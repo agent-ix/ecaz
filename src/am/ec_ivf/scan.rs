@@ -2327,10 +2327,11 @@ unsafe fn rerank_probe_candidates(
             )
             .unwrap_or_else(|e| pgrx::error!("{e}"));
 
-            // Task 111g (003b): for rerank_placement = 'index', read the
+            // Task 111g/111h: for rerank_placement = 'index', read the
             // persisted compact 0x2A sidecar (keyed by heap TID) instead of the
-            // full f32 heap source. The 'table' path (and any v2-era index with
-            // no sidecar) keeps the heap-source read, bit-identical to f32.
+            // full f32 heap source. The source path keeps the heap-source read;
+            // `source_diagnostic` may score that fetched f32 vector through the
+            // legacy query-time compact conversion for benchmark attribution.
             let sidecar_head = unsafe { index_placement_sidecar_head(scan, index_options) };
             // SAFETY: `reranked_prefix_len <= rerank_len <= candidates.len()`,
             // and the rerank helpers validate their scan-local state before
@@ -2348,7 +2349,7 @@ unsafe fn rerank_probe_candidates(
                     )
                 },
                 None => unsafe {
-                    rerank_probe_candidates_table_side(
+                    rerank_probe_candidates_source_side(
                         opaque,
                         &scorer,
                         &mut candidates[..reranked_prefix_len],
@@ -2373,8 +2374,8 @@ unsafe fn rerank_probe_candidates(
 
 /// Returns the persisted compact rerank sidecar head when this scan should read
 /// the index-side 0x2A sidecar (rerank_placement = 'index' and a sidecar exists
-/// on disk), or `None` to keep the heap/table source read. A v2-era index has
-/// `rerank_sidecar_head = INVALID`, so it always falls back to the table path.
+/// on disk), or `None` to keep the heap/source-vector read. An index with no
+/// sidecar head falls back to the source path.
 ///
 /// # Safety
 /// `scan` is the live IndexScanDesc; `(*scan).indexRelation` is read to decode
@@ -2412,7 +2413,7 @@ fn resolve_rerank_len(rerank_width: i32, candidate_len: usize) -> usize {
 /// representations (f32/f16) score inside the fetch loop; batched
 /// representations (rabitq4) collect the fetched source vectors and score the
 /// whole frontier through the shared candidate_batch scorers afterward.
-unsafe fn rerank_probe_candidates_table_side(
+unsafe fn rerank_probe_candidates_source_side(
     opaque: &mut EcIvfScanOpaque,
     scorer: &super::rerank::RerankScorer,
     candidates: &mut [EcIvfScoredCandidate],
@@ -2426,13 +2427,13 @@ unsafe fn rerank_probe_candidates_table_side(
         .as_deref()
         .filter(|state| state.source_attnum > 0)
         .unwrap_or_else(|| {
-            pgrx::error!("ec_ivf table-side rerank is missing heap fetch state");
+            pgrx::error!("ec_ivf source rerank is missing heap fetch state");
         });
     let heap_relation = state.heap_relation();
     let snapshot = state.snapshot();
     let slot = state.slot();
     if heap_relation.is_null() || snapshot.is_null() || slot.is_null() {
-        pgrx::error!("ec_ivf table-side rerank is missing heap fetch state");
+        pgrx::error!("ec_ivf source rerank is missing heap fetch state");
     }
     let source_attnum = i32::from(state.source_attnum);
     let heap_blocks = candidate_heap_blocks(candidates);
@@ -2466,12 +2467,12 @@ unsafe fn rerank_probe_candidates_table_side(
             source::fetch_heap_row_version_with_reader(
                 &mut heap_reader,
                 candidate.heap_tid,
-                "ec_ivf table-side rerank source vector",
+                "ec_ivf source rerank vector",
             );
             source::with_indexed_ecvector_from_slot_reader(
                 &mut heap_reader,
                 source_attnum,
-                "ec_ivf table-side rerank source vector",
+                "ec_ivf source rerank vector",
                 |source_vector| {
                     if batched {
                         collected_sources.push(source_vector.as_slice().to_vec());
@@ -2500,7 +2501,7 @@ unsafe fn rerank_probe_candidates_table_side(
         }
     }
 
-    // The table path reads the full f32 heap source for every reranked
+    // The source path reads the full f32 heap source for every reranked
     // candidate: `dimensions * 4` bytes each. Record it so the index-placement
     // compact sidecar's byte reduction is comparable by counter.
     let source_bytes_per_candidate = (opaque.scan_dimensions as usize) * std::mem::size_of::<f32>();

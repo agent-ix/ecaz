@@ -185,9 +185,9 @@ win under the storage/cache conditions they are designed for.
 
 ## Checklist
 
-- [ ] Rename or document current `table` behavior so query-time compact
+- [x] Rename or document current `table` behavior so query-time compact
       conversion cannot be mistaken for persisted table storage.
-- [ ] Reject or gate diagnostic query-time f16/rabitq conversion paths outside
+- [x] Reject or gate diagnostic query-time f16/rabitq conversion paths outside
       the benchmark-only diagnostic surface.
 - [ ] Define the common rerank payload codec interface.
 - [ ] Implement persisted f16 payload encoding for build and insert.
@@ -212,7 +212,7 @@ win under the storage/cache conditions they are designed for.
       fallback directory/full-chain lookup, and mixed postings that cannot carry
       an unambiguous direct pointer.
 - [ ] Add encode/decode and scalar-vs-batch differential tests for every format.
-- [ ] Add a no-query-time-source-conversion regression test for persisted compact
+- [x] Add a no-query-time-source-conversion regression test for persisted compact
       formats: source-vector f32 may be read only for the `source` baseline or
       an explicitly diagnostic mode.
 - [ ] Run the full `ecaz bench suite` matrix at 10k/50k/100k/1M.

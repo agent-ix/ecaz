@@ -60,8 +60,8 @@ pub(super) const FIRST_DATA_BLOCK_NUMBER: u32 = 1;
 // at the sidecar directory fallback. Posting-carried rerank TIDs are the hot
 // sidecar lookup path; the directory and then full-chain read are compatibility
 // fallbacks. A rerank_sidecar_head of INVALID is the legitimate "no sidecar"
-// state for rerank_placement = 'table' and for f32 storage (rerank reads from
-// the heap/table source path instead). This research project keeps no backward
+// state for rerank_placement = 'source' and for f32 storage (rerank reads from
+// the heap/source-vector path instead). This research project keeps no backward
 // compatibility with older metadata widths (the 86-byte v3 layout is rejected
 // by version, not silently truncated).
 pub const EC_IVF_INDEX_FORMAT_VERSION: u16 = 4;
@@ -629,7 +629,7 @@ pub struct MetadataPage {
     pub pq_group_size: u16,
     /// Task 111g v3: head of the compact rerank sidecar chain (tag 0x2A),
     /// keyed by heap TID. `INVALID` means no sidecar exists (rerank_placement =
-    /// 'table' / f32 storage), so rerank reads from the heap/table source path.
+    /// 'source' / f32 storage), so rerank reads from the heap/source-vector path.
     pub rerank_sidecar_head: ItemPointer,
     /// ADR-079: head of the rerank sidecar directory chain (bytes 86..92).
     /// `INVALID` when no directory exists (no sidecar, or pre-ADR-079 build);
@@ -801,7 +801,7 @@ impl MetadataPage {
                     .expect("metadata pq group size slice should be 2 bytes"),
             ),
             // v3 rerank sidecar head (bytes 80..86). INVALID is the legitimate
-            // "no sidecar" state for rerank_placement = 'table' / f32 storage.
+            // "no sidecar" state for rerank_placement = 'source' / f32 storage.
             rerank_sidecar_head: ItemPointer::decode(
                 &bytes[EC_IVF_METADATA_RERANK_SIDECAR_HEAD_OFFSET
                     ..EC_IVF_METADATA_RERANK_SIDECAR_HEAD_OFFSET + ITEM_POINTER_BYTES],

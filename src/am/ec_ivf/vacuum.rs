@@ -179,7 +179,7 @@ unsafe fn run_bulkdelete(
     // Task 111g: maintain the compact rerank sidecar. Tombstone dead heap TIDs
     // (set heap_tid = INVALID, same byte length) so the index-side rerank lookup
     // never matches a reused heap line pointer to a stale payload. Space is
-    // reclaimed on REINDEX. No-op when there is no sidecar (table placement /
+    // reclaimed on REINDEX. No-op when there is no sidecar (source placement /
     // v2-era index).
     if metadata.rerank_sidecar_head != ItemPointer::INVALID {
         bulkdelete_rerank_sidecar(

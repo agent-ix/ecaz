@@ -95,8 +95,8 @@ rebuilt.
 The v4 metadata struct is `EC_IVF_METADATA_BYTES = 92` bytes wide.
 `EC_IVF_METADATA_RERANK_SIDECAR_HEAD_OFFSET = 80` holds the head `ItemPointer` of
 the compact rerank sidecar chain (tag `0x2A`). A head of `ItemPointer::INVALID`
-is the legitimate "no sidecar" state for `rerank_placement = 'table'` and for
-f32 storage; the scan then reranks from the heap/table source path. That is a
+is the legitimate "no sidecar" state for `rerank_placement = 'source'` and for
+f32 storage; the scan then reranks from the heap/source-vector path. That is a
 runtime placement state, not a compatibility mode.
 
 `EC_IVF_METADATA_RERANK_SIDECAR_DIRECTORY_HEAD_OFFSET = 86` holds the head
@@ -135,7 +135,9 @@ shape is
 writes it globally tid-sorted; insert prepends a single-entry block (O(1)) and
 repoints the metadata head; vacuum tombstones dead entries in place
 (`heap_tid = INVALID`, same byte length) and REINDEX regenerates the chain.
-`rerank_placement = 'table'` (and any v1/v2 index) writes no sidecar.
+`rerank_placement = 'source'` writes no sidecar. `rerank_placement = 'table'`
+is reserved for a future real table-owned persisted payload design and is not
+the heap-source fallback.
 
 Task 111f removed the abandoned page-spanning packed and columnar frozen-list
 formats (`0x26`, `0x27`, `0x29`) before they shipped on `main`. Their former tag

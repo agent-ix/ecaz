@@ -1059,17 +1059,17 @@
         let ctid_to_id = ctid_id_map("ec_ivf_coarse_rerank_contract");
         let build_ids = ivf_debug_output_ids(index_oid, vec![1.0, 0.0], &ctid_to_id, 4);
 
-        assert_eq!(contract, "coarse_rerank/rabitq/1/heap_f32/table/f32/3");
+        assert_eq!(contract, "coarse_rerank/rabitq/1/heap_f32/source/f32/3");
         assert!(build_ids.contains(&0));
     }
 
     #[pg_test]
     fn test_ec_ivf_coarse_rerank_f16_rabitq4_admin_snapshot() {
-        // Task 111g: f16 and rabitq4 table-side rerank formats are creatable and
-        // reported by the admin snapshot.
+        // Task 111h: compact rerank formats with auto placement resolve to the
+        // persisted index sidecar, not the legacy source-vector conversion path.
         for (suffix, rerank_format, expected) in [
-            ("f16", "f16", "coarse_rerank/table/f16"),
-            ("rabitq4", "rabitq4", "coarse_rerank/table/rabitq4"),
+            ("f16", "f16", "coarse_rerank/index/f16"),
+            ("rabitq4", "rabitq4", "coarse_rerank/index/rabitq4"),
         ] {
             let table = format!("ec_ivf_cr_fmt_{suffix}");
             let index = format!("ec_ivf_cr_fmt_{suffix}_idx");
@@ -1111,8 +1111,8 @@
 
     #[pg_test]
     fn test_ec_ivf_coarse_rerank_f16_matches_f32_ranking() {
-        // Task 111g recall parity: an f16 table-side rerank returns the same
-        // top-k ranking as the f32 table-side rerank on a deterministic corpus,
+        // Task 111h recall parity: an f16 persisted-index rerank returns the
+        // same top-k ranking as the f32 source rerank on a deterministic corpus,
         // and the f16 scores stay within binary16 precision of the f32 scores.
         let rows: Vec<(i64, Vec<f32>)> = (0..16)
             .map(|id| {
@@ -1182,7 +1182,7 @@
 
     #[pg_test]
     fn test_ec_ivf_coarse_rerank_rabitq4_returns_correct_top_neighbor() {
-        // Task 111g correctness: rabitq4 table-side rerank ranks the exact
+        // Task 111g/111h correctness: persisted rabitq4 rerank ranks the exact
         // nearest neighbor first on a separable corpus.
         Spi::run(
             "CREATE TABLE ec_ivf_cr_rb4 (id bigint primary key, embedding ecvector)",
@@ -1280,11 +1280,11 @@
     }
 
     #[pg_test]
-    fn test_ec_ivf_index_placement_f16_matches_table_f16_ranking() {
+    fn test_ec_ivf_index_f16_matches_source_diagnostic_f16() {
         // Task 111g (003b) recall parity: the index-side f16 sidecar rerank
         // returns the SAME top-k ranking and bit-identical scores as the
-        // table-side f16 rerank (both round-trip the source through binary16),
-        // proving the persisted compact sidecar preserves f16 recall.
+        // source-diagnostic f16 rerank (both round-trip the source through
+        // binary16), proving the persisted compact sidecar preserves f16 recall.
         let rows: Vec<(i64, Vec<f32>)> = (0..16)
             .map(|id| {
                 let base = id as f32;
@@ -1296,7 +1296,7 @@
             .collect();
 
         for (table, placement) in [
-            ("ec_ivf_idx_par_table", "table"),
+            ("ec_ivf_idx_par_source_diag", "source_diagnostic"),
             ("ec_ivf_idx_par_index", "index"),
         ] {
             Spi::run(&format!(
@@ -1325,32 +1325,34 @@
         }
 
         let query = rows[3].1.clone();
-        let table_oid = ec_ivf_index_oid("ec_ivf_idx_par_table_idx");
+        let source_diag_oid = ec_ivf_index_oid("ec_ivf_idx_par_source_diag_idx");
         let index_oid = ec_ivf_index_oid("ec_ivf_idx_par_index_idx");
-        let ctid_table = ctid_id_map("ec_ivf_idx_par_table");
+        let ctid_source_diag = ctid_id_map("ec_ivf_idx_par_source_diag");
         let ctid_index = ctid_id_map("ec_ivf_idx_par_index");
 
-        let table_ids = ivf_debug_output_ids(table_oid, query.clone(), &ctid_table, 5);
+        let source_diag_ids =
+            ivf_debug_output_ids(source_diag_oid, query.clone(), &ctid_source_diag, 5);
         let index_ids = ivf_debug_output_ids(index_oid, query.clone(), &ctid_index, 5);
         assert_eq!(
-            table_ids, index_ids,
-            "index-side f16 rerank top-5 ranking should match table-side f16 ranking"
+            source_diag_ids, index_ids,
+            "index-side f16 rerank top-5 ranking should match source-diagnostic f16 ranking"
         );
 
-        let (table_outputs, _) =
-            ec_ivf_debug!(am::debug_ec_ivf_gettuple_outputs(table_oid, query.clone()));
+        let (source_diag_outputs, _) =
+            ec_ivf_debug!(am::debug_ec_ivf_gettuple_outputs(source_diag_oid, query.clone()));
         let (index_outputs, _) =
             ec_ivf_debug!(am::debug_ec_ivf_gettuple_outputs(index_oid, query));
-        assert_eq!(table_outputs.len(), index_outputs.len());
-        for ((_, _, table_score), (_, _, index_score)) in
-            table_outputs.iter().zip(index_outputs.iter())
+        assert_eq!(source_diag_outputs.len(), index_outputs.len());
+        for ((_, _, source_diag_score), (_, _, index_score)) in
+            source_diag_outputs.iter().zip(index_outputs.iter())
         {
             // The sidecar stores the exact f16 round-trip of the source, so the
-            // index-side score is bit-identical to the table-side f16 score.
+            // index-side score is bit-identical to the source-diagnostic f16
+            // score.
             assert_eq!(
                 index_score.to_bits(),
-                table_score.to_bits(),
-                "index-side f16 score {index_score} should match table-side f16 score {table_score}"
+                source_diag_score.to_bits(),
+                "index-side f16 score {index_score} should match source-diagnostic f16 score {source_diag_score}"
             );
         }
     }
@@ -1402,8 +1404,8 @@
     fn test_ec_ivf_index_placement_fewer_rerank_bytes() {
         // Task 111g (003b) WIN EVIDENCE (by counter, no ecaz bench suite): the
         // index-placement compact sidecar reads strictly fewer rerank *source*
-        // bytes than the table-side f32 rerank on the same corpus/query.
-        //   - table f32 reads dims*4 per reranked candidate (full heap source).
+        // bytes than the source f32 rerank on the same corpus/query.
+        //   - source f32 reads dims*4 per reranked candidate (full heap source).
         //   - index f16 reads dims*2; index rabitq4 reads the rabitq4 payload
         //     length (both far smaller than dims*4).
         let dims = 8usize;
@@ -1444,13 +1446,13 @@
             ec_ivf_index_oid(&format!("{table}_idx"))
         };
 
-        let table_f32_oid = make_index("ec_ivf_bytes_table_f32", "f32", "table");
+        let source_f32_oid = make_index("ec_ivf_bytes_source_f32", "f32", "source");
         let index_f16_oid = make_index("ec_ivf_bytes_index_f16", "f16", "index");
         let index_rb4_oid = make_index("ec_ivf_bytes_index_rb4", "rabitq4", "index");
 
         let query = rows[2].1.clone();
-        let table_f32 = ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(
-            table_f32_oid,
+        let source_f32 = ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(
+            source_f32_oid,
             query.clone()
         ));
         let index_f16 = ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(
@@ -1464,15 +1466,15 @@
 
         // Every variant reranks the same frontier, so rerank_rows match and the
         // byte comparison is apples-to-apples.
-        assert!(table_f32.rerank_rows > 0, "table f32 should rerank rows");
-        assert_eq!(table_f32.rerank_rows, index_f16.rerank_rows);
-        assert_eq!(table_f32.rerank_rows, index_rb4.rerank_rows);
+        assert!(source_f32.rerank_rows > 0, "source f32 should rerank rows");
+        assert_eq!(source_f32.rerank_rows, index_f16.rerank_rows);
+        assert_eq!(source_f32.rerank_rows, index_rb4.rerank_rows);
 
         // f32 reads dims*4 per candidate; f16 reads dims*2 (exactly half).
         assert_eq!(
-            table_f32.rerank_source_bytes_read,
-            table_f32.rerank_rows * (dims * 4) as u32,
-            "table f32 should read dims*4 per reranked candidate"
+            source_f32.rerank_source_bytes_read,
+            source_f32.rerank_rows * (dims * 4) as u32,
+            "source f32 should read dims*4 per reranked candidate"
         );
         assert_eq!(
             index_f16.rerank_source_bytes_read,
@@ -1481,16 +1483,16 @@
         );
 
         assert!(
-            index_f16.rerank_source_bytes_read < table_f32.rerank_source_bytes_read,
-            "index f16 ({}) should read fewer rerank source bytes than table f32 ({})",
+            index_f16.rerank_source_bytes_read < source_f32.rerank_source_bytes_read,
+            "index f16 ({}) should read fewer rerank source bytes than source f32 ({})",
             index_f16.rerank_source_bytes_read,
-            table_f32.rerank_source_bytes_read
+            source_f32.rerank_source_bytes_read
         );
         assert!(
-            index_rb4.rerank_source_bytes_read < table_f32.rerank_source_bytes_read,
-            "index rabitq4 ({}) should read fewer rerank source bytes than table f32 ({})",
+            index_rb4.rerank_source_bytes_read < source_f32.rerank_source_bytes_read,
+            "index rabitq4 ({}) should read fewer rerank source bytes than source f32 ({})",
             index_rb4.rerank_source_bytes_read,
-            table_f32.rerank_source_bytes_read
+            source_f32.rerank_source_bytes_read
         );
     }
 
@@ -1547,12 +1549,11 @@
     }
 
     #[pg_test]
-    fn test_ec_ivf_table_placement_has_no_sidecar_and_scans() {
-        // Task 111g (003b): a table-placement coarse_rerank index carries NO
+    fn test_ec_ivf_source_placement_has_no_sidecar_and_scans() {
+        // Task 111h: a source-placement coarse_rerank index carries NO
         // sidecar (rerank_sidecar_head = INVALID). Such an index must still
-        // scan, reading the heap source (the table f32 path). This is the
-        // legitimate "no sidecar -> table fallback" runtime state, not a compat
-        // mode.
+        // scan, reading the heap source. This is the legitimate
+        // "no sidecar -> source fallback" runtime state, not a compat mode.
         Spi::run("CREATE TABLE ec_ivf_no_sidecar (id bigint primary key, embedding ecvector)")
             .expect("table creation should succeed");
         Spi::run(
@@ -1572,26 +1573,26 @@
                 training_sample_rows = 4,
                 storage_format = 'coarse_rerank',
                 rerank_format = 'f32',
-                rerank_placement = 'table',
+                rerank_placement = 'source',
                 rerank_width = 3
              )",
         )
-        .expect("table-placement index creation should succeed");
+        .expect("source-placement index creation should succeed");
 
         let index_oid = ec_ivf_index_oid("ec_ivf_no_sidecar_idx");
         // No sidecar head persisted: the metadata reads back with an invalid
-        // sidecar head and the scan falls back to the heap/table source path.
+        // sidecar head and the scan falls back to the heap/source-vector path.
         let sidecar_head_valid =
             ec_ivf_debug!(am::debug_ec_ivf_rerank_sidecar_head_is_valid(index_oid));
         assert!(
             !sidecar_head_valid,
-            "table-placement index should have no sidecar head"
+            "source-placement index should have no sidecar head"
         );
 
         let ctid_to_id = ctid_id_map("ec_ivf_no_sidecar");
         let ids = ivf_debug_output_ids(index_oid, vec![1.0, 0.0], &ctid_to_id, 4);
-        assert!(ids.contains(&0), "table-placement scan should return rows, got {ids:?}");
-        assert_eq!(ids[0], 0, "table f32 rerank should rank the exact match first");
+        assert!(ids.contains(&0), "source-placement scan should return rows, got {ids:?}");
+        assert_eq!(ids[0], 0, "source f32 rerank should rank the exact match first");
     }
 
     #[pg_test]
@@ -3633,9 +3634,9 @@
     // Task 112: lazy heap-f32 exact rerank.
     // ---------------------------------------------------------------------
 
-    /// Build a heap-f32 (table-side) rerank IVF index over `rows` with the given
+    /// Build a heap-f32 source-side rerank IVF index over `rows` with the given
     /// `rerank_width`, returning its OID. `storage_format = 'coarse_rerank'`
-    /// keeps the heap source vector and reranks table-side through the f32 path
+    /// keeps the heap source vector and reranks source-side through the f32 path
     /// (the pre-112 exact rerank), which is exactly the surface Task 112 touches.
     fn make_lazy_rerank_index(table: &str, rows: &[(i64, Vec<f32>)], rerank_width: i32) -> pg_sys::Oid {
         Spi::run(&format!(
@@ -3656,7 +3657,7 @@
                 training_sample_rows = {rows_len},
                 storage_format = 'coarse_rerank',
                 rerank_format = 'f32',
-                rerank_placement = 'table',
+                rerank_placement = 'source',
                 rerank_width = {rerank_width}
              )",
             rows_len = rows.len(),
@@ -3828,7 +3829,7 @@
              (embedding ecvector_ip_ops) \
              WITH (nlists = 1, nprobe = 1, training_sample_rows = 2, \
                    storage_format = 'coarse_rerank', rerank_format = 'f32', \
-                   rerank_placement = 'table', rerank_width = 8)",
+                   rerank_placement = 'source', rerank_width = 8)",
         )
         .expect("index creation should succeed");
 

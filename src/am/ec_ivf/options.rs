@@ -163,18 +163,22 @@ impl CoarseFormat {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RerankPlacement {
     Auto = 0,
-    Table = 1,
-    Index = 2,
+    Source = 1,
+    Table = 2,
+    Index = 3,
+    SourceDiagnostic = 4,
 }
 
 impl RerankPlacement {
     pub(super) fn parse_reloption(value: &str) -> Result<Self, String> {
         match value {
             "auto" => Ok(Self::Auto),
-            "table" | "heap" => Ok(Self::Table),
+            "source" | "heap" => Ok(Self::Source),
+            "table" => Ok(Self::Table),
             "index" => Ok(Self::Index),
+            "source_diagnostic" | "heap_diagnostic" => Ok(Self::SourceDiagnostic),
             other => Err(format!(
-                "invalid ec_ivf rerank_placement reloption: expected 'auto', 'table', 'heap', or 'index', got '{other}'"
+                "invalid ec_ivf rerank_placement reloption: expected 'auto', 'source', 'heap', 'table', 'index', or 'source_diagnostic', got '{other}'"
             )),
         }
     }
@@ -182,8 +186,10 @@ impl RerankPlacement {
     pub(super) fn reloption_name(self) -> &'static str {
         match self {
             Self::Auto => "auto",
+            Self::Source => "source",
             Self::Table => "table",
             Self::Index => "index",
+            Self::SourceDiagnostic => "source_diagnostic",
         }
     }
 }
@@ -731,7 +737,7 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amoptions(
         pg_sys::add_local_string_reloption(
             &mut relopts,
             c"rerank_placement".as_ptr(),
-            c"Task 111e coarse_rerank rerank payload placement: 'table', 'heap', 'index', or 'auto'."
+            c"Task 111h coarse_rerank rerank payload placement: 'source', 'index', 'table', 'source_diagnostic', or 'auto'."
                 .as_ptr(),
             ptr::null(),
             None,
@@ -876,17 +882,41 @@ fn build_options_from_reloptions(
             }
         }
         match rerank_placement {
-            RerankPlacement::Auto => rerank_placement = RerankPlacement::Table,
-            RerankPlacement::Table => {}
-            // Task 111g (003b): index placement is implemented as the persisted
-            // compact 0x2A sidecar keyed by heap TID. It is only meaningful with
-            // a compact rerank_format (f16 / rabitq4); f32 keeps the heap source
-            // and has no sidecar to place index-side. `rerank_format` is already
-            // resolved (Auto -> F32) above, so f32 is the only "no sidecar" arm.
+            RerankPlacement::Auto => {
+                rerank_placement = match rerank_format {
+                    RerankFormat::F32 => RerankPlacement::Source,
+                    RerankFormat::F16 | RerankFormat::RaBitQ4 => RerankPlacement::Index,
+                    RerankFormat::Auto
+                    | RerankFormat::RaBitQ2
+                    | RerankFormat::RaBitQ8
+                    | RerankFormat::TurboQuant => unreachable!(
+                        "coarse_rerank rerank_format should be resolved or rejected"
+                    ),
+                }
+            }
+            RerankPlacement::Source => match rerank_format {
+                RerankFormat::F32 => {}
+                RerankFormat::F16 | RerankFormat::RaBitQ4 => pgrx::error!(
+                    "ec_ivf rerank_placement = 'source' reads the existing f32 source vector and only supports rerank_format = 'f32'; use rerank_placement = 'index' for persisted compact payloads or 'source_diagnostic' for the legacy query-time conversion benchmark"
+                ),
+                RerankFormat::Auto
+                | RerankFormat::RaBitQ2
+                | RerankFormat::RaBitQ8
+                | RerankFormat::TurboQuant => unreachable!(
+                    "coarse_rerank rerank_format should be resolved or rejected"
+                ),
+            },
+            RerankPlacement::Table => pgrx::error!(
+                "ec_ivf rerank_placement = 'table' is reserved for real table-owned persisted rerank payloads and is not implemented yet; use rerank_placement = 'source' for the existing f32 source vector or 'index' for persisted compact payloads"
+            ),
+            // Task 111g/111h legacy baseline: index placement is currently the
+            // persisted compact 0x2A sidecar keyed by heap TID. It is only
+            // meaningful with compact rerank_format values; f32 keeps the source
+            // vector and has no sidecar to place index-side.
             RerankPlacement::Index => match rerank_format {
                 RerankFormat::F16 | RerankFormat::RaBitQ4 => {}
                 RerankFormat::F32 => pgrx::error!(
-                    "ec_ivf rerank_placement = 'index' requires a compact rerank_format ('f16' or 'rabitq4'); 'f32' keeps the heap source, so use rerank_placement = 'table'"
+                    "ec_ivf rerank_placement = 'index' requires a compact rerank_format ('f16' or 'rabitq4'); 'f32' keeps the source vector, so use rerank_placement = 'source'"
                 ),
                 RerankFormat::Auto
                 | RerankFormat::RaBitQ2
@@ -894,6 +924,15 @@ fn build_options_from_reloptions(
                 | RerankFormat::TurboQuant => pgrx::error!(
                     "ec_ivf rerank_placement = 'index' supports rerank_format = 'f16' or 'rabitq4'; '{}' is not implemented yet",
                     rerank_format.reloption_name()
+                ),
+            },
+            RerankPlacement::SourceDiagnostic => match rerank_format {
+                RerankFormat::F32 | RerankFormat::F16 | RerankFormat::RaBitQ4 => {}
+                RerankFormat::Auto
+                | RerankFormat::RaBitQ2
+                | RerankFormat::RaBitQ8
+                | RerankFormat::TurboQuant => unreachable!(
+                    "coarse_rerank rerank_format should be resolved or rejected"
                 ),
             },
         }
@@ -1003,25 +1042,25 @@ mod tests {
         assert!(options.dense_posting_blocks);
         assert!(options.dense_posting_typed_layout);
         assert_eq!(options.rerank, RerankMode::HeapF32);
-        assert_eq!(options.rerank_placement, RerankPlacement::Table);
+        assert_eq!(options.rerank_placement, RerankPlacement::Source);
         assert_eq!(options.rerank_format, RerankFormat::F32);
     }
 
     #[test]
-    fn coarse_rerank_keeps_explicit_heap_f32() {
+    fn coarse_rerank_keeps_explicit_source_f32() {
         let options = build_options_from_reloptions(
             &reloptions(),
             Some("coarse_rerank".into()),
             None,
             Some("heap_f32".into()),
             Some("rabitq".into()),
-            Some("table".into()),
+            Some("source".into()),
             Some("f32".into()),
         );
 
         assert_eq!(options.rerank, RerankMode::HeapF32);
         assert_eq!(options.coarse_format, CoarseFormat::RaBitQ);
-        assert_eq!(options.rerank_placement, RerankPlacement::Table);
+        assert_eq!(options.rerank_placement, RerankPlacement::Source);
         assert_eq!(options.rerank_format, RerankFormat::F32);
     }
 
@@ -1045,13 +1084,30 @@ mod tests {
         assert_eq!(options.coarse_bits, 1);
         assert_eq!(options.quant_bits, 1);
         assert_eq!(options.rerank, RerankMode::HeapF32);
-        assert_eq!(options.rerank_placement, RerankPlacement::Table);
+        assert_eq!(options.rerank_placement, RerankPlacement::Source);
         assert_eq!(options.rerank_format, RerankFormat::F32);
     }
 
     #[test]
+    #[should_panic]
+    fn coarse_rerank_rejects_table_placement_until_real_table_payloads_exist() {
+        build_options_from_reloptions(
+            &reloptions(),
+            Some("coarse_rerank".into()),
+            None,
+            Some("heap_f32".into()),
+            Some("rabitq".into()),
+            Some("table".into()),
+            Some("f32".into()),
+        );
+    }
+
+    #[test]
     fn rerank_format_parse_accepts_f16() {
-        assert_eq!(RerankFormat::parse_reloption("f16").unwrap(), RerankFormat::F16);
+        assert_eq!(
+            RerankFormat::parse_reloption("f16").unwrap(),
+            RerankFormat::F16
+        );
         assert_eq!(
             RerankFormat::parse_reloption("heap_f16").unwrap(),
             RerankFormat::F16
@@ -1073,7 +1129,7 @@ mod tests {
 
         assert_eq!(options.storage_format, StorageFormat::CoarseRerank);
         assert_eq!(options.rerank, RerankMode::HeapF32);
-        assert_eq!(options.rerank_placement, RerankPlacement::Table);
+        assert_eq!(options.rerank_placement, RerankPlacement::Index);
         assert_eq!(options.rerank_format, RerankFormat::F16);
     }
 
@@ -1091,8 +1147,40 @@ mod tests {
 
         assert_eq!(options.storage_format, StorageFormat::CoarseRerank);
         assert_eq!(options.rerank, RerankMode::HeapF32);
-        assert_eq!(options.rerank_placement, RerankPlacement::Table);
+        assert_eq!(options.rerank_placement, RerankPlacement::Index);
         assert_eq!(options.rerank_format, RerankFormat::RaBitQ4);
+    }
+
+    #[test]
+    #[should_panic]
+    fn coarse_rerank_rejects_source_placement_with_compact_format() {
+        build_options_from_reloptions(
+            &reloptions(),
+            Some("coarse_rerank".into()),
+            None,
+            None,
+            None,
+            Some("source".into()),
+            Some("f16".into()),
+        );
+    }
+
+    #[test]
+    fn coarse_rerank_accepts_source_diagnostic_with_compact_format() {
+        let options = build_options_from_reloptions(
+            &reloptions(),
+            Some("coarse_rerank".into()),
+            None,
+            None,
+            None,
+            Some("source_diagnostic".into()),
+            Some("f16".into()),
+        );
+
+        assert_eq!(options.storage_format, StorageFormat::CoarseRerank);
+        assert_eq!(options.rerank, RerankMode::HeapF32);
+        assert_eq!(options.rerank_placement, RerankPlacement::SourceDiagnostic);
+        assert_eq!(options.rerank_format, RerankFormat::F16);
     }
 
     #[test]

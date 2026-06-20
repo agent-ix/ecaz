@@ -916,7 +916,7 @@ fn dense_posting_group_limit(payload_len: usize, page_size: usize) -> Result<usi
 
 /// Task 111g: build the compact rerank sidecar chain (tag 0x2A) for
 /// `rerank_placement = 'index'`. Returns the head ItemPointer, or `INVALID`
-/// when no sidecar is persisted (table placement, or an f32/auto rerank_format
+/// when no sidecar is persisted (source placement, or an f32/auto rerank_format
 /// that keeps the heap source). Entries are written globally tid-sorted so the
 /// scan reads them in heap-TID order; blocks chain via `next_tid`.
 fn build_rerank_sidecar_chain(

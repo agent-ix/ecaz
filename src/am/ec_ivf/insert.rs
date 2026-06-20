@@ -207,7 +207,7 @@ unsafe fn insert_into_trained_index(
 
 /// Append the inserted row's compact rerank payload to the 0x2A sidecar chain
 /// when the index uses rerank_placement = 'index' with a compact rerank_format.
-/// No-op for table placement / f32 (no sidecar). Prepends a single-entry block
+/// No-op for source placement / f32 (no sidecar). Prepends a single-entry block
 /// to keep inserts O(1).
 unsafe fn append_rerank_sidecar_entry(
     index_relation: pg_sys::Relation,

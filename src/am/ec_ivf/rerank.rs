@@ -1,6 +1,6 @@
 //! Task 111g: pluggable IVF coarse-rerank representations.
 //!
-//! The coarse_rerank survivor set is reranked table-side by reading the heap
+//! The coarse_rerank source-placement survivor set reranks by reading the heap
 //! source column (the original full-precision f32 vector) **tid-sorted** and
 //! rescoring each candidate through the configured `rerank_format`:
 //!
@@ -13,9 +13,11 @@
 //!   codec and score through the existing `candidate_batch` RaBitQ scorers, then
 //!   negate the inner-product estimate.
 //!
-//! All three keep the on-disk layout untouched: the rerank payload is always the
-//! heap source vector. The representation only changes how a fetched vector is
-//! *scored*, so the read order (tid-sorted) and IO shape match the f32 path.
+//! These source-placement diagnostic representations keep the on-disk layout
+//! untouched: the rerank payload is always the heap source vector. The
+//! representation only changes how a fetched vector is *scored*, so the read
+//! order (tid-sorted) and IO shape match the f32 path. Persisted compact
+//! payloads use the index-side sidecar path instead.
 
 use super::options::RerankFormat;
 use super::quantizer::{IvfPreparedQuery, IvfQuantizer};
@@ -40,7 +42,7 @@ pub(super) enum RerankScorer {
 
 impl RerankScorer {
     /// Build the scorer for `rerank_format`. `f16`/`rabitq4` are only valid for
-    /// the `coarse_rerank` storage format (table-side rerank); the caller has
+    /// the `coarse_rerank` storage format; the caller has
     /// already validated that pairing at index creation, but this re-checks so a
     /// stray format on another storage profile is a hard error rather than a
     /// silent wrong answer.
@@ -79,10 +81,12 @@ impl RerankScorer {
                     payload_len,
                 })
             }
-            RerankFormat::RaBitQ2 | RerankFormat::RaBitQ8 | RerankFormat::TurboQuant => Err(format!(
-                "ec_ivf rerank_format = '{}' is not implemented",
-                rerank_format.reloption_name()
-            )),
+            RerankFormat::RaBitQ2 | RerankFormat::RaBitQ8 | RerankFormat::TurboQuant => {
+                Err(format!(
+                    "ec_ivf rerank_format = '{}' is not implemented",
+                    rerank_format.reloption_name()
+                ))
+            }
         }
     }
 
@@ -309,10 +313,12 @@ impl RerankSidecarEncoder {
                     payload_len,
                 }))
             }
-            RerankFormat::RaBitQ2 | RerankFormat::RaBitQ8 | RerankFormat::TurboQuant => Err(format!(
-                "ec_ivf rerank_format = '{}' is not implemented for index placement",
-                rerank_format.reloption_name()
-            )),
+            RerankFormat::RaBitQ2 | RerankFormat::RaBitQ8 | RerankFormat::TurboQuant => {
+                Err(format!(
+                    "ec_ivf rerank_format = '{}' is not implemented for index placement",
+                    rerank_format.reloption_name()
+                ))
+            }
         }
     }
 
@@ -529,10 +535,10 @@ mod tests {
         };
         let query = gen(1);
         let sources: Vec<Vec<f32>> = (0..n).map(|i| gen(100 + i as u64)).collect();
-        let f32s =
-            RerankScorer::resolve(RerankFormat::F32, StorageFormat::CoarseRerank, d, &query).unwrap();
-        let f16s =
-            RerankScorer::resolve(RerankFormat::F16, StorageFormat::CoarseRerank, d, &query).unwrap();
+        let f32s = RerankScorer::resolve(RerankFormat::F32, StorageFormat::CoarseRerank, d, &query)
+            .unwrap();
+        let f16s = RerankScorer::resolve(RerankFormat::F16, StorageFormat::CoarseRerank, d, &query)
+            .unwrap();
         let mut s32: Vec<(usize, f32)> = sources
             .iter()
             .enumerate()
@@ -662,7 +668,7 @@ mod tests {
     #[test]
     fn f16_sidecar_payload_scores_match_table_f16_path() {
         // The index-side f16 path (score_sidecar_payload over a packed payload)
-        // must produce the same score as the table-side f16 path
+        // must produce the same score as the source-diagnostic f16 path
         // (score_source over the raw f32 source), because both round-trip the
         // source through binary16 before the inner product.
         let query = [0.2_f32, -0.5, 0.75, 0.1, -0.9];
@@ -670,10 +676,10 @@ mod tests {
         let scorer = RerankScorer::F16 {
             query_f16: query.iter().copied().map(f16_round_trip).collect(),
         };
-        let table_score = scorer.score_source(&query, &source);
+        let source_diag_score = scorer.score_source(&query, &source);
         let payload = pack_f16_payload(&source);
         let index_score = scorer.score_sidecar_payload(&payload);
-        assert_eq!(index_score.to_bits(), table_score.to_bits());
+        assert_eq!(index_score.to_bits(), source_diag_score.to_bits());
     }
 
     #[test]
