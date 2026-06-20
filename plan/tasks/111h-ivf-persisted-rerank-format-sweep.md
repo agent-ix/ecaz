@@ -211,7 +211,7 @@ win under the storage/cache conditions they are designed for.
 - [ ] Specifically cover live insert and vacuum for direct payload pointers,
       fallback directory/full-chain lookup, and mixed postings that cannot carry
       an unambiguous direct pointer.
-- [ ] Add encode/decode and scalar-vs-batch differential tests for every format.
+- [x] Add encode/decode and scalar-vs-batch differential tests for every format.
 - [x] Add a no-query-time-source-conversion regression test for persisted compact
       formats: source-vector f32 may be read only for the `source` baseline or
       an explicitly diagnostic mode.

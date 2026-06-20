@@ -1018,6 +1018,79 @@ mod tests {
     }
 
     #[test]
+    fn compact_payload_codecs_batch_paths_match_scalar_scores() {
+        let query = [0.2_f32, -0.5, 0.75, 0.1, -0.9, 0.33, -0.12, 0.44];
+        let sources = [
+            [0.4_f32, 0.25, -0.6, 0.05, 0.33, -0.2, 0.18, 0.71],
+            [-0.1_f32, 0.35, 0.52, -0.4, 0.27, 0.18, -0.31, 0.05],
+            [0.6_f32, -0.22, 0.08, 0.15, -0.44, 0.72, 0.11, -0.19],
+        ];
+
+        for format in [
+            RerankFormat::RaBitQ4,
+            RerankFormat::RaBitQ8,
+            RerankFormat::TurboQuant,
+        ] {
+            let scorer =
+                RerankScorer::resolve(format, StorageFormat::CoarseRerank, query.len(), &query)
+                    .unwrap();
+            assert!(
+                scorer.is_batched(),
+                "{} should use the compact batch scorer",
+                format.reloption_name()
+            );
+
+            let source_refs: Vec<&[f32]> = sources.iter().map(|source| source.as_slice()).collect();
+            let scalar_source_scores: Vec<f32> = source_refs
+                .iter()
+                .map(|source| scorer.score_source_result(&query, source).unwrap())
+                .collect();
+            let mut source_batch_scores = vec![0.0_f32; sources.len()];
+            scorer
+                .score_sources_batch(&source_refs, &mut source_batch_scores)
+                .unwrap();
+
+            let encoder = RerankSidecarEncoder::resolve(format, query.len())
+                .unwrap()
+                .unwrap();
+            let payloads: Vec<Vec<u8>> = source_refs
+                .iter()
+                .map(|source| encoder.encode(source).unwrap())
+                .collect();
+            let sidecar_scalar_scores: Vec<f32> = payloads
+                .iter()
+                .map(|payload| scorer.score_sidecar_payload(payload))
+                .collect();
+            let mut payload_slab =
+                Vec::with_capacity(payloads.len() * encoder.payload_len(query.len()));
+            for payload in &payloads {
+                assert_eq!(payload.len(), encoder.payload_len(query.len()));
+                payload_slab.extend_from_slice(payload);
+            }
+            let mut sidecar_batch_scores = vec![0.0_f32; sources.len()];
+            scorer
+                .score_sidecar_payloads_batch(&payload_slab, &mut sidecar_batch_scores)
+                .unwrap();
+
+            for index in 0..sources.len() {
+                let expected = scalar_source_scores[index];
+                let tolerance = 1.0e-3_f32 * expected.abs().max(1.0);
+                for (label, got) in [
+                    ("source batch", source_batch_scores[index]),
+                    ("sidecar scalar", sidecar_scalar_scores[index]),
+                    ("sidecar batch", sidecar_batch_scores[index]),
+                ] {
+                    assert!(
+                        (got - expected).abs() <= tolerance,
+                        "{} {label} score {got} should match scalar source score {expected} for candidate {index}",
+                        format.reloption_name()
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
     fn f32_scorer_matches_source_reference() {
         let query = [0.2_f32, -0.5, 0.75];
         let source = [0.4_f32, 0.25, -0.6];
