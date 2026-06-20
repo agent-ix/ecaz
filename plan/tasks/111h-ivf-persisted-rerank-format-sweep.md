@@ -197,9 +197,10 @@ win under the storage/cache conditions they are designed for.
 - [x] Implement the packed index-side rerank group/segment layout.
 - [ ] Benchmark the existing `0x2A` direct-TID sidecar path as a legacy
       index-side baseline before replacing or superseding it.
-- [ ] Implement table-owned persisted compact payload storage, or produce
+- [x] Implement table-owned persisted compact payload storage, or produce
       packet-local evidence explaining why PostgreSQL table-owned storage is not
-      viable and what replaces it.
+      viable and what replaces it. Evidence:
+      `reviews/task-111h/034-table-owned-storage-rationale/`.
 - [x] Implement direct payload lookup without per-query heap-TID hash-map
       rebuilds for the index-side path.
 - [ ] Implement or explicitly benchmark away owned per-survivor payload copies
