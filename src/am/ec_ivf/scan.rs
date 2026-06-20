@@ -2706,8 +2706,9 @@ unsafe fn rerank_probe_candidates_index_side(
             payload_decode_elapsed += payload_decode_started.elapsed();
             payload_bytes_scored += payload.len();
             let payload_score_started = Instant::now();
-            let centroid_ip = rerank_centroid_ip_for_list(&centroid_ip_by_list, payload_ref.list_id)
-                .unwrap_or_else(|e| pgrx::error!("{e}"));
+            let centroid_ip =
+                rerank_centroid_ip_for_list(&centroid_ip_by_list, payload_ref.list_id)
+                    .unwrap_or_else(|e| pgrx::error!("{e}"));
             candidate.score = scorer.score_sidecar_payload_with_centroid_ip(payload, centroid_ip);
             payload_score_elapsed += payload_score_started.elapsed();
         }
@@ -2979,7 +2980,7 @@ fn rerank_centroid_ip_for_list(
         .get(list_id as usize)
         .and_then(|value| *value)
         .ok_or_else(|| {
-            format!("ec_ivf residual RaBitQ rerank missing centroid score for list {list_id}")
+            format!("ec_ivf centroid-relative rerank missing centroid score for list {list_id}")
         })
 }
 

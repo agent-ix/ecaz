@@ -68,6 +68,7 @@ pub(super) enum RerankPayloadCodec {
         quantizer: IvfQuantizer,
         code_len: usize,
         payload_len: usize,
+        centroid_relative: bool,
     },
 }
 
@@ -124,6 +125,7 @@ impl RerankPayloadCodec {
                     quantizer,
                     code_len,
                     payload_len,
+                    centroid_relative: rabitq_residual,
                 }))
             }
             RerankFormat::RaBitQ2 => Err(format!(
@@ -157,7 +159,14 @@ impl RerankPayloadCodec {
     }
 
     fn uses_centroid_ip(&self) -> bool {
-        matches!(self, Self::RaBitQ { residual: true, .. })
+        matches!(
+            self,
+            Self::RaBitQ { residual: true, .. }
+                | Self::TurboQuant {
+                    centroid_relative: true,
+                    ..
+                }
+        )
     }
 
     fn prepare_query(&self, query: &[f32]) -> Result<RerankPreparedQuery, String> {
@@ -216,18 +225,15 @@ impl RerankPayloadCodec {
                 quantizer,
                 code_len,
                 payload_len,
+                centroid_relative,
             } => {
-                let (_dimensions, gamma, code) = quantizer.encode_source(source)?;
-                if code.len() != *code_len {
-                    return Err(format!(
-                        "ec_ivf turboquant rerank code length {} does not match payload code length {code_len}",
-                        code.len()
-                    ));
+                if *centroid_relative {
+                    return Err(
+                        "ec_ivf centroid-relative turboquant rerank payload encoding requires the assigned centroid"
+                            .to_owned(),
+                    );
                 }
-                let mut payload = Vec::with_capacity(*payload_len);
-                payload.extend_from_slice(&gamma.to_le_bytes());
-                payload.extend_from_slice(&code);
-                Ok(payload)
+                encode_turboquant_payload(*quantizer, *code_len, *payload_len, source)
             }
         }
     }
@@ -254,6 +260,26 @@ impl RerankPayloadCodec {
                     ));
                 }
                 Ok(code)
+            }
+            Self::TurboQuant {
+                quantizer,
+                code_len,
+                payload_len,
+                centroid_relative: true,
+            } => {
+                if source.len() != centroid.len() {
+                    return Err(format!(
+                        "ec_ivf centroid-relative turboquant rerank source/centroid dimension mismatch: source {}, centroid {}",
+                        source.len(),
+                        centroid.len()
+                    ));
+                }
+                let residual = source
+                    .iter()
+                    .zip(centroid.iter())
+                    .map(|(value, center)| value - center)
+                    .collect::<Vec<_>>();
+                encode_turboquant_payload(*quantizer, *code_len, *payload_len, &residual)
             }
             _ => self.encode_source(source),
         }
@@ -304,6 +330,7 @@ impl RerankPayloadCodec {
                     quantizer,
                     code_len,
                     payload_len,
+                    ..
                 },
                 RerankPreparedQuery::Quantized(prepared_query),
             ) => {
@@ -362,6 +389,7 @@ impl RerankPayloadCodec {
                     quantizer,
                     code_len,
                     payload_len,
+                    ..
                 },
                 RerankPreparedQuery::Quantized(prepared_query),
             ) => {
@@ -439,6 +467,31 @@ impl RerankPayloadCodec {
     }
 }
 
+fn encode_turboquant_payload(
+    quantizer: IvfQuantizer,
+    code_len: usize,
+    payload_len: usize,
+    source: &[f32],
+) -> Result<Vec<u8>, String> {
+    let (_dimensions, gamma, code) = quantizer.encode_source(source)?;
+    if code.len() != code_len {
+        return Err(format!(
+            "ec_ivf turboquant rerank code length {} does not match payload code length {code_len}",
+            code.len()
+        ));
+    }
+    let mut payload = Vec::with_capacity(payload_len);
+    payload.extend_from_slice(&gamma.to_le_bytes());
+    payload.extend_from_slice(&code);
+    if payload.len() != payload_len {
+        return Err(format!(
+            "ec_ivf turboquant rerank payload length {} does not match expected {payload_len}",
+            payload.len()
+        ));
+    }
+    Ok(payload)
+}
+
 fn split_turboquant_payload(
     payload: &[u8],
     code_len: usize,
@@ -498,7 +551,7 @@ impl RerankScorer {
                 } else {
                     RerankPayloadCodec::resolve(rerank_format, dimensions)?
                 }
-                    .ok_or_else(|| "ec_ivf compact rerank codec resolved to source".to_owned())?;
+                .ok_or_else(|| "ec_ivf compact rerank codec resolved to source".to_owned())?;
                 let prepared_query = codec.prepare_query(query)?;
                 Ok(Self::Payload(RerankPayloadScorer {
                     codec,
@@ -634,7 +687,7 @@ impl RerankScorer {
         if self.uses_sidecar_centroid_ip() {
             if centroid_ips.len() != out_scores.len() {
                 return Err(format!(
-                    "ec_ivf residual RaBitQ rerank centroid-ip count {} does not match score count {}",
+                    "ec_ivf centroid-relative rerank centroid-ip count {} does not match score count {}",
                     centroid_ips.len(),
                     out_scores.len()
                 ));
@@ -1137,21 +1190,24 @@ mod tests {
     }
 
     #[test]
-    fn index_side_rabitq_payloads_require_centroid_and_apply_correction() {
+    fn index_side_quantized_payloads_require_centroid_and_apply_correction() {
         let query = [0.2_f32, -0.5, 0.75, 0.1, -0.9, 0.33, -0.12, 0.44];
         let source = [0.4_f32, 0.25, -0.6, 0.05, 0.33, -0.2, 0.18, 0.71];
         let centroid = [0.1_f32, -0.2, 0.4, 0.0, -0.4, 0.1, 0.08, 0.5];
-        let centroid_ip: f32 = query
-            .iter()
-            .zip(centroid.iter())
-            .map(|(q, c)| q * c)
-            .sum();
+        let centroid_ip: f32 = query.iter().zip(centroid.iter()).map(|(q, c)| q * c).sum();
 
-        for format in [RerankFormat::RaBitQ4, RerankFormat::RaBitQ8] {
+        for format in [
+            RerankFormat::RaBitQ4,
+            RerankFormat::RaBitQ8,
+            RerankFormat::TurboQuant,
+        ] {
             let encoder = RerankSidecarEncoder::resolve(format, source.len())
                 .unwrap()
                 .unwrap();
-            assert!(encoder.encode(&source).unwrap_err().contains("assigned centroid"));
+            assert!(encoder
+                .encode(&source)
+                .unwrap_err()
+                .contains("assigned centroid"));
             let payload = encoder.encode_with_centroid(&source, &centroid).unwrap();
             assert_eq!(payload.len(), encoder.payload_len(source.len()));
 

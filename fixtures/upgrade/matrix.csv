@@ -6,6 +6,7 @@ hnsw,4,true,true,fixtures/on-disk/hnsw_metadata_v4_rabitq.hex,current RaBitQ HNS
 diskann,3,true,true,fixtures/on-disk/diskann_vamana_metadata_v3.hex,current DiskANN Vamana format
 ivf,4,false,false,fixtures/on-disk/ivf_metadata_v4.hex,legacy IVF v4 rejected; used 0x2A heap-TID rerank sidecar
 ivf,5,false,false,fixtures/on-disk/ivf_metadata_v5.hex,legacy IVF v5 rejected; packed 0x2B groups used non-residual RaBitQ rerank payload bytes
-ivf,6,true,true,fixtures/on-disk/ivf_metadata_v6.hex,current IVF format (92 bytes); packed 0x2B RaBitQ rerank payloads are centroid-residual encoded
+ivf,6,false,false,fixtures/on-disk/ivf_metadata_v6.hex,legacy IVF v6 rejected; packed 0x2B groups used whole-vector TurboQuant rerank payload bytes
+ivf,7,true,true,fixtures/on-disk/ivf_metadata_v7.hex,current IVF format (92 bytes); packed 0x2B quantized rerank payloads are centroid-relative
 spire-partition,1,true,true,fixtures/on-disk/spire_leaf_partition_object_v1.hex,SPIRE V1 partition objects remain readable and writable
 spire-partition,2,true,true,fixtures/on-disk/spire_leaf_v2_meta_v2.hex,SPIRE V2 partition objects and chain records remain readable and writable

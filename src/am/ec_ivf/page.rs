@@ -53,21 +53,23 @@ pub(super) const METADATA_BLOCK_NUMBER: u32 = 0;
 pub(super) const FIRST_DATA_BLOCK_NUMBER: pg_sys::BlockNumber = 1;
 #[cfg(not(any(feature = "pg17", feature = "pg18")))]
 pub(super) const FIRST_DATA_BLOCK_NUMBER: u32 = 1;
-// v6 metadata is the only supported on-disk format. It is 92 bytes wide and
-// stores the rerank sidecar head ItemPointer at bytes 80..86. In v6 that head
+// v7 metadata is the only supported on-disk format. It is 92 bytes wide and
+// stores the rerank sidecar head ItemPointer at bytes 80..86. In v7 that head
 // points at the 0x2B packed rerank group-header chain used by
-// rerank_placement = 'index'. RaBitQ rerank group payloads are residual encoded
-// against the assigned centroid in v6; v5 used the same layout with
+// rerank_placement = 'index'. RaBitQ and TurboQuant rerank group payloads are
+// encoded relative to the assigned centroid in v7; v6 used centroid-relative
+// RaBitQ but whole-vector TurboQuant bytes, v5 used the same layout with
 // non-residual RaBitQ bytes, and v4's 0x2A heap-TID sidecar remains a legacy
-// benchmark baseline. Neither older version is a readable current format. The
+// benchmark baseline. No older version is a readable current format. The
 // rerank sidecar directory head ItemPointer at bytes 86..92 is retained for the
-// old v4 field width but is INVALID for v6 packed groups. Posting-carried rerank TIDs are the
-// hot group lookup path; the group chain is the fallback, vacuum, and inspection
-// path. A rerank_sidecar_head of INVALID is the legitimate "no sidecar" state
-// for rerank_placement = 'source' and for f32 storage (rerank reads from the
-// heap/source-vector path instead). This research project keeps no backward
-// compatibility with older metadata widths/layouts.
-pub const EC_IVF_INDEX_FORMAT_VERSION: u16 = 6;
+// old v4 field width but is INVALID for v7 packed groups. Posting-carried
+// rerank TIDs are the hot group lookup path; the group chain is the fallback,
+// vacuum, and inspection path. A rerank_sidecar_head of INVALID is the
+// legitimate "no sidecar" state for rerank_placement = 'source' and for f32
+// storage (rerank reads from the heap/source-vector path instead). This
+// research project keeps no backward compatibility with older metadata
+// widths/layouts.
+pub const EC_IVF_INDEX_FORMAT_VERSION: u16 = 7;
 pub(super) const INDEX_FORMAT_VERSION: u16 = EC_IVF_INDEX_FORMAT_VERSION;
 
 pub const EC_IVF_METADATA_MAGIC: u32 = 0x5649_4345; // "ECIV" as little-endian bytes.
@@ -91,10 +93,10 @@ pub const EC_IVF_METADATA_TOTAL_DEAD_TUPLES_OFFSET: usize = 56;
 pub const EC_IVF_METADATA_INSERTED_SINCE_BUILD_OFFSET: usize = 64;
 pub const EC_IVF_METADATA_PQ_CODEBOOK_HEAD_OFFSET: usize = 72;
 pub const EC_IVF_METADATA_PQ_GROUP_SIZE_OFFSET: usize = 78;
-/// Task 111h v6: packed rerank group-header chain head ItemPointer
+/// Task 111h v7: packed rerank group-header chain head ItemPointer
 /// (bytes 80..86).
 pub const EC_IVF_METADATA_RERANK_SIDECAR_HEAD_OFFSET: usize = 80;
-/// Legacy ADR-079 directory head slot (bytes 86..92). v6 packed rerank groups
+/// Legacy ADR-079 directory head slot (bytes 86..92). v7 packed rerank groups
 /// keep the field for metadata width stability but write INVALID; group headers
 /// chain through their own `next_group_tid`.
 pub const EC_IVF_METADATA_RERANK_SIDECAR_DIRECTORY_HEAD_OFFSET: usize = 86;
