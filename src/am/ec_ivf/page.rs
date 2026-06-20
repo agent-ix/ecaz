@@ -146,7 +146,7 @@ const POSTING_FLAG_DELETED: u8 = 0b0000_0001;
 const POSTING_FIXED_BYTES: usize = EC_IVF_POSTING_PAYLOAD_OFFSET;
 const DENSE_POSTING_BLOCK_HEADER_BYTES: usize = 16;
 const RERANK_GROUP_HEADER_FIXED_BYTES: usize =
-    1 + 1 + 4 + 2 + 2 + 2 + 4 + 4 + 2 + ITEM_POINTER_BYTES + 2;
+    1 + 1 + 4 + 2 + 2 + 2 + 4 + 4 + 2 + ITEM_POINTER_BYTES + ITEM_POINTER_BYTES + 2;
 const RERANK_GROUP_PAYLOAD_SEGMENT_HEADER_BYTES: usize = 1 + 2 + ITEM_POINTER_BYTES;
 
 #[cfg(not(any(feature = "pg17", feature = "pg18")))]
@@ -1057,7 +1057,8 @@ pub(super) struct IvfDensePostingBlockTuple {
 /// Task 111h packed rerank group header. One logical group is sized to the
 /// scorer width; this header stores group metadata once and may carry the first
 /// payload fragment. Continuation segments are payload-only tuples linked by
-/// `next_segment_tid`.
+/// `next_segment_tid`; group headers are linked separately by `next_group_tid`
+/// for fallback scans, vacuum, and inspection.
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct IvfRerankGroupHeaderTuple {
     pub(super) rerank_format: u8,
@@ -1065,6 +1066,7 @@ pub(super) struct IvfRerankGroupHeaderTuple {
     pub(super) scorer_width: usize,
     pub(super) payload_len: usize,
     pub(super) next_segment_tid: ItemPointer,
+    pub(super) next_group_tid: ItemPointer,
     pub(super) deleted_bitmap: Vec<u8>,
     pub(super) gammas: Vec<f32>,
     pub(super) heap_tid_counts: Vec<u16>,
@@ -1085,6 +1087,7 @@ pub(super) struct IvfRerankGroupHeaderRef<'a> {
     total_payload_bytes: usize,
     header_payload_bytes: usize,
     pub(super) next_segment_tid: ItemPointer,
+    pub(super) next_group_tid: ItemPointer,
     deleted_bitmap: &'a [u8],
     gamma_bytes: &'a [u8],
     heap_tid_count_bytes: &'a [u8],
@@ -1537,7 +1540,10 @@ impl<'a> IvfRerankGroupHeaderRef<'a> {
                 .expect("rerank group header payload slice should be 2 bytes"),
         ) as usize;
         let next_segment_tid = ItemPointer::decode(&input[22..22 + ITEM_POINTER_BYTES])?;
-        let reserved_start = 22 + ITEM_POINTER_BYTES;
+        let next_group_start = 22 + ITEM_POINTER_BYTES;
+        let next_group_tid =
+            ItemPointer::decode(&input[next_group_start..next_group_start + ITEM_POINTER_BYTES])?;
+        let reserved_start = next_group_start + ITEM_POINTER_BYTES;
         if input[reserved_start..RERANK_GROUP_HEADER_FIXED_BYTES]
             .iter()
             .any(|byte| *byte != 0)
@@ -1598,6 +1604,7 @@ impl<'a> IvfRerankGroupHeaderRef<'a> {
             total_payload_bytes,
             header_payload_bytes,
             next_segment_tid,
+            next_group_tid,
             deleted_bitmap: &input[deleted_bitmap_start..deleted_bitmap_end],
             gamma_bytes: &input[gamma_start..gamma_end],
             heap_tid_count_bytes: &input[heap_tid_count_start..heap_tid_count_end],
@@ -1749,6 +1756,7 @@ impl IvfRerankGroupHeaderTuple {
             scorer_width,
             payload_len,
             next_segment_tid: ItemPointer::INVALID,
+            next_group_tid: ItemPointer::INVALID,
             deleted_bitmap: vec![0; dense_deleted_bitmap_len(scorer_width)],
             gammas,
             heap_tid_counts,
@@ -1814,6 +1822,7 @@ impl IvfRerankGroupHeaderTuple {
         out.extend_from_slice(&(total_payload_bytes as u32).to_le_bytes());
         out.extend_from_slice(&(self.payloads.len() as u16).to_le_bytes());
         self.next_segment_tid.encode_into(&mut out);
+        self.next_group_tid.encode_into(&mut out);
         out.extend_from_slice(&[0, 0]);
         out.extend_from_slice(&self.deleted_bitmap);
         for gamma in &self.gammas {
@@ -1856,6 +1865,7 @@ impl IvfRerankGroupHeaderTuple {
             scorer_width: header.scorer_width,
             payload_len: header.payload_len,
             next_segment_tid: header.next_segment_tid,
+            next_group_tid: header.next_group_tid,
             deleted_bitmap: header.deleted_bitmap.to_vec(),
             gammas,
             heap_tid_counts,
@@ -2679,10 +2689,32 @@ impl DataPage {
         self.insert_raw_tuple(tuple.encode()?)
     }
 
+    pub(super) fn insert_ivf_rerank_group_header(
+        &mut self,
+        tuple: &IvfRerankGroupHeaderTuple,
+    ) -> Result<ItemPointer, String> {
+        self.insert_raw_tuple(tuple.encode()?)
+    }
+
+    pub(super) fn insert_ivf_rerank_group_payload_segment(
+        &mut self,
+        tuple: &IvfRerankGroupPayloadSegmentTuple,
+    ) -> Result<ItemPointer, String> {
+        self.insert_raw_tuple(tuple.encode()?)
+    }
+
     pub(super) fn update_ivf_rerank_sidecar_block(
         &mut self,
         tid: ItemPointer,
         tuple: &IvfRerankSidecarBlockTuple,
+    ) -> Result<(), String> {
+        self.update_raw_tuple(tid, tuple.encode()?)
+    }
+
+    pub(super) fn update_ivf_rerank_group_header(
+        &mut self,
+        tid: ItemPointer,
+        tuple: &IvfRerankGroupHeaderTuple,
     ) -> Result<(), String> {
         self.update_raw_tuple(tid, tuple.encode()?)
     }
@@ -2708,6 +2740,20 @@ impl DataPage {
         tid: ItemPointer,
     ) -> Result<IvfRerankSidecarBlockTuple, String> {
         IvfRerankSidecarBlockTuple::decode(self.raw_tuple(tid)?)
+    }
+
+    pub(super) fn read_ivf_rerank_group_header(
+        &self,
+        tid: ItemPointer,
+    ) -> Result<IvfRerankGroupHeaderTuple, String> {
+        IvfRerankGroupHeaderTuple::decode(self.raw_tuple(tid)?)
+    }
+
+    pub(super) fn read_ivf_rerank_group_payload_segment(
+        &self,
+        tid: ItemPointer,
+    ) -> Result<IvfRerankGroupPayloadSegmentTuple, String> {
+        IvfRerankGroupPayloadSegmentTuple::decode(self.raw_tuple(tid)?)
     }
 }
 
@@ -2805,6 +2851,20 @@ impl DataPageChain {
         self.insert_raw_tuple(tuple.encode()?)
     }
 
+    pub(super) fn insert_ivf_rerank_group_header(
+        &mut self,
+        tuple: &IvfRerankGroupHeaderTuple,
+    ) -> Result<ItemPointer, String> {
+        self.insert_raw_tuple(tuple.encode()?)
+    }
+
+    pub(super) fn insert_ivf_rerank_group_payload_segment(
+        &mut self,
+        tuple: &IvfRerankGroupPayloadSegmentTuple,
+    ) -> Result<ItemPointer, String> {
+        self.insert_raw_tuple(tuple.encode()?)
+    }
+
     pub(super) fn update_ivf_rerank_sidecar_block(
         &mut self,
         tid: ItemPointer,
@@ -2813,6 +2873,21 @@ impl DataPageChain {
         self.get_page_mut(tid.block_number)
             .ok_or_else(|| format!("ec_ivf rerank sidecar block {} not found", tid.block_number))?
             .update_ivf_rerank_sidecar_block(tid, tuple)
+    }
+
+    pub(super) fn update_ivf_rerank_group_header(
+        &mut self,
+        tid: ItemPointer,
+        tuple: &IvfRerankGroupHeaderTuple,
+    ) -> Result<(), String> {
+        self.get_page_mut(tid.block_number)
+            .ok_or_else(|| {
+                format!(
+                    "ec_ivf rerank group header block {} not found",
+                    tid.block_number
+                )
+            })?
+            .update_ivf_rerank_group_header(tid, tuple)
     }
 
     pub(super) fn read_ivf_posting(
@@ -2845,6 +2920,32 @@ impl DataPageChain {
             .get_page(tid.block_number)
             .ok_or_else(|| format!("ec_ivf rerank sidecar block {} not found", tid.block_number))?;
         page.read_ivf_rerank_sidecar_block(tid)
+    }
+
+    pub(super) fn read_ivf_rerank_group_header_staged(
+        &self,
+        tid: ItemPointer,
+    ) -> Result<IvfRerankGroupHeaderTuple, String> {
+        let page = self.get_page(tid.block_number).ok_or_else(|| {
+            format!(
+                "ec_ivf rerank group header block {} not found",
+                tid.block_number
+            )
+        })?;
+        page.read_ivf_rerank_group_header(tid)
+    }
+
+    pub(super) fn read_ivf_rerank_group_payload_segment_staged(
+        &self,
+        tid: ItemPointer,
+    ) -> Result<IvfRerankGroupPayloadSegmentTuple, String> {
+        let page = self.get_page(tid.block_number).ok_or_else(|| {
+            format!(
+                "ec_ivf rerank group payload segment block {} not found",
+                tid.block_number
+            )
+        })?;
+        page.read_ivf_rerank_group_payload_segment(tid)
     }
 }
 
@@ -2916,6 +3017,42 @@ pub(super) unsafe fn read_ivf_rerank_sidecar_block(
         IvfRerankSidecarBlockTuple::decode(tuple_bytes)
     })?;
     Ok(block)
+}
+
+/// Task 111h: read one packed rerank group header (tag 0x2B). The header's
+/// `next_segment_tid` follows payload continuation bytes; `next_group_tid`
+/// follows the group chain.
+#[cfg(any(feature = "pg17", feature = "pg18"))]
+pub(super) unsafe fn read_ivf_rerank_group_header(
+    index_relation: pg_sys::Relation,
+    tid: ItemPointer,
+) -> Result<IvfRerankGroupHeaderTuple, String> {
+    let index = IvfPageRelation::new(ivf_relation_nonnull(
+        index_relation,
+        "ec_ivf rerank group header read",
+    ));
+    let (header, _) = read_page_tuple(index, tid, "rerank group header", |tuple_bytes| {
+        IvfRerankGroupHeaderTuple::decode(tuple_bytes)
+    })?;
+    Ok(header)
+}
+
+/// Task 111h: read one packed rerank group payload continuation segment
+/// (tag 0x2C).
+#[cfg(any(feature = "pg17", feature = "pg18"))]
+pub(super) unsafe fn read_ivf_rerank_group_payload_segment(
+    index_relation: pg_sys::Relation,
+    tid: ItemPointer,
+) -> Result<IvfRerankGroupPayloadSegmentTuple, String> {
+    let index = IvfPageRelation::new(ivf_relation_nonnull(
+        index_relation,
+        "ec_ivf rerank group payload segment read",
+    ));
+    let (segment, _) =
+        read_page_tuple(index, tid, "rerank group payload segment", |tuple_bytes| {
+            IvfRerankGroupPayloadSegmentTuple::decode(tuple_bytes)
+        })?;
+    Ok(segment)
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
@@ -4604,6 +4741,7 @@ mod tests {
         )
         .unwrap();
         tuple.next_segment_tid = tid(9, 7);
+        tuple.next_group_tid = tid(10, 1);
         dense_deleted_bitmap_set(&mut tuple.deleted_bitmap, 3);
 
         let encoded = tuple.encode().unwrap();
@@ -4625,6 +4763,7 @@ mod tests {
         assert_eq!(borrowed.total_payload_bytes(), 12);
         assert_eq!(borrowed.header_payload_bytes(), 5);
         assert_eq!(borrowed.next_segment_tid, tid(9, 7));
+        assert_eq!(borrowed.next_group_tid, tid(10, 1));
         assert!(dense_deleted_bitmap_get(borrowed.deleted_bitmap, 3));
         assert_eq!(borrowed.gamma(2), 0.75);
         assert_eq!(borrowed.heap_tid_count(1), 1);
@@ -4858,13 +4997,38 @@ mod tests {
             next_tid: tid(9, 1),
             centroids: vec![1.0, -0.5],
         };
+        let group_payload_segment = IvfRerankGroupPayloadSegmentTuple {
+            next_segment_tid: ItemPointer::INVALID,
+            payloads: vec![0x20, 0x21, 0x22],
+        };
+        let group_postings = vec![
+            (tid(4, 1), 0.25, vec![0x10, 0x11]),
+            (tid(4, 2), 0.5, vec![0x12, 0x13]),
+        ];
+        let mut group_header = IvfRerankGroupHeaderTuple::from_single_heaptid_postings(
+            RerankFormat::F16 as u8,
+            1,
+            4,
+            &group_postings,
+            2,
+            3,
+        )
+        .unwrap();
 
         let mut page = DataPage::new(FIRST_DATA_BLOCK_NUMBER, DEFAULT_PAGE_SIZE);
         let centroid_tid = page.insert_ivf_centroid(&centroid).unwrap();
         let directory_tid = page.insert_ivf_list_directory(directory).unwrap();
         let posting_tid = page.insert_ivf_posting(&posting).unwrap();
         let codebook_tid = page.insert_ivf_pq_codebook(&codebook).unwrap();
+        let group_header_tid = page.insert_ivf_rerank_group_header(&group_header).unwrap();
+        let group_segment_tid = page
+            .insert_ivf_rerank_group_payload_segment(&group_payload_segment)
+            .unwrap();
         page.update_ivf_pq_codebook(codebook_tid, &updated_codebook)
+            .unwrap();
+        group_header.next_segment_tid = group_segment_tid;
+        group_header.next_group_tid = tid(20, 1);
+        page.update_ivf_rerank_group_header(group_header_tid, &group_header)
             .unwrap();
 
         assert_eq!(page.read_ivf_centroid(centroid_tid, 2).unwrap(), centroid);
@@ -4884,6 +5048,15 @@ mod tests {
             )
             .unwrap(),
             updated_codebook
+        );
+        assert_eq!(
+            page.read_ivf_rerank_group_header(group_header_tid).unwrap(),
+            group_header
+        );
+        assert_eq!(
+            page.read_ivf_rerank_group_payload_segment(group_segment_tid)
+                .unwrap(),
+            group_payload_segment
         );
     }
 
@@ -4936,13 +5109,36 @@ mod tests {
             next_tid: tid(4, 2),
             centroids: vec![3.0, 2.0, 1.0, 0.0],
         };
+        let group_payload_segment = IvfRerankGroupPayloadSegmentTuple {
+            next_segment_tid: ItemPointer::INVALID,
+            payloads: vec![0x30, 0x31],
+        };
+        let group_postings = vec![(tid(8, 1), 0.25, vec![0x40, 0x41])];
+        let mut group_header = IvfRerankGroupHeaderTuple::from_single_heaptid_postings(
+            RerankFormat::F16 as u8,
+            2,
+            4,
+            &group_postings,
+            2,
+            1,
+        )
+        .unwrap();
 
         let mut chain = DataPageChain::new(DEFAULT_PAGE_SIZE);
         let centroid_tid = chain.insert_ivf_centroid(&centroid).unwrap();
         let directory_tid = chain.insert_ivf_list_directory(directory).unwrap();
         let codebook_tid = chain.insert_ivf_pq_codebook(&codebook).unwrap();
+        let group_header_tid = chain.insert_ivf_rerank_group_header(&group_header).unwrap();
+        let group_segment_tid = chain
+            .insert_ivf_rerank_group_payload_segment(&group_payload_segment)
+            .unwrap();
         chain
             .update_ivf_pq_codebook(codebook_tid, &updated_codebook)
+            .unwrap();
+        group_header.next_segment_tid = group_segment_tid;
+        group_header.next_group_tid = tid(21, 1);
+        chain
+            .update_ivf_rerank_group_header(group_header_tid, &group_header)
             .unwrap();
 
         assert_eq!(chain.read_ivf_centroid(centroid_tid, 2).unwrap(), centroid);
@@ -4961,6 +5157,18 @@ mod tests {
             )
             .unwrap(),
             updated_codebook
+        );
+        assert_eq!(
+            chain
+                .read_ivf_rerank_group_header_staged(group_header_tid)
+                .unwrap(),
+            group_header
+        );
+        assert_eq!(
+            chain
+                .read_ivf_rerank_group_payload_segment_staged(group_segment_tid)
+                .unwrap(),
+            group_payload_segment
         );
     }
 
