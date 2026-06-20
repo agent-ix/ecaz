@@ -1748,6 +1748,75 @@
     }
 
     #[pg_test]
+    fn test_ec_ivf_index_placement_partial_final_group() {
+        // Task 111h: final packed rerank groups can have valid_count smaller
+        // than scorer_width. Padding is a scorer convenience only; scans must
+        // emit and score only valid/live postings.
+        Spi::run("CREATE TABLE ec_ivf_idx_partial (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_ivf_idx_partial VALUES
+             (0, '[1.0,0.0]'::ecvector),
+             (1, '[0.0,1.0]'::ecvector),
+             (2, '[-1.0,0.0]'::ecvector)",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_ivf_idx_partial_idx ON ec_ivf_idx_partial USING ec_ivf \
+             (embedding ecvector_ip_ops) \
+             WITH (
+                nlists = 1,
+                nprobe = 1,
+                training_sample_rows = 3,
+                storage_format = 'coarse_rerank',
+                rerank_format = 'f16',
+                rerank_placement = 'index',
+                rerank_width = 8
+             )",
+        )
+        .expect("index-placement f16 index creation should succeed");
+
+        let index_oid = ec_ivf_index_oid("ec_ivf_idx_partial_idx");
+        let counters = ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(
+            index_oid,
+            vec![1.0, 0.0]
+        ));
+        let ctid_to_id = ctid_id_map("ec_ivf_idx_partial");
+        let output_ids = counters
+            .outputs
+            .iter()
+            .map(|(block_number, offset_number, _)| {
+                *ctid_to_id
+                    .get(&(*block_number, *offset_number))
+                    .expect("debug output ctid should map to a table id")
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(counters.rerank_placement, "index");
+        assert_eq!(counters.rerank_format, "f16");
+        assert_eq!(counters.rerank_rows, 3);
+        assert_eq!(
+            output_ids.len(),
+            3,
+            "partial final group must not emit padded slots, got {output_ids:?}"
+        );
+        assert!(
+            output_ids.iter().all(|id| *id <= 2),
+            "partial final group emitted an unexpected row id: {output_ids:?}"
+        );
+        assert_eq!(
+            counters.rerank_payload_bytes_scored,
+            3 * (2 * 2),
+            "partial final f16 group should score only valid slots"
+        );
+        assert_eq!(
+            counters.rerank_source_bytes_read, 0,
+            "index-side partial final group should not read heap source vectors"
+        );
+        assert_eq!(counters.rerank_payload_slab_bytes_copied, 0);
+    }
+
+    #[pg_test]
     fn test_ec_ivf_source_placement_has_no_sidecar_and_scans() {
         // Task 111h: a source-placement coarse_rerank index carries NO
         // sidecar (rerank_sidecar_head = INVALID). Such an index must still
