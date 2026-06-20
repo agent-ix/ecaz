@@ -19,8 +19,7 @@ of quantization and index options rather than a single fixed architecture.
 
 #### Quantization Types
 
-- `turboquant` — [TurboQuant](https://research.google/blog/turboquant-redefining-ai-efficiency-with-
-  extreme-compression/): training-free quantization that reaches near-optimal accuracy at extreme
+- `turboquant` — [TurboQuant](https://research.google/blog/turboquant-redefining-ai-efficiency-with-extreme-compression/): training-free quantization that reaches near-optimal accuracy at extreme
   compression.
 - `pq_fastscan` — [Product Quantization](https://ieeexplore.ieee.org/document/5432202): trained
   quantization that learns a small codebook from your data and approximates each vector with it.
