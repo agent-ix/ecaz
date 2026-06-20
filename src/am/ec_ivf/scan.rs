@@ -1753,7 +1753,15 @@ unsafe fn materialize_probe_candidates(
     // SAFETY: candidates were materialized for this live scan and opaque; the
     // rerank helper validates whether heap_f32 state is present before use.
     let rerank_started = should_record_exact_rerank.then(Instant::now);
-    unsafe { rerank_probe_candidates(scan, index_options, opaque, &mut candidates) };
+    unsafe {
+        rerank_probe_candidates(
+            scan,
+            index_options,
+            opaque,
+            centroid_scores,
+            &mut candidates,
+        )
+    };
     if let Some(rerank_started) = rerank_started {
         opaque
             .explain_counters
@@ -2268,6 +2276,7 @@ unsafe fn rerank_probe_candidates(
     scan: pg_sys::IndexScanDesc,
     index_options: &super::options::EcIvfOptions,
     opaque: &mut EcIvfScanOpaque,
+    centroid_scores: &[EcIvfCentroidScore],
     candidates: &mut Vec<EcIvfScoredCandidate>,
 ) {
     match index_options.rerank.v1_effective() {
@@ -2330,6 +2339,19 @@ unsafe fn rerank_probe_candidates(
                 .explain_counters
                 .record_lazy_rerank_plan(rerank_len, if lazy_enabled { plan.skipped() } else { 0 });
             debug_assert!(reranked_prefix_len <= rerank_len);
+            // Task 111h: for rerank_placement = 'index', read persisted packed
+            // rerank groups (0x2B/0x2C) through posting-carried group header
+            // TIDs instead of the full f32 heap source. The source path keeps
+            // the heap-source read; `source_diagnostic` may score that fetched
+            // f32 vector through the legacy query-time compact conversion for
+            // benchmark attribution.
+            let sidecar_head = unsafe { index_placement_sidecar_head(scan, index_options) };
+            let scorer_placement = if sidecar_head.is_some() {
+                index_options.rerank_placement
+            } else {
+                super::options::RerankPlacement::SourceDiagnostic
+            };
+
             // Task 111g: the rerank stage reads the heap source column
             // tid-sorted (unchanged) and rescores the frontier through the
             // configured `rerank_format`. The default `f32` path stays
@@ -2337,6 +2359,7 @@ unsafe fn rerank_probe_candidates(
             // share the Task 111h rerank payload codec.
             let scorer = super::rerank::RerankScorer::resolve(
                 index_options.rerank_format,
+                scorer_placement,
                 index_options.storage_format,
                 opaque.scan_dimensions as usize,
                 opaque.query_values(),
@@ -2347,13 +2370,6 @@ unsafe fn rerank_probe_candidates(
                 index_options.rerank_format.reloption_name(),
             );
 
-            // Task 111h: for rerank_placement = 'index', read persisted packed
-            // rerank groups (0x2B/0x2C) through posting-carried group header
-            // TIDs instead of the full f32 heap source. The source path keeps
-            // the heap-source read; `source_diagnostic` may score that fetched
-            // f32 vector through the legacy query-time compact conversion for
-            // benchmark attribution.
-            let sidecar_head = unsafe { index_placement_sidecar_head(scan, index_options) };
             // SAFETY: `reranked_prefix_len <= rerank_len <= candidates.len()`,
             // and the rerank helpers validate their scan-local state before
             // fetching. Only the reranked prefix is exact-scored; the skipped
@@ -2366,6 +2382,7 @@ unsafe fn rerank_probe_candidates(
                         opaque,
                         &scorer,
                         sidecar_head,
+                        centroid_scores,
                         &mut candidates[..reranked_prefix_len],
                     )
                 },
@@ -2568,6 +2585,7 @@ unsafe fn rerank_probe_candidates_index_side(
     opaque: &mut EcIvfScanOpaque,
     scorer: &super::rerank::RerankScorer,
     sidecar_head: ItemPointer,
+    centroid_scores: &[EcIvfCentroidScore],
     candidates: &mut [EcIvfScoredCandidate],
 ) {
     if candidates.is_empty() {
@@ -2636,17 +2654,30 @@ unsafe fn rerank_probe_candidates_index_side(
 
     let batched = scorer.is_batched();
     let mut payload_bytes_scored = 0usize;
+    let centroid_ip_by_list = build_rerank_centroid_ip_by_list(scorer, centroid_scores);
 
     if batched {
         // Collect survivors' payloads in survivor order, then batch-score.
         let mut payload_slab: Vec<u8> = Vec::with_capacity(candidates.len() * expected_payload_len);
+        let mut centroid_ips: Vec<f32> = if scorer.uses_sidecar_centroid_ip() {
+            Vec::with_capacity(candidates.len())
+        } else {
+            Vec::new()
+        };
         let payload_decode_started = Instant::now();
         for candidate in candidates.iter() {
-            let payload =
+            let payload_ref =
                 rerank_group_payload_for_candidate(&group_cache, candidate, expected_payload_len)
                     .unwrap_or_else(|e| pgrx::error!("{e}"));
+            let payload = payload_ref.payload;
             payload_slab.extend_from_slice(payload);
             payload_bytes_scored += payload.len();
+            if scorer.uses_sidecar_centroid_ip() {
+                centroid_ips.push(
+                    rerank_centroid_ip_for_list(&centroid_ip_by_list, payload_ref.list_id)
+                        .unwrap_or_else(|e| pgrx::error!("{e}")),
+                );
+            }
         }
         payload_decode_elapsed += payload_decode_started.elapsed();
         opaque
@@ -2655,7 +2686,11 @@ unsafe fn rerank_probe_candidates_index_side(
         let mut scores = vec![0.0_f32; candidates.len()];
         let payload_score_started = Instant::now();
         scorer
-            .score_sidecar_payloads_batch(&payload_slab, &mut scores)
+            .score_sidecar_payloads_batch_with_centroid_ips(
+                &payload_slab,
+                &centroid_ips,
+                &mut scores,
+            )
             .unwrap_or_else(|e| pgrx::error!("{e}"));
         payload_score_elapsed += payload_score_started.elapsed();
         for (candidate, score) in candidates.iter_mut().zip(scores.iter()) {
@@ -2664,13 +2699,16 @@ unsafe fn rerank_probe_candidates_index_side(
     } else {
         for candidate in candidates.iter_mut() {
             let payload_decode_started = Instant::now();
-            let payload =
+            let payload_ref =
                 rerank_group_payload_for_candidate(&group_cache, candidate, expected_payload_len)
                     .unwrap_or_else(|e| pgrx::error!("{e}"));
+            let payload = payload_ref.payload;
             payload_decode_elapsed += payload_decode_started.elapsed();
             payload_bytes_scored += payload.len();
             let payload_score_started = Instant::now();
-            candidate.score = scorer.score_sidecar_payload(payload);
+            let centroid_ip = rerank_centroid_ip_for_list(&centroid_ip_by_list, payload_ref.list_id)
+                .unwrap_or_else(|e| pgrx::error!("{e}"));
+            candidate.score = scorer.score_sidecar_payload_with_centroid_ip(payload, centroid_ip);
             payload_score_elapsed += payload_score_started.elapsed();
         }
     }
@@ -2693,6 +2731,12 @@ unsafe fn rerank_probe_candidates_index_side(
 struct LoadedRerankGroup {
     header: super::page::IvfRerankGroupHeaderTuple,
     payloads: Vec<u8>,
+}
+
+#[derive(Debug)]
+struct RerankGroupPayloadRef<'a> {
+    payload: &'a [u8],
+    list_id: u32,
 }
 
 #[derive(Default)]
@@ -2840,7 +2884,7 @@ fn rerank_group_payload_for_candidate<'a>(
     groups: &'a HashMap<ItemPointer, LoadedRerankGroup>,
     candidate: &EcIvfScoredCandidate,
     expected_payload_len: usize,
-) -> Result<&'a [u8], String> {
+) -> Result<RerankGroupPayloadRef<'a>, String> {
     if candidate.rerank_tid != ItemPointer::INVALID {
         let group = groups.get(&candidate.rerank_tid).ok_or_else(|| {
             format!(
@@ -2867,7 +2911,7 @@ fn rerank_group_payload_for_heap_tid(
     group: &LoadedRerankGroup,
     heap_tid: ItemPointer,
     expected_payload_len: usize,
-) -> Result<&[u8], String> {
+) -> Result<RerankGroupPayloadRef<'_>, String> {
     for index in 0..group.header.len() {
         if group.header.is_deleted(index) {
             continue;
@@ -2892,12 +2936,51 @@ fn rerank_group_payload_for_heap_tid(
         if payload_end > group.payloads.len() {
             return Err("ec_ivf rerank group payload range is out of bounds".to_owned());
         }
-        return Ok(&group.payloads[payload_offset..payload_end]);
+        return Ok(RerankGroupPayloadRef {
+            payload: &group.payloads[payload_offset..payload_end],
+            list_id: group.header.list_id,
+        });
     }
     Err(format!(
         "ec_ivf rerank group did not contain heap tid {:?}",
         heap_tid
     ))
+}
+
+fn build_rerank_centroid_ip_by_list(
+    scorer: &super::rerank::RerankScorer,
+    centroid_scores: &[EcIvfCentroidScore],
+) -> Vec<Option<f32>> {
+    if !scorer.uses_sidecar_centroid_ip() {
+        return Vec::new();
+    }
+    let capacity = centroid_scores
+        .iter()
+        .map(|score| score.list_id as usize)
+        .max()
+        .map_or(0, |max_list_id| max_list_id + 1);
+    let mut by_list = vec![None; capacity];
+    for score in centroid_scores {
+        if let Some(slot) = by_list.get_mut(score.list_id as usize) {
+            *slot = Some(score.score);
+        }
+    }
+    by_list
+}
+
+fn rerank_centroid_ip_for_list(
+    centroid_ip_by_list: &[Option<f32>],
+    list_id: u32,
+) -> Result<f32, String> {
+    if centroid_ip_by_list.is_empty() {
+        return Ok(0.0);
+    }
+    centroid_ip_by_list
+        .get(list_id as usize)
+        .and_then(|value| *value)
+        .ok_or_else(|| {
+            format!("ec_ivf residual RaBitQ rerank missing centroid score for list {list_id}")
+        })
 }
 
 /// Load compact rerank payloads through posting-carried sidecar block TIDs.
@@ -4366,16 +4449,15 @@ mod tests {
 
         let mut direct_candidate = candidate(12, 1, 0.0);
         direct_candidate.rerank_tid = group_tid;
-        assert_eq!(
-            rerank_group_payload_for_candidate(&groups, &direct_candidate, 2).unwrap(),
-            &[0x20, 0x21]
-        );
+        let direct = rerank_group_payload_for_candidate(&groups, &direct_candidate, 2).unwrap();
+        assert_eq!(direct.payload, &[0x20, 0x21]);
+        assert_eq!(direct.list_id, 7);
 
         let fallback_candidate = candidate(11, 1, 0.0);
-        assert_eq!(
-            rerank_group_payload_for_candidate(&groups, &fallback_candidate, 2).unwrap(),
-            &[0x10, 0x11]
-        );
+        let fallback =
+            rerank_group_payload_for_candidate(&groups, &fallback_candidate, 2).unwrap();
+        assert_eq!(fallback.payload, &[0x10, 0x11]);
+        assert_eq!(fallback.list_id, 7);
     }
 
     #[test]

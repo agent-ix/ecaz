@@ -165,8 +165,18 @@ unsafe fn insert_into_trained_index(
 
     let list_id_u32 =
         u32::try_from(list_id).map_err(|_| "ec_ivf assigned list id exceeds u32".to_owned())?;
-    let mut rerank_group =
-        append_rerank_group_entry(index_relation, heap_tid, list_id_u32, gamma, &source_vector)?;
+    let rerank_centroid = model
+        .centroids
+        .get(list_id)
+        .ok_or_else(|| format!("ec_ivf assigned list {list_id} has no centroid"))?;
+    let mut rerank_group = append_rerank_group_entry(
+        index_relation,
+        heap_tid,
+        list_id_u32,
+        gamma,
+        &source_vector,
+        rerank_centroid,
+    )?;
     let rerank_tid = rerank_group
         .as_ref()
         .map(|group| group.tid)
@@ -231,6 +241,7 @@ unsafe fn append_rerank_group_entry(
     list_id: u32,
     gamma: f32,
     source_vector: &[f32],
+    centroid: &[f32],
 ) -> Result<Option<AppendedRerankGroup>, String> {
     let reloptions = NonNull::new(index_relation)
         .map(options::relation_options)
@@ -245,7 +256,7 @@ unsafe fn append_rerank_group_entry(
     else {
         return Ok(None);
     };
-    let payload = encoder.encode(source_vector)?;
+    let payload = encoder.encode_with_centroid(source_vector, centroid)?;
     let payload_len = encoder.payload_len(source_vector.len());
     if payload.len() != payload_len {
         return Err(format!(

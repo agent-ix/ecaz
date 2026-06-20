@@ -113,10 +113,10 @@ const _: () = {
 };
 
 const _: () = {
-    // v5 metadata: 92 bytes. Bytes 80..86 point at the packed 0x2B rerank group
+    // v6 metadata: 92 bytes. Bytes 80..86 point at the packed 0x2B rerank group
     // header chain for index-side compact rerank; bytes 86..92 retain the
-    // legacy directory-head slot but are INVALID for v5 packed groups.
-    assert!(EC_IVF_INDEX_FORMAT_VERSION == 5);
+    // legacy directory-head slot but are INVALID for v6 packed groups.
+    assert!(EC_IVF_INDEX_FORMAT_VERSION == 6);
     assert!(EC_IVF_METADATA_MAGIC == 0x5649_4345);
     assert!(EC_IVF_METADATA_BYTES == 92);
     assert!(EC_IVF_METADATA_RERANK_SIDECAR_HEAD_OFFSET == 80);

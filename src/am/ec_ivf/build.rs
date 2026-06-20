@@ -653,6 +653,7 @@ impl BuildState {
                 &mut data_pages,
                 &self.heap_tuples,
                 &tuple_indices_by_list,
+                &model.centroids,
                 &self.options,
                 dimensions,
             )?;
@@ -925,6 +926,7 @@ fn build_rerank_group_chain(
     data_pages: &mut DataPageChain,
     heap_tuples: &[BuildTuple],
     tuple_indices_by_list: &[Vec<usize>],
+    centroids: &[Vec<f32>],
     options: &options::EcIvfOptions,
     dimensions: u16,
 ) -> Result<(ItemPointer, ItemPointer, HashMap<ItemPointer, ItemPointer>), String> {
@@ -959,10 +961,13 @@ fn build_rerank_group_chain(
 
     for (list_id, tuple_indices) in tuple_indices_by_list.iter().enumerate() {
         let list_id = list_id_u32(list_id)?;
+        let centroid = centroids
+            .get(list_id as usize)
+            .ok_or_else(|| format!("ec_ivf rerank group list {list_id} has no centroid"))?;
         let mut pending: Vec<(ItemPointer, f32, Vec<u8>)> = Vec::with_capacity(scorer_width);
         for &tuple_index in tuple_indices {
             let tuple = &heap_tuples[tuple_index];
-            let payload = encoder.encode(&tuple.source_vector)?;
+            let payload = encoder.encode_with_centroid(&tuple.source_vector, centroid)?;
             if payload.len() != payload_len {
                 return Err(format!(
                     "ec_ivf rerank group payload length {} does not match expected {payload_len}",
