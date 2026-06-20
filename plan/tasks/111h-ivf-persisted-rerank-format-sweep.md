@@ -43,6 +43,13 @@ and is already fast in the warm-cache sweep. Any compact rerank representation
 must beat that baseline on matched recall/latency, total storage, cold/remote IO,
 or index-only serving value.
 
+The 111g/005 direct-TID sidecar fix also changes the baseline interpretation:
+index-side f16 is no longer assumed to be a `150 ms` directory-bound path on
+fresh builds. Treat the current `0x2A` direct-TID sidecar as a legacy baseline
+to measure against, not as the final compact-layout answer. The follow-up must
+make clear which results are from source-vector rerank, diagnostic query-time
+conversion, legacy `0x2A` sidecar, and the new packed rerank layout.
+
 ## Correct Placement Semantics
 
 Use explicit placement names in code/docs/packets. Do not overload "table-side"
@@ -81,6 +88,9 @@ conversion must be rejected or renamed as a diagnostic-only mode.
 - f16 scoring should avoid unnecessary allocation and full f32 materialization.
   If the first implementation decodes to f32, benchmark it against a direct
   packed-f16 scorer and record the gap.
+- Direct packed-payload scoring must report decode/materialization work. A path
+  that allocates one `Vec<f32>` or equivalent full-width buffer per candidate is
+  not sufficient evidence for rejecting the compact format.
 - RaBitQ-8 and TurboQuant rerank are required implementations for this task.
   They must share the same placement/payload interface as f16 and RaBitQ-4.
 - Build, insert, delete/vacuum, and rebuild paths must keep persisted rerank
@@ -115,6 +125,11 @@ Required shape:
   arrays per page.
 - Scan must resolve survivor payloads by direct group/segment offsets, not by
   rebuilding a heap-TID hash map per query.
+- Scan should avoid owned per-survivor payload copies. Prefer page-local slices,
+  bounded scratch arenas, or scorer APIs that can consume segment/group payload
+  ranges directly. A path that copies each survivor into a `Vec<u8>` map entry
+  and then copies again into a batch-scoring slab must be measured as a legacy
+  baseline, not accepted as the final compact layout.
 - The layout must report bytes/pages read for metadata and payload separately.
 
 ## Table Payload Requirements
@@ -180,16 +195,26 @@ win under the storage/cache conditions they are designed for.
 - [ ] Implement persisted RaBitQ-8 payload encoding under the same interface.
 - [ ] Implement persisted TurboQuant payload encoding under the same interface.
 - [ ] Implement the packed index-side rerank group/segment layout.
+- [ ] Benchmark the existing `0x2A` direct-TID sidecar path as a legacy
+      index-side baseline before replacing or superseding it.
 - [ ] Implement table-owned persisted compact payload storage, or produce
       packet-local evidence explaining why PostgreSQL table-owned storage is not
       viable and what replaces it.
 - [ ] Implement direct payload lookup without per-query heap-TID hash-map
       rebuilds for the index-side path.
+- [ ] Implement or explicitly benchmark away owned per-survivor payload copies
+      and double-copy batch-scoring slabs in the compact index path.
 - [ ] Add EXPLAIN/admin/counter coverage for placement, format, payload bytes,
       pages read, decode time, and scoring time.
 - [ ] Add PG18 correctness fixtures for create/insert/update/delete/vacuum,
       mixed old/new postings, and snapshot-visible rerank payloads.
+- [ ] Specifically cover live insert and vacuum for direct payload pointers,
+      fallback directory/full-chain lookup, and mixed postings that cannot carry
+      an unambiguous direct pointer.
 - [ ] Add encode/decode and scalar-vs-batch differential tests for every format.
+- [ ] Add a no-query-time-source-conversion regression test for persisted compact
+      formats: source-vector f32 may be read only for the `source` baseline or
+      an explicitly diagnostic mode.
 - [ ] Run the full `ecaz bench suite` matrix at 10k/50k/100k/1M.
 - [ ] Publish packet-local manifests and raw results for every suite.
 - [ ] Produce a final decision table comparing f32 source, f16, RaBitQ-4,
