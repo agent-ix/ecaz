@@ -53,18 +53,19 @@ pub(super) const METADATA_BLOCK_NUMBER: u32 = 0;
 pub(super) const FIRST_DATA_BLOCK_NUMBER: pg_sys::BlockNumber = 1;
 #[cfg(not(any(feature = "pg17", feature = "pg18")))]
 pub(super) const FIRST_DATA_BLOCK_NUMBER: u32 = 1;
-// v4 metadata is the only supported on-disk format. It is 92 bytes wide and
-// stores the rerank sidecar head ItemPointer at bytes 80..86, pointing at the
-// 0x2A compact rerank sidecar chain used by rerank_placement = 'index', and the
-// rerank sidecar directory head ItemPointer at bytes 86..92 (ADR-079), pointing
-// at the sidecar directory fallback. Posting-carried rerank TIDs are the hot
-// sidecar lookup path; the directory and then full-chain read are compatibility
-// fallbacks. A rerank_sidecar_head of INVALID is the legitimate "no sidecar"
-// state for rerank_placement = 'source' and for f32 storage (rerank reads from
-// the heap/source-vector path instead). This research project keeps no backward
-// compatibility with older metadata widths (the 86-byte v3 layout is rejected
-// by version, not silently truncated).
-pub const EC_IVF_INDEX_FORMAT_VERSION: u16 = 4;
+// v5 metadata is the only supported on-disk format. It is 92 bytes wide and
+// stores the rerank sidecar head ItemPointer at bytes 80..86. In v5 that head
+// points at the 0x2B packed rerank group-header chain used by
+// rerank_placement = 'index'; v4's 0x2A heap-TID sidecar remains a legacy
+// benchmark baseline but is not a readable current format. The rerank sidecar
+// directory head ItemPointer at bytes 86..92 is retained for the old v4 field
+// width but is INVALID for v5 packed groups. Posting-carried rerank TIDs are the
+// hot group lookup path; the group chain is the fallback, vacuum, and inspection
+// path. A rerank_sidecar_head of INVALID is the legitimate "no sidecar" state
+// for rerank_placement = 'source' and for f32 storage (rerank reads from the
+// heap/source-vector path instead). This research project keeps no backward
+// compatibility with older metadata widths/layouts.
+pub const EC_IVF_INDEX_FORMAT_VERSION: u16 = 5;
 pub(super) const INDEX_FORMAT_VERSION: u16 = EC_IVF_INDEX_FORMAT_VERSION;
 
 pub const EC_IVF_METADATA_MAGIC: u32 = 0x5649_4345; // "ECIV" as little-endian bytes.
@@ -88,12 +89,12 @@ pub const EC_IVF_METADATA_TOTAL_DEAD_TUPLES_OFFSET: usize = 56;
 pub const EC_IVF_METADATA_INSERTED_SINCE_BUILD_OFFSET: usize = 64;
 pub const EC_IVF_METADATA_PQ_CODEBOOK_HEAD_OFFSET: usize = 72;
 pub const EC_IVF_METADATA_PQ_GROUP_SIZE_OFFSET: usize = 78;
-/// Task 111g v3: rerank sidecar chain head ItemPointer (bytes 80..86).
+/// Task 111h v5: packed rerank group-header chain head ItemPointer
+/// (bytes 80..86).
 pub const EC_IVF_METADATA_RERANK_SIDECAR_HEAD_OFFSET: usize = 80;
-/// ADR-079: head of the rerank sidecar *directory* chain (bytes 86..92). The
-/// directory maps each build-written `0x2A` block's first heap TID to the block
-/// pointer. Posting-carried rerank TIDs are the hot path; this directory is the
-/// first fallback, and `INVALID` falls back again to full-chain scan.
+/// Legacy ADR-079 directory head slot (bytes 86..92). v5 packed rerank groups
+/// keep the field for metadata width stability but write INVALID; group headers
+/// chain through their own `next_group_tid`.
 pub const EC_IVF_METADATA_RERANK_SIDECAR_DIRECTORY_HEAD_OFFSET: usize = 86;
 
 pub const EC_IVF_BLOCK_REF_BYTES: usize = 4;
@@ -125,6 +126,27 @@ pub const EC_IVF_PQ_CODEBOOK_GROUP_INDEX_OFFSET: usize = 1;
 pub const EC_IVF_PQ_CODEBOOK_NEXT_TID_OFFSET: usize = 3;
 pub const EC_IVF_PQ_CODEBOOK_CENTROIDS_OFFSET: usize =
     EC_IVF_PQ_CODEBOOK_NEXT_TID_OFFSET + ITEM_POINTER_BYTES;
+pub const EC_IVF_RERANK_GROUP_HEADER_TAG_OFFSET: usize = 0;
+pub const EC_IVF_RERANK_GROUP_HEADER_RERANK_FORMAT_OFFSET: usize = 1;
+pub const EC_IVF_RERANK_GROUP_HEADER_LIST_ID_OFFSET: usize = 2;
+pub const EC_IVF_RERANK_GROUP_HEADER_SCORER_WIDTH_OFFSET: usize = 6;
+pub const EC_IVF_RERANK_GROUP_HEADER_VALID_COUNT_OFFSET: usize = 8;
+pub const EC_IVF_RERANK_GROUP_HEADER_PAYLOAD_LEN_OFFSET: usize = 10;
+pub const EC_IVF_RERANK_GROUP_HEADER_TOTAL_HEAP_TIDS_OFFSET: usize = 12;
+pub const EC_IVF_RERANK_GROUP_HEADER_TOTAL_PAYLOAD_BYTES_OFFSET: usize = 16;
+pub const EC_IVF_RERANK_GROUP_HEADER_HEADER_PAYLOAD_BYTES_OFFSET: usize = 20;
+pub const EC_IVF_RERANK_GROUP_HEADER_NEXT_SEGMENT_TID_OFFSET: usize = 22;
+pub const EC_IVF_RERANK_GROUP_HEADER_NEXT_GROUP_TID_OFFSET: usize =
+    EC_IVF_RERANK_GROUP_HEADER_NEXT_SEGMENT_TID_OFFSET + ITEM_POINTER_BYTES;
+pub const EC_IVF_RERANK_GROUP_HEADER_RESERVED_OFFSET: usize =
+    EC_IVF_RERANK_GROUP_HEADER_NEXT_GROUP_TID_OFFSET + ITEM_POINTER_BYTES;
+pub const EC_IVF_RERANK_GROUP_HEADER_FIXED_BYTES: usize =
+    EC_IVF_RERANK_GROUP_HEADER_RESERVED_OFFSET + 2;
+pub const EC_IVF_RERANK_GROUP_PAYLOAD_SEGMENT_TAG_OFFSET: usize = 0;
+pub const EC_IVF_RERANK_GROUP_PAYLOAD_SEGMENT_PAYLOAD_BYTES_OFFSET: usize = 1;
+pub const EC_IVF_RERANK_GROUP_PAYLOAD_SEGMENT_NEXT_SEGMENT_TID_OFFSET: usize = 3;
+pub const EC_IVF_RERANK_GROUP_PAYLOAD_SEGMENT_HEADER_BYTES: usize =
+    EC_IVF_RERANK_GROUP_PAYLOAD_SEGMENT_NEXT_SEGMENT_TID_OFFSET + ITEM_POINTER_BYTES;
 
 const METADATA_MAGIC: u32 = EC_IVF_METADATA_MAGIC;
 const METADATA_BYTES: usize = EC_IVF_METADATA_BYTES;
@@ -145,9 +167,9 @@ const IVF_RERANK_GROUP_PAYLOAD_SEGMENT_TAG: u8 = 0x2C;
 const POSTING_FLAG_DELETED: u8 = 0b0000_0001;
 const POSTING_FIXED_BYTES: usize = EC_IVF_POSTING_PAYLOAD_OFFSET;
 const DENSE_POSTING_BLOCK_HEADER_BYTES: usize = 16;
-const RERANK_GROUP_HEADER_FIXED_BYTES: usize =
-    1 + 1 + 4 + 2 + 2 + 2 + 4 + 4 + 2 + ITEM_POINTER_BYTES + ITEM_POINTER_BYTES + 2;
-const RERANK_GROUP_PAYLOAD_SEGMENT_HEADER_BYTES: usize = 1 + 2 + ITEM_POINTER_BYTES;
+const RERANK_GROUP_HEADER_FIXED_BYTES: usize = EC_IVF_RERANK_GROUP_HEADER_FIXED_BYTES;
+const RERANK_GROUP_PAYLOAD_SEGMENT_HEADER_BYTES: usize =
+    EC_IVF_RERANK_GROUP_PAYLOAD_SEGMENT_HEADER_BYTES;
 
 #[cfg(not(any(feature = "pg17", feature = "pg18")))]
 #[repr(u8)]
@@ -1707,6 +1729,14 @@ impl<'a> IvfRerankGroupHeaderRef<'a> {
 impl IvfRerankGroupHeaderTuple {
     pub(super) fn len(&self) -> usize {
         self.gammas.len()
+    }
+
+    pub(super) fn is_deleted(&self, index: usize) -> bool {
+        dense_deleted_bitmap_get(&self.deleted_bitmap, index)
+    }
+
+    pub(super) fn mark_deleted(&mut self, index: usize) {
+        dense_deleted_bitmap_set(&mut self.deleted_bitmap, index);
     }
 
     pub(super) fn from_single_heaptid_postings(
@@ -3750,6 +3780,78 @@ pub(super) unsafe fn append_ivf_rerank_sidecar_block_to_new_block(
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
+pub(super) unsafe fn append_ivf_rerank_group_header_to_new_block(
+    index_relation: pg_sys::Relation,
+    header: &IvfRerankGroupHeaderTuple,
+) -> Result<ItemPointer, String> {
+    if !rerank_group_header_tuple_fits(
+        header.len(),
+        header.scorer_width,
+        header.heap_tids.len(),
+        header.payloads.len(),
+        pg_sys::BLCKSZ as usize,
+    ) {
+        return Err(format!(
+            "ec_ivf rerank group header ({} entries, scorer width {}, header payload {}) does not fit on a page",
+            header.len(),
+            header.scorer_width,
+            header.payloads.len()
+        ));
+    }
+    let index = IvfPageRelation::new(ivf_relation_nonnull(
+        index_relation,
+        "ec_ivf rerank group header append",
+    ));
+    append_single_tuple_to_new_block(index, "rerank group header", &header.encode()?)
+}
+
+#[cfg(any(feature = "pg17", feature = "pg18"))]
+pub(super) unsafe fn append_ivf_rerank_group_payload_segment_to_new_block(
+    index_relation: pg_sys::Relation,
+    segment: &IvfRerankGroupPayloadSegmentTuple,
+) -> Result<ItemPointer, String> {
+    if !rerank_group_payload_segment_tuple_fits(segment.payloads.len(), pg_sys::BLCKSZ as usize) {
+        return Err(format!(
+            "ec_ivf rerank group payload segment ({} bytes) does not fit on a page",
+            segment.payloads.len()
+        ));
+    }
+    let index = IvfPageRelation::new(ivf_relation_nonnull(
+        index_relation,
+        "ec_ivf rerank group payload segment append",
+    ));
+    append_single_tuple_to_new_block(index, "rerank group payload segment", &segment.encode()?)
+}
+
+#[cfg(any(feature = "pg17", feature = "pg18"))]
+fn append_single_tuple_to_new_block(
+    index: IvfPageRelation<'_>,
+    context: &str,
+    payload: &[u8],
+) -> Result<ItemPointer, String> {
+    let buffer = index
+        .read_main_locked(P_NEW, pg_sys::ReadBufferMode::RBM_ZERO_AND_LOCK)
+        .ok_or_else(|| format!("ec_ivf failed to allocate {context} block"))?;
+    let page_size = buffer.page_size();
+    let mut wal_txn = index.start_wal();
+    let page = wal_txn.register_locked_buffer_full_image(&buffer);
+    let registered = WalRegisteredPage::new(index.raw(), buffer.block_number(), page);
+    registered.init(page_size, 0);
+    let offset = registered.add_item(payload);
+    if offset == pg_sys::InvalidOffsetNumber {
+        std::mem::drop(wal_txn);
+        return Err(format!("ec_ivf failed to append {context} to new block"));
+    }
+    let block_number = buffer.block_number();
+    wal_txn.finish();
+    registered.record_free_space(registered.free_space());
+    Ok(ItemPointer {
+        block_number,
+        offset_number: offset,
+    })
+}
+
+#[cfg(any(feature = "pg17", feature = "pg18"))]
 pub(super) unsafe fn rewrite_ivf_list_directory(
     index_relation: pg_sys::Relation,
     directory_tid: ItemPointer,
@@ -3816,6 +3918,40 @@ pub(super) unsafe fn rewrite_ivf_rerank_sidecar_block(
     let page = wal_txn.register_locked_buffer_full_image(&buffer);
     let writer = PageTupleWriter::new(page, buffer.page_size(), tid.block_number);
     if let Err(err) = writer.copy_required_exact(tid, "rerank sidecar", &encoded) {
+        std::mem::drop(wal_txn);
+        return Err(err);
+    }
+    wal_txn.finish();
+    Ok(())
+}
+
+#[cfg(any(feature = "pg17", feature = "pg18"))]
+pub(super) unsafe fn rewrite_ivf_rerank_group_header(
+    index_relation: pg_sys::Relation,
+    tid: ItemPointer,
+    header: &IvfRerankGroupHeaderTuple,
+) -> Result<(), String> {
+    let index = IvfPageRelation::new(ivf_relation_nonnull(
+        index_relation,
+        "ec_ivf rerank group header rewrite",
+    ));
+    let encoded = header.encode()?;
+    let buffer = index
+        .read_main(
+            tid.block_number,
+            pg_sys::ReadBufferMode::RBM_NORMAL,
+            pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
+        )
+        .ok_or_else(|| {
+            format!(
+                "ec_ivf failed to open rerank group header block {}",
+                tid.block_number
+            )
+        })?;
+    let mut wal_txn = index.start_wal();
+    let page = wal_txn.register_locked_buffer_full_image(&buffer);
+    let writer = PageTupleWriter::new(page, buffer.page_size(), tid.block_number);
+    if let Err(err) = writer.copy_required_exact(tid, "rerank group header", &encoded) {
         std::mem::drop(wal_txn);
         return Err(err);
     }

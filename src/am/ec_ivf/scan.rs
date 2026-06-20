@@ -2545,34 +2545,19 @@ unsafe fn rerank_probe_candidates_index_side(
         .sidecar_payload_len(dimensions)
         .unwrap_or_else(|| pgrx::error!("ec_ivf index-side rerank used for an f32 rerank format"));
 
-    // Prefer direct posting->sidecar TIDs. This avoids the ADR-079 directory's
-    // O(N) per-query scan, which is pathological for f16 because the 4KB compact
-    // vectors fit only one entry per 8KB sidecar page at the 2048-d benchmark
-    // shape.
-    let metadata = unsafe { super::page::read_metadata_page(index_relation) };
+    // Prefer direct posting->group-header TIDs. This avoids rebuilding a
+    // heap-TID payload map: each survivor points at its scorer-width group, and
+    // the group-local heap-TID arrays locate the payload slice.
     let use_direct_tids = candidates
         .iter()
         .all(|candidate| candidate.rerank_tid != ItemPointer::INVALID);
-    let use_directory = metadata.rerank_sidecar_directory_head != ItemPointer::INVALID
-        && metadata.inserted_since_build == 0;
-    let payload_map = if use_direct_tids {
+    let group_cache = if use_direct_tids {
         unsafe {
-            load_rerank_sidecar_payloads_by_tid(index_relation, expected_payload_len, candidates)
-        }
-        .unwrap_or_else(|e| pgrx::error!("{e}"))
-    } else if use_directory {
-        let survivors: Vec<ItemPointer> = candidates.iter().map(|c| c.heap_tid).collect();
-        unsafe {
-            load_rerank_sidecar_payloads_directed(
-                index_relation,
-                metadata.rerank_sidecar_directory_head,
-                expected_payload_len,
-                &survivors,
-            )
+            load_rerank_groups_by_header_tid(index_relation, expected_payload_len, candidates)
         }
         .unwrap_or_else(|e| pgrx::error!("{e}"))
     } else {
-        unsafe { load_rerank_sidecar_payloads(index_relation, sidecar_head, expected_payload_len) }
+        unsafe { load_rerank_groups_full_chain(index_relation, sidecar_head, expected_payload_len) }
             .unwrap_or_else(|e| pgrx::error!("{e}"))
     };
 
@@ -2583,12 +2568,9 @@ unsafe fn rerank_probe_candidates_index_side(
         // Collect survivors' payloads in survivor order, then batch-score.
         let mut payload_slab: Vec<u8> = Vec::with_capacity(candidates.len() * expected_payload_len);
         for candidate in candidates.iter() {
-            let payload = payload_map.get(&candidate.heap_tid).unwrap_or_else(|| {
-                pgrx::error!(
-                    "ec_ivf index-side rerank is missing sidecar payload for heap tid {:?}",
-                    candidate.heap_tid
-                )
-            });
+            let payload =
+                rerank_group_payload_for_candidate(&group_cache, candidate, expected_payload_len)
+                    .unwrap_or_else(|e| pgrx::error!("{e}"));
             payload_slab.extend_from_slice(payload);
             source_bytes_read += payload.len();
         }
@@ -2601,12 +2583,9 @@ unsafe fn rerank_probe_candidates_index_side(
         }
     } else {
         for candidate in candidates.iter_mut() {
-            let payload = payload_map.get(&candidate.heap_tid).unwrap_or_else(|| {
-                pgrx::error!(
-                    "ec_ivf index-side rerank is missing sidecar payload for heap tid {:?}",
-                    candidate.heap_tid
-                )
-            });
+            let payload =
+                rerank_group_payload_for_candidate(&group_cache, candidate, expected_payload_len)
+                    .unwrap_or_else(|e| pgrx::error!("{e}"));
             candidate.score = scorer.score_sidecar_payload(payload);
             source_bytes_read += payload.len();
         }
@@ -2619,6 +2598,168 @@ unsafe fn rerank_probe_candidates_index_side(
     for _ in 0..rerank_rows {
         opaque.explain_counters.record_rerank_row();
     }
+}
+
+struct LoadedRerankGroup {
+    header: super::page::IvfRerankGroupHeaderTuple,
+    payloads: Vec<u8>,
+}
+
+/// Load compact rerank payload groups through posting-carried group header TIDs.
+/// This is O(unique survivor groups) and keeps lookup state keyed by group TID,
+/// not by every survivor heap TID.
+///
+/// # Safety
+/// `index_relation` is live; candidate rerank TIDs point at 0x2B group headers
+/// in that relation.
+unsafe fn load_rerank_groups_by_header_tid(
+    index_relation: pg_sys::Relation,
+    expected_payload_len: usize,
+    candidates: &[EcIvfScoredCandidate],
+) -> Result<HashMap<ItemPointer, LoadedRerankGroup>, String> {
+    let mut groups = HashMap::new();
+    for candidate in candidates {
+        if candidate.rerank_tid == ItemPointer::INVALID {
+            return Err(format!(
+                "ec_ivf index-side rerank candidate {:?} has no direct group header tid",
+                candidate.heap_tid
+            ));
+        }
+        if groups.contains_key(&candidate.rerank_tid) {
+            continue;
+        }
+        let group = unsafe {
+            load_rerank_group(index_relation, candidate.rerank_tid, expected_payload_len)
+        }?;
+        groups.insert(candidate.rerank_tid, group);
+    }
+    Ok(groups)
+}
+
+/// Fallback loader for postings without direct group-header TIDs. This walks the
+/// full group chain rooted at metadata.rerank_sidecar_head.
+///
+/// # Safety
+/// `index_relation` is live; the group chain rooted at `head` is read page by
+/// page.
+unsafe fn load_rerank_groups_full_chain(
+    index_relation: pg_sys::Relation,
+    head: ItemPointer,
+    expected_payload_len: usize,
+) -> Result<HashMap<ItemPointer, LoadedRerankGroup>, String> {
+    let mut groups = HashMap::new();
+    let mut next_tid = head;
+    while next_tid != ItemPointer::INVALID {
+        let group_tid = next_tid;
+        let group = unsafe { load_rerank_group(index_relation, group_tid, expected_payload_len) }?;
+        next_tid = group.header.next_group_tid;
+        groups.insert(group_tid, group);
+    }
+    Ok(groups)
+}
+
+unsafe fn load_rerank_group(
+    index_relation: pg_sys::Relation,
+    group_tid: ItemPointer,
+    expected_payload_len: usize,
+) -> Result<LoadedRerankGroup, String> {
+    let header = unsafe { super::page::read_ivf_rerank_group_header(index_relation, group_tid)? };
+    if header.payload_len != expected_payload_len {
+        return Err(format!(
+            "ec_ivf rerank group payload length {} does not match expected {expected_payload_len}",
+            header.payload_len
+        ));
+    }
+    let expected_total = header
+        .len()
+        .checked_mul(header.payload_len)
+        .ok_or_else(|| "ec_ivf rerank group total payload length overflow".to_owned())?;
+    let mut payloads = header.payloads.clone();
+    let mut next_segment_tid = header.next_segment_tid;
+    while next_segment_tid != ItemPointer::INVALID {
+        let segment = unsafe {
+            super::page::read_ivf_rerank_group_payload_segment(index_relation, next_segment_tid)?
+        };
+        payloads.extend_from_slice(&segment.payloads);
+        if payloads.len() > expected_total {
+            return Err(format!(
+                "ec_ivf rerank group payload bytes {} exceed expected {expected_total}",
+                payloads.len()
+            ));
+        }
+        next_segment_tid = segment.next_segment_tid;
+    }
+    if payloads.len() != expected_total {
+        return Err(format!(
+            "ec_ivf rerank group payload bytes {} do not match expected {expected_total}",
+            payloads.len()
+        ));
+    }
+    Ok(LoadedRerankGroup { header, payloads })
+}
+
+fn rerank_group_payload_for_candidate<'a>(
+    groups: &'a HashMap<ItemPointer, LoadedRerankGroup>,
+    candidate: &EcIvfScoredCandidate,
+    expected_payload_len: usize,
+) -> Result<&'a [u8], String> {
+    if candidate.rerank_tid != ItemPointer::INVALID {
+        let group = groups.get(&candidate.rerank_tid).ok_or_else(|| {
+            format!(
+                "ec_ivf index-side rerank is missing group {:?} for heap tid {:?}",
+                candidate.rerank_tid, candidate.heap_tid
+            )
+        })?;
+        return rerank_group_payload_for_heap_tid(group, candidate.heap_tid, expected_payload_len);
+    }
+    for group in groups.values() {
+        if let Ok(payload) =
+            rerank_group_payload_for_heap_tid(group, candidate.heap_tid, expected_payload_len)
+        {
+            return Ok(payload);
+        }
+    }
+    Err(format!(
+        "ec_ivf index-side rerank is missing group payload for heap tid {:?}",
+        candidate.heap_tid
+    ))
+}
+
+fn rerank_group_payload_for_heap_tid(
+    group: &LoadedRerankGroup,
+    heap_tid: ItemPointer,
+    expected_payload_len: usize,
+) -> Result<&[u8], String> {
+    for index in 0..group.header.len() {
+        if group.header.is_deleted(index) {
+            continue;
+        }
+        let heap_start = usize::try_from(group.header.heap_tid_offsets[index])
+            .map_err(|_| "ec_ivf rerank group heap offset conversion failed".to_owned())?;
+        let heap_count = usize::from(group.header.heap_tid_counts[index]);
+        let heap_end = heap_start
+            .checked_add(heap_count)
+            .ok_or_else(|| "ec_ivf rerank group heap range overflow".to_owned())?;
+        if heap_end > group.header.heap_tids.len() {
+            return Err("ec_ivf rerank group heap range is out of bounds".to_owned());
+        }
+        if !group.header.heap_tids[heap_start..heap_end].contains(&heap_tid) {
+            continue;
+        }
+        let payload_offset = usize::try_from(group.header.payload_offsets[index])
+            .map_err(|_| "ec_ivf rerank group payload offset conversion failed".to_owned())?;
+        let payload_end = payload_offset
+            .checked_add(expected_payload_len)
+            .ok_or_else(|| "ec_ivf rerank group payload range overflow".to_owned())?;
+        if payload_end > group.payloads.len() {
+            return Err("ec_ivf rerank group payload range is out of bounds".to_owned());
+        }
+        return Ok(&group.payloads[payload_offset..payload_end]);
+    }
+    Err(format!(
+        "ec_ivf rerank group did not contain heap tid {:?}",
+        heap_tid
+    ))
 }
 
 /// Load compact rerank payloads through posting-carried sidecar block TIDs.

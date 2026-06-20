@@ -176,13 +176,11 @@ unsafe fn run_bulkdelete(
         add_index_bulk_delete_tuples_removed(stats_handle, removed_heap_tids);
     }
 
-    // Task 111g: maintain the compact rerank sidecar. Tombstone dead heap TIDs
-    // (set heap_tid = INVALID, same byte length) so the index-side rerank lookup
-    // never matches a reused heap line pointer to a stale payload. Space is
-    // reclaimed on REINDEX. No-op when there is no sidecar (source placement /
-    // v2-era index).
+    // Task 111h: maintain packed rerank groups. Tombstone dead group slots in
+    // the header bitmap so the index-side rerank lookup never matches a reused
+    // heap line pointer to a stale payload. Space is reclaimed on REINDEX.
     if metadata.rerank_sidecar_head != ItemPointer::INVALID {
-        bulkdelete_rerank_sidecar(
+        bulkdelete_rerank_groups(
             index_relation,
             metadata.rerank_sidecar_head,
             callback,
@@ -194,16 +192,15 @@ unsafe fn run_bulkdelete(
     finish_vacuum_stats(index_relation, stats, &metadata)
 }
 
-/// Walk the rerank sidecar chain and tombstone entries whose heap TID is now
-/// dead. Each block is rewritten in place at the same byte length (dead entries
-/// keep their payload slot but get heap_tid = INVALID); only blocks that change
-/// are rewritten.
+/// Walk the packed rerank group chain and tombstone entries whose heap TID is
+/// now dead. Each header is rewritten in place at the same byte length; dead
+/// entries keep their payload slot but set the deleted bitmap.
 ///
 /// # Safety
 /// `index_relation` is the live IVF index being vacuumed; the chain rooted at
 /// `head` is read page by page; `callback`/`callback_state` are valid for the
 /// call.
-unsafe fn bulkdelete_rerank_sidecar(
+unsafe fn bulkdelete_rerank_groups(
     index_relation: pg_sys::Relation,
     head: ItemPointer,
     callback: BulkDeleteCallback,
@@ -211,20 +208,33 @@ unsafe fn bulkdelete_rerank_sidecar(
 ) -> Result<(), String> {
     let mut next_tid = head;
     while next_tid != ItemPointer::INVALID {
-        let block_tid = next_tid;
-        let (mut block, following) =
-            page::read_ivf_rerank_sidecar_block_and_next(index_relation, block_tid)?;
+        let group_tid = next_tid;
+        let mut group = page::read_ivf_rerank_group_header(index_relation, group_tid)?;
+        let following = group.next_group_tid;
         let mut changed = false;
-        for heap_tid in block.heap_tids.iter_mut() {
-            if *heap_tid != ItemPointer::INVALID
-                && heap_tid_is_dead(*heap_tid, callback, callback_state)
+        for index in 0..group.len() {
+            if group.is_deleted(index) {
+                continue;
+            }
+            let heap_start = usize::try_from(group.heap_tid_offsets[index])
+                .map_err(|_| "ec_ivf rerank group heap offset conversion failed".to_owned())?;
+            let heap_count = usize::from(group.heap_tid_counts[index]);
+            let heap_end = heap_start
+                .checked_add(heap_count)
+                .ok_or_else(|| "ec_ivf rerank group heap range overflow".to_owned())?;
+            if heap_end > group.heap_tids.len() {
+                return Err("ec_ivf rerank group heap range is out of bounds".to_owned());
+            }
+            if group.heap_tids[heap_start..heap_end]
+                .iter()
+                .any(|heap_tid| heap_tid_is_dead(*heap_tid, callback, callback_state))
             {
-                *heap_tid = ItemPointer::INVALID;
+                group.mark_deleted(index);
                 changed = true;
             }
         }
         if changed {
-            page::rewrite_ivf_rerank_sidecar_block(index_relation, block_tid, &block)?;
+            page::rewrite_ivf_rerank_group_header(index_relation, group_tid, &group)?;
         }
         next_tid = following;
     }

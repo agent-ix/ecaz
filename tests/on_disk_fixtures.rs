@@ -505,13 +505,14 @@ fn diskann_vamana_codebook_tuple_v3_fixture_decodes() {
 }
 
 #[test]
-fn ivf_metadata_v4_fixture_decodes() {
-    // ADR-079: current IVF format is v4 (92 bytes, adds rerank_sidecar_directory_head).
-    let bytes = decode_hex_fixture(include_str!("../fixtures/on-disk/ivf_metadata_v4.hex"));
+fn ivf_metadata_v5_fixture_decodes() {
+    // Task 111h: current IVF format is v5 (92 bytes; rerank sidecar head now
+    // points at packed 0x2B rerank group headers when index placement is used).
+    let bytes = decode_hex_fixture(include_str!("../fixtures/on-disk/ivf_metadata_v5.hex"));
 
     let metadata = IvfMetadataPage::decode(&bytes).expect("ivf metadata fixture should decode");
 
-    assert_eq!(metadata.format_version, 4);
+    assert_eq!(metadata.format_version, 5);
     assert_eq!(metadata.dimensions, 128);
     assert_eq!(metadata.nlists, 16);
     assert_eq!(metadata.nprobe, 4);
@@ -555,7 +556,7 @@ fn ivf_metadata_v4_fixture_decodes() {
 
 #[test]
 fn ivf_metadata_byteswapped_version_is_rejected() {
-    let mut bytes = decode_hex_fixture(include_str!("../fixtures/on-disk/ivf_metadata_v4.hex"));
+    let mut bytes = decode_hex_fixture(include_str!("../fixtures/on-disk/ivf_metadata_v5.hex"));
     bytes.swap(
         EC_IVF_METADATA_FORMAT_VERSION_OFFSET,
         EC_IVF_METADATA_FORMAT_VERSION_OFFSET + 1,
@@ -564,7 +565,20 @@ fn ivf_metadata_byteswapped_version_is_rejected() {
     let err = IvfMetadataPage::decode(&bytes).expect_err("byte-swapped version should fail");
 
     assert!(
-        err.contains("unsupported ec_ivf metadata format version: 1024"),
+        err.contains("unsupported ec_ivf metadata format version: 1280"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn ivf_metadata_v4_is_rejected_by_version() {
+    // Task 111h / NFR-016: v4 used the legacy 0x2A heap-TID sidecar. The v5
+    // writer emits packed 0x2B/0x2C rerank groups, so v4 is an explicit rebuild
+    // boundary in this research branch.
+    let bytes = decode_hex_fixture(include_str!("../fixtures/on-disk/ivf_metadata_v4.hex"));
+    let err = IvfMetadataPage::decode(&bytes).expect_err("old v4 layout should be rejected");
+    assert!(
+        err.contains("unsupported ec_ivf metadata format version: 4"),
         "unexpected error: {err}"
     );
 }

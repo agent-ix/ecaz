@@ -194,13 +194,13 @@ win under the storage/cache conditions they are designed for.
 - [x] Implement persisted RaBitQ-4 payload encoding under the same interface.
 - [x] Implement persisted RaBitQ-8 payload encoding under the same interface.
 - [x] Implement persisted TurboQuant payload encoding under the same interface.
-- [ ] Implement the packed index-side rerank group/segment layout.
+- [x] Implement the packed index-side rerank group/segment layout.
 - [ ] Benchmark the existing `0x2A` direct-TID sidecar path as a legacy
       index-side baseline before replacing or superseding it.
 - [ ] Implement table-owned persisted compact payload storage, or produce
       packet-local evidence explaining why PostgreSQL table-owned storage is not
       viable and what replaces it.
-- [ ] Implement direct payload lookup without per-query heap-TID hash-map
+- [x] Implement direct payload lookup without per-query heap-TID hash-map
       rebuilds for the index-side path.
 - [ ] Implement or explicitly benchmark away owned per-survivor payload copies
       and double-copy batch-scoring slabs in the compact index path.

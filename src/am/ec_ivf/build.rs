@@ -644,14 +644,15 @@ impl BuildState {
             None
         };
 
-        // Build the compact rerank sidecar before postings so each posting can
-        // persist a direct pointer to its sidecar block. That lets scan skip the
-        // O(N) sidecar directory for fresh builds.
+        // Build the compact rerank groups before postings so each posting can
+        // persist a direct pointer to its group header. That lets scan read only
+        // the survivor groups without a heap-TID sidecar directory.
         data_pages.start_new_page_if_current_has_tuples();
         let (rerank_sidecar_head, rerank_sidecar_directory_head, rerank_tids_by_heap_tid) =
-            build_rerank_sidecar_chain(
+            build_rerank_group_chain(
                 &mut data_pages,
                 &self.heap_tuples,
+                &tuple_indices_by_list,
                 &self.options,
                 dimensions,
             )?;
@@ -914,21 +915,23 @@ fn dense_posting_group_limit(payload_len: usize, page_size: usize) -> Result<usi
     Ok(segment_capacity.min(u16::MAX as usize).max(1))
 }
 
-/// Task 111g: build the compact rerank sidecar chain (tag 0x2A) for
+/// Task 111h: build the packed compact rerank group chain (tags 0x2B/0x2C) for
 /// `rerank_placement = 'index'`. Returns the head ItemPointer, or `INVALID`
-/// when no sidecar is persisted (source placement, or an f32/auto rerank_format
-/// that keeps the heap source). Entries are written globally tid-sorted so the
-/// scan reads them in heap-TID order; blocks chain via `next_tid`.
-fn build_rerank_sidecar_chain(
+/// when no compact payload is persisted (source placement, or an f32/auto
+/// rerank_format that keeps the heap source). Groups are list-local and flush at
+/// scorer-width completion or list boundary; postings carry direct pointers to
+/// their group headers.
+fn build_rerank_group_chain(
     data_pages: &mut DataPageChain,
     heap_tuples: &[BuildTuple],
+    tuple_indices_by_list: &[Vec<usize>],
     options: &options::EcIvfOptions,
     dimensions: u16,
 ) -> Result<(ItemPointer, ItemPointer, HashMap<ItemPointer, ItemPointer>), String> {
-    // Returns (sidecar_head, directory_head, heap_tid -> sidecar block tid).
-    // ADR-079: the directory chain maps each sidecar block's first heap TID to
-    // the block pointer for bounded reads; direct posting pointers are the hot
-    // query path when available.
+    // Returns (group_head, directory_head, heap_tid -> group header tid).
+    // The directory head is intentionally INVALID for the packed group layout;
+    // direct posting pointers are the hot query path, and the group header chain
+    // is the fallback/inspection/vacuum path.
     if options.rerank_placement != options::RerankPlacement::Index {
         return Ok((ItemPointer::INVALID, ItemPointer::INVALID, HashMap::new()));
     }
@@ -946,155 +949,208 @@ fn build_rerank_sidecar_chain(
     let payload_len = encoder.payload_len(usize::from(dimensions));
     let rerank_format = options.rerank_format as u8;
     let page_size = data_pages.page_size();
-
-    // Globally tid-sort the rows so the sidecar chain is ascending by heap TID.
-    let mut order: Vec<usize> = (0..heap_tuples.len()).collect();
-    order.sort_by(|&a, &b| {
-        let ta = heap_tuples[a].heap_tid;
-        let tb = heap_tuples[b].heap_tid;
-        ta.block_number
-            .cmp(&tb.block_number)
-            .then_with(|| ta.offset_number.cmp(&tb.offset_number))
-    });
-
-    let entries_per_block = rerank_sidecar_entries_per_block(payload_len, page_size)?;
+    let scorer_width = rerank_group_scorer_width(options)?;
+    let segment_payload_capacity = rerank_group_payload_segment_capacity(page_size)?;
 
     data_pages.start_new_page_if_current_has_tuples();
-    let mut block_tids: Vec<ItemPointer> = Vec::new();
+    let mut group_tids: Vec<ItemPointer> = Vec::new();
     let mut rerank_tids_by_heap_tid: HashMap<ItemPointer, ItemPointer> =
         HashMap::with_capacity(heap_tuples.len());
-    // ADR-079: each block's first (smallest) heap TID, parallel to block_tids;
-    // becomes the directory key for survivor-directed bounded reads.
-    let mut block_first_tids: Vec<ItemPointer> = Vec::new();
-    let mut pending_tids: Vec<ItemPointer> = Vec::with_capacity(entries_per_block);
-    let mut pending_payloads: Vec<u8> = Vec::with_capacity(entries_per_block * payload_len);
 
-    let flush = |data_pages: &mut DataPageChain,
-                 block_tids: &mut Vec<ItemPointer>,
-                 rerank_tids_by_heap_tid: &mut HashMap<ItemPointer, ItemPointer>,
-                 block_first_tids: &mut Vec<ItemPointer>,
-                 pending_tids: &mut Vec<ItemPointer>,
-                 pending_payloads: &mut Vec<u8>|
-     -> Result<(), String> {
-        if pending_tids.is_empty() {
-            return Ok(());
+    for (list_id, tuple_indices) in tuple_indices_by_list.iter().enumerate() {
+        let list_id = list_id_u32(list_id)?;
+        let mut pending: Vec<(ItemPointer, f32, Vec<u8>)> = Vec::with_capacity(scorer_width);
+        for &tuple_index in tuple_indices {
+            let tuple = &heap_tuples[tuple_index];
+            let payload = encoder.encode(&tuple.source_vector)?;
+            if payload.len() != payload_len {
+                return Err(format!(
+                    "ec_ivf rerank group payload length {} does not match expected {payload_len}",
+                    payload.len()
+                ));
+            }
+            pending.push((tuple.heap_tid, tuple.gamma, payload));
+            if pending.len() >= scorer_width {
+                flush_rerank_group(
+                    data_pages,
+                    &mut group_tids,
+                    &mut rerank_tids_by_heap_tid,
+                    rerank_format,
+                    list_id,
+                    scorer_width,
+                    payload_len,
+                    segment_payload_capacity,
+                    page_size,
+                    &mut pending,
+                )?;
+            }
         }
-        let block = page::IvfRerankSidecarBlockTuple::new(
+        flush_rerank_group(
+            data_pages,
+            &mut group_tids,
+            &mut rerank_tids_by_heap_tid,
             rerank_format,
+            list_id,
+            scorer_width,
             payload_len,
-            std::mem::take(pending_tids),
-            std::mem::take(pending_payloads),
+            segment_payload_capacity,
+            page_size,
+            &mut pending,
         )?;
-        let first_tid = block.heap_tids[0];
-        let block_tid = data_pages.insert_ivf_rerank_sidecar_block(&block)?;
-        for heap_tid in &block.heap_tids {
-            rerank_tids_by_heap_tid.insert(*heap_tid, block_tid);
-        }
-        block_tids.push(block_tid);
-        block_first_tids.push(first_tid);
-        Ok(())
-    };
-
-    for &index in &order {
-        let tuple = &heap_tuples[index];
-        let payload = encoder.encode(&tuple.source_vector)?;
-        if payload.len() != payload_len {
-            return Err(format!(
-                "ec_ivf rerank sidecar payload length {} does not match expected {payload_len}",
-                payload.len()
-            ));
-        }
-        pending_tids.push(tuple.heap_tid);
-        pending_payloads.extend_from_slice(&payload);
-        if pending_tids.len() >= entries_per_block {
-            flush(
-                data_pages,
-                &mut block_tids,
-                &mut rerank_tids_by_heap_tid,
-                &mut block_first_tids,
-                &mut pending_tids,
-                &mut pending_payloads,
-            )?;
-        }
     }
-    flush(
-        data_pages,
-        &mut block_tids,
-        &mut rerank_tids_by_heap_tid,
-        &mut block_first_tids,
-        &mut pending_tids,
-        &mut pending_payloads,
-    )?;
 
-    // Link each block to the next via its next_tid field (second pass, like the
-    // pq_codebook chain).
-    for i in 0..block_tids.len() {
-        let next_tid = block_tids
+    // Link each group header to the next group header. Payload continuation
+    // segments are chained independently through next_segment_tid.
+    for i in 0..group_tids.len() {
+        let next_tid = group_tids
             .get(i + 1)
             .copied()
             .unwrap_or(ItemPointer::INVALID);
-        let mut block = data_pages.read_ivf_rerank_sidecar_block_staged(block_tids[i])?;
-        block.next_tid = next_tid;
-        data_pages.update_ivf_rerank_sidecar_block(block_tids[i], &block)?;
+        let mut group = data_pages.read_ivf_rerank_group_header_staged(group_tids[i])?;
+        group.next_group_tid = next_tid;
+        data_pages.update_ivf_rerank_group_header(group_tids[i], &group)?;
     }
 
-    let sidecar_head = block_tids.first().copied().unwrap_or(ItemPointer::INVALID);
-
-    // ADR-079: build the directory chain. It reuses the 0x2A block format: each
-    // entry's "heap_tid" is a sidecar block's first heap TID and its 6-byte
-    // "payload" is that block's ItemPointer. Globally tid-sorted (block_first_tids
-    // is ascending because the sidecar chain is). Scan binary-searches this small
-    // directory to read only the survivor blocks instead of the whole chain.
-    let dir_payload_len = crate::storage::page::ITEM_POINTER_BYTES;
-    let dir_entries_per_block = rerank_sidecar_entries_per_block(dir_payload_len, page_size)?;
-    let mut dir_block_tids: Vec<ItemPointer> = Vec::new();
-    let mut start = 0;
-    while start < block_first_tids.len() {
-        let end = (start + dir_entries_per_block).min(block_first_tids.len());
-        let keys = block_first_tids[start..end].to_vec();
-        let mut payloads = Vec::with_capacity((end - start) * dir_payload_len);
-        for block_tid in &block_tids[start..end] {
-            block_tid.encode_into(&mut payloads);
-        }
-        let dir_block =
-            page::IvfRerankSidecarBlockTuple::new(rerank_format, dir_payload_len, keys, payloads)?;
-        dir_block_tids.push(data_pages.insert_ivf_rerank_sidecar_block(&dir_block)?);
-        start = end;
-    }
-    for i in 0..dir_block_tids.len() {
-        let next_tid = dir_block_tids
-            .get(i + 1)
-            .copied()
-            .unwrap_or(ItemPointer::INVALID);
-        let mut block = data_pages.read_ivf_rerank_sidecar_block_staged(dir_block_tids[i])?;
-        block.next_tid = next_tid;
-        data_pages.update_ivf_rerank_sidecar_block(dir_block_tids[i], &block)?;
-    }
-    let directory_head = dir_block_tids
-        .first()
-        .copied()
-        .unwrap_or(ItemPointer::INVALID);
-
-    Ok((sidecar_head, directory_head, rerank_tids_by_heap_tid))
+    let sidecar_head = group_tids.first().copied().unwrap_or(ItemPointer::INVALID);
+    Ok((sidecar_head, ItemPointer::INVALID, rerank_tids_by_heap_tid))
 }
 
-/// Max sidecar entries that fit in one page-sized 0x2A block, given the compact
-/// payload width, capped at the `u16` entry-count field width. Errors if not
-/// even one entry fits a page.
-fn rerank_sidecar_entries_per_block(payload_len: usize, page_size: usize) -> Result<usize, String> {
-    if !page::rerank_sidecar_block_tuple_fits(1, payload_len, page_size) {
+fn flush_rerank_group(
+    data_pages: &mut DataPageChain,
+    group_tids: &mut Vec<ItemPointer>,
+    rerank_tids_by_heap_tid: &mut HashMap<ItemPointer, ItemPointer>,
+    rerank_format: u8,
+    list_id: u32,
+    scorer_width: usize,
+    payload_len: usize,
+    segment_payload_capacity: usize,
+    page_size: usize,
+    pending: &mut Vec<(ItemPointer, f32, Vec<u8>)>,
+) -> Result<(), String> {
+    if pending.is_empty() {
+        return Ok(());
+    }
+    let entries = std::mem::take(pending);
+    let total_payload_bytes = entries
+        .len()
+        .checked_mul(payload_len)
+        .ok_or_else(|| "ec_ivf rerank group payload bytes overflow".to_owned())?;
+    let header_payload_bytes = rerank_group_header_payload_capacity(
+        entries.len(),
+        scorer_width,
+        entries.len(),
+        total_payload_bytes,
+        page_size,
+    )?;
+    let mut all_payloads = Vec::with_capacity(total_payload_bytes);
+    for (_heap_tid, _gamma, payload) in &entries {
+        all_payloads.extend_from_slice(payload);
+    }
+    let next_segment_tid = insert_rerank_group_payload_segments(
+        data_pages,
+        &all_payloads[header_payload_bytes..],
+        segment_payload_capacity,
+    )?;
+    let mut header = page::IvfRerankGroupHeaderTuple::from_single_heaptid_postings(
+        rerank_format,
+        list_id,
+        scorer_width,
+        &entries,
+        payload_len,
+        header_payload_bytes,
+    )?;
+    header.next_segment_tid = next_segment_tid;
+    let header_tid = data_pages.insert_ivf_rerank_group_header(&header)?;
+    for (heap_tid, _gamma, _payload) in entries {
+        rerank_tids_by_heap_tid.insert(heap_tid, header_tid);
+    }
+    group_tids.push(header_tid);
+    Ok(())
+}
+
+fn insert_rerank_group_payload_segments(
+    data_pages: &mut DataPageChain,
+    payload_tail: &[u8],
+    segment_payload_capacity: usize,
+) -> Result<ItemPointer, String> {
+    if payload_tail.is_empty() {
+        return Ok(ItemPointer::INVALID);
+    }
+    if segment_payload_capacity == 0 {
+        return Err("ec_ivf rerank group payload segment capacity is zero".to_owned());
+    }
+    let mut next_segment_tid = ItemPointer::INVALID;
+    for chunk in payload_tail.chunks(segment_payload_capacity).rev() {
+        let segment = page::IvfRerankGroupPayloadSegmentTuple {
+            next_segment_tid,
+            payloads: chunk.to_vec(),
+        };
+        next_segment_tid = data_pages.insert_ivf_rerank_group_payload_segment(&segment)?;
+    }
+    Ok(next_segment_tid)
+}
+
+fn rerank_group_scorer_width(options: &options::EcIvfOptions) -> Result<usize, String> {
+    let width = if options.rerank_width > 0 {
+        options.rerank_width
+    } else {
+        super::EC_IVF_DEFAULT_RERANK_WIDTH
+    };
+    let width = usize::try_from(width)
+        .map_err(|_| format!("ec_ivf rerank group scorer width {width} is out of range"))?;
+    if width == 0 || width > u16::MAX as usize {
         return Err(format!(
-            "ec_ivf rerank sidecar payload length {payload_len} does not fit a single entry on a page"
+            "ec_ivf rerank group scorer width {width} must be in 1..={}",
+            u16::MAX
         ));
     }
-    // Grow until the next entry would overflow the page (or the u16 cap).
-    let mut count = 1;
-    while count < u16::MAX as usize
-        && page::rerank_sidecar_block_tuple_fits(count + 1, payload_len, page_size)
+    Ok(width)
+}
+
+fn rerank_group_header_payload_capacity(
+    valid_count: usize,
+    scorer_width: usize,
+    total_heap_tids: usize,
+    total_payload_bytes: usize,
+    page_size: usize,
+) -> Result<usize, String> {
+    let mut capacity = total_payload_bytes.min(u16::MAX as usize);
+    while capacity > 0
+        && !page::rerank_group_header_tuple_fits(
+            valid_count,
+            scorer_width,
+            total_heap_tids,
+            capacity,
+            page_size,
+        )
     {
-        count += 1;
+        capacity -= 1;
     }
-    Ok(count)
+    if page::rerank_group_header_tuple_fits(
+        valid_count,
+        scorer_width,
+        total_heap_tids,
+        capacity,
+        page_size,
+    ) {
+        Ok(capacity)
+    } else {
+        Err(format!(
+            "ec_ivf rerank group header for {valid_count} entries at scorer width {scorer_width} does not fit on a page"
+        ))
+    }
+}
+
+fn rerank_group_payload_segment_capacity(page_size: usize) -> Result<usize, String> {
+    let mut capacity = (u16::MAX as usize).min(page_size);
+    while capacity > 0 && !page::rerank_group_payload_segment_tuple_fits(capacity, page_size) {
+        capacity -= 1;
+    }
+    if capacity == 0 {
+        Err("ec_ivf rerank group payload segment cannot fit payload bytes on a page".to_owned())
+    } else {
+        Ok(capacity)
+    }
 }
 
 fn insert_dense_posting_group(

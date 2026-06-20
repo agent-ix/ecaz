@@ -113,11 +113,10 @@ const _: () = {
 };
 
 const _: () = {
-    // v4 metadata: 92 bytes (ADR-079 bumped v3->v4, 86->92) — rerank sidecar head
-    // ItemPointer at 80..86, rerank sidecar directory head at 86..92. The version
-    // bump (per NFR-016) makes the reader reject the old 86-byte v3 layout by
-    // version rather than by an ambiguous length mismatch.
-    assert!(EC_IVF_INDEX_FORMAT_VERSION == 4);
+    // v5 metadata: 92 bytes. Bytes 80..86 point at the packed 0x2B rerank group
+    // header chain for index-side compact rerank; bytes 86..92 retain the
+    // legacy directory-head slot but are INVALID for v5 packed groups.
+    assert!(EC_IVF_INDEX_FORMAT_VERSION == 5);
     assert!(EC_IVF_METADATA_MAGIC == 0x5649_4345);
     assert!(EC_IVF_METADATA_BYTES == 92);
     assert!(EC_IVF_METADATA_RERANK_SIDECAR_HEAD_OFFSET == 80);
@@ -169,6 +168,25 @@ const _: () = {
     assert!(EC_IVF_PQ_CODEBOOK_GROUP_INDEX_OFFSET == 1);
     assert!(EC_IVF_PQ_CODEBOOK_NEXT_TID_OFFSET == 3);
     assert!(EC_IVF_PQ_CODEBOOK_CENTROIDS_OFFSET == 9);
+
+    assert!(EC_IVF_RERANK_GROUP_HEADER_FIXED_BYTES == 36);
+    assert!(EC_IVF_RERANK_GROUP_HEADER_TAG_OFFSET == 0);
+    assert!(EC_IVF_RERANK_GROUP_HEADER_RERANK_FORMAT_OFFSET == 1);
+    assert!(EC_IVF_RERANK_GROUP_HEADER_LIST_ID_OFFSET == 2);
+    assert!(EC_IVF_RERANK_GROUP_HEADER_SCORER_WIDTH_OFFSET == 6);
+    assert!(EC_IVF_RERANK_GROUP_HEADER_VALID_COUNT_OFFSET == 8);
+    assert!(EC_IVF_RERANK_GROUP_HEADER_PAYLOAD_LEN_OFFSET == 10);
+    assert!(EC_IVF_RERANK_GROUP_HEADER_TOTAL_HEAP_TIDS_OFFSET == 12);
+    assert!(EC_IVF_RERANK_GROUP_HEADER_TOTAL_PAYLOAD_BYTES_OFFSET == 16);
+    assert!(EC_IVF_RERANK_GROUP_HEADER_HEADER_PAYLOAD_BYTES_OFFSET == 20);
+    assert!(EC_IVF_RERANK_GROUP_HEADER_NEXT_SEGMENT_TID_OFFSET == 22);
+    assert!(EC_IVF_RERANK_GROUP_HEADER_NEXT_GROUP_TID_OFFSET == 28);
+    assert!(EC_IVF_RERANK_GROUP_HEADER_RESERVED_OFFSET == 34);
+
+    assert!(EC_IVF_RERANK_GROUP_PAYLOAD_SEGMENT_HEADER_BYTES == 9);
+    assert!(EC_IVF_RERANK_GROUP_PAYLOAD_SEGMENT_TAG_OFFSET == 0);
+    assert!(EC_IVF_RERANK_GROUP_PAYLOAD_SEGMENT_PAYLOAD_BYTES_OFFSET == 1);
+    assert!(EC_IVF_RERANK_GROUP_PAYLOAD_SEGMENT_NEXT_SEGMENT_TID_OFFSET == 3);
 };
 
 const _: () = {
