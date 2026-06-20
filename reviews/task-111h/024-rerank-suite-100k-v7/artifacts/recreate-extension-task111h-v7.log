@@ -1,0 +1,2 @@
+ERROR:  duplicate key value violates unique constraint "pg_extension_name_index"
+DETAIL:  Key (extname)=(ecaz) already exists.
