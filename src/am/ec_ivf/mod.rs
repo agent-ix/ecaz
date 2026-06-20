@@ -125,6 +125,7 @@ pub(crate) use self::insert::debug_ec_ivf_validate_no_duplicate_heap_tid;
 pub(crate) use self::scan::{
     debug_ec_ivf_build_metadata, debug_ec_ivf_directory_entry, debug_ec_ivf_directory_summary,
     debug_ec_ivf_gettuple_after_rescan_result, debug_ec_ivf_gettuple_counter_snapshot,
+    debug_ec_ivf_gettuple_counter_snapshot_with_missing_rerank_tid,
     debug_ec_ivf_gettuple_outputs, debug_ec_ivf_metadata,
     debug_ec_ivf_pq_fastscan_model_cache_reused, debug_ec_ivf_quantizer_cache_ptr,
     debug_ec_ivf_rabitq_residual, debug_ec_ivf_rerank_mode,

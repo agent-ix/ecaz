@@ -1646,6 +1646,92 @@
     }
 
     #[pg_test]
+    fn test_ec_ivf_index_placement_mixed_fallback_chain() {
+        // Task 111h: a mixed frontier where one posting lacks a direct group
+        // TID must fall back to the full packed group chain and still produce
+        // the same results as the direct-pointer hot path.
+        Spi::run("CREATE TABLE ec_ivf_idx_mixed (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_ivf_idx_mixed VALUES
+             (0, '[1.0,0.0]'::ecvector),
+             (1, '[0.99,0.01]'::ecvector),
+             (2, '[0.0,1.0]'::ecvector),
+             (3, '[-1.0,0.0]'::ecvector),
+             (4, '[0.0,-1.0]'::ecvector),
+             (5, '[0.7,0.7]'::ecvector),
+             (6, '[-0.7,0.7]'::ecvector),
+             (7, '[0.7,-0.7]'::ecvector)",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_ivf_idx_mixed_idx ON ec_ivf_idx_mixed USING ec_ivf \
+             (embedding ecvector_ip_ops) \
+             WITH (
+                nlists = 1,
+                nprobe = 1,
+                training_sample_rows = 8,
+                storage_format = 'coarse_rerank',
+                rerank_format = 'f16',
+                rerank_placement = 'index',
+                rerank_width = 2
+             )",
+        )
+        .expect("index-placement f16 index creation should succeed");
+
+        let index_oid = ec_ivf_index_oid("ec_ivf_idx_mixed_idx");
+        let query = vec![1.0, 0.0];
+        let direct = ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(
+            index_oid,
+            query.clone()
+        ));
+        let mixed = ec_ivf_debug!(
+            am::debug_ec_ivf_gettuple_counter_snapshot_with_missing_rerank_tid(index_oid, query)
+        );
+        let ctid_to_id = ctid_id_map("ec_ivf_idx_mixed");
+        let output_ids = |outputs: &[(u32, u16, f32)]| {
+            outputs
+                .iter()
+                .map(|(block_number, offset_number, _)| {
+                    *ctid_to_id
+                        .get(&(*block_number, *offset_number))
+                        .expect("debug output ctid should map to a table id")
+                })
+                .collect::<Vec<_>>()
+        };
+
+        assert_eq!(direct.rerank_placement, "index");
+        assert_eq!(direct.rerank_format, "f16");
+        assert_eq!(mixed.rerank_placement, "index");
+        assert_eq!(mixed.rerank_format, "f16");
+        assert_eq!(direct.rerank_rows, 2);
+        assert_eq!(mixed.rerank_rows, direct.rerank_rows);
+        assert_eq!(
+            output_ids(&mixed.outputs),
+            output_ids(&direct.outputs),
+            "mixed missing group TID fallback should preserve direct-path outputs"
+        );
+        assert_eq!(
+            mixed.rerank_payload_bytes_scored,
+            direct.rerank_payload_bytes_scored,
+            "fallback should score the same survivor payload bytes"
+        );
+        assert_eq!(mixed.rerank_payload_slab_bytes_copied, 0);
+        assert_eq!(direct.rerank_full_chain_loads, 0);
+        assert_eq!(
+            mixed.rerank_full_chain_loads, 1,
+            "mixed missing group TID should force one full-chain load"
+        );
+        assert!(
+            mixed.rerank_index_group_header_pages_read
+                >= direct.rerank_index_group_header_pages_read,
+            "fallback should read at least as many group headers as direct, direct={} mixed={}",
+            direct.rerank_index_group_header_pages_read,
+            mixed.rerank_index_group_header_pages_read
+        );
+    }
+
+    #[pg_test]
     fn test_ec_ivf_source_placement_has_no_sidecar_and_scans() {
         // Task 111h: a source-placement coarse_rerank index carries NO
         // sidecar (rerank_sidecar_head = INVALID). Such an index must still

@@ -58,11 +58,16 @@ struct EcIvfScanOpaque {
     heap_rerank_state: Option<Box<IvfHeapRerankState>>,
     explain_counters: IvfExplainCounters,
     stats_delta: TqStatsCounters,
+    #[cfg(any(test, feature = "pg_test"))]
+    debug_force_first_missing_rerank_tid: bool,
+    #[cfg(any(test, feature = "pg_test"))]
+    debug_rerank_full_chain_loads: u32,
 }
 
 impl std::fmt::Debug for EcIvfScanOpaque {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("EcIvfScanOpaque")
+        let mut debug = f.debug_struct("EcIvfScanOpaque");
+        debug
             .field("rescan_called", &self.rescan_called)
             .field("query_dimensions", &self.query_dimensions)
             .field("query_values", &self.query_values)
@@ -90,8 +95,18 @@ impl std::fmt::Debug for EcIvfScanOpaque {
             )
             .field("heap_rerank_state", &self.heap_rerank_state.is_some())
             .field("explain_counters", &self.explain_counters)
-            .field("stats_delta", &self.stats_delta)
-            .finish()
+            .field("stats_delta", &self.stats_delta);
+        #[cfg(any(test, feature = "pg_test"))]
+        debug.field(
+            "debug_force_first_missing_rerank_tid",
+            &self.debug_force_first_missing_rerank_tid,
+        );
+        #[cfg(any(test, feature = "pg_test"))]
+        debug.field(
+            "debug_rerank_full_chain_loads",
+            &self.debug_rerank_full_chain_loads,
+        );
+        debug.finish()
     }
 }
 
@@ -2543,6 +2558,12 @@ unsafe fn rerank_probe_candidates_index_side(
     // Read tid-sorted (matches the heap_f32 read shape and keeps the lookup
     // map probes ascending).
     candidates.sort_by(candidate_heap_tid_cmp);
+    #[cfg(any(test, feature = "pg_test"))]
+    if opaque.debug_force_first_missing_rerank_tid {
+        if let Some(candidate) = candidates.first_mut() {
+            candidate.rerank_tid = ItemPointer::INVALID;
+        }
+    }
 
     let index_relation = unsafe { (*scan).indexRelation };
     let dimensions = opaque.scan_dimensions as usize;
@@ -2568,6 +2589,11 @@ unsafe fn rerank_probe_candidates_index_side(
         }
         .unwrap_or_else(|e| pgrx::error!("{e}"))
     } else {
+        #[cfg(any(test, feature = "pg_test"))]
+        {
+            opaque.debug_rerank_full_chain_loads =
+                opaque.debug_rerank_full_chain_loads.saturating_add(1);
+        }
         unsafe {
             load_rerank_groups_full_chain(
                 index_relation,
@@ -3420,6 +3446,14 @@ unsafe fn debug_scan_opaque<'a>(scan: pg_sys::IndexScanDesc) -> &'a EcIvfScanOpa
 }
 
 /// # Safety
+/// Callers mutate the IVF opaque while the scan descriptor is live and
+/// after begin/rescan initialized the opaque pointer.
+#[cfg(any(test, feature = "pg_test"))]
+unsafe fn debug_scan_opaque_mut<'a>(scan: pg_sys::IndexScanDesc) -> &'a mut EcIvfScanOpaque {
+    &mut *(*scan).opaque.cast::<EcIvfScanOpaque>()
+}
+
+/// # Safety
 /// `as_ref` converts a null IVF opaque pointer to None for debug probes
 /// that intentionally inspect optional cache state.
 #[cfg(any(test, feature = "pg_test"))]
@@ -3731,6 +3765,7 @@ pub(crate) struct EcIvfGettupleCounterDebugSnapshot {
     pub(crate) rerank_index_segment_payload_bytes_read: u32,
     pub(crate) rerank_payload_bytes_scored: u32,
     pub(crate) rerank_payload_slab_bytes_copied: u32,
+    pub(crate) rerank_full_chain_loads: u32,
     pub(crate) rerank_candidates_considered: u32,
     pub(crate) rerank_candidates_skipped: u32,
     pub(crate) postings_pruned_by_bound: u32,
@@ -3744,12 +3779,37 @@ pub(crate) unsafe fn debug_ec_ivf_gettuple_counter_snapshot(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> EcIvfGettupleCounterDebugSnapshot {
+    debug_ec_ivf_gettuple_counter_snapshot_inner(index_oid, query, false)
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+/// # Safety
+/// Test-only helper; caller is a pgrx-managed test fixture that holds
+/// the IVF index referenced by `index_oid` open for the call duration.
+pub(crate) unsafe fn debug_ec_ivf_gettuple_counter_snapshot_with_missing_rerank_tid(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+) -> EcIvfGettupleCounterDebugSnapshot {
+    debug_ec_ivf_gettuple_counter_snapshot_inner(index_oid, query, true)
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+unsafe fn debug_ec_ivf_gettuple_counter_snapshot_inner(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+    force_first_missing_rerank_tid: bool,
+) -> EcIvfGettupleCounterDebugSnapshot {
     let state = debug_begin_heap_backed_scan(index_oid);
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: IntoDatum::into_datum(query).expect("query should convert to datum"),
         ..Default::default()
     };
     let scan = state.scan.as_ptr();
+    {
+        let opaque = debug_scan_opaque_mut(scan);
+        opaque.debug_force_first_missing_rerank_tid = force_first_missing_rerank_tid;
+        opaque.debug_rerank_full_chain_loads = 0;
+    }
     debug_index_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
 
     let mut outputs = Vec::new();
@@ -3765,7 +3825,9 @@ pub(crate) unsafe fn debug_ec_ivf_gettuple_counter_snapshot(
     } else {
         debug_scan_first_orderby_is_null(scan)
     };
-    let counters = debug_scan_opaque(scan).explain_counters;
+    let opaque = debug_scan_opaque(scan);
+    let counters = opaque.explain_counters;
+    let rerank_full_chain_loads = opaque.debug_rerank_full_chain_loads;
 
     debug_end_heap_backed_scan(state);
     EcIvfGettupleCounterDebugSnapshot {
@@ -3792,6 +3854,7 @@ pub(crate) unsafe fn debug_ec_ivf_gettuple_counter_snapshot(
             .stats_rerank_index_segment_payload_bytes_read,
         rerank_payload_bytes_scored: counters.stats_rerank_payload_bytes_scored,
         rerank_payload_slab_bytes_copied: counters.stats_rerank_payload_slab_bytes_copied,
+        rerank_full_chain_loads,
         rerank_candidates_considered: counters.stats_rerank_candidates_considered,
         rerank_candidates_skipped: counters.stats_rerank_candidates_skipped,
         postings_pruned_by_bound: counters.stats_postings_pruned_by_bound,
