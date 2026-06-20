@@ -11,6 +11,15 @@ Only link measured or intentionally scaffolded benchmark packets here. If a
 benchmark lane does not yet have a packet, leave it out of this index rather
 than inventing an empty result.
 
+## Current Full-Scale Evidence
+
+The current production benchmark evidence (both AWS lanes, all four access
+methods × quantizations × 10K/50K/100K/1M) is the **Task 105 full-scale matrix**:
+`reviews/task-105/006-full-scale-matrix/` (G4 + Intel), with per-lane raw
+evidence in `reviews/task-105/004-g4-lane/` and `005-intel-lane/`. Distributed
+multi-node SPIRE is `reviews/task-107/`. The `benchmarks/current/<lane>/` lanes
+below are the promotion targets for that evidence and remain pending refresh.
+
 ## Current Lanes
 
 | Lane | Host class | Current manifest | Standard suite |
