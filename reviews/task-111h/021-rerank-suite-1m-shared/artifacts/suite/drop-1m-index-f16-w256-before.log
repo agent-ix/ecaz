@@ -1,0 +1,2 @@
+DROP INDEX
+NOTICE:  index "task111h021_1m_index_f16_w256_idx" does not exist, skipping
