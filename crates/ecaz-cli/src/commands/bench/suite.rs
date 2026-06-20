@@ -284,6 +284,8 @@ struct LoadStep {
     #[serde(default)]
     storage_format: Option<String>,
     #[serde(default)]
+    index_name: Option<String>,
+    #[serde(default)]
     table_reloptions: Vec<String>,
     #[serde(default)]
     reloptions: Vec<String>,
@@ -2754,6 +2756,9 @@ fn expand_load(step: &LoadStep, defaults: &SuiteDefaults) -> Vec<String> {
     if let Some(storage_format) = step.storage_format.as_deref() {
         push_arg(&mut args, "--storage-format", storage_format);
     }
+    if let Some(index_name) = step.index_name.as_deref() {
+        push_arg(&mut args, "--index-name", index_name);
+    }
     for reloption in &step.table_reloptions {
         push_arg(&mut args, "--table-reloption", reloption);
     }
@@ -3807,6 +3812,7 @@ mod tests {
                 m: Vec::new(),
                 ef_construction: None,
                 storage_format: None,
+                index_name: None,
                 table_reloptions: Vec::new(),
                 reloptions: Vec::new(),
                 log_file: Some("${artifact_dir}/load.log".into()),
@@ -4161,6 +4167,7 @@ mod tests {
             m: Vec::new(),
             ef_construction: None,
             storage_format: Some("rabitq".into()),
+            index_name: Some("surface_rabitq_idx".into()),
             table_reloptions: Vec::new(),
             reloptions: vec!["nlists=1024".into()],
             log_file: Some("load.log".into()),
@@ -4168,6 +4175,9 @@ mod tests {
         let args = expand_load(&step, &defaults);
         assert!(args.contains(&"--chunked".into()));
         assert!(args.windows(2).any(|w| w == ["--storage-format", "rabitq"]));
+        assert!(args
+            .windows(2)
+            .any(|w| w == ["--index-name", "surface_rabitq_idx"]));
         assert!(args
             .windows(2)
             .any(|w| w == ["--manifest-file", "stage/anchor_manifest.json"]));
@@ -4201,6 +4211,7 @@ mod tests {
                 m: Vec::new(),
                 ef_construction: None,
                 storage_format: None,
+                index_name: None,
                 table_reloptions: vec!["parallel_workers=4".into()],
                 reloptions: vec!["nlists=128".into()],
                 log_file: Some("load.log".into()),
@@ -4603,6 +4614,7 @@ mod tests {
             m: Vec::new(),
             ef_construction: None,
             storage_format: Some("rabitq".into()),
+            index_name: None,
             table_reloptions: Vec::new(),
             reloptions: Vec::new(),
             log_file: Some("load.log".into()),
