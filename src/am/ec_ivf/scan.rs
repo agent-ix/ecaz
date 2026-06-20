@@ -2779,9 +2779,11 @@ unsafe fn load_rerank_groups_full_chain(
     read_stats: &mut RerankGroupReadStats,
 ) -> Result<HashMap<ItemPointer, LoadedRerankGroup>, String> {
     let mut groups = HashMap::new();
+    let mut visited = HashSet::new();
     let mut next_tid = head;
     while next_tid != ItemPointer::INVALID {
         let group_tid = next_tid;
+        super::page::remember_rerank_group_chain_tid(&mut visited, group_tid)?;
         let group = unsafe {
             load_rerank_group(index_relation, group_tid, expected_payload_len, read_stats)
         }?;

@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::ffi::c_void;
 use std::ptr::NonNull;
 
@@ -206,9 +207,11 @@ unsafe fn bulkdelete_rerank_groups(
     callback: BulkDeleteCallback,
     callback_state: *mut c_void,
 ) -> Result<(), String> {
+    let mut visited = HashSet::new();
     let mut next_tid = head;
     while next_tid != ItemPointer::INVALID {
         let group_tid = next_tid;
+        page::remember_rerank_group_chain_tid(&mut visited, group_tid)?;
         let mut group = page::read_ivf_rerank_group_header(index_relation, group_tid)?;
         let following = group.next_group_tid;
         let mut changed = false;

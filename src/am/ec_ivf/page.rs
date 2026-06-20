@@ -2,7 +2,7 @@
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
 use std::collections::BTreeSet;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 #[cfg(any(feature = "pg17", feature = "pg18"))]
 use std::marker::PhantomData;
 use std::mem::{align_of, size_of};
@@ -1117,6 +1117,17 @@ pub(super) struct IvfRerankGroupHeaderRef<'a> {
     payload_offset_bytes: &'a [u8],
     heap_tid_bytes: &'a [u8],
     pub(super) payloads: &'a [u8],
+}
+
+pub(super) fn remember_rerank_group_chain_tid(
+    visited: &mut HashSet<ItemPointer>,
+    tid: ItemPointer,
+) -> Result<(), String> {
+    if visited.insert(tid) {
+        Ok(())
+    } else {
+        Err(format!("ec_ivf rerank group chain cycle at tid {:?}", tid))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -4698,6 +4709,22 @@ mod tests {
 
     fn block(block_number: u32) -> BlockRef {
         BlockRef { block_number }
+    }
+
+    #[test]
+    fn rerank_group_chain_visit_rejects_cycle() {
+        let mut visited = HashSet::new();
+        let first = tid(10, 1);
+        let second = tid(11, 1);
+
+        remember_rerank_group_chain_tid(&mut visited, first).unwrap();
+        remember_rerank_group_chain_tid(&mut visited, second).unwrap();
+        let err = remember_rerank_group_chain_tid(&mut visited, first).unwrap_err();
+
+        assert!(
+            err.contains("rerank group chain cycle"),
+            "unexpected cycle error: {err}"
+        );
     }
 
     #[test]
