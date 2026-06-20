@@ -119,12 +119,10 @@ pub(crate) struct IvfExplainCounters {
     /// until Task 113 supplies a calibrated lower bound; non-zero once a real
     /// bound lets the stop fire safely.
     pub stats_rerank_candidates_skipped: u32,
-    /// Task 111g: total bytes of rerank *source* representation read for the
-    /// reranked frontier. Table f32 accumulates `dims * 4` per candidate
-    /// (full heap source); the index-placement compact sidecar accumulates
-    /// `dims * 2` (f16) or the rabitq4 payload length per candidate. This is
-    /// the byte-reduction win evidence the 003 gate asks to be proven by
-    /// counter.
+    /// Task 111h: total bytes read from the heap source-vector column for the
+    /// reranked frontier. Source f32 accumulates `dims * 4` per candidate; the
+    /// persisted index-placement compact path keeps this at zero and reports
+    /// compact payload reads/scored bytes through the packed-group counters.
     pub stats_rerank_source_bytes_read: u32,
     /// Task 111h: number of packed rerank group header pages read during
     /// index-placement rerank. Packed groups store list/local metadata once in
@@ -141,8 +139,8 @@ pub(crate) struct IvfExplainCounters {
     /// Task 111h: payload bytes read from `0x2C` continuation segments.
     pub stats_rerank_index_segment_payload_bytes_read: u32,
     /// Task 111h: compact rerank payload bytes handed to the scorer for the
-    /// exact rerank frontier. This is per-survivor scored payload width, so it
-    /// can be compared with `stats_rerank_source_bytes_read`.
+    /// exact rerank frontier. This is per-survivor scored payload width, not
+    /// the full packed-group payload bytes physically read from index pages.
     pub stats_rerank_payload_bytes_scored: u32,
     /// Task 111h: compact rerank payload bytes copied into the current batch
     /// scoring slab. Non-batched f16 stays zero here; batched compact formats

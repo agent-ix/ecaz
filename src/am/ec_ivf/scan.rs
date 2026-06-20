@@ -2635,7 +2635,7 @@ unsafe fn rerank_probe_candidates_index_side(
     );
 
     let batched = scorer.is_batched();
-    let mut source_bytes_read = 0usize;
+    let mut payload_bytes_scored = 0usize;
 
     if batched {
         // Collect survivors' payloads in survivor order, then batch-score.
@@ -2646,7 +2646,7 @@ unsafe fn rerank_probe_candidates_index_side(
                 rerank_group_payload_for_candidate(&group_cache, candidate, expected_payload_len)
                     .unwrap_or_else(|e| pgrx::error!("{e}"));
             payload_slab.extend_from_slice(payload);
-            source_bytes_read += payload.len();
+            payload_bytes_scored += payload.len();
         }
         payload_decode_elapsed += payload_decode_started.elapsed();
         opaque
@@ -2668,7 +2668,7 @@ unsafe fn rerank_probe_candidates_index_side(
                 rerank_group_payload_for_candidate(&group_cache, candidate, expected_payload_len)
                     .unwrap_or_else(|e| pgrx::error!("{e}"));
             payload_decode_elapsed += payload_decode_started.elapsed();
-            source_bytes_read += payload.len();
+            payload_bytes_scored += payload.len();
             let payload_score_started = Instant::now();
             candidate.score = scorer.score_sidecar_payload(payload);
             payload_score_elapsed += payload_score_started.elapsed();
@@ -2678,10 +2678,7 @@ unsafe fn rerank_probe_candidates_index_side(
     let rerank_rows = candidates.len();
     opaque
         .explain_counters
-        .record_rerank_source_bytes_read(source_bytes_read);
-    opaque
-        .explain_counters
-        .record_rerank_payload_bytes_scored(source_bytes_read);
+        .record_rerank_payload_bytes_scored(payload_bytes_scored);
     opaque
         .explain_counters
         .record_rerank_payload_decode_elapsed_us(elapsed_us_u32(payload_decode_elapsed));

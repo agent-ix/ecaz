@@ -1512,8 +1512,8 @@
         );
         assert_eq!(
             index_f16.rerank_source_bytes_read,
-            index_f16.rerank_rows * (dims * 2) as u32,
-            "index f16 should read dims*2 per reranked candidate"
+            0,
+            "index f16 should not read the heap source vector during rerank"
         );
         assert_eq!(
             source_f32.rerank_payload_bytes_scored, 0,
@@ -1525,7 +1525,7 @@
         );
         assert_eq!(
             index_f16.rerank_payload_bytes_scored,
-            index_f16.rerank_source_bytes_read,
+            index_f16.rerank_rows * (dims * 2) as u32,
             "index f16 should score exactly the persisted payload bytes read"
         );
         assert_eq!(
@@ -1547,8 +1547,11 @@
             "packed group payload reads should cover scored f16 payload bytes"
         );
         assert_eq!(
-            index_rb4.rerank_payload_bytes_scored,
-            index_rb4.rerank_source_bytes_read,
+            index_rb4.rerank_source_bytes_read, 0,
+            "index rabitq4 should not read the heap source vector during rerank"
+        );
+        assert!(
+            index_rb4.rerank_payload_bytes_scored > 0,
             "index rabitq4 should score persisted payload bytes"
         );
         assert_eq!(
@@ -1560,22 +1563,30 @@
             index_rb4.rerank_payload_slab_bytes_copied > 0,
             "batched rabitq4 should copy survivor payloads into a scoring slab"
         );
+        assert_eq!(
+            index_rb8.rerank_source_bytes_read, 0,
+            "index rabitq8 should not read the heap source vector during rerank"
+        );
+        assert!(
+            index_rb8.rerank_payload_bytes_scored > 0,
+            "index rabitq8 should score persisted payload bytes"
+        );
 
         assert!(
             index_f16.rerank_source_bytes_read < source_f32.rerank_source_bytes_read,
-            "index f16 ({}) should read fewer rerank source bytes than source f32 ({})",
+            "index f16 ({}) should read fewer heap source bytes than source f32 ({})",
             index_f16.rerank_source_bytes_read,
             source_f32.rerank_source_bytes_read
         );
         assert!(
             index_rb4.rerank_source_bytes_read < source_f32.rerank_source_bytes_read,
-            "index rabitq4 ({}) should read fewer rerank source bytes than source f32 ({})",
+            "index rabitq4 ({}) should read fewer heap source bytes than source f32 ({})",
             index_rb4.rerank_source_bytes_read,
             source_f32.rerank_source_bytes_read
         );
         assert!(
             index_rb8.rerank_source_bytes_read < source_f32.rerank_source_bytes_read,
-            "index rabitq8 ({}) should read fewer rerank source bytes than source f32 ({})",
+            "index rabitq8 ({}) should read fewer heap source bytes than source f32 ({})",
             index_rb8.rerank_source_bytes_read,
             source_f32.rerank_source_bytes_read
         );
@@ -1639,8 +1650,13 @@
         assert_eq!(counters.rerank_format, "f16");
         assert!(counters.rerank_index_group_header_pages_read > 0);
         assert_eq!(
+            counters.rerank_source_bytes_read, 0,
+            "inserted index-side payload should not read the heap source vector during rerank"
+        );
+        assert_eq!(
             counters.rerank_payload_bytes_scored,
-            counters.rerank_source_bytes_read
+            counters.rerank_rows * (4 * 2) as u32,
+            "inserted f16 payload should score dims*2 bytes per reranked candidate"
         );
         assert_eq!(counters.rerank_payload_slab_bytes_copied, 0);
     }
@@ -2193,8 +2209,13 @@
             "vacuumed packed group read should still account header metadata"
         );
         assert_eq!(
+            counters.rerank_source_bytes_read, 0,
+            "vacuumed index-side payload should not read the heap source vector during rerank"
+        );
+        assert_eq!(
             counters.rerank_payload_bytes_scored,
-            counters.rerank_source_bytes_read
+            counters.rerank_rows * (4 * 2) as u32,
+            "vacuumed f16 payload should score dims*2 bytes per reranked candidate"
         );
         assert_eq!(counters.rerank_payload_slab_bytes_copied, 0);
 
