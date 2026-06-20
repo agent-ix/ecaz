@@ -1,0 +1,697 @@
+{
+  "suite": "task111h-100k-rabitq8-score-clip-ab",
+  "schema_version": 1,
+  "config": "reviews/task-111h/036-rabitq8-score-clip-ab/artifacts/task111h-100k-rabitq8-score-clip-ab-suite.json",
+  "config_sha256": "a2ba3d9fa3d664a4577c217667278b678d2b69e82dc4cae1f452bfac8df2dfd2",
+  "dry_run": false,
+  "generated_at_unix_ms": 1781990538091,
+  "connection": {
+    "database": "task111h_rabitq8_score_clip_ab",
+    "host": "/home/peter/.pgrx",
+    "port": 28818,
+    "user": null,
+    "password_configured": false
+  },
+  "backend": {
+    "build_profile": "release",
+    "sha256": "16b9bb87866d9b9809a70c11f0a7be12d5e30608596a1940f4db2f748d51b629",
+    "path": "/home/peter/.pgrx/18.3/pgrx-install/lib/postgresql/ecaz.so"
+  },
+  "steps": [
+    {
+      "name": "precheck-host-rabitq8-score-clip-ab",
+      "kind": "raw",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task111h",
+        "scale100k",
+        "precheck",
+        "local",
+        "pg18",
+        "format=rabitq8"
+      ],
+      "expected_artifacts": [
+        "reviews/task-111h/036-rabitq8-score-clip-ab/artifacts/suite-cont-est-c4/precheck-host.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-100k-index-rabitq8-est-c2-w64",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task111h",
+        "scale100k",
+        "load",
+        "ec_real_100k",
+        "format=rabitq8",
+        "placement=index",
+        "width=64",
+        "score=estimator",
+        "clip=2"
+      ],
+      "expected_artifacts": [
+        "reviews/task-111h/036-rabitq8-score-clip-ab/artifacts/suite-cont-est-c4/load-100k-index-rabitq8-est-c2-w64.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-100k-index-rabitq8-est-c2-w64",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task111h",
+        "scale100k",
+        "recall",
+        "ec_real_100k",
+        "format=rabitq8",
+        "placement=index",
+        "width=64",
+        "score=estimator",
+        "clip=2"
+      ],
+      "expected_artifacts": [
+        "reviews/task-111h/036-rabitq8-score-clip-ab/artifacts/suite-cont-est-c4/recall-100k-index-rabitq8-est-c2-w64.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-100k-index-rabitq8-est-c2-w64",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task111h",
+        "scale100k",
+        "latency",
+        "ec_real_100k",
+        "format=rabitq8",
+        "placement=index",
+        "width=64",
+        "score=estimator",
+        "clip=2",
+        "warm"
+      ],
+      "expected_artifacts": [
+        "reviews/task-111h/036-rabitq8-score-clip-ab/artifacts/suite-cont-est-c4/latency-100k-index-rabitq8-est-c2-w64.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-100k-index-rabitq8-est-c2-w64",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task111h",
+        "scale100k",
+        "storage",
+        "ec_real_100k",
+        "format=rabitq8",
+        "placement=index",
+        "width=64",
+        "score=estimator",
+        "clip=2"
+      ],
+      "expected_artifacts": [
+        "reviews/task-111h/036-rabitq8-score-clip-ab/artifacts/suite-cont-est-c4/storage-100k-index-rabitq8-est-c2-w64.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-100k-index-rabitq8-ls-c2-w64",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task111h",
+        "scale100k",
+        "load",
+        "ec_real_100k",
+        "format=rabitq8",
+        "placement=index",
+        "width=64",
+        "score=least_squares",
+        "clip=2"
+      ],
+      "expected_artifacts": [
+        "reviews/task-111h/036-rabitq8-score-clip-ab/artifacts/suite-cont-est-c4/load-100k-index-rabitq8-ls-c2-w64.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-100k-index-rabitq8-ls-c2-w64",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task111h",
+        "scale100k",
+        "recall",
+        "ec_real_100k",
+        "format=rabitq8",
+        "placement=index",
+        "width=64",
+        "score=least_squares",
+        "clip=2"
+      ],
+      "expected_artifacts": [
+        "reviews/task-111h/036-rabitq8-score-clip-ab/artifacts/suite-cont-est-c4/recall-100k-index-rabitq8-ls-c2-w64.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-100k-index-rabitq8-ls-c2-w64",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task111h",
+        "scale100k",
+        "latency",
+        "ec_real_100k",
+        "format=rabitq8",
+        "placement=index",
+        "width=64",
+        "score=least_squares",
+        "clip=2",
+        "warm"
+      ],
+      "expected_artifacts": [
+        "reviews/task-111h/036-rabitq8-score-clip-ab/artifacts/suite-cont-est-c4/latency-100k-index-rabitq8-ls-c2-w64.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-100k-index-rabitq8-ls-c2-w64",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task111h",
+        "scale100k",
+        "storage",
+        "ec_real_100k",
+        "format=rabitq8",
+        "placement=index",
+        "width=64",
+        "score=least_squares",
+        "clip=2"
+      ],
+      "expected_artifacts": [
+        "reviews/task-111h/036-rabitq8-score-clip-ab/artifacts/suite-cont-est-c4/storage-100k-index-rabitq8-ls-c2-w64.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-100k-index-rabitq8-est-c3-w64",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task111h",
+        "scale100k",
+        "load",
+        "ec_real_100k",
+        "format=rabitq8",
+        "placement=index",
+        "width=64",
+        "score=estimator",
+        "clip=3"
+      ],
+      "expected_artifacts": [
+        "reviews/task-111h/036-rabitq8-score-clip-ab/artifacts/suite-cont-est-c4/load-100k-index-rabitq8-est-c3-w64.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-100k-index-rabitq8-est-c3-w64",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task111h",
+        "scale100k",
+        "recall",
+        "ec_real_100k",
+        "format=rabitq8",
+        "placement=index",
+        "width=64",
+        "score=estimator",
+        "clip=3"
+      ],
+      "expected_artifacts": [
+        "reviews/task-111h/036-rabitq8-score-clip-ab/artifacts/suite-cont-est-c4/recall-100k-index-rabitq8-est-c3-w64.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-100k-index-rabitq8-est-c3-w64",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task111h",
+        "scale100k",
+        "latency",
+        "ec_real_100k",
+        "format=rabitq8",
+        "placement=index",
+        "width=64",
+        "score=estimator",
+        "clip=3",
+        "warm"
+      ],
+      "expected_artifacts": [
+        "reviews/task-111h/036-rabitq8-score-clip-ab/artifacts/suite-cont-est-c4/latency-100k-index-rabitq8-est-c3-w64.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-100k-index-rabitq8-est-c3-w64",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task111h",
+        "scale100k",
+        "storage",
+        "ec_real_100k",
+        "format=rabitq8",
+        "placement=index",
+        "width=64",
+        "score=estimator",
+        "clip=3"
+      ],
+      "expected_artifacts": [
+        "reviews/task-111h/036-rabitq8-score-clip-ab/artifacts/suite-cont-est-c4/storage-100k-index-rabitq8-est-c3-w64.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-100k-index-rabitq8-ls-c3-w64",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task111h",
+        "scale100k",
+        "load",
+        "ec_real_100k",
+        "format=rabitq8",
+        "placement=index",
+        "width=64",
+        "score=least_squares",
+        "clip=3"
+      ],
+      "expected_artifacts": [
+        "reviews/task-111h/036-rabitq8-score-clip-ab/artifacts/suite-cont-est-c4/load-100k-index-rabitq8-ls-c3-w64.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-100k-index-rabitq8-ls-c3-w64",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task111h",
+        "scale100k",
+        "recall",
+        "ec_real_100k",
+        "format=rabitq8",
+        "placement=index",
+        "width=64",
+        "score=least_squares",
+        "clip=3"
+      ],
+      "expected_artifacts": [
+        "reviews/task-111h/036-rabitq8-score-clip-ab/artifacts/suite-cont-est-c4/recall-100k-index-rabitq8-ls-c3-w64.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-100k-index-rabitq8-ls-c3-w64",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task111h",
+        "scale100k",
+        "latency",
+        "ec_real_100k",
+        "format=rabitq8",
+        "placement=index",
+        "width=64",
+        "score=least_squares",
+        "clip=3",
+        "warm"
+      ],
+      "expected_artifacts": [
+        "reviews/task-111h/036-rabitq8-score-clip-ab/artifacts/suite-cont-est-c4/latency-100k-index-rabitq8-ls-c3-w64.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-100k-index-rabitq8-ls-c3-w64",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task111h",
+        "scale100k",
+        "storage",
+        "ec_real_100k",
+        "format=rabitq8",
+        "placement=index",
+        "width=64",
+        "score=least_squares",
+        "clip=3"
+      ],
+      "expected_artifacts": [
+        "reviews/task-111h/036-rabitq8-score-clip-ab/artifacts/suite-cont-est-c4/storage-100k-index-rabitq8-ls-c3-w64.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-100k-index-rabitq8-est-c4-w64",
+      "kind": "load",
+      "command": [
+        "--database",
+        "task111h_rabitq8_score_clip_ab",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-111h/036-rabitq8-score-clip-ab/artifacts/suite-cont-est-c4/load-100k-index-rabitq8-est-c4-w64.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "task111h036_100k_rq8_est_c4_w64",
+        "--profile",
+        "ec_ivf",
+        "--corpus-file",
+        "data/staged-current/ec_real_100k_corpus.tsv",
+        "--queries-file",
+        "data/staged-current/ec_real_100k_queries.tsv",
+        "--manifest-file",
+        "data/staged-current/ec_real_100k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--dim",
+        "1536",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--reloption",
+        "nlists=256",
+        "--reloption",
+        "nprobe=32",
+        "--reloption",
+        "training_sample_rows=10000",
+        "--reloption",
+        "storage_format=coarse_rerank",
+        "--reloption",
+        "coarse_bits=1",
+        "--reloption",
+        "rerank=heap_f32",
+        "--reloption",
+        "rerank_width=64",
+        "--reloption",
+        "rerank_placement=index",
+        "--reloption",
+        "rerank_format=rabitq8",
+        "--reloption",
+        "rabitq_rerank_least_squares=0",
+        "--reloption",
+        "rabitq_rerank_clip=4"
+      ],
+      "selected": true,
+      "tags": [
+        "task111h",
+        "scale100k",
+        "load",
+        "ec_real_100k",
+        "format=rabitq8",
+        "placement=index",
+        "width=64",
+        "score=estimator",
+        "clip=4"
+      ],
+      "expected_artifacts": [
+        "reviews/task-111h/036-rabitq8-score-clip-ab/artifacts/suite-cont-est-c4/load-100k-index-rabitq8-est-c4-w64.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1781990538193,
+      "finished_at_unix_ms": 1781990628043,
+      "duration_ms": 90312,
+      "exit_code": 0
+    },
+    {
+      "name": "recall-100k-index-rabitq8-est-c4-w64",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "task111h_rabitq8_score_clip_ab",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "recall",
+        "--prefix",
+        "task111h036_100k_rq8_est_c4_w64",
+        "--profile",
+        "ec_ivf",
+        "--k",
+        "10",
+        "--sweep",
+        "8,16,32,64,128,200",
+        "--rerank-width",
+        "64",
+        "--queries-limit",
+        "200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--truth-cache-file",
+        "reviews/task-111h/036-rabitq8-score-clip-ab/artifacts/suite-cont-est-c4/truth-100k-k10.json",
+        "--truth-corpus-file",
+        "data/staged-current/ec_real_100k_corpus.tsv",
+        "--log-output",
+        "reviews/task-111h/036-rabitq8-score-clip-ab/artifacts/suite-cont-est-c4/recall-100k-index-rabitq8-est-c4-w64.log"
+      ],
+      "selected": true,
+      "tags": [
+        "task111h",
+        "scale100k",
+        "recall",
+        "ec_real_100k",
+        "format=rabitq8",
+        "placement=index",
+        "width=64",
+        "score=estimator",
+        "clip=4"
+      ],
+      "expected_artifacts": [
+        "reviews/task-111h/036-rabitq8-score-clip-ab/artifacts/suite-cont-est-c4/recall-100k-index-rabitq8-est-c4-w64.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1781990628043,
+      "finished_at_unix_ms": 1781990643757,
+      "duration_ms": 15870,
+      "exit_code": 0
+    },
+    {
+      "name": "latency-100k-index-rabitq8-est-c4-w64",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "task111h_rabitq8_score_clip_ab",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "latency",
+        "--prefix",
+        "task111h036_100k_rq8_est_c4_w64",
+        "--profile",
+        "ec_ivf",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "200",
+        "--sweep",
+        "8,16,32,64,128,200",
+        "--rerank-width",
+        "64",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--sample-backend-memory",
+        "--cache-state",
+        "post_recall_warm",
+        "--task87-candidate-batch-counters",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "reviews/task-111h/036-rabitq8-score-clip-ab/artifacts/suite-cont-est-c4/latency-100k-index-rabitq8-est-c4-w64.log"
+      ],
+      "selected": true,
+      "tags": [
+        "task111h",
+        "scale100k",
+        "latency",
+        "ec_real_100k",
+        "format=rabitq8",
+        "placement=index",
+        "width=64",
+        "score=estimator",
+        "clip=4",
+        "warm"
+      ],
+      "expected_artifacts": [
+        "reviews/task-111h/036-rabitq8-score-clip-ab/artifacts/suite-cont-est-c4/latency-100k-index-rabitq8-est-c4-w64.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1781990643758,
+      "finished_at_unix_ms": 1781990653145,
+      "duration_ms": 9379,
+      "exit_code": 0
+    },
+    {
+      "name": "storage-100k-index-rabitq8-est-c4-w64",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "task111h_rabitq8_score_clip_ab",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-111h/036-rabitq8-score-clip-ab/artifacts/suite-cont-est-c4/storage-100k-index-rabitq8-est-c4-w64.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "task111h036_100k_rq8_est_c4_w64"
+      ],
+      "selected": true,
+      "tags": [
+        "task111h",
+        "scale100k",
+        "storage",
+        "ec_real_100k",
+        "format=rabitq8",
+        "placement=index",
+        "width=64",
+        "score=estimator",
+        "clip=4"
+      ],
+      "expected_artifacts": [
+        "reviews/task-111h/036-rabitq8-score-clip-ab/artifacts/suite-cont-est-c4/storage-100k-index-rabitq8-est-c4-w64.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1781990653145,
+      "finished_at_unix_ms": 1781990653180,
+      "duration_ms": 31,
+      "exit_code": 0
+    },
+    {
+      "name": "load-100k-index-rabitq8-ls-c4-w64",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task111h",
+        "scale100k",
+        "load",
+        "ec_real_100k",
+        "format=rabitq8",
+        "placement=index",
+        "width=64",
+        "score=least_squares",
+        "clip=4"
+      ],
+      "expected_artifacts": [
+        "reviews/task-111h/036-rabitq8-score-clip-ab/artifacts/suite-cont-est-c4/load-100k-index-rabitq8-ls-c4-w64.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-100k-index-rabitq8-ls-c4-w64",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task111h",
+        "scale100k",
+        "recall",
+        "ec_real_100k",
+        "format=rabitq8",
+        "placement=index",
+        "width=64",
+        "score=least_squares",
+        "clip=4"
+      ],
+      "expected_artifacts": [
+        "reviews/task-111h/036-rabitq8-score-clip-ab/artifacts/suite-cont-est-c4/recall-100k-index-rabitq8-ls-c4-w64.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-100k-index-rabitq8-ls-c4-w64",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task111h",
+        "scale100k",
+        "latency",
+        "ec_real_100k",
+        "format=rabitq8",
+        "placement=index",
+        "width=64",
+        "score=least_squares",
+        "clip=4",
+        "warm"
+      ],
+      "expected_artifacts": [
+        "reviews/task-111h/036-rabitq8-score-clip-ab/artifacts/suite-cont-est-c4/latency-100k-index-rabitq8-ls-c4-w64.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-100k-index-rabitq8-ls-c4-w64",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task111h",
+        "scale100k",
+        "storage",
+        "ec_real_100k",
+        "format=rabitq8",
+        "placement=index",
+        "width=64",
+        "score=least_squares",
+        "clip=4"
+      ],
+      "expected_artifacts": [
+        "reviews/task-111h/036-rabitq8-score-clip-ab/artifacts/suite-cont-est-c4/storage-100k-index-rabitq8-ls-c4-w64.log"
+      ],
+      "status": "skipped"
+    }
+  ]
+}

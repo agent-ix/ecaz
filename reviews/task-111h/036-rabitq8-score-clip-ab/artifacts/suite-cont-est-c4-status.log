@@ -1,0 +1,26 @@
+[suite:task111h-100k-rabitq8-score-clip-ab] completed=4 failed=0 skipped=21 dry_run=0 missing_artifacts=0 stale=0
+Skipped      precheck-host-rabitq8-score-clip-ab  
+Skipped      load-100k-index-rabitq8-est-c2-w64   
+Skipped      recall-100k-index-rabitq8-est-c2-w64 
+Skipped      latency-100k-index-rabitq8-est-c2-w64 
+Skipped      storage-100k-index-rabitq8-est-c2-w64 
+Skipped      load-100k-index-rabitq8-ls-c2-w64    
+Skipped      recall-100k-index-rabitq8-ls-c2-w64  
+Skipped      latency-100k-index-rabitq8-ls-c2-w64 
+Skipped      storage-100k-index-rabitq8-ls-c2-w64 
+Skipped      load-100k-index-rabitq8-est-c3-w64   
+Skipped      recall-100k-index-rabitq8-est-c3-w64 
+Skipped      latency-100k-index-rabitq8-est-c3-w64 
+Skipped      storage-100k-index-rabitq8-est-c3-w64 
+Skipped      load-100k-index-rabitq8-ls-c3-w64    
+Skipped      recall-100k-index-rabitq8-ls-c3-w64  
+Skipped      latency-100k-index-rabitq8-ls-c3-w64 
+Skipped      storage-100k-index-rabitq8-ls-c3-w64 
+Succeeded    load-100k-index-rabitq8-est-c4-w64   --database task111h_rabitq8_score_clip_ab --host /home/peter/.pgrx --port 28818 --log-file reviews/task-111h/036-rabitq8-score-clip-ab/artifacts/suite-cont-est-c4/load-100k-index-rabitq8-est-c4-w64.log corpus load --prefix task111h036_100k_rq8_est_c4_w64 --profile ec_ivf --corpus-file data/staged-current/ec_real_100k_corpus.tsv --queries-file data/staged-current/ec_real_100k_queries.tsv --manifest-file data/staged-current/ec_real_100k_manifest.json --allow-manifest-mismatch --dim 1536 --bits 4 --seed 42 --reloption nlists=256 --reloption nprobe=32 --reloption training_sample_rows=10000 --reloption storage_format=coarse_rerank --reloption coarse_bits=1 --reloption rerank=heap_f32 --reloption rerank_width=64 --reloption rerank_placement=index --reloption rerank_format=rabitq8 --reloption rabitq_rerank_least_squares=0 --reloption rabitq_rerank_clip=4
+Succeeded    recall-100k-index-rabitq8-est-c4-w64 --database task111h_rabitq8_score_clip_ab --host /home/peter/.pgrx --port 28818 bench recall --prefix task111h036_100k_rq8_est_c4_w64 --profile ec_ivf --k 10 --sweep "8,16,32,64,128,200" --rerank-width 64 --queries-limit 200 --bits 4 --seed 42 --force-index --truth-cache-file reviews/task-111h/036-rabitq8-score-clip-ab/artifacts/suite-cont-est-c4/truth-100k-k10.json --truth-corpus-file data/staged-current/ec_real_100k_corpus.tsv --log-output reviews/task-111h/036-rabitq8-score-clip-ab/artifacts/suite-cont-est-c4/recall-100k-index-rabitq8-est-c4-w64.log
+Succeeded    latency-100k-index-rabitq8-est-c4-w64 --database task111h_rabitq8_score_clip_ab --host /home/peter/.pgrx --port 28818 bench latency --prefix task111h036_100k_rq8_est_c4_w64 --profile ec_ivf --k 10 --concurrency 1 --iterations 200 --sweep "8,16,32,64,128,200" --rerank-width 64 --bits 4 --seed 42 --force-index --sample-backend-memory --cache-state post_recall_warm --task87-candidate-batch-counters --memory-sample-interval-ms 25 --log-output reviews/task-111h/036-rabitq8-score-clip-ab/artifacts/suite-cont-est-c4/latency-100k-index-rabitq8-est-c4-w64.log
+Succeeded    storage-100k-index-rabitq8-est-c4-w64 --database task111h_rabitq8_score_clip_ab --host /home/peter/.pgrx --port 28818 --log-file reviews/task-111h/036-rabitq8-score-clip-ab/artifacts/suite-cont-est-c4/storage-100k-index-rabitq8-est-c4-w64.log bench storage --prefix task111h036_100k_rq8_est_c4_w64
+Skipped      load-100k-index-rabitq8-ls-c4-w64    
+Skipped      recall-100k-index-rabitq8-ls-c4-w64  
+Skipped      latency-100k-index-rabitq8-ls-c4-w64 
+Skipped      storage-100k-index-rabitq8-ls-c4-w64 
