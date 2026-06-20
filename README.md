@@ -1,8 +1,8 @@
 
 <img
-  src="https://github.com/user-attachments/assets/57712c6e-252d-4f94-9007-3996a7b938f8"
+  src="logo.png"
   alt="ECAZ logo"
-    width="480" height="480"
+  width="100%"
   title="Rinse the roots clean, then scrape away the outer bark. Slice thinly and dry until brittle. Grind into a coarse powder with a pinch of mineral salt. Steep in hot water until the liquid turns deep crimson. Strain, cool, and store in a dark glass vial."
 />
 
@@ -149,28 +149,6 @@ directly comparable.
 | `ec_diskann` | rabitq | 0.981 | 5.0 ms | 407 MiB |
 | `ec_spire` ⁽¹⁾ | rabitq | 0.986 | 137 ms | 779 MiB |
 
-Operating points: DiskANN `list_size=64..128`, IVF/SPIRE `nprobe=16..64`, HNSW
-`ef_search=80..160`. Each family also has a faster lower-recall point on the same
-index — e.g. DiskANN 0.947 @ 3.6 ms, IVF 0.926 @ 16.1 ms.
-
-How to read it:
-
-- **`ec_diskann`** — best all-round at scale: the most recall per millisecond and
-  a compact index. Requires unit-normalized source vectors.
-- **`ec_ivf`** — strong recall with the smallest index (RaBitQ 1-bit is the sweet
-  spot); the posting-list model lets you trade recall against latency via `nprobe`.
-- **`ec_hnsw`** — general-purpose graph default with competitive latency; recall
-  tops out lower than the other families at 1M in this sweep.
-- **`ec_spire`** ⁽¹⁾ — a partitioned, **distributed / scale-out** index. The row
-  above is its single-node point; SPIRE's real value is multi-node (below). It
-  trades single-node latency for partitioning, and its latency is still being
-  optimized.
-
-For context, at 1M `ec_ivf` (RaBitQ 1-bit) serves 0.980 recall at 56.8 ms p50 —
-faster than the tuned vchord RaBitQ comparator (~90 ms p50, which reaches ~1.0
-recall) — and every ecaz family is far ahead of the untuned pgvector /
-pgvectorscale baselines.
-
 Source: `reviews/task-105/006-full-scale-matrix/` (Task 105 full-scale matrix,
 `main=1345ca603`; G4 + Intel × 10K/50K/100K/1M × all AM/quant).
 
@@ -186,12 +164,6 @@ reads, at `nprobe=64`:
 | 3-node distributed | rabitq | 0.951 | 117 ms | 135 ms |
 | 3-node distributed | turboquant | 0.949 | 140 ms | 164 ms |
 
-Distributing across 3 nodes is roughly **5x faster at 1M than the same index on a
-single node** (121 ms vs 620 ms at matched `nprobe=32`) — SPIRE trades latency for
-scale-out partitioning. It is currently a **research / scale-out surface**: not yet
-on the single-node DiskANN/IVF latency frontier, with latency optimization
-ongoing. Source: `reviews/task-107/` (`005-product-decision/`,
-`004-distributed-completion/`).
 
 ## Choosing An Index
 
