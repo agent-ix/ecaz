@@ -737,7 +737,7 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amoptions(
         pg_sys::add_local_string_reloption(
             &mut relopts,
             c"rerank_placement".as_ptr(),
-            c"Task 111h coarse_rerank rerank payload placement: 'source', 'index', 'table', 'source_diagnostic', or 'auto'."
+            c"Task 111h coarse_rerank rerank payload placement: 'source', 'index', 'table' (reserved), 'source_diagnostic', or 'auto'."
                 .as_ptr(),
             ptr::null(),
             None,

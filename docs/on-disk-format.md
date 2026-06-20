@@ -124,10 +124,10 @@ rerank sidecar block:
 | `0x2B` | rerank group header | current v5; scorer-width compact rerank group metadata |
 | `0x2C` | rerank group payload segment | current v5; payload-only continuation bytes |
 
-The legacy v4 `0x2A` rerank sidecar block stored a tid-keyed run of Task 111h
-common rerank payload codec bytes, chained via a per-block `next_tid`. It remains
-only as a benchmark/code baseline; v5 readers reject v4 metadata rather than
-reading `0x2A` as a current format.
+The legacy v4 `0x2A` rerank sidecar block stored a tid-keyed run of compact
+rerank payload bytes, chained via a per-block `next_tid`. It remains only as a
+benchmark/code baseline; v5 readers reject v4 metadata rather than reading
+`0x2A` as a current format.
 
 The v5 `0x2B` rerank group header stores a logical scorer-width group once:
 `[tag:u8=0x2B][rerank_format:u8][list_id:u32][scorer_width:u16][valid_count:u16]`
