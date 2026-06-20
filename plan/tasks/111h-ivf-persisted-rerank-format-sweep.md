@@ -208,7 +208,7 @@ win under the storage/cache conditions they are designed for.
       pages read, decode time, and scoring time.
 - [ ] Add PG18 correctness fixtures for create/insert/update/delete/vacuum,
       mixed old/new postings, and snapshot-visible rerank payloads.
-- [ ] Specifically cover live insert and vacuum for direct payload pointers,
+- [x] Specifically cover live insert and vacuum for direct payload pointers,
       fallback directory/full-chain lookup, and mixed postings that cannot carry
       an unambiguous direct pointer.
 - [x] Add encode/decode and scalar-vs-batch differential tests for every format.
