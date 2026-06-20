@@ -3715,6 +3715,8 @@ pub(crate) unsafe fn debug_ec_ivf_gettuple_outputs(
 pub(crate) struct EcIvfGettupleCounterDebugSnapshot {
     pub(crate) outputs: Vec<(u32, u16, f32)>,
     pub(crate) orderby_cleared: bool,
+    pub(crate) rerank_placement: &'static str,
+    pub(crate) rerank_format: &'static str,
     pub(crate) row_postings_visited: u32,
     pub(crate) dense_blocks_visited: u32,
     pub(crate) dense_postings_visited: u32,
@@ -3722,6 +3724,13 @@ pub(crate) struct EcIvfGettupleCounterDebugSnapshot {
     pub(crate) dense_coalesced_flushes: u32,
     pub(crate) rerank_rows: u32,
     pub(crate) rerank_source_bytes_read: u32,
+    pub(crate) rerank_index_group_header_pages_read: u32,
+    pub(crate) rerank_index_payload_segment_pages_read: u32,
+    pub(crate) rerank_index_group_metadata_bytes_read: u32,
+    pub(crate) rerank_index_header_payload_bytes_read: u32,
+    pub(crate) rerank_index_segment_payload_bytes_read: u32,
+    pub(crate) rerank_payload_bytes_scored: u32,
+    pub(crate) rerank_payload_slab_bytes_copied: u32,
     pub(crate) rerank_candidates_considered: u32,
     pub(crate) rerank_candidates_skipped: u32,
     pub(crate) postings_pruned_by_bound: u32,
@@ -3762,6 +3771,8 @@ pub(crate) unsafe fn debug_ec_ivf_gettuple_counter_snapshot(
     EcIvfGettupleCounterDebugSnapshot {
         outputs,
         orderby_cleared,
+        rerank_placement: counters.stats_rerank_placement,
+        rerank_format: counters.stats_rerank_format,
         row_postings_visited: counters.stats_row_postings_visited,
         dense_blocks_visited: counters.stats_dense_blocks_visited,
         dense_postings_visited: counters.stats_dense_postings_visited,
@@ -3769,6 +3780,18 @@ pub(crate) unsafe fn debug_ec_ivf_gettuple_counter_snapshot(
         dense_coalesced_flushes: counters.stats_dense_coalesced_flushes,
         rerank_rows: counters.stats_rerank_rows,
         rerank_source_bytes_read: counters.stats_rerank_source_bytes_read,
+        rerank_index_group_header_pages_read: counters
+            .stats_rerank_index_group_header_pages_read,
+        rerank_index_payload_segment_pages_read: counters
+            .stats_rerank_index_payload_segment_pages_read,
+        rerank_index_group_metadata_bytes_read: counters
+            .stats_rerank_index_group_metadata_bytes_read,
+        rerank_index_header_payload_bytes_read: counters
+            .stats_rerank_index_header_payload_bytes_read,
+        rerank_index_segment_payload_bytes_read: counters
+            .stats_rerank_index_segment_payload_bytes_read,
+        rerank_payload_bytes_scored: counters.stats_rerank_payload_bytes_scored,
+        rerank_payload_slab_bytes_copied: counters.stats_rerank_payload_slab_bytes_copied,
         rerank_candidates_considered: counters.stats_rerank_candidates_considered,
         rerank_candidates_skipped: counters.stats_rerank_candidates_skipped,
         postings_pruned_by_bound: counters.stats_postings_pruned_by_bound,

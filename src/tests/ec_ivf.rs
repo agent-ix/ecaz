@@ -1492,6 +1492,14 @@
         // Every variant reranks the same frontier, so rerank_rows match and the
         // byte comparison is apples-to-apples.
         assert!(source_f32.rerank_rows > 0, "source f32 should rerank rows");
+        assert_eq!(source_f32.rerank_placement, "source");
+        assert_eq!(source_f32.rerank_format, "f32");
+        assert_eq!(index_f16.rerank_placement, "index");
+        assert_eq!(index_f16.rerank_format, "f16");
+        assert_eq!(index_rb4.rerank_placement, "index");
+        assert_eq!(index_rb4.rerank_format, "rabitq4");
+        assert_eq!(index_rb8.rerank_placement, "index");
+        assert_eq!(index_rb8.rerank_format, "rabitq8");
         assert_eq!(source_f32.rerank_rows, index_f16.rerank_rows);
         assert_eq!(source_f32.rerank_rows, index_rb4.rerank_rows);
         assert_eq!(source_f32.rerank_rows, index_rb8.rerank_rows);
@@ -1506,6 +1514,51 @@
             index_f16.rerank_source_bytes_read,
             index_f16.rerank_rows * (dims * 2) as u32,
             "index f16 should read dims*2 per reranked candidate"
+        );
+        assert_eq!(
+            source_f32.rerank_payload_bytes_scored, 0,
+            "source f32 has no compact packed-group payload to score"
+        );
+        assert_eq!(
+            source_f32.rerank_index_group_header_pages_read, 0,
+            "source f32 should not read packed rerank group headers"
+        );
+        assert_eq!(
+            index_f16.rerank_payload_bytes_scored,
+            index_f16.rerank_source_bytes_read,
+            "index f16 should score exactly the persisted payload bytes read"
+        );
+        assert_eq!(
+            index_f16.rerank_payload_slab_bytes_copied, 0,
+            "index f16 scalar scoring should avoid the batch payload slab"
+        );
+        assert!(
+            index_f16.rerank_index_group_header_pages_read > 0,
+            "index f16 should read packed rerank group headers"
+        );
+        assert!(
+            index_f16.rerank_index_group_metadata_bytes_read > 0,
+            "index f16 should account packed group metadata bytes"
+        );
+        assert!(
+            index_f16.rerank_index_header_payload_bytes_read
+                + index_f16.rerank_index_segment_payload_bytes_read
+                >= index_f16.rerank_payload_bytes_scored,
+            "packed group payload reads should cover scored f16 payload bytes"
+        );
+        assert_eq!(
+            index_rb4.rerank_payload_bytes_scored,
+            index_rb4.rerank_source_bytes_read,
+            "index rabitq4 should score persisted payload bytes"
+        );
+        assert_eq!(
+            index_rb4.rerank_payload_slab_bytes_copied,
+            index_rb4.rerank_payload_bytes_scored,
+            "batched rabitq4 scoring should expose the current slab copy cost"
+        );
+        assert!(
+            index_rb4.rerank_payload_slab_bytes_copied > 0,
+            "batched rabitq4 should copy survivor payloads into a scoring slab"
         );
 
         assert!(
@@ -1529,10 +1582,10 @@
     }
 
     #[pg_test]
-    fn test_ec_ivf_index_placement_insert_maintains_sidecar() {
-        // Task 111g (003b): a row inserted after build into an index-placement
-        // index is reranked from the sidecar (its compact payload was appended),
-        // so it is returned and ranked correctly.
+    fn test_ec_ivf_index_placement_insert_maintains_packed_group() {
+        // Task 111h: a row inserted after build into an index-placement index
+        // is reranked from its appended packed group payload, so it is returned
+        // and ranked correctly.
         Spi::run("CREATE TABLE ec_ivf_idx_ins (id bigint primary key, embedding ecvector)")
             .expect("table creation should succeed");
         let rows: Vec<(i64, Vec<f32>)> = (0..12)
@@ -1570,14 +1623,26 @@
         let index_oid = ec_ivf_index_oid("ec_ivf_idx_ins_idx");
         let ctid_to_id = ctid_id_map("ec_ivf_idx_ins");
         let ids = ivf_debug_output_ids(index_oid, vec![0.0, 0.0, 1.0, 0.0], &ctid_to_id, 3);
+        let counters = ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(
+            index_oid,
+            vec![0.0, 0.0, 1.0, 0.0]
+        ));
         assert!(
             ids.contains(&100),
-            "post-build inserted row should be reranked from the sidecar, got {ids:?}"
+            "post-build inserted row should be reranked from the packed group, got {ids:?}"
         );
         assert_eq!(
             ids[0], 100,
             "the inserted exact match should rank first, got {ids:?}"
         );
+        assert_eq!(counters.rerank_placement, "index");
+        assert_eq!(counters.rerank_format, "f16");
+        assert!(counters.rerank_index_group_header_pages_read > 0);
+        assert_eq!(
+            counters.rerank_payload_bytes_scored,
+            counters.rerank_source_bytes_read
+        );
+        assert_eq!(counters.rerank_payload_slab_bytes_copied, 0);
     }
 
     #[pg_test]
@@ -1984,10 +2049,10 @@
     }
 
     #[pg_test]
-    fn test_ec_ivf_index_placement_vacuum_removes_sidecar_entry() {
-        // Task 111g (003b): vacuuming a dead row removes it from the index-side
-        // f16 sidecar (tombstoned), so it is no longer returned, and the
-        // surviving rows still rerank correctly from the sidecar.
+    fn test_ec_ivf_index_placement_vacuum_tombstones_packed_group_slot() {
+        // Task 111h: vacuuming a dead row tombstones its packed rerank group
+        // slot, so it is no longer returned, and surviving rows still rerank
+        // correctly from packed payloads.
         Spi::run("CREATE TABLE ec_ivf_idx_vac (id bigint primary key, embedding ecvector)")
             .expect("table creation should succeed");
         Spi::run(
@@ -2021,16 +2086,33 @@
         assert_eq!(stats.tuples_removed, 1.0);
 
         // Query aligned with the deleted row's vector: it must not be returned,
-        // and the remaining rows must still be reranked from the sidecar.
+        // and the remaining rows must still be reranked from packed payloads.
         let ctid_to_id = ctid_id_map("ec_ivf_idx_vac");
         let ids = ivf_debug_output_ids(index_oid, vec![0.0, 1.0, 0.0, 0.0], &ctid_to_id, 4);
+        let counters = ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(
+            index_oid,
+            vec![0.0, 1.0, 0.0, 0.0]
+        ));
         assert!(
             !ids.contains(&1),
             "vacuumed row should not be returned, got {ids:?}"
         );
         assert_eq!(ids.len(), 3, "three live rows should remain, got {ids:?}");
+        assert_eq!(counters.outputs.len(), 3);
+        assert_eq!(counters.rerank_placement, "index");
+        assert_eq!(counters.rerank_format, "f16");
+        assert!(counters.rerank_index_group_header_pages_read > 0);
+        assert!(
+            counters.rerank_index_group_metadata_bytes_read > 0,
+            "vacuumed packed group read should still account header metadata"
+        );
+        assert_eq!(
+            counters.rerank_payload_bytes_scored,
+            counters.rerank_source_bytes_read
+        );
+        assert_eq!(counters.rerank_payload_slab_bytes_copied, 0);
 
-        // A surviving row still reranks correctly from the (tombstoned) sidecar.
+        // A surviving row still reranks correctly from the tombstoned group.
         let top = ivf_debug_output_ids(index_oid, vec![0.0, 0.0, 1.0, 0.0], &ctid_to_id, 1);
         assert_eq!(top, vec![2], "surviving row 2 should rank first for its query");
     }
