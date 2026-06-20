@@ -1,0 +1,45 @@
+┌────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬──────────────────┬─────────────┬─────────────┬────────────────┐
+│ nprobe ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state      ┆ rss_peak_kb ┆ hwm_peak_kb ┆ memory_samples │
+╞════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪══════════════════╪═════════════╪═════════════╪════════════════╡
+│ 8      ┆ 200   ┆ 9.21 ms ┆ 0.52 ms ┆ 6.84 ms ┆ 9.17 ms ┆ 9.88 ms ┆ 10.6 ms ┆ 12.9 ms ┆ post_recall_warm ┆ 154920      ┆ 154920      ┆ 71             │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 16     ┆ 200   ┆ 9.46 ms ┆ 0.46 ms ┆ 8.90 ms ┆ 9.36 ms ┆ 10.1 ms ┆ 11.0 ms ┆ 13.7 ms ┆ post_recall_warm ┆ 155048      ┆ 155048      ┆ 73             │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 32     ┆ 200   ┆ 9.52 ms ┆ 0.45 ms ┆ 9.06 ms ┆ 9.41 ms ┆ 10.2 ms ┆ 10.5 ms ┆ 14.2 ms ┆ post_recall_warm ┆ 154888      ┆ 154888      ┆ 73             │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 64     ┆ 200   ┆ 9.79 ms ┆ 0.54 ms ┆ 9.19 ms ┆ 9.66 ms ┆ 10.7 ms ┆ 11.3 ms ┆ 14.4 ms ┆ post_recall_warm ┆ 155008      ┆ 155008      ┆ 75             │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 128    ┆ 200   ┆ 12.0 ms ┆ 0.85 ms ┆ 10.5 ms ┆ 11.9 ms ┆ 13.3 ms ┆ 14.9 ms ┆ 17.0 ms ┆ post_recall_warm ┆ 155388      ┆ 155388      ┆ 92             │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 200    ┆ 200   ┆ 11.5 ms ┆ 1.32 ms ┆ 10.1 ms ┆ 10.9 ms ┆ 13.7 ms ┆ 14.5 ms ┆ 19.0 ms ┆ post_recall_warm ┆ 155196      ┆ 155196      ┆ 88             │
+└────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴──────────────────┴─────────────┴─────────────┴────────────────┘
+[block-kernel-counters] command=latency label=nprobe=8 surface=ivf quant=rabitq isa=avx2 flushes=1600 candidates=82805 elapsed_nanos=6469560 elapsed_ms=6.469560 kernel_flushes=1600 kernel_candidates=82805 kernel_elapsed_nanos=6469560 kernel_elapsed_ms=6.469560 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=2 width_8_15=44 width_16_31=348 width_ge32=1206
+[task87-counters] command=latency label=nprobe=8 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=nprobe=8 surface=ivf flushes=1600 candidates=82805 elapsed_nanos=6469560 elapsed_ms=6.469560 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=nprobe=8 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=nprobe=8 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[block-kernel-counters] command=latency label=nprobe=16 surface=ivf quant=rabitq isa=avx2 flushes=3200 candidates=158327 elapsed_nanos=11259884 elapsed_ms=11.259884 kernel_flushes=3200 kernel_candidates=158327 kernel_elapsed_nanos=11259884 kernel_elapsed_ms=11.259884 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=3 width_8_15=131 width_16_31=727 width_ge32=2339
+[task87-counters] command=latency label=nprobe=16 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=nprobe=16 surface=ivf flushes=3200 candidates=158327 elapsed_nanos=11259884 elapsed_ms=11.259884 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=nprobe=16 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=nprobe=16 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[block-kernel-counters] command=latency label=nprobe=32 surface=ivf quant=rabitq isa=avx2 flushes=6400 candidates=304242 elapsed_nanos=23181592 elapsed_ms=23.181592 kernel_flushes=6400 kernel_candidates=304242 kernel_elapsed_nanos=23181592 kernel_elapsed_ms=23.181592 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=26 width_8_15=340 width_16_31=1579 width_ge32=4455
+[task87-counters] command=latency label=nprobe=32 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=ivf flushes=6400 candidates=304242 elapsed_nanos=23181592 elapsed_ms=23.181592 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[block-kernel-counters] command=latency label=nprobe=64 surface=ivf quant=rabitq isa=avx2 flushes=12800 candidates=565939 elapsed_nanos=40872364 elapsed_ms=40.872364 kernel_flushes=12800 kernel_candidates=565939 kernel_elapsed_nanos=40872364 kernel_elapsed_ms=40.872364 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=108 width_8_15=881 width_16_31=3854 width_ge32=7957
+[task87-counters] command=latency label=nprobe=64 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=nprobe=64 surface=ivf flushes=12800 candidates=565939 elapsed_nanos=40872364 elapsed_ms=40.872364 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=nprobe=64 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=nprobe=64 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[block-kernel-counters] command=latency label=nprobe=128 surface=ivf quant=rabitq isa=avx2 flushes=25600 candidates=1053717 elapsed_nanos=101576440 elapsed_ms=101.576440 kernel_flushes=25600 kernel_candidates=1053717 kernel_elapsed_nanos=101576440 kernel_elapsed_ms=101.576440 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=431 width_8_15=2480 width_16_31=8105 width_ge32=14584
+[task87-counters] command=latency label=nprobe=128 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=nprobe=128 surface=ivf flushes=25600 candidates=1053717 elapsed_nanos=101576440 elapsed_ms=101.576440 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=nprobe=128 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=nprobe=128 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[block-kernel-counters] command=latency label=nprobe=200 surface=ivf quant=rabitq isa=avx2 flushes=40000 candidates=1574642 elapsed_nanos=134475394 elapsed_ms=134.475394 kernel_flushes=40000 kernel_candidates=1574642 kernel_elapsed_nanos=134475394 kernel_elapsed_ms=134.475394 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=822 width_8_15=4352 width_16_31=12823 width_ge32=22003
+[task87-counters] command=latency label=nprobe=200 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=nprobe=200 surface=ivf flushes=40000 candidates=1574642 elapsed_nanos=134475394 elapsed_ms=134.475394 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=nprobe=200 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=nprobe=200 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
