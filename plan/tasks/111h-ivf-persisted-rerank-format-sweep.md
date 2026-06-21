@@ -1,8 +1,10 @@
 # Task 111h: IVF Persisted Rerank Format Sweep
 
-Status: **reopened** (2026-06-20; packet
+Status: **complete** (2026-06-21; corrected closeout packet
+`reviews/task-111h/048-final-closeout-decision-v9/`, after packet
 `reviews/task-111h/041-final-closeout-decision/feedback/2026-06-20-01-reviewer.md`
-rejected closeout as not evidence-backed for the compact-format decision).
+rejected the prior closeout as not evidence-backed for the compact-format
+decision).
 Priority: P0 correctness of the coarse-rerank product decision.
 Parent: `111e-ivf-coarse-rerank-candidate-pipeline.md`,
 `111g-ivf-coarse-rerank-representations.md`.
@@ -237,11 +239,12 @@ win under the storage/cache conditions they are designed for.
       storage/latency/recall logs in packets 024, 026, 027, 028, 036, and 040.
 - [x] Produce a final decision table comparing f32 source, f16, RaBitQ-4,
       RaBitQ-8, and TurboQuant at matched recall. Evidence:
-      `reviews/task-111h/029-cross-scale-matched-recall-v7/` and final
-      closeout `reviews/task-111h/041-final-closeout-decision/`.
+      `reviews/task-111h/029-cross-scale-matched-recall-v7/` as the stale
+      v7 intermediate, and corrected closeout
+      `reviews/task-111h/048-final-closeout-decision-v9/`.
 - [x] State promote / iterate / abandon for each format and placement with
       evidence. No format may be left as "not tried". Evidence:
-      `reviews/task-111h/041-final-closeout-decision/`.
+      `reviews/task-111h/048-final-closeout-decision-v9/`.
 
 ### Reopened Follow-Up After Packet 041
 
@@ -249,16 +252,31 @@ Packet 041 accepted the common rerank-payload engineering but rejected the
 decision closeout. The prior final table is now a stale intermediate decision,
 not a task closeout. The corrected closeout must add packet-local evidence for:
 
-- [ ] RaBitQ-4 clip sweep for `{2,3,4}` before abandon/iterate/promote.
-- [ ] RaBitQ-8 matched-recall comparison vs index f16 at the best clip config.
-- [ ] Exact-dequant scoring, or an equivalent fidelity lever, for compact
+- [x] RaBitQ-4 clip sweep for `{2,3,4}` before abandon/iterate/promote.
+      Evidence: corrected 10k/50k/100k suites in
+      `reviews/task-111h/044-corrected-compact-10k-v9/`,
+      `reviews/task-111h/045-corrected-compact-50k-v9/`, and
+      `reviews/task-111h/046-corrected-compact-100k-v9/`.
+- [x] RaBitQ-8 matched-recall comparison vs index f16 at the best clip config.
+      Evidence: corrected 10k/50k/100k suites in packets 044-046 and locked 1M
+      best-config suite in
+      `reviews/task-111h/047-corrected-compact-1m-locked-v9/`; final decision
+      table in `reviews/task-111h/048-final-closeout-decision-v9/`.
+- [x] Exact-dequant scoring, or an equivalent fidelity lever, for compact
       formats before using default-estimator results as rejection evidence.
-- [ ] TurboQuant fidelity lever coverage; the current default scorer-only TQ
-      matrix is insufficient by itself.
-- [ ] Matched-recall vs index f16 at recall `0.97` and `0.99` for each compact
-      format's best config.
-- [ ] Corrected 10k/50k/100k compact-format sweep before spending a final 1M
-      run on the locked config.
+      Evidence: implementation packet
+      `reviews/task-111h/043-exact-dequant-score-mode/` and measured
+      exact-dequant cells in packets 044-047.
+- [x] TurboQuant fidelity lever coverage; the current default scorer-only TQ
+      matrix is insufficient by itself. Evidence: TurboQuant exact-dequant
+      cells in packets 044-047.
+- [x] Matched-recall vs index f16 at recall `0.97` and `0.99` for each compact
+      format's best config. Evidence: corrected closeout
+      `reviews/task-111h/048-final-closeout-decision-v9/`, backed by packet
+      artifacts in 044-047.
+- [x] Corrected 10k/50k/100k compact-format sweep before spending a final 1M
+      run on the locked config. Evidence: packets 044, 045, and 046 precede
+      the locked 1M packet 047.
 
 ## Acceptance Criteria
 
