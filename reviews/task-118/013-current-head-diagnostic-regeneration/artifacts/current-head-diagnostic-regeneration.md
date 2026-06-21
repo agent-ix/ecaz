@@ -68,9 +68,9 @@ six 10k frontier steps:
 - `frontier-10k-hnsw-pq-fastscan-compressed-build`
 - `frontier-10k-hnsw-rabitq-compressed-build`
 
-Each selected step keeps the full 10k diagnostic sweep
-`40,64,100,128,160,200`. The final decision table should use the `ef_search=200`
-rows.
+Packet 015 narrows these 10k diagnostic-only steps to `ef_search=200`, matching
+the final decision table and the already-narrowed 50k/100k diagnostic shape.
+Recall and latency steps still keep their broader sweep where needed.
 
 ## Commit Scope
 

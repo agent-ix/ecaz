@@ -39,5 +39,6 @@ final evidence collection.
 ## Remaining Task 118 Closeout Work
 
 On the Intel benchmark host, reinstall the current branch with `pg_test`, run
-the 10k frontier regeneration command from this packet, run the 50k/100k suites
-from packet 010, then update packet 006 with the final decision table.
+the 10k frontier regeneration command from this packet using the packet 015
+ef=200 diagnostic shape, run the 50k/100k suites from packet 010, then update
+packet 006 with the final decision table.
