@@ -53,10 +53,10 @@ require_representative_artifact_dir() {
   absolute_artifact_dir="$(realpath -m -- "$absolute_artifact_dir")"
 
   case "$absolute_artifact_dir" in
-    "$repo_root"/reviews/task-30/*/artifacts)
+    "$repo_root"/reviews/task-*/*/artifacts)
       ;;
     *)
-      die "ARTIFACT_DIR must be packet-local under reviews/task-30/<packet>/artifacts: $artifact_dir"
+      die "ARTIFACT_DIR must be packet-local under reviews/task-<id>/<packet>/artifacts: $artifact_dir"
       ;;
   esac
 
