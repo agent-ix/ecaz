@@ -1,0 +1,11 @@
+    Blocking waiting for file lock on artifact directory
+   Compiling ecaz-cli v0.1.0 (/home/peter/dev/ecaz/crates/ecaz-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 46.84s
+     Running unittests src/main.rs (target/debug/deps/ecaz-c8c7d75795db63e7)
+
+running 2 tests
+test commands::bench::hnsw_frontier::tests::summarize_frontier_rows_computes_recall_and_means ... ok
+test commands::bench::suite::tests::parses_and_expands_hnsw_frontier_step ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 409 filtered out; finished in 0.00s
+
