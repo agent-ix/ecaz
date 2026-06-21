@@ -1,0 +1,223 @@
+# Task 118 Final Closeout Audit Template
+
+Use this template when the Intel 50k/100k artifacts have landed in
+`reviews/task-118/006-final-attribution-matrix/artifacts/`.
+
+The closeout claim is valid only when every item below has packet-local evidence
+and no item relies on terminal scrollback, uncommitted files, truth caches, raw
+per-query JSONL, or AMD-only timing.
+
+## Artifact Presence
+
+Required final Intel artifacts:
+
+- `suite-manifest-50k-intel.json`
+- `results-50k-intel.jsonl`
+- `suite-run-50k-intel.log`
+- `suite-manifest-100k-intel.json`
+- `results-100k-intel.jsonl`
+- `suite-run-100k-intel.log`
+- per-step logs cited by packet 006 `request.md` and `artifacts/manifest.md`
+
+Presence check:
+
+```bash
+for path in \
+  reviews/task-118/006-final-attribution-matrix/artifacts/suite-manifest-50k-intel.json \
+  reviews/task-118/006-final-attribution-matrix/artifacts/results-50k-intel.jsonl \
+  reviews/task-118/006-final-attribution-matrix/artifacts/suite-run-50k-intel.log \
+  reviews/task-118/006-final-attribution-matrix/artifacts/suite-manifest-100k-intel.json \
+  reviews/task-118/006-final-attribution-matrix/artifacts/results-100k-intel.jsonl \
+  reviews/task-118/006-final-attribution-matrix/artifacts/suite-run-100k-intel.log
+do
+  test -s "$path" && printf 'present\t%s\n' "$path" || printf 'MISSING\t%s\n' "$path"
+done
+```
+
+## Selected-Step Status
+
+Both Intel manifests must show every selected step succeeded.
+
+```bash
+for manifest in \
+  reviews/task-118/006-final-attribution-matrix/artifacts/suite-manifest-50k-intel.json \
+  reviews/task-118/006-final-attribution-matrix/artifacts/suite-manifest-100k-intel.json
+do
+  echo "$manifest"
+  jq -r '[.steps[] | select(.selected)] | group_by(.status)[] | [.[0].status, length] | @tsv' "$manifest"
+done
+```
+
+Expected shape per scale with the current suite config:
+
+- `36` selected steps total;
+- `6` load;
+- `6` recall;
+- `6` hnsw-frontier;
+- `6` hnsw-score-correlation;
+- `6` latency;
+- `6` storage.
+
+Across the 50k and 100k Intel manifests together, this is `72` selected steps:
+`12` of each selected step kind.
+
+## Result Row Completeness
+
+Each Intel results file must contain the required result kinds.
+
+```bash
+for results in \
+  reviews/task-118/006-final-attribution-matrix/artifacts/results-50k-intel.jsonl \
+  reviews/task-118/006-final-attribution-matrix/artifacts/results-100k-intel.jsonl
+do
+  echo "$results"
+  jq -r '.kind + "\t" + .metric' "$results" | sort | uniq -c
+done
+```
+
+Expected minimum per scale:
+
+- `36` `recall	recall` rows;
+- `6` `hnsw-frontier	hnsw_frontier` rows;
+- `6` `hnsw-score-correlation	hnsw_score_correlation` rows;
+- `36` `latency	latency` rows;
+- at least `6` total storage rows for `metric=="storage_field"` and
+  `values.field=="total"`;
+- load timing rows for all six source/compressed format lanes.
+
+## Acceptance Criteria Audit
+
+### 1. Candidate Containment Diagnostic
+
+Evidence must show, for each scale, format, and build path:
+
+- `truth@10 in frontier`;
+- `truth@100 in frontier`;
+- final emitted row count;
+- visited count / final visited count.
+
+Extraction:
+
+```bash
+jq -r 'select(.kind=="hnsw-frontier") |
+  [.step, .values.storage_format, .values.prefix, .values.ef_search,
+   .values["truth@10 in frontier"], .values["truth@100 in frontier"],
+   .values["visited final"], .values.emitted] | @tsv' \
+  reviews/task-118/006-final-attribution-matrix/artifacts/results-50k-intel.jsonl \
+  reviews/task-118/006-final-attribution-matrix/artifacts/results-100k-intel.jsonl
+```
+
+Completion standard:
+
+- rows exist for TurboQuant, PqFastScan, and RaBitQ;
+- rows exist for source-build and compressed-build lanes;
+- rows exist at 50k and 100k;
+- every row is `ef_search=200`;
+- the final decision table compares recall@10 with `truth@10 in frontier`.
+
+### 2. Rerank Boundary Counters
+
+Evidence must show exact-reranked candidate count and dropped-before-exact count.
+
+Extraction:
+
+```bash
+jq -r 'select(.kind=="hnsw-frontier") |
+  [.step, .values.storage_format, .values.prefix, .values.ef_search,
+   .values["exact rerank"], .values["quantized rerank"],
+   .values["dropped before exact"], .values.emitted] | @tsv' \
+  reviews/task-118/006-final-attribution-matrix/artifacts/results-50k-intel.jsonl \
+  reviews/task-118/006-final-attribution-matrix/artifacts/results-100k-intel.jsonl
+```
+
+Completion standard:
+
+- every required lane has a row;
+- the packet explicitly states whether any candidate was dropped before exact
+  rerank;
+- the dominant-loss classification does not blame final rerank/output unless
+  these counters support it.
+
+### 3. Source-F32 Build Vs Compressed-Build A/B
+
+Evidence must compare source-build and compressed-build lanes for the same scale
+and format.
+
+Extraction:
+
+```bash
+jq -r 'select(.kind=="recall" and .values.ef_search=="200") |
+  [.step, .values.storage_format, .values.prefix,
+   .values["recall@k"], .values["mean q-time"]] | @tsv' \
+  reviews/task-118/006-final-attribution-matrix/artifacts/results-50k-intel.jsonl \
+  reviews/task-118/006-final-attribution-matrix/artifacts/results-100k-intel.jsonl
+```
+
+Completion standard:
+
+- every required format has both source-build and compressed-build rows;
+- the final packet states whether compressed-build changes recall, containment,
+  latency, or storage;
+- if source-vs-compressed cannot be expressed for any lane, packet 006 must
+  point to a narrow blocker instead of declaring a result.
+
+### 4. Approx-Score Correlation Evidence
+
+Evidence must exist for TurboQuant, PqFastScan, and RaBitQ at 50k and 100k.
+
+Extraction:
+
+```bash
+jq -r 'select(.kind=="hnsw-score-correlation") |
+  [.step, .values.storage_format, .values.prefix, .values.ef_search,
+   .values["mean spearman"], .values["mean |rank shift|"],
+   .values["max |rank shift|"], .values["mean |score delta|"],
+   .values["missing cmp"]] | @tsv' \
+  reviews/task-118/006-final-attribution-matrix/artifacts/results-50k-intel.jsonl \
+  reviews/task-118/006-final-attribution-matrix/artifacts/results-100k-intel.jsonl
+```
+
+Completion standard:
+
+- every required format/scale/build path has a row;
+- missing comparison count is interpreted;
+- the final decision table distinguishes scorer-ordering loss from candidate
+  containment loss.
+
+### 5. Final Decision Packet
+
+Packet 006 must include a final table with one row per
+`format x scale x build path` at `ef_search=200`.
+
+Required columns:
+
+| Format | Scale | Build path | Recall@10 | Truth@10 in frontier | Truth@100 in frontier | Exact rerank | Dropped before exact | Mean Spearman | Mean rank shift | Total storage | Dominant loss stage | Next action |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- | --- |
+
+Allowed dominant-loss labels:
+
+- `graph build quality`
+- `traversal scorer quality`
+- `frontier width`
+- `rerank boundary`
+- `visibility/output behavior`
+- `benchmark harness issue`
+- `no implementation follow-up justified`
+
+The final packet should state whether RaBitQ remains worth pursuing for HNSW,
+whether TurboQuant/PqFastScan need HNSW-specific follow-up, and whether a
+follow-up task should focus on graph construction, traversal scoring, or wider
+frontier/rerank behavior.
+
+## Commit Checklist
+
+Before pushing final closeout:
+
+- `git status --short` has no staged truth caches, raw diagnostic JSONL, corpus
+  TSV/TSV.GZ, scratch logs, or tunnel/SSM exhaust.
+- packet 006 `request.md` cites only committed packet-local artifacts.
+- packet 006 `artifacts/manifest.md` records head SHA, command, timestamp, lane,
+  scale, storage format, build path, key result lines, and isolated one-index
+  surface for each cited artifact set.
+- all commits are pushed to
+  `task-118-hnsw-quantized-recall-attribution`.
