@@ -94,6 +94,9 @@ done
 [[ -n "$artifact_dir" ]] || die "--artifact-dir is required"
 
 case "$artifact_dir" in
+  reviews/task-30/957-spire-aws-verification/artifacts|"$repo_root"/reviews/task-30/957-spire-aws-verification/artifacts)
+    die "--artifact-dir must not use the legacy default packet: $artifact_dir"
+    ;;
   reviews/task-*/*/artifacts|"$repo_root"/reviews/task-*/*/artifacts)
     ;;
   *)
