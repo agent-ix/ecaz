@@ -92,7 +92,7 @@
       "tags": ["task118", "frontier", "ec_real_10k", "hnsw", "turboquant"],
       "prefix": "task118_real10k_hnsw_turboquant",
       "m": 16,
-      "sweep": [40, 64, 100, 128, 160, 200]
+      "sweep": [200]
     },
     {
       "kind": "hnsw-frontier",
@@ -100,7 +100,7 @@
       "tags": ["task118", "frontier", "ec_real_10k", "hnsw", "pq_fastscan"],
       "prefix": "task118_real10k_hnsw_pq_fastscan",
       "m": 16,
-      "sweep": [40, 64, 100, 128, 160, 200]
+      "sweep": [200]
     },
     {
       "kind": "hnsw-frontier",
@@ -108,7 +108,7 @@
       "tags": ["task118", "frontier", "ec_real_10k", "hnsw", "rabitq"],
       "prefix": "task118_real10k_hnsw_rabitq",
       "m": 16,
-      "sweep": [40, 64, 100, 128, 160, 200]
+      "sweep": [200]
     },
     {
       "kind": "hnsw-score-correlation",
@@ -116,7 +116,7 @@
       "tags": ["task118", "score-correlation", "ec_real_10k", "hnsw", "turboquant"],
       "prefix": "task118_real10k_hnsw_turboquant",
       "m": 16,
-      "sweep": [40, 64, 100, 128, 160, 200]
+      "sweep": [200]
     },
     {
       "kind": "hnsw-score-correlation",
@@ -124,7 +124,7 @@
       "tags": ["task118", "score-correlation", "ec_real_10k", "hnsw", "pq_fastscan"],
       "prefix": "task118_real10k_hnsw_pq_fastscan",
       "m": 16,
-      "sweep": [40, 64, 100, 128, 160, 200]
+      "sweep": [200]
     },
     {
       "kind": "hnsw-score-correlation",
@@ -132,7 +132,7 @@
       "tags": ["task118", "score-correlation", "ec_real_10k", "hnsw", "rabitq"],
       "prefix": "task118_real10k_hnsw_rabitq",
       "m": 16,
-      "sweep": [40, 64, 100, 128, 160, 200]
+      "sweep": [200]
     },
     {
       "kind": "latency",
@@ -611,7 +611,7 @@
       "tags": ["task118", "frontier", "ec_real_10k", "hnsw", "turboquant", "compressed_build"],
       "prefix": "task118_r10k_tq_cb",
       "m": 16,
-      "sweep": [40, 64, 100, 128, 160, 200]
+      "sweep": [200]
     },
     {
       "kind": "hnsw-frontier",
@@ -619,7 +619,7 @@
       "tags": ["task118", "frontier", "ec_real_10k", "hnsw", "pq_fastscan", "compressed_build"],
       "prefix": "task118_r10k_pq_cb",
       "m": 16,
-      "sweep": [40, 64, 100, 128, 160, 200]
+      "sweep": [200]
     },
     {
       "kind": "hnsw-frontier",
@@ -627,7 +627,7 @@
       "tags": ["task118", "frontier", "ec_real_10k", "hnsw", "rabitq", "compressed_build"],
       "prefix": "task118_r10k_rq_cb",
       "m": 16,
-      "sweep": [40, 64, 100, 128, 160, 200]
+      "sweep": [200]
     },
     {
       "kind": "hnsw-score-correlation",
@@ -635,7 +635,7 @@
       "tags": ["task118", "score-correlation", "ec_real_10k", "hnsw", "turboquant", "compressed_build"],
       "prefix": "task118_r10k_tq_cb",
       "m": 16,
-      "sweep": [40, 64, 100, 128, 160, 200]
+      "sweep": [200]
     },
     {
       "kind": "hnsw-score-correlation",
@@ -643,7 +643,7 @@
       "tags": ["task118", "score-correlation", "ec_real_10k", "hnsw", "pq_fastscan", "compressed_build"],
       "prefix": "task118_r10k_pq_cb",
       "m": 16,
-      "sweep": [40, 64, 100, 128, 160, 200]
+      "sweep": [200]
     },
     {
       "kind": "hnsw-score-correlation",
@@ -651,7 +651,7 @@
       "tags": ["task118", "score-correlation", "ec_real_10k", "hnsw", "rabitq", "compressed_build"],
       "prefix": "task118_r10k_rq_cb",
       "m": 16,
-      "sweep": [40, 64, 100, 128, 160, 200]
+      "sweep": [200]
     },
     {
       "kind": "latency",
