@@ -14,6 +14,7 @@ mod build_probe;
 mod comparator;
 mod cross_am;
 mod graph;
+mod hnsw_frontier;
 pub mod latency;
 mod overhead;
 mod rabitq_kernel;
@@ -27,6 +28,7 @@ pub use build_probe::BuildProbeArgs;
 pub use comparator::ComparatorArgs;
 pub use cross_am::CrossAmArgs;
 pub use graph::GraphArgs;
+pub use hnsw_frontier::HnswFrontierArgs;
 pub use latency::LatencyArgs;
 pub use overhead::OverheadArgs;
 pub use rabitq_kernel::RabitqKernelArgs;
@@ -544,6 +546,8 @@ pub enum BenchCommand {
     DiskannGraph(GraphArgs),
     /// DiskANN in-memory build diagnostics: candidate pools, pruning, and degree shape.
     DiskannBuildProbe(BuildProbeArgs),
+    /// HNSW candidate-frontier containment diagnostics for recall attribution.
+    HnswFrontier(HnswFrontierArgs),
     /// Latency overhead breakdown: encode vs internal scan vs residual client/protocol.
     Overhead(OverheadArgs),
     /// IVF/RaBitQ sidecar upper-bound rerank measurement.
@@ -566,6 +570,7 @@ impl BenchCommand {
             BenchCommand::Comparator(a) => comparator::run(conn, a).await,
             BenchCommand::DiskannGraph(a) => graph::run(conn, a).await,
             BenchCommand::DiskannBuildProbe(a) => build_probe::run(conn, a).await,
+            BenchCommand::HnswFrontier(a) => hnsw_frontier::run(conn, a).await,
             BenchCommand::Overhead(a) => overhead::run(conn, a).await,
             BenchCommand::SidecarRerank(a) => sidecar_rerank::run(conn, a).await,
             BenchCommand::RabitqKernel(a) => rabitq_kernel::run(a).await,

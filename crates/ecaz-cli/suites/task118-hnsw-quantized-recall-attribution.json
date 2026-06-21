@@ -1,0 +1,461 @@
+{
+  "name": "task118-hnsw-quantized-recall-attribution",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-118/002-hnsw-frontier-suite-workflow/artifacts",
+  "defaults": {
+    "pg": 18,
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 200,
+    "iterations": 200,
+    "force_index": true,
+    "sample_backend_memory": true,
+    "memory_sample_interval_ms": 25
+  },
+  "thresholds": [],
+  "steps": [
+    {
+      "kind": "load",
+      "name": "load-10k-hnsw-turboquant",
+      "tags": ["task118", "load", "ec_real_10k", "hnsw", "turboquant"],
+      "prefix": "task118_real10k_hnsw_turboquant",
+      "profile": "ec_hnsw",
+      "storage_format": "turboquant",
+      "corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_10k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_10k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "m": [16],
+      "ef_construction": 128
+    },
+    {
+      "kind": "load",
+      "name": "load-10k-hnsw-pq-fastscan",
+      "tags": ["task118", "load", "ec_real_10k", "hnsw", "pq_fastscan"],
+      "prefix": "task118_real10k_hnsw_pq_fastscan",
+      "profile": "ec_hnsw",
+      "storage_format": "pq_fastscan",
+      "corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_10k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_10k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "m": [16],
+      "ef_construction": 128
+    },
+    {
+      "kind": "load",
+      "name": "load-10k-hnsw-rabitq",
+      "tags": ["task118", "load", "ec_real_10k", "hnsw", "rabitq"],
+      "prefix": "task118_real10k_hnsw_rabitq",
+      "profile": "ec_hnsw",
+      "storage_format": "rabitq",
+      "corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_10k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_10k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "m": [16],
+      "ef_construction": 128
+    },
+    {
+      "kind": "recall",
+      "name": "recall-10k-hnsw-turboquant",
+      "tags": ["task118", "recall", "ec_real_10k", "hnsw", "turboquant"],
+      "prefix": "task118_real10k_hnsw_turboquant",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [40, 64, 100, 128, 160, 200],
+      "truth_cache_file": "${artifact_dir}/truth-10k-k10.json"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-10k-hnsw-pq-fastscan",
+      "tags": ["task118", "recall", "ec_real_10k", "hnsw", "pq_fastscan"],
+      "prefix": "task118_real10k_hnsw_pq_fastscan",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [40, 64, 100, 128, 160, 200],
+      "truth_cache_file": "${artifact_dir}/truth-10k-k10.json"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-10k-hnsw-rabitq",
+      "tags": ["task118", "recall", "ec_real_10k", "hnsw", "rabitq"],
+      "prefix": "task118_real10k_hnsw_rabitq",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [40, 64, 100, 128, 160, 200],
+      "truth_cache_file": "${artifact_dir}/truth-10k-k10.json"
+    },
+    {
+      "kind": "hnsw-frontier",
+      "name": "frontier-10k-hnsw-turboquant",
+      "tags": ["task118", "frontier", "ec_real_10k", "hnsw", "turboquant"],
+      "prefix": "task118_real10k_hnsw_turboquant",
+      "m": 16,
+      "sweep": [40, 64, 100, 128, 160, 200]
+    },
+    {
+      "kind": "hnsw-frontier",
+      "name": "frontier-10k-hnsw-pq-fastscan",
+      "tags": ["task118", "frontier", "ec_real_10k", "hnsw", "pq_fastscan"],
+      "prefix": "task118_real10k_hnsw_pq_fastscan",
+      "m": 16,
+      "sweep": [40, 64, 100, 128, 160, 200]
+    },
+    {
+      "kind": "hnsw-frontier",
+      "name": "frontier-10k-hnsw-rabitq",
+      "tags": ["task118", "frontier", "ec_real_10k", "hnsw", "rabitq"],
+      "prefix": "task118_real10k_hnsw_rabitq",
+      "m": 16,
+      "sweep": [40, 64, 100, 128, 160, 200]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-10k-hnsw-turboquant",
+      "tags": ["task118", "latency", "ec_real_10k", "hnsw", "turboquant", "post_recall_warm"],
+      "prefix": "task118_real10k_hnsw_turboquant",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [40, 64, 100, 128, 160, 200],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-10k-hnsw-pq-fastscan",
+      "tags": ["task118", "latency", "ec_real_10k", "hnsw", "pq_fastscan", "post_recall_warm"],
+      "prefix": "task118_real10k_hnsw_pq_fastscan",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [40, 64, 100, 128, 160, 200],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-10k-hnsw-rabitq",
+      "tags": ["task118", "latency", "ec_real_10k", "hnsw", "rabitq", "post_recall_warm"],
+      "prefix": "task118_real10k_hnsw_rabitq",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [40, 64, 100, 128, 160, 200],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-10k-hnsw-turboquant",
+      "tags": ["task118", "storage", "ec_real_10k", "hnsw", "turboquant"],
+      "prefix": "task118_real10k_hnsw_turboquant"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-10k-hnsw-pq-fastscan",
+      "tags": ["task118", "storage", "ec_real_10k", "hnsw", "pq_fastscan"],
+      "prefix": "task118_real10k_hnsw_pq_fastscan"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-10k-hnsw-rabitq",
+      "tags": ["task118", "storage", "ec_real_10k", "hnsw", "rabitq"],
+      "prefix": "task118_real10k_hnsw_rabitq"
+    },
+
+    {
+      "kind": "load",
+      "name": "load-50k-hnsw-turboquant",
+      "tags": ["task118", "load", "ec_real_50k", "hnsw", "turboquant"],
+      "prefix": "task118_real50k_hnsw_turboquant",
+      "profile": "ec_hnsw",
+      "storage_format": "turboquant",
+      "corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_50k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "m": [16],
+      "ef_construction": 128
+    },
+    {
+      "kind": "load",
+      "name": "load-50k-hnsw-pq-fastscan",
+      "tags": ["task118", "load", "ec_real_50k", "hnsw", "pq_fastscan"],
+      "prefix": "task118_real50k_hnsw_pq_fastscan",
+      "profile": "ec_hnsw",
+      "storage_format": "pq_fastscan",
+      "corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_50k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "m": [16],
+      "ef_construction": 128
+    },
+    {
+      "kind": "load",
+      "name": "load-50k-hnsw-rabitq",
+      "tags": ["task118", "load", "ec_real_50k", "hnsw", "rabitq"],
+      "prefix": "task118_real50k_hnsw_rabitq",
+      "profile": "ec_hnsw",
+      "storage_format": "rabitq",
+      "corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_50k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "m": [16],
+      "ef_construction": 128
+    },
+    {
+      "kind": "recall",
+      "name": "recall-50k-hnsw-turboquant",
+      "tags": ["task118", "recall", "ec_real_50k", "hnsw", "turboquant"],
+      "prefix": "task118_real50k_hnsw_turboquant",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [40, 64, 100, 128, 160, 200],
+      "truth_cache_file": "${artifact_dir}/truth-50k-k10.json"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-50k-hnsw-pq-fastscan",
+      "tags": ["task118", "recall", "ec_real_50k", "hnsw", "pq_fastscan"],
+      "prefix": "task118_real50k_hnsw_pq_fastscan",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [40, 64, 100, 128, 160, 200],
+      "truth_cache_file": "${artifact_dir}/truth-50k-k10.json"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-50k-hnsw-rabitq",
+      "tags": ["task118", "recall", "ec_real_50k", "hnsw", "rabitq"],
+      "prefix": "task118_real50k_hnsw_rabitq",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [40, 64, 100, 128, 160, 200],
+      "truth_cache_file": "${artifact_dir}/truth-50k-k10.json"
+    },
+    {
+      "kind": "hnsw-frontier",
+      "name": "frontier-50k-hnsw-turboquant",
+      "tags": ["task118", "frontier", "ec_real_50k", "hnsw", "turboquant"],
+      "prefix": "task118_real50k_hnsw_turboquant",
+      "m": 16,
+      "sweep": [40, 64, 100, 128, 160, 200]
+    },
+    {
+      "kind": "hnsw-frontier",
+      "name": "frontier-50k-hnsw-pq-fastscan",
+      "tags": ["task118", "frontier", "ec_real_50k", "hnsw", "pq_fastscan"],
+      "prefix": "task118_real50k_hnsw_pq_fastscan",
+      "m": 16,
+      "sweep": [40, 64, 100, 128, 160, 200]
+    },
+    {
+      "kind": "hnsw-frontier",
+      "name": "frontier-50k-hnsw-rabitq",
+      "tags": ["task118", "frontier", "ec_real_50k", "hnsw", "rabitq"],
+      "prefix": "task118_real50k_hnsw_rabitq",
+      "m": 16,
+      "sweep": [40, 64, 100, 128, 160, 200]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-50k-hnsw-turboquant",
+      "tags": ["task118", "latency", "ec_real_50k", "hnsw", "turboquant", "post_recall_warm"],
+      "prefix": "task118_real50k_hnsw_turboquant",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [40, 64, 100, 128, 160, 200],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-50k-hnsw-pq-fastscan",
+      "tags": ["task118", "latency", "ec_real_50k", "hnsw", "pq_fastscan", "post_recall_warm"],
+      "prefix": "task118_real50k_hnsw_pq_fastscan",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [40, 64, 100, 128, 160, 200],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-50k-hnsw-rabitq",
+      "tags": ["task118", "latency", "ec_real_50k", "hnsw", "rabitq", "post_recall_warm"],
+      "prefix": "task118_real50k_hnsw_rabitq",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [40, 64, 100, 128, 160, 200],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-50k-hnsw-turboquant",
+      "tags": ["task118", "storage", "ec_real_50k", "hnsw", "turboquant"],
+      "prefix": "task118_real50k_hnsw_turboquant"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-50k-hnsw-pq-fastscan",
+      "tags": ["task118", "storage", "ec_real_50k", "hnsw", "pq_fastscan"],
+      "prefix": "task118_real50k_hnsw_pq_fastscan"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-50k-hnsw-rabitq",
+      "tags": ["task118", "storage", "ec_real_50k", "hnsw", "rabitq"],
+      "prefix": "task118_real50k_hnsw_rabitq"
+    },
+
+    {
+      "kind": "load",
+      "name": "load-100k-hnsw-turboquant",
+      "tags": ["task118", "load", "ec_real_100k", "hnsw", "turboquant"],
+      "prefix": "task118_real100k_hnsw_turboquant",
+      "profile": "ec_hnsw",
+      "storage_format": "turboquant",
+      "corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_100k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "m": [16],
+      "ef_construction": 128
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-hnsw-pq-fastscan",
+      "tags": ["task118", "load", "ec_real_100k", "hnsw", "pq_fastscan"],
+      "prefix": "task118_real100k_hnsw_pq_fastscan",
+      "profile": "ec_hnsw",
+      "storage_format": "pq_fastscan",
+      "corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_100k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "m": [16],
+      "ef_construction": 128
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-hnsw-rabitq",
+      "tags": ["task118", "load", "ec_real_100k", "hnsw", "rabitq"],
+      "prefix": "task118_real100k_hnsw_rabitq",
+      "profile": "ec_hnsw",
+      "storage_format": "rabitq",
+      "corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_100k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "m": [16],
+      "ef_construction": 128
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-hnsw-turboquant",
+      "tags": ["task118", "recall", "ec_real_100k", "hnsw", "turboquant"],
+      "prefix": "task118_real100k_hnsw_turboquant",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [40, 64, 100, 128, 160, 200],
+      "truth_cache_file": "${artifact_dir}/truth-100k-k10.json"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-hnsw-pq-fastscan",
+      "tags": ["task118", "recall", "ec_real_100k", "hnsw", "pq_fastscan"],
+      "prefix": "task118_real100k_hnsw_pq_fastscan",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [40, 64, 100, 128, 160, 200],
+      "truth_cache_file": "${artifact_dir}/truth-100k-k10.json"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-hnsw-rabitq",
+      "tags": ["task118", "recall", "ec_real_100k", "hnsw", "rabitq"],
+      "prefix": "task118_real100k_hnsw_rabitq",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [40, 64, 100, 128, 160, 200],
+      "truth_cache_file": "${artifact_dir}/truth-100k-k10.json"
+    },
+    {
+      "kind": "hnsw-frontier",
+      "name": "frontier-100k-hnsw-turboquant",
+      "tags": ["task118", "frontier", "ec_real_100k", "hnsw", "turboquant"],
+      "prefix": "task118_real100k_hnsw_turboquant",
+      "m": 16,
+      "sweep": [40, 64, 100, 128, 160, 200]
+    },
+    {
+      "kind": "hnsw-frontier",
+      "name": "frontier-100k-hnsw-pq-fastscan",
+      "tags": ["task118", "frontier", "ec_real_100k", "hnsw", "pq_fastscan"],
+      "prefix": "task118_real100k_hnsw_pq_fastscan",
+      "m": 16,
+      "sweep": [40, 64, 100, 128, 160, 200]
+    },
+    {
+      "kind": "hnsw-frontier",
+      "name": "frontier-100k-hnsw-rabitq",
+      "tags": ["task118", "frontier", "ec_real_100k", "hnsw", "rabitq"],
+      "prefix": "task118_real100k_hnsw_rabitq",
+      "m": 16,
+      "sweep": [40, 64, 100, 128, 160, 200]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-hnsw-turboquant",
+      "tags": ["task118", "latency", "ec_real_100k", "hnsw", "turboquant", "post_recall_warm"],
+      "prefix": "task118_real100k_hnsw_turboquant",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [40, 64, 100, 128, 160, 200],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-hnsw-pq-fastscan",
+      "tags": ["task118", "latency", "ec_real_100k", "hnsw", "pq_fastscan", "post_recall_warm"],
+      "prefix": "task118_real100k_hnsw_pq_fastscan",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [40, 64, 100, 128, 160, 200],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-hnsw-rabitq",
+      "tags": ["task118", "latency", "ec_real_100k", "hnsw", "rabitq", "post_recall_warm"],
+      "prefix": "task118_real100k_hnsw_rabitq",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [40, 64, 100, 128, 160, 200],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k-hnsw-turboquant",
+      "tags": ["task118", "storage", "ec_real_100k", "hnsw", "turboquant"],
+      "prefix": "task118_real100k_hnsw_turboquant"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k-hnsw-pq-fastscan",
+      "tags": ["task118", "storage", "ec_real_100k", "hnsw", "pq_fastscan"],
+      "prefix": "task118_real100k_hnsw_pq_fastscan"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k-hnsw-rabitq",
+      "tags": ["task118", "storage", "ec_real_100k", "hnsw", "rabitq"],
+      "prefix": "task118_real100k_hnsw_rabitq"
+    }
+  ]
+}

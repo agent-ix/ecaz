@@ -285,6 +285,50 @@
 
     #[pg_extern]
     #[allow(clippy::type_complexity)]
+    fn ec_hnsw_graph_scan_recall_frontier_containment_rows(
+        corpus_table: String,
+        query_table: String,
+        index_name: String,
+        m: i32,
+        ef_search: i32,
+        query_limit: i32,
+    ) -> TableIterator<
+        'static,
+        (
+            name!(m, i32),
+            name!(ef_search, i32),
+            name!(query_index, i32),
+            name!(visited_before_output, i32),
+            name!(pre_final_frontier_size, i32),
+            name!(final_visited_count, i32),
+            name!(final_emitted_count, i32),
+            name!(exact_reranked_candidates, i32),
+            name!(quantized_reranked_candidates, i32),
+            name!(candidates_dropped_before_exact_rerank, i32),
+            name!(truth_top10_in_frontier, i32),
+            name!(truth_top100_in_frontier, i32),
+            name!(truth_top10_row_indices, Vec<i64>),
+            name!(frontier_row_indices, Vec<i64>),
+            name!(frontier_approx_scores, Vec<f32>),
+            name!(frontier_exact_scores, Vec<f32>),
+            name!(frontier_approx_ranks, Vec<i32>),
+            name!(frontier_exact_ranks, Vec<i32>),
+            name!(final_emitted_row_indices, Vec<i64>),
+        ),
+    > {
+        assert!(query_limit > 0, "query_limit must be positive");
+        TableIterator::new(run_graph_scan_recall_frontier_containment_rows_for_relation(
+            &corpus_table,
+            &query_table,
+            &index_name,
+            m,
+            ef_search,
+            usize::try_from(query_limit).expect("query limit should be positive"),
+        ))
+    }
+
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
     fn ec_hnsw_graph_scan_recall_probe(
         m: i32,
         ef_search: i32,

@@ -1111,6 +1111,29 @@
         )
     }
 
+    fn run_graph_scan_recall_frontier_containment_rows_for_relation(
+        corpus_table: &str,
+        query_table: &str,
+        index_name: &str,
+        m: i32,
+        ef_search: i32,
+        query_limit: usize,
+    ) -> Vec<GraphScanRecallFrontierContainmentRow> {
+        let context = build_external_recall_context(corpus_table, query_table, false);
+        let limit = query_limit.min(context.queries.len());
+        (0..limit)
+            .map(|query_index| {
+                probe_graph_scan_recall_frontier_containment_for_context(
+                    &context,
+                    index_name,
+                    m,
+                    ef_search,
+                    query_index,
+                )
+            })
+            .collect()
+    }
+
     fn spearman_rank_correlation_external(true_top_k: &[(usize, f32)], pred_ids: &[i64]) -> f32 {
         let n = true_top_k.len().min(pred_ids.len());
         if n < 2 {
