@@ -22,7 +22,11 @@ This is not benchmark evidence. It is scorer-sanity coverage for the diagnostic 
   - command: `cargo check --features 'pg18 pg_test' --no-default-features`
   - result: passed
 
-Direct runtime execution via `cargo pgrx test pg18 test_ech_score_correlation_synthetic_known_ordering` did not return actionable output in this AMD sandbox session and was interrupted. It should be rerun on a normal PG18 test host before treating the fixture as runtime-validated.
+- `artifacts/cargo-pgrx-test-pg18-score-sanity.log`
+  - command: `cargo pgrx test pg18 test_ech_score_correlation_synthetic_known_ordering`
+  - result: inconclusive. The command remained at the compile phase in this AMD sandbox session and was interrupted.
+
+The fixture should be rerun on a normal PG18 test host before treating it as runtime-validated.
 
 ## Remaining Task 118 Closeout Work
 

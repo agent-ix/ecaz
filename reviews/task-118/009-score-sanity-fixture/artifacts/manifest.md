@@ -16,6 +16,15 @@
 - key result:
   `Finished dev profile [unoptimized + debuginfo]`
 
+### `cargo-pgrx-test-pg18-score-sanity.log`
+
+- command:
+  `cargo pgrx test pg18 test_ech_score_correlation_synthetic_known_ordering`
+- purpose: attempted runtime execution of the new synthetic score-correlation fixture.
+- result: inconclusive. On this AMD sandbox session the command remained at
+  `Compiling ecaz v0.1.1` for several minutes and was interrupted. Do not treat
+  this artifact as a passing runtime test.
+
 ## Validation Notes
 
 I also attempted direct execution with:
@@ -23,4 +32,8 @@ I also attempted direct execution with:
 - `cargo pgrx test pg18 test_ech_score_correlation_synthetic_known_ordering`
 - `cargo test --features 'pg18 pg_test' --no-default-features test_ech_score_correlation_synthetic_known_ordering -- --nocapture`
 
-Both attempts were interrupted after producing no actionable output in this AMD sandbox session, so they are not cited as passed validation. The fixture is committed because it closes a Task 118 scorer-sanity coverage gap and compiles under the PG18 pg_test feature set; runtime execution should be rerun on a normal PG18 test host.
+The logged pgrx attempt and the earlier plain `cargo test` attempt were both
+interrupted before producing a pass/fail result in this AMD sandbox session.
+The fixture is committed because it closes a Task 118 scorer-sanity coverage gap
+and compiles under the PG18 pg_test feature set; runtime execution should be
+rerun on a normal PG18 test host.
