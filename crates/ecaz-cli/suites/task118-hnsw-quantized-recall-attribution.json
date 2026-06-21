@@ -534,7 +534,7 @@
       "kind": "load",
       "name": "load-10k-hnsw-turboquant-compressed-build",
       "tags": ["task118", "load", "ec_real_10k", "hnsw", "turboquant", "compressed_build"],
-      "prefix": "task118_real10k_hnsw_turboquant_compressed_build",
+      "prefix": "task118_r10k_tq_cb",
       "profile": "ec_hnsw",
       "storage_format": "turboquant",
       "corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
@@ -549,7 +549,7 @@
       "kind": "load",
       "name": "load-10k-hnsw-pq-fastscan-compressed-build",
       "tags": ["task118", "load", "ec_real_10k", "hnsw", "pq_fastscan", "compressed_build"],
-      "prefix": "task118_real10k_hnsw_pq_fastscan_compressed_build",
+      "prefix": "task118_r10k_pq_cb",
       "profile": "ec_hnsw",
       "storage_format": "pq_fastscan",
       "corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
@@ -564,7 +564,7 @@
       "kind": "load",
       "name": "load-10k-hnsw-rabitq-compressed-build",
       "tags": ["task118", "load", "ec_real_10k", "hnsw", "rabitq", "compressed_build"],
-      "prefix": "task118_real10k_hnsw_rabitq_compressed_build",
+      "prefix": "task118_r10k_rq_cb",
       "profile": "ec_hnsw",
       "storage_format": "rabitq",
       "corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
@@ -579,7 +579,7 @@
       "kind": "recall",
       "name": "recall-10k-hnsw-turboquant-compressed-build",
       "tags": ["task118", "recall", "ec_real_10k", "hnsw", "turboquant", "compressed_build"],
-      "prefix": "task118_real10k_hnsw_turboquant_compressed_build",
+      "prefix": "task118_r10k_tq_cb",
       "profile": "ec_hnsw",
       "k": 10,
       "sweep": [40, 64, 100, 128, 160, 200],
@@ -589,7 +589,7 @@
       "kind": "recall",
       "name": "recall-10k-hnsw-pq-fastscan-compressed-build",
       "tags": ["task118", "recall", "ec_real_10k", "hnsw", "pq_fastscan", "compressed_build"],
-      "prefix": "task118_real10k_hnsw_pq_fastscan_compressed_build",
+      "prefix": "task118_r10k_pq_cb",
       "profile": "ec_hnsw",
       "k": 10,
       "sweep": [40, 64, 100, 128, 160, 200],
@@ -599,7 +599,7 @@
       "kind": "recall",
       "name": "recall-10k-hnsw-rabitq-compressed-build",
       "tags": ["task118", "recall", "ec_real_10k", "hnsw", "rabitq", "compressed_build"],
-      "prefix": "task118_real10k_hnsw_rabitq_compressed_build",
+      "prefix": "task118_r10k_rq_cb",
       "profile": "ec_hnsw",
       "k": 10,
       "sweep": [40, 64, 100, 128, 160, 200],
@@ -609,7 +609,7 @@
       "kind": "hnsw-frontier",
       "name": "frontier-10k-hnsw-turboquant-compressed-build",
       "tags": ["task118", "frontier", "ec_real_10k", "hnsw", "turboquant", "compressed_build"],
-      "prefix": "task118_real10k_hnsw_turboquant_compressed_build",
+      "prefix": "task118_r10k_tq_cb",
       "m": 16,
       "sweep": [40, 64, 100, 128, 160, 200]
     },
@@ -617,7 +617,7 @@
       "kind": "hnsw-frontier",
       "name": "frontier-10k-hnsw-pq-fastscan-compressed-build",
       "tags": ["task118", "frontier", "ec_real_10k", "hnsw", "pq_fastscan", "compressed_build"],
-      "prefix": "task118_real10k_hnsw_pq_fastscan_compressed_build",
+      "prefix": "task118_r10k_pq_cb",
       "m": 16,
       "sweep": [40, 64, 100, 128, 160, 200]
     },
@@ -625,7 +625,7 @@
       "kind": "hnsw-frontier",
       "name": "frontier-10k-hnsw-rabitq-compressed-build",
       "tags": ["task118", "frontier", "ec_real_10k", "hnsw", "rabitq", "compressed_build"],
-      "prefix": "task118_real10k_hnsw_rabitq_compressed_build",
+      "prefix": "task118_r10k_rq_cb",
       "m": 16,
       "sweep": [40, 64, 100, 128, 160, 200]
     },
@@ -633,7 +633,7 @@
       "kind": "hnsw-score-correlation",
       "name": "score-correlation-10k-hnsw-turboquant-compressed-build",
       "tags": ["task118", "score-correlation", "ec_real_10k", "hnsw", "turboquant", "compressed_build"],
-      "prefix": "task118_real10k_hnsw_turboquant_compressed_build",
+      "prefix": "task118_r10k_tq_cb",
       "m": 16,
       "sweep": [40, 64, 100, 128, 160, 200]
     },
@@ -641,7 +641,7 @@
       "kind": "hnsw-score-correlation",
       "name": "score-correlation-10k-hnsw-pq-fastscan-compressed-build",
       "tags": ["task118", "score-correlation", "ec_real_10k", "hnsw", "pq_fastscan", "compressed_build"],
-      "prefix": "task118_real10k_hnsw_pq_fastscan_compressed_build",
+      "prefix": "task118_r10k_pq_cb",
       "m": 16,
       "sweep": [40, 64, 100, 128, 160, 200]
     },
@@ -649,7 +649,7 @@
       "kind": "hnsw-score-correlation",
       "name": "score-correlation-10k-hnsw-rabitq-compressed-build",
       "tags": ["task118", "score-correlation", "ec_real_10k", "hnsw", "rabitq", "compressed_build"],
-      "prefix": "task118_real10k_hnsw_rabitq_compressed_build",
+      "prefix": "task118_r10k_rq_cb",
       "m": 16,
       "sweep": [40, 64, 100, 128, 160, 200]
     },
@@ -657,7 +657,7 @@
       "kind": "latency",
       "name": "latency-10k-hnsw-turboquant-compressed-build",
       "tags": ["task118", "latency", "ec_real_10k", "hnsw", "turboquant", "post_recall_warm", "compressed_build"],
-      "prefix": "task118_real10k_hnsw_turboquant_compressed_build",
+      "prefix": "task118_r10k_tq_cb",
       "profile": "ec_hnsw",
       "k": 10,
       "sweep": [40, 64, 100, 128, 160, 200],
@@ -668,7 +668,7 @@
       "kind": "latency",
       "name": "latency-10k-hnsw-pq-fastscan-compressed-build",
       "tags": ["task118", "latency", "ec_real_10k", "hnsw", "pq_fastscan", "post_recall_warm", "compressed_build"],
-      "prefix": "task118_real10k_hnsw_pq_fastscan_compressed_build",
+      "prefix": "task118_r10k_pq_cb",
       "profile": "ec_hnsw",
       "k": 10,
       "sweep": [40, 64, 100, 128, 160, 200],
@@ -679,7 +679,7 @@
       "kind": "latency",
       "name": "latency-10k-hnsw-rabitq-compressed-build",
       "tags": ["task118", "latency", "ec_real_10k", "hnsw", "rabitq", "post_recall_warm", "compressed_build"],
-      "prefix": "task118_real10k_hnsw_rabitq_compressed_build",
+      "prefix": "task118_r10k_rq_cb",
       "profile": "ec_hnsw",
       "k": 10,
       "sweep": [40, 64, 100, 128, 160, 200],
@@ -690,26 +690,26 @@
       "kind": "storage",
       "name": "storage-10k-hnsw-turboquant-compressed-build",
       "tags": ["task118", "storage", "ec_real_10k", "hnsw", "turboquant", "compressed_build"],
-      "prefix": "task118_real10k_hnsw_turboquant_compressed_build"
+      "prefix": "task118_r10k_tq_cb"
     },
     {
       "kind": "storage",
       "name": "storage-10k-hnsw-pq-fastscan-compressed-build",
       "tags": ["task118", "storage", "ec_real_10k", "hnsw", "pq_fastscan", "compressed_build"],
-      "prefix": "task118_real10k_hnsw_pq_fastscan_compressed_build"
+      "prefix": "task118_r10k_pq_cb"
     },
     {
       "kind": "storage",
       "name": "storage-10k-hnsw-rabitq-compressed-build",
       "tags": ["task118", "storage", "ec_real_10k", "hnsw", "rabitq", "compressed_build"],
-      "prefix": "task118_real10k_hnsw_rabitq_compressed_build"
+      "prefix": "task118_r10k_rq_cb"
     },
 
     {
       "kind": "load",
       "name": "load-50k-hnsw-turboquant-compressed-build",
       "tags": ["task118", "load", "ec_real_50k", "hnsw", "turboquant", "compressed_build"],
-      "prefix": "task118_real50k_hnsw_turboquant_compressed_build",
+      "prefix": "task118_r50k_tq_cb",
       "profile": "ec_hnsw",
       "storage_format": "turboquant",
       "corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
@@ -724,7 +724,7 @@
       "kind": "load",
       "name": "load-50k-hnsw-pq-fastscan-compressed-build",
       "tags": ["task118", "load", "ec_real_50k", "hnsw", "pq_fastscan", "compressed_build"],
-      "prefix": "task118_real50k_hnsw_pq_fastscan_compressed_build",
+      "prefix": "task118_r50k_pq_cb",
       "profile": "ec_hnsw",
       "storage_format": "pq_fastscan",
       "corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
@@ -739,7 +739,7 @@
       "kind": "load",
       "name": "load-50k-hnsw-rabitq-compressed-build",
       "tags": ["task118", "load", "ec_real_50k", "hnsw", "rabitq", "compressed_build"],
-      "prefix": "task118_real50k_hnsw_rabitq_compressed_build",
+      "prefix": "task118_r50k_rq_cb",
       "profile": "ec_hnsw",
       "storage_format": "rabitq",
       "corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
@@ -754,7 +754,7 @@
       "kind": "recall",
       "name": "recall-50k-hnsw-turboquant-compressed-build",
       "tags": ["task118", "recall", "ec_real_50k", "hnsw", "turboquant", "compressed_build"],
-      "prefix": "task118_real50k_hnsw_turboquant_compressed_build",
+      "prefix": "task118_r50k_tq_cb",
       "profile": "ec_hnsw",
       "k": 10,
       "sweep": [40, 64, 100, 128, 160, 200],
@@ -764,7 +764,7 @@
       "kind": "recall",
       "name": "recall-50k-hnsw-pq-fastscan-compressed-build",
       "tags": ["task118", "recall", "ec_real_50k", "hnsw", "pq_fastscan", "compressed_build"],
-      "prefix": "task118_real50k_hnsw_pq_fastscan_compressed_build",
+      "prefix": "task118_r50k_pq_cb",
       "profile": "ec_hnsw",
       "k": 10,
       "sweep": [40, 64, 100, 128, 160, 200],
@@ -774,7 +774,7 @@
       "kind": "recall",
       "name": "recall-50k-hnsw-rabitq-compressed-build",
       "tags": ["task118", "recall", "ec_real_50k", "hnsw", "rabitq", "compressed_build"],
-      "prefix": "task118_real50k_hnsw_rabitq_compressed_build",
+      "prefix": "task118_r50k_rq_cb",
       "profile": "ec_hnsw",
       "k": 10,
       "sweep": [40, 64, 100, 128, 160, 200],
@@ -784,7 +784,7 @@
       "kind": "hnsw-frontier",
       "name": "frontier-50k-hnsw-turboquant-compressed-build",
       "tags": ["task118", "frontier", "ec_real_50k", "hnsw", "turboquant", "compressed_build"],
-      "prefix": "task118_real50k_hnsw_turboquant_compressed_build",
+      "prefix": "task118_r50k_tq_cb",
       "m": 16,
       "sweep": [40, 64, 100, 128, 160, 200]
     },
@@ -792,7 +792,7 @@
       "kind": "hnsw-frontier",
       "name": "frontier-50k-hnsw-pq-fastscan-compressed-build",
       "tags": ["task118", "frontier", "ec_real_50k", "hnsw", "pq_fastscan", "compressed_build"],
-      "prefix": "task118_real50k_hnsw_pq_fastscan_compressed_build",
+      "prefix": "task118_r50k_pq_cb",
       "m": 16,
       "sweep": [40, 64, 100, 128, 160, 200]
     },
@@ -800,7 +800,7 @@
       "kind": "hnsw-frontier",
       "name": "frontier-50k-hnsw-rabitq-compressed-build",
       "tags": ["task118", "frontier", "ec_real_50k", "hnsw", "rabitq", "compressed_build"],
-      "prefix": "task118_real50k_hnsw_rabitq_compressed_build",
+      "prefix": "task118_r50k_rq_cb",
       "m": 16,
       "sweep": [40, 64, 100, 128, 160, 200]
     },
@@ -808,7 +808,7 @@
       "kind": "hnsw-score-correlation",
       "name": "score-correlation-50k-hnsw-turboquant-compressed-build",
       "tags": ["task118", "score-correlation", "ec_real_50k", "hnsw", "turboquant", "compressed_build"],
-      "prefix": "task118_real50k_hnsw_turboquant_compressed_build",
+      "prefix": "task118_r50k_tq_cb",
       "m": 16,
       "sweep": [40, 64, 100, 128, 160, 200]
     },
@@ -816,7 +816,7 @@
       "kind": "hnsw-score-correlation",
       "name": "score-correlation-50k-hnsw-pq-fastscan-compressed-build",
       "tags": ["task118", "score-correlation", "ec_real_50k", "hnsw", "pq_fastscan", "compressed_build"],
-      "prefix": "task118_real50k_hnsw_pq_fastscan_compressed_build",
+      "prefix": "task118_r50k_pq_cb",
       "m": 16,
       "sweep": [40, 64, 100, 128, 160, 200]
     },
@@ -824,7 +824,7 @@
       "kind": "hnsw-score-correlation",
       "name": "score-correlation-50k-hnsw-rabitq-compressed-build",
       "tags": ["task118", "score-correlation", "ec_real_50k", "hnsw", "rabitq", "compressed_build"],
-      "prefix": "task118_real50k_hnsw_rabitq_compressed_build",
+      "prefix": "task118_r50k_rq_cb",
       "m": 16,
       "sweep": [40, 64, 100, 128, 160, 200]
     },
@@ -832,7 +832,7 @@
       "kind": "latency",
       "name": "latency-50k-hnsw-turboquant-compressed-build",
       "tags": ["task118", "latency", "ec_real_50k", "hnsw", "turboquant", "post_recall_warm", "compressed_build"],
-      "prefix": "task118_real50k_hnsw_turboquant_compressed_build",
+      "prefix": "task118_r50k_tq_cb",
       "profile": "ec_hnsw",
       "k": 10,
       "sweep": [40, 64, 100, 128, 160, 200],
@@ -843,7 +843,7 @@
       "kind": "latency",
       "name": "latency-50k-hnsw-pq-fastscan-compressed-build",
       "tags": ["task118", "latency", "ec_real_50k", "hnsw", "pq_fastscan", "post_recall_warm", "compressed_build"],
-      "prefix": "task118_real50k_hnsw_pq_fastscan_compressed_build",
+      "prefix": "task118_r50k_pq_cb",
       "profile": "ec_hnsw",
       "k": 10,
       "sweep": [40, 64, 100, 128, 160, 200],
@@ -854,7 +854,7 @@
       "kind": "latency",
       "name": "latency-50k-hnsw-rabitq-compressed-build",
       "tags": ["task118", "latency", "ec_real_50k", "hnsw", "rabitq", "post_recall_warm", "compressed_build"],
-      "prefix": "task118_real50k_hnsw_rabitq_compressed_build",
+      "prefix": "task118_r50k_rq_cb",
       "profile": "ec_hnsw",
       "k": 10,
       "sweep": [40, 64, 100, 128, 160, 200],
@@ -865,26 +865,26 @@
       "kind": "storage",
       "name": "storage-50k-hnsw-turboquant-compressed-build",
       "tags": ["task118", "storage", "ec_real_50k", "hnsw", "turboquant", "compressed_build"],
-      "prefix": "task118_real50k_hnsw_turboquant_compressed_build"
+      "prefix": "task118_r50k_tq_cb"
     },
     {
       "kind": "storage",
       "name": "storage-50k-hnsw-pq-fastscan-compressed-build",
       "tags": ["task118", "storage", "ec_real_50k", "hnsw", "pq_fastscan", "compressed_build"],
-      "prefix": "task118_real50k_hnsw_pq_fastscan_compressed_build"
+      "prefix": "task118_r50k_pq_cb"
     },
     {
       "kind": "storage",
       "name": "storage-50k-hnsw-rabitq-compressed-build",
       "tags": ["task118", "storage", "ec_real_50k", "hnsw", "rabitq", "compressed_build"],
-      "prefix": "task118_real50k_hnsw_rabitq_compressed_build"
+      "prefix": "task118_r50k_rq_cb"
     },
 
     {
       "kind": "load",
       "name": "load-100k-hnsw-turboquant-compressed-build",
       "tags": ["task118", "load", "ec_real_100k", "hnsw", "turboquant", "compressed_build"],
-      "prefix": "task118_real100k_hnsw_turboquant_compressed_build",
+      "prefix": "task118_r100k_tq_cb",
       "profile": "ec_hnsw",
       "storage_format": "turboquant",
       "corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
@@ -899,7 +899,7 @@
       "kind": "load",
       "name": "load-100k-hnsw-pq-fastscan-compressed-build",
       "tags": ["task118", "load", "ec_real_100k", "hnsw", "pq_fastscan", "compressed_build"],
-      "prefix": "task118_real100k_hnsw_pq_fastscan_compressed_build",
+      "prefix": "task118_r100k_pq_cb",
       "profile": "ec_hnsw",
       "storage_format": "pq_fastscan",
       "corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
@@ -914,7 +914,7 @@
       "kind": "load",
       "name": "load-100k-hnsw-rabitq-compressed-build",
       "tags": ["task118", "load", "ec_real_100k", "hnsw", "rabitq", "compressed_build"],
-      "prefix": "task118_real100k_hnsw_rabitq_compressed_build",
+      "prefix": "task118_r100k_rq_cb",
       "profile": "ec_hnsw",
       "storage_format": "rabitq",
       "corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
@@ -929,7 +929,7 @@
       "kind": "recall",
       "name": "recall-100k-hnsw-turboquant-compressed-build",
       "tags": ["task118", "recall", "ec_real_100k", "hnsw", "turboquant", "compressed_build"],
-      "prefix": "task118_real100k_hnsw_turboquant_compressed_build",
+      "prefix": "task118_r100k_tq_cb",
       "profile": "ec_hnsw",
       "k": 10,
       "sweep": [40, 64, 100, 128, 160, 200],
@@ -939,7 +939,7 @@
       "kind": "recall",
       "name": "recall-100k-hnsw-pq-fastscan-compressed-build",
       "tags": ["task118", "recall", "ec_real_100k", "hnsw", "pq_fastscan", "compressed_build"],
-      "prefix": "task118_real100k_hnsw_pq_fastscan_compressed_build",
+      "prefix": "task118_r100k_pq_cb",
       "profile": "ec_hnsw",
       "k": 10,
       "sweep": [40, 64, 100, 128, 160, 200],
@@ -949,7 +949,7 @@
       "kind": "recall",
       "name": "recall-100k-hnsw-rabitq-compressed-build",
       "tags": ["task118", "recall", "ec_real_100k", "hnsw", "rabitq", "compressed_build"],
-      "prefix": "task118_real100k_hnsw_rabitq_compressed_build",
+      "prefix": "task118_r100k_rq_cb",
       "profile": "ec_hnsw",
       "k": 10,
       "sweep": [40, 64, 100, 128, 160, 200],
@@ -959,7 +959,7 @@
       "kind": "hnsw-frontier",
       "name": "frontier-100k-hnsw-turboquant-compressed-build",
       "tags": ["task118", "frontier", "ec_real_100k", "hnsw", "turboquant", "compressed_build"],
-      "prefix": "task118_real100k_hnsw_turboquant_compressed_build",
+      "prefix": "task118_r100k_tq_cb",
       "m": 16,
       "sweep": [40, 64, 100, 128, 160, 200]
     },
@@ -967,7 +967,7 @@
       "kind": "hnsw-frontier",
       "name": "frontier-100k-hnsw-pq-fastscan-compressed-build",
       "tags": ["task118", "frontier", "ec_real_100k", "hnsw", "pq_fastscan", "compressed_build"],
-      "prefix": "task118_real100k_hnsw_pq_fastscan_compressed_build",
+      "prefix": "task118_r100k_pq_cb",
       "m": 16,
       "sweep": [40, 64, 100, 128, 160, 200]
     },
@@ -975,7 +975,7 @@
       "kind": "hnsw-frontier",
       "name": "frontier-100k-hnsw-rabitq-compressed-build",
       "tags": ["task118", "frontier", "ec_real_100k", "hnsw", "rabitq", "compressed_build"],
-      "prefix": "task118_real100k_hnsw_rabitq_compressed_build",
+      "prefix": "task118_r100k_rq_cb",
       "m": 16,
       "sweep": [40, 64, 100, 128, 160, 200]
     },
@@ -983,7 +983,7 @@
       "kind": "hnsw-score-correlation",
       "name": "score-correlation-100k-hnsw-turboquant-compressed-build",
       "tags": ["task118", "score-correlation", "ec_real_100k", "hnsw", "turboquant", "compressed_build"],
-      "prefix": "task118_real100k_hnsw_turboquant_compressed_build",
+      "prefix": "task118_r100k_tq_cb",
       "m": 16,
       "sweep": [40, 64, 100, 128, 160, 200]
     },
@@ -991,7 +991,7 @@
       "kind": "hnsw-score-correlation",
       "name": "score-correlation-100k-hnsw-pq-fastscan-compressed-build",
       "tags": ["task118", "score-correlation", "ec_real_100k", "hnsw", "pq_fastscan", "compressed_build"],
-      "prefix": "task118_real100k_hnsw_pq_fastscan_compressed_build",
+      "prefix": "task118_r100k_pq_cb",
       "m": 16,
       "sweep": [40, 64, 100, 128, 160, 200]
     },
@@ -999,7 +999,7 @@
       "kind": "hnsw-score-correlation",
       "name": "score-correlation-100k-hnsw-rabitq-compressed-build",
       "tags": ["task118", "score-correlation", "ec_real_100k", "hnsw", "rabitq", "compressed_build"],
-      "prefix": "task118_real100k_hnsw_rabitq_compressed_build",
+      "prefix": "task118_r100k_rq_cb",
       "m": 16,
       "sweep": [40, 64, 100, 128, 160, 200]
     },
@@ -1007,7 +1007,7 @@
       "kind": "latency",
       "name": "latency-100k-hnsw-turboquant-compressed-build",
       "tags": ["task118", "latency", "ec_real_100k", "hnsw", "turboquant", "post_recall_warm", "compressed_build"],
-      "prefix": "task118_real100k_hnsw_turboquant_compressed_build",
+      "prefix": "task118_r100k_tq_cb",
       "profile": "ec_hnsw",
       "k": 10,
       "sweep": [40, 64, 100, 128, 160, 200],
@@ -1018,7 +1018,7 @@
       "kind": "latency",
       "name": "latency-100k-hnsw-pq-fastscan-compressed-build",
       "tags": ["task118", "latency", "ec_real_100k", "hnsw", "pq_fastscan", "post_recall_warm", "compressed_build"],
-      "prefix": "task118_real100k_hnsw_pq_fastscan_compressed_build",
+      "prefix": "task118_r100k_pq_cb",
       "profile": "ec_hnsw",
       "k": 10,
       "sweep": [40, 64, 100, 128, 160, 200],
@@ -1029,7 +1029,7 @@
       "kind": "latency",
       "name": "latency-100k-hnsw-rabitq-compressed-build",
       "tags": ["task118", "latency", "ec_real_100k", "hnsw", "rabitq", "post_recall_warm", "compressed_build"],
-      "prefix": "task118_real100k_hnsw_rabitq_compressed_build",
+      "prefix": "task118_r100k_rq_cb",
       "profile": "ec_hnsw",
       "k": 10,
       "sweep": [40, 64, 100, 128, 160, 200],
@@ -1040,19 +1040,19 @@
       "kind": "storage",
       "name": "storage-100k-hnsw-turboquant-compressed-build",
       "tags": ["task118", "storage", "ec_real_100k", "hnsw", "turboquant", "compressed_build"],
-      "prefix": "task118_real100k_hnsw_turboquant_compressed_build"
+      "prefix": "task118_r100k_tq_cb"
     },
     {
       "kind": "storage",
       "name": "storage-100k-hnsw-pq-fastscan-compressed-build",
       "tags": ["task118", "storage", "ec_real_100k", "hnsw", "pq_fastscan", "compressed_build"],
-      "prefix": "task118_real100k_hnsw_pq_fastscan_compressed_build"
+      "prefix": "task118_r100k_pq_cb"
     },
     {
       "kind": "storage",
       "name": "storage-100k-hnsw-rabitq-compressed-build",
       "tags": ["task118", "storage", "ec_real_100k", "hnsw", "rabitq", "compressed_build"],
-      "prefix": "task118_real100k_hnsw_rabitq_compressed_build"
+      "prefix": "task118_r100k_rq_cb"
     }
   ]
 }
