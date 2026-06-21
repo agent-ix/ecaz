@@ -208,7 +208,65 @@ pub enum RerankMode {
 pub(super) enum RaBitQRerankScoreMode {
     Estimator,
     LeastSquares,
+    ExactDequant,
 }
+
+#[cfg(not(any(feature = "pg17", feature = "pg18")))]
+impl RaBitQRerankScoreMode {
+    pub(super) fn from_metadata_byte(value: u8) -> Result<Self, String> {
+        match value {
+            0 => Ok(Self::Estimator),
+            1 => Ok(Self::LeastSquares),
+            2 => Ok(Self::ExactDequant),
+            other => Err(format!(
+                "invalid ec_ivf rerank score mode stored in metadata: {other}"
+            )),
+        }
+    }
+
+    pub(super) fn metadata_byte(self) -> u8 {
+        match self {
+            Self::Estimator => 0,
+            Self::LeastSquares => 1,
+            Self::ExactDequant => 2,
+        }
+    }
+}
+
+#[cfg(not(any(feature = "pg17", feature = "pg18")))]
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CoarseFormat {
+    Auto = 0,
+    RaBitQ = 1,
+}
+
+#[cfg(not(any(feature = "pg17", feature = "pg18")))]
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RerankPlacement {
+    Auto = 0,
+    Source = 1,
+    Table = 2,
+    Index = 3,
+    SourceDiagnostic = 4,
+}
+
+#[cfg(not(any(feature = "pg17", feature = "pg18")))]
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RerankFormat {
+    Auto = 0,
+    F32 = 1,
+    RaBitQ2 = 2,
+    RaBitQ4 = 3,
+    RaBitQ8 = 4,
+    TurboQuant = 5,
+    F16 = 6,
+}
+
+#[cfg(not(any(feature = "pg17", feature = "pg18")))]
+const EC_IVF_DEFAULT_RABITQ_RERANK_CLIP: i32 = 2;
 
 #[cfg(not(any(feature = "pg17", feature = "pg18")))]
 impl RerankMode {
@@ -233,11 +291,16 @@ pub(super) struct EcIvfOptions {
     pub(super) posting_slack_percent: i32,
     pub(super) storage_format: StorageFormat,
     pub(super) rerank: RerankMode,
+    pub(super) coarse_bits: i32,
     pub(super) quant_bits: u8,
+    pub(super) rabitq_residual: bool,
     pub(super) rabitq_rerank_score: RaBitQRerankScoreMode,
     pub(super) rabitq_rerank_clip: i32,
     pub(super) dense_posting_blocks: bool,
     pub(super) dense_posting_typed_layout: bool,
+    pub(super) coarse_format: CoarseFormat,
+    pub(super) rerank_placement: RerankPlacement,
+    pub(super) rerank_format: RerankFormat,
 }
 
 #[cfg(not(any(feature = "pg17", feature = "pg18")))]
@@ -4750,6 +4813,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(any(feature = "pg17", feature = "pg18"))]
     use crate::am::ec_ivf::options::{
         CoarseFormat, RaBitQRerankScoreMode, RerankFormat, RerankPlacement,
         EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,

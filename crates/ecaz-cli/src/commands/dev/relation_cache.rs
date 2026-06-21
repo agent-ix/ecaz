@@ -2,6 +2,7 @@ use clap::Args;
 use color_eyre::eyre::{bail, Context, Result};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::File;
+#[cfg(any(target_os = "linux", target_os = "android"))]
 use std::os::fd::AsRawFd;
 use std::path::{Path, PathBuf};
 
@@ -259,6 +260,7 @@ fn relation_file_name_matches(base: &str, name: &str) -> bool {
             .is_some_and(|tail| tail.starts_with('.') || tail.starts_with('_'))
 }
 
+#[cfg(any(target_os = "linux", target_os = "android"))]
 fn evict_file(file: &EvictFile) -> Result<()> {
     let handle = File::open(&file.path)
         .wrap_err_with(|| format!("opening relation file {}", file.path.display()))?;
@@ -270,6 +272,13 @@ fn evict_file(file: &EvictFile) -> Result<()> {
         );
     }
     Ok(())
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "android")))]
+fn evict_file(file: &EvictFile) -> Result<()> {
+    let _handle = File::open(&file.path)
+        .wrap_err_with(|| format!("opening relation file {}", file.path.display()))?;
+    bail!("relation-cache eviction requires posix_fadvise(DONTNEED), unavailable on this platform");
 }
 
 #[cfg(test)]
