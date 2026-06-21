@@ -1,0 +1,12 @@
+Script started on 2026-06-19 22:03:24-07:00 [<not executed on terminal>]
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 07s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-52f8c7085962b346)
+
+running 1 test
+test am::ec_ivf::rerank::tests::compact_payload_codecs_batch_paths_match_scalar_scores ... [32mok(B[m
+
+test result: [32mok(B[m. 1 passed; 0 failed; 0 ignored; 0 measured; 2199 filtered out; finished in 0.08s
+
+
+Script done on 2026-06-19 22:04:32-07:00 [COMMAND_EXIT_CODE="0"]

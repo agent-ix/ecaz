@@ -1,0 +1,11 @@
+Script started on 2026-06-20 13:39:39-07:00 [<not executed on terminal>]
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.15s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-c7c1af696107cad0)
+
+running 1 test
+test am::ec_ivf::rerank::tests::rabitq_index_rerank_exposes_least_squares_and_clip_levers ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2209 filtered out; finished in 0.00s
+
+
+Script done on 2026-06-20 13:39:40-07:00 [COMMAND_EXIT_CODE="0"]

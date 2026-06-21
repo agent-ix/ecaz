@@ -1,0 +1,17 @@
+Script started on 2026-06-20 14:54:14-07:00 [<not executed on terminal>]
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.21s
+     Running tests/on_disk_fixtures.rs (target/debug/deps/on_disk_fixtures-86dd414e3453b000)
+
+running 7 tests
+test ivf_metadata_v3_is_rejected_by_version ... ok
+test ivf_metadata_byteswapped_version_is_rejected ... ok
+test ivf_metadata_v4_is_rejected_by_version ... ok
+test ivf_metadata_v6_is_rejected_by_version ... ok
+test ivf_metadata_v5_is_rejected_by_version ... ok
+test ivf_metadata_v7_is_rejected_by_version ... ok
+test ivf_metadata_v8_fixture_decodes ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 45 filtered out; finished in 0.00s
+
+
+Script done on 2026-06-20 14:54:15-07:00 [COMMAND_EXIT_CODE="0"]

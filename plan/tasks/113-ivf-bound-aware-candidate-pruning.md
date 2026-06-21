@@ -28,6 +28,15 @@ promotion bench deferred to the Intel bench host). Reviewed in
   if the deferred lazy A/B shows it fires. See the 002 reviewer feedback.
 Priority: P1 latency.
 
+**Benchmark verdict (2026-06-19, intel-local, real DBpedia 10/50/100k, fixed
+release `.so`; `benchmarks/ivf-111g-115-attribution/`):** posting prune is
+**recall-safe on both paths** (off==on byte-identical, incl. the dense path codex
+P2 flagged). **Row path: ~4% latency win** at matched recall — the lane's one real
+measured latency improvement; keep. **Dense (coarse_rerank) path: no win, ~3%
+slower** (direct-scan doesn't pre-prune; cutoff is bookkeeping) → recommend gating
+the prune to the row path. See
+`reviews/task-113/003-lazy-prune-followup/feedback/2026-06-19-01-reviewer.md`.
+
 ## Goal
 
 Reduce IVF scan latency by using quantizer-provided score bounds to avoid

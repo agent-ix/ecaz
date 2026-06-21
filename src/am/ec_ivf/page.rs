@@ -2,7 +2,7 @@
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
 use std::collections::BTreeSet;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 #[cfg(any(feature = "pg17", feature = "pg18"))]
 use std::marker::PhantomData;
 use std::mem::{align_of, size_of};
@@ -29,7 +29,7 @@ mod pg_sys {
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
-use super::options::{EcIvfOptions, RerankMode, StorageFormat};
+use super::options::{EcIvfOptions, RaBitQRerankScoreMode, RerankMode, StorageFormat};
 #[cfg(any(feature = "pg17", feature = "pg18"))]
 use super::P_NEW;
 #[cfg(not(any(feature = "pg17", feature = "pg18")))]
@@ -53,18 +53,32 @@ pub(super) const METADATA_BLOCK_NUMBER: u32 = 0;
 pub(super) const FIRST_DATA_BLOCK_NUMBER: pg_sys::BlockNumber = 1;
 #[cfg(not(any(feature = "pg17", feature = "pg18")))]
 pub(super) const FIRST_DATA_BLOCK_NUMBER: u32 = 1;
-// v3 metadata is the only supported on-disk format. It is 86 bytes wide and
-// stores the rerank sidecar head ItemPointer at bytes 80..86, pointing at the
-// 0x2A compact rerank sidecar chain used by rerank_placement = 'index'. A
-// rerank_sidecar_head of INVALID is the legitimate "no sidecar" state for
-// rerank_placement = 'table' and for f32 storage (rerank reads from the
-// heap/table source path instead). This research project keeps no backward
-// compatibility with older metadata widths.
-pub const EC_IVF_INDEX_FORMAT_VERSION: u16 = 3;
+// v9 metadata is the only supported on-disk format. It is 92 bytes wide and
+// stores RaBitQ rerank score knobs at bytes 22..24 plus the rerank sidecar head
+// ItemPointer at bytes 80..86. In v9 that head
+// points at the 0x2B packed rerank group-header chain used by
+// rerank_placement = 'index'. RaBitQ and TurboQuant rerank group payloads are
+// encoded relative to the assigned centroid in v8; v9 expands the persisted
+// compact-rerank score mode byte to include exact-dequant diagnostics. v7 used
+// the same payload layout but read the RaBitQ rerank score knobs from mutable
+// live reloptions, v6 used centroid-relative RaBitQ but whole-vector
+// TurboQuant bytes, v5 used the same layout with non-residual RaBitQ bytes,
+// and v4's 0x2A heap-TID
+// sidecar remains a legacy benchmark baseline. No older version is a readable
+// current format. The
+// rerank sidecar directory head ItemPointer at bytes 86..92 is retained for the
+// old v4 field width but is INVALID for v9 packed groups. Posting-carried
+// rerank TIDs are the hot group lookup path; the group chain is the fallback,
+// vacuum, and inspection path. A rerank_sidecar_head of INVALID is the
+// legitimate "no sidecar" state for rerank_placement = 'source' and for f32
+// storage (rerank reads from the heap/source-vector path instead). This
+// research project keeps no backward compatibility with older metadata
+// widths/layouts.
+pub const EC_IVF_INDEX_FORMAT_VERSION: u16 = 9;
 pub(super) const INDEX_FORMAT_VERSION: u16 = EC_IVF_INDEX_FORMAT_VERSION;
 
 pub const EC_IVF_METADATA_MAGIC: u32 = 0x5649_4345; // "ECIV" as little-endian bytes.
-pub const EC_IVF_METADATA_BYTES: usize = 86;
+pub const EC_IVF_METADATA_BYTES: usize = 92;
 pub const EC_IVF_METADATA_MAGIC_OFFSET: usize = 0;
 pub const EC_IVF_METADATA_FORMAT_VERSION_OFFSET: usize = 4;
 pub const EC_IVF_METADATA_DIMENSIONS_OFFSET: usize = 6;
@@ -72,6 +86,8 @@ pub const EC_IVF_METADATA_NLISTS_OFFSET: usize = 8;
 pub const EC_IVF_METADATA_NPROBE_OFFSET: usize = 12;
 pub const EC_IVF_METADATA_TRAINING_SAMPLE_ROWS_OFFSET: usize = 16;
 pub const EC_IVF_METADATA_TRAINING_VERSION_OFFSET: usize = 20;
+pub const EC_IVF_METADATA_RABITQ_RERANK_SCORE_MODE_OFFSET: usize = 22;
+pub const EC_IVF_METADATA_RABITQ_RERANK_CLIP_OFFSET: usize = 23;
 pub const EC_IVF_METADATA_SEED_OFFSET: usize = 24;
 pub const EC_IVF_METADATA_STORAGE_FORMAT_OFFSET: usize = 32;
 pub const EC_IVF_METADATA_RERANK_OFFSET: usize = 33;
@@ -84,8 +100,13 @@ pub const EC_IVF_METADATA_TOTAL_DEAD_TUPLES_OFFSET: usize = 56;
 pub const EC_IVF_METADATA_INSERTED_SINCE_BUILD_OFFSET: usize = 64;
 pub const EC_IVF_METADATA_PQ_CODEBOOK_HEAD_OFFSET: usize = 72;
 pub const EC_IVF_METADATA_PQ_GROUP_SIZE_OFFSET: usize = 78;
-/// Task 111g v3: rerank sidecar chain head ItemPointer (bytes 80..86).
+/// Task 111h v8+: packed rerank group-header chain head ItemPointer
+/// (bytes 80..86).
 pub const EC_IVF_METADATA_RERANK_SIDECAR_HEAD_OFFSET: usize = 80;
+/// Legacy ADR-079 directory head slot (bytes 86..92). v9 packed rerank groups
+/// keep the field for metadata width stability but write INVALID; group headers
+/// chain through their own `next_group_tid`.
+pub const EC_IVF_METADATA_RERANK_SIDECAR_DIRECTORY_HEAD_OFFSET: usize = 86;
 
 pub const EC_IVF_BLOCK_REF_BYTES: usize = 4;
 pub const EC_IVF_BLOCK_REF_BLOCK_NUMBER_OFFSET: usize = 0;
@@ -116,6 +137,27 @@ pub const EC_IVF_PQ_CODEBOOK_GROUP_INDEX_OFFSET: usize = 1;
 pub const EC_IVF_PQ_CODEBOOK_NEXT_TID_OFFSET: usize = 3;
 pub const EC_IVF_PQ_CODEBOOK_CENTROIDS_OFFSET: usize =
     EC_IVF_PQ_CODEBOOK_NEXT_TID_OFFSET + ITEM_POINTER_BYTES;
+pub const EC_IVF_RERANK_GROUP_HEADER_TAG_OFFSET: usize = 0;
+pub const EC_IVF_RERANK_GROUP_HEADER_RERANK_FORMAT_OFFSET: usize = 1;
+pub const EC_IVF_RERANK_GROUP_HEADER_LIST_ID_OFFSET: usize = 2;
+pub const EC_IVF_RERANK_GROUP_HEADER_SCORER_WIDTH_OFFSET: usize = 6;
+pub const EC_IVF_RERANK_GROUP_HEADER_VALID_COUNT_OFFSET: usize = 8;
+pub const EC_IVF_RERANK_GROUP_HEADER_PAYLOAD_LEN_OFFSET: usize = 10;
+pub const EC_IVF_RERANK_GROUP_HEADER_TOTAL_HEAP_TIDS_OFFSET: usize = 12;
+pub const EC_IVF_RERANK_GROUP_HEADER_TOTAL_PAYLOAD_BYTES_OFFSET: usize = 16;
+pub const EC_IVF_RERANK_GROUP_HEADER_HEADER_PAYLOAD_BYTES_OFFSET: usize = 20;
+pub const EC_IVF_RERANK_GROUP_HEADER_NEXT_SEGMENT_TID_OFFSET: usize = 22;
+pub const EC_IVF_RERANK_GROUP_HEADER_NEXT_GROUP_TID_OFFSET: usize =
+    EC_IVF_RERANK_GROUP_HEADER_NEXT_SEGMENT_TID_OFFSET + ITEM_POINTER_BYTES;
+pub const EC_IVF_RERANK_GROUP_HEADER_RESERVED_OFFSET: usize =
+    EC_IVF_RERANK_GROUP_HEADER_NEXT_GROUP_TID_OFFSET + ITEM_POINTER_BYTES;
+pub const EC_IVF_RERANK_GROUP_HEADER_FIXED_BYTES: usize =
+    EC_IVF_RERANK_GROUP_HEADER_RESERVED_OFFSET + 2;
+pub const EC_IVF_RERANK_GROUP_PAYLOAD_SEGMENT_TAG_OFFSET: usize = 0;
+pub const EC_IVF_RERANK_GROUP_PAYLOAD_SEGMENT_PAYLOAD_BYTES_OFFSET: usize = 1;
+pub const EC_IVF_RERANK_GROUP_PAYLOAD_SEGMENT_NEXT_SEGMENT_TID_OFFSET: usize = 3;
+pub const EC_IVF_RERANK_GROUP_PAYLOAD_SEGMENT_HEADER_BYTES: usize =
+    EC_IVF_RERANK_GROUP_PAYLOAD_SEGMENT_NEXT_SEGMENT_TID_OFFSET + ITEM_POINTER_BYTES;
 
 const METADATA_MAGIC: u32 = EC_IVF_METADATA_MAGIC;
 const METADATA_BYTES: usize = EC_IVF_METADATA_BYTES;
@@ -129,9 +171,16 @@ const IVF_DENSE_POSTING_ALIGNED_BLOCK_TAG: u8 = 0x28;
 // Task 111g: compact rerank sidecar block, keyed by heap TID. Stores a
 // tid-sorted run of (heap_tid, compact payload) entries chained via next_tid.
 const IVF_RERANK_SIDECAR_BLOCK_TAG: u8 = 0x2A;
+// Task 111h: packed scorer-width rerank groups. The header segment stores
+// logical-group metadata once; payload segments carry only continuation bytes.
+const IVF_RERANK_GROUP_HEADER_TAG: u8 = 0x2B;
+const IVF_RERANK_GROUP_PAYLOAD_SEGMENT_TAG: u8 = 0x2C;
 const POSTING_FLAG_DELETED: u8 = 0b0000_0001;
 const POSTING_FIXED_BYTES: usize = EC_IVF_POSTING_PAYLOAD_OFFSET;
 const DENSE_POSTING_BLOCK_HEADER_BYTES: usize = 16;
+const RERANK_GROUP_HEADER_FIXED_BYTES: usize = EC_IVF_RERANK_GROUP_HEADER_FIXED_BYTES;
+const RERANK_GROUP_PAYLOAD_SEGMENT_HEADER_BYTES: usize =
+    EC_IVF_RERANK_GROUP_PAYLOAD_SEGMENT_HEADER_BYTES;
 
 #[cfg(not(any(feature = "pg17", feature = "pg18")))]
 #[repr(u8)]
@@ -153,6 +202,71 @@ pub enum RerankMode {
     HeapF32 = 2,
     SourceColumn = 3,
 }
+
+#[cfg(not(any(feature = "pg17", feature = "pg18")))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum RaBitQRerankScoreMode {
+    Estimator,
+    LeastSquares,
+    ExactDequant,
+}
+
+#[cfg(not(any(feature = "pg17", feature = "pg18")))]
+impl RaBitQRerankScoreMode {
+    pub(super) fn from_metadata_byte(value: u8) -> Result<Self, String> {
+        match value {
+            0 => Ok(Self::Estimator),
+            1 => Ok(Self::LeastSquares),
+            2 => Ok(Self::ExactDequant),
+            other => Err(format!(
+                "invalid ec_ivf rerank score mode stored in metadata: {other}"
+            )),
+        }
+    }
+
+    pub(super) fn metadata_byte(self) -> u8 {
+        match self {
+            Self::Estimator => 0,
+            Self::LeastSquares => 1,
+            Self::ExactDequant => 2,
+        }
+    }
+}
+
+#[cfg(not(any(feature = "pg17", feature = "pg18")))]
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CoarseFormat {
+    Auto = 0,
+    RaBitQ = 1,
+}
+
+#[cfg(not(any(feature = "pg17", feature = "pg18")))]
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RerankPlacement {
+    Auto = 0,
+    Source = 1,
+    Table = 2,
+    Index = 3,
+    SourceDiagnostic = 4,
+}
+
+#[cfg(not(any(feature = "pg17", feature = "pg18")))]
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RerankFormat {
+    Auto = 0,
+    F32 = 1,
+    RaBitQ2 = 2,
+    RaBitQ4 = 3,
+    RaBitQ8 = 4,
+    TurboQuant = 5,
+    F16 = 6,
+}
+
+#[cfg(not(any(feature = "pg17", feature = "pg18")))]
+const EC_IVF_DEFAULT_RABITQ_RERANK_CLIP: i32 = 2;
 
 #[cfg(not(any(feature = "pg17", feature = "pg18")))]
 impl RerankMode {
@@ -177,9 +291,16 @@ pub(super) struct EcIvfOptions {
     pub(super) posting_slack_percent: i32,
     pub(super) storage_format: StorageFormat,
     pub(super) rerank: RerankMode,
+    pub(super) coarse_bits: i32,
     pub(super) quant_bits: u8,
+    pub(super) rabitq_residual: bool,
+    pub(super) rabitq_rerank_score: RaBitQRerankScoreMode,
+    pub(super) rabitq_rerank_clip: i32,
     pub(super) dense_posting_blocks: bool,
     pub(super) dense_posting_typed_layout: bool,
+    pub(super) coarse_format: CoarseFormat,
+    pub(super) rerank_placement: RerankPlacement,
+    pub(super) rerank_format: RerankFormat,
 }
 
 #[cfg(not(any(feature = "pg17", feature = "pg18")))]
@@ -601,6 +722,17 @@ pub struct MetadataPage {
     pub seed: u64,
     pub storage_format: StorageFormat,
     pub rerank: RerankMode,
+    /// Task 111h v9: compact rerank scorer mode persisted at metadata byte
+    /// 22. `0` uses the format default scorer, `1` uses the RaBitQ
+    /// least-squares projection, and `2` scores the compact payload as a
+    /// dequantized vector diagnostic. This is a build-time payload
+    /// interpretation knob and must not be read from mutable reloptions during
+    /// scan or insert.
+    pub rabitq_rerank_score_mode: RaBitQRerankScoreMode,
+    /// Task 111h v8+: RaBitQ rerank clip persisted at metadata byte 23. Valid
+    /// values are 1..=8 and define the LUT/payload interpretation used by the
+    /// rerank scorer.
+    pub rabitq_rerank_clip: u8,
     /// RaBitQ per-dim code width. Valid values are {1, 2, 4, 8}. v1
     /// indexes write 0 here and the decoder coerces to 4 (the legacy
     /// hardcoded value).
@@ -620,8 +752,12 @@ pub struct MetadataPage {
     pub pq_group_size: u16,
     /// Task 111g v3: head of the compact rerank sidecar chain (tag 0x2A),
     /// keyed by heap TID. `INVALID` means no sidecar exists (rerank_placement =
-    /// 'table' / f32 storage), so rerank reads from the heap/table source path.
+    /// 'source' / f32 storage), so rerank reads from the heap/source-vector path.
     pub rerank_sidecar_head: ItemPointer,
+    /// ADR-079: head of the rerank sidecar directory chain (bytes 86..92).
+    /// `INVALID` when no directory exists (no sidecar, or pre-ADR-079 build);
+    /// scan falls back to the full-chain read in that case.
+    pub rerank_sidecar_directory_head: ItemPointer,
 }
 
 impl MetadataPage {
@@ -637,6 +773,9 @@ impl MetadataPage {
             seed: u64::try_from(options.seed).expect("validated seed should fit in u64"),
             storage_format: options.storage_format,
             rerank: options.rerank.v1_effective(),
+            rabitq_rerank_score_mode: options.rabitq_rerank_score,
+            rabitq_rerank_clip: u8::try_from(options.rabitq_rerank_clip)
+                .expect("validated rabitq_rerank_clip should fit in u8"),
             quant_bits: options.effective_quant_bits(),
             rabitq_residual: options.rabitq_residual,
             centroid_head: ItemPointer::INVALID,
@@ -647,7 +786,16 @@ impl MetadataPage {
             pq_codebook_head: ItemPointer::INVALID,
             pq_group_size: 0,
             rerank_sidecar_head: ItemPointer::INVALID,
+            rerank_sidecar_directory_head: ItemPointer::INVALID,
         }
+    }
+
+    pub(super) fn rabitq_rerank_score_mode(&self) -> RaBitQRerankScoreMode {
+        self.rabitq_rerank_score_mode
+    }
+
+    pub(super) fn rabitq_rerank_clip_i32(&self) -> i32 {
+        i32::from(self.rabitq_rerank_clip)
     }
 
     pub(super) fn encode(&self) -> [u8; METADATA_BYTES] {
@@ -659,6 +807,8 @@ impl MetadataPage {
         out[12..16].copy_from_slice(&self.nprobe.to_le_bytes());
         out[16..20].copy_from_slice(&self.training_sample_rows.to_le_bytes());
         out[20..22].copy_from_slice(&self.training_version.to_le_bytes());
+        out[22] = self.rabitq_rerank_score_mode.metadata_byte();
+        out[23] = self.rabitq_rerank_clip;
         out[24..32].copy_from_slice(&self.seed.to_le_bytes());
         out[32] = self.storage_format as u8;
         out[33] = self.rerank as u8;
@@ -672,14 +822,17 @@ impl MetadataPage {
         out[64..72].copy_from_slice(&self.inserted_since_build.to_le_bytes());
         write_item_pointer(&mut out[72..78], self.pq_codebook_head);
         out[78..80].copy_from_slice(&self.pq_group_size.to_le_bytes());
-        // Task 111g v3: rerank sidecar head (bytes 80..86).
+        // Task 111g: rerank sidecar head (bytes 80..86).
         write_item_pointer(&mut out[80..86], self.rerank_sidecar_head);
+        // ADR-079: rerank sidecar directory head (bytes 86..92).
+        write_item_pointer(&mut out[86..92], self.rerank_sidecar_directory_head);
         out
     }
 
     pub fn decode(bytes: &[u8]) -> Result<Self, String> {
-        // v3 is the only supported width (86 bytes), including the rerank
-        // sidecar head at bytes 80..86.
+        // v9 is the only supported width (92 bytes), including compact rerank
+        // score knobs at bytes 22..24, the packed rerank group head at bytes
+        // 80..86, and the legacy sidecar directory head at bytes 86..92.
         if bytes.len() < EC_IVF_METADATA_BYTES {
             return Err(format!(
                 "ec_ivf metadata length mismatch: got {}, expected at least {EC_IVF_METADATA_BYTES}",
@@ -731,6 +884,15 @@ impl MetadataPage {
                     .try_into()
                     .expect("metadata training version slice should be 2 bytes"),
             ),
+            rabitq_rerank_score_mode: RaBitQRerankScoreMode::from_metadata_byte(bytes[22])?,
+            rabitq_rerank_clip: match bytes[23] {
+                clip @ 1..=8 => clip,
+                other => {
+                    return Err(format!(
+                        "invalid ec_ivf rabitq_rerank_clip stored in metadata: {other}"
+                    ))
+                }
+            },
             seed: u64::from_le_bytes(
                 bytes[24..32]
                     .try_into()
@@ -784,9 +946,14 @@ impl MetadataPage {
                     .expect("metadata pq group size slice should be 2 bytes"),
             ),
             // v3 rerank sidecar head (bytes 80..86). INVALID is the legitimate
-            // "no sidecar" state for rerank_placement = 'table' / f32 storage.
+            // "no sidecar" state for rerank_placement = 'source' / f32 storage.
             rerank_sidecar_head: ItemPointer::decode(
-                &bytes[EC_IVF_METADATA_RERANK_SIDECAR_HEAD_OFFSET..EC_IVF_METADATA_BYTES],
+                &bytes[EC_IVF_METADATA_RERANK_SIDECAR_HEAD_OFFSET
+                    ..EC_IVF_METADATA_RERANK_SIDECAR_HEAD_OFFSET + ITEM_POINTER_BYTES],
+            )?,
+            // ADR-079 rerank sidecar directory head (bytes 86..92).
+            rerank_sidecar_directory_head: ItemPointer::decode(
+                &bytes[EC_IVF_METADATA_RERANK_SIDECAR_DIRECTORY_HEAD_OFFSET..EC_IVF_METADATA_BYTES],
             )?,
         })
     }
@@ -1022,6 +1189,66 @@ pub(super) struct IvfDensePostingBlockTuple {
     pub(super) heap_tids: Vec<ItemPointer>,
     pub(super) deleted_bitmap: Vec<u8>,
     pub(super) payload_len: usize,
+    pub(super) payloads: Vec<u8>,
+}
+
+/// Task 111h packed rerank group header. One logical group is sized to the
+/// scorer width; this header stores group metadata once and may carry the first
+/// payload fragment. Continuation segments are payload-only tuples linked by
+/// `next_segment_tid`; group headers are linked separately by `next_group_tid`
+/// for fallback scans, vacuum, and inspection.
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct IvfRerankGroupHeaderTuple {
+    pub(super) rerank_format: u8,
+    pub(super) list_id: u32,
+    pub(super) scorer_width: usize,
+    pub(super) payload_len: usize,
+    pub(super) next_segment_tid: ItemPointer,
+    pub(super) next_group_tid: ItemPointer,
+    pub(super) deleted_bitmap: Vec<u8>,
+    pub(super) gammas: Vec<f32>,
+    pub(super) heap_tid_counts: Vec<u16>,
+    pub(super) heap_tid_offsets: Vec<u32>,
+    pub(super) payload_offsets: Vec<u32>,
+    pub(super) heap_tids: Vec<ItemPointer>,
+    pub(super) payloads: Vec<u8>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(super) struct IvfRerankGroupHeaderRef<'a> {
+    pub(super) rerank_format: u8,
+    pub(super) list_id: u32,
+    scorer_width: usize,
+    valid_count: usize,
+    payload_len: usize,
+    total_heap_tids: usize,
+    total_payload_bytes: usize,
+    header_payload_bytes: usize,
+    pub(super) next_segment_tid: ItemPointer,
+    pub(super) next_group_tid: ItemPointer,
+    deleted_bitmap: &'a [u8],
+    gamma_bytes: &'a [u8],
+    heap_tid_count_bytes: &'a [u8],
+    heap_tid_offset_bytes: &'a [u8],
+    payload_offset_bytes: &'a [u8],
+    heap_tid_bytes: &'a [u8],
+    pub(super) payloads: &'a [u8],
+}
+
+pub(super) fn remember_rerank_group_chain_tid(
+    visited: &mut HashSet<ItemPointer>,
+    tid: ItemPointer,
+) -> Result<(), String> {
+    if visited.insert(tid) {
+        Ok(())
+    } else {
+        Err(format!("ec_ivf rerank group chain cycle at tid {:?}", tid))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct IvfRerankGroupPayloadSegmentTuple {
+    pub(super) next_segment_tid: ItemPointer,
     pub(super) payloads: Vec<u8>,
 }
 
@@ -1296,6 +1523,12 @@ impl<'a> IvfDensePostingBlockRef<'a> {
             .map(|chunk| ItemPointer::decode(chunk).expect("validated dense block tid bytes"))
     }
 
+    pub(super) fn rerank_tid(&self, index: usize) -> ItemPointer {
+        let start = index * ITEM_POINTER_BYTES;
+        ItemPointer::decode(&self.rerank_tid_bytes[start..start + ITEM_POINTER_BYTES])
+            .expect("validated dense block rerank tid bytes")
+    }
+
     pub(super) fn payload(&self, index: usize) -> &[u8] {
         let start = index * self.payload_len;
         &self.payloads[start..start + self.payload_len]
@@ -1389,6 +1622,12 @@ impl<'a> IvfDensePostingRef<'a> {
         }
     }
 
+    pub(super) fn rerank_tid(self, index: usize) -> ItemPointer {
+        match self {
+            Self::Block(block) => block.rerank_tid(index),
+        }
+    }
+
     pub(super) fn payload(self, index: usize) -> &'a [u8] {
         match self {
             Self::Block(block) => {
@@ -1396,6 +1635,473 @@ impl<'a> IvfDensePostingRef<'a> {
                 &block.payloads[start..start + block.payload_len]
             }
         }
+    }
+}
+
+impl<'a> IvfRerankGroupHeaderRef<'a> {
+    pub(super) fn decode(input: &'a [u8]) -> Result<Self, String> {
+        if input.len() < RERANK_GROUP_HEADER_FIXED_BYTES {
+            return Err(format!(
+                "ec_ivf rerank group header length mismatch: got {}, expected at least {RERANK_GROUP_HEADER_FIXED_BYTES}",
+                input.len()
+            ));
+        }
+        if input[0] != IVF_RERANK_GROUP_HEADER_TAG {
+            return Err(format!(
+                "invalid ec_ivf rerank group header tag: {}",
+                input[0]
+            ));
+        }
+        let rerank_format = input[1];
+        let list_id = u32::from_le_bytes(
+            input[2..6]
+                .try_into()
+                .expect("rerank group list id slice should be 4 bytes"),
+        );
+        let scorer_width = u16::from_le_bytes(
+            input[6..8]
+                .try_into()
+                .expect("rerank group scorer width slice should be 2 bytes"),
+        ) as usize;
+        let valid_count = u16::from_le_bytes(
+            input[8..10]
+                .try_into()
+                .expect("rerank group valid count slice should be 2 bytes"),
+        ) as usize;
+        let payload_len = u16::from_le_bytes(
+            input[10..12]
+                .try_into()
+                .expect("rerank group payload len slice should be 2 bytes"),
+        ) as usize;
+        let total_heap_tids = u32::from_le_bytes(
+            input[12..16]
+                .try_into()
+                .expect("rerank group heap tid count slice should be 4 bytes"),
+        ) as usize;
+        let total_payload_bytes = u32::from_le_bytes(
+            input[16..20]
+                .try_into()
+                .expect("rerank group total payload slice should be 4 bytes"),
+        ) as usize;
+        let header_payload_bytes = u16::from_le_bytes(
+            input[20..22]
+                .try_into()
+                .expect("rerank group header payload slice should be 2 bytes"),
+        ) as usize;
+        let next_segment_tid = ItemPointer::decode(&input[22..22 + ITEM_POINTER_BYTES])?;
+        let next_group_start = 22 + ITEM_POINTER_BYTES;
+        let next_group_tid =
+            ItemPointer::decode(&input[next_group_start..next_group_start + ITEM_POINTER_BYTES])?;
+        let reserved_start = next_group_start + ITEM_POINTER_BYTES;
+        if input[reserved_start..RERANK_GROUP_HEADER_FIXED_BYTES]
+            .iter()
+            .any(|byte| *byte != 0)
+        {
+            return Err("ec_ivf rerank group header reserved bytes must be zero".to_owned());
+        }
+
+        if scorer_width == 0 {
+            return Err("ec_ivf rerank group scorer width must be positive".to_owned());
+        }
+        if valid_count == 0 || valid_count > scorer_width {
+            return Err(format!(
+                "ec_ivf rerank group valid count {valid_count} must be in 1..={scorer_width}"
+            ));
+        }
+        if payload_len == 0 {
+            return Err("ec_ivf rerank group payload length must be positive".to_owned());
+        }
+        if total_payload_bytes != valid_count * payload_len {
+            return Err(format!(
+                "ec_ivf rerank group total payload bytes {total_payload_bytes} do not match {valid_count} entries * {payload_len}"
+            ));
+        }
+        if header_payload_bytes > total_payload_bytes {
+            return Err(format!(
+                "ec_ivf rerank group header payload bytes {header_payload_bytes} exceed total payload bytes {total_payload_bytes}"
+            ));
+        }
+
+        let deleted_bitmap_start = RERANK_GROUP_HEADER_FIXED_BYTES;
+        let deleted_bitmap_end = deleted_bitmap_start + dense_deleted_bitmap_len(scorer_width);
+        let gamma_start = deleted_bitmap_end;
+        let gamma_end = gamma_start + valid_count * size_of::<f32>();
+        let heap_tid_count_start = gamma_end;
+        let heap_tid_count_end = heap_tid_count_start + valid_count * size_of::<u16>();
+        let heap_tid_offset_start = heap_tid_count_end;
+        let heap_tid_offset_end = heap_tid_offset_start + valid_count * size_of::<u32>();
+        let payload_offset_start = heap_tid_offset_end;
+        let payload_offset_end = payload_offset_start + valid_count * size_of::<u32>();
+        let heap_tid_start = payload_offset_end;
+        let heap_tid_end = heap_tid_start + total_heap_tids * ITEM_POINTER_BYTES;
+        let payload_start = heap_tid_end;
+        let payload_end = payload_start + header_payload_bytes;
+        if input.len() != payload_end {
+            return Err(format!(
+                "ec_ivf rerank group header length mismatch: got {}, expected {payload_end}",
+                input.len()
+            ));
+        }
+
+        Ok(Self {
+            rerank_format,
+            list_id,
+            scorer_width,
+            valid_count,
+            payload_len,
+            total_heap_tids,
+            total_payload_bytes,
+            header_payload_bytes,
+            next_segment_tid,
+            next_group_tid,
+            deleted_bitmap: &input[deleted_bitmap_start..deleted_bitmap_end],
+            gamma_bytes: &input[gamma_start..gamma_end],
+            heap_tid_count_bytes: &input[heap_tid_count_start..heap_tid_count_end],
+            heap_tid_offset_bytes: &input[heap_tid_offset_start..heap_tid_offset_end],
+            payload_offset_bytes: &input[payload_offset_start..payload_offset_end],
+            heap_tid_bytes: &input[heap_tid_start..heap_tid_end],
+            payloads: &input[payload_start..payload_end],
+        })
+    }
+
+    pub(super) fn scorer_width(&self) -> usize {
+        self.scorer_width
+    }
+
+    pub(super) fn valid_count(&self) -> usize {
+        self.valid_count
+    }
+
+    pub(super) fn payload_len(&self) -> usize {
+        self.payload_len
+    }
+
+    pub(super) fn total_payload_bytes(&self) -> usize {
+        self.total_payload_bytes
+    }
+
+    pub(super) fn header_payload_bytes(&self) -> usize {
+        self.header_payload_bytes
+    }
+
+    pub(super) fn gamma(&self, index: usize) -> f32 {
+        let start = index * size_of::<f32>();
+        f32::from_le_bytes(
+            self.gamma_bytes[start..start + size_of::<f32>()]
+                .try_into()
+                .expect("validated rerank group gamma chunk"),
+        )
+    }
+
+    pub(super) fn heap_tid_count(&self, index: usize) -> usize {
+        let start = index * size_of::<u16>();
+        u16::from_le_bytes(
+            self.heap_tid_count_bytes[start..start + size_of::<u16>()]
+                .try_into()
+                .expect("validated rerank group heap tid count chunk"),
+        ) as usize
+    }
+
+    pub(super) fn heap_tid_offset(&self, index: usize) -> usize {
+        let start = index * size_of::<u32>();
+        u32::from_le_bytes(
+            self.heap_tid_offset_bytes[start..start + size_of::<u32>()]
+                .try_into()
+                .expect("validated rerank group heap tid offset chunk"),
+        ) as usize
+    }
+
+    pub(super) fn payload_offset(&self, index: usize) -> usize {
+        let start = index * size_of::<u32>();
+        u32::from_le_bytes(
+            self.payload_offset_bytes[start..start + size_of::<u32>()]
+                .try_into()
+                .expect("validated rerank group payload offset chunk"),
+        ) as usize
+    }
+
+    pub(super) fn heap_tids(&self, index: usize) -> impl Iterator<Item = ItemPointer> + '_ {
+        let start = self.heap_tid_offset(index);
+        let count = self.heap_tid_count(index);
+        self.heap_tid_bytes[start * ITEM_POINTER_BYTES..(start + count) * ITEM_POINTER_BYTES]
+            .chunks_exact(ITEM_POINTER_BYTES)
+            .map(|chunk| ItemPointer::decode(chunk).expect("validated rerank group tid bytes"))
+    }
+
+    pub(super) fn validate_offsets(&self) -> Result<(), String> {
+        for index in 0..self.valid_count {
+            let heap_start = self.heap_tid_offset(index);
+            let heap_count = self.heap_tid_count(index);
+            if heap_count == 0 {
+                return Err("ec_ivf rerank group heap tid range is empty".to_owned());
+            }
+            if heap_start
+                .checked_add(heap_count)
+                .map_or(true, |end| end > self.total_heap_tids)
+            {
+                return Err("ec_ivf rerank group heap tid range is out of bounds".to_owned());
+            }
+            let payload_start = self.payload_offset(index);
+            if payload_start
+                .checked_add(self.payload_len)
+                .map_or(true, |end| end > self.total_payload_bytes)
+            {
+                return Err("ec_ivf rerank group payload range is out of bounds".to_owned());
+            }
+        }
+        Ok(())
+    }
+}
+
+impl IvfRerankGroupHeaderTuple {
+    pub(super) fn len(&self) -> usize {
+        self.gammas.len()
+    }
+
+    pub(super) fn is_deleted(&self, index: usize) -> bool {
+        dense_deleted_bitmap_get(&self.deleted_bitmap, index)
+    }
+
+    pub(super) fn mark_deleted(&mut self, index: usize) {
+        dense_deleted_bitmap_set(&mut self.deleted_bitmap, index);
+    }
+
+    pub(super) fn from_single_heaptid_postings(
+        rerank_format: u8,
+        list_id: u32,
+        scorer_width: usize,
+        postings: &[(ItemPointer, f32, Vec<u8>)],
+        payload_len: usize,
+        header_payload_bytes: usize,
+    ) -> Result<Self, String> {
+        if postings.is_empty() {
+            return Err("ec_ivf rerank group requires at least one posting".to_owned());
+        }
+        let mut gammas = Vec::with_capacity(postings.len());
+        let mut heap_tid_counts = Vec::with_capacity(postings.len());
+        let mut heap_tid_offsets = Vec::with_capacity(postings.len());
+        let mut payload_offsets = Vec::with_capacity(postings.len());
+        let mut heap_tids = Vec::with_capacity(postings.len());
+        let mut payloads = Vec::with_capacity(postings.len() * payload_len);
+        for (heap_tid, gamma, payload) in postings {
+            if !gamma.is_finite() {
+                return Err("ec_ivf rerank group gamma must be finite".to_owned());
+            }
+            if payload.len() != payload_len {
+                return Err(format!(
+                    "ec_ivf rerank group payload length mismatch: got {}, expected {payload_len}",
+                    payload.len()
+                ));
+            }
+            heap_tid_offsets.push(
+                u32::try_from(heap_tids.len())
+                    .map_err(|_| "ec_ivf rerank group heap tid offset exceeds u32".to_owned())?,
+            );
+            payload_offsets.push(
+                u32::try_from(payloads.len())
+                    .map_err(|_| "ec_ivf rerank group payload offset exceeds u32".to_owned())?,
+            );
+            heap_tid_counts.push(1);
+            heap_tids.push(*heap_tid);
+            gammas.push(*gamma);
+            payloads.extend_from_slice(payload);
+        }
+        let header_payload_bytes = header_payload_bytes.min(payloads.len());
+        Ok(Self {
+            rerank_format,
+            list_id,
+            scorer_width,
+            payload_len,
+            next_segment_tid: ItemPointer::INVALID,
+            next_group_tid: ItemPointer::INVALID,
+            deleted_bitmap: vec![0; dense_deleted_bitmap_len(scorer_width)],
+            gammas,
+            heap_tid_counts,
+            heap_tid_offsets,
+            payload_offsets,
+            heap_tids,
+            payloads: payloads[..header_payload_bytes].to_vec(),
+        })
+    }
+
+    pub(super) fn encode(&self) -> Result<Vec<u8>, String> {
+        let valid_count = self.gammas.len();
+        if self.scorer_width == 0 {
+            return Err("ec_ivf rerank group scorer width must be positive".to_owned());
+        }
+        if valid_count == 0 || valid_count > self.scorer_width {
+            return Err(format!(
+                "ec_ivf rerank group valid count {valid_count} must be in 1..={}",
+                self.scorer_width
+            ));
+        }
+        if self.scorer_width > u16::MAX as usize || valid_count > u16::MAX as usize {
+            return Err("ec_ivf rerank group scorer width/count exceeds u16".to_owned());
+        }
+        if self.payload_len == 0 || self.payload_len > u16::MAX as usize {
+            return Err("ec_ivf rerank group payload length out of range".to_owned());
+        }
+        if self.gammas.len() != self.heap_tid_counts.len()
+            || self.gammas.len() != self.heap_tid_offsets.len()
+            || self.gammas.len() != self.payload_offsets.len()
+            || self.deleted_bitmap.len() != dense_deleted_bitmap_len(self.scorer_width)
+        {
+            return Err("ec_ivf rerank group metadata array length mismatch".to_owned());
+        }
+        if self.gammas.iter().any(|gamma| !gamma.is_finite()) {
+            return Err("ec_ivf rerank group gamma must be finite".to_owned());
+        }
+        if self.heap_tids.len() > u32::MAX as usize {
+            return Err("ec_ivf rerank group heap tid count exceeds u32".to_owned());
+        }
+        let total_payload_bytes = valid_count
+            .checked_mul(self.payload_len)
+            .ok_or_else(|| "ec_ivf rerank group payload bytes overflow".to_owned())?;
+        if total_payload_bytes > u32::MAX as usize {
+            return Err("ec_ivf rerank group total payload bytes exceed u32".to_owned());
+        }
+        if self.payloads.len() > total_payload_bytes || self.payloads.len() > u16::MAX as usize {
+            return Err("ec_ivf rerank group header payload bytes out of range".to_owned());
+        }
+        let mut out = Vec::with_capacity(Self::encoded_len(
+            valid_count,
+            self.scorer_width,
+            self.heap_tids.len(),
+            self.payloads.len(),
+        ));
+        out.push(IVF_RERANK_GROUP_HEADER_TAG);
+        out.push(self.rerank_format);
+        out.extend_from_slice(&self.list_id.to_le_bytes());
+        out.extend_from_slice(&(self.scorer_width as u16).to_le_bytes());
+        out.extend_from_slice(&(valid_count as u16).to_le_bytes());
+        out.extend_from_slice(&(self.payload_len as u16).to_le_bytes());
+        out.extend_from_slice(&(self.heap_tids.len() as u32).to_le_bytes());
+        out.extend_from_slice(&(total_payload_bytes as u32).to_le_bytes());
+        out.extend_from_slice(&(self.payloads.len() as u16).to_le_bytes());
+        self.next_segment_tid.encode_into(&mut out);
+        self.next_group_tid.encode_into(&mut out);
+        out.extend_from_slice(&[0, 0]);
+        out.extend_from_slice(&self.deleted_bitmap);
+        for gamma in &self.gammas {
+            out.extend_from_slice(&gamma.to_le_bytes());
+        }
+        for count in &self.heap_tid_counts {
+            out.extend_from_slice(&count.to_le_bytes());
+        }
+        for offset in &self.heap_tid_offsets {
+            out.extend_from_slice(&offset.to_le_bytes());
+        }
+        for offset in &self.payload_offsets {
+            out.extend_from_slice(&offset.to_le_bytes());
+        }
+        for tid in &self.heap_tids {
+            tid.encode_into(&mut out);
+        }
+        out.extend_from_slice(&self.payloads);
+
+        IvfRerankGroupHeaderRef::decode(&out)?.validate_offsets()?;
+        Ok(out)
+    }
+
+    pub(super) fn decode(input: &[u8]) -> Result<Self, String> {
+        let header = IvfRerankGroupHeaderRef::decode(input)?;
+        header.validate_offsets()?;
+        let mut gammas = Vec::with_capacity(header.valid_count);
+        let mut heap_tid_counts = Vec::with_capacity(header.valid_count);
+        let mut heap_tid_offsets = Vec::with_capacity(header.valid_count);
+        let mut payload_offsets = Vec::with_capacity(header.valid_count);
+        for index in 0..header.valid_count {
+            gammas.push(header.gamma(index));
+            heap_tid_counts.push(header.heap_tid_count(index) as u16);
+            heap_tid_offsets.push(header.heap_tid_offset(index) as u32);
+            payload_offsets.push(header.payload_offset(index) as u32);
+        }
+        Ok(Self {
+            rerank_format: header.rerank_format,
+            list_id: header.list_id,
+            scorer_width: header.scorer_width,
+            payload_len: header.payload_len,
+            next_segment_tid: header.next_segment_tid,
+            next_group_tid: header.next_group_tid,
+            deleted_bitmap: header.deleted_bitmap.to_vec(),
+            gammas,
+            heap_tid_counts,
+            heap_tid_offsets,
+            payload_offsets,
+            heap_tids: header
+                .heap_tid_bytes
+                .chunks_exact(ITEM_POINTER_BYTES)
+                .map(ItemPointer::decode)
+                .collect::<Result<Vec<_>, _>>()?,
+            payloads: header.payloads.to_vec(),
+        })
+    }
+
+    pub(super) const fn encoded_len(
+        valid_count: usize,
+        scorer_width: usize,
+        total_heap_tids: usize,
+        header_payload_bytes: usize,
+    ) -> usize {
+        RERANK_GROUP_HEADER_FIXED_BYTES
+            + dense_deleted_bitmap_len(scorer_width)
+            + valid_count * size_of::<f32>()
+            + valid_count * size_of::<u16>()
+            + valid_count * size_of::<u32>()
+            + valid_count * size_of::<u32>()
+            + total_heap_tids * ITEM_POINTER_BYTES
+            + header_payload_bytes
+    }
+}
+
+impl IvfRerankGroupPayloadSegmentTuple {
+    pub(super) fn encode(&self) -> Result<Vec<u8>, String> {
+        if self.payloads.len() > u16::MAX as usize {
+            return Err("ec_ivf rerank group payload segment exceeds u16".to_owned());
+        }
+        let mut out =
+            Vec::with_capacity(RERANK_GROUP_PAYLOAD_SEGMENT_HEADER_BYTES + self.payloads.len());
+        out.push(IVF_RERANK_GROUP_PAYLOAD_SEGMENT_TAG);
+        out.extend_from_slice(&(self.payloads.len() as u16).to_le_bytes());
+        self.next_segment_tid.encode_into(&mut out);
+        out.extend_from_slice(&self.payloads);
+        Ok(out)
+    }
+
+    pub(super) fn decode(input: &[u8]) -> Result<Self, String> {
+        if input.len() < RERANK_GROUP_PAYLOAD_SEGMENT_HEADER_BYTES {
+            return Err(format!(
+                "ec_ivf rerank group payload segment length mismatch: got {}, expected at least {RERANK_GROUP_PAYLOAD_SEGMENT_HEADER_BYTES}",
+                input.len()
+            ));
+        }
+        if input[0] != IVF_RERANK_GROUP_PAYLOAD_SEGMENT_TAG {
+            return Err(format!(
+                "invalid ec_ivf rerank group payload segment tag: {}",
+                input[0]
+            ));
+        }
+        let payload_bytes = u16::from_le_bytes(
+            input[1..3]
+                .try_into()
+                .expect("rerank group segment payload bytes should be 2 bytes"),
+        ) as usize;
+        let payload_start = RERANK_GROUP_PAYLOAD_SEGMENT_HEADER_BYTES;
+        let payload_end = payload_start + payload_bytes;
+        if input.len() != payload_end {
+            return Err(format!(
+                "ec_ivf rerank group payload segment length mismatch: got {}, expected {payload_end}",
+                input.len()
+            ));
+        }
+        Ok(Self {
+            next_segment_tid: ItemPointer::decode(&input[3..3 + ITEM_POINTER_BYTES])?,
+            payloads: input[payload_start..payload_end].to_vec(),
+        })
+    }
+
+    pub(super) const fn encoded_len(payload_bytes: usize) -> usize {
+        RERANK_GROUP_PAYLOAD_SEGMENT_HEADER_BYTES + payload_bytes
     }
 }
 
@@ -1839,10 +2545,9 @@ impl IvfPqCodebookTuple {
 ///
 /// Each block holds a tid-sorted run of (heap_tid, compact payload) entries and
 /// chains to the next block via `next_tid`. Build writes the chain globally
-/// tid-sorted; insert appends to the tail (locally unsorted); the rerank read
-/// loads the whole chain into a heap-TID lookup map and reads only the (small,
-/// rerank_width-bounded) survivor set. `payload_len` is the compact rep width:
-/// `dims * 2` for f16, the rabitq4 payload length for rabitq4.
+/// tid-sorted; insert prepends single-entry blocks (locally unsorted); the
+/// rerank read loads the needed survivor payloads. `payload_len` is the Task
+/// 111h common rerank payload codec width for the configured compact format.
 ///
 /// On-disk layout:
 /// ```text
@@ -1959,7 +2664,8 @@ impl IvfRerankSidecarBlockTuple {
                 .expect("rerank sidecar entry count slice should be 2 bytes"),
         ) as usize;
         let next_tid = ItemPointer::decode(
-            &input[RERANK_SIDECAR_NEXT_TID_OFFSET..RERANK_SIDECAR_NEXT_TID_OFFSET + ITEM_POINTER_BYTES],
+            &input[RERANK_SIDECAR_NEXT_TID_OFFSET
+                ..RERANK_SIDECAR_NEXT_TID_OFFSET + ITEM_POINTER_BYTES],
         )?;
         let heap_tids_start = RERANK_SIDECAR_HEADER_BYTES;
         let heap_tids_end = heap_tids_start + count * ITEM_POINTER_BYTES;
@@ -1996,6 +2702,32 @@ pub(super) fn rerank_sidecar_block_tuple_fits(
 ) -> bool {
     aligned_tuple_bytes(IvfRerankSidecarBlockTuple::encoded_len(count, payload_len))
         <= usable_page_bytes(page_size)
+}
+
+pub(super) fn rerank_group_header_tuple_fits(
+    valid_count: usize,
+    scorer_width: usize,
+    total_heap_tids: usize,
+    header_payload_bytes: usize,
+    page_size: usize,
+) -> bool {
+    valid_count > 0
+        && valid_count <= scorer_width
+        && aligned_tuple_bytes(IvfRerankGroupHeaderTuple::encoded_len(
+            valid_count,
+            scorer_width,
+            total_heap_tids,
+            header_payload_bytes,
+        )) <= usable_page_bytes(page_size)
+}
+
+pub(super) fn rerank_group_payload_segment_tuple_fits(
+    payload_bytes: usize,
+    page_size: usize,
+) -> bool {
+    aligned_tuple_bytes(IvfRerankGroupPayloadSegmentTuple::encoded_len(
+        payload_bytes,
+    )) <= usable_page_bytes(page_size)
 }
 
 pub(super) fn centroid_tuple_fits(dimensions: usize, page_size: usize) -> bool {
@@ -2114,10 +2846,32 @@ impl DataPage {
         self.insert_raw_tuple(tuple.encode()?)
     }
 
+    pub(super) fn insert_ivf_rerank_group_header(
+        &mut self,
+        tuple: &IvfRerankGroupHeaderTuple,
+    ) -> Result<ItemPointer, String> {
+        self.insert_raw_tuple(tuple.encode()?)
+    }
+
+    pub(super) fn insert_ivf_rerank_group_payload_segment(
+        &mut self,
+        tuple: &IvfRerankGroupPayloadSegmentTuple,
+    ) -> Result<ItemPointer, String> {
+        self.insert_raw_tuple(tuple.encode()?)
+    }
+
     pub(super) fn update_ivf_rerank_sidecar_block(
         &mut self,
         tid: ItemPointer,
         tuple: &IvfRerankSidecarBlockTuple,
+    ) -> Result<(), String> {
+        self.update_raw_tuple(tid, tuple.encode()?)
+    }
+
+    pub(super) fn update_ivf_rerank_group_header(
+        &mut self,
+        tid: ItemPointer,
+        tuple: &IvfRerankGroupHeaderTuple,
     ) -> Result<(), String> {
         self.update_raw_tuple(tid, tuple.encode()?)
     }
@@ -2143,6 +2897,20 @@ impl DataPage {
         tid: ItemPointer,
     ) -> Result<IvfRerankSidecarBlockTuple, String> {
         IvfRerankSidecarBlockTuple::decode(self.raw_tuple(tid)?)
+    }
+
+    pub(super) fn read_ivf_rerank_group_header(
+        &self,
+        tid: ItemPointer,
+    ) -> Result<IvfRerankGroupHeaderTuple, String> {
+        IvfRerankGroupHeaderTuple::decode(self.raw_tuple(tid)?)
+    }
+
+    pub(super) fn read_ivf_rerank_group_payload_segment(
+        &self,
+        tid: ItemPointer,
+    ) -> Result<IvfRerankGroupPayloadSegmentTuple, String> {
+        IvfRerankGroupPayloadSegmentTuple::decode(self.raw_tuple(tid)?)
     }
 }
 
@@ -2240,19 +3008,43 @@ impl DataPageChain {
         self.insert_raw_tuple(tuple.encode()?)
     }
 
+    pub(super) fn insert_ivf_rerank_group_header(
+        &mut self,
+        tuple: &IvfRerankGroupHeaderTuple,
+    ) -> Result<ItemPointer, String> {
+        self.insert_raw_tuple(tuple.encode()?)
+    }
+
+    pub(super) fn insert_ivf_rerank_group_payload_segment(
+        &mut self,
+        tuple: &IvfRerankGroupPayloadSegmentTuple,
+    ) -> Result<ItemPointer, String> {
+        self.insert_raw_tuple(tuple.encode()?)
+    }
+
     pub(super) fn update_ivf_rerank_sidecar_block(
         &mut self,
         tid: ItemPointer,
         tuple: &IvfRerankSidecarBlockTuple,
     ) -> Result<(), String> {
         self.get_page_mut(tid.block_number)
+            .ok_or_else(|| format!("ec_ivf rerank sidecar block {} not found", tid.block_number))?
+            .update_ivf_rerank_sidecar_block(tid, tuple)
+    }
+
+    pub(super) fn update_ivf_rerank_group_header(
+        &mut self,
+        tid: ItemPointer,
+        tuple: &IvfRerankGroupHeaderTuple,
+    ) -> Result<(), String> {
+        self.get_page_mut(tid.block_number)
             .ok_or_else(|| {
                 format!(
-                    "ec_ivf rerank sidecar block {} not found",
+                    "ec_ivf rerank group header block {} not found",
                     tid.block_number
                 )
             })?
-            .update_ivf_rerank_sidecar_block(tid, tuple)
+            .update_ivf_rerank_group_header(tid, tuple)
     }
 
     pub(super) fn read_ivf_posting(
@@ -2281,13 +3073,36 @@ impl DataPageChain {
         &self,
         tid: ItemPointer,
     ) -> Result<IvfRerankSidecarBlockTuple, String> {
+        let page = self
+            .get_page(tid.block_number)
+            .ok_or_else(|| format!("ec_ivf rerank sidecar block {} not found", tid.block_number))?;
+        page.read_ivf_rerank_sidecar_block(tid)
+    }
+
+    pub(super) fn read_ivf_rerank_group_header_staged(
+        &self,
+        tid: ItemPointer,
+    ) -> Result<IvfRerankGroupHeaderTuple, String> {
         let page = self.get_page(tid.block_number).ok_or_else(|| {
             format!(
-                "ec_ivf rerank sidecar block {} not found",
+                "ec_ivf rerank group header block {} not found",
                 tid.block_number
             )
         })?;
-        page.read_ivf_rerank_sidecar_block(tid)
+        page.read_ivf_rerank_group_header(tid)
+    }
+
+    pub(super) fn read_ivf_rerank_group_payload_segment_staged(
+        &self,
+        tid: ItemPointer,
+    ) -> Result<IvfRerankGroupPayloadSegmentTuple, String> {
+        let page = self.get_page(tid.block_number).ok_or_else(|| {
+            format!(
+                "ec_ivf rerank group payload segment block {} not found",
+                tid.block_number
+            )
+        })?;
+        page.read_ivf_rerank_group_payload_segment(tid)
     }
 }
 
@@ -2359,6 +3174,42 @@ pub(super) unsafe fn read_ivf_rerank_sidecar_block(
         IvfRerankSidecarBlockTuple::decode(tuple_bytes)
     })?;
     Ok(block)
+}
+
+/// Task 111h: read one packed rerank group header (tag 0x2B). The header's
+/// `next_segment_tid` follows payload continuation bytes; `next_group_tid`
+/// follows the group chain.
+#[cfg(any(feature = "pg17", feature = "pg18"))]
+pub(super) unsafe fn read_ivf_rerank_group_header(
+    index_relation: pg_sys::Relation,
+    tid: ItemPointer,
+) -> Result<IvfRerankGroupHeaderTuple, String> {
+    let index = IvfPageRelation::new(ivf_relation_nonnull(
+        index_relation,
+        "ec_ivf rerank group header read",
+    ));
+    let (header, _) = read_page_tuple(index, tid, "rerank group header", |tuple_bytes| {
+        IvfRerankGroupHeaderTuple::decode(tuple_bytes)
+    })?;
+    Ok(header)
+}
+
+/// Task 111h: read one packed rerank group payload continuation segment
+/// (tag 0x2C).
+#[cfg(any(feature = "pg17", feature = "pg18"))]
+pub(super) unsafe fn read_ivf_rerank_group_payload_segment(
+    index_relation: pg_sys::Relation,
+    tid: ItemPointer,
+) -> Result<IvfRerankGroupPayloadSegmentTuple, String> {
+    let index = IvfPageRelation::new(ivf_relation_nonnull(
+        index_relation,
+        "ec_ivf rerank group payload segment read",
+    ));
+    let (segment, _) =
+        read_page_tuple(index, tid, "rerank group payload segment", |tuple_bytes| {
+            IvfRerankGroupPayloadSegmentTuple::decode(tuple_bytes)
+        })?;
+    Ok(segment)
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
@@ -3022,8 +3873,11 @@ pub(super) unsafe fn append_ivf_rerank_sidecar_block_to_new_block(
         "ec_ivf rerank sidecar append",
     ));
     let payload = block.encode()?;
-    if !rerank_sidecar_block_tuple_fits(block.entry_count(), block.payload_len, pg_sys::BLCKSZ as usize)
-    {
+    if !rerank_sidecar_block_tuple_fits(
+        block.entry_count(),
+        block.payload_len,
+        pg_sys::BLCKSZ as usize,
+    ) {
         return Err(format!(
             "ec_ivf rerank sidecar block ({} entries, payload {}) does not fit on a page",
             block.entry_count(),
@@ -3042,6 +3896,78 @@ pub(super) unsafe fn append_ivf_rerank_sidecar_block_to_new_block(
     if offset == pg_sys::InvalidOffsetNumber {
         std::mem::drop(wal_txn);
         return Err("ec_ivf failed to append rerank sidecar block to new block".to_owned());
+    }
+    let block_number = buffer.block_number();
+    wal_txn.finish();
+    registered.record_free_space(registered.free_space());
+    Ok(ItemPointer {
+        block_number,
+        offset_number: offset,
+    })
+}
+
+#[cfg(any(feature = "pg17", feature = "pg18"))]
+pub(super) unsafe fn append_ivf_rerank_group_header_to_new_block(
+    index_relation: pg_sys::Relation,
+    header: &IvfRerankGroupHeaderTuple,
+) -> Result<ItemPointer, String> {
+    if !rerank_group_header_tuple_fits(
+        header.len(),
+        header.scorer_width,
+        header.heap_tids.len(),
+        header.payloads.len(),
+        pg_sys::BLCKSZ as usize,
+    ) {
+        return Err(format!(
+            "ec_ivf rerank group header ({} entries, scorer width {}, header payload {}) does not fit on a page",
+            header.len(),
+            header.scorer_width,
+            header.payloads.len()
+        ));
+    }
+    let index = IvfPageRelation::new(ivf_relation_nonnull(
+        index_relation,
+        "ec_ivf rerank group header append",
+    ));
+    append_single_tuple_to_new_block(index, "rerank group header", &header.encode()?)
+}
+
+#[cfg(any(feature = "pg17", feature = "pg18"))]
+pub(super) unsafe fn append_ivf_rerank_group_payload_segment_to_new_block(
+    index_relation: pg_sys::Relation,
+    segment: &IvfRerankGroupPayloadSegmentTuple,
+) -> Result<ItemPointer, String> {
+    if !rerank_group_payload_segment_tuple_fits(segment.payloads.len(), pg_sys::BLCKSZ as usize) {
+        return Err(format!(
+            "ec_ivf rerank group payload segment ({} bytes) does not fit on a page",
+            segment.payloads.len()
+        ));
+    }
+    let index = IvfPageRelation::new(ivf_relation_nonnull(
+        index_relation,
+        "ec_ivf rerank group payload segment append",
+    ));
+    append_single_tuple_to_new_block(index, "rerank group payload segment", &segment.encode()?)
+}
+
+#[cfg(any(feature = "pg17", feature = "pg18"))]
+fn append_single_tuple_to_new_block(
+    index: IvfPageRelation<'_>,
+    context: &str,
+    payload: &[u8],
+) -> Result<ItemPointer, String> {
+    let buffer = index
+        .read_main_locked(P_NEW, pg_sys::ReadBufferMode::RBM_ZERO_AND_LOCK)
+        .ok_or_else(|| format!("ec_ivf failed to allocate {context} block"))?;
+    let page_size = buffer.page_size();
+    let mut wal_txn = index.start_wal();
+    let page = wal_txn.register_locked_buffer_full_image(&buffer);
+    let registered = WalRegisteredPage::new(index.raw(), buffer.block_number(), page);
+    registered.init(page_size, 0);
+    let offset = registered.add_item(payload);
+    if offset == pg_sys::InvalidOffsetNumber {
+        std::mem::drop(wal_txn);
+        return Err(format!("ec_ivf failed to append {context} to new block"));
     }
     let block_number = buffer.block_number();
     wal_txn.finish();
@@ -3119,6 +4045,40 @@ pub(super) unsafe fn rewrite_ivf_rerank_sidecar_block(
     let page = wal_txn.register_locked_buffer_full_image(&buffer);
     let writer = PageTupleWriter::new(page, buffer.page_size(), tid.block_number);
     if let Err(err) = writer.copy_required_exact(tid, "rerank sidecar", &encoded) {
+        std::mem::drop(wal_txn);
+        return Err(err);
+    }
+    wal_txn.finish();
+    Ok(())
+}
+
+#[cfg(any(feature = "pg17", feature = "pg18"))]
+pub(super) unsafe fn rewrite_ivf_rerank_group_header(
+    index_relation: pg_sys::Relation,
+    tid: ItemPointer,
+    header: &IvfRerankGroupHeaderTuple,
+) -> Result<(), String> {
+    let index = IvfPageRelation::new(ivf_relation_nonnull(
+        index_relation,
+        "ec_ivf rerank group header rewrite",
+    ));
+    let encoded = header.encode()?;
+    let buffer = index
+        .read_main(
+            tid.block_number,
+            pg_sys::ReadBufferMode::RBM_NORMAL,
+            pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
+        )
+        .ok_or_else(|| {
+            format!(
+                "ec_ivf failed to open rerank group header block {}",
+                tid.block_number
+            )
+        })?;
+    let mut wal_txn = index.start_wal();
+    let page = wal_txn.register_locked_buffer_full_image(&buffer);
+    let writer = PageTupleWriter::new(page, buffer.page_size(), tid.block_number);
+    if let Err(err) = writer.copy_required_exact(tid, "rerank group header", &encoded) {
         std::mem::drop(wal_txn);
         return Err(err);
     }
@@ -3773,10 +4733,91 @@ where
     Ok(metadata)
 }
 
+#[cfg(any(feature = "pg17", feature = "pg18"))]
+pub(super) unsafe fn update_metadata_page_prepending_rerank_group<F>(
+    index_relation: pg_sys::Relation,
+    group_tid: ItemPointer,
+    group_header: &mut IvfRerankGroupHeaderTuple,
+    update: F,
+) -> Result<MetadataPage, String>
+where
+    F: FnOnce(&mut MetadataPage) -> Result<(), String>,
+{
+    let index = IvfPageRelation::new(ivf_relation_nonnull(
+        index_relation,
+        "ec_ivf metadata rerank group prepend",
+    ));
+    let metadata_buffer = index
+        .read_main(
+            METADATA_BLOCK_NUMBER,
+            pg_sys::ReadBufferMode::RBM_NORMAL,
+            pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
+        )
+        .ok_or_else(|| "ec_ivf failed to open metadata buffer".to_owned())?;
+    let group_buffer = index
+        .read_main(
+            group_tid.block_number,
+            pg_sys::ReadBufferMode::RBM_NORMAL,
+            pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
+        )
+        .ok_or_else(|| {
+            format!(
+                "ec_ivf failed to open rerank group header block {}",
+                group_tid.block_number
+            )
+        })?;
+
+    let mut wal_txn = index.start_wal();
+    let metadata_page = wal_txn.register_locked_buffer_full_image(&metadata_buffer);
+    let metadata_registered =
+        WalRegisteredPage::new(index.raw(), METADATA_BLOCK_NUMBER, metadata_page);
+    let metadata_bytes = metadata_registered.special_bytes(METADATA_BYTES);
+    let mut metadata = match MetadataPage::decode(metadata_bytes) {
+        Ok(metadata) => metadata,
+        Err(err) => {
+            std::mem::drop(wal_txn);
+            return Err(err);
+        }
+    };
+    let previous_head = metadata.rerank_sidecar_head;
+    if let Err(err) = update(&mut metadata) {
+        std::mem::drop(wal_txn);
+        return Err(err);
+    }
+    group_header.next_group_tid = previous_head;
+    metadata.rerank_sidecar_head = group_tid;
+
+    let group_encoded = match group_header.encode() {
+        Ok(encoded) => encoded,
+        Err(err) => {
+            std::mem::drop(wal_txn);
+            return Err(err);
+        }
+    };
+    let group_page = wal_txn.register_locked_buffer_full_image(&group_buffer);
+    let group_writer =
+        PageTupleWriter::new(group_page, group_buffer.page_size(), group_tid.block_number);
+    if let Err(err) =
+        group_writer.copy_required_exact(group_tid, "rerank group header", &group_encoded)
+    {
+        std::mem::drop(wal_txn);
+        return Err(err);
+    }
+
+    let metadata_encoded = metadata.encode();
+    metadata_registered.copy_to_special(&metadata_encoded[..METADATA_BYTES]);
+    wal_txn.finish();
+    Ok(metadata)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::am::ec_ivf::options::{CoarseFormat, RerankFormat, RerankPlacement};
+    #[cfg(any(feature = "pg17", feature = "pg18"))]
+    use crate::am::ec_ivf::options::{
+        CoarseFormat, RaBitQRerankScoreMode, RerankFormat, RerankPlacement,
+        EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
+    };
     use crate::storage::page::DEFAULT_PAGE_SIZE;
 
     fn tid(block_number: u32, offset_number: u16) -> ItemPointer {
@@ -3788,6 +4829,22 @@ mod tests {
 
     fn block(block_number: u32) -> BlockRef {
         BlockRef { block_number }
+    }
+
+    #[test]
+    fn rerank_group_chain_visit_rejects_cycle() {
+        let mut visited = HashSet::new();
+        let first = tid(10, 1);
+        let second = tid(11, 1);
+
+        remember_rerank_group_chain_tid(&mut visited, first).unwrap();
+        remember_rerank_group_chain_tid(&mut visited, second).unwrap();
+        let err = remember_rerank_group_chain_tid(&mut visited, first).unwrap_err();
+
+        assert!(
+            err.contains("rerank group chain cycle"),
+            "unexpected cycle error: {err}"
+        );
     }
 
     #[test]
@@ -3805,6 +4862,8 @@ mod tests {
             dense_posting_blocks: false,
             dense_posting_typed_layout: false,
             rabitq_residual: false,
+            rabitq_rerank_score: RaBitQRerankScoreMode::Estimator,
+            rabitq_rerank_clip: EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
             storage_format: StorageFormat::RaBitQ,
             rerank: RerankMode::HeapF32,
             coarse_format: CoarseFormat::Auto,
@@ -3823,8 +4882,94 @@ mod tests {
 
         assert_eq!(decoded, metadata);
         assert_eq!(decoded.format_version, INDEX_FORMAT_VERSION);
+        assert_eq!(
+            decoded.rabitq_rerank_score_mode,
+            RaBitQRerankScoreMode::Estimator
+        );
+        assert_eq!(
+            decoded.rabitq_rerank_clip,
+            EC_IVF_DEFAULT_RABITQ_RERANK_CLIP as u8
+        );
         // Task 115: default index is plain RaBitQ.
         assert!(!decoded.rabitq_residual);
+    }
+
+    #[test]
+    fn metadata_roundtrips_rabitq_rerank_score_knobs() {
+        let metadata = MetadataPage::empty(EcIvfOptions {
+            nlists: 64,
+            nprobe: 8,
+            rerank_width: 0,
+            training_sample_rows: 10_000,
+            seed: 7,
+            pq_group_size: 0,
+            posting_slack_percent: 0,
+            quant_bits: 4,
+            coarse_bits: 0,
+            dense_posting_blocks: false,
+            dense_posting_typed_layout: false,
+            rabitq_residual: false,
+            rabitq_rerank_score: RaBitQRerankScoreMode::LeastSquares,
+            rabitq_rerank_clip: 4,
+            storage_format: StorageFormat::CoarseRerank,
+            rerank: RerankMode::HeapF32,
+            coarse_format: CoarseFormat::RaBitQ,
+            rerank_placement: RerankPlacement::Index,
+            rerank_format: RerankFormat::RaBitQ8,
+        });
+
+        let encoded = metadata.encode();
+        assert_eq!(encoded[EC_IVF_METADATA_RABITQ_RERANK_SCORE_MODE_OFFSET], 1);
+        assert_eq!(encoded[EC_IVF_METADATA_RABITQ_RERANK_CLIP_OFFSET], 4);
+
+        let decoded = MetadataPage::decode(&encoded).unwrap();
+        assert_eq!(
+            decoded.rabitq_rerank_score_mode,
+            RaBitQRerankScoreMode::LeastSquares
+        );
+        assert_eq!(
+            decoded.rabitq_rerank_score_mode(),
+            RaBitQRerankScoreMode::LeastSquares
+        );
+        assert_eq!(decoded.rabitq_rerank_clip, 4);
+        assert_eq!(decoded.rabitq_rerank_clip_i32(), 4);
+        assert_eq!(decoded, metadata);
+    }
+
+    #[test]
+    fn metadata_roundtrips_exact_dequant_rerank_score_mode() {
+        let metadata = MetadataPage::empty(EcIvfOptions {
+            nlists: 64,
+            nprobe: 8,
+            rerank_width: 0,
+            training_sample_rows: 10_000,
+            seed: 7,
+            pq_group_size: 0,
+            posting_slack_percent: 0,
+            quant_bits: 4,
+            coarse_bits: 0,
+            dense_posting_blocks: false,
+            dense_posting_typed_layout: false,
+            rabitq_residual: false,
+            rabitq_rerank_score: RaBitQRerankScoreMode::ExactDequant,
+            rabitq_rerank_clip: 4,
+            storage_format: StorageFormat::CoarseRerank,
+            rerank: RerankMode::HeapF32,
+            coarse_format: CoarseFormat::RaBitQ,
+            rerank_placement: RerankPlacement::Index,
+            rerank_format: RerankFormat::TurboQuant,
+        });
+
+        let encoded = metadata.encode();
+        assert_eq!(encoded[EC_IVF_METADATA_RABITQ_RERANK_SCORE_MODE_OFFSET], 2);
+        assert_eq!(encoded[EC_IVF_METADATA_RABITQ_RERANK_CLIP_OFFSET], 4);
+
+        let decoded = MetadataPage::decode(&encoded).unwrap();
+        assert_eq!(
+            decoded.rabitq_rerank_score_mode(),
+            RaBitQRerankScoreMode::ExactDequant
+        );
+        assert_eq!(decoded, metadata);
     }
 
     #[test]
@@ -3844,6 +4989,8 @@ mod tests {
             dense_posting_blocks: false,
             dense_posting_typed_layout: false,
             rabitq_residual: true,
+            rabitq_rerank_score: RaBitQRerankScoreMode::Estimator,
+            rabitq_rerank_clip: EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
             storage_format: StorageFormat::RaBitQ,
             rerank: RerankMode::HeapF32,
             coarse_format: CoarseFormat::Auto,
@@ -3879,6 +5026,8 @@ mod tests {
             dense_posting_blocks: false,
             dense_posting_typed_layout: false,
             rabitq_residual: false,
+            rabitq_rerank_score: RaBitQRerankScoreMode::Estimator,
+            rabitq_rerank_clip: EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
             storage_format: StorageFormat::Auto,
             rerank: RerankMode::Auto,
             coarse_format: CoarseFormat::Auto,
@@ -3889,6 +5038,68 @@ mod tests {
         // Anything narrower than the v3 width is a genuine truncation.
         let err = MetadataPage::decode(&encoded[..EC_IVF_METADATA_BYTES - 1]).unwrap_err();
         assert!(err.contains("metadata length mismatch"));
+    }
+
+    #[test]
+    fn metadata_decode_rejects_invalid_scalar_fields() {
+        let metadata = MetadataPage::empty(EcIvfOptions {
+            nlists: 8,
+            nprobe: 2,
+            rerank_width: 0,
+            training_sample_rows: 128,
+            seed: 42,
+            pq_group_size: 0,
+            posting_slack_percent: 0,
+            quant_bits: 4,
+            coarse_bits: 0,
+            dense_posting_blocks: false,
+            dense_posting_typed_layout: false,
+            rabitq_residual: false,
+            rabitq_rerank_score: RaBitQRerankScoreMode::Estimator,
+            rabitq_rerank_clip: EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
+            storage_format: StorageFormat::Auto,
+            rerank: RerankMode::Auto,
+            coarse_format: CoarseFormat::Auto,
+            rerank_placement: RerankPlacement::Auto,
+            rerank_format: RerankFormat::Auto,
+        });
+        let encoded = metadata.encode();
+
+        let mut bad_magic = encoded.clone();
+        bad_magic[0] = 0;
+        assert!(MetadataPage::decode(&bad_magic)
+            .unwrap_err()
+            .contains("metadata magic"));
+
+        let mut bad_version = encoded.clone();
+        bad_version[4..6].copy_from_slice(&0_u16.to_le_bytes());
+        assert!(MetadataPage::decode(&bad_version)
+            .unwrap_err()
+            .contains("metadata format version"));
+
+        let mut bad_score_mode = encoded.clone();
+        bad_score_mode[EC_IVF_METADATA_RABITQ_RERANK_SCORE_MODE_OFFSET] = 255;
+        assert!(MetadataPage::decode(&bad_score_mode)
+            .unwrap_err()
+            .contains("rerank score mode"));
+
+        let mut bad_clip = encoded.clone();
+        bad_clip[EC_IVF_METADATA_RABITQ_RERANK_CLIP_OFFSET] = 9;
+        assert!(MetadataPage::decode(&bad_clip)
+            .unwrap_err()
+            .contains("rabitq_rerank_clip"));
+
+        let mut bad_quant_bits = encoded.clone();
+        bad_quant_bits[34] = 3;
+        assert!(MetadataPage::decode(&bad_quant_bits)
+            .unwrap_err()
+            .contains("quant_bits"));
+
+        let mut bad_residual = encoded;
+        bad_residual[EC_IVF_METADATA_RABITQ_RESIDUAL_OFFSET] = 2;
+        assert!(MetadataPage::decode(&bad_residual)
+            .unwrap_err()
+            .contains("rabitq_residual"));
     }
 
     #[test]
@@ -3933,6 +5144,35 @@ mod tests {
     }
 
     #[test]
+    fn centroid_tuple_rejects_invalid_tag_dimension_field_and_nan() {
+        assert!(IvfCentroidTuple {
+            list_id: 1,
+            centroid: vec![f32::NAN],
+        }
+        .encode()
+        .unwrap_err()
+        .contains("non-finite"));
+
+        let tuple = IvfCentroidTuple {
+            list_id: 3,
+            centroid: vec![1.0, 0.0],
+        };
+        let encoded = tuple.encode().unwrap();
+
+        let mut bad_tag = encoded.clone();
+        bad_tag[0] = IVF_LIST_DIRECTORY_TAG;
+        assert!(IvfCentroidTuple::decode(&bad_tag, 2)
+            .unwrap_err()
+            .contains("centroid tuple tag"));
+
+        let mut bad_dimension_field = encoded;
+        bad_dimension_field[5..7].copy_from_slice(&3_u16.to_le_bytes());
+        assert!(IvfCentroidTuple::decode(&bad_dimension_field, 2)
+            .unwrap_err()
+            .contains("centroid dimensions mismatch"));
+    }
+
+    #[test]
     fn list_directory_tuple_roundtrip() {
         let tuple = IvfListDirectoryTuple {
             list_id: 9,
@@ -3951,6 +5191,21 @@ mod tests {
             IvfListDirectoryTuple::empty(10).head_block,
             BlockRef::INVALID
         );
+    }
+
+    #[test]
+    fn list_directory_tuple_rejects_bad_length_and_tag() {
+        let encoded = IvfListDirectoryTuple::empty(1).encode();
+
+        assert!(IvfListDirectoryTuple::decode(&encoded[..encoded.len() - 1])
+            .unwrap_err()
+            .contains("list directory tuple length mismatch"));
+
+        let mut bad_tag = encoded;
+        bad_tag[0] = IVF_CENTROID_TAG;
+        assert!(IvfListDirectoryTuple::decode(&bad_tag)
+            .unwrap_err()
+            .contains("list directory tuple tag"));
     }
 
     #[test]
@@ -4028,18 +5283,282 @@ mod tests {
     }
 
     #[test]
+    fn rerank_group_header_roundtrips_payload_fragment() {
+        let postings = vec![
+            (tid(1, 1), 0.25, vec![10, 11, 12, 13]),
+            (tid(1, 5), 0.5, vec![20, 21, 22, 23]),
+            (tid(2, 3), 0.75, vec![30, 31, 32, 33]),
+        ];
+        let mut tuple = IvfRerankGroupHeaderTuple::from_single_heaptid_postings(
+            RerankFormat::F16 as u8,
+            42,
+            4,
+            &postings,
+            4,
+            5,
+        )
+        .unwrap();
+        tuple.next_segment_tid = tid(9, 7);
+        tuple.next_group_tid = tid(10, 1);
+        dense_deleted_bitmap_set(&mut tuple.deleted_bitmap, 3);
+
+        let encoded = tuple.encode().unwrap();
+        let decoded = IvfRerankGroupHeaderTuple::decode(&encoded).unwrap();
+        let borrowed = IvfRerankGroupHeaderRef::decode(&encoded).unwrap();
+
+        assert_eq!(encoded[0], IVF_RERANK_GROUP_HEADER_TAG);
+        assert_eq!(
+            encoded.len(),
+            IvfRerankGroupHeaderTuple::encoded_len(3, 4, 3, 5)
+        );
+        assert_eq!(decoded, tuple);
+        assert_eq!(tuple.len(), 3);
+        assert_eq!(borrowed.rerank_format, RerankFormat::F16 as u8);
+        assert_eq!(borrowed.list_id, 42);
+        assert_eq!(borrowed.scorer_width(), 4);
+        assert_eq!(borrowed.valid_count(), 3);
+        assert_eq!(borrowed.payload_len(), 4);
+        assert_eq!(borrowed.total_payload_bytes(), 12);
+        assert_eq!(borrowed.header_payload_bytes(), 5);
+        assert_eq!(borrowed.next_segment_tid, tid(9, 7));
+        assert_eq!(borrowed.next_group_tid, tid(10, 1));
+        assert!(dense_deleted_bitmap_get(borrowed.deleted_bitmap, 3));
+        assert_eq!(borrowed.gamma(2), 0.75);
+        assert_eq!(borrowed.heap_tid_count(1), 1);
+        assert_eq!(borrowed.heap_tid_offset(2), 2);
+        assert_eq!(borrowed.payload_offset(2), 8);
+        assert_eq!(borrowed.heap_tids(1).collect::<Vec<_>>(), vec![tid(1, 5)]);
+        assert_eq!(borrowed.payloads, &[10u8, 11, 12, 13, 20]);
+        assert!(rerank_group_header_tuple_fits(
+            3,
+            4,
+            3,
+            5,
+            DEFAULT_PAGE_SIZE
+        ));
+    }
+
+    #[test]
+    fn rerank_group_header_rejects_invalid_metadata() {
+        let postings = vec![(tid(1, 1), 0.25, vec![1, 2, 3, 4])];
+        let mut tuple = IvfRerankGroupHeaderTuple::from_single_heaptid_postings(
+            RerankFormat::F16 as u8,
+            7,
+            4,
+            &postings,
+            4,
+            4,
+        )
+        .unwrap();
+        tuple.heap_tid_counts[0] = 0;
+
+        let err = tuple.encode().unwrap_err();
+
+        assert!(err.contains("heap tid range is empty"));
+
+        let mut encoded = IvfRerankGroupHeaderTuple::from_single_heaptid_postings(
+            RerankFormat::F16 as u8,
+            7,
+            4,
+            &postings,
+            4,
+            4,
+        )
+        .unwrap()
+        .encode()
+        .unwrap();
+        encoded[RERANK_GROUP_HEADER_FIXED_BYTES - 1] = 1;
+        let err = IvfRerankGroupHeaderTuple::decode(&encoded).unwrap_err();
+
+        assert!(err.contains("reserved bytes"));
+    }
+
+    #[test]
+    fn rerank_group_header_rejects_decode_and_encode_edge_cases() {
+        let postings = vec![(tid(1, 1), 0.25, vec![1, 2])];
+        let valid = IvfRerankGroupHeaderTuple::from_single_heaptid_postings(
+            RerankFormat::F16 as u8,
+            7,
+            4,
+            &postings,
+            2,
+            2,
+        )
+        .unwrap();
+        let encoded = valid.encode().unwrap();
+
+        assert!(IvfRerankGroupHeaderTuple::from_single_heaptid_postings(
+            RerankFormat::F16 as u8,
+            7,
+            4,
+            &[],
+            2,
+            0,
+        )
+        .unwrap_err()
+        .contains("requires at least one posting"));
+        assert!(IvfRerankGroupHeaderTuple::from_single_heaptid_postings(
+            RerankFormat::F16 as u8,
+            7,
+            4,
+            &[(tid(1, 1), f32::INFINITY, vec![1, 2])],
+            2,
+            2,
+        )
+        .unwrap_err()
+        .contains("gamma must be finite"));
+        assert!(IvfRerankGroupHeaderTuple::from_single_heaptid_postings(
+            RerankFormat::F16 as u8,
+            7,
+            4,
+            &[(tid(1, 1), 0.25, vec![1])],
+            2,
+            1,
+        )
+        .unwrap_err()
+        .contains("payload length mismatch"));
+
+        let mut bad = valid.clone();
+        bad.scorer_width = 0;
+        assert!(bad.encode().unwrap_err().contains("scorer width"));
+
+        let mut bad = valid.clone();
+        bad.payload_len = 0;
+        assert!(bad.encode().unwrap_err().contains("payload length"));
+
+        let mut bad = valid.clone();
+        bad.deleted_bitmap.push(0);
+        assert!(bad.encode().unwrap_err().contains("array length mismatch"));
+
+        let mut bad = valid.clone();
+        bad.gammas[0] = f32::NAN;
+        assert!(bad.encode().unwrap_err().contains("gamma must be finite"));
+
+        let mut bad = valid.clone();
+        bad.payloads.extend_from_slice(&[0, 1, 2]);
+        assert!(bad
+            .encode()
+            .unwrap_err()
+            .contains("header payload bytes out of range"));
+
+        assert!(
+            IvfRerankGroupHeaderTuple::decode(&encoded[..RERANK_GROUP_HEADER_FIXED_BYTES - 1])
+                .unwrap_err()
+                .contains("group header length mismatch")
+        );
+
+        let mut bad_tag = encoded.clone();
+        bad_tag[0] = IVF_RERANK_GROUP_PAYLOAD_SEGMENT_TAG;
+        assert!(IvfRerankGroupHeaderTuple::decode(&bad_tag)
+            .unwrap_err()
+            .contains("group header tag"));
+
+        let mut bad_scorer_width = encoded.clone();
+        bad_scorer_width[6..8].copy_from_slice(&0_u16.to_le_bytes());
+        assert!(IvfRerankGroupHeaderTuple::decode(&bad_scorer_width)
+            .unwrap_err()
+            .contains("scorer width"));
+
+        let mut bad_valid_count = encoded.clone();
+        bad_valid_count[8..10].copy_from_slice(&0_u16.to_le_bytes());
+        assert!(IvfRerankGroupHeaderTuple::decode(&bad_valid_count)
+            .unwrap_err()
+            .contains("valid count"));
+
+        let mut bad_payload_len = encoded.clone();
+        bad_payload_len[10..12].copy_from_slice(&0_u16.to_le_bytes());
+        assert!(IvfRerankGroupHeaderTuple::decode(&bad_payload_len)
+            .unwrap_err()
+            .contains("payload length"));
+
+        let mut bad_total_payload = encoded.clone();
+        bad_total_payload[16..20].copy_from_slice(&3_u32.to_le_bytes());
+        assert!(IvfRerankGroupHeaderTuple::decode(&bad_total_payload)
+            .unwrap_err()
+            .contains("total payload bytes"));
+
+        let mut bad_header_payload = encoded.clone();
+        bad_header_payload[20..22].copy_from_slice(&3_u16.to_le_bytes());
+        assert!(IvfRerankGroupHeaderTuple::decode(&bad_header_payload)
+            .unwrap_err()
+            .contains("header payload bytes"));
+
+        let mut bad_len = encoded.clone();
+        bad_len.pop();
+        assert!(IvfRerankGroupHeaderTuple::decode(&bad_len)
+            .unwrap_err()
+            .contains("group header length mismatch"));
+    }
+
+    #[test]
+    fn rerank_group_payload_segment_roundtrips() {
+        let tuple = IvfRerankGroupPayloadSegmentTuple {
+            next_segment_tid: tid(12, 4),
+            payloads: vec![1, 2, 3, 4, 5, 6],
+        };
+
+        let encoded = tuple.encode().unwrap();
+        let decoded = IvfRerankGroupPayloadSegmentTuple::decode(&encoded).unwrap();
+
+        assert_eq!(encoded[0], IVF_RERANK_GROUP_PAYLOAD_SEGMENT_TAG);
+        assert_eq!(
+            encoded.len(),
+            IvfRerankGroupPayloadSegmentTuple::encoded_len(tuple.payloads.len())
+        );
+        assert_eq!(decoded, tuple);
+        assert!(rerank_group_payload_segment_tuple_fits(
+            tuple.payloads.len(),
+            DEFAULT_PAGE_SIZE
+        ));
+
+        let mut bad_tag = encoded;
+        bad_tag[0] = IVF_RERANK_GROUP_HEADER_TAG;
+        let err = IvfRerankGroupPayloadSegmentTuple::decode(&bad_tag).unwrap_err();
+        assert!(err.contains("payload segment tag"));
+    }
+
+    #[test]
+    fn rerank_group_payload_segment_rejects_size_edge_cases() {
+        let too_large = IvfRerankGroupPayloadSegmentTuple {
+            next_segment_tid: ItemPointer::INVALID,
+            payloads: vec![0; u16::MAX as usize + 1],
+        };
+        assert!(too_large.encode().unwrap_err().contains("exceeds u16"));
+
+        assert!(
+            IvfRerankGroupPayloadSegmentTuple::decode(&[IVF_RERANK_GROUP_PAYLOAD_SEGMENT_TAG])
+                .unwrap_err()
+                .contains("payload segment length mismatch")
+        );
+
+        let tuple = IvfRerankGroupPayloadSegmentTuple {
+            next_segment_tid: tid(12, 4),
+            payloads: vec![1, 2, 3],
+        };
+        let mut bad_len = tuple.encode().unwrap();
+        bad_len[1..3].copy_from_slice(&4_u16.to_le_bytes());
+        assert!(IvfRerankGroupPayloadSegmentTuple::decode(&bad_len)
+            .unwrap_err()
+            .contains("payload segment length mismatch"));
+    }
+
+    #[test]
     fn dense_posting_block_roundtrip_preserves_scan_arrays() {
         let postings = vec![
-            (tid(11, 1), 0.25, ItemPointer::INVALID, vec![1, 2, 3]),
-            (tid(12, 2), 0.5, ItemPointer::INVALID, vec![4, 5, 6]),
-            (tid(13, 3), 0.75, ItemPointer::INVALID, vec![7, 8, 9]),
+            (tid(11, 1), 0.25, tid(21, 1), vec![1, 2, 3]),
+            (tid(12, 2), 0.5, tid(22, 2), vec![4, 5, 6]),
+            (tid(13, 3), 0.75, tid(23, 3), vec![7, 8, 9]),
         ];
-        let tuple =
+        let mut tuple =
             IvfDensePostingBlockTuple::from_single_heaptid_postings(4, &postings, 3).unwrap();
+        tuple.mark_deleted(1);
+        assert_eq!(tuple.len(), 3);
+        assert!(tuple.is_deleted(1));
 
         let encoded = tuple.encode().unwrap();
         let decoded = IvfDensePostingBlockTuple::decode(&encoded, 3).unwrap();
         let borrowed = IvfDensePostingBlockRef::decode(&encoded, 3).unwrap();
+        let generic = IvfDensePostingRef::Block(borrowed);
 
         assert_eq!(decoded, tuple);
         assert!(dense_posting_block_tuple_fits(
@@ -4051,12 +5570,34 @@ mod tests {
         assert_eq!(borrowed.list_id, 4);
         assert_eq!(borrowed.len(), 3);
         assert_eq!(borrowed.total_heap_tids(), 3);
+        assert_eq!(borrowed.payload_len(), 3);
+        assert!(borrowed.is_deleted(1));
         assert_eq!(borrowed.gammas(), vec![0.25, 0.5, 0.75]);
+        let mut gammas = vec![99.0];
+        borrowed.copy_gammas_to(&mut gammas);
+        assert_eq!(gammas, vec![0.25, 0.5, 0.75]);
+        assert_eq!(borrowed.gamma(2), 0.75);
         assert_eq!(borrowed.payload(1), &[4, 5, 6]);
+        assert_eq!(borrowed.rerank_tid(2), tid(23, 3));
         assert_eq!(
             borrowed.heap_tids(2).collect::<Vec<_>>(),
             vec![postings[2].0]
         );
+
+        assert_eq!(generic.list_id(), 4);
+        assert_eq!(generic.len(), 3);
+        assert_eq!(generic.payload_len(), 3);
+        assert_eq!(generic.payloads(), &[1, 2, 3, 4, 5, 6, 7, 8, 9]);
+        assert!(generic.is_deleted(1));
+        let mut generic_gammas = Vec::new();
+        generic.copy_gammas_to(&mut generic_gammas);
+        assert_eq!(generic_gammas, vec![0.25, 0.5, 0.75]);
+        assert_eq!(generic.gammas_native_le(), borrowed.gammas_native_le());
+        assert_eq!(generic.gamma(0), 0.25);
+        assert_eq!(generic.heap_tid_count(0), 1);
+        assert_eq!(generic.heap_tids(0).collect::<Vec<_>>(), vec![tid(11, 1)]);
+        assert_eq!(generic.rerank_tid(1), tid(22, 2));
+        assert_eq!(generic.payload(2), &[7, 8, 9]);
     }
 
     #[test]
@@ -4085,8 +5626,87 @@ mod tests {
             aligned_ref.heap_tid_offsets_native_le().unwrap(),
             &[0, 1, 2]
         );
+        assert!(native_le_f32_slice(&aligned[1..2]).is_none());
+        assert!(native_le_u16_slice(&aligned[1..2]).is_none());
+        assert!(native_le_u32_slice(&aligned[1..2]).is_none());
         assert_eq!(legacy_ref.gammas(), aligned_ref.gammas());
         assert!(legacy_ref.gammas_native_le().is_none());
+    }
+
+    #[test]
+    fn dense_posting_block_rejects_encode_and_decode_edge_cases() {
+        assert!(
+            IvfDensePostingBlockTuple::from_single_heaptid_postings(1, &[], 2)
+                .unwrap_err()
+                .contains("requires at least one posting")
+        );
+        assert!(IvfDensePostingBlockTuple::from_single_heaptid_postings(
+            1,
+            &[(tid(1, 1), f32::NAN, ItemPointer::INVALID, vec![0, 1])],
+            2,
+        )
+        .unwrap_err()
+        .contains("gamma must be finite"));
+        assert!(IvfDensePostingBlockTuple::from_single_heaptid_postings(
+            1,
+            &[(tid(1, 1), 0.5, ItemPointer::INVALID, vec![0])],
+            2,
+        )
+        .unwrap_err()
+        .contains("payload length mismatch"));
+
+        let tuple = IvfDensePostingBlockTuple::from_single_heaptid_postings(
+            1,
+            &[(tid(1, 1), 0.5, tid(2, 1), vec![0, 1])],
+            2,
+        )
+        .unwrap();
+        let encoded = tuple.encode().unwrap();
+
+        assert!(IvfDensePostingBlockTuple::decode(
+            &encoded[..DENSE_POSTING_BLOCK_HEADER_BYTES - 1],
+            2,
+        )
+        .unwrap_err()
+        .contains("dense posting block length mismatch"));
+
+        let mut bad_tag = encoded.clone();
+        bad_tag[0] = IVF_POSTING_TAG;
+        assert!(IvfDensePostingBlockTuple::decode(&bad_tag, 2)
+            .unwrap_err()
+            .contains("dense posting block tag"));
+
+        assert!(IvfDensePostingBlockTuple::decode(&encoded, 3)
+            .unwrap_err()
+            .contains("payload length mismatch"));
+
+        let mut bad_len = encoded.clone();
+        bad_len.pop();
+        assert!(IvfDensePostingBlockTuple::decode(&bad_len, 2)
+            .unwrap_err()
+            .contains("dense posting block length mismatch"));
+
+        let mut bad_offset = tuple.clone();
+        bad_offset.heap_tid_offsets[0] = 99;
+        assert!(
+            IvfDensePostingBlockTuple::decode(&bad_offset.encode().unwrap(), 2)
+                .unwrap_err()
+                .contains("heap tid range is out of bounds")
+        );
+
+        let mut bad_arrays = tuple.clone();
+        bad_arrays.rerank_tids.clear();
+        assert!(bad_arrays
+            .encode()
+            .unwrap_err()
+            .contains("array length mismatch"));
+
+        let mut bad_gamma = tuple;
+        bad_gamma.gammas[0] = f32::INFINITY;
+        assert!(bad_gamma
+            .encode()
+            .unwrap_err()
+            .contains("gamma must be finite"));
     }
 
     #[test]
@@ -4133,6 +5753,32 @@ mod tests {
     }
 
     #[test]
+    fn posting_tuple_rejects_nonfinite_gamma_and_bad_single_heaptid_gamma() {
+        assert!(IvfPostingTuple {
+            list_id: 0,
+            deleted: false,
+            heaptids: vec![tid(1, 1)],
+            gamma: f32::NAN,
+            rerank_tid: ItemPointer::INVALID,
+            payload: vec![0],
+        }
+        .encode()
+        .unwrap_err()
+        .contains("gamma must be finite"));
+
+        assert!(IvfPostingTuple::encode_single_heaptid(
+            0,
+            false,
+            tid(1, 1),
+            f32::INFINITY,
+            ItemPointer::INVALID,
+            &[0],
+        )
+        .unwrap_err()
+        .contains("gamma must be finite"));
+    }
+
+    #[test]
     fn pq_codebook_tuple_roundtrip() {
         let tuple = IvfPqCodebookTuple {
             group_index: 2,
@@ -4148,6 +5794,35 @@ mod tests {
         assert_eq!(borrowed.group_index, 2);
         assert_eq!(borrowed.next_tid, tuple.next_tid);
         assert_eq!(borrowed.collect_centroids(), tuple.centroids);
+    }
+
+    #[test]
+    fn pq_codebook_tuple_rejects_invalid_shape_and_values() {
+        assert!(IvfPqCodebookTuple {
+            group_index: 0,
+            next_tid: ItemPointer::INVALID,
+            centroids: vec![f32::NAN],
+        }
+        .encode()
+        .unwrap_err()
+        .contains("non-finite"));
+
+        let tuple = IvfPqCodebookTuple {
+            group_index: 2,
+            next_tid: tid(9, 3),
+            centroids: vec![0.0, 0.5],
+        };
+        let encoded = tuple.encode().unwrap();
+
+        assert!(IvfPqCodebookTuple::decode(&encoded[..encoded.len() - 1], 2)
+            .unwrap_err()
+            .contains("pq codebook tuple length mismatch"));
+
+        let mut bad_tag = encoded;
+        bad_tag[0] = IVF_POSTING_TAG;
+        assert!(IvfPqCodebookTuple::decode(&bad_tag, 2)
+            .unwrap_err()
+            .contains("pq codebook tuple tag"));
     }
 
     #[test]
@@ -4182,13 +5857,65 @@ mod tests {
             next_tid: tid(9, 1),
             centroids: vec![1.0, -0.5],
         };
+        let group_payload_segment = IvfRerankGroupPayloadSegmentTuple {
+            next_segment_tid: ItemPointer::INVALID,
+            payloads: vec![0x20, 0x21, 0x22],
+        };
+        let group_postings = vec![
+            (tid(4, 1), 0.25, vec![0x10, 0x11]),
+            (tid(4, 2), 0.5, vec![0x12, 0x13]),
+        ];
+        let mut group_header = IvfRerankGroupHeaderTuple::from_single_heaptid_postings(
+            RerankFormat::F16 as u8,
+            1,
+            4,
+            &group_postings,
+            2,
+            3,
+        )
+        .unwrap();
 
         let mut page = DataPage::new(FIRST_DATA_BLOCK_NUMBER, DEFAULT_PAGE_SIZE);
         let centroid_tid = page.insert_ivf_centroid(&centroid).unwrap();
         let directory_tid = page.insert_ivf_list_directory(directory).unwrap();
         let posting_tid = page.insert_ivf_posting(&posting).unwrap();
         let codebook_tid = page.insert_ivf_pq_codebook(&codebook).unwrap();
+        let dense_block = IvfDensePostingBlockTuple::from_single_heaptid_postings(
+            1,
+            &[
+                (tid(5, 1), 0.5, tid(30, 1), vec![0x01, 0x02]),
+                (tid(5, 2), 0.75, tid(30, 2), vec![0x03, 0x04]),
+            ],
+            2,
+        )
+        .unwrap();
+        let dense_tid = page.insert_ivf_dense_posting_block(&dense_block).unwrap();
+        let aligned_dense_tid = page
+            .insert_ivf_dense_posting_aligned_block(&dense_block)
+            .unwrap();
+        let single_tid = page
+            .insert_ivf_single_heaptid_posting(1, tid(6, 1), 0.5, tid(31, 1), &[0xcc, 0xdd])
+            .unwrap();
+        let mut sidecar = IvfRerankSidecarBlockTuple::new(
+            RerankFormat::F16 as u8,
+            2,
+            vec![tid(7, 1), tid(7, 2)],
+            vec![0x01, 0x02, 0x03, 0x04],
+        )
+        .unwrap();
+        let sidecar_tid = page.insert_ivf_rerank_sidecar_block(&sidecar).unwrap();
+        let group_header_tid = page.insert_ivf_rerank_group_header(&group_header).unwrap();
+        let group_segment_tid = page
+            .insert_ivf_rerank_group_payload_segment(&group_payload_segment)
+            .unwrap();
         page.update_ivf_pq_codebook(codebook_tid, &updated_codebook)
+            .unwrap();
+        sidecar.next_tid = tid(32, 1);
+        page.update_ivf_rerank_sidecar_block(sidecar_tid, &sidecar)
+            .unwrap();
+        group_header.next_segment_tid = group_segment_tid;
+        group_header.next_group_tid = tid(20, 1);
+        page.update_ivf_rerank_group_header(group_header_tid, &group_header)
             .unwrap();
 
         assert_eq!(page.read_ivf_centroid(centroid_tid, 2).unwrap(), centroid);
@@ -4202,6 +5929,30 @@ mod tests {
             posting
         );
         assert_eq!(
+            page.read_ivf_dense_posting_block(dense_tid, 2).unwrap(),
+            dense_block
+        );
+        assert_eq!(
+            page.read_ivf_dense_posting_block(aligned_dense_tid, 2)
+                .unwrap(),
+            dense_block
+        );
+        assert_eq!(
+            page.read_ivf_posting(single_tid, 2).unwrap(),
+            IvfPostingTuple {
+                list_id: 1,
+                deleted: false,
+                heaptids: vec![tid(6, 1)],
+                gamma: 0.5,
+                rerank_tid: tid(31, 1),
+                payload: vec![0xcc, 0xdd],
+            }
+        );
+        assert_eq!(
+            page.read_ivf_rerank_sidecar_block(sidecar_tid).unwrap(),
+            sidecar
+        );
+        assert_eq!(
             IvfPqCodebookTuple::decode(
                 page.raw_tuple(codebook_tid).unwrap(),
                 updated_codebook.centroids.len()
@@ -4209,6 +5960,64 @@ mod tests {
             .unwrap(),
             updated_codebook
         );
+        assert_eq!(
+            page.read_ivf_rerank_group_header(group_header_tid).unwrap(),
+            group_header
+        );
+        assert_eq!(
+            page.read_ivf_rerank_group_payload_segment(group_segment_tid)
+                .unwrap(),
+            group_payload_segment
+        );
+    }
+
+    #[test]
+    fn data_page_chain_reports_missing_blocks_for_staged_ivf_helpers() {
+        let mut chain = DataPageChain::new(DEFAULT_PAGE_SIZE);
+        let missing = tid(99, 1);
+        let codebook = IvfPqCodebookTuple {
+            group_index: 0,
+            next_tid: ItemPointer::INVALID,
+            centroids: vec![0.0],
+        };
+        let group_header = IvfRerankGroupHeaderTuple::from_single_heaptid_postings(
+            RerankFormat::F16 as u8,
+            1,
+            1,
+            &[(tid(1, 1), 0.25, vec![0])],
+            1,
+            1,
+        )
+        .unwrap();
+
+        assert!(chain
+            .update_ivf_pq_codebook(missing, &codebook)
+            .unwrap_err()
+            .contains("pq codebook block 99 not found"));
+        assert!(chain
+            .update_ivf_rerank_sidecar_block(
+                missing,
+                &IvfRerankSidecarBlockTuple::new(RerankFormat::F16 as u8, 1, vec![], vec![])
+                    .unwrap(),
+            )
+            .unwrap_err()
+            .contains("rerank sidecar block 99 not found"));
+        assert!(chain
+            .update_ivf_rerank_group_header(missing, &group_header)
+            .unwrap_err()
+            .contains("rerank group header block 99 not found"));
+        assert!(chain
+            .read_ivf_rerank_sidecar_block_staged(missing)
+            .unwrap_err()
+            .contains("rerank sidecar block 99 not found"));
+        assert!(chain
+            .read_ivf_rerank_group_header_staged(missing)
+            .unwrap_err()
+            .contains("rerank group header block 99 not found"));
+        assert!(chain
+            .read_ivf_rerank_group_payload_segment_staged(missing)
+            .unwrap_err()
+            .contains("rerank group payload segment block 99 not found"));
     }
 
     #[test]
@@ -4260,19 +6069,94 @@ mod tests {
             next_tid: tid(4, 2),
             centroids: vec![3.0, 2.0, 1.0, 0.0],
         };
+        let group_payload_segment = IvfRerankGroupPayloadSegmentTuple {
+            next_segment_tid: ItemPointer::INVALID,
+            payloads: vec![0x30, 0x31],
+        };
+        let group_postings = vec![(tid(8, 1), 0.25, vec![0x40, 0x41])];
+        let mut group_header = IvfRerankGroupHeaderTuple::from_single_heaptid_postings(
+            RerankFormat::F16 as u8,
+            2,
+            4,
+            &group_postings,
+            2,
+            1,
+        )
+        .unwrap();
 
         let mut chain = DataPageChain::new(DEFAULT_PAGE_SIZE);
         let centroid_tid = chain.insert_ivf_centroid(&centroid).unwrap();
         let directory_tid = chain.insert_ivf_list_directory(directory).unwrap();
         let codebook_tid = chain.insert_ivf_pq_codebook(&codebook).unwrap();
+        let dense_block = IvfDensePostingBlockTuple::from_single_heaptid_postings(
+            2,
+            &[(tid(9, 1), 0.75, tid(40, 1), vec![0x50, 0x51])],
+            2,
+        )
+        .unwrap();
+        let dense_tid = chain.insert_ivf_dense_posting_block(&dense_block).unwrap();
+        let aligned_dense_tid = chain
+            .insert_ivf_dense_posting_aligned_block(&dense_block)
+            .unwrap();
+        let single_tid = chain
+            .insert_ivf_single_heaptid_posting(2, tid(9, 2), 0.25, tid(40, 2), &[0x52, 0x53])
+            .unwrap();
+        let mut sidecar = IvfRerankSidecarBlockTuple::new(
+            RerankFormat::F16 as u8,
+            2,
+            vec![tid(10, 1)],
+            vec![0x54, 0x55],
+        )
+        .unwrap();
+        let sidecar_tid = chain.insert_ivf_rerank_sidecar_block(&sidecar).unwrap();
+        let group_header_tid = chain.insert_ivf_rerank_group_header(&group_header).unwrap();
+        let group_segment_tid = chain
+            .insert_ivf_rerank_group_payload_segment(&group_payload_segment)
+            .unwrap();
         chain
             .update_ivf_pq_codebook(codebook_tid, &updated_codebook)
+            .unwrap();
+        sidecar.next_tid = tid(41, 1);
+        chain
+            .update_ivf_rerank_sidecar_block(sidecar_tid, &sidecar)
+            .unwrap();
+        group_header.next_segment_tid = group_segment_tid;
+        group_header.next_group_tid = tid(21, 1);
+        chain
+            .update_ivf_rerank_group_header(group_header_tid, &group_header)
             .unwrap();
 
         assert_eq!(chain.read_ivf_centroid(centroid_tid, 2).unwrap(), centroid);
         assert_eq!(
             chain.read_ivf_list_directory(directory_tid).unwrap(),
             directory
+        );
+        assert_eq!(
+            chain.read_ivf_dense_posting_block(dense_tid, 2).unwrap(),
+            dense_block
+        );
+        assert_eq!(
+            chain
+                .read_ivf_dense_posting_block(aligned_dense_tid, 2)
+                .unwrap(),
+            dense_block
+        );
+        assert_eq!(
+            chain.read_ivf_posting(single_tid, 2).unwrap(),
+            IvfPostingTuple {
+                list_id: 2,
+                deleted: false,
+                heaptids: vec![tid(9, 2)],
+                gamma: 0.25,
+                rerank_tid: tid(40, 2),
+                payload: vec![0x52, 0x53],
+            }
+        );
+        assert_eq!(
+            chain
+                .read_ivf_rerank_sidecar_block_staged(sidecar_tid)
+                .unwrap(),
+            sidecar
         );
         assert_eq!(
             IvfPqCodebookTuple::decode(
@@ -4286,6 +6170,18 @@ mod tests {
             .unwrap(),
             updated_codebook
         );
+        assert_eq!(
+            chain
+                .read_ivf_rerank_group_header_staged(group_header_tid)
+                .unwrap(),
+            group_header
+        );
+        assert_eq!(
+            chain
+                .read_ivf_rerank_group_payload_segment_staged(group_segment_tid)
+                .unwrap(),
+            group_payload_segment
+        );
     }
 
     #[test]
@@ -4296,10 +6192,38 @@ mod tests {
         assert!(list_directory_tuple_fits(DEFAULT_PAGE_SIZE));
         assert!(posting_tuple_fits(4096, DEFAULT_PAGE_SIZE));
         assert!(pq_codebook_tuple_fits(256, DEFAULT_PAGE_SIZE));
+        assert!(rerank_sidecar_block_tuple_fits(64, 4, DEFAULT_PAGE_SIZE));
+        assert!(rerank_group_header_tuple_fits(
+            64,
+            64,
+            64,
+            1024,
+            DEFAULT_PAGE_SIZE
+        ));
+        assert!(rerank_group_payload_segment_tuple_fits(
+            4096,
+            DEFAULT_PAGE_SIZE
+        ));
         assert!(!centroid_tuple_fits(1536, 64));
         assert!(!list_directory_tuple_fits(32));
         assert!(!posting_tuple_fits(DEFAULT_PAGE_SIZE, DEFAULT_PAGE_SIZE));
         assert!(!pq_codebook_tuple_fits(
+            DEFAULT_PAGE_SIZE,
+            DEFAULT_PAGE_SIZE
+        ));
+        assert!(!rerank_sidecar_block_tuple_fits(
+            DEFAULT_PAGE_SIZE,
+            DEFAULT_PAGE_SIZE,
+            DEFAULT_PAGE_SIZE
+        ));
+        assert!(!rerank_group_header_tuple_fits(
+            0,
+            64,
+            0,
+            0,
+            DEFAULT_PAGE_SIZE
+        ));
+        assert!(!rerank_group_payload_segment_tuple_fits(
             DEFAULT_PAGE_SIZE,
             DEFAULT_PAGE_SIZE
         ));
@@ -4379,6 +6303,8 @@ mod tests {
             dense_posting_blocks: false,
             dense_posting_typed_layout: false,
             rabitq_residual: false,
+            rabitq_rerank_score: RaBitQRerankScoreMode::Estimator,
+            rabitq_rerank_clip: EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
             storage_format: StorageFormat::Auto,
             rerank: RerankMode::Auto,
             coarse_format: CoarseFormat::Auto,

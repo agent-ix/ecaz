@@ -22,6 +22,15 @@ k-cap + per-candidate residual carriage worth building. Acceptance criterion 4
 (bench evidence) + the heap-fetch-reduction goal remain open and bench-gated.
 Priority: P0 latency.
 
+**Benchmark verdict (2026-06-19, intel-local, real DBpedia 10/50/100k, fixed
+release `.so`; `benchmarks/ivf-111g-115-attribution/`):** lazy rerank is **inert
+— no win**. `ec_ivf.lazy_heap_rerank` off vs on is recall byte-identical and
+latency-neutral (within noise) at all scales — no skip fires (NoBound +
+`min_kept == rerank_width` + loose residual bound). Driver/gate/counters are
+correct infrastructure, but the heap-fetch-reduction goal is **not realized** and
+is likely marginal even after a k-cap. See
+`reviews/task-112/002-lazy-exact-floor-followup/feedback/2026-06-19-01-reviewer.md`.
+
 ## Goal
 
 Reduce `ec_ivf` query latency by fetching and exact-scoring fewer heap rows in

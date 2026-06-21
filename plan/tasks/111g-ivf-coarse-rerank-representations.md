@@ -9,6 +9,18 @@ placement (`rerank_placement='index'`) was promoted from a Non-Goal to the
 constructive win: a persisted compact `0x2A` sidecar with a metadata v3 clean
 break (no backward-compat — research project), blessed in the 003a design review.
 Priority: P1 latency / recall-at-latency (unlocks the 111e contract).
+
+**Benchmark verdict (2026-06-19, intel-local, real DBpedia 10/50/100k, fixed
+release `.so`; `benchmarks/ivf-111g-115-attribution/`):** the bench surfaced two
+real bugs. (1) **f16 rerank was broken** — subnormal binary16 decode collapsed
+recall@10 to ~0.6; **fixed** (commit `0c3efc611`), now ≈ f32 (0.9975 vs 0.9985
+@np200). (2) **index-side `rerank_placement='index'` is a severe regression** —
+~40–120× slower and 16× larger than table-side at equal recall (O(N) full-chain
+read; the byte counter only saw O(W) survivors). Fix = **ADR-079**
+(survivor-directed bounded read); do not promote index-side until re-benched.
+Table-side compact reps offer no benefit over f32 (f16(fixed)≈f32; rabitq4 loses
+recall). See
+`reviews/task-111g/004-sidecar-accounting-followup/feedback/2026-06-19-01-reviewer.md`.
 Parent: `111-ivf-scan-dense-posting-block-layout.md`, follows
 `111e-ivf-coarse-rerank-candidate-pipeline.md` and `111f-ivf-dead-format-cleanup.md`.
 Evidence anchor: `reviews/task-111e/005-compact-sidecar-rerank/`,

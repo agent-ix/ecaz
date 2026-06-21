@@ -1,0 +1,5 @@
+Script started on 2026-06-20 20:09:10-07:00 [<not executed on terminal>]
+NOTICE:  database "task111h_corrected_100k_v9" does not exist, skipping
+DROP DATABASE
+
+Script done on 2026-06-20 20:09:10-07:00 [COMMAND_EXIT_CODE="0"]

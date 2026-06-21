@@ -131,7 +131,9 @@ pub(super) fn score_partial_sve(
         if is_aarch64_feature_detected!("sve2") {
             // SAFETY: runtime feature detection above guarantees SVE2/SVE
             // support, and callers validate LUT/code/output shapes before dispatch.
-            return Some(unsafe { score_sve_impl(lut, original_dim, codes, out_scores, Isa::Sve2) });
+            return Some(unsafe {
+                score_sve_impl(lut, original_dim, codes, out_scores, Isa::Sve2)
+            });
         }
         if is_aarch64_feature_detected!("sve") {
             // SAFETY: runtime feature detection above guarantees SVE support,

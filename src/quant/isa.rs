@@ -289,7 +289,10 @@ mod tests {
             Some(Isa::Sve2),
             Some(Isa::Avx2),
         ] {
-            assert_eq!(super::decode_cap(cap.map_or(super::CAP_UNSET, super::cap_rank)), cap);
+            assert_eq!(
+                super::decode_cap(cap.map_or(super::CAP_UNSET, super::cap_rank)),
+                cap
+            );
         }
     }
 

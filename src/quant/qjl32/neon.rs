@@ -172,8 +172,8 @@ unsafe fn score_octet_candidate_parallel_neon(
 ) {
     use std::arch::aarch64::{
         vaddq_f32, vaddq_u32, vandq_u32, vbslq_f32, vceqq_u32, vdupq_n_f32, vdupq_n_s32,
-        vdupq_n_u32, vld1q_f32, vld1q_u32, vmulq_f32, vmulq_u32, vqtbl2q_u8,
-        vreinterpretq_f32_u8, vreinterpretq_u8_u32, vshlq_n_u32, vshlq_u32, vst1q_f32,
+        vdupq_n_u32, vld1q_f32, vld1q_u32, vmulq_f32, vmulq_u32, vqtbl2q_u8, vreinterpretq_f32_u8,
+        vreinterpretq_u8_u32, vshlq_n_u32, vshlq_u32, vst1q_f32,
     };
 
     let mut mse_codes = [&[][..]; OCTET_WIDTH];
@@ -224,10 +224,8 @@ unsafe fn score_octet_candidate_parallel_neon(
                 vmulq_u32(vshlq_n_u32::<2>(idx_hi), byte_spread),
                 byte_offsets,
             );
-            let cb_lo =
-                vreinterpretq_f32_u8(vqtbl2q_u8(cb_table, vreinterpretq_u8_u32(bytes_lo)));
-            let cb_hi =
-                vreinterpretq_f32_u8(vqtbl2q_u8(cb_table, vreinterpretq_u8_u32(bytes_hi)));
+            let cb_lo = vreinterpretq_f32_u8(vqtbl2q_u8(cb_table, vreinterpretq_u8_u32(bytes_lo)));
+            let cb_hi = vreinterpretq_f32_u8(vqtbl2q_u8(cb_table, vreinterpretq_u8_u32(bytes_hi)));
 
             let absolute = dim_index + subdim;
             let rotated = vdupq_n_f32(*prepared.rotated.get_unchecked(absolute));

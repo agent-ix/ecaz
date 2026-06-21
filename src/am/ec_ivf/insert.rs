@@ -133,8 +133,9 @@ unsafe fn insert_into_trained_index(
         .map_err(|e| format!("ec_ivf aminsert centroid assignment failed: {e}"))?;
     let (directory_tid, directory) = load_directory_entry(index_relation, metadata, list_id)?;
 
-    // Task 111g: keep the heap TID + source vector so we can append a compact
-    // rerank sidecar entry (index placement) after the posting is written.
+    // Task 111g: keep the heap TID + source vector so index-placement inserts
+    // can append a compact rerank sidecar block and store its direct TID on the
+    // posting before the posting becomes visible to scans.
     let heap_tid = tuple.heap_tid;
     let source_vector = tuple.source_vector.clone();
 
@@ -147,13 +148,15 @@ unsafe fn insert_into_trained_index(
             .centroids
             .get(list_id)
             .ok_or_else(|| format!("ec_ivf assigned list {list_id} has no centroid"))?;
-        let residual_quantizer = quantizer::IvfQuantizer::resolve_with_pq_group_size_bits_and_residual(
-            metadata.storage_format,
-            usize::from(metadata.dimensions),
-            metadata_pq_group_size(metadata),
-            Some(metadata.quant_bits),
-            true,
-        )?;
+        let residual_quantizer =
+            quantizer::IvfQuantizer::resolve_with_pq_group_size_bits_and_residual(
+                metadata.storage_format,
+                usize::from(metadata.dimensions),
+                metadata_pq_group_size(metadata),
+                Some(metadata.quant_bits),
+                true,
+                None,
+            )?;
         let (_dimensions, gamma, payload) =
             residual_quantizer.encode_source_residual(&tuple.source_vector, centroid)?;
         (gamma, payload)
@@ -161,13 +164,32 @@ unsafe fn insert_into_trained_index(
         (tuple.gamma, tuple.payload)
     };
 
+    let list_id_u32 =
+        u32::try_from(list_id).map_err(|_| "ec_ivf assigned list id exceeds u32".to_owned())?;
+    let rerank_centroid = model
+        .centroids
+        .get(list_id)
+        .ok_or_else(|| format!("ec_ivf assigned list {list_id} has no centroid"))?;
+    let mut rerank_group = append_rerank_group_entry(
+        index_relation,
+        metadata,
+        heap_tid,
+        list_id_u32,
+        gamma,
+        &source_vector,
+        rerank_centroid,
+    )?;
+    let rerank_tid = rerank_group
+        .as_ref()
+        .map(|group| group.tid)
+        .unwrap_or(ItemPointer::INVALID);
+
     let posting = page::IvfPostingTuple {
-        list_id: u32::try_from(list_id)
-            .map_err(|_| "ec_ivf assigned list id exceeds u32".to_owned())?,
+        list_id: list_id_u32,
         deleted: false,
         heaptids: vec![tuple.heap_tid],
         gamma,
-        rerank_tid: ItemPointer::INVALID,
+        rerank_tid,
         payload,
     };
     let block_range = live_insert_block_range(&directory)
@@ -189,60 +211,180 @@ unsafe fn insert_into_trained_index(
         apply_directory_insert_stats(latest_directory, posting_tid)
     })
     .map_err(|e| format!("ec_ivf aminsert stats update failed: {e}"))?;
-    page::update_metadata_page(index_relation, apply_metadata_insert_stats)
-        .map_err(|e| format!("ec_ivf aminsert metadata update failed: {e}"))?;
-
-    // Task 111g: for rerank_placement = 'index', persist the new row's compact
-    // payload into the sidecar so the index-side rerank can find it. Prepend a
-    // single-entry 0x2A block to the chain (its next_tid = old head) and point
-    // the metadata head at it — O(1), no tail walk.
-    append_rerank_sidecar_entry(index_relation, heap_tid, &source_vector)?;
+    if let Some(group) = rerank_group.as_mut() {
+        page::update_metadata_page_prepending_rerank_group(
+            index_relation,
+            group.tid,
+            &mut group.header,
+            |metadata| apply_metadata_insert_stats(metadata),
+        )
+    } else {
+        page::update_metadata_page(index_relation, |metadata| {
+            apply_metadata_insert_stats(metadata)
+        })
+    }
+    .map_err(|e| format!("ec_ivf aminsert metadata update failed: {e}"))?;
 
     Ok(())
 }
 
-/// Append the inserted row's compact rerank payload to the 0x2A sidecar chain
-/// when the index uses rerank_placement = 'index' with a compact rerank_format.
-/// No-op for table placement / f32 (no sidecar). Prepends a single-entry block
-/// to keep inserts O(1).
-unsafe fn append_rerank_sidecar_entry(
+struct AppendedRerankGroup {
+    tid: ItemPointer,
+    header: page::IvfRerankGroupHeaderTuple,
+}
+
+/// Append the inserted row's compact rerank payload to a fresh packed rerank
+/// group when the index uses rerank_placement = 'index' with a compact
+/// rerank_format. No-op for source placement / f32. The group is published
+/// later by relinking it under the metadata lock, after the posting is durable.
+unsafe fn append_rerank_group_entry(
     index_relation: pg_sys::Relation,
+    metadata: &page::MetadataPage,
     heap_tid: ItemPointer,
+    list_id: u32,
+    gamma: f32,
     source_vector: &[f32],
-) -> Result<(), String> {
+    centroid: &[f32],
+) -> Result<Option<AppendedRerankGroup>, String> {
     let reloptions = NonNull::new(index_relation)
         .map(options::relation_options)
         .ok_or_else(|| "ec_ivf aminsert received null index relation".to_owned())?;
     if reloptions.rerank_placement != options::RerankPlacement::Index {
-        return Ok(());
+        return Ok(None);
     }
     let Some(encoder) = super::rerank::RerankSidecarEncoder::resolve(
         reloptions.rerank_format,
         source_vector.len(),
+        metadata.rabitq_rerank_clip_i32(),
     )?
     else {
-        return Ok(());
+        return Ok(None);
     };
-    let payload = encoder.encode(source_vector)?;
+    let payload = encoder.encode_with_centroid(source_vector, centroid)?;
     let payload_len = encoder.payload_len(source_vector.len());
-
-    // Build the single-entry block with next_tid pointing at the current head.
-    let metadata = page::read_metadata_page(index_relation);
-    let mut block = page::IvfRerankSidecarBlockTuple::new(
-        reloptions.rerank_format as u8,
-        payload_len,
-        vec![heap_tid],
-        payload,
+    if payload.len() != payload_len {
+        return Err(format!(
+            "ec_ivf rerank group payload length {} does not match expected {payload_len}",
+            payload.len()
+        ));
+    }
+    let scorer_width = rerank_group_scorer_width(reloptions.rerank_width)?;
+    let header_payload_bytes = rerank_group_header_payload_capacity(
+        1,
+        scorer_width,
+        1,
+        payload.len(),
+        pg_sys::BLCKSZ as usize,
     )?;
-    block.next_tid = metadata.rerank_sidecar_head;
-    let new_head = page::append_ivf_rerank_sidecar_block_to_new_block(index_relation, &block)?;
+    let segment_payload_capacity = rerank_group_payload_segment_capacity(pg_sys::BLCKSZ as usize)?;
+    let next_segment_tid = append_rerank_group_payload_segments(
+        index_relation,
+        &payload[header_payload_bytes..],
+        segment_payload_capacity,
+    )?;
 
-    page::update_metadata_page(index_relation, |metadata| {
-        metadata.rerank_sidecar_head = new_head;
-        Ok(())
-    })
-    .map_err(|e| format!("ec_ivf aminsert rerank sidecar head update failed: {e}"))?;
-    Ok(())
+    // Build the single-entry group now, but publish it only during the final
+    // metadata update. That update rewrites next_group_tid under the metadata
+    // lock so concurrent insert prepends cannot orphan each other.
+    let postings = vec![(heap_tid, gamma, payload)];
+    let mut header = page::IvfRerankGroupHeaderTuple::from_single_heaptid_postings(
+        reloptions.rerank_format as u8,
+        list_id,
+        scorer_width,
+        &postings,
+        payload_len,
+        header_payload_bytes,
+    )?;
+    header.next_segment_tid = next_segment_tid;
+    header.next_group_tid = ItemPointer::INVALID;
+    let tid = page::append_ivf_rerank_group_header_to_new_block(index_relation, &header)?;
+    Ok(Some(AppendedRerankGroup { tid, header }))
+}
+
+unsafe fn append_rerank_group_payload_segments(
+    index_relation: pg_sys::Relation,
+    payload_tail: &[u8],
+    segment_payload_capacity: usize,
+) -> Result<ItemPointer, String> {
+    if payload_tail.is_empty() {
+        return Ok(ItemPointer::INVALID);
+    }
+    if segment_payload_capacity == 0 {
+        return Err("ec_ivf rerank group payload segment capacity is zero".to_owned());
+    }
+    let mut next_segment_tid = ItemPointer::INVALID;
+    for chunk in payload_tail.chunks(segment_payload_capacity).rev() {
+        let segment = page::IvfRerankGroupPayloadSegmentTuple {
+            next_segment_tid,
+            payloads: chunk.to_vec(),
+        };
+        next_segment_tid =
+            page::append_ivf_rerank_group_payload_segment_to_new_block(index_relation, &segment)?;
+    }
+    Ok(next_segment_tid)
+}
+
+fn rerank_group_scorer_width(rerank_width: i32) -> Result<usize, String> {
+    let width = if rerank_width > 0 {
+        rerank_width
+    } else {
+        super::EC_IVF_DEFAULT_RERANK_WIDTH
+    };
+    let width = usize::try_from(width)
+        .map_err(|_| format!("ec_ivf rerank group scorer width {width} is out of range"))?;
+    if width == 0 || width > u16::MAX as usize {
+        return Err(format!(
+            "ec_ivf rerank group scorer width {width} must be in 1..={}",
+            u16::MAX
+        ));
+    }
+    Ok(width)
+}
+
+fn rerank_group_header_payload_capacity(
+    valid_count: usize,
+    scorer_width: usize,
+    total_heap_tids: usize,
+    total_payload_bytes: usize,
+    page_size: usize,
+) -> Result<usize, String> {
+    let mut capacity = total_payload_bytes.min(u16::MAX as usize);
+    while capacity > 0
+        && !page::rerank_group_header_tuple_fits(
+            valid_count,
+            scorer_width,
+            total_heap_tids,
+            capacity,
+            page_size,
+        )
+    {
+        capacity -= 1;
+    }
+    if page::rerank_group_header_tuple_fits(
+        valid_count,
+        scorer_width,
+        total_heap_tids,
+        capacity,
+        page_size,
+    ) {
+        Ok(capacity)
+    } else {
+        Err(format!(
+            "ec_ivf rerank group header for {valid_count} entries at scorer width {scorer_width} does not fit on a page"
+        ))
+    }
+}
+
+fn rerank_group_payload_segment_capacity(page_size: usize) -> Result<usize, String> {
+    let mut capacity = (u16::MAX as usize).min(page_size);
+    while capacity > 0 && !page::rerank_group_payload_segment_tuple_fits(capacity, page_size) {
+        capacity -= 1;
+    }
+    if capacity == 0 {
+        Err("ec_ivf rerank group payload segment cannot fit payload bytes on a page".to_owned())
+    } else {
+        Ok(capacity)
+    }
 }
 
 unsafe fn ensure_heap_tid_absent(
@@ -338,6 +480,8 @@ fn options_from_metadata(
         dense_posting_blocks: false,
         dense_posting_typed_layout: false,
         rabitq_residual: metadata.rabitq_residual,
+        rabitq_rerank_score: metadata.rabitq_rerank_score_mode(),
+        rabitq_rerank_clip: metadata.rabitq_rerank_clip_i32(),
         storage_format: metadata.storage_format,
         rerank: metadata.rerank,
         coarse_format: if metadata.storage_format == options::StorageFormat::CoarseRerank {

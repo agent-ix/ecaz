@@ -1,0 +1,19 @@
+Script started on 2026-06-20 15:52:55-07:00 [<not executed on terminal>]
+cache_evict_start database=task111h_cold_50k dry_run=true data_directory=/home/peter/.pgrx/data-18 relations=5 files=9 bytes=1014423552
+cache_evict_file status=dry_run relation=pg_toast_129955597 relkind=t bytes=819200000 path=/home/peter/.pgrx/data-18/base/129804060/129955603
+cache_evict_file status=dry_run relation=pg_toast_129955597 relkind=t bytes=221184 path=/home/peter/.pgrx/data-18/base/129804060/129955603_fsm
+cache_evict_file status=dry_run relation=pg_toast_129955597 relkind=t bytes=32768 path=/home/peter/.pgrx/data-18/base/129804060/129955603_vm
+cache_evict_file status=dry_run relation=pg_toast_129955597_index relkind=i bytes=9052160 path=/home/peter/.pgrx/data-18/base/129804060/129955604
+cache_evict_file status=dry_run relation=task111h040_50k_index_f16_w32_corpus relkind=r bytes=3833856 path=/home/peter/.pgrx/data-18/base/129804060/129955597
+cache_evict_file status=dry_run relation=task111h040_50k_index_f16_w32_corpus relkind=r bytes=24576 path=/home/peter/.pgrx/data-18/base/129804060/129955597_fsm
+cache_evict_file status=dry_run relation=task111h040_50k_index_f16_w32_corpus relkind=r bytes=8192 path=/home/peter/.pgrx/data-18/base/129804060/129955597_vm
+cache_evict_file status=dry_run relation=task111h040_50k_index_f16_w32_corpus_pkey relkind=i bytes=1138688 path=/home/peter/.pgrx/data-18/base/129804060/129955605
+cache_evict_file status=dry_run relation=task111h040_50k_index_f16_w32_idx relkind=i bytes=180912128 path=/home/peter/.pgrx/data-18/base/129804060/130106625
+cache_evict_relation relation=pg_toast_129955597 bytes=819453952
+cache_evict_relation relation=pg_toast_129955597_index bytes=9052160
+cache_evict_relation relation=task111h040_50k_index_f16_w32_corpus bytes=3866624
+cache_evict_relation relation=task111h040_50k_index_f16_w32_corpus_pkey bytes=1138688
+cache_evict_relation relation=task111h040_50k_index_f16_w32_idx bytes=180912128
+cache_evict_summary database=task111h_cold_50k dry_run=true relations=5 files=9 bytes=1014423552
+
+Script done on 2026-06-20 15:52:55-07:00 [COMMAND_EXIT_CODE="0"]

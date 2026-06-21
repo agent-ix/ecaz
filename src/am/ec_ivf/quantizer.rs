@@ -1,4 +1,4 @@
-use super::options::StorageFormat;
+use super::options::{StorageFormat, EC_IVF_DEFAULT_RABITQ_RERANK_CLIP};
 use super::page;
 use crate::am::common::candidate_batch::{
     record_ivf_rabitq_arithmetic_batch_flush_width, score_grouped_pq_batch_for,
@@ -55,6 +55,10 @@ pub(super) struct IvfQuantizer {
     /// Per-dim code width for the RaBitQ branch. Ignored for
     /// TurboQuant / PqFastScan profiles. Always one of {1, 2, 4, 8}.
     rabitq_bits: u8,
+    /// Integer scalar clip radius for RaBitQ encoders/scorers. Stored as an
+    /// integer because reloptions currently expose the Task 111h A/B values
+    /// {2,3,4}; default 2 preserves the existing profile.
+    rabitq_quant_clip: u8,
     /// Task 115: when set (RaBitQ profile only), postings are encoded as the
     /// residual `o − c` against the assigned IVF centroid via
     /// [`Self::encode_source_residual`], and scan adds the exact per-list
@@ -125,6 +129,7 @@ impl IvfQuantizer {
             pq_group_size,
             rabitq_bits,
             false,
+            None,
         )
     }
 
@@ -138,6 +143,7 @@ impl IvfQuantizer {
         pq_group_size: Option<usize>,
         rabitq_bits: Option<u8>,
         rabitq_residual: bool,
+        rabitq_quant_clip: Option<u8>,
     ) -> Result<Self, String> {
         storage_format.validate_v1_supported()?;
         let profile = match storage_format {
@@ -153,9 +159,7 @@ impl IvfQuantizer {
             StorageFormat::RaBitQ | StorageFormat::CoarseRerank => IvfQuantizerProfile::RaBitQ,
         };
         if rabitq_residual && !matches!(profile, IvfQuantizerProfile::RaBitQ) {
-            return Err(
-                "ec_ivf rabitq_residual requires storage_format = 'rabitq'".to_owned(),
-            );
+            return Err("ec_ivf rabitq_residual requires storage_format = 'rabitq'".to_owned());
         }
         let bits = match rabitq_bits.unwrap_or(crate::DEFAULT_QUANT_BITS) {
             b @ (1 | 2 | 4 | 8) => b,
@@ -165,10 +169,15 @@ impl IvfQuantizer {
                 ))
             }
         };
+        let quant_clip = rabitq_quant_clip.unwrap_or(EC_IVF_DEFAULT_RABITQ_RERANK_CLIP as u8);
+        if quant_clip == 0 {
+            return Err("ec_ivf RaBitQ quant_clip must be positive".to_owned());
+        }
         Ok(Self {
             profile,
             dimensions,
             rabitq_bits: bits,
+            rabitq_quant_clip: quant_clip,
             rabitq_residual,
         })
     }
@@ -225,7 +234,8 @@ impl IvfQuantizer {
     ) -> Result<(u16, f32, Vec<u8>), String> {
         if !self.rabitq_residual || !matches!(self.profile, IvfQuantizerProfile::RaBitQ) {
             return Err(
-                "ec_ivf encode_source_residual requires a RaBitQ residual-mode quantizer".to_owned(),
+                "ec_ivf encode_source_residual requires a RaBitQ residual-mode quantizer"
+                    .to_owned(),
             );
         }
         if source.is_empty() {
@@ -411,6 +421,41 @@ impl IvfQuantizer {
             )
             | (IvfQuantizerProfile::PqFastScan { .. }, IvfPreparedQuery::RaBitQ(_)) => {
                 Err("ec_ivf prepared query does not match quantizer profile".to_owned())
+            }
+        }
+    }
+
+    pub(super) fn score_ip_dequantized_from_parts(
+        self,
+        query: &[f32],
+        payload: &[u8],
+    ) -> Result<f32, String> {
+        match self.profile {
+            IvfQuantizerProfile::TurboQuant => {
+                if query.len() != self.dimensions {
+                    return Err(format!(
+                        "query dimension mismatch: got {}, expected {}",
+                        query.len(),
+                        self.dimensions
+                    ));
+                }
+                let quantizer = ProdQuantizer::cached(
+                    self.dimensions,
+                    crate::DEFAULT_QUANT_BITS,
+                    crate::DEFAULT_QUANT_SEED,
+                );
+                let decoded = quantizer.decode_approximate_from_code(payload);
+                Ok(query
+                    .iter()
+                    .zip(decoded.iter())
+                    .map(|(query_i, decoded_i)| query_i * decoded_i)
+                    .sum())
+            }
+            IvfQuantizerProfile::RaBitQ => Err(
+                "ec_ivf RaBitQ dequantized scoring is implemented on PreparedEstimator".to_owned(),
+            ),
+            IvfQuantizerProfile::PqFastScan { .. } => {
+                Err("ec_ivf pq_fastscan dequantized scoring is not supported".to_owned())
             }
         }
     }
@@ -979,10 +1024,11 @@ impl IvfQuantizer {
     }
 
     fn rabitq_quantizer(self) -> Result<Arc<RaBitQQuantizer>, String> {
-        RaBitQQuantizer::cached_seeded_srht_bits(
+        RaBitQQuantizer::cached_seeded_srht_bits_clip(
             self.dimensions,
             crate::DEFAULT_QUANT_SEED,
             self.rabitq_bits,
+            f32::from(self.rabitq_quant_clip),
         )
     }
 

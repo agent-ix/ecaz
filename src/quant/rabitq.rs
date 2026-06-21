@@ -83,6 +83,7 @@ struct SeededSrhtCacheKey {
     dimensions: usize,
     seed: u64,
     bits_per_dim: u8,
+    quant_clip_bits: u32,
 }
 
 static SEEDED_SRHT_CACHE: OnceLock<Mutex<HashMap<SeededSrhtCacheKey, Arc<RaBitQQuantizer>>>> =
@@ -291,10 +292,25 @@ impl RaBitQQuantizer {
         seed: u64,
         bits: u8,
     ) -> Result<Arc<Self>, String> {
+        Self::cached_seeded_srht_bits_clip(dimensions, seed, bits, RABITQ_DEFAULT_QUANT_CLIP)
+    }
+
+    pub fn cached_seeded_srht_bits_clip(
+        dimensions: usize,
+        seed: u64,
+        bits: u8,
+        quant_clip: f32,
+    ) -> Result<Arc<Self>, String> {
+        if quant_clip <= 0.0 || !quant_clip.is_finite() {
+            return Err(format!(
+                "RaBitQ quant_clip must be positive and finite, got {quant_clip}",
+            ));
+        }
         let key = SeededSrhtCacheKey {
             dimensions,
             seed,
             bits_per_dim: bits,
+            quant_clip_bits: quant_clip.to_bits(),
         };
         let cache = SEEDED_SRHT_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
         let mut cache_guard = cache
@@ -303,7 +319,9 @@ impl RaBitQQuantizer {
         if let Some(quantizer) = cache_guard.get(&key) {
             return Ok(Arc::clone(quantizer));
         }
-        let quantizer = Arc::new(Self::with_seeded_srht_bits(dimensions, seed, bits)?);
+        let quantizer = Arc::new(Self::with_seeded_srht_bits_clip(
+            dimensions, seed, bits, quant_clip,
+        )?);
         cache_guard.insert(key, Arc::clone(&quantizer));
         Ok(quantizer)
     }
@@ -386,10 +404,19 @@ impl RaBitQQuantizer {
     /// for prod call sites where the seed is recorded in the
     /// index metadata so different indexes get independent rotations.
     pub fn with_seeded_srht_bits(dimensions: usize, seed: u64, bits: u8) -> Result<Self, String> {
+        Self::with_seeded_srht_bits_clip(dimensions, seed, bits, RABITQ_DEFAULT_QUANT_CLIP)
+    }
+
+    pub fn with_seeded_srht_bits_clip(
+        dimensions: usize,
+        seed: u64,
+        bits: u8,
+        quant_clip: f32,
+    ) -> Result<Self, String> {
         #[cfg(test)]
         note_seeded_srht_construction_for_test(dimensions);
         let rotation: Arc<dyn Rotation> = Arc::new(SrhtRotation::with_seed(dimensions, seed));
-        Self::with_bits(rotation, bits)
+        Self::with_bits_clip(rotation, bits, quant_clip)
     }
 
     pub fn dimensions(&self) -> usize {
@@ -1041,6 +1068,28 @@ impl PreparedEstimator {
     #[inline]
     pub fn estimate_ip_least_squares_scalar_only(&self, code: &[u8]) -> f32 {
         estimate_ip_least_squares_scalar_only_impl(
+            &self.query_rotated,
+            Some(&self.query_bf16),
+            Some(&self.dequant_lut_bf16),
+            self.dimensions,
+            self.bits_per_dim,
+            &self.dequant_lut,
+            self.bits1_byte_lut.as_deref(),
+            self.bits8_query_scale.as_slice(),
+            self.bits8_query_offset.as_slice(),
+            code,
+        )
+    }
+
+    /// Exact dot product against the norm-rescaled dequantized code vector:
+    /// `||o|| * <q, x_dec> / ||x_dec||`.
+    ///
+    /// This is a diagnostic rerank mode, not the paper estimator. It exposes
+    /// the "score the persisted compact payload as the vector it reconstructs"
+    /// lever for Task 111h sweeps.
+    #[inline]
+    pub fn estimate_ip_dequantized_scalar_only(&self, code: &[u8]) -> f32 {
+        estimate_ip_dequantized_scalar_only_impl(
             &self.query_rotated,
             Some(&self.query_bf16),
             Some(&self.dequant_lut_bf16),
@@ -4633,6 +4682,64 @@ fn estimate_ip_least_squares_scalar_only_impl(
     candidate_norm * candidate_o_dot * sum_q_dequant / candidate_x_norm
 }
 
+#[inline]
+fn estimate_ip_dequantized_scalar_only_impl(
+    query_rotated: &[f32],
+    query_bf16: Option<&[u16]>,
+    dequant_lut_bf16: Option<&[u16; 256]>,
+    dimensions: usize,
+    bits_per_dim: u8,
+    dequant_lut: &[f32; 256],
+    bits1_byte_lut: Option<&[[f32; 8]; 256]>,
+    bits8_query_scale: &[f32],
+    bits8_query_offset: &[f32],
+    code: &[u8],
+) -> f32 {
+    debug_assert_eq!(query_rotated.len(), dimensions);
+    let bits = bits_per_dim as usize;
+    let packed_bytes = (dimensions * bits).div_ceil(8);
+    assert!(
+        code.len() >= packed_bytes + RABITQ_SCALAR_LEN,
+        "RaBitQ code too short: got {}, expected at least {}",
+        code.len(),
+        packed_bytes + RABITQ_SCALAR_LEN,
+    );
+    let s = packed_bytes;
+    let candidate_norm = f32::from_le_bytes(
+        code[s..s + RABITQ_NORM_LEN]
+            .try_into()
+            .expect("norm slice is always 4 bytes"),
+    );
+    let candidate_x_norm = f32::from_le_bytes(
+        code[s + RABITQ_NORM_LEN + RABITQ_UNIT_DOT_LEN..s + RABITQ_SCALAR_LEN]
+            .try_into()
+            .expect("x_norm slice is always 4 bytes"),
+    );
+
+    if candidate_norm <= 0.0
+        || !candidate_norm.is_finite()
+        || candidate_x_norm <= 0.0
+        || !candidate_x_norm.is_finite()
+    {
+        return 0.0;
+    }
+
+    let sum_q_dequant = sum_query_dequant_with_bf16(
+        query_rotated,
+        query_bf16,
+        dequant_lut_bf16,
+        dimensions,
+        bits,
+        dequant_lut,
+        bits1_byte_lut,
+        bits8_query_scale,
+        bits8_query_offset,
+        code,
+    );
+
+    candidate_norm * sum_q_dequant / candidate_x_norm
+}
+
 fn sign_words_from_byte_slice(bytes: &[u8], dim: usize) -> Vec<u64> {
     let mut words = vec![0_u64; dim.div_ceil(64)];
     for index in 0..dim {
@@ -5430,6 +5537,72 @@ mod tests {
         let estimate = prepared.estimate_ip_least_squares_scalar_only(&code);
         assert!((estimate - expected).abs() < 1e-6);
         assert_ne!(estimate, prepared.estimate_ip_scalar_only(&code));
+    }
+
+    #[test]
+    fn dequantized_estimator_scores_reconstructed_payload_and_guards_tail_scalars() {
+        let q = identity_quantizer(5, 4);
+        let query = [0.75_f32, -0.25, 1.25, -1.5, 0.5];
+        let candidate = [-0.25_f32, 0.0, 0.25, 0.5, -0.5];
+        let mut code =
+            <RaBitQQuantizer as crate::quant::Quantizer>::encode_code(&q, &candidate).into_vec();
+        let prepared = q.prepare_estimator(&query);
+        let packed_bytes = q.packed_bytes();
+
+        let candidate_norm = read_tail_f32(&code, packed_bytes, 0);
+        let x_norm = read_tail_f32(&code, packed_bytes, RABITQ_NORM_LEN + RABITQ_UNIT_DOT_LEN);
+        let sqrt_d = (q.dimensions() as f32).sqrt();
+        let mut sum_q_dequant = 0.0_f32;
+        for (i, &query_i) in query.iter().enumerate() {
+            sum_q_dequant += query_i
+                * dequant_level(
+                    read_level(&code, i, 4),
+                    4,
+                    sqrt_d,
+                    RABITQ_DEFAULT_QUANT_CLIP,
+                );
+        }
+        let expected = candidate_norm * sum_q_dequant / x_norm;
+
+        let estimate = prepared.estimate_ip_dequantized_scalar_only(&code);
+        assert!((estimate - expected).abs() < 1e-6);
+        assert_ne!(estimate, prepared.estimate_ip_scalar_only(&code));
+
+        write_tail_f32(&mut code, packed_bytes, 0, 0.0);
+        assert_eq!(prepared.estimate_ip_dequantized_scalar_only(&code), 0.0);
+        write_tail_f32(&mut code, packed_bytes, 0, candidate_norm);
+        write_tail_f32(
+            &mut code,
+            packed_bytes,
+            RABITQ_NORM_LEN + RABITQ_UNIT_DOT_LEN,
+            f32::NAN,
+        );
+        assert_eq!(prepared.estimate_ip_dequantized_scalar_only(&code), 0.0);
+    }
+
+    #[test]
+    fn seeded_srht_cache_keys_include_bits_seed_and_clip() {
+        clear_seeded_srht_cache_for_test();
+        reset_seeded_srht_construction_count_for_test(8);
+
+        let q1 = RaBitQQuantizer::cached_seeded_srht_bits_clip(8, 42, 4, 2.0).unwrap();
+        let q2 = RaBitQQuantizer::cached_seeded_srht_bits_clip(8, 42, 4, 2.0).unwrap();
+        assert!(Arc::ptr_eq(&q1, &q2));
+        assert_eq!(seeded_srht_construction_count_for_test(), 1);
+
+        let q3 = RaBitQQuantizer::cached_seeded_srht_bits_clip(8, 42, 4, 3.0).unwrap();
+        assert!(!Arc::ptr_eq(&q1, &q3));
+        assert_eq!(seeded_srht_construction_count_for_test(), 2);
+
+        let default_clip = RaBitQQuantizer::cached_seeded_srht_bits(8, 7, 1).unwrap();
+        let explicit_default =
+            RaBitQQuantizer::cached_seeded_srht_bits_clip(8, 7, 1, RABITQ_DEFAULT_QUANT_CLIP)
+                .unwrap();
+        assert!(Arc::ptr_eq(&default_clip, &explicit_default));
+
+        assert!(RaBitQQuantizer::cached_seeded_srht_bits_clip(8, 7, 4, 0.0).is_err());
+        assert!(RaBitQQuantizer::with_seeded_srht_bits(8, 99, 4).is_ok());
+        assert!(RaBitQQuantizer::with_seeded_srht_bits_clip(8, 99, 4, 2.5).is_ok());
     }
 
     #[test]

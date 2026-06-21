@@ -479,7 +479,10 @@ mod tests {
         // full-width rerank, no skips, byte-identical.
         let approx = [-9.0_f32, -8.0, -7.0, -6.0, -5.0];
         let (plan, fetched) = drive_recording(&approx, &RaBitQLazyBound::default(), 2);
-        assert_eq!(plan.reranked_prefix_len, 5, "default bound reranks full width");
+        assert_eq!(
+            plan.reranked_prefix_len, 5,
+            "default bound reranks full width"
+        );
         assert_eq!(plan.skipped(), 0);
         assert_eq!(fetched, vec![0, 1, 2, 3, 4]);
     }
@@ -490,7 +493,10 @@ mod tests {
         // SlackBound does — RaBitQLazyBound is the production shape of that.
         let approx = [-9.0_f32, -8.0, -7.0, -6.0, -5.0];
         let (plan, _) = drive_recording(&approx, &RaBitQLazyBound::with_slack(0.0), 2);
-        assert_eq!(plan.reranked_prefix_len, 2, "zero-slack RaBitQ bound stops at floor");
+        assert_eq!(
+            plan.reranked_prefix_len, 2,
+            "zero-slack RaBitQ bound stops at floor"
+        );
         assert_eq!(plan.skipped(), 3);
     }
 
@@ -503,7 +509,10 @@ mod tests {
             let a = bits as f32 * 0.3;
             let lb = bound.lower_bound(a);
             assert!(lb >= prev, "non-monotone at a={a}: {lb} < {prev}");
-            assert!(lb <= a, "bound {lb} exceeded approx {a} (slack must be >= 0)");
+            assert!(
+                lb <= a,
+                "bound {lb} exceeded approx {a} (slack must be >= 0)"
+            );
             prev = lb;
         }
     }

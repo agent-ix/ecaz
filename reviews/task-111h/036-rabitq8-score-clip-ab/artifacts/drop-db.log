@@ -1,0 +1,2 @@
+DROP DATABASE
+NOTICE:  database "task111h_rabitq8_score_clip_ab" does not exist, skipping

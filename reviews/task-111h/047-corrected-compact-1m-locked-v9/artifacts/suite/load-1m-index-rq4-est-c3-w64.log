@@ -1,0 +1,58 @@
+[loader] warning: profile "ec_ivf" does not list rabitq_rerank_least_squares, rabitq_rerank_clip as known reloptions; passing through verbatim. Known reloptions: nlists, nprobe, rerank_width, training_sample_rows, seed, pq_group_size, storage_format, quantizer, rerank, coarse_format, coarse_bits, rerank_placement, rerank_format
+[loader] warning: manifest prefix "ec_real_ann_benchmarks_anchor" does not match --prefix "task111h047_1m_shared"
+[loader] skipping corpus chunk corpus/corpus-00000.tsv (already loaded)
+[loader] skipping corpus chunk corpus/corpus-00001.tsv (already loaded)
+[loader] skipping corpus chunk corpus/corpus-00002.tsv (already loaded)
+[loader] skipping corpus chunk corpus/corpus-00003.tsv (already loaded)
+[loader] skipping corpus chunk corpus/corpus-00004.tsv (already loaded)
+[loader] skipping corpus chunk corpus/corpus-00005.tsv (already loaded)
+[loader] skipping corpus chunk corpus/corpus-00006.tsv (already loaded)
+[loader] skipping corpus chunk corpus/corpus-00007.tsv (already loaded)
+[loader] skipping corpus chunk corpus/corpus-00008.tsv (already loaded)
+[loader] skipping corpus chunk corpus/corpus-00009.tsv (already loaded)
+[loader] skipping corpus chunk corpus/corpus-00010.tsv (already loaded)
+[loader] skipping corpus chunk corpus/corpus-00011.tsv (already loaded)
+[loader] skipping corpus chunk corpus/corpus-00012.tsv (already loaded)
+[loader] skipping corpus chunk corpus/corpus-00013.tsv (already loaded)
+[loader] skipping corpus chunk corpus/corpus-00014.tsv (already loaded)
+[loader] skipping corpus chunk corpus/corpus-00015.tsv (already loaded)
+[loader] skipping corpus chunk corpus/corpus-00016.tsv (already loaded)
+[loader] skipping corpus chunk corpus/corpus-00017.tsv (already loaded)
+[loader] skipping corpus chunk corpus/corpus-00018.tsv (already loaded)
+[loader] skipping corpus chunk corpus/corpus-00019.tsv (already loaded)
+[loader] skipping corpus chunk corpus/corpus-00020.tsv (already loaded)
+[loader] skipping corpus chunk corpus/corpus-00021.tsv (already loaded)
+[loader] skipping corpus chunk corpus/corpus-00022.tsv (already loaded)
+[loader] skipping corpus chunk corpus/corpus-00023.tsv (already loaded)
+[loader] skipping corpus chunk corpus/corpus-00024.tsv (already loaded)
+[loader] skipping corpus chunk corpus/corpus-00025.tsv (already loaded)
+[loader] skipping corpus chunk corpus/corpus-00026.tsv (already loaded)
+[loader] skipping corpus chunk corpus/corpus-00027.tsv (already loaded)
+[loader] skipping corpus chunk corpus/corpus-00028.tsv (already loaded)
+[loader] skipping corpus chunk corpus/corpus-00029.tsv (already loaded)
+[loader] skipping corpus chunk corpus/corpus-00030.tsv (already loaded)
+[loader] skipping corpus chunk corpus/corpus-00031.tsv (already loaded)
+[loader] skipping corpus chunk corpus/corpus-00032.tsv (already loaded)
+[loader] skipping corpus chunk corpus/corpus-00033.tsv (already loaded)
+[loader] skipping corpus chunk corpus/corpus-00034.tsv (already loaded)
+[loader] skipping corpus chunk corpus/corpus-00035.tsv (already loaded)
+[loader] skipping corpus chunk corpus/corpus-00036.tsv (already loaded)
+[loader] skipping corpus chunk corpus/corpus-00037.tsv (already loaded)
+[loader] skipping corpus chunk corpus/corpus-00038.tsv (already loaded)
+[loader] skipping corpus chunk corpus/corpus-00039.tsv (already loaded)
+[loader] skipping queries chunk queries/queries-00000.tsv (already loaded)
+[loader] building task111h047_1m_index_rq4_est_c3_w64_idx using ec_ivf (reloptions=[nlists=1024, nprobe=32, training_sample_rows=50000, storage_format=coarse_rerank, coarse_bits=1, rerank=heap_f32, rerank_width=64, rerank_placement=index, rerank_format=rabitq4, rabitq_rerank_least_squares=0, rabitq_rerank_clip=3]) ...
+[loader] built task111h047_1m_index_rq4_est_c3_w64_idx in 186.99s
+[loader] ec_ivf build timing: requested_workers=1 workers_launched=1 heap_tuples=990000 index_tuples=990000 heap_ingest_us=52343694 train_model_us=32403718 stage_build_plan_us=90971165 stage_pq_train_us=0 stage_centroids_us=2255 stage_assign_us=75906082 stage_postings_us=667187 stage_directory_us=949 flush_build_plan_us=10820945 parallel_begin_us=1123 parallel_drain_us=50214417 parallel_sort_push_us=2128148 parallel_worker_tuple_buffer_capacity=1048576 parallel_worker_tuple_buffer_struct_bytes=67108864
+┌─────────┬─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                                                                                                                                                                                                                           │
+╞═════════╪═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_ivf                                                                                                                                                                                                                                                                          │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ task111h047_1m_shared_corpus (990000 rows)                                                                                                                                                                                                                                      │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ task111h047_1m_shared_queries (10000 rows)                                                                                                                                                                                                                                      │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ task111h047_1m_index_rq4_est_c3_w64_idx [nlists=1024, nprobe=32, training_sample_rows=50000, storage_format=coarse_rerank, coarse_bits=1, rerank=heap_f32, rerank_width=64, rerank_placement=index, rerank_format=rabitq4, rabitq_rerank_least_squares=0, rabitq_rerank_clip=3] │
+└─────────┴─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+[loader] completed prefix task111h047_1m_shared in 310.68s

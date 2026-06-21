@@ -21,6 +21,9 @@ use super::{
 
 const EC_IVF_SESSION_NPROBE_UNSET: i32 = -1;
 const EC_IVF_SESSION_RERANK_WIDTH_UNSET: i32 = -1;
+pub(super) const EC_IVF_DEFAULT_RABITQ_RERANK_CLIP: i32 = 2;
+const EC_IVF_MIN_RABITQ_RERANK_CLIP: i32 = 1;
+const EC_IVF_MAX_RABITQ_RERANK_CLIP: i32 = 8;
 
 static EC_IVF_NPROBE_GUC: GucSetting<i32> = GucSetting::<i32>::new(EC_IVF_SESSION_NPROBE_UNSET);
 static EC_IVF_RERANK_WIDTH_GUC: GucSetting<i32> =
@@ -71,6 +74,9 @@ struct EcIvfReloptions {
     dense_posting_blocks: i32,
     dense_posting_typed_layout: i32,
     rabitq_residual: i32,
+    rabitq_rerank_least_squares: i32,
+    rerank_exact_dequant: i32,
+    rabitq_rerank_clip: i32,
     storage_format_offset: i32,
     quantizer_offset: i32,
     rerank_offset: i32,
@@ -163,18 +169,22 @@ impl CoarseFormat {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RerankPlacement {
     Auto = 0,
-    Table = 1,
-    Index = 2,
+    Source = 1,
+    Table = 2,
+    Index = 3,
+    SourceDiagnostic = 4,
 }
 
 impl RerankPlacement {
     pub(super) fn parse_reloption(value: &str) -> Result<Self, String> {
         match value {
             "auto" => Ok(Self::Auto),
-            "table" | "heap" => Ok(Self::Table),
+            "source" | "heap" => Ok(Self::Source),
+            "table" => Ok(Self::Table),
             "index" => Ok(Self::Index),
+            "source_diagnostic" | "heap_diagnostic" => Ok(Self::SourceDiagnostic),
             other => Err(format!(
-                "invalid ec_ivf rerank_placement reloption: expected 'auto', 'table', 'heap', or 'index', got '{other}'"
+                "invalid ec_ivf rerank_placement reloption: expected 'auto', 'source', 'heap', 'table', 'index', or 'source_diagnostic', got '{other}'"
             )),
         }
     }
@@ -182,8 +192,10 @@ impl RerankPlacement {
     pub(super) fn reloption_name(self) -> &'static str {
         match self {
             Self::Auto => "auto",
+            Self::Source => "source",
             Self::Table => "table",
             Self::Index => "index",
+            Self::SourceDiagnostic => "source_diagnostic",
         }
     }
 }
@@ -225,6 +237,69 @@ impl RerankFormat {
             Self::RaBitQ4 => "rabitq4",
             Self::RaBitQ8 => "rabitq8",
             Self::TurboQuant => "turboquant",
+        }
+    }
+}
+
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RaBitQRerankScoreMode {
+    Estimator,
+    LeastSquares,
+    ExactDequant,
+}
+
+impl RaBitQRerankScoreMode {
+    pub(super) fn from_reloption_flags(
+        least_squares: i32,
+        exact_dequant: i32,
+    ) -> Result<Self, String> {
+        if !matches!(least_squares, 0 | 1) {
+            return Err(format!(
+                "ec_ivf rabitq_rerank_least_squares must be 0 or 1, got {least_squares}"
+            ));
+        }
+        if !matches!(exact_dequant, 0 | 1) {
+            return Err(format!(
+                "ec_ivf rerank_exact_dequant must be 0 or 1, got {exact_dequant}"
+            ));
+        }
+        match (least_squares, exact_dequant) {
+            (0, 0) => Ok(Self::Estimator),
+            (1, 0) => Ok(Self::LeastSquares),
+            (0, 1) => Ok(Self::ExactDequant),
+            (1, 1) => Err(
+                "ec_ivf rabitq_rerank_least_squares and rerank_exact_dequant are mutually exclusive"
+                    .to_owned(),
+            ),
+            _ => unreachable!("validated boolean reloption flags"),
+        }
+    }
+
+    pub(super) fn from_metadata_byte(value: u8) -> Result<Self, String> {
+        match value {
+            0 => Ok(Self::Estimator),
+            1 => Ok(Self::LeastSquares),
+            2 => Ok(Self::ExactDequant),
+            other => Err(format!(
+                "invalid ec_ivf rerank score mode stored in metadata: {other}"
+            )),
+        }
+    }
+
+    pub(super) fn metadata_byte(self) -> u8 {
+        match self {
+            Self::Estimator => 0,
+            Self::LeastSquares => 1,
+            Self::ExactDequant => 2,
+        }
+    }
+
+    pub(super) fn reloption_name(self) -> &'static str {
+        match self {
+            Self::Estimator => "estimator",
+            Self::LeastSquares => "least_squares",
+            Self::ExactDequant => "exact_dequant",
         }
     }
 }
@@ -285,6 +360,13 @@ pub(super) struct EcIvfOptions {
     /// Task 115: RaBitQ residual encoding gate. Only meaningful for
     /// `storage_format = 'rabitq'`; ignored (forced false) otherwise.
     pub(super) rabitq_residual: bool,
+    /// Task 111h follow-up: index/source-diagnostic RaBitQ rerank scoring
+    /// profile. Default keeps the paper estimator; least_squares exposes the
+    /// lower-variance dequantized projection already present in the harness.
+    pub(super) rabitq_rerank_score: RaBitQRerankScoreMode,
+    /// Task 111h follow-up: integer scalar clip radius used for persisted
+    /// RaBitQ rerank payloads. Default 2 preserves the existing profile.
+    pub(super) rabitq_rerank_clip: i32,
     pub(super) storage_format: StorageFormat,
     pub(super) rerank: RerankMode,
     pub(super) coarse_format: CoarseFormat,
@@ -306,6 +388,8 @@ impl EcIvfOptions {
         dense_posting_blocks: false,
         dense_posting_typed_layout: false,
         rabitq_residual: false,
+        rabitq_rerank_score: RaBitQRerankScoreMode::Estimator,
+        rabitq_rerank_clip: EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
         storage_format: StorageFormat::Auto,
         rerank: RerankMode::Auto,
         coarse_format: CoarseFormat::Auto,
@@ -690,6 +774,36 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amoptions(
             1,
             offset_of!(EcIvfReloptions, rabitq_residual) as i32,
         );
+        pg_sys::add_local_int_reloption(
+            &mut relopts,
+            c"rabitq_rerank_least_squares".as_ptr(),
+            c"Task 111h RaBitQ rerank scorer: 0 uses the default asymmetric estimator, 1 uses the lower-variance least-squares dequantized projection."
+                .as_ptr(),
+            0,
+            0,
+            1,
+            offset_of!(EcIvfReloptions, rabitq_rerank_least_squares) as i32,
+        );
+        pg_sys::add_local_int_reloption(
+            &mut relopts,
+            c"rerank_exact_dequant".as_ptr(),
+            c"Task 111h compact rerank scorer: 0 uses the format default, 1 scores the persisted compact payload as a dequantized vector diagnostic."
+                .as_ptr(),
+            0,
+            0,
+            1,
+            offset_of!(EcIvfReloptions, rerank_exact_dequant) as i32,
+        );
+        pg_sys::add_local_int_reloption(
+            &mut relopts,
+            c"rabitq_rerank_clip".as_ptr(),
+            c"Task 111h RaBitQ rerank scalar quantization clip radius for compact rerank payloads; default 2 preserves the existing profile."
+                .as_ptr(),
+            EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
+            EC_IVF_MIN_RABITQ_RERANK_CLIP,
+            EC_IVF_MAX_RABITQ_RERANK_CLIP,
+            offset_of!(EcIvfReloptions, rabitq_rerank_clip) as i32,
+        );
         pg_sys::add_local_string_reloption(
                 &mut relopts,
                 c"storage_format".as_ptr(),
@@ -731,7 +845,7 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amoptions(
         pg_sys::add_local_string_reloption(
             &mut relopts,
             c"rerank_placement".as_ptr(),
-            c"Task 111e coarse_rerank rerank payload placement: 'table', 'heap', 'index', or 'auto'."
+            c"Task 111h coarse_rerank rerank payload placement: 'source', 'index', 'table' (reserved), 'source_diagnostic', or 'auto'."
                 .as_ptr(),
             ptr::null(),
             None,
@@ -741,7 +855,7 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amoptions(
         pg_sys::add_local_string_reloption(
             &mut relopts,
             c"rerank_format".as_ptr(),
-            c"Task 111e coarse_rerank rerank representation: 'f32', 'rabitq2', 'rabitq4', 'rabitq8', 'turboquant', or 'auto'."
+            c"Task 111e coarse_rerank rerank representation: 'f32', 'f16', 'rabitq4', 'rabitq8', 'turboquant', or 'auto'."
                 .as_ptr(),
             ptr::null(),
             None,
@@ -847,6 +961,21 @@ fn build_options_from_reloptions(
         }
         None => RerankFormat::Auto,
     };
+    let rabitq_rerank_score = RaBitQRerankScoreMode::from_reloption_flags(
+        reloptions.rabitq_rerank_least_squares,
+        reloptions.rerank_exact_dequant,
+    )
+    .unwrap_or_else(|e| pgrx::error!("{e}"));
+    if !(EC_IVF_MIN_RABITQ_RERANK_CLIP..=EC_IVF_MAX_RABITQ_RERANK_CLIP)
+        .contains(&reloptions.rabitq_rerank_clip)
+    {
+        pgrx::error!(
+            "ec_ivf rabitq_rerank_clip must be between {} and {}, got {}",
+            EC_IVF_MIN_RABITQ_RERANK_CLIP,
+            EC_IVF_MAX_RABITQ_RERANK_CLIP,
+            reloptions.rabitq_rerank_clip
+        );
+    }
     if storage_format == StorageFormat::CoarseRerank {
         match coarse_format {
             CoarseFormat::Auto => coarse_format = CoarseFormat::RaBitQ,
@@ -864,36 +993,76 @@ fn build_options_from_reloptions(
         }
         match rerank_format {
             RerankFormat::Auto => rerank_format = RerankFormat::F32,
-            // Task 111g: f32 / f16 / rabitq4 reranks are implemented. The
-            // remaining compact formats stay rejected until a slice implements
-            // + benches them.
-            RerankFormat::F32 | RerankFormat::F16 | RerankFormat::RaBitQ4 => {}
-            RerankFormat::RaBitQ2 | RerankFormat::RaBitQ8 | RerankFormat::TurboQuant => {
+            // Task 111h: f32 source plus persisted f16/RaBitQ-4/RaBitQ-8/
+            // TurboQuant compact reranks are implemented through the common
+            // rerank payload codec. RaBitQ-2 remains outside the required
+            // 111h decision matrix.
+            RerankFormat::F32
+            | RerankFormat::F16
+            | RerankFormat::RaBitQ4
+            | RerankFormat::RaBitQ8
+            | RerankFormat::TurboQuant => {}
+            RerankFormat::RaBitQ2 => {
                 pgrx::error!(
-                    "ec_ivf storage_format = 'coarse_rerank' supports rerank_format = 'f32', 'f16', or 'rabitq4'; '{}' is not implemented yet",
+                    "ec_ivf storage_format = 'coarse_rerank' supports rerank_format = 'f32', 'f16', 'rabitq4', 'rabitq8', or 'turboquant'; '{}' is not implemented",
                     rerank_format.reloption_name()
                 )
             }
         }
         match rerank_placement {
-            RerankPlacement::Auto => rerank_placement = RerankPlacement::Table,
-            RerankPlacement::Table => {}
-            // Task 111g (003b): index placement is implemented as the persisted
-            // compact 0x2A sidecar keyed by heap TID. It is only meaningful with
-            // a compact rerank_format (f16 / rabitq4); f32 keeps the heap source
-            // and has no sidecar to place index-side. `rerank_format` is already
-            // resolved (Auto -> F32) above, so f32 is the only "no sidecar" arm.
-            RerankPlacement::Index => match rerank_format {
-                RerankFormat::F16 | RerankFormat::RaBitQ4 => {}
-                RerankFormat::F32 => pgrx::error!(
-                    "ec_ivf rerank_placement = 'index' requires a compact rerank_format ('f16' or 'rabitq4'); 'f32' keeps the heap source, so use rerank_placement = 'table'"
-                ),
-                RerankFormat::Auto
-                | RerankFormat::RaBitQ2
+            RerankPlacement::Auto => {
+                rerank_placement = match rerank_format {
+                    RerankFormat::F32 => RerankPlacement::Source,
+                    RerankFormat::F16
+                    | RerankFormat::RaBitQ4
+                    | RerankFormat::RaBitQ8
+                    | RerankFormat::TurboQuant => RerankPlacement::Index,
+                    RerankFormat::Auto
+                    | RerankFormat::RaBitQ2 => unreachable!(
+                        "coarse_rerank rerank_format should be resolved or rejected"
+                    ),
+                }
+            }
+            RerankPlacement::Source => match rerank_format {
+                RerankFormat::F32 => {}
+                RerankFormat::F16
+                | RerankFormat::RaBitQ4
                 | RerankFormat::RaBitQ8
                 | RerankFormat::TurboQuant => pgrx::error!(
-                    "ec_ivf rerank_placement = 'index' supports rerank_format = 'f16' or 'rabitq4'; '{}' is not implemented yet",
+                    "ec_ivf rerank_placement = 'source' reads the existing f32 source vector and only supports rerank_format = 'f32'; use rerank_placement = 'index' for persisted compact payloads or 'source_diagnostic' for the legacy query-time conversion benchmark"
+                ),
+                RerankFormat::Auto | RerankFormat::RaBitQ2 => unreachable!(
+                    "coarse_rerank rerank_format should be resolved or rejected"
+                ),
+            },
+            RerankPlacement::Table => pgrx::error!(
+                "ec_ivf rerank_placement = 'table' is reserved for real table-owned persisted rerank payloads and is not implemented yet; use rerank_placement = 'source' for the existing f32 source vector or 'index' for persisted compact payloads"
+            ),
+            // Task 111h: index placement persists compact payloads in packed
+            // scorer-width rerank groups. It is only meaningful with compact
+            // rerank_format values; f32 keeps the source vector and has no
+            // compact payload to place index-side.
+            RerankPlacement::Index => match rerank_format {
+                RerankFormat::F16
+                | RerankFormat::RaBitQ4
+                | RerankFormat::RaBitQ8
+                | RerankFormat::TurboQuant => {}
+                RerankFormat::F32 => pgrx::error!(
+                    "ec_ivf rerank_placement = 'index' requires a compact rerank_format ('f16', 'rabitq4', 'rabitq8', or 'turboquant'); 'f32' keeps the source vector, so use rerank_placement = 'source'"
+                ),
+                RerankFormat::Auto | RerankFormat::RaBitQ2 => pgrx::error!(
+                    "ec_ivf rerank_placement = 'index' supports rerank_format = 'f16', 'rabitq4', 'rabitq8', or 'turboquant'; '{}' is not implemented",
                     rerank_format.reloption_name()
+                ),
+            },
+            RerankPlacement::SourceDiagnostic => match rerank_format {
+                RerankFormat::F32
+                | RerankFormat::F16
+                | RerankFormat::RaBitQ4
+                | RerankFormat::RaBitQ8
+                | RerankFormat::TurboQuant => {}
+                RerankFormat::Auto | RerankFormat::RaBitQ2 => unreachable!(
+                    "coarse_rerank rerank_format should be resolved or rejected"
                 ),
             },
         }
@@ -911,6 +1080,27 @@ fn build_options_from_reloptions(
         pgrx::error!(
             "ec_ivf rabitq_residual = 1 requires storage_format = 'rabitq' (got '{}')",
             storage_format.reloption_name()
+        );
+    }
+    let rabitq_only_rerank_knob_set = rabitq_rerank_score == RaBitQRerankScoreMode::LeastSquares
+        || reloptions.rabitq_rerank_clip != EC_IVF_DEFAULT_RABITQ_RERANK_CLIP;
+    if rabitq_only_rerank_knob_set
+        && !(storage_format == StorageFormat::CoarseRerank
+            && matches!(rerank_format, RerankFormat::RaBitQ4 | RerankFormat::RaBitQ8))
+    {
+        pgrx::error!(
+            "ec_ivf RaBitQ rerank scoring knobs require storage_format = 'coarse_rerank' with rerank_format = 'rabitq4' or 'rabitq8'"
+        );
+    }
+    if rabitq_rerank_score == RaBitQRerankScoreMode::ExactDequant
+        && !(storage_format == StorageFormat::CoarseRerank
+            && matches!(
+                rerank_format,
+                RerankFormat::RaBitQ4 | RerankFormat::RaBitQ8 | RerankFormat::TurboQuant
+            ))
+    {
+        pgrx::error!(
+            "ec_ivf rerank_exact_dequant requires storage_format = 'coarse_rerank' with rerank_format = 'rabitq4', 'rabitq8', or 'turboquant'"
         );
     }
 
@@ -933,6 +1123,8 @@ fn build_options_from_reloptions(
         dense_posting_typed_layout: storage_format == StorageFormat::CoarseRerank
             || reloptions.dense_posting_typed_layout != 0,
         rabitq_residual,
+        rabitq_rerank_score,
+        rabitq_rerank_clip: reloptions.rabitq_rerank_clip,
         storage_format,
         rerank,
         coarse_format,
@@ -967,6 +1159,9 @@ mod tests {
             dense_posting_blocks: 0,
             dense_posting_typed_layout: 0,
             rabitq_residual: 0,
+            rabitq_rerank_least_squares: 0,
+            rerank_exact_dequant: 0,
+            rabitq_rerank_clip: EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
             storage_format_offset: 0,
             quantizer_offset: 0,
             rerank_offset: 0,
@@ -1003,25 +1198,25 @@ mod tests {
         assert!(options.dense_posting_blocks);
         assert!(options.dense_posting_typed_layout);
         assert_eq!(options.rerank, RerankMode::HeapF32);
-        assert_eq!(options.rerank_placement, RerankPlacement::Table);
+        assert_eq!(options.rerank_placement, RerankPlacement::Source);
         assert_eq!(options.rerank_format, RerankFormat::F32);
     }
 
     #[test]
-    fn coarse_rerank_keeps_explicit_heap_f32() {
+    fn coarse_rerank_keeps_explicit_source_f32() {
         let options = build_options_from_reloptions(
             &reloptions(),
             Some("coarse_rerank".into()),
             None,
             Some("heap_f32".into()),
             Some("rabitq".into()),
-            Some("table".into()),
+            Some("source".into()),
             Some("f32".into()),
         );
 
         assert_eq!(options.rerank, RerankMode::HeapF32);
         assert_eq!(options.coarse_format, CoarseFormat::RaBitQ);
-        assert_eq!(options.rerank_placement, RerankPlacement::Table);
+        assert_eq!(options.rerank_placement, RerankPlacement::Source);
         assert_eq!(options.rerank_format, RerankFormat::F32);
     }
 
@@ -1045,13 +1240,30 @@ mod tests {
         assert_eq!(options.coarse_bits, 1);
         assert_eq!(options.quant_bits, 1);
         assert_eq!(options.rerank, RerankMode::HeapF32);
-        assert_eq!(options.rerank_placement, RerankPlacement::Table);
+        assert_eq!(options.rerank_placement, RerankPlacement::Source);
         assert_eq!(options.rerank_format, RerankFormat::F32);
     }
 
     #[test]
+    #[should_panic]
+    fn coarse_rerank_rejects_table_placement_until_real_table_payloads_exist() {
+        build_options_from_reloptions(
+            &reloptions(),
+            Some("coarse_rerank".into()),
+            None,
+            Some("heap_f32".into()),
+            Some("rabitq".into()),
+            Some("table".into()),
+            Some("f32".into()),
+        );
+    }
+
+    #[test]
     fn rerank_format_parse_accepts_f16() {
-        assert_eq!(RerankFormat::parse_reloption("f16").unwrap(), RerankFormat::F16);
+        assert_eq!(
+            RerankFormat::parse_reloption("f16").unwrap(),
+            RerankFormat::F16
+        );
         assert_eq!(
             RerankFormat::parse_reloption("heap_f16").unwrap(),
             RerankFormat::F16
@@ -1073,7 +1285,7 @@ mod tests {
 
         assert_eq!(options.storage_format, StorageFormat::CoarseRerank);
         assert_eq!(options.rerank, RerankMode::HeapF32);
-        assert_eq!(options.rerank_placement, RerankPlacement::Table);
+        assert_eq!(options.rerank_placement, RerankPlacement::Index);
         assert_eq!(options.rerank_format, RerankFormat::F16);
     }
 
@@ -1091,8 +1303,175 @@ mod tests {
 
         assert_eq!(options.storage_format, StorageFormat::CoarseRerank);
         assert_eq!(options.rerank, RerankMode::HeapF32);
-        assert_eq!(options.rerank_placement, RerankPlacement::Table);
+        assert_eq!(options.rerank_placement, RerankPlacement::Index);
         assert_eq!(options.rerank_format, RerankFormat::RaBitQ4);
+    }
+
+    #[test]
+    fn coarse_rerank_accepts_rabitq8_rerank_format() {
+        let options = build_options_from_reloptions(
+            &reloptions(),
+            Some("coarse_rerank".into()),
+            None,
+            None,
+            None,
+            None,
+            Some("rabitq8".into()),
+        );
+
+        assert_eq!(options.storage_format, StorageFormat::CoarseRerank);
+        assert_eq!(options.rerank, RerankMode::HeapF32);
+        assert_eq!(options.rerank_placement, RerankPlacement::Index);
+        assert_eq!(options.rerank_format, RerankFormat::RaBitQ8);
+    }
+
+    #[test]
+    fn coarse_rerank_accepts_rabitq_rerank_scoring_knobs() {
+        let mut reloptions = reloptions();
+        reloptions.rabitq_rerank_least_squares = 1;
+        reloptions.rabitq_rerank_clip = 4;
+
+        let options = build_options_from_reloptions(
+            &reloptions,
+            Some("coarse_rerank".into()),
+            None,
+            None,
+            None,
+            None,
+            Some("rabitq8".into()),
+        );
+
+        assert_eq!(options.rerank_format, RerankFormat::RaBitQ8);
+        assert_eq!(
+            options.rabitq_rerank_score,
+            RaBitQRerankScoreMode::LeastSquares
+        );
+        assert_eq!(options.rabitq_rerank_clip, 4);
+    }
+
+    #[test]
+    #[should_panic]
+    fn coarse_rerank_rejects_rabitq_rerank_knobs_for_non_rabitq_format() {
+        let mut reloptions = reloptions();
+        reloptions.rabitq_rerank_least_squares = 1;
+
+        build_options_from_reloptions(
+            &reloptions,
+            Some("coarse_rerank".into()),
+            None,
+            None,
+            None,
+            None,
+            Some("f16".into()),
+        );
+    }
+
+    #[test]
+    fn coarse_rerank_accepts_exact_dequant_for_compact_quantized_formats() {
+        for format in ["rabitq4", "rabitq8", "turboquant"] {
+            let mut reloptions = reloptions();
+            reloptions.rerank_exact_dequant = 1;
+
+            let options = build_options_from_reloptions(
+                &reloptions,
+                Some("coarse_rerank".into()),
+                None,
+                None,
+                None,
+                None,
+                Some(format.into()),
+            );
+
+            assert_eq!(
+                options.rabitq_rerank_score,
+                RaBitQRerankScoreMode::ExactDequant
+            );
+        }
+    }
+
+    #[test]
+    #[should_panic]
+    fn coarse_rerank_rejects_exact_dequant_for_f16() {
+        let mut reloptions = reloptions();
+        reloptions.rerank_exact_dequant = 1;
+
+        build_options_from_reloptions(
+            &reloptions,
+            Some("coarse_rerank".into()),
+            None,
+            None,
+            None,
+            None,
+            Some("f16".into()),
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn coarse_rerank_rejects_conflicting_score_mode_flags() {
+        let mut reloptions = reloptions();
+        reloptions.rabitq_rerank_least_squares = 1;
+        reloptions.rerank_exact_dequant = 1;
+
+        build_options_from_reloptions(
+            &reloptions,
+            Some("coarse_rerank".into()),
+            None,
+            None,
+            None,
+            None,
+            Some("rabitq8".into()),
+        );
+    }
+
+    #[test]
+    fn coarse_rerank_accepts_turboquant_rerank_format() {
+        let options = build_options_from_reloptions(
+            &reloptions(),
+            Some("coarse_rerank".into()),
+            None,
+            None,
+            None,
+            None,
+            Some("turboquant".into()),
+        );
+
+        assert_eq!(options.storage_format, StorageFormat::CoarseRerank);
+        assert_eq!(options.rerank, RerankMode::HeapF32);
+        assert_eq!(options.rerank_placement, RerankPlacement::Index);
+        assert_eq!(options.rerank_format, RerankFormat::TurboQuant);
+    }
+
+    #[test]
+    #[should_panic]
+    fn coarse_rerank_rejects_source_placement_with_compact_format() {
+        build_options_from_reloptions(
+            &reloptions(),
+            Some("coarse_rerank".into()),
+            None,
+            None,
+            None,
+            Some("source".into()),
+            Some("f16".into()),
+        );
+    }
+
+    #[test]
+    fn coarse_rerank_accepts_source_diagnostic_with_compact_format() {
+        let options = build_options_from_reloptions(
+            &reloptions(),
+            Some("coarse_rerank".into()),
+            None,
+            None,
+            None,
+            Some("source_diagnostic".into()),
+            Some("f16".into()),
+        );
+
+        assert_eq!(options.storage_format, StorageFormat::CoarseRerank);
+        assert_eq!(options.rerank, RerankMode::HeapF32);
+        assert_eq!(options.rerank_placement, RerankPlacement::SourceDiagnostic);
+        assert_eq!(options.rerank_format, RerankFormat::F16);
     }
 
     #[test]
@@ -1106,34 +1485,6 @@ mod tests {
             None,
             None,
             Some("rabitq2".into()),
-        );
-    }
-
-    #[test]
-    #[should_panic]
-    fn coarse_rerank_rejects_rabitq8_rerank_format() {
-        build_options_from_reloptions(
-            &reloptions(),
-            Some("coarse_rerank".into()),
-            None,
-            None,
-            None,
-            None,
-            Some("rabitq8".into()),
-        );
-    }
-
-    #[test]
-    #[should_panic]
-    fn coarse_rerank_rejects_turboquant_rerank_format() {
-        build_options_from_reloptions(
-            &reloptions(),
-            Some("coarse_rerank".into()),
-            None,
-            None,
-            None,
-            None,
-            Some("turboquant".into()),
         );
     }
 
@@ -1201,5 +1552,41 @@ mod tests {
         assert_eq!(options.rerank, RerankMode::HeapF32);
         assert_eq!(options.rerank_placement, RerankPlacement::Index);
         assert_eq!(options.rerank_format, RerankFormat::RaBitQ4);
+    }
+
+    #[test]
+    fn coarse_rerank_accepts_index_placement_with_rabitq8() {
+        let options = build_options_from_reloptions(
+            &reloptions(),
+            Some("coarse_rerank".into()),
+            None,
+            None,
+            None,
+            Some("index".into()),
+            Some("rabitq8".into()),
+        );
+
+        assert_eq!(options.storage_format, StorageFormat::CoarseRerank);
+        assert_eq!(options.rerank, RerankMode::HeapF32);
+        assert_eq!(options.rerank_placement, RerankPlacement::Index);
+        assert_eq!(options.rerank_format, RerankFormat::RaBitQ8);
+    }
+
+    #[test]
+    fn coarse_rerank_accepts_index_placement_with_turboquant() {
+        let options = build_options_from_reloptions(
+            &reloptions(),
+            Some("coarse_rerank".into()),
+            None,
+            None,
+            None,
+            Some("index".into()),
+            Some("turboquant".into()),
+        );
+
+        assert_eq!(options.storage_format, StorageFormat::CoarseRerank);
+        assert_eq!(options.rerank, RerankMode::HeapF32);
+        assert_eq!(options.rerank_placement, RerankPlacement::Index);
+        assert_eq!(options.rerank_format, RerankFormat::TurboQuant);
     }
 }

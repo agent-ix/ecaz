@@ -77,7 +77,10 @@ fn not_implemented(callback: &str) -> ! {
 
 pub(crate) use self::admin::{index_admin_snapshot, index_drift_snapshot, index_page_ownership};
 pub(crate) use self::cost::index_cost_snapshot;
-pub use self::options::{RerankMode as IvfRerankMode, StorageFormat as IvfStorageFormat};
+pub use self::options::{
+    RaBitQRerankScoreMode as IvfRerankScoreMode, RerankMode as IvfRerankMode,
+    StorageFormat as IvfStorageFormat,
+};
 pub use self::page::{
     BlockRef as IvfBlockRef, IvfCentroidTuple, IvfListDirectoryTuple, IvfPostingTuple,
     IvfPqCodebookTuple, MetadataPage as IvfMetadataPage, EC_IVF_BLOCK_REF_BLOCK_NUMBER_OFFSET,
@@ -87,12 +90,13 @@ pub use self::page::{
     EC_IVF_LIST_DIRECTORY_HEAD_BLOCK_OFFSET, EC_IVF_LIST_DIRECTORY_INSERTED_SINCE_BUILD_OFFSET,
     EC_IVF_LIST_DIRECTORY_LIST_ID_OFFSET, EC_IVF_LIST_DIRECTORY_LIVE_COUNT_OFFSET,
     EC_IVF_LIST_DIRECTORY_TAG_OFFSET, EC_IVF_LIST_DIRECTORY_TAIL_BLOCK_OFFSET,
-    EC_IVF_METADATA_BYTES, EC_IVF_METADATA_CENTROID_HEAD_OFFSET,
-    EC_IVF_METADATA_DIMENSIONS_OFFSET, EC_IVF_METADATA_DIRECTORY_HEAD_OFFSET,
-    EC_IVF_METADATA_FORMAT_VERSION_OFFSET, EC_IVF_METADATA_INSERTED_SINCE_BUILD_OFFSET,
-    EC_IVF_METADATA_MAGIC, EC_IVF_METADATA_MAGIC_OFFSET, EC_IVF_METADATA_NLISTS_OFFSET,
-    EC_IVF_METADATA_NPROBE_OFFSET, EC_IVF_METADATA_PQ_CODEBOOK_HEAD_OFFSET,
-    EC_IVF_METADATA_PQ_GROUP_SIZE_OFFSET, EC_IVF_METADATA_RERANK_OFFSET,
+    EC_IVF_METADATA_BYTES, EC_IVF_METADATA_CENTROID_HEAD_OFFSET, EC_IVF_METADATA_DIMENSIONS_OFFSET,
+    EC_IVF_METADATA_DIRECTORY_HEAD_OFFSET, EC_IVF_METADATA_FORMAT_VERSION_OFFSET,
+    EC_IVF_METADATA_INSERTED_SINCE_BUILD_OFFSET, EC_IVF_METADATA_MAGIC,
+    EC_IVF_METADATA_MAGIC_OFFSET, EC_IVF_METADATA_NLISTS_OFFSET, EC_IVF_METADATA_NPROBE_OFFSET,
+    EC_IVF_METADATA_PQ_CODEBOOK_HEAD_OFFSET, EC_IVF_METADATA_PQ_GROUP_SIZE_OFFSET,
+    EC_IVF_METADATA_RABITQ_RERANK_CLIP_OFFSET, EC_IVF_METADATA_RABITQ_RERANK_SCORE_MODE_OFFSET,
+    EC_IVF_METADATA_RERANK_OFFSET, EC_IVF_METADATA_RERANK_SIDECAR_DIRECTORY_HEAD_OFFSET,
     EC_IVF_METADATA_RERANK_SIDECAR_HEAD_OFFSET, EC_IVF_METADATA_SEED_OFFSET,
     EC_IVF_METADATA_STORAGE_FORMAT_OFFSET, EC_IVF_METADATA_TOTAL_DEAD_TUPLES_OFFSET,
     EC_IVF_METADATA_TOTAL_LIVE_TUPLES_OFFSET, EC_IVF_METADATA_TRAINING_SAMPLE_ROWS_OFFSET,
@@ -102,6 +106,18 @@ pub use self::page::{
     EC_IVF_POSTING_PAYLOAD_OFFSET, EC_IVF_POSTING_RERANK_TID_OFFSET, EC_IVF_POSTING_TAG_OFFSET,
     EC_IVF_PQ_CODEBOOK_CENTROIDS_OFFSET, EC_IVF_PQ_CODEBOOK_GROUP_INDEX_OFFSET,
     EC_IVF_PQ_CODEBOOK_NEXT_TID_OFFSET, EC_IVF_PQ_CODEBOOK_TAG_OFFSET,
+    EC_IVF_RERANK_GROUP_HEADER_FIXED_BYTES, EC_IVF_RERANK_GROUP_HEADER_HEADER_PAYLOAD_BYTES_OFFSET,
+    EC_IVF_RERANK_GROUP_HEADER_LIST_ID_OFFSET, EC_IVF_RERANK_GROUP_HEADER_NEXT_GROUP_TID_OFFSET,
+    EC_IVF_RERANK_GROUP_HEADER_NEXT_SEGMENT_TID_OFFSET,
+    EC_IVF_RERANK_GROUP_HEADER_PAYLOAD_LEN_OFFSET, EC_IVF_RERANK_GROUP_HEADER_RERANK_FORMAT_OFFSET,
+    EC_IVF_RERANK_GROUP_HEADER_RESERVED_OFFSET, EC_IVF_RERANK_GROUP_HEADER_SCORER_WIDTH_OFFSET,
+    EC_IVF_RERANK_GROUP_HEADER_TAG_OFFSET, EC_IVF_RERANK_GROUP_HEADER_TOTAL_HEAP_TIDS_OFFSET,
+    EC_IVF_RERANK_GROUP_HEADER_TOTAL_PAYLOAD_BYTES_OFFSET,
+    EC_IVF_RERANK_GROUP_HEADER_VALID_COUNT_OFFSET,
+    EC_IVF_RERANK_GROUP_PAYLOAD_SEGMENT_HEADER_BYTES,
+    EC_IVF_RERANK_GROUP_PAYLOAD_SEGMENT_NEXT_SEGMENT_TID_OFFSET,
+    EC_IVF_RERANK_GROUP_PAYLOAD_SEGMENT_PAYLOAD_BYTES_OFFSET,
+    EC_IVF_RERANK_GROUP_PAYLOAD_SEGMENT_TAG_OFFSET,
 };
 #[cfg(feature = "pg18")]
 pub(crate) use self::scan::explain_counters_from_index_scan_state;
@@ -113,9 +129,9 @@ pub(crate) use self::insert::debug_ec_ivf_validate_no_duplicate_heap_tid;
 pub(crate) use self::scan::{
     debug_ec_ivf_build_metadata, debug_ec_ivf_directory_entry, debug_ec_ivf_directory_summary,
     debug_ec_ivf_gettuple_after_rescan_result, debug_ec_ivf_gettuple_counter_snapshot,
-    debug_ec_ivf_gettuple_outputs, debug_ec_ivf_metadata,
-    debug_ec_ivf_pq_fastscan_model_cache_reused, debug_ec_ivf_quantizer_cache_ptr,
-    debug_ec_ivf_rabitq_residual, debug_ec_ivf_rerank_mode,
+    debug_ec_ivf_gettuple_counter_snapshot_with_missing_rerank_tid, debug_ec_ivf_gettuple_outputs,
+    debug_ec_ivf_metadata, debug_ec_ivf_pq_fastscan_model_cache_reused,
+    debug_ec_ivf_quantizer_cache_ptr, debug_ec_ivf_rabitq_residual, debug_ec_ivf_rerank_mode,
     debug_ec_ivf_rerank_sidecar_head_is_valid, debug_ec_ivf_rescan_query_prep,
 };
 
