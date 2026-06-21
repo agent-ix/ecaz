@@ -438,6 +438,74 @@
     }
 
     #[pg_test]
+    fn test_ech_frontier_containment_reports_pre_output_frontier() {
+        let prefix = "ec_hnsw_frontier_containment_sanity";
+
+        for storage_format in ["turboquant", "pq_fastscan", "rabitq"] {
+            let index_name = create_score_correlation_sanity_fixture(prefix, storage_format);
+            let corpus_table = format!("{prefix}_{storage_format}_corpus");
+            let queries_table = format!("{prefix}_{storage_format}_queries");
+            let context = build_external_recall_context(&corpus_table, &queries_table, false);
+            let row = probe_graph_scan_recall_frontier_containment_for_context(
+                &context,
+                &index_name,
+                6,
+                16,
+                0,
+            );
+
+            let visited_before_output = row.3;
+            let pre_final_frontier_size = row.4;
+            let final_visited_count = row.5;
+            let final_emitted_count = row.6;
+            let exact_reranked_candidates = row.7;
+            let candidates_dropped_before_exact_rerank = row.9;
+            let truth_top10_in_frontier = row.10;
+            let truth_top100_in_frontier = row.11;
+            let frontier_row_indices = &row.13;
+            let frontier_approx_scores = &row.14;
+            let frontier_exact_scores = &row.15;
+            let frontier_approx_ranks = &row.16;
+            let frontier_exact_ranks = &row.17;
+            let final_emitted_row_indices = &row.18;
+
+            assert_eq!(
+                usize::try_from(pre_final_frontier_size).expect("frontier size should fit usize"),
+                frontier_row_indices.len(),
+                "{storage_format} frontier rows should describe the pre-output frontier, not the final emitted stream",
+            );
+            assert_eq!(frontier_approx_scores.len(), frontier_row_indices.len());
+            assert_eq!(frontier_exact_scores.len(), frontier_row_indices.len());
+            assert_eq!(frontier_approx_ranks.len(), frontier_row_indices.len());
+            assert_eq!(frontier_exact_ranks.len(), frontier_row_indices.len());
+            assert_eq!(
+                usize::try_from(final_emitted_count).expect("emitted count should fit usize"),
+                final_emitted_row_indices.len(),
+                "{storage_format} final emitted rows should be reported separately from the frontier",
+            );
+            assert!(
+                visited_before_output <= final_visited_count,
+                "{storage_format} final visited count should include at least the pre-output visited set",
+            );
+            assert!(
+                exact_reranked_candidates <= final_visited_count,
+                "{storage_format} cannot exact-rerank more candidates than the scan visited",
+            );
+            assert_eq!(
+                candidates_dropped_before_exact_rerank,
+                (final_visited_count - exact_reranked_candidates).max(0),
+                "{storage_format} dropped-before-exact counter should match visited minus exact-reranked",
+            );
+            assert!((0..=10).contains(&truth_top10_in_frontier));
+            assert!((0..=16).contains(&truth_top100_in_frontier));
+            assert!(
+                frontier_exact_scores.iter().all(|score| score.is_finite()),
+                "{storage_format} frontier exact score audit should compute source-f32 scores",
+            );
+        }
+    }
+
+    #[pg_test]
     // Ignored because it requires the `pg_test` cargo feature and a scratch
     // pgrx test cluster to run, not because of long seeding. Seeding is
     // batched in `create_external_recall_smoke_tables`; the remaining

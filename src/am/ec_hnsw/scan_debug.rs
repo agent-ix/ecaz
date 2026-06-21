@@ -2496,7 +2496,10 @@ pub(crate) fn debug_gettuple_frontier_containment_report(
             quantized_reranked_candidates,
         )
     });
-    let pre_final_frontier_size = final_emitted_count;
+    let pre_final_frontier_size = debug_i32_count(
+        leftover_frontier_candidates.len(),
+        "pre-final frontier size",
+    );
     let candidates_dropped_before_exact_rerank =
         (final_visited_count - exact_reranked_candidates).max(0);
 

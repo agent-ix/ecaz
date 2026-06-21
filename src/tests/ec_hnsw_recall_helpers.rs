@@ -1029,13 +1029,13 @@
         let report = am::debug_gettuple_frontier_containment_report(index_oid, query.clone());
 
         let mut frontier_rows = report
-            .final_emitted_candidates
+            .frontier_candidates
             .iter()
-            .map(|(heap_tid, approx_score, _comparison_score, _approx_rank)| {
+            .map(|(heap_tid, approx_score)| {
                 let row_index = *context
                     .ctid_to_row_index
                     .get(heap_tid)
-                    .expect("emitted heap tid should map back to a corpus row index");
+                    .expect("frontier heap tid should map back to a corpus row index");
                 let exact_score = dot_product(query, &context.corpus[row_index]);
                 (
                     i64::try_from(row_index).expect("row index should fit into bigint"),
