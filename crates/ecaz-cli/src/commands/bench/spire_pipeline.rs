@@ -1692,6 +1692,7 @@ struct LocalPipelineRow {
     heap_rerank_row_count: i64,
     remote_fanout_count: i64,
     next_blocker: String,
+    recommendation: String,
 }
 
 impl From<Row> for LocalPipelineRow {
@@ -1709,6 +1710,44 @@ impl From<Row> for LocalPipelineRow {
             heap_rerank_row_count: row.get(9),
             remote_fanout_count: row.get(10),
             next_blocker: row.get(11),
+            recommendation: row.get(12),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct FunnelPipelineStageRecord {
+    step_ordinal: i64,
+    step_name: String,
+    active_epoch: i64,
+    status: String,
+    item_count: i64,
+    ready_count: i64,
+    blocked_count: i64,
+    route_count: i64,
+    candidate_count: i64,
+    heap_rerank_row_count: i64,
+    remote_fanout_count: i64,
+    next_blocker: String,
+    recommendation: String,
+}
+
+impl From<&LocalPipelineRow> for FunnelPipelineStageRecord {
+    fn from(row: &LocalPipelineRow) -> Self {
+        Self {
+            step_ordinal: row.step_ordinal,
+            step_name: row.step_name.clone(),
+            active_epoch: row.active_epoch,
+            status: row.status.clone(),
+            item_count: row.item_count,
+            ready_count: row.ready_count,
+            blocked_count: row.blocked_count,
+            route_count: row.route_count,
+            candidate_count: row.candidate_count,
+            heap_rerank_row_count: row.heap_rerank_row_count,
+            remote_fanout_count: row.remote_fanout_count,
+            next_blocker: row.next_blocker.clone(),
+            recommendation: row.recommendation.clone(),
         }
     }
 }
@@ -2263,6 +2302,7 @@ struct FunnelRecord {
     nprobe: i32,
     query_ordinal: usize,
     query_id: i64,
+    pipeline_stages: Vec<FunnelPipelineStageRecord>,
     leaf_route_count: i64,
     scanned_leaf_count: i64,
     candidate_count: i64,
@@ -2310,6 +2350,10 @@ impl FunnelRecord {
         rerank_locality: Option<&RerankLocalityRow>,
         returned_to_k_count: Option<usize>,
     ) -> Result<Self> {
+        let pipeline_stages = local_rows
+            .iter()
+            .map(FunnelPipelineStageRecord::from)
+            .collect();
         let candidate_count = local_step_value(local_rows, "candidates", |row| row.candidate_count)
             .unwrap_or_else(|| leaf_rows.iter().map(|row| row.candidate_row_count).sum());
         let retained_after_rerank_count =
@@ -2402,6 +2446,7 @@ impl FunnelRecord {
             nprobe,
             query_ordinal,
             query_id,
+            pipeline_stages,
             leaf_route_count,
             scanned_leaf_count,
             candidate_count,
@@ -3642,6 +3687,8 @@ mod tests {
             heap_rerank_row_count: 0,
             remote_fanout_count: 0,
             next_blocker: "candidate_budget".to_owned(),
+            recommendation: "increase max_candidate_rows or inspect candidate diagnostics"
+                .to_owned(),
         }];
         let leaf_rows = vec![
             LeafCandidateRow {
@@ -3721,6 +3768,15 @@ mod tests {
         .expect("funnel record");
 
         assert_eq!(record.candidate_count, 300);
+        assert_eq!(record.pipeline_stages.len(), 1);
+        assert_eq!(record.pipeline_stages[0].step_name, "candidates");
+        assert_eq!(record.pipeline_stages[0].status, "truncated");
+        assert_eq!(record.pipeline_stages[0].blocked_count, 275);
+        assert_eq!(record.pipeline_stages[0].next_blocker, "candidate_budget");
+        assert_eq!(
+            record.pipeline_stages[0].recommendation,
+            "increase max_candidate_rows or inspect candidate diagnostics"
+        );
         assert_eq!(record.leaf_object_bytes, 3000);
         assert_eq!(record.leaf_summary_object_bytes, 384);
         assert_eq!(record.leaf_row_object_bytes, 1536);
