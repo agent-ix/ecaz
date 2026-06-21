@@ -275,7 +275,7 @@ pub mod bench_api {
         spire_leaf_v2_segment_vec_ids_offset, vamana_decode_overflow_tuple_fixture,
         vamana_node_neighbors_offset, vamana_node_search_code_offset, IvfBlockRef,
         IvfCentroidTuple, IvfListDirectoryTuple, IvfMetadataPage, IvfPostingTuple,
-        IvfPqCodebookTuple, IvfRerankMode, IvfStorageFormat, MetricSummary,
+        IvfPqCodebookTuple, IvfRerankMode, IvfRerankScoreMode, IvfStorageFormat, MetricSummary,
         SpireAssignmentRowFixture, SpireConsistencyMode, SpireDeltaPartitionObjectFixture,
         SpireEpochManifest, SpireEpochState, SpireLeafPartitionObjectFixture,
         SpireLeafPartitionObjectV2MetaFixture, SpireLeafPartitionObjectV2SegmentFixture,

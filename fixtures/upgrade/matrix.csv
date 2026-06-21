@@ -8,6 +8,7 @@ ivf,4,false,false,fixtures/on-disk/ivf_metadata_v4.hex,legacy IVF v4 rejected; u
 ivf,5,false,false,fixtures/on-disk/ivf_metadata_v5.hex,legacy IVF v5 rejected; packed 0x2B groups used non-residual RaBitQ rerank payload bytes
 ivf,6,false,false,fixtures/on-disk/ivf_metadata_v6.hex,legacy IVF v6 rejected; packed 0x2B groups used whole-vector TurboQuant rerank payload bytes
 ivf,7,false,false,fixtures/on-disk/ivf_metadata_v7.hex,legacy IVF v7 rejected; lacked metadata-backed RaBitQ rerank score/clip fields
-ivf,8,true,true,fixtures/on-disk/ivf_metadata_v8.hex,current IVF format (92 bytes); packed 0x2B quantized rerank payloads are centroid-relative and RaBitQ rerank score/clip are metadata-backed
+ivf,8,false,false,fixtures/on-disk/ivf_metadata_v8.hex,legacy IVF v8 rejected; byte 22 was a two-value RaBitQ score flag before v9 expanded it to compact rerank score mode
+ivf,9,true,true,fixtures/on-disk/ivf_metadata_v9.hex,current IVF format (92 bytes); packed 0x2B quantized rerank payloads are centroid-relative and compact rerank score/clip are metadata-backed
 spire-partition,1,true,true,fixtures/on-disk/spire_leaf_partition_object_v1.hex,SPIRE V1 partition objects remain readable and writable
 spire-partition,2,true,true,fixtures/on-disk/spire_leaf_v2_meta_v2.hex,SPIRE V2 partition objects and chain records remain readable and writable

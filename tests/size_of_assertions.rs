@@ -113,11 +113,12 @@ const _: () = {
 };
 
 const _: () = {
-    // v8 metadata: 92 bytes. Bytes 22..24 persist RaBitQ rerank scorer knobs.
+    // v9 metadata: 92 bytes. Bytes 22..24 persist compact rerank score mode
+    // and RaBitQ clip knobs.
     // Bytes 80..86 point at the packed 0x2B rerank group
     // header chain for index-side compact rerank; bytes 86..92 retain the
-    // legacy directory-head slot but are INVALID for v8 packed groups.
-    assert!(EC_IVF_INDEX_FORMAT_VERSION == 8);
+    // legacy directory-head slot but are INVALID for v9 packed groups.
+    assert!(EC_IVF_INDEX_FORMAT_VERSION == 9);
     assert!(EC_IVF_METADATA_MAGIC == 0x5649_4345);
     assert!(EC_IVF_METADATA_BYTES == 92);
     assert!(EC_IVF_METADATA_RERANK_SIDECAR_HEAD_OFFSET == 80);

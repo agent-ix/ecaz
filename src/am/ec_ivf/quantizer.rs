@@ -425,6 +425,41 @@ impl IvfQuantizer {
         }
     }
 
+    pub(super) fn score_ip_dequantized_from_parts(
+        self,
+        query: &[f32],
+        payload: &[u8],
+    ) -> Result<f32, String> {
+        match self.profile {
+            IvfQuantizerProfile::TurboQuant => {
+                if query.len() != self.dimensions {
+                    return Err(format!(
+                        "query dimension mismatch: got {}, expected {}",
+                        query.len(),
+                        self.dimensions
+                    ));
+                }
+                let quantizer = ProdQuantizer::cached(
+                    self.dimensions,
+                    crate::DEFAULT_QUANT_BITS,
+                    crate::DEFAULT_QUANT_SEED,
+                );
+                let decoded = quantizer.decode_approximate_from_code(payload);
+                Ok(query
+                    .iter()
+                    .zip(decoded.iter())
+                    .map(|(query_i, decoded_i)| query_i * decoded_i)
+                    .sum())
+            }
+            IvfQuantizerProfile::RaBitQ => Err(
+                "ec_ivf RaBitQ dequantized scoring is implemented on PreparedEstimator".to_owned(),
+            ),
+            IvfQuantizerProfile::PqFastScan { .. } => {
+                Err("ec_ivf pq_fastscan dequantized scoring is not supported".to_owned())
+            }
+        }
+    }
+
     pub(super) fn score_ip_from_parts_with_min_bound(
         self,
         prepared_query: &IvfPreparedQuery,

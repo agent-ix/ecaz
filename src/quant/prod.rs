@@ -181,6 +181,16 @@ impl ProdQuantizer {
     #[allow(dead_code)]
     pub fn decode_approximate(&self, payload: &[u8]) -> Vec<f32> {
         let (_, mse_packed, _) = self.split_payload(payload);
+        self.decode_approximate_mse(mse_packed)
+    }
+
+    #[allow(dead_code)]
+    pub fn decode_approximate_from_code(&self, code_bytes: &[u8]) -> Vec<f32> {
+        let (mse_packed, _) = self.split_code_bytes(code_bytes);
+        self.decode_approximate_mse(mse_packed)
+    }
+
+    fn decode_approximate_mse(&self, mse_packed: &[u8]) -> Vec<f32> {
         let mse_indices = unpack_mse_indices(
             mse_packed,
             self.original_dim,

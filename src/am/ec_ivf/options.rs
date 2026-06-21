@@ -75,6 +75,7 @@ struct EcIvfReloptions {
     dense_posting_typed_layout: i32,
     rabitq_residual: i32,
     rabitq_rerank_least_squares: i32,
+    rerank_exact_dequant: i32,
     rabitq_rerank_clip: i32,
     storage_format_offset: i32,
     quantizer_offset: i32,
@@ -240,20 +241,57 @@ impl RerankFormat {
     }
 }
 
+#[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum RaBitQRerankScoreMode {
+pub enum RaBitQRerankScoreMode {
     Estimator,
     LeastSquares,
+    ExactDequant,
 }
 
 impl RaBitQRerankScoreMode {
-    pub(super) fn from_least_squares_flag(value: i32) -> Result<Self, String> {
+    pub(super) fn from_reloption_flags(
+        least_squares: i32,
+        exact_dequant: i32,
+    ) -> Result<Self, String> {
+        if !matches!(least_squares, 0 | 1) {
+            return Err(format!(
+                "ec_ivf rabitq_rerank_least_squares must be 0 or 1, got {least_squares}"
+            ));
+        }
+        if !matches!(exact_dequant, 0 | 1) {
+            return Err(format!(
+                "ec_ivf rerank_exact_dequant must be 0 or 1, got {exact_dequant}"
+            ));
+        }
+        match (least_squares, exact_dequant) {
+            (0, 0) => Ok(Self::Estimator),
+            (1, 0) => Ok(Self::LeastSquares),
+            (0, 1) => Ok(Self::ExactDequant),
+            (1, 1) => Err(
+                "ec_ivf rabitq_rerank_least_squares and rerank_exact_dequant are mutually exclusive"
+                    .to_owned(),
+            ),
+            _ => unreachable!("validated boolean reloption flags"),
+        }
+    }
+
+    pub(super) fn from_metadata_byte(value: u8) -> Result<Self, String> {
         match value {
             0 => Ok(Self::Estimator),
             1 => Ok(Self::LeastSquares),
+            2 => Ok(Self::ExactDequant),
             other => Err(format!(
-                "ec_ivf rabitq_rerank_least_squares must be 0 or 1, got {other}"
+                "invalid ec_ivf rerank score mode stored in metadata: {other}"
             )),
+        }
+    }
+
+    pub(super) fn metadata_byte(self) -> u8 {
+        match self {
+            Self::Estimator => 0,
+            Self::LeastSquares => 1,
+            Self::ExactDequant => 2,
         }
     }
 
@@ -261,6 +299,7 @@ impl RaBitQRerankScoreMode {
         match self {
             Self::Estimator => "estimator",
             Self::LeastSquares => "least_squares",
+            Self::ExactDequant => "exact_dequant",
         }
     }
 }
@@ -747,6 +786,16 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amoptions(
         );
         pg_sys::add_local_int_reloption(
             &mut relopts,
+            c"rerank_exact_dequant".as_ptr(),
+            c"Task 111h compact rerank scorer: 0 uses the format default, 1 scores the persisted compact payload as a dequantized vector diagnostic."
+                .as_ptr(),
+            0,
+            0,
+            1,
+            offset_of!(EcIvfReloptions, rerank_exact_dequant) as i32,
+        );
+        pg_sys::add_local_int_reloption(
+            &mut relopts,
             c"rabitq_rerank_clip".as_ptr(),
             c"Task 111h RaBitQ rerank scalar quantization clip radius for compact rerank payloads; default 2 preserves the existing profile."
                 .as_ptr(),
@@ -912,9 +961,11 @@ fn build_options_from_reloptions(
         }
         None => RerankFormat::Auto,
     };
-    let rabitq_rerank_score =
-        RaBitQRerankScoreMode::from_least_squares_flag(reloptions.rabitq_rerank_least_squares)
-            .unwrap_or_else(|e| pgrx::error!("{e}"));
+    let rabitq_rerank_score = RaBitQRerankScoreMode::from_reloption_flags(
+        reloptions.rabitq_rerank_least_squares,
+        reloptions.rerank_exact_dequant,
+    )
+    .unwrap_or_else(|e| pgrx::error!("{e}"));
     if !(EC_IVF_MIN_RABITQ_RERANK_CLIP..=EC_IVF_MAX_RABITQ_RERANK_CLIP)
         .contains(&reloptions.rabitq_rerank_clip)
     {
@@ -1031,14 +1082,25 @@ fn build_options_from_reloptions(
             storage_format.reloption_name()
         );
     }
-    let rabitq_rerank_knob_set = rabitq_rerank_score != RaBitQRerankScoreMode::Estimator
+    let rabitq_only_rerank_knob_set = rabitq_rerank_score == RaBitQRerankScoreMode::LeastSquares
         || reloptions.rabitq_rerank_clip != EC_IVF_DEFAULT_RABITQ_RERANK_CLIP;
-    if rabitq_rerank_knob_set
+    if rabitq_only_rerank_knob_set
         && !(storage_format == StorageFormat::CoarseRerank
             && matches!(rerank_format, RerankFormat::RaBitQ4 | RerankFormat::RaBitQ8))
     {
         pgrx::error!(
             "ec_ivf RaBitQ rerank scoring knobs require storage_format = 'coarse_rerank' with rerank_format = 'rabitq4' or 'rabitq8'"
+        );
+    }
+    if rabitq_rerank_score == RaBitQRerankScoreMode::ExactDequant
+        && !(storage_format == StorageFormat::CoarseRerank
+            && matches!(
+                rerank_format,
+                RerankFormat::RaBitQ4 | RerankFormat::RaBitQ8 | RerankFormat::TurboQuant
+            ))
+    {
+        pgrx::error!(
+            "ec_ivf rerank_exact_dequant requires storage_format = 'coarse_rerank' with rerank_format = 'rabitq4', 'rabitq8', or 'turboquant'"
         );
     }
 
@@ -1098,6 +1160,7 @@ mod tests {
             dense_posting_typed_layout: 0,
             rabitq_residual: 0,
             rabitq_rerank_least_squares: 0,
+            rerank_exact_dequant: 0,
             rabitq_rerank_clip: EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
             storage_format_offset: 0,
             quantizer_offset: 0,
@@ -1300,6 +1363,64 @@ mod tests {
             None,
             None,
             Some("f16".into()),
+        );
+    }
+
+    #[test]
+    fn coarse_rerank_accepts_exact_dequant_for_compact_quantized_formats() {
+        for format in ["rabitq4", "rabitq8", "turboquant"] {
+            let mut reloptions = reloptions();
+            reloptions.rerank_exact_dequant = 1;
+
+            let options = build_options_from_reloptions(
+                &reloptions,
+                Some("coarse_rerank".into()),
+                None,
+                None,
+                None,
+                None,
+                Some(format.into()),
+            );
+
+            assert_eq!(
+                options.rabitq_rerank_score,
+                RaBitQRerankScoreMode::ExactDequant
+            );
+        }
+    }
+
+    #[test]
+    #[should_panic]
+    fn coarse_rerank_rejects_exact_dequant_for_f16() {
+        let mut reloptions = reloptions();
+        reloptions.rerank_exact_dequant = 1;
+
+        build_options_from_reloptions(
+            &reloptions,
+            Some("coarse_rerank".into()),
+            None,
+            None,
+            None,
+            None,
+            Some("f16".into()),
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn coarse_rerank_rejects_conflicting_score_mode_flags() {
+        let mut reloptions = reloptions();
+        reloptions.rabitq_rerank_least_squares = 1;
+        reloptions.rerank_exact_dequant = 1;
+
+        build_options_from_reloptions(
+            &reloptions,
+            Some("coarse_rerank".into()),
+            None,
+            None,
+            None,
+            None,
+            Some("rabitq8".into()),
         );
     }
 

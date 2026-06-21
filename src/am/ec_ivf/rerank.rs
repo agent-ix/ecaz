@@ -43,8 +43,13 @@ pub(super) struct RerankPayloadScorer {
 }
 
 enum RerankPreparedQuery {
-    F16 { query_f16: Vec<f32> },
-    Quantized(IvfPreparedQuery),
+    F16 {
+        query_f16: Vec<f32>,
+    },
+    Quantized {
+        prepared_query: IvfPreparedQuery,
+        query: Vec<f32>,
+    },
 }
 
 /// Query-independent rerank payload codec. This is the narrow common interface
@@ -66,6 +71,7 @@ pub(super) enum RerankPayloadCodec {
         residual: bool,
     },
     TurboQuant {
+        score_mode: RaBitQRerankScoreMode,
         quantizer: IvfQuantizer,
         code_len: usize,
         payload_len: usize,
@@ -143,6 +149,7 @@ impl RerankPayloadCodec {
                 let code_len = quantizer.payload_len();
                 let payload_len = std::mem::size_of::<f32>() + code_len;
                 Ok(Some(Self::TurboQuant {
+                    score_mode: rabitq_score_mode,
                     quantizer,
                     code_len,
                     payload_len,
@@ -205,7 +212,10 @@ impl RerankPayloadCodec {
             }
             Self::RaBitQ { quantizer, .. } | Self::TurboQuant { quantizer, .. } => quantizer
                 .prepare_ip_query(query)
-                .map(RerankPreparedQuery::Quantized),
+                .map(|prepared_query| RerankPreparedQuery::Quantized {
+                    prepared_query,
+                    query: query.to_vec(),
+                }),
         }
     }
 
@@ -247,6 +257,7 @@ impl RerankPayloadCodec {
                 code_len,
                 payload_len,
                 centroid_relative,
+                ..
             } => {
                 if *centroid_relative {
                     return Err(
@@ -287,6 +298,7 @@ impl RerankPayloadCodec {
                 code_len,
                 payload_len,
                 centroid_relative: true,
+                ..
             } => {
                 if source.len() != centroid.len() {
                     return Err(format!(
@@ -317,7 +329,13 @@ impl RerankPayloadCodec {
                 let _ = query;
                 Ok(f16_negative_inner_product(query_f16, source))
             }
-            (_, RerankPreparedQuery::Quantized(_)) => {
+            (
+                _,
+                RerankPreparedQuery::Quantized {
+                    prepared_query: _,
+                    query: _,
+                },
+            ) => {
                 let payload = self.encode_source(source)?;
                 self.score_payload(prepared_query, &payload)
             }
@@ -340,7 +358,10 @@ impl RerankPayloadCodec {
                 Self::RaBitQ {
                     score_mode, bits, ..
                 },
-                RerankPreparedQuery::Quantized(prepared_query),
+                RerankPreparedQuery::Quantized {
+                    prepared_query,
+                    query: _,
+                },
             ) => {
                 let estimate = match prepared_query {
                     IvfPreparedQuery::RaBitQ(prepared) => match score_mode {
@@ -349,6 +370,9 @@ impl RerankPayloadCodec {
                         }
                         RaBitQRerankScoreMode::LeastSquares => {
                             prepared.estimate_ip_least_squares_scalar_only(payload)
+                        }
+                        RaBitQRerankScoreMode::ExactDequant => {
+                            prepared.estimate_ip_dequantized_scalar_only(payload)
                         }
                     },
                     _ => {
@@ -362,15 +386,26 @@ impl RerankPayloadCodec {
             }
             (
                 Self::TurboQuant {
+                    score_mode,
                     quantizer,
                     code_len,
                     payload_len,
                     ..
                 },
-                RerankPreparedQuery::Quantized(prepared_query),
+                RerankPreparedQuery::Quantized {
+                    prepared_query,
+                    query,
+                },
             ) => {
                 let (gamma, code) = split_turboquant_payload(payload, *code_len, *payload_len)?;
-                let estimate = quantizer.score_ip_from_parts(prepared_query, gamma, code)?;
+                let estimate = match score_mode {
+                    RaBitQRerankScoreMode::Estimator | RaBitQRerankScoreMode::LeastSquares => {
+                        quantizer.score_ip_from_parts(prepared_query, gamma, code)?
+                    }
+                    RaBitQRerankScoreMode::ExactDequant => {
+                        quantizer.score_ip_dequantized_from_parts(query, code)?
+                    }
+                };
                 Ok(-estimate)
             }
             _ => Err("ec_ivf rerank payload codec and prepared query do not match".to_owned()),
@@ -392,7 +427,10 @@ impl RerankPayloadCodec {
                     score_mode,
                     ..
                 },
-                RerankPreparedQuery::Quantized(prepared_query),
+                RerankPreparedQuery::Quantized {
+                    prepared_query,
+                    query: _,
+                },
             ) => {
                 if payloads.len() != out_scores.len() * payload_len {
                     return Err(format!(
@@ -438,17 +476,38 @@ impl RerankPayloadCodec {
                             *out = -prepared.estimate_ip_least_squares_scalar_only(payload);
                         }
                     }
+                    RaBitQRerankScoreMode::ExactDequant => {
+                        let prepared = match prepared_query {
+                            IvfPreparedQuery::RaBitQ(prepared) => prepared,
+                            _ => {
+                                return Err(
+                                    "ec_ivf rabitq rerank prepared query is not a RaBitQ query"
+                                        .to_owned(),
+                                )
+                            }
+                        };
+                        for (out, payload) in out_scores
+                            .iter_mut()
+                            .zip(payloads.chunks_exact(*payload_len))
+                        {
+                            *out = -prepared.estimate_ip_dequantized_scalar_only(payload);
+                        }
+                    }
                 }
                 Ok(())
             }
             (
                 Self::TurboQuant {
+                    score_mode,
                     quantizer,
                     code_len,
                     payload_len,
                     ..
                 },
-                RerankPreparedQuery::Quantized(prepared_query),
+                RerankPreparedQuery::Quantized {
+                    prepared_query,
+                    query,
+                },
             ) => {
                 if payloads.len() != out_scores.len() * payload_len {
                     return Err(format!(
@@ -457,30 +516,45 @@ impl RerankPayloadCodec {
                         out_scores.len()
                     ));
                 }
-                let mut gammas = Vec::with_capacity(out_scores.len());
-                let mut code_slab = Vec::with_capacity(out_scores.len() * code_len);
-                for payload in payloads.chunks_exact(*payload_len) {
-                    let (gamma, code) = split_turboquant_payload(payload, *code_len, *payload_len)?;
-                    gammas.push(gamma);
-                    code_slab.extend_from_slice(code);
-                }
-                let mut estimates: Vec<f32> = Vec::with_capacity(out_scores.len());
-                let scored = quantizer.score_turboquant_batch_from_payloads(
-                    prepared_query,
-                    &code_slab,
-                    *code_len,
-                    &gammas,
-                    &mut estimates,
-                )?;
-                if !scored || estimates.len() != out_scores.len() {
-                    return Err(format!(
-                        "ec_ivf turboquant rerank batch scorer produced {} scores for {} payloads",
-                        estimates.len(),
-                        out_scores.len()
-                    ));
-                }
-                for (out, estimate) in out_scores.iter_mut().zip(estimates.iter()) {
-                    *out = -estimate;
+                match score_mode {
+                    RaBitQRerankScoreMode::Estimator | RaBitQRerankScoreMode::LeastSquares => {
+                        let mut gammas = Vec::with_capacity(out_scores.len());
+                        let mut code_slab = Vec::with_capacity(out_scores.len() * code_len);
+                        for payload in payloads.chunks_exact(*payload_len) {
+                            let (gamma, code) =
+                                split_turboquant_payload(payload, *code_len, *payload_len)?;
+                            gammas.push(gamma);
+                            code_slab.extend_from_slice(code);
+                        }
+                        let mut estimates: Vec<f32> = Vec::with_capacity(out_scores.len());
+                        let scored = quantizer.score_turboquant_batch_from_payloads(
+                            prepared_query,
+                            &code_slab,
+                            *code_len,
+                            &gammas,
+                            &mut estimates,
+                        )?;
+                        if !scored || estimates.len() != out_scores.len() {
+                            return Err(format!(
+                                "ec_ivf turboquant rerank batch scorer produced {} scores for {} payloads",
+                                estimates.len(),
+                                out_scores.len()
+                            ));
+                        }
+                        for (out, estimate) in out_scores.iter_mut().zip(estimates.iter()) {
+                            *out = -estimate;
+                        }
+                    }
+                    RaBitQRerankScoreMode::ExactDequant => {
+                        for (out, payload) in out_scores
+                            .iter_mut()
+                            .zip(payloads.chunks_exact(*payload_len))
+                        {
+                            let (_gamma, code) =
+                                split_turboquant_payload(payload, *code_len, *payload_len)?;
+                            *out = -quantizer.score_ip_dequantized_from_parts(query, code)?;
+                        }
+                    }
                 }
                 Ok(())
             }
@@ -500,12 +574,16 @@ impl RerankPayloadCodec {
         match (self, prepared_query) {
             (
                 Self::TurboQuant {
+                    score_mode,
                     quantizer,
                     code_len,
                     payload_len,
                     ..
                 },
-                RerankPreparedQuery::Quantized(prepared_query),
+                RerankPreparedQuery::Quantized {
+                    prepared_query,
+                    query,
+                },
             ) => {
                 if payloads.len() != out_scores.len() {
                     return Err(format!(
@@ -514,30 +592,42 @@ impl RerankPayloadCodec {
                         out_scores.len()
                     ));
                 }
-                let mut gammas = Vec::with_capacity(out_scores.len());
-                let mut codes = Vec::with_capacity(out_scores.len());
-                for payload in payloads {
-                    let (gamma, code) = split_turboquant_payload(payload, *code_len, *payload_len)?;
-                    gammas.push(gamma);
-                    codes.push(code);
-                }
-                let mut estimates: Vec<f32> = Vec::with_capacity(out_scores.len());
-                let scored = quantizer.score_turboquant_batch_from_payload_refs(
-                    prepared_query,
-                    &codes,
-                    *code_len,
-                    &gammas,
-                    &mut estimates,
-                )?;
-                if !scored || estimates.len() != out_scores.len() {
-                    return Err(format!(
-                        "ec_ivf turboquant borrowed rerank batch scorer produced {} scores for {} payloads",
-                        estimates.len(),
-                        out_scores.len()
-                    ));
-                }
-                for (out, estimate) in out_scores.iter_mut().zip(estimates.iter()) {
-                    *out = -estimate;
+                match score_mode {
+                    RaBitQRerankScoreMode::Estimator | RaBitQRerankScoreMode::LeastSquares => {
+                        let mut gammas = Vec::with_capacity(out_scores.len());
+                        let mut codes = Vec::with_capacity(out_scores.len());
+                        for payload in payloads {
+                            let (gamma, code) =
+                                split_turboquant_payload(payload, *code_len, *payload_len)?;
+                            gammas.push(gamma);
+                            codes.push(code);
+                        }
+                        let mut estimates: Vec<f32> = Vec::with_capacity(out_scores.len());
+                        let scored = quantizer.score_turboquant_batch_from_payload_refs(
+                            prepared_query,
+                            &codes,
+                            *code_len,
+                            &gammas,
+                            &mut estimates,
+                        )?;
+                        if !scored || estimates.len() != out_scores.len() {
+                            return Err(format!(
+                                "ec_ivf turboquant borrowed rerank batch scorer produced {} scores for {} payloads",
+                                estimates.len(),
+                                out_scores.len()
+                            ));
+                        }
+                        for (out, estimate) in out_scores.iter_mut().zip(estimates.iter()) {
+                            *out = -estimate;
+                        }
+                    }
+                    RaBitQRerankScoreMode::ExactDequant => {
+                        for (out, payload) in out_scores.iter_mut().zip(payloads.iter()) {
+                            let (_gamma, code) =
+                                split_turboquant_payload(payload, *code_len, *payload_len)?;
+                            *out = -quantizer.score_ip_dequantized_from_parts(query, code)?;
+                        }
+                    }
                 }
                 Ok(())
             }
@@ -547,7 +637,7 @@ impl RerankPayloadCodec {
                     payload_len,
                     ..
                 },
-                RerankPreparedQuery::Quantized(_),
+                RerankPreparedQuery::Quantized { .. },
             ) => Err(format!(
                 "ec_ivf {} borrowed rerank payload batch is not available; contiguous slab length remains {payload_len}",
                 format.reloption_name()
@@ -1523,6 +1613,72 @@ mod tests {
             .score_sidecar_payloads_batch(&slab, &mut batch_scores)
             .unwrap();
         assert_eq!(batch_scores, [least_squares_score, least_squares_score]);
+    }
+
+    #[test]
+    fn compact_index_rerank_exposes_exact_dequant_score_mode() {
+        let query = [0.2_f32, -0.5, 0.75, 0.1, -0.9, 0.33, -0.12, 0.44];
+        let source = [1.4_f32, -0.25, 0.9, 0.35, -1.3, 0.8, 0.18, -0.71];
+        let centroid = [0.1_f32, -0.2, 0.4, 0.0, -0.4, 0.1, 0.08, 0.5];
+        let centroid_ip: f32 = query.iter().zip(centroid.iter()).map(|(q, c)| q * c).sum();
+
+        for format in [
+            RerankFormat::RaBitQ4,
+            RerankFormat::RaBitQ8,
+            RerankFormat::TurboQuant,
+        ] {
+            let encoder = RerankSidecarEncoder::resolve(format, source.len(), 4)
+                .unwrap()
+                .unwrap();
+            let payload = encoder.encode_with_centroid(&source, &centroid).unwrap();
+            let scorer = RerankScorer::resolve(
+                format,
+                RerankPlacement::Index,
+                StorageFormat::CoarseRerank,
+                source.len(),
+                &query,
+                RaBitQRerankScoreMode::ExactDequant,
+                4,
+            )
+            .unwrap();
+            let scalar = scorer.score_sidecar_payload(&payload);
+            assert!(
+                scalar.is_finite(),
+                "{} exact-dequant scalar score should be finite",
+                format.reloption_name()
+            );
+
+            let corrected = scorer.score_sidecar_payload_with_centroid_ip(&payload, centroid_ip);
+            assert_eq!(corrected.to_bits(), (scalar - centroid_ip).to_bits());
+
+            let mut scores = [0.0_f32; 2];
+            let mut slab = Vec::with_capacity(payload.len() * 2);
+            slab.extend_from_slice(&payload);
+            slab.extend_from_slice(&payload);
+            scorer
+                .score_sidecar_payloads_batch_with_centroid_ips(
+                    &slab,
+                    &[centroid_ip, centroid_ip],
+                    &mut scores,
+                )
+                .unwrap();
+            assert_eq!(scores[0].to_bits(), corrected.to_bits());
+            assert_eq!(scores[1].to_bits(), corrected.to_bits());
+
+            if format == RerankFormat::TurboQuant {
+                let payload_refs = [&payload[..], &payload[..]];
+                let mut ref_scores = [0.0_f32; 2];
+                scorer
+                    .score_sidecar_payload_refs_batch_with_centroid_ips(
+                        &payload_refs,
+                        &[centroid_ip, centroid_ip],
+                        &mut ref_scores,
+                    )
+                    .unwrap();
+                assert_eq!(ref_scores[0].to_bits(), corrected.to_bits());
+                assert_eq!(ref_scores[1].to_bits(), corrected.to_bits());
+            }
+        }
     }
 
     #[test]

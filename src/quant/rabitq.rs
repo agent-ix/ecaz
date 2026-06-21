@@ -1081,6 +1081,28 @@ impl PreparedEstimator {
         )
     }
 
+    /// Exact dot product against the norm-rescaled dequantized code vector:
+    /// `||o|| * <q, x_dec> / ||x_dec||`.
+    ///
+    /// This is a diagnostic rerank mode, not the paper estimator. It exposes
+    /// the "score the persisted compact payload as the vector it reconstructs"
+    /// lever for Task 111h sweeps.
+    #[inline]
+    pub fn estimate_ip_dequantized_scalar_only(&self, code: &[u8]) -> f32 {
+        estimate_ip_dequantized_scalar_only_impl(
+            &self.query_rotated,
+            Some(&self.query_bf16),
+            Some(&self.dequant_lut_bf16),
+            self.dimensions,
+            self.bits_per_dim,
+            &self.dequant_lut,
+            self.bits1_byte_lut.as_deref(),
+            self.bits8_query_scale.as_slice(),
+            self.bits8_query_offset.as_slice(),
+            code,
+        )
+    }
+
     /// Batch IVF-fast estimates for contiguous bits=1, bits=4, or bits=8
     /// RaBitQ codes.
     ///
@@ -4658,6 +4680,64 @@ fn estimate_ip_least_squares_scalar_only_impl(
         return 0.0;
     }
     candidate_norm * candidate_o_dot * sum_q_dequant / candidate_x_norm
+}
+
+#[inline]
+fn estimate_ip_dequantized_scalar_only_impl(
+    query_rotated: &[f32],
+    query_bf16: Option<&[u16]>,
+    dequant_lut_bf16: Option<&[u16; 256]>,
+    dimensions: usize,
+    bits_per_dim: u8,
+    dequant_lut: &[f32; 256],
+    bits1_byte_lut: Option<&[[f32; 8]; 256]>,
+    bits8_query_scale: &[f32],
+    bits8_query_offset: &[f32],
+    code: &[u8],
+) -> f32 {
+    debug_assert_eq!(query_rotated.len(), dimensions);
+    let bits = bits_per_dim as usize;
+    let packed_bytes = (dimensions * bits).div_ceil(8);
+    assert!(
+        code.len() >= packed_bytes + RABITQ_SCALAR_LEN,
+        "RaBitQ code too short: got {}, expected at least {}",
+        code.len(),
+        packed_bytes + RABITQ_SCALAR_LEN,
+    );
+    let s = packed_bytes;
+    let candidate_norm = f32::from_le_bytes(
+        code[s..s + RABITQ_NORM_LEN]
+            .try_into()
+            .expect("norm slice is always 4 bytes"),
+    );
+    let candidate_x_norm = f32::from_le_bytes(
+        code[s + RABITQ_NORM_LEN + RABITQ_UNIT_DOT_LEN..s + RABITQ_SCALAR_LEN]
+            .try_into()
+            .expect("x_norm slice is always 4 bytes"),
+    );
+
+    if candidate_norm <= 0.0
+        || !candidate_norm.is_finite()
+        || candidate_x_norm <= 0.0
+        || !candidate_x_norm.is_finite()
+    {
+        return 0.0;
+    }
+
+    let sum_q_dequant = sum_query_dequant_with_bf16(
+        query_rotated,
+        query_bf16,
+        dequant_lut_bf16,
+        dimensions,
+        bits,
+        dequant_lut,
+        bits1_byte_lut,
+        bits8_query_scale,
+        bits8_query_offset,
+        code,
+    );
+
+    candidate_norm * sum_q_dequant / candidate_x_norm
 }
 
 fn sign_words_from_byte_slice(bytes: &[u8], dim: usize) -> Vec<u64> {

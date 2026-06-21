@@ -77,7 +77,10 @@ fn not_implemented(callback: &str) -> ! {
 
 pub(crate) use self::admin::{index_admin_snapshot, index_drift_snapshot, index_page_ownership};
 pub(crate) use self::cost::index_cost_snapshot;
-pub use self::options::{RerankMode as IvfRerankMode, StorageFormat as IvfStorageFormat};
+pub use self::options::{
+    RaBitQRerankScoreMode as IvfRerankScoreMode, RerankMode as IvfRerankMode,
+    StorageFormat as IvfStorageFormat,
+};
 pub use self::page::{
     BlockRef as IvfBlockRef, IvfCentroidTuple, IvfListDirectoryTuple, IvfPostingTuple,
     IvfPqCodebookTuple, MetadataPage as IvfMetadataPage, EC_IVF_BLOCK_REF_BLOCK_NUMBER_OFFSET,
