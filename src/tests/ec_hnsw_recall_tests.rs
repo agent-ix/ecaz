@@ -297,6 +297,146 @@
         }
     }
 
+    fn create_score_correlation_sanity_fixture(prefix: &str, storage_format: &str) -> String {
+        let corpus_table = format!("{prefix}_{storage_format}_corpus");
+        let queries_table = format!("{prefix}_{storage_format}_queries");
+        let index_name = format!("{prefix}_{storage_format}_m6_idx");
+
+        Spi::run(&format!("DROP TABLE IF EXISTS {corpus_table} CASCADE"))
+            .expect("score sanity corpus drop should succeed");
+        Spi::run(&format!("DROP TABLE IF EXISTS {queries_table} CASCADE"))
+            .expect("score sanity query drop should succeed");
+
+        Spi::run(&format!(
+            "CREATE TABLE {corpus_table} (
+                id bigint primary key,
+                source real[] NOT NULL,
+                embedding ecvector
+            )"
+        ))
+        .expect("score sanity corpus create should succeed");
+        Spi::run(&format!(
+            "CREATE TABLE {queries_table} (
+                id bigint primary key,
+                source real[] NOT NULL
+            )"
+        ))
+        .expect("score sanity query create should succeed");
+
+        let query = {
+            let mut vector = vec![0.0_f32; 16];
+            vector[0] = 1.0;
+            vector
+        };
+        let rows = (0..16)
+            .map(|id| {
+                let mut vector = vec![0.0_f32; 16];
+                vector[0] = 1.0 - (id as f32 * 0.1);
+                vector[1] = id as f32 * 0.01;
+                let source = format_recall_vector_sql_literal(&vector);
+                format!("({id}, {source}, encode_to_ecvector({source}, 4, 42))")
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        Spi::run(&format!(
+            "INSERT INTO {corpus_table} (id, source, embedding) VALUES {rows}"
+        ))
+        .expect("score sanity corpus insert should succeed");
+
+        let query_source = format_recall_vector_sql_literal(&query);
+        Spi::run(&format!(
+            "INSERT INTO {queries_table} (id, source) VALUES (0, {query_source})"
+        ))
+        .expect("score sanity query insert should succeed");
+
+        Spi::run(&format!(
+            "CREATE INDEX {index_name} ON {corpus_table} \
+             USING ec_hnsw (embedding ecvector_ip_ops) \
+             WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = '{storage_format}')"
+        ))
+        .expect("score sanity index create should succeed");
+
+        index_name
+    }
+
+    #[pg_test]
+    fn test_ech_score_correlation_synthetic_known_ordering() {
+        let prefix = "ec_hnsw_score_correlation_sanity";
+
+        for storage_format in ["turboquant", "pq_fastscan", "rabitq"] {
+            let index_name = create_score_correlation_sanity_fixture(prefix, storage_format);
+            let corpus_table = format!("{prefix}_{storage_format}_corpus");
+            let queries_table = format!("{prefix}_{storage_format}_queries");
+            let context = build_external_recall_context(&corpus_table, &queries_table, false);
+            let row = graph_scan_score_correlation_for_context(&context, &index_name, 6, 16, 0);
+
+            let emitted_result_count = row.3;
+            let compared_result_count = row.4;
+            let missing_comparison_count = row.5;
+            let max_abs_score_delta = row.7;
+            let mean_abs_rank_shift = row.9;
+            let spearman_rank_correlation = row.11;
+            let exact_best_approx_rank = row.12;
+            let compared_row_indices = row.14;
+            let compared_approx_scores = row.16;
+            let compared_exact_scores = row.17;
+            let compared_exact_ranks = row.18;
+
+            assert!(
+                emitted_result_count >= 10,
+                "{storage_format} synthetic scorer fixture should emit at least top-10 candidates"
+            );
+            assert_eq!(
+                compared_result_count, emitted_result_count,
+                "{storage_format} synthetic scorer fixture should carry comparison scores for every emitted result"
+            );
+            assert_eq!(
+                missing_comparison_count, 0,
+                "{storage_format} synthetic scorer fixture should not miss comparison scores"
+            );
+            assert_eq!(
+                exact_best_approx_rank,
+                Some(1),
+                "{storage_format} synthetic scorer fixture should keep the known exact-best row first"
+            );
+            assert!(
+                max_abs_score_delta < 0.25,
+                "{storage_format} synthetic scorer fixture score delta too large: {max_abs_score_delta}"
+            );
+            assert!(
+                mean_abs_rank_shift <= 1.0,
+                "{storage_format} synthetic scorer fixture rank shift too large: {mean_abs_rank_shift}"
+            );
+            assert!(
+                spearman_rank_correlation >= 0.95,
+                "{storage_format} synthetic scorer fixture rank correlation too low: {spearman_rank_correlation}"
+            );
+
+            for (((row_index, approx_score), exact_score), exact_rank) in compared_row_indices
+                .iter()
+                .zip(compared_approx_scores.iter())
+                .zip(compared_exact_scores.iter())
+                .zip(compared_exact_ranks.iter())
+                .take(10)
+            {
+                let expected_exact_score = -1.0 + (*row_index as f32 * 0.1);
+                assert_f32_close(
+                    *exact_score,
+                    expected_exact_score,
+                    "synthetic scorer fixture exact score should match the hand-authored source vector",
+                );
+                assert!(
+                    (*exact_rank >= 1) && (*exact_rank <= emitted_result_count),
+                    "{storage_format} synthetic scorer fixture exact rank should be in emitted range"
+                );
+                assert!(
+                    approx_score.is_finite(),
+                    "{storage_format} synthetic scorer fixture approximate score should be finite"
+                );
+            }
+        }
+    }
+
     #[pg_test]
     // Ignored because it requires the `pg_test` cargo feature and a scratch
     // pgrx test cluster to run, not because of long seeding. Seeding is
@@ -347,4 +487,3 @@
         assert_eq!(summary.3, 8);
         assert!((0.0..=1.0).contains(&summary.9));
     }
-
