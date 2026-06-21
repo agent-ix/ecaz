@@ -68,3 +68,28 @@ not final exact rerank or score ordering.
 
 This packet is still not a final Task 118 closeout; 50k and 100k evidence is
 still required.
+
+## 50k AMD-Local Partial Update
+
+The current host is the slower AMD machine, so I stopped the 50k suite after
+capturing source-build load and recall for all three formats. These rows are
+useful for local relative direction only; they are not final closeout evidence.
+
+Artifacts:
+
+- `artifacts/suite-manifest-50k.json`
+- `artifacts/suite-run-50k.log`
+- `artifacts/load-50k-hnsw-{turboquant,pq-fastscan,rabitq}.log`
+- `artifacts/recall-50k-hnsw-{turboquant,pq-fastscan,rabitq}.log`
+- `artifacts/scratch-restart-after-amd-frontier-cancel.log`
+
+At `ef_search=200`, AMD-local source-build recall was:
+
+- TurboQuant: `0.9735`, mean q-time `49.77 ms`
+- PqFastScan: `0.9735`, mean q-time `52.75 ms`
+- RaBitQ: `0.9520`, mean q-time `85.82 ms`
+
+The first 50k frontier helper call did not return after roughly 20 minutes on
+this AMD host. I interrupted the suite and restarted the PG18 scratch cluster
+after PostgreSQL cancel/terminate did not stop the active helper backend. The
+Intel desktop should run the remaining 50k/100k closeout matrix when available.

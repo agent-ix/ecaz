@@ -85,3 +85,46 @@ Key 10k `ef_search=200` results:
 - RaBitQ recall equals `truth@10 in frontier`, despite stronger score
   correlation than TurboQuant/PqFastScan. At 10k, the dominant RaBitQ loss is
   candidate containment/traversal, not final exact rerank or scorer ordering.
+
+## 50k AMD-local partial checkpoint
+
+This host is the slower AMD machine. Treat the 50k rows below as AMD-local
+relative evidence only; final closeout measurement should be produced on the
+Intel benchmark desktop when it is available.
+
+Command:
+
+`cargo run -p ecaz-cli -- --host /home/peter/.pgrx --port 28818 --database tqvector_bench --log-file reviews/task-118/006-final-attribution-matrix/artifacts/suite-run-50k.log bench suite run --config crates/ecaz-cli/suites/task118-hnsw-quantized-recall-attribution.json --artifact-dir reviews/task-118/006-final-attribution-matrix/artifacts --manifest-output reviews/task-118/006-final-attribution-matrix/artifacts/suite-manifest-50k.json --results-output reviews/task-118/006-final-attribution-matrix/artifacts/results-50k.jsonl --only-tag ec_real_50k --continue-on-error --allow-debug-backend`
+
+Artifacts:
+
+- `suite-manifest-50k.json`
+  - Status at interrupt: `6` succeeded, `30` pending, `72` skipped.
+  - Completed steps: source-build load and recall for TurboQuant, PqFastScan,
+    and RaBitQ.
+- `suite-run-50k.log`
+  - Runner log for the AMD-local partial pass.
+- `load-50k-hnsw-{turboquant,pq-fastscan,rabitq}.log`
+  - Source-build load logs.
+- `recall-50k-hnsw-{turboquant,pq-fastscan,rabitq}.log`
+  - Source-build recall logs.
+- `scratch-restart-after-amd-frontier-cancel.log`
+  - After the suite was interrupted, the active frontier helper backend did not
+    respond to PostgreSQL cancel/terminate. The PG18 scratch cluster was
+    restarted to stop the AMD-local benchmark backend.
+
+No `results-50k.jsonl` is present because the suite was intentionally
+interrupted before normal result emission. The raw `truth-50k-k10.json` cache is
+not committed.
+
+50k AMD-local source-build recall at `ef_search=200`:
+
+| Format | Recall@10 | Mean q-time |
+| --- | ---: | ---: |
+| TurboQuant | 0.9735 | 49.77 ms |
+| PqFastScan | 0.9735 | 52.75 ms |
+| RaBitQ | 0.9520 | 85.82 ms |
+
+The AMD-local 50k recall shape matches the 10k direction: RaBitQ remains lower
+than TurboQuant/PqFastScan and slower. Frontier, score-correlation, latency,
+storage, compressed-build A/B, and 100k evidence remain for the Intel host.

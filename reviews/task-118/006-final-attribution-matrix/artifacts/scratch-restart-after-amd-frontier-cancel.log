@@ -1,0 +1,10 @@
+[scratch] stopped existing postmaster pid=2813558
+[scratch] repo=/home/peter/dev/ecaz
+[scratch] pgrx_home=/home/peter/.pgrx
+[scratch] pg=18
+[scratch] window=64
+[scratch] grouped_score_mode=binary
+[scratch] rerank_mode=heap_f32
+[scratch] rerank_source_column=build_source_column
+[scratch] exact_scope=disabled
+[scratch] started Postgres v18 on port 28818
