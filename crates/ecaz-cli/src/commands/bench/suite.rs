@@ -4035,11 +4035,11 @@ mod tests {
         assert!(summary
             .iter()
             .any(|(metric, v)| metric == "comparator_build"
-                && v.get("subject").map(String::as_str)
-                    == Some("real_100k_corpus_vchord_idx")));
-        assert!(summary.iter().any(|(metric, v)| metric
-            == "comparator_index_size"
-            && v.get("bytes").map(String::as_str) == Some("4096")));
+                && v.get("subject").map(String::as_str) == Some("real_100k_corpus_vchord_idx")));
+        assert!(summary
+            .iter()
+            .any(|(metric, v)| metric == "comparator_index_size"
+                && v.get("bytes").map(String::as_str) == Some("4096")));
     }
 
     #[test]

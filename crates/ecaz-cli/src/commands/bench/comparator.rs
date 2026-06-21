@@ -194,7 +194,9 @@ pub async fn run(conn: &ConnectionOptions, args: ComparatorArgs) -> Result<()> {
 
     let dim = read_dim(&client, &corpus_table).await?;
     let corpus_rows = count_rows(&client, &corpus_table).await?;
-    let lists = args.lists.unwrap_or_else(|| default_lists_for_rows(corpus_rows));
+    let lists = args
+        .lists
+        .unwrap_or_else(|| default_lists_for_rows(corpus_rows));
 
     // Accumulate the parser-visible lines (build + size + table) so the
     // `--log-output` artifact is self-contained for the suite parser.

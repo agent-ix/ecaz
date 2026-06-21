@@ -273,8 +273,14 @@ mod tests {
         let queries_path = tmp.path().join("subset_queries.tsv");
         let (corpus, queries) = subset_tsv(&source, &corpus_path, &queries_path, 3, 2).unwrap();
 
-        assert_eq!(std::fs::read_to_string(corpus_path).unwrap(), "0\t[1.0]\n1\t[2.0]\n2\t[3.0]\n");
-        assert_eq!(std::fs::read_to_string(queries_path).unwrap(), "3\t[4.0]\n4\t[5.0]\n");
+        assert_eq!(
+            std::fs::read_to_string(corpus_path).unwrap(),
+            "0\t[1.0]\n1\t[2.0]\n2\t[3.0]\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(queries_path).unwrap(),
+            "3\t[4.0]\n4\t[5.0]\n"
+        );
         assert_eq!(corpus.rows, 3);
         assert_eq!(corpus.first_id, Some(0));
         assert_eq!(corpus.last_id, Some(2));

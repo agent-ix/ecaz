@@ -92,9 +92,8 @@ unsafe fn score_candidate_avx2(
         return 0.0;
     }
 
-    let codebook = _mm256_broadcastsi128_si256(_mm_loadu_si128(
-        prepared.codebook.as_ptr() as *const __m128i
-    ));
+    let codebook =
+        _mm256_broadcastsi128_si256(_mm_loadu_si128(prepared.codebook.as_ptr() as *const __m128i));
     let nibble_mask = _mm256_set1_epi8(0x0F);
     let mut acc = _mm256_setzero_si256();
 
@@ -155,10 +154,7 @@ unsafe fn madd_i8_vectors(a: __m256i, b: __m256i) -> __m256i {
     let a_hi = _mm256_cvtepi8_epi16(_mm256_extracti128_si256::<1>(a));
     let b_lo = _mm256_cvtepi8_epi16(_mm256_castsi256_si128(b));
     let b_hi = _mm256_cvtepi8_epi16(_mm256_extracti128_si256::<1>(b));
-    _mm256_add_epi32(
-        _mm256_madd_epi16(a_lo, b_lo),
-        _mm256_madd_epi16(a_hi, b_hi),
-    )
+    _mm256_add_epi32(_mm256_madd_epi16(a_lo, b_lo), _mm256_madd_epi16(a_hi, b_hi))
 }
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
