@@ -1,0 +1,29 @@
+   Compiling ecaz-cli v0.1.0 (/home/peter/dev/ecaz/crates/ecaz-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 51.97s
+     Running unittests src/main.rs (target/debug/deps/ecaz-c8c7d75795db63e7)
+
+running 21 tests
+test commands::bench::recall::tests::build_knn_sql_uses_raw_real_query_for_hnsw ... ok
+test commands::bench::comparator::tests::pgvector_hnsw_index_sql_pins_ip_ops_and_reloptions ... ok
+test commands::bench::hnsw_frontier::tests::summarize_frontier_rows_computes_recall_and_means ... ok
+test commands::bench::hnsw_score_correlation::tests::summarize_rows_computes_means_and_maxima ... ok
+test commands::bench::suite::tests::expands_hnsw_compressed_build_load_step ... ok
+test commands::corpus::load::tests::collision_hnsw_ef_construction_and_build_source_flagged ... ok
+test commands::corpus::load::tests::collision_hnsw_m_reloption_flagged ... ok
+test commands::bench::suite::tests::parses_and_expands_hnsw_frontier_step ... ok
+test commands::bench::suite::tests::parses_and_expands_hnsw_score_correlation_step ... ok
+test commands::corpus::load::tests::foreign_hnsw_reloption_keys_are_ignored_for_hnsw_profile ... ok
+test commands::corpus::load::tests::diskann_plan_is_single_index_with_no_hnsw_defaults ... ok
+test commands::corpus::load::tests::foreign_hnsw_reloption_keys_find_hnsw_only_keys_once_for_diskann ... ok
+test commands::corpus::load::tests::hnsw_plan_defaults_to_8_16_sweep_with_ef_and_build_source ... ok
+test commands::corpus::load::tests::hnsw_plan_can_disable_build_source_column_for_compressed_ab ... ok
+test commands::corpus::load::tests::hnsw_plan_honors_explicit_m_and_dedup ... ok
+test commands::corpus::load::tests::hnsw_plan_passes_extras_through_and_orders_after_built_ins ... ok
+test commands::corpus::load::tests::unsupported_hnsw_reloption_error_points_diskann_operator_at_known_keys ... ok
+test commands::corpus::prepare::tests::legacy_hnsw_real_profile_names_are_not_aliases ... ok
+test profiles::tests::ec_hnsw_supports_m_sweep_and_build_source ... ok
+test commands::stress::vacuum::tests::seed_ddl_pins_ec_hnsw_opclass_and_encoder ... ok
+test psql::tests::hnsw_index_sql_matches_legacy_loader_shape ... ok
+
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 394 filtered out; finished in 0.00s
+
