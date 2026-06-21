@@ -1,7 +1,8 @@
 # Task 111h: IVF Persisted Rerank Format Sweep
 
-Status: **complete** (2026-06-20; closeout
-`reviews/task-111h/041-final-closeout-decision/`).
+Status: **reopened** (2026-06-20; packet
+`reviews/task-111h/041-final-closeout-decision/feedback/2026-06-20-01-reviewer.md`
+rejected closeout as not evidence-backed for the compact-format decision).
 Priority: P0 correctness of the coarse-rerank product decision.
 Parent: `111e-ivf-coarse-rerank-candidate-pipeline.md`,
 `111g-ivf-coarse-rerank-representations.md`.
@@ -241,6 +242,23 @@ win under the storage/cache conditions they are designed for.
 - [x] State promote / iterate / abandon for each format and placement with
       evidence. No format may be left as "not tried". Evidence:
       `reviews/task-111h/041-final-closeout-decision/`.
+
+### Reopened Follow-Up After Packet 041
+
+Packet 041 accepted the common rerank-payload engineering but rejected the
+decision closeout. The prior final table is now a stale intermediate decision,
+not a task closeout. The corrected closeout must add packet-local evidence for:
+
+- [ ] RaBitQ-4 clip sweep for `{2,3,4}` before abandon/iterate/promote.
+- [ ] RaBitQ-8 matched-recall comparison vs index f16 at the best clip config.
+- [ ] Exact-dequant scoring, or an equivalent fidelity lever, for compact
+      formats before using default-estimator results as rejection evidence.
+- [ ] TurboQuant fidelity lever coverage; the current default scorer-only TQ
+      matrix is insufficient by itself.
+- [ ] Matched-recall vs index f16 at recall `0.97` and `0.99` for each compact
+      format's best config.
+- [ ] Corrected 10k/50k/100k compact-format sweep before spending a final 1M
+      run on the locked config.
 
 ## Acceptance Criteria
 
