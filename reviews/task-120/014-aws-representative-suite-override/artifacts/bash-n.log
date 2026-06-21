@@ -1,0 +1,3 @@
+bash -n scripts/spire-aws/bench.sh: OK
+bash -n scripts/spire-aws/preflight-representative-performance.sh: OK
+bash -n scripts/spire-aws/run-representative-performance-pass.sh: OK
