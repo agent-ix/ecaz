@@ -1586,6 +1586,28 @@ fn parse_result_rows(
                 values: add_result_context(manifest, step, values),
             })
             .collect(),
+        "hnsw-frontier" => parse_table_rows(raw)
+            .into_iter()
+            .map(|values| ResultRow {
+                suite: manifest.suite.clone(),
+                step: step.name.clone(),
+                kind: step.kind.clone(),
+                metric: "hnsw_frontier".into(),
+                artifact: artifact.into(),
+                values: add_result_context(manifest, step, values),
+            })
+            .collect(),
+        "hnsw-score-correlation" => parse_table_rows(raw)
+            .into_iter()
+            .map(|values| ResultRow {
+                suite: manifest.suite.clone(),
+                step: step.name.clone(),
+                kind: step.kind.clone(),
+                metric: "hnsw_score_correlation".into(),
+                artifact: artifact.into(),
+                values: add_result_context(manifest, step, values),
+            })
+            .collect(),
         "storage" => parse_storage_rows(raw)
             .into_iter()
             .map(|(metric, values)| ResultRow {
@@ -5560,6 +5582,181 @@ mod tests {
         assert_eq!(
             counters.values.get("storage_format").map(String::as_str),
             Some("pq_fastscan")
+        );
+    }
+
+    #[test]
+    fn parses_hnsw_frontier_summary_rows() {
+        let manifest = SuiteManifest {
+            suite: "task118".into(),
+            schema_version: 1,
+            config: "suite.json".into(),
+            config_sha256: "hash".into(),
+            dry_run: false,
+            generated_at_unix_ms: 0,
+            connection: ManifestConnection {
+                database: "tqvector_bench".into(),
+                host: None,
+                port: Some(28818),
+                user: None,
+                password_configured: false,
+            },
+            backend: None,
+            steps: Vec::new(),
+            threshold_results: Vec::new(),
+        };
+        let step = StepRecord {
+            name: "frontier-10k-hnsw-rabitq".into(),
+            kind: "hnsw-frontier".into(),
+            command: vec![
+                "bench".into(),
+                "hnsw-frontier".into(),
+                "--prefix".into(),
+                "task118_real_10k_hnsw_rabitq".into(),
+                "--index".into(),
+                "task118_real_10k_hnsw_rabitq_m16_idx".into(),
+                "--m".into(),
+                "16".into(),
+            ],
+            selected: true,
+            quant: Some("rabitq".into()),
+            isa: None,
+            kernel_status: None,
+            pgoptions: None,
+            tags: vec!["frontier".into(), "hnsw".into(), "rabitq".into()],
+            expected_artifacts: vec!["frontier.log".into()],
+            status: Some(StepStatus::Succeeded),
+            started_at_unix_ms: None,
+            finished_at_unix_ms: None,
+            duration_ms: None,
+            exit_code: None,
+            parallel_workers_before: None,
+            parallel_workers_after: None,
+            parallel_workers_delta: None,
+        };
+        let rows = parse_result_rows(
+            &manifest,
+            &step,
+            "frontier.log",
+            "prefix: task118_real_10k_hnsw_rabitq\n\
+             index: task118_real_10k_hnsw_rabitq_m16_idx\n\
+             m: 16\n\
+             ┌───────────┬─────────┬──────────────────────┬───────────────────────┬────────────────────┬──────────┬───────────────┬─────────┬──────────────┬──────────────────┬──────────────────────┐\n\
+             │ ef_search ┆ queries ┆ truth@10 in frontier ┆ truth@100 in frontier ┆ visited pre-output ┆ frontier ┆ visited final ┆ emitted ┆ exact rerank ┆ quantized rerank ┆ dropped before exact │\n\
+             ╞═══════════╪═════════╪══════════════════════╪═══════════════════════╪════════════════════╪══════════╪═══════════════╪═════════╪══════════════╪══════════════════╪══════════════════════╡\n\
+             │ 200       ┆ 200     ┆ 0.9705               ┆ 0.7211                ┆ 400.0              ┆ 200.0    ┆ 401.0         ┆ 200.0   ┆ 200.0        ┆ 0.0              ┆ 0.0                  │\n\
+             └───────────┴─────────┴──────────────────────┴───────────────────────┴────────────────────┴──────────┴───────────────┴─────────┴──────────────┴──────────────────┴──────────────────────┘\n",
+        );
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].kind, "hnsw-frontier");
+        assert_eq!(rows[0].metric, "hnsw_frontier");
+        assert_eq!(
+            rows[0]
+                .values
+                .get("truth@10 in frontier")
+                .map(String::as_str),
+            Some("0.9705")
+        );
+        assert_eq!(
+            rows[0].values.get("exact rerank").map(String::as_str),
+            Some("200.0")
+        );
+        assert_eq!(
+            rows[0].values.get("storage_format").map(String::as_str),
+            Some("rabitq")
+        );
+        assert_eq!(
+            rows[0].values.get("prefix").map(String::as_str),
+            Some("task118_real_10k_hnsw_rabitq")
+        );
+    }
+
+    #[test]
+    fn parses_hnsw_score_correlation_summary_rows() {
+        let manifest = SuiteManifest {
+            suite: "task118".into(),
+            schema_version: 1,
+            config: "suite.json".into(),
+            config_sha256: "hash".into(),
+            dry_run: false,
+            generated_at_unix_ms: 0,
+            connection: ManifestConnection {
+                database: "tqvector_bench".into(),
+                host: None,
+                port: Some(28818),
+                user: None,
+                password_configured: false,
+            },
+            backend: None,
+            steps: Vec::new(),
+            threshold_results: Vec::new(),
+        };
+        let step = StepRecord {
+            name: "score-correlation-10k-hnsw-turboquant".into(),
+            kind: "hnsw-score-correlation".into(),
+            command: vec![
+                "bench".into(),
+                "hnsw-score-correlation".into(),
+                "--prefix".into(),
+                "task118_real_10k_hnsw_turboquant".into(),
+                "--index".into(),
+                "task118_real_10k_hnsw_turboquant_m16_idx".into(),
+                "--m".into(),
+                "16".into(),
+            ],
+            selected: true,
+            quant: Some("turboquant".into()),
+            isa: None,
+            kernel_status: None,
+            pgoptions: None,
+            tags: vec![
+                "score-correlation".into(),
+                "hnsw".into(),
+                "turboquant".into(),
+            ],
+            expected_artifacts: vec!["score-correlation.log".into()],
+            status: Some(StepStatus::Succeeded),
+            started_at_unix_ms: None,
+            finished_at_unix_ms: None,
+            duration_ms: None,
+            exit_code: None,
+            parallel_workers_before: None,
+            parallel_workers_after: None,
+            parallel_workers_delta: None,
+        };
+        let rows = parse_result_rows(
+            &manifest,
+            &step,
+            "score-correlation.log",
+            "prefix: task118_real_10k_hnsw_turboquant\n\
+             index: task118_real_10k_hnsw_turboquant_m16_idx\n\
+             m: 16\n\
+             ┌───────────┬─────────┬─────────┬──────────┬─────────────┬────────────────────┬───────────────────┬───────────────────┬──────────────────┬───────────────┬────────────────────────┬────────────────────────────┐\n\
+             │ ef_search ┆ queries ┆ emitted ┆ compared ┆ missing cmp ┆ mean |score delta| ┆ mean signed delta ┆ mean |rank shift| ┆ max |rank shift| ┆ mean spearman ┆ exact best approx rank ┆ exact top4 max approx rank │\n\
+             ╞═══════════╪═════════╪═════════╪══════════╪═════════════╪════════════════════╪═══════════════════╪═══════════════════╪══════════════════╪═══════════════╪════════════════════════╪════════════════════════════╡\n\
+             │ 200       ┆ 200     ┆ 10.0    ┆ 10.0     ┆ 0.0         ┆ 0.001234           ┆ -0.000123         ┆ 1.25              ┆ 8                ┆ 0.8404        ┆ 3.0                    ┆ 7.0                        │\n\
+             └───────────┴─────────┴─────────┴──────────┴─────────────┴────────────────────┴───────────────────┴───────────────────┴──────────────────┴───────────────┴────────────────────────┴────────────────────────────┘\n",
+        );
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].kind, "hnsw-score-correlation");
+        assert_eq!(rows[0].metric, "hnsw_score_correlation");
+        assert_eq!(
+            rows[0].values.get("mean spearman").map(String::as_str),
+            Some("0.8404")
+        );
+        assert_eq!(
+            rows[0].values.get("mean |rank shift|").map(String::as_str),
+            Some("1.25")
+        );
+        assert_eq!(
+            rows[0].values.get("storage_format").map(String::as_str),
+            Some("turboquant")
+        );
+        assert_eq!(
+            rows[0].values.get("prefix").map(String::as_str),
+            Some("task118_real_10k_hnsw_turboquant")
         );
     }
 
