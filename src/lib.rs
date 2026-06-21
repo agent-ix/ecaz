@@ -8391,6 +8391,96 @@ fn ec_spire_index_scan_leaf_target_block_rank_snapshot(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_index_scan_target_candidate_rank_snapshot(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+    target_local_sequences: Vec<i64>,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(effective_nprobe, i64),
+        name!(effective_nprobe_source, String),
+        name!(effective_rerank_width, i64),
+        name!(effective_rerank_width_source, String),
+        name!(target_ordinal, i64),
+        name!(target_local_sequence, i64),
+        name!(status, String),
+        name!(approximate_candidate_count, i64),
+        name!(rerank_prefix_count, i64),
+        name!(approximate_rank, Option<i64>),
+        name!(selected_by_rerank_prefix, Option<bool>),
+        name!(pid, Option<i64>),
+        name!(node_id, Option<i64>),
+        name!(local_store_id, Option<i64>),
+        name!(object_version, Option<i64>),
+        name!(row_index, Option<i64>),
+        name!(assignment_flags, Option<i64>),
+        name!(approximate_score, Option<f32>),
+        name!(heap_block, Option<i64>),
+        name!(heap_offset, Option<i64>),
+    ),
+> {
+    let target_local_sequences = target_local_sequences
+        .into_iter()
+        .map(|target_local_sequence| {
+            if target_local_sequence <= 0 {
+                pgrx::error!(
+                    "ec_spire_index_scan_target_candidate_rank_snapshot target local sequences must be positive"
+                );
+            }
+            u64::try_from(target_local_sequence)
+                .expect("positive target local sequence should fit in u64")
+        })
+        .collect::<Vec<_>>();
+    let rows = {
+        let index_relation = open_valid_ec_spire_index_guard(
+            index_oid,
+            "ec_spire_index_scan_target_candidate_rank_snapshot",
+        );
+        with_spire_live_index_relation!(
+            index_relation,
+            am::spire_index_scan_target_candidate_rank_snapshot,
+            query,
+            target_local_sequences
+        )
+    };
+
+    TableIterator::new(rows.into_iter().map(|row| {
+        (
+            i64::try_from(row.active_epoch).expect("active epoch should fit in i64"),
+            i64::from(row.effective_nprobe),
+            row.effective_nprobe_source.to_owned(),
+            i64::try_from(row.effective_rerank_width)
+                .expect("effective rerank width should fit in i64"),
+            row.effective_rerank_width_source.to_owned(),
+            i64::try_from(row.target_ordinal).expect("target ordinal should fit in i64"),
+            i64::try_from(row.target_local_sequence)
+                .expect("target local sequence should fit in i64"),
+            row.status.to_owned(),
+            i64::try_from(row.approximate_candidate_count)
+                .expect("approximate candidate count should fit in i64"),
+            i64::try_from(row.rerank_prefix_count).expect("rerank prefix count should fit in i64"),
+            row.approximate_rank
+                .map(|rank| i64::try_from(rank).expect("approximate rank should fit in i64")),
+            row.selected_by_rerank_prefix,
+            row.pid
+                .map(|pid| i64::try_from(pid).expect("PID should fit in i64")),
+            row.node_id.map(i64::from),
+            row.local_store_id.map(i64::from),
+            row.object_version
+                .map(|version| i64::try_from(version).expect("object version should fit in i64")),
+            row.row_index.map(i64::from),
+            row.assignment_flags.map(i64::from),
+            row.approximate_score,
+            row.heap_block.map(i64::from),
+            row.heap_offset.map(i64::from),
+        )
+    }))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_index_selected_pid_placement_snapshot(
     index_oid: pg_sys::Oid,
     selected_pids: Vec<i64>,

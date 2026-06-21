@@ -720,6 +720,13 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
                     &target_local_sequences,
                 )
                 .await?;
+                let candidate_rank_rows = query_target_candidate_rank_rows(
+                    &client,
+                    &index,
+                    &query.source,
+                    &target_local_sequences,
+                )
+                .await?;
                 stage_containment_rows.extend(StageContainmentRecord::from_query(
                     *nprobe,
                     query_index + 1,
@@ -729,6 +736,7 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
                     &funnel_local_rows,
                     &funnel_leaf_rows,
                     funnel_rerank_locality.as_ref(),
+                    &candidate_rank_rows,
                     &rank_rows,
                 )?);
             }
@@ -1442,6 +1450,23 @@ async fn query_leaf_target_block_rank_rows(
     Ok(rows.into_iter().map(LeafBlockRankRow::from).collect())
 }
 
+async fn query_target_candidate_rank_rows(
+    client: &Client,
+    index: &str,
+    query: &[f32],
+    target_local_sequences: &[i64],
+) -> Result<Vec<TargetCandidateRankRow>> {
+    let target_local_sequences = target_local_sequences.to_vec();
+    let rows = client
+        .query(
+            target_candidate_rank_snapshot_sql(),
+            &[&index, &query, &target_local_sequences],
+        )
+        .await
+        .wrap_err("querying ec_spire_index_scan_target_candidate_rank_snapshot")?;
+    Ok(rows.into_iter().map(TargetCandidateRankRow::from).collect())
+}
+
 async fn query_remote_pipeline_rows(
     client: &Client,
     index: &str,
@@ -1626,6 +1651,17 @@ fn leaf_target_block_rank_snapshot_sql() -> &'static str {
      FROM ec_spire_index_scan_leaf_target_block_rank_snapshot(
             $1::text::regclass::oid, $2::real[], $3::bigint[])
      ORDER BY target_ordinal, block_rank NULLS LAST, pid NULLS LAST, row_index NULLS LAST"
+}
+
+fn target_candidate_rank_snapshot_sql() -> &'static str {
+    "SELECT target_ordinal, target_local_sequence, status,
+            approximate_candidate_count, rerank_prefix_count, approximate_rank,
+            selected_by_rerank_prefix, pid, node_id, local_store_id,
+            object_version, row_index, assignment_flags, approximate_score,
+            heap_block, heap_offset
+     FROM ec_spire_index_scan_target_candidate_rank_snapshot(
+            $1::text::regclass::oid, $2::real[], $3::bigint[])
+     ORDER BY target_ordinal, approximate_rank NULLS LAST, pid NULLS LAST, row_index NULLS LAST"
 }
 
 fn remote_pipeline_steps_sql() -> &'static str {
@@ -2029,6 +2065,59 @@ impl From<Row> for LeafBlockRankRow {
             route_rank: row.get(19),
             route_score: row.get(20),
             assignment_flags: row.get(21),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct TargetCandidateRankRow {
+    target_ordinal: i64,
+    #[allow(dead_code)]
+    target_local_sequence: i64,
+    status: String,
+    approximate_candidate_count: i64,
+    rerank_prefix_count: i64,
+    approximate_rank: Option<i64>,
+    selected_by_rerank_prefix: Option<bool>,
+    #[allow(dead_code)]
+    pid: Option<i64>,
+    #[allow(dead_code)]
+    node_id: Option<i64>,
+    #[allow(dead_code)]
+    local_store_id: Option<i64>,
+    #[allow(dead_code)]
+    object_version: Option<i64>,
+    #[allow(dead_code)]
+    row_index: Option<i64>,
+    #[allow(dead_code)]
+    assignment_flags: Option<i64>,
+    #[allow(dead_code)]
+    approximate_score: Option<f32>,
+    #[allow(dead_code)]
+    heap_block: Option<i64>,
+    #[allow(dead_code)]
+    heap_offset: Option<i64>,
+}
+
+impl From<Row> for TargetCandidateRankRow {
+    fn from(row: Row) -> Self {
+        Self {
+            target_ordinal: row.get(0),
+            target_local_sequence: row.get(1),
+            status: row.get(2),
+            approximate_candidate_count: row.get(3),
+            rerank_prefix_count: row.get(4),
+            approximate_rank: row.get(5),
+            selected_by_rerank_prefix: row.get(6),
+            pid: row.get(7),
+            node_id: row.get(8),
+            local_store_id: row.get(9),
+            object_version: row.get(10),
+            row_index: row.get(11),
+            assignment_flags: row.get(12),
+            approximate_score: row.get(13),
+            heap_block: row.get(14),
+            heap_offset: row.get(15),
         }
     }
 }
@@ -2648,6 +2737,7 @@ impl StageContainmentRecord {
         local_rows: &[LocalPipelineRow],
         leaf_rows: &[LeafCandidateRow],
         rerank_locality: Option<&RerankLocalityRow>,
+        candidate_rank_rows: &[TargetCandidateRankRow],
         rank_rows: &[LeafBlockRankRow],
     ) -> Result<Vec<Self>> {
         let rank_by_ordinal = rank_rows
@@ -2662,6 +2752,18 @@ impl StageContainmentRecord {
                 Ok((ordinal, row))
             })
             .collect::<Result<HashMap<_, _>>>()?;
+        let candidate_rank_by_ordinal = candidate_rank_rows
+            .iter()
+            .map(|row| {
+                let ordinal = usize::try_from(row.target_ordinal).map_err(|_| {
+                    eyre!(
+                        "stage containment target candidate ordinal {} exceeds usize",
+                        row.target_ordinal
+                    )
+                })?;
+                Ok((ordinal, row))
+            })
+            .collect::<Result<HashMap<_, _>>>()?;
         let predicted_id_set = predicted_ids.iter().copied().collect::<HashSet<_>>();
         let totals = LeafStageTotals::from_rows(leaf_rows);
         let routing_step = local_step(local_rows, "routing");
@@ -2669,6 +2771,14 @@ impl StageContainmentRecord {
         let prefetch_step = local_step(local_rows, "prefetch");
         let candidate_step = local_step(local_rows, "candidates");
         let rerank_step = local_step(local_rows, "heap_rerank");
+        let candidate_snapshot_count = candidate_rank_rows.first().map_or_else(
+            || candidate_step.map_or(totals.candidate_row_count, |row| row.candidate_count),
+            |row| row.approximate_candidate_count,
+        );
+        let rerank_snapshot_prefix_count = candidate_rank_rows.first().map_or_else(
+            || rerank_locality.map_or(0, |row| row.rerank_prefix_count),
+            |row| row.rerank_prefix_count,
+        );
 
         let mut rows = Vec::with_capacity(6);
         rows.push(Self::build(
@@ -2755,17 +2865,21 @@ impl StageContainmentRecord {
             query_id,
             4,
             "local_candidate_frontier",
-            "final_hits_lower_bound_until_target_candidate_rank_snapshot",
+            "target_candidate_rank_snapshot",
             truth_ids,
-            |_truth_index, truth_id| predicted_id_set.contains(truth_id),
-            |truth_index, truth_id| {
+            |truth_index, _truth_id| {
+                target_candidate_rank_row_retained(
+                    candidate_rank_by_ordinal.get(&truth_index).copied(),
+                )
+            },
+            |truth_index, _truth_id| {
                 stage_missing_reason_for_candidate_frontier(
+                    candidate_rank_by_ordinal.get(&truth_index).copied(),
                     rank_by_ordinal.get(&truth_index).copied(),
-                    predicted_id_set.contains(truth_id),
                 )
             },
             candidate_step,
-            candidate_step.map_or(totals.candidate_row_count, |row| row.candidate_count),
+            candidate_snapshot_count,
             totals.leaf_row_segment_read_bytes,
             totals.leaf_object_bytes,
             totals.leaf_summary_object_bytes,
@@ -2786,17 +2900,21 @@ impl StageContainmentRecord {
             query_id,
             5,
             "exact_source_rerank_frontier",
-            "final_hits_lower_bound_until_target_candidate_rank_snapshot",
+            "target_candidate_rank_snapshot",
             truth_ids,
-            |_truth_index, truth_id| predicted_id_set.contains(truth_id),
-            |truth_index, truth_id| {
+            |truth_index, _truth_id| {
+                target_candidate_rank_row_in_rerank_prefix(
+                    candidate_rank_by_ordinal.get(&truth_index).copied(),
+                )
+            },
+            |truth_index, _truth_id| {
                 stage_missing_reason_for_rerank_frontier(
+                    candidate_rank_by_ordinal.get(&truth_index).copied(),
                     rank_by_ordinal.get(&truth_index).copied(),
-                    predicted_id_set.contains(truth_id),
                 )
             },
             rerank_step,
-            rerank_locality.map_or(0, |row| row.rerank_prefix_count),
+            rerank_snapshot_prefix_count,
             0,
             totals.leaf_object_bytes,
             totals.leaf_summary_object_bytes,
@@ -2819,6 +2937,7 @@ impl StageContainmentRecord {
             |truth_index, truth_id| {
                 stage_missing_reason_for_final(
                     rank_by_ordinal.get(&truth_index).copied(),
+                    candidate_rank_by_ordinal.get(&truth_index).copied(),
                     predicted_id_set.contains(truth_id),
                 )
             },
@@ -2960,21 +3079,56 @@ fn stage_missing_reason_for_block(row: Option<&LeafBlockRankRow>) -> &'static st
     }
 }
 
+fn target_candidate_rank_row_retained(row: Option<&TargetCandidateRankRow>) -> bool {
+    row.is_some_and(|row| row.status == "target_candidate_ranked" && row.approximate_rank.is_some())
+}
+
+fn target_candidate_rank_row_in_rerank_prefix(row: Option<&TargetCandidateRankRow>) -> bool {
+    row.is_some_and(|row| {
+        row.status == "target_candidate_ranked"
+            && row.approximate_rank.is_some()
+            && row.selected_by_rerank_prefix == Some(true)
+    })
+}
+
 fn stage_missing_reason_for_candidate_frontier(
+    candidate_row: Option<&TargetCandidateRankRow>,
     row: Option<&LeafBlockRankRow>,
-    final_hit: bool,
 ) -> &'static str {
-    if final_hit {
+    if target_candidate_rank_row_retained(candidate_row) {
         return "contained";
     }
     if !target_rank_row_block_selected(row) {
         return stage_missing_reason_for_block(row);
     }
-    "candidate_or_later_cap"
+    match candidate_row.map(|row| row.status.as_str()) {
+        Some("nprobe_zero") => "nprobe_zero",
+        Some("candidate_not_retained") => "candidate_not_retained",
+        Some(_) => "candidate_rank_missing",
+        None => "candidate_rank_row_missing",
+    }
 }
 
 fn stage_missing_reason_for_rerank_frontier(
+    candidate_row: Option<&TargetCandidateRankRow>,
     row: Option<&LeafBlockRankRow>,
+) -> &'static str {
+    if target_candidate_rank_row_in_rerank_prefix(candidate_row) {
+        return "contained";
+    }
+    if !target_candidate_rank_row_retained(candidate_row) {
+        return stage_missing_reason_for_candidate_frontier(candidate_row, row);
+    }
+    match candidate_row.and_then(|row| row.selected_by_rerank_prefix) {
+        Some(false) => "rerank_width_cap",
+        Some(true) => "contained",
+        None => "rerank_prefix_unknown",
+    }
+}
+
+fn stage_missing_reason_for_final(
+    row: Option<&LeafBlockRankRow>,
+    candidate_row: Option<&TargetCandidateRankRow>,
     final_hit: bool,
 ) -> &'static str {
     if final_hit {
@@ -2983,15 +3137,11 @@ fn stage_missing_reason_for_rerank_frontier(
     if !target_rank_row_block_selected(row) {
         return stage_missing_reason_for_block(row);
     }
-    "rerank_or_final_topk_cap"
-}
-
-fn stage_missing_reason_for_final(row: Option<&LeafBlockRankRow>, final_hit: bool) -> &'static str {
-    if final_hit {
-        return "contained";
+    if !target_candidate_rank_row_retained(candidate_row) {
+        return stage_missing_reason_for_candidate_frontier(candidate_row, row);
     }
-    if !target_rank_row_block_selected(row) {
-        return stage_missing_reason_for_block(row);
+    if !target_candidate_rank_row_in_rerank_prefix(candidate_row) {
+        return stage_missing_reason_for_rerank_frontier(candidate_row, row);
     }
     "not_returned_in_topk"
 }
@@ -4117,6 +4267,32 @@ mod tests {
         }
     }
 
+    fn candidate_ranked_row(
+        target_ordinal: i64,
+        status: &str,
+        approximate_rank: Option<i64>,
+        selected_by_rerank_prefix: Option<bool>,
+    ) -> TargetCandidateRankRow {
+        TargetCandidateRankRow {
+            target_ordinal,
+            target_local_sequence: 100 + target_ordinal,
+            status: status.to_owned(),
+            approximate_candidate_count: 300,
+            rerank_prefix_count: 25,
+            approximate_rank,
+            selected_by_rerank_prefix,
+            pid: Some(10 + target_ordinal),
+            node_id: Some(1),
+            local_store_id: Some(1),
+            object_version: Some(1),
+            row_index: Some(target_ordinal),
+            assignment_flags: Some(0),
+            approximate_score: Some(0.1),
+            heap_block: Some(200 + target_ordinal),
+            heap_offset: Some(1),
+        }
+    }
+
     fn ready_endpoint_identity() -> EndpointIdentityRow {
         EndpointIdentityRow {
             tuple_transport_capabilities: vec!["pg_binary_attr_v1".to_owned()],
@@ -4309,16 +4485,26 @@ mod tests {
             96,
             1,
             42,
-            &[1, 2, 3, 4],
+            &[1, 2, 3, 4, 5, 6],
             &[1],
             &local_rows,
             &leaf_rows,
             Some(&rerank_locality),
             &[
+                candidate_ranked_row(0, "target_candidate_ranked", Some(1), Some(true)),
+                candidate_ranked_row(1, "candidate_not_retained", None, Some(false)),
+                candidate_ranked_row(2, "candidate_not_retained", None, Some(false)),
+                candidate_ranked_row(3, "target_candidate_ranked", Some(50), Some(false)),
+                candidate_ranked_row(4, "target_candidate_ranked", Some(10), Some(true)),
+                candidate_ranked_row(5, "candidate_not_retained", None, Some(false)),
+            ],
+            &[
                 ranked_row(0, "target_block_ranked", Some(true)),
                 ranked_row(1, "not_found_in_routed_leaves", None),
                 ranked_row(2, "target_block_ranked", Some(false)),
                 ranked_row(3, "target_block_ranked", Some(true)),
+                ranked_row(4, "target_block_ranked", Some(true)),
+                ranked_row(5, "target_block_ranked", Some(true)),
             ],
         )
         .expect("stage containment rows");
@@ -4328,14 +4514,15 @@ mod tests {
             .iter()
             .find(|row| row.stage_name == "topology_route_set")
             .expect("route stage");
-        assert_eq!(route.contained_truth_count, 3);
+        assert_eq!(route.contained_truth_count, 5);
         assert_eq!(route.missing_reason_counts["routing_miss"], 1);
 
         let blocks = rows
             .iter()
             .find(|row| row.stage_name == "selected_leaf_blocks")
             .expect("block stage");
-        assert_eq!(blocks.contained_truth_count, 2);
+        assert_eq!(blocks.contained_truth_count, 4);
+        assert_eq!(blocks.missing_reason_counts["routing_miss"], 1);
         assert_eq!(blocks.missing_reason_counts["block_pruned_global_cap"], 1);
         assert_eq!(blocks.leaf_block_selected_count, 6);
 
@@ -4345,21 +4532,41 @@ mod tests {
             .expect("candidate stage");
         assert_eq!(
             candidates.containment_basis,
-            "final_hits_lower_bound_until_target_candidate_rank_snapshot"
+            "target_candidate_rank_snapshot"
         );
-        assert_eq!(candidates.contained_truth_count, 1);
+        assert_eq!(candidates.contained_truth_count, 3);
         assert_eq!(candidates.candidate_or_object_count, 300);
         assert_eq!(candidates.blocked_count, 275);
+        assert_eq!(candidates.missing_reason_counts["routing_miss"], 1);
         assert_eq!(
-            candidates.missing_reason_counts["candidate_or_later_cap"],
+            candidates.missing_reason_counts["block_pruned_global_cap"],
             1
         );
+        assert_eq!(
+            candidates.missing_reason_counts["candidate_not_retained"],
+            1
+        );
+
+        let rerank = rows
+            .iter()
+            .find(|row| row.stage_name == "exact_source_rerank_frontier")
+            .expect("rerank stage");
+        assert_eq!(rerank.containment_basis, "target_candidate_rank_snapshot");
+        assert_eq!(rerank.contained_truth_count, 2);
+        assert_eq!(rerank.candidate_or_object_count, 25);
+        assert_eq!(rerank.missing_reason_counts["rerank_width_cap"], 1);
+        assert_eq!(rerank.missing_reason_counts["candidate_not_retained"], 1);
 
         let final_topk = rows
             .iter()
             .find(|row| row.stage_name == "final_top_k")
             .expect("final stage");
         assert_eq!(final_topk.contained_truth_ranks, vec![1]);
+        assert_eq!(final_topk.missing_reason_counts["rerank_width_cap"], 1);
+        assert_eq!(
+            final_topk.missing_reason_counts["candidate_not_retained"],
+            1
+        );
         assert_eq!(final_topk.missing_reason_counts["not_returned_in_topk"], 1);
     }
 

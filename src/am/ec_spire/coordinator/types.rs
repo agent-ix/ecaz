@@ -1863,6 +1863,31 @@ pub(crate) struct SpireIndexScanLeafBlockRankSnapshotRow {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub(crate) struct SpireIndexScanTargetCandidateRankSnapshotRow {
+    pub(crate) active_epoch: u64,
+    pub(crate) effective_nprobe: u32,
+    pub(crate) effective_nprobe_source: &'static str,
+    pub(crate) effective_rerank_width: u64,
+    pub(crate) effective_rerank_width_source: &'static str,
+    pub(crate) target_ordinal: u64,
+    pub(crate) target_local_sequence: u64,
+    pub(crate) status: &'static str,
+    pub(crate) approximate_candidate_count: u64,
+    pub(crate) rerank_prefix_count: u64,
+    pub(crate) approximate_rank: Option<u64>,
+    pub(crate) selected_by_rerank_prefix: Option<bool>,
+    pub(crate) pid: Option<u64>,
+    pub(crate) node_id: Option<u32>,
+    pub(crate) local_store_id: Option<u32>,
+    pub(crate) object_version: Option<u64>,
+    pub(crate) row_index: Option<u32>,
+    pub(crate) assignment_flags: Option<u16>,
+    pub(crate) approximate_score: Option<f32>,
+    pub(crate) heap_block: Option<u32>,
+    pub(crate) heap_offset: Option<u16>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct SpireIndexLeafTargetAssignmentSnapshotRow {
     pub(crate) active_epoch: u64,
     pub(crate) target_ordinal: u64,
