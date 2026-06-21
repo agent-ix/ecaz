@@ -1,0 +1,14 @@
+Script started on 2026-06-20 18:53:42-07:00 [<not executed on terminal>]
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.16s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-a1bfb6a215f6e239)
+
+running 4 tests
+test am::ec_ivf::options::tests::coarse_rerank_accepts_exact_dequant_for_compact_quantized_formats ... ok
+test am::ec_ivf::page::tests::metadata_roundtrips_exact_dequant_rerank_score_mode ... ok
+test am::ec_ivf::options::tests::coarse_rerank_rejects_exact_dequant_for_f16 - should panic ... ok
+test am::ec_ivf::rerank::tests::compact_index_rerank_exposes_exact_dequant_score_mode ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 2212 filtered out; finished in 0.08s
+
+
+Script done on 2026-06-20 18:53:43-07:00 [COMMAND_EXIT_CODE="0"]
