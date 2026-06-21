@@ -1,0 +1,2132 @@
+{
+  "suite": "task118-hnsw-quantized-recall-attribution",
+  "schema_version": 1,
+  "config": "crates/ecaz-cli/suites/task118-hnsw-quantized-recall-attribution.json",
+  "config_sha256": "3dbbd641aeb4aeac6b88f4126c9564c353d0566f571c6dd7f6f2fc8d88a673d3",
+  "dry_run": true,
+  "generated_at_unix_ms": 1782054114413,
+  "connection": {
+    "database": "tqvector_bench",
+    "host": null,
+    "port": null,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "load-10k-hnsw-turboquant",
+      "kind": "load",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/load-10k-hnsw-turboquant.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "task118_real10k_hnsw_turboquant",
+        "--profile",
+        "ec_hnsw",
+        "--corpus-file",
+        "data/staged-current/ec_real_10k_corpus.tsv",
+        "--queries-file",
+        "data/staged-current/ec_real_10k_queries.tsv",
+        "--manifest-file",
+        "data/staged-current/ec_real_10k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--m",
+        "16",
+        "--ef-construction",
+        "128",
+        "--storage-format",
+        "turboquant"
+      ],
+      "selected": true,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "load",
+        "ec_real_10k",
+        "hnsw",
+        "turboquant"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/load-10k-hnsw-turboquant.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "load-10k-hnsw-pq-fastscan",
+      "kind": "load",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/load-10k-hnsw-pq-fastscan.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "task118_real10k_hnsw_pq_fastscan",
+        "--profile",
+        "ec_hnsw",
+        "--corpus-file",
+        "data/staged-current/ec_real_10k_corpus.tsv",
+        "--queries-file",
+        "data/staged-current/ec_real_10k_queries.tsv",
+        "--manifest-file",
+        "data/staged-current/ec_real_10k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--m",
+        "16",
+        "--ef-construction",
+        "128",
+        "--storage-format",
+        "pq_fastscan"
+      ],
+      "selected": true,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "load",
+        "ec_real_10k",
+        "hnsw",
+        "pq_fastscan"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/load-10k-hnsw-pq-fastscan.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "load-10k-hnsw-rabitq",
+      "kind": "load",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/load-10k-hnsw-rabitq.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "task118_real10k_hnsw_rabitq",
+        "--profile",
+        "ec_hnsw",
+        "--corpus-file",
+        "data/staged-current/ec_real_10k_corpus.tsv",
+        "--queries-file",
+        "data/staged-current/ec_real_10k_queries.tsv",
+        "--manifest-file",
+        "data/staged-current/ec_real_10k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--m",
+        "16",
+        "--ef-construction",
+        "128",
+        "--storage-format",
+        "rabitq"
+      ],
+      "selected": true,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "load",
+        "ec_real_10k",
+        "hnsw",
+        "rabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/load-10k-hnsw-rabitq.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "recall-10k-hnsw-turboquant",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "recall",
+        "--prefix",
+        "task118_real10k_hnsw_turboquant",
+        "--profile",
+        "ec_hnsw",
+        "--k",
+        "10",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--queries-limit",
+        "200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--truth-cache-file",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/truth-10k-k10.json",
+        "--log-output",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/recall-10k-hnsw-turboquant.log"
+      ],
+      "selected": true,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "recall",
+        "ec_real_10k",
+        "hnsw",
+        "turboquant"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/recall-10k-hnsw-turboquant.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "recall-10k-hnsw-pq-fastscan",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "recall",
+        "--prefix",
+        "task118_real10k_hnsw_pq_fastscan",
+        "--profile",
+        "ec_hnsw",
+        "--k",
+        "10",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--queries-limit",
+        "200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--truth-cache-file",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/truth-10k-k10.json",
+        "--log-output",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/recall-10k-hnsw-pq-fastscan.log"
+      ],
+      "selected": true,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "recall",
+        "ec_real_10k",
+        "hnsw",
+        "pq_fastscan"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/recall-10k-hnsw-pq-fastscan.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "recall-10k-hnsw-rabitq",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "recall",
+        "--prefix",
+        "task118_real10k_hnsw_rabitq",
+        "--profile",
+        "ec_hnsw",
+        "--k",
+        "10",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--queries-limit",
+        "200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--truth-cache-file",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/truth-10k-k10.json",
+        "--log-output",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/recall-10k-hnsw-rabitq.log"
+      ],
+      "selected": true,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "recall",
+        "ec_real_10k",
+        "hnsw",
+        "rabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/recall-10k-hnsw-rabitq.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "frontier-10k-hnsw-turboquant",
+      "kind": "hnsw-frontier",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "hnsw-frontier",
+        "--prefix",
+        "task118_real10k_hnsw_turboquant",
+        "--m",
+        "16",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--queries-limit",
+        "200",
+        "--log-output",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/frontier-10k-hnsw-turboquant.log",
+        "--jsonl-output",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/frontier-10k-hnsw-turboquant.jsonl"
+      ],
+      "selected": true,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "frontier",
+        "ec_real_10k",
+        "hnsw",
+        "turboquant"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/frontier-10k-hnsw-turboquant.log",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/frontier-10k-hnsw-turboquant.jsonl"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "frontier-10k-hnsw-pq-fastscan",
+      "kind": "hnsw-frontier",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "hnsw-frontier",
+        "--prefix",
+        "task118_real10k_hnsw_pq_fastscan",
+        "--m",
+        "16",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--queries-limit",
+        "200",
+        "--log-output",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/frontier-10k-hnsw-pq-fastscan.log",
+        "--jsonl-output",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/frontier-10k-hnsw-pq-fastscan.jsonl"
+      ],
+      "selected": true,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "frontier",
+        "ec_real_10k",
+        "hnsw",
+        "pq_fastscan"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/frontier-10k-hnsw-pq-fastscan.log",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/frontier-10k-hnsw-pq-fastscan.jsonl"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "frontier-10k-hnsw-rabitq",
+      "kind": "hnsw-frontier",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "hnsw-frontier",
+        "--prefix",
+        "task118_real10k_hnsw_rabitq",
+        "--m",
+        "16",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--queries-limit",
+        "200",
+        "--log-output",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/frontier-10k-hnsw-rabitq.log",
+        "--jsonl-output",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/frontier-10k-hnsw-rabitq.jsonl"
+      ],
+      "selected": true,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "frontier",
+        "ec_real_10k",
+        "hnsw",
+        "rabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/frontier-10k-hnsw-rabitq.log",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/frontier-10k-hnsw-rabitq.jsonl"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "score-correlation-10k-hnsw-turboquant",
+      "kind": "hnsw-score-correlation",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "hnsw-score-correlation",
+        "--prefix",
+        "task118_real10k_hnsw_turboquant",
+        "--m",
+        "16",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--queries-limit",
+        "200",
+        "--log-output",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/score-correlation-10k-hnsw-turboquant.log",
+        "--jsonl-output",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/score-correlation-10k-hnsw-turboquant.jsonl"
+      ],
+      "selected": true,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "score-correlation",
+        "ec_real_10k",
+        "hnsw",
+        "turboquant"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/score-correlation-10k-hnsw-turboquant.log",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/score-correlation-10k-hnsw-turboquant.jsonl"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "score-correlation-10k-hnsw-pq-fastscan",
+      "kind": "hnsw-score-correlation",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "hnsw-score-correlation",
+        "--prefix",
+        "task118_real10k_hnsw_pq_fastscan",
+        "--m",
+        "16",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--queries-limit",
+        "200",
+        "--log-output",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/score-correlation-10k-hnsw-pq-fastscan.log",
+        "--jsonl-output",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/score-correlation-10k-hnsw-pq-fastscan.jsonl"
+      ],
+      "selected": true,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "score-correlation",
+        "ec_real_10k",
+        "hnsw",
+        "pq_fastscan"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/score-correlation-10k-hnsw-pq-fastscan.log",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/score-correlation-10k-hnsw-pq-fastscan.jsonl"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "score-correlation-10k-hnsw-rabitq",
+      "kind": "hnsw-score-correlation",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "hnsw-score-correlation",
+        "--prefix",
+        "task118_real10k_hnsw_rabitq",
+        "--m",
+        "16",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--queries-limit",
+        "200",
+        "--log-output",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/score-correlation-10k-hnsw-rabitq.log",
+        "--jsonl-output",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/score-correlation-10k-hnsw-rabitq.jsonl"
+      ],
+      "selected": true,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "score-correlation",
+        "ec_real_10k",
+        "hnsw",
+        "rabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/score-correlation-10k-hnsw-rabitq.log",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/score-correlation-10k-hnsw-rabitq.jsonl"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "latency-10k-hnsw-turboquant",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "latency",
+        "--prefix",
+        "task118_real10k_hnsw_turboquant",
+        "--profile",
+        "ec_hnsw",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "200",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--sample-backend-memory",
+        "--cache-state",
+        "post_recall_warm",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/latency-10k-hnsw-turboquant.log"
+      ],
+      "selected": true,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "latency",
+        "ec_real_10k",
+        "hnsw",
+        "turboquant",
+        "post_recall_warm"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/latency-10k-hnsw-turboquant.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "latency-10k-hnsw-pq-fastscan",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "latency",
+        "--prefix",
+        "task118_real10k_hnsw_pq_fastscan",
+        "--profile",
+        "ec_hnsw",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "200",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--sample-backend-memory",
+        "--cache-state",
+        "post_recall_warm",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/latency-10k-hnsw-pq-fastscan.log"
+      ],
+      "selected": true,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "latency",
+        "ec_real_10k",
+        "hnsw",
+        "pq_fastscan",
+        "post_recall_warm"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/latency-10k-hnsw-pq-fastscan.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "latency-10k-hnsw-rabitq",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "latency",
+        "--prefix",
+        "task118_real10k_hnsw_rabitq",
+        "--profile",
+        "ec_hnsw",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "200",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--sample-backend-memory",
+        "--cache-state",
+        "post_recall_warm",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/latency-10k-hnsw-rabitq.log"
+      ],
+      "selected": true,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "latency",
+        "ec_real_10k",
+        "hnsw",
+        "rabitq",
+        "post_recall_warm"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/latency-10k-hnsw-rabitq.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "storage-10k-hnsw-turboquant",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/storage-10k-hnsw-turboquant.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "task118_real10k_hnsw_turboquant"
+      ],
+      "selected": true,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "storage",
+        "ec_real_10k",
+        "hnsw",
+        "turboquant"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/storage-10k-hnsw-turboquant.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "storage-10k-hnsw-pq-fastscan",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/storage-10k-hnsw-pq-fastscan.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "task118_real10k_hnsw_pq_fastscan"
+      ],
+      "selected": true,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "storage",
+        "ec_real_10k",
+        "hnsw",
+        "pq_fastscan"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/storage-10k-hnsw-pq-fastscan.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "storage-10k-hnsw-rabitq",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/storage-10k-hnsw-rabitq.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "task118_real10k_hnsw_rabitq"
+      ],
+      "selected": true,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "storage",
+        "ec_real_10k",
+        "hnsw",
+        "rabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/storage-10k-hnsw-rabitq.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "load-50k-hnsw-turboquant",
+      "kind": "load",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/load-50k-hnsw-turboquant.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "task118_real50k_hnsw_turboquant",
+        "--profile",
+        "ec_hnsw",
+        "--corpus-file",
+        "data/staged-current/ec_real_50k_corpus.tsv",
+        "--queries-file",
+        "data/staged-current/ec_real_50k_queries.tsv",
+        "--manifest-file",
+        "data/staged-current/ec_real_50k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--m",
+        "16",
+        "--ef-construction",
+        "128",
+        "--storage-format",
+        "turboquant"
+      ],
+      "selected": true,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "load",
+        "ec_real_50k",
+        "hnsw",
+        "turboquant"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/load-50k-hnsw-turboquant.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "load-50k-hnsw-pq-fastscan",
+      "kind": "load",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/load-50k-hnsw-pq-fastscan.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "task118_real50k_hnsw_pq_fastscan",
+        "--profile",
+        "ec_hnsw",
+        "--corpus-file",
+        "data/staged-current/ec_real_50k_corpus.tsv",
+        "--queries-file",
+        "data/staged-current/ec_real_50k_queries.tsv",
+        "--manifest-file",
+        "data/staged-current/ec_real_50k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--m",
+        "16",
+        "--ef-construction",
+        "128",
+        "--storage-format",
+        "pq_fastscan"
+      ],
+      "selected": true,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "load",
+        "ec_real_50k",
+        "hnsw",
+        "pq_fastscan"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/load-50k-hnsw-pq-fastscan.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "load-50k-hnsw-rabitq",
+      "kind": "load",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/load-50k-hnsw-rabitq.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "task118_real50k_hnsw_rabitq",
+        "--profile",
+        "ec_hnsw",
+        "--corpus-file",
+        "data/staged-current/ec_real_50k_corpus.tsv",
+        "--queries-file",
+        "data/staged-current/ec_real_50k_queries.tsv",
+        "--manifest-file",
+        "data/staged-current/ec_real_50k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--m",
+        "16",
+        "--ef-construction",
+        "128",
+        "--storage-format",
+        "rabitq"
+      ],
+      "selected": true,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "load",
+        "ec_real_50k",
+        "hnsw",
+        "rabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/load-50k-hnsw-rabitq.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "recall-50k-hnsw-turboquant",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "recall",
+        "--prefix",
+        "task118_real50k_hnsw_turboquant",
+        "--profile",
+        "ec_hnsw",
+        "--k",
+        "10",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--queries-limit",
+        "200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--truth-cache-file",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/truth-50k-k10.json",
+        "--log-output",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/recall-50k-hnsw-turboquant.log"
+      ],
+      "selected": true,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "recall",
+        "ec_real_50k",
+        "hnsw",
+        "turboquant"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/recall-50k-hnsw-turboquant.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "recall-50k-hnsw-pq-fastscan",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "recall",
+        "--prefix",
+        "task118_real50k_hnsw_pq_fastscan",
+        "--profile",
+        "ec_hnsw",
+        "--k",
+        "10",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--queries-limit",
+        "200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--truth-cache-file",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/truth-50k-k10.json",
+        "--log-output",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/recall-50k-hnsw-pq-fastscan.log"
+      ],
+      "selected": true,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "recall",
+        "ec_real_50k",
+        "hnsw",
+        "pq_fastscan"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/recall-50k-hnsw-pq-fastscan.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "recall-50k-hnsw-rabitq",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "recall",
+        "--prefix",
+        "task118_real50k_hnsw_rabitq",
+        "--profile",
+        "ec_hnsw",
+        "--k",
+        "10",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--queries-limit",
+        "200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--truth-cache-file",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/truth-50k-k10.json",
+        "--log-output",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/recall-50k-hnsw-rabitq.log"
+      ],
+      "selected": true,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "recall",
+        "ec_real_50k",
+        "hnsw",
+        "rabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/recall-50k-hnsw-rabitq.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "frontier-50k-hnsw-turboquant",
+      "kind": "hnsw-frontier",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "hnsw-frontier",
+        "--prefix",
+        "task118_real50k_hnsw_turboquant",
+        "--m",
+        "16",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--queries-limit",
+        "200",
+        "--log-output",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/frontier-50k-hnsw-turboquant.log",
+        "--jsonl-output",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/frontier-50k-hnsw-turboquant.jsonl"
+      ],
+      "selected": true,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "frontier",
+        "ec_real_50k",
+        "hnsw",
+        "turboquant"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/frontier-50k-hnsw-turboquant.log",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/frontier-50k-hnsw-turboquant.jsonl"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "frontier-50k-hnsw-pq-fastscan",
+      "kind": "hnsw-frontier",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "hnsw-frontier",
+        "--prefix",
+        "task118_real50k_hnsw_pq_fastscan",
+        "--m",
+        "16",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--queries-limit",
+        "200",
+        "--log-output",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/frontier-50k-hnsw-pq-fastscan.log",
+        "--jsonl-output",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/frontier-50k-hnsw-pq-fastscan.jsonl"
+      ],
+      "selected": true,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "frontier",
+        "ec_real_50k",
+        "hnsw",
+        "pq_fastscan"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/frontier-50k-hnsw-pq-fastscan.log",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/frontier-50k-hnsw-pq-fastscan.jsonl"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "frontier-50k-hnsw-rabitq",
+      "kind": "hnsw-frontier",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "hnsw-frontier",
+        "--prefix",
+        "task118_real50k_hnsw_rabitq",
+        "--m",
+        "16",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--queries-limit",
+        "200",
+        "--log-output",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/frontier-50k-hnsw-rabitq.log",
+        "--jsonl-output",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/frontier-50k-hnsw-rabitq.jsonl"
+      ],
+      "selected": true,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "frontier",
+        "ec_real_50k",
+        "hnsw",
+        "rabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/frontier-50k-hnsw-rabitq.log",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/frontier-50k-hnsw-rabitq.jsonl"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "score-correlation-50k-hnsw-turboquant",
+      "kind": "hnsw-score-correlation",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "hnsw-score-correlation",
+        "--prefix",
+        "task118_real50k_hnsw_turboquant",
+        "--m",
+        "16",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--queries-limit",
+        "200",
+        "--log-output",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/score-correlation-50k-hnsw-turboquant.log",
+        "--jsonl-output",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/score-correlation-50k-hnsw-turboquant.jsonl"
+      ],
+      "selected": true,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "score-correlation",
+        "ec_real_50k",
+        "hnsw",
+        "turboquant"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/score-correlation-50k-hnsw-turboquant.log",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/score-correlation-50k-hnsw-turboquant.jsonl"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "score-correlation-50k-hnsw-pq-fastscan",
+      "kind": "hnsw-score-correlation",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "hnsw-score-correlation",
+        "--prefix",
+        "task118_real50k_hnsw_pq_fastscan",
+        "--m",
+        "16",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--queries-limit",
+        "200",
+        "--log-output",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/score-correlation-50k-hnsw-pq-fastscan.log",
+        "--jsonl-output",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/score-correlation-50k-hnsw-pq-fastscan.jsonl"
+      ],
+      "selected": true,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "score-correlation",
+        "ec_real_50k",
+        "hnsw",
+        "pq_fastscan"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/score-correlation-50k-hnsw-pq-fastscan.log",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/score-correlation-50k-hnsw-pq-fastscan.jsonl"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "score-correlation-50k-hnsw-rabitq",
+      "kind": "hnsw-score-correlation",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "hnsw-score-correlation",
+        "--prefix",
+        "task118_real50k_hnsw_rabitq",
+        "--m",
+        "16",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--queries-limit",
+        "200",
+        "--log-output",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/score-correlation-50k-hnsw-rabitq.log",
+        "--jsonl-output",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/score-correlation-50k-hnsw-rabitq.jsonl"
+      ],
+      "selected": true,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "score-correlation",
+        "ec_real_50k",
+        "hnsw",
+        "rabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/score-correlation-50k-hnsw-rabitq.log",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/score-correlation-50k-hnsw-rabitq.jsonl"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "latency-50k-hnsw-turboquant",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "latency",
+        "--prefix",
+        "task118_real50k_hnsw_turboquant",
+        "--profile",
+        "ec_hnsw",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "200",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--sample-backend-memory",
+        "--cache-state",
+        "post_recall_warm",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/latency-50k-hnsw-turboquant.log"
+      ],
+      "selected": true,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "latency",
+        "ec_real_50k",
+        "hnsw",
+        "turboquant",
+        "post_recall_warm"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/latency-50k-hnsw-turboquant.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "latency-50k-hnsw-pq-fastscan",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "latency",
+        "--prefix",
+        "task118_real50k_hnsw_pq_fastscan",
+        "--profile",
+        "ec_hnsw",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "200",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--sample-backend-memory",
+        "--cache-state",
+        "post_recall_warm",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/latency-50k-hnsw-pq-fastscan.log"
+      ],
+      "selected": true,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "latency",
+        "ec_real_50k",
+        "hnsw",
+        "pq_fastscan",
+        "post_recall_warm"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/latency-50k-hnsw-pq-fastscan.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "latency-50k-hnsw-rabitq",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "latency",
+        "--prefix",
+        "task118_real50k_hnsw_rabitq",
+        "--profile",
+        "ec_hnsw",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "200",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--sample-backend-memory",
+        "--cache-state",
+        "post_recall_warm",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/latency-50k-hnsw-rabitq.log"
+      ],
+      "selected": true,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "latency",
+        "ec_real_50k",
+        "hnsw",
+        "rabitq",
+        "post_recall_warm"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/latency-50k-hnsw-rabitq.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "storage-50k-hnsw-turboquant",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/storage-50k-hnsw-turboquant.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "task118_real50k_hnsw_turboquant"
+      ],
+      "selected": true,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "storage",
+        "ec_real_50k",
+        "hnsw",
+        "turboquant"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/storage-50k-hnsw-turboquant.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "storage-50k-hnsw-pq-fastscan",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/storage-50k-hnsw-pq-fastscan.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "task118_real50k_hnsw_pq_fastscan"
+      ],
+      "selected": true,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "storage",
+        "ec_real_50k",
+        "hnsw",
+        "pq_fastscan"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/storage-50k-hnsw-pq-fastscan.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "storage-50k-hnsw-rabitq",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/storage-50k-hnsw-rabitq.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "task118_real50k_hnsw_rabitq"
+      ],
+      "selected": true,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "storage",
+        "ec_real_50k",
+        "hnsw",
+        "rabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/storage-50k-hnsw-rabitq.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "load-100k-hnsw-turboquant",
+      "kind": "load",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/load-100k-hnsw-turboquant.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "task118_real100k_hnsw_turboquant",
+        "--profile",
+        "ec_hnsw",
+        "--corpus-file",
+        "data/staged-current/ec_real_100k_corpus.tsv",
+        "--queries-file",
+        "data/staged-current/ec_real_100k_queries.tsv",
+        "--manifest-file",
+        "data/staged-current/ec_real_100k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--m",
+        "16",
+        "--ef-construction",
+        "128",
+        "--storage-format",
+        "turboquant"
+      ],
+      "selected": true,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "load",
+        "ec_real_100k",
+        "hnsw",
+        "turboquant"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/load-100k-hnsw-turboquant.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "load-100k-hnsw-pq-fastscan",
+      "kind": "load",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/load-100k-hnsw-pq-fastscan.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "task118_real100k_hnsw_pq_fastscan",
+        "--profile",
+        "ec_hnsw",
+        "--corpus-file",
+        "data/staged-current/ec_real_100k_corpus.tsv",
+        "--queries-file",
+        "data/staged-current/ec_real_100k_queries.tsv",
+        "--manifest-file",
+        "data/staged-current/ec_real_100k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--m",
+        "16",
+        "--ef-construction",
+        "128",
+        "--storage-format",
+        "pq_fastscan"
+      ],
+      "selected": true,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "load",
+        "ec_real_100k",
+        "hnsw",
+        "pq_fastscan"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/load-100k-hnsw-pq-fastscan.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "load-100k-hnsw-rabitq",
+      "kind": "load",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/load-100k-hnsw-rabitq.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "task118_real100k_hnsw_rabitq",
+        "--profile",
+        "ec_hnsw",
+        "--corpus-file",
+        "data/staged-current/ec_real_100k_corpus.tsv",
+        "--queries-file",
+        "data/staged-current/ec_real_100k_queries.tsv",
+        "--manifest-file",
+        "data/staged-current/ec_real_100k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--m",
+        "16",
+        "--ef-construction",
+        "128",
+        "--storage-format",
+        "rabitq"
+      ],
+      "selected": true,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "load",
+        "ec_real_100k",
+        "hnsw",
+        "rabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/load-100k-hnsw-rabitq.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "recall-100k-hnsw-turboquant",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "recall",
+        "--prefix",
+        "task118_real100k_hnsw_turboquant",
+        "--profile",
+        "ec_hnsw",
+        "--k",
+        "10",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--queries-limit",
+        "200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--truth-cache-file",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/truth-100k-k10.json",
+        "--log-output",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/recall-100k-hnsw-turboquant.log"
+      ],
+      "selected": true,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "recall",
+        "ec_real_100k",
+        "hnsw",
+        "turboquant"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/recall-100k-hnsw-turboquant.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "recall-100k-hnsw-pq-fastscan",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "recall",
+        "--prefix",
+        "task118_real100k_hnsw_pq_fastscan",
+        "--profile",
+        "ec_hnsw",
+        "--k",
+        "10",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--queries-limit",
+        "200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--truth-cache-file",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/truth-100k-k10.json",
+        "--log-output",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/recall-100k-hnsw-pq-fastscan.log"
+      ],
+      "selected": true,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "recall",
+        "ec_real_100k",
+        "hnsw",
+        "pq_fastscan"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/recall-100k-hnsw-pq-fastscan.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "recall-100k-hnsw-rabitq",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "recall",
+        "--prefix",
+        "task118_real100k_hnsw_rabitq",
+        "--profile",
+        "ec_hnsw",
+        "--k",
+        "10",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--queries-limit",
+        "200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--truth-cache-file",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/truth-100k-k10.json",
+        "--log-output",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/recall-100k-hnsw-rabitq.log"
+      ],
+      "selected": true,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "recall",
+        "ec_real_100k",
+        "hnsw",
+        "rabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/recall-100k-hnsw-rabitq.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "frontier-100k-hnsw-turboquant",
+      "kind": "hnsw-frontier",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "hnsw-frontier",
+        "--prefix",
+        "task118_real100k_hnsw_turboquant",
+        "--m",
+        "16",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--queries-limit",
+        "200",
+        "--log-output",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/frontier-100k-hnsw-turboquant.log",
+        "--jsonl-output",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/frontier-100k-hnsw-turboquant.jsonl"
+      ],
+      "selected": true,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "frontier",
+        "ec_real_100k",
+        "hnsw",
+        "turboquant"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/frontier-100k-hnsw-turboquant.log",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/frontier-100k-hnsw-turboquant.jsonl"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "frontier-100k-hnsw-pq-fastscan",
+      "kind": "hnsw-frontier",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "hnsw-frontier",
+        "--prefix",
+        "task118_real100k_hnsw_pq_fastscan",
+        "--m",
+        "16",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--queries-limit",
+        "200",
+        "--log-output",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/frontier-100k-hnsw-pq-fastscan.log",
+        "--jsonl-output",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/frontier-100k-hnsw-pq-fastscan.jsonl"
+      ],
+      "selected": true,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "frontier",
+        "ec_real_100k",
+        "hnsw",
+        "pq_fastscan"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/frontier-100k-hnsw-pq-fastscan.log",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/frontier-100k-hnsw-pq-fastscan.jsonl"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "frontier-100k-hnsw-rabitq",
+      "kind": "hnsw-frontier",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "hnsw-frontier",
+        "--prefix",
+        "task118_real100k_hnsw_rabitq",
+        "--m",
+        "16",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--queries-limit",
+        "200",
+        "--log-output",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/frontier-100k-hnsw-rabitq.log",
+        "--jsonl-output",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/frontier-100k-hnsw-rabitq.jsonl"
+      ],
+      "selected": true,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "frontier",
+        "ec_real_100k",
+        "hnsw",
+        "rabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/frontier-100k-hnsw-rabitq.log",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/frontier-100k-hnsw-rabitq.jsonl"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "score-correlation-100k-hnsw-turboquant",
+      "kind": "hnsw-score-correlation",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "hnsw-score-correlation",
+        "--prefix",
+        "task118_real100k_hnsw_turboquant",
+        "--m",
+        "16",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--queries-limit",
+        "200",
+        "--log-output",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/score-correlation-100k-hnsw-turboquant.log",
+        "--jsonl-output",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/score-correlation-100k-hnsw-turboquant.jsonl"
+      ],
+      "selected": true,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "score-correlation",
+        "ec_real_100k",
+        "hnsw",
+        "turboquant"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/score-correlation-100k-hnsw-turboquant.log",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/score-correlation-100k-hnsw-turboquant.jsonl"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "score-correlation-100k-hnsw-pq-fastscan",
+      "kind": "hnsw-score-correlation",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "hnsw-score-correlation",
+        "--prefix",
+        "task118_real100k_hnsw_pq_fastscan",
+        "--m",
+        "16",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--queries-limit",
+        "200",
+        "--log-output",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/score-correlation-100k-hnsw-pq-fastscan.log",
+        "--jsonl-output",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/score-correlation-100k-hnsw-pq-fastscan.jsonl"
+      ],
+      "selected": true,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "score-correlation",
+        "ec_real_100k",
+        "hnsw",
+        "pq_fastscan"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/score-correlation-100k-hnsw-pq-fastscan.log",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/score-correlation-100k-hnsw-pq-fastscan.jsonl"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "score-correlation-100k-hnsw-rabitq",
+      "kind": "hnsw-score-correlation",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "hnsw-score-correlation",
+        "--prefix",
+        "task118_real100k_hnsw_rabitq",
+        "--m",
+        "16",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--queries-limit",
+        "200",
+        "--log-output",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/score-correlation-100k-hnsw-rabitq.log",
+        "--jsonl-output",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/score-correlation-100k-hnsw-rabitq.jsonl"
+      ],
+      "selected": true,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "score-correlation",
+        "ec_real_100k",
+        "hnsw",
+        "rabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/score-correlation-100k-hnsw-rabitq.log",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/score-correlation-100k-hnsw-rabitq.jsonl"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "latency-100k-hnsw-turboquant",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "latency",
+        "--prefix",
+        "task118_real100k_hnsw_turboquant",
+        "--profile",
+        "ec_hnsw",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "200",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--sample-backend-memory",
+        "--cache-state",
+        "post_recall_warm",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/latency-100k-hnsw-turboquant.log"
+      ],
+      "selected": true,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "latency",
+        "ec_real_100k",
+        "hnsw",
+        "turboquant",
+        "post_recall_warm"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/latency-100k-hnsw-turboquant.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "latency-100k-hnsw-pq-fastscan",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "latency",
+        "--prefix",
+        "task118_real100k_hnsw_pq_fastscan",
+        "--profile",
+        "ec_hnsw",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "200",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--sample-backend-memory",
+        "--cache-state",
+        "post_recall_warm",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/latency-100k-hnsw-pq-fastscan.log"
+      ],
+      "selected": true,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "latency",
+        "ec_real_100k",
+        "hnsw",
+        "pq_fastscan",
+        "post_recall_warm"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/latency-100k-hnsw-pq-fastscan.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "latency-100k-hnsw-rabitq",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "latency",
+        "--prefix",
+        "task118_real100k_hnsw_rabitq",
+        "--profile",
+        "ec_hnsw",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "200",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--sample-backend-memory",
+        "--cache-state",
+        "post_recall_warm",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/latency-100k-hnsw-rabitq.log"
+      ],
+      "selected": true,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "latency",
+        "ec_real_100k",
+        "hnsw",
+        "rabitq",
+        "post_recall_warm"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/latency-100k-hnsw-rabitq.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "storage-100k-hnsw-turboquant",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/storage-100k-hnsw-turboquant.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "task118_real100k_hnsw_turboquant"
+      ],
+      "selected": true,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "storage",
+        "ec_real_100k",
+        "hnsw",
+        "turboquant"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/storage-100k-hnsw-turboquant.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "storage-100k-hnsw-pq-fastscan",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/storage-100k-hnsw-pq-fastscan.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "task118_real100k_hnsw_pq_fastscan"
+      ],
+      "selected": true,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "storage",
+        "ec_real_100k",
+        "hnsw",
+        "pq_fastscan"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/storage-100k-hnsw-pq-fastscan.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "storage-100k-hnsw-rabitq",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/storage-100k-hnsw-rabitq.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "task118_real100k_hnsw_rabitq"
+      ],
+      "selected": true,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "storage",
+        "ec_real_100k",
+        "hnsw",
+        "rabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts/storage-100k-hnsw-rabitq.log"
+      ],
+      "status": "dry-run"
+    }
+  ]
+}
