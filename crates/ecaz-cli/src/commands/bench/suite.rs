@@ -479,6 +479,8 @@ struct SpirePipelineStep {
     log_output: Option<PathBuf>,
     #[serde(default)]
     funnel_output: Option<PathBuf>,
+    #[serde(default)]
+    stage_containment_output: Option<PathBuf>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -2569,6 +2571,7 @@ impl SuiteStep {
                 .log_output
                 .iter()
                 .chain(step.funnel_output.iter())
+                .chain(step.stage_containment_output.iter())
                 .chain(step.leaf_block_rank_output.iter())
                 .chain(step.target_block_rank_output.iter())
                 .chain(step.miss_attribution_output.iter())
@@ -3131,6 +3134,11 @@ fn expand_spire_pipeline(step: &SpirePipelineStep, defaults: &SuiteDefaults) -> 
     }
     push_opt_path(&mut args, "--log-output", step.log_output.as_deref());
     push_opt_path(&mut args, "--funnel-output", step.funnel_output.as_deref());
+    push_opt_path(
+        &mut args,
+        "--stage-containment-output",
+        step.stage_containment_output.as_deref(),
+    );
     args
 }
 
@@ -4710,6 +4718,7 @@ mod tests {
             task87_candidate_batch_counters: Some(true),
             log_output: Some("spire-profile.log".into()),
             funnel_output: None,
+            stage_containment_output: Some("stage-containment.jsonl".into()),
         };
 
         let args = expand_spire_pipeline(&step, &defaults);
@@ -4750,6 +4759,9 @@ mod tests {
         assert!(args
             .windows(2)
             .any(|w| w == ["--miss-attribution-output", "miss-attribution.jsonl"]));
+        assert!(args
+            .windows(2)
+            .any(|w| w == ["--stage-containment-output", "stage-containment.jsonl"]));
         assert!(args
             .windows(2)
             .any(|w| w == ["--log-output", "spire-profile.log"]));
@@ -4807,6 +4819,7 @@ mod tests {
                 task87_candidate_batch_counters: None,
                 log_output: None,
                 funnel_output: None,
+                stage_containment_output: None,
             })],
         };
 
