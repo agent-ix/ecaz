@@ -1,0 +1,2 @@
+DROP INDEX
+NOTICE:  index "task111h047_1m_index_tq_default_w64_idx" does not exist, skipping
