@@ -2439,7 +2439,7 @@ pub(crate) fn debug_gettuple_frontier_containment_report(
     };
     debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
 
-    let (requested_ef_search, visited_before_output, pre_final_frontier_size, frontier_candidates) =
+    let (requested_ef_search, visited_before_output, leftover_frontier_candidates) =
         debug_with_scan_opaque(scan, |opaque| {
             (
                 debug_i32_count(opaque.bootstrap_frontier_limit, "ef_search"),
@@ -2449,7 +2449,6 @@ pub(crate) fn debug_gettuple_frontier_containment_report(
                         .unwrap_or(0),
                     "visited count",
                 ),
-                debug_i32_count(visible_frontier_candidates(opaque).len(), "frontier size"),
                 debug_frontier_heap_candidates(index_relation, opaque),
             )
         });
@@ -2497,6 +2496,7 @@ pub(crate) fn debug_gettuple_frontier_containment_report(
             quantized_reranked_candidates,
         )
     });
+    let pre_final_frontier_size = final_emitted_count;
     let candidates_dropped_before_exact_rerank =
         (final_visited_count - exact_reranked_candidates).max(0);
 
@@ -2505,7 +2505,7 @@ pub(crate) fn debug_gettuple_frontier_containment_report(
         requested_ef_search,
         visited_before_output,
         pre_final_frontier_size,
-        frontier_candidates,
+        frontier_candidates: leftover_frontier_candidates,
         final_visited_count,
         final_emitted_count,
         exact_reranked_candidates,

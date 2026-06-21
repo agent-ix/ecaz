@@ -230,7 +230,7 @@ async fn fetch_frontier_rows(
     let rows = client
         .query(
             "SELECT *
-             FROM ec_hnsw_graph_scan_recall_frontier_containment_rows($1, $2, $3, $4, $5, $6)
+             FROM tests.ec_hnsw_graph_scan_recall_frontier_containment_rows($1::text, $2::text, $3::text, $4::int4, $5::int4, $6::int4)
              ORDER BY query_index",
             &[&corpus_table, &query_table, &index_name, &m, &ef_search, &queries_limit],
         )
