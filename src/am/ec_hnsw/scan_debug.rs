@@ -2401,37 +2401,12 @@ fn debug_u64_i32_count(value: u64, label: &str) -> i32 {
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-fn debug_frontier_heap_candidates(
-    index_relation: pg_sys::Relation,
-    opaque: &TqScanOpaque,
-) -> Vec<DebugFrontierCandidateRow> {
-    visible_frontier_candidates(opaque)
-        .into_iter()
-        .flat_map(|candidate| {
-            let element =
-                debug_load_graph_element(index_relation, candidate.node, opaque.scan_graph_storage);
-            if element.deleted || element.heaptids.is_empty() {
-                return Vec::new();
-            }
-            element
-                .heaptids
-                .into_iter()
-                .map(|heap_tid| (debug_item_pointer_coords(heap_tid), candidate.score))
-                .collect::<Vec<_>>()
-        })
-        .collect()
-}
-
-#[cfg(any(test, feature = "pg_test"))]
 pub(crate) fn debug_gettuple_frontier_containment_report(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> DebugFrontierContainmentReport {
     let scan_state = debug_begin_heap_backed_scan(index_oid);
     let scan = scan_state.as_ptr();
-    // SAFETY: `scan_state` owns the live HNSW index scan descriptor until it is
-    // dropped at the end of this function.
-    let index_relation = unsafe { (*scan).indexRelation };
 
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
@@ -2439,19 +2414,17 @@ pub(crate) fn debug_gettuple_frontier_containment_report(
     };
     debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
 
-    let (requested_ef_search, visited_before_output, leftover_frontier_candidates) =
-        debug_with_scan_opaque(scan, |opaque| {
-            (
-                debug_i32_count(opaque.bootstrap_frontier_limit, "ef_search"),
-                debug_i32_count(
-                    scan_box_ref(opaque.visited_tids, opaque)
-                        .map(HashSet::len)
-                        .unwrap_or(0),
-                    "visited count",
-                ),
-                debug_frontier_heap_candidates(index_relation, opaque),
-            )
-        });
+    let (requested_ef_search, visited_before_output) = debug_with_scan_opaque(scan, |opaque| {
+        (
+            debug_i32_count(opaque.bootstrap_frontier_limit, "ef_search"),
+            debug_i32_count(
+                scan_box_ref(opaque.visited_tids, opaque)
+                    .map(HashSet::len)
+                    .unwrap_or(0),
+                "visited count",
+            ),
+        )
+    });
 
     let mut final_emitted_candidates = Vec::new();
     while let Some(heap_tid) =
@@ -2496,10 +2469,16 @@ pub(crate) fn debug_gettuple_frontier_containment_report(
             quantized_reranked_candidates,
         )
     });
-    let pre_final_frontier_size = debug_i32_count(
-        leftover_frontier_candidates.len(),
-        "pre-final frontier size",
-    );
+    // The visible frontier is not the durable candidate-pool surface for the
+    // graph-first scan: initial result staging happens through gettuple, and
+    // the SQL LIMIT truncation happens after the AM has produced this ordered
+    // ef_search-sized stream. Treat the full AM-emitted stream as the
+    // pre-final candidate pool for Task 118 containment diagnostics.
+    let pre_final_frontier_size = final_emitted_count;
+    let pre_final_frontier_candidates = final_emitted_candidates
+        .iter()
+        .map(|(heap_tid, approx_score, _comparison_score, _approx_rank)| (*heap_tid, *approx_score))
+        .collect::<Vec<_>>();
     let candidates_dropped_before_exact_rerank =
         (final_visited_count - exact_reranked_candidates).max(0);
 
@@ -2508,7 +2487,7 @@ pub(crate) fn debug_gettuple_frontier_containment_report(
         requested_ef_search,
         visited_before_output,
         pre_final_frontier_size,
-        frontier_candidates: leftover_frontier_candidates,
+        frontier_candidates: pre_final_frontier_candidates,
         final_visited_count,
         final_emitted_count,
         exact_reranked_candidates,

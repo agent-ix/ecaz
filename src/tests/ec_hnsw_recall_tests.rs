@@ -438,7 +438,7 @@
     }
 
     #[pg_test]
-    fn test_ech_frontier_containment_reports_pre_output_frontier() {
+    fn test_ech_frontier_containment_reports_am_candidate_pool() {
         let prefix = "ec_hnsw_frontier_containment_sanity";
 
         for storage_format in ["turboquant", "pq_fastscan", "rabitq"] {
@@ -472,16 +472,24 @@
             assert_eq!(
                 usize::try_from(pre_final_frontier_size).expect("frontier size should fit usize"),
                 frontier_row_indices.len(),
-                "{storage_format} frontier rows should describe the pre-output frontier, not the final emitted stream",
+                "{storage_format} frontier rows should describe the AM candidate pool before SQL LIMIT",
+            );
+            assert!(
+                pre_final_frontier_size > 0,
+                "{storage_format} candidate-pool diagnostic should not report an empty frontier for this fixture",
             );
             assert_eq!(frontier_approx_scores.len(), frontier_row_indices.len());
             assert_eq!(frontier_exact_scores.len(), frontier_row_indices.len());
             assert_eq!(frontier_approx_ranks.len(), frontier_row_indices.len());
             assert_eq!(frontier_exact_ranks.len(), frontier_row_indices.len());
             assert_eq!(
+                pre_final_frontier_size, final_emitted_count,
+                "{storage_format} debug probe exhausts the AM stream, so candidate-pool size should match the emitted candidate count",
+            );
+            assert_eq!(
                 usize::try_from(final_emitted_count).expect("emitted count should fit usize"),
                 final_emitted_row_indices.len(),
-                "{storage_format} final emitted rows should be reported separately from the frontier",
+                "{storage_format} emitted candidate rows should be reported separately from the frontier score arrays",
             );
             assert!(
                 visited_before_output <= final_visited_count,
