@@ -120,6 +120,27 @@
         i32, // graph_below_exact_queries
         i32, // worst_exact_gap
     );
+    type GraphScanRecallFrontierContainmentRow = (
+        i32,      // m
+        i32,      // ef_search
+        i32,      // query_index
+        i32,      // visited_before_output
+        i32,      // pre_final_frontier_size
+        i32,      // final_visited_count
+        i32,      // final_emitted_count
+        i32,      // exact_reranked_candidates
+        i32,      // quantized_reranked_candidates
+        i32,      // candidates_dropped_before_exact_rerank
+        i32,      // truth_top10_in_frontier
+        i32,      // truth_top100_in_frontier
+        Vec<i64>, // truth_top10_row_indices
+        Vec<i64>, // frontier_row_indices
+        Vec<f32>, // frontier_approx_scores
+        Vec<f32>, // frontier_exact_scores
+        Vec<i32>, // frontier_approx_ranks
+        Vec<i32>, // frontier_exact_ranks
+        Vec<i64>, // final_emitted_row_indices
+    );
     type GraphScanRecallAnnBenchmarksReferenceRow = (
         i32,  // m
         i32,  // ef_search
@@ -922,6 +943,172 @@
         } else {
             dcg / idcg
         }
+    }
+
+    fn rank_frontier_by_approx(frontier: &[(i64, f32, f32)]) -> Vec<i32> {
+        let mut ranked = frontier
+            .iter()
+            .enumerate()
+            .map(|(idx, (row_index, approx_score, _exact_score))| (idx, *row_index, *approx_score))
+            .collect::<Vec<_>>();
+        ranked.sort_by(|left, right| {
+            left.2
+                .total_cmp(&right.2)
+                .then_with(|| left.1.cmp(&right.1))
+        });
+        let mut ranks = vec![0_i32; frontier.len()];
+        for (rank, (idx, _row_index, _score)) in ranked.into_iter().enumerate() {
+            ranks[idx] = i32::try_from(rank + 1).expect("approx rank should fit into int");
+        }
+        ranks
+    }
+
+    fn rank_frontier_by_exact(frontier: &[(i64, f32, f32)]) -> Vec<i32> {
+        let mut ranked = frontier
+            .iter()
+            .enumerate()
+            .map(|(idx, (row_index, _approx_score, exact_score))| (idx, *row_index, *exact_score))
+            .collect::<Vec<_>>();
+        ranked.sort_by(|left, right| {
+            right
+                .2
+                .total_cmp(&left.2)
+                .then_with(|| left.1.cmp(&right.1))
+        });
+        let mut ranks = vec![0_i32; frontier.len()];
+        for (rank, (idx, _row_index, _score)) in ranked.into_iter().enumerate() {
+            ranks[idx] = i32::try_from(rank + 1).expect("exact rank should fit into int");
+        }
+        ranks
+    }
+
+    fn probe_graph_scan_recall_frontier_containment_for_context(
+        context: &ExternalRecallContext,
+        index_name: &str,
+        m: i32,
+        ef_search: i32,
+        query_index: usize,
+    ) -> GraphScanRecallFrontierContainmentRow {
+        let index_name_ident = recall_fixture_ident(index_name);
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>(&format!("SELECT '{index_name_ident}'::regclass::oid"))
+                .expect("frontier containment index oid query should succeed")
+                .expect("frontier containment index oid should exist");
+        let query = context
+            .queries
+            .get(query_index)
+            .unwrap_or_else(|| panic!("query_index {query_index} should exist"));
+        let truth = context
+            .ground_truth_top_k
+            .get(query_index)
+            .expect("truth row should exist for query");
+
+        Spi::run(&format!("SET LOCAL ec_hnsw.ef_search = {ef_search}"))
+            .expect("setting ef_search should succeed");
+        let report = am::debug_gettuple_frontier_containment_report(index_oid, query.clone());
+
+        let mut frontier_rows = report
+            .frontier_candidates
+            .into_iter()
+            .map(|(heap_tid, approx_score)| {
+                let row_index = *context
+                    .ctid_to_row_index
+                    .get(&heap_tid)
+                    .expect("frontier heap tid should map back to a corpus row index");
+                let exact_score = dot_product(query, &context.corpus[row_index]);
+                (
+                    i64::try_from(row_index).expect("row index should fit into bigint"),
+                    approx_score,
+                    exact_score,
+                )
+            })
+            .collect::<Vec<_>>();
+        frontier_rows.sort_by(|left, right| {
+            left.0
+                .cmp(&right.0)
+                .then_with(|| left.1.total_cmp(&right.1))
+        });
+        let frontier_approx_ranks = rank_frontier_by_approx(&frontier_rows);
+        let frontier_exact_ranks = rank_frontier_by_exact(&frontier_rows);
+        let frontier_row_indices = frontier_rows
+            .iter()
+            .map(|(row_index, _, _)| *row_index)
+            .collect::<Vec<_>>();
+        let frontier_approx_scores = frontier_rows
+            .iter()
+            .map(|(_, approx_score, _)| *approx_score)
+            .collect::<Vec<_>>();
+        let frontier_exact_scores = frontier_rows
+            .iter()
+            .map(|(_, _, exact_score)| *exact_score)
+            .collect::<Vec<_>>();
+
+        let truth_top10_row_indices = truth
+            .iter()
+            .take(RECALL_K)
+            .map(|(idx, _)| i64::try_from(*idx).expect("row index should fit into bigint"))
+            .collect::<Vec<_>>();
+        let truth_top100_row_indices = truth
+            .iter()
+            .take(RECALL_K * 10)
+            .map(|(idx, _)| i64::try_from(*idx).expect("row index should fit into bigint"))
+            .collect::<Vec<_>>();
+        let truth_top10_in_frontier =
+            recall_top_k_overlap(&truth_top10_row_indices, &frontier_row_indices);
+        let truth_top100_in_frontier =
+            recall_top_k_overlap(&truth_top100_row_indices, &frontier_row_indices);
+
+        let final_emitted_row_indices = report
+            .final_emitted_candidates
+            .into_iter()
+            .map(|(heap_tid, _approx_score, _comparison_score, _approx_rank)| {
+                let row_index = *context
+                    .ctid_to_row_index
+                    .get(&heap_tid)
+                    .expect("emitted heap tid should map back to a corpus row index");
+                i64::try_from(row_index).expect("row index should fit into bigint")
+            })
+            .collect::<Vec<_>>();
+
+        (
+            m,
+            report.requested_ef_search,
+            i32::try_from(query_index).expect("query index should fit into int"),
+            report.visited_before_output,
+            report.pre_final_frontier_size,
+            report.final_visited_count,
+            report.final_emitted_count,
+            report.exact_reranked_candidates,
+            report.quantized_reranked_candidates,
+            report.candidates_dropped_before_exact_rerank,
+            truth_top10_in_frontier,
+            truth_top100_in_frontier,
+            truth_top10_row_indices,
+            frontier_row_indices,
+            frontier_approx_scores,
+            frontier_exact_scores,
+            frontier_approx_ranks,
+            frontier_exact_ranks,
+            final_emitted_row_indices,
+        )
+    }
+
+    fn probe_graph_scan_recall_frontier_containment_for_relation(
+        corpus_table: &str,
+        query_table: &str,
+        index_name: &str,
+        m: i32,
+        ef_search: i32,
+        query_index: usize,
+    ) -> GraphScanRecallFrontierContainmentRow {
+        let context = build_external_recall_context(corpus_table, query_table, false);
+        probe_graph_scan_recall_frontier_containment_for_context(
+            &context,
+            index_name,
+            m,
+            ef_search,
+            query_index,
+        )
     }
 
     fn spearman_rank_correlation_external(true_top_k: &[(usize, f32)], pred_ids: &[i64]) -> f32 {

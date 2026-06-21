@@ -81,6 +81,27 @@ type DebugCandidateFrontierSlotConsume = (
 );
 
 #[cfg(any(test, feature = "pg_test"))]
+pub(crate) type DebugFrontierCandidateRow = (HeapTidCoords, f32);
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) type DebugEmittedCandidateRow = (HeapTidCoords, f32, Option<f32>, Option<i32>);
+
+#[cfg(any(test, feature = "pg_test"))]
+#[derive(Debug, Clone)]
+pub(crate) struct DebugFrontierContainmentReport {
+    pub requested_ef_search: i32,
+    pub visited_before_output: i32,
+    pub pre_final_frontier_size: i32,
+    pub frontier_candidates: Vec<DebugFrontierCandidateRow>,
+    pub final_visited_count: i32,
+    pub final_emitted_count: i32,
+    pub exact_reranked_candidates: i32,
+    pub quantized_reranked_candidates: i32,
+    pub candidates_dropped_before_exact_rerank: i32,
+    pub final_emitted_candidates: Vec<DebugEmittedCandidateRow>,
+}
+
+#[cfg(any(test, feature = "pg_test"))]
 fn debug_candidate_slot(
     candidate: Option<search::BeamCandidate<page::ItemPointer>>,
 ) -> DebugCandidateSlot {
@@ -2367,6 +2388,131 @@ pub(crate) fn debug_gettuple_scan_heap_tids_with_scores(
 
     drop(scan_state);
     tids
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn debug_i32_count(value: usize, label: &str) -> i32 {
+    i32::try_from(value).unwrap_or_else(|_| pgrx::error!("{label} should fit in int"))
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn debug_u64_i32_count(value: u64, label: &str) -> i32 {
+    i32::try_from(value).unwrap_or_else(|_| pgrx::error!("{label} should fit in int"))
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn debug_frontier_heap_candidates(
+    index_relation: pg_sys::Relation,
+    opaque: &TqScanOpaque,
+) -> Vec<DebugFrontierCandidateRow> {
+    visible_frontier_candidates(opaque)
+        .into_iter()
+        .flat_map(|candidate| {
+            let element =
+                debug_load_graph_element(index_relation, candidate.node, opaque.scan_graph_storage);
+            if element.deleted || element.heaptids.is_empty() {
+                return Vec::new();
+            }
+            element
+                .heaptids
+                .into_iter()
+                .map(|heap_tid| (debug_item_pointer_coords(heap_tid), candidate.score))
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) fn debug_gettuple_frontier_containment_report(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+) -> DebugFrontierContainmentReport {
+    let scan_state = debug_begin_heap_backed_scan(index_oid);
+    let scan = scan_state.as_ptr();
+    // SAFETY: `scan_state` owns the live HNSW index scan descriptor until it is
+    // dropped at the end of this function.
+    let index_relation = unsafe { (*scan).indexRelation };
+
+    let mut orderby = pg_sys::ScanKeyData {
+        sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
+        ..Default::default()
+    };
+    debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
+
+    let (requested_ef_search, visited_before_output, pre_final_frontier_size, frontier_candidates) =
+        debug_with_scan_opaque(scan, |opaque| {
+            (
+                debug_i32_count(opaque.bootstrap_frontier_limit, "ef_search"),
+                debug_i32_count(
+                    scan_box_ref(opaque.visited_tids, opaque)
+                        .map(HashSet::len)
+                        .unwrap_or(0),
+                    "visited count",
+                ),
+                debug_i32_count(visible_frontier_candidates(opaque).len(), "frontier size"),
+                debug_frontier_heap_candidates(index_relation, opaque),
+            )
+        });
+
+    let mut final_emitted_candidates = Vec::new();
+    while let Some(heap_tid) =
+        debug_am_gettuple_heap_tid(scan, pg_sys::ScanDirection::ForwardScanDirection)
+    {
+        let approx_score = debug_current_result_approx_score(scan)
+            .or_else(|| debug_scan_orderby_score(scan))
+            .expect("graph-first scan should publish an approximate score for emitted tuples");
+        let comparison_score = debug_current_result_comparison_score(scan);
+        let approx_rank = debug_current_result_approx_rank(scan);
+        final_emitted_candidates.push((heap_tid, approx_score, comparison_score, approx_rank));
+    }
+
+    let (
+        final_visited_count,
+        final_emitted_count,
+        exact_reranked_candidates,
+        quantized_reranked_candidates,
+    ) = debug_with_scan_opaque(scan, |opaque| {
+        let exact_reranked_candidates = debug_u64_i32_count(
+            opaque.debug_profile.grouped_rerank_heap_score_calls,
+            "heap rerank count",
+        );
+        let quantized_reranked_candidates = debug_u64_i32_count(
+            opaque.debug_profile.grouped_rerank_quantized_score_calls,
+            "quantized rerank count",
+        );
+        (
+            debug_i32_count(
+                scan_box_ref(opaque.visited_tids, opaque)
+                    .map(HashSet::len)
+                    .unwrap_or(0),
+                "visited count",
+            ),
+            debug_i32_count(
+                scan_box_ref(opaque.emitted_result_tids, opaque)
+                    .map(HashSet::len)
+                    .unwrap_or(0),
+                "emitted count",
+            ),
+            exact_reranked_candidates,
+            quantized_reranked_candidates,
+        )
+    });
+    let candidates_dropped_before_exact_rerank =
+        (final_visited_count - exact_reranked_candidates).max(0);
+
+    drop(scan_state);
+    DebugFrontierContainmentReport {
+        requested_ef_search,
+        visited_before_output,
+        pre_final_frontier_size,
+        frontier_candidates,
+        final_visited_count,
+        final_emitted_count,
+        exact_reranked_candidates,
+        quantized_reranked_candidates,
+        candidates_dropped_before_exact_rerank,
+        final_emitted_candidates,
+    }
 }
 
 #[cfg(any(test, feature = "pg_test"))]
