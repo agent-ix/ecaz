@@ -5041,6 +5041,68 @@ mod tests {
     }
 
     #[test]
+    fn metadata_decode_rejects_invalid_scalar_fields() {
+        let metadata = MetadataPage::empty(EcIvfOptions {
+            nlists: 8,
+            nprobe: 2,
+            rerank_width: 0,
+            training_sample_rows: 128,
+            seed: 42,
+            pq_group_size: 0,
+            posting_slack_percent: 0,
+            quant_bits: 4,
+            coarse_bits: 0,
+            dense_posting_blocks: false,
+            dense_posting_typed_layout: false,
+            rabitq_residual: false,
+            rabitq_rerank_score: RaBitQRerankScoreMode::Estimator,
+            rabitq_rerank_clip: EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
+            storage_format: StorageFormat::Auto,
+            rerank: RerankMode::Auto,
+            coarse_format: CoarseFormat::Auto,
+            rerank_placement: RerankPlacement::Auto,
+            rerank_format: RerankFormat::Auto,
+        });
+        let encoded = metadata.encode();
+
+        let mut bad_magic = encoded.clone();
+        bad_magic[0] = 0;
+        assert!(MetadataPage::decode(&bad_magic)
+            .unwrap_err()
+            .contains("metadata magic"));
+
+        let mut bad_version = encoded.clone();
+        bad_version[4..6].copy_from_slice(&0_u16.to_le_bytes());
+        assert!(MetadataPage::decode(&bad_version)
+            .unwrap_err()
+            .contains("metadata format version"));
+
+        let mut bad_score_mode = encoded.clone();
+        bad_score_mode[EC_IVF_METADATA_RABITQ_RERANK_SCORE_MODE_OFFSET] = 255;
+        assert!(MetadataPage::decode(&bad_score_mode)
+            .unwrap_err()
+            .contains("rerank score mode"));
+
+        let mut bad_clip = encoded.clone();
+        bad_clip[EC_IVF_METADATA_RABITQ_RERANK_CLIP_OFFSET] = 9;
+        assert!(MetadataPage::decode(&bad_clip)
+            .unwrap_err()
+            .contains("rabitq_rerank_clip"));
+
+        let mut bad_quant_bits = encoded.clone();
+        bad_quant_bits[34] = 3;
+        assert!(MetadataPage::decode(&bad_quant_bits)
+            .unwrap_err()
+            .contains("quant_bits"));
+
+        let mut bad_residual = encoded;
+        bad_residual[EC_IVF_METADATA_RABITQ_RESIDUAL_OFFSET] = 2;
+        assert!(MetadataPage::decode(&bad_residual)
+            .unwrap_err()
+            .contains("rabitq_residual"));
+    }
+
+    #[test]
     fn block_ref_roundtrip() {
         let original = block(99);
         let mut encoded = Vec::new();
@@ -5082,6 +5144,35 @@ mod tests {
     }
 
     #[test]
+    fn centroid_tuple_rejects_invalid_tag_dimension_field_and_nan() {
+        assert!(IvfCentroidTuple {
+            list_id: 1,
+            centroid: vec![f32::NAN],
+        }
+        .encode()
+        .unwrap_err()
+        .contains("non-finite"));
+
+        let tuple = IvfCentroidTuple {
+            list_id: 3,
+            centroid: vec![1.0, 0.0],
+        };
+        let encoded = tuple.encode().unwrap();
+
+        let mut bad_tag = encoded.clone();
+        bad_tag[0] = IVF_LIST_DIRECTORY_TAG;
+        assert!(IvfCentroidTuple::decode(&bad_tag, 2)
+            .unwrap_err()
+            .contains("centroid tuple tag"));
+
+        let mut bad_dimension_field = encoded;
+        bad_dimension_field[5..7].copy_from_slice(&3_u16.to_le_bytes());
+        assert!(IvfCentroidTuple::decode(&bad_dimension_field, 2)
+            .unwrap_err()
+            .contains("centroid dimensions mismatch"));
+    }
+
+    #[test]
     fn list_directory_tuple_roundtrip() {
         let tuple = IvfListDirectoryTuple {
             list_id: 9,
@@ -5100,6 +5191,21 @@ mod tests {
             IvfListDirectoryTuple::empty(10).head_block,
             BlockRef::INVALID
         );
+    }
+
+    #[test]
+    fn list_directory_tuple_rejects_bad_length_and_tag() {
+        let encoded = IvfListDirectoryTuple::empty(1).encode();
+
+        assert!(IvfListDirectoryTuple::decode(&encoded[..encoded.len() - 1])
+            .unwrap_err()
+            .contains("list directory tuple length mismatch"));
+
+        let mut bad_tag = encoded;
+        bad_tag[0] = IVF_CENTROID_TAG;
+        assert!(IvfListDirectoryTuple::decode(&bad_tag)
+            .unwrap_err()
+            .contains("list directory tuple tag"));
     }
 
     #[test]
@@ -5268,6 +5374,123 @@ mod tests {
     }
 
     #[test]
+    fn rerank_group_header_rejects_decode_and_encode_edge_cases() {
+        let postings = vec![(tid(1, 1), 0.25, vec![1, 2])];
+        let valid = IvfRerankGroupHeaderTuple::from_single_heaptid_postings(
+            RerankFormat::F16 as u8,
+            7,
+            4,
+            &postings,
+            2,
+            2,
+        )
+        .unwrap();
+        let encoded = valid.encode().unwrap();
+
+        assert!(IvfRerankGroupHeaderTuple::from_single_heaptid_postings(
+            RerankFormat::F16 as u8,
+            7,
+            4,
+            &[],
+            2,
+            0,
+        )
+        .unwrap_err()
+        .contains("requires at least one posting"));
+        assert!(IvfRerankGroupHeaderTuple::from_single_heaptid_postings(
+            RerankFormat::F16 as u8,
+            7,
+            4,
+            &[(tid(1, 1), f32::INFINITY, vec![1, 2])],
+            2,
+            2,
+        )
+        .unwrap_err()
+        .contains("gamma must be finite"));
+        assert!(IvfRerankGroupHeaderTuple::from_single_heaptid_postings(
+            RerankFormat::F16 as u8,
+            7,
+            4,
+            &[(tid(1, 1), 0.25, vec![1])],
+            2,
+            1,
+        )
+        .unwrap_err()
+        .contains("payload length mismatch"));
+
+        let mut bad = valid.clone();
+        bad.scorer_width = 0;
+        assert!(bad.encode().unwrap_err().contains("scorer width"));
+
+        let mut bad = valid.clone();
+        bad.payload_len = 0;
+        assert!(bad.encode().unwrap_err().contains("payload length"));
+
+        let mut bad = valid.clone();
+        bad.deleted_bitmap.push(0);
+        assert!(bad.encode().unwrap_err().contains("array length mismatch"));
+
+        let mut bad = valid.clone();
+        bad.gammas[0] = f32::NAN;
+        assert!(bad.encode().unwrap_err().contains("gamma must be finite"));
+
+        let mut bad = valid.clone();
+        bad.payloads.extend_from_slice(&[0, 1, 2]);
+        assert!(bad
+            .encode()
+            .unwrap_err()
+            .contains("header payload bytes out of range"));
+
+        assert!(
+            IvfRerankGroupHeaderTuple::decode(&encoded[..RERANK_GROUP_HEADER_FIXED_BYTES - 1])
+                .unwrap_err()
+                .contains("group header length mismatch")
+        );
+
+        let mut bad_tag = encoded.clone();
+        bad_tag[0] = IVF_RERANK_GROUP_PAYLOAD_SEGMENT_TAG;
+        assert!(IvfRerankGroupHeaderTuple::decode(&bad_tag)
+            .unwrap_err()
+            .contains("group header tag"));
+
+        let mut bad_scorer_width = encoded.clone();
+        bad_scorer_width[6..8].copy_from_slice(&0_u16.to_le_bytes());
+        assert!(IvfRerankGroupHeaderTuple::decode(&bad_scorer_width)
+            .unwrap_err()
+            .contains("scorer width"));
+
+        let mut bad_valid_count = encoded.clone();
+        bad_valid_count[8..10].copy_from_slice(&0_u16.to_le_bytes());
+        assert!(IvfRerankGroupHeaderTuple::decode(&bad_valid_count)
+            .unwrap_err()
+            .contains("valid count"));
+
+        let mut bad_payload_len = encoded.clone();
+        bad_payload_len[10..12].copy_from_slice(&0_u16.to_le_bytes());
+        assert!(IvfRerankGroupHeaderTuple::decode(&bad_payload_len)
+            .unwrap_err()
+            .contains("payload length"));
+
+        let mut bad_total_payload = encoded.clone();
+        bad_total_payload[16..20].copy_from_slice(&3_u32.to_le_bytes());
+        assert!(IvfRerankGroupHeaderTuple::decode(&bad_total_payload)
+            .unwrap_err()
+            .contains("total payload bytes"));
+
+        let mut bad_header_payload = encoded.clone();
+        bad_header_payload[20..22].copy_from_slice(&3_u16.to_le_bytes());
+        assert!(IvfRerankGroupHeaderTuple::decode(&bad_header_payload)
+            .unwrap_err()
+            .contains("header payload bytes"));
+
+        let mut bad_len = encoded.clone();
+        bad_len.pop();
+        assert!(IvfRerankGroupHeaderTuple::decode(&bad_len)
+            .unwrap_err()
+            .contains("group header length mismatch"));
+    }
+
+    #[test]
     fn rerank_group_payload_segment_roundtrips() {
         let tuple = IvfRerankGroupPayloadSegmentTuple {
             next_segment_tid: tid(12, 4),
@@ -5292,6 +5515,31 @@ mod tests {
         bad_tag[0] = IVF_RERANK_GROUP_HEADER_TAG;
         let err = IvfRerankGroupPayloadSegmentTuple::decode(&bad_tag).unwrap_err();
         assert!(err.contains("payload segment tag"));
+    }
+
+    #[test]
+    fn rerank_group_payload_segment_rejects_size_edge_cases() {
+        let too_large = IvfRerankGroupPayloadSegmentTuple {
+            next_segment_tid: ItemPointer::INVALID,
+            payloads: vec![0; u16::MAX as usize + 1],
+        };
+        assert!(too_large.encode().unwrap_err().contains("exceeds u16"));
+
+        assert!(
+            IvfRerankGroupPayloadSegmentTuple::decode(&[IVF_RERANK_GROUP_PAYLOAD_SEGMENT_TAG])
+                .unwrap_err()
+                .contains("payload segment length mismatch")
+        );
+
+        let tuple = IvfRerankGroupPayloadSegmentTuple {
+            next_segment_tid: tid(12, 4),
+            payloads: vec![1, 2, 3],
+        };
+        let mut bad_len = tuple.encode().unwrap();
+        bad_len[1..3].copy_from_slice(&4_u16.to_le_bytes());
+        assert!(IvfRerankGroupPayloadSegmentTuple::decode(&bad_len)
+            .unwrap_err()
+            .contains("payload segment length mismatch"));
     }
 
     #[test]
@@ -5378,8 +5626,87 @@ mod tests {
             aligned_ref.heap_tid_offsets_native_le().unwrap(),
             &[0, 1, 2]
         );
+        assert!(native_le_f32_slice(&aligned[1..2]).is_none());
+        assert!(native_le_u16_slice(&aligned[1..2]).is_none());
+        assert!(native_le_u32_slice(&aligned[1..2]).is_none());
         assert_eq!(legacy_ref.gammas(), aligned_ref.gammas());
         assert!(legacy_ref.gammas_native_le().is_none());
+    }
+
+    #[test]
+    fn dense_posting_block_rejects_encode_and_decode_edge_cases() {
+        assert!(
+            IvfDensePostingBlockTuple::from_single_heaptid_postings(1, &[], 2)
+                .unwrap_err()
+                .contains("requires at least one posting")
+        );
+        assert!(IvfDensePostingBlockTuple::from_single_heaptid_postings(
+            1,
+            &[(tid(1, 1), f32::NAN, ItemPointer::INVALID, vec![0, 1])],
+            2,
+        )
+        .unwrap_err()
+        .contains("gamma must be finite"));
+        assert!(IvfDensePostingBlockTuple::from_single_heaptid_postings(
+            1,
+            &[(tid(1, 1), 0.5, ItemPointer::INVALID, vec![0])],
+            2,
+        )
+        .unwrap_err()
+        .contains("payload length mismatch"));
+
+        let tuple = IvfDensePostingBlockTuple::from_single_heaptid_postings(
+            1,
+            &[(tid(1, 1), 0.5, tid(2, 1), vec![0, 1])],
+            2,
+        )
+        .unwrap();
+        let encoded = tuple.encode().unwrap();
+
+        assert!(IvfDensePostingBlockTuple::decode(
+            &encoded[..DENSE_POSTING_BLOCK_HEADER_BYTES - 1],
+            2,
+        )
+        .unwrap_err()
+        .contains("dense posting block length mismatch"));
+
+        let mut bad_tag = encoded.clone();
+        bad_tag[0] = IVF_POSTING_TAG;
+        assert!(IvfDensePostingBlockTuple::decode(&bad_tag, 2)
+            .unwrap_err()
+            .contains("dense posting block tag"));
+
+        assert!(IvfDensePostingBlockTuple::decode(&encoded, 3)
+            .unwrap_err()
+            .contains("payload length mismatch"));
+
+        let mut bad_len = encoded.clone();
+        bad_len.pop();
+        assert!(IvfDensePostingBlockTuple::decode(&bad_len, 2)
+            .unwrap_err()
+            .contains("dense posting block length mismatch"));
+
+        let mut bad_offset = tuple.clone();
+        bad_offset.heap_tid_offsets[0] = 99;
+        assert!(
+            IvfDensePostingBlockTuple::decode(&bad_offset.encode().unwrap(), 2)
+                .unwrap_err()
+                .contains("heap tid range is out of bounds")
+        );
+
+        let mut bad_arrays = tuple.clone();
+        bad_arrays.rerank_tids.clear();
+        assert!(bad_arrays
+            .encode()
+            .unwrap_err()
+            .contains("array length mismatch"));
+
+        let mut bad_gamma = tuple;
+        bad_gamma.gammas[0] = f32::INFINITY;
+        assert!(bad_gamma
+            .encode()
+            .unwrap_err()
+            .contains("gamma must be finite"));
     }
 
     #[test]
@@ -5426,6 +5753,32 @@ mod tests {
     }
 
     #[test]
+    fn posting_tuple_rejects_nonfinite_gamma_and_bad_single_heaptid_gamma() {
+        assert!(IvfPostingTuple {
+            list_id: 0,
+            deleted: false,
+            heaptids: vec![tid(1, 1)],
+            gamma: f32::NAN,
+            rerank_tid: ItemPointer::INVALID,
+            payload: vec![0],
+        }
+        .encode()
+        .unwrap_err()
+        .contains("gamma must be finite"));
+
+        assert!(IvfPostingTuple::encode_single_heaptid(
+            0,
+            false,
+            tid(1, 1),
+            f32::INFINITY,
+            ItemPointer::INVALID,
+            &[0],
+        )
+        .unwrap_err()
+        .contains("gamma must be finite"));
+    }
+
+    #[test]
     fn pq_codebook_tuple_roundtrip() {
         let tuple = IvfPqCodebookTuple {
             group_index: 2,
@@ -5441,6 +5794,35 @@ mod tests {
         assert_eq!(borrowed.group_index, 2);
         assert_eq!(borrowed.next_tid, tuple.next_tid);
         assert_eq!(borrowed.collect_centroids(), tuple.centroids);
+    }
+
+    #[test]
+    fn pq_codebook_tuple_rejects_invalid_shape_and_values() {
+        assert!(IvfPqCodebookTuple {
+            group_index: 0,
+            next_tid: ItemPointer::INVALID,
+            centroids: vec![f32::NAN],
+        }
+        .encode()
+        .unwrap_err()
+        .contains("non-finite"));
+
+        let tuple = IvfPqCodebookTuple {
+            group_index: 2,
+            next_tid: tid(9, 3),
+            centroids: vec![0.0, 0.5],
+        };
+        let encoded = tuple.encode().unwrap();
+
+        assert!(IvfPqCodebookTuple::decode(&encoded[..encoded.len() - 1], 2)
+            .unwrap_err()
+            .contains("pq codebook tuple length mismatch"));
+
+        let mut bad_tag = encoded;
+        bad_tag[0] = IVF_POSTING_TAG;
+        assert!(IvfPqCodebookTuple::decode(&bad_tag, 2)
+            .unwrap_err()
+            .contains("pq codebook tuple tag"));
     }
 
     #[test]
@@ -5587,6 +5969,55 @@ mod tests {
                 .unwrap(),
             group_payload_segment
         );
+    }
+
+    #[test]
+    fn data_page_chain_reports_missing_blocks_for_staged_ivf_helpers() {
+        let mut chain = DataPageChain::new(DEFAULT_PAGE_SIZE);
+        let missing = tid(99, 1);
+        let codebook = IvfPqCodebookTuple {
+            group_index: 0,
+            next_tid: ItemPointer::INVALID,
+            centroids: vec![0.0],
+        };
+        let group_header = IvfRerankGroupHeaderTuple::from_single_heaptid_postings(
+            RerankFormat::F16 as u8,
+            1,
+            1,
+            &[(tid(1, 1), 0.25, vec![0])],
+            1,
+            1,
+        )
+        .unwrap();
+
+        assert!(chain
+            .update_ivf_pq_codebook(missing, &codebook)
+            .unwrap_err()
+            .contains("pq codebook block 99 not found"));
+        assert!(chain
+            .update_ivf_rerank_sidecar_block(
+                missing,
+                &IvfRerankSidecarBlockTuple::new(RerankFormat::F16 as u8, 1, vec![], vec![])
+                    .unwrap(),
+            )
+            .unwrap_err()
+            .contains("rerank sidecar block 99 not found"));
+        assert!(chain
+            .update_ivf_rerank_group_header(missing, &group_header)
+            .unwrap_err()
+            .contains("rerank group header block 99 not found"));
+        assert!(chain
+            .read_ivf_rerank_sidecar_block_staged(missing)
+            .unwrap_err()
+            .contains("rerank sidecar block 99 not found"));
+        assert!(chain
+            .read_ivf_rerank_group_header_staged(missing)
+            .unwrap_err()
+            .contains("rerank group header block 99 not found"));
+        assert!(chain
+            .read_ivf_rerank_group_payload_segment_staged(missing)
+            .unwrap_err()
+            .contains("rerank group payload segment block 99 not found"));
     }
 
     #[test]
