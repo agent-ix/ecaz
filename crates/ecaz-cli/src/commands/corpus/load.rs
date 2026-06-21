@@ -76,6 +76,14 @@ pub struct LoadArgs {
     #[arg(long)]
     pub ef_construction: Option<i32>,
 
+    /// HNSW-only: heap source column used for graph construction.
+    #[arg(long)]
+    pub hnsw_build_source_column: Option<String>,
+
+    /// HNSW-only: build graph neighbors from the indexed/encoded column instead of a heap source column.
+    #[arg(long)]
+    pub no_hnsw_build_source_column: bool,
+
     /// Optional storage format (turboquant / pq_fastscan).
     #[arg(long)]
     pub storage_format: Option<String>,
@@ -274,6 +282,22 @@ pub async fn run(conn: &ConnectionOptions, args: LoadArgs) -> Result<()> {
     if !profile.sweep_axis_is_m() && args.ef_construction.is_some() {
         return Err(eyre!(unsupported_ef_construction_error(profile)));
     }
+    if !profile.sweep_axis_is_m()
+        && (args.hnsw_build_source_column.is_some() || args.no_hnsw_build_source_column)
+    {
+        return Err(eyre!(
+            "--hnsw-build-source-column and --no-hnsw-build-source-column are only supported with HNSW profiles"
+        ));
+    }
+    if args.hnsw_build_source_column.is_some() && args.no_hnsw_build_source_column {
+        return Err(eyre!(
+            "--hnsw-build-source-column conflicts with --no-hnsw-build-source-column"
+        ));
+    }
+    if let Some(column) = args.hnsw_build_source_column.as_deref() {
+        profiles::validate_ident(column)
+            .wrap_err_with(|| format!("invalid --hnsw-build-source-column {:?}", column))?;
+    }
     if let Some(index_name) = args.index_name.as_deref() {
         validate_qualified_ident(index_name)
             .wrap_err_with(|| format!("invalid --index-name {:?}", index_name))?;
@@ -327,11 +351,13 @@ pub async fn run(conn: &ConnectionOptions, args: LoadArgs) -> Result<()> {
         Some(sf) => format!("{}_{sf}", args.prefix),
         None => args.prefix.clone(),
     };
+    let hnsw_build_source_column = hnsw_build_source_column(profile, &args);
     let index_jobs = plan_index_jobs_with_optional_name(
         profile,
         &index_prefix,
         &args.m,
         args.ef_construction.unwrap_or(DEFAULT_HNSW_EF_CONSTRUCTION),
+        hnsw_build_source_column.as_deref(),
         args.storage_format.as_deref(),
         &args.reloptions,
         args.index_name.as_deref(),
@@ -1280,11 +1306,23 @@ fn reloption_flag_collisions(
         .collect()
 }
 
+fn hnsw_build_source_column(profile: &IndexProfile, args: &LoadArgs) -> Option<String> {
+    if !profile.sweep_axis_is_m() || args.no_hnsw_build_source_column {
+        return None;
+    }
+    Some(
+        args.hnsw_build_source_column
+            .clone()
+            .unwrap_or_else(|| DEFAULT_HNSW_BUILD_SOURCE_COLUMN.to_owned()),
+    )
+}
+
 fn plan_index_jobs(
     profile: &IndexProfile,
     index_prefix: &str,
     m_values: &[i32],
     ef_construction: i32,
+    hnsw_build_source_column: Option<&str>,
     storage_format: Option<&str>,
     extra: &[(String, String)],
 ) -> Vec<IndexJob> {
@@ -1300,11 +1338,10 @@ fn plan_index_jobs(
                 let mut opts: Vec<(String, String)> = vec![
                     ("m".into(), m.to_string()),
                     ("ef_construction".into(), ef_construction.to_string()),
-                    (
-                        "build_source_column".into(),
-                        DEFAULT_HNSW_BUILD_SOURCE_COLUMN.into(),
-                    ),
                 ];
+                if let Some(column) = hnsw_build_source_column {
+                    opts.push(("build_source_column".into(), column.into()));
+                }
                 if let Some(sf) = storage_format {
                     opts.push(("storage_format".into(), sf.into()));
                 }
@@ -1332,6 +1369,7 @@ fn plan_index_jobs_with_optional_name(
     index_prefix: &str,
     m_values: &[i32],
     ef_construction: i32,
+    hnsw_build_source_column: Option<&str>,
     storage_format: Option<&str>,
     extra: &[(String, String)],
     index_name: Option<&str>,
@@ -1341,6 +1379,7 @@ fn plan_index_jobs_with_optional_name(
         index_prefix,
         m_values,
         ef_construction,
+        hnsw_build_source_column,
         storage_format,
         extra,
     );
@@ -2250,7 +2289,7 @@ mod tests {
 
     #[test]
     fn hnsw_plan_defaults_to_8_16_sweep_with_ef_and_build_source() {
-        let jobs = plan_index_jobs(&EC_HNSW, "dbpedia_10k", &[], 128, None, &[]);
+        let jobs = plan_index_jobs(&EC_HNSW, "dbpedia_10k", &[], 128, Some("source"), None, &[]);
         assert_eq!(jobs.len(), 2);
         assert_eq!(jobs[0].name, "dbpedia_10k_m8_idx");
         assert_eq!(jobs[1].name, "dbpedia_10k_m16_idx");
@@ -2268,6 +2307,7 @@ mod tests {
             "foo_pq_fastscan",
             &[8, 16, 8],
             96,
+            Some("source"),
             Some("pq_fastscan"),
             &[],
         );
@@ -2282,7 +2322,7 @@ mod tests {
     #[test]
     fn hnsw_plan_passes_extras_through_and_orders_after_built_ins() {
         let extras = vec![opt("storage_format", "turboquant"), opt("custom", "x")];
-        let jobs = plan_index_jobs(&EC_HNSW, "p", &[8], 128, None, &extras);
+        let jobs = plan_index_jobs(&EC_HNSW, "p", &[8], 128, Some("source"), None, &extras);
         // built-ins come first so duplicates from --reloption would override
         let keys: Vec<&str> = jobs[0].reloptions.iter().map(|(k, _)| k.as_str()).collect();
         assert_eq!(
@@ -2298,6 +2338,30 @@ mod tests {
     }
 
     #[test]
+    fn hnsw_plan_can_disable_build_source_column_for_compressed_ab() {
+        let jobs = plan_index_jobs(
+            &EC_HNSW,
+            "p_compressed_build",
+            &[16],
+            128,
+            None,
+            Some("rabitq"),
+            &[],
+        );
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(jobs[0].name, "p_compressed_build_m16_idx");
+        assert!(jobs[0].reloptions.contains(&opt("m", "16")));
+        assert!(jobs[0].reloptions.contains(&opt("ef_construction", "128")));
+        assert!(jobs[0]
+            .reloptions
+            .contains(&opt("storage_format", "rabitq")));
+        assert!(!jobs[0]
+            .reloptions
+            .iter()
+            .any(|(key, _value)| key == "build_source_column"));
+    }
+
+    #[test]
     fn dedup_preserve_order_keeps_first_occurrence() {
         assert_eq!(
             dedup_preserve_order(vec![16, 8, 16, 32, 8]),
@@ -2310,7 +2374,7 @@ mod tests {
     #[test]
     fn diskann_plan_is_single_index_with_no_hnsw_defaults() {
         let extras = vec![opt("graph_degree", "48")];
-        let jobs = plan_index_jobs(&EC_DISKANN, "foo", &[], 128, None, &extras);
+        let jobs = plan_index_jobs(&EC_DISKANN, "foo", &[], 128, None, None, &extras);
         assert_eq!(jobs.len(), 1);
         assert_eq!(jobs[0].name, "foo_idx");
         assert!(jobs[0].reloptions.contains(&opt("graph_degree", "48")));
@@ -2328,6 +2392,7 @@ mod tests {
             "foo_pq_fastscan",
             &[],
             128,
+            None,
             Some("pq_fastscan"),
             &[],
         );
@@ -2346,6 +2411,7 @@ mod tests {
             "foo_turboquant",
             &[],
             128,
+            None,
             Some("turboquant"),
             &extras,
         );
@@ -2370,6 +2436,7 @@ mod tests {
             "aws_spire_node_2",
             &[],
             128,
+            None,
             Some("rabitq"),
             &[opt("nlists", "8")],
             Some("public.aws_spire_remote_a_idx"),
@@ -2390,6 +2457,7 @@ mod tests {
             "pfx",
             &[],
             128,
+            Some("source"),
             None,
             &[],
             Some("custom_idx"),

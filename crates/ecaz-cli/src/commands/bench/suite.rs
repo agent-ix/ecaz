@@ -284,6 +284,10 @@ struct LoadStep {
     #[serde(default)]
     ef_construction: Option<i32>,
     #[serde(default)]
+    hnsw_build_source_column: Option<String>,
+    #[serde(default)]
+    no_hnsw_build_source_column: bool,
+    #[serde(default)]
     storage_format: Option<String>,
     #[serde(default)]
     index_name: Option<String>,
@@ -2429,6 +2433,12 @@ impl SuiteStep {
                         step.name
                     )
                 }
+                if step.hnsw_build_source_column.is_some() && step.no_hnsw_build_source_column {
+                    bail!(
+                        "load step {:?} cannot set both hnsw_build_source_column and no_hnsw_build_source_column",
+                        step.name
+                    )
+                }
                 Ok(())
             }
             SuiteStep::Recall(step) => {
@@ -2889,6 +2899,12 @@ fn expand_load(step: &LoadStep, defaults: &SuiteDefaults) -> Vec<String> {
     }
     if let Some(ef_construction) = step.ef_construction {
         push_arg(&mut args, "--ef-construction", &ef_construction.to_string());
+    }
+    if let Some(column) = step.hnsw_build_source_column.as_deref() {
+        push_arg(&mut args, "--hnsw-build-source-column", column);
+    }
+    if step.no_hnsw_build_source_column {
+        args.push("--no-hnsw-build-source-column".into());
     }
     if let Some(storage_format) = step.storage_format.as_deref() {
         push_arg(&mut args, "--storage-format", storage_format);
@@ -3991,6 +4007,8 @@ mod tests {
                 seed: None,
                 m: Vec::new(),
                 ef_construction: None,
+                hnsw_build_source_column: None,
+                no_hnsw_build_source_column: false,
                 storage_format: None,
                 index_name: None,
                 table_reloptions: Vec::new(),
@@ -4346,6 +4364,8 @@ mod tests {
             seed: None,
             m: Vec::new(),
             ef_construction: None,
+            hnsw_build_source_column: None,
+            no_hnsw_build_source_column: false,
             storage_format: Some("rabitq".into()),
             index_name: Some("surface_rabitq_idx".into()),
             table_reloptions: Vec::new(),
@@ -4363,6 +4383,46 @@ mod tests {
             .any(|w| w == ["--manifest-file", "stage/anchor_manifest.json"]));
         assert!(!args.iter().any(|arg| arg == "--corpus-file"));
         assert!(!args.iter().any(|arg| arg == "--queries-file"));
+    }
+
+    #[test]
+    fn expands_hnsw_compressed_build_load_step() {
+        let defaults = SuiteDefaults {
+            profile: Some("ec_hnsw".into()),
+            bits: Some(4),
+            seed: Some(42),
+            ..SuiteDefaults::default()
+        };
+        let step = LoadStep {
+            name: "load".into(),
+            tags: vec!["load".into()],
+            pgoptions: None,
+            capture_parallel_workers: false,
+            prefix: "surface_compressed_build".into(),
+            corpus_file: Some("corpus.tsv".into()),
+            queries_file: Some("queries.tsv".into()),
+            manifest_file: Some("manifest.json".into()),
+            allow_manifest_mismatch: true,
+            chunked: false,
+            dim: None,
+            profile: Some("ec_hnsw".into()),
+            bits: None,
+            seed: None,
+            m: vec![16],
+            ef_construction: Some(128),
+            hnsw_build_source_column: None,
+            no_hnsw_build_source_column: true,
+            storage_format: Some("rabitq".into()),
+            index_name: None,
+            table_reloptions: Vec::new(),
+            reloptions: Vec::new(),
+            log_file: Some("load.log".into()),
+        };
+        let args = expand_load(&step, &defaults);
+        assert!(args.windows(2).any(|w| w == ["--storage-format", "rabitq"]));
+        assert!(args.windows(2).any(|w| w == ["--ef-construction", "128"]));
+        assert!(args.contains(&"--no-hnsw-build-source-column".into()));
+        assert!(!args.iter().any(|arg| arg == "--hnsw-build-source-column"));
     }
 
     #[test]
@@ -4390,6 +4450,8 @@ mod tests {
                 seed: None,
                 m: Vec::new(),
                 ef_construction: None,
+                hnsw_build_source_column: None,
+                no_hnsw_build_source_column: false,
                 storage_format: None,
                 index_name: None,
                 table_reloptions: vec!["parallel_workers=4".into()],
@@ -4793,6 +4855,8 @@ mod tests {
             seed: None,
             m: Vec::new(),
             ef_construction: None,
+            hnsw_build_source_column: None,
+            no_hnsw_build_source_column: false,
             storage_format: Some("rabitq".into()),
             index_name: None,
             table_reloptions: Vec::new(),
