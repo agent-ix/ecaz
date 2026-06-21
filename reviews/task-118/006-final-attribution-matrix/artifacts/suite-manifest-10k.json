@@ -1,0 +1,3109 @@
+{
+  "suite": "task118-hnsw-quantized-recall-attribution",
+  "schema_version": 1,
+  "config": "crates/ecaz-cli/suites/task118-hnsw-quantized-recall-attribution.json",
+  "config_sha256": "ec179dc8c590281a83245a9c817240a84b33de936ee9fd8b7367feab2004c2e3",
+  "dry_run": false,
+  "generated_at_unix_ms": 1782060189965,
+  "connection": {
+    "database": "tqvector_bench",
+    "host": "/home/peter/.pgrx",
+    "port": 28818,
+    "user": null,
+    "password_configured": false
+  },
+  "backend": {
+    "build_profile": "debug",
+    "sha256": "2918ab561868e7f14bf13dbe9a28e6457668ffb8cfe898dac76fbfe5e3250559",
+    "path": "/home/peter/.pgrx/18.3/pgrx-install/lib/postgresql/ecaz.so"
+  },
+  "steps": [
+    {
+      "name": "load-10k-hnsw-turboquant",
+      "kind": "load",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/load-10k-hnsw-turboquant.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "task118_real10k_hnsw_turboquant",
+        "--profile",
+        "ec_hnsw",
+        "--corpus-file",
+        "data/staged-current/ec_real_10k_corpus.tsv",
+        "--queries-file",
+        "data/staged-current/ec_real_10k_queries.tsv",
+        "--manifest-file",
+        "data/staged-current/ec_real_10k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--m",
+        "16",
+        "--ef-construction",
+        "128",
+        "--storage-format",
+        "turboquant"
+      ],
+      "selected": true,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "load",
+        "ec_real_10k",
+        "hnsw",
+        "turboquant"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/load-10k-hnsw-turboquant.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1782060206074,
+      "finished_at_unix_ms": 1782060224198,
+      "duration_ms": 18119,
+      "exit_code": 0
+    },
+    {
+      "name": "load-10k-hnsw-pq-fastscan",
+      "kind": "load",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/load-10k-hnsw-pq-fastscan.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "task118_real10k_hnsw_pq_fastscan",
+        "--profile",
+        "ec_hnsw",
+        "--corpus-file",
+        "data/staged-current/ec_real_10k_corpus.tsv",
+        "--queries-file",
+        "data/staged-current/ec_real_10k_queries.tsv",
+        "--manifest-file",
+        "data/staged-current/ec_real_10k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--m",
+        "16",
+        "--ef-construction",
+        "128",
+        "--storage-format",
+        "pq_fastscan"
+      ],
+      "selected": true,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "load",
+        "ec_real_10k",
+        "hnsw",
+        "pq_fastscan"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/load-10k-hnsw-pq-fastscan.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1782060224202,
+      "finished_at_unix_ms": 1782060242367,
+      "duration_ms": 18160,
+      "exit_code": 0
+    },
+    {
+      "name": "load-10k-hnsw-rabitq",
+      "kind": "load",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/load-10k-hnsw-rabitq.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "task118_real10k_hnsw_rabitq",
+        "--profile",
+        "ec_hnsw",
+        "--corpus-file",
+        "data/staged-current/ec_real_10k_corpus.tsv",
+        "--queries-file",
+        "data/staged-current/ec_real_10k_queries.tsv",
+        "--manifest-file",
+        "data/staged-current/ec_real_10k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--m",
+        "16",
+        "--ef-construction",
+        "128",
+        "--storage-format",
+        "rabitq"
+      ],
+      "selected": true,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "load",
+        "ec_real_10k",
+        "hnsw",
+        "rabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/load-10k-hnsw-rabitq.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1782060242371,
+      "finished_at_unix_ms": 1782060260647,
+      "duration_ms": 18272,
+      "exit_code": 0
+    },
+    {
+      "name": "recall-10k-hnsw-turboquant",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "recall",
+        "--prefix",
+        "task118_real10k_hnsw_turboquant",
+        "--profile",
+        "ec_hnsw",
+        "--k",
+        "10",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--queries-limit",
+        "200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--truth-cache-file",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/truth-10k-k10.json",
+        "--log-output",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/recall-10k-hnsw-turboquant.log"
+      ],
+      "selected": true,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "recall",
+        "ec_real_10k",
+        "hnsw",
+        "turboquant"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/recall-10k-hnsw-turboquant.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1782060260652,
+      "finished_at_unix_ms": 1782060314871,
+      "duration_ms": 54215,
+      "exit_code": 0
+    },
+    {
+      "name": "recall-10k-hnsw-pq-fastscan",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "recall",
+        "--prefix",
+        "task118_real10k_hnsw_pq_fastscan",
+        "--profile",
+        "ec_hnsw",
+        "--k",
+        "10",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--queries-limit",
+        "200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--truth-cache-file",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/truth-10k-k10.json",
+        "--log-output",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/recall-10k-hnsw-pq-fastscan.log"
+      ],
+      "selected": true,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "recall",
+        "ec_real_10k",
+        "hnsw",
+        "pq_fastscan"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/recall-10k-hnsw-pq-fastscan.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1782060314876,
+      "finished_at_unix_ms": 1782060373140,
+      "duration_ms": 58259,
+      "exit_code": 0
+    },
+    {
+      "name": "recall-10k-hnsw-rabitq",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "recall",
+        "--prefix",
+        "task118_real10k_hnsw_rabitq",
+        "--profile",
+        "ec_hnsw",
+        "--k",
+        "10",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--queries-limit",
+        "200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--truth-cache-file",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/truth-10k-k10.json",
+        "--log-output",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/recall-10k-hnsw-rabitq.log"
+      ],
+      "selected": true,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "recall",
+        "ec_real_10k",
+        "hnsw",
+        "rabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/recall-10k-hnsw-rabitq.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1782060373144,
+      "finished_at_unix_ms": 1782060455595,
+      "duration_ms": 82447,
+      "exit_code": 0
+    },
+    {
+      "name": "frontier-10k-hnsw-turboquant",
+      "kind": "hnsw-frontier",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "hnsw-frontier",
+        "--prefix",
+        "task118_real10k_hnsw_turboquant",
+        "--m",
+        "16",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--queries-limit",
+        "200",
+        "--log-output",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/frontier-10k-hnsw-turboquant.log",
+        "--jsonl-output",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/frontier-10k-hnsw-turboquant.jsonl"
+      ],
+      "selected": true,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "frontier",
+        "ec_real_10k",
+        "hnsw",
+        "turboquant"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/frontier-10k-hnsw-turboquant.log",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/frontier-10k-hnsw-turboquant.jsonl"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1782060455600,
+      "finished_at_unix_ms": 1782060834164,
+      "duration_ms": 378560,
+      "exit_code": 0
+    },
+    {
+      "name": "frontier-10k-hnsw-pq-fastscan",
+      "kind": "hnsw-frontier",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "hnsw-frontier",
+        "--prefix",
+        "task118_real10k_hnsw_pq_fastscan",
+        "--m",
+        "16",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--queries-limit",
+        "200",
+        "--log-output",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/frontier-10k-hnsw-pq-fastscan.log",
+        "--jsonl-output",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/frontier-10k-hnsw-pq-fastscan.jsonl"
+      ],
+      "selected": true,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "frontier",
+        "ec_real_10k",
+        "hnsw",
+        "pq_fastscan"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/frontier-10k-hnsw-pq-fastscan.log",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/frontier-10k-hnsw-pq-fastscan.jsonl"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1782060834168,
+      "finished_at_unix_ms": 1782061214817,
+      "duration_ms": 380644,
+      "exit_code": 0
+    },
+    {
+      "name": "frontier-10k-hnsw-rabitq",
+      "kind": "hnsw-frontier",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "hnsw-frontier",
+        "--prefix",
+        "task118_real10k_hnsw_rabitq",
+        "--m",
+        "16",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--queries-limit",
+        "200",
+        "--log-output",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/frontier-10k-hnsw-rabitq.log",
+        "--jsonl-output",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/frontier-10k-hnsw-rabitq.jsonl"
+      ],
+      "selected": true,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "frontier",
+        "ec_real_10k",
+        "hnsw",
+        "rabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/frontier-10k-hnsw-rabitq.log",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/frontier-10k-hnsw-rabitq.jsonl"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1782061214829,
+      "finished_at_unix_ms": 1782061619638,
+      "duration_ms": 404797,
+      "exit_code": 0
+    },
+    {
+      "name": "score-correlation-10k-hnsw-turboquant",
+      "kind": "hnsw-score-correlation",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "hnsw-score-correlation",
+        "--prefix",
+        "task118_real10k_hnsw_turboquant",
+        "--m",
+        "16",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--queries-limit",
+        "200",
+        "--log-output",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/score-correlation-10k-hnsw-turboquant.log",
+        "--jsonl-output",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/score-correlation-10k-hnsw-turboquant.jsonl"
+      ],
+      "selected": true,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "score-correlation",
+        "ec_real_10k",
+        "hnsw",
+        "turboquant"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/score-correlation-10k-hnsw-turboquant.log",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/score-correlation-10k-hnsw-turboquant.jsonl"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1782061619650,
+      "finished_at_unix_ms": 1782061989845,
+      "duration_ms": 370184,
+      "exit_code": 0
+    },
+    {
+      "name": "score-correlation-10k-hnsw-pq-fastscan",
+      "kind": "hnsw-score-correlation",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "hnsw-score-correlation",
+        "--prefix",
+        "task118_real10k_hnsw_pq_fastscan",
+        "--m",
+        "16",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--queries-limit",
+        "200",
+        "--log-output",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/score-correlation-10k-hnsw-pq-fastscan.log",
+        "--jsonl-output",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/score-correlation-10k-hnsw-pq-fastscan.jsonl"
+      ],
+      "selected": true,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "score-correlation",
+        "ec_real_10k",
+        "hnsw",
+        "pq_fastscan"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/score-correlation-10k-hnsw-pq-fastscan.log",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/score-correlation-10k-hnsw-pq-fastscan.jsonl"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1782061989850,
+      "finished_at_unix_ms": 1782062363953,
+      "duration_ms": 374099,
+      "exit_code": 0
+    },
+    {
+      "name": "score-correlation-10k-hnsw-rabitq",
+      "kind": "hnsw-score-correlation",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "hnsw-score-correlation",
+        "--prefix",
+        "task118_real10k_hnsw_rabitq",
+        "--m",
+        "16",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--queries-limit",
+        "200",
+        "--log-output",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/score-correlation-10k-hnsw-rabitq.log",
+        "--jsonl-output",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/score-correlation-10k-hnsw-rabitq.jsonl"
+      ],
+      "selected": true,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "score-correlation",
+        "ec_real_10k",
+        "hnsw",
+        "rabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/score-correlation-10k-hnsw-rabitq.log",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/score-correlation-10k-hnsw-rabitq.jsonl"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1782062363958,
+      "finished_at_unix_ms": 1782062762712,
+      "duration_ms": 398749,
+      "exit_code": 0
+    },
+    {
+      "name": "latency-10k-hnsw-turboquant",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "latency",
+        "--prefix",
+        "task118_real10k_hnsw_turboquant",
+        "--profile",
+        "ec_hnsw",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "200",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--sample-backend-memory",
+        "--cache-state",
+        "post_recall_warm",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/latency-10k-hnsw-turboquant.log"
+      ],
+      "selected": true,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "latency",
+        "ec_real_10k",
+        "hnsw",
+        "turboquant",
+        "post_recall_warm"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/latency-10k-hnsw-turboquant.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1782062762716,
+      "finished_at_unix_ms": 1782062800161,
+      "duration_ms": 37441,
+      "exit_code": 0
+    },
+    {
+      "name": "latency-10k-hnsw-pq-fastscan",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "latency",
+        "--prefix",
+        "task118_real10k_hnsw_pq_fastscan",
+        "--profile",
+        "ec_hnsw",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "200",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--sample-backend-memory",
+        "--cache-state",
+        "post_recall_warm",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/latency-10k-hnsw-pq-fastscan.log"
+      ],
+      "selected": true,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "latency",
+        "ec_real_10k",
+        "hnsw",
+        "pq_fastscan",
+        "post_recall_warm"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/latency-10k-hnsw-pq-fastscan.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1782062800165,
+      "finished_at_unix_ms": 1782062840657,
+      "duration_ms": 40487,
+      "exit_code": 0
+    },
+    {
+      "name": "latency-10k-hnsw-rabitq",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "latency",
+        "--prefix",
+        "task118_real10k_hnsw_rabitq",
+        "--profile",
+        "ec_hnsw",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "200",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--sample-backend-memory",
+        "--cache-state",
+        "post_recall_warm",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/latency-10k-hnsw-rabitq.log"
+      ],
+      "selected": true,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "latency",
+        "ec_real_10k",
+        "hnsw",
+        "rabitq",
+        "post_recall_warm"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/latency-10k-hnsw-rabitq.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1782062840661,
+      "finished_at_unix_ms": 1782062905263,
+      "duration_ms": 64598,
+      "exit_code": 0
+    },
+    {
+      "name": "storage-10k-hnsw-turboquant",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/storage-10k-hnsw-turboquant.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "task118_real10k_hnsw_turboquant"
+      ],
+      "selected": true,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "storage",
+        "ec_real_10k",
+        "hnsw",
+        "turboquant"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/storage-10k-hnsw-turboquant.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1782062905268,
+      "finished_at_unix_ms": 1782062905312,
+      "duration_ms": 37,
+      "exit_code": 0
+    },
+    {
+      "name": "storage-10k-hnsw-pq-fastscan",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/storage-10k-hnsw-pq-fastscan.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "task118_real10k_hnsw_pq_fastscan"
+      ],
+      "selected": true,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "storage",
+        "ec_real_10k",
+        "hnsw",
+        "pq_fastscan"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/storage-10k-hnsw-pq-fastscan.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1782062905319,
+      "finished_at_unix_ms": 1782062905356,
+      "duration_ms": 31,
+      "exit_code": 0
+    },
+    {
+      "name": "storage-10k-hnsw-rabitq",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/storage-10k-hnsw-rabitq.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "task118_real10k_hnsw_rabitq"
+      ],
+      "selected": true,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "storage",
+        "ec_real_10k",
+        "hnsw",
+        "rabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/storage-10k-hnsw-rabitq.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1782062905361,
+      "finished_at_unix_ms": 1782062905394,
+      "duration_ms": 29,
+      "exit_code": 0
+    },
+    {
+      "name": "load-50k-hnsw-turboquant",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "load",
+        "ec_real_50k",
+        "hnsw",
+        "turboquant"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/load-50k-hnsw-turboquant.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-50k-hnsw-pq-fastscan",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "load",
+        "ec_real_50k",
+        "hnsw",
+        "pq_fastscan"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/load-50k-hnsw-pq-fastscan.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-50k-hnsw-rabitq",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "load",
+        "ec_real_50k",
+        "hnsw",
+        "rabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/load-50k-hnsw-rabitq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-50k-hnsw-turboquant",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "recall",
+        "ec_real_50k",
+        "hnsw",
+        "turboquant"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/recall-50k-hnsw-turboquant.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-50k-hnsw-pq-fastscan",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "recall",
+        "ec_real_50k",
+        "hnsw",
+        "pq_fastscan"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/recall-50k-hnsw-pq-fastscan.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-50k-hnsw-rabitq",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "recall",
+        "ec_real_50k",
+        "hnsw",
+        "rabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/recall-50k-hnsw-rabitq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "frontier-50k-hnsw-turboquant",
+      "kind": "hnsw-frontier",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "frontier",
+        "ec_real_50k",
+        "hnsw",
+        "turboquant"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/frontier-50k-hnsw-turboquant.log",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/frontier-50k-hnsw-turboquant.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "frontier-50k-hnsw-pq-fastscan",
+      "kind": "hnsw-frontier",
+      "command": [],
+      "selected": false,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "frontier",
+        "ec_real_50k",
+        "hnsw",
+        "pq_fastscan"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/frontier-50k-hnsw-pq-fastscan.log",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/frontier-50k-hnsw-pq-fastscan.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "frontier-50k-hnsw-rabitq",
+      "kind": "hnsw-frontier",
+      "command": [],
+      "selected": false,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "frontier",
+        "ec_real_50k",
+        "hnsw",
+        "rabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/frontier-50k-hnsw-rabitq.log",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/frontier-50k-hnsw-rabitq.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "score-correlation-50k-hnsw-turboquant",
+      "kind": "hnsw-score-correlation",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "score-correlation",
+        "ec_real_50k",
+        "hnsw",
+        "turboquant"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/score-correlation-50k-hnsw-turboquant.log",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/score-correlation-50k-hnsw-turboquant.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "score-correlation-50k-hnsw-pq-fastscan",
+      "kind": "hnsw-score-correlation",
+      "command": [],
+      "selected": false,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "score-correlation",
+        "ec_real_50k",
+        "hnsw",
+        "pq_fastscan"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/score-correlation-50k-hnsw-pq-fastscan.log",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/score-correlation-50k-hnsw-pq-fastscan.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "score-correlation-50k-hnsw-rabitq",
+      "kind": "hnsw-score-correlation",
+      "command": [],
+      "selected": false,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "score-correlation",
+        "ec_real_50k",
+        "hnsw",
+        "rabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/score-correlation-50k-hnsw-rabitq.log",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/score-correlation-50k-hnsw-rabitq.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-50k-hnsw-turboquant",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "latency",
+        "ec_real_50k",
+        "hnsw",
+        "turboquant",
+        "post_recall_warm"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/latency-50k-hnsw-turboquant.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-50k-hnsw-pq-fastscan",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "latency",
+        "ec_real_50k",
+        "hnsw",
+        "pq_fastscan",
+        "post_recall_warm"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/latency-50k-hnsw-pq-fastscan.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-50k-hnsw-rabitq",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "latency",
+        "ec_real_50k",
+        "hnsw",
+        "rabitq",
+        "post_recall_warm"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/latency-50k-hnsw-rabitq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-50k-hnsw-turboquant",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "storage",
+        "ec_real_50k",
+        "hnsw",
+        "turboquant"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/storage-50k-hnsw-turboquant.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-50k-hnsw-pq-fastscan",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "storage",
+        "ec_real_50k",
+        "hnsw",
+        "pq_fastscan"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/storage-50k-hnsw-pq-fastscan.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-50k-hnsw-rabitq",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "storage",
+        "ec_real_50k",
+        "hnsw",
+        "rabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/storage-50k-hnsw-rabitq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-100k-hnsw-turboquant",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "load",
+        "ec_real_100k",
+        "hnsw",
+        "turboquant"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/load-100k-hnsw-turboquant.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-100k-hnsw-pq-fastscan",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "load",
+        "ec_real_100k",
+        "hnsw",
+        "pq_fastscan"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/load-100k-hnsw-pq-fastscan.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-100k-hnsw-rabitq",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "load",
+        "ec_real_100k",
+        "hnsw",
+        "rabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/load-100k-hnsw-rabitq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-100k-hnsw-turboquant",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "recall",
+        "ec_real_100k",
+        "hnsw",
+        "turboquant"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/recall-100k-hnsw-turboquant.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-100k-hnsw-pq-fastscan",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "recall",
+        "ec_real_100k",
+        "hnsw",
+        "pq_fastscan"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/recall-100k-hnsw-pq-fastscan.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-100k-hnsw-rabitq",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "recall",
+        "ec_real_100k",
+        "hnsw",
+        "rabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/recall-100k-hnsw-rabitq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "frontier-100k-hnsw-turboquant",
+      "kind": "hnsw-frontier",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "frontier",
+        "ec_real_100k",
+        "hnsw",
+        "turboquant"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/frontier-100k-hnsw-turboquant.log",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/frontier-100k-hnsw-turboquant.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "frontier-100k-hnsw-pq-fastscan",
+      "kind": "hnsw-frontier",
+      "command": [],
+      "selected": false,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "frontier",
+        "ec_real_100k",
+        "hnsw",
+        "pq_fastscan"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/frontier-100k-hnsw-pq-fastscan.log",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/frontier-100k-hnsw-pq-fastscan.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "frontier-100k-hnsw-rabitq",
+      "kind": "hnsw-frontier",
+      "command": [],
+      "selected": false,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "frontier",
+        "ec_real_100k",
+        "hnsw",
+        "rabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/frontier-100k-hnsw-rabitq.log",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/frontier-100k-hnsw-rabitq.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "score-correlation-100k-hnsw-turboquant",
+      "kind": "hnsw-score-correlation",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "score-correlation",
+        "ec_real_100k",
+        "hnsw",
+        "turboquant"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/score-correlation-100k-hnsw-turboquant.log",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/score-correlation-100k-hnsw-turboquant.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "score-correlation-100k-hnsw-pq-fastscan",
+      "kind": "hnsw-score-correlation",
+      "command": [],
+      "selected": false,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "score-correlation",
+        "ec_real_100k",
+        "hnsw",
+        "pq_fastscan"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/score-correlation-100k-hnsw-pq-fastscan.log",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/score-correlation-100k-hnsw-pq-fastscan.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "score-correlation-100k-hnsw-rabitq",
+      "kind": "hnsw-score-correlation",
+      "command": [],
+      "selected": false,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "score-correlation",
+        "ec_real_100k",
+        "hnsw",
+        "rabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/score-correlation-100k-hnsw-rabitq.log",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/score-correlation-100k-hnsw-rabitq.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-100k-hnsw-turboquant",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "latency",
+        "ec_real_100k",
+        "hnsw",
+        "turboquant",
+        "post_recall_warm"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/latency-100k-hnsw-turboquant.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-100k-hnsw-pq-fastscan",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "latency",
+        "ec_real_100k",
+        "hnsw",
+        "pq_fastscan",
+        "post_recall_warm"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/latency-100k-hnsw-pq-fastscan.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-100k-hnsw-rabitq",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "latency",
+        "ec_real_100k",
+        "hnsw",
+        "rabitq",
+        "post_recall_warm"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/latency-100k-hnsw-rabitq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-100k-hnsw-turboquant",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "storage",
+        "ec_real_100k",
+        "hnsw",
+        "turboquant"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/storage-100k-hnsw-turboquant.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-100k-hnsw-pq-fastscan",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "storage",
+        "ec_real_100k",
+        "hnsw",
+        "pq_fastscan"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/storage-100k-hnsw-pq-fastscan.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-100k-hnsw-rabitq",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "storage",
+        "ec_real_100k",
+        "hnsw",
+        "rabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/storage-100k-hnsw-rabitq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-10k-hnsw-turboquant-compressed-build",
+      "kind": "load",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/load-10k-hnsw-turboquant-compressed-build.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "task118_real10k_hnsw_turboquant_compressed_build",
+        "--profile",
+        "ec_hnsw",
+        "--corpus-file",
+        "data/staged-current/ec_real_10k_corpus.tsv",
+        "--queries-file",
+        "data/staged-current/ec_real_10k_queries.tsv",
+        "--manifest-file",
+        "data/staged-current/ec_real_10k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--m",
+        "16",
+        "--ef-construction",
+        "128",
+        "--no-hnsw-build-source-column",
+        "--storage-format",
+        "turboquant"
+      ],
+      "selected": true,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "load",
+        "ec_real_10k",
+        "hnsw",
+        "turboquant",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/load-10k-hnsw-turboquant-compressed-build.log"
+      ],
+      "status": "failed",
+      "started_at_unix_ms": 1782062905399,
+      "finished_at_unix_ms": 1782062942041,
+      "duration_ms": 36637,
+      "exit_code": 1
+    },
+    {
+      "name": "load-10k-hnsw-pq-fastscan-compressed-build",
+      "kind": "load",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/load-10k-hnsw-pq-fastscan-compressed-build.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "task118_real10k_hnsw_pq_fastscan_compressed_build",
+        "--profile",
+        "ec_hnsw",
+        "--corpus-file",
+        "data/staged-current/ec_real_10k_corpus.tsv",
+        "--queries-file",
+        "data/staged-current/ec_real_10k_queries.tsv",
+        "--manifest-file",
+        "data/staged-current/ec_real_10k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--m",
+        "16",
+        "--ef-construction",
+        "128",
+        "--no-hnsw-build-source-column",
+        "--storage-format",
+        "pq_fastscan"
+      ],
+      "selected": true,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "load",
+        "ec_real_10k",
+        "hnsw",
+        "pq_fastscan",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/load-10k-hnsw-pq-fastscan-compressed-build.log"
+      ],
+      "status": "failed",
+      "started_at_unix_ms": 1782062942045,
+      "finished_at_unix_ms": 1782062978648,
+      "duration_ms": 36599,
+      "exit_code": 1
+    },
+    {
+      "name": "load-10k-hnsw-rabitq-compressed-build",
+      "kind": "load",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/load-10k-hnsw-rabitq-compressed-build.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "task118_real10k_hnsw_rabitq_compressed_build",
+        "--profile",
+        "ec_hnsw",
+        "--corpus-file",
+        "data/staged-current/ec_real_10k_corpus.tsv",
+        "--queries-file",
+        "data/staged-current/ec_real_10k_queries.tsv",
+        "--manifest-file",
+        "data/staged-current/ec_real_10k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--m",
+        "16",
+        "--ef-construction",
+        "128",
+        "--no-hnsw-build-source-column",
+        "--storage-format",
+        "rabitq"
+      ],
+      "selected": true,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "load",
+        "ec_real_10k",
+        "hnsw",
+        "rabitq",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/load-10k-hnsw-rabitq-compressed-build.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1782062978653,
+      "finished_at_unix_ms": 1782063110249,
+      "duration_ms": 131592,
+      "exit_code": 0
+    },
+    {
+      "name": "recall-10k-hnsw-turboquant-compressed-build",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "recall",
+        "--prefix",
+        "task118_real10k_hnsw_turboquant_compressed_build",
+        "--profile",
+        "ec_hnsw",
+        "--k",
+        "10",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--queries-limit",
+        "200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--truth-cache-file",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/truth-10k-k10.json",
+        "--log-output",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/recall-10k-hnsw-turboquant-compressed-build.log"
+      ],
+      "selected": true,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "recall",
+        "ec_real_10k",
+        "hnsw",
+        "turboquant",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/recall-10k-hnsw-turboquant-compressed-build.log"
+      ],
+      "status": "failed",
+      "started_at_unix_ms": 1782063110253,
+      "finished_at_unix_ms": 1782063110277,
+      "duration_ms": 18,
+      "exit_code": 1
+    },
+    {
+      "name": "recall-10k-hnsw-pq-fastscan-compressed-build",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "recall",
+        "--prefix",
+        "task118_real10k_hnsw_pq_fastscan_compressed_build",
+        "--profile",
+        "ec_hnsw",
+        "--k",
+        "10",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--queries-limit",
+        "200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--truth-cache-file",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/truth-10k-k10.json",
+        "--log-output",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/recall-10k-hnsw-pq-fastscan-compressed-build.log"
+      ],
+      "selected": true,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "recall",
+        "ec_real_10k",
+        "hnsw",
+        "pq_fastscan",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/recall-10k-hnsw-pq-fastscan-compressed-build.log"
+      ],
+      "status": "failed",
+      "started_at_unix_ms": 1782063110282,
+      "finished_at_unix_ms": 1782063110306,
+      "duration_ms": 18,
+      "exit_code": 1
+    },
+    {
+      "name": "recall-10k-hnsw-rabitq-compressed-build",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "recall",
+        "--prefix",
+        "task118_real10k_hnsw_rabitq_compressed_build",
+        "--profile",
+        "ec_hnsw",
+        "--k",
+        "10",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--queries-limit",
+        "200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--truth-cache-file",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/truth-10k-k10.json",
+        "--log-output",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/recall-10k-hnsw-rabitq-compressed-build.log"
+      ],
+      "selected": true,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "recall",
+        "ec_real_10k",
+        "hnsw",
+        "rabitq",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/recall-10k-hnsw-rabitq-compressed-build.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1782063110310,
+      "finished_at_unix_ms": 1782063191451,
+      "duration_ms": 81137,
+      "exit_code": 0
+    },
+    {
+      "name": "frontier-10k-hnsw-turboquant-compressed-build",
+      "kind": "hnsw-frontier",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "hnsw-frontier",
+        "--prefix",
+        "task118_real10k_hnsw_turboquant_compressed_build",
+        "--m",
+        "16",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--queries-limit",
+        "200",
+        "--log-output",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/frontier-10k-hnsw-turboquant-compressed-build.log",
+        "--jsonl-output",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/frontier-10k-hnsw-turboquant-compressed-build.jsonl"
+      ],
+      "selected": true,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "frontier",
+        "ec_real_10k",
+        "hnsw",
+        "turboquant",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/frontier-10k-hnsw-turboquant-compressed-build.log",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/frontier-10k-hnsw-turboquant-compressed-build.jsonl"
+      ],
+      "status": "failed",
+      "started_at_unix_ms": 1782063191455,
+      "finished_at_unix_ms": 1782063191479,
+      "duration_ms": 19,
+      "exit_code": 1
+    },
+    {
+      "name": "frontier-10k-hnsw-pq-fastscan-compressed-build",
+      "kind": "hnsw-frontier",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "hnsw-frontier",
+        "--prefix",
+        "task118_real10k_hnsw_pq_fastscan_compressed_build",
+        "--m",
+        "16",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--queries-limit",
+        "200",
+        "--log-output",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/frontier-10k-hnsw-pq-fastscan-compressed-build.log",
+        "--jsonl-output",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/frontier-10k-hnsw-pq-fastscan-compressed-build.jsonl"
+      ],
+      "selected": true,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "frontier",
+        "ec_real_10k",
+        "hnsw",
+        "pq_fastscan",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/frontier-10k-hnsw-pq-fastscan-compressed-build.log",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/frontier-10k-hnsw-pq-fastscan-compressed-build.jsonl"
+      ],
+      "status": "failed",
+      "started_at_unix_ms": 1782063191483,
+      "finished_at_unix_ms": 1782063191508,
+      "duration_ms": 20,
+      "exit_code": 1
+    },
+    {
+      "name": "frontier-10k-hnsw-rabitq-compressed-build",
+      "kind": "hnsw-frontier",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "hnsw-frontier",
+        "--prefix",
+        "task118_real10k_hnsw_rabitq_compressed_build",
+        "--m",
+        "16",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--queries-limit",
+        "200",
+        "--log-output",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/frontier-10k-hnsw-rabitq-compressed-build.log",
+        "--jsonl-output",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/frontier-10k-hnsw-rabitq-compressed-build.jsonl"
+      ],
+      "selected": true,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "frontier",
+        "ec_real_10k",
+        "hnsw",
+        "rabitq",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/frontier-10k-hnsw-rabitq-compressed-build.log",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/frontier-10k-hnsw-rabitq-compressed-build.jsonl"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1782063191512,
+      "finished_at_unix_ms": 1782063595154,
+      "duration_ms": 403637,
+      "exit_code": 0
+    },
+    {
+      "name": "score-correlation-10k-hnsw-turboquant-compressed-build",
+      "kind": "hnsw-score-correlation",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "hnsw-score-correlation",
+        "--prefix",
+        "task118_real10k_hnsw_turboquant_compressed_build",
+        "--m",
+        "16",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--queries-limit",
+        "200",
+        "--log-output",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/score-correlation-10k-hnsw-turboquant-compressed-build.log",
+        "--jsonl-output",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/score-correlation-10k-hnsw-turboquant-compressed-build.jsonl"
+      ],
+      "selected": true,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "score-correlation",
+        "ec_real_10k",
+        "hnsw",
+        "turboquant",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/score-correlation-10k-hnsw-turboquant-compressed-build.log",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/score-correlation-10k-hnsw-turboquant-compressed-build.jsonl"
+      ],
+      "status": "failed",
+      "started_at_unix_ms": 1782063595159,
+      "finished_at_unix_ms": 1782063595184,
+      "duration_ms": 20,
+      "exit_code": 1
+    },
+    {
+      "name": "score-correlation-10k-hnsw-pq-fastscan-compressed-build",
+      "kind": "hnsw-score-correlation",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "hnsw-score-correlation",
+        "--prefix",
+        "task118_real10k_hnsw_pq_fastscan_compressed_build",
+        "--m",
+        "16",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--queries-limit",
+        "200",
+        "--log-output",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/score-correlation-10k-hnsw-pq-fastscan-compressed-build.log",
+        "--jsonl-output",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/score-correlation-10k-hnsw-pq-fastscan-compressed-build.jsonl"
+      ],
+      "selected": true,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "score-correlation",
+        "ec_real_10k",
+        "hnsw",
+        "pq_fastscan",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/score-correlation-10k-hnsw-pq-fastscan-compressed-build.log",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/score-correlation-10k-hnsw-pq-fastscan-compressed-build.jsonl"
+      ],
+      "status": "failed",
+      "started_at_unix_ms": 1782063595188,
+      "finished_at_unix_ms": 1782063595213,
+      "duration_ms": 20,
+      "exit_code": 1
+    },
+    {
+      "name": "score-correlation-10k-hnsw-rabitq-compressed-build",
+      "kind": "hnsw-score-correlation",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "hnsw-score-correlation",
+        "--prefix",
+        "task118_real10k_hnsw_rabitq_compressed_build",
+        "--m",
+        "16",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--queries-limit",
+        "200",
+        "--log-output",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/score-correlation-10k-hnsw-rabitq-compressed-build.log",
+        "--jsonl-output",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/score-correlation-10k-hnsw-rabitq-compressed-build.jsonl"
+      ],
+      "selected": true,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "score-correlation",
+        "ec_real_10k",
+        "hnsw",
+        "rabitq",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/score-correlation-10k-hnsw-rabitq-compressed-build.log",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/score-correlation-10k-hnsw-rabitq-compressed-build.jsonl"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1782063595217,
+      "finished_at_unix_ms": 1782063993276,
+      "duration_ms": 398054,
+      "exit_code": 0
+    },
+    {
+      "name": "latency-10k-hnsw-turboquant-compressed-build",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "latency",
+        "--prefix",
+        "task118_real10k_hnsw_turboquant_compressed_build",
+        "--profile",
+        "ec_hnsw",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "200",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--sample-backend-memory",
+        "--cache-state",
+        "post_recall_warm",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/latency-10k-hnsw-turboquant-compressed-build.log"
+      ],
+      "selected": true,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "latency",
+        "ec_real_10k",
+        "hnsw",
+        "turboquant",
+        "post_recall_warm",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/latency-10k-hnsw-turboquant-compressed-build.log"
+      ],
+      "status": "failed",
+      "started_at_unix_ms": 1782063993288,
+      "finished_at_unix_ms": 1782063993318,
+      "duration_ms": 18,
+      "exit_code": 1
+    },
+    {
+      "name": "latency-10k-hnsw-pq-fastscan-compressed-build",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "latency",
+        "--prefix",
+        "task118_real10k_hnsw_pq_fastscan_compressed_build",
+        "--profile",
+        "ec_hnsw",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "200",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--sample-backend-memory",
+        "--cache-state",
+        "post_recall_warm",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/latency-10k-hnsw-pq-fastscan-compressed-build.log"
+      ],
+      "selected": true,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "latency",
+        "ec_real_10k",
+        "hnsw",
+        "pq_fastscan",
+        "post_recall_warm",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/latency-10k-hnsw-pq-fastscan-compressed-build.log"
+      ],
+      "status": "failed",
+      "started_at_unix_ms": 1782063993323,
+      "finished_at_unix_ms": 1782063993344,
+      "duration_ms": 17,
+      "exit_code": 1
+    },
+    {
+      "name": "latency-10k-hnsw-rabitq-compressed-build",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "latency",
+        "--prefix",
+        "task118_real10k_hnsw_rabitq_compressed_build",
+        "--profile",
+        "ec_hnsw",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "200",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--sample-backend-memory",
+        "--cache-state",
+        "post_recall_warm",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/latency-10k-hnsw-rabitq-compressed-build.log"
+      ],
+      "selected": true,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "latency",
+        "ec_real_10k",
+        "hnsw",
+        "rabitq",
+        "post_recall_warm",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/latency-10k-hnsw-rabitq-compressed-build.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1782063993349,
+      "finished_at_unix_ms": 1782064058014,
+      "duration_ms": 64659,
+      "exit_code": 0
+    },
+    {
+      "name": "storage-10k-hnsw-turboquant-compressed-build",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/storage-10k-hnsw-turboquant-compressed-build.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "task118_real10k_hnsw_turboquant_compressed_build"
+      ],
+      "selected": true,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "storage",
+        "ec_real_10k",
+        "hnsw",
+        "turboquant",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/storage-10k-hnsw-turboquant-compressed-build.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1782064058018,
+      "finished_at_unix_ms": 1782064058049,
+      "duration_ms": 26,
+      "exit_code": 0
+    },
+    {
+      "name": "storage-10k-hnsw-pq-fastscan-compressed-build",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/storage-10k-hnsw-pq-fastscan-compressed-build.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "task118_real10k_hnsw_pq_fastscan_compressed_build"
+      ],
+      "selected": true,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "storage",
+        "ec_real_10k",
+        "hnsw",
+        "pq_fastscan",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/storage-10k-hnsw-pq-fastscan-compressed-build.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1782064058054,
+      "finished_at_unix_ms": 1782064058085,
+      "duration_ms": 27,
+      "exit_code": 0
+    },
+    {
+      "name": "storage-10k-hnsw-rabitq-compressed-build",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/storage-10k-hnsw-rabitq-compressed-build.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "task118_real10k_hnsw_rabitq_compressed_build"
+      ],
+      "selected": true,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "storage",
+        "ec_real_10k",
+        "hnsw",
+        "rabitq",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/storage-10k-hnsw-rabitq-compressed-build.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1782064058089,
+      "finished_at_unix_ms": 1782064058122,
+      "duration_ms": 29,
+      "exit_code": 0
+    },
+    {
+      "name": "load-50k-hnsw-turboquant-compressed-build",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "load",
+        "ec_real_50k",
+        "hnsw",
+        "turboquant",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/load-50k-hnsw-turboquant-compressed-build.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-50k-hnsw-pq-fastscan-compressed-build",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "load",
+        "ec_real_50k",
+        "hnsw",
+        "pq_fastscan",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/load-50k-hnsw-pq-fastscan-compressed-build.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-50k-hnsw-rabitq-compressed-build",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "load",
+        "ec_real_50k",
+        "hnsw",
+        "rabitq",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/load-50k-hnsw-rabitq-compressed-build.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-50k-hnsw-turboquant-compressed-build",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "recall",
+        "ec_real_50k",
+        "hnsw",
+        "turboquant",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/recall-50k-hnsw-turboquant-compressed-build.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-50k-hnsw-pq-fastscan-compressed-build",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "recall",
+        "ec_real_50k",
+        "hnsw",
+        "pq_fastscan",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/recall-50k-hnsw-pq-fastscan-compressed-build.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-50k-hnsw-rabitq-compressed-build",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "recall",
+        "ec_real_50k",
+        "hnsw",
+        "rabitq",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/recall-50k-hnsw-rabitq-compressed-build.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "frontier-50k-hnsw-turboquant-compressed-build",
+      "kind": "hnsw-frontier",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "frontier",
+        "ec_real_50k",
+        "hnsw",
+        "turboquant",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/frontier-50k-hnsw-turboquant-compressed-build.log",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/frontier-50k-hnsw-turboquant-compressed-build.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "frontier-50k-hnsw-pq-fastscan-compressed-build",
+      "kind": "hnsw-frontier",
+      "command": [],
+      "selected": false,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "frontier",
+        "ec_real_50k",
+        "hnsw",
+        "pq_fastscan",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/frontier-50k-hnsw-pq-fastscan-compressed-build.log",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/frontier-50k-hnsw-pq-fastscan-compressed-build.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "frontier-50k-hnsw-rabitq-compressed-build",
+      "kind": "hnsw-frontier",
+      "command": [],
+      "selected": false,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "frontier",
+        "ec_real_50k",
+        "hnsw",
+        "rabitq",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/frontier-50k-hnsw-rabitq-compressed-build.log",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/frontier-50k-hnsw-rabitq-compressed-build.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "score-correlation-50k-hnsw-turboquant-compressed-build",
+      "kind": "hnsw-score-correlation",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "score-correlation",
+        "ec_real_50k",
+        "hnsw",
+        "turboquant",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/score-correlation-50k-hnsw-turboquant-compressed-build.log",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/score-correlation-50k-hnsw-turboquant-compressed-build.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "score-correlation-50k-hnsw-pq-fastscan-compressed-build",
+      "kind": "hnsw-score-correlation",
+      "command": [],
+      "selected": false,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "score-correlation",
+        "ec_real_50k",
+        "hnsw",
+        "pq_fastscan",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/score-correlation-50k-hnsw-pq-fastscan-compressed-build.log",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/score-correlation-50k-hnsw-pq-fastscan-compressed-build.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "score-correlation-50k-hnsw-rabitq-compressed-build",
+      "kind": "hnsw-score-correlation",
+      "command": [],
+      "selected": false,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "score-correlation",
+        "ec_real_50k",
+        "hnsw",
+        "rabitq",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/score-correlation-50k-hnsw-rabitq-compressed-build.log",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/score-correlation-50k-hnsw-rabitq-compressed-build.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-50k-hnsw-turboquant-compressed-build",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "latency",
+        "ec_real_50k",
+        "hnsw",
+        "turboquant",
+        "post_recall_warm",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/latency-50k-hnsw-turboquant-compressed-build.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-50k-hnsw-pq-fastscan-compressed-build",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "latency",
+        "ec_real_50k",
+        "hnsw",
+        "pq_fastscan",
+        "post_recall_warm",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/latency-50k-hnsw-pq-fastscan-compressed-build.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-50k-hnsw-rabitq-compressed-build",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "latency",
+        "ec_real_50k",
+        "hnsw",
+        "rabitq",
+        "post_recall_warm",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/latency-50k-hnsw-rabitq-compressed-build.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-50k-hnsw-turboquant-compressed-build",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "storage",
+        "ec_real_50k",
+        "hnsw",
+        "turboquant",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/storage-50k-hnsw-turboquant-compressed-build.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-50k-hnsw-pq-fastscan-compressed-build",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "storage",
+        "ec_real_50k",
+        "hnsw",
+        "pq_fastscan",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/storage-50k-hnsw-pq-fastscan-compressed-build.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-50k-hnsw-rabitq-compressed-build",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "storage",
+        "ec_real_50k",
+        "hnsw",
+        "rabitq",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/storage-50k-hnsw-rabitq-compressed-build.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-100k-hnsw-turboquant-compressed-build",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "load",
+        "ec_real_100k",
+        "hnsw",
+        "turboquant",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/load-100k-hnsw-turboquant-compressed-build.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-100k-hnsw-pq-fastscan-compressed-build",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "load",
+        "ec_real_100k",
+        "hnsw",
+        "pq_fastscan",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/load-100k-hnsw-pq-fastscan-compressed-build.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-100k-hnsw-rabitq-compressed-build",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "load",
+        "ec_real_100k",
+        "hnsw",
+        "rabitq",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/load-100k-hnsw-rabitq-compressed-build.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-100k-hnsw-turboquant-compressed-build",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "recall",
+        "ec_real_100k",
+        "hnsw",
+        "turboquant",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/recall-100k-hnsw-turboquant-compressed-build.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-100k-hnsw-pq-fastscan-compressed-build",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "recall",
+        "ec_real_100k",
+        "hnsw",
+        "pq_fastscan",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/recall-100k-hnsw-pq-fastscan-compressed-build.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-100k-hnsw-rabitq-compressed-build",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "recall",
+        "ec_real_100k",
+        "hnsw",
+        "rabitq",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/recall-100k-hnsw-rabitq-compressed-build.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "frontier-100k-hnsw-turboquant-compressed-build",
+      "kind": "hnsw-frontier",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "frontier",
+        "ec_real_100k",
+        "hnsw",
+        "turboquant",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/frontier-100k-hnsw-turboquant-compressed-build.log",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/frontier-100k-hnsw-turboquant-compressed-build.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "frontier-100k-hnsw-pq-fastscan-compressed-build",
+      "kind": "hnsw-frontier",
+      "command": [],
+      "selected": false,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "frontier",
+        "ec_real_100k",
+        "hnsw",
+        "pq_fastscan",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/frontier-100k-hnsw-pq-fastscan-compressed-build.log",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/frontier-100k-hnsw-pq-fastscan-compressed-build.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "frontier-100k-hnsw-rabitq-compressed-build",
+      "kind": "hnsw-frontier",
+      "command": [],
+      "selected": false,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "frontier",
+        "ec_real_100k",
+        "hnsw",
+        "rabitq",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/frontier-100k-hnsw-rabitq-compressed-build.log",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/frontier-100k-hnsw-rabitq-compressed-build.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "score-correlation-100k-hnsw-turboquant-compressed-build",
+      "kind": "hnsw-score-correlation",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "score-correlation",
+        "ec_real_100k",
+        "hnsw",
+        "turboquant",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/score-correlation-100k-hnsw-turboquant-compressed-build.log",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/score-correlation-100k-hnsw-turboquant-compressed-build.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "score-correlation-100k-hnsw-pq-fastscan-compressed-build",
+      "kind": "hnsw-score-correlation",
+      "command": [],
+      "selected": false,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "score-correlation",
+        "ec_real_100k",
+        "hnsw",
+        "pq_fastscan",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/score-correlation-100k-hnsw-pq-fastscan-compressed-build.log",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/score-correlation-100k-hnsw-pq-fastscan-compressed-build.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "score-correlation-100k-hnsw-rabitq-compressed-build",
+      "kind": "hnsw-score-correlation",
+      "command": [],
+      "selected": false,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "score-correlation",
+        "ec_real_100k",
+        "hnsw",
+        "rabitq",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/score-correlation-100k-hnsw-rabitq-compressed-build.log",
+        "reviews/task-118/006-final-attribution-matrix/artifacts/score-correlation-100k-hnsw-rabitq-compressed-build.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-100k-hnsw-turboquant-compressed-build",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "latency",
+        "ec_real_100k",
+        "hnsw",
+        "turboquant",
+        "post_recall_warm",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/latency-100k-hnsw-turboquant-compressed-build.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-100k-hnsw-pq-fastscan-compressed-build",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "latency",
+        "ec_real_100k",
+        "hnsw",
+        "pq_fastscan",
+        "post_recall_warm",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/latency-100k-hnsw-pq-fastscan-compressed-build.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-100k-hnsw-rabitq-compressed-build",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "latency",
+        "ec_real_100k",
+        "hnsw",
+        "rabitq",
+        "post_recall_warm",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/latency-100k-hnsw-rabitq-compressed-build.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-100k-hnsw-turboquant-compressed-build",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "storage",
+        "ec_real_100k",
+        "hnsw",
+        "turboquant",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/storage-100k-hnsw-turboquant-compressed-build.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-100k-hnsw-pq-fastscan-compressed-build",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "storage",
+        "ec_real_100k",
+        "hnsw",
+        "pq_fastscan",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/storage-100k-hnsw-pq-fastscan-compressed-build.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-100k-hnsw-rabitq-compressed-build",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "storage",
+        "ec_real_100k",
+        "hnsw",
+        "rabitq",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/006-final-attribution-matrix/artifacts/storage-100k-hnsw-rabitq-compressed-build.log"
+      ],
+      "status": "skipped"
+    }
+  ]
+}

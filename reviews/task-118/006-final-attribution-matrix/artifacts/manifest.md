@@ -32,3 +32,56 @@ The broader 10k/50k/100k attribution matrix remains in progress in this packet.
 Do not treat this packet as final closeout until the request cites complete
 10k, 50k, and 100k recall, latency, storage, frontier containment, score
 correlation, and source-vs-compressed build evidence.
+
+## 10k attribution checkpoint
+
+Head SHA: `71b622d8a` for the packet update; code/config under measurement was
+`1a6e75720b5f10b8999a1d94958e99be39df2eff`.
+
+Commands:
+
+- Source-build 10k pass:
+  `cargo run -p ecaz-cli -- --host /home/peter/.pgrx --port 28818 --database tqvector_bench --log-file reviews/task-118/006-final-attribution-matrix/artifacts/suite-run-10k.log bench suite run --config crates/ecaz-cli/suites/task118-hnsw-quantized-recall-attribution.json --artifact-dir reviews/task-118/006-final-attribution-matrix/artifacts --manifest-output reviews/task-118/006-final-attribution-matrix/artifacts/suite-manifest-10k.json --results-output reviews/task-118/006-final-attribution-matrix/artifacts/results-10k.jsonl --only-tag ec_real_10k --continue-on-error --allow-debug-backend`
+- Corrected compressed-build 10k rerun:
+  `cargo run -p ecaz-cli -- --host /home/peter/.pgrx --port 28818 --database tqvector_bench --log-file reviews/task-118/006-final-attribution-matrix/artifacts/suite-run-10k-compressed-rerun.log bench suite run --config crates/ecaz-cli/suites/task118-hnsw-quantized-recall-attribution.json --artifact-dir reviews/task-118/006-final-attribution-matrix/artifacts --manifest-output reviews/task-118/006-final-attribution-matrix/artifacts/suite-manifest-10k-compressed-rerun.json --results-output reviews/task-118/006-final-attribution-matrix/artifacts/results-10k-compressed-rerun.jsonl --only <18 explicit 10k compressed-build steps> --continue-on-error --allow-debug-backend`
+
+Artifacts:
+
+- `suite-manifest-10k.json`, `results-10k.jsonl`, `suite-run-10k.log`
+  - Source-build 10k pass.
+  - Manifest status: `26` succeeded, `10` failed, `72` skipped.
+  - The failures were only the pre-fix TurboQuant/PqFastScan compressed-build
+    steps; the source-build 10k rows succeeded.
+- `suite-manifest-10k-compressed-rerun.json`,
+  `results-10k-compressed-rerun.jsonl`,
+  `suite-run-10k-compressed-rerun.log`
+  - Corrected compressed-build 10k pass.
+  - Manifest status: `18` succeeded, `90` skipped, no failed selected steps.
+- Per-step `load-*`, `recall-*`, `frontier-*`, `score-correlation-*`,
+  `latency-*`, and `storage-*` logs for 10k source-build and compressed-build
+  runs.
+  - Raw per-query frontier/score JSONL files are intentionally not cited as the
+    checkpoint source of truth; the summarized per-step logs and suite results
+    contain the decision-grade rows.
+
+Key 10k `ef_search=200` results:
+
+| Format | Build path | Recall@10 | Truth@10 in frontier | Exact rerank | Dropped before exact | Mean Spearman | Latency mean / p95 / p99 | Total / index storage |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- |
+| TurboQuant | source | 0.9950 | 0.9965 | 200 | 0 | 0.8404 | 42.4 ms / 49.6 ms / 60.0 ms | 172.1 MiB / 13.0 MiB |
+| TurboQuant | compressed | 0.9950 | 0.9965 | 200 | 0 | 0.8404 | 42.5 ms / 49.5 ms / 55.7 ms | 172.1 MiB / 13.0 MiB |
+| PqFastScan | source | 0.9945 | 0.9960 | 200 | 0 | 0.8404 | 45.7 ms / 54.5 ms / 60.2 ms | 172.2 MiB / 13.1 MiB |
+| PqFastScan | compressed | 0.9945 | 0.9960 | 200 | 0 | 0.8404 | 45.0 ms / 51.0 ms / 60.0 ms | 172.2 MiB / 13.1 MiB |
+| RaBitQ | source | 0.9705 | 0.9705 | 200 | 0 | 0.9086 | 80.9 ms / 92.7 ms / 109.4 ms | 172.1 MiB / 13.0 MiB |
+| RaBitQ | compressed | 0.9705 | 0.9705 | 200 | 0 | 0.9086 | 81.4 ms / 93.1 ms / 115.3 ms | 172.1 MiB / 13.0 MiB |
+
+10k interpretation:
+
+- Source-build and compressed-build results match for all three formats at
+  10k; no recall loss is attributable to the HNSW build source column at this
+  scale.
+- TurboQuant/PqFastScan candidate containment slightly exceeds final recall,
+  while final rerank counters show no truncation before exact rerank.
+- RaBitQ recall equals `truth@10 in frontier`, despite stronger score
+  correlation than TurboQuant/PqFastScan. At 10k, the dominant RaBitQ loss is
+  candidate containment/traversal, not final exact rerank or scorer ordering.

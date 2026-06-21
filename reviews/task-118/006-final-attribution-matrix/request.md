@@ -40,3 +40,31 @@ prefixes are shortened.
 The larger final attribution matrix is still in progress in this same packet.
 This request is for the config checkpoint that unblocks the compressed-build
 A/B lanes.
+
+## 10k Evidence Update
+
+The 10k source-build and corrected compressed-build lanes are now present in the
+packet artifacts.
+
+- Source-build artifact set: `artifacts/suite-manifest-10k.json`,
+  `artifacts/results-10k.jsonl`, `artifacts/suite-run-10k.log`
+- Compressed-build artifact set:
+  `artifacts/suite-manifest-10k-compressed-rerun.json`,
+  `artifacts/results-10k-compressed-rerun.jsonl`,
+  `artifacts/suite-run-10k-compressed-rerun.log`
+
+At `ef_search=200`, source-build and compressed-build recall match for all
+formats:
+
+- TurboQuant: `0.9950` source, `0.9950` compressed
+- PqFastScan: `0.9945` source, `0.9945` compressed
+- RaBitQ: `0.9705` source, `0.9705` compressed
+
+The frontier and score-correlation logs show no pre-exact-rerank drops. RaBitQ
+has lower 10k recall because `truth@10 in frontier` is also `0.9705`, while its
+score correlation remains stronger than TurboQuant/PqFastScan (`0.9086` vs
+`0.8404`). The 10k result points at candidate containment/traversal for RaBitQ,
+not final exact rerank or score ordering.
+
+This packet is still not a final Task 118 closeout; 50k and 100k evidence is
+still required.
