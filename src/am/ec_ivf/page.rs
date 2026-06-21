@@ -5297,16 +5297,20 @@ mod tests {
     #[test]
     fn dense_posting_block_roundtrip_preserves_scan_arrays() {
         let postings = vec![
-            (tid(11, 1), 0.25, ItemPointer::INVALID, vec![1, 2, 3]),
-            (tid(12, 2), 0.5, ItemPointer::INVALID, vec![4, 5, 6]),
-            (tid(13, 3), 0.75, ItemPointer::INVALID, vec![7, 8, 9]),
+            (tid(11, 1), 0.25, tid(21, 1), vec![1, 2, 3]),
+            (tid(12, 2), 0.5, tid(22, 2), vec![4, 5, 6]),
+            (tid(13, 3), 0.75, tid(23, 3), vec![7, 8, 9]),
         ];
-        let tuple =
+        let mut tuple =
             IvfDensePostingBlockTuple::from_single_heaptid_postings(4, &postings, 3).unwrap();
+        tuple.mark_deleted(1);
+        assert_eq!(tuple.len(), 3);
+        assert!(tuple.is_deleted(1));
 
         let encoded = tuple.encode().unwrap();
         let decoded = IvfDensePostingBlockTuple::decode(&encoded, 3).unwrap();
         let borrowed = IvfDensePostingBlockRef::decode(&encoded, 3).unwrap();
+        let generic = IvfDensePostingRef::Block(borrowed);
 
         assert_eq!(decoded, tuple);
         assert!(dense_posting_block_tuple_fits(
@@ -5318,12 +5322,34 @@ mod tests {
         assert_eq!(borrowed.list_id, 4);
         assert_eq!(borrowed.len(), 3);
         assert_eq!(borrowed.total_heap_tids(), 3);
+        assert_eq!(borrowed.payload_len(), 3);
+        assert!(borrowed.is_deleted(1));
         assert_eq!(borrowed.gammas(), vec![0.25, 0.5, 0.75]);
+        let mut gammas = vec![99.0];
+        borrowed.copy_gammas_to(&mut gammas);
+        assert_eq!(gammas, vec![0.25, 0.5, 0.75]);
+        assert_eq!(borrowed.gamma(2), 0.75);
         assert_eq!(borrowed.payload(1), &[4, 5, 6]);
+        assert_eq!(borrowed.rerank_tid(2), tid(23, 3));
         assert_eq!(
             borrowed.heap_tids(2).collect::<Vec<_>>(),
             vec![postings[2].0]
         );
+
+        assert_eq!(generic.list_id(), 4);
+        assert_eq!(generic.len(), 3);
+        assert_eq!(generic.payload_len(), 3);
+        assert_eq!(generic.payloads(), &[1, 2, 3, 4, 5, 6, 7, 8, 9]);
+        assert!(generic.is_deleted(1));
+        let mut generic_gammas = Vec::new();
+        generic.copy_gammas_to(&mut generic_gammas);
+        assert_eq!(generic_gammas, vec![0.25, 0.5, 0.75]);
+        assert_eq!(generic.gammas_native_le(), borrowed.gammas_native_le());
+        assert_eq!(generic.gamma(0), 0.25);
+        assert_eq!(generic.heap_tid_count(0), 1);
+        assert_eq!(generic.heap_tids(0).collect::<Vec<_>>(), vec![tid(11, 1)]);
+        assert_eq!(generic.rerank_tid(1), tid(22, 2));
+        assert_eq!(generic.payload(2), &[7, 8, 9]);
     }
 
     #[test]
@@ -5472,11 +5498,38 @@ mod tests {
         let directory_tid = page.insert_ivf_list_directory(directory).unwrap();
         let posting_tid = page.insert_ivf_posting(&posting).unwrap();
         let codebook_tid = page.insert_ivf_pq_codebook(&codebook).unwrap();
+        let dense_block = IvfDensePostingBlockTuple::from_single_heaptid_postings(
+            1,
+            &[
+                (tid(5, 1), 0.5, tid(30, 1), vec![0x01, 0x02]),
+                (tid(5, 2), 0.75, tid(30, 2), vec![0x03, 0x04]),
+            ],
+            2,
+        )
+        .unwrap();
+        let dense_tid = page.insert_ivf_dense_posting_block(&dense_block).unwrap();
+        let aligned_dense_tid = page
+            .insert_ivf_dense_posting_aligned_block(&dense_block)
+            .unwrap();
+        let single_tid = page
+            .insert_ivf_single_heaptid_posting(1, tid(6, 1), 0.5, tid(31, 1), &[0xcc, 0xdd])
+            .unwrap();
+        let mut sidecar = IvfRerankSidecarBlockTuple::new(
+            RerankFormat::F16 as u8,
+            2,
+            vec![tid(7, 1), tid(7, 2)],
+            vec![0x01, 0x02, 0x03, 0x04],
+        )
+        .unwrap();
+        let sidecar_tid = page.insert_ivf_rerank_sidecar_block(&sidecar).unwrap();
         let group_header_tid = page.insert_ivf_rerank_group_header(&group_header).unwrap();
         let group_segment_tid = page
             .insert_ivf_rerank_group_payload_segment(&group_payload_segment)
             .unwrap();
         page.update_ivf_pq_codebook(codebook_tid, &updated_codebook)
+            .unwrap();
+        sidecar.next_tid = tid(32, 1);
+        page.update_ivf_rerank_sidecar_block(sidecar_tid, &sidecar)
             .unwrap();
         group_header.next_segment_tid = group_segment_tid;
         group_header.next_group_tid = tid(20, 1);
@@ -5492,6 +5545,30 @@ mod tests {
             page.read_ivf_posting(posting_tid, posting.payload.len())
                 .unwrap(),
             posting
+        );
+        assert_eq!(
+            page.read_ivf_dense_posting_block(dense_tid, 2).unwrap(),
+            dense_block
+        );
+        assert_eq!(
+            page.read_ivf_dense_posting_block(aligned_dense_tid, 2)
+                .unwrap(),
+            dense_block
+        );
+        assert_eq!(
+            page.read_ivf_posting(single_tid, 2).unwrap(),
+            IvfPostingTuple {
+                list_id: 1,
+                deleted: false,
+                heaptids: vec![tid(6, 1)],
+                gamma: 0.5,
+                rerank_tid: tid(31, 1),
+                payload: vec![0xcc, 0xdd],
+            }
+        );
+        assert_eq!(
+            page.read_ivf_rerank_sidecar_block(sidecar_tid).unwrap(),
+            sidecar
         );
         assert_eq!(
             IvfPqCodebookTuple::decode(
@@ -5580,12 +5657,37 @@ mod tests {
         let centroid_tid = chain.insert_ivf_centroid(&centroid).unwrap();
         let directory_tid = chain.insert_ivf_list_directory(directory).unwrap();
         let codebook_tid = chain.insert_ivf_pq_codebook(&codebook).unwrap();
+        let dense_block = IvfDensePostingBlockTuple::from_single_heaptid_postings(
+            2,
+            &[(tid(9, 1), 0.75, tid(40, 1), vec![0x50, 0x51])],
+            2,
+        )
+        .unwrap();
+        let dense_tid = chain.insert_ivf_dense_posting_block(&dense_block).unwrap();
+        let aligned_dense_tid = chain
+            .insert_ivf_dense_posting_aligned_block(&dense_block)
+            .unwrap();
+        let single_tid = chain
+            .insert_ivf_single_heaptid_posting(2, tid(9, 2), 0.25, tid(40, 2), &[0x52, 0x53])
+            .unwrap();
+        let mut sidecar = IvfRerankSidecarBlockTuple::new(
+            RerankFormat::F16 as u8,
+            2,
+            vec![tid(10, 1)],
+            vec![0x54, 0x55],
+        )
+        .unwrap();
+        let sidecar_tid = chain.insert_ivf_rerank_sidecar_block(&sidecar).unwrap();
         let group_header_tid = chain.insert_ivf_rerank_group_header(&group_header).unwrap();
         let group_segment_tid = chain
             .insert_ivf_rerank_group_payload_segment(&group_payload_segment)
             .unwrap();
         chain
             .update_ivf_pq_codebook(codebook_tid, &updated_codebook)
+            .unwrap();
+        sidecar.next_tid = tid(41, 1);
+        chain
+            .update_ivf_rerank_sidecar_block(sidecar_tid, &sidecar)
             .unwrap();
         group_header.next_segment_tid = group_segment_tid;
         group_header.next_group_tid = tid(21, 1);
@@ -5597,6 +5699,33 @@ mod tests {
         assert_eq!(
             chain.read_ivf_list_directory(directory_tid).unwrap(),
             directory
+        );
+        assert_eq!(
+            chain.read_ivf_dense_posting_block(dense_tid, 2).unwrap(),
+            dense_block
+        );
+        assert_eq!(
+            chain
+                .read_ivf_dense_posting_block(aligned_dense_tid, 2)
+                .unwrap(),
+            dense_block
+        );
+        assert_eq!(
+            chain.read_ivf_posting(single_tid, 2).unwrap(),
+            IvfPostingTuple {
+                list_id: 2,
+                deleted: false,
+                heaptids: vec![tid(9, 2)],
+                gamma: 0.25,
+                rerank_tid: tid(40, 2),
+                payload: vec![0x52, 0x53],
+            }
+        );
+        assert_eq!(
+            chain
+                .read_ivf_rerank_sidecar_block_staged(sidecar_tid)
+                .unwrap(),
+            sidecar
         );
         assert_eq!(
             IvfPqCodebookTuple::decode(
@@ -5632,6 +5761,7 @@ mod tests {
         assert!(list_directory_tuple_fits(DEFAULT_PAGE_SIZE));
         assert!(posting_tuple_fits(4096, DEFAULT_PAGE_SIZE));
         assert!(pq_codebook_tuple_fits(256, DEFAULT_PAGE_SIZE));
+        assert!(rerank_sidecar_block_tuple_fits(64, 4, DEFAULT_PAGE_SIZE));
         assert!(rerank_group_header_tuple_fits(
             64,
             64,
@@ -5647,6 +5777,11 @@ mod tests {
         assert!(!list_directory_tuple_fits(32));
         assert!(!posting_tuple_fits(DEFAULT_PAGE_SIZE, DEFAULT_PAGE_SIZE));
         assert!(!pq_codebook_tuple_fits(
+            DEFAULT_PAGE_SIZE,
+            DEFAULT_PAGE_SIZE
+        ));
+        assert!(!rerank_sidecar_block_tuple_fits(
+            DEFAULT_PAGE_SIZE,
             DEFAULT_PAGE_SIZE,
             DEFAULT_PAGE_SIZE
         ));

@@ -5540,6 +5540,72 @@ mod tests {
     }
 
     #[test]
+    fn dequantized_estimator_scores_reconstructed_payload_and_guards_tail_scalars() {
+        let q = identity_quantizer(5, 4);
+        let query = [0.75_f32, -0.25, 1.25, -1.5, 0.5];
+        let candidate = [-0.25_f32, 0.0, 0.25, 0.5, -0.5];
+        let mut code =
+            <RaBitQQuantizer as crate::quant::Quantizer>::encode_code(&q, &candidate).into_vec();
+        let prepared = q.prepare_estimator(&query);
+        let packed_bytes = q.packed_bytes();
+
+        let candidate_norm = read_tail_f32(&code, packed_bytes, 0);
+        let x_norm = read_tail_f32(&code, packed_bytes, RABITQ_NORM_LEN + RABITQ_UNIT_DOT_LEN);
+        let sqrt_d = (q.dimensions() as f32).sqrt();
+        let mut sum_q_dequant = 0.0_f32;
+        for (i, &query_i) in query.iter().enumerate() {
+            sum_q_dequant += query_i
+                * dequant_level(
+                    read_level(&code, i, 4),
+                    4,
+                    sqrt_d,
+                    RABITQ_DEFAULT_QUANT_CLIP,
+                );
+        }
+        let expected = candidate_norm * sum_q_dequant / x_norm;
+
+        let estimate = prepared.estimate_ip_dequantized_scalar_only(&code);
+        assert!((estimate - expected).abs() < 1e-6);
+        assert_ne!(estimate, prepared.estimate_ip_scalar_only(&code));
+
+        write_tail_f32(&mut code, packed_bytes, 0, 0.0);
+        assert_eq!(prepared.estimate_ip_dequantized_scalar_only(&code), 0.0);
+        write_tail_f32(&mut code, packed_bytes, 0, candidate_norm);
+        write_tail_f32(
+            &mut code,
+            packed_bytes,
+            RABITQ_NORM_LEN + RABITQ_UNIT_DOT_LEN,
+            f32::NAN,
+        );
+        assert_eq!(prepared.estimate_ip_dequantized_scalar_only(&code), 0.0);
+    }
+
+    #[test]
+    fn seeded_srht_cache_keys_include_bits_seed_and_clip() {
+        clear_seeded_srht_cache_for_test();
+        reset_seeded_srht_construction_count_for_test(8);
+
+        let q1 = RaBitQQuantizer::cached_seeded_srht_bits_clip(8, 42, 4, 2.0).unwrap();
+        let q2 = RaBitQQuantizer::cached_seeded_srht_bits_clip(8, 42, 4, 2.0).unwrap();
+        assert!(Arc::ptr_eq(&q1, &q2));
+        assert_eq!(seeded_srht_construction_count_for_test(), 1);
+
+        let q3 = RaBitQQuantizer::cached_seeded_srht_bits_clip(8, 42, 4, 3.0).unwrap();
+        assert!(!Arc::ptr_eq(&q1, &q3));
+        assert_eq!(seeded_srht_construction_count_for_test(), 2);
+
+        let default_clip = RaBitQQuantizer::cached_seeded_srht_bits(8, 7, 1).unwrap();
+        let explicit_default =
+            RaBitQQuantizer::cached_seeded_srht_bits_clip(8, 7, 1, RABITQ_DEFAULT_QUANT_CLIP)
+                .unwrap();
+        assert!(Arc::ptr_eq(&default_clip, &explicit_default));
+
+        assert!(RaBitQQuantizer::cached_seeded_srht_bits_clip(8, 7, 4, 0.0).is_err());
+        assert!(RaBitQQuantizer::with_seeded_srht_bits(8, 99, 4).is_ok());
+        assert!(RaBitQQuantizer::with_seeded_srht_bits_clip(8, 99, 4, 2.5).is_ok());
+    }
+
+    #[test]
     fn estimate_ip_o_dot_floor_covers_below_equal_and_above() {
         let q = identity_quantizer(5, 2);
         let query = [0.75_f32, -0.25, 1.25, -1.5, 0.5];
