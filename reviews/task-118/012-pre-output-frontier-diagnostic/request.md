@@ -9,6 +9,13 @@ date: 2026-06-21
 
 # Review Request: Pre-Output Frontier Diagnostic Semantics
 
+## Superseded Note
+
+Packet 014 supersedes this checkpoint's visible-frontier interpretation. The
+correct Task 118 frontier diagnostic surface is the AM's ef_search-sized
+candidate pool before SQL LIMIT truncation, not the scan-internal visible
+frontier vector captured before gettuple-driven result staging.
+
 ## Scope
 
 This checkpoint tightens Task 118 candidate-containment evidence.

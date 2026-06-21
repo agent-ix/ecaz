@@ -11,8 +11,10 @@ date: 2026-06-21
 
 ## Scope
 
-This checkpoint updates Task 118 closeout handoff material after packet 012
-changed the frontier diagnostic semantics.
+This checkpoint updates Task 118 closeout handoff material after the frontier
+diagnostic semantics changed. Packet 014 later corrects that semantics note:
+the final frontier rows should report the AM's ef_search-sized candidate pool
+before SQL LIMIT truncation.
 
 Packet 006's existing 10k frontier rows were generated before commit
 `6ff2d1d3d8aa04edced517497d940c65ea3d6bca`, so they should not be reused as

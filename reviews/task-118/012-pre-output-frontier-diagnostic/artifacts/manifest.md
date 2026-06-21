@@ -1,5 +1,9 @@
 # Task 118 Packet 012 Artifact Manifest
 
+Superseded by packet 014: the visible-frontier interpretation in this packet
+was too early in the scan lifecycle. Packet 014 corrects the diagnostic to
+report the AM candidate pool before SQL LIMIT truncation.
+
 - head SHA: `6ff2d1d3d8aa04edced517497d940c65ea3d6bca`
 - task bucket: `reviews/task-118/012-pre-output-frontier-diagnostic`
 - generated: `2026-06-21`

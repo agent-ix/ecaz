@@ -10,7 +10,7 @@
 
 ### `current-head-diagnostic-regeneration.md`
 
-- purpose: operator supplement requiring current-head regeneration of 10k HNSW frontier diagnostics after packet 012 changed diagnostic semantics.
+- purpose: operator supplement requiring current-head regeneration of 10k HNSW frontier diagnostics after packet 014 corrected diagnostic semantics.
 - includes: exact 10k frontier regeneration command, expected selected steps, final packet commit scope, and raw JSONL exclusion rule.
 
 ### `suite-dry-run-10k-frontier-current-head.log`

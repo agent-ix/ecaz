@@ -1,8 +1,8 @@
 # Task 118 Current-Head Diagnostic Regeneration Supplement
 
-Packet 012 changed the HNSW frontier containment diagnostic semantics:
-`frontier_*` rows and truth-containment counters now use the captured
-pre-output visible frontier rather than the final emitted stream.
+Packet 014 corrects the HNSW frontier containment diagnostic semantics:
+`frontier_*` rows and truth-containment counters now use the AM's
+ef_search-sized candidate pool before SQL LIMIT truncation.
 
 Because packet 006's existing 10k frontier logs were generated before that
 change, they are not final Task 118 containment evidence. The final packet must
@@ -22,7 +22,8 @@ Before final closeout:
 The old 10k recall, latency, storage, and score-correlation rows can remain
 useful context when their code paths are unchanged, but the final packet must
 not cite pre-`6ff2d1d3d8aa04edced517497d940c65ea3d6bca` 10k frontier rows as
-proof of candidate containment.
+proof of candidate containment. Prefer citing artifacts generated at or after
+`df7ff2a0324929bd385e710ed97807be971773df`.
 
 ## 10k Frontier Regeneration Command
 

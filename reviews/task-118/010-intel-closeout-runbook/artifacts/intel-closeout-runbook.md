@@ -4,11 +4,11 @@ This runbook is for the Intel desktop that owns final Task 118 measurement.
 The AMD host can produce relative checks, but final closeout evidence should be
 captured on Intel.
 
-Current-head note: packet 012 changed the frontier containment diagnostic so
-`frontier_*` rows now describe the captured pre-output HNSW frontier rather
-than the final emitted stream. Before closing Task 118, use the packet 013
-supplement to regenerate 10k frontier diagnostics on the current branch head in
-addition to the 50k/100k Intel runs below.
+Current-head note: packet 014 corrects the frontier containment diagnostic so
+`frontier_*` rows describe the AM's ef_search-sized candidate pool before SQL
+LIMIT truncation. Before closing Task 118, use the packet 013 supplement to
+regenerate 10k frontier diagnostics on the current branch head in addition to
+the 50k/100k Intel runs below.
 
 ## Branch And Build
 
