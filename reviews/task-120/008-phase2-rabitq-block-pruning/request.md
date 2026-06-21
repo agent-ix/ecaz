@@ -79,9 +79,10 @@ Primary summary artifacts:
 - `artifacts/suite-manifest.json`
 - `artifacts/suite-status.log`
 
-Raw pipeline artifacts are packet-local for the corrected recursive `full` and
-`l2` matrix. The aborted flat `g128` run is not cited as decision-grade
-evidence.
+The raw per-query SPIRE pipeline JSONL dumps were pruned after reviewer
+feedback because the cited decision evidence is preserved in the compact
+summary files above plus `suite-results.jsonl`. The aborted flat `g128` run is
+not cited as decision-grade evidence.
 
 ## Caveat
 
@@ -89,6 +90,11 @@ This packet deliberately does not claim route-vs-leaf-vs-block truth attribution
 from target-block-rank output. The Phase 1 reviewer flagged that diagnostic as
 non-decision-grade. The Phase 2 conclusion here rests on A/B final recall,
 latency, storage, and selected-leaf-block candidate counts.
+
+The suite ran through `target/debug/ecaz`, so the latency numbers are local
+debug-build reference data only. The no-go recommendation rests on the measured
+recall collapse; any future promotion packet must remeasure latency with a
+release backend/binary.
 
 ## Closeout Status
 

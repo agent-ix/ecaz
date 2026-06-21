@@ -57,3 +57,12 @@ reviews/**/list-command-invocations*.json
 # Regenerable recall ground-truth caches.
 reviews/**/truth-cache/
 benchmarks/**/truth-cache/
+
+# Raw per-query SPIRE pipeline diagnostics are large and usually regenerable.
+# Commit compact summaries and suite-results.jsonl unless a packet explicitly
+# needs a force-added raw diagnostic artifact.
+reviews/**/pipeline-*-funnel.jsonl
+reviews/**/pipeline-*-stage-containment.jsonl
+reviews/**/pipeline-*-leaf-block-rank.jsonl
+reviews/**/pipeline-*-target-block-rank.jsonl
+reviews/**/pipeline-*-target-candidate-rank.jsonl

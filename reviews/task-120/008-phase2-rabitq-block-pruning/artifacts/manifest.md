@@ -8,6 +8,7 @@
 - rerank mode: current SPIRE exact/source rerank with `rerank_width=25`
 - isolated one-index-per-table vs shared-table surface: isolated prefixes per scale in database `tqvector_bench_task120`
 - timestamp: `2026-06-21T10:49:17-07:00`
+- artifacts committed in packet commit: `e1f77534a18683d6f7412007fc65571eef90936fb`
 
 This packet uses a bespoke `ecaz bench suite` config instead of the canonical
 current lane config because Task 120 Phase 2 needs SPIRE-only recursive RaBitQ
@@ -168,6 +169,13 @@ target-block-rank attribution as non-decision-grade. The Phase 2 conclusion here
 rests on A/B final recall, latency, storage, and selected-leaf-block candidate
 counts.
 
+Latency caveat: this suite ran through `target/debug/ecaz`, so the latency
+values are debug-build reference data only. They are acceptable for this packet's
+recall-driven no-go conclusion, but they must not be cited for any future
+promotion decision. At 10k, the recall-step mean had `l2` slightly slower than
+`full` while the dedicated latency step had `l2` slightly faster; treat that as
+debug/local noise, not as a stable 10k latency finding.
+
 ## Raw Measurement Logs
 
 ### Load and storage logs
@@ -185,19 +193,16 @@ counts.
 - result: all recall and latency steps succeeded
 - key values: summarized in `recall-latency-summary.txt`
 
-### SPIRE pipeline logs and JSONL
+### SPIRE pipeline logs and summaries
 
 - files:
   - `pipeline-{10k,50k,100k}-rabitq-{full,l2}.log`
-  - `pipeline-{10k,50k,100k}-rabitq-{full,l2}-funnel.jsonl`
-  - `pipeline-{10k,50k,100k}-rabitq-{full,l2}-stage-containment.jsonl`
-  - `pipeline-{10k,50k,100k}-rabitq-{full,l2}-leaf-block-rank.jsonl`
-  - `pipeline-{10k,50k,100k}-rabitq-{full,l2}-target-block-rank.jsonl`
-  - `pipeline-{10k,50k,100k}-rabitq-{full,l2}-target-candidate-rank.jsonl`
 - command source: `suite.json`
 - result: all pipeline steps succeeded
 - cited values: selected-leaf-block pruning rows summarized in
   `block-pruning-summary.txt` and `block-pruning-comparison.txt`
+- raw per-query pipeline JSONL dumps were pruned after reviewer feedback; the
+  compact summary files preserve the cited result lines
 
 ## Setup and Provenance Logs
 
