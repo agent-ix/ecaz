@@ -1,0 +1,7 @@
+Scale	Format	Build path	Recall@10	Mean q-time	Truth@10 in frontier	Truth@100 in frontier	Exact rerank	Dropped before exact	Mean Spearman	Mean rank shift	Total storage	Total storage bytes	Dominant loss stage	Next action
+10k	turboquant	source-build	0.9950	42.47 ms	0.9965	0.9545	200.0	0.0	0.8404	22.79	172.1 MiB	180459930		
+10k	turboquant	compressed-build	0.9950	42.57 ms	0.9965	0.9545	200.0	0.0	0.8404	22.79	172.1 MiB	180459930		
+10k	pq_fastscan	source-build	0.9945	44.97 ms	0.9960	0.9543	200.0	0.0	0.8404	22.78	172.2 MiB	180564787		
+10k	pq_fastscan	compressed-build	0.9945	44.53 ms	0.9960	0.9543	200.0	0.0	0.8404	22.78	172.2 MiB	180564787		
+10k	rabitq	source-build	0.9705	80.96 ms	0.9705	0.9272	200.0	0.0	0.9086	16.85	172.1 MiB	180459930		
+10k	rabitq	compressed-build	0.9705	80.89 ms	0.9705	0.9272	200.0	0.0	0.9086	16.85	172.1 MiB	180459930		
