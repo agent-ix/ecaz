@@ -460,6 +460,8 @@ struct SpirePipelineStep {
     #[serde(default)]
     target_block_rank_output: Option<PathBuf>,
     #[serde(default)]
+    target_candidate_rank_output: Option<PathBuf>,
+    #[serde(default)]
     miss_attribution_output: Option<PathBuf>,
     #[serde(default)]
     leaf_block_rank_local_sequence_offset: Option<i64>,
@@ -2574,6 +2576,7 @@ impl SuiteStep {
                 .chain(step.stage_containment_output.iter())
                 .chain(step.leaf_block_rank_output.iter())
                 .chain(step.target_block_rank_output.iter())
+                .chain(step.target_candidate_rank_output.iter())
                 .chain(step.miss_attribution_output.iter())
                 .cloned()
                 .collect(),
@@ -3097,6 +3100,11 @@ fn expand_spire_pipeline(step: &SpirePipelineStep, defaults: &SuiteDefaults) -> 
         &mut args,
         "--target-block-rank-output",
         step.target_block_rank_output.as_deref(),
+    );
+    push_opt_path(
+        &mut args,
+        "--target-candidate-rank-output",
+        step.target_candidate_rank_output.as_deref(),
     );
     push_opt_path(
         &mut args,
@@ -4708,6 +4716,7 @@ mod tests {
             truth_cache_file: Some("truth-cache.json".into()),
             leaf_block_rank_output: None,
             target_block_rank_output: Some("target-block-rank.jsonl".into()),
+            target_candidate_rank_output: Some("target-candidate-rank.jsonl".into()),
             miss_attribution_output: Some("miss-attribution.jsonl".into()),
             leaf_block_rank_local_sequence_offset: None,
             include_production_read_profile: Some(true),
@@ -4756,6 +4765,11 @@ mod tests {
         assert!(args
             .windows(2)
             .any(|w| w == ["--target-block-rank-output", "target-block-rank.jsonl"]));
+        assert!(args.windows(2).any(|w| w
+            == [
+                "--target-candidate-rank-output",
+                "target-candidate-rank.jsonl"
+            ]));
         assert!(args
             .windows(2)
             .any(|w| w == ["--miss-attribution-output", "miss-attribution.jsonl"]));
@@ -4809,6 +4823,7 @@ mod tests {
                 truth_cache_file: None,
                 leaf_block_rank_output: None,
                 target_block_rank_output: None,
+                target_candidate_rank_output: None,
                 miss_attribution_output: None,
                 leaf_block_rank_local_sequence_offset: None,
                 include_production_read_profile: Some(true),

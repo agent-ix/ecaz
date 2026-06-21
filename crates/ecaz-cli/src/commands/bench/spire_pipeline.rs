@@ -136,6 +136,12 @@ pub struct SpirePipelineArgs {
     /// leaves first and emits only the containing block rank.
     #[arg(long)]
     pub target_block_rank_output: Option<PathBuf>,
+    /// Write per-exact-neighbor target candidate-rank rows as JSONL.
+    ///
+    /// This records retained approximate candidate rank and rerank-prefix
+    /// membership for each exact truth row.
+    #[arg(long)]
+    pub target_candidate_rank_output: Option<PathBuf>,
     /// Write per-exact-neighbor recall miss attribution rows as JSONL.
     ///
     /// Requires `--include-recall` and query metrics. The output joins exact
@@ -336,6 +342,7 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
     let mut stage_containment_rows = Vec::<StageContainmentRecord>::new();
     let mut leaf_block_rank_rows = Vec::<LeafBlockRankRecord>::new();
     let mut target_block_rank_rows = Vec::<LeafBlockRankRecord>::new();
+    let mut target_candidate_rank_rows = Vec::<TargetCandidateRankRecord>::new();
     let mut miss_attribution_rows = Vec::<MissAttributionRecord>::new();
     let mut remote_epoch = args.remote_requested_epoch;
     let mut task87_counter_lines = Vec::new();
@@ -684,6 +691,60 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
                     ));
                 }
             }
+            let mut candidate_rank_rows_for_stage = None::<Vec<TargetCandidateRankRow>>;
+            if args.target_candidate_rank_output.is_some() {
+                let truth_ids = query_truth
+                    .as_ref()
+                    .expect("target candidate rank output is validated to require recall truth");
+                let query_truth_ids = truth_ids.get(query_index).ok_or_else(|| {
+                    eyre!(
+                        "exact-truth ids missing for query ordinal {}",
+                        query_index + 1
+                    )
+                })?;
+                let target_local_sequences = query_truth_ids
+                    .iter()
+                    .map(|truth_id| {
+                        truth_id
+                            .checked_add(args.leaf_block_rank_local_sequence_offset)
+                            .ok_or_else(|| {
+                                eyre!(
+                                    "target candidate rank local sequence overflow for truth id {truth_id}"
+                                )
+                            })
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+                let rank_rows = query_target_candidate_rank_rows(
+                    &client,
+                    &index,
+                    &query.source,
+                    &target_local_sequences,
+                )
+                .await?;
+                for row in &rank_rows {
+                    let truth_index = usize::try_from(row.target_ordinal).map_err(|_| {
+                        eyre!(
+                            "target candidate rank target ordinal {} exceeds usize",
+                            row.target_ordinal
+                        )
+                    })?;
+                    let truth_id = *query_truth_ids.get(truth_index).ok_or_else(|| {
+                        eyre!(
+                            "target candidate rank target ordinal {} exceeds truth id count {}",
+                            row.target_ordinal,
+                            query_truth_ids.len()
+                        )
+                    })?;
+                    target_candidate_rank_rows.push(TargetCandidateRankRecord::from_row(
+                        *nprobe,
+                        query_index + 1,
+                        query.id,
+                        truth_id,
+                        row.clone(),
+                    ));
+                }
+                candidate_rank_rows_for_stage = Some(rank_rows);
+            }
             if args.stage_containment_output.is_some() {
                 let truth_ids = query_truth
                     .as_ref()
@@ -719,13 +780,18 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
                     &target_local_sequences,
                 )
                 .await?;
-                let candidate_rank_rows = query_target_candidate_rank_rows(
-                    &client,
-                    &index,
-                    &query.source,
-                    &target_local_sequences,
-                )
-                .await?;
+                let candidate_rank_rows = match candidate_rank_rows_for_stage {
+                    Some(rows) => rows,
+                    None => {
+                        query_target_candidate_rank_rows(
+                            &client,
+                            &index,
+                            &query.source,
+                            &target_local_sequences,
+                        )
+                        .await?
+                    }
+                };
                 stage_containment_rows.extend(StageContainmentRecord::from_query(
                     *nprobe,
                     query_index + 1,
@@ -843,6 +909,9 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
     if let Some(path) = args.target_block_rank_output {
         write_leaf_block_rank_jsonl(&path, &target_block_rank_rows).await?;
     }
+    if let Some(path) = args.target_candidate_rank_output {
+        write_target_candidate_rank_jsonl(&path, &target_candidate_rank_rows).await?;
+    }
     if let Some(path) = args.miss_attribution_output {
         write_miss_attribution_jsonl(&path, &miss_attribution_rows).await?;
     }
@@ -905,6 +974,11 @@ fn validate_args(args: &SpirePipelineArgs) -> Result<()> {
             "--target-block-rank-output requires --include-recall so exact truth ids are available"
         ));
     }
+    if args.target_candidate_rank_output.is_some() && !args.include_recall {
+        return Err(eyre!(
+            "--target-candidate-rank-output requires --include-recall so exact truth ids are available"
+        ));
+    }
     if args.miss_attribution_output.is_some() && !args.include_recall {
         return Err(eyre!(
             "--miss-attribution-output requires --include-recall so exact truth ids are available"
@@ -932,6 +1006,7 @@ fn validate_args(args: &SpirePipelineArgs) -> Result<()> {
     }
     if (args.leaf_block_rank_output.is_some()
         || args.target_block_rank_output.is_some()
+        || args.target_candidate_rank_output.is_some()
         || args.miss_attribution_output.is_some()
         || args.stage_containment_output.is_some())
         && args.leaf_block_rank_local_sequence_offset < 0
@@ -2122,6 +2197,65 @@ impl From<Row> for TargetCandidateRankRow {
 }
 
 #[derive(Debug, Serialize)]
+struct TargetCandidateRankRecord {
+    kind: &'static str,
+    nprobe: i32,
+    query_ordinal: usize,
+    query_id: i64,
+    truth_rank: i64,
+    truth_id: i64,
+    target_local_sequence: i64,
+    status: String,
+    approximate_candidate_count: i64,
+    rerank_prefix_count: i64,
+    approximate_rank: Option<i64>,
+    selected_by_rerank_prefix: Option<bool>,
+    pid: Option<i64>,
+    node_id: Option<i64>,
+    local_store_id: Option<i64>,
+    object_version: Option<i64>,
+    row_index: Option<i64>,
+    assignment_flags: Option<i64>,
+    approximate_score: Option<f32>,
+    heap_block: Option<i64>,
+    heap_offset: Option<i64>,
+}
+
+impl TargetCandidateRankRecord {
+    fn from_row(
+        nprobe: i32,
+        query_ordinal: usize,
+        query_id: i64,
+        truth_id: i64,
+        row: TargetCandidateRankRow,
+    ) -> Self {
+        Self {
+            kind: "spire_target_candidate_rank",
+            nprobe,
+            query_ordinal,
+            query_id,
+            truth_rank: row.target_ordinal + 1,
+            truth_id,
+            target_local_sequence: row.target_local_sequence,
+            status: row.status,
+            approximate_candidate_count: row.approximate_candidate_count,
+            rerank_prefix_count: row.rerank_prefix_count,
+            approximate_rank: row.approximate_rank,
+            selected_by_rerank_prefix: row.selected_by_rerank_prefix,
+            pid: row.pid,
+            node_id: row.node_id,
+            local_store_id: row.local_store_id,
+            object_version: row.object_version,
+            row_index: row.row_index,
+            assignment_flags: row.assignment_flags,
+            approximate_score: row.approximate_score,
+            heap_block: row.heap_block,
+            heap_offset: row.heap_offset,
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
 struct LeafBlockRankRecord {
     kind: &'static str,
     nprobe: i32,
@@ -3215,6 +3349,27 @@ async fn write_leaf_block_rank_jsonl(path: &PathBuf, rows: &[LeafBlockRankRecord
         .wrap_err_with(|| format!("writing {}", path.display()))
 }
 
+async fn write_target_candidate_rank_jsonl(
+    path: &PathBuf,
+    rows: &[TargetCandidateRankRecord],
+) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .wrap_err_with(|| format!("creating {}", parent.display()))?;
+    }
+    let mut output = String::new();
+    for row in rows {
+        output.push_str(
+            &serde_json::to_string(row).wrap_err("serializing target candidate rank row")?,
+        );
+        output.push('\n');
+    }
+    tokio::fs::write(path, output)
+        .await
+        .wrap_err_with(|| format!("writing {}", path.display()))
+}
+
 async fn write_miss_attribution_jsonl(
     path: &PathBuf,
     rows: &[MissAttributionRecord],
@@ -4212,6 +4367,7 @@ mod tests {
             truth_cache_file: None,
             leaf_block_rank_output: None,
             target_block_rank_output: None,
+            target_candidate_rank_output: None,
             miss_attribution_output: None,
             leaf_block_rank_local_sequence_offset: 0,
             include_production_read_profile: false,
@@ -4360,6 +4516,14 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("--stage-containment-output requires --include-recall"));
+
+        let mut args = default_args();
+        args.target_candidate_rank_output = Some("target-candidate-rank.jsonl".into());
+        args.include_recall = false;
+        assert!(validate_args(&args)
+            .unwrap_err()
+            .to_string()
+            .contains("--target-candidate-rank-output requires --include-recall"));
 
         let mut args = default_args();
         args.stage_containment_output = Some("stage.jsonl".into());
