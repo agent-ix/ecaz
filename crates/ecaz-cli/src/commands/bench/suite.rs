@@ -1166,7 +1166,15 @@ fn apply_artifact_dir_templates(config: &mut SuiteConfig) {
                 rewrite_artifact_dir_path(&mut step.log_output, &artifact_dir);
             }
             SuiteStep::SpirePipeline(step) => {
+                rewrite_artifact_dir_path(&mut step.truth_corpus_file, &artifact_dir);
+                rewrite_artifact_dir_path(&mut step.truth_cache_file, &artifact_dir);
+                rewrite_artifact_dir_path(&mut step.leaf_block_rank_output, &artifact_dir);
+                rewrite_artifact_dir_path(&mut step.target_block_rank_output, &artifact_dir);
+                rewrite_artifact_dir_path(&mut step.target_candidate_rank_output, &artifact_dir);
+                rewrite_artifact_dir_path(&mut step.miss_attribution_output, &artifact_dir);
                 rewrite_artifact_dir_path(&mut step.log_output, &artifact_dir);
+                rewrite_artifact_dir_path(&mut step.funnel_output, &artifact_dir);
+                rewrite_artifact_dir_path(&mut step.stage_containment_output, &artifact_dir);
             }
             SuiteStep::Storage(step) => {
                 rewrite_artifact_dir_path(&mut step.log_file, &artifact_dir);
@@ -3844,6 +3852,116 @@ mod tests {
             step.log_file,
             Some(PathBuf::from("artifacts/current/load.log"))
         );
+    }
+
+    #[test]
+    fn artifact_dir_templates_rewrite_spire_pipeline_paths() {
+        let mut config = SuiteConfig {
+            name: "current".into(),
+            schema_version: 1,
+            artifact_dir: Some("artifacts/current".into()),
+            defaults: SuiteDefaults::default(),
+            thresholds: Vec::new(),
+            steps: vec![SuiteStep::SpirePipeline(SpirePipelineStep {
+                name: "profile".into(),
+                tags: Vec::new(),
+                pgoptions: None,
+                prefix: "surface".into(),
+                index: None,
+                queries_limit: None,
+                sweep: vec![8, 16],
+                rerank_width: None,
+                max_candidate_rows: None,
+                max_routed_candidate_rows: None,
+                adaptive_nprobe: None,
+                adaptive_nprobe_score_gap_micros: None,
+                include_remote: None,
+                require_remote_placements: None,
+                include_local_store_overlap: None,
+                remote_selected_pids: Vec::new(),
+                remote_requested_epoch: None,
+                top_k: None,
+                consistency_mode: None,
+                remote_tuple_transport: None,
+                include_cost_snapshot: None,
+                cost_routing_dimension_scale: None,
+                cost_leaf_dimension_scale: None,
+                cost_index_page_scale: None,
+                cost_local_store_page_fanout_scale: None,
+                cost_storage_scoring_multiplier: None,
+                cost_rerank_multiplier: None,
+                include_query_metrics: None,
+                include_recall: None,
+                truth_corpus_file: Some("${artifact_dir}/truth/corpus.tsv".into()),
+                truth_cache_file: Some("${artifact_dir}/truth/cache.json".into()),
+                leaf_block_rank_output: Some(
+                    "${artifact_dir}/profile-leaf-block-rank.jsonl".into(),
+                ),
+                target_block_rank_output: Some(
+                    "${artifact_dir}/profile-target-block-rank.jsonl".into(),
+                ),
+                target_candidate_rank_output: Some(
+                    "${artifact_dir}/profile-target-candidate-rank.jsonl".into(),
+                ),
+                miss_attribution_output: Some("${artifact_dir}/profile-misses.jsonl".into()),
+                leaf_block_rank_local_sequence_offset: None,
+                include_production_read_profile: None,
+                production_read_only: None,
+                query_metric_k: None,
+                query_metric_projection_columns: Vec::new(),
+                session_gucs: Vec::new(),
+                task87_candidate_batch_counters: None,
+                log_output: Some("${artifact_dir}/profile.log".into()),
+                funnel_output: Some("${artifact_dir}/profile-funnel.jsonl".into()),
+                stage_containment_output: Some("${artifact_dir}/profile-stage.jsonl".into()),
+            })],
+        };
+
+        apply_artifact_dir_templates(&mut config);
+
+        let SuiteStep::SpirePipeline(step) = &config.steps[0] else {
+            panic!("expected spire-pipeline step");
+        };
+        assert_eq!(
+            step.truth_corpus_file.as_deref(),
+            Some(Path::new("artifacts/current/truth/corpus.tsv"))
+        );
+        assert_eq!(
+            step.truth_cache_file.as_deref(),
+            Some(Path::new("artifacts/current/truth/cache.json"))
+        );
+        assert_eq!(
+            config.steps[0].expected_artifacts(),
+            vec![
+                PathBuf::from("artifacts/current/profile.log"),
+                PathBuf::from("artifacts/current/profile-funnel.jsonl"),
+                PathBuf::from("artifacts/current/profile-stage.jsonl"),
+                PathBuf::from("artifacts/current/profile-leaf-block-rank.jsonl"),
+                PathBuf::from("artifacts/current/profile-target-block-rank.jsonl"),
+                PathBuf::from("artifacts/current/profile-target-candidate-rank.jsonl"),
+                PathBuf::from("artifacts/current/profile-misses.jsonl"),
+            ]
+        );
+        let conn = ConnectionOptions {
+            database: "postgres".into(),
+            host: None,
+            port: None,
+            user: None,
+            password: None,
+        };
+        let args = config.steps[0]
+            .expand(&config.defaults, &conn)
+            .expect("spire-pipeline expansion should succeed");
+        assert!(args.windows(2).any(|w| w
+            == [
+                "--target-candidate-rank-output",
+                "artifacts/current/profile-target-candidate-rank.jsonl",
+            ]));
+        assert!(args.windows(2).any(|w| w
+            == [
+                "--stage-containment-output",
+                "artifacts/current/profile-stage.jsonl"
+            ]));
     }
 
     #[test]
