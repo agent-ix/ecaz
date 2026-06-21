@@ -7,6 +7,13 @@ The closeout claim is valid only when every item below has packet-local evidence
 and no item relies on terminal scrollback, uncommitted files, truth caches, raw
 per-query JSONL, or AMD-only timing.
 
+Current-head note: packet 012 corrected the HNSW frontier diagnostic semantics.
+Any final `truth@10 in frontier`, `truth@100 in frontier`, and `frontier_*`
+claims must come from artifacts generated after commit
+`6ff2d1d3d8aa04edced517497d940c65ea3d6bca`. Regenerate the 10k frontier
+diagnostic rows as described in packet 013 before reusing packet 006 as final
+Task 118 evidence.
+
 ## Artifact Presence
 
 Required final Intel artifacts:
