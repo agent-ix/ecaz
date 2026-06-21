@@ -59,6 +59,15 @@
   - command: `target/debug/ecaz bench suite report ...`
   - key result: report emitted after the final rerun with rebuilt CLI attribution
     handling
+- `pipeline-stage-containment-summary.txt`
+  - compact aggregate over the pruned per-query stage-containment JSONL
+  - key result: all six stages have identical contained/missing truth counts for
+    each scale and nprobe
+- `pipeline-target-block-rank-summary.txt`
+  - compact aggregate over the pruned per-query target-block-rank JSONL
+  - key result: retained truth targets are labeled
+    `target_no_block_summaries`; genuine misses remain
+    `not_found_in_routed_leaves`
 
 Historical dry-run/audit artifacts in this packet:
 
@@ -75,11 +84,16 @@ For each scale, the suite emitted:
 
 - `load-{10k,50k,100k}-spire.log`
 - `pipeline-{10k,50k,100k}-spire.log`
-- `pipeline-{10k,50k,100k}-funnel.jsonl`
-- `pipeline-{10k,50k,100k}-stage-containment.jsonl`
-- `pipeline-{10k,50k,100k}-leaf-block-rank.jsonl`
-- `pipeline-{10k,50k,100k}-target-block-rank.jsonl`
-- `pipeline-{10k,50k,100k}-target-candidate-rank.jsonl`
+
+The suite also emitted per-query diagnostic JSONL families
+(`funnel`, `stage-containment`, `leaf-block-rank`, `target-block-rank`, and
+`target-candidate-rank`) during the original rerun. Those raw per-query JSONLs
+were pruned after reviewer feedback because they are packet exhaust under the
+repository review-packet rules. The committed compact sources for the cited
+diagnostic aggregates are:
+
+- `pipeline-stage-containment-summary.txt`
+- `pipeline-target-block-rank-summary.txt`
 
 ## Target Block Attribution Counts
 

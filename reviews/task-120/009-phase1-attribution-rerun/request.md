@@ -39,6 +39,9 @@ logic. It does not change the normal scan executor's candidate selection path.
 - Suite status:
   `reviews/task-120/009-phase1-attribution-rerun/artifacts/suite-status.log`
   reports `completed=7 failed=0 skipped=0 dry_run=0 missing_artifacts=0 stale=0`
+- Compact diagnostic summaries:
+  - `reviews/task-120/009-phase1-attribution-rerun/artifacts/pipeline-stage-containment-summary.txt`
+  - `reviews/task-120/009-phase1-attribution-rerun/artifacts/pipeline-target-block-rank-summary.txt`
 - Focused tests:
   - `reviews/task-120/009-phase1-attribution-rerun/artifacts/cargo-test-miss-attribution.log`
   - `reviews/task-120/009-phase1-attribution-rerun/artifacts/cargo-test-stage-containment.log`
@@ -106,6 +109,9 @@ The rerun used 200 queries per scale and `nprobe=8,16,24,32`.
 
 - The suite uses task-local prefixes with `--allow-manifest-mismatch` because
   the staged manifests refer to the canonical `ec_real_*` prefixes.
+- The raw per-query pipeline JSONLs from the rerun were pruned after reviewer
+  feedback; the packet now keeps compact aggregate summaries for the cited
+  diagnostic cells.
 - The packet uses `--truth-corpus-file`; it does not generate or commit
   `truth-cache/`.
 - Corpus/query TSV inputs remain outside git per repository packet rules.
