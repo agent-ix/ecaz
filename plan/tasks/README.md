@@ -168,6 +168,7 @@ These pre-lane task files are retained only for historical context under
 118. `118-hnsw-quantized-recall-attribution.md` — **proposed**: measurement-first HNSW recall attribution before new profile work; adds candidate-frontier containment diagnostics, rerank-boundary counters, source-f32 build vs compressed-build A/B, and approximate-score correlation audits for TurboQuant, PqFastScan, and RaBitQ at 10k/50k/100k.
 119. `119-hnsw-rabitq-coarse-rerank-profile.md` — **proposed, gated by Task 118**: evaluates the true HNSW RaBitQ coarse-rerank profile — 1-bit RaBitQ candidate generation/traversal, explicit overfetch, exact/source rerank, storage-layout follow-up, and API/profile cleanup — only if attribution proves the frontier can support high recall.
 120. `120-spire-coarse-rerank-measurement-program.md` — **proposed**: phased SPIRE coarse-rerank research program covering stage-by-stage containment, local leaf coarse-rerank, candidate-budget policy, conservative topology route-set refinement, distributed near-data rerank, and maintenance/staleness invariants, all benchmark-gated before any product/default claim.
+121. `121-spire-distributed-read-transport-efficiency.md` — **proposed**: measurement-first SPIRE distributed read executor/transport follow-up covering true phase timeline evidence, tuple-heavy distributed baselines, direct typed `bytea[]` receive vs hex text, metadata/projection-width reduction, and candidate-to-heap scheduling only after Task 120 owns the candidate/rerank budget shape.
 
 ## Coordination rules
 
