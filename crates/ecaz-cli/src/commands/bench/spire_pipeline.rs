@@ -176,8 +176,7 @@ pub struct SpirePipelineArgs {
     /// Write per-query, per-stage exact-truth containment rows as JSONL.
     ///
     /// Requires `--include-recall` and query metrics. Candidate/rerank
-    /// containment is reported as a lower bound until a target candidate-rank
-    /// SQL snapshot is available.
+    /// containment uses the target candidate-rank SQL snapshot.
     #[arg(long)]
     pub stage_containment_output: Option<PathBuf>,
 }
