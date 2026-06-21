@@ -3758,13 +3758,25 @@ struct ProductionReadProfileAggregate {
     status: MixedValue,
     result_source: MixedValue,
     selected_pid_count_sum: i64,
+    local_pid_count_sum: i64,
     remote_pid_count_sum: i64,
+    skipped_pid_count_sum: i64,
     dispatch_count_sum: i64,
+    compact_candidate_count_sum: i64,
+    remote_heap_ready_dispatch_count_sum: i64,
+    remote_heap_failed_dispatch_count_sum: i64,
+    remote_heap_candidate_count_sum: i64,
+    local_heap_candidate_count_sum: i64,
     socket_open_count_sum: i64,
     candidate_receive_query_count_sum: i64,
     heap_receive_query_count_sum: i64,
     endpoint_identity_query_count_sum: i64,
+    payload_decode_row_count_sum: i64,
     payload_decode_bytes_sum: i64,
+    merge_input_count_sum: i64,
+    merge_duplicate_vec_id_count_sum: i64,
+    merge_output_count_sum: i64,
+    strict_fail_count_sum: i64,
     remote_timeout_count_sum: i64,
     remote_cancel_count_sum: i64,
     degraded_skipped_dispatch_count_sum: i64,
@@ -3784,13 +3796,27 @@ impl ProductionReadProfileAggregate {
         self.result_source
             .record(row.string_metric("result_source"));
         self.selected_pid_count_sum += row.i64_metric("selected_pid_count");
+        self.local_pid_count_sum += row.i64_metric("local_pid_count");
         self.remote_pid_count_sum += row.i64_metric("remote_pid_count");
+        self.skipped_pid_count_sum += row.i64_metric("skipped_pid_count");
         self.dispatch_count_sum += row.i64_metric("dispatch_count");
+        self.compact_candidate_count_sum += row.i64_metric("compact_candidate_count");
+        self.remote_heap_ready_dispatch_count_sum +=
+            row.i64_metric("remote_heap_ready_dispatch_count");
+        self.remote_heap_failed_dispatch_count_sum +=
+            row.i64_metric("remote_heap_failed_dispatch_count");
+        self.remote_heap_candidate_count_sum += row.i64_metric("remote_heap_candidate_count");
+        self.local_heap_candidate_count_sum += row.i64_metric("local_heap_candidate_count");
         self.socket_open_count_sum += row.i64_metric("socket_open_count");
         self.candidate_receive_query_count_sum += row.i64_metric("candidate_receive_query_count");
         self.heap_receive_query_count_sum += row.i64_metric("heap_receive_query_count");
         self.endpoint_identity_query_count_sum += row.i64_metric("endpoint_identity_query_count");
+        self.payload_decode_row_count_sum += row.i64_metric("payload_decode_row_count");
         self.payload_decode_bytes_sum += row.i64_metric("payload_decode_bytes");
+        self.merge_input_count_sum += row.i64_metric("merge_input_count");
+        self.merge_duplicate_vec_id_count_sum += row.i64_metric("merge_duplicate_vec_id_count");
+        self.merge_output_count_sum += row.i64_metric("merge_output_count");
+        self.strict_fail_count_sum += row.i64_metric("strict_fail_count");
         self.remote_timeout_count_sum += row.i64_metric("remote_timeout_count");
         self.remote_cancel_count_sum += row.i64_metric("remote_cancel_count");
         self.degraded_skipped_dispatch_count_sum +=
@@ -4273,8 +4299,15 @@ fn render_production_read_profile_table(
         "status",
         "result_source",
         "selected_pid_sum",
+        "local_pid_sum",
         "remote_pid_sum",
+        "skipped_pid_sum",
         "dispatch_sum",
+        "compact_candidate_sum",
+        "remote_heap_ready_dispatch_sum",
+        "remote_heap_failed_dispatch_sum",
+        "remote_heap_candidate_sum",
+        "local_heap_candidate_sum",
         "socket_open_sum",
         "connect_p50",
         "connect_p95",
@@ -4291,7 +4324,12 @@ fn render_production_read_profile_table(
         "candidate_query_sum",
         "heap_query_sum",
         "endpoint_identity_query_sum",
+        "payload_rows_sum",
         "payload_bytes_sum",
+        "merge_input_sum",
+        "merge_duplicate_vec_id_sum",
+        "merge_output_sum",
+        "strict_fail_sum",
         "timeout_sum",
         "cancel_sum",
         "degraded_skip_sum",
@@ -4310,8 +4348,15 @@ fn render_production_read_profile_table(
             Cell::new(aggregate.status.label()),
             Cell::new(aggregate.result_source.label()),
             Cell::new(aggregate.selected_pid_count_sum),
+            Cell::new(aggregate.local_pid_count_sum),
             Cell::new(aggregate.remote_pid_count_sum),
+            Cell::new(aggregate.skipped_pid_count_sum),
             Cell::new(aggregate.dispatch_count_sum),
+            Cell::new(aggregate.compact_candidate_count_sum),
+            Cell::new(aggregate.remote_heap_ready_dispatch_count_sum),
+            Cell::new(aggregate.remote_heap_failed_dispatch_count_sum),
+            Cell::new(aggregate.remote_heap_candidate_count_sum),
+            Cell::new(aggregate.local_heap_candidate_count_sum),
             Cell::new(aggregate.socket_open_count_sum),
             Cell::new(format_duration_ms(connect.p50)),
             Cell::new(format_duration_ms(connect.p95)),
@@ -4328,7 +4373,12 @@ fn render_production_read_profile_table(
             Cell::new(aggregate.candidate_receive_query_count_sum),
             Cell::new(aggregate.heap_receive_query_count_sum),
             Cell::new(aggregate.endpoint_identity_query_count_sum),
+            Cell::new(aggregate.payload_decode_row_count_sum),
             Cell::new(aggregate.payload_decode_bytes_sum),
+            Cell::new(aggregate.merge_input_count_sum),
+            Cell::new(aggregate.merge_duplicate_vec_id_count_sum),
+            Cell::new(aggregate.merge_output_count_sum),
+            Cell::new(aggregate.strict_fail_count_sum),
             Cell::new(aggregate.remote_timeout_count_sum),
             Cell::new(aggregate.remote_cancel_count_sum),
             Cell::new(aggregate.degraded_skipped_dispatch_count_sum),
@@ -5125,8 +5175,15 @@ mod tests {
                 ("status".into(), "ready".into()),
                 ("result_source".into(), "remote_heap_candidates".into()),
                 ("selected_pid_count".into(), "3".into()),
+                ("local_pid_count".into(), "1".into()),
                 ("remote_pid_count".into(), "3".into()),
+                ("skipped_pid_count".into(), "0".into()),
                 ("dispatch_count".into(), "2".into()),
+                ("compact_candidate_count".into(), "4".into()),
+                ("remote_heap_ready_dispatch_count".into(), "2".into()),
+                ("remote_heap_failed_dispatch_count".into(), "0".into()),
+                ("remote_heap_candidate_count".into(), "5".into()),
+                ("local_heap_candidate_count".into(), "1".into()),
                 ("socket_open_count".into(), "2".into()),
                 ("connect_elapsed_ms".into(), "1".into()),
                 ("endpoint_identity_elapsed_ms".into(), "2".into()),
@@ -5137,7 +5194,12 @@ mod tests {
                 ("candidate_receive_query_count".into(), "2".into()),
                 ("heap_receive_query_count".into(), "2".into()),
                 ("endpoint_identity_query_count".into(), "2".into()),
+                ("payload_decode_row_count".into(), "6".into()),
                 ("payload_decode_bytes".into(), "256".into()),
+                ("merge_input_count".into(), "6".into()),
+                ("merge_duplicate_vec_id_count".into(), "1".into()),
+                ("merge_output_count".into(), "5".into()),
+                ("strict_fail_count".into(), "0".into()),
                 ("remote_timeout_count".into(), "0".into()),
                 ("remote_cancel_count".into(), "0".into()),
                 ("degraded_skipped_dispatch_count".into(), "0".into()),
@@ -5153,6 +5215,8 @@ mod tests {
         assert!(rendered.contains("endpoint_identity_query_sum"));
         assert!(rendered.contains("remote_heap_candidates"));
         assert!(rendered.contains("payload_bytes_sum"));
+        assert!(rendered.contains("compact_candidate_sum"));
+        assert!(rendered.contains("merge_duplicate_vec_id_sum"));
         assert!(rendered.contains("256"));
     }
 
