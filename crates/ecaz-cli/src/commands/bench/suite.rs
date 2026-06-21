@@ -209,6 +209,7 @@ enum SuiteStep {
     CrossAm(CrossAmStep),
     Latency(LatencyStep),
     HnswFrontier(HnswFrontierStep),
+    HnswScoreCorrelation(HnswScoreCorrelationStep),
     SpirePipeline(SpirePipelineStep),
     Storage(StorageStep),
     Explain(ExplainStep),
@@ -397,6 +398,24 @@ struct LatencyStep {
 
 #[derive(Debug, Deserialize)]
 struct HnswFrontierStep {
+    name: String,
+    #[serde(default)]
+    tags: Vec<String>,
+    prefix: String,
+    #[serde(default)]
+    index: Option<String>,
+    m: i32,
+    sweep: Vec<i32>,
+    #[serde(default)]
+    queries_limit: Option<usize>,
+    #[serde(default)]
+    log_output: Option<PathBuf>,
+    #[serde(default)]
+    jsonl_output: Option<PathBuf>,
+}
+
+#[derive(Debug, Deserialize)]
+struct HnswScoreCorrelationStep {
     name: String,
     #[serde(default)]
     tags: Vec<String>,
@@ -1128,6 +1147,15 @@ fn apply_default_artifact_logs(config: &mut SuiteConfig) {
                     step.jsonl_output = Some(artifact_dir.join(format!("{safe_name}.jsonl")));
                 }
             }
+            SuiteStep::HnswScoreCorrelation(step) => {
+                let safe_name = artifact_safe_step_name(&step.name);
+                if step.log_output.is_none() {
+                    step.log_output = Some(artifact_dir.join(format!("{safe_name}.log")));
+                }
+                if step.jsonl_output.is_none() {
+                    step.jsonl_output = Some(artifact_dir.join(format!("{safe_name}.jsonl")));
+                }
+            }
             SuiteStep::SpirePipeline(step) if step.log_output.is_none() => {
                 step.log_output = Some(log_path(&step.name));
             }
@@ -1190,6 +1218,10 @@ fn apply_artifact_dir_templates(config: &mut SuiteConfig) {
                 rewrite_artifact_dir_path(&mut step.log_output, &artifact_dir);
             }
             SuiteStep::HnswFrontier(step) => {
+                rewrite_artifact_dir_path(&mut step.log_output, &artifact_dir);
+                rewrite_artifact_dir_path(&mut step.jsonl_output, &artifact_dir);
+            }
+            SuiteStep::HnswScoreCorrelation(step) => {
                 rewrite_artifact_dir_path(&mut step.log_output, &artifact_dir);
                 rewrite_artifact_dir_path(&mut step.jsonl_output, &artifact_dir);
             }
@@ -2297,6 +2329,7 @@ impl SuiteStep {
             SuiteStep::CrossAm(step) => &step.name,
             SuiteStep::Latency(step) => &step.name,
             SuiteStep::HnswFrontier(step) => &step.name,
+            SuiteStep::HnswScoreCorrelation(step) => &step.name,
             SuiteStep::SpirePipeline(step) => &step.name,
             SuiteStep::Storage(step) => &step.name,
             SuiteStep::Explain(step) => &step.name,
@@ -2315,6 +2348,7 @@ impl SuiteStep {
             SuiteStep::CrossAm(_) => "cross-am",
             SuiteStep::Latency(_) => "latency",
             SuiteStep::HnswFrontier(_) => "hnsw-frontier",
+            SuiteStep::HnswScoreCorrelation(_) => "hnsw-score-correlation",
             SuiteStep::SpirePipeline(_) => "spire-pipeline",
             SuiteStep::Storage(_) => "storage",
             SuiteStep::Explain(_) => "explain",
@@ -2333,6 +2367,7 @@ impl SuiteStep {
             SuiteStep::CrossAm(step) => &step.tags,
             SuiteStep::Latency(step) => &step.tags,
             SuiteStep::HnswFrontier(step) => &step.tags,
+            SuiteStep::HnswScoreCorrelation(step) => &step.tags,
             SuiteStep::SpirePipeline(step) => &step.tags,
             SuiteStep::Storage(step) => &step.tags,
             SuiteStep::Explain(step) => &step.tags,
@@ -2474,6 +2509,27 @@ impl SuiteStep {
                 }
                 Ok(())
             }
+            SuiteStep::HnswScoreCorrelation(step) => {
+                if step.m <= 0 {
+                    bail!(
+                        "hnsw-score-correlation step {:?} must set m >= 1",
+                        step.name
+                    )
+                }
+                if step.sweep.is_empty() {
+                    bail!(
+                        "hnsw-score-correlation step {:?} must include at least one sweep value",
+                        step.name
+                    )
+                }
+                if step.queries_limit == Some(0) {
+                    bail!(
+                        "hnsw-score-correlation step {:?} must set queries_limit >= 1",
+                        step.name
+                    )
+                }
+                Ok(())
+            }
             SuiteStep::SpirePipeline(step) => {
                 if step.sweep.is_empty() {
                     bail!(
@@ -2583,6 +2639,9 @@ impl SuiteStep {
             SuiteStep::CrossAm(step) => Ok(expand_cross_am(step)),
             SuiteStep::Latency(step) => Ok(expand_latency(step, defaults)),
             SuiteStep::HnswFrontier(step) => Ok(expand_hnsw_frontier(step, defaults)),
+            SuiteStep::HnswScoreCorrelation(step) => {
+                Ok(expand_hnsw_score_correlation(step, defaults))
+            }
             SuiteStep::SpirePipeline(step) => Ok(expand_spire_pipeline(step, defaults)),
             SuiteStep::Storage(step) => Ok(expand_storage(step)),
             SuiteStep::Explain(step) => Ok(expand_explain(step, defaults, conn)),
@@ -2620,6 +2679,12 @@ impl SuiteStep {
             SuiteStep::CrossAm(step) => step.log_output.iter().cloned().collect(),
             SuiteStep::Latency(step) => step.log_output.iter().cloned().collect(),
             SuiteStep::HnswFrontier(step) => step
+                .log_output
+                .iter()
+                .chain(step.jsonl_output.iter())
+                .cloned()
+                .collect(),
+            SuiteStep::HnswScoreCorrelation(step) => step
                 .log_output
                 .iter()
                 .chain(step.jsonl_output.iter())
@@ -2705,6 +2770,12 @@ impl SuiteStep {
                 .cloned()
                 .collect(),
             SuiteStep::HnswFrontier(step) => step
+                .log_output
+                .iter()
+                .chain(step.jsonl_output.iter())
+                .cloned()
+                .collect(),
+            SuiteStep::HnswScoreCorrelation(step) => step
                 .log_output
                 .iter()
                 .chain(step.jsonl_output.iter())
@@ -3035,6 +3106,29 @@ fn expand_latency(step: &LatencyStep, defaults: &SuiteDefaults) -> Vec<String> {
 
 fn expand_hnsw_frontier(step: &HnswFrontierStep, defaults: &SuiteDefaults) -> Vec<String> {
     let mut args = vec!["bench".into(), "hnsw-frontier".into()];
+    push_arg(&mut args, "--prefix", &step.prefix);
+    push_opt_arg(&mut args, "--index", step.index.as_deref());
+    push_arg(&mut args, "--m", &step.m.to_string());
+    push_arg(&mut args, "--sweep", &join_i32(&step.sweep));
+    push_arg(
+        &mut args,
+        "--queries-limit",
+        &step
+            .queries_limit
+            .or(defaults.queries_limit)
+            .unwrap_or(200)
+            .to_string(),
+    );
+    push_opt_path(&mut args, "--log-output", step.log_output.as_deref());
+    push_opt_path(&mut args, "--jsonl-output", step.jsonl_output.as_deref());
+    args
+}
+
+fn expand_hnsw_score_correlation(
+    step: &HnswScoreCorrelationStep,
+    defaults: &SuiteDefaults,
+) -> Vec<String> {
+    let mut args = vec!["bench".into(), "hnsw-score-correlation".into()];
     push_arg(&mut args, "--prefix", &step.prefix);
     push_opt_arg(&mut args, "--index", step.index.as_deref());
     push_arg(&mut args, "--m", &step.m.to_string());
@@ -5078,6 +5172,69 @@ mod tests {
                 "reviews/task-118/002-suite/artifacts/frontier-10k-rabitq.log",
                 "--jsonl-output",
                 "reviews/task-118/002-suite/artifacts/frontier-10k-rabitq.jsonl",
+            ]
+        );
+    }
+
+    #[test]
+    fn parses_and_expands_hnsw_score_correlation_step() {
+        let mut cfg: SuiteConfig = serde_json::from_str(
+            r#"{
+              "name": "task118",
+              "schema_version": 1,
+              "artifact_dir": "reviews/task-118/003-suite/artifacts",
+              "defaults": { "queries_limit": 25 },
+              "steps": [
+                {
+                  "kind": "hnsw-score-correlation",
+                  "name": "score-correlation-10k-rabitq",
+                  "tags": ["score-correlation", "hnsw", "rabitq"],
+                  "prefix": "task118_real_10k_hnsw_rabitq",
+                  "index": "task118_real_10k_hnsw_rabitq_m16_idx",
+                  "m": 16,
+                  "sweep": [100, 200]
+                }
+              ]
+            }"#,
+        )
+        .unwrap();
+        apply_default_artifact_logs(&mut cfg);
+        validate_config(&cfg).unwrap();
+        let SuiteStep::HnswScoreCorrelation(step) = &cfg.steps[0] else {
+            panic!("expected hnsw-score-correlation step");
+        };
+        assert_eq!(cfg.steps[0].kind(), "hnsw-score-correlation");
+        assert_eq!(
+            cfg.steps[0].expected_artifacts(),
+            vec![
+                PathBuf::from(
+                    "reviews/task-118/003-suite/artifacts/score-correlation-10k-rabitq.log"
+                ),
+                PathBuf::from(
+                    "reviews/task-118/003-suite/artifacts/score-correlation-10k-rabitq.jsonl"
+                ),
+            ]
+        );
+        let args = expand_hnsw_score_correlation(step, &cfg.defaults);
+        assert_eq!(
+            args,
+            vec![
+                "bench",
+                "hnsw-score-correlation",
+                "--prefix",
+                "task118_real_10k_hnsw_rabitq",
+                "--index",
+                "task118_real_10k_hnsw_rabitq_m16_idx",
+                "--m",
+                "16",
+                "--sweep",
+                "100,200",
+                "--queries-limit",
+                "25",
+                "--log-output",
+                "reviews/task-118/003-suite/artifacts/score-correlation-10k-rabitq.log",
+                "--jsonl-output",
+                "reviews/task-118/003-suite/artifacts/score-correlation-10k-rabitq.jsonl",
             ]
         );
     }

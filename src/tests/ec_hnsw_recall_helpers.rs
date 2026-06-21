@@ -141,6 +141,27 @@
         Vec<i32>, // frontier_exact_ranks
         Vec<i64>, // final_emitted_row_indices
     );
+    type GraphScanScoreCorrelationRow = (
+        i32,         // m
+        i32,         // ef_search
+        i32,         // query_index
+        i32,         // emitted_result_count
+        i32,         // compared_result_count
+        i32,         // missing_comparison_count
+        f64,         // mean_abs_score_delta
+        f32,         // max_abs_score_delta
+        f64,         // mean_signed_score_delta
+        f64,         // mean_abs_rank_shift
+        i32,         // max_abs_rank_shift
+        f64,         // spearman_rank_correlation
+        Option<i32>, // exact_best_approx_rank
+        Option<i32>, // exact_top4_max_approx_rank
+        Vec<i64>,    // compared_row_indices
+        Vec<i32>,    // compared_approx_ranks
+        Vec<f32>,    // compared_approx_scores
+        Vec<f32>,    // compared_exact_scores
+        Vec<i32>,    // compared_exact_ranks
+    );
     type GraphScanRecallAnnBenchmarksReferenceRow = (
         i32,  // m
         i32,  // ef_search
@@ -1124,6 +1145,216 @@
         (0..limit)
             .map(|query_index| {
                 probe_graph_scan_recall_frontier_containment_for_context(
+                    &context,
+                    index_name,
+                    m,
+                    ef_search,
+                    query_index,
+                )
+            })
+            .collect()
+    }
+
+    fn graph_scan_score_correlation_for_context(
+        context: &ExternalRecallContext,
+        index_name: &str,
+        m: i32,
+        ef_search: i32,
+        query_index: usize,
+    ) -> GraphScanScoreCorrelationRow {
+        let index_name_ident = recall_fixture_ident(index_name);
+        let index_oid = Spi::get_one::<pg_sys::Oid>(&format!(
+            "SELECT '{index_name_ident}'::regclass::oid"
+        ))
+        .expect("score correlation index oid query should succeed")
+        .expect("score correlation index oid should exist");
+        let query = context
+            .queries
+            .get(query_index)
+            .unwrap_or_else(|| panic!("query_index {query_index} should exist"));
+
+        Spi::run(&format!("SET LOCAL ec_hnsw.ef_search = {ef_search}"))
+            .expect("setting ef_search should succeed");
+
+        let mut rows = am::debug_gettuple_scan_heap_tids_with_score_comparisons(
+            index_oid,
+            query.clone(),
+        )
+        .into_iter()
+        .enumerate()
+        .map(|(idx, (heap_tid, approx_score, comparison_score, approx_rank))| {
+            let approx_rank = approx_rank
+                .unwrap_or_else(|| i32::try_from(idx + 1).expect("approx rank should fit"));
+            (heap_tid, approx_rank, approx_score, comparison_score)
+        })
+        .collect::<Vec<_>>();
+        rows.sort_by_key(|(_heap_tid, approx_rank, _approx_score, _comparison_score)| {
+            *approx_rank
+        });
+
+        let emitted_result_count =
+            i32::try_from(rows.len()).expect("emitted result count should fit into int");
+        let missing_comparison_count = i32::try_from(
+            rows.iter()
+                .filter(|(_heap_tid, _approx_rank, _approx_score, score)| score.is_none())
+                .count(),
+        )
+        .expect("missing comparison count should fit into int");
+
+        let mut compared = rows
+            .into_iter()
+            .filter_map(|(heap_tid, approx_rank, approx_score, exact_score)| {
+                exact_score.map(|exact_score| {
+                    let row_index = *context
+                        .ctid_to_row_index
+                        .get(&heap_tid)
+                        .expect("emitted heap tid should map back to a corpus row index");
+                    (
+                        i64::try_from(row_index).expect("row index should fit into bigint"),
+                        approx_rank,
+                        approx_score,
+                        exact_score,
+                        0_i32,
+                    )
+                })
+            })
+            .collect::<Vec<_>>();
+
+        let compared_result_count =
+            i32::try_from(compared.len()).expect("compared result count should fit into int");
+        let mut exact_order = compared
+            .iter()
+            .enumerate()
+            .map(|(idx, (_row_index, approx_rank, _approx_score, exact_score, _exact_rank))| {
+                (idx, *approx_rank, *exact_score)
+            })
+            .collect::<Vec<_>>();
+        exact_order.sort_by(|left, right| {
+            left.2
+                .total_cmp(&right.2)
+                .then_with(|| left.1.cmp(&right.1))
+        });
+        for (rank, (idx, _approx_rank, _exact_score)) in exact_order.into_iter().enumerate() {
+            compared[idx].4 = i32::try_from(rank + 1).expect("exact rank should fit into int");
+        }
+
+        let mut abs_score_delta_sum = 0.0_f64;
+        let mut signed_score_delta_sum = 0.0_f64;
+        let mut max_abs_score_delta = 0.0_f32;
+        let mut abs_rank_shift_sum = 0.0_f64;
+        let mut max_abs_rank_shift = 0_i32;
+        let mut d_squared_sum = 0.0_f64;
+        let mut exact_best_approx_rank = None;
+        let mut exact_top4_max_approx_rank = None;
+
+        for (_row_index, approx_rank, approx_score, exact_score, exact_rank) in &compared {
+            let signed_score_delta = approx_score - exact_score;
+            abs_score_delta_sum += f64::from(signed_score_delta.abs());
+            signed_score_delta_sum += f64::from(signed_score_delta);
+            max_abs_score_delta = max_abs_score_delta.max(signed_score_delta.abs());
+
+            let rank_shift = approx_rank - exact_rank;
+            let abs_rank_shift = rank_shift.abs();
+            abs_rank_shift_sum += f64::from(abs_rank_shift);
+            max_abs_rank_shift = max_abs_rank_shift.max(abs_rank_shift);
+            let d = f64::from(rank_shift);
+            d_squared_sum += d * d;
+
+            if *exact_rank == 1 {
+                exact_best_approx_rank = Some(*approx_rank);
+            }
+            if *exact_rank <= 4 {
+                exact_top4_max_approx_rank = Some(
+                    exact_top4_max_approx_rank
+                        .map_or(*approx_rank, |max_rank: i32| max_rank.max(*approx_rank)),
+                );
+            }
+        }
+
+        let compared_denom = f64::from(compared_result_count.max(1));
+        let mean_abs_score_delta = if compared_result_count == 0 {
+            0.0
+        } else {
+            abs_score_delta_sum / compared_denom
+        };
+        let mean_signed_score_delta = if compared_result_count == 0 {
+            0.0
+        } else {
+            signed_score_delta_sum / compared_denom
+        };
+        let mean_abs_rank_shift = if compared_result_count == 0 {
+            0.0
+        } else {
+            abs_rank_shift_sum / compared_denom
+        };
+        let spearman_rank_correlation = if compared_result_count < 2 {
+            0.0
+        } else {
+            let n = f64::from(compared_result_count);
+            1.0 - (6.0 * d_squared_sum / (n * (n * n - 1.0)))
+        };
+
+        (
+            m,
+            ef_search,
+            i32::try_from(query_index).expect("query index should fit into int"),
+            emitted_result_count,
+            compared_result_count,
+            missing_comparison_count,
+            mean_abs_score_delta,
+            max_abs_score_delta,
+            mean_signed_score_delta,
+            mean_abs_rank_shift,
+            max_abs_rank_shift,
+            spearman_rank_correlation,
+            exact_best_approx_rank,
+            exact_top4_max_approx_rank,
+            compared
+                .iter()
+                .map(|(row_index, _approx_rank, _approx_score, _exact_score, _exact_rank)| {
+                    *row_index
+                })
+                .collect(),
+            compared
+                .iter()
+                .map(|(_row_index, approx_rank, _approx_score, _exact_score, _exact_rank)| {
+                    *approx_rank
+                })
+                .collect(),
+            compared
+                .iter()
+                .map(|(_row_index, _approx_rank, approx_score, _exact_score, _exact_rank)| {
+                    *approx_score
+                })
+                .collect(),
+            compared
+                .iter()
+                .map(|(_row_index, _approx_rank, _approx_score, exact_score, _exact_rank)| {
+                    *exact_score
+                })
+                .collect(),
+            compared
+                .iter()
+                .map(|(_row_index, _approx_rank, _approx_score, _exact_score, exact_rank)| {
+                    *exact_rank
+                })
+                .collect(),
+        )
+    }
+
+    fn run_graph_scan_score_correlation_rows_for_relation(
+        corpus_table: &str,
+        query_table: &str,
+        index_name: &str,
+        m: i32,
+        ef_search: i32,
+        query_limit: usize,
+    ) -> Vec<GraphScanScoreCorrelationRow> {
+        let context = build_external_recall_context(corpus_table, query_table, false);
+        let limit = query_limit.min(context.queries.len());
+        (0..limit)
+            .map(|query_index| {
+                graph_scan_score_correlation_for_context(
                     &context,
                     index_name,
                     m,

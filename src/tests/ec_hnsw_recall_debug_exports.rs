@@ -329,6 +329,50 @@
 
     #[pg_extern]
     #[allow(clippy::type_complexity)]
+    fn ec_hnsw_graph_scan_score_correlation_rows(
+        corpus_table: String,
+        query_table: String,
+        index_name: String,
+        m: i32,
+        ef_search: i32,
+        query_limit: i32,
+    ) -> TableIterator<
+        'static,
+        (
+            name!(m, i32),
+            name!(ef_search, i32),
+            name!(query_index, i32),
+            name!(emitted_result_count, i32),
+            name!(compared_result_count, i32),
+            name!(missing_comparison_count, i32),
+            name!(mean_abs_score_delta, f64),
+            name!(max_abs_score_delta, f32),
+            name!(mean_signed_score_delta, f64),
+            name!(mean_abs_rank_shift, f64),
+            name!(max_abs_rank_shift, i32),
+            name!(spearman_rank_correlation, f64),
+            name!(exact_best_approx_rank, Option<i32>),
+            name!(exact_top4_max_approx_rank, Option<i32>),
+            name!(compared_row_indices, Vec<i64>),
+            name!(compared_approx_ranks, Vec<i32>),
+            name!(compared_approx_scores, Vec<f32>),
+            name!(compared_exact_scores, Vec<f32>),
+            name!(compared_exact_ranks, Vec<i32>),
+        ),
+    > {
+        assert!(query_limit > 0, "query_limit must be positive");
+        TableIterator::new(run_graph_scan_score_correlation_rows_for_relation(
+            &corpus_table,
+            &query_table,
+            &index_name,
+            m,
+            ef_search,
+            usize::try_from(query_limit).expect("query limit should be positive"),
+        ))
+    }
+
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
     fn ec_hnsw_graph_scan_recall_probe(
         m: i32,
         ef_search: i32,

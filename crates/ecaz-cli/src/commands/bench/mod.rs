@@ -15,6 +15,7 @@ mod comparator;
 mod cross_am;
 mod graph;
 mod hnsw_frontier;
+mod hnsw_score_correlation;
 pub mod latency;
 mod overhead;
 mod rabitq_kernel;
@@ -29,6 +30,7 @@ pub use comparator::ComparatorArgs;
 pub use cross_am::CrossAmArgs;
 pub use graph::GraphArgs;
 pub use hnsw_frontier::HnswFrontierArgs;
+pub use hnsw_score_correlation::HnswScoreCorrelationArgs;
 pub use latency::LatencyArgs;
 pub use overhead::OverheadArgs;
 pub use rabitq_kernel::RabitqKernelArgs;
@@ -548,6 +550,8 @@ pub enum BenchCommand {
     DiskannBuildProbe(BuildProbeArgs),
     /// HNSW candidate-frontier containment diagnostics for recall attribution.
     HnswFrontier(HnswFrontierArgs),
+    /// HNSW approximate/exact score and rank-correlation diagnostics.
+    HnswScoreCorrelation(HnswScoreCorrelationArgs),
     /// Latency overhead breakdown: encode vs internal scan vs residual client/protocol.
     Overhead(OverheadArgs),
     /// IVF/RaBitQ sidecar upper-bound rerank measurement.
@@ -571,6 +575,7 @@ impl BenchCommand {
             BenchCommand::DiskannGraph(a) => graph::run(conn, a).await,
             BenchCommand::DiskannBuildProbe(a) => build_probe::run(conn, a).await,
             BenchCommand::HnswFrontier(a) => hnsw_frontier::run(conn, a).await,
+            BenchCommand::HnswScoreCorrelation(a) => hnsw_score_correlation::run(conn, a).await,
             BenchCommand::Overhead(a) => overhead::run(conn, a).await,
             BenchCommand::SidecarRerank(a) => sidecar_rerank::run(conn, a).await,
             BenchCommand::RabitqKernel(a) => rabitq_kernel::run(a).await,

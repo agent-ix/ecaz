@@ -1,7 +1,7 @@
 {
   "name": "task118-hnsw-quantized-recall-attribution",
   "schema_version": 1,
-  "artifact_dir": "reviews/task-118/002-hnsw-frontier-suite-workflow/artifacts",
+  "artifact_dir": "reviews/task-118/003-hnsw-score-correlation-workflow/artifacts",
   "defaults": {
     "pg": 18,
     "bits": 4,
@@ -106,6 +106,30 @@
       "kind": "hnsw-frontier",
       "name": "frontier-10k-hnsw-rabitq",
       "tags": ["task118", "frontier", "ec_real_10k", "hnsw", "rabitq"],
+      "prefix": "task118_real10k_hnsw_rabitq",
+      "m": 16,
+      "sweep": [40, 64, 100, 128, 160, 200]
+    },
+    {
+      "kind": "hnsw-score-correlation",
+      "name": "score-correlation-10k-hnsw-turboquant",
+      "tags": ["task118", "score-correlation", "ec_real_10k", "hnsw", "turboquant"],
+      "prefix": "task118_real10k_hnsw_turboquant",
+      "m": 16,
+      "sweep": [40, 64, 100, 128, 160, 200]
+    },
+    {
+      "kind": "hnsw-score-correlation",
+      "name": "score-correlation-10k-hnsw-pq-fastscan",
+      "tags": ["task118", "score-correlation", "ec_real_10k", "hnsw", "pq_fastscan"],
+      "prefix": "task118_real10k_hnsw_pq_fastscan",
+      "m": 16,
+      "sweep": [40, 64, 100, 128, 160, 200]
+    },
+    {
+      "kind": "hnsw-score-correlation",
+      "name": "score-correlation-10k-hnsw-rabitq",
+      "tags": ["task118", "score-correlation", "ec_real_10k", "hnsw", "rabitq"],
       "prefix": "task118_real10k_hnsw_rabitq",
       "m": 16,
       "sweep": [40, 64, 100, 128, 160, 200]
@@ -259,6 +283,30 @@
       "sweep": [40, 64, 100, 128, 160, 200]
     },
     {
+      "kind": "hnsw-score-correlation",
+      "name": "score-correlation-50k-hnsw-turboquant",
+      "tags": ["task118", "score-correlation", "ec_real_50k", "hnsw", "turboquant"],
+      "prefix": "task118_real50k_hnsw_turboquant",
+      "m": 16,
+      "sweep": [40, 64, 100, 128, 160, 200]
+    },
+    {
+      "kind": "hnsw-score-correlation",
+      "name": "score-correlation-50k-hnsw-pq-fastscan",
+      "tags": ["task118", "score-correlation", "ec_real_50k", "hnsw", "pq_fastscan"],
+      "prefix": "task118_real50k_hnsw_pq_fastscan",
+      "m": 16,
+      "sweep": [40, 64, 100, 128, 160, 200]
+    },
+    {
+      "kind": "hnsw-score-correlation",
+      "name": "score-correlation-50k-hnsw-rabitq",
+      "tags": ["task118", "score-correlation", "ec_real_50k", "hnsw", "rabitq"],
+      "prefix": "task118_real50k_hnsw_rabitq",
+      "m": 16,
+      "sweep": [40, 64, 100, 128, 160, 200]
+    },
+    {
       "kind": "latency",
       "name": "latency-50k-hnsw-turboquant",
       "tags": ["task118", "latency", "ec_real_50k", "hnsw", "turboquant", "post_recall_warm"],
@@ -402,6 +450,30 @@
       "kind": "hnsw-frontier",
       "name": "frontier-100k-hnsw-rabitq",
       "tags": ["task118", "frontier", "ec_real_100k", "hnsw", "rabitq"],
+      "prefix": "task118_real100k_hnsw_rabitq",
+      "m": 16,
+      "sweep": [40, 64, 100, 128, 160, 200]
+    },
+    {
+      "kind": "hnsw-score-correlation",
+      "name": "score-correlation-100k-hnsw-turboquant",
+      "tags": ["task118", "score-correlation", "ec_real_100k", "hnsw", "turboquant"],
+      "prefix": "task118_real100k_hnsw_turboquant",
+      "m": 16,
+      "sweep": [40, 64, 100, 128, 160, 200]
+    },
+    {
+      "kind": "hnsw-score-correlation",
+      "name": "score-correlation-100k-hnsw-pq-fastscan",
+      "tags": ["task118", "score-correlation", "ec_real_100k", "hnsw", "pq_fastscan"],
+      "prefix": "task118_real100k_hnsw_pq_fastscan",
+      "m": 16,
+      "sweep": [40, 64, 100, 128, 160, 200]
+    },
+    {
+      "kind": "hnsw-score-correlation",
+      "name": "score-correlation-100k-hnsw-rabitq",
+      "tags": ["task118", "score-correlation", "ec_real_100k", "hnsw", "rabitq"],
       "prefix": "task118_real100k_hnsw_rabitq",
       "m": 16,
       "sweep": [40, 64, 100, 128, 160, 200]
