@@ -19,8 +19,8 @@ No benchmark is run here. This is a closeout-quality control artifact so packet 
 ## Validation
 
 - The template uses only `ecaz bench suite` outputs and `jq` queries over packet-local artifacts.
-- The expected row counts match the current checked-in Task 118 suite shape after packet 008 narrowed large-scale diagnostics to `ef_search=200`.
+- The expected row counts match the current checked-in Task 118 suite shape after packet 008 narrowed large-scale diagnostics to `ef_search=200` and packet 015 narrowed 10k diagnostics to the same final decision shape.
 
 ## Remaining Task 118 Closeout Work
 
-Run the Intel 50k and 100k suites, commit the final packet 006 artifacts, then fill the decision table using the audit template.
+Run the Intel 10k, 50k, and 100k suites, commit the final packet 006 artifacts, then fill the decision table using the audit template.

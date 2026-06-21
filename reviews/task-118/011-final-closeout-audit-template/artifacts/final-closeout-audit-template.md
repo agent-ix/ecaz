@@ -1,6 +1,6 @@
 # Task 118 Final Closeout Audit Template
 
-Use this template when the Intel 50k/100k artifacts have landed in
+Use this template when the Intel 10k/50k/100k artifacts have landed in
 `reviews/task-118/006-final-attribution-matrix/artifacts/`.
 
 The closeout claim is valid only when every item below has packet-local evidence
@@ -10,14 +10,17 @@ per-query JSONL, or AMD-only timing.
 Current-head note: packet 014 corrected the HNSW frontier diagnostic semantics.
 Any final `truth@10 in frontier`, `truth@100 in frontier`, and `frontier_*`
 claims must come from artifacts generated after commit
-`df7ff2a0324929bd385e710ed97807be971773df`. Regenerate the 10k frontier
-diagnostic rows as described in packet 013 before reusing packet 006 as final
-Task 118 evidence.
+`df7ff2a0324929bd385e710ed97807be971773df`. Packet 016 provides AMD-local
+current-head 10k frontier and score-correlation evidence, but final closeout
+should use Intel artifacts for all three required scales: 10k, 50k, and 100k.
 
 ## Artifact Presence
 
 Required final Intel artifacts:
 
+- `suite-manifest-10k-intel.json`
+- `results-10k-intel.jsonl`
+- `suite-run-10k-intel.log`
 - `suite-manifest-50k-intel.json`
 - `results-50k-intel.jsonl`
 - `suite-run-50k-intel.log`
@@ -30,6 +33,9 @@ Presence check:
 
 ```bash
 for path in \
+  reviews/task-118/006-final-attribution-matrix/artifacts/suite-manifest-10k-intel.json \
+  reviews/task-118/006-final-attribution-matrix/artifacts/results-10k-intel.jsonl \
+  reviews/task-118/006-final-attribution-matrix/artifacts/suite-run-10k-intel.log \
   reviews/task-118/006-final-attribution-matrix/artifacts/suite-manifest-50k-intel.json \
   reviews/task-118/006-final-attribution-matrix/artifacts/results-50k-intel.jsonl \
   reviews/task-118/006-final-attribution-matrix/artifacts/suite-run-50k-intel.log \
@@ -47,6 +53,7 @@ Both Intel manifests must show every selected step succeeded.
 
 ```bash
 for manifest in \
+  reviews/task-118/006-final-attribution-matrix/artifacts/suite-manifest-10k-intel.json \
   reviews/task-118/006-final-attribution-matrix/artifacts/suite-manifest-50k-intel.json \
   reviews/task-118/006-final-attribution-matrix/artifacts/suite-manifest-100k-intel.json
 do
@@ -65,8 +72,8 @@ Expected shape per scale with the current suite config:
 - `6` latency;
 - `6` storage.
 
-Across the 50k and 100k Intel manifests together, this is `72` selected steps:
-`12` of each selected step kind.
+Across the 10k, 50k, and 100k Intel manifests together, this is `108` selected
+steps: `18` of each selected step kind.
 
 ## Result Row Completeness
 
@@ -74,6 +81,7 @@ Each Intel results file must contain the required result kinds.
 
 ```bash
 for results in \
+  reviews/task-118/006-final-attribution-matrix/artifacts/results-10k-intel.jsonl \
   reviews/task-118/006-final-attribution-matrix/artifacts/results-50k-intel.jsonl \
   reviews/task-118/006-final-attribution-matrix/artifacts/results-100k-intel.jsonl
 do
@@ -110,6 +118,7 @@ jq -r 'select(.kind=="hnsw-frontier") |
   [.step, .values.storage_format, .values.prefix, .values.ef_search,
    .values["truth@10 in frontier"], .values["truth@100 in frontier"],
    .values["visited final"], .values.emitted] | @tsv' \
+  reviews/task-118/006-final-attribution-matrix/artifacts/results-10k-intel.jsonl \
   reviews/task-118/006-final-attribution-matrix/artifacts/results-50k-intel.jsonl \
   reviews/task-118/006-final-attribution-matrix/artifacts/results-100k-intel.jsonl
 ```
@@ -118,7 +127,7 @@ Completion standard:
 
 - rows exist for TurboQuant, PqFastScan, and RaBitQ;
 - rows exist for source-build and compressed-build lanes;
-- rows exist at 50k and 100k;
+- rows exist at 10k, 50k, and 100k;
 - every row is `ef_search=200`;
 - the final decision table compares recall@10 with `truth@10 in frontier`.
 
@@ -133,6 +142,7 @@ jq -r 'select(.kind=="hnsw-frontier") |
   [.step, .values.storage_format, .values.prefix, .values.ef_search,
    .values["exact rerank"], .values["quantized rerank"],
    .values["dropped before exact"], .values.emitted] | @tsv' \
+  reviews/task-118/006-final-attribution-matrix/artifacts/results-10k-intel.jsonl \
   reviews/task-118/006-final-attribution-matrix/artifacts/results-50k-intel.jsonl \
   reviews/task-118/006-final-attribution-matrix/artifacts/results-100k-intel.jsonl
 ```
@@ -156,6 +166,7 @@ Extraction:
 jq -r 'select(.kind=="recall" and .values.ef_search=="200") |
   [.step, .values.storage_format, .values.prefix,
    .values["recall@k"], .values["mean q-time"]] | @tsv' \
+  reviews/task-118/006-final-attribution-matrix/artifacts/results-10k-intel.jsonl \
   reviews/task-118/006-final-attribution-matrix/artifacts/results-50k-intel.jsonl \
   reviews/task-118/006-final-attribution-matrix/artifacts/results-100k-intel.jsonl
 ```
@@ -170,7 +181,8 @@ Completion standard:
 
 ### 4. Approx-Score Correlation Evidence
 
-Evidence must exist for TurboQuant, PqFastScan, and RaBitQ at 50k and 100k.
+Evidence must exist for TurboQuant, PqFastScan, and RaBitQ at 10k, 50k, and
+100k.
 
 Extraction:
 
@@ -180,6 +192,7 @@ jq -r 'select(.kind=="hnsw-score-correlation") |
    .values["mean spearman"], .values["mean |rank shift|"],
    .values["max |rank shift|"], .values["mean |score delta|"],
    .values["missing cmp"]] | @tsv' \
+  reviews/task-118/006-final-attribution-matrix/artifacts/results-10k-intel.jsonl \
   reviews/task-118/006-final-attribution-matrix/artifacts/results-50k-intel.jsonl \
   reviews/task-118/006-final-attribution-matrix/artifacts/results-100k-intel.jsonl
 ```
