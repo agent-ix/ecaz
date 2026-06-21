@@ -162,36 +162,20 @@ jq -r '.kind + "\t" + .metric' \
   | sort | uniq -c
 ```
 
-Extract the final Task 118 decision rows:
+Extract the final Task 118 decision table skeleton:
 
 ```bash
-jq -r 'select(.kind=="recall" and .values.ef_search=="200") |
-  [.step, .values.storage_format, .values["recall@k"], .values["mean q-time"]] | @tsv' \
+jq -sr -f reviews/task-118/018-final-table-extractor/artifacts/task118-final-table.jq \
   reviews/task-118/006-final-attribution-matrix/artifacts/results-10k-intel.jsonl \
   reviews/task-118/006-final-attribution-matrix/artifacts/results-50k-intel.jsonl \
-  reviews/task-118/006-final-attribution-matrix/artifacts/results-100k-intel.jsonl
-
-jq -r 'select(.kind=="hnsw-frontier") |
-  [.step, .values.storage_format, .values.ef_search, .values["truth@10 in frontier"],
-   .values["truth@100 in frontier"], .values["visited final"], .values.emitted,
-   .values["exact rerank"], .values["dropped before exact"]] | @tsv' \
-  reviews/task-118/006-final-attribution-matrix/artifacts/results-10k-intel.jsonl \
-  reviews/task-118/006-final-attribution-matrix/artifacts/results-50k-intel.jsonl \
-  reviews/task-118/006-final-attribution-matrix/artifacts/results-100k-intel.jsonl
-
-jq -r 'select(.kind=="hnsw-score-correlation") |
-  [.step, .values.storage_format, .values.ef_search, .values["mean spearman"],
-   .values["mean |rank shift|"], .values["max |rank shift|"], .values["missing cmp"]] | @tsv' \
-  reviews/task-118/006-final-attribution-matrix/artifacts/results-10k-intel.jsonl \
-  reviews/task-118/006-final-attribution-matrix/artifacts/results-50k-intel.jsonl \
-  reviews/task-118/006-final-attribution-matrix/artifacts/results-100k-intel.jsonl
-
-jq -r 'select(.kind=="storage" and .metric=="storage_field" and .values.field=="total") |
-  [.step, .values.storage_format, .values.value, .values.value_bytes] | @tsv' \
-  reviews/task-118/006-final-attribution-matrix/artifacts/results-10k-intel.jsonl \
-  reviews/task-118/006-final-attribution-matrix/artifacts/results-50k-intel.jsonl \
-  reviews/task-118/006-final-attribution-matrix/artifacts/results-100k-intel.jsonl
+  reviews/task-118/006-final-attribution-matrix/artifacts/results-100k-intel.jsonl \
+  > reviews/task-118/006-final-attribution-matrix/artifacts/final-decision-table-intel.tsv
 ```
+
+The extractor output should have 19 lines: one header plus 18 data rows
+(`3 scales x 3 formats x 2 build paths`). Fill the blank
+`Dominant loss stage` and `Next action` columns manually in packet 006 after
+interpreting the rows.
 
 ## Commit Scope
 
@@ -209,6 +193,7 @@ Commit only decision-grade artifacts:
 - `results-100k-intel.jsonl`
 - `suite-run-100k-intel.log`
 - per-step 100k logs cited by the request
+- `final-decision-table-intel.tsv`
 - updated `reviews/task-118/006-final-attribution-matrix/artifacts/manifest.md`
 - updated `reviews/task-118/006-final-attribution-matrix/request.md`
 
@@ -219,8 +204,9 @@ temporary scratch/diagnostic exhaust.
 
 After the Intel rows land, update packet 006 with a final classification table:
 
-| Format | Scale | Build path | Recall@10 | Truth@10 in frontier | Exact rerank | Dropped before exact | Mean Spearman | Storage total | Dominant loss stage | Next action |
-| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- | --- |
+Use `final-decision-table-intel.tsv` from the extractor as the table skeleton.
+Packet 006 may convert it to Markdown, but it must preserve the generated
+recall, frontier, rerank, score-correlation, and storage values.
 
 The final Task 118 closeout should explicitly classify TurboQuant, PqFastScan,
 and RaBitQ as graph-build quality, traversal scorer quality, frontier width,

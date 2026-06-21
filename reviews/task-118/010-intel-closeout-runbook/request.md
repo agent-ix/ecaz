@@ -8,6 +8,7 @@ This checkpoint adds a packet-local runbook for the final Task 118 Intel measure
 - required PG18 `pg_test` diagnostic install command;
 - result regeneration and status commands;
 - post-run JSONL checks for the required recall, latency, storage, frontier-containment, rerank-counter, and score-correlation rows;
+- packet 018 final-table extractor command for `final-decision-table-intel.tsv`;
 - commit-scope guardrails for decision-grade artifacts only;
 - final decision table template.
 

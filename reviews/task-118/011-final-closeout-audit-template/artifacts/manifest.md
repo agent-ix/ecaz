@@ -19,6 +19,7 @@
   - selected-step status checks;
   - result-row completeness checks;
   - acceptance-criteria-specific `jq` extraction commands;
+  - packet 018 final-table extractor row-width and row-count checks;
   - final decision table schema;
   - allowed dominant-loss labels;
   - commit hygiene checklist.

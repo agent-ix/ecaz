@@ -209,10 +209,33 @@ Completion standard:
 Packet 006 must include a final table with one row per
 `format x scale x build path` at `ef_search=200`.
 
+Generate the final table skeleton with packet 018's extractor:
+
+```bash
+jq -sr -f reviews/task-118/018-final-table-extractor/artifacts/task118-final-table.jq \
+  reviews/task-118/006-final-attribution-matrix/artifacts/results-10k-intel.jsonl \
+  reviews/task-118/006-final-attribution-matrix/artifacts/results-50k-intel.jsonl \
+  reviews/task-118/006-final-attribution-matrix/artifacts/results-100k-intel.jsonl \
+  > reviews/task-118/006-final-attribution-matrix/artifacts/final-decision-table-intel.tsv
+```
+
+Extractor output check:
+
+```bash
+awk -F '\t' 'NR==1 {print "header_columns", NF; next} {rows++; if (NF != 15) bad++} END {print "data_rows", rows; print "bad_width_rows", bad + 0}' \
+  reviews/task-118/006-final-attribution-matrix/artifacts/final-decision-table-intel.tsv
+```
+
+Expected output:
+
+- `header_columns 15`
+- `data_rows 18`
+- `bad_width_rows 0`
+
 Required columns:
 
-| Format | Scale | Build path | Recall@10 | Truth@10 in frontier | Truth@100 in frontier | Exact rerank | Dropped before exact | Mean Spearman | Mean rank shift | Total storage | Dominant loss stage | Next action |
-| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- | --- |
+| Scale | Format | Build path | Recall@10 | Mean q-time | Truth@10 in frontier | Truth@100 in frontier | Exact rerank | Dropped before exact | Mean Spearman | Mean rank shift | Total storage | Total storage bytes | Dominant loss stage | Next action |
+| --- | --- | --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- | ---: | --- | --- |
 
 Allowed dominant-loss labels:
 

@@ -12,6 +12,7 @@ The template maps Task 118 acceptance criteria to concrete evidence checks over 
 - rerank-boundary counters;
 - source-build vs compressed-build recall comparison;
 - score-correlation rows;
+- packet 018 final-table extractor row-width and row-count checks;
 - final dominant-loss classification table.
 
 No benchmark is run here. This is a closeout-quality control artifact so packet 006 can be updated from the Intel rows without weakening the task definition.

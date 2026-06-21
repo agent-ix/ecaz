@@ -21,5 +21,6 @@
   - 100k `ecaz bench suite` command;
   - status and report regeneration commands;
   - post-run `jq` checks for recall, frontier, score-correlation, latency, and storage evidence;
+  - packet 018 final-table extractor command for `final-decision-table-intel.tsv`;
   - commit-scope guardrails to avoid committing truth caches, raw per-query JSONL, corpus TSVs, or scratch exhaust;
   - final decision table template.
