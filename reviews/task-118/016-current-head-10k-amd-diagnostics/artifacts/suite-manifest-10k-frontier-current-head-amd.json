@@ -1,0 +1,2219 @@
+{
+  "suite": "task118-hnsw-quantized-recall-attribution",
+  "schema_version": 1,
+  "config": "crates/ecaz-cli/suites/task118-hnsw-quantized-recall-attribution.json",
+  "config_sha256": "ac9464fb257727eb17cf10cb89496fee4ed99ddc7272eddb61ac22696ba9ab01",
+  "dry_run": false,
+  "generated_at_unix_ms": 1782084603282,
+  "connection": {
+    "database": "tqvector_bench",
+    "host": "/home/peter/.pgrx",
+    "port": 28818,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "load-10k-hnsw-turboquant",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "load",
+        "ec_real_10k",
+        "hnsw",
+        "turboquant"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/load-10k-hnsw-turboquant.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-10k-hnsw-pq-fastscan",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "load",
+        "ec_real_10k",
+        "hnsw",
+        "pq_fastscan"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/load-10k-hnsw-pq-fastscan.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-10k-hnsw-rabitq",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "load",
+        "ec_real_10k",
+        "hnsw",
+        "rabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/load-10k-hnsw-rabitq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-10k-hnsw-turboquant",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "recall",
+        "ec_real_10k",
+        "hnsw",
+        "turboquant"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/recall-10k-hnsw-turboquant.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-10k-hnsw-pq-fastscan",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "recall",
+        "ec_real_10k",
+        "hnsw",
+        "pq_fastscan"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/recall-10k-hnsw-pq-fastscan.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-10k-hnsw-rabitq",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "recall",
+        "ec_real_10k",
+        "hnsw",
+        "rabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/recall-10k-hnsw-rabitq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "frontier-10k-hnsw-turboquant",
+      "kind": "hnsw-frontier",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "hnsw-frontier",
+        "--prefix",
+        "task118_real10k_hnsw_turboquant",
+        "--m",
+        "16",
+        "--sweep",
+        "200",
+        "--queries-limit",
+        "200",
+        "--log-output",
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/frontier-10k-hnsw-turboquant.log",
+        "--jsonl-output",
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/frontier-10k-hnsw-turboquant.jsonl"
+      ],
+      "selected": true,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "frontier",
+        "ec_real_10k",
+        "hnsw",
+        "turboquant"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/frontier-10k-hnsw-turboquant.log",
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/frontier-10k-hnsw-turboquant.jsonl"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1782084603285,
+      "finished_at_unix_ms": 1782084670481,
+      "duration_ms": 67193,
+      "exit_code": 0
+    },
+    {
+      "name": "frontier-10k-hnsw-pq-fastscan",
+      "kind": "hnsw-frontier",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "hnsw-frontier",
+        "--prefix",
+        "task118_real10k_hnsw_pq_fastscan",
+        "--m",
+        "16",
+        "--sweep",
+        "200",
+        "--queries-limit",
+        "200",
+        "--log-output",
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/frontier-10k-hnsw-pq-fastscan.log",
+        "--jsonl-output",
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/frontier-10k-hnsw-pq-fastscan.jsonl"
+      ],
+      "selected": true,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "frontier",
+        "ec_real_10k",
+        "hnsw",
+        "pq_fastscan"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/frontier-10k-hnsw-pq-fastscan.log",
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/frontier-10k-hnsw-pq-fastscan.jsonl"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1782084670485,
+      "finished_at_unix_ms": 1782084740654,
+      "duration_ms": 70166,
+      "exit_code": 0
+    },
+    {
+      "name": "frontier-10k-hnsw-rabitq",
+      "kind": "hnsw-frontier",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "hnsw-frontier",
+        "--prefix",
+        "task118_real10k_hnsw_rabitq",
+        "--m",
+        "16",
+        "--sweep",
+        "200",
+        "--queries-limit",
+        "200",
+        "--log-output",
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/frontier-10k-hnsw-rabitq.log",
+        "--jsonl-output",
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/frontier-10k-hnsw-rabitq.jsonl"
+      ],
+      "selected": true,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "frontier",
+        "ec_real_10k",
+        "hnsw",
+        "rabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/frontier-10k-hnsw-rabitq.log",
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/frontier-10k-hnsw-rabitq.jsonl"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1782084740658,
+      "finished_at_unix_ms": 1782084818650,
+      "duration_ms": 77988,
+      "exit_code": 0
+    },
+    {
+      "name": "score-correlation-10k-hnsw-turboquant",
+      "kind": "hnsw-score-correlation",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "score-correlation",
+        "ec_real_10k",
+        "hnsw",
+        "turboquant"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/score-correlation-10k-hnsw-turboquant.log",
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/score-correlation-10k-hnsw-turboquant.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "score-correlation-10k-hnsw-pq-fastscan",
+      "kind": "hnsw-score-correlation",
+      "command": [],
+      "selected": false,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "score-correlation",
+        "ec_real_10k",
+        "hnsw",
+        "pq_fastscan"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/score-correlation-10k-hnsw-pq-fastscan.log",
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/score-correlation-10k-hnsw-pq-fastscan.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "score-correlation-10k-hnsw-rabitq",
+      "kind": "hnsw-score-correlation",
+      "command": [],
+      "selected": false,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "score-correlation",
+        "ec_real_10k",
+        "hnsw",
+        "rabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/score-correlation-10k-hnsw-rabitq.log",
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/score-correlation-10k-hnsw-rabitq.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-10k-hnsw-turboquant",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "latency",
+        "ec_real_10k",
+        "hnsw",
+        "turboquant",
+        "post_recall_warm"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/latency-10k-hnsw-turboquant.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-10k-hnsw-pq-fastscan",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "latency",
+        "ec_real_10k",
+        "hnsw",
+        "pq_fastscan",
+        "post_recall_warm"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/latency-10k-hnsw-pq-fastscan.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-10k-hnsw-rabitq",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "latency",
+        "ec_real_10k",
+        "hnsw",
+        "rabitq",
+        "post_recall_warm"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/latency-10k-hnsw-rabitq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-10k-hnsw-turboquant",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "storage",
+        "ec_real_10k",
+        "hnsw",
+        "turboquant"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/storage-10k-hnsw-turboquant.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-10k-hnsw-pq-fastscan",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "storage",
+        "ec_real_10k",
+        "hnsw",
+        "pq_fastscan"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/storage-10k-hnsw-pq-fastscan.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-10k-hnsw-rabitq",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "storage",
+        "ec_real_10k",
+        "hnsw",
+        "rabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/storage-10k-hnsw-rabitq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-50k-hnsw-turboquant",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "load",
+        "ec_real_50k",
+        "hnsw",
+        "turboquant"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/load-50k-hnsw-turboquant.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-50k-hnsw-pq-fastscan",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "load",
+        "ec_real_50k",
+        "hnsw",
+        "pq_fastscan"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/load-50k-hnsw-pq-fastscan.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-50k-hnsw-rabitq",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "load",
+        "ec_real_50k",
+        "hnsw",
+        "rabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/load-50k-hnsw-rabitq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-50k-hnsw-turboquant",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "recall",
+        "ec_real_50k",
+        "hnsw",
+        "turboquant"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/recall-50k-hnsw-turboquant.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-50k-hnsw-pq-fastscan",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "recall",
+        "ec_real_50k",
+        "hnsw",
+        "pq_fastscan"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/recall-50k-hnsw-pq-fastscan.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-50k-hnsw-rabitq",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "recall",
+        "ec_real_50k",
+        "hnsw",
+        "rabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/recall-50k-hnsw-rabitq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "frontier-50k-hnsw-turboquant",
+      "kind": "hnsw-frontier",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "frontier",
+        "ec_real_50k",
+        "hnsw",
+        "turboquant"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/frontier-50k-hnsw-turboquant.log",
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/frontier-50k-hnsw-turboquant.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "frontier-50k-hnsw-pq-fastscan",
+      "kind": "hnsw-frontier",
+      "command": [],
+      "selected": false,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "frontier",
+        "ec_real_50k",
+        "hnsw",
+        "pq_fastscan"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/frontier-50k-hnsw-pq-fastscan.log",
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/frontier-50k-hnsw-pq-fastscan.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "frontier-50k-hnsw-rabitq",
+      "kind": "hnsw-frontier",
+      "command": [],
+      "selected": false,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "frontier",
+        "ec_real_50k",
+        "hnsw",
+        "rabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/frontier-50k-hnsw-rabitq.log",
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/frontier-50k-hnsw-rabitq.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "score-correlation-50k-hnsw-turboquant",
+      "kind": "hnsw-score-correlation",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "score-correlation",
+        "ec_real_50k",
+        "hnsw",
+        "turboquant"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/score-correlation-50k-hnsw-turboquant.log",
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/score-correlation-50k-hnsw-turboquant.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "score-correlation-50k-hnsw-pq-fastscan",
+      "kind": "hnsw-score-correlation",
+      "command": [],
+      "selected": false,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "score-correlation",
+        "ec_real_50k",
+        "hnsw",
+        "pq_fastscan"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/score-correlation-50k-hnsw-pq-fastscan.log",
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/score-correlation-50k-hnsw-pq-fastscan.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "score-correlation-50k-hnsw-rabitq",
+      "kind": "hnsw-score-correlation",
+      "command": [],
+      "selected": false,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "score-correlation",
+        "ec_real_50k",
+        "hnsw",
+        "rabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/score-correlation-50k-hnsw-rabitq.log",
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/score-correlation-50k-hnsw-rabitq.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-50k-hnsw-turboquant",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "latency",
+        "ec_real_50k",
+        "hnsw",
+        "turboquant",
+        "post_recall_warm"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/latency-50k-hnsw-turboquant.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-50k-hnsw-pq-fastscan",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "latency",
+        "ec_real_50k",
+        "hnsw",
+        "pq_fastscan",
+        "post_recall_warm"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/latency-50k-hnsw-pq-fastscan.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-50k-hnsw-rabitq",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "latency",
+        "ec_real_50k",
+        "hnsw",
+        "rabitq",
+        "post_recall_warm"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/latency-50k-hnsw-rabitq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-50k-hnsw-turboquant",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "storage",
+        "ec_real_50k",
+        "hnsw",
+        "turboquant"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/storage-50k-hnsw-turboquant.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-50k-hnsw-pq-fastscan",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "storage",
+        "ec_real_50k",
+        "hnsw",
+        "pq_fastscan"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/storage-50k-hnsw-pq-fastscan.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-50k-hnsw-rabitq",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "storage",
+        "ec_real_50k",
+        "hnsw",
+        "rabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/storage-50k-hnsw-rabitq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-100k-hnsw-turboquant",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "load",
+        "ec_real_100k",
+        "hnsw",
+        "turboquant"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/load-100k-hnsw-turboquant.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-100k-hnsw-pq-fastscan",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "load",
+        "ec_real_100k",
+        "hnsw",
+        "pq_fastscan"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/load-100k-hnsw-pq-fastscan.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-100k-hnsw-rabitq",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "load",
+        "ec_real_100k",
+        "hnsw",
+        "rabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/load-100k-hnsw-rabitq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-100k-hnsw-turboquant",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "recall",
+        "ec_real_100k",
+        "hnsw",
+        "turboquant"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/recall-100k-hnsw-turboquant.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-100k-hnsw-pq-fastscan",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "recall",
+        "ec_real_100k",
+        "hnsw",
+        "pq_fastscan"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/recall-100k-hnsw-pq-fastscan.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-100k-hnsw-rabitq",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "recall",
+        "ec_real_100k",
+        "hnsw",
+        "rabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/recall-100k-hnsw-rabitq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "frontier-100k-hnsw-turboquant",
+      "kind": "hnsw-frontier",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "frontier",
+        "ec_real_100k",
+        "hnsw",
+        "turboquant"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/frontier-100k-hnsw-turboquant.log",
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/frontier-100k-hnsw-turboquant.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "frontier-100k-hnsw-pq-fastscan",
+      "kind": "hnsw-frontier",
+      "command": [],
+      "selected": false,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "frontier",
+        "ec_real_100k",
+        "hnsw",
+        "pq_fastscan"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/frontier-100k-hnsw-pq-fastscan.log",
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/frontier-100k-hnsw-pq-fastscan.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "frontier-100k-hnsw-rabitq",
+      "kind": "hnsw-frontier",
+      "command": [],
+      "selected": false,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "frontier",
+        "ec_real_100k",
+        "hnsw",
+        "rabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/frontier-100k-hnsw-rabitq.log",
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/frontier-100k-hnsw-rabitq.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "score-correlation-100k-hnsw-turboquant",
+      "kind": "hnsw-score-correlation",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "score-correlation",
+        "ec_real_100k",
+        "hnsw",
+        "turboquant"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/score-correlation-100k-hnsw-turboquant.log",
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/score-correlation-100k-hnsw-turboquant.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "score-correlation-100k-hnsw-pq-fastscan",
+      "kind": "hnsw-score-correlation",
+      "command": [],
+      "selected": false,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "score-correlation",
+        "ec_real_100k",
+        "hnsw",
+        "pq_fastscan"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/score-correlation-100k-hnsw-pq-fastscan.log",
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/score-correlation-100k-hnsw-pq-fastscan.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "score-correlation-100k-hnsw-rabitq",
+      "kind": "hnsw-score-correlation",
+      "command": [],
+      "selected": false,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "score-correlation",
+        "ec_real_100k",
+        "hnsw",
+        "rabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/score-correlation-100k-hnsw-rabitq.log",
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/score-correlation-100k-hnsw-rabitq.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-100k-hnsw-turboquant",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "latency",
+        "ec_real_100k",
+        "hnsw",
+        "turboquant",
+        "post_recall_warm"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/latency-100k-hnsw-turboquant.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-100k-hnsw-pq-fastscan",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "latency",
+        "ec_real_100k",
+        "hnsw",
+        "pq_fastscan",
+        "post_recall_warm"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/latency-100k-hnsw-pq-fastscan.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-100k-hnsw-rabitq",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "latency",
+        "ec_real_100k",
+        "hnsw",
+        "rabitq",
+        "post_recall_warm"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/latency-100k-hnsw-rabitq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-100k-hnsw-turboquant",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "storage",
+        "ec_real_100k",
+        "hnsw",
+        "turboquant"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/storage-100k-hnsw-turboquant.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-100k-hnsw-pq-fastscan",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "storage",
+        "ec_real_100k",
+        "hnsw",
+        "pq_fastscan"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/storage-100k-hnsw-pq-fastscan.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-100k-hnsw-rabitq",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "storage",
+        "ec_real_100k",
+        "hnsw",
+        "rabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/storage-100k-hnsw-rabitq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-10k-hnsw-turboquant-compressed-build",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "load",
+        "ec_real_10k",
+        "hnsw",
+        "turboquant",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/load-10k-hnsw-turboquant-compressed-build.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-10k-hnsw-pq-fastscan-compressed-build",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "load",
+        "ec_real_10k",
+        "hnsw",
+        "pq_fastscan",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/load-10k-hnsw-pq-fastscan-compressed-build.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-10k-hnsw-rabitq-compressed-build",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "load",
+        "ec_real_10k",
+        "hnsw",
+        "rabitq",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/load-10k-hnsw-rabitq-compressed-build.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-10k-hnsw-turboquant-compressed-build",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "recall",
+        "ec_real_10k",
+        "hnsw",
+        "turboquant",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/recall-10k-hnsw-turboquant-compressed-build.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-10k-hnsw-pq-fastscan-compressed-build",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "recall",
+        "ec_real_10k",
+        "hnsw",
+        "pq_fastscan",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/recall-10k-hnsw-pq-fastscan-compressed-build.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-10k-hnsw-rabitq-compressed-build",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "recall",
+        "ec_real_10k",
+        "hnsw",
+        "rabitq",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/recall-10k-hnsw-rabitq-compressed-build.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "frontier-10k-hnsw-turboquant-compressed-build",
+      "kind": "hnsw-frontier",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "hnsw-frontier",
+        "--prefix",
+        "task118_r10k_tq_cb",
+        "--m",
+        "16",
+        "--sweep",
+        "200",
+        "--queries-limit",
+        "200",
+        "--log-output",
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/frontier-10k-hnsw-turboquant-compressed-build.log",
+        "--jsonl-output",
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/frontier-10k-hnsw-turboquant-compressed-build.jsonl"
+      ],
+      "selected": true,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "frontier",
+        "ec_real_10k",
+        "hnsw",
+        "turboquant",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/frontier-10k-hnsw-turboquant-compressed-build.log",
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/frontier-10k-hnsw-turboquant-compressed-build.jsonl"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1782084818653,
+      "finished_at_unix_ms": 1782084888597,
+      "duration_ms": 69940,
+      "exit_code": 0
+    },
+    {
+      "name": "frontier-10k-hnsw-pq-fastscan-compressed-build",
+      "kind": "hnsw-frontier",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "hnsw-frontier",
+        "--prefix",
+        "task118_r10k_pq_cb",
+        "--m",
+        "16",
+        "--sweep",
+        "200",
+        "--queries-limit",
+        "200",
+        "--log-output",
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/frontier-10k-hnsw-pq-fastscan-compressed-build.log",
+        "--jsonl-output",
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/frontier-10k-hnsw-pq-fastscan-compressed-build.jsonl"
+      ],
+      "selected": true,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "frontier",
+        "ec_real_10k",
+        "hnsw",
+        "pq_fastscan",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/frontier-10k-hnsw-pq-fastscan-compressed-build.log",
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/frontier-10k-hnsw-pq-fastscan-compressed-build.jsonl"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1782084888600,
+      "finished_at_unix_ms": 1782084959392,
+      "duration_ms": 70788,
+      "exit_code": 0
+    },
+    {
+      "name": "frontier-10k-hnsw-rabitq-compressed-build",
+      "kind": "hnsw-frontier",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "hnsw-frontier",
+        "--prefix",
+        "task118_r10k_rq_cb",
+        "--m",
+        "16",
+        "--sweep",
+        "200",
+        "--queries-limit",
+        "200",
+        "--log-output",
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/frontier-10k-hnsw-rabitq-compressed-build.log",
+        "--jsonl-output",
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/frontier-10k-hnsw-rabitq-compressed-build.jsonl"
+      ],
+      "selected": true,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "frontier",
+        "ec_real_10k",
+        "hnsw",
+        "rabitq",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/frontier-10k-hnsw-rabitq-compressed-build.log",
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/frontier-10k-hnsw-rabitq-compressed-build.jsonl"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1782084959401,
+      "finished_at_unix_ms": 1782085037300,
+      "duration_ms": 77892,
+      "exit_code": 0
+    },
+    {
+      "name": "score-correlation-10k-hnsw-turboquant-compressed-build",
+      "kind": "hnsw-score-correlation",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "score-correlation",
+        "ec_real_10k",
+        "hnsw",
+        "turboquant",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/score-correlation-10k-hnsw-turboquant-compressed-build.log",
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/score-correlation-10k-hnsw-turboquant-compressed-build.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "score-correlation-10k-hnsw-pq-fastscan-compressed-build",
+      "kind": "hnsw-score-correlation",
+      "command": [],
+      "selected": false,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "score-correlation",
+        "ec_real_10k",
+        "hnsw",
+        "pq_fastscan",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/score-correlation-10k-hnsw-pq-fastscan-compressed-build.log",
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/score-correlation-10k-hnsw-pq-fastscan-compressed-build.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "score-correlation-10k-hnsw-rabitq-compressed-build",
+      "kind": "hnsw-score-correlation",
+      "command": [],
+      "selected": false,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "score-correlation",
+        "ec_real_10k",
+        "hnsw",
+        "rabitq",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/score-correlation-10k-hnsw-rabitq-compressed-build.log",
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/score-correlation-10k-hnsw-rabitq-compressed-build.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-10k-hnsw-turboquant-compressed-build",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "latency",
+        "ec_real_10k",
+        "hnsw",
+        "turboquant",
+        "post_recall_warm",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/latency-10k-hnsw-turboquant-compressed-build.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-10k-hnsw-pq-fastscan-compressed-build",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "latency",
+        "ec_real_10k",
+        "hnsw",
+        "pq_fastscan",
+        "post_recall_warm",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/latency-10k-hnsw-pq-fastscan-compressed-build.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-10k-hnsw-rabitq-compressed-build",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "latency",
+        "ec_real_10k",
+        "hnsw",
+        "rabitq",
+        "post_recall_warm",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/latency-10k-hnsw-rabitq-compressed-build.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-10k-hnsw-turboquant-compressed-build",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "storage",
+        "ec_real_10k",
+        "hnsw",
+        "turboquant",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/storage-10k-hnsw-turboquant-compressed-build.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-10k-hnsw-pq-fastscan-compressed-build",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "storage",
+        "ec_real_10k",
+        "hnsw",
+        "pq_fastscan",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/storage-10k-hnsw-pq-fastscan-compressed-build.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-10k-hnsw-rabitq-compressed-build",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "storage",
+        "ec_real_10k",
+        "hnsw",
+        "rabitq",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/storage-10k-hnsw-rabitq-compressed-build.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-50k-hnsw-turboquant-compressed-build",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "load",
+        "ec_real_50k",
+        "hnsw",
+        "turboquant",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/load-50k-hnsw-turboquant-compressed-build.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-50k-hnsw-pq-fastscan-compressed-build",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "load",
+        "ec_real_50k",
+        "hnsw",
+        "pq_fastscan",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/load-50k-hnsw-pq-fastscan-compressed-build.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-50k-hnsw-rabitq-compressed-build",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "load",
+        "ec_real_50k",
+        "hnsw",
+        "rabitq",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/load-50k-hnsw-rabitq-compressed-build.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-50k-hnsw-turboquant-compressed-build",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "recall",
+        "ec_real_50k",
+        "hnsw",
+        "turboquant",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/recall-50k-hnsw-turboquant-compressed-build.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-50k-hnsw-pq-fastscan-compressed-build",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "recall",
+        "ec_real_50k",
+        "hnsw",
+        "pq_fastscan",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/recall-50k-hnsw-pq-fastscan-compressed-build.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-50k-hnsw-rabitq-compressed-build",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "recall",
+        "ec_real_50k",
+        "hnsw",
+        "rabitq",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/recall-50k-hnsw-rabitq-compressed-build.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "frontier-50k-hnsw-turboquant-compressed-build",
+      "kind": "hnsw-frontier",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "frontier",
+        "ec_real_50k",
+        "hnsw",
+        "turboquant",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/frontier-50k-hnsw-turboquant-compressed-build.log",
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/frontier-50k-hnsw-turboquant-compressed-build.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "frontier-50k-hnsw-pq-fastscan-compressed-build",
+      "kind": "hnsw-frontier",
+      "command": [],
+      "selected": false,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "frontier",
+        "ec_real_50k",
+        "hnsw",
+        "pq_fastscan",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/frontier-50k-hnsw-pq-fastscan-compressed-build.log",
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/frontier-50k-hnsw-pq-fastscan-compressed-build.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "frontier-50k-hnsw-rabitq-compressed-build",
+      "kind": "hnsw-frontier",
+      "command": [],
+      "selected": false,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "frontier",
+        "ec_real_50k",
+        "hnsw",
+        "rabitq",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/frontier-50k-hnsw-rabitq-compressed-build.log",
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/frontier-50k-hnsw-rabitq-compressed-build.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "score-correlation-50k-hnsw-turboquant-compressed-build",
+      "kind": "hnsw-score-correlation",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "score-correlation",
+        "ec_real_50k",
+        "hnsw",
+        "turboquant",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/score-correlation-50k-hnsw-turboquant-compressed-build.log",
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/score-correlation-50k-hnsw-turboquant-compressed-build.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "score-correlation-50k-hnsw-pq-fastscan-compressed-build",
+      "kind": "hnsw-score-correlation",
+      "command": [],
+      "selected": false,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "score-correlation",
+        "ec_real_50k",
+        "hnsw",
+        "pq_fastscan",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/score-correlation-50k-hnsw-pq-fastscan-compressed-build.log",
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/score-correlation-50k-hnsw-pq-fastscan-compressed-build.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "score-correlation-50k-hnsw-rabitq-compressed-build",
+      "kind": "hnsw-score-correlation",
+      "command": [],
+      "selected": false,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "score-correlation",
+        "ec_real_50k",
+        "hnsw",
+        "rabitq",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/score-correlation-50k-hnsw-rabitq-compressed-build.log",
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/score-correlation-50k-hnsw-rabitq-compressed-build.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-50k-hnsw-turboquant-compressed-build",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "latency",
+        "ec_real_50k",
+        "hnsw",
+        "turboquant",
+        "post_recall_warm",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/latency-50k-hnsw-turboquant-compressed-build.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-50k-hnsw-pq-fastscan-compressed-build",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "latency",
+        "ec_real_50k",
+        "hnsw",
+        "pq_fastscan",
+        "post_recall_warm",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/latency-50k-hnsw-pq-fastscan-compressed-build.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-50k-hnsw-rabitq-compressed-build",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "latency",
+        "ec_real_50k",
+        "hnsw",
+        "rabitq",
+        "post_recall_warm",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/latency-50k-hnsw-rabitq-compressed-build.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-50k-hnsw-turboquant-compressed-build",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "storage",
+        "ec_real_50k",
+        "hnsw",
+        "turboquant",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/storage-50k-hnsw-turboquant-compressed-build.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-50k-hnsw-pq-fastscan-compressed-build",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "storage",
+        "ec_real_50k",
+        "hnsw",
+        "pq_fastscan",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/storage-50k-hnsw-pq-fastscan-compressed-build.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-50k-hnsw-rabitq-compressed-build",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "storage",
+        "ec_real_50k",
+        "hnsw",
+        "rabitq",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/storage-50k-hnsw-rabitq-compressed-build.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-100k-hnsw-turboquant-compressed-build",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "load",
+        "ec_real_100k",
+        "hnsw",
+        "turboquant",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/load-100k-hnsw-turboquant-compressed-build.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-100k-hnsw-pq-fastscan-compressed-build",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "load",
+        "ec_real_100k",
+        "hnsw",
+        "pq_fastscan",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/load-100k-hnsw-pq-fastscan-compressed-build.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-100k-hnsw-rabitq-compressed-build",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "load",
+        "ec_real_100k",
+        "hnsw",
+        "rabitq",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/load-100k-hnsw-rabitq-compressed-build.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-100k-hnsw-turboquant-compressed-build",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "recall",
+        "ec_real_100k",
+        "hnsw",
+        "turboquant",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/recall-100k-hnsw-turboquant-compressed-build.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-100k-hnsw-pq-fastscan-compressed-build",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "recall",
+        "ec_real_100k",
+        "hnsw",
+        "pq_fastscan",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/recall-100k-hnsw-pq-fastscan-compressed-build.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-100k-hnsw-rabitq-compressed-build",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "recall",
+        "ec_real_100k",
+        "hnsw",
+        "rabitq",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/recall-100k-hnsw-rabitq-compressed-build.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "frontier-100k-hnsw-turboquant-compressed-build",
+      "kind": "hnsw-frontier",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "frontier",
+        "ec_real_100k",
+        "hnsw",
+        "turboquant",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/frontier-100k-hnsw-turboquant-compressed-build.log",
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/frontier-100k-hnsw-turboquant-compressed-build.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "frontier-100k-hnsw-pq-fastscan-compressed-build",
+      "kind": "hnsw-frontier",
+      "command": [],
+      "selected": false,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "frontier",
+        "ec_real_100k",
+        "hnsw",
+        "pq_fastscan",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/frontier-100k-hnsw-pq-fastscan-compressed-build.log",
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/frontier-100k-hnsw-pq-fastscan-compressed-build.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "frontier-100k-hnsw-rabitq-compressed-build",
+      "kind": "hnsw-frontier",
+      "command": [],
+      "selected": false,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "frontier",
+        "ec_real_100k",
+        "hnsw",
+        "rabitq",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/frontier-100k-hnsw-rabitq-compressed-build.log",
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/frontier-100k-hnsw-rabitq-compressed-build.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "score-correlation-100k-hnsw-turboquant-compressed-build",
+      "kind": "hnsw-score-correlation",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "score-correlation",
+        "ec_real_100k",
+        "hnsw",
+        "turboquant",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/score-correlation-100k-hnsw-turboquant-compressed-build.log",
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/score-correlation-100k-hnsw-turboquant-compressed-build.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "score-correlation-100k-hnsw-pq-fastscan-compressed-build",
+      "kind": "hnsw-score-correlation",
+      "command": [],
+      "selected": false,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "score-correlation",
+        "ec_real_100k",
+        "hnsw",
+        "pq_fastscan",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/score-correlation-100k-hnsw-pq-fastscan-compressed-build.log",
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/score-correlation-100k-hnsw-pq-fastscan-compressed-build.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "score-correlation-100k-hnsw-rabitq-compressed-build",
+      "kind": "hnsw-score-correlation",
+      "command": [],
+      "selected": false,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "score-correlation",
+        "ec_real_100k",
+        "hnsw",
+        "rabitq",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/score-correlation-100k-hnsw-rabitq-compressed-build.log",
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/score-correlation-100k-hnsw-rabitq-compressed-build.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-100k-hnsw-turboquant-compressed-build",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "latency",
+        "ec_real_100k",
+        "hnsw",
+        "turboquant",
+        "post_recall_warm",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/latency-100k-hnsw-turboquant-compressed-build.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-100k-hnsw-pq-fastscan-compressed-build",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "latency",
+        "ec_real_100k",
+        "hnsw",
+        "pq_fastscan",
+        "post_recall_warm",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/latency-100k-hnsw-pq-fastscan-compressed-build.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-100k-hnsw-rabitq-compressed-build",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "latency",
+        "ec_real_100k",
+        "hnsw",
+        "rabitq",
+        "post_recall_warm",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/latency-100k-hnsw-rabitq-compressed-build.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-100k-hnsw-turboquant-compressed-build",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "task118",
+        "storage",
+        "ec_real_100k",
+        "hnsw",
+        "turboquant",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/storage-100k-hnsw-turboquant-compressed-build.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-100k-hnsw-pq-fastscan-compressed-build",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "quant": "pq_fastscan",
+      "tags": [
+        "task118",
+        "storage",
+        "ec_real_100k",
+        "hnsw",
+        "pq_fastscan",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/storage-100k-hnsw-pq-fastscan-compressed-build.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-100k-hnsw-rabitq-compressed-build",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "quant": "rabitq",
+      "tags": [
+        "task118",
+        "storage",
+        "ec_real_100k",
+        "hnsw",
+        "rabitq",
+        "compressed_build"
+      ],
+      "expected_artifacts": [
+        "reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/storage-100k-hnsw-rabitq-compressed-build.log"
+      ],
+      "status": "skipped"
+    }
+  ]
+}
