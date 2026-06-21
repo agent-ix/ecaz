@@ -1247,6 +1247,29 @@ fn collect_validated_leaf_target_block_rank_snapshot(
             .push(target_ordinal);
     }
 
+    if scored_ranges.is_empty() {
+        let candidates = collect_validated_scan_plan_approx_candidates(
+            snapshot,
+            object_store,
+            query,
+            hierarchy,
+            scan_plan,
+            top_graph_plan,
+            "leaf target block rank no-summary fallback",
+        )?;
+        return no_summary_leaf_target_block_rank_rows_from_candidates(
+            snapshot,
+            scan_plan,
+            target_local_sequences,
+            &candidates,
+            max_global_blocks,
+            radius_weight,
+            scored_block_count,
+            cap_block_ip,
+            &route_context_by_pid,
+        );
+    }
+
     let target_hits = collect_loaded_leaf_target_block_hits(
         &loaded_leaf_routes,
         &target_ordinals_by_sequence,
@@ -1304,6 +1327,107 @@ fn collect_validated_leaf_target_block_rank_snapshot(
                 route_rank: route_context.map(|(rank, _score)| rank),
                 route_score: route_context.map(|(_rank, score)| score),
                 assignment_flags: Some(hit.assignment_flags),
+            });
+        }
+    }
+
+    rows.extend(missing_leaf_block_rank_rows(
+        snapshot,
+        scan_plan,
+        target_local_sequences,
+        "not_found_in_routed_leaves",
+        max_global_blocks,
+        radius_weight,
+        scored_block_count,
+        cap_block_ip,
+        &found_target_ordinals,
+    ));
+    rows.sort_by(|left, right| {
+        left.target_ordinal
+            .cmp(&right.target_ordinal)
+            .then_with(|| {
+                left.block_rank
+                    .unwrap_or(u64::MAX)
+                    .cmp(&right.block_rank.unwrap_or(u64::MAX))
+            })
+            .then_with(|| left.pid.unwrap_or(u64::MAX).cmp(&right.pid.unwrap_or(u64::MAX)))
+            .then_with(|| {
+                left.row_index
+                    .unwrap_or(u32::MAX)
+                    .cmp(&right.row_index.unwrap_or(u32::MAX))
+            })
+    });
+    Ok(rows)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn no_summary_leaf_target_block_rank_rows_from_candidates(
+    snapshot: &SpireValidatedEpochSnapshot<'_>,
+    scan_plan: SpireSingleLevelScanPlan,
+    target_local_sequences: &[u64],
+    candidates: &[SpireScoredScanCandidate],
+    max_global_blocks: u64,
+    radius_weight: f64,
+    scored_block_count: u64,
+    cap_block_ip: Option<f32>,
+    route_context_by_pid: &HashMap<u64, (u64, f32)>,
+) -> Result<Vec<SpireLeafBlockRankSnapshotRow>, String> {
+    let mut target_ordinals_by_sequence = HashMap::<u64, Vec<u64>>::new();
+    for (target_ordinal, target_local_sequence) in target_local_sequences.iter().enumerate() {
+        let target_ordinal = u64::try_from(target_ordinal)
+            .map_err(|_| "ec_spire target ordinal exceeds u64".to_owned())?;
+        target_ordinals_by_sequence
+            .entry(*target_local_sequence)
+            .or_default()
+            .push(target_ordinal);
+    }
+
+    let mut found_target_ordinals = HashSet::<u64>::new();
+    let mut rows = Vec::new();
+    for candidate in candidates {
+        let Some(target_local_sequence) = candidate.vec_id.local_sequence() else {
+            continue;
+        };
+        let Some(target_ordinals) = target_ordinals_by_sequence.get(&target_local_sequence) else {
+            continue;
+        };
+        let placement = snapshot
+            .require_lookup(candidate.pid, "leaf target block rank no-summary candidate")?
+            .placement;
+        let route_context = route_context_by_pid.get(&candidate.pid).copied();
+        for target_ordinal in target_ordinals {
+            if !found_target_ordinals.insert(*target_ordinal) {
+                continue;
+            }
+            rows.push(SpireLeafBlockRankSnapshotRow {
+                active_epoch: snapshot.epoch_manifest().epoch,
+                effective_nprobe: scan_plan.nprobe,
+                effective_nprobe_source: scan_plan.nprobe_source,
+                effective_rerank_width: u64::try_from(scan_plan.rerank_width)
+                    .map_err(|_| "ec_spire rerank width exceeds u64".to_owned())?,
+                effective_rerank_width_source: scan_plan.rerank_width_source,
+                target_ordinal: *target_ordinal,
+                target_local_sequence,
+                status: "target_no_block_summaries",
+                max_global_blocks,
+                radius_weight,
+                scored_block_count,
+                block_rank: None,
+                selected_by_global_cap: Some(true),
+                pid: Some(candidate.pid),
+                node_id: Some(placement.node_id),
+                local_store_id: Some(placement.local_store_id),
+                object_version: Some(candidate.object_version),
+                row_index: Some(candidate.row_index),
+                row_base: None,
+                row_end: None,
+                row_count: None,
+                block_ip: None,
+                cap_block_ip,
+                block_ip_margin_to_cap: None,
+                route_rank: route_context.map(|(rank, _score)| rank),
+                route_score: route_context.map(|(_rank, score)| score),
+                assignment_flags: Some(candidate.assignment_flags),
             });
         }
     }

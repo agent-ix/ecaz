@@ -2583,11 +2583,13 @@ fn classify_miss_stage(rank_row: Option<&LeafBlockRankRow>) -> &'static str {
     };
     match row.status.as_str() {
         "not_found_in_routed_leaves" | "nprobe_zero" => "routing_miss",
-        "block_ranked" => match row.selected_by_global_cap {
-            Some(false) => "block_pruned_global_cap",
-            Some(true) => "candidate_or_rerank_cap",
-            None => "candidate_or_rerank_cap",
-        },
+        "block_ranked" | "target_block_ranked" | "target_no_block_summaries" => {
+            match row.selected_by_global_cap {
+                Some(false) => "block_pruned_global_cap",
+                Some(true) => "candidate_or_rerank_cap",
+                None => "candidate_or_rerank_cap",
+            }
+        }
         _ => "attribution_unknown",
     }
 }
@@ -3187,8 +3189,10 @@ fn target_rank_row_is_routed(row: Option<&LeafBlockRankRow>) -> bool {
 
 fn target_rank_row_block_selected(row: Option<&LeafBlockRankRow>) -> bool {
     row.is_some_and(|row| {
-        matches!(row.status.as_str(), "block_ranked" | "target_block_ranked")
-            && row.selected_by_global_cap != Some(false)
+        matches!(
+            row.status.as_str(),
+            "block_ranked" | "target_block_ranked" | "target_no_block_summaries"
+        ) && row.selected_by_global_cap != Some(false)
     })
 }
 
@@ -4541,14 +4545,15 @@ mod tests {
             96,
             1,
             990000,
-            &[1, 2, 3, 4],
-            &[101, 102, 103, 104],
+            &[1, 2, 3, 4, 5],
+            &[101, 102, 103, 104, 105],
             &[1],
             &[
                 ranked_row(0, "block_ranked", Some(true)),
                 ranked_row(1, "not_found_in_routed_leaves", None),
                 ranked_row(2, "block_ranked", Some(false)),
-                ranked_row(3, "block_ranked", Some(true)),
+                ranked_row(3, "target_block_ranked", Some(true)),
+                ranked_row(4, "target_no_block_summaries", Some(true)),
             ],
         )
         .expect("attribution rows");
@@ -4557,6 +4562,7 @@ mod tests {
         assert_eq!(rows[1].miss_stage, "routing_miss");
         assert_eq!(rows[2].miss_stage, "block_pruned_global_cap");
         assert_eq!(rows[3].miss_stage, "candidate_or_rerank_cap");
+        assert_eq!(rows[4].miss_stage, "candidate_or_rerank_cap");
     }
 
     #[test]
@@ -4667,7 +4673,7 @@ mod tests {
                 ranked_row(2, "target_block_ranked", Some(false)),
                 ranked_row(3, "target_block_ranked", Some(true)),
                 ranked_row(4, "target_block_ranked", Some(true)),
-                ranked_row(5, "target_block_ranked", Some(true)),
+                ranked_row(5, "target_no_block_summaries", Some(true)),
             ],
         )
         .expect("stage containment rows");
