@@ -1,9 +1,9 @@
 # Task 121 Stage 1 Routing Screen Artifact Manifest
 
-- Head SHA: `006b26c39a3a79adf1213dbb62fa0c64bff8ed51`
+- Head SHA: `cb45540f053e6b638338043aea96a2d156bfdea0`
 - Task bucket: `reviews/task-121/001-stage1-routing-screen`
 - Lane: `intel-local`
-- Fixture: real corpus 100k, q20 bounded baseline slice plus q200/seven-sweep baseline
+- Fixture: real corpus 100k, q20 bounded baseline slice, q200/seven-sweep baseline, and q200 OFAT screens
 - Storage format: RaBitQ baseline
 - Rerank mode: default SPIRE pipeline exact-source rerank
 - Index/table isolation: isolated prefix/table/index for baseline (`t121_s1_100k_baseline`)
@@ -170,3 +170,63 @@
     - nprobe 96: 1995/2000 truth items contained, 0.9975
   - Pipeline counters matched baseline exactly at every nprobe, including candidate_sum and object_bytes_sum.
   - Interpretation: `top_graph_search_list_size=200` did not improve route containment or recall over the baseline `top_graph_search_list_size=96`; it mostly increased latency. It is not a significant lever in this local 100k screen.
+
+## boundary_replica_count=1 OFAT
+
+- `bound1-load-suite-manifest.json`
+- `bound1-load-suite-results.jsonl`
+- `bound1-load-suite-run.log`
+- `load-bound1.log`
+  - Command: `target/debug/ecaz bench suite run --config reviews/task-121/001-stage1-routing-screen/artifacts/suite-stage1-routing-screen-100k.json --database tqvector_bench_task121 --host /home/peter/.pgrx --port 28818 --only load-bound1 --manifest-output reviews/task-121/001-stage1-routing-screen/artifacts/bound1-load-suite-manifest.json --results-output reviews/task-121/001-stage1-routing-screen/artifacts/bound1-load-suite-results.jsonl --log-file reviews/task-121/001-stage1-routing-screen/artifacts/bound1-load-suite-run.log`
+  - Key result lines:
+    - copied corpus rows: 100000 in 98.37s
+    - encoded corpus rows: 100000 in 32.18s
+    - copied query rows: 1000 in 1.02s
+    - built index `t121_s1_100k_bound1_idx` in 44.40s
+    - completed prefix in 333.24s
+
+- `bound1-storage-suite-manifest.json`
+- `bound1-storage-suite-results.jsonl`
+- `bound1-storage-suite-run.log`
+- `storage-bound1.log`
+  - Command: `target/debug/ecaz bench suite run --config reviews/task-121/001-stage1-routing-screen/artifacts/suite-stage1-routing-screen-100k.json --database tqvector_bench_task121 --host /home/peter/.pgrx --port 28818 --only storage-bound1 --manifest-output reviews/task-121/001-stage1-routing-screen/artifacts/bound1-storage-suite-manifest.json --results-output reviews/task-121/001-stage1-routing-screen/artifacts/bound1-storage-suite-results.jsonl --log-file reviews/task-121/001-stage1-routing-screen/artifacts/bound1-storage-suite-run.log`
+  - Key result lines:
+    - total: 1.7 GiB
+    - indexes: 160.1 MiB
+    - SPIRE index: 157.9 MiB
+    - index bytes/row: 1655.2 B
+
+- `bound1-pipeline-suite-manifest.json`
+- `bound1-pipeline-suite-results.jsonl`
+- `bound1-pipeline-suite-run.log`
+- `pipeline-bound1.log`
+- `pipeline-bound1-funnel.jsonl`
+- `pipeline-bound1-stage-containment.jsonl`
+- `pipeline-bound1-route-containment.tsv`
+  - Command: `target/debug/ecaz bench suite run --config reviews/task-121/001-stage1-routing-screen/artifacts/suite-stage1-routing-screen-100k.json --database tqvector_bench_task121 --host /home/peter/.pgrx --port 28818 --only pipeline-bound1 --manifest-output reviews/task-121/001-stage1-routing-screen/artifacts/bound1-pipeline-suite-manifest.json --results-output reviews/task-121/001-stage1-routing-screen/artifacts/bound1-pipeline-suite-results.jsonl --log-file reviews/task-121/001-stage1-routing-screen/artifacts/bound1-pipeline-suite-run.log`
+  - Results shape: 200 queries x seven nprobe values (`8,16,24,32,48,64,96`), 1,400 funnel rows, 8,400 stage-containment rows.
+  - Key coordinator result lines:
+    - nprobe 8: recall@10 0.8365, p50 497.014 ms, p95 634.028 ms, p99 820.927 ms, max 1031.618 ms
+    - nprobe 16: recall@10 0.9235, p50 950.199 ms, p95 1167.817 ms, p99 1292.569 ms, max 1489.419 ms
+    - nprobe 24: recall@10 0.9605, p50 1335.556 ms, p95 1585.095 ms, p99 1719.755 ms, max 1940.050 ms
+    - nprobe 32: recall@10 0.9735, p50 1742.360 ms, p95 2020.705 ms, p99 2175.389 ms, max 2718.170 ms
+    - nprobe 48: recall@10 0.9870, p50 2449.828 ms, p95 2873.829 ms, p99 3037.819 ms, max 3138.740 ms
+    - nprobe 64: recall@10 0.9940, p50 3146.297 ms, p95 3592.560 ms, p99 4101.957 ms, max 4437.518 ms
+    - nprobe 96: recall@10 0.9995, p50 4137.887 ms, p95 4579.126 ms, p99 4977.837 ms, max 5257.249 ms
+  - Route-stage containment from `pipeline-bound1-route-containment.tsv`:
+    - nprobe 8: 1673/2000 truth items contained, 0.8365
+    - nprobe 16: 1847/2000 truth items contained, 0.9235
+    - nprobe 24: 1921/2000 truth items contained, 0.9605
+    - nprobe 32: 1947/2000 truth items contained, 0.9735
+    - nprobe 48: 1974/2000 truth items contained, 0.9870
+    - nprobe 64: 1988/2000 truth items contained, 0.9940
+    - nprobe 96: 1999/2000 truth items contained, 0.9995
+  - Pipeline counters:
+    - nprobe 8: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 2,638,655, object_bytes_sum 2,151,211,640
+    - nprobe 16: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 5,243,699, object_bytes_sum 4,275,026,696
+    - nprobe 24: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 7,848,831, object_bytes_sum 6,398,915,592
+    - nprobe 32: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 10,487,717, object_bytes_sum 8,550,319,352
+    - nprobe 48: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 15,763,335, object_bytes_sum 12,851,374,848
+    - nprobe 64: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 21,025,889, object_bytes_sum 17,141,781,392
+    - nprobe 96: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 31,137,800, object_bytes_sum 25,385,760,368
+  - Interpretation: `boundary_replica_count=1` substantially improves route containment and final recall at every nprobe, but roughly doubles candidate work and SPIRE index size compared with the baseline. Route-stage containment still exactly matches final recall, so the measured pipeline remains route-limited.
