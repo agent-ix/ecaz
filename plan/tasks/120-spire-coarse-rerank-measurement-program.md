@@ -129,16 +129,17 @@ generation and local exact/source rerank before returning compact exact-scored
 streams to the coordinator.
 
 Phase 5 MUST be validated on a local multi-node setup before any AWS run. This
-local gate must be a real multi-node distributed test: one local coordinator and
-one or more local worker PostgreSQL nodes/databases, with remote placements and
-remote dispatch enabled. It is acceptable for the coordinator and worker
-PostgreSQL instances/databases to run on the same physical machine; it is not
-acceptable to substitute a single-node local scan for this gate. The local
-multi-node test must exercise the same distributed production-read path, static
-remote placements, worker/fanout controls, shipping counters, and merge/dedupe
-counters. Start with a tiny local fixture, then scale to the required local
-10k/50k/100k matrices only after the production-read suite path is known to
-complete and emit the required counters.
+local gate must be a **local multi-node distributed test**: one local
+coordinator plus one or more local worker PostgreSQL nodes/databases, with
+remote placements and remote dispatch enabled. The coordinator and worker may
+run on the same physical machine, but they must be distinct SPIRE node
+identities and the evidence must show that the worker path was used. A
+single-node local scan, even on the same corpus and host, does not satisfy this
+gate. The local multi-node test must exercise the same distributed
+production-read path, static remote placements, worker/fanout controls, shipping
+counters, and merge/dedupe counters. Start with a tiny local fixture, then scale
+to the required local 10k/50k/100k matrices only after the production-read suite
+path is known to complete and emit the required counters.
 
 Do not run Phase 5 in AWS until the local multi-node gate passes and the user
 explicitly approves the specific AWS run. Approval must be affirmative and tied
@@ -181,10 +182,12 @@ exact/full-leaf behavior, but must not silently drop candidates.
 - Distributed Phase 5 evidence must first run locally as a multi-node test
   against a coordinator plus at least one worker PostgreSQL node/database.
   Running those PostgreSQL nodes/databases on the same machine is acceptable;
-  replacing the gate with a single-node scan is not. Local distributed evidence
-  must prove the production-read path completes and reports recall/latency,
-  shipped rows/bytes, merge/dedupe counters, rowcap behavior, and worker/fanout
-  effects before any AWS benchmark is considered.
+  replacing the gate with a single-node scan is not. The packet manifest must
+  identify the local coordinator node and local worker node(s), and cite
+  evidence that remote placements/dispatch were active. Local distributed
+  evidence must prove the production-read path completes and reports
+  recall/latency, shipped rows/bytes, merge/dedupe counters, rowcap behavior,
+  and worker/fanout effects before any AWS benchmark is considered.
 - AWS is opt-in only. Do not provision, resume, or run AWS benchmarks for this
   task without explicit user approval for that specific AWS run.
 - AWS 1M runs are required before any SPIRE product-default or product-claim
