@@ -468,6 +468,7 @@
             let frontier_approx_ranks = &row.16;
             let frontier_exact_ranks = &row.17;
             let final_emitted_row_indices = &row.18;
+            let frontier_equals_final_emitted = row.19;
 
             assert_eq!(
                 usize::try_from(pre_final_frontier_size).expect("frontier size should fit usize"),
@@ -484,7 +485,11 @@
             assert_eq!(frontier_exact_ranks.len(), frontier_row_indices.len());
             assert_eq!(
                 pre_final_frontier_size, final_emitted_count,
-                "{storage_format} debug probe exhausts the AM stream, so candidate-pool size should match the emitted candidate count",
+                "{storage_format} debug probe reports the AM-emitted candidate pool, so its size should match the emitted candidate count",
+            );
+            assert!(
+                frontier_equals_final_emitted,
+                "{storage_format} current diagnostic must explicitly mark that frontier/output stage separation is not observable",
             );
             assert_eq!(
                 usize::try_from(final_emitted_count).expect("emitted count should fit usize"),
@@ -501,8 +506,8 @@
             );
             assert_eq!(
                 candidates_dropped_before_exact_rerank,
-                (final_visited_count - exact_reranked_candidates).max(0),
-                "{storage_format} dropped-before-exact counter should match visited minus exact-reranked",
+                (pre_final_frontier_size - exact_reranked_candidates).max(0),
+                "{storage_format} dropped-before-exact counter should be candidate-pool-relative",
             );
             assert!((0..=10).contains(&truth_top10_in_frontier));
             assert!((0..=16).contains(&truth_top100_in_frontier));

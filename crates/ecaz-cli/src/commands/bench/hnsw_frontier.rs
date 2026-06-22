@@ -1,9 +1,10 @@
-//! `ecaz bench hnsw-frontier` — HNSW candidate-frontier containment diagnostics.
+//! `ecaz bench hnsw-frontier` — HNSW emitted candidate-pool containment diagnostics.
 //!
 //! This command is intentionally tied to the pg_test diagnostic SQL functions
 //! added for Task 118. It does not benchmark the production SQL path directly;
-//! instead, it emits per-query evidence about the candidate frontier before
-//! final result emission.
+//! instead, it emits per-query evidence about the AM-emitted candidate pool.
+//! The current diagnostic cannot distinguish a broader pre-rerank frontier from
+//! the final emitted stream; JSONL rows expose that explicitly.
 
 use clap::Args;
 use color_eyre::eyre::{eyre, Context, Result};
@@ -68,6 +69,7 @@ struct FrontierRow {
     frontier_approx_ranks: Vec<i32>,
     frontier_exact_ranks: Vec<i32>,
     final_emitted_row_indices: Vec<i64>,
+    frontier_equals_final_emitted: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -83,6 +85,7 @@ struct FrontierSummary {
     mean_exact_reranked_candidates: f64,
     mean_quantized_reranked_candidates: f64,
     mean_candidates_dropped_before_exact_rerank: f64,
+    all_frontier_equals_final_emitted: bool,
 }
 
 pub async fn run(conn: &ConnectionOptions, args: HnswFrontierArgs) -> Result<()> {
@@ -275,6 +278,7 @@ fn decode_frontier_row(
         frontier_approx_ranks: row.get("frontier_approx_ranks"),
         frontier_exact_ranks: row.get("frontier_exact_ranks"),
         final_emitted_row_indices: row.get("final_emitted_row_indices"),
+        frontier_equals_final_emitted: row.get("frontier_equals_final_emitted"),
     }
 }
 
@@ -293,6 +297,7 @@ fn summarize_frontier_rows(ef_search: i32, rows: &[FrontierRow]) -> FrontierSumm
             mean_exact_reranked_candidates: 0.0,
             mean_quantized_reranked_candidates: 0.0,
             mean_candidates_dropped_before_exact_rerank: 0.0,
+            all_frontier_equals_final_emitted: true,
         };
     }
     let denom = queries as f64;
@@ -318,6 +323,7 @@ fn summarize_frontier_rows(ef_search: i32, rows: &[FrontierRow]) -> FrontierSumm
         mean_candidates_dropped_before_exact_rerank: mean_i32(rows, |row| {
             row.candidates_dropped_before_exact_rerank
         }),
+        all_frontier_equals_final_emitted: rows.iter().all(|row| row.frontier_equals_final_emitted),
     }
 }
 
@@ -331,15 +337,16 @@ fn render_summary(prefix: &str, index_name: &str, m: i32, summaries: &[FrontierS
     table.set_header(vec![
         "ef_search",
         "queries",
-        "truth@10 in frontier",
-        "truth@100 in frontier",
-        "visited pre-output",
-        "frontier",
+        "truth@10 in emitted pool",
+        "truth@100 in emitted pool",
+        "visited after rescan",
+        "emitted pool",
         "visited final",
         "emitted",
         "exact rerank",
         "quantized rerank",
-        "dropped before exact",
+        "pool dropped before exact",
+        "pool == emitted",
     ]);
     for summary in summaries {
         table.add_row(vec![
@@ -357,6 +364,7 @@ fn render_summary(prefix: &str, index_name: &str, m: i32, summaries: &[FrontierS
                 "{:.1}",
                 summary.mean_candidates_dropped_before_exact_rerank
             )),
+            Cell::new(summary.all_frontier_equals_final_emitted),
         ]);
     }
     format!("prefix: {prefix}\nindex: {index_name}\nm: {m}\n{table}")
@@ -401,6 +409,7 @@ mod tests {
             frontier_approx_ranks: Vec::new(),
             frontier_exact_ranks: Vec::new(),
             final_emitted_row_indices: Vec::new(),
+            frontier_equals_final_emitted: true,
         }
     }
 

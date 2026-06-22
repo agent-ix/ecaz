@@ -271,6 +271,7 @@
             name!(frontier_approx_ranks, Vec<i32>),
             name!(frontier_exact_ranks, Vec<i32>),
             name!(final_emitted_row_indices, Vec<i64>),
+            name!(frontier_equals_final_emitted, bool),
         ),
     > {
         TableIterator::once(probe_graph_scan_recall_frontier_containment_for_relation(
@@ -314,6 +315,7 @@
             name!(frontier_approx_ranks, Vec<i32>),
             name!(frontier_exact_ranks, Vec<i32>),
             name!(final_emitted_row_indices, Vec<i64>),
+            name!(frontier_equals_final_emitted, bool),
         ),
     > {
         assert!(query_limit > 0, "query_limit must be positive");

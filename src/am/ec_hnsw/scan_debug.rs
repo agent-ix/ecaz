@@ -99,6 +99,7 @@ pub(crate) struct DebugFrontierContainmentReport {
     pub quantized_reranked_candidates: i32,
     pub candidates_dropped_before_exact_rerank: i32,
     pub final_emitted_candidates: Vec<DebugEmittedCandidateRow>,
+    pub frontier_equals_final_emitted: bool,
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -2472,15 +2473,17 @@ pub(crate) fn debug_gettuple_frontier_containment_report(
     // The visible frontier is not the durable candidate-pool surface for the
     // graph-first scan: initial result staging happens through gettuple, and
     // the SQL LIMIT truncation happens after the AM has produced this ordered
-    // ef_search-sized stream. Treat the full AM-emitted stream as the
-    // pre-final candidate pool for Task 118 containment diagnostics.
+    // ef_search-sized stream. This diagnostic therefore reports the full
+    // AM-emitted stream as the observable candidate pool and records that it is
+    // identical to the final emitted set. It does not distinguish a broader
+    // pre-rerank frontier from post-rerank emission.
     let pre_final_frontier_size = final_emitted_count;
     let pre_final_frontier_candidates = final_emitted_candidates
         .iter()
         .map(|(heap_tid, approx_score, _comparison_score, _approx_rank)| (*heap_tid, *approx_score))
         .collect::<Vec<_>>();
     let candidates_dropped_before_exact_rerank =
-        (final_visited_count - exact_reranked_candidates).max(0);
+        (pre_final_frontier_size - exact_reranked_candidates).max(0);
 
     drop(scan_state);
     DebugFrontierContainmentReport {
@@ -2494,6 +2497,7 @@ pub(crate) fn debug_gettuple_frontier_containment_report(
         quantized_reranked_candidates,
         candidates_dropped_before_exact_rerank,
         final_emitted_candidates,
+        frontier_equals_final_emitted: true,
     }
 }
 

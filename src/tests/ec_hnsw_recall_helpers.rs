@@ -140,6 +140,7 @@
         Vec<i32>, // frontier_approx_ranks
         Vec<i32>, // frontier_exact_ranks
         Vec<i64>, // final_emitted_row_indices
+        bool,     // frontier_equals_final_emitted
     );
     type GraphScanScoreCorrelationRow = (
         i32,         // m
@@ -1111,6 +1112,7 @@
             frontier_approx_ranks,
             frontier_exact_ranks,
             final_emitted_row_indices,
+            report.frontier_equals_final_emitted,
         )
     }
 
