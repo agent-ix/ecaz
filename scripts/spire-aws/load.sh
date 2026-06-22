@@ -32,6 +32,13 @@ SPIRE_AWS_COORD_RELOPTIONS="${SPIRE_AWS_COORD_RELOPTIONS:-}"
 SPIRE_AWS_REMOTE_RELOPTIONS="${SPIRE_AWS_REMOTE_RELOPTIONS:-}"
 mkdir -p "$WORK_DIR"
 
+is_direct_local_topology() {
+  jq -e '
+    ((.artifact_bucket? // "") == "")
+    and all(.remotes[]; ((.instance_id? // "") == ""))
+  ' "$TOPOLOGY" >/dev/null
+}
+
 reloption_args_string() {
   local raw="$1"
   local out=""
@@ -417,6 +424,26 @@ load_coordinator_representative_node_local() {
   download_optional_s3_log "$load_log_key" "$ARTIFACT_DIR/coordinator-load-${TIER}.log"
 }
 
+load_coordinator_representative_direct() {
+  local corpus_file="$1"
+  local queries_file="$2"
+  local manifest_file="$3"
+
+  reset_coordinator_index_if_requested
+  "$ECAZ_BIN" corpus load \
+    --host "$COORD_HOST" --port "$COORD_PORT" --user ecaz_coord --database postgres \
+    --prefix "$PREFIX" \
+    --corpus-file "$corpus_file" \
+    --queries-file "$queries_file" \
+    --manifest-file "$manifest_file" \
+    --allow-manifest-mismatch \
+    --profile ec_spire --dim 1536 --bits 4 --seed 42 \
+    --storage-format "$SPIRE_AWS_STORAGE_FORMAT" \
+    --index-name "$COORD_INDEX" \
+    "${COORD_RELOPTION_ARGS[@]}" \
+    --log-file "$ARTIFACT_DIR/coordinator-load-${TIER}.log"
+}
+
 conninfo_lookup_key() {
   local secret_name="$1"
   local key="EC_SPIRE_REMOTE_CONNINFO_"
@@ -458,13 +485,14 @@ write_leaf_owned_distributed_plan() {
 
   jq -c '.remotes[]' "$TOPOLOGY" | while read -r remote; do
     local node_id secret_name lookup_key remote_prefix remote_index node_dir
-    local assignments row_ids remote_corpus row_count assignment_count identity_sql
+    local remote_output_base assignments row_ids remote_corpus row_count assignment_count identity_sql
     node_id=$(jq -r '.node_id' <<< "$remote")
     secret_name=$(jq -r '.secret_name' <<< "$remote")
     lookup_key=$(conninfo_lookup_key "$secret_name")
     remote_prefix="${PREFIX}_node_${node_id}"
     remote_index="$REMOTE_INDEX"
-    node_dir="$DISTRIBUTED_OUTPUT_DIR/node-${node_id}"
+    remote_output_base="${SPIRE_AWS_REMOTE_CORPUS_OUTPUT_DIR:-$DISTRIBUTED_OUTPUT_DIR}"
+    node_dir="$remote_output_base/node-${node_id}"
     assignments="$node_dir/coordinator-base-assignments.tsv"
     row_ids="$node_dir/row-ids.txt"
     remote_corpus="$node_dir/${remote_prefix}_corpus.tsv"
@@ -594,7 +622,7 @@ case "$TIER" in
     PREFIX="${PREFIX:-ec_spire_aws_repr_1m}"
     PREPARED_PREFIX="${SPIRE_AWS_REPRESENTATIVE_PREPARED_PREFIX:-ec_real_100k}"
     SOURCE_DATASET="${SPIRE_AWS_REPRESENTATIVE_DATASET:-qdrant-dbpedia-openai3-large-1536-1m}"
-    PREPARED_DIR="$WORK_DIR/qdrant-dbpedia/prepared"
+    PREPARED_DIR="${SPIRE_AWS_REPRESENTATIVE_PREPARED_DIR:-$WORK_DIR/qdrant-dbpedia/prepared}"
     PREPARED_CORPUS="$PREPARED_DIR/${PREPARED_PREFIX}_corpus.tsv"
     PREPARED_QUERIES="$PREPARED_DIR/${PREPARED_PREFIX}_queries.tsv"
     PREPARED_MANIFEST="$PREPARED_DIR/${PREPARED_PREFIX}_manifest.json"
@@ -624,11 +652,18 @@ case "$TIER" in
       echo "representative fetch/prepare skipped; reusing $PREPARED_DIR"
     fi
     if [[ "$SPIRE_AWS_SKIP_COORDINATOR_LOAD" != "1" ]]; then
-      load_coordinator_representative_node_local \
-        "$PREPARED_CORPUS" \
-        "$PREPARED_QUERIES" \
-        "$PREPARED_MANIFEST"
-      restart_operator_tunnel_if_available coordinator "$(jq -r '.coordinator.instance_id' "$TOPOLOGY")" "$COORD_PORT"
+      if is_direct_local_topology; then
+        load_coordinator_representative_direct \
+          "$PREPARED_CORPUS" \
+          "$PREPARED_QUERIES" \
+          "$PREPARED_MANIFEST"
+      else
+        load_coordinator_representative_node_local \
+          "$PREPARED_CORPUS" \
+          "$PREPARED_QUERIES" \
+          "$PREPARED_MANIFEST"
+        restart_operator_tunnel_if_available coordinator "$(jq -r '.coordinator.instance_id' "$TOPOLOGY")" "$COORD_PORT"
+      fi
     else
       echo "coordinator load skipped for representative tier (SPIRE_AWS_SKIP_COORDINATOR_LOAD=1)" \
         | tee "$ARTIFACT_DIR/coordinator-load-${TIER}.skipped.log"
@@ -666,7 +701,7 @@ case "$TIER" in
     echo "unknown tier: $TIER" >&2; exit 2 ;;
 esac
 
-if [[ "$TIER" == "representative" ]]; then
+if [[ "$TIER" == "representative" && ! is_direct_local_topology ]]; then
   load_remote_shards_node_local
   restart_all_operator_tunnels_if_available
 else
