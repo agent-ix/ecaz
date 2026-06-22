@@ -25,6 +25,8 @@ pub enum SpireMulticlusterCommand {
     FaultPg18(StageEFaultPg18Args),
     /// Run a PG18 Stage E lifecycle-matrix fixture case.
     LifecyclePg18(StageELifecyclePg18Args),
+    /// Run the PG18 one-coordinator/three-worker local distributed benchmark lane.
+    LocalMultinodePg18(LocalMultinodePg18Args),
 }
 
 impl SpireMulticlusterCommand {
@@ -42,6 +44,9 @@ impl SpireMulticlusterCommand {
             }
             SpireMulticlusterCommand::FaultPg18(args) => run_stage_e_fault_pg18(args).await,
             SpireMulticlusterCommand::LifecyclePg18(args) => run_stage_e_lifecycle_pg18(args).await,
+            SpireMulticlusterCommand::LocalMultinodePg18(args) => {
+                run_local_multinode_pg18(args).await
+            }
         }
     }
 }
@@ -359,6 +364,101 @@ pub struct StageELifecyclePg18Args {
     /// Run id used in the default run directory.
     #[arg(long)]
     run_id: Option<String>,
+
+    /// Skip cargo pgrx install before starting fixture clusters.
+    #[arg(long)]
+    skip_install: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct LocalMultinodePg18Args {
+    /// PostgreSQL major version from the local pgrx install.
+    #[arg(long, default_value_t = DEFAULT_PG_MAJOR)]
+    pg: u16,
+
+    /// Override PGRX_HOME.
+    #[arg(long)]
+    pgrx_home: Option<PathBuf>,
+
+    /// Explicit PostgreSQL bin directory. Defaults to the newest matching pgrx install.
+    #[arg(long)]
+    pgbin: Option<PathBuf>,
+
+    /// Store harness, PostgreSQL, SPIRE, and suite logs in a packet artifact directory.
+    #[arg(long)]
+    artifact_dir: Option<PathBuf>,
+
+    /// Run directory. Defaults to the script-owned target/ path.
+    #[arg(long)]
+    run_dir: Option<PathBuf>,
+
+    /// Tee harness stdout/stderr to this file.
+    #[arg(long)]
+    smoke_log: Option<PathBuf>,
+
+    /// Coordinator PostgreSQL port.
+    #[arg(long)]
+    coord_port: Option<u16>,
+
+    /// First worker PostgreSQL port.
+    #[arg(long)]
+    remote1_port: Option<u16>,
+
+    /// Second worker PostgreSQL port.
+    #[arg(long)]
+    remote2_port: Option<u16>,
+
+    /// Third worker PostgreSQL port.
+    #[arg(long)]
+    remote3_port: Option<u16>,
+
+    /// Run id used in the default run directory.
+    #[arg(long)]
+    run_id: Option<String>,
+
+    /// Local load tier: correctness or representative.
+    #[arg(long)]
+    tier: Option<String>,
+
+    /// Corpus prefix for representative/local-real runs.
+    #[arg(long)]
+    prefix: Option<String>,
+
+    /// Prepared corpus basename prefix for representative tier.
+    #[arg(long)]
+    prepared_prefix: Option<String>,
+
+    /// Directory containing prepared corpus/query/manifest files.
+    #[arg(long)]
+    prepared_dir: Option<PathBuf>,
+
+    /// Top-k for the packet-local bench suite.
+    #[arg(long)]
+    bench_top_k: Option<u16>,
+
+    /// Query count for the packet-local bench suite.
+    #[arg(long)]
+    bench_queries_limit: Option<usize>,
+
+    /// Comma-separated nprobe sweep for the packet-local bench suite.
+    #[arg(long)]
+    bench_sweep: Option<String>,
+
+    /// Comma-separated nprobe sweep for the rowcap step.
+    #[arg(long)]
+    bench_rowcap_sweep: Option<String>,
+
+    /// Local corpus TSV for exact truth in bench spire-pipeline.
+    #[arg(long)]
+    bench_truth_corpus_file: Option<PathBuf>,
+
+    /// Skip the packet-local bench suite step.
+    #[arg(long)]
+    skip_bench_suite: bool,
+
+    /// Skip correctness-only pooling/fault drills.
+    #[arg(long)]
+    skip_fault_drills: bool,
 
     /// Skip cargo pgrx install before starting fixture clusters.
     #[arg(long)]
@@ -882,6 +982,96 @@ async fn run_stage_e_lifecycle_pg18(args: StageELifecyclePg18Args) -> Result<()>
         .wrap_err("running SPIRE PG18 Stage E lifecycle fixture")
 }
 
+async fn run_local_multinode_pg18(args: LocalMultinodePg18Args) -> Result<()> {
+    if args.pg != 18 {
+        bail!("local-multinode-pg18 requires --pg 18, got {}", args.pg);
+    }
+    let repo_root = repo_root()?;
+    let pgbin = match args.pgbin {
+        Some(path) => path,
+        None => {
+            let pgrx_home = resolve_pgrx_home(args.pgrx_home.as_ref());
+            find_pgrx_install(args.pg, &pgrx_home)?.bin_dir
+        }
+    };
+    let script = repo_root.join("scripts/run_spire_phase13e_aws_harness_local_pg18.sh");
+    if !script.is_file() {
+        bail!(
+            "SPIRE local multinode fixture script is missing: {}",
+            script.display()
+        );
+    }
+
+    crate::ecaz_println!("[spire-multicluster] repo={}", repo_root.display());
+    crate::ecaz_println!("[spire-multicluster] pgbin={}", pgbin.display());
+    crate::ecaz_println!("[spire-multicluster] topology=local-multinode");
+    if let Some(artifact_dir) = &args.artifact_dir {
+        crate::ecaz_println!(
+            "[spire-multicluster] artifact_dir={}",
+            artifact_dir.display()
+        );
+    }
+
+    let mut command = Command::new("bash");
+    command
+        .arg(&script)
+        .arg("--pgbin")
+        .arg(&pgbin)
+        .current_dir(&repo_root)
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit());
+
+    push_path_arg(&mut command, "--artifact-dir", args.artifact_dir.as_ref());
+    push_path_arg(&mut command, "--run-dir", args.run_dir.as_ref());
+    push_path_arg(&mut command, "--smoke-log", args.smoke_log.as_ref());
+    push_u16_arg(&mut command, "--coord-port", args.coord_port);
+    push_u16_arg(&mut command, "--remote1-port", args.remote1_port);
+    push_u16_arg(&mut command, "--remote2-port", args.remote2_port);
+    push_u16_arg(&mut command, "--remote3-port", args.remote3_port);
+    if let Some(run_id) = args.run_id {
+        command.arg("--run-id").arg(run_id);
+    }
+    push_string_arg(&mut command, "--tier", args.tier.as_deref());
+    push_string_arg(&mut command, "--prefix", args.prefix.as_deref());
+    push_string_arg(
+        &mut command,
+        "--prepared-prefix",
+        args.prepared_prefix.as_deref(),
+    );
+    push_path_arg(&mut command, "--prepared-dir", args.prepared_dir.as_ref());
+    push_u16_arg(&mut command, "--bench-top-k", args.bench_top_k);
+    push_usize_arg(
+        &mut command,
+        "--bench-queries-limit",
+        args.bench_queries_limit,
+    );
+    push_string_arg(&mut command, "--bench-sweep", args.bench_sweep.as_deref());
+    push_string_arg(
+        &mut command,
+        "--bench-rowcap-sweep",
+        args.bench_rowcap_sweep.as_deref(),
+    );
+    push_path_arg(
+        &mut command,
+        "--bench-truth-corpus-file",
+        args.bench_truth_corpus_file.as_ref(),
+    );
+    if args.skip_bench_suite {
+        command.arg("--skip-bench-suite");
+    }
+    if args.skip_fault_drills {
+        command.arg("--skip-fault-drills");
+    }
+    if args.skip_install {
+        command.arg("--skip-install");
+    }
+
+    run_status(command)
+        .await
+        .wrap_err("running SPIRE PG18 local multinode fixture")
+}
+
 fn push_path_arg(command: &mut Command, name: &str, value: Option<&PathBuf>) {
     if let Some(value) = value {
         command.arg(name).arg(value);
@@ -891,5 +1081,17 @@ fn push_path_arg(command: &mut Command, name: &str, value: Option<&PathBuf>) {
 fn push_u16_arg(command: &mut Command, name: &str, value: Option<u16>) {
     if let Some(value) = value {
         command.arg(name).arg(value.to_string());
+    }
+}
+
+fn push_usize_arg(command: &mut Command, name: &str, value: Option<usize>) {
+    if let Some(value) = value {
+        command.arg(name).arg(value.to_string());
+    }
+}
+
+fn push_string_arg(command: &mut Command, name: &str, value: Option<&str>) {
+    if let Some(value) = value {
+        command.arg(name).arg(value);
     }
 }
