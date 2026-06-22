@@ -1,14 +1,15 @@
-# Task 121 Stage 1 Routing Screen - Local Baseline Checkpoint
+# Task 121 Stage 1 Routing Screen - Local Baseline Evidence
 
 ## Scope
 
-This packet carries the Task 121 Stage 1 local 100k RaBitQ baseline setup plus a bounded exploratory baseline measurement. It does not claim the full OFAT matrix is complete.
+This packet carries the Task 121 Stage 1 local 100k RaBitQ baseline setup plus completed local baseline pipeline evidence. It does not claim the full OFAT matrix is complete.
 
 The suite config now:
 
 - scopes storage-format variants to RaBitQ baseline plus TurboQuant only;
 - adds explicit `truth_cache_file` wiring to all `spire-pipeline` steps so exact truth is generated once and reused;
-- adds bounded q20/nprobe96 baseline steps for fast local sanity evidence before widening to q200/full sweeps.
+- adds bounded q20/nprobe96 baseline steps for fast local sanity evidence before widening to q200/full sweeps;
+- emits pipeline funnel and stage-containment JSONL incrementally during long pipeline runs.
 
 ## Completed Local Evidence
 
@@ -33,9 +34,21 @@ Bounded q20/nprobe96 result:
 - Pipeline counters at nprobe96/q20: route_sum 1920, candidate_sum 1,522,002, heap_rerank_sum 1,522,002.
 - Stage containment for the sampled q20 run showed final top-k containment 10/10 for the sampled rows; routing stage status was `truncated` with `next_blocker=routing_budget`, so route-budget pressure is real even when final recall is perfect at nprobe96.
 
-## Negative Finding
+Full q200/seven-sweep baseline result:
 
-The original q200/seven-sweep `pipeline-baseline` was attempted after generating a q200 truth cache. It loaded cached truth successfully, but `include_query_metrics` kept issuing indexed KNN queries for more than 33 minutes without writing result artifacts. I canceled it to avoid more opaque runtime. This is not a completed q200 benchmark, but it is a practical runner finding: full q200 x seven-sweep pipeline is too slow/opaque for the first local loop unless the runner writes per-sweep artifacts or the first pass uses a bounded query/sweep slice.
+| nprobe | recall@10 | route-stage containment | p50 latency | p95 latency | candidate rows |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 8 | 0.7250 | 0.7250 | 244.812 ms | 307.294 ms | 1,232,065 |
+| 16 | 0.8525 | 0.8525 | 502.956 ms | 609.909 ms | 2,514,557 |
+| 24 | 0.9045 | 0.9045 | 785.069 ms | 915.098 ms | 3,816,799 |
+| 32 | 0.9310 | 0.9310 | 1055.659 ms | 1214.091 ms | 5,165,224 |
+| 48 | 0.9645 | 0.9645 | 1633.655 ms | 1836.622 ms | 7,795,405 |
+| 64 | 0.9825 | 0.9825 | 2181.396 ms | 2481.401 ms | 10,420,357 |
+| 96 | 0.9975 | 0.9975 | 3347.935 ms | 3676.094 ms | 15,506,227 |
+
+Key baseline finding: route-stage containment equals final recall for every measured nprobe. The baseline loses truth at route selection, not in later placement, prefetch, candidate materialization, or heap rerank stages. Every routing row reported `status=truncated` and `next_blocker=routing_budget`, so Task 121 Phase 1 should prioritize levers that directly change routing coverage before tuning downstream scan costs.
+
+The original q200/seven-sweep attempt was canceled after more than 33 minutes because artifacts were opaque during execution. After the incremental JSONL runner change captured in `reviews/task-121/003-spire-pipeline-incremental-jsonl/`, the same baseline completed locally and wrote packet-local evidence throughout the run.
 
 ## Artifacts
 
