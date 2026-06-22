@@ -1,0 +1,8 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.20s
+     Running unittests src/main.rs (target/debug/deps/ecaz-c8c7d75795db63e7)
+
+running 1 test
+test commands::bench::hnsw_frontier::tests::summarize_frontier_rows_computes_recall_and_means ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 416 filtered out; finished in 0.00s
+
