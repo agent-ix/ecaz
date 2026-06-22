@@ -1,6 +1,6 @@
 # Task 121 Stage 1 Routing Screen Artifact Manifest
 
-- Head SHA: `ab80fdc26a48bf9eebf49b15590e9d3d83ab661f`
+- Head SHA: `006b26c39a3a79adf1213dbb62fa0c64bff8ed51`
 - Task bucket: `reviews/task-121/001-stage1-routing-screen`
 - Lane: `intel-local`
 - Fixture: real corpus 100k, q20 bounded baseline slice plus q200/seven-sweep baseline
@@ -118,3 +118,55 @@
   - Interpretation: route-stage containment exactly matches final recall at every nprobe, so this baseline is route-limited. Downstream stages did not introduce additional truth loss for the measured baseline.
   - Prior attempt: the original q200/seven-sweep pipeline was canceled after more than 33 minutes without visible intermediate result artifacts. The retry above used the incremental JSONL runner change from packet `003-spire-pipeline-incremental-jsonl` and completed with packet-local artifacts.
   - Note: q200 truth-cache JSON is a regenerable cache and is intentionally not committed.
+
+## top_graph_search_list_size=200 OFAT
+
+- `tgsl200-load-suite-manifest.json`
+- `tgsl200-load-suite-results.jsonl`
+- `tgsl200-load-suite-run.log`
+- `load-tgsl200.log`
+  - Command: `target/debug/ecaz bench suite run --config reviews/task-121/001-stage1-routing-screen/artifacts/suite-stage1-routing-screen-100k.json --database tqvector_bench_task121 --host /home/peter/.pgrx --port 28818 --only load-tgsl200 --manifest-output reviews/task-121/001-stage1-routing-screen/artifacts/tgsl200-load-suite-manifest.json --results-output reviews/task-121/001-stage1-routing-screen/artifacts/tgsl200-load-suite-results.jsonl --log-file reviews/task-121/001-stage1-routing-screen/artifacts/tgsl200-load-suite-run.log`
+  - Key result lines:
+    - copied corpus rows: 100000 in 96.69s
+    - encoded corpus rows: 100000 in 33.65s
+    - copied query rows: 1000 in 973.29ms
+    - built index `t121_s1_100k_tgsl200_idx` in 9.39s
+    - completed prefix in 296.20s
+
+- `tgsl200-storage-suite-manifest.json`
+- `tgsl200-storage-suite-results.jsonl`
+- `tgsl200-storage-suite-run.log`
+- `storage-tgsl200.log`
+  - Command: `target/debug/ecaz bench suite run --config reviews/task-121/001-stage1-routing-screen/artifacts/suite-stage1-routing-screen-100k.json --database tqvector_bench_task121 --host /home/peter/.pgrx --port 28818 --only storage-tgsl200 --manifest-output reviews/task-121/001-stage1-routing-screen/artifacts/tgsl200-storage-suite-manifest.json --results-output reviews/task-121/001-stage1-routing-screen/artifacts/tgsl200-storage-suite-results.jsonl --log-file reviews/task-121/001-stage1-routing-screen/artifacts/tgsl200-storage-suite-run.log`
+  - Key result lines:
+    - total: 1.6 GiB
+    - SPIRE index: 79.7 MiB
+    - index bytes/row: 835.8 B
+
+- `tgsl200-pipeline-suite-manifest.json`
+- `tgsl200-pipeline-suite-results.jsonl`
+- `tgsl200-pipeline-suite-run.log`
+- `pipeline-tgsl200.log`
+- `pipeline-tgsl200-funnel.jsonl`
+- `pipeline-tgsl200-stage-containment.jsonl`
+- `pipeline-tgsl200-route-containment.tsv`
+  - Command: `target/debug/ecaz bench suite run --config reviews/task-121/001-stage1-routing-screen/artifacts/suite-stage1-routing-screen-100k.json --database tqvector_bench_task121 --host /home/peter/.pgrx --port 28818 --only pipeline-tgsl200 --manifest-output reviews/task-121/001-stage1-routing-screen/artifacts/tgsl200-pipeline-suite-manifest.json --results-output reviews/task-121/001-stage1-routing-screen/artifacts/tgsl200-pipeline-suite-results.jsonl --log-file reviews/task-121/001-stage1-routing-screen/artifacts/tgsl200-pipeline-suite-run.log`
+  - Results shape: 200 queries x seven nprobe values (`8,16,24,32,48,64,96`), 1,400 funnel rows, 8,400 stage-containment rows.
+  - Key coordinator result lines:
+    - nprobe 8: recall@10 0.7250, p50 257.170 ms, p95 327.460 ms, p99 373.368 ms, max 392.591 ms
+    - nprobe 16: recall@10 0.8525, p50 518.332 ms, p95 622.913 ms, p99 677.147 ms, max 734.309 ms
+    - nprobe 24: recall@10 0.9045, p50 816.473 ms, p95 947.148 ms, p99 1141.587 ms, max 1241.734 ms
+    - nprobe 32: recall@10 0.9310, p50 1081.118 ms, p95 1256.546 ms, p99 1502.441 ms, max 1575.107 ms
+    - nprobe 48: recall@10 0.9645, p50 1680.941 ms, p95 1903.131 ms, p99 2257.859 ms, max 2351.692 ms
+    - nprobe 64: recall@10 0.9825, p50 2207.241 ms, p95 2482.774 ms, p99 2911.217 ms, max 3112.201 ms
+    - nprobe 96: recall@10 0.9975, p50 3308.038 ms, p95 3749.160 ms, p99 4105.172 ms, max 4198.029 ms
+  - Route-stage containment from `pipeline-tgsl200-route-containment.tsv` exactly matched baseline:
+    - nprobe 8: 1450/2000 truth items contained, 0.7250
+    - nprobe 16: 1705/2000 truth items contained, 0.8525
+    - nprobe 24: 1809/2000 truth items contained, 0.9045
+    - nprobe 32: 1862/2000 truth items contained, 0.9310
+    - nprobe 48: 1929/2000 truth items contained, 0.9645
+    - nprobe 64: 1965/2000 truth items contained, 0.9825
+    - nprobe 96: 1995/2000 truth items contained, 0.9975
+  - Pipeline counters matched baseline exactly at every nprobe, including candidate_sum and object_bytes_sum.
+  - Interpretation: `top_graph_search_list_size=200` did not improve route containment or recall over the baseline `top_graph_search_list_size=96`; it mostly increased latency. It is not a significant lever in this local 100k screen.

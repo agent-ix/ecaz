@@ -50,6 +50,20 @@ Key baseline finding: route-stage containment equals final recall for every meas
 
 The original q200/seven-sweep attempt was canceled after more than 33 minutes because artifacts were opaque during execution. After the incremental JSONL runner change captured in `reviews/task-121/003-spire-pipeline-incremental-jsonl/`, the same baseline completed locally and wrote packet-local evidence throughout the run.
 
+First OFAT lever result, `top_graph_search_list_size=200`:
+
+| nprobe | baseline recall@10 | tgsl200 recall@10 | baseline p50 | tgsl200 p50 | baseline p95 | tgsl200 p95 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 8 | 0.7250 | 0.7250 | 244.812 ms | 257.170 ms | 307.294 ms | 327.460 ms |
+| 16 | 0.8525 | 0.8525 | 502.956 ms | 518.332 ms | 609.909 ms | 622.913 ms |
+| 24 | 0.9045 | 0.9045 | 785.069 ms | 816.473 ms | 915.098 ms | 947.148 ms |
+| 32 | 0.9310 | 0.9310 | 1055.659 ms | 1081.118 ms | 1214.091 ms | 1256.546 ms |
+| 48 | 0.9645 | 0.9645 | 1633.655 ms | 1680.941 ms | 1836.622 ms | 1903.131 ms |
+| 64 | 0.9825 | 0.9825 | 2181.396 ms | 2207.241 ms | 2481.401 ms | 2482.774 ms |
+| 96 | 0.9975 | 0.9975 | 3347.935 ms | 3308.038 ms | 3676.094 ms | 3749.160 ms |
+
+`tgsl200` did not improve route containment or recall at any nprobe. Its candidate counts and local object bytes also matched baseline exactly, and storage stayed at a 79.7 MiB SPIRE index. Practical conclusion for Phase 1: increasing `top_graph_search_list_size` from 96 to 200 is not a significant lever for this 100k local screen.
+
 ## Artifacts
 
 See `artifacts/manifest.md` for artifact metadata and command provenance.
