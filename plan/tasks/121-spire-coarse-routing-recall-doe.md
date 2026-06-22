@@ -86,7 +86,7 @@ via the funnel. Levers and screen values:
 | `recursive_fanout` | 8 | 0, 16, 32 | hierarchy depth vs precision |
 | `top_graph_degree` | 32 | 48, 64 | richer graph connectivity |
 | `training_sample_rows` | 10000 | 50000, 100000 | centroid quality plateaus past 10k sample |
-| `storage_format` | rabitq | turboquant, pq | candidate-stage recall vs scan cost |
+| `storage_format` | rabitq | turboquant | candidate-stage recall vs scan cost (rabitq + TQ only; PQ out of scope) |
 
 Output: a per-lever delta(route-stage containment) table at 100k, every number
 tracing to funnel JSONL, and the **significant-lever set** to carry forward.
