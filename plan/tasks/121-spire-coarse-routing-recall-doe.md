@@ -1,6 +1,7 @@
 # Task 121 - SPIRE Coarse-Routing Recall Broad Exploration (DOE)
 
-Status: proposed / draft - pending review. **Local-only.**
+Status: **Phase 0 tooling under review** (2026-06-22;
+`reviews/task-121/002-phase0-local-multinode-suite-lane/`). **Local-only.**
 
 ## Why
 

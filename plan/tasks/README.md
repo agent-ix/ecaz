@@ -168,6 +168,7 @@ These pre-lane task files are retained only for historical context under
 118. `118-hnsw-quantized-recall-attribution.md` — **proposed**: measurement-first HNSW recall attribution before new profile work; adds candidate-frontier containment diagnostics, rerank-boundary counters, source-f32 build vs compressed-build A/B, and approximate-score correlation audits for TurboQuant, PqFastScan, and RaBitQ at 10k/50k/100k.
 119. `119-hnsw-rabitq-coarse-rerank-profile.md` — **proposed, gated by Task 118**: evaluates the true HNSW RaBitQ coarse-rerank profile — 1-bit RaBitQ candidate generation/traversal, explicit overfetch, exact/source rerank, storage-layout follow-up, and API/profile cleanup — only if attribution proves the frontier can support high recall.
 120. `120-spire-coarse-rerank-measurement-program.md` — **final no-promotion recommendation under review** (2026-06-22; `reviews/task-120/018-final-recommendation/`): phased SPIRE coarse-rerank research program completed as a measurement synthesis with no promoted SPIRE default. The local multi-node distributed gate passed in packet 017; any future AWS 1M distributed product-claim matrix remains explicit user-approval-only.
+121. `121-spire-coarse-routing-recall-doe.md` — **Phase 0 tooling under review** (2026-06-22; `reviews/task-121/002-phase0-local-multinode-suite-lane/`): local-only SPIRE coarse-routing recall DOE. Current slice adds a first-class `ecaz bench suite` local multi-node lane before new measurements; no AWS work is authorized.
 
 ## Coordination rules
 
