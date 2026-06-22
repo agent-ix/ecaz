@@ -128,6 +128,23 @@ For distributed SPIRE, evaluate the contract where workers do local candidate
 generation and local exact/source rerank before returning compact exact-scored
 streams to the coordinator.
 
+Phase 5 MUST be validated on a local multi-node setup before any AWS run. This
+local gate must be a real multi-node distributed test: one local coordinator and
+one or more local worker PostgreSQL nodes/databases, with remote placements and
+remote dispatch enabled. It is acceptable for the coordinator and worker
+PostgreSQL instances/databases to run on the same physical machine; it is not
+acceptable to substitute a single-node local scan for this gate. The local
+multi-node test must exercise the same distributed production-read path, static
+remote placements, worker/fanout controls, shipping counters, and merge/dedupe
+counters. Start with a tiny local fixture, then scale to the required local
+10k/50k/100k matrices only after the production-read suite path is known to
+complete and emit the required counters.
+
+Do not run Phase 5 in AWS until the local multi-node gate passes and the user
+explicitly approves the specific AWS run. Approval must be affirmative and tied
+to the intended AWS matrix; a prior general task request is not approval to
+provision or benchmark in AWS.
+
 Required measurements:
 
 - worker-local candidates generated;
@@ -161,8 +178,18 @@ exact/full-leaf behavior, but must not silently drop candidates.
 
 - Use `ecaz bench suite` for every benchmark matrix.
 - Minimum local matrix before product claims: 10k, 50k, and 100k.
+- Distributed Phase 5 evidence must first run locally as a multi-node test
+  against a coordinator plus at least one worker PostgreSQL node/database.
+  Running those PostgreSQL nodes/databases on the same machine is acceptable;
+  replacing the gate with a single-node scan is not. Local distributed evidence
+  must prove the production-read path completes and reports recall/latency,
+  shipped rows/bytes, merge/dedupe counters, rowcap behavior, and worker/fanout
+  effects before any AWS benchmark is considered.
+- AWS is opt-in only. Do not provision, resume, or run AWS benchmarks for this
+  task without explicit user approval for that specific AWS run.
 - AWS 1M runs are required before any SPIRE product-default or product-claim
-  decision.
+  decision, but only after the local distributed gate above passes and explicit
+  AWS approval is given.
 - Required metrics: recall@10, NDCG@10 where available, p50/p95/p99 latency,
   storage, build time, per-stage candidate counts, row payload reads,
   shipped bytes/rows for distributed paths, and exact truth containment.
