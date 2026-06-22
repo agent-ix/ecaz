@@ -1,0 +1,21 @@
+[loader] warning: profile "ec_spire" does not list top_graph_search_list_size as known reloption; passing through verbatim. Known reloptions: nlists, recursive_fanout, local_store_count, local_store_tablespaces, boundary_replica_count, nprobe, nprobe_per_level, rerank_width, training_sample_rows, seed, pq_group_size, storage_format, quantizer
+[loader] inspecting /var/tmp/ecaz-spire-aws-load/representative/coordinator/ec_real_ann_benchmarks_anchor_corpus.tsv
+[loader] inspecting /var/tmp/ecaz-spire-aws-load/representative/coordinator/ec_real_ann_benchmarks_anchor_queries.tsv
+[loader] corpus: 990000 rows, sha256=00d96d7665edc31cd8e4e62712c0ef2679fb714682f3ce4d522305e59faec687  queries: 10000 rows, sha256=34c4874e0e35734574f4ee9e1dd10753fcec2d295955061a407c258df163f5a0
+[loader] warning: manifest verification failed for /var/tmp/ecaz-spire-aws-load/representative/coordinator/ec_real_ann_benchmarks_anchor_manifest.json: prefix="ec_real_ann_benchmarks_anchor" (expected "ec_spire_aws_repr_1m")
+[loader] ec_spire_aws_repr_1m_corpus already has 990000 rows; skipping reload
+[loader] ec_spire_aws_repr_1m_queries already has 10000 rows; skipping reload
+[loader] building ec_spire_aws_repr_1m_idx using ec_spire (reloptions=[top_graph_search_list_size=96, local_store_count=1, storage_format=rabitq]) ...
+[loader] built ec_spire_aws_repr_1m_idx in 2701.75s
+┌─────────┬──────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                                                │
+╞═════════╪══════════════════════════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_spire                                                                                             │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ ec_spire_aws_repr_1m_corpus (990000 rows)                                                            │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ ec_spire_aws_repr_1m_queries (10000 rows)                                                            │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ ec_spire_aws_repr_1m_idx [top_graph_search_list_size=96, local_store_count=1, storage_format=rabitq] │
+└─────────┴──────────────────────────────────────────────────────────────────────────────────────────────────────┘
+[loader] completed prefix ec_spire_aws_repr_1m in 2828.33s
