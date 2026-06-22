@@ -25,6 +25,7 @@ ECAZ_BIN="${ECAZ_BIN:-ecaz}"
 WORK_DIR="${WORK_DIR:-$ARTIFACT_DIR/work}"
 SPIRE_AWS_RESET_COORDINATOR_INDEX="${SPIRE_AWS_RESET_COORDINATOR_INDEX:-1}"
 SPIRE_AWS_SKIP_COORDINATOR_LOAD="${SPIRE_AWS_SKIP_COORDINATOR_LOAD:-0}"
+SPIRE_AWS_SKIP_REPRESENTATIVE_PREPARE="${SPIRE_AWS_SKIP_REPRESENTATIVE_PREPARE:-0}"
 SPIRE_AWS_STORAGE_FORMAT="${SPIRE_AWS_STORAGE_FORMAT:-rabitq}"
 SPIRE_AWS_NODE_LOAD_BASE_DIR="${SPIRE_AWS_NODE_LOAD_BASE_DIR:-/var/tmp/ecaz-spire-aws-load}"
 SPIRE_AWS_COORD_RELOPTIONS="${SPIRE_AWS_COORD_RELOPTIONS:-}"
@@ -125,6 +126,7 @@ ssm_run_shell() {
   local comment="$2"
   local log_file="$3"
   local commands_json="$4"
+  local timeout="${SPIRE_AWS_SSM_TIMEOUT_SECONDS:-3600}"
   local parameters_json
   local cmd_id
 
@@ -134,6 +136,7 @@ ssm_run_shell() {
     --document-name "AWS-RunShellScript" \
     --instance-ids "$instance_id" \
     --parameters "$parameters_json" \
+    --timeout-seconds "$timeout" \
     --output-s3-bucket-name "$BUCKET" \
     --output-s3-key-prefix "spire-aws/load-ssm" \
     --comment "$comment" \
@@ -591,32 +594,46 @@ case "$TIER" in
     PREFIX="${PREFIX:-ec_spire_aws_repr_1m}"
     PREPARED_PREFIX="${SPIRE_AWS_REPRESENTATIVE_PREPARED_PREFIX:-ec_real_100k}"
     SOURCE_DATASET="${SPIRE_AWS_REPRESENTATIVE_DATASET:-qdrant-dbpedia-openai3-large-1536-1m}"
+    PREPARED_DIR="$WORK_DIR/qdrant-dbpedia/prepared"
+    PREPARED_CORPUS="$PREPARED_DIR/${PREPARED_PREFIX}_corpus.tsv"
+    PREPARED_QUERIES="$PREPARED_DIR/${PREPARED_PREFIX}_queries.tsv"
+    PREPARED_MANIFEST="$PREPARED_DIR/${PREPARED_PREFIX}_manifest.json"
     COORD_INDEX="${COORD_INDEX:-${PREFIX}_idx}"
     REMOTE_INDEX="${REMOTE_INDEX:-${PREFIX}_remote_idx}"
     DISTRIBUTED_OUTPUT_DIR="${ARTIFACT_DIR}/distributed-${TIER}"
     PLACEMENT_CONFIG="${DISTRIBUTED_OUTPUT_DIR}/distributed-placement-config.json"
     PLAN_FILE="${DISTRIBUTED_OUTPUT_DIR}/distributed-placement-plan.json"
     write_distributed_placement_config
-    "$ECAZ_BIN" corpus fetch \
-      --dataset "$SOURCE_DATASET" \
-      --output-dir "$WORK_DIR/qdrant-dbpedia/"
-    "$ECAZ_BIN" corpus prepare \
-      --profile "$PREPARED_PREFIX" \
-      --parquet "$WORK_DIR/qdrant-dbpedia/data" \
-      --output-dir "$WORK_DIR/qdrant-dbpedia/prepared/" \
-      --dim 1536 \
-      --source-dataset "$SOURCE_DATASET"
+    if [[ "$SPIRE_AWS_SKIP_REPRESENTATIVE_PREPARE" != "1" ]]; then
+      "$ECAZ_BIN" corpus fetch \
+        --dataset "$SOURCE_DATASET" \
+        --output-dir "$WORK_DIR/qdrant-dbpedia/"
+      "$ECAZ_BIN" corpus prepare \
+        --profile "$PREPARED_PREFIX" \
+        --parquet "$WORK_DIR/qdrant-dbpedia/data" \
+        --output-dir "$PREPARED_DIR/" \
+        --dim 1536 \
+        --source-dataset "$SOURCE_DATASET"
+    else
+      for prepared_file in "$PREPARED_CORPUS" "$PREPARED_QUERIES" "$PREPARED_MANIFEST"; do
+        if [[ ! -s "$prepared_file" ]]; then
+          echo "SPIRE_AWS_SKIP_REPRESENTATIVE_PREPARE=1 but missing prepared file: $prepared_file" >&2
+          exit 2
+        fi
+      done
+      echo "representative fetch/prepare skipped; reusing $PREPARED_DIR"
+    fi
     if [[ "$SPIRE_AWS_SKIP_COORDINATOR_LOAD" != "1" ]]; then
       load_coordinator_representative_node_local \
-        "$WORK_DIR/qdrant-dbpedia/prepared/${PREPARED_PREFIX}_corpus.tsv" \
-        "$WORK_DIR/qdrant-dbpedia/prepared/${PREPARED_PREFIX}_queries.tsv" \
-        "$WORK_DIR/qdrant-dbpedia/prepared/${PREPARED_PREFIX}_manifest.json"
+        "$PREPARED_CORPUS" \
+        "$PREPARED_QUERIES" \
+        "$PREPARED_MANIFEST"
       restart_operator_tunnel_if_available coordinator "$(jq -r '.coordinator.instance_id' "$TOPOLOGY")" "$COORD_PORT"
     else
       echo "coordinator load skipped for representative tier (SPIRE_AWS_SKIP_COORDINATOR_LOAD=1)" \
         | tee "$ARTIFACT_DIR/coordinator-load-${TIER}.skipped.log"
     fi
-    write_leaf_owned_distributed_plan "$WORK_DIR/qdrant-dbpedia/prepared/${PREPARED_PREFIX}_corpus.tsv" 1536 4 42 ec_spire "$SPIRE_AWS_STORAGE_FORMAT" \
+    write_leaf_owned_distributed_plan "$PREPARED_CORPUS" 1536 4 42 ec_spire "$SPIRE_AWS_STORAGE_FORMAT" \
       > "$ARTIFACT_DIR/distributed-plan-${TIER}.log"
     ;;
   stress)
