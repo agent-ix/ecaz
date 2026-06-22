@@ -833,6 +833,16 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
                     returned_to_k_count,
                 )?);
             }
+            flush_pipeline_jsonl_outputs(
+                &args,
+                &funnel_rows,
+                &stage_containment_rows,
+                &leaf_block_rank_rows,
+                &target_block_rank_rows,
+                &target_candidate_rank_rows,
+                &miss_attribution_rows,
+            )
+            .await?;
             bar.inc(1);
         }
         bar.finish_and_clear();
@@ -887,34 +897,26 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
         output.push_str(&task87_counter_lines.join("\n"));
     }
     println!("{output}");
-    if let Some(path) = args.log_output {
+    if let Some(path) = args.log_output.as_ref() {
         if let Some(parent) = path.parent() {
             tokio::fs::create_dir_all(parent)
                 .await
                 .wrap_err_with(|| format!("creating {}", parent.display()))?;
         }
-        tokio::fs::write(&path, format!("{output}\n"))
+        tokio::fs::write(path, format!("{output}\n"))
             .await
             .wrap_err_with(|| format!("writing {}", path.display()))?;
     }
-    if let Some(path) = args.funnel_output {
-        write_funnel_jsonl(&path, &funnel_rows).await?;
-    }
-    if let Some(path) = args.stage_containment_output {
-        write_stage_containment_jsonl(&path, &stage_containment_rows).await?;
-    }
-    if let Some(path) = args.leaf_block_rank_output {
-        write_leaf_block_rank_jsonl(&path, &leaf_block_rank_rows).await?;
-    }
-    if let Some(path) = args.target_block_rank_output {
-        write_leaf_block_rank_jsonl(&path, &target_block_rank_rows).await?;
-    }
-    if let Some(path) = args.target_candidate_rank_output {
-        write_target_candidate_rank_jsonl(&path, &target_candidate_rank_rows).await?;
-    }
-    if let Some(path) = args.miss_attribution_output {
-        write_miss_attribution_jsonl(&path, &miss_attribution_rows).await?;
-    }
+    flush_pipeline_jsonl_outputs(
+        &args,
+        &funnel_rows,
+        &stage_containment_rows,
+        &leaf_block_rank_rows,
+        &target_block_rank_rows,
+        &target_candidate_rank_rows,
+        &miss_attribution_rows,
+    )
+    .await?;
     Ok(())
 }
 
@@ -3290,6 +3292,36 @@ where
     rows.iter()
         .find(|row| row.step_name == step_name)
         .map(value)
+}
+
+async fn flush_pipeline_jsonl_outputs(
+    args: &SpirePipelineArgs,
+    funnel_rows: &[FunnelRecord],
+    stage_containment_rows: &[StageContainmentRecord],
+    leaf_block_rank_rows: &[LeafBlockRankRecord],
+    target_block_rank_rows: &[LeafBlockRankRecord],
+    target_candidate_rank_rows: &[TargetCandidateRankRecord],
+    miss_attribution_rows: &[MissAttributionRecord],
+) -> Result<()> {
+    if let Some(path) = args.funnel_output.as_ref() {
+        write_funnel_jsonl(path, funnel_rows).await?;
+    }
+    if let Some(path) = args.stage_containment_output.as_ref() {
+        write_stage_containment_jsonl(path, stage_containment_rows).await?;
+    }
+    if let Some(path) = args.leaf_block_rank_output.as_ref() {
+        write_leaf_block_rank_jsonl(path, leaf_block_rank_rows).await?;
+    }
+    if let Some(path) = args.target_block_rank_output.as_ref() {
+        write_leaf_block_rank_jsonl(path, target_block_rank_rows).await?;
+    }
+    if let Some(path) = args.target_candidate_rank_output.as_ref() {
+        write_target_candidate_rank_jsonl(path, target_candidate_rank_rows).await?;
+    }
+    if let Some(path) = args.miss_attribution_output.as_ref() {
+        write_miss_attribution_jsonl(path, miss_attribution_rows).await?;
+    }
+    Ok(())
 }
 
 fn percentile_nearest_rank(values: &mut [i64], percentile: usize) -> i64 {
