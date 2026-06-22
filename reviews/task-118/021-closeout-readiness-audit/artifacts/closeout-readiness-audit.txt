@@ -1,0 +1,22 @@
+# Task 118 closeout readiness audit
+timestamp	2026-06-21T17:06:58-07:00
+head	5831f3bd641ec6779621ba7745c475d222b9e7ee
+
+## Required final Intel artifacts
+MISSING	reviews/task-118/006-final-attribution-matrix/artifacts/cargo-pgrx-test-pg18-score-sanity-intel.log
+MISSING	reviews/task-118/006-final-attribution-matrix/artifacts/suite-manifest-10k-intel.json
+MISSING	reviews/task-118/006-final-attribution-matrix/artifacts/results-10k-intel.jsonl
+MISSING	reviews/task-118/006-final-attribution-matrix/artifacts/suite-run-10k-intel.log
+MISSING	reviews/task-118/006-final-attribution-matrix/artifacts/suite-manifest-50k-intel.json
+MISSING	reviews/task-118/006-final-attribution-matrix/artifacts/results-50k-intel.jsonl
+MISSING	reviews/task-118/006-final-attribution-matrix/artifacts/suite-run-50k-intel.log
+MISSING	reviews/task-118/006-final-attribution-matrix/artifacts/suite-manifest-100k-intel.json
+MISSING	reviews/task-118/006-final-attribution-matrix/artifacts/results-100k-intel.jsonl
+MISSING	reviews/task-118/006-final-attribution-matrix/artifacts/suite-run-100k-intel.log
+MISSING	reviews/task-118/006-final-attribution-matrix/artifacts/final-decision-table-intel.tsv
+
+## Existing non-final local/AMD context
+present	reviews/task-118/006-final-attribution-matrix/artifacts/results-10k.jsonl
+present	reviews/task-118/006-final-attribution-matrix/artifacts/results-10k-compressed-rerun.jsonl
+present	reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/results-10k-frontier-current-head-amd.jsonl
+present	reviews/task-118/016-current-head-10k-amd-diagnostics/artifacts/results-10k-score-current-head-amd.jsonl
