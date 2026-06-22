@@ -18,6 +18,7 @@ should use Intel artifacts for all three required scales: 10k, 50k, and 100k.
 
 Required final Intel artifacts:
 
+- `cargo-pgrx-test-pg18-score-sanity-intel.log`
 - `suite-manifest-10k-intel.json`
 - `results-10k-intel.jsonl`
 - `suite-run-10k-intel.log`
@@ -33,6 +34,7 @@ Presence check:
 
 ```bash
 for path in \
+  reviews/task-118/006-final-attribution-matrix/artifacts/cargo-pgrx-test-pg18-score-sanity-intel.log \
   reviews/task-118/006-final-attribution-matrix/artifacts/suite-manifest-10k-intel.json \
   reviews/task-118/006-final-attribution-matrix/artifacts/results-10k-intel.jsonl \
   reviews/task-118/006-final-attribution-matrix/artifacts/suite-run-10k-intel.log \
@@ -45,6 +47,13 @@ for path in \
 do
   test -s "$path" && printf 'present\t%s\n' "$path" || printf 'MISSING\t%s\n' "$path"
 done
+```
+
+Score-sanity runtime check:
+
+```bash
+rg -n "test result: ok|1 passed|0 failed" \
+  reviews/task-118/006-final-attribution-matrix/artifacts/cargo-pgrx-test-pg18-score-sanity-intel.log
 ```
 
 ## Selected-Step Status
@@ -183,6 +192,10 @@ Completion standard:
 
 Evidence must exist for TurboQuant, PqFastScan, and RaBitQ at 10k, 50k, and
 100k.
+
+The synthetic known-order score-correlation fixture must also pass on the final
+PG18 host. This guards against wrong-sign, missing-comparison, or badly
+misordered diagnostic behavior before interpreting large-scale score rows.
 
 Extraction:
 

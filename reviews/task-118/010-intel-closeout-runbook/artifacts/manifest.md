@@ -16,6 +16,7 @@
 - purpose: exact operator runbook for the final Intel Task 118 evidence pass.
 - includes:
   - extension install command with `pg18 pg_test` diagnostics enabled;
+  - focused synthetic score-correlation runtime test command;
   - 10k `ecaz bench suite` command;
   - 50k `ecaz bench suite` command;
   - 100k `ecaz bench suite` command;

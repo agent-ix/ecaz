@@ -32,6 +32,21 @@ cargo pgrx install --pg-config /home/peter/.pgrx/18.3/pgrx-install/bin/pg_config
 The benchmark database used by prior Task 118 packets is `tqvector_bench` on
 PG18 port `28818` with socket directory `/home/peter/.pgrx`.
 
+## Score-Sanity Runtime Test
+
+Packet 009 added the synthetic known-order score-correlation fixture, but the
+AMD-local runtime attempts remained inconclusive during compile. Packet 020
+repeated that current-head AMD attempt with the same result. Run the focused
+runtime test on the Intel/normal PG18 host before final closeout:
+
+```bash
+cargo pgrx test pg18 test_ech_score_correlation_synthetic_known_ordering \
+  > reviews/task-118/006-final-attribution-matrix/artifacts/cargo-pgrx-test-pg18-score-sanity-intel.log 2>&1
+```
+
+Commit the log if it passes. If it fails, treat that as a Task 118 scorer
+sanity blocker rather than closing the task from benchmark rows alone.
+
 ## 10k Suite
 
 Run the full 10k suite on Intel so the final closeout has Intel recall,
@@ -182,6 +197,7 @@ interpreting the rows.
 Commit only decision-grade artifacts:
 
 - `suite-manifest-10k-intel.json`
+- `cargo-pgrx-test-pg18-score-sanity-intel.log`
 - `results-10k-intel.jsonl`
 - `suite-run-10k-intel.log`
 - per-step 10k logs cited by the request

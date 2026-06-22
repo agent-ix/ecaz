@@ -6,6 +6,7 @@ This checkpoint adds a packet-local runbook for the final Task 118 Intel measure
 
 - exact 10k, 50k, and 100k `ecaz bench suite` commands;
 - required PG18 `pg_test` diagnostic install command;
+- focused synthetic score-correlation runtime test command;
 - result regeneration and status commands;
 - post-run JSONL checks for the required recall, latency, storage, frontier-containment, rerank-counter, and score-correlation rows;
 - packet 018 final-table extractor command for `final-decision-table-intel.tsv`;

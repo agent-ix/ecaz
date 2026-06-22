@@ -16,6 +16,7 @@
 - purpose: requirement-by-requirement audit template for proving Task 118 closeout after Intel evidence lands.
 - includes:
   - expected final artifacts;
+  - synthetic score-correlation runtime test pass/fail check;
   - selected-step status checks;
   - result-row completeness checks;
   - acceptance-criteria-specific `jq` extraction commands;

@@ -7,6 +7,7 @@ This checkpoint adds a packet-local audit template for the final Task 118 closeo
 The template maps Task 118 acceptance criteria to concrete evidence checks over the future Intel artifacts:
 
 - artifact presence and selected-step status;
+- synthetic score-correlation runtime test pass/fail check;
 - normalized result row counts;
 - candidate containment rows;
 - rerank-boundary counters;
