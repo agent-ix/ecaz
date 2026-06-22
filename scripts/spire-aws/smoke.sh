@@ -19,7 +19,8 @@ ECAZ_BIN="${ECAZ_BIN:-ecaz}"
 truth_args=()
 case "$PREFIX" in
   ec_spire_aws_repr_1m)
-    truth_corpus_file="${SPIRE_AWS_REPRESENTATIVE_TRUTH_CORPUS_FILE:-${WORK_DIR:-$ARTIFACT_DIR/work}/qdrant-dbpedia/prepared/ec_real_100k_corpus.tsv}"
+    representative_truth_prefix="${SPIRE_AWS_REPRESENTATIVE_PREPARED_PREFIX:-ec_real_100k}"
+    truth_corpus_file="${SPIRE_AWS_REPRESENTATIVE_TRUTH_CORPUS_FILE:-${WORK_DIR:-$ARTIFACT_DIR/work}/qdrant-dbpedia/prepared/${representative_truth_prefix}_corpus.tsv}"
     truth_args+=(--truth-corpus-file "$truth_corpus_file")
     ;;
 esac
