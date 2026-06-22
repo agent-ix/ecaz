@@ -1,6 +1,10 @@
 # Task 120: SPIRE Coarse-Rerank Measurement Program
 
-Status: **proposed**.
+Status: **final no-promotion recommendation under review** (2026-06-22;
+closeout synthesis in `reviews/task-120/018-final-recommendation/`). Task 120
+does not authorize AWS work: the required local multi-node gate passed in
+`reviews/task-120/017-phase5-local-multinode-gate/`, and any future AWS 1M
+distributed product-claim matrix requires explicit user approval.
 Owner: coder (to be assigned). One coder, one branch.
 Priority: P0 for any renewed SPIRE algorithm work.
 
