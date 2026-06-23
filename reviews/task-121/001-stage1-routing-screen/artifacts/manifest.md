@@ -1,6 +1,6 @@
 # Task 121 Stage 1 Routing Screen Artifact Manifest
 
-- Head SHA: `283a6f7a5d9fe5659a803cdc69f2382397ac7426`
+- Head SHA: `353501957dfa1bf53e94878fd3e7ac014a0bfe97`
 - Task bucket: `reviews/task-121/001-stage1-routing-screen`
 - Lane: `intel-local`
 - Fixture: real corpus 100k, q20 bounded baseline slice, q200/seven-sweep baseline, and q200 OFAT screens
@@ -553,3 +553,76 @@
     - nprobe 64: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 1,474,921, object_bytes_sum 1,203,862,648
     - nprobe 96: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 2,177,568, object_bytes_sum 1,777,407,696
   - Interpretation: `nlists=1024` completes the standalone `nlists` boundary check. It reduces fanout and latency again, but route-stage containment and final recall continue to degrade under the fixed routing budget. Treat higher `nlists` as a cost lever that may need a coverage lever paired with it, not as a standalone route-recall lever.
+
+## recursive_fanout=0 Build-Gated Cell
+
+- `fanout0-load-suite-manifest.json`
+- `fanout0-load-suite-run.log`
+- `load-fanout0.log`
+  - Command: `target/debug/ecaz bench suite run --config reviews/task-121/001-stage1-routing-screen/artifacts/suite-stage1-routing-screen-100k.json --database tqvector_bench_task121 --host /home/peter/.pgrx --port 28818 --only load-fanout0 --manifest-output reviews/task-121/001-stage1-routing-screen/artifacts/fanout0-load-suite-manifest.json --results-output reviews/task-121/001-stage1-routing-screen/artifacts/fanout0-load-suite-results.jsonl --log-file reviews/task-121/001-stage1-routing-screen/artifacts/fanout0-load-suite-run.log`
+  - Key result lines:
+    - copied corpus rows: 100000 in 101.26s
+    - encoded corpus rows: 100000 in 32.20s
+    - copied query rows: 1000 in 1.01s
+    - index build failed with `ERROR: ec_spire top_graph_enabled requires recursive_fanout >= 2 during build`
+  - Interpretation: the literal `recursive_fanout=0` OFAT cell is invalid with the Task 121 baseline because `top_graph_enabled=1` is held constant. No route-containment or recall result exists for this build-gated combination.
+
+## recursive_fanout=16 OFAT
+
+- `fanout16-load-suite-manifest.json`
+- `fanout16-load-suite-results.jsonl`
+- `fanout16-load-suite-run.log`
+- `load-fanout16.log`
+  - Command: `target/debug/ecaz bench suite run --config reviews/task-121/001-stage1-routing-screen/artifacts/suite-stage1-routing-screen-100k.json --database tqvector_bench_task121 --host /home/peter/.pgrx --port 28818 --only load-fanout16 --manifest-output reviews/task-121/001-stage1-routing-screen/artifacts/fanout16-load-suite-manifest.json --results-output reviews/task-121/001-stage1-routing-screen/artifacts/fanout16-load-suite-results.jsonl --log-file reviews/task-121/001-stage1-routing-screen/artifacts/fanout16-load-suite-run.log`
+  - Key result lines:
+    - copied corpus rows: 100000 in 97.85s
+    - encoded corpus rows: 100000 in 33.15s
+    - copied query rows: 1000 in 1.01s
+    - built index `t121_s1_100k_fanout16_idx` in 10.10s
+    - completed prefix in 301.75s
+
+- `fanout16-storage-suite-manifest.json`
+- `fanout16-storage-suite-results.jsonl`
+- `fanout16-storage-suite-run.log`
+- `storage-fanout16.log`
+  - Command: `target/debug/ecaz bench suite run --config reviews/task-121/001-stage1-routing-screen/artifacts/suite-stage1-routing-screen-100k.json --database tqvector_bench_task121 --host /home/peter/.pgrx --port 28818 --only storage-fanout16 --manifest-output reviews/task-121/001-stage1-routing-screen/artifacts/fanout16-storage-suite-manifest.json --results-output reviews/task-121/001-stage1-routing-screen/artifacts/fanout16-storage-suite-results.jsonl --log-file reviews/task-121/001-stage1-routing-screen/artifacts/fanout16-storage-suite-run.log`
+  - Key result lines:
+    - total: 1.6 GiB
+    - indexes: 82.0 MiB
+    - SPIRE index: 79.8 MiB
+    - index bytes/row: 836.6 B
+
+- `fanout16-pipeline-suite-manifest.json`
+- `fanout16-pipeline-suite-results.jsonl`
+- `fanout16-pipeline-suite-run.log`
+- `pipeline-fanout16.log`
+- `pipeline-fanout16-funnel.jsonl`
+- `pipeline-fanout16-stage-containment.jsonl`
+- `pipeline-fanout16-route-containment.tsv`
+  - Command: `target/debug/ecaz bench suite run --config reviews/task-121/001-stage1-routing-screen/artifacts/suite-stage1-routing-screen-100k.json --database tqvector_bench_task121 --host /home/peter/.pgrx --port 28818 --only pipeline-fanout16 --manifest-output reviews/task-121/001-stage1-routing-screen/artifacts/fanout16-pipeline-suite-manifest.json --results-output reviews/task-121/001-stage1-routing-screen/artifacts/fanout16-pipeline-suite-results.jsonl --log-file reviews/task-121/001-stage1-routing-screen/artifacts/fanout16-pipeline-suite-run.log`
+  - Results shape: 200 queries x seven nprobe values (`8,16,24,32,48,64,96`), 1,400 funnel rows, 8,400 stage-containment rows.
+  - Key coordinator result lines:
+    - nprobe 8: recall@10 0.7480, p50 250.995 ms, p95 324.399 ms, p99 343.845 ms, max 361.317 ms
+    - nprobe 16: recall@10 0.8605, p50 534.268 ms, p95 628.510 ms, p99 662.994 ms, max 684.571 ms
+    - nprobe 24: recall@10 0.9170, p50 797.713 ms, p95 886.185 ms, p99 924.432 ms, max 930.390 ms
+    - nprobe 32: recall@10 0.9400, p50 1073.706 ms, p95 1191.517 ms, p99 1241.229 ms, max 1409.611 ms
+    - nprobe 48: recall@10 0.9680, p50 1626.846 ms, p95 1783.439 ms, p99 1827.741 ms, max 1851.927 ms
+    - nprobe 64: recall@10 0.9845, p50 2187.801 ms, p95 2340.580 ms, p99 2458.388 ms, max 2739.102 ms
+    - nprobe 96: recall@10 0.9960, p50 3286.694 ms, p95 3487.819 ms, p99 3554.765 ms, max 3620.900 ms
+  - Route-stage containment from `pipeline-fanout16-route-containment.tsv`:
+    - nprobe 8: 1496/2000 truth items contained, 0.7480
+    - nprobe 16: 1721/2000 truth items contained, 0.8605
+    - nprobe 24: 1834/2000 truth items contained, 0.9170
+    - nprobe 32: 1880/2000 truth items contained, 0.9400
+    - nprobe 48: 1936/2000 truth items contained, 0.9680
+    - nprobe 64: 1969/2000 truth items contained, 0.9845
+    - nprobe 96: 1992/2000 truth items contained, 0.9960
+  - Pipeline counters:
+    - nprobe 8: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 1,236,917, object_bytes_sum 1,008,532,232
+    - nprobe 16: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 2,516,097, object_bytes_sum 2,051,510,976
+    - nprobe 24: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 3,778,758, object_bytes_sum 3,081,024,144
+    - nprobe 32: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 5,066,438, object_bytes_sum 4,130,930,864
+    - nprobe 48: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 7,613,053, object_bytes_sum 6,207,309,256
+    - nprobe 64: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 10,174,090, object_bytes_sum 8,295,447,760
+    - nprobe 96: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 15,340,768, object_bytes_sum 12,508,080,736
+  - Interpretation: `recursive_fanout=16` is a small low/mid-nprobe recall improvement with nearly baseline storage and candidate volume. It is not in the same class as boundary replication, and it slightly underperforms baseline at nprobe 96, but it is cheap enough to keep under consideration pending `recursive_fanout=32`.

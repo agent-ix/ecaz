@@ -158,6 +158,22 @@ Seventh OFAT lever result, `nlists=1024`:
 
 `nlists=1024` completes the standalone `nlists` boundary check and confirms the degradation curve. Finer leaves monotonically reduce candidate rows and coordinator latency under the fixed nprobe budget, but route-stage containment and final recall continue to fall. At nprobe 96, `nlists=1024` is 7.60 recall points below baseline and 5.05 points below `nlists=316`. This closes the standalone `nlists` screen as a negative recall lever for Task 121: useful as a cost lever to pair with boundary replication or another coverage lever, but not significant by itself for the route-loss objective.
 
+Eighth OFAT lever result, `recursive_fanout`:
+
+`recursive_fanout=0` is not a valid single-factor cell with the Task 121 baseline because `top_graph_enabled=1` requires `recursive_fanout >= 2` during index build. The packet keeps the failed load artifact for provenance, but there is no recall/route-containment result for that invalid combination.
+
+| nprobe | baseline recall@10 | fanout16 recall@10 | baseline p50 | fanout16 p50 | baseline candidates | fanout16 candidates |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 8 | 0.7250 | 0.7480 | 244.812 ms | 250.995 ms | 1,232,065 | 1,236,917 |
+| 16 | 0.8525 | 0.8605 | 502.956 ms | 534.268 ms | 2,514,557 | 2,516,097 |
+| 24 | 0.9045 | 0.9170 | 785.069 ms | 797.713 ms | 3,816,799 | 3,778,758 |
+| 32 | 0.9310 | 0.9400 | 1055.659 ms | 1073.706 ms | 5,165,224 | 5,066,438 |
+| 48 | 0.9645 | 0.9680 | 1633.655 ms | 1626.846 ms | 7,795,405 | 7,613,053 |
+| 64 | 0.9825 | 0.9845 | 2181.396 ms | 2187.801 ms | 10,420,357 | 10,174,090 |
+| 96 | 0.9975 | 0.9960 | 3347.935 ms | 3286.694 ms | 15,506,227 | 15,340,768 |
+
+`recursive_fanout=16` is a small positive low/mid-nprobe routing lever, not a dominant recall fix. Route-stage containment again equals final recall for every nprobe. The largest gain is +0.0230 recall@10 at nprobe 8, and the effect shrinks to near-neutral by nprobe 48/64 before slightly underperforming baseline at nprobe 96. Candidate rows and index size remain close to baseline, so this is a cheap minor precision tweak worth retaining for the final significant-set decision only if `fanout32` confirms a real trend.
+
 ## Artifacts
 
 See `artifacts/manifest.md` for artifact metadata and command provenance.
