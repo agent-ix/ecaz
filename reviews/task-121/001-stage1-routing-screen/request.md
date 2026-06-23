@@ -78,6 +78,20 @@ Second OFAT lever result, `boundary_replica_count=1`:
 
 `boundary_replica_count=1` is a significant recall lever. It improves route containment and final recall at every measured nprobe, with the largest practical gain at low nprobe: +0.1115 recall@10 at nprobe 8 and +0.0710 at nprobe 16. The cost is also clear: SPIRE index size rises from 79.7 MiB to 157.9 MiB, index build time rises from 11.60s to 44.40s, candidate rows roughly double, and coordinator latency rises materially. Route-stage containment still equals final recall for every nprobe, so the measured pipeline remains route-limited; boundary replicas improve routing coverage rather than exposing a downstream loss stage.
 
+Third OFAT lever result, `boundary_replica_count=2`:
+
+| nprobe | baseline recall@10 | bound1 recall@10 | bound2 recall@10 | baseline p50 | bound1 p50 | bound2 p50 | bound2 candidates |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 8 | 0.7250 | 0.8365 | 0.8730 | 244.812 ms | 497.014 ms | 696.395 ms | 3,942,723 |
+| 16 | 0.8525 | 0.9235 | 0.9465 | 502.956 ms | 950.199 ms | 1227.200 ms | 7,878,446 |
+| 24 | 0.9045 | 0.9605 | 0.9745 | 785.069 ms | 1335.556 ms | 1737.343 ms | 11,786,881 |
+| 32 | 0.9310 | 0.9735 | 0.9835 | 1055.659 ms | 1742.360 ms | 2181.439 ms | 15,730,984 |
+| 48 | 0.9645 | 0.9870 | 0.9925 | 1633.655 ms | 2449.828 ms | 3034.067 ms | 23,657,267 |
+| 64 | 0.9825 | 0.9940 | 0.9970 | 2181.396 ms | 3146.297 ms | 3607.115 ms | 31,551,045 |
+| 96 | 0.9975 | 0.9995 | 1.0000 | 3347.935 ms | 4137.887 ms | 4553.530 ms | 46,704,408 |
+
+`boundary_replica_count=2` improves route containment again, but with diminishing recall gain versus bound1 and another large cost jump. The largest incremental bound2-over-bound1 gains are +0.0365 recall@10 at nprobe 8 and +0.0230 at nprobe 16; by nprobe 96 the gain is only +0.0005. SPIRE index size rises to 235.9 MiB, index build time rises to 54.47s, and candidate rows at nprobe 96 reach 46.7M across 200 queries. Route-stage containment still exactly equals final recall, so the finding remains clear: boundary replicas buy routing coverage, but the cost curve steepens quickly.
+
 ## Artifacts
 
 See `artifacts/manifest.md` for artifact metadata and command provenance.
