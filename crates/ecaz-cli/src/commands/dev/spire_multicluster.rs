@@ -432,6 +432,30 @@ pub struct LocalMultinodePg18Args {
     #[arg(long)]
     prepared_dir: Option<PathBuf>,
 
+    /// Storage format for coordinator and remote ec_spire indexes.
+    #[arg(long)]
+    storage_format: Option<String>,
+
+    /// Coordinator index name.
+    #[arg(long)]
+    coord_index: Option<String>,
+
+    /// Remote index name.
+    #[arg(long)]
+    remote_index: Option<String>,
+
+    /// Reloption applied to both coordinator and remote ec_spire indexes.
+    #[arg(long = "reloption")]
+    reloptions: Vec<String>,
+
+    /// Reloption applied only to the coordinator ec_spire index.
+    #[arg(long = "coord-reloption")]
+    coord_reloptions: Vec<String>,
+
+    /// Reloption applied only to remote ec_spire indexes.
+    #[arg(long = "remote-reloption")]
+    remote_reloptions: Vec<String>,
+
     /// Top-k for the packet-local bench suite.
     #[arg(long)]
     bench_top_k: Option<u16>,
@@ -1040,6 +1064,25 @@ async fn run_local_multinode_pg18(args: LocalMultinodePg18Args) -> Result<()> {
         args.prepared_prefix.as_deref(),
     );
     push_path_arg(&mut command, "--prepared-dir", args.prepared_dir.as_ref());
+    set_env_if_some(
+        &mut command,
+        "SPIRE_AWS_STORAGE_FORMAT",
+        args.storage_format.as_deref(),
+    );
+    set_env_if_some(&mut command, "COORD_INDEX", args.coord_index.as_deref());
+    set_env_if_some(&mut command, "REMOTE_INDEX", args.remote_index.as_deref());
+    let coord_reloptions = joined_reloptions(&args.reloptions, &args.coord_reloptions);
+    let remote_reloptions = joined_reloptions(&args.reloptions, &args.remote_reloptions);
+    set_env_if_nonempty(
+        &mut command,
+        "SPIRE_AWS_COORD_RELOPTIONS",
+        &coord_reloptions,
+    );
+    set_env_if_nonempty(
+        &mut command,
+        "SPIRE_AWS_REMOTE_RELOPTIONS",
+        &remote_reloptions,
+    );
     push_u16_arg(&mut command, "--bench-top-k", args.bench_top_k);
     push_usize_arg(
         &mut command,
@@ -1094,4 +1137,25 @@ fn push_string_arg(command: &mut Command, name: &str, value: Option<&str>) {
     if let Some(value) = value {
         command.arg(name).arg(value);
     }
+}
+
+fn set_env_if_some(command: &mut Command, name: &str, value: Option<&str>) {
+    if let Some(value) = value {
+        command.env(name, value);
+    }
+}
+
+fn set_env_if_nonempty(command: &mut Command, name: &str, value: &str) {
+    if !value.is_empty() {
+        command.env(name, value);
+    }
+}
+
+fn joined_reloptions(shared: &[String], specific: &[String]) -> String {
+    shared
+        .iter()
+        .chain(specific.iter())
+        .map(String::as_str)
+        .collect::<Vec<_>>()
+        .join(";")
 }

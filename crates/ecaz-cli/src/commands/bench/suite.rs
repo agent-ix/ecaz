@@ -429,6 +429,18 @@ struct SpireLocalMultinodeStep {
     #[serde(default)]
     prepared_dir: Option<PathBuf>,
     #[serde(default)]
+    storage_format: Option<String>,
+    #[serde(default)]
+    coord_index: Option<String>,
+    #[serde(default)]
+    remote_index: Option<String>,
+    #[serde(default)]
+    reloptions: Vec<String>,
+    #[serde(default)]
+    coord_reloptions: Vec<String>,
+    #[serde(default)]
+    remote_reloptions: Vec<String>,
+    #[serde(default)]
     bench_top_k: Option<u16>,
     #[serde(default)]
     bench_queries_limit: Option<usize>,
@@ -1165,7 +1177,7 @@ fn apply_default_artifact_logs(config: &mut SuiteConfig) {
                     step.smoke_log = step
                         .artifact_dir
                         .as_ref()
-                        .map(|dir| dir.join("phase13e-local-multinode.log"));
+                        .map(|dir| dir.join("local-multinode.log"));
                 }
             }
             SuiteStep::SpirePipeline(step) if step.log_output.is_none() => {
@@ -2525,6 +2537,27 @@ impl SuiteStep {
                         )
                     }
                 }
+                validate_optional_nonempty(
+                    "spire-local-multinode storage_format",
+                    step.storage_format.as_deref(),
+                )?;
+                validate_optional_nonempty(
+                    "spire-local-multinode coord_index",
+                    step.coord_index.as_deref(),
+                )?;
+                validate_optional_nonempty(
+                    "spire-local-multinode remote_index",
+                    step.remote_index.as_deref(),
+                )?;
+                validate_reloption_list("spire-local-multinode reloptions", &step.reloptions)?;
+                validate_reloption_list(
+                    "spire-local-multinode coord_reloptions",
+                    &step.coord_reloptions,
+                )?;
+                validate_reloption_list(
+                    "spire-local-multinode remote_reloptions",
+                    &step.remote_reloptions,
+                )?;
                 if step.bench_top_k == Some(0) {
                     bail!(
                         "spire-local-multinode step {:?} must set bench_top_k >= 1",
@@ -2688,12 +2721,20 @@ impl SuiteStep {
             SuiteStep::Latency(step) => step.log_output.iter().cloned().collect(),
             SuiteStep::SpireLocalMultinode(step) => {
                 let mut artifacts: Vec<PathBuf> = step.smoke_log.iter().cloned().collect();
+                if let Some(run_dir) = &step.run_dir {
+                    artifacts.push(run_dir.join("topology.local.json"));
+                } else if let Some(run_id) = &step.run_id {
+                    artifacts.push(PathBuf::from(format!(
+                        "target/spire-phase13e-aws-local-{run_id}/topology.local.json"
+                    )));
+                }
                 if let Some(artifact_dir) = &step.artifact_dir {
-                    artifacts.extend([
-                        artifact_dir.join("topology.local.json"),
-                        artifact_dir.join("local-spire-pipeline-suite/suite-manifest.json"),
-                        artifact_dir.join("local-spire-pipeline-suite/suite-results.jsonl"),
-                    ]);
+                    if !step.skip_bench_suite {
+                        artifacts.extend([
+                            artifact_dir.join("bench-suite/suite-manifest.json"),
+                            artifact_dir.join("bench-suite/results.jsonl"),
+                        ]);
+                    }
                 }
                 artifacts
             }
@@ -2807,6 +2848,27 @@ fn validate_profile_name(label: &str, profile_name: Option<&str>) -> Result<()> 
                 profile_name,
                 profiles::names().join(", ")
             );
+        }
+    }
+    Ok(())
+}
+
+fn validate_optional_nonempty(label: &str, value: Option<&str>) -> Result<()> {
+    if let Some(value) = value {
+        if value.trim().is_empty() {
+            bail!("{label} must not be empty");
+        }
+    }
+    Ok(())
+}
+
+fn validate_reloption_list(label: &str, reloptions: &[String]) -> Result<()> {
+    for reloption in reloptions {
+        if reloption.trim().is_empty() {
+            bail!("{label} must not include empty reloptions");
+        }
+        if reloption.contains(';') {
+            bail!("{label} item {:?} must not contain ';'", reloption);
         }
     }
     Ok(())
@@ -3148,6 +3210,22 @@ fn expand_spire_local_multinode(
         step.prepared_prefix.as_deref(),
     );
     push_opt_path(&mut args, "--prepared-dir", step.prepared_dir.as_deref());
+    push_opt_arg(
+        &mut args,
+        "--storage-format",
+        step.storage_format.as_deref(),
+    );
+    push_opt_arg(&mut args, "--coord-index", step.coord_index.as_deref());
+    push_opt_arg(&mut args, "--remote-index", step.remote_index.as_deref());
+    for reloption in &step.reloptions {
+        push_arg(&mut args, "--reloption", reloption);
+    }
+    for reloption in &step.coord_reloptions {
+        push_arg(&mut args, "--coord-reloption", reloption);
+    }
+    for reloption in &step.remote_reloptions {
+        push_arg(&mut args, "--remote-reloption", reloption);
+    }
     push_opt_u16(&mut args, "--bench-top-k", step.bench_top_k);
     push_opt_usize(&mut args, "--bench-queries-limit", step.bench_queries_limit);
     push_opt_arg(&mut args, "--bench-sweep", step.bench_sweep.as_deref());
@@ -4075,6 +4153,12 @@ mod tests {
             "remote2_port": 39802,
             "remote3_port": 39803,
             "tier": "correctness",
+            "storage_format": "turboquant",
+            "coord_index": "task121_coord_idx",
+            "remote_index": "task121_remote_idx",
+            "reloptions": ["nlists=128", "top_graph_enabled=1"],
+            "coord_reloptions": ["training_sample_rows=10000"],
+            "remote_reloptions": ["boundary_replica_count=1"],
             "bench_top_k": 6,
             "bench_queries_limit": 1,
             "bench_sweep": "3",
@@ -4124,12 +4208,122 @@ mod tests {
             .command
             .windows(2)
             .any(|w| w == ["--remote3-port", "39803"]));
+        assert!(step
+            .command
+            .windows(2)
+            .any(|w| w == ["--storage-format", "turboquant"]));
+        assert!(step
+            .command
+            .windows(2)
+            .any(|w| w == ["--coord-index", "task121_coord_idx"]));
+        assert!(step
+            .command
+            .windows(2)
+            .any(|w| w == ["--remote-index", "task121_remote_idx"]));
+        assert!(step
+            .command
+            .windows(2)
+            .any(|w| w == ["--reloption", "nlists=128"]));
+        assert!(step
+            .command
+            .windows(2)
+            .any(|w| w == ["--coord-reloption", "training_sample_rows=10000"]));
+        assert!(step
+            .command
+            .windows(2)
+            .any(|w| w == ["--remote-reloption", "boundary_replica_count=1"]));
         assert!(step.command.contains(&"--skip-bench-suite".into()));
         assert!(step.command.contains(&"--skip-fault-drills".into()));
         assert!(step
             .expected_artifacts
             .iter()
-            .any(|path| path.ends_with("phase13e-local-multinode.log")));
+            .any(|path| path.ends_with("local-multinode.log")));
+        assert!(step
+            .expected_artifacts
+            .iter()
+            .any(|path| path
+                .ends_with("target/spire-phase13e-aws-local-task121/topology.local.json")));
+        assert!(!step
+            .expected_artifacts
+            .iter()
+            .any(|path| path.ends_with("bench-suite/results.jsonl")));
+    }
+
+    #[test]
+    fn spire_local_multinode_step_tracks_bench_artifacts_when_enabled() {
+        let raw = r#"{
+          "name": "local-multinode",
+          "schema_version": 1,
+          "artifact_dir": "artifacts/task121",
+          "defaults": {"pg": 18},
+          "steps": [{
+            "kind": "spire-local-multinode",
+            "name": "local-gate",
+            "run_dir": "target/task121-local-run",
+            "coord_port": 39800,
+            "remote1_port": 39801,
+            "remote2_port": 39802,
+            "remote3_port": 39803,
+            "tier": "correctness",
+            "skip_fault_drills": true,
+            "skip_install": true
+          }]
+        }"#;
+        let mut config: SuiteConfig = serde_json::from_str(raw).expect("suite parses");
+        apply_default_artifact_logs(&mut config);
+        apply_artifact_dir_templates(&mut config);
+        validate_config(&config).expect("suite validates");
+
+        let args = SuiteRunOptions {
+            config: "suite.json".into(),
+            dry_run: true,
+            continue_on_error: false,
+            only: Vec::new(),
+            only_tag: Vec::new(),
+            resume_from: None,
+            results_output: None,
+            artifact_dir: None,
+            manifest_output: None,
+            allow_debug_backend: false,
+        };
+        let manifest = build_manifest(&conn(), &args, raw, &config).expect("manifest builds");
+        let step = &manifest.steps[0];
+
+        assert!(step
+            .expected_artifacts
+            .iter()
+            .any(|path| path.ends_with("target/task121-local-run/topology.local.json")));
+        assert!(step
+            .expected_artifacts
+            .iter()
+            .any(|path| path
+                .ends_with("artifacts/task121/local-gate/bench-suite/suite-manifest.json")));
+        assert!(step
+            .expected_artifacts
+            .iter()
+            .any(|path| path.ends_with("artifacts/task121/local-gate/bench-suite/results.jsonl")));
+    }
+
+    #[test]
+    fn spire_local_multinode_step_rejects_semicolon_reloptions() {
+        let raw = r#"{
+          "name": "local-multinode",
+          "schema_version": 1,
+          "defaults": {"pg": 18},
+          "steps": [{
+            "kind": "spire-local-multinode",
+            "name": "local-gate",
+            "coord_port": 39800,
+            "remote1_port": 39801,
+            "remote2_port": 39802,
+            "remote3_port": 39803,
+            "reloptions": ["nlists=128;top_graph_enabled=1"]
+          }]
+        }"#;
+        let config: SuiteConfig = serde_json::from_str(raw).expect("suite parses");
+        let err = validate_config(&config).expect_err("reloption with semicolon is rejected");
+
+        assert!(err.to_string().contains("must not contain ';'"));
     }
 
     #[test]
