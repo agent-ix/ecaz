@@ -1,6 +1,6 @@
 # Task 121 Stage 1 Routing Screen Artifact Manifest
 
-- Head SHA: `67523f3589f41ab51261d18617c53105871fde15`
+- Head SHA: `f8169d7039dbce077d02a933b825a60f63a1cfa0`
 - Task bucket: `reviews/task-121/001-stage1-routing-screen`
 - Lane: `intel-local`
 - Fixture: real corpus 100k, q20 bounded baseline slice, q200/seven-sweep baseline, and q200 OFAT screens
@@ -866,3 +866,63 @@
     - nprobe 64: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 10,205,921, object_bytes_sum 8,321,360,096
     - nprobe 96: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 15,240,059, object_bytes_sum 12,425,937,896
   - Interpretation: `training_sample_rows=50000` improves route-stage containment and final recall from nprobe 8 through 64 while slightly reducing candidate volume versus baseline. It is not a strict dominance result because nprobe 96 falls slightly below baseline; keep it as a low/mid-nprobe precision candidate pending `training_sample_rows=100000`.
+
+## training_sample_rows=100000 OFAT
+
+- `train100k-load-suite-manifest.json`
+- `train100k-load-suite-results.jsonl`
+- `train100k-load-suite-run.log`
+- `load-train100k.log`
+  - Command: `target/debug/ecaz bench suite run --config reviews/task-121/001-stage1-routing-screen/artifacts/suite-stage1-routing-screen-100k.json --database tqvector_bench_task121 --host /home/peter/.pgrx --port 28818 --only load-train100k --manifest-output reviews/task-121/001-stage1-routing-screen/artifacts/train100k-load-suite-manifest.json --results-output reviews/task-121/001-stage1-routing-screen/artifacts/train100k-load-suite-results.jsonl --log-file reviews/task-121/001-stage1-routing-screen/artifacts/train100k-load-suite-run.log`
+  - Key result lines:
+    - copied corpus rows: 100000 in 95.32s
+    - encoded corpus rows: 100000 in 27.39s
+    - copied query rows: 1000 in 988.15ms
+    - built index `t121_s1_100k_train100k_idx` in 17.26s
+    - completed prefix in 296.75s
+
+- `train100k-storage-suite-manifest.json`
+- `train100k-storage-suite-results.jsonl`
+- `train100k-storage-suite-run.log`
+- `storage-train100k.log`
+  - Command: `target/debug/ecaz bench suite run --config reviews/task-121/001-stage1-routing-screen/artifacts/suite-stage1-routing-screen-100k.json --database tqvector_bench_task121 --host /home/peter/.pgrx --port 28818 --only storage-train100k --manifest-output reviews/task-121/001-stage1-routing-screen/artifacts/train100k-storage-suite-manifest.json --results-output reviews/task-121/001-stage1-routing-screen/artifacts/train100k-storage-suite-results.jsonl --log-file reviews/task-121/001-stage1-routing-screen/artifacts/train100k-storage-suite-run.log`
+  - Key result lines:
+    - total: 1.6 GiB
+    - indexes: 81.9 MiB
+    - SPIRE index: 79.7 MiB
+    - index bytes/row: 835.5 B
+
+- `train100k-pipeline-suite-manifest.json`
+- `train100k-pipeline-suite-results.jsonl`
+- `train100k-pipeline-suite-run.log`
+- `pipeline-train100k.log`
+- `pipeline-train100k-funnel.jsonl`
+- `pipeline-train100k-stage-containment.jsonl`
+- `pipeline-train100k-route-containment.tsv`
+  - Command: `target/debug/ecaz bench suite run --config reviews/task-121/001-stage1-routing-screen/artifacts/suite-stage1-routing-screen-100k.json --database tqvector_bench_task121 --host /home/peter/.pgrx --port 28818 --only pipeline-train100k --manifest-output reviews/task-121/001-stage1-routing-screen/artifacts/train100k-pipeline-suite-manifest.json --results-output reviews/task-121/001-stage1-routing-screen/artifacts/train100k-pipeline-suite-results.jsonl --log-file reviews/task-121/001-stage1-routing-screen/artifacts/train100k-pipeline-suite-run.log`
+  - Results shape: 200 queries x seven nprobe values (`8,16,24,32,48,64,96`), 1,400 funnel rows, 8,400 stage-containment rows.
+  - Key coordinator result lines:
+    - nprobe 8: recall@10 0.7700, p50 247.546 ms, p95 344.586 ms, p99 376.577 ms, max 382.106 ms
+    - nprobe 16: recall@10 0.8715, p50 520.779 ms, p95 641.028 ms, p99 676.940 ms, max 757.166 ms
+    - nprobe 24: recall@10 0.9135, p50 800.027 ms, p95 915.831 ms, p99 989.013 ms, max 1006.518 ms
+    - nprobe 32: recall@10 0.9345, p50 1070.170 ms, p95 1198.706 ms, p99 1257.549 ms, max 1318.628 ms
+    - nprobe 48: recall@10 0.9655, p50 1631.295 ms, p95 1771.191 ms, p99 1840.763 ms, max 1883.522 ms
+    - nprobe 64: recall@10 0.9825, p50 2167.957 ms, p95 2337.490 ms, p99 2399.322 ms, max 2402.684 ms
+    - nprobe 96: recall@10 0.9965, p50 3278.701 ms, p95 3479.388 ms, p99 3515.914 ms, max 3542.196 ms
+  - Route-stage containment from `pipeline-train100k-route-containment.tsv`:
+    - nprobe 8: 1540/2000 truth items contained, 0.7700
+    - nprobe 16: 1743/2000 truth items contained, 0.8715
+    - nprobe 24: 1827/2000 truth items contained, 0.9135
+    - nprobe 32: 1869/2000 truth items contained, 0.9345
+    - nprobe 48: 1931/2000 truth items contained, 0.9655
+    - nprobe 64: 1965/2000 truth items contained, 0.9825
+    - nprobe 96: 1993/2000 truth items contained, 0.9965
+  - Pipeline counters:
+    - nprobe 8: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 1,277,652, object_bytes_sum 1,041,738,000
+    - nprobe 16: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 2,525,033, object_bytes_sum 2,058,790,952
+    - nprobe 24: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 3,804,743, object_bytes_sum 3,102,198,080
+    - nprobe 32: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 5,088,570, object_bytes_sum 4,148,959,536
+    - nprobe 48: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 7,634,332, object_bytes_sum 6,224,637,472
+    - nprobe 64: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 10,178,967, object_bytes_sum 8,299,395,648
+    - nprobe 96: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 15,206,113, object_bytes_sum 12,398,273,728
+  - Interpretation: `training_sample_rows=100000` improves route-stage containment and final recall from nprobe 8 through 48, ties baseline at nprobe 64, and is slightly below baseline at nprobe 96. It is weaker than `training_sample_rows=50000` at every measured nprobe except a tiny edge at nprobe 96, and it builds slower. Keep `train50k` as the better training-sample candidate; do not promote `train100k` as a stronger boundary.

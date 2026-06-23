@@ -230,6 +230,20 @@ Twelfth OFAT lever result, `training_sample_rows=50000`:
 
 `training_sample_rows=50000` is a real but mixed routing lever. It improves route-stage containment and final recall from nprobe 8 through 64, with the largest gains at low nprobe (+0.0535 at nprobe 8, +0.0285 at nprobe 16), and slightly reduces candidate volume versus baseline. It does not dominate the baseline at the high-recall end: nprobe 96 falls from 0.9975 to 0.9960. Keep it in the significant-set discussion as a cheap low/mid-nprobe improvement, pending the `train100k` boundary check.
 
+Thirteenth OFAT lever result, `training_sample_rows=100000`:
+
+| nprobe | baseline recall@10 | train50k recall@10 | train100k recall@10 | train100k p50 | train100k candidates |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 8 | 0.7250 | 0.7785 | 0.7700 | 247.546 ms | 1,277,652 |
+| 16 | 0.8525 | 0.8810 | 0.8715 | 520.779 ms | 2,525,033 |
+| 24 | 0.9045 | 0.9285 | 0.9135 | 800.027 ms | 3,804,743 |
+| 32 | 0.9310 | 0.9455 | 0.9345 | 1070.170 ms | 5,088,570 |
+| 48 | 0.9645 | 0.9725 | 0.9655 | 1631.295 ms | 7,634,332 |
+| 64 | 0.9825 | 0.9830 | 0.9825 | 2167.957 ms | 10,178,967 |
+| 96 | 0.9975 | 0.9960 | 0.9965 | 3278.701 ms | 15,206,113 |
+
+`training_sample_rows=100000` confirms training sample size is a modest low/mid-nprobe routing lever, but it is weaker than `train50k` on this fixture. Versus baseline it improves recall from nprobe 8 through 48, ties at nprobe 64, and is slightly below baseline at nprobe 96. Versus `train50k` it is lower at every nprobe except a tiny +0.0005 at nprobe 96. It also builds slower than `train50k` (17.26s vs 13.15s). Keep `train50k` as the better candidate if training sample size remains in the Phase 2 discussion; do not promote `train100k` as a better boundary.
+
 ## Artifacts
 
 See `artifacts/manifest.md` for artifact metadata and command provenance.
