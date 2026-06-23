@@ -50,7 +50,7 @@ Key baseline finding: route-stage containment equals final recall for every meas
 
 The original q200/seven-sweep attempt was canceled after more than 33 minutes because artifacts were opaque during execution. After the incremental JSONL runner change captured in `reviews/task-121/003-spire-pipeline-incremental-jsonl/`, the same baseline completed locally and wrote packet-local evidence throughout the run.
 
-First OFAT lever result, `top_graph_search_list_size=200`:
+First OFAT lever result, `top_graph_search_list_size=200`, low-nprobe screen:
 
 | nprobe | baseline recall@10 | tgsl200 recall@10 | baseline p50 | tgsl200 p50 | baseline p95 | tgsl200 p95 |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -62,7 +62,17 @@ First OFAT lever result, `top_graph_search_list_size=200`:
 | 64 | 0.9825 | 0.9825 | 2181.396 ms | 2207.241 ms | 2481.401 ms | 2482.774 ms |
 | 96 | 0.9975 | 0.9975 | 3347.935 ms | 3308.038 ms | 3676.094 ms | 3749.160 ms |
 
-`tgsl200` did not improve route containment or recall at any nprobe. Its candidate counts and local object bytes also matched baseline exactly, and storage stayed at a 79.7 MiB SPIRE index. Practical conclusion for Phase 1: increasing `top_graph_search_list_size` from 96 to 200 is not a significant lever for this 100k local screen.
+`tgsl200` did not improve route containment or recall at any nprobe in the original low-nprobe sweep. Its candidate counts and local object bytes also matched baseline exactly, and storage stayed at a 79.7 MiB SPIRE index. The reviewer correctly flagged that this low-nprobe result is inert by construction for beam analysis because all measured nprobe values are <= the baseline `top_graph_search_list_size=96`.
+
+Corrected high-nprobe `tgsl200` screen:
+
+| nprobe | route-stage containment | recall@10 | p50 latency | p95 latency | candidate rows |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 128 | 1.0000 | 1.0000 | 4351.972 ms | 5125.647 ms | 20,000,000 |
+| 160 | 1.0000 | 1.0000 | 4364.396 ms | 5296.145 ms | 20,000,000 |
+| 200 | 1.0000 | 1.0000 | 4410.790 ms | 4967.462 ms | 20,000,000 |
+
+The corrected `tgsl200` high-nprobe run proves that widening the beam can reach perfect route containment and recall on this 100k local fixture, but it does so by scanning and heap-reranking the full 100k corpus for every query. Routing counters report `effective_nprobe=128`, `beam_width=128`, and no truncation for requested nprobe 128/160/200; all three settings materialize 20.0M candidates across 200 queries. Practical conclusion for Phase 1: `top_graph_search_list_size=200` is useful as a ceiling/diagnostic bound, but not a viable performance tuning lever at this scale unless paired with another change that prevents full-corpus candidate fanout.
 
 Second OFAT lever result, `boundary_replica_count=1`:
 

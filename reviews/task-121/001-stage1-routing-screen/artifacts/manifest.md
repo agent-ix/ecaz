@@ -1,6 +1,6 @@
 # Task 121 Stage 1 Routing Screen Artifact Manifest
 
-- Head SHA: `ccd8ccfd6cf41b68c4a4634b4f29780271211c32`
+- Head SHA: `f63bb98894f3e677c31a7042b26d72939dc42ed4`
 - Task bucket: `reviews/task-121/001-stage1-routing-screen`
 - Lane: `intel-local`
 - Fixture: real corpus 100k, q20 bounded baseline slice, q200/seven-sweep baseline, and q200 OFAT screens
@@ -14,7 +14,7 @@
 
 - `suite-stage1-routing-screen-100k.json`
   - Command: `target/debug/ecaz bench suite audit --config reviews/task-121/001-stage1-routing-screen/artifacts/suite-stage1-routing-screen-100k.json`
-  - Result: audit passed, 58 steps.
+  - Result: audit passed, 59 steps.
   - Notes: storage-format screen is RaBitQ baseline plus TurboQuant only. The suite adds q20 bounded baseline steps and `truth_cache_file` wiring for full q200 pipeline steps.
 
 ## Host Precheck
@@ -169,7 +169,30 @@
     - nprobe 64: 1965/2000 truth items contained, 0.9825
     - nprobe 96: 1995/2000 truth items contained, 0.9975
   - Pipeline counters matched baseline exactly at every nprobe, including candidate_sum and object_bytes_sum.
-  - Interpretation: `top_graph_search_list_size=200` did not improve route containment or recall over the baseline `top_graph_search_list_size=96`; it mostly increased latency. It is not a significant lever in this local 100k screen.
+  - Interpretation: the low-nprobe `top_graph_search_list_size=200` sweep did not improve route containment or recall over the baseline `top_graph_search_list_size=96`, but it is inert for beam analysis because every measured nprobe was <= 96. Treat it as a baseline-equivalence/control result, not as a final beam verdict.
+
+- `tgsl200-hi-pipeline-suite-manifest.json`
+- `tgsl200-hi-pipeline-suite-results.jsonl`
+- `tgsl200-hi-pipeline-suite-run.log`
+- `pipeline-tgsl200-hi.log`
+- `pipeline-tgsl200-hi-funnel.jsonl`
+- `pipeline-tgsl200-hi-stage-containment.jsonl`
+- `pipeline-tgsl200-hi-route-containment.tsv`
+  - Command: `target/debug/ecaz bench suite run --config reviews/task-121/001-stage1-routing-screen/artifacts/suite-stage1-routing-screen-100k.json --database tqvector_bench_task121 --host /home/peter/.pgrx --port 28818 --only pipeline-tgsl200-hi --manifest-output reviews/task-121/001-stage1-routing-screen/artifacts/tgsl200-hi-pipeline-suite-manifest.json --results-output reviews/task-121/001-stage1-routing-screen/artifacts/tgsl200-hi-pipeline-suite-results.jsonl --log-file reviews/task-121/001-stage1-routing-screen/artifacts/tgsl200-hi-pipeline-suite-run.log`
+  - Results shape: 200 queries x three nprobe values (`128,160,200`), 600 funnel rows, 3,600 stage-containment rows.
+  - Key coordinator result lines:
+    - nprobe 128: recall@10 1.0000, p50 4351.972 ms, p95 5125.647 ms, p99 5424.095 ms, max 8445.497 ms
+    - nprobe 160: recall@10 1.0000, p50 4364.396 ms, p95 5296.145 ms, p99 5478.484 ms, max 5553.372 ms
+    - nprobe 200: recall@10 1.0000, p50 4410.790 ms, p95 4967.462 ms, p99 5100.958 ms, max 5313.000 ms
+  - Route-stage containment from `pipeline-tgsl200-hi-route-containment.tsv`:
+    - nprobe 128: 2000/2000 truth items contained, 1.0000
+    - nprobe 160: 2000/2000 truth items contained, 1.0000
+    - nprobe 200: 2000/2000 truth items contained, 1.0000
+  - Pipeline counters:
+    - nprobe 128: effective_nprobe 128, beam_width 128, max_leaf_routes 128, truncation `none`, candidate_sum 20,000,000, heap_rerank_sum 20,000,000, object_bytes_sum 16,307,043,200
+    - nprobe 160: effective_nprobe 128, beam_width 128, max_leaf_routes 128, truncation `none`, candidate_sum 20,000,000, heap_rerank_sum 20,000,000, object_bytes_sum 16,307,043,200
+    - nprobe 200: effective_nprobe 128, beam_width 128, max_leaf_routes 128, truncation `none`, candidate_sum 20,000,000, heap_rerank_sum 20,000,000, object_bytes_sum 16,307,043,200
+  - Interpretation: the corrected high-nprobe `top_graph_search_list_size=200` run reaches perfect route containment and recall, but only by materializing and heap-reranking the full 100k corpus for every query. It is a useful ceiling/diagnostic result, not a practical performance lever for this 100k local screen without another pruning change.
 
 ## boundary_replica_count=1 OFAT
 
