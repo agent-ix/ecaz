@@ -188,6 +188,20 @@ Ninth OFAT lever result, `recursive_fanout=32`:
 
 `recursive_fanout=32` does not confirm a meaningful monotonic fanout trend. It is worse than baseline at nprobe 8/16, slightly above baseline at nprobe 24-64, and still below baseline at nprobe 96; it is also worse than `fanout16` at every point except a tiny +0.0030 at nprobe 48 and tie at 64/96. The recursive-fanout screen should therefore be treated as not significant for the route-loss objective on this 100k RaBitQ fixture. It may be a harmless implementation tuning knob, but it is not a Phase 2 precision winner.
 
+Tenth OFAT lever result, `top_graph_degree=48`:
+
+| nprobe | baseline recall@10 | degree48 recall@10 | baseline p50 | degree48 p50 | baseline candidates | degree48 candidates |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 8 | 0.7250 | 0.7250 | 244.812 ms | 255.509 ms | 1,232,065 | 1,232,065 |
+| 16 | 0.8525 | 0.8525 | 502.956 ms | 507.541 ms | 2,514,557 | 2,514,557 |
+| 24 | 0.9045 | 0.9045 | 785.069 ms | 801.513 ms | 3,816,799 | 3,816,799 |
+| 32 | 0.9310 | 0.9310 | 1055.659 ms | 1064.949 ms | 5,165,224 | 5,165,224 |
+| 48 | 0.9645 | 0.9645 | 1633.655 ms | 1671.661 ms | 7,795,405 | 7,795,405 |
+| 64 | 0.9825 | 0.9825 | 2181.396 ms | 2208.507 ms | 10,420,357 | 10,420,357 |
+| 96 | 0.9975 | 0.9975 | 3347.935 ms | 3360.583 ms | 15,506,227 | 15,506,227 |
+
+`top_graph_degree=48` is a negative standalone lever in this 100k RaBitQ local screen. It exactly reproduces baseline route-stage containment, final recall, and candidate volume at every measured nprobe, while p50 latency is slightly slower in this run. This means the default degree already covers the routing path used by this fixture, and increasing degree alone should not advance to Phase 2.
+
 ## Artifacts
 
 See `artifacts/manifest.md` for artifact metadata and command provenance.
