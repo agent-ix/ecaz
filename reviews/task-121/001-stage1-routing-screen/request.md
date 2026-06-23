@@ -174,6 +174,20 @@ Eighth OFAT lever result, `recursive_fanout`:
 
 `recursive_fanout=16` is a small positive low/mid-nprobe routing lever, not a dominant recall fix. Route-stage containment again equals final recall for every nprobe. The largest gain is +0.0230 recall@10 at nprobe 8, and the effect shrinks to near-neutral by nprobe 48/64 before slightly underperforming baseline at nprobe 96. Candidate rows and index size remain close to baseline, so this is a cheap minor precision tweak worth retaining for the final significant-set decision only if `fanout32` confirms a real trend.
 
+Ninth OFAT lever result, `recursive_fanout=32`:
+
+| nprobe | baseline recall@10 | fanout16 recall@10 | fanout32 recall@10 | fanout32 p50 | fanout32 candidates |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 8 | 0.7250 | 0.7480 | 0.7150 | 252.436 ms | 1,274,555 |
+| 16 | 0.8525 | 0.8605 | 0.8370 | 514.769 ms | 2,567,307 |
+| 24 | 0.9045 | 0.9170 | 0.9110 | 819.709 ms | 3,860,790 |
+| 32 | 0.9310 | 0.9400 | 0.9390 | 1088.363 ms | 5,155,744 |
+| 48 | 0.9645 | 0.9680 | 0.9710 | 1675.766 ms | 7,796,424 |
+| 64 | 0.9825 | 0.9845 | 0.9845 | 2244.150 ms | 10,457,321 |
+| 96 | 0.9975 | 0.9960 | 0.9960 | 3373.078 ms | 15,572,100 |
+
+`recursive_fanout=32` does not confirm a meaningful monotonic fanout trend. It is worse than baseline at nprobe 8/16, slightly above baseline at nprobe 24-64, and still below baseline at nprobe 96; it is also worse than `fanout16` at every point except a tiny +0.0030 at nprobe 48 and tie at 64/96. The recursive-fanout screen should therefore be treated as not significant for the route-loss objective on this 100k RaBitQ fixture. It may be a harmless implementation tuning knob, but it is not a Phase 2 precision winner.
+
 ## Artifacts
 
 See `artifacts/manifest.md` for artifact metadata and command provenance.
