@@ -2725,7 +2725,7 @@ impl SuiteStep {
                     artifacts.push(run_dir.join("topology.local.json"));
                 } else if let Some(run_id) = &step.run_id {
                     artifacts.push(PathBuf::from(format!(
-                        "target/spire-phase13e-aws-local-{run_id}/topology.local.json"
+                        "target/spire-local-multinode-{run_id}/topology.local.json"
                     )));
                 }
                 if let Some(artifact_dir) = &step.artifact_dir {
@@ -4238,11 +4238,12 @@ mod tests {
             .expected_artifacts
             .iter()
             .any(|path| path.ends_with("local-multinode.log")));
-        assert!(step
-            .expected_artifacts
-            .iter()
-            .any(|path| path
-                .ends_with("target/spire-phase13e-aws-local-task121/topology.local.json")));
+        assert!(
+            step.expected_artifacts
+                .iter()
+                .any(|path| path
+                    .ends_with("target/spire-local-multinode-task121/topology.local.json"))
+        );
         assert!(!step
             .expected_artifacts
             .iter()
