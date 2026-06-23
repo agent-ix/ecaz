@@ -102,6 +102,20 @@ Third OFAT lever result, `boundary_replica_count=2`:
 
 `boundary_replica_count=2` improves route containment again, but with diminishing recall gain versus bound1 and another large cost jump. The largest incremental bound2-over-bound1 gains are +0.0365 recall@10 at nprobe 8 and +0.0230 at nprobe 16; by nprobe 96 the gain is only +0.0005. SPIRE index size rises to 235.9 MiB, index build time rises to 54.47s, and candidate rows at nprobe 96 reach 46.7M across 200 queries. Route-stage containment still exactly equals final recall, so the finding remains clear: boundary replicas buy routing coverage, but the cost curve steepens quickly.
 
+Fourth OFAT lever result, `boundary_replica_count=4`:
+
+| nprobe | baseline recall@10 | bound1 recall@10 | bound2 recall@10 | bound4 recall@10 | bound4 p50 | bound4 p95 | bound4 candidates |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 8 | 0.7250 | 0.8365 | 0.8730 | 0.9135 | 1017.592 ms | 1340.120 ms | 6,473,923 |
+| 16 | 0.8525 | 0.9235 | 0.9465 | 0.9655 | 1791.907 ms | 2216.811 ms | 13,094,002 |
+| 24 | 0.9045 | 0.9605 | 0.9745 | 0.9875 | 2368.554 ms | 2880.358 ms | 19,636,910 |
+| 32 | 0.9310 | 0.9735 | 0.9835 | 0.9915 | 2899.310 ms | 3537.148 ms | 26,182,573 |
+| 48 | 0.9645 | 0.9870 | 0.9925 | 0.9955 | 3695.809 ms | 4414.522 ms | 39,338,713 |
+| 64 | 0.9825 | 0.9940 | 0.9970 | 0.9985 | 4242.798 ms | 5001.764 ms | 52,438,585 |
+| 96 | 0.9975 | 0.9995 | 1.0000 | 1.0000 | 4948.452 ms | 5773.607 ms | 77,582,377 |
+
+`boundary_replica_count=4` confirms the knee is before 4 for this local 100k RaBitQ screen. It improves low-nprobe recall versus bound2 (+0.0405 at nprobe 8, +0.0190 at nprobe 16), but bound2 already reaches 1.0000 at nprobe 96 and bound4 adds no high-nprobe recall headroom. The cost is severe: SPIRE index size rises to 392.2 MiB, index bytes/row to 4112.4 B, and nprobe 96 materializes 77.6M candidate rows across 200 queries while heap-reranking 19.3M retained rows. Route-stage containment still exactly equals final recall at every nprobe, so the pipeline remains route-limited; bound4 is evidence for the diminishing-return boundary, not a practical default.
+
 ## Artifacts
 
 See `artifacts/manifest.md` for artifact metadata and command provenance.

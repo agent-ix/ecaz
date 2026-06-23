@@ -1,6 +1,6 @@
 # Task 121 Stage 1 Routing Screen Artifact Manifest
 
-- Head SHA: `f63bb98894f3e677c31a7042b26d72939dc42ed4`
+- Head SHA: `2e21da6e0b3ada3607291838f1547bbf0c1436e0`
 - Task bucket: `reviews/task-121/001-stage1-routing-screen`
 - Lane: `intel-local`
 - Fixture: real corpus 100k, q20 bounded baseline slice, q200/seven-sweep baseline, and q200 OFAT screens
@@ -313,3 +313,63 @@
     - nprobe 64: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 31,551,045, object_bytes_sum 25,721,865,624
     - nprobe 96: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 46,704,408, object_bytes_sum 38,075,629,848
   - Interpretation: `boundary_replica_count=2` continues improving route containment and final recall, reaching 1.0000 recall@10 at nprobe 96, but with diminishing incremental gains over `boundary_replica_count=1` and a steep cost increase. Route-stage containment still exactly matches final recall, so downstream stages remain lossless for this measured local pipeline.
+
+## boundary_replica_count=4 OFAT
+
+- `bound4-load-suite-manifest.json`
+- `bound4-load-suite-results.jsonl`
+- `bound4-load-suite-run.log`
+- `load-bound4.log`
+  - Command: `target/debug/ecaz bench suite run --config reviews/task-121/001-stage1-routing-screen/artifacts/suite-stage1-routing-screen-100k.json --database tqvector_bench_task121 --host /home/peter/.pgrx --port 28818 --only load-bound4 --manifest-output reviews/task-121/001-stage1-routing-screen/artifacts/bound4-load-suite-manifest.json --results-output reviews/task-121/001-stage1-routing-screen/artifacts/bound4-load-suite-results.jsonl --log-file reviews/task-121/001-stage1-routing-screen/artifacts/bound4-load-suite-run.log`
+  - Key result lines:
+    - copied corpus rows: 100000 in 105.23s
+    - encoded corpus rows: 100000 in 40.66s
+    - copied query rows: 1000 in 1.13s
+    - built index `t121_s1_100k_bound4_idx` in 61.94s
+    - completed prefix in 377.89s
+
+- `bound4-storage-suite-manifest.json`
+- `bound4-storage-suite-results.jsonl`
+- `bound4-storage-suite-run.log`
+- `storage-bound4.log`
+  - Command: `target/debug/ecaz bench suite run --config reviews/task-121/001-stage1-routing-screen/artifacts/suite-stage1-routing-screen-100k.json --database tqvector_bench_task121 --host /home/peter/.pgrx --port 28818 --only storage-bound4 --manifest-output reviews/task-121/001-stage1-routing-screen/artifacts/bound4-storage-suite-manifest.json --results-output reviews/task-121/001-stage1-routing-screen/artifacts/bound4-storage-suite-results.jsonl --log-file reviews/task-121/001-stage1-routing-screen/artifacts/bound4-storage-suite-run.log`
+  - Key result lines:
+    - total: 1.9 GiB
+    - indexes: 394.5 MiB
+    - SPIRE index: 392.2 MiB
+    - index bytes/row: 4112.4 B
+
+- `bound4-pipeline-suite-manifest.json`
+- `bound4-pipeline-suite-results.jsonl`
+- `bound4-pipeline-suite-run.log`
+- `pipeline-bound4.log`
+- `pipeline-bound4-funnel.jsonl`
+- `pipeline-bound4-stage-containment.jsonl`
+- `pipeline-bound4-route-containment.tsv`
+  - Command: `target/debug/ecaz bench suite run --config reviews/task-121/001-stage1-routing-screen/artifacts/suite-stage1-routing-screen-100k.json --database tqvector_bench_task121 --host /home/peter/.pgrx --port 28818 --only pipeline-bound4 --manifest-output reviews/task-121/001-stage1-routing-screen/artifacts/bound4-pipeline-suite-manifest.json --results-output reviews/task-121/001-stage1-routing-screen/artifacts/bound4-pipeline-suite-results.jsonl --log-file reviews/task-121/001-stage1-routing-screen/artifacts/bound4-pipeline-suite-run.log`
+  - Results shape: 200 queries x seven nprobe values (`8,16,24,32,48,64,96`), 1,400 funnel rows, 8,400 stage-containment rows.
+  - Key coordinator result lines:
+    - nprobe 8: recall@10 0.9135, p50 1017.592 ms, p95 1340.120 ms, p99 1445.754 ms, max 1795.534 ms
+    - nprobe 16: recall@10 0.9655, p50 1791.907 ms, p95 2216.811 ms, p99 2434.887 ms, max 2483.666 ms
+    - nprobe 24: recall@10 0.9875, p50 2368.554 ms, p95 2880.358 ms, p99 3090.746 ms, max 3359.237 ms
+    - nprobe 32: recall@10 0.9915, p50 2899.310 ms, p95 3537.148 ms, p99 3950.738 ms, max 4116.895 ms
+    - nprobe 48: recall@10 0.9955, p50 3695.809 ms, p95 4414.522 ms, p99 4679.280 ms, max 5138.083 ms
+    - nprobe 64: recall@10 0.9985, p50 4242.798 ms, p95 5001.764 ms, p99 5388.172 ms, max 5471.008 ms
+    - nprobe 96: recall@10 1.0000, p50 4948.452 ms, p95 5773.607 ms, p99 6118.705 ms, max 6313.436 ms
+  - Route-stage containment from `pipeline-bound4-route-containment.tsv`:
+    - nprobe 8: 1827/2000 truth items contained, 0.9135
+    - nprobe 16: 1931/2000 truth items contained, 0.9655
+    - nprobe 24: 1975/2000 truth items contained, 0.9875
+    - nprobe 32: 1983/2000 truth items contained, 0.9915
+    - nprobe 48: 1991/2000 truth items contained, 0.9955
+    - nprobe 64: 1997/2000 truth items contained, 0.9985
+    - nprobe 96: 2000/2000 truth items contained, 1.0000
+  - Pipeline counters:
+    - nprobe 8: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 6,473,923, object_bytes_sum 5,277,738,976
+    - nprobe 16: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 13,094,002, object_bytes_sum 10,674,617,080
+    - nprobe 24: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 19,636,910, object_bytes_sum 16,008,581,936
+    - nprobe 32: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 26,182,573, object_bytes_sum 21,344,792,056
+    - nprobe 48: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 39,338,713, object_bytes_sum 32,070,047,488
+    - nprobe 64: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 52,438,585, object_bytes_sum 42,749,433,016
+    - nprobe 96: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 77,582,377, object_bytes_sum 63,247,390,288
+  - Interpretation: `boundary_replica_count=4` improves low-nprobe route containment again, but the incremental gain over `boundary_replica_count=2` is already small at medium/high nprobe and zero at nprobe 96. It is not a practical default candidate for this 100k local screen because storage and candidate fanout rise sharply; it is useful as the upper point in the reviewer-requested 1/2/4 knee sweep.
