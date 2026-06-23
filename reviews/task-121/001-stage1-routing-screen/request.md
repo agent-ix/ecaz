@@ -216,6 +216,20 @@ Eleventh OFAT lever result, `top_graph_degree=64`:
 
 `top_graph_degree=64` closes the standalone top-graph-degree screen as negative. It exactly matches baseline and `degree48` route-stage containment, final recall, and candidate volume at every nprobe. Latency variation is run noise around the same candidate work. Raising top graph degree alone should not be treated as a route-recall lever for Phase 2.
 
+Twelfth OFAT lever result, `training_sample_rows=50000`:
+
+| nprobe | baseline recall@10 | train50k recall@10 | baseline p50 | train50k p50 | baseline candidates | train50k candidates |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 8 | 0.7250 | 0.7785 | 244.812 ms | 236.996 ms | 1,232,065 | 1,196,419 |
+| 16 | 0.8525 | 0.8810 | 502.956 ms | 506.070 ms | 2,514,557 | 2,493,768 |
+| 24 | 0.9045 | 0.9285 | 785.069 ms | 807.199 ms | 3,816,799 | 3,805,247 |
+| 32 | 0.9310 | 0.9455 | 1055.659 ms | 1071.395 ms | 5,165,224 | 5,108,969 |
+| 48 | 0.9645 | 0.9725 | 1633.655 ms | 1645.488 ms | 7,795,405 | 7,673,584 |
+| 64 | 0.9825 | 0.9830 | 2181.396 ms | 2199.172 ms | 10,420,357 | 10,205,921 |
+| 96 | 0.9975 | 0.9960 | 3347.935 ms | 3291.206 ms | 15,506,227 | 15,240,059 |
+
+`training_sample_rows=50000` is a real but mixed routing lever. It improves route-stage containment and final recall from nprobe 8 through 64, with the largest gains at low nprobe (+0.0535 at nprobe 8, +0.0285 at nprobe 16), and slightly reduces candidate volume versus baseline. It does not dominate the baseline at the high-recall end: nprobe 96 falls from 0.9975 to 0.9960. Keep it in the significant-set discussion as a cheap low/mid-nprobe improvement, pending the `train100k` boundary check.
+
 ## Artifacts
 
 See `artifacts/manifest.md` for artifact metadata and command provenance.

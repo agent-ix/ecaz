@@ -1,6 +1,6 @@
 # Task 121 Stage 1 Routing Screen Artifact Manifest
 
-- Head SHA: `e841d29755dd160221106bc076d9a9d9d857be80`
+- Head SHA: `67523f3589f41ab51261d18617c53105871fde15`
 - Task bucket: `reviews/task-121/001-stage1-routing-screen`
 - Lane: `intel-local`
 - Fixture: real corpus 100k, q20 bounded baseline slice, q200/seven-sweep baseline, and q200 OFAT screens
@@ -806,3 +806,63 @@
     - nprobe 64: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 10,420,357, object_bytes_sum 8,496,202,984
     - nprobe 96: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 15,506,227, object_bytes_sum 12,642,962,128
   - Interpretation: `top_graph_degree=64` also exactly reproduces baseline route-stage containment, final recall, and candidate volume at every measured nprobe. Together with `degree48`, this closes top graph degree as a negative standalone route-recall lever for Phase 2 selection.
+
+## training_sample_rows=50000 OFAT
+
+- `train50k-load-suite-manifest.json`
+- `train50k-load-suite-results.jsonl`
+- `train50k-load-suite-run.log`
+- `load-train50k.log`
+  - Command: `target/debug/ecaz bench suite run --config reviews/task-121/001-stage1-routing-screen/artifacts/suite-stage1-routing-screen-100k.json --database tqvector_bench_task121 --host /home/peter/.pgrx --port 28818 --only load-train50k --manifest-output reviews/task-121/001-stage1-routing-screen/artifacts/train50k-load-suite-manifest.json --results-output reviews/task-121/001-stage1-routing-screen/artifacts/train50k-load-suite-results.jsonl --log-file reviews/task-121/001-stage1-routing-screen/artifacts/train50k-load-suite-run.log`
+  - Key result lines:
+    - copied corpus rows: 100000 in 98.17s
+    - encoded corpus rows: 100000 in 27.93s
+    - copied query rows: 1000 in 996.90ms
+    - built index `t121_s1_100k_train50k_idx` in 13.15s
+    - completed prefix in 294.04s
+
+- `train50k-storage-suite-manifest.json`
+- `train50k-storage-suite-results.jsonl`
+- `train50k-storage-suite-run.log`
+- `storage-train50k.log`
+  - Command: `target/debug/ecaz bench suite run --config reviews/task-121/001-stage1-routing-screen/artifacts/suite-stage1-routing-screen-100k.json --database tqvector_bench_task121 --host /home/peter/.pgrx --port 28818 --only storage-train50k --manifest-output reviews/task-121/001-stage1-routing-screen/artifacts/train50k-storage-suite-manifest.json --results-output reviews/task-121/001-stage1-routing-screen/artifacts/train50k-storage-suite-results.jsonl --log-file reviews/task-121/001-stage1-routing-screen/artifacts/train50k-storage-suite-run.log`
+  - Key result lines:
+    - total: 1.6 GiB
+    - indexes: 81.8 MiB
+    - SPIRE index: 79.6 MiB
+    - index bytes/row: 835.2 B
+
+- `train50k-pipeline-suite-manifest.json`
+- `train50k-pipeline-suite-results.jsonl`
+- `train50k-pipeline-suite-run.log`
+- `pipeline-train50k.log`
+- `pipeline-train50k-funnel.jsonl`
+- `pipeline-train50k-stage-containment.jsonl`
+- `pipeline-train50k-route-containment.tsv`
+  - Command: `target/debug/ecaz bench suite run --config reviews/task-121/001-stage1-routing-screen/artifacts/suite-stage1-routing-screen-100k.json --database tqvector_bench_task121 --host /home/peter/.pgrx --port 28818 --only pipeline-train50k --manifest-output reviews/task-121/001-stage1-routing-screen/artifacts/train50k-pipeline-suite-manifest.json --results-output reviews/task-121/001-stage1-routing-screen/artifacts/train50k-pipeline-suite-results.jsonl --log-file reviews/task-121/001-stage1-routing-screen/artifacts/train50k-pipeline-suite-run.log`
+  - Results shape: 200 queries x seven nprobe values (`8,16,24,32,48,64,96`), 1,400 funnel rows, 8,400 stage-containment rows.
+  - Key coordinator result lines:
+    - nprobe 8: recall@10 0.7785, p50 236.996 ms, p95 288.512 ms, p99 318.218 ms, max 378.751 ms
+    - nprobe 16: recall@10 0.8810, p50 506.070 ms, p95 583.197 ms, p99 636.824 ms, max 651.175 ms
+    - nprobe 24: recall@10 0.9285, p50 807.199 ms, p95 908.381 ms, p99 945.487 ms, max 970.348 ms
+    - nprobe 32: recall@10 0.9455, p50 1071.395 ms, p95 1198.233 ms, p99 1223.283 ms, max 1261.580 ms
+    - nprobe 48: recall@10 0.9725, p50 1645.488 ms, p95 1767.012 ms, p99 1807.163 ms, max 1835.888 ms
+    - nprobe 64: recall@10 0.9830, p50 2199.172 ms, p95 2344.822 ms, p99 2401.996 ms, max 2417.074 ms
+    - nprobe 96: recall@10 0.9960, p50 3291.206 ms, p95 3498.792 ms, p99 3582.280 ms, max 3646.644 ms
+  - Route-stage containment from `pipeline-train50k-route-containment.tsv`:
+    - nprobe 8: 1557/2000 truth items contained, 0.7785
+    - nprobe 16: 1762/2000 truth items contained, 0.8810
+    - nprobe 24: 1857/2000 truth items contained, 0.9285
+    - nprobe 32: 1891/2000 truth items contained, 0.9455
+    - nprobe 48: 1945/2000 truth items contained, 0.9725
+    - nprobe 64: 1966/2000 truth items contained, 0.9830
+    - nprobe 96: 1992/2000 truth items contained, 0.9960
+  - Pipeline counters:
+    - nprobe 8: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 1,196,419, object_bytes_sum 975,506,008
+    - nprobe 16: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 2,493,768, object_bytes_sum 2,033,289,864
+    - nprobe 24: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 3,805,247, object_bytes_sum 3,102,594,152
+    - nprobe 32: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 5,108,969, object_bytes_sum 4,165,575,560
+    - nprobe 48: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 7,673,584, object_bytes_sum 6,256,624,744
+    - nprobe 64: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 10,205,921, object_bytes_sum 8,321,360,096
+    - nprobe 96: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 15,240,059, object_bytes_sum 12,425,937,896
+  - Interpretation: `training_sample_rows=50000` improves route-stage containment and final recall from nprobe 8 through 64 while slightly reducing candidate volume versus baseline. It is not a strict dominance result because nprobe 96 falls slightly below baseline; keep it as a low/mid-nprobe precision candidate pending `training_sample_rows=100000`.
