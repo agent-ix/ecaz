@@ -130,6 +130,20 @@ Fifth OFAT lever result, `nlists=316`:
 
 `nlists=316` is a scan-efficiency/storage lever, not a route-recall fix by itself. It cuts the SPIRE index to 81.8 MiB / 858.1 B per row and cuts candidate fanout by roughly 60% versus baseline at the same nprobe, yielding much lower coordinator latency. But route-stage containment again exactly equals final recall, and recall is worse than baseline from nprobe 16 through 96. Compared with `boundary_replica_count=2`, it is dramatically cheaper but does not rival the recall improvement. Practical Phase 1 conclusion: keep `nlists` in the factorial only if paired with a coverage lever such as boundary replication; do not treat higher `nlists` alone as significant for the route-loss objective.
 
+Sixth OFAT lever result, `nlists=512`:
+
+| nprobe | baseline recall@10 | nlist316 recall@10 | nlist512 recall@10 | nlist512 p50 | nlist512 p95 | nlist512 candidates |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 8 | 0.7250 | 0.7370 | 0.6600 | 82.284 ms | 127.963 ms | 329,783 |
+| 16 | 0.8525 | 0.8230 | 0.7630 | 145.977 ms | 191.681 ms | 652,296 |
+| 24 | 0.9045 | 0.8650 | 0.8125 | 214.549 ms | 269.854 ms | 983,356 |
+| 32 | 0.9310 | 0.8975 | 0.8480 | 289.288 ms | 371.181 ms | 1,319,095 |
+| 48 | 0.9645 | 0.9220 | 0.8850 | 437.427 ms | 526.012 ms | 1,984,266 |
+| 64 | 0.9825 | 0.9445 | 0.9075 | 590.094 ms | 721.693 ms | 2,654,041 |
+| 96 | 0.9975 | 0.9720 | 0.9350 | 890.681 ms | 1156.328 ms | 3,991,647 |
+
+`nlists=512` strengthens the negative result for finer leaves as a standalone routing lever. It reduces the SPIRE candidate rows again versus `nlists=316` and keeps index size close to baseline at 84.0 MiB / 881.1 B per row, but route containment and final recall fall at every measured nprobe. At nprobe 96 it is 6.25 recall points below `nlists=316` and 6.25 points below baseline. This suggests the finer-list setting is behaving primarily as a scan-pruning/cost lever under the fixed routing budget, not as a centroid-quality recovery lever. The remaining `nlists=1024` cell should be treated as a boundary check for this degradation curve, not as likely recall recovery.
+
 ## Artifacts
 
 See `artifacts/manifest.md` for artifact metadata and command provenance.

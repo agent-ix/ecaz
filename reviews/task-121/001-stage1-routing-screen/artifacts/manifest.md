@@ -1,6 +1,6 @@
 # Task 121 Stage 1 Routing Screen Artifact Manifest
 
-- Head SHA: `baae3eb6c445a1f8215728c96e1f17885e14460f`
+- Head SHA: `070f7d35c85d0b26fab5eeaa5d491115f8dfb986`
 - Task bucket: `reviews/task-121/001-stage1-routing-screen`
 - Lane: `intel-local`
 - Fixture: real corpus 100k, q20 bounded baseline slice, q200/seven-sweep baseline, and q200 OFAT screens
@@ -433,3 +433,63 @@
     - nprobe 64: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 4,062,261, object_bytes_sum 3,313,029,384
     - nprobe 96: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 6,137,532, object_bytes_sum 5,005,531,872
   - Interpretation: `nlists=316` reduces candidate fanout, object bytes, and latency substantially, with SPIRE index size close to baseline, but it does not fix route-stage loss. Route-stage containment exactly matches final recall at every nprobe, and recall is below baseline from nprobe 16 through nprobe 96. Treat this as a scan-efficiency/storage lever that may be useful in combination with a coverage lever, not as a standalone significant route-recall lever.
+
+## nlists=512 OFAT
+
+- `nlist512-load-suite-manifest.json`
+- `nlist512-load-suite-results.jsonl`
+- `nlist512-load-suite-run.log`
+- `load-nlist512.log`
+  - Command: `target/debug/ecaz bench suite run --config reviews/task-121/001-stage1-routing-screen/artifacts/suite-stage1-routing-screen-100k.json --database tqvector_bench_task121 --host /home/peter/.pgrx --port 28818 --only load-nlist512 --manifest-output reviews/task-121/001-stage1-routing-screen/artifacts/nlist512-load-suite-manifest.json --results-output reviews/task-121/001-stage1-routing-screen/artifacts/nlist512-load-suite-results.jsonl --log-file reviews/task-121/001-stage1-routing-screen/artifacts/nlist512-load-suite-run.log`
+  - Key result lines:
+    - copied corpus rows: 100000 in 100.96s
+    - encoded corpus rows: 100000 in 39.90s
+    - copied query rows: 1000 in 1.04s
+    - built index `t121_s1_100k_nlist512_idx` in 17.54s
+    - completed prefix in 318.43s
+
+- `nlist512-storage-suite-manifest.json`
+- `nlist512-storage-suite-results.jsonl`
+- `nlist512-storage-suite-run.log`
+- `storage-nlist512.log`
+  - Command: `target/debug/ecaz bench suite run --config reviews/task-121/001-stage1-routing-screen/artifacts/suite-stage1-routing-screen-100k.json --database tqvector_bench_task121 --host /home/peter/.pgrx --port 28818 --only storage-nlist512 --manifest-output reviews/task-121/001-stage1-routing-screen/artifacts/nlist512-storage-suite-manifest.json --results-output reviews/task-121/001-stage1-routing-screen/artifacts/nlist512-storage-suite-results.jsonl --log-file reviews/task-121/001-stage1-routing-screen/artifacts/nlist512-storage-suite-run.log`
+  - Key result lines:
+    - total: 1.6 GiB
+    - indexes: 86.2 MiB
+    - SPIRE index: 84.0 MiB
+    - index bytes/row: 881.1 B
+
+- `nlist512-pipeline-suite-manifest.json`
+- `nlist512-pipeline-suite-results.jsonl`
+- `nlist512-pipeline-suite-run.log`
+- `pipeline-nlist512.log`
+- `pipeline-nlist512-funnel.jsonl`
+- `pipeline-nlist512-stage-containment.jsonl`
+- `pipeline-nlist512-route-containment.tsv`
+  - Command: `target/debug/ecaz bench suite run --config reviews/task-121/001-stage1-routing-screen/artifacts/suite-stage1-routing-screen-100k.json --database tqvector_bench_task121 --host /home/peter/.pgrx --port 28818 --only pipeline-nlist512 --manifest-output reviews/task-121/001-stage1-routing-screen/artifacts/nlist512-pipeline-suite-manifest.json --results-output reviews/task-121/001-stage1-routing-screen/artifacts/nlist512-pipeline-suite-results.jsonl --log-file reviews/task-121/001-stage1-routing-screen/artifacts/nlist512-pipeline-suite-run.log`
+  - Results shape: 200 queries x seven nprobe values (`8,16,24,32,48,64,96`), 1,400 funnel rows, 8,400 stage-containment rows.
+  - Key coordinator result lines:
+    - nprobe 8: recall@10 0.6600, p50 82.284 ms, p95 127.963 ms, p99 160.771 ms, max 187.125 ms
+    - nprobe 16: recall@10 0.7630, p50 145.977 ms, p95 191.681 ms, p99 208.049 ms, max 221.874 ms
+    - nprobe 24: recall@10 0.8125, p50 214.549 ms, p95 269.854 ms, p99 306.690 ms, max 409.914 ms
+    - nprobe 32: recall@10 0.8480, p50 289.288 ms, p95 371.181 ms, p99 428.569 ms, max 468.653 ms
+    - nprobe 48: recall@10 0.8850, p50 437.427 ms, p95 526.012 ms, p99 554.278 ms, max 714.449 ms
+    - nprobe 64: recall@10 0.9075, p50 590.094 ms, p95 721.693 ms, p99 759.129 ms, max 856.643 ms
+    - nprobe 96: recall@10 0.9350, p50 890.681 ms, p95 1156.328 ms, p99 1296.603 ms, max 1609.012 ms
+  - Route-stage containment from `pipeline-nlist512-route-containment.tsv`:
+    - nprobe 8: 1320/2000 truth items contained, 0.6600
+    - nprobe 16: 1526/2000 truth items contained, 0.7630
+    - nprobe 24: 1625/2000 truth items contained, 0.8125
+    - nprobe 32: 1696/2000 truth items contained, 0.8480
+    - nprobe 48: 1770/2000 truth items contained, 0.8850
+    - nprobe 64: 1815/2000 truth items contained, 0.9075
+    - nprobe 96: 1870/2000 truth items contained, 0.9350
+  - Pipeline counters:
+    - nprobe 8: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 329,783, object_bytes_sum 269,022,296
+    - nprobe 16: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 652,296, object_bytes_sum 532,121,472
+    - nprobe 24: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 983,356, object_bytes_sum 802,188,544
+    - nprobe 32: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 1,319,095, object_bytes_sum 1,076,069,656
+    - nprobe 48: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 1,984,266, object_bytes_sum 1,618,690,104
+    - nprobe 64: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 2,654,041, object_bytes_sum 2,165,062,552
+    - nprobe 96: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 3,991,647, object_bytes_sum 3,256,222,152
+  - Interpretation: `nlists=512` further reduces fanout and latency relative to `nlists=316`, but worsens route-stage containment at every nprobe. The result reinforces that higher `nlists` alone is a scan-efficiency/storage lever under the fixed routing budget, not a route-recall recovery lever.
