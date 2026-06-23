@@ -244,6 +244,20 @@ Thirteenth OFAT lever result, `training_sample_rows=100000`:
 
 `training_sample_rows=100000` confirms training sample size is a modest low/mid-nprobe routing lever, but it is weaker than `train50k` on this fixture. Versus baseline it improves recall from nprobe 8 through 48, ties at nprobe 64, and is slightly below baseline at nprobe 96. Versus `train50k` it is lower at every nprobe except a tiny +0.0005 at nprobe 96. It also builds slower than `train50k` (17.26s vs 13.15s). Keep `train50k` as the better candidate if training sample size remains in the Phase 2 discussion; do not promote `train100k` as a better boundary.
 
+Fourteenth OFAT lever result, `storage_format=turboquant`:
+
+| nprobe | baseline recall@10 | turboquant recall@10 | baseline p50 | turboquant p50 | turboquant candidates |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 8 | 0.7250 | 0.7250 | 244.812 ms | 242.683 ms | 1,232,065 |
+| 16 | 0.8525 | 0.8525 | 502.956 ms | 512.312 ms | 2,514,557 |
+| 24 | 0.9045 | 0.9045 | 785.069 ms | 802.866 ms | 3,816,799 |
+| 32 | 0.9310 | 0.9310 | 1055.659 ms | 1078.829 ms | 5,165,224 |
+| 48 | 0.9645 | 0.9645 | 1633.655 ms | 1653.092 ms | 7,795,405 |
+| 64 | 0.9825 | 0.9825 | 2181.396 ms | 2220.939 ms | 10,420,357 |
+| 96 | 0.9975 | 0.9975 | 3347.935 ms | 3333.098 ms | 15,506,227 |
+
+`storage_format=turboquant` is recall-neutral in this local 100k Stage 1 screen. Route-stage containment, final recall, and candidate counts exactly match the RaBitQ baseline at every nprobe. SPIRE index size is also effectively unchanged (79.6 MiB / 834.8 B per row versus 79.7 MiB / 835.8 B baseline). Treat this as a storage-format compatibility/control result, not a route-recall lever for Phase 2.
+
 ## Artifacts
 
 See `artifacts/manifest.md` for artifact metadata and command provenance.

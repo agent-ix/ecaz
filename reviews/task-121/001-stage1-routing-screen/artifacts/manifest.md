@@ -1,6 +1,6 @@
 # Task 121 Stage 1 Routing Screen Artifact Manifest
 
-- Head SHA: `f8169d7039dbce077d02a933b825a60f63a1cfa0`
+- Head SHA: `1e8e6c547ab6b38cb065c45327c317723695905f`
 - Task bucket: `reviews/task-121/001-stage1-routing-screen`
 - Lane: `intel-local`
 - Fixture: real corpus 100k, q20 bounded baseline slice, q200/seven-sweep baseline, and q200 OFAT screens
@@ -926,3 +926,63 @@
     - nprobe 64: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 10,178,967, object_bytes_sum 8,299,395,648
     - nprobe 96: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 15,206,113, object_bytes_sum 12,398,273,728
   - Interpretation: `training_sample_rows=100000` improves route-stage containment and final recall from nprobe 8 through 48, ties baseline at nprobe 64, and is slightly below baseline at nprobe 96. It is weaker than `training_sample_rows=50000` at every measured nprobe except a tiny edge at nprobe 96, and it builds slower. Keep `train50k` as the better training-sample candidate; do not promote `train100k` as a stronger boundary.
+
+## storage_format=turboquant OFAT
+
+- `fmt-turboquant-load-suite-manifest.json`
+- `fmt-turboquant-load-suite-results.jsonl`
+- `fmt-turboquant-load-suite-run.log`
+- `load-fmt-turboquant.log`
+  - Command: `target/debug/ecaz bench suite run --config reviews/task-121/001-stage1-routing-screen/artifacts/suite-stage1-routing-screen-100k.json --database tqvector_bench_task121 --host /home/peter/.pgrx --port 28818 --only load-fmt-turboquant --manifest-output reviews/task-121/001-stage1-routing-screen/artifacts/fmt-turboquant-load-suite-manifest.json --results-output reviews/task-121/001-stage1-routing-screen/artifacts/fmt-turboquant-load-suite-results.jsonl --log-file reviews/task-121/001-stage1-routing-screen/artifacts/fmt-turboquant-load-suite-run.log`
+  - Key result lines:
+    - copied corpus rows: 100000 in 97.56s
+    - encoded corpus rows: 100000 in 27.31s
+    - copied query rows: 1000 in 981.85ms
+    - built index `t121_s1_100k_fmt_tq_idx` in 9.53s
+    - completed prefix in 290.38s
+
+- `fmt-turboquant-storage-suite-manifest.json`
+- `fmt-turboquant-storage-suite-results.jsonl`
+- `fmt-turboquant-storage-suite-run.log`
+- `storage-fmt-turboquant.log`
+  - Command: `target/debug/ecaz bench suite run --config reviews/task-121/001-stage1-routing-screen/artifacts/suite-stage1-routing-screen-100k.json --database tqvector_bench_task121 --host /home/peter/.pgrx --port 28818 --only storage-fmt-turboquant --manifest-output reviews/task-121/001-stage1-routing-screen/artifacts/fmt-turboquant-storage-suite-manifest.json --results-output reviews/task-121/001-stage1-routing-screen/artifacts/fmt-turboquant-storage-suite-results.jsonl --log-file reviews/task-121/001-stage1-routing-screen/artifacts/fmt-turboquant-storage-suite-run.log`
+  - Key result lines:
+    - total: 1.6 GiB
+    - indexes: 81.8 MiB
+    - SPIRE index: 79.6 MiB
+    - index bytes/row: 834.8 B
+
+- `fmt-turboquant-pipeline-suite-manifest.json`
+- `fmt-turboquant-pipeline-suite-results.jsonl`
+- `fmt-turboquant-pipeline-suite-run.log`
+- `pipeline-fmt-turboquant.log`
+- `pipeline-fmt-turboquant-funnel.jsonl`
+- `pipeline-fmt-turboquant-stage-containment.jsonl`
+- `pipeline-fmt-turboquant-route-containment.tsv`
+  - Command: `target/debug/ecaz bench suite run --config reviews/task-121/001-stage1-routing-screen/artifacts/suite-stage1-routing-screen-100k.json --database tqvector_bench_task121 --host /home/peter/.pgrx --port 28818 --only pipeline-fmt-turboquant --manifest-output reviews/task-121/001-stage1-routing-screen/artifacts/fmt-turboquant-pipeline-suite-manifest.json --results-output reviews/task-121/001-stage1-routing-screen/artifacts/fmt-turboquant-pipeline-suite-results.jsonl --log-file reviews/task-121/001-stage1-routing-screen/artifacts/fmt-turboquant-pipeline-suite-run.log`
+  - Results shape: 200 queries x seven nprobe values (`8,16,24,32,48,64,96`), 1,400 funnel rows, 8,400 stage-containment rows.
+  - Key coordinator result lines:
+    - nprobe 8: recall@10 0.7250, p50 242.683 ms, p95 297.598 ms, p99 320.605 ms, max 475.231 ms
+    - nprobe 16: recall@10 0.8525, p50 512.312 ms, p95 610.085 ms, p99 630.596 ms, max 639.629 ms
+    - nprobe 24: recall@10 0.9045, p50 802.866 ms, p95 916.862 ms, p99 933.799 ms, max 951.949 ms
+    - nprobe 32: recall@10 0.9310, p50 1078.829 ms, p95 1185.537 ms, p99 1265.423 ms, max 1309.834 ms
+    - nprobe 48: recall@10 0.9645, p50 1653.092 ms, p95 1797.057 ms, p99 1862.733 ms, max 1893.208 ms
+    - nprobe 64: recall@10 0.9825, p50 2220.939 ms, p95 2379.939 ms, p99 2476.357 ms, max 2565.707 ms
+    - nprobe 96: recall@10 0.9975, p50 3333.098 ms, p95 3545.230 ms, p99 3610.670 ms, max 3778.021 ms
+  - Route-stage containment from `pipeline-fmt-turboquant-route-containment.tsv`:
+    - nprobe 8: 1450/2000 truth items contained, 0.7250
+    - nprobe 16: 1705/2000 truth items contained, 0.8525
+    - nprobe 24: 1809/2000 truth items contained, 0.9045
+    - nprobe 32: 1862/2000 truth items contained, 0.9310
+    - nprobe 48: 1929/2000 truth items contained, 0.9645
+    - nprobe 64: 1965/2000 truth items contained, 0.9825
+    - nprobe 96: 1995/2000 truth items contained, 0.9975
+  - Pipeline counters:
+    - nprobe 8: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 1,232,065, object_bytes_sum 989,792,332
+    - nprobe 16: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 2,514,557, object_bytes_sum 2,020,081,676
+    - nprobe 24: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 3,816,799, object_bytes_sum 3,066,232,132
+    - nprobe 32: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 5,165,224, object_bytes_sum 4,149,477,472
+    - nprobe 48: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 7,795,405, object_bytes_sum 6,262,417,444
+    - nprobe 64: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 10,420,357, object_bytes_sum 8,371,158,700
+    - nprobe 96: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 15,506,227, object_bytes_sum 12,456,887,404
+  - Interpretation: `storage_format=turboquant` exactly matches the RaBitQ baseline route-stage containment, final recall, and candidate volume at every measured nprobe. SPIRE index size is effectively unchanged at 79.6 MiB / 834.8 B per row. This is a recall-neutral storage-format compatibility/control result, not a route-recall lever for Phase 2 selection.
