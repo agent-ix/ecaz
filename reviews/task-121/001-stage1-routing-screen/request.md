@@ -144,6 +144,20 @@ Sixth OFAT lever result, `nlists=512`:
 
 `nlists=512` strengthens the negative result for finer leaves as a standalone routing lever. It reduces the SPIRE candidate rows again versus `nlists=316` and keeps index size close to baseline at 84.0 MiB / 881.1 B per row, but route containment and final recall fall at every measured nprobe. At nprobe 96 it is 6.25 recall points below `nlists=316` and 6.25 points below baseline. This suggests the finer-list setting is behaving primarily as a scan-pruning/cost lever under the fixed routing budget, not as a centroid-quality recovery lever. The remaining `nlists=1024` cell should be treated as a boundary check for this degradation curve, not as likely recall recovery.
 
+Seventh OFAT lever result, `nlists=1024`:
+
+| nprobe | baseline recall@10 | nlist316 recall@10 | nlist512 recall@10 | nlist1024 recall@10 | nlist1024 p50 | nlist1024 candidates |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 8 | 0.7250 | 0.7370 | 0.6600 | 0.6410 | 83.488 ms | 196,031 |
+| 16 | 0.8525 | 0.8230 | 0.7630 | 0.7190 | 118.638 ms | 390,113 |
+| 24 | 0.9045 | 0.8650 | 0.8125 | 0.7725 | 161.101 ms | 575,635 |
+| 32 | 0.9310 | 0.8975 | 0.8480 | 0.8110 | 191.812 ms | 756,686 |
+| 48 | 0.9645 | 0.9220 | 0.8850 | 0.8635 | 272.876 ms | 1,113,024 |
+| 64 | 0.9825 | 0.9445 | 0.9075 | 0.8910 | 364.600 ms | 1,474,921 |
+| 96 | 0.9975 | 0.9720 | 0.9350 | 0.9215 | 517.387 ms | 2,177,568 |
+
+`nlists=1024` completes the standalone `nlists` boundary check and confirms the degradation curve. Finer leaves monotonically reduce candidate rows and coordinator latency under the fixed nprobe budget, but route-stage containment and final recall continue to fall. At nprobe 96, `nlists=1024` is 7.60 recall points below baseline and 5.05 points below `nlists=316`. This closes the standalone `nlists` screen as a negative recall lever for Task 121: useful as a cost lever to pair with boundary replication or another coverage lever, but not significant by itself for the route-loss objective.
+
 ## Artifacts
 
 See `artifacts/manifest.md` for artifact metadata and command provenance.

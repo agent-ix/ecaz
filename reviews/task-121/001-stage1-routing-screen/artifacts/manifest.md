@@ -1,6 +1,6 @@
 # Task 121 Stage 1 Routing Screen Artifact Manifest
 
-- Head SHA: `070f7d35c85d0b26fab5eeaa5d491115f8dfb986`
+- Head SHA: `283a6f7a5d9fe5659a803cdc69f2382397ac7426`
 - Task bucket: `reviews/task-121/001-stage1-routing-screen`
 - Lane: `intel-local`
 - Fixture: real corpus 100k, q20 bounded baseline slice, q200/seven-sweep baseline, and q200 OFAT screens
@@ -493,3 +493,63 @@
     - nprobe 64: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 2,654,041, object_bytes_sum 2,165,062,552
     - nprobe 96: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 3,991,647, object_bytes_sum 3,256,222,152
   - Interpretation: `nlists=512` further reduces fanout and latency relative to `nlists=316`, but worsens route-stage containment at every nprobe. The result reinforces that higher `nlists` alone is a scan-efficiency/storage lever under the fixed routing budget, not a route-recall recovery lever.
+
+## nlists=1024 OFAT
+
+- `nlist1024-load-suite-manifest.json`
+- `nlist1024-load-suite-results.jsonl`
+- `nlist1024-load-suite-run.log`
+- `load-nlist1024.log`
+  - Command: `target/debug/ecaz bench suite run --config reviews/task-121/001-stage1-routing-screen/artifacts/suite-stage1-routing-screen-100k.json --database tqvector_bench_task121 --host /home/peter/.pgrx --port 28818 --only load-nlist1024 --manifest-output reviews/task-121/001-stage1-routing-screen/artifacts/nlist1024-load-suite-manifest.json --results-output reviews/task-121/001-stage1-routing-screen/artifacts/nlist1024-load-suite-results.jsonl --log-file reviews/task-121/001-stage1-routing-screen/artifacts/nlist1024-load-suite-run.log`
+  - Key result lines:
+    - copied corpus rows: 100000 in 101.78s
+    - encoded corpus rows: 100000 in 38.29s
+    - copied query rows: 1000 in 1.03s
+    - built index `t121_s1_100k_nlist1024_idx` in 24.97s
+    - completed prefix in 327.87s
+
+- `nlist1024-storage-suite-manifest.json`
+- `nlist1024-storage-suite-results.jsonl`
+- `nlist1024-storage-suite-run.log`
+- `storage-nlist1024.log`
+  - Command: `target/debug/ecaz bench suite run --config reviews/task-121/001-stage1-routing-screen/artifacts/suite-stage1-routing-screen-100k.json --database tqvector_bench_task121 --host /home/peter/.pgrx --port 28818 --only storage-nlist1024 --manifest-output reviews/task-121/001-stage1-routing-screen/artifacts/nlist1024-storage-suite-manifest.json --results-output reviews/task-121/001-stage1-routing-screen/artifacts/nlist1024-storage-suite-results.jsonl --log-file reviews/task-121/001-stage1-routing-screen/artifacts/nlist1024-storage-suite-run.log`
+  - Key result lines:
+    - total: 1.6 GiB
+    - indexes: 92.0 MiB
+    - SPIRE index: 89.8 MiB
+    - index bytes/row: 941.2 B
+
+- `nlist1024-pipeline-suite-manifest.json`
+- `nlist1024-pipeline-suite-results.jsonl`
+- `nlist1024-pipeline-suite-run.log`
+- `pipeline-nlist1024.log`
+- `pipeline-nlist1024-funnel.jsonl`
+- `pipeline-nlist1024-stage-containment.jsonl`
+- `pipeline-nlist1024-route-containment.tsv`
+  - Command: `target/debug/ecaz bench suite run --config reviews/task-121/001-stage1-routing-screen/artifacts/suite-stage1-routing-screen-100k.json --database tqvector_bench_task121 --host /home/peter/.pgrx --port 28818 --only pipeline-nlist1024 --manifest-output reviews/task-121/001-stage1-routing-screen/artifacts/nlist1024-pipeline-suite-manifest.json --results-output reviews/task-121/001-stage1-routing-screen/artifacts/nlist1024-pipeline-suite-results.jsonl --log-file reviews/task-121/001-stage1-routing-screen/artifacts/nlist1024-pipeline-suite-run.log`
+  - Results shape: 200 queries x seven nprobe values (`8,16,24,32,48,64,96`), 1,400 funnel rows, 8,400 stage-containment rows.
+  - Key coordinator result lines:
+    - nprobe 8: recall@10 0.6410, p50 83.488 ms, p95 114.339 ms, p99 127.886 ms, max 136.624 ms
+    - nprobe 16: recall@10 0.7190, p50 118.638 ms, p95 153.161 ms, p99 173.645 ms, max 180.503 ms
+    - nprobe 24: recall@10 0.7725, p50 161.101 ms, p95 200.097 ms, p99 250.597 ms, max 271.928 ms
+    - nprobe 32: recall@10 0.8110, p50 191.812 ms, p95 235.784 ms, p99 301.654 ms, max 321.914 ms
+    - nprobe 48: recall@10 0.8635, p50 272.876 ms, p95 340.202 ms, p99 370.248 ms, max 633.631 ms
+    - nprobe 64: recall@10 0.8910, p50 364.600 ms, p95 456.640 ms, p99 487.897 ms, max 551.777 ms
+    - nprobe 96: recall@10 0.9215, p50 517.387 ms, p95 647.998 ms, p99 704.917 ms, max 852.538 ms
+  - Route-stage containment from `pipeline-nlist1024-route-containment.tsv`:
+    - nprobe 8: 1282/2000 truth items contained, 0.6410
+    - nprobe 16: 1438/2000 truth items contained, 0.7190
+    - nprobe 24: 1545/2000 truth items contained, 0.7725
+    - nprobe 32: 1622/2000 truth items contained, 0.8110
+    - nprobe 48: 1727/2000 truth items contained, 0.8635
+    - nprobe 64: 1782/2000 truth items contained, 0.8910
+    - nprobe 96: 1843/2000 truth items contained, 0.9215
+  - Pipeline counters:
+    - nprobe 8: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 196,031, object_bytes_sum 159,999,200
+    - nprobe 16: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 390,113, object_bytes_sum 318,402,728
+    - nprobe 24: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 575,635, object_bytes_sum 469,828,576
+    - nprobe 32: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 756,686, object_bytes_sum 617,608,736
+    - nprobe 48: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 1,113,024, object_bytes_sum 908,469,624
+    - nprobe 64: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 1,474,921, object_bytes_sum 1,203,862,648
+    - nprobe 96: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 2,177,568, object_bytes_sum 1,777,407,696
+  - Interpretation: `nlists=1024` completes the standalone `nlists` boundary check. It reduces fanout and latency again, but route-stage containment and final recall continue to degrade under the fixed routing budget. Treat higher `nlists` as a cost lever that may need a coverage lever paired with it, not as a standalone route-recall lever.
