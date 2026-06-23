@@ -1,6 +1,6 @@
 # Task 121 Stage 1 Routing Screen Artifact Manifest
 
-- Head SHA: `2e21da6e0b3ada3607291838f1547bbf0c1436e0`
+- Head SHA: `baae3eb6c445a1f8215728c96e1f17885e14460f`
 - Task bucket: `reviews/task-121/001-stage1-routing-screen`
 - Lane: `intel-local`
 - Fixture: real corpus 100k, q20 bounded baseline slice, q200/seven-sweep baseline, and q200 OFAT screens
@@ -373,3 +373,63 @@
     - nprobe 64: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 52,438,585, object_bytes_sum 42,749,433,016
     - nprobe 96: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 77,582,377, object_bytes_sum 63,247,390,288
   - Interpretation: `boundary_replica_count=4` improves low-nprobe route containment again, but the incremental gain over `boundary_replica_count=2` is already small at medium/high nprobe and zero at nprobe 96. It is not a practical default candidate for this 100k local screen because storage and candidate fanout rise sharply; it is useful as the upper point in the reviewer-requested 1/2/4 knee sweep.
+
+## nlists=316 OFAT
+
+- `nlist316-load-suite-manifest.json`
+- `nlist316-load-suite-results.jsonl`
+- `nlist316-load-suite-run.log`
+- `load-nlist316.log`
+  - Command: `target/debug/ecaz bench suite run --config reviews/task-121/001-stage1-routing-screen/artifacts/suite-stage1-routing-screen-100k.json --database tqvector_bench_task121 --host /home/peter/.pgrx --port 28818 --only load-nlist316 --manifest-output reviews/task-121/001-stage1-routing-screen/artifacts/nlist316-load-suite-manifest.json --results-output reviews/task-121/001-stage1-routing-screen/artifacts/nlist316-load-suite-results.jsonl --log-file reviews/task-121/001-stage1-routing-screen/artifacts/nlist316-load-suite-run.log`
+  - Key result lines:
+    - copied corpus rows: 100000 in 99.38s
+    - encoded corpus rows: 100000 in 41.45s
+    - copied query rows: 1000 in 1.01s
+    - built index `t121_s1_100k_nlist316_idx` in 19.93s
+    - completed prefix in 330.20s
+
+- `nlist316-storage-suite-manifest.json`
+- `nlist316-storage-suite-results.jsonl`
+- `nlist316-storage-suite-run.log`
+- `storage-nlist316.log`
+  - Command: `target/debug/ecaz bench suite run --config reviews/task-121/001-stage1-routing-screen/artifacts/suite-stage1-routing-screen-100k.json --database tqvector_bench_task121 --host /home/peter/.pgrx --port 28818 --only storage-nlist316 --manifest-output reviews/task-121/001-stage1-routing-screen/artifacts/nlist316-storage-suite-manifest.json --results-output reviews/task-121/001-stage1-routing-screen/artifacts/nlist316-storage-suite-results.jsonl --log-file reviews/task-121/001-stage1-routing-screen/artifacts/nlist316-storage-suite-run.log`
+  - Key result lines:
+    - total: 1.6 GiB
+    - indexes: 84.0 MiB
+    - SPIRE index: 81.8 MiB
+    - index bytes/row: 858.1 B
+
+- `nlist316-pipeline-suite-manifest.json`
+- `nlist316-pipeline-suite-results.jsonl`
+- `nlist316-pipeline-suite-run.log`
+- `pipeline-nlist316.log`
+- `pipeline-nlist316-funnel.jsonl`
+- `pipeline-nlist316-stage-containment.jsonl`
+- `pipeline-nlist316-route-containment.tsv`
+  - Command: `target/debug/ecaz bench suite run --config reviews/task-121/001-stage1-routing-screen/artifacts/suite-stage1-routing-screen-100k.json --database tqvector_bench_task121 --host /home/peter/.pgrx --port 28818 --only pipeline-nlist316 --manifest-output reviews/task-121/001-stage1-routing-screen/artifacts/nlist316-pipeline-suite-manifest.json --results-output reviews/task-121/001-stage1-routing-screen/artifacts/nlist316-pipeline-suite-results.jsonl --log-file reviews/task-121/001-stage1-routing-screen/artifacts/nlist316-pipeline-suite-run.log`
+  - Results shape: 200 queries x seven nprobe values (`8,16,24,32,48,64,96`), 1,400 funnel rows, 8,400 stage-containment rows.
+  - Key coordinator result lines:
+    - nprobe 8: recall@10 0.7370, p50 110.945 ms, p95 160.774 ms, p99 189.428 ms, max 215.405 ms
+    - nprobe 16: recall@10 0.8230, p50 207.869 ms, p95 263.543 ms, p99 292.891 ms, max 322.823 ms
+    - nprobe 24: recall@10 0.8650, p50 321.769 ms, p95 394.223 ms, p99 479.944 ms, max 517.561 ms
+    - nprobe 32: recall@10 0.8975, p50 435.530 ms, p95 531.639 ms, p99 668.909 ms, max 708.045 ms
+    - nprobe 48: recall@10 0.9220, p50 654.295 ms, p95 779.757 ms, p99 888.993 ms, max 927.761 ms
+    - nprobe 64: recall@10 0.9445, p50 876.194 ms, p95 1047.150 ms, p99 1212.010 ms, max 1348.545 ms
+    - nprobe 96: recall@10 0.9720, p50 1351.068 ms, p95 1568.207 ms, p99 1810.746 ms, max 1868.750 ms
+  - Route-stage containment from `pipeline-nlist316-route-containment.tsv`:
+    - nprobe 8: 1474/2000 truth items contained, 0.7370
+    - nprobe 16: 1646/2000 truth items contained, 0.8230
+    - nprobe 24: 1730/2000 truth items contained, 0.8650
+    - nprobe 32: 1795/2000 truth items contained, 0.8975
+    - nprobe 48: 1844/2000 truth items contained, 0.9220
+    - nprobe 64: 1889/2000 truth items contained, 0.9445
+    - nprobe 96: 1944/2000 truth items contained, 0.9720
+  - Pipeline counters:
+    - nprobe 8: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 487,390, object_bytes_sum 397,501,240
+    - nprobe 16: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 999,460, object_bytes_sum 815,123,560
+    - nprobe 24: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 1,500,025, object_bytes_sum 1,223,368,264
+    - nprobe 32: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 2,009,214, object_bytes_sum 1,638,645,528
+    - nprobe 48: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 3,051,404, object_bytes_sum 2,488,608,128
+    - nprobe 64: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 4,062,261, object_bytes_sum 3,313,029,384
+    - nprobe 96: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 6,137,532, object_bytes_sum 5,005,531,872
+  - Interpretation: `nlists=316` reduces candidate fanout, object bytes, and latency substantially, with SPIRE index size close to baseline, but it does not fix route-stage loss. Route-stage containment exactly matches final recall at every nprobe, and recall is below baseline from nprobe 16 through nprobe 96. Treat this as a scan-efficiency/storage lever that may be useful in combination with a coverage lever, not as a standalone significant route-recall lever.

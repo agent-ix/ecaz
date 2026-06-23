@@ -116,6 +116,20 @@ Fourth OFAT lever result, `boundary_replica_count=4`:
 
 `boundary_replica_count=4` confirms the knee is before 4 for this local 100k RaBitQ screen. It improves low-nprobe recall versus bound2 (+0.0405 at nprobe 8, +0.0190 at nprobe 16), but bound2 already reaches 1.0000 at nprobe 96 and bound4 adds no high-nprobe recall headroom. The cost is severe: SPIRE index size rises to 392.2 MiB, index bytes/row to 4112.4 B, and nprobe 96 materializes 77.6M candidate rows across 200 queries while heap-reranking 19.3M retained rows. Route-stage containment still exactly equals final recall at every nprobe, so the pipeline remains route-limited; bound4 is evidence for the diminishing-return boundary, not a practical default.
 
+Fifth OFAT lever result, `nlists=316`:
+
+| nprobe | baseline recall@10 | bound2 recall@10 | nlist316 recall@10 | baseline p50 | nlist316 p50 | baseline candidates | nlist316 candidates |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 8 | 0.7250 | 0.8730 | 0.7370 | 244.812 ms | 110.945 ms | 1,232,065 | 487,390 |
+| 16 | 0.8525 | 0.9465 | 0.8230 | 502.956 ms | 207.869 ms | 2,514,557 | 999,460 |
+| 24 | 0.9045 | 0.9745 | 0.8650 | 785.069 ms | 321.769 ms | 3,816,799 | 1,500,025 |
+| 32 | 0.9310 | 0.9835 | 0.8975 | 1055.659 ms | 435.530 ms | 5,165,224 | 2,009,214 |
+| 48 | 0.9645 | 0.9925 | 0.9220 | 1633.655 ms | 654.295 ms | 7,795,405 | 3,051,404 |
+| 64 | 0.9825 | 0.9970 | 0.9445 | 2181.396 ms | 876.194 ms | 10,420,357 | 4,062,261 |
+| 96 | 0.9975 | 1.0000 | 0.9720 | 3347.935 ms | 1351.068 ms | 15,506,227 | 6,137,532 |
+
+`nlists=316` is a scan-efficiency/storage lever, not a route-recall fix by itself. It cuts the SPIRE index to 81.8 MiB / 858.1 B per row and cuts candidate fanout by roughly 60% versus baseline at the same nprobe, yielding much lower coordinator latency. But route-stage containment again exactly equals final recall, and recall is worse than baseline from nprobe 16 through 96. Compared with `boundary_replica_count=2`, it is dramatically cheaper but does not rival the recall improvement. Practical Phase 1 conclusion: keep `nlists` in the factorial only if paired with a coverage lever such as boundary replication; do not treat higher `nlists` alone as significant for the route-loss objective.
+
 ## Artifacts
 
 See `artifacts/manifest.md` for artifact metadata and command provenance.
