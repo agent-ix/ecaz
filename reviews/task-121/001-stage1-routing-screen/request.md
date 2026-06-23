@@ -202,6 +202,20 @@ Tenth OFAT lever result, `top_graph_degree=48`:
 
 `top_graph_degree=48` is a negative standalone lever in this 100k RaBitQ local screen. It exactly reproduces baseline route-stage containment, final recall, and candidate volume at every measured nprobe, while p50 latency is slightly slower in this run. This means the default degree already covers the routing path used by this fixture, and increasing degree alone should not advance to Phase 2.
 
+Eleventh OFAT lever result, `top_graph_degree=64`:
+
+| nprobe | baseline recall@10 | degree48 recall@10 | degree64 recall@10 | degree64 p50 | degree64 candidates |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 8 | 0.7250 | 0.7250 | 0.7250 | 245.286 ms | 1,232,065 |
+| 16 | 0.8525 | 0.8525 | 0.8525 | 526.218 ms | 2,514,557 |
+| 24 | 0.9045 | 0.9045 | 0.9045 | 794.859 ms | 3,816,799 |
+| 32 | 0.9310 | 0.9310 | 0.9310 | 1084.428 ms | 5,165,224 |
+| 48 | 0.9645 | 0.9645 | 0.9645 | 1658.276 ms | 7,795,405 |
+| 64 | 0.9825 | 0.9825 | 0.9825 | 2223.015 ms | 10,420,357 |
+| 96 | 0.9975 | 0.9975 | 0.9975 | 3333.675 ms | 15,506,227 |
+
+`top_graph_degree=64` closes the standalone top-graph-degree screen as negative. It exactly matches baseline and `degree48` route-stage containment, final recall, and candidate volume at every nprobe. Latency variation is run noise around the same candidate work. Raising top graph degree alone should not be treated as a route-recall lever for Phase 2.
+
 ## Artifacts
 
 See `artifacts/manifest.md` for artifact metadata and command provenance.

@@ -1,6 +1,6 @@
 # Task 121 Stage 1 Routing Screen Artifact Manifest
 
-- Head SHA: `82107fe2a79e1bb1924f0bba22391f635ca50a72`
+- Head SHA: `e841d29755dd160221106bc076d9a9d9d857be80`
 - Task bucket: `reviews/task-121/001-stage1-routing-screen`
 - Lane: `intel-local`
 - Fixture: real corpus 100k, q20 bounded baseline slice, q200/seven-sweep baseline, and q200 OFAT screens
@@ -746,3 +746,63 @@
     - nprobe 64: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 10,420,357, object_bytes_sum 8,496,202,984
     - nprobe 96: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 15,506,227, object_bytes_sum 12,642,962,128
   - Interpretation: `top_graph_degree=48` exactly reproduces baseline route-stage containment, final recall, and candidate volume at every measured nprobe, with slightly slower p50 latency in this run. It is not a standalone route-recall lever for Phase 2 selection.
+
+## top_graph_degree=64 OFAT
+
+- `degree64-load-suite-manifest.json`
+- `degree64-load-suite-results.jsonl`
+- `degree64-load-suite-run.log`
+- `load-degree64.log`
+  - Command: `target/debug/ecaz bench suite run --config reviews/task-121/001-stage1-routing-screen/artifacts/suite-stage1-routing-screen-100k.json --database tqvector_bench_task121 --host /home/peter/.pgrx --port 28818 --only load-degree64 --manifest-output reviews/task-121/001-stage1-routing-screen/artifacts/degree64-load-suite-manifest.json --results-output reviews/task-121/001-stage1-routing-screen/artifacts/degree64-load-suite-results.jsonl --log-file reviews/task-121/001-stage1-routing-screen/artifacts/degree64-load-suite-run.log`
+  - Key result lines:
+    - copied corpus rows: 100000 in 95.41s
+    - encoded corpus rows: 100000 in 28.75s
+    - copied query rows: 1000 in 981.28ms
+    - built index `t121_s1_100k_degree64_idx` in 9.53s
+    - completed prefix in 290.20s
+
+- `degree64-storage-suite-manifest.json`
+- `degree64-storage-suite-results.jsonl`
+- `degree64-storage-suite-run.log`
+- `storage-degree64.log`
+  - Command: `target/debug/ecaz bench suite run --config reviews/task-121/001-stage1-routing-screen/artifacts/suite-stage1-routing-screen-100k.json --database tqvector_bench_task121 --host /home/peter/.pgrx --port 28818 --only storage-degree64 --manifest-output reviews/task-121/001-stage1-routing-screen/artifacts/degree64-storage-suite-manifest.json --results-output reviews/task-121/001-stage1-routing-screen/artifacts/degree64-storage-suite-results.jsonl --log-file reviews/task-121/001-stage1-routing-screen/artifacts/degree64-storage-suite-run.log`
+  - Key result lines:
+    - total: 1.6 GiB
+    - indexes: 81.9 MiB
+    - SPIRE index: 79.7 MiB
+    - index bytes/row: 835.8 B
+
+- `degree64-pipeline-suite-manifest.json`
+- `degree64-pipeline-suite-results.jsonl`
+- `degree64-pipeline-suite-run.log`
+- `pipeline-degree64.log`
+- `pipeline-degree64-funnel.jsonl`
+- `pipeline-degree64-stage-containment.jsonl`
+- `pipeline-degree64-route-containment.tsv`
+  - Command: `target/debug/ecaz bench suite run --config reviews/task-121/001-stage1-routing-screen/artifacts/suite-stage1-routing-screen-100k.json --database tqvector_bench_task121 --host /home/peter/.pgrx --port 28818 --only pipeline-degree64 --manifest-output reviews/task-121/001-stage1-routing-screen/artifacts/degree64-pipeline-suite-manifest.json --results-output reviews/task-121/001-stage1-routing-screen/artifacts/degree64-pipeline-suite-results.jsonl --log-file reviews/task-121/001-stage1-routing-screen/artifacts/degree64-pipeline-suite-run.log`
+  - Results shape: 200 queries x seven nprobe values (`8,16,24,32,48,64,96`), 1,400 funnel rows, 8,400 stage-containment rows.
+  - Key coordinator result lines:
+    - nprobe 8: recall@10 0.7250, p50 245.286 ms, p95 301.690 ms, p99 339.228 ms, max 356.615 ms
+    - nprobe 16: recall@10 0.8525, p50 526.218 ms, p95 620.230 ms, p99 658.075 ms, max 678.630 ms
+    - nprobe 24: recall@10 0.9045, p50 794.859 ms, p95 899.380 ms, p99 912.173 ms, max 934.343 ms
+    - nprobe 32: recall@10 0.9310, p50 1084.428 ms, p95 1187.098 ms, p99 1247.314 ms, max 1336.282 ms
+    - nprobe 48: recall@10 0.9645, p50 1658.276 ms, p95 1793.259 ms, p99 1894.651 ms, max 1979.919 ms
+    - nprobe 64: recall@10 0.9825, p50 2223.015 ms, p95 2371.674 ms, p99 2419.963 ms, max 2425.511 ms
+    - nprobe 96: recall@10 0.9975, p50 3333.675 ms, p95 3562.202 ms, p99 3651.130 ms, max 3686.262 ms
+  - Route-stage containment from `pipeline-degree64-route-containment.tsv`:
+    - nprobe 8: 1450/2000 truth items contained, 0.7250
+    - nprobe 16: 1705/2000 truth items contained, 0.8525
+    - nprobe 24: 1809/2000 truth items contained, 0.9045
+    - nprobe 32: 1862/2000 truth items contained, 0.9310
+    - nprobe 48: 1929/2000 truth items contained, 0.9645
+    - nprobe 64: 1965/2000 truth items contained, 0.9825
+    - nprobe 96: 1995/2000 truth items contained, 0.9975
+  - Pipeline counters:
+    - nprobe 8: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 1,232,065, object_bytes_sum 1,004,577,112
+    - nprobe 16: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 2,514,557, object_bytes_sum 2,050,256,360
+    - nprobe 24: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 3,816,799, object_bytes_sum 3,112,033,720
+    - nprobe 32: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 5,165,224, object_bytes_sum 4,211,460,160
+    - nprobe 48: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 7,795,405, object_bytes_sum 6,355,962,304
+    - nprobe 64: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 10,420,357, object_bytes_sum 8,496,202,984
+    - nprobe 96: routing `truncated`, `next_blocker=routing_budget`, candidate_sum 15,506,227, object_bytes_sum 12,642,962,128
+  - Interpretation: `top_graph_degree=64` also exactly reproduces baseline route-stage containment, final recall, and candidate volume at every measured nprobe. Together with `degree48`, this closes top graph degree as a negative standalone route-recall lever for Phase 2 selection.
