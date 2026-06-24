@@ -1,6 +1,8 @@
 # Task 118: HNSW Quantized Recall Attribution
 
-Status: **proposed**.
+Status: **complete** (2026-06-24; closeout
+`reviews/task-118/006-final-attribution-matrix/`, M5 release evidence commit
+`af1845658` plus score-correlation baseline fix `e94ba88d1`).
 Owner: coder (to be assigned). One coder, one branch.
 Priority: P0 for HNSW quantized-format decisions.
 

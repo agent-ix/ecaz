@@ -20,6 +20,13 @@ Suite config:
 
 - `crates/ecaz-cli/suites/task118-hnsw-quantized-recall-attribution.json`
 
+This bespoke suite is intentional for Task 118 because the canonical current
+lanes do not include the `hnsw-frontier` and `hnsw-score-correlation`
+attribution steps. The closeout recall, latency, and storage rows are still
+normal production-path `ecaz bench suite` steps; the diagnostic rows are used
+only to classify emitted-pool containment, rerank counters, and score-ordering
+loss.
+
 Corpus staging:
 
 The staged corpus/query TSV files are intentionally not committed.
@@ -169,9 +176,9 @@ Key 10k `ef_search=200` results:
 
 ## 50k AMD-local partial checkpoint
 
-This host is the slower AMD machine. Treat the 50k rows below as AMD-local
-relative evidence only; final closeout measurement should be produced on the
-Intel benchmark desktop when it is available.
+This host was the slower AMD machine. Treat the 50k rows below as superseded
+AMD-local relative evidence only; the M5 release closeout matrix above is the
+current closeout evidence.
 
 Command:
 
@@ -206,6 +213,5 @@ not committed.
 | PqFastScan | 0.9735 | 52.75 ms |
 | RaBitQ | 0.9520 | 85.82 ms |
 
-The AMD-local 50k recall shape matches the 10k direction: RaBitQ remains lower
-than TurboQuant/PqFastScan and slower. Frontier, score-correlation, latency,
-storage, compressed-build A/B, and 100k evidence remain for the Intel host.
+The AMD-local 50k recall shape matched the earlier 10k direction, but this
+partial row set is superseded by the complete M5 release evidence above.

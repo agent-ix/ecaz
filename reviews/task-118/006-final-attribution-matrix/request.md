@@ -71,6 +71,11 @@ Interpretation:
     `./target/debug/ecaz --host /Users/peter/.pgrx --port 28818 --database tqvector_task118_m5_release --log-file <suite-run-log> bench suite run --config crates/ecaz-cli/suites/task118-hnsw-quantized-recall-attribution.json --artifact-dir reviews/task-118/006-final-attribution-matrix/artifacts --manifest-output <suite-manifest> --results-output <results-jsonl> --only-tag ec_real_{10k,50k,100k} --continue-on-error`
   - Backend validation: `ecaz_build_profile()` returned `release` in
     `tqvector_task118_m5_release`.
+  - The bespoke Task 118 suite is intentional: the current canonical lanes do
+    not include the `hnsw-frontier` and `hnsw-score-correlation` attribution
+    steps required by this task. The recall, latency, and storage rows are
+    still the normal production-path suite steps; the diagnostic steps are used
+    only to classify emitted-pool containment and score-ordering loss.
 
 ## Previous Packet History
 
@@ -135,14 +140,14 @@ score correlation remains stronger than TurboQuant/PqFastScan (`0.9086` vs
 `0.8404`). The 10k result points at candidate containment/traversal for RaBitQ,
 not final exact rerank or score ordering.
 
-This packet is still not a final Task 118 closeout; 50k and 100k evidence is
-still required.
+This older 10k checkpoint is superseded by the M5 release closeout evidence at
+the top of this request.
 
 ## 50k AMD-Local Partial Update
 
-The current host is the slower AMD machine, so I stopped the 50k suite after
-capturing source-build load and recall for all three formats. These rows are
-useful for local relative direction only; they are not final closeout evidence.
+This older partial checkpoint was captured on the slower AMD machine before the
+M5 closeout run. It remains packet history only; the M5 release evidence at the
+top of this request supersedes it for closeout.
 
 Artifacts:
 
@@ -160,5 +165,4 @@ At `ef_search=200`, AMD-local source-build recall was:
 
 The first 50k frontier helper call did not return after roughly 20 minutes on
 this AMD host. I interrupted the suite and restarted the PG18 scratch cluster
-after PostgreSQL cancel/terminate did not stop the active helper backend. The
-Intel desktop should run the remaining 50k/100k closeout matrix when available.
+after PostgreSQL cancel/terminate did not stop the active helper backend.
