@@ -1,14 +1,13 @@
-# Task 121 review request: Phase 2 local 50k b2 plus b4/tr10 checkpoint
+# Task 121 review request: Phase 2 local 50k b2/b4 f8 matrix
 
 ## Scope
 
 This packet responds to the reviewer gap that 50k b2/b4 f8 cells were missing.
-It is an interim checkpoint at the user-requested halt boundary:
+It now covers the full local 50k b2/b4 f8 supplement:
 
 - completed: b2/tr10 and b2/tr50 recall/storage at 50k f8
 - completed: b4/tr10 recall/storage at 50k f8
-- completed: b4/tr50 storage at 50k f8
-- pending: b4/tr50 recall pipeline
+- completed: b4/tr50 recall/storage at 50k f8
 
 This is local-only evidence on the existing PG18 benchmark database. It is not
 AWS evidence. It is also not the Phase 0 local multi-node lane; all measured
@@ -53,6 +52,19 @@ target/debug/ecaz --database tqvector_bench_task121 --host /home/peter/.pgrx --p
 The b4-only status artifact reports:
 `completed=1 failed=0 skipped=13 dry_run=0 missing_artifacts=0 stale=0`, with
 `pipeline-50k_b4_tr10_f8` succeeded and `pipeline-50k_b4_tr50_f8` skipped.
+
+The b4/tr50 cell then ran as a separate `--only` resume after restarting the
+local PG18 cluster. The restarted cluster listened on `/tmp`, so this final
+resume uses `--host /tmp`:
+
+```text
+target/debug/ecaz --database tqvector_bench_task121 --host /tmp --port 28818 bench suite run --config reviews/task-121/016-phase2-local-50k-b2-b4-f8-run/artifacts/suite-phase2-local-50k-b2-b4-f8-run.json --resume-from reviews/task-121/016-phase2-local-50k-b2-b4-f8-run/artifacts/suite-phase2-local-50k-b2-b4-f8-run-manifest.json --only pipeline-50k_b4_tr50_f8 --manifest-output reviews/task-121/016-phase2-local-50k-b2-b4-f8-run/artifacts/suite-phase2-local-50k-b4-tr50-only-manifest.json --results-output reviews/task-121/016-phase2-local-50k-b2-b4-f8-run/artifacts/suite-phase2-local-50k-b4-tr50-only-results.jsonl --log-file reviews/task-121/016-phase2-local-50k-b2-b4-f8-run/artifacts/suite-phase2-local-50k-b4-tr50-only-resume.log
+```
+
+The b4/tr50-only manifest reports `pipeline-50k_b4_tr50_f8` succeeded, with
+the other suite steps skipped by the `--only` selector. The streamed diagnostic
+files reached the expected shape: 1800 funnel rows and 10800 stage-containment
+rows.
 
 ## Result
 
@@ -102,17 +114,31 @@ Completed b4/tr10 recall/latency pipeline rows:
 | b4_tr10_f8 | 64 | 1571.358 ms | 1793.543 ms | 1.0000 |
 | b4_tr10_f8 | 96 | 1900.814 ms | 2199.261 ms | 1.0000 |
 
-Interim read: b4/tr10 improves recall versus b2/tr10 at every low/mid nprobe
-measured, reaching recall 1.0000 by nprobe 64 instead of nprobe 96. That recall
-gain is not free: b4/tr10 has materially higher storage and fixed-nprobe latency
-than b2/tr10. B2/tr50 remains a lower-storage alternative, but b4/tr10 has
-higher recall at the low/mid nprobe points measured in this run.
+Completed b4/tr50 recall/latency pipeline rows:
+
+| cell | nprobe | p50 | p95 | recall@10 |
+|---|---:|---:|---:|---:|
+| b4_tr50_f8 | 4 | 244.920 ms | 564.265 ms | 0.9650 |
+| b4_tr50_f8 | 8 | 400.503 ms | 547.652 ms | 0.9810 |
+| b4_tr50_f8 | 12 | 556.820 ms | 756.253 ms | 0.9865 |
+| b4_tr50_f8 | 16 | 658.855 ms | 882.720 ms | 0.9905 |
+| b4_tr50_f8 | 24 | 877.132 ms | 1107.089 ms | 0.9975 |
+| b4_tr50_f8 | 32 | 1130.192 ms | 1410.404 ms | 0.9985 |
+| b4_tr50_f8 | 48 | 1482.835 ms | 1740.106 ms | 1.0000 |
+| b4_tr50_f8 | 64 | 1668.702 ms | 2202.986 ms | 1.0000 |
+| b4_tr50_f8 | 96 | 2135.053 ms | 2647.988 ms | 1.0000 |
+
+Interim read: b4/tr50 is the strongest 50k recall cell in this packet. It
+improves low/mid-nprobe recall over b4/tr10 and reaches recall 1.0000 by
+nprobe 48, earlier than b4/tr10 at nprobe 64 and both b2 cells at nprobe 96.
+That recall gain is not free: b4/tr50 has b4-sized storage and higher
+fixed-nprobe latency than the b2 cells, and it is slower than b4/tr10 at most
+fixed nprobe points.
 
 ## Remaining Work
 
 This packet does not close Task 121. Still owed:
 
-- b4/tr50 50k recall pipeline
 - full 100k Phase 2 recall matrix beyond the current b0/b1/b2 partials
 - credible clean latency re-measurement on a quiesced host
 - Phase 3 scan-efficiency A/B
@@ -133,6 +159,9 @@ This packet does not close Task 121. Still owed:
 - `artifacts/suite-phase2-local-50k-b4-tr10-only-resume.log`
 - `artifacts/suite-phase2-local-50k-b4-tr10-only-status.log`
 - `artifacts/suite-phase2-local-50k-b4-tr10-only-manifest.json`
+- `artifacts/suite-phase2-local-50k-b4-tr50-only-resume.log`
+- `artifacts/suite-phase2-local-50k-b4-tr50-only-manifest.json`
+- `artifacts/suite-phase2-local-50k-b4-tr50-only-results.jsonl`
 - `artifacts/precheck-host.log`
 - `artifacts/load-50k_b2_tr10_f8.log`
 - `artifacts/load-50k_b2_tr50_f8.log`
@@ -146,3 +175,4 @@ This packet does not close Task 121. Still owed:
 - `artifacts/pipeline-50k_b2_tr10_f8.log`
 - `artifacts/pipeline-50k_b2_tr50_f8.log`
 - `artifacts/pipeline-50k_b4_tr10_f8.log`
+- `artifacts/pipeline-50k_b4_tr50_f8.log`

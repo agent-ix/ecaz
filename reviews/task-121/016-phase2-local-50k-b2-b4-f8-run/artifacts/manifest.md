@@ -4,8 +4,8 @@
 
 - Task bucket: `reviews/task-121/`
 - Packet path: `reviews/task-121/016-phase2-local-50k-b2-b4-f8-run/`
-- Head SHA: `14a44f0128a7c6def3f706dc1794ec16110f5335`
-- Timestamp: 2026-06-23 17:47-21:08 America/Los_Angeles
+- Head SHA: `b22241b6edb42484cf6b6bc8177990a403a5be6b`
+- Timestamp: 2026-06-23 17:47-23:07 America/Los_Angeles
 - Lane: Task 121 Phase 2 local 50k f8 b2/b4 supplement
 - Fixture: local staged real corpus, 50k corpus, 200-query pipeline sweep
 - Storage format / quantizer: RaBitQ storage with TurboQuant f8 route-stage
@@ -47,6 +47,13 @@ B4/tr10-only resume from the breakpoint:
 target/debug/ecaz --database tqvector_bench_task121 --host /home/peter/.pgrx --port 28818 bench suite run --config reviews/task-121/016-phase2-local-50k-b2-b4-f8-run/artifacts/suite-phase2-local-50k-b2-b4-f8-run.json --resume-from reviews/task-121/016-phase2-local-50k-b2-b4-f8-run/artifacts/suite-phase2-local-50k-b2-b4-f8-run-manifest.json --only pipeline-50k_b4_tr10_f8 --manifest-output reviews/task-121/016-phase2-local-50k-b2-b4-f8-run/artifacts/suite-phase2-local-50k-b2-b4-f8-run-manifest.json --results-output reviews/task-121/016-phase2-local-50k-b2-b4-f8-run/artifacts/suite-phase2-local-50k-b2-b4-f8-run-results.jsonl --log-file reviews/task-121/016-phase2-local-50k-b2-b4-f8-run/artifacts/suite-phase2-local-50k-b4-tr10-only-resume.log
 ```
 
+B4/tr50-only resume after restarting local PG18. The restarted cluster listened
+on `/tmp`, so this command uses `--host /tmp`:
+
+```text
+target/debug/ecaz --database tqvector_bench_task121 --host /tmp --port 28818 bench suite run --config reviews/task-121/016-phase2-local-50k-b2-b4-f8-run/artifacts/suite-phase2-local-50k-b2-b4-f8-run.json --resume-from reviews/task-121/016-phase2-local-50k-b2-b4-f8-run/artifacts/suite-phase2-local-50k-b2-b4-f8-run-manifest.json --only pipeline-50k_b4_tr50_f8 --manifest-output reviews/task-121/016-phase2-local-50k-b2-b4-f8-run/artifacts/suite-phase2-local-50k-b4-tr50-only-manifest.json --results-output reviews/task-121/016-phase2-local-50k-b2-b4-f8-run/artifacts/suite-phase2-local-50k-b4-tr50-only-results.jsonl --log-file reviews/task-121/016-phase2-local-50k-b2-b4-f8-run/artifacts/suite-phase2-local-50k-b4-tr50-only-resume.log
+```
+
 ## Artifacts
 
 - `suite-phase2-local-50k-b2-b4-f8-run.json`
@@ -81,6 +88,13 @@ target/debug/ecaz --database tqvector_bench_task121 --host /home/peter/.pgrx --p
 - `suite-phase2-local-50k-b4-tr10-only-manifest.json`
   - B4-only suite manifest preserved before restoring the shared b2 checkpoint
     manifest.
+- `suite-phase2-local-50k-b4-tr50-only-resume.log`
+  - Resume runner log for `--only pipeline-50k_b4_tr50_f8`.
+- `suite-phase2-local-50k-b4-tr50-only-manifest.json`
+  - B4/tr50-only suite manifest. `pipeline-50k_b4_tr50_f8` succeeded; all
+    non-selected steps were skipped.
+- `suite-phase2-local-50k-b4-tr50-only-results.jsonl`
+  - Structured extracted results for `pipeline-50k_b4_tr50_f8`.
 - `load-50k_b2_tr10_f8.log`, `load-50k_b2_tr50_f8.log`,
   `load-50k_b4_tr10_f8.log`, `load-50k_b4_tr50_f8.log`
   - Local one-index-per-table corpus load logs.
@@ -96,8 +110,14 @@ target/debug/ecaz --database tqvector_bench_task121 --host /home/peter/.pgrx --p
   - Completed b2/tr50 pipeline recall and funnel summary.
 - `pipeline-50k_b4_tr10_f8.log`
   - Completed b4/tr10 pipeline recall and funnel summary.
+- `pipeline-50k_b4_tr50_f8.log`
+  - Completed b4/tr50 pipeline recall and funnel summary.
+- `pipeline-50k_b4_tr50_f8-funnel.jsonl`
+  - Untracked streamed diagnostic artifact; final row count 1800.
+- `pipeline-50k_b4_tr50_f8-stage-containment.jsonl`
+  - Untracked streamed diagnostic artifact; final row count 10800.
 - `summary-50k-b2-checkpoint.md`
-  - Compact interpretation table for this interim b2 plus b4/tr10 checkpoint.
+  - Compact interpretation table for this local 50k b2/b4 matrix checkpoint.
 
 ## Key Result Lines
 
@@ -147,10 +167,25 @@ Completed 50k b4/tr10 pipeline cell:
 | b4_tr10_f8 | 64 | 1571.358 ms | 1793.543 ms | 1.0000 |
 | b4_tr10_f8 | 96 | 1900.814 ms | 2199.261 ms | 1.0000 |
 
+Completed 50k b4/tr50 pipeline cell:
+
+| cell | nprobe | p50 | p95 | recall@10 |
+|---|---:|---:|---:|---:|
+| b4_tr50_f8 | 4 | 244.920 ms | 564.265 ms | 0.9650 |
+| b4_tr50_f8 | 8 | 400.503 ms | 547.652 ms | 0.9810 |
+| b4_tr50_f8 | 12 | 556.820 ms | 756.253 ms | 0.9865 |
+| b4_tr50_f8 | 16 | 658.855 ms | 882.720 ms | 0.9905 |
+| b4_tr50_f8 | 24 | 877.132 ms | 1107.089 ms | 0.9975 |
+| b4_tr50_f8 | 32 | 1130.192 ms | 1410.404 ms | 0.9985 |
+| b4_tr50_f8 | 48 | 1482.835 ms | 1740.106 ms | 1.0000 |
+| b4_tr50_f8 | 64 | 1668.702 ms | 2202.986 ms | 1.0000 |
+| b4_tr50_f8 | 96 | 2135.053 ms | 2647.988 ms | 1.0000 |
+
 ## Interpretation
 
 The completed b2 cells close the 50k b2 evidence gap for f8 recall/storage.
-The b4/tr10 cell adds the first b4 recall result at 50k: it reaches recall
-1.0000 by nprobe 64, but costs substantially more storage and fixed-nprobe
-latency than b2/tr10. B4/tr50 recall remains pending because the user requested
-a halt at the b4/tr10 benchmark breakpoint.
+The completed b4 cells close the 50k b4 evidence gap for f8 recall/storage.
+B4/tr50 is the strongest 50k recall cell here: it reaches recall 1.0000 by
+nprobe 48, earlier than b4/tr10 at nprobe 64 and both b2 cells at nprobe 96.
+The tradeoff is b4-sized storage and higher fixed-nprobe latency than the b2
+cells; b4/tr50 is also slower than b4/tr10 at most fixed nprobe points.

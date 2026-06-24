@@ -1,4 +1,4 @@
-# Task 121 Phase 2 local 50k b2 plus b4/tr10 checkpoint
+# Task 121 Phase 2 local 50k b2/b4 f8 checkpoint
 
 This is local-only, single-PostgreSQL evidence. It is not AWS evidence and it is
 not the Phase 0 local multi-node lane.
@@ -22,10 +22,11 @@ Completed:
 Additional b4-only resume completed:
 
 - `pipeline-50k_b4_tr10_f8`
-
-Pending:
-
 - `pipeline-50k_b4_tr50_f8`
+
+The b4/tr50-only resume wrote 1800 funnel rows and 10800 stage-containment
+rows. The streamed JSONLs remain untracked; the compact log and suite JSONL are
+packet evidence.
 
 ## Storage
 
@@ -73,6 +74,20 @@ Pending:
 | b4_tr10_f8 | 64 | 1571.358 ms | 1793.543 ms | 1.0000 |
 | b4_tr10_f8 | 96 | 1900.814 ms | 2199.261 ms | 1.0000 |
 
+## Completed b4/tr50 Pipeline Results
+
+| cell | nprobe | p50 | p95 | recall@10 |
+|---|---:|---:|---:|---:|
+| b4_tr50_f8 | 4 | 244.920 ms | 564.265 ms | 0.9650 |
+| b4_tr50_f8 | 8 | 400.503 ms | 547.652 ms | 0.9810 |
+| b4_tr50_f8 | 12 | 556.820 ms | 756.253 ms | 0.9865 |
+| b4_tr50_f8 | 16 | 658.855 ms | 882.720 ms | 0.9905 |
+| b4_tr50_f8 | 24 | 877.132 ms | 1107.089 ms | 0.9975 |
+| b4_tr50_f8 | 32 | 1130.192 ms | 1410.404 ms | 0.9985 |
+| b4_tr50_f8 | 48 | 1482.835 ms | 1740.106 ms | 1.0000 |
+| b4_tr50_f8 | 64 | 1668.702 ms | 2202.986 ms | 1.0000 |
+| b4_tr50_f8 | 96 | 2135.053 ms | 2647.988 ms | 1.0000 |
+
 ## Interim Read
 
 Boundary replica count 2 is a real recall-recovery lever at 50k f8. The b2
@@ -82,8 +97,12 @@ points, with p50 1896.008 ms at nprobe 96 versus 1743.187 ms for b2/tr10.
 
 B4/tr10 improves recall over b2/tr10 at low and mid nprobe, reaching recall
 1.0000 by nprobe 64 instead of nprobe 96. The tradeoff is larger storage and
-higher fixed-nprobe latency. B4/tr50 recall remains pending.
+higher fixed-nprobe latency.
 
-This packet does not close Task 121; the remaining 50k b4/tr50 cell, the full
-100k matrix, credible clean latency, Phase 3 scan-efficiency A/B, and Phase 4
-verdict are still owed.
+B4/tr50 is the strongest 50k recall cell in this packet. It improves low/mid
+nprobe recall over b4/tr10 and reaches recall 1.0000 by nprobe 48. The tradeoff
+is b4-sized storage and higher fixed-nprobe latency than the b2 cells; b4/tr50
+is also slower than b4/tr10 at most fixed nprobe points.
+
+This packet does not close Task 121; the full 100k matrix, credible clean
+latency, Phase 3 scan-efficiency A/B, and Phase 4 verdict are still owed.
