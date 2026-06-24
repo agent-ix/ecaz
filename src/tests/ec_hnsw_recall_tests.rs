@@ -419,7 +419,10 @@
                 .zip(compared_exact_ranks.iter())
                 .take(10)
             {
-                let expected_exact_score = -1.0 + (*row_index as f32 * 0.1);
+                let row_index = usize::try_from(*row_index)
+                    .expect("synthetic scorer row index should fit usize");
+                let expected_exact_score =
+                    -dot_product(&context.queries[0], &context.corpus[row_index]);
                 assert_f32_close(
                     *exact_score,
                     expected_exact_score,

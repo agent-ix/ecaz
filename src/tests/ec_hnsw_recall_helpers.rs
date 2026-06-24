@@ -1205,12 +1205,13 @@
 
         let mut compared = rows
             .into_iter()
-            .filter_map(|(heap_tid, approx_rank, approx_score, exact_score)| {
-                exact_score.map(|exact_score| {
+            .filter_map(|(heap_tid, approx_rank, approx_score, comparison_score)| {
+                comparison_score.map(|_comparison_score| {
                     let row_index = *context
                         .ctid_to_row_index
                         .get(&heap_tid)
                         .expect("emitted heap tid should map back to a corpus row index");
+                    let exact_score = -dot_product(query, &context.corpus[row_index]);
                     (
                         i64::try_from(row_index).expect("row index should fit into bigint"),
                         approx_rank,
