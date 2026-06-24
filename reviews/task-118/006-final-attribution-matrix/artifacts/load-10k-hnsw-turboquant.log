@@ -2,9 +2,12 @@
 [loader] inspecting data/staged-current/ec_real_10k_queries.tsv
 [loader] corpus: 10000 rows, sha256=c67c5810b66d982d705974e48d4775479adfbd92a988f694091266e049a35e75  queries: 200 rows, sha256=a2c191bb742017d849e73f6e6866e8e0f0bac1579ba212f7fc76b8eb09904ae8
 [loader] warning: manifest verification failed for data/staged-current/ec_real_10k_manifest.json: prefix="ec_real_10k" (expected "task118_real10k_hnsw_turboquant")
-[loader] task118_real10k_hnsw_turboquant_corpus already has 10000 rows; skipping reload
-[loader] task118_real10k_hnsw_turboquant_queries already has 200 rows; skipping reload
-[loader] task118_real10k_hnsw_turboquant_turboquant_m16_idx already exists with reloptions=[m=16, ef_construction=128, build_source_column=source, storage_format=turboquant]; skipping rebuild
+[loader] copied corpus table task118_real10k_hnsw_turboquant_corpus in 5.84s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table task118_real10k_hnsw_turboquant_corpus in 1.73s
+[loader] copied queries table task118_real10k_hnsw_turboquant_queries in 141.59ms
+[loader] building task118_real10k_hnsw_turboquant_turboquant_m16_idx using ec_hnsw (reloptions=[m=16, ef_construction=128, build_source_column=source, storage_format=turboquant]) ...
+[loader] built task118_real10k_hnsw_turboquant_turboquant_m16_idx in 1.67s
 ┌─────────┬───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ field   ┆ value                                                                                                                                 │
 ╞═════════╪═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╡
@@ -16,4 +19,4 @@
 ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
 │ indexes ┆ task118_real10k_hnsw_turboquant_turboquant_m16_idx [m=16, ef_construction=128, build_source_column=source, storage_format=turboquant] │
 └─────────┴───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-[loader] completed prefix task118_real10k_hnsw_turboquant in 18.11s
+[loader] completed prefix task118_real10k_hnsw_turboquant in 19.75s

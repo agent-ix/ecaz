@@ -2,12 +2,12 @@
 [loader] inspecting data/staged-current/ec_real_10k_queries.tsv
 [loader] corpus: 10000 rows, sha256=c67c5810b66d982d705974e48d4775479adfbd92a988f694091266e049a35e75  queries: 200 rows, sha256=a2c191bb742017d849e73f6e6866e8e0f0bac1579ba212f7fc76b8eb09904ae8
 [loader] warning: manifest verification failed for data/staged-current/ec_real_10k_manifest.json: prefix="ec_real_10k" (expected "task118_r10k_pq_cb")
-[loader] copied corpus table task118_r10k_pq_cb_corpus in 11.21s
+[loader] copied corpus table task118_r10k_pq_cb_corpus in 5.82s
 [loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
-[loader] encoded corpus table task118_r10k_pq_cb_corpus in 7.08s
-[loader] copied queries table task118_r10k_pq_cb_queries in 243.12ms
+[loader] encoded corpus table task118_r10k_pq_cb_corpus in 1.98s
+[loader] copied queries table task118_r10k_pq_cb_queries in 150.43ms
 [loader] building task118_r10k_pq_cb_pq_fastscan_m16_idx using ec_hnsw (reloptions=[m=16, ef_construction=128, storage_format=pq_fastscan]) ...
-[loader] built task118_r10k_pq_cb_pq_fastscan_m16_idx in 102.04s
+[loader] built task118_r10k_pq_cb_pq_fastscan_m16_idx in 1.70s
 ┌─────────┬────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ field   ┆ value                                                                                          │
 ╞═════════╪════════════════════════════════════════════════════════════════════════════════════════════════╡
@@ -19,4 +19,4 @@
 ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
 │ indexes ┆ task118_r10k_pq_cb_pq_fastscan_m16_idx [m=16, ef_construction=128, storage_format=pq_fastscan] │
 └─────────┴────────────────────────────────────────────────────────────────────────────────────────────────┘
-[loader] completed prefix task118_r10k_pq_cb in 138.72s
+[loader] completed prefix task118_r10k_pq_cb in 19.77s
