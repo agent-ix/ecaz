@@ -27,7 +27,7 @@ use crate::storage::{
 };
 
 use super::options::StorageFormat;
-use super::quantizer::{self, IvfPqFastScanModel, IvfPreparedQuery, IvfQuantizer};
+use super::quantizer::{self, IvfPqFastScanModel, IvfPreparedQuery, IvfQuantizer, IvfTqPlusModel};
 
 // Manual `Debug` impl below; the `Option<Box<T>>` fields whose payload
 // types (`IvfHeapRerankState`, `IvfPqFastScanModel`) wrap pgrx guard
@@ -43,6 +43,7 @@ struct EcIvfScanOpaque {
     scan_nlists: u32,
     scan_nprobe: u32,
     pq_fastscan_model: Option<Box<IvfPqFastScanModel>>,
+    tqplus_model: Option<Box<IvfTqPlusModel>>,
     prepared_query: *mut IvfPreparedQuery,
     centroid_scores: *mut EcIvfCentroidScore,
     centroid_score_count: u32,
@@ -75,6 +76,7 @@ impl std::fmt::Debug for EcIvfScanOpaque {
             .field("scan_nlists", &self.scan_nlists)
             .field("scan_nprobe", &self.scan_nprobe)
             .field("pq_fastscan_model", &self.pq_fastscan_model.is_some())
+            .field("tqplus_model", &self.tqplus_model.is_some())
             .field("prepared_query", &self.prepared_query)
             .field("centroid_scores", &self.centroid_scores)
             .field("centroid_score_count", &self.centroid_score_count)
@@ -764,6 +766,7 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amendscan(scan: pg_sys::IndexScanD
             flush_scan_stats(opaque);
             free_scan_query_prep(opaque);
             free_pq_fastscan_model(opaque);
+            free_tqplus_model(opaque);
             free_candidate_dedup(opaque);
             free_posting_scratch_soa(opaque);
             free_dense_posting_coalescing_scratch(opaque);
@@ -896,18 +899,31 @@ unsafe fn store_scan_prepared_query(
         return;
     }
 
-    let quantizer = IvfQuantizer::resolve_with_pq_group_size_and_bits(
-        metadata.storage_format,
-        metadata.dimensions as usize,
-        metadata_pq_group_size(metadata),
-        Some(metadata.quant_bits),
-    )
-    .unwrap_or_else(|e| pgrx::error!("{e}"));
+    let tqplus = metadata.storage_format == StorageFormat::TurboQuant
+        && metadata.turboquant_calibration
+            == super::options::TurboQuantCalibration::TqPlusExperimental;
+    let quantizer = if tqplus {
+        IvfQuantizer::resolve_tqplus_experimental(metadata.dimensions as usize)
+    } else {
+        IvfQuantizer::resolve_with_pq_group_size_and_bits(
+            metadata.storage_format,
+            metadata.dimensions as usize,
+            metadata_pq_group_size(metadata),
+            Some(metadata.quant_bits),
+        )
+        .unwrap_or_else(|e| pgrx::error!("{e}"))
+    };
     let prepared = if metadata.storage_format == StorageFormat::PqFastScan {
         let model = pq_fastscan_model_for_scan(opaque, index_relation, metadata)
             .unwrap_or_else(|e| pgrx::error!("ec_ivf failed to load pq_fastscan model: {e}"));
         quantizer
             .prepare_ip_query_with_pq_model(query, model)
+            .unwrap_or_else(|e| pgrx::error!("ec_ivf failed to prepare scan query: {e}"))
+    } else if tqplus {
+        let model = tqplus_model_for_scan(opaque, index_relation, metadata)
+            .unwrap_or_else(|e| pgrx::error!("ec_ivf failed to load TQ+ model: {e}"));
+        quantizer
+            .prepare_ip_query_with_tqplus_model(query, model)
             .unwrap_or_else(|e| pgrx::error!("ec_ivf failed to prepare scan query: {e}"))
     } else {
         quantizer
@@ -947,6 +963,29 @@ unsafe fn pq_fastscan_model_for_scan<'a>(
 
 fn free_pq_fastscan_model(opaque: &mut EcIvfScanOpaque) {
     opaque.pq_fastscan_model = None;
+}
+
+/// # Safety
+/// `index_relation` and metadata describe the live IVF index; the quantizer
+/// loader validates the on-disk TQ+ calibration state. The returned reference
+/// is valid until `free_tqplus_model` clears the scan-opaque slot.
+unsafe fn tqplus_model_for_scan<'a>(
+    opaque: &'a mut EcIvfScanOpaque,
+    index_relation: pg_sys::Relation,
+    metadata: &super::page::MetadataPage,
+) -> Result<&'a IvfTqPlusModel, String> {
+    if opaque.tqplus_model.is_none() {
+        let model = quantizer::load_tqplus_model(index_relation, metadata)?;
+        opaque.tqplus_model = Some(Box::new(model));
+    }
+    Ok(opaque
+        .tqplus_model
+        .as_deref()
+        .expect("tqplus_model was just populated above"))
+}
+
+fn free_tqplus_model(opaque: &mut EcIvfScanOpaque) {
+    opaque.tqplus_model = None;
 }
 
 fn store_centroid_scores(opaque: &mut EcIvfScanOpaque, scores: &[EcIvfCentroidScore]) {
@@ -4223,7 +4262,8 @@ mod tests {
 
     use super::super::options::{
         CoarseFormat, EcIvfOptions, RaBitQRerankScoreMode, RerankFormat, RerankMode,
-        RerankPlacement, StorageFormat as IvfStorageFormat, EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
+        RerankPlacement, StorageFormat as IvfStorageFormat, TurboQuantCalibration,
+        EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
     };
     use super::super::page::{
         IvfDensePostingBlockRef, IvfDensePostingBlockTuple, IvfDensePostingRef, IvfPostingTuple,
@@ -4305,6 +4345,7 @@ mod tests {
             rabitq_rerank_score: RaBitQRerankScoreMode::Estimator,
             rabitq_rerank_clip: EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
             storage_format: IvfStorageFormat::RaBitQ,
+            turboquant_calibration: TurboQuantCalibration::None,
             rerank,
             coarse_format: CoarseFormat::Auto,
             rerank_placement: RerankPlacement::Auto,

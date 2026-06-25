@@ -79,6 +79,7 @@ struct EcIvfReloptions {
     rabitq_rerank_clip: i32,
     storage_format_offset: i32,
     quantizer_offset: i32,
+    turboquant_calibration_offset: i32,
     rerank_offset: i32,
     coarse_format_offset: i32,
     rerank_placement_offset: i32,
@@ -126,6 +127,39 @@ impl StorageFormat {
             | Self::PqFastScan
             | Self::RaBitQ
             | Self::CoarseRerank => Ok(()),
+        }
+    }
+}
+
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TurboQuantCalibration {
+    None = 0,
+    TqPlusExperimental = 1,
+}
+
+impl TurboQuantCalibration {
+    pub(super) fn parse_reloption(value: &str) -> Result<Self, String> {
+        match value {
+            "none" | "off" => Ok(Self::None),
+            "tqplus_experimental" => Ok(Self::TqPlusExperimental),
+            other => Err(format!(
+                "invalid ec_ivf turboquant_calibration reloption: expected 'none' or 'tqplus_experimental', got '{other}'"
+            )),
+        }
+    }
+
+    pub(super) fn metadata_byte(self) -> u8 {
+        self as u8
+    }
+
+    pub(super) fn from_metadata_byte(value: u8) -> Result<Self, String> {
+        match value {
+            0 => Ok(Self::None),
+            1 => Ok(Self::TqPlusExperimental),
+            other => Err(format!(
+                "invalid ec_ivf turboquant_calibration stored in metadata: {other}"
+            )),
         }
     }
 }
@@ -368,6 +402,7 @@ pub(super) struct EcIvfOptions {
     /// RaBitQ rerank payloads. Default 2 preserves the existing profile.
     pub(super) rabitq_rerank_clip: i32,
     pub(super) storage_format: StorageFormat,
+    pub(super) turboquant_calibration: TurboQuantCalibration,
     pub(super) rerank: RerankMode,
     pub(super) coarse_format: CoarseFormat,
     pub(super) rerank_placement: RerankPlacement,
@@ -391,6 +426,7 @@ impl EcIvfOptions {
         rabitq_rerank_score: RaBitQRerankScoreMode::Estimator,
         rabitq_rerank_clip: EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
         storage_format: StorageFormat::Auto,
+        turboquant_calibration: TurboQuantCalibration::None,
         rerank: RerankMode::Auto,
         coarse_format: CoarseFormat::Auto,
         rerank_placement: RerankPlacement::Auto,
@@ -825,6 +861,16 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amoptions(
                 offset_of!(EcIvfReloptions, quantizer_offset) as i32,
             );
         pg_sys::add_local_string_reloption(
+                &mut relopts,
+                c"turboquant_calibration".as_ptr(),
+                c"Experimental Task 89 TurboQuant calibration profile: 'none' or 'tqplus_experimental'. Only valid with storage_format = 'turboquant'."
+                    .as_ptr(),
+                ptr::null(),
+                None,
+                None,
+                offset_of!(EcIvfReloptions, turboquant_calibration_offset) as i32,
+            );
+        pg_sys::add_local_string_reloption(
             &mut relopts,
             c"rerank".as_ptr(),
             c"IVF rerank mode: 'off', 'heap_f32', 'source_column', or 'auto'.".as_ptr(),
@@ -895,6 +941,10 @@ impl EcIvfReloptionsView {
         let quantizer_reloption =
             self.read_string_reloption(reloptions.quantizer_offset, "quantizer");
         let rerank_reloption = self.read_string_reloption(reloptions.rerank_offset, "rerank");
+        let turboquant_calibration_reloption = self.read_string_reloption(
+            reloptions.turboquant_calibration_offset,
+            "turboquant_calibration",
+        );
         let coarse_format_reloption =
             self.read_string_reloption(reloptions.coarse_format_offset, "coarse_format");
         let rerank_placement_reloption =
@@ -902,10 +952,11 @@ impl EcIvfReloptionsView {
         let rerank_format_reloption =
             self.read_string_reloption(reloptions.rerank_format_offset, "rerank_format");
 
-        build_options_from_reloptions(
+        build_options_from_reloptions_with_calibration(
             reloptions,
             storage_format_reloption,
             quantizer_reloption,
+            turboquant_calibration_reloption,
             rerank_reloption,
             coarse_format_reloption,
             rerank_placement_reloption,
@@ -918,6 +969,28 @@ fn build_options_from_reloptions(
     reloptions: &EcIvfReloptions,
     storage_format_reloption: Option<String>,
     quantizer_reloption: Option<String>,
+    rerank_reloption: Option<String>,
+    coarse_format_reloption: Option<String>,
+    rerank_placement_reloption: Option<String>,
+    rerank_format_reloption: Option<String>,
+) -> EcIvfOptions {
+    build_options_from_reloptions_with_calibration(
+        reloptions,
+        storage_format_reloption,
+        quantizer_reloption,
+        None,
+        rerank_reloption,
+        coarse_format_reloption,
+        rerank_placement_reloption,
+        rerank_format_reloption,
+    )
+}
+
+fn build_options_from_reloptions_with_calibration(
+    reloptions: &EcIvfReloptions,
+    storage_format_reloption: Option<String>,
+    quantizer_reloption: Option<String>,
+    turboquant_calibration_reloption: Option<String>,
     rerank_reloption: Option<String>,
     coarse_format_reloption: Option<String>,
     rerank_placement_reloption: Option<String>,
@@ -938,6 +1011,23 @@ fn build_options_from_reloptions(
         .or(quantizer_reloption)
         .map(|value| StorageFormat::parse_reloption(&value).unwrap_or_else(|e| pgrx::error!("{e}")))
         .unwrap_or(StorageFormat::Auto);
+    let turboquant_calibration = turboquant_calibration_reloption
+        .map(|value| {
+            TurboQuantCalibration::parse_reloption(&value).unwrap_or_else(|e| pgrx::error!("{e}"))
+        })
+        .unwrap_or(TurboQuantCalibration::None);
+    if turboquant_calibration != TurboQuantCalibration::None
+        && storage_format != StorageFormat::TurboQuant
+    {
+        pgrx::error!(
+            "ec_ivf turboquant_calibration = '{}' requires storage_format = 'turboquant' (got '{}')",
+            match turboquant_calibration {
+                TurboQuantCalibration::None => "none",
+                TurboQuantCalibration::TqPlusExperimental => "tqplus_experimental",
+            },
+            storage_format.reloption_name()
+        );
+    }
     let mut rerank = match rerank_reloption {
         Some(value) => RerankMode::parse_reloption(&value).unwrap_or_else(|e| pgrx::error!("{e}")),
         None => RerankMode::Auto,
@@ -1126,6 +1216,7 @@ fn build_options_from_reloptions(
         rabitq_rerank_score,
         rabitq_rerank_clip: reloptions.rabitq_rerank_clip,
         storage_format,
+        turboquant_calibration,
         rerank,
         coarse_format,
         rerank_placement,
@@ -1164,6 +1255,7 @@ mod tests {
             rabitq_rerank_clip: EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
             storage_format_offset: 0,
             quantizer_offset: 0,
+            turboquant_calibration_offset: 0,
             rerank_offset: 0,
             coarse_format_offset: 0,
             rerank_placement_offset: 0,
@@ -1177,6 +1269,41 @@ mod tests {
 
         assert_eq!(parsed, StorageFormat::CoarseRerank);
         assert_eq!(parsed.reloption_name(), "coarse_rerank");
+    }
+
+    #[test]
+    fn turboquant_calibration_accepts_tqplus_experimental_with_turboquant() {
+        let options = build_options_from_reloptions_with_calibration(
+            &reloptions(),
+            Some("turboquant".into()),
+            None,
+            Some("tqplus_experimental".into()),
+            None,
+            None,
+            None,
+            None,
+        );
+
+        assert_eq!(options.storage_format, StorageFormat::TurboQuant);
+        assert_eq!(
+            options.turboquant_calibration,
+            TurboQuantCalibration::TqPlusExperimental
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn turboquant_calibration_rejects_tqplus_experimental_without_turboquant() {
+        build_options_from_reloptions_with_calibration(
+            &reloptions(),
+            Some("rabitq".into()),
+            None,
+            Some("tqplus_experimental".into()),
+            None,
+            None,
+            None,
+            None,
+        );
     }
 
     #[test]

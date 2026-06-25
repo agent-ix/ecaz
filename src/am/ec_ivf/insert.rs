@@ -99,20 +99,30 @@ unsafe fn reencode_tuple_for_storage(
     metadata: &page::MetadataPage,
     mut tuple: build::BuildTuple,
 ) -> Result<build::BuildTuple, String> {
-    if metadata.storage_format != options::StorageFormat::PqFastScan {
+    let tqplus = metadata.storage_format == options::StorageFormat::TurboQuant
+        && metadata.turboquant_calibration == options::TurboQuantCalibration::TqPlusExperimental;
+    if metadata.storage_format != options::StorageFormat::PqFastScan && !tqplus {
         return Ok(tuple);
     }
-    // SAFETY: caller passes the live IVF index relation and metadata read from
-    // it; the model chain is validated by the loader.
-    let model = unsafe { quantizer::load_pq_fastscan_model(index_relation, metadata) }?;
-    let ivf_quantizer = quantizer::IvfQuantizer::resolve_with_pq_group_size_and_bits(
-        metadata.storage_format,
-        usize::from(metadata.dimensions),
-        metadata_pq_group_size(metadata),
-        Some(metadata.quant_bits),
-    )?;
-    let (dimensions, gamma, payload) =
-        ivf_quantizer.encode_source_with_pq_model(&tuple.source_vector, &model)?;
+    let (dimensions, gamma, payload) = if tqplus {
+        // SAFETY: caller passes the live IVF index relation and metadata read
+        // from it; the calibration chain is validated by the loader.
+        let model = unsafe { quantizer::load_tqplus_model(index_relation, metadata) }?;
+        let ivf_quantizer =
+            quantizer::IvfQuantizer::resolve_tqplus_experimental(usize::from(metadata.dimensions));
+        ivf_quantizer.encode_source_with_tqplus_model(&tuple.source_vector, &model)?
+    } else {
+        // SAFETY: caller passes the live IVF index relation and metadata read
+        // from it; the model chain is validated by the loader.
+        let model = unsafe { quantizer::load_pq_fastscan_model(index_relation, metadata) }?;
+        let ivf_quantizer = quantizer::IvfQuantizer::resolve_with_pq_group_size_and_bits(
+            metadata.storage_format,
+            usize::from(metadata.dimensions),
+            metadata_pq_group_size(metadata),
+            Some(metadata.quant_bits),
+        )?;
+        ivf_quantizer.encode_source_with_pq_model(&tuple.source_vector, &model)?
+    };
     tuple.dimensions = dimensions;
     tuple.gamma = gamma;
     tuple.payload = payload;
@@ -483,6 +493,7 @@ fn options_from_metadata(
         rabitq_rerank_score: metadata.rabitq_rerank_score_mode(),
         rabitq_rerank_clip: metadata.rabitq_rerank_clip_i32(),
         storage_format: metadata.storage_format,
+        turboquant_calibration: metadata.turboquant_calibration,
         rerank: metadata.rerank,
         coarse_format: if metadata.storage_format == options::StorageFormat::CoarseRerank {
             options::CoarseFormat::RaBitQ

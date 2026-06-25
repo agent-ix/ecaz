@@ -118,9 +118,9 @@ const _: () = {
     // Bytes 80..86 point at the packed 0x2B rerank group
     // header chain for index-side compact rerank; bytes 86..92 retain the
     // legacy directory-head slot but are INVALID for v9 packed groups.
-    assert!(EC_IVF_INDEX_FORMAT_VERSION == 9);
+    assert!(EC_IVF_INDEX_FORMAT_VERSION == 10);
     assert!(EC_IVF_METADATA_MAGIC == 0x5649_4345);
-    assert!(EC_IVF_METADATA_BYTES == 92);
+    assert!(EC_IVF_METADATA_BYTES == 93);
     assert!(EC_IVF_METADATA_RERANK_SIDECAR_HEAD_OFFSET == 80);
     assert!(EC_IVF_METADATA_RERANK_SIDECAR_DIRECTORY_HEAD_OFFSET == 86);
     assert!(EC_IVF_METADATA_MAGIC_OFFSET == 0);

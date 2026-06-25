@@ -4,7 +4,7 @@ use std::ptr::{self, NonNull};
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::time::Instant;
 
-use super::quantizer::{self, IvfPqFastScanModel, IvfQuantizer};
+use super::quantizer::{self, IvfPqFastScanModel, IvfQuantizer, IvfTqPlusModel};
 use super::{build_parallel, options, page, training, P_NEW};
 use crate::am::common::{
     callback::pg_am_callback, detoast::DetoastedVarlena, training as common_training,
@@ -548,6 +548,7 @@ impl BuildState {
         }
         let pq_train_start = Instant::now();
         let pq_model = self.train_pq_fastscan_model(dimensions)?;
+        let tqplus_model = self.train_tqplus_model(dimensions)?;
         timing.pq_train_us = elapsed_us(pq_train_start);
         let pq_centroid_count = pq_model
             .as_ref()
@@ -556,6 +557,14 @@ impl BuildState {
         if pq_model.is_some() && !page::pq_codebook_tuple_fits(pq_centroid_count, self.page_size) {
             return Err(format!(
                 "pq_fastscan codebook tuple for group centroid count {pq_centroid_count} does not fit on a page"
+            ));
+        }
+        if tqplus_model.is_some()
+            && !page::pq_codebook_tuple_fits(usize::from(dimensions), self.page_size)
+        {
+            return Err(format!(
+                "TQ+ calibration tuple for dim {} does not fit on a page",
+                dimensions
             ));
         }
 
@@ -605,6 +614,28 @@ impl BuildState {
                 .copied()
                 .unwrap_or(ItemPointer::INVALID);
         }
+        let mut tqplus_calibration_head = ItemPointer::INVALID;
+        if let Some(tqplus_model) = &tqplus_model {
+            let shift_tuple = page::IvfPqCodebookTuple {
+                group_index: 0,
+                next_tid: ItemPointer::INVALID,
+                centroids: tqplus_model.calibration.shift.clone(),
+            };
+            let scale_tuple = page::IvfPqCodebookTuple {
+                group_index: 1,
+                next_tid: ItemPointer::INVALID,
+                centroids: tqplus_model.calibration.scale.clone(),
+            };
+            let shift_tid = data_pages.insert_ivf_pq_codebook(&shift_tuple)?;
+            let scale_tid = data_pages.insert_ivf_pq_codebook(&scale_tuple)?;
+            let linked_shift_tuple = page::IvfPqCodebookTuple {
+                group_index: 0,
+                next_tid: scale_tid,
+                centroids: tqplus_model.calibration.shift.clone(),
+            };
+            data_pages.update_ivf_pq_codebook(shift_tid, &linked_shift_tuple)?;
+            tqplus_calibration_head = shift_tid;
+        }
         timing.centroids_us = elapsed_us(centroids_start);
 
         let source_refs = self
@@ -629,6 +660,9 @@ impl BuildState {
         } else {
             None
         };
+        let tqplus_posting_quantizer = tqplus_model
+            .as_ref()
+            .map(|_| IvfQuantizer::resolve_tqplus_experimental(usize::from(dimensions)));
         // Task 115: when residual encoding is gated on (RaBitQ only), resolve a
         // residual-mode quantizer once; postings are re-encoded against their
         // assigned centroid inside the per-list loop below.
@@ -683,7 +717,9 @@ impl BuildState {
                     let (heap_tid, gamma, payload) = encode_build_posting(
                         &self.heap_tuples[*tuple_index],
                         &pq_model,
+                        &tqplus_model,
                         pq_posting_quantizer,
+                        tqplus_posting_quantizer,
                         residual_posting,
                     )?;
                     let payload_len = payload.len();
@@ -734,7 +770,9 @@ impl BuildState {
                     let (heap_tid, gamma, payload) = encode_build_posting(
                         &self.heap_tuples[*tuple_index],
                         &pq_model,
+                        &tqplus_model,
                         pq_posting_quantizer,
+                        tqplus_posting_quantizer,
                         residual_posting,
                     )?;
                     posting_tids_by_list[list_id].push(
@@ -823,6 +861,10 @@ impl BuildState {
             metadata.pq_group_size = u16::try_from(pq_model.group_size)
                 .map_err(|_| "pq_fastscan group size exceeds u16".to_owned())?;
         }
+        if tqplus_model.is_some() {
+            metadata.pq_codebook_head = tqplus_calibration_head;
+            metadata.pq_group_size = 0;
+        }
         metadata.total_live_tuples = u64::try_from(self.heap_tuples.len())
             .map_err(|_| "heap tuple count exceeds u64".to_owned())?;
         metadata.rerank_sidecar_head = rerank_sidecar_head;
@@ -866,6 +908,32 @@ impl BuildState {
             group_size: model.group_size,
             signs: model.signs,
             flat_codebooks: model.codebooks.into_iter().flatten().collect(),
+        }))
+    }
+
+    fn train_tqplus_model(&self, dimensions: u16) -> Result<Option<IvfTqPlusModel>, String> {
+        if self.options.turboquant_calibration != options::TurboQuantCalibration::TqPlusExperimental
+        {
+            return Ok(None);
+        }
+        let quantizer = ProdQuantizer::cached(
+            usize::from(dimensions),
+            crate::DEFAULT_QUANT_BITS,
+            crate::DEFAULT_QUANT_SEED,
+        );
+        if !quantizer.binary_sign_no_qjl_4bit_supported() {
+            return Err(
+                "ec_ivf TQ+ experimental profile currently requires the no-QJL 4-bit lane"
+                    .to_owned(),
+            );
+        }
+        let sample_vectors = self
+            .training_sample_vectors()
+            .into_iter()
+            .map(<[f32]>::to_vec)
+            .collect::<Vec<_>>();
+        Ok(Some(IvfTqPlusModel {
+            calibration: quantizer.fit_tqplus_calibration(&sample_vectors),
         }))
     }
 }
@@ -1184,25 +1252,33 @@ fn insert_dense_posting_group(
 fn encode_build_posting(
     tuple: &BuildTuple,
     pq_model: &Option<IvfPqFastScanModel>,
+    tqplus_model: &Option<IvfTqPlusModel>,
     pq_posting_quantizer: Option<IvfQuantizer>,
+    tqplus_posting_quantizer: Option<IvfQuantizer>,
     residual_posting: Option<(IvfQuantizer, &[f32])>,
 ) -> Result<(ItemPointer, f32, Vec<u8>), String> {
-    let (gamma, payload) = match (pq_model, residual_posting) {
-        (Some(pq_model), _) => {
+    let (gamma, payload) = match (pq_model, tqplus_model, residual_posting) {
+        (Some(pq_model), _, _) => {
             let (_, gamma, payload) = pq_posting_quantizer
                 .expect("pq posting quantizer should exist for pq model")
                 .encode_source_with_pq_model(&tuple.source_vector, pq_model)?;
             (gamma, payload)
         }
+        (None, Some(tqplus_model), _) => {
+            let (_, gamma, payload) = tqplus_posting_quantizer
+                .expect("TQ+ posting quantizer should exist for TQ+ model")
+                .encode_source_with_tqplus_model(&tuple.source_vector, tqplus_model)?;
+            (gamma, payload)
+        }
         // Task 115: residual mode re-encodes the source against the assigned
         // centroid here (the only point in the build where the list's centroid
         // is in hand), mirroring the deferred PQ re-encode path above.
-        (None, Some((residual_quantizer, centroid))) => {
+        (None, None, Some((residual_quantizer, centroid))) => {
             let (_, gamma, payload) =
                 residual_quantizer.encode_source_residual(&tuple.source_vector, centroid)?;
             (gamma, payload)
         }
-        (None, None) => (tuple.gamma, tuple.payload.clone()),
+        (None, None, None) => (tuple.gamma, tuple.payload.clone()),
     };
     Ok((tuple.heap_tid, gamma, payload))
 }
@@ -1515,6 +1591,7 @@ mod tests {
             rabitq_rerank_score: options::RaBitQRerankScoreMode::Estimator,
             rabitq_rerank_clip: options::EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
             storage_format: options::StorageFormat::Auto,
+            turboquant_calibration: options::TurboQuantCalibration::None,
             rerank: options::RerankMode::Auto,
             coarse_format: options::CoarseFormat::Auto,
             rerank_placement: options::RerankPlacement::Auto,

@@ -29,7 +29,9 @@ mod pg_sys {
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
-use super::options::{EcIvfOptions, RaBitQRerankScoreMode, RerankMode, StorageFormat};
+use super::options::{
+    EcIvfOptions, RaBitQRerankScoreMode, RerankMode, StorageFormat, TurboQuantCalibration,
+};
 #[cfg(any(feature = "pg17", feature = "pg18"))]
 use super::P_NEW;
 #[cfg(not(any(feature = "pg17", feature = "pg18")))]
@@ -53,15 +55,17 @@ pub(super) const METADATA_BLOCK_NUMBER: u32 = 0;
 pub(super) const FIRST_DATA_BLOCK_NUMBER: pg_sys::BlockNumber = 1;
 #[cfg(not(any(feature = "pg17", feature = "pg18")))]
 pub(super) const FIRST_DATA_BLOCK_NUMBER: u32 = 1;
-// v9 metadata is the only supported on-disk format. It is 92 bytes wide and
+// v10 metadata is the only supported on-disk format. It is 93 bytes wide and
 // stores RaBitQ rerank score knobs at bytes 22..24 plus the rerank sidecar head
-// ItemPointer at bytes 80..86. In v9 that head
+// ItemPointer at bytes 80..86. In v9/v10 that head
 // points at the 0x2B packed rerank group-header chain used by
 // rerank_placement = 'index'. RaBitQ and TurboQuant rerank group payloads are
 // encoded relative to the assigned centroid in v8; v9 expands the persisted
-// compact-rerank score mode byte to include exact-dequant diagnostics. v7 used
-// the same payload layout but read the RaBitQ rerank score knobs from mutable
-// live reloptions, v6 used centroid-relative RaBitQ but whole-vector
+// compact-rerank score mode byte to include exact-dequant diagnostics. v10 adds
+// a TurboQuant calibration profile byte at offset 92 so TQ+ experimental
+// indexes cannot be read as ordinary TurboQuant by older builds. v7 used the
+// same payload layout but read the RaBitQ rerank score knobs from mutable live
+// reloptions, v6 used centroid-relative RaBitQ but whole-vector
 // TurboQuant bytes, v5 used the same layout with non-residual RaBitQ bytes,
 // and v4's 0x2A heap-TID
 // sidecar remains a legacy benchmark baseline. No older version is a readable
@@ -74,11 +78,12 @@ pub(super) const FIRST_DATA_BLOCK_NUMBER: u32 = 1;
 // storage (rerank reads from the heap/source-vector path instead). This
 // research project keeps no backward compatibility with older metadata
 // widths/layouts.
-pub const EC_IVF_INDEX_FORMAT_VERSION: u16 = 9;
+pub const EC_IVF_INDEX_FORMAT_VERSION: u16 = 10;
 pub(super) const INDEX_FORMAT_VERSION: u16 = EC_IVF_INDEX_FORMAT_VERSION;
+const PRE_TQPLUS_INDEX_FORMAT_VERSION: u16 = 9;
 
 pub const EC_IVF_METADATA_MAGIC: u32 = 0x5649_4345; // "ECIV" as little-endian bytes.
-pub const EC_IVF_METADATA_BYTES: usize = 92;
+pub const EC_IVF_METADATA_BYTES: usize = 93;
 pub const EC_IVF_METADATA_MAGIC_OFFSET: usize = 0;
 pub const EC_IVF_METADATA_FORMAT_VERSION_OFFSET: usize = 4;
 pub const EC_IVF_METADATA_DIMENSIONS_OFFSET: usize = 6;
@@ -107,6 +112,10 @@ pub const EC_IVF_METADATA_RERANK_SIDECAR_HEAD_OFFSET: usize = 80;
 /// keep the field for metadata width stability but write INVALID; group headers
 /// chain through their own `next_group_tid`.
 pub const EC_IVF_METADATA_RERANK_SIDECAR_DIRECTORY_HEAD_OFFSET: usize = 86;
+/// Task 89 / ADR-081: TurboQuant calibration profile byte. `0` means ordinary
+/// TurboQuant; `1` means IVF-only TQ+ experimental calibration metadata is
+/// stored in the PQ-codebook chain.
+pub const EC_IVF_METADATA_TURBOQUANT_CALIBRATION_OFFSET: usize = 92;
 
 pub const EC_IVF_BLOCK_REF_BYTES: usize = 4;
 pub const EC_IVF_BLOCK_REF_BLOCK_NUMBER_OFFSET: usize = 0;
@@ -737,6 +746,10 @@ pub struct MetadataPage {
     /// indexes write 0 here and the decoder coerces to 4 (the legacy
     /// hardcoded value).
     pub quant_bits: u8,
+    /// Task 89 / ADR-081: build-time TurboQuant calibration profile. Nonzero
+    /// values require `storage_format = turboquant` and a calibration metadata
+    /// chain rooted at `pq_codebook_head`.
+    pub turboquant_calibration: TurboQuantCalibration,
     /// Task 115: when true (RaBitQ only), posting payloads are residual-encoded
     /// against the assigned centroid and scan applies the per-list centroid
     /// correction. Stored at metadata byte 35 (0 = plain, the default for every
@@ -777,6 +790,7 @@ impl MetadataPage {
             rabitq_rerank_clip: u8::try_from(options.rabitq_rerank_clip)
                 .expect("validated rabitq_rerank_clip should fit in u8"),
             quant_bits: options.effective_quant_bits(),
+            turboquant_calibration: options.turboquant_calibration,
             rabitq_residual: options.rabitq_residual,
             centroid_head: ItemPointer::INVALID,
             directory_head: ItemPointer::INVALID,
@@ -826,13 +840,15 @@ impl MetadataPage {
         write_item_pointer(&mut out[80..86], self.rerank_sidecar_head);
         // ADR-079: rerank sidecar directory head (bytes 86..92).
         write_item_pointer(&mut out[86..92], self.rerank_sidecar_directory_head);
+        out[92] = self.turboquant_calibration.metadata_byte();
         out
     }
 
     pub fn decode(bytes: &[u8]) -> Result<Self, String> {
-        // v9 is the only supported width (92 bytes), including compact rerank
-        // score knobs at bytes 22..24, the packed rerank group head at bytes
-        // 80..86, and the legacy sidecar directory head at bytes 86..92.
+        // v10 adds the TurboQuant calibration profile at byte 92. v9 indexes
+        // used a 92-byte logical metadata payload, but the page special area
+        // was already aligned wider, so byte 92 reads as padding and must be
+        // treated as "no calibration" for compatibility.
         if bytes.len() < EC_IVF_METADATA_BYTES {
             return Err(format!(
                 "ec_ivf metadata length mismatch: got {}, expected at least {EC_IVF_METADATA_BYTES}",
@@ -852,11 +868,18 @@ impl MetadataPage {
                 .try_into()
                 .expect("metadata format slice should be 2 bytes"),
         );
-        if format_version != INDEX_FORMAT_VERSION {
+        if format_version != INDEX_FORMAT_VERSION
+            && format_version != PRE_TQPLUS_INDEX_FORMAT_VERSION
+        {
             return Err(format!(
                 "unsupported ec_ivf metadata format version: {format_version}"
             ));
         }
+        let turboquant_calibration = if format_version == INDEX_FORMAT_VERSION {
+            TurboQuantCalibration::from_metadata_byte(bytes[92])?
+        } else {
+            TurboQuantCalibration::None
+        };
         Ok(Self {
             format_version,
             dimensions: u16::from_le_bytes(
@@ -911,6 +934,7 @@ impl MetadataPage {
                     ))
                 }
             },
+            turboquant_calibration,
             // Task 115: residual-mode flag (byte 35). v1/v2 indexes wrote 0
             // here, so they decode as plain RaBitQ — the recall-safe default.
             rabitq_residual: match bytes[35] {
@@ -953,7 +977,8 @@ impl MetadataPage {
             )?,
             // ADR-079 rerank sidecar directory head (bytes 86..92).
             rerank_sidecar_directory_head: ItemPointer::decode(
-                &bytes[EC_IVF_METADATA_RERANK_SIDECAR_DIRECTORY_HEAD_OFFSET..EC_IVF_METADATA_BYTES],
+                &bytes[EC_IVF_METADATA_RERANK_SIDECAR_DIRECTORY_HEAD_OFFSET
+                    ..EC_IVF_METADATA_RERANK_SIDECAR_DIRECTORY_HEAD_OFFSET + ITEM_POINTER_BYTES],
             )?,
         })
     }
@@ -4865,6 +4890,7 @@ mod tests {
             rabitq_rerank_score: RaBitQRerankScoreMode::Estimator,
             rabitq_rerank_clip: EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
             storage_format: StorageFormat::RaBitQ,
+            turboquant_calibration: TurboQuantCalibration::None,
             rerank: RerankMode::HeapF32,
             coarse_format: CoarseFormat::Auto,
             rerank_placement: RerankPlacement::Auto,
@@ -4895,6 +4921,42 @@ mod tests {
     }
 
     #[test]
+    fn metadata_decode_v9_defaults_turboquant_calibration_to_none() {
+        let metadata = MetadataPage::empty(EcIvfOptions {
+            nlists: 128,
+            nprobe: 8,
+            rerank_width: 0,
+            training_sample_rows: 10_000,
+            seed: 7,
+            pq_group_size: 0,
+            posting_slack_percent: 0,
+            quant_bits: 4,
+            coarse_bits: 0,
+            dense_posting_blocks: false,
+            dense_posting_typed_layout: false,
+            rabitq_residual: false,
+            rabitq_rerank_score: RaBitQRerankScoreMode::Estimator,
+            rabitq_rerank_clip: EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
+            storage_format: StorageFormat::TurboQuant,
+            turboquant_calibration: TurboQuantCalibration::None,
+            rerank: RerankMode::HeapF32,
+            coarse_format: CoarseFormat::Auto,
+            rerank_placement: RerankPlacement::Auto,
+            rerank_format: RerankFormat::Auto,
+        });
+        let mut encoded = metadata.encode();
+        encoded[EC_IVF_METADATA_FORMAT_VERSION_OFFSET
+            ..EC_IVF_METADATA_FORMAT_VERSION_OFFSET + std::mem::size_of::<u16>()]
+            .copy_from_slice(&9_u16.to_le_bytes());
+        encoded[EC_IVF_METADATA_TURBOQUANT_CALIBRATION_OFFSET] = 255;
+
+        let decoded = MetadataPage::decode(&encoded).unwrap();
+
+        assert_eq!(decoded.format_version, 9);
+        assert_eq!(decoded.turboquant_calibration, TurboQuantCalibration::None);
+    }
+
+    #[test]
     fn metadata_roundtrips_rabitq_rerank_score_knobs() {
         let metadata = MetadataPage::empty(EcIvfOptions {
             nlists: 64,
@@ -4912,6 +4974,7 @@ mod tests {
             rabitq_rerank_score: RaBitQRerankScoreMode::LeastSquares,
             rabitq_rerank_clip: 4,
             storage_format: StorageFormat::CoarseRerank,
+            turboquant_calibration: TurboQuantCalibration::None,
             rerank: RerankMode::HeapF32,
             coarse_format: CoarseFormat::RaBitQ,
             rerank_placement: RerankPlacement::Index,
@@ -4954,6 +5017,7 @@ mod tests {
             rabitq_rerank_score: RaBitQRerankScoreMode::ExactDequant,
             rabitq_rerank_clip: 4,
             storage_format: StorageFormat::CoarseRerank,
+            turboquant_calibration: TurboQuantCalibration::None,
             rerank: RerankMode::HeapF32,
             coarse_format: CoarseFormat::RaBitQ,
             rerank_placement: RerankPlacement::Index,
@@ -4992,6 +5056,7 @@ mod tests {
             rabitq_rerank_score: RaBitQRerankScoreMode::Estimator,
             rabitq_rerank_clip: EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
             storage_format: StorageFormat::RaBitQ,
+            turboquant_calibration: TurboQuantCalibration::None,
             rerank: RerankMode::HeapF32,
             coarse_format: CoarseFormat::Auto,
             rerank_placement: RerankPlacement::Auto,
@@ -5029,6 +5094,7 @@ mod tests {
             rabitq_rerank_score: RaBitQRerankScoreMode::Estimator,
             rabitq_rerank_clip: EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
             storage_format: StorageFormat::Auto,
+            turboquant_calibration: TurboQuantCalibration::None,
             rerank: RerankMode::Auto,
             coarse_format: CoarseFormat::Auto,
             rerank_placement: RerankPlacement::Auto,
@@ -5058,6 +5124,7 @@ mod tests {
             rabitq_rerank_score: RaBitQRerankScoreMode::Estimator,
             rabitq_rerank_clip: EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
             storage_format: StorageFormat::Auto,
+            turboquant_calibration: TurboQuantCalibration::None,
             rerank: RerankMode::Auto,
             coarse_format: CoarseFormat::Auto,
             rerank_placement: RerankPlacement::Auto,
@@ -6306,6 +6373,7 @@ mod tests {
             rabitq_rerank_score: RaBitQRerankScoreMode::Estimator,
             rabitq_rerank_clip: EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
             storage_format: StorageFormat::Auto,
+            turboquant_calibration: TurboQuantCalibration::None,
             rerank: RerankMode::Auto,
             coarse_format: CoarseFormat::Auto,
             rerank_placement: RerankPlacement::Auto,
