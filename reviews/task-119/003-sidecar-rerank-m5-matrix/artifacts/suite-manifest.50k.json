@@ -1,0 +1,133 @@
+{
+  "suite": "task119-hnsw-rabitq-sidecar-rerank-matrix",
+  "schema_version": 1,
+  "config": "crates/ecaz-cli/suites/task119-hnsw-rabitq-sidecar-rerank-matrix.json",
+  "config_sha256": "8d944284e65a63afa8fbd180ecc8d9bcdaf903026184491ff130d0f002398d85",
+  "dry_run": false,
+  "generated_at_unix_ms": 1782355884997,
+  "connection": {
+    "database": "tqvector_task119_m5_release2",
+    "host": "/Users/peter/.pgrx",
+    "port": 28818,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "sidecar-10k-hnsw-rabitq-required-rerank-matrix",
+      "kind": "sidecar-rerank",
+      "command": [],
+      "selected": false,
+      "quant": "rabitq",
+      "tags": [
+        "task119",
+        "sidecar_rerank",
+        "ec_real_10k",
+        "hnsw",
+        "rabitq",
+        "required_matrix"
+      ],
+      "expected_artifacts": [
+        "reviews/task-119/003-sidecar-rerank-m5-matrix/artifacts/sidecar-10k-hnsw-rabitq-required-rerank-matrix.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "sidecar-50k-hnsw-rabitq-required-rerank-matrix",
+      "kind": "sidecar-rerank",
+      "command": [
+        "--database",
+        "tqvector_task119_m5_release2",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "sidecar-rerank",
+        "--prefix",
+        "task119_real50k_hnsw_rabitq",
+        "--profile",
+        "ec_hnsw",
+        "--k",
+        "10",
+        "--candidate-k",
+        "1000",
+        "--concurrency",
+        "1",
+        "--sweep",
+        "320,500,1000",
+        "--queries-limit",
+        "200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--variant",
+        "f32",
+        "--variant",
+        "rabitq2",
+        "--variant",
+        "rabitq4",
+        "--variant",
+        "rabitq8",
+        "--variant",
+        "turboquant_2bit",
+        "--variant",
+        "turboquant_3bit",
+        "--variant",
+        "turboquant_4bit",
+        "--variant",
+        "turboquant_5bit",
+        "--variant",
+        "turboquant_6bit",
+        "--variant",
+        "turboquant_7bit",
+        "--variant",
+        "turboquant_8bit",
+        "--read-mode",
+        "free",
+        "--force-index",
+        "--allow-unsafe-index-shape",
+        "--log-output",
+        "reviews/task-119/003-sidecar-rerank-m5-matrix/artifacts/sidecar-50k-hnsw-rabitq-required-rerank-matrix.log"
+      ],
+      "selected": true,
+      "quant": "rabitq",
+      "tags": [
+        "task119",
+        "sidecar_rerank",
+        "ec_real_50k",
+        "hnsw",
+        "rabitq",
+        "required_matrix"
+      ],
+      "expected_artifacts": [
+        "reviews/task-119/003-sidecar-rerank-m5-matrix/artifacts/sidecar-50k-hnsw-rabitq-required-rerank-matrix.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1782355884998,
+      "finished_at_unix_ms": 1782356473691,
+      "duration_ms": 588690,
+      "exit_code": 0
+    },
+    {
+      "name": "sidecar-100k-hnsw-rabitq-required-rerank-matrix",
+      "kind": "sidecar-rerank",
+      "command": [],
+      "selected": false,
+      "quant": "rabitq",
+      "tags": [
+        "task119",
+        "sidecar_rerank",
+        "ec_real_100k",
+        "hnsw",
+        "rabitq",
+        "required_matrix"
+      ],
+      "expected_artifacts": [
+        "reviews/task-119/003-sidecar-rerank-m5-matrix/artifacts/sidecar-100k-hnsw-rabitq-required-rerank-matrix.log"
+      ],
+      "status": "skipped"
+    }
+  ]
+}
