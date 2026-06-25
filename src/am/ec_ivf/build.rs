@@ -921,12 +921,6 @@ impl BuildState {
             crate::DEFAULT_QUANT_BITS,
             crate::DEFAULT_QUANT_SEED,
         );
-        if !quantizer.binary_sign_no_qjl_4bit_supported() {
-            return Err(
-                "ec_ivf TQ+ experimental profile currently requires the no-QJL 4-bit lane"
-                    .to_owned(),
-            );
-        }
         let sample_vectors = self
             .training_sample_vectors()
             .into_iter()

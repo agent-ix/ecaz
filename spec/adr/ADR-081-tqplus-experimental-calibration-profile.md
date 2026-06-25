@@ -54,8 +54,11 @@ TQ+ changes the TurboQuant build/query/scoring pipeline in calibrated space:
 2. Encode database vectors through that calibration before packing TurboQuant
    codes.
 3. Persist calibration metadata with the IVF index.
-4. Persist a per-vector renormalization scalar only if the Phase 1 measurement
-   shows that it is required for recall or score-error quality.
+4. Persist per-vector scalar state according to the TurboQuant scoring lane:
+   no-QJL 4-bit reuses the existing IVF posting gamma field as the candidate
+   renormalization scalar; QJL/gamma-aware TQ+ keeps residual gamma in that
+   field and appends a 4-byte candidate renormalization scalar to the
+   experimental posting payload.
 5. Prepare queries through inverse calibration and bias handling before building
    the TurboQuant scorer state.
 6. Score with the existing TurboQuant scorer family wherever possible.

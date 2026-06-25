@@ -53,6 +53,8 @@ pub struct TqPlusCalibration {
 #[derive(Debug, Clone, PartialEq)]
 pub struct TqPlusNoQjl4BitEncoded {
     pub mse_packed: Vec<u8>,
+    pub qjl_packed: Vec<u8>,
+    pub residual_gamma: f32,
     pub renorm: f32,
 }
 
@@ -60,6 +62,8 @@ pub struct TqPlusNoQjl4BitEncoded {
 pub struct PreparedTqPlusNoQjl4BitQuery {
     pub lut: Vec<f32>,
     pub bias: f32,
+    pub sq: Vec<f32>,
+    pub qjl_scale: f32,
 }
 
 pub use crate::quant::rabitq::BinarySignNoQjl4BitQuery;
@@ -462,8 +466,8 @@ impl ProdQuantizer {
             "TQ+ calibration requires at least one training vector"
         );
         assert!(
-            self.bits == 4 && !qjl_enabled(self.original_dim, self.bits),
-            "TQ+ experimental calibration currently targets the no-QJL 4-bit lane"
+            self.bits == 4,
+            "TQ+ experimental calibration requires 4-bit TurboQuant"
         );
 
         let mut sorted_by_dim = vec![Vec::with_capacity(vectors.len()); self.original_dim];
@@ -504,6 +508,14 @@ impl ProdQuantizer {
         vector: &[f32],
         calibration: &TqPlusCalibration,
     ) -> TqPlusNoQjl4BitEncoded {
+        self.encode_tqplus_4bit(vector, calibration)
+    }
+
+    pub fn encode_tqplus_4bit(
+        &self,
+        vector: &[f32],
+        calibration: &TqPlusCalibration,
+    ) -> TqPlusNoQjl4BitEncoded {
         assert_eq!(
             vector.len(),
             self.original_dim,
@@ -512,8 +524,8 @@ impl ProdQuantizer {
             self.original_dim
         );
         assert!(
-            self.bits == 4 && !qjl_enabled(self.original_dim, self.bits),
-            "TQ+ experimental encoding currently targets the no-QJL 4-bit lane"
+            self.bits == 4,
+            "TQ+ experimental encoding requires 4-bit TurboQuant"
         );
         assert_eq!(calibration.shift.len(), self.original_dim);
         assert_eq!(calibration.scale.len(), self.original_dim);
@@ -521,19 +533,59 @@ impl ProdQuantizer {
         let norm = vector.iter().map(|value| value * value).sum::<f32>().sqrt();
         let normalized = normalized_for_tqplus(vector);
         let rotated = rotation::srht_padded(&normalized, &self.signs);
+        let bits_per_index = mse_bits(self.original_dim, self.bits);
         let mut indices = Vec::with_capacity(self.original_dim);
         for (dim_index, value) in rotated[..self.original_dim].iter().enumerate() {
             let calibrated = *value * calibration.scale[dim_index] + calibration.shift[dim_index];
             indices.push(nearest_code_index(&self.codebook, calibrated));
         }
 
+        let (qjl_packed, residual_gamma) = if qjl_enabled(self.original_dim, self.bits) {
+            let calibrated_mse = mse::decode_indices(&self.codebook, &indices);
+            let mut rotated_domain = vec![0.0_f32; self.transform_dim];
+            for dim_index in 0..self.original_dim {
+                let inv_scale = 1.0 / calibration.scale[dim_index].max(1.0e-6);
+                rotated_domain[dim_index] =
+                    (calibrated_mse[dim_index] - calibration.shift[dim_index]) * inv_scale;
+            }
+            let decoded_mse = qjl::decode_mse_only(&rotated_domain, &self.signs, self.original_dim);
+            let residual = normalized
+                .iter()
+                .zip(decoded_mse.iter())
+                .map(|(input, approx)| input - approx)
+                .collect::<Vec<_>>();
+            let residual_gamma = residual
+                .iter()
+                .map(|value| value * value)
+                .sum::<f32>()
+                .sqrt();
+            let qjl_projection = qjl::qjl_project(&residual, &self.qjl_signs);
+            let qjl_signs = qjl_projection[..self.original_dim]
+                .iter()
+                .map(|value| *value >= 0.0)
+                .collect::<Vec<_>>();
+            (pack_qjl_signs(&qjl_signs), residual_gamma)
+        } else {
+            (Vec::new(), 0.0)
+        };
+
         TqPlusNoQjl4BitEncoded {
-            mse_packed: pack_mse_indices(&indices, 4),
+            mse_packed: pack_mse_indices(&indices, bits_per_index),
+            qjl_packed,
+            residual_gamma,
             renorm: norm,
         }
     }
 
     pub fn prepare_ip_query_tqplus_no_qjl_4bit(
+        &self,
+        query: &[f32],
+        calibration: &TqPlusCalibration,
+    ) -> PreparedTqPlusNoQjl4BitQuery {
+        self.prepare_ip_query_tqplus_4bit(query, calibration)
+    }
+
+    pub fn prepare_ip_query_tqplus_4bit(
         &self,
         query: &[f32],
         calibration: &TqPlusCalibration,
@@ -546,14 +598,17 @@ impl ProdQuantizer {
             self.original_dim
         );
         assert!(
-            self.bits == 4 && !qjl_enabled(self.original_dim, self.bits),
-            "TQ+ experimental query prep currently targets the no-QJL 4-bit lane"
+            self.bits == 4,
+            "TQ+ experimental query prep requires 4-bit TurboQuant"
         );
         assert_eq!(calibration.shift.len(), self.original_dim);
         assert_eq!(calibration.scale.len(), self.original_dim);
 
+        let qjl_active = qjl_enabled(self.original_dim, self.bits);
         let rotated = rotation::srht_padded(query, &self.signs);
-        let mut lut = Vec::with_capacity(self.original_dim * 16);
+        let mut qjl_projection = qjl_active.then(|| qjl::qjl_project(query, &self.qjl_signs));
+        let num_centroids = 1usize << mse_bits(self.original_dim, self.bits);
+        let mut lut = Vec::with_capacity(self.original_dim * num_centroids);
         let mut bias = 0.0_f32;
         for dim_index in 0..self.original_dim {
             let inv_scale = 1.0 / calibration.scale[dim_index].max(1.0e-6);
@@ -564,16 +619,45 @@ impl ProdQuantizer {
             }
         }
 
-        PreparedTqPlusNoQjl4BitQuery { lut, bias }
+        if let Some(projection) = qjl_projection.as_mut() {
+            projection.truncate(self.original_dim);
+        }
+
+        PreparedTqPlusNoQjl4BitQuery {
+            lut,
+            bias,
+            sq: qjl_projection.unwrap_or_default(),
+            qjl_scale: if qjl_active {
+                (PI / 2.0).sqrt() / self.original_dim as f32
+            } else {
+                0.0
+            },
+        }
     }
 
     pub fn score_tqplus_no_qjl_4bit_from_parts(
         &self,
         prepared: &PreparedTqPlusNoQjl4BitQuery,
-        renorm: f32,
-        mse_packed: &[u8],
+        gamma_or_renorm: f32,
+        code_bytes: &[u8],
     ) -> f32 {
-        self.score_tqplus_no_qjl_4bit_unrenormalized(prepared, mse_packed) * renorm
+        self.score_tqplus_4bit_from_parts(prepared, gamma_or_renorm, code_bytes)
+    }
+
+    pub fn score_tqplus_4bit_from_parts(
+        &self,
+        prepared: &PreparedTqPlusNoQjl4BitQuery,
+        gamma_or_renorm: f32,
+        code_bytes: &[u8],
+    ) -> f32 {
+        let (mse_packed, qjl_packed, renorm) =
+            self.split_tqplus_4bit_code_bytes(code_bytes, gamma_or_renorm);
+        self.score_tqplus_no_qjl_4bit_unrenormalized_with_qjl(
+            prepared,
+            gamma_or_renorm,
+            mse_packed,
+            qjl_packed,
+        ) * renorm
     }
 
     pub fn score_tqplus_no_qjl_4bit_unrenormalized(
@@ -581,17 +665,48 @@ impl ProdQuantizer {
         prepared: &PreparedTqPlusNoQjl4BitQuery,
         mse_packed: &[u8],
     ) -> f32 {
-        assert!(
-            self.bits == 4 && !qjl_enabled(self.original_dim, self.bits),
-            "TQ+ experimental scoring currently targets the no-QJL 4-bit lane"
-        );
-        assert_eq!(prepared.lut.len(), self.original_dim * 16);
-        assert_eq!(mse_packed.len(), mse_code_len(self.original_dim, self.bits));
+        self.score_tqplus_no_qjl_4bit_unrenormalized_with_qjl(prepared, 0.0, mse_packed, &[])
+    }
 
+    fn score_tqplus_no_qjl_4bit_unrenormalized_with_qjl(
+        &self,
+        prepared: &PreparedTqPlusNoQjl4BitQuery,
+        residual_gamma: f32,
+        mse_packed: &[u8],
+        qjl_packed: &[u8],
+    ) -> f32 {
+        assert!(
+            self.bits == 4,
+            "TQ+ experimental scoring requires 4-bit TurboQuant"
+        );
+        let bits_per_index = mse_bits(self.original_dim, self.bits);
+        let num_centroids = 1usize << bits_per_index;
+        assert_eq!(prepared.lut.len(), self.original_dim * num_centroids);
+        assert_eq!(mse_packed.len(), mse_code_len(self.original_dim, self.bits));
         let mut score = 0.0_f32;
         for dim_index in 0..self.original_dim {
-            let centroid_index = mse_index_at(mse_packed, dim_index, 4) as usize;
-            score += prepared.lut[dim_index * 16 + centroid_index];
+            let centroid_index = mse_index_at(mse_packed, dim_index, bits_per_index) as usize;
+            score += prepared.lut[dim_index * num_centroids + centroid_index];
+        }
+
+        if qjl_enabled(self.original_dim, self.bits) {
+            assert_eq!(
+                qjl_packed.len(),
+                qjl_code_len_for_bits(self.original_dim, self.bits)
+            );
+            assert_eq!(prepared.sq.len(), self.original_dim);
+            let mut qjl_sum = 0.0_f32;
+            for dim_index in 0..self.original_dim {
+                qjl_sum += if qjl_sign_at(qjl_packed, dim_index) {
+                    prepared.sq[dim_index]
+                } else {
+                    -prepared.sq[dim_index]
+                };
+            }
+            score += residual_gamma * prepared.qjl_scale * qjl_sum;
+        } else {
+            assert!(qjl_packed.is_empty());
+            assert!(prepared.sq.is_empty());
         }
 
         score + prepared.bias
@@ -1241,6 +1356,70 @@ impl ProdQuantizer {
             gamma,
             &payload[mse_start..qjl_start],
             &payload[qjl_start..qjl_start + qjl_len],
+        )
+    }
+
+    pub fn tqplus_code_len(&self) -> usize {
+        let base = mse_code_len(self.original_dim, self.bits)
+            + qjl_code_len_for_bits(self.original_dim, self.bits);
+        if qjl_enabled(self.original_dim, self.bits) {
+            base + std::mem::size_of::<f32>()
+        } else {
+            base
+        }
+    }
+
+    pub fn pack_tqplus_code(&self, encoded: &TqPlusNoQjl4BitEncoded) -> Vec<u8> {
+        assert_eq!(
+            encoded.mse_packed.len(),
+            mse_code_len(self.original_dim, self.bits)
+        );
+        assert_eq!(
+            encoded.qjl_packed.len(),
+            qjl_code_len_for_bits(self.original_dim, self.bits)
+        );
+        let mut code = Vec::with_capacity(self.tqplus_code_len());
+        code.extend_from_slice(&encoded.mse_packed);
+        code.extend_from_slice(&encoded.qjl_packed);
+        if qjl_enabled(self.original_dim, self.bits) {
+            code.extend_from_slice(&encoded.renorm.to_le_bytes());
+        }
+        code
+    }
+
+    fn split_tqplus_4bit_code_bytes<'a>(
+        &self,
+        code_bytes: &'a [u8],
+        gamma_or_renorm: f32,
+    ) -> (&'a [u8], &'a [u8], f32) {
+        assert!(
+            self.bits == 4,
+            "TQ+ experimental scoring requires 4-bit TurboQuant"
+        );
+        let mse_len = mse_code_len(self.original_dim, self.bits);
+        let qjl_len = qjl_code_len_for_bits(self.original_dim, self.bits);
+        let expected = self.tqplus_code_len();
+        assert_eq!(
+            code_bytes.len(),
+            expected,
+            "TQ+ code length mismatch: got {}, expected {expected}",
+            code_bytes.len()
+        );
+        let qjl_start = mse_len;
+        let qjl_end = qjl_start + qjl_len;
+        let renorm = if qjl_enabled(self.original_dim, self.bits) {
+            f32::from_le_bytes(
+                code_bytes[qjl_end..qjl_end + std::mem::size_of::<f32>()]
+                    .try_into()
+                    .expect("TQ+ renorm slice"),
+            )
+        } else {
+            gamma_or_renorm
+        };
+        (
+            &code_bytes[..mse_len],
+            &code_bytes[qjl_start..qjl_end],
+            renorm,
         )
     }
 
@@ -2752,6 +2931,57 @@ mod tests {
                     acc + prepared.lut[dim_index * 16 + usize::from(*centroid_index)]
                 });
         let explicit = explicit_unrenormalized * encoded.renorm;
+        assert!(
+            (score - explicit).abs() <= 1.0e-5,
+            "score={score} explicit={explicit}"
+        );
+    }
+
+    #[test]
+    fn tqplus_qjl_score_uses_residual_gamma_and_appended_renorm() {
+        let quantizer = ProdQuantizer::new(32, 4, 42);
+        assert!(!quantizer.binary_sign_no_qjl_4bit_supported());
+        assert!(quantizer.exact_score_uses_qjl());
+        let vectors = (0..16)
+            .map(|seed| random_unit_vector(32, 3000 + seed))
+            .collect::<Vec<_>>();
+        let calibration = quantizer.fit_tqplus_calibration(&vectors);
+        let query = random_unit_vector(32, 33);
+        let candidate = random_unit_vector(32, 34)
+            .into_iter()
+            .map(|value| value * 2.25)
+            .collect::<Vec<_>>();
+        let encoded = quantizer.encode_tqplus_4bit(&candidate, &calibration);
+        let prepared = quantizer.prepare_ip_query_tqplus_4bit(&query, &calibration);
+        let code = quantizer.pack_tqplus_code(&encoded);
+
+        assert_eq!(encoded.mse_packed.len(), mse_code_len(32, 4));
+        assert_eq!(encoded.qjl_packed.len(), qjl_code_len(32));
+        assert_eq!(code.len(), mse_code_len(32, 4) + qjl_code_len(32) + 4);
+
+        let score =
+            quantizer.score_tqplus_4bit_from_parts(&prepared, encoded.residual_gamma, &code);
+
+        let indices = unpack_mse_indices(&encoded.mse_packed, 32, 3);
+        let mut explicit_unrenormalized =
+            indices
+                .iter()
+                .enumerate()
+                .fold(prepared.bias, |acc, (dim_index, centroid_index)| {
+                    acc + prepared.lut[dim_index * 8 + usize::from(*centroid_index)]
+                });
+        let qjl_sum = (0..32)
+            .map(|dim_index| {
+                if qjl_sign_at(&encoded.qjl_packed, dim_index) {
+                    prepared.sq[dim_index]
+                } else {
+                    -prepared.sq[dim_index]
+                }
+            })
+            .sum::<f32>();
+        explicit_unrenormalized += encoded.residual_gamma * prepared.qjl_scale * qjl_sum;
+        let explicit = explicit_unrenormalized * encoded.renorm;
+
         assert!(
             (score - explicit).abs() <= 1.0e-5,
             "score={score} explicit={explicit}"

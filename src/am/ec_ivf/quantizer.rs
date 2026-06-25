@@ -268,8 +268,13 @@ impl IvfQuantizer {
             crate::DEFAULT_QUANT_BITS,
             crate::DEFAULT_QUANT_SEED,
         );
-        let encoded = quantizer.encode_tqplus_no_qjl_4bit(source, &model.calibration);
-        Ok((dimensions, encoded.renorm, encoded.mse_packed))
+        let encoded = quantizer.encode_tqplus_4bit(source, &model.calibration);
+        let gamma = if encoded.qjl_packed.is_empty() {
+            encoded.renorm
+        } else {
+            encoded.residual_gamma
+        };
+        Ok((dimensions, gamma, quantizer.pack_tqplus_code(&encoded)))
     }
 
     /// Task 115: encode `source` as the RaBitQ residual against its assigned
@@ -404,7 +409,7 @@ impl IvfQuantizer {
             crate::DEFAULT_QUANT_SEED,
         );
         Ok(IvfPreparedQuery::TurboQuantTqPlus(
-            quantizer.prepare_ip_query_tqplus_no_qjl_4bit(query, &model.calibration),
+            quantizer.prepare_ip_query_tqplus_4bit(query, &model.calibration),
         ))
     }
 
@@ -476,7 +481,7 @@ impl IvfQuantizer {
                     crate::DEFAULT_QUANT_BITS,
                     crate::DEFAULT_QUANT_SEED,
                 );
-                Ok(quantizer.score_tqplus_no_qjl_4bit_from_parts(prepared_query, gamma, payload))
+                Ok(quantizer.score_tqplus_4bit_from_parts(prepared_query, gamma, payload))
             }
             (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::RaBitQ(prepared_query)) => {
                 let _ = gamma;
@@ -1130,8 +1135,16 @@ impl IvfQuantizer {
 
     pub(super) fn payload_len(self) -> usize {
         match self.profile {
-            IvfQuantizerProfile::TurboQuant | IvfQuantizerProfile::TurboQuantTqPlus => {
+            IvfQuantizerProfile::TurboQuant => {
                 crate::code_len(self.dimensions, crate::DEFAULT_QUANT_BITS)
+            }
+            IvfQuantizerProfile::TurboQuantTqPlus => {
+                let quantizer = ProdQuantizer::cached(
+                    self.dimensions,
+                    crate::DEFAULT_QUANT_BITS,
+                    crate::DEFAULT_QUANT_SEED,
+                );
+                quantizer.tqplus_code_len()
             }
             IvfQuantizerProfile::PqFastScan { group_count, .. } => group_count.div_ceil(2),
             IvfQuantizerProfile::RaBitQ => code_len_for(self.dimensions, self.rabitq_bits)
@@ -1213,17 +1226,6 @@ impl IvfQuantizer {
                         model.calibration.scale.len(),
                         self.dimensions
                     ));
-                }
-                let quantizer = ProdQuantizer::cached(
-                    self.dimensions,
-                    crate::DEFAULT_QUANT_BITS,
-                    crate::DEFAULT_QUANT_SEED,
-                );
-                if !quantizer.binary_sign_no_qjl_4bit_supported() {
-                    return Err(
-                        "ec_ivf TQ+ experimental profile currently requires the no-QJL 4-bit lane"
-                            .to_owned(),
-                    );
                 }
                 Ok(())
             }
@@ -1644,7 +1646,7 @@ impl IvfPreparedQuery {
         match self {
             Self::TurboQuant(prepared) => prepared.sq.len(),
             Self::TurboQuantNoQjl4BitLut(_) => 0,
-            Self::TurboQuantTqPlus(_) => 0,
+            Self::TurboQuantTqPlus(prepared) => prepared.sq.len(),
             Self::PqFastScan { .. } => 0,
             Self::RaBitQ(_) => 0,
         }
@@ -1835,6 +1837,63 @@ mod tests {
                 .score_ip_from_parts(&prepared, gamma, &payload)
                 .unwrap(),
             direct.score_ip_from_parts_lut_no_qjl_4bit(&direct_prepared, &payload)
+        );
+    }
+
+    #[test]
+    fn tqplus_qjl_ivf_payload_uses_gamma_for_residual_and_appends_renorm() {
+        let dimensions = 32;
+        let source = unit_vector(dimensions)
+            .into_iter()
+            .map(|value| value * 2.0)
+            .collect::<Vec<_>>();
+        let query = unit_vector(dimensions);
+        let training_rows = (0..16)
+            .map(|seed| {
+                let mut values = (0..dimensions)
+                    .map(|index| (((index + seed) % 13) as f32 - 6.0) / dimensions as f32)
+                    .collect::<Vec<_>>();
+                let norm = values.iter().map(|value| value * value).sum::<f32>().sqrt();
+                values
+                    .iter_mut()
+                    .for_each(|value| *value /= norm.max(f32::EPSILON));
+                values
+            })
+            .collect::<Vec<_>>();
+        let prod = ProdQuantizer::cached(
+            dimensions,
+            crate::DEFAULT_QUANT_BITS,
+            crate::DEFAULT_QUANT_SEED,
+        );
+        let model = IvfTqPlusModel {
+            calibration: prod.fit_tqplus_calibration(&training_rows),
+        };
+        let dispatch = IvfQuantizer::resolve_tqplus_experimental(dimensions);
+
+        assert_eq!(dispatch.payload_len(), crate::code_len(dimensions, 4) + 4);
+
+        let (_, gamma, payload) = dispatch
+            .encode_source_with_tqplus_model(&source, &model)
+            .unwrap();
+        let prepared = dispatch
+            .prepare_ip_query_with_tqplus_model(&query, &model)
+            .unwrap();
+
+        assert_eq!(payload.len(), dispatch.payload_len());
+        assert_eq!(prepared.lut_len(), dimensions * 8);
+        assert_eq!(prepared.sq_len(), dimensions);
+        assert!(gamma > 0.0);
+
+        let appended_renorm =
+            f32::from_le_bytes(payload[payload.len() - 4..].try_into().expect("renorm"));
+        assert!((appended_renorm - 2.0).abs() < 1.0e-6);
+
+        let direct_prepared = prod.prepare_ip_query_tqplus_4bit(&query, &model.calibration);
+        assert_eq!(
+            dispatch
+                .score_ip_from_parts(&prepared, gamma, &payload)
+                .unwrap(),
+            prod.score_tqplus_4bit_from_parts(&direct_prepared, gamma, &payload)
         );
     }
 

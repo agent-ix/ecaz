@@ -168,8 +168,10 @@ ADR-081 selects the Phase 1 build shape:
   packed-code layouts.
 - Persist calibration metadata separately from packed per-vector
   code bytes.
-- Add one per-vector renormalization scalar only if Phase 2/3
-  score-error checks show it is needed.
+- Store candidate renormalization without widening the no-QJL 4-bit
+  payload; QJL/gamma-aware TQ+ uses the existing posting gamma field
+  for residual gamma and appends a 4-byte renormalization scalar to
+  the experimental posting payload.
 - Prepare queries with inverse calibration and bias handling.
 - Route scoring through existing IVF TurboQuant scorers wherever
   possible.
