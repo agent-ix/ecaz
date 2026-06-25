@@ -1,0 +1,6 @@
+CREATE EXTENSION
+ ecaz_build_profile | current_setting | current_setting 
+--------------------+-----------------+-----------------
+ release            | auto            | -1
+(1 row)
+
