@@ -72,6 +72,23 @@ The TurboQuant list is intentionally explicit. It matches the current
 `ProdQuantizer` contract of `2..=8` bits. Do not collapse this to "all
 TurboQuant variants" in benchmark configs, manifests, or closeout text.
 
+For QJL-active TurboQuant lanes, the bit label is composed as follows:
+
+| TurboQuant label | MSE bits/dim | QJL bits/dim | MSE centroids |
+| --- | ---: | ---: | ---: |
+| `turboquant_2bit` | 1 | 1 | 2 |
+| `turboquant_3bit` | 2 | 1 | 4 |
+| `turboquant_4bit` | 3 | 1 | 8 |
+| `turboquant_5bit` | 4 | 1 | 16 |
+| `turboquant_6bit` | 5 | 1 | 32 |
+| `turboquant_7bit` | 6 | 1 | 64 |
+| `turboquant_8bit` | 7 | 1 | 128 |
+
+The current 1536-dimensional tiled 4-bit lane is a special no-QJL storage
+lane: `turboquant_4bit` at that shape is 4 MSE bits/dim, 0 QJL bits/dim, and
+16 MSE centroids. Bench manifests must state whether this special lane or the
+general QJL-active composition was measured.
+
 TurboQuant and multi-bit RaBitQ in this task are rerank representations over a
 RaBitQ-1 frontier, not replacements for the RaBitQ-1 candidate generator.
 
