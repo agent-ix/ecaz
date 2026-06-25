@@ -1,0 +1,65 @@
+{
+  "name": "task119-hnsw-rabitq-sidecar-db-read-viable-lanes",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-119/006-sidecar-rerank-m5-db-read/artifacts",
+  "defaults": {
+    "pg": 18,
+    "socket_dir": "/Users/peter/.pgrx",
+    "port": 28818,
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 200,
+    "force_index": true
+  },
+  "thresholds": [],
+  "steps": [
+    {
+      "kind": "sidecar-rerank",
+      "name": "sidecar-10k-hnsw-rabitq-db-read-viable-lanes",
+      "tags": ["task119", "sidecar_rerank", "db_read", "ec_real_10k", "hnsw", "rabitq"],
+      "prefix": "task119_real10k_hnsw_rabitq",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "candidate_k": 1000,
+      "concurrency": 1,
+      "sweep": [1000],
+      "variants": ["f32", "rabitq8", "turboquant_4bit", "turboquant_8bit"],
+      "read_modes": ["tid-sorted"],
+      "rebuild_sidecar_table": true,
+      "allow_unsafe_index_shape": true,
+      "log_output": "${artifact_dir}/sidecar-10k-hnsw-rabitq-db-read-viable-lanes.log"
+    },
+    {
+      "kind": "sidecar-rerank",
+      "name": "sidecar-50k-hnsw-rabitq-db-read-viable-lanes",
+      "tags": ["task119", "sidecar_rerank", "db_read", "ec_real_50k", "hnsw", "rabitq"],
+      "prefix": "task119_real50k_hnsw_rabitq",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "candidate_k": 1000,
+      "concurrency": 1,
+      "sweep": [1000],
+      "variants": ["f32", "rabitq8", "turboquant_4bit", "turboquant_8bit"],
+      "read_modes": ["tid-sorted"],
+      "rebuild_sidecar_table": true,
+      "allow_unsafe_index_shape": true,
+      "log_output": "${artifact_dir}/sidecar-50k-hnsw-rabitq-db-read-viable-lanes.log"
+    },
+    {
+      "kind": "sidecar-rerank",
+      "name": "sidecar-100k-hnsw-rabitq-db-read-viable-lanes",
+      "tags": ["task119", "sidecar_rerank", "db_read", "ec_real_100k", "hnsw", "rabitq"],
+      "prefix": "task119_real100k_hnsw_rabitq",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "candidate_k": 1000,
+      "concurrency": 1,
+      "sweep": [1000],
+      "variants": ["f32", "rabitq8", "turboquant_4bit", "turboquant_8bit"],
+      "read_modes": ["tid-sorted"],
+      "rebuild_sidecar_table": true,
+      "allow_unsafe_index_shape": true,
+      "log_output": "${artifact_dir}/sidecar-100k-hnsw-rabitq-db-read-viable-lanes.log"
+    }
+  ]
+}

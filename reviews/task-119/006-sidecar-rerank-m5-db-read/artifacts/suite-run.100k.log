@@ -1,0 +1,6 @@
+[suite:task119-hnsw-rabitq-sidecar-db-read-viable-lanes] wrote reviews/task-119/006-sidecar-rerank-m5-db-read/artifacts/suite-manifest.100k.json
+[suite:task119-hnsw-rabitq-sidecar-db-read-viable-lanes] sidecar-100k-hnsw-rabitq-db-read-viable-lanes -> --database tqvector_task119_m5_release2 --host /Users/peter/.pgrx --port 28818 bench sidecar-rerank --prefix task119_real100k_hnsw_rabitq --profile ec_hnsw --k 10 --candidate-k 1000 --concurrency 1 --sweep 1000 --queries-limit 200 --bits 4 --seed 42 --variant f32 --variant rabitq8 --variant turboquant_4bit --variant turboquant_8bit --read-mode tid-sorted --rebuild-sidecar-table --force-index --allow-unsafe-index-shape --log-output reviews/task-119/006-sidecar-rerank-m5-db-read/artifacts/sidecar-100k-hnsw-rabitq-db-read-viable-lanes.log
+[suite:task119-hnsw-rabitq-sidecar-db-read-viable-lanes] wrote reviews/task-119/006-sidecar-rerank-m5-db-read/artifacts/suite-manifest.100k.json
+[suite:task119-hnsw-rabitq-sidecar-db-read-viable-lanes] wrote reviews/task-119/006-sidecar-rerank-m5-db-read/artifacts/suite-manifest.100k.json
+[suite:task119-hnsw-rabitq-sidecar-db-read-viable-lanes] wrote reviews/task-119/006-sidecar-rerank-m5-db-read/artifacts/suite-results.100k.jsonl
+[suite:task119-hnsw-rabitq-sidecar-db-read-viable-lanes] wrote reviews/task-119/006-sidecar-rerank-m5-db-read/artifacts/suite-manifest.100k.json

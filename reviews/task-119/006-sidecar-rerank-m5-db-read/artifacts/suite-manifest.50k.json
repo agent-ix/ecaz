@@ -1,0 +1,120 @@
+{
+  "suite": "task119-hnsw-rabitq-sidecar-db-read-viable-lanes",
+  "schema_version": 1,
+  "config": "reviews/task-119/006-sidecar-rerank-m5-db-read/suite.json",
+  "config_sha256": "8ca785f93048c80c26b24de264232d603217677cf3232609406fb121ac755e1c",
+  "dry_run": false,
+  "generated_at_unix_ms": 1782362760630,
+  "connection": {
+    "database": "tqvector_task119_m5_release2",
+    "host": "/Users/peter/.pgrx",
+    "port": 28818,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "sidecar-10k-hnsw-rabitq-db-read-viable-lanes",
+      "kind": "sidecar-rerank",
+      "command": [],
+      "selected": false,
+      "quant": "rabitq",
+      "tags": [
+        "task119",
+        "sidecar_rerank",
+        "db_read",
+        "ec_real_10k",
+        "hnsw",
+        "rabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-119/006-sidecar-rerank-m5-db-read/artifacts/sidecar-10k-hnsw-rabitq-db-read-viable-lanes.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "sidecar-50k-hnsw-rabitq-db-read-viable-lanes",
+      "kind": "sidecar-rerank",
+      "command": [
+        "--database",
+        "tqvector_task119_m5_release2",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "sidecar-rerank",
+        "--prefix",
+        "task119_real50k_hnsw_rabitq",
+        "--profile",
+        "ec_hnsw",
+        "--k",
+        "10",
+        "--candidate-k",
+        "1000",
+        "--concurrency",
+        "1",
+        "--sweep",
+        "1000",
+        "--queries-limit",
+        "200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--variant",
+        "f32",
+        "--variant",
+        "rabitq8",
+        "--variant",
+        "turboquant_4bit",
+        "--variant",
+        "turboquant_8bit",
+        "--read-mode",
+        "tid-sorted",
+        "--rebuild-sidecar-table",
+        "--force-index",
+        "--allow-unsafe-index-shape",
+        "--log-output",
+        "reviews/task-119/006-sidecar-rerank-m5-db-read/artifacts/sidecar-50k-hnsw-rabitq-db-read-viable-lanes.log"
+      ],
+      "selected": true,
+      "quant": "rabitq",
+      "tags": [
+        "task119",
+        "sidecar_rerank",
+        "db_read",
+        "ec_real_50k",
+        "hnsw",
+        "rabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-119/006-sidecar-rerank-m5-db-read/artifacts/sidecar-50k-hnsw-rabitq-db-read-viable-lanes.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1782362760630,
+      "finished_at_unix_ms": 1782362986607,
+      "duration_ms": 225976,
+      "exit_code": 0
+    },
+    {
+      "name": "sidecar-100k-hnsw-rabitq-db-read-viable-lanes",
+      "kind": "sidecar-rerank",
+      "command": [],
+      "selected": false,
+      "quant": "rabitq",
+      "tags": [
+        "task119",
+        "sidecar_rerank",
+        "db_read",
+        "ec_real_100k",
+        "hnsw",
+        "rabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-119/006-sidecar-rerank-m5-db-read/artifacts/sidecar-100k-hnsw-rabitq-db-read-viable-lanes.log"
+      ],
+      "status": "skipped"
+    }
+  ]
+}
