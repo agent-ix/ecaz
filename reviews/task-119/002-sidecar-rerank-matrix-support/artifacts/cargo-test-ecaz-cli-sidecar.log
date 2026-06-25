@@ -1,0 +1,38 @@
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: In file included from /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:19:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:537:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   537 | dlist_next_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:547:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   547 | dlist_prev_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:1054:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:  1054 | slist_next_node(slist_head *head, slist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:58: warning: unused parameter 'size' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                          ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:70: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                                      ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:882:56: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   882 | pgstat_hash_hash_key(const void *d, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                        ^
+warning: ecaz@0.1.1: 6 warnings generated.
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.13s
+     Running unittests src/main.rs (target/debug/deps/ecaz-fd414aa15ad3bc5a)
+
+running 9 tests
+test commands::bench::comparator::tests::sidecar_and_index_names_are_engine_scoped ... ok
+test commands::bench::comparator::tests::sidecar_ddl_uses_if_not_exists_and_vector_dim ... ok
+test commands::bench::sidecar_rerank::tests::dot_f32_bytes_matches_plain_dot ... ok
+test commands::bench::sidecar_rerank::tests::dot_f16_bytes_matches_half_precision_dot ... ok
+test commands::bench::sidecar_rerank::tests::task119_sidecar_variant_bit_sizes_are_explicit ... ok
+test commands::bench::sidecar_rerank::tests::task119_sidecar_variant_labels_are_explicit ... ok
+test commands::bench::sidecar_rerank::tests::sidecar_read_mode_labels_distinguish_db_modes ... ok
+test commands::bench::suite::tests::expands_sidecar_rerank_with_variants ... ok
+test commands::bench::sidecar_rerank::tests::task119_sidecar_variant_cli_names_parse ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 411 filtered out; finished in 0.00s
+
