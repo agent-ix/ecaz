@@ -1,6 +1,8 @@
 # Task 119: HNSW RaBitQ Coarse-Rerank Profile
 
-Status: **proposed**.
+Status: **complete** (2026-06-25; closeout
+`reviews/task-119/007-final-closeout/`; recommendation: keep experimental and
+iterate, do not promote HNSW RaBitQ coarse-rerank as a production profile yet).
 Owner: coder (to be assigned). One coder, one branch.
 Priority: P1, gated by Task 118 attribution.
 
