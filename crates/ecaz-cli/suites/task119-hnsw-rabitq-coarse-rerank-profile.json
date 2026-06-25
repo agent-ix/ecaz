@@ -5,6 +5,7 @@
   "defaults": {
     "pg": 18,
     "socket_dir": "/Users/peter/.pgrx",
+    "port": 28818,
     "bits": 4,
     "seed": 42,
     "queries_limit": 200,
