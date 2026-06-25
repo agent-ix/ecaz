@@ -6,7 +6,7 @@
     "pg": 18,
     "socket_dir": "/Users/peter/.pgrx",
     "port": 28818,
-    "queries_limit": 1,
+    "queries_limit": 20,
     "force_index": true
   },
   "thresholds": [],
@@ -18,6 +18,7 @@
       "prefix": "task119_real50k_hnsw_rabitq",
       "m": 16,
       "sweep": [320, 500, 1000],
+      "counters_only": true,
       "session_gucs": ["ec_hnsw.rerank_format=quantized"]
     },
     {
@@ -28,6 +29,7 @@
       "m": 16,
       "sweep": [320, 500, 1000],
       "rerank_width": 1000,
+      "counters_only": true,
       "session_gucs": ["ec_hnsw.rerank_format=heap_f32"]
     },
     {
@@ -37,6 +39,7 @@
       "prefix": "task119_real100k_hnsw_rabitq",
       "m": 16,
       "sweep": [320, 500, 1000],
+      "counters_only": true,
       "session_gucs": ["ec_hnsw.rerank_format=quantized"]
     },
     {
@@ -47,6 +50,7 @@
       "m": 16,
       "sweep": [320, 500, 1000],
       "rerank_width": 1000,
+      "counters_only": true,
       "session_gucs": ["ec_hnsw.rerank_format=heap_f32"]
     }
   ]

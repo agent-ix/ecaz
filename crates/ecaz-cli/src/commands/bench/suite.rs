@@ -417,6 +417,8 @@ struct HnswFrontierStep {
     #[serde(default)]
     session_gucs: Vec<String>,
     #[serde(default)]
+    counters_only: bool,
+    #[serde(default)]
     log_output: Option<PathBuf>,
     #[serde(default)]
     jsonl_output: Option<PathBuf>,
@@ -3166,6 +3168,9 @@ fn expand_hnsw_frontier(step: &HnswFrontierStep, defaults: &SuiteDefaults) -> Ve
     }
     for guc in &step.session_gucs {
         push_arg(&mut args, "--session-guc", guc);
+    }
+    if step.counters_only {
+        args.push("--counters-only".into());
     }
     push_opt_path(&mut args, "--log-output", step.log_output.as_deref());
     push_opt_path(&mut args, "--jsonl-output", step.jsonl_output.as_deref());

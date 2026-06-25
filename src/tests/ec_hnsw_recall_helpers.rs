@@ -142,6 +142,19 @@
         Vec<i64>, // final_emitted_row_indices
         bool,     // frontier_equals_final_emitted
     );
+    type GraphScanFrontierCounterRow = (
+        i32,  // m
+        i32,  // ef_search
+        i32,  // query_index
+        i32,  // visited_before_output
+        i32,  // pre_final_frontier_size
+        i32,  // final_visited_count
+        i32,  // final_emitted_count
+        i32,  // exact_reranked_candidates
+        i32,  // quantized_reranked_candidates
+        i32,  // candidates_dropped_before_exact_rerank
+        bool, // frontier_equals_final_emitted
+    );
     type GraphScanScoreCorrelationRow = (
         i32,         // m
         i32,         // ef_search
@@ -794,13 +807,23 @@
     /// order returned by Postgres so that ground-truth indices stay stable
     /// across reruns.
     fn load_external_recall_relation(table_name: &str) -> (Vec<i64>, Vec<Vec<f32>>) {
+        load_external_recall_relation_limit(table_name, None)
+    }
+
+    fn load_external_recall_relation_limit(
+        table_name: &str,
+        row_limit: Option<usize>,
+    ) -> (Vec<i64>, Vec<Vec<f32>>) {
         let table_name = recall_fixture_ident(table_name);
         Spi::connect(|client| {
             let mut ids: Vec<i64> = Vec::new();
             let mut vectors: Vec<Vec<f32>> = Vec::new();
+            let limit_clause = row_limit
+                .map(|limit| format!(" LIMIT {limit}"))
+                .unwrap_or_default();
             let rows = client
                 .select(
-                    &format!("SELECT id, source FROM {table_name} ORDER BY id"),
+                    &format!("SELECT id, source FROM {table_name} ORDER BY id{limit_clause}"),
                     None,
                     &[],
                 )
@@ -1152,6 +1175,53 @@
                     m,
                     ef_search,
                     query_index,
+                )
+            })
+            .collect()
+    }
+
+    fn run_graph_scan_frontier_counter_rows_for_relation(
+        query_table: &str,
+        index_name: &str,
+        m: i32,
+        ef_search: i32,
+        query_limit: usize,
+    ) -> Vec<GraphScanFrontierCounterRow> {
+        let index_name_ident = recall_fixture_ident(index_name);
+        let index_oid = Spi::get_one::<pg_sys::Oid>(&format!(
+            "SELECT '{index_name_ident}'::regclass::oid"
+        ))
+        .expect("frontier counter index oid query should succeed")
+        .expect("frontier counter index oid should exist");
+        let (_query_ids, queries) =
+            load_external_recall_relation_limit(query_table, Some(query_limit));
+
+        assert!(
+            !queries.is_empty(),
+            "external recall query table must contain at least one row"
+        );
+
+        Spi::run(&format!("SET LOCAL ec_hnsw.ef_search = {ef_search}"))
+            .expect("setting ef_search should succeed");
+
+        queries
+            .iter()
+            .enumerate()
+            .map(|(query_index, query)| {
+                let report =
+                    am::debug_gettuple_frontier_containment_report(index_oid, query.clone());
+                (
+                    m,
+                    report.requested_ef_search,
+                    i32::try_from(query_index).expect("query index should fit into int"),
+                    report.visited_before_output,
+                    report.pre_final_frontier_size,
+                    report.final_visited_count,
+                    report.final_emitted_count,
+                    report.exact_reranked_candidates,
+                    report.quantized_reranked_candidates,
+                    report.candidates_dropped_before_exact_rerank,
+                    report.frontier_equals_final_emitted,
                 )
             })
             .collect()

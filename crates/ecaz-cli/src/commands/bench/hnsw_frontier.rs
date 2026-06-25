@@ -42,6 +42,9 @@ pub struct HnswFrontierArgs {
     /// Extra session GUCs to set on the diagnostic connection, as name=value.
     #[arg(long = "session-guc")]
     pub session_gucs: Vec<String>,
+    /// Skip full recall/frontier containment work and emit only AM candidate-stage counters.
+    #[arg(long)]
+    pub counters_only: bool,
     /// Write compact summary output to this path in addition to stdout.
     #[arg(long)]
     pub log_output: Option<PathBuf>,
@@ -84,6 +87,38 @@ struct FrontierSummary {
     queries: usize,
     recall_top10_in_frontier: f64,
     recall_top100_in_frontier: f64,
+    mean_visited_before_output: f64,
+    mean_pre_final_frontier_size: f64,
+    mean_final_visited_count: f64,
+    mean_final_emitted_count: f64,
+    mean_exact_reranked_candidates: f64,
+    mean_quantized_reranked_candidates: f64,
+    mean_candidates_dropped_before_exact_rerank: f64,
+    all_frontier_equals_final_emitted: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct CounterRow {
+    prefix: String,
+    query_table: String,
+    index_name: String,
+    m: i32,
+    ef_search: i32,
+    query_index: i32,
+    visited_before_output: i32,
+    pre_final_frontier_size: i32,
+    final_visited_count: i32,
+    final_emitted_count: i32,
+    exact_reranked_candidates: i32,
+    quantized_reranked_candidates: i32,
+    candidates_dropped_before_exact_rerank: i32,
+    frontier_equals_final_emitted: bool,
+}
+
+#[derive(Debug, Clone)]
+struct CounterSummary {
+    ef_search: i32,
+    queries: usize,
     mean_visited_before_output: f64,
     mean_pre_final_frontier_size: f64,
     mean_final_visited_count: f64,
@@ -138,12 +173,36 @@ pub async fn run(conn: &ConnectionOptions, args: HnswFrontierArgs) -> Result<()>
         None => None,
     };
     let mut summaries = Vec::new();
+    let mut counter_summaries = Vec::new();
     for ef_search in sweep {
         if let Some(rerank_width) = args.rerank_width {
             client
                 .batch_execute(&format!("SET ec_hnsw.rerank_width = {rerank_width}"))
                 .await
                 .wrap_err_with(|| format!("SET ec_hnsw.rerank_width = {rerank_width}"))?;
+        }
+        if args.counters_only {
+            let rows = fetch_counter_rows(
+                &client,
+                &args.prefix,
+                &query_table,
+                &index_name,
+                args.m,
+                ef_search,
+                args.queries_limit,
+            )
+            .await?;
+            if let Some(writer) = jsonl_writer.as_mut() {
+                for row in &rows {
+                    serde_json::to_writer(&mut *writer, row)
+                        .wrap_err("writing HNSW counter JSON row")?;
+                    writer
+                        .write_all(b"\n")
+                        .wrap_err("writing HNSW counter JSONL newline")?;
+                }
+            }
+            counter_summaries.push(summarize_counter_rows(ef_search, &rows));
+            continue;
         }
         let rows = fetch_frontier_rows(
             &client,
@@ -170,7 +229,11 @@ pub async fn run(conn: &ConnectionOptions, args: HnswFrontierArgs) -> Result<()>
         writer.flush().wrap_err("flushing frontier JSONL output")?;
     }
 
-    let output = render_summary(&args.prefix, &index_name, args.m, &summaries);
+    let output = if args.counters_only {
+        render_counter_summary(&args.prefix, &index_name, args.m, &counter_summaries)
+    } else {
+        render_summary(&args.prefix, &index_name, args.m, &summaries)
+    };
     crate::ecaz_println!("{output}");
     if let Some(path) = args.log_output.as_deref() {
         let mut file = create_output_file(path)?;
@@ -266,6 +329,33 @@ async fn fetch_frontier_rows(
         .collect())
 }
 
+async fn fetch_counter_rows(
+    client: &Client,
+    prefix: &str,
+    query_table: &str,
+    index_name: &str,
+    m: i32,
+    ef_search: i32,
+    queries_limit: usize,
+) -> Result<Vec<CounterRow>> {
+    let queries_limit = i32::try_from(queries_limit).wrap_err("--queries-limit exceeds int4")?;
+    let rows = client
+        .query(
+            "SELECT *
+             FROM tests.ec_hnsw_graph_scan_frontier_counter_rows($1::text, $2::text, $3::int4, $4::int4, $5::int4)
+             ORDER BY query_index",
+            &[&query_table, &index_name, &m, &ef_search, &queries_limit],
+        )
+        .await
+        .wrap_err(
+            "running ec_hnsw frontier counter diagnostic; ensure the extension is installed with pg_test diagnostics",
+        )?;
+    Ok(rows
+        .into_iter()
+        .map(|row| decode_counter_row(prefix, query_table, index_name, row))
+        .collect())
+}
+
 fn decode_frontier_row(
     prefix: &str,
     corpus_table: &str,
@@ -297,6 +387,25 @@ fn decode_frontier_row(
         frontier_approx_ranks: row.get("frontier_approx_ranks"),
         frontier_exact_ranks: row.get("frontier_exact_ranks"),
         final_emitted_row_indices: row.get("final_emitted_row_indices"),
+        frontier_equals_final_emitted: row.get("frontier_equals_final_emitted"),
+    }
+}
+
+fn decode_counter_row(prefix: &str, query_table: &str, index_name: &str, row: Row) -> CounterRow {
+    CounterRow {
+        prefix: prefix.to_owned(),
+        query_table: query_table.to_owned(),
+        index_name: index_name.to_owned(),
+        m: row.get("m"),
+        ef_search: row.get("ef_search"),
+        query_index: row.get("query_index"),
+        visited_before_output: row.get("visited_before_output"),
+        pre_final_frontier_size: row.get("pre_final_frontier_size"),
+        final_visited_count: row.get("final_visited_count"),
+        final_emitted_count: row.get("final_emitted_count"),
+        exact_reranked_candidates: row.get("exact_reranked_candidates"),
+        quantized_reranked_candidates: row.get("quantized_reranked_candidates"),
+        candidates_dropped_before_exact_rerank: row.get("candidates_dropped_before_exact_rerank"),
         frontier_equals_final_emitted: row.get("frontier_equals_final_emitted"),
     }
 }
@@ -350,6 +459,44 @@ fn mean_i32(rows: &[FrontierRow], value: impl Fn(&FrontierRow) -> i32) -> f64 {
     rows.iter().map(|row| f64::from(value(row))).sum::<f64>() / rows.len() as f64
 }
 
+fn summarize_counter_rows(ef_search: i32, rows: &[CounterRow]) -> CounterSummary {
+    let queries = rows.len();
+    if queries == 0 {
+        return CounterSummary {
+            ef_search,
+            queries,
+            mean_visited_before_output: 0.0,
+            mean_pre_final_frontier_size: 0.0,
+            mean_final_visited_count: 0.0,
+            mean_final_emitted_count: 0.0,
+            mean_exact_reranked_candidates: 0.0,
+            mean_quantized_reranked_candidates: 0.0,
+            mean_candidates_dropped_before_exact_rerank: 0.0,
+            all_frontier_equals_final_emitted: true,
+        };
+    }
+    CounterSummary {
+        ef_search,
+        queries,
+        mean_visited_before_output: mean_counter_i32(rows, |row| row.visited_before_output),
+        mean_pre_final_frontier_size: mean_counter_i32(rows, |row| row.pre_final_frontier_size),
+        mean_final_visited_count: mean_counter_i32(rows, |row| row.final_visited_count),
+        mean_final_emitted_count: mean_counter_i32(rows, |row| row.final_emitted_count),
+        mean_exact_reranked_candidates: mean_counter_i32(rows, |row| row.exact_reranked_candidates),
+        mean_quantized_reranked_candidates: mean_counter_i32(rows, |row| {
+            row.quantized_reranked_candidates
+        }),
+        mean_candidates_dropped_before_exact_rerank: mean_counter_i32(rows, |row| {
+            row.candidates_dropped_before_exact_rerank
+        }),
+        all_frontier_equals_final_emitted: rows.iter().all(|row| row.frontier_equals_final_emitted),
+    }
+}
+
+fn mean_counter_i32(rows: &[CounterRow], value: impl Fn(&CounterRow) -> i32) -> f64 {
+    rows.iter().map(|row| f64::from(value(row))).sum::<f64>() / rows.len() as f64
+}
+
 fn render_summary(prefix: &str, index_name: &str, m: i32, summaries: &[FrontierSummary]) -> String {
     let mut table = Table::new();
     table.load_preset(UTF8_FULL);
@@ -387,6 +534,46 @@ fn render_summary(prefix: &str, index_name: &str, m: i32, summaries: &[FrontierS
         ]);
     }
     format!("prefix: {prefix}\nindex: {index_name}\nm: {m}\n{table}")
+}
+
+fn render_counter_summary(
+    prefix: &str,
+    index_name: &str,
+    m: i32,
+    summaries: &[CounterSummary],
+) -> String {
+    let mut table = Table::new();
+    table.load_preset(UTF8_FULL);
+    table.set_header(vec![
+        "ef_search",
+        "queries",
+        "visited after rescan",
+        "emitted pool",
+        "visited final",
+        "emitted",
+        "exact rerank",
+        "quantized rerank",
+        "pool dropped before exact",
+        "pool == emitted",
+    ]);
+    for summary in summaries {
+        table.add_row(vec![
+            Cell::new(summary.ef_search),
+            Cell::new(summary.queries),
+            Cell::new(format!("{:.1}", summary.mean_visited_before_output)),
+            Cell::new(format!("{:.1}", summary.mean_pre_final_frontier_size)),
+            Cell::new(format!("{:.1}", summary.mean_final_visited_count)),
+            Cell::new(format!("{:.1}", summary.mean_final_emitted_count)),
+            Cell::new(format!("{:.1}", summary.mean_exact_reranked_candidates)),
+            Cell::new(format!("{:.1}", summary.mean_quantized_reranked_candidates)),
+            Cell::new(format!(
+                "{:.1}",
+                summary.mean_candidates_dropped_before_exact_rerank
+            )),
+            Cell::new(summary.all_frontier_equals_final_emitted),
+        ]);
+    }
+    format!("prefix: {prefix}\nindex: {index_name}\nm: {m}\nmode: counters-only\n{table}")
 }
 
 fn create_output_file(path: &Path) -> Result<File> {
