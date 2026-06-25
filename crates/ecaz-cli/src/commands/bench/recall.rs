@@ -662,7 +662,7 @@ fn validate_rerank_width_arg(
     };
     if rerank_width_guc(profile).is_none() {
         return Err(eyre!(
-            "--rerank-width is only supported with --profile ec_ivf or ec_spire"
+            "--rerank-width is only supported with --profile ec_hnsw, ec_ivf, or ec_spire"
         ));
     }
     if value < -1 {
@@ -673,6 +673,7 @@ fn validate_rerank_width_arg(
 
 fn rerank_width_guc(profile: &profiles::IndexProfile) -> Option<&'static str> {
     match profile.name {
+        "ec_hnsw" => Some("ec_hnsw.rerank_width"),
         "ec_ivf" => Some("ec_ivf.rerank_width"),
         "ec_spire" => Some("ec_spire.rerank_width"),
         _ => None,

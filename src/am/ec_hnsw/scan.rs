@@ -73,7 +73,8 @@ const LEGACY_ADR030_EXPERIMENTAL_EXACT_TRAVERSAL_STRATEGY_ENV: &str =
 const TURBOQUANT_EXACT_SCORE_MODE_ENV: &str = "TQVECTOR_TURBOQUANT_EXACT_SCORE_MODE";
 const TURBOQUANT_TILED_LUT_TILE_SIZE: usize = 512;
 pub(crate) const PQ_FASTSCAN_DEFAULT_LIVE_RERANK_WINDOW: usize = 64;
-const PQ_FASTSCAN_MAX_LIVE_RERANK_WINDOW: usize = 64;
+const PQ_FASTSCAN_MAX_LIVE_RERANK_WINDOW: usize =
+    super::options::EC_HNSW_MAX_RERANK_WIDTH as usize;
 pub(crate) const PQ_FASTSCAN_DEFAULT_TRAVERSAL_SCORE_MODE_NAME: &str = "binary";
 pub(crate) const PQ_FASTSCAN_DEFAULT_RERANK_MODE_NAME: &str = "heap_f32";
 const PQ_FASTSCAN_EXACT_SCORE_UNAVAILABLE: &str =
@@ -680,6 +681,7 @@ impl GroupedRerankMode {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PqFastScanRerankModeResolution {
     EnvOverride,
+    SessionOverride,
     DefaultHeapF32WithIndexedColumn,
     DefaultHeapF32WithRerankSourceColumn,
     DefaultHeapF32WithBuildSourceColumn,
@@ -692,6 +694,7 @@ impl PqFastScanRerankModeResolution {
     pub(crate) const fn as_str(self) -> &'static str {
         match self {
             Self::EnvOverride => "env_override",
+            Self::SessionOverride => "session_override",
             Self::DefaultHeapF32WithIndexedColumn => "default_heap_f32_with_indexed_column",
             Self::DefaultHeapF32WithRerankSourceColumn => {
                 "default_heap_f32_with_rerank_source_column"
@@ -1038,13 +1041,13 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_amrescan(
         opaque.scan_graph_storage = graph_storage;
         opaque.grouped_live_rerank_window = if matches!(
             opaque.scan_graph_storage,
-            graph::GraphStorageDescriptor::PqFastScan(_)
+            graph::GraphStorageDescriptor::PqFastScan(_) | graph::GraphStorageDescriptor::RaBitQ(_)
         ) {
-            u8::try_from(resolve_grouped_live_rerank_window())
-                .expect("grouped live rerank window should fit in u8")
+            u16::try_from(resolve_grouped_live_rerank_window())
+                .expect("grouped live rerank window should fit in u16")
         } else {
-            u8::try_from(PQ_FASTSCAN_DEFAULT_LIVE_RERANK_WINDOW)
-                .expect("default grouped live rerank window should fit in u8")
+            u16::try_from(PQ_FASTSCAN_DEFAULT_LIVE_RERANK_WINDOW)
+                .expect("default grouped live rerank window should fit in u16")
         };
         opaque.grouped_traversal_score_mode = if matches!(
             opaque.scan_graph_storage,
@@ -1517,6 +1520,15 @@ fn default_grouped_rerank_mode_resolution(
     }
 }
 
+fn grouped_heap_rerank_source_available(
+    index_options: &super::options::TqHnswOptions,
+    has_default_heap_f32_source: bool,
+) -> bool {
+    has_default_heap_f32_source
+        || index_options.rerank_source_column.is_some()
+        || index_options.build_source_column.is_some()
+}
+
 fn effective_grouped_rerank_source_column(
     index_options: &super::options::TqHnswOptions,
     mode: GroupedRerankMode,
@@ -1543,6 +1555,34 @@ fn resolve_grouped_rerank_mode_decision(
         PQ_FASTSCAN_RERANK_MODE_ENV,
         LEGACY_ADR030_EXPERIMENTAL_RERANK_MODE_ENV,
     ) else {
+        match super::options::current_rerank_format() {
+            super::options::HnswRerankFormatGuc::Auto => {}
+            super::options::HnswRerankFormatGuc::Quantized => {
+                return PqFastScanRerankModeDecision {
+                    mode: GroupedRerankMode::Quantized,
+                    resolution: PqFastScanRerankModeResolution::SessionOverride,
+                    source_column: None,
+                };
+            }
+            super::options::HnswRerankFormatGuc::HeapF32 => {
+                if !grouped_heap_rerank_source_available(
+                    index_options,
+                    has_default_heap_f32_source,
+                ) {
+                    pgrx::error!(
+                        "ec_hnsw rerank_format=heap_f32 requires an indexed ecvector column, build_source_column, or rerank_source_column"
+                    );
+                }
+                return PqFastScanRerankModeDecision {
+                    mode: GroupedRerankMode::HeapF32,
+                    resolution: PqFastScanRerankModeResolution::SessionOverride,
+                    source_column: effective_grouped_rerank_source_column(
+                        index_options,
+                        GroupedRerankMode::HeapF32,
+                    ),
+                };
+            }
+        }
         let mode = default_grouped_rerank_mode(index_options, has_default_heap_f32_source);
         return PqFastScanRerankModeDecision {
             mode,
@@ -1574,7 +1614,10 @@ pub(crate) fn resolve_pq_fastscan_rerank_mode_decision(
     index_relation: pg_sys::Relation,
     graph_storage: graph::GraphStorageDescriptor,
 ) -> PqFastScanRerankModeDecision {
-    if !matches!(graph_storage, graph::GraphStorageDescriptor::PqFastScan(_)) {
+    if !matches!(
+        graph_storage,
+        graph::GraphStorageDescriptor::PqFastScan(_) | graph::GraphStorageDescriptor::RaBitQ(_)
+    ) {
         return PqFastScanRerankModeDecision {
             mode: GroupedRerankMode::Quantized,
             resolution: PqFastScanRerankModeResolution::NonPqFastScanStorage,
@@ -1720,6 +1763,12 @@ fn grouped_exact_traversal_frontier_head_enabled(opaque: &TqScanOpaque) -> bool 
 }
 
 fn resolve_grouped_live_rerank_window() -> usize {
+    let session_width = super::options::current_rerank_width();
+    if session_width != -1 {
+        return usize::try_from(session_width)
+            .expect("validated ec_hnsw.rerank_width should fit in usize");
+    }
+
     let Some(raw_window) = pq_fastscan_env_var(
         PQ_FASTSCAN_SCAN_WINDOW_ENV,
         LEGACY_ADR030_EXPERIMENTAL_SCAN_WINDOW_ENV,
@@ -6168,8 +6217,8 @@ pub(super) struct TqScanOpaque {
     pub(super) next_offset_number: u16,
     pub(super) execution_phase: ScanExecutionPhase,
     grouped_live_rerank_buffer: [BufferedGroupedScanResult; PQ_FASTSCAN_MAX_LIVE_RERANK_WINDOW],
-    grouped_live_rerank_buffer_len: u8,
-    grouped_live_rerank_window: u8,
+    grouped_live_rerank_buffer_len: u16,
+    grouped_live_rerank_window: u16,
     grouped_traversal_score_mode: GroupedTraversalScoreMode,
     grouped_rerank_mode: GroupedRerankMode,
     grouped_heap_rerank_state: *mut GroupedHeapRerankState,
@@ -6263,7 +6312,7 @@ impl Default for TqScanOpaque {
             grouped_live_rerank_buffer: [BufferedGroupedScanResult::default();
                 PQ_FASTSCAN_MAX_LIVE_RERANK_WINDOW],
             grouped_live_rerank_buffer_len: 0,
-            grouped_live_rerank_window: PQ_FASTSCAN_DEFAULT_LIVE_RERANK_WINDOW as u8,
+            grouped_live_rerank_window: PQ_FASTSCAN_DEFAULT_LIVE_RERANK_WINDOW as u16,
             grouped_traversal_score_mode: GroupedTraversalScoreMode::Binary,
             grouped_rerank_mode: GroupedRerankMode::Quantized,
             grouped_heap_rerank_state: ptr::null_mut(),
@@ -9008,6 +9057,34 @@ mod tests {
             default_grouped_rerank_mode_resolution(&options, false),
             PqFastScanRerankModeResolution::DefaultQuantizedTurboQuantStorage,
             "source-backed turboquant defaults should explain that quantized came from turboquant storage"
+        );
+    }
+
+    #[test]
+    fn source_backed_rabitq_default_rerank_resolves_to_quantized() {
+        let options = super::super::options::TqHnswOptions {
+            m: super::super::EC_HNSW_DEFAULT_M,
+            ef_construction: super::super::EC_HNSW_DEFAULT_EF_CONSTRUCTION,
+            ef_search: super::super::EC_HNSW_DEFAULT_EF_SEARCH,
+            build_source_column: Some("source".to_owned()),
+            rerank_source_column: None,
+            storage_format: super::super::options::StorageFormat::RaBitQ,
+        };
+
+        assert_eq!(
+            default_grouped_rerank_mode(&options, false),
+            GroupedRerankMode::Quantized,
+            "source-backed rabitq indexes should keep the default quantized rerank path"
+        );
+        assert!(
+            grouped_heap_rerank_source_available(&options, false),
+            "source-backed rabitq indexes should be eligible for explicit heap_f32 rerank"
+        );
+        assert_eq!(
+            effective_grouped_rerank_source_column(&options, GroupedRerankMode::HeapF32)
+                .as_deref(),
+            Some("source"),
+            "explicit heap_f32 rerank should use build_source_column when no rerank_source_column is set"
         );
     }
 

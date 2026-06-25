@@ -2400,6 +2400,66 @@
             Some(1),
             "RaBitQ HNSW scan should rank the matching build-time row first",
         );
+        let (
+            _rescan_amrescan_total_elapsed_us,
+            _rescan_graph_result_materialize_elapsed_us,
+            _emit_elapsed_us,
+            _total_elapsed_us,
+            default_result_count,
+            default_quantized_rerank_calls,
+            _default_quantized_rerank_elapsed_us,
+            default_heap_rerank_calls,
+            _default_heap_rerank_elapsed_us,
+            default_heap_rows_fetched,
+            _default_heap_fetch_elapsed_us,
+            _default_heap_decode_elapsed_us,
+            _default_heap_dot_elapsed_us,
+        ) = am::debug_grouped_rerank_profile(index_oid, query_one.clone(), 4);
+        assert_eq!(default_result_count, 4);
+        assert!(
+            default_quantized_rerank_calls > 0,
+            "default RaBitQ grouped rerank should use quantized cold payload scoring",
+        );
+        assert_eq!(
+            default_heap_rerank_calls, 0,
+            "default RaBitQ grouped rerank should not fetch heap/source rows",
+        );
+        assert_eq!(default_heap_rows_fetched, 0);
+
+        Spi::run("SET LOCAL ec_hnsw.rerank_format = heap_f32")
+            .expect("heap_f32 rerank format should be settable");
+        Spi::run("SET LOCAL ec_hnsw.rerank_width = 4")
+            .expect("HNSW rerank width should be settable");
+        let (
+            _heap_rescan_amrescan_total_elapsed_us,
+            _heap_rescan_graph_result_materialize_elapsed_us,
+            _heap_emit_elapsed_us,
+            _heap_total_elapsed_us,
+            heap_result_count,
+            heap_quantized_rerank_calls,
+            _heap_quantized_rerank_elapsed_us,
+            heap_rerank_calls,
+            _heap_rerank_elapsed_us,
+            heap_rows_fetched,
+            _heap_fetch_elapsed_us,
+            _heap_decode_elapsed_us,
+            _heap_dot_elapsed_us,
+        ) = am::debug_grouped_rerank_profile(index_oid, query_one.clone(), 4);
+        assert_eq!(heap_result_count, 4);
+        assert_eq!(
+            heap_quantized_rerank_calls, 0,
+            "explicit RaBitQ heap_f32 rerank should bypass quantized rerank scoring",
+        );
+        assert!(
+            heap_rerank_calls > 0,
+            "explicit RaBitQ heap_f32 rerank should score retained candidates from heap/source rows",
+        );
+        assert!(
+            heap_rows_fetched >= heap_rerank_calls,
+            "heap_f32 rerank should fetch at least one source row per reranked element",
+        );
+        Spi::run("RESET ec_hnsw.rerank_format").expect("rerank format should reset");
+        Spi::run("RESET ec_hnsw.rerank_width").expect("rerank width should reset");
 
         Spi::run(
             "INSERT INTO ec_hnsw_rabitq_round_trip VALUES

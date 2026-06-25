@@ -36,6 +36,12 @@ pub struct HnswFrontierArgs {
     /// Cap the query set.
     #[arg(long, default_value_t = 200)]
     pub queries_limit: usize,
+    /// Session override for grouped HNSW rerank frontier width.
+    #[arg(long)]
+    pub rerank_width: Option<i32>,
+    /// Extra session GUCs to set on the diagnostic connection, as name=value.
+    #[arg(long = "session-guc")]
+    pub session_gucs: Vec<String>,
     /// Write compact summary output to this path in addition to stdout.
     #[arg(long)]
     pub log_output: Option<PathBuf>,
@@ -108,10 +114,17 @@ pub async fn run(conn: &ConnectionOptions, args: HnswFrontierArgs) -> Result<()>
     if sweep.iter().any(|value| *value <= 0) {
         return Err(eyre!("--sweep values must be positive"));
     }
+    if let Some(rerank_width) = args.rerank_width {
+        if rerank_width < -1 {
+            return Err(eyre!("--rerank-width must be >= -1"));
+        }
+    }
+    let session_gucs = super::parse_session_gucs(&args.session_gucs)?;
 
     let corpus_table = format!("{}_corpus", args.prefix);
     let query_table = format!("{}_queries", args.prefix);
     let client = psql::connect(conn).await?;
+    super::apply_session_gucs(&client, &session_gucs).await?;
     if !psql::relation_exists(&client, &corpus_table, 'r').await? {
         return Err(eyre!("no corpus table {:?} in this database", corpus_table));
     }
@@ -126,6 +139,12 @@ pub async fn run(conn: &ConnectionOptions, args: HnswFrontierArgs) -> Result<()>
     };
     let mut summaries = Vec::new();
     for ef_search in sweep {
+        if let Some(rerank_width) = args.rerank_width {
+            client
+                .batch_execute(&format!("SET ec_hnsw.rerank_width = {rerank_width}"))
+                .await
+                .wrap_err_with(|| format!("SET ec_hnsw.rerank_width = {rerank_width}"))?;
+        }
         let rows = fetch_frontier_rows(
             &client,
             &args.prefix,

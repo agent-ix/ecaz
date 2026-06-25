@@ -25,6 +25,11 @@ static EC_HNSW_ENABLE_PARALLEL_BUILD_CONCURRENT_DSM_GUC: GucSetting<bool> =
 static EC_HNSW_CANDIDATE_BATCH_SCORING_GUC: GucSetting<bool> = GucSetting::<bool>::new(true);
 static EC_HNSW_TURBOQUANT_EXACT_SCORE_MODE_GUC: GucSetting<TurboQuantExactScoreModeGuc> =
     GucSetting::<TurboQuantExactScoreModeGuc>::new(TurboQuantExactScoreModeGuc::Exact);
+static EC_HNSW_RERANK_FORMAT_GUC: GucSetting<HnswRerankFormatGuc> =
+    GucSetting::<HnswRerankFormatGuc>::new(HnswRerankFormatGuc::Auto);
+static EC_HNSW_RERANK_WIDTH_GUC: GucSetting<i32> = GucSetting::<i32>::new(-1);
+
+pub(crate) const EC_HNSW_MAX_RERANK_WIDTH: i32 = 1024;
 
 /// Session selector for the HNSW TurboQuant exact-score strategy. Replaces
 /// the former `TQVECTOR_TURBOQUANT_EXACT_SCORE_MODE` server environment
@@ -39,6 +44,19 @@ pub(super) enum TurboQuantExactScoreModeGuc {
     TiledLut,
     #[name = c"int8_approx"]
     Int8Approx,
+}
+
+/// Session selector for grouped HNSW final rerank. `auto` preserves the
+/// storage-format default; benchmark profiles can force heap/source f32
+/// rerank for RaBitQ coarse-rerank experiments.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PostgresGucEnum)]
+pub(super) enum HnswRerankFormatGuc {
+    #[name = c"auto"]
+    Auto,
+    #[name = c"quantized"]
+    Quantized,
+    #[name = c"heap_f32"]
+    HeapF32,
 }
 
 #[repr(C)]
@@ -139,10 +157,36 @@ pub(super) fn register_gucs() {
         GucContext::Userset,
         GucFlags::default(),
     );
+    GucRegistry::define_enum_guc(
+        c"ec_hnsw.rerank_format",
+        c"Session selector for grouped ec_hnsw final rerank.",
+        c"Values: auto, quantized, heap_f32. heap_f32 reranks the retained grouped HNSW frontier with a heap/source f32 vector.",
+        &EC_HNSW_RERANK_FORMAT_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    GucRegistry::define_int_guc(
+        c"ec_hnsw.rerank_width",
+        c"Session override for grouped ec_hnsw final rerank width.",
+        c"Controls the retained grouped HNSW window reranked before emission. -1 uses the default; valid overrides are 1-1024.",
+        &EC_HNSW_RERANK_WIDTH_GUC,
+        -1,
+        EC_HNSW_MAX_RERANK_WIDTH,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
 }
 
 pub(super) fn current_turboquant_exact_score_mode() -> TurboQuantExactScoreModeGuc {
     EC_HNSW_TURBOQUANT_EXACT_SCORE_MODE_GUC.get()
+}
+
+pub(super) fn current_rerank_format() -> HnswRerankFormatGuc {
+    EC_HNSW_RERANK_FORMAT_GUC.get()
+}
+
+pub(super) fn current_rerank_width() -> i32 {
+    EC_HNSW_RERANK_WIDTH_GUC.get()
 }
 
 pub(super) fn current_session_ef_search() -> i32 {

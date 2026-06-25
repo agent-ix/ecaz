@@ -122,6 +122,7 @@ pub const EC_HNSW: IndexProfile = IndexProfile {
         "m",
         "ef_construction",
         "build_source_column",
+        "rerank_source_column",
         "storage_format",
     ],
     default_sweep: &[40, 64, 100, 128, 160, 200],

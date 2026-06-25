@@ -413,6 +413,10 @@ struct HnswFrontierStep {
     #[serde(default)]
     queries_limit: Option<usize>,
     #[serde(default)]
+    rerank_width: Option<i32>,
+    #[serde(default)]
+    session_gucs: Vec<String>,
+    #[serde(default)]
     log_output: Option<PathBuf>,
     #[serde(default)]
     jsonl_output: Option<PathBuf>,
@@ -3157,6 +3161,12 @@ fn expand_hnsw_frontier(step: &HnswFrontierStep, defaults: &SuiteDefaults) -> Ve
             .unwrap_or(200)
             .to_string(),
     );
+    if let Some(width) = step.rerank_width {
+        push_arg(&mut args, "--rerank-width", &width.to_string());
+    }
+    for guc in &step.session_gucs {
+        push_arg(&mut args, "--session-guc", guc);
+    }
     push_opt_path(&mut args, "--log-output", step.log_output.as_deref());
     push_opt_path(&mut args, "--jsonl-output", step.jsonl_output.as_deref());
     args
@@ -3636,6 +3646,7 @@ fn explain_step_profile<'a>(
 
 fn rerank_width_guc(profile: &IndexProfile) -> Option<&'static str> {
     match profile.name {
+        "ec_hnsw" => Some("ec_hnsw.rerank_width"),
         "ec_ivf" => Some("ec_ivf.rerank_width"),
         "ec_spire" => Some("ec_spire.rerank_width"),
         _ => None,
