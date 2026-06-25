@@ -1,0 +1,53 @@
+{
+  "name": "task119-hnsw-rabitq-coarse-rerank-frontier-reuse",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-119/001-rabitq-heap-f32-profile/artifacts/frontier-release-index-diagnostics",
+  "defaults": {
+    "pg": 18,
+    "socket_dir": "/Users/peter/.pgrx",
+    "port": 28818,
+    "queries_limit": 50,
+    "force_index": true
+  },
+  "thresholds": [],
+  "steps": [
+    {
+      "kind": "hnsw-frontier",
+      "name": "frontier-50k-hnsw-rabitq-quantized",
+      "tags": ["task119", "frontier", "ec_real_50k", "hnsw", "rabitq", "rerank_quantized", "release_index"],
+      "prefix": "task119_real50k_hnsw_rabitq",
+      "m": 16,
+      "sweep": [320, 500, 1000],
+      "session_gucs": ["ec_hnsw.rerank_format=quantized"]
+    },
+    {
+      "kind": "hnsw-frontier",
+      "name": "frontier-50k-hnsw-rabitq-heap-f32-w1000",
+      "tags": ["task119", "frontier", "ec_real_50k", "hnsw", "rabitq", "rerank_heap_f32", "width1000", "release_index"],
+      "prefix": "task119_real50k_hnsw_rabitq",
+      "m": 16,
+      "sweep": [320, 500, 1000],
+      "rerank_width": 1000,
+      "session_gucs": ["ec_hnsw.rerank_format=heap_f32"]
+    },
+    {
+      "kind": "hnsw-frontier",
+      "name": "frontier-100k-hnsw-rabitq-quantized",
+      "tags": ["task119", "frontier", "ec_real_100k", "hnsw", "rabitq", "rerank_quantized", "release_index"],
+      "prefix": "task119_real100k_hnsw_rabitq",
+      "m": 16,
+      "sweep": [320, 500, 1000],
+      "session_gucs": ["ec_hnsw.rerank_format=quantized"]
+    },
+    {
+      "kind": "hnsw-frontier",
+      "name": "frontier-100k-hnsw-rabitq-heap-f32-w1000",
+      "tags": ["task119", "frontier", "ec_real_100k", "hnsw", "rabitq", "rerank_heap_f32", "width1000", "release_index"],
+      "prefix": "task119_real100k_hnsw_rabitq",
+      "m": 16,
+      "sweep": [320, 500, 1000],
+      "rerank_width": 1000,
+      "session_gucs": ["ec_hnsw.rerank_format=heap_f32"]
+    }
+  ]
+}
