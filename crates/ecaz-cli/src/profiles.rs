@@ -167,6 +167,7 @@ pub const EC_IVF: IndexProfile = IndexProfile {
         "seed",
         "pq_group_size",
         "storage_format",
+        "turboquant_calibration",
         "quantizer",
         "rerank",
         // Task 111e/111g coarse_rerank knobs (reloption passthrough surface).
@@ -351,6 +352,7 @@ mod tests {
         assert_eq!(p.ef_search_guc, Some("ec_ivf.nprobe"));
         assert_eq!(p.build_source_column, None);
         assert!(!p.encode_scan_query);
+        assert!(p.known_reloptions.contains(&"turboquant_calibration"));
     }
 
     #[test]
