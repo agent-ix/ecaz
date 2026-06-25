@@ -60,8 +60,17 @@ The second-stage rerank representation matrix must include:
 - RaBitQ 2-bit;
 - RaBitQ 4-bit;
 - RaBitQ 8-bit;
-- every TurboQuant bit variant exposed by the implementation/CLI at the time
-  of the run.
+- TurboQuant 2-bit;
+- TurboQuant 3-bit;
+- TurboQuant 4-bit;
+- TurboQuant 5-bit;
+- TurboQuant 6-bit;
+- TurboQuant 7-bit;
+- TurboQuant 8-bit.
+
+The TurboQuant list is intentionally explicit. It matches the current
+`ProdQuantizer` contract of `2..=8` bits. Do not collapse this to "all
+TurboQuant variants" in benchmark configs, manifests, or closeout text.
 
 TurboQuant and multi-bit RaBitQ in this task are rerank representations over a
 RaBitQ-1 frontier, not replacements for the RaBitQ-1 candidate generator.
@@ -78,7 +87,7 @@ Candidate knobs:
 ```text
 storage_format = 'rabitq'
 candidate_format = 'rabitq_1bit'
-rerank_format = 'source_f32' | 'heap_f32' | 'rabitq_2bit' | 'rabitq_4bit' | 'rabitq_8bit' | 'turboquant_*' | ...
+rerank_format = 'source_f32' | 'heap_f32' | 'rabitq_2bit' | 'rabitq_4bit' | 'rabitq_8bit' | 'turboquant_2bit' | 'turboquant_3bit' | 'turboquant_4bit' | 'turboquant_5bit' | 'turboquant_6bit' | 'turboquant_7bit' | 'turboquant_8bit' | ...
 rerank_width = N
 traversal_rescore_budget = N
 ```
@@ -95,7 +104,7 @@ Implement or expose the narrowest measurable baseline:
 - explicit frontier overfetch;
 - exact/source-f32 rerank over the retained frontier;
 - RaBitQ 2/4/8 rerank over the retained frontier;
-- all exposed TurboQuant bit-variant reranks over the retained frontier;
+- TurboQuant 2/3/4/5/6/7/8-bit reranks over the retained frontier;
 - deterministic top-k emission after exact rerank;
 - counters for visited candidates, frontier candidates, reranked rows by
   representation, heap/source reads, and emitted rows.
@@ -157,12 +166,14 @@ across TurboQuant, PqFastScan, and RaBitQ:
 
 - Use `ecaz bench suite` for every benchmark matrix.
 - Minimum matrix: 10k, 50k, 100k x RaBitQ-1 candidate frontier x
-  `{f32, RaBitQ 2-bit, RaBitQ 4-bit, RaBitQ 8-bit, all TurboQuant bit variants}`
+  `{f32, RaBitQ 2-bit, RaBitQ 4-bit, RaBitQ 8-bit, TurboQuant 2-bit,
+  TurboQuant 3-bit, TurboQuant 4-bit, TurboQuant 5-bit, TurboQuant 6-bit,
+  TurboQuant 7-bit, TurboQuant 8-bit}`
   x relevant `ef_search` and `rerank_width` values.
-- The suite config must enumerate the exact TurboQuant bit variants available
-  in the implementation at the time of the run. If a listed representation is
-  not implemented, the packet must state that explicitly and either add support
-  before measuring or mark the task blocked/incomplete.
+- The suite config must enumerate TurboQuant 2/3/4/5/6/7/8-bit rerank
+  representations explicitly. If a listed representation is not implemented,
+  the packet must state that explicitly and either add support before measuring
+  or mark the task blocked/incomplete.
 - PqFastScan and ordinary HNSW TurboQuant/RaBitQ storage-format baselines are
   useful context but are not substitutes for the RaBitQ-1 + second-stage rerank
   matrix.
@@ -186,8 +197,8 @@ across TurboQuant, PqFastScan, and RaBitQ:
 
 1. Task 118 attribution is cited and the go/no-go condition is explicit.
 2. A true RaBitQ-1 coarse-rerank profile is measured with explicit overfetch
-   and the required second-stage rerank matrix: f32, RaBitQ 2/4/8, and all
-   TurboQuant bit variants.
+   and the required second-stage rerank matrix: f32, RaBitQ 2/4/8, and
+   TurboQuant 2/3/4/5/6/7/8.
 3. Recall, latency, storage, and candidate-stage counters are reported at
    10k/50k/100k for every required rerank representation, or the task is left
    open with a precise missing-representation/blocker list.
