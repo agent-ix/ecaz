@@ -1,9 +1,9 @@
 //! `ecaz bench sidecar-rerank` — IVF/RaBitQ sidecar upper-bound study.
 //!
 //! This is intentionally a measurement harness, not an index feature. It asks
-//! an isolated `ec_ivf`/RaBitQ `rerank=off` index for an approximate candidate
-//! frontier, then locally reranks only those candidate ids with f32, f16, or
-//! bits=8 RaBitQ sidecar representations.
+//! an isolated approximate index for a candidate frontier, then locally reranks
+//! only those candidate ids with f32, f16, RaBitQ, or TurboQuant sidecar
+//! representations.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -36,10 +36,32 @@ use super::recall::{
 pub enum SidecarVariant {
     F32,
     F16,
+    #[value(name = "rabitq2")]
+    Rabitq2,
+    #[value(name = "rabitq4")]
+    Rabitq4,
+    #[value(name = "rabitq8")]
     Rabitq8,
+    #[value(name = "rabitq8ls")]
     Rabitq8ls,
+    #[value(name = "rabitq8c3")]
     Rabitq8c3,
+    #[value(name = "rabitq8c4")]
     Rabitq8c4,
+    #[value(name = "turboquant_2bit", alias = "turboquant2")]
+    TurboQuant2Bit,
+    #[value(name = "turboquant_3bit", alias = "turboquant3")]
+    TurboQuant3Bit,
+    #[value(name = "turboquant_4bit", alias = "turboquant4")]
+    TurboQuant4Bit,
+    #[value(name = "turboquant_5bit", alias = "turboquant5")]
+    TurboQuant5Bit,
+    #[value(name = "turboquant_6bit", alias = "turboquant6")]
+    TurboQuant6Bit,
+    #[value(name = "turboquant_7bit", alias = "turboquant7")]
+    TurboQuant7Bit,
+    #[value(name = "turboquant_8bit", alias = "turboquant8")]
+    TurboQuant8Bit,
 }
 
 impl SidecarVariant {
@@ -47,19 +69,106 @@ impl SidecarVariant {
         match self {
             Self::F32 => "f32",
             Self::F16 => "f16",
+            Self::Rabitq2 => "rabitq2",
+            Self::Rabitq4 => "rabitq4",
             Self::Rabitq8 => "rabitq8",
             Self::Rabitq8ls => "rabitq8ls",
             Self::Rabitq8c3 => "rabitq8c3",
             Self::Rabitq8c4 => "rabitq8c4",
+            Self::TurboQuant2Bit => "turboquant_2bit",
+            Self::TurboQuant3Bit => "turboquant_3bit",
+            Self::TurboQuant4Bit => "turboquant_4bit",
+            Self::TurboQuant5Bit => "turboquant_5bit",
+            Self::TurboQuant6Bit => "turboquant_6bit",
+            Self::TurboQuant7Bit => "turboquant_7bit",
+            Self::TurboQuant8Bit => "turboquant_8bit",
         }
     }
 
     fn rabitq_clip(self) -> Option<f32> {
         match self {
-            Self::Rabitq8 | Self::Rabitq8ls => Some(2.0),
+            Self::Rabitq2 | Self::Rabitq4 | Self::Rabitq8 | Self::Rabitq8ls => Some(2.0),
             Self::Rabitq8c3 => Some(3.0),
             Self::Rabitq8c4 => Some(4.0),
-            Self::F32 | Self::F16 => None,
+            Self::F32
+            | Self::F16
+            | Self::TurboQuant2Bit
+            | Self::TurboQuant3Bit
+            | Self::TurboQuant4Bit
+            | Self::TurboQuant5Bit
+            | Self::TurboQuant6Bit
+            | Self::TurboQuant7Bit
+            | Self::TurboQuant8Bit => None,
+        }
+    }
+
+    fn rabitq_bits(self) -> Option<u8> {
+        match self {
+            Self::Rabitq2 => Some(2),
+            Self::Rabitq4 => Some(4),
+            Self::Rabitq8 | Self::Rabitq8ls | Self::Rabitq8c3 | Self::Rabitq8c4 => Some(8),
+            Self::F32
+            | Self::F16
+            | Self::TurboQuant2Bit
+            | Self::TurboQuant3Bit
+            | Self::TurboQuant4Bit
+            | Self::TurboQuant5Bit
+            | Self::TurboQuant6Bit
+            | Self::TurboQuant7Bit
+            | Self::TurboQuant8Bit => None,
+        }
+    }
+
+    fn turboquant_bits(self) -> Option<u8> {
+        match self {
+            Self::TurboQuant2Bit => Some(2),
+            Self::TurboQuant3Bit => Some(3),
+            Self::TurboQuant4Bit => Some(4),
+            Self::TurboQuant5Bit => Some(5),
+            Self::TurboQuant6Bit => Some(6),
+            Self::TurboQuant7Bit => Some(7),
+            Self::TurboQuant8Bit => Some(8),
+            Self::F32
+            | Self::F16
+            | Self::Rabitq2
+            | Self::Rabitq4
+            | Self::Rabitq8
+            | Self::Rabitq8ls
+            | Self::Rabitq8c3
+            | Self::Rabitq8c4 => None,
+        }
+    }
+
+    fn uses_rabitq_batch_score(self) -> bool {
+        matches!(
+            self,
+            Self::Rabitq4 | Self::Rabitq8 | Self::Rabitq8c3 | Self::Rabitq8c4
+        )
+    }
+
+    fn is_rabitq(self) -> bool {
+        self.rabitq_bits().is_some()
+    }
+
+    fn is_turboquant(self) -> bool {
+        self.turboquant_bits().is_some()
+    }
+
+    fn is_rabitq_least_squares(self) -> bool {
+        matches!(self, Self::Rabitq8ls)
+    }
+}
+
+#[derive(Clone)]
+struct TurboQuantPayload {
+    payload: Box<[u8]>,
+}
+
+impl TurboQuantPayload {
+    fn new(quantizer: &ProdQuantizer, vector: &[f32]) -> Self {
+        let encoded = quantizer.encode(vector);
+        Self {
+            payload: quantizer.pack_payload(&encoded).into_boxed_slice(),
         }
     }
 }
@@ -616,9 +725,13 @@ impl Sidecar {
 enum SidecarStorage {
     F32,
     F16(Vec<Vec<f16>>),
-    Rabitq8 {
+    Rabitq {
         quantizer: Arc<RaBitQQuantizer>,
         codes: Vec<Box<[u8]>>,
+    },
+    TurboQuant {
+        quantizer: Arc<ProdQuantizer>,
+        payloads: Vec<TurboQuantPayload>,
     },
 }
 
@@ -753,7 +866,8 @@ fn sidecar_payload_bytes(sidecar: &Sidecar, corpus: &Array2<f32>, pos: usize) ->
             .iter()
             .flat_map(|value| value.to_le_bytes())
             .collect()),
-        SidecarStorage::Rabitq8 { codes, .. } => Ok(codes[pos].to_vec()),
+        SidecarStorage::Rabitq { codes, .. } => Ok(codes[pos].to_vec()),
+        SidecarStorage::TurboQuant { payloads, .. } => Ok(payloads[pos].payload.to_vec()),
     }
 }
 
@@ -776,15 +890,13 @@ fn build_sidecar(variant: SidecarVariant, corpus: &Array2<f32>, seed: u64) -> Re
                 storage: SidecarStorage::F16(encoded),
             })
         }
-        SidecarVariant::Rabitq8
-        | SidecarVariant::Rabitq8ls
-        | SidecarVariant::Rabitq8c3
-        | SidecarVariant::Rabitq8c4 => {
+        variant if variant.is_rabitq() => {
             let prod = ProdQuantizer::cached(corpus.ncols(), 4, seed);
+            let bits = variant.rabitq_bits().expect("RaBitQ variant has bits");
             let clip = variant.rabitq_clip().expect("RaBitQ variant has a clip");
             let quantizer = Arc::new(
-                RaBitQQuantizer::with_srht_bits_clip(corpus.ncols(), prod, 8, clip).map_err(
-                    |err| eyre!("building bits=8 RaBitQ sidecar with clip {clip}: {err}"),
+                RaBitQQuantizer::with_srht_bits_clip(corpus.ncols(), prod, bits, clip).map_err(
+                    |err| eyre!("building bits={bits} RaBitQ sidecar with clip {clip}: {err}"),
                 )?,
             );
             let bytes_per_vector = <RaBitQQuantizer as Quantizer>::code_len(quantizer.as_ref());
@@ -799,9 +911,32 @@ fn build_sidecar(variant: SidecarVariant, corpus: &Array2<f32>, seed: u64) -> Re
             Ok(Sidecar {
                 variant,
                 bytes_per_vector,
-                storage: SidecarStorage::Rabitq8 { quantizer, codes },
+                storage: SidecarStorage::Rabitq { quantizer, codes },
             })
         }
+        variant if variant.is_turboquant() => {
+            let bits = variant
+                .turboquant_bits()
+                .expect("TurboQuant variant has bits");
+            let quantizer = ProdQuantizer::cached(corpus.ncols(), bits, seed);
+            let payloads = corpus
+                .rows()
+                .into_iter()
+                .map(|row| {
+                    let values: Vec<f32> = row.to_vec();
+                    TurboQuantPayload::new(&quantizer, &values)
+                })
+                .collect();
+            Ok(Sidecar {
+                variant,
+                bytes_per_vector: ecaz::bench_api::payload_len(corpus.ncols(), bits),
+                storage: SidecarStorage::TurboQuant {
+                    quantizer,
+                    payloads,
+                },
+            })
+        }
+        _ => unreachable!("handled concrete sidecar variant"),
     }
 }
 
@@ -843,12 +978,9 @@ fn rerank_with_sidecar(
                     scored.push((*id, dot_f16(&query, &encoded[pos])));
                 }
             }
-            SidecarStorage::Rabitq8 { quantizer, codes } => {
+            SidecarStorage::Rabitq { quantizer, codes } => {
                 let prepared = quantizer.prepare_estimator(&query);
-                if matches!(
-                    sidecar.variant,
-                    SidecarVariant::Rabitq8 | SidecarVariant::Rabitq8c3 | SidecarVariant::Rabitq8c4
-                ) {
+                if sidecar.variant.uses_rabitq_batch_score() {
                     let mut slab = Vec::with_capacity(ids.len() * sidecar.bytes_per_vector);
                     for id in ids {
                         let pos = *id_to_pos.get(id).ok_or_else(|| {
@@ -873,6 +1005,19 @@ fn rerank_with_sidecar(
                         let score = rabitq_sidecar_score(sidecar.variant, &prepared, &codes[pos]);
                         scored.push((*id, score));
                     }
+                }
+            }
+            SidecarStorage::TurboQuant {
+                quantizer,
+                payloads,
+            } => {
+                let prepared = quantizer.prepare_ip_query(&query);
+                for id in ids {
+                    let pos = *id_to_pos.get(id).ok_or_else(|| {
+                        eyre!("candidate id {id} not present in corpus source map")
+                    })?;
+                    let score = quantizer.score_ip_encoded(&prepared, &payloads[pos].payload);
+                    scored.push((*id, score));
                 }
             }
         }
@@ -1053,12 +1198,9 @@ fn score_sidecar_payloads(
                 scored.push((*id, dot_f16_bytes(query, payload)?));
             }
         }
-        SidecarStorage::Rabitq8 { quantizer, .. } => {
+        SidecarStorage::Rabitq { quantizer, .. } => {
             let prepared = quantizer.prepare_estimator(query);
-            if matches!(
-                sidecar.variant,
-                SidecarVariant::Rabitq8 | SidecarVariant::Rabitq8c3 | SidecarVariant::Rabitq8c4
-            ) {
+            if sidecar.variant.uses_rabitq_batch_score() {
                 let mut slab = Vec::with_capacity(payloads.len() * sidecar.bytes_per_vector);
                 for (id, payload) in payloads {
                     if payload.len() != sidecar.bytes_per_vector {
@@ -1095,6 +1237,21 @@ fn score_sidecar_payloads(
                 }
             }
         }
+        SidecarStorage::TurboQuant { quantizer, .. } => {
+            let prepared = quantizer.prepare_ip_query(query);
+            for (id, payload) in payloads {
+                if payload.len() != sidecar.bytes_per_vector {
+                    bail!(
+                        "{} sidecar payload for id {id} has {} bytes, expected {}",
+                        sidecar.variant.label(),
+                        payload.len(),
+                        sidecar.bytes_per_vector
+                    );
+                }
+                let score = quantizer.score_ip_encoded(&prepared, payload);
+                scored.push((*id, score));
+            }
+        }
     }
     Ok(scored)
 }
@@ -1104,12 +1261,12 @@ fn rabitq_sidecar_score(
     prepared: &ecaz::bench_api::PreparedEstimator,
     code: &[u8],
 ) -> f32 {
-    match variant {
-        SidecarVariant::Rabitq8 | SidecarVariant::Rabitq8c3 | SidecarVariant::Rabitq8c4 => {
-            prepared.estimate_ip(code).estimate
-        }
-        SidecarVariant::Rabitq8ls => prepared.estimate_ip_least_squares_scalar_only(code),
-        SidecarVariant::F32 | SidecarVariant::F16 => unreachable!("not a RaBitQ sidecar variant"),
+    if variant.is_rabitq_least_squares() {
+        prepared.estimate_ip_least_squares_scalar_only(code)
+    } else if variant.is_rabitq() {
+        prepared.estimate_ip(code).estimate
+    } else {
+        unreachable!("not a RaBitQ sidecar variant")
     }
 }
 
@@ -1231,6 +1388,7 @@ async fn write_log(path: &Path, output: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use clap::ValueEnum;
 
     #[test]
     fn dot_f32_bytes_matches_plain_dot() {
@@ -1270,5 +1428,65 @@ mod tests {
         assert!(SidecarReadMode::RandomId.uses_db());
         assert_eq!(SidecarReadMode::TidSorted.label(), "tid-sorted");
         assert!(SidecarReadMode::TidSorted.uses_db());
+    }
+
+    #[test]
+    fn task119_sidecar_variant_labels_are_explicit() {
+        let variants = [
+            (SidecarVariant::F32, "f32"),
+            (SidecarVariant::Rabitq2, "rabitq2"),
+            (SidecarVariant::Rabitq4, "rabitq4"),
+            (SidecarVariant::Rabitq8, "rabitq8"),
+            (SidecarVariant::TurboQuant2Bit, "turboquant_2bit"),
+            (SidecarVariant::TurboQuant3Bit, "turboquant_3bit"),
+            (SidecarVariant::TurboQuant4Bit, "turboquant_4bit"),
+            (SidecarVariant::TurboQuant5Bit, "turboquant_5bit"),
+            (SidecarVariant::TurboQuant6Bit, "turboquant_6bit"),
+            (SidecarVariant::TurboQuant7Bit, "turboquant_7bit"),
+            (SidecarVariant::TurboQuant8Bit, "turboquant_8bit"),
+        ];
+
+        for (variant, label) in variants {
+            assert_eq!(variant.label(), label);
+        }
+    }
+
+    #[test]
+    fn task119_sidecar_variant_bit_sizes_are_explicit() {
+        assert_eq!(SidecarVariant::Rabitq2.rabitq_bits(), Some(2));
+        assert_eq!(SidecarVariant::Rabitq4.rabitq_bits(), Some(4));
+        assert_eq!(SidecarVariant::Rabitq8.rabitq_bits(), Some(8));
+
+        assert_eq!(SidecarVariant::TurboQuant2Bit.turboquant_bits(), Some(2));
+        assert_eq!(SidecarVariant::TurboQuant3Bit.turboquant_bits(), Some(3));
+        assert_eq!(SidecarVariant::TurboQuant4Bit.turboquant_bits(), Some(4));
+        assert_eq!(SidecarVariant::TurboQuant5Bit.turboquant_bits(), Some(5));
+        assert_eq!(SidecarVariant::TurboQuant6Bit.turboquant_bits(), Some(6));
+        assert_eq!(SidecarVariant::TurboQuant7Bit.turboquant_bits(), Some(7));
+        assert_eq!(SidecarVariant::TurboQuant8Bit.turboquant_bits(), Some(8));
+    }
+
+    #[test]
+    fn task119_sidecar_variant_cli_names_parse() {
+        assert_eq!(
+            SidecarVariant::from_str("rabitq2", true).unwrap(),
+            SidecarVariant::Rabitq2
+        );
+        assert_eq!(
+            SidecarVariant::from_str("rabitq4", true).unwrap(),
+            SidecarVariant::Rabitq4
+        );
+        assert_eq!(
+            SidecarVariant::from_str("turboquant_2bit", true).unwrap(),
+            SidecarVariant::TurboQuant2Bit
+        );
+        assert_eq!(
+            SidecarVariant::from_str("turboquant_8bit", true).unwrap(),
+            SidecarVariant::TurboQuant8Bit
+        );
+        assert_eq!(
+            SidecarVariant::from_str("turboquant2", true).unwrap(),
+            SidecarVariant::TurboQuant2Bit
+        );
     }
 }
