@@ -167,25 +167,6 @@
       "truth_corpus_file": "data/staged-current/ec_real_10k_corpus.tsv"
     },
     {
-      "kind": "hnsw-frontier",
-      "name": "frontier-10k-hnsw-rabitq-quantized",
-      "tags": ["task119", "frontier", "ec_real_10k", "hnsw", "rabitq", "rerank_quantized"],
-      "prefix": "task119_real10k_hnsw_rabitq",
-      "m": 16,
-      "sweep": [320, 500, 1000],
-      "session_gucs": ["ec_hnsw.rerank_format=quantized"]
-    },
-    {
-      "kind": "hnsw-frontier",
-      "name": "frontier-10k-hnsw-rabitq-heap-f32-w1000",
-      "tags": ["task119", "frontier", "ec_real_10k", "hnsw", "rabitq", "rerank_heap_f32", "width1000"],
-      "prefix": "task119_real10k_hnsw_rabitq",
-      "m": 16,
-      "sweep": [320, 500, 1000],
-      "rerank_width": 1000,
-      "session_gucs": ["ec_hnsw.rerank_format=heap_f32"]
-    },
-    {
       "kind": "latency",
       "name": "latency-10k-hnsw-rabitq-quantized",
       "tags": ["task119", "latency", "ec_real_10k", "hnsw", "rabitq", "rerank_quantized", "post_recall_warm"],
@@ -345,25 +326,6 @@
       "truth_corpus_file": "data/staged-current/ec_real_50k_corpus.tsv"
     },
     {
-      "kind": "hnsw-frontier",
-      "name": "frontier-50k-hnsw-rabitq-quantized",
-      "tags": ["task119", "frontier", "ec_real_50k", "hnsw", "rabitq", "rerank_quantized"],
-      "prefix": "task119_real50k_hnsw_rabitq",
-      "m": 16,
-      "sweep": [320, 500, 1000],
-      "session_gucs": ["ec_hnsw.rerank_format=quantized"]
-    },
-    {
-      "kind": "hnsw-frontier",
-      "name": "frontier-50k-hnsw-rabitq-heap-f32-w1000",
-      "tags": ["task119", "frontier", "ec_real_50k", "hnsw", "rabitq", "rerank_heap_f32", "width1000"],
-      "prefix": "task119_real50k_hnsw_rabitq",
-      "m": 16,
-      "sweep": [320, 500, 1000],
-      "rerank_width": 1000,
-      "session_gucs": ["ec_hnsw.rerank_format=heap_f32"]
-    },
-    {
       "kind": "latency",
       "name": "latency-50k-hnsw-rabitq-quantized",
       "tags": ["task119", "latency", "ec_real_50k", "hnsw", "rabitq", "rerank_quantized", "post_recall_warm"],
@@ -521,25 +483,6 @@
       "session_gucs": ["ec_hnsw.rerank_format=heap_f32"],
       "truth_cache_file": "${artifact_dir}/truth-100k-k10.json",
       "truth_corpus_file": "data/staged-current/ec_real_100k_corpus.tsv"
-    },
-    {
-      "kind": "hnsw-frontier",
-      "name": "frontier-100k-hnsw-rabitq-quantized",
-      "tags": ["task119", "frontier", "ec_real_100k", "hnsw", "rabitq", "rerank_quantized"],
-      "prefix": "task119_real100k_hnsw_rabitq",
-      "m": 16,
-      "sweep": [320, 500, 1000],
-      "session_gucs": ["ec_hnsw.rerank_format=quantized"]
-    },
-    {
-      "kind": "hnsw-frontier",
-      "name": "frontier-100k-hnsw-rabitq-heap-f32-w1000",
-      "tags": ["task119", "frontier", "ec_real_100k", "hnsw", "rabitq", "rerank_heap_f32", "width1000"],
-      "prefix": "task119_real100k_hnsw_rabitq",
-      "m": 16,
-      "sweep": [320, 500, 1000],
-      "rerank_width": 1000,
-      "session_gucs": ["ec_hnsw.rerank_format=heap_f32"]
     },
     {
       "kind": "latency",

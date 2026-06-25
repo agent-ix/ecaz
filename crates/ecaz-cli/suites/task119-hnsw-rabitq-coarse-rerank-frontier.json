@@ -1,0 +1,117 @@
+{
+  "name": "task119-hnsw-rabitq-coarse-rerank-frontier",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-119/001-rabitq-heap-f32-profile/artifacts/frontier-diagnostics",
+  "defaults": {
+    "pg": 18,
+    "socket_dir": "/Users/peter/.pgrx",
+    "port": 28818,
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 200,
+    "iterations": 200,
+    "force_index": true
+  },
+  "thresholds": [],
+  "steps": [
+    {
+      "kind": "load",
+      "name": "load-10k-hnsw-rabitq",
+      "tags": ["task119", "load", "ec_real_10k", "hnsw", "rabitq", "frontier"],
+      "prefix": "task119_diag_real10k_hnsw_rabitq",
+      "profile": "ec_hnsw",
+      "storage_format": "rabitq",
+      "corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_10k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_10k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "m": [16],
+      "ef_construction": 128
+    },
+    {
+      "kind": "hnsw-frontier",
+      "name": "frontier-10k-hnsw-rabitq-quantized",
+      "tags": ["task119", "frontier", "ec_real_10k", "hnsw", "rabitq", "rerank_quantized"],
+      "prefix": "task119_diag_real10k_hnsw_rabitq",
+      "m": 16,
+      "sweep": [320, 500, 1000],
+      "session_gucs": ["ec_hnsw.rerank_format=quantized"]
+    },
+    {
+      "kind": "hnsw-frontier",
+      "name": "frontier-10k-hnsw-rabitq-heap-f32-w1000",
+      "tags": ["task119", "frontier", "ec_real_10k", "hnsw", "rabitq", "rerank_heap_f32", "width1000"],
+      "prefix": "task119_diag_real10k_hnsw_rabitq",
+      "m": 16,
+      "sweep": [320, 500, 1000],
+      "rerank_width": 1000,
+      "session_gucs": ["ec_hnsw.rerank_format=heap_f32"]
+    },
+    {
+      "kind": "load",
+      "name": "load-50k-hnsw-rabitq",
+      "tags": ["task119", "load", "ec_real_50k", "hnsw", "rabitq", "frontier"],
+      "prefix": "task119_diag_real50k_hnsw_rabitq",
+      "profile": "ec_hnsw",
+      "storage_format": "rabitq",
+      "corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_50k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "m": [16],
+      "ef_construction": 128
+    },
+    {
+      "kind": "hnsw-frontier",
+      "name": "frontier-50k-hnsw-rabitq-quantized",
+      "tags": ["task119", "frontier", "ec_real_50k", "hnsw", "rabitq", "rerank_quantized"],
+      "prefix": "task119_diag_real50k_hnsw_rabitq",
+      "m": 16,
+      "sweep": [320, 500, 1000],
+      "session_gucs": ["ec_hnsw.rerank_format=quantized"]
+    },
+    {
+      "kind": "hnsw-frontier",
+      "name": "frontier-50k-hnsw-rabitq-heap-f32-w1000",
+      "tags": ["task119", "frontier", "ec_real_50k", "hnsw", "rabitq", "rerank_heap_f32", "width1000"],
+      "prefix": "task119_diag_real50k_hnsw_rabitq",
+      "m": 16,
+      "sweep": [320, 500, 1000],
+      "rerank_width": 1000,
+      "session_gucs": ["ec_hnsw.rerank_format=heap_f32"]
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-hnsw-rabitq",
+      "tags": ["task119", "load", "ec_real_100k", "hnsw", "rabitq", "frontier"],
+      "prefix": "task119_diag_real100k_hnsw_rabitq",
+      "profile": "ec_hnsw",
+      "storage_format": "rabitq",
+      "corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_100k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "m": [16],
+      "ef_construction": 128
+    },
+    {
+      "kind": "hnsw-frontier",
+      "name": "frontier-100k-hnsw-rabitq-quantized",
+      "tags": ["task119", "frontier", "ec_real_100k", "hnsw", "rabitq", "rerank_quantized"],
+      "prefix": "task119_diag_real100k_hnsw_rabitq",
+      "m": 16,
+      "sweep": [320, 500, 1000],
+      "session_gucs": ["ec_hnsw.rerank_format=quantized"]
+    },
+    {
+      "kind": "hnsw-frontier",
+      "name": "frontier-100k-hnsw-rabitq-heap-f32-w1000",
+      "tags": ["task119", "frontier", "ec_real_100k", "hnsw", "rabitq", "rerank_heap_f32", "width1000"],
+      "prefix": "task119_diag_real100k_hnsw_rabitq",
+      "m": 16,
+      "sweep": [320, 500, 1000],
+      "rerank_width": 1000,
+      "session_gucs": ["ec_hnsw.rerank_format=heap_f32"]
+    }
+  ]
+}
