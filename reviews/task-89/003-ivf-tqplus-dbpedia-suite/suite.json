@@ -1,0 +1,255 @@
+{
+  "name": "task89-ivf-tqplus-dbpedia",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite",
+  "defaults": {
+    "profile": "ec_ivf",
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 100,
+    "iterations": 100,
+    "force_index": true,
+    "sample_backend_memory": true,
+    "memory_sample_interval_ms": 25,
+    "pg": 18
+  },
+  "steps": [
+    {
+      "kind": "load",
+      "name": "load-dbpedia10k-tq",
+      "tags": ["load", "dbpedia", "real10k", "ivf", "turboquant", "baseline", "no-qjl"],
+      "prefix": "task89_dbpedia10k_ivf_tq",
+      "corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_10k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_10k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "storage_format": "turboquant",
+      "reloptions": [
+        "nlists=64",
+        "nprobe=48"
+      ]
+    },
+    {
+      "kind": "load",
+      "name": "load-dbpedia10k-tqplus",
+      "tags": ["load", "dbpedia", "real10k", "ivf", "turboquant", "tqplus", "no-qjl"],
+      "prefix": "task89_dbpedia10k_ivf_tqplus",
+      "corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_10k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_10k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "storage_format": "turboquant",
+      "reloptions": [
+        "nlists=64",
+        "nprobe=48",
+        "turboquant_calibration=tqplus_experimental"
+      ]
+    },
+    {
+      "kind": "recall",
+      "name": "recall10-dbpedia10k-tq",
+      "tags": ["recall", "dbpedia", "real10k", "ivf", "turboquant", "baseline", "no-qjl"],
+      "prefix": "task89_dbpedia10k_ivf_tq",
+      "k": 10,
+      "sweep": [16, 32, 48, 64],
+      "truth_cache_file": "${artifact_dir}/truth-dbpedia10k-k10.json",
+      "truth_corpus_file": "data/staged-current/ec_real_10k_corpus.tsv"
+    },
+    {
+      "kind": "recall",
+      "name": "recall10-dbpedia10k-tqplus",
+      "tags": ["recall", "dbpedia", "real10k", "ivf", "turboquant", "tqplus", "no-qjl"],
+      "prefix": "task89_dbpedia10k_ivf_tqplus",
+      "k": 10,
+      "sweep": [16, 32, 48, 64],
+      "truth_cache_file": "${artifact_dir}/truth-dbpedia10k-k10.json",
+      "truth_corpus_file": "data/staged-current/ec_real_10k_corpus.tsv"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-dbpedia10k-tq",
+      "tags": ["latency", "dbpedia", "real10k", "ivf", "turboquant", "baseline", "no-qjl"],
+      "prefix": "task89_dbpedia10k_ivf_tq",
+      "k": 10,
+      "sweep": [16, 32, 48, 64]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-dbpedia10k-tqplus",
+      "tags": ["latency", "dbpedia", "real10k", "ivf", "turboquant", "tqplus", "no-qjl"],
+      "prefix": "task89_dbpedia10k_ivf_tqplus",
+      "k": 10,
+      "sweep": [16, 32, 48, 64]
+    },
+    {
+      "kind": "storage",
+      "name": "storage-dbpedia10k-tq",
+      "tags": ["storage", "dbpedia", "real10k", "ivf", "turboquant", "baseline", "no-qjl"],
+      "prefix": "task89_dbpedia10k_ivf_tq"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-dbpedia10k-tqplus",
+      "tags": ["storage", "dbpedia", "real10k", "ivf", "turboquant", "tqplus", "no-qjl"],
+      "prefix": "task89_dbpedia10k_ivf_tqplus"
+    },
+    {
+      "kind": "load",
+      "name": "load-dbpedia50k-tq",
+      "tags": ["load", "dbpedia", "real50k", "ivf", "turboquant", "baseline", "no-qjl"],
+      "prefix": "task89_dbpedia50k_ivf_tq",
+      "corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_50k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "storage_format": "turboquant",
+      "reloptions": [
+        "nlists=128",
+        "nprobe=64"
+      ]
+    },
+    {
+      "kind": "load",
+      "name": "load-dbpedia50k-tqplus",
+      "tags": ["load", "dbpedia", "real50k", "ivf", "turboquant", "tqplus", "no-qjl"],
+      "prefix": "task89_dbpedia50k_ivf_tqplus",
+      "corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_50k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "storage_format": "turboquant",
+      "reloptions": [
+        "nlists=128",
+        "nprobe=64",
+        "turboquant_calibration=tqplus_experimental"
+      ]
+    },
+    {
+      "kind": "recall",
+      "name": "recall10-dbpedia50k-tq",
+      "tags": ["recall", "dbpedia", "real50k", "ivf", "turboquant", "baseline", "no-qjl"],
+      "prefix": "task89_dbpedia50k_ivf_tq",
+      "k": 10,
+      "sweep": [32, 48, 64, 96],
+      "truth_cache_file": "${artifact_dir}/truth-dbpedia50k-k10.json",
+      "truth_corpus_file": "data/staged-current/ec_real_50k_corpus.tsv"
+    },
+    {
+      "kind": "recall",
+      "name": "recall10-dbpedia50k-tqplus",
+      "tags": ["recall", "dbpedia", "real50k", "ivf", "turboquant", "tqplus", "no-qjl"],
+      "prefix": "task89_dbpedia50k_ivf_tqplus",
+      "k": 10,
+      "sweep": [32, 48, 64, 96],
+      "truth_cache_file": "${artifact_dir}/truth-dbpedia50k-k10.json",
+      "truth_corpus_file": "data/staged-current/ec_real_50k_corpus.tsv"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-dbpedia50k-tq",
+      "tags": ["latency", "dbpedia", "real50k", "ivf", "turboquant", "baseline", "no-qjl"],
+      "prefix": "task89_dbpedia50k_ivf_tq",
+      "k": 10,
+      "sweep": [32, 48, 64, 96]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-dbpedia50k-tqplus",
+      "tags": ["latency", "dbpedia", "real50k", "ivf", "turboquant", "tqplus", "no-qjl"],
+      "prefix": "task89_dbpedia50k_ivf_tqplus",
+      "k": 10,
+      "sweep": [32, 48, 64, 96]
+    },
+    {
+      "kind": "storage",
+      "name": "storage-dbpedia50k-tq",
+      "tags": ["storage", "dbpedia", "real50k", "ivf", "turboquant", "baseline", "no-qjl"],
+      "prefix": "task89_dbpedia50k_ivf_tq"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-dbpedia50k-tqplus",
+      "tags": ["storage", "dbpedia", "real50k", "ivf", "turboquant", "tqplus", "no-qjl"],
+      "prefix": "task89_dbpedia50k_ivf_tqplus"
+    },
+    {
+      "kind": "load",
+      "name": "load-dbpedia100k-tq",
+      "tags": ["load", "dbpedia", "real100k", "ivf", "turboquant", "baseline", "no-qjl"],
+      "prefix": "task89_dbpedia100k_ivf_tq",
+      "corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_100k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "storage_format": "turboquant",
+      "reloptions": [
+        "nlists=256",
+        "nprobe=96"
+      ]
+    },
+    {
+      "kind": "load",
+      "name": "load-dbpedia100k-tqplus",
+      "tags": ["load", "dbpedia", "real100k", "ivf", "turboquant", "tqplus", "no-qjl"],
+      "prefix": "task89_dbpedia100k_ivf_tqplus",
+      "corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_100k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "storage_format": "turboquant",
+      "reloptions": [
+        "nlists=256",
+        "nprobe=96",
+        "turboquant_calibration=tqplus_experimental"
+      ]
+    },
+    {
+      "kind": "recall",
+      "name": "recall10-dbpedia100k-tq",
+      "tags": ["recall", "dbpedia", "real100k", "ivf", "turboquant", "baseline", "no-qjl"],
+      "prefix": "task89_dbpedia100k_ivf_tq",
+      "k": 10,
+      "sweep": [64, 96, 128, 160],
+      "truth_cache_file": "${artifact_dir}/truth-dbpedia100k-k10.json",
+      "truth_corpus_file": "data/staged-current/ec_real_100k_corpus.tsv"
+    },
+    {
+      "kind": "recall",
+      "name": "recall10-dbpedia100k-tqplus",
+      "tags": ["recall", "dbpedia", "real100k", "ivf", "turboquant", "tqplus", "no-qjl"],
+      "prefix": "task89_dbpedia100k_ivf_tqplus",
+      "k": 10,
+      "sweep": [64, 96, 128, 160],
+      "truth_cache_file": "${artifact_dir}/truth-dbpedia100k-k10.json",
+      "truth_corpus_file": "data/staged-current/ec_real_100k_corpus.tsv"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-dbpedia100k-tq",
+      "tags": ["latency", "dbpedia", "real100k", "ivf", "turboquant", "baseline", "no-qjl"],
+      "prefix": "task89_dbpedia100k_ivf_tq",
+      "k": 10,
+      "sweep": [64, 96, 128, 160]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-dbpedia100k-tqplus",
+      "tags": ["latency", "dbpedia", "real100k", "ivf", "turboquant", "tqplus", "no-qjl"],
+      "prefix": "task89_dbpedia100k_ivf_tqplus",
+      "k": 10,
+      "sweep": [64, 96, 128, 160]
+    },
+    {
+      "kind": "storage",
+      "name": "storage-dbpedia100k-tq",
+      "tags": ["storage", "dbpedia", "real100k", "ivf", "turboquant", "baseline", "no-qjl"],
+      "prefix": "task89_dbpedia100k_ivf_tq"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-dbpedia100k-tqplus",
+      "tags": ["storage", "dbpedia", "real100k", "ivf", "turboquant", "tqplus", "no-qjl"],
+      "prefix": "task89_dbpedia100k_ivf_tqplus"
+    }
+  ]
+}
