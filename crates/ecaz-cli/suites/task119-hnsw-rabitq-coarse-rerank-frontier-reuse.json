@@ -6,7 +6,7 @@
     "pg": 18,
     "socket_dir": "/Users/peter/.pgrx",
     "port": 28818,
-    "queries_limit": 50,
+    "queries_limit": 10,
     "force_index": true
   },
   "thresholds": [],
