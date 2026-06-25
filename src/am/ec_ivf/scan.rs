@@ -899,20 +899,8 @@ unsafe fn store_scan_prepared_query(
         return;
     }
 
-    let tqplus = metadata.storage_format == StorageFormat::TurboQuant
-        && metadata.turboquant_calibration
-            == super::options::TurboQuantCalibration::TqPlusExperimental;
-    let quantizer = if tqplus {
-        IvfQuantizer::resolve_tqplus_experimental(metadata.dimensions as usize)
-    } else {
-        IvfQuantizer::resolve_with_pq_group_size_and_bits(
-            metadata.storage_format,
-            metadata.dimensions as usize,
-            metadata_pq_group_size(metadata),
-            Some(metadata.quant_bits),
-        )
-        .unwrap_or_else(|e| pgrx::error!("{e}"))
-    };
+    let tqplus = metadata_uses_tqplus(metadata);
+    let quantizer = scan_quantizer_for_metadata(metadata).unwrap_or_else(|e| pgrx::error!("{e}"));
     let prepared = if metadata.storage_format == StorageFormat::PqFastScan {
         let model = pq_fastscan_model_for_scan(opaque, index_relation, metadata)
             .unwrap_or_else(|e| pgrx::error!("ec_ivf failed to load pq_fastscan model: {e}"));
@@ -939,6 +927,31 @@ fn free_scan_prepared_query(opaque: &mut EcIvfScanOpaque) {
         // SAFETY: non-null `ptr` was created with `Box::into_raw` by
         // `store_scan_prepared_query` and is owned by this scan opaque.
         drop(unsafe { Box::from_raw(ptr) });
+    }
+}
+
+fn metadata_uses_tqplus(metadata: &super::page::MetadataPage) -> bool {
+    metadata.storage_format == StorageFormat::TurboQuant
+        && metadata.turboquant_calibration
+            == super::options::TurboQuantCalibration::TqPlusExperimental
+}
+
+fn scan_quantizer_for_metadata(
+    metadata: &super::page::MetadataPage,
+) -> Result<IvfQuantizer, String> {
+    if metadata_uses_tqplus(metadata) {
+        Ok(IvfQuantizer::resolve_tqplus_experimental(
+            metadata.dimensions as usize,
+        ))
+    } else {
+        IvfQuantizer::resolve_with_pq_group_size_bits_and_residual(
+            metadata.storage_format,
+            metadata.dimensions as usize,
+            metadata_pq_group_size(metadata),
+            Some(metadata.quant_bits),
+            metadata.rabitq_residual,
+            None,
+        )
     }
 }
 
@@ -1519,14 +1532,7 @@ unsafe fn materialize_probe_candidates(
     let index_relation_handle = NonNull::new(index_relation).unwrap_or_else(|| {
         pgrx::error!("ec_ivf materialize_probe_candidates received null index relation")
     });
-    let quantizer = IvfQuantizer::resolve_with_pq_group_size_bits_and_residual(
-        metadata.storage_format,
-        metadata.dimensions as usize,
-        metadata_pq_group_size(metadata),
-        Some(metadata.quant_bits),
-        metadata.rabitq_residual,
-        None,
-    )?;
+    let quantizer = scan_quantizer_for_metadata(metadata)?;
     // Task 115: per-list exact centroid inner product `⟨q, c⟩`, indexed by
     // list_id. In residual mode each posting's RaBitQ residual estimate
     // (`⟨q, o − c⟩`) is shifted by this term to recover `⟨q, o⟩`. Empty (and
