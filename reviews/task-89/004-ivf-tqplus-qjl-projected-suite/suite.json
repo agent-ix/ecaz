@@ -1,0 +1,103 @@
+{
+  "name": "task89-ivf-tqplus-qjl-projected",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-89/004-ivf-tqplus-qjl-projected-suite/artifacts/suite",
+  "defaults": {
+    "profile": "ec_ivf",
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 100,
+    "iterations": 100,
+    "force_index": true,
+    "sample_backend_memory": true,
+    "memory_sample_interval_ms": 25,
+    "pg": 18
+  },
+  "steps": [
+    {
+      "kind": "load",
+      "name": "load-dbpedia10k-qjl-tq",
+      "tags": ["load", "dbpedia", "real10k", "ivf", "turboquant", "baseline", "qjl", "projected768"],
+      "prefix": "task89_dbpedia10k_qjl768_ivf_tq",
+      "corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_10k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_10k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "dim": 768,
+      "input_dim": 1536,
+      "storage_format": "turboquant",
+      "reloptions": [
+        "nlists=64",
+        "nprobe=48"
+      ]
+    },
+    {
+      "kind": "load",
+      "name": "load-dbpedia10k-qjl-tqplus",
+      "tags": ["load", "dbpedia", "real10k", "ivf", "turboquant", "tqplus", "qjl", "projected768"],
+      "prefix": "task89_dbpedia10k_qjl768_ivf_tqplus",
+      "corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_10k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_10k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "dim": 768,
+      "input_dim": 1536,
+      "storage_format": "turboquant",
+      "reloptions": [
+        "nlists=64",
+        "nprobe=48",
+        "turboquant_calibration=tqplus_experimental"
+      ]
+    },
+    {
+      "kind": "recall",
+      "name": "recall10-dbpedia10k-qjl-tq",
+      "tags": ["recall", "dbpedia", "real10k", "ivf", "turboquant", "baseline", "qjl", "projected768"],
+      "prefix": "task89_dbpedia10k_qjl768_ivf_tq",
+      "k": 10,
+      "sweep": [16, 32, 48, 64],
+      "truth_cache_file": "${artifact_dir}/truth-dbpedia10k-qjl768-k10.json",
+      "truth_corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "truth_input_dim": 1536
+    },
+    {
+      "kind": "recall",
+      "name": "recall10-dbpedia10k-qjl-tqplus",
+      "tags": ["recall", "dbpedia", "real10k", "ivf", "turboquant", "tqplus", "qjl", "projected768"],
+      "prefix": "task89_dbpedia10k_qjl768_ivf_tqplus",
+      "k": 10,
+      "sweep": [16, 32, 48, 64],
+      "truth_cache_file": "${artifact_dir}/truth-dbpedia10k-qjl768-k10.json",
+      "truth_corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "truth_input_dim": 1536
+    },
+    {
+      "kind": "latency",
+      "name": "latency-dbpedia10k-qjl-tq",
+      "tags": ["latency", "dbpedia", "real10k", "ivf", "turboquant", "baseline", "qjl", "projected768"],
+      "prefix": "task89_dbpedia10k_qjl768_ivf_tq",
+      "k": 10,
+      "sweep": [16, 32, 48, 64]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-dbpedia10k-qjl-tqplus",
+      "tags": ["latency", "dbpedia", "real10k", "ivf", "turboquant", "tqplus", "qjl", "projected768"],
+      "prefix": "task89_dbpedia10k_qjl768_ivf_tqplus",
+      "k": 10,
+      "sweep": [16, 32, 48, 64]
+    },
+    {
+      "kind": "storage",
+      "name": "storage-dbpedia10k-qjl-tq",
+      "tags": ["storage", "dbpedia", "real10k", "ivf", "turboquant", "baseline", "qjl", "projected768"],
+      "prefix": "task89_dbpedia10k_qjl768_ivf_tq"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-dbpedia10k-qjl-tqplus",
+      "tags": ["storage", "dbpedia", "real10k", "ivf", "turboquant", "tqplus", "qjl", "projected768"],
+      "prefix": "task89_dbpedia10k_qjl768_ivf_tqplus"
+    }
+  ]
+}

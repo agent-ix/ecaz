@@ -1,0 +1,23 @@
+[loader] inspecting data/staged-current/ec_real_10k_corpus.tsv
+[loader] inspecting data/staged-current/ec_real_10k_queries.tsv
+[loader] corpus: 10000 rows, sha256=c67c5810b66d982d705974e48d4775479adfbd92a988f694091266e049a35e75  queries: 200 rows, sha256=a2c191bb742017d849e73f6e6866e8e0f0bac1579ba212f7fc76b8eb09904ae8
+[loader] warning: manifest verification failed for data/staged-current/ec_real_10k_manifest.json: prefix="ec_real_10k" (expected "task89_dbpedia10k_qjl768_ivf_tq"); dimension=1536 (expected 768)
+[loader] copied corpus table task89_dbpedia10k_qjl768_ivf_tq_corpus in 4.49s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table task89_dbpedia10k_qjl768_ivf_tq_corpus in 896.05ms
+[loader] copied queries table task89_dbpedia10k_qjl768_ivf_tq_queries in 96.22ms
+[loader] building task89_dbpedia10k_qjl768_ivf_tq_turboquant_idx using ec_ivf (reloptions=[nlists=64, nprobe=48, storage_format=turboquant]) ...
+[loader] built task89_dbpedia10k_qjl768_ivf_tq_turboquant_idx in 288.07ms
+[loader] ec_ivf build timing: requested_workers=0 workers_launched=0 heap_tuples=10000 index_tuples=10000 heap_ingest_us=116985 train_model_us=135245 stage_build_plan_us=16581 stage_pq_train_us=0 stage_centroids_us=58 stage_assign_us=14385 stage_postings_us=1989 stage_directory_us=1 flush_build_plan_us=14386 parallel_begin_us=0 parallel_drain_us=0 parallel_sort_push_us=0 parallel_worker_tuple_buffer_capacity=0 parallel_worker_tuple_buffer_struct_bytes=0
+┌─────────┬──────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                                            │
+╞═════════╪══════════════════════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_ivf                                                                                           │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ task89_dbpedia10k_qjl768_ivf_tq_corpus (10000 rows)                                              │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ task89_dbpedia10k_qjl768_ivf_tq_queries (200 rows)                                               │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ task89_dbpedia10k_qjl768_ivf_tq_turboquant_idx [nlists=64, nprobe=48, storage_format=turboquant] │
+└─────────┴──────────────────────────────────────────────────────────────────────────────────────────────────┘
+[loader] completed prefix task89_dbpedia10k_qjl768_ivf_tq in 16.47s
