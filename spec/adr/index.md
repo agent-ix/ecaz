@@ -76,7 +76,7 @@ This index is the canonical navigation surface for Ecaz architecture decisions. 
 | Universal block kernel pattern | `ADR-076-universal-block-kernel-pattern.md` | ACCEPTED | Task 92 standardizes block width, runtime ISA detection, `(AM, quant, ISA)` counters, off-path scalar accounting, and the per-kernel module layout for Tasks 93-99. |
 | Block kernel completeness closing record | `ADR-077-block-kernel-completeness-closing-record.md` | ACCEPTED | Task 99 closes the kernel-completeness initiative: aggregate matrix as coverage gate, anchor-regime menu, per-AM enablement policy (IVF batch default → on), ISA dispatch policy incl. `ecaz.isa_cap` and the measured NEON-over-SVE2 G4 decision, deliberate exclusions, and named open gaps. |
 | IVF dense format negative result | `ADR-078-ivf-dense-format-negative-result.md` | ACCEPTED | Task 111f keeps page-local/aligned dense blocks, coalescing, typed views, and coarse rerank; removes the dominated page-spanning packed, columnar frozen-list, and page-scatter experimental formats. |
-| TQ+ experimental calibration profile | `ADR-081-tqplus-experimental-calibration-profile.md` | PROPOSED | Task 89 Phase 1 treats TQ+ as an IVF-only experimental TurboQuant calibration profile, not a new public `storage_format`, until no-QJL, QJL, storage, latency, and insert-drift evidence justify promotion. |
+| TQ+ experimental calibration profile | `ADR-081-tqplus-experimental-calibration-profile.md` | ACCEPTED | Task 89 Phase 1 treats TQ+ as an IVF-only experimental TurboQuant calibration profile, not a new public `storage_format`, until no-QJL, QJL, storage, cross-corpus, comparable-latency, and insert-drift evidence justify promotion. |
 
 ## Superseded Historical Decisions
 

@@ -2,7 +2,7 @@
 type: ADR
 id: ADR-081
 title: "TQ+ as an Experimental TurboQuant Calibration Profile"
-status: PROPOSED
+status: ACCEPTED
 impact: Affects Task 89, IVF TurboQuant build/scan metadata, TurboQuant query preparation, FR-013, FR-038, ADR-070, ADR-071, and ADR-072.
 date: 2026-06-25
 ---
@@ -97,10 +97,19 @@ using `ecaz bench suite`:
   packed code bytes.
 - Insert drift at 10%, 25%, and 50% post-build inserts against a full-rebuild
   baseline before any production promotion.
+- At least one non-DBPedia corpus before any promote/defer/public-shape
+  closeout. Cross-corpus evidence is non-waivable because calibration quality
+  is distribution-sensitive.
 
 If the QJL or non-default TurboQuant mode cannot be measured with the current
 IVF harness, Phase 1 must record that as an implementation gap instead of
 promoting based only on no-QJL 4-bit.
+
+Latency measurements are decision-grade only when TQ+ and baseline TurboQuant
+use comparable scorer implementations. If TQ+ remains scalar-only while the
+baseline uses tiled/SIMD scoring, the packet must label latency as
+non-comparable and base any promote/defer recommendation on recall or score
+error, storage, and drift instead.
 
 ## Promotion Gate
 
