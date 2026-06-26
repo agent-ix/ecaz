@@ -1,0 +1,23 @@
+[loader] inspecting reviews/task-89/006-ivf-tqplus-cross-corpus/artifacts/generated/synth_corpus.tsv
+[loader] inspecting reviews/task-89/006-ivf-tqplus-cross-corpus/artifacts/generated/synth_queries.tsv
+[loader] corpus: 10000 rows, sha256=c329ec4286ee75a1e28f2d5be6fca51141d9fe402d0efdafcc4dd0ef9fa1999e  queries: 200 rows, sha256=d6fb2694c7c60686489cc503183313463249dfadea0680aa7aaad38fe6b7f3d5
+[loader] no sibling manifest at reviews/task-89/006-ivf-tqplus-cross-corpus/artifacts/generated/synth_manifest.json; continuing without verification
+[loader] copied corpus table task89_synth10k_ivf_tq_corpus in 4.78s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table task89_synth10k_ivf_tq_corpus in 1.65s
+[loader] copied queries table task89_synth10k_ivf_tq_queries in 134.27ms
+[loader] building task89_synth10k_ivf_tq_turboquant_idx using ec_ivf (reloptions=[nlists=64, nprobe=48, storage_format=turboquant]) ...
+[loader] built task89_synth10k_ivf_tq_turboquant_idx in 461.49ms
+[loader] ec_ivf build timing: requested_workers=0 workers_launched=0 heap_tuples=10000 index_tuples=10000 heap_ingest_us=128334 train_model_us=261039 stage_build_plan_us=33433 stage_pq_train_us=0 stage_centroids_us=95 stage_assign_us=30321 stage_postings_us=2997 stage_directory_us=2 flush_build_plan_us=34682 parallel_begin_us=0 parallel_drain_us=0 parallel_sort_push_us=0 parallel_worker_tuple_buffer_capacity=0 parallel_worker_tuple_buffer_struct_bytes=0
+┌─────────┬─────────────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                                   │
+╞═════════╪═════════════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_ivf                                                                                  │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ task89_synth10k_ivf_tq_corpus (10000 rows)                                              │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ task89_synth10k_ivf_tq_queries (200 rows)                                               │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ task89_synth10k_ivf_tq_turboquant_idx [nlists=64, nprobe=48, storage_format=turboquant] │
+└─────────┴─────────────────────────────────────────────────────────────────────────────────────────┘
+[loader] completed prefix task89_synth10k_ivf_tq in 14.10s

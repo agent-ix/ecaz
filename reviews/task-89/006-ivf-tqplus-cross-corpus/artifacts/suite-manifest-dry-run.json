@@ -1,0 +1,323 @@
+{
+  "suite": "task89-ivf-tqplus-cross-corpus",
+  "schema_version": 1,
+  "config": "reviews/task-89/006-ivf-tqplus-cross-corpus/suite.json",
+  "config_sha256": "4c5aa34b64b777d780df0ced8ec47f3d67a2426f7c16aa9fd7f31bd82ec5f355",
+  "dry_run": true,
+  "generated_at_unix_ms": 1782444547492,
+  "connection": {
+    "database": "tqvector_bench",
+    "host": null,
+    "port": null,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "generate-synth-corpus",
+      "kind": "raw",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "corpus",
+        "generate",
+        "--output",
+        "reviews/task-89/006-ivf-tqplus-cross-corpus/artifacts/generated/synth_corpus.tsv",
+        "--n",
+        "10000",
+        "--dim",
+        "1536",
+        "--seed",
+        "8906",
+        "--start-id",
+        "0",
+        "--kind",
+        "corpus"
+      ],
+      "selected": true,
+      "expected_artifacts": [
+        "reviews/task-89/006-ivf-tqplus-cross-corpus/artifacts/generated/synth_corpus.tsv"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "generate-synth-queries",
+      "kind": "raw",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "corpus",
+        "generate",
+        "--output",
+        "reviews/task-89/006-ivf-tqplus-cross-corpus/artifacts/generated/synth_queries.tsv",
+        "--n",
+        "200",
+        "--dim",
+        "1536",
+        "--seed",
+        "8907",
+        "--start-id",
+        "1000000",
+        "--kind",
+        "queries"
+      ],
+      "selected": true,
+      "expected_artifacts": [
+        "reviews/task-89/006-ivf-tqplus-cross-corpus/artifacts/generated/synth_queries.tsv"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "load-synth-tq",
+      "kind": "load",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "reviews/task-89/006-ivf-tqplus-cross-corpus/artifacts/suite/load-synth-tq.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "task89_synth10k_ivf_tq",
+        "--profile",
+        "ec_ivf",
+        "--corpus-file",
+        "reviews/task-89/006-ivf-tqplus-cross-corpus/artifacts/generated/synth_corpus.tsv",
+        "--queries-file",
+        "reviews/task-89/006-ivf-tqplus-cross-corpus/artifacts/generated/synth_queries.tsv",
+        "--dim",
+        "1536",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--storage-format",
+        "turboquant",
+        "--reloption",
+        "nlists=64",
+        "--reloption",
+        "nprobe=48"
+      ],
+      "selected": true,
+      "expected_artifacts": [
+        "reviews/task-89/006-ivf-tqplus-cross-corpus/artifacts/suite/load-synth-tq.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "load-synth-tqplus",
+      "kind": "load",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "reviews/task-89/006-ivf-tqplus-cross-corpus/artifacts/suite/load-synth-tqplus.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "task89_synth10k_ivf_tqplus",
+        "--profile",
+        "ec_ivf",
+        "--corpus-file",
+        "reviews/task-89/006-ivf-tqplus-cross-corpus/artifacts/generated/synth_corpus.tsv",
+        "--queries-file",
+        "reviews/task-89/006-ivf-tqplus-cross-corpus/artifacts/generated/synth_queries.tsv",
+        "--dim",
+        "1536",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--storage-format",
+        "turboquant",
+        "--reloption",
+        "nlists=64",
+        "--reloption",
+        "nprobe=48",
+        "--reloption",
+        "turboquant_calibration=tqplus_experimental"
+      ],
+      "selected": true,
+      "expected_artifacts": [
+        "reviews/task-89/006-ivf-tqplus-cross-corpus/artifacts/suite/load-synth-tqplus.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "recall-synth-tq",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "recall",
+        "--prefix",
+        "task89_synth10k_ivf_tq",
+        "--profile",
+        "ec_ivf",
+        "--k",
+        "10",
+        "--sweep",
+        "16,32,48,64",
+        "--queries-limit",
+        "200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--log-output",
+        "reviews/task-89/006-ivf-tqplus-cross-corpus/artifacts/suite/recall-synth-tq.log"
+      ],
+      "selected": true,
+      "expected_artifacts": [
+        "reviews/task-89/006-ivf-tqplus-cross-corpus/artifacts/suite/recall-synth-tq.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "recall-synth-tqplus",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "recall",
+        "--prefix",
+        "task89_synth10k_ivf_tqplus",
+        "--profile",
+        "ec_ivf",
+        "--k",
+        "10",
+        "--sweep",
+        "16,32,48,64",
+        "--queries-limit",
+        "200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--log-output",
+        "reviews/task-89/006-ivf-tqplus-cross-corpus/artifacts/suite/recall-synth-tqplus.log"
+      ],
+      "selected": true,
+      "expected_artifacts": [
+        "reviews/task-89/006-ivf-tqplus-cross-corpus/artifacts/suite/recall-synth-tqplus.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "latency-synth-tq",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "latency",
+        "--prefix",
+        "task89_synth10k_ivf_tq",
+        "--profile",
+        "ec_ivf",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "200",
+        "--sweep",
+        "16,32,48,64",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--sample-backend-memory",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "reviews/task-89/006-ivf-tqplus-cross-corpus/artifacts/suite/latency-synth-tq.log"
+      ],
+      "selected": true,
+      "expected_artifacts": [
+        "reviews/task-89/006-ivf-tqplus-cross-corpus/artifacts/suite/latency-synth-tq.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "latency-synth-tqplus",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "latency",
+        "--prefix",
+        "task89_synth10k_ivf_tqplus",
+        "--profile",
+        "ec_ivf",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "200",
+        "--sweep",
+        "16,32,48,64",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--sample-backend-memory",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "reviews/task-89/006-ivf-tqplus-cross-corpus/artifacts/suite/latency-synth-tqplus.log"
+      ],
+      "selected": true,
+      "expected_artifacts": [
+        "reviews/task-89/006-ivf-tqplus-cross-corpus/artifacts/suite/latency-synth-tqplus.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "storage-synth-tq",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "reviews/task-89/006-ivf-tqplus-cross-corpus/artifacts/suite/storage-synth-tq.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "task89_synth10k_ivf_tq"
+      ],
+      "selected": true,
+      "expected_artifacts": [
+        "reviews/task-89/006-ivf-tqplus-cross-corpus/artifacts/suite/storage-synth-tq.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "storage-synth-tqplus",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "reviews/task-89/006-ivf-tqplus-cross-corpus/artifacts/suite/storage-synth-tqplus.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "task89_synth10k_ivf_tqplus"
+      ],
+      "selected": true,
+      "expected_artifacts": [
+        "reviews/task-89/006-ivf-tqplus-cross-corpus/artifacts/suite/storage-synth-tqplus.log"
+      ],
+      "status": "dry-run"
+    }
+  ]
+}
