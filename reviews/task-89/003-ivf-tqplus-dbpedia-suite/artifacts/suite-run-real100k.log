@@ -1,0 +1,182 @@
+[suite:task89-ivf-tqplus-dbpedia] wrote reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real100k/suite-manifest.json
+[suite:task89-ivf-tqplus-dbpedia] wrote reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real100k/suite-manifest.json
+[suite:task89-ivf-tqplus-dbpedia] load-dbpedia100k-tq -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 --log-file reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real100k/load-dbpedia100k-tq.log corpus load --prefix task89_dbpedia100k_ivf_tq --profile ec_ivf --corpus-file data/staged-current/ec_real_100k_corpus.tsv --queries-file data/staged-current/ec_real_100k_queries.tsv --manifest-file data/staged-current/ec_real_100k_manifest.json --allow-manifest-mismatch --bits 4 --seed 42 --storage-format turboquant --reloption nlists=256 --reloption nprobe=96
+[suite:task89-ivf-tqplus-dbpedia] wrote reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real100k/suite-manifest.json
+┌─────────┬─────────────────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                                       │
+╞═════════╪═════════════════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_ivf                                                                                      │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ task89_dbpedia100k_ivf_tq_corpus (100000 rows)                                              │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ task89_dbpedia100k_ivf_tq_queries (1000 rows)                                               │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ task89_dbpedia100k_ivf_tq_turboquant_idx [nlists=256, nprobe=96, storage_format=turboquant] │
+└─────────┴─────────────────────────────────────────────────────────────────────────────────────────────┘
+[loader] inspecting data/staged-current/ec_real_100k_corpus.tsv
+[loader] inspecting data/staged-current/ec_real_100k_queries.tsv
+[loader] corpus: 100000 rows, sha256=07275cfd5a7a4b415ddf5eacc086de98294ac978532df46ffae30f9202323a95  queries: 1000 rows, sha256=a7cbec6fc44f6c148234538f61339d00d2f10646febc8f667dcbe75d9cf41782
+[loader] warning: manifest verification failed for data/staged-current/ec_real_100k_manifest.json: prefix="ec_real_100k" (expected "task89_dbpedia100k_ivf_tq")
+[loader] copied corpus table task89_dbpedia100k_ivf_tq_corpus in 56.40s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table task89_dbpedia100k_ivf_tq_corpus in 20.92s
+[loader] copied queries table task89_dbpedia100k_ivf_tq_queries in 610.99ms
+[loader] building task89_dbpedia100k_ivf_tq_turboquant_idx using ec_ivf (reloptions=[nlists=256, nprobe=96, storage_format=turboquant]) ...
+[loader] built task89_dbpedia100k_ivf_tq_turboquant_idx in 4.34s
+[loader] ec_ivf build timing: requested_workers=0 workers_launched=0 heap_tuples=100000 index_tuples=100000 heap_ingest_us=1253848 train_model_us=950756 stage_build_plan_us=1178935 stage_pq_train_us=0 stage_centroids_us=379 stage_assign_us=1152764 stage_postings_us=25680 stage_directory_us=7 flush_build_plan_us=929389 parallel_begin_us=0 parallel_drain_us=0 parallel_sort_push_us=0 parallel_worker_tuple_buffer_capacity=0 parallel_worker_tuple_buffer_struct_bytes=0
+[loader] completed prefix task89_dbpedia100k_ivf_tq in 179.14s
+[suite:task89-ivf-tqplus-dbpedia] wrote reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real100k/suite-manifest.json
+[suite:task89-ivf-tqplus-dbpedia] load-dbpedia100k-tqplus -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 --log-file reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real100k/load-dbpedia100k-tqplus.log corpus load --prefix task89_dbpedia100k_ivf_tqplus --profile ec_ivf --corpus-file data/staged-current/ec_real_100k_corpus.tsv --queries-file data/staged-current/ec_real_100k_queries.tsv --manifest-file data/staged-current/ec_real_100k_manifest.json --allow-manifest-mismatch --bits 4 --seed 42 --storage-format turboquant --reloption nlists=256 --reloption nprobe=96 --reloption turboquant_calibration=tqplus_experimental
+[suite:task89-ivf-tqplus-dbpedia] wrote reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real100k/suite-manifest.json
+┌─────────┬─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                                                                                       │
+╞═════════╪═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_ivf                                                                                                                                      │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ task89_dbpedia100k_ivf_tqplus_corpus (100000 rows)                                                                                          │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ task89_dbpedia100k_ivf_tqplus_queries (1000 rows)                                                                                           │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ task89_dbpedia100k_ivf_tqplus_turboquant_idx [nlists=256, nprobe=96, turboquant_calibration=tqplus_experimental, storage_format=turboquant] │
+└─────────┴─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+[loader] inspecting data/staged-current/ec_real_100k_corpus.tsv
+[loader] inspecting data/staged-current/ec_real_100k_queries.tsv
+[loader] corpus: 100000 rows, sha256=07275cfd5a7a4b415ddf5eacc086de98294ac978532df46ffae30f9202323a95  queries: 1000 rows, sha256=a7cbec6fc44f6c148234538f61339d00d2f10646febc8f667dcbe75d9cf41782
+[loader] warning: manifest verification failed for data/staged-current/ec_real_100k_manifest.json: prefix="ec_real_100k" (expected "task89_dbpedia100k_ivf_tqplus")
+[loader] copied corpus table task89_dbpedia100k_ivf_tqplus_corpus in 57.70s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table task89_dbpedia100k_ivf_tqplus_corpus in 20.77s
+[loader] copied queries table task89_dbpedia100k_ivf_tqplus_queries in 613.98ms
+[loader] building task89_dbpedia100k_ivf_tqplus_turboquant_idx using ec_ivf (reloptions=[nlists=256, nprobe=96, turboquant_calibration=tqplus_experimental, storage_format=turboquant]) ...
+[loader] built task89_dbpedia100k_ivf_tqplus_turboquant_idx in 5.79s
+[loader] ec_ivf build timing: requested_workers=0 workers_launched=0 heap_tuples=100000 index_tuples=100000 heap_ingest_us=1258450 train_model_us=953398 stage_build_plan_us=2576366 stage_pq_train_us=255058 stage_centroids_us=415 stage_assign_us=1161705 stage_postings_us=1159077 stage_directory_us=6 flush_build_plan_us=975293 parallel_begin_us=0 parallel_drain_us=0 parallel_sort_push_us=0 parallel_worker_tuple_buffer_capacity=0 parallel_worker_tuple_buffer_struct_bytes=0
+[loader] completed prefix task89_dbpedia100k_ivf_tqplus in 182.43s
+[suite:task89-ivf-tqplus-dbpedia] wrote reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real100k/suite-manifest.json
+[suite:task89-ivf-tqplus-dbpedia] recall10-dbpedia100k-tq -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench recall --prefix task89_dbpedia100k_ivf_tq --profile ec_ivf --k 10 --sweep "64,96,128,160" --queries-limit 100 --bits 4 --seed 42 --force-index --truth-cache-file reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real100k/truth-dbpedia100k-k10.json --truth-corpus-file data/staged-current/ec_real_100k_corpus.tsv --log-output reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real100k/recall10-dbpedia100k-tq.log
+[suite:task89-ivf-tqplus-dbpedia] wrote reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real100k/suite-manifest.json
+┌────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ nprobe ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 64     ┆ 100     ┆ 1000          ┆ 0.9390   ┆ 0.9224          ┆ 0.9522           ┆ 0.9000     ┆ 0.9000     ┆ 1.0000     ┆ 0.8000       ┆ 0.9984 ┆ 10.45 ms    │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 96     ┆ 100     ┆ 1000          ┆ 0.9490   ┆ 0.9336          ┆ 0.9610           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.8000       ┆ 0.9991 ┆ 14.49 ms    │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 128    ┆ 100     ┆ 1000          ┆ 0.9530   ┆ 0.9381          ┆ 0.9645           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.8000       ┆ 0.9993 ┆ 19.00 ms    │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 160    ┆ 100     ┆ 1000          ┆ 0.9550   ┆ 0.9403          ┆ 0.9662           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.8000       ┆ 0.9994 ┆ 23.52 ms    │
+└────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from task89_dbpedia100k_ivf_tq_queries ...
+[recall] loading truth corpus from data/staged-current/ec_real_100k_corpus.tsv ...
+[recall] computing ground truth: 100 queries vs 100000 corpus rows (dim=1536) ...
+[recall] ground truth in 30.84s
+[recall] wrote ground truth cache reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real100k/truth-dbpedia100k-k10.json
+[suite:task89-ivf-tqplus-dbpedia] wrote reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real100k/suite-manifest.json
+[suite:task89-ivf-tqplus-dbpedia] recall10-dbpedia100k-tqplus -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench recall --prefix task89_dbpedia100k_ivf_tqplus --profile ec_ivf --k 10 --sweep "64,96,128,160" --queries-limit 100 --bits 4 --seed 42 --force-index --truth-cache-file reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real100k/truth-dbpedia100k-k10.json --truth-corpus-file data/staged-current/ec_real_100k_corpus.tsv --log-output reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real100k/recall10-dbpedia100k-tqplus.log
+[suite:task89-ivf-tqplus-dbpedia] wrote reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real100k/suite-manifest.json
+┌────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ nprobe ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 64     ┆ 100     ┆ 1000          ┆ 0.9340   ┆ 0.9169          ┆ 0.9478           ┆ 0.8000     ┆ 0.9000     ┆ 1.0000     ┆ 0.8000       ┆ 0.9983 ┆ 29.60 ms    │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 96     ┆ 100     ┆ 1000          ┆ 0.9430   ┆ 0.9269          ┆ 0.9557           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.8000       ┆ 0.9990 ┆ 43.31 ms    │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 128    ┆ 100     ┆ 1000          ┆ 0.9450   ┆ 0.9291          ┆ 0.9575           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.7000       ┆ 0.9991 ┆ 56.86 ms    │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 160    ┆ 100     ┆ 1000          ┆ 0.9490   ┆ 0.9336          ┆ 0.9610           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.8000       ┆ 0.9993 ┆ 71.67 ms    │
+└────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from task89_dbpedia100k_ivf_tqplus_queries ...
+[recall] loaded ground truth cache reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real100k/truth-dbpedia100k-k10.json
+[recall] loading truth corpus from data/staged-current/ec_real_100k_corpus.tsv ...
+[suite:task89-ivf-tqplus-dbpedia] wrote reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real100k/suite-manifest.json
+[suite:task89-ivf-tqplus-dbpedia] latency-dbpedia100k-tq -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench latency --prefix task89_dbpedia100k_ivf_tq --profile ec_ivf --k 10 --concurrency 1 --iterations 100 --sweep "64,96,128,160" --bits 4 --seed 42 --force-index --sample-backend-memory --memory-sample-interval-ms 25 --log-output reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real100k/latency-dbpedia100k-tq.log
+[suite:task89-ivf-tqplus-dbpedia] wrote reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real100k/suite-manifest.json
+┌────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────────┬─────────────┬─────────────┬────────────────┐
+│ nprobe ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state ┆ rss_peak_kb ┆ hwm_peak_kb ┆ memory_samples │
+╞════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════════╪═════════════╪═════════════╪════════════════╡
+│ 64     ┆ 100   ┆ 9.89 ms ┆ 1.79 ms ┆ 8.14 ms ┆ 9.64 ms ┆ 11.1 ms ┆ 14.9 ms ┆ 24.5 ms ┆ unspecified ┆ 0           ┆ 0           ┆ 0              │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 96     ┆ 100   ┆ 14.0 ms ┆ 0.83 ms ┆ 12.6 ms ┆ 14.0 ms ┆ 15.0 ms ┆ 15.5 ms ┆ 19.5 ms ┆ unspecified ┆ 0           ┆ 0           ┆ 0              │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 128    ┆ 100   ┆ 18.3 ms ┆ 0.95 ms ┆ 16.3 ms ┆ 18.3 ms ┆ 19.4 ms ┆ 19.9 ms ┆ 23.9 ms ┆ unspecified ┆ 0           ┆ 0           ┆ 0              │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 160    ┆ 100   ┆ 22.6 ms ┆ 1.01 ms ┆ 20.8 ms ┆ 22.6 ms ┆ 23.7 ms ┆ 24.1 ms ┆ 29.6 ms ┆ unspecified ┆ 0           ┆ 0           ┆ 0              │
+└────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────────┴─────────────┴─────────────┴────────────────┘
+[suite:task89-ivf-tqplus-dbpedia] wrote reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real100k/suite-manifest.json
+[suite:task89-ivf-tqplus-dbpedia] latency-dbpedia100k-tqplus -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench latency --prefix task89_dbpedia100k_ivf_tqplus --profile ec_ivf --k 10 --concurrency 1 --iterations 100 --sweep "64,96,128,160" --bits 4 --seed 42 --force-index --sample-backend-memory --memory-sample-interval-ms 25 --log-output reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real100k/latency-dbpedia100k-tqplus.log
+[suite:task89-ivf-tqplus-dbpedia] wrote reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real100k/suite-manifest.json
+┌────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────────┬─────────────┬─────────────┬────────────────┐
+│ nprobe ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state ┆ rss_peak_kb ┆ hwm_peak_kb ┆ memory_samples │
+╞════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════════╪═════════════╪═════════════╪════════════════╡
+│ 64     ┆ 100   ┆ 28.8 ms ┆ 3.73 ms ┆ 24.0 ms ┆ 28.7 ms ┆ 31.5 ms ┆ 34.3 ms ┆ 60.7 ms ┆ unspecified ┆ 0           ┆ 0           ┆ 0              │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 96     ┆ 100   ┆ 42.3 ms ┆ 2.31 ms ┆ 37.2 ms ┆ 42.2 ms ┆ 46.5 ms ┆ 47.6 ms ┆ 49.0 ms ┆ unspecified ┆ 0           ┆ 0           ┆ 0              │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 128    ┆ 100   ┆ 55.9 ms ┆ 2.60 ms ┆ 49.4 ms ┆ 55.9 ms ┆ 60.3 ms ┆ 61.9 ms ┆ 64.2 ms ┆ unspecified ┆ 0           ┆ 0           ┆ 0              │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 160    ┆ 100   ┆ 70.5 ms ┆ 2.51 ms ┆ 64.1 ms ┆ 70.7 ms ┆ 74.6 ms ┆ 77.0 ms ┆ 77.9 ms ┆ unspecified ┆ 0           ┆ 0           ┆ 0              │
+└────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────────┴─────────────┴─────────────┴────────────────┘
+[suite:task89-ivf-tqplus-dbpedia] wrote reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real100k/suite-manifest.json
+[suite:task89-ivf-tqplus-dbpedia] storage-dbpedia100k-tq -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 --log-file reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real100k/storage-dbpedia100k-tq.log bench storage --prefix task89_dbpedia100k_ivf_tq
+[suite:task89-ivf-tqplus-dbpedia] wrote reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real100k/suite-manifest.json
+┌───────────────────────────────┬──────────────────────────────────┐
+│ field                         ┆ value                            │
+╞═══════════════════════════════╪══════════════════════════════════╡
+│ prefix                        ┆ task89_dbpedia100k_ivf_tq        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus                        ┆ task89_dbpedia100k_ivf_tq_corpus │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ rows                          ┆ 100000                           │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ heap                          ┆ 7.3 MiB                          │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ table (heap + toast + fsm/vm) ┆ 1.6 GiB                          │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes                       ┆ 91.9 MiB                         │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ total                         ┆ 1.6 GiB                          │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (total)               ┆ 17610.4 B                        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (heap only)           ┆ 76.6 B                           │
+└───────────────────────────────┴──────────────────────────────────┘
+┌──────────────────────────────────────────┬───────────────┬───────────┬──────────────────────────────────────────────────┬──────────┬─────────┐
+│ index                                    ┆ access method ┆ profile   ┆ reloptions                                       ┆ size     ┆ per row │
+╞══════════════════════════════════════════╪═══════════════╪═══════════╪══════════════════════════════════════════════════╪══════════╪═════════╡
+│ task89_dbpedia100k_ivf_tq_turboquant_idx ┆ ec_ivf        ┆ ec_ivf    ┆ {nlists=256,nprobe=96,storage_format=turboquant} ┆ 89.8 MiB ┆ 941.2 B │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ task89_dbpedia100k_ivf_tq_corpus_pkey    ┆ btree         ┆ <unknown> ┆ {}                                               ┆ 2.2 MiB  ┆ 22.6 B  │
+└──────────────────────────────────────────┴───────────────┴───────────┴──────────────────────────────────────────────────┴──────────┴─────────┘
+[suite:task89-ivf-tqplus-dbpedia] wrote reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real100k/suite-manifest.json
+[suite:task89-ivf-tqplus-dbpedia] storage-dbpedia100k-tqplus -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 --log-file reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real100k/storage-dbpedia100k-tqplus.log bench storage --prefix task89_dbpedia100k_ivf_tqplus
+[suite:task89-ivf-tqplus-dbpedia] wrote reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real100k/suite-manifest.json
+┌───────────────────────────────┬──────────────────────────────────────┐
+│ field                         ┆ value                                │
+╞═══════════════════════════════╪══════════════════════════════════════╡
+│ prefix                        ┆ task89_dbpedia100k_ivf_tqplus        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus                        ┆ task89_dbpedia100k_ivf_tqplus_corpus │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ rows                          ┆ 100000                               │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ heap                          ┆ 7.3 MiB                              │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ table (heap + toast + fsm/vm) ┆ 1.6 GiB                              │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes                       ┆ 91.9 MiB                             │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ total                         ┆ 1.6 GiB                              │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (total)               ┆ 17610.6 B                            │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (heap only)           ┆ 76.6 B                               │
+└───────────────────────────────┴──────────────────────────────────────┘
+┌──────────────────────────────────────────────┬───────────────┬───────────┬─────────────────────────────────────────────────────────────────────────────────────────────┬──────────┬─────────┐
+│ index                                        ┆ access method ┆ profile   ┆ reloptions                                                                                  ┆ size     ┆ per row │
+╞══════════════════════════════════════════════╪═══════════════╪═══════════╪═════════════════════════════════════════════════════════════════════════════════════════════╪══════════╪═════════╡
+│ task89_dbpedia100k_ivf_tqplus_turboquant_idx ┆ ec_ivf        ┆ ec_ivf    ┆ {nlists=256,nprobe=96,turboquant_calibration=tqplus_experimental,storage_format=turboquant} ┆ 89.8 MiB ┆ 941.3 B │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ task89_dbpedia100k_ivf_tqplus_corpus_pkey    ┆ btree         ┆ <unknown> ┆ {}                                                                                          ┆ 2.2 MiB  ┆ 22.6 B  │
+└──────────────────────────────────────────────┴───────────────┴───────────┴─────────────────────────────────────────────────────────────────────────────────────────────┴──────────┴─────────┘
+[suite:task89-ivf-tqplus-dbpedia] wrote reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real100k/suite-manifest.json
+[suite:task89-ivf-tqplus-dbpedia] wrote reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real100k/results.jsonl
+[suite:task89-ivf-tqplus-dbpedia] wrote reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real100k/suite-manifest.json

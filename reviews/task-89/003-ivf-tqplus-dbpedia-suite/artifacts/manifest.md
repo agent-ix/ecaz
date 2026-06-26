@@ -1,21 +1,21 @@
 ---
-head_sha: 1d9b3d20a31c9378d8deffe3ab482848b059519e
+head_sha: c55d831a1e43a84e3abc07cf53ab41a008c823fa
 task_bucket: reviews/task-89
 packet: reviews/task-89/003-ivf-tqplus-dbpedia-suite
-timestamp_utc: 2026-06-25T22:12:51Z
+timestamp_utc: 2026-06-26T02:35:38Z
 ---
 
 # Artifact Manifest
 
 ## Scope
 
-Task 89 IVF TQ+ DBPedia suite scaffold plus successful real-corpus 10k and 50k
-A/B lanes. This packet does not close Task 89: DBPedia 100k, QJL-active fixture
+Task 89 IVF TQ+ DBPedia suite scaffold plus successful real-corpus 10k, 50k,
+and 100k A/B lanes. This packet does not close Task 89: QJL-active fixture
 coverage, insert drift, and non-DBPedia evidence remain open.
 
 ## Code Checkpoint
 
-- Head SHA: `1d9b3d20a31c9378d8deffe3ab482848b059519e`
+- Head SHA: `c55d831a1e43a84e3abc07cf53ab41a008c823fa`
 - Code commits covered:
   - `048afad36` allows `turboquant_calibration` through the `ecaz-cli` IVF reloption registry.
   - `1d9b3d20a` resolves TQ+ metadata to `IvfQuantizerProfile::TurboQuantTqPlus` during IVF scan scoring, matching query preparation and fixing the observed prepared-query/profile mismatch.
@@ -198,9 +198,46 @@ baseline total=839.8MiB index=44.9MiB per_row_total=17611.8B
 TQ+      total=839.8MiB index=44.9MiB per_row_total=17612.1B
 ```
 
+## DBPedia 100k Evidence
+
+### `suite-run-real100k.log`
+
+Command:
+
+```text
+./target/debug/ecaz bench suite run --config reviews/task-89/003-ivf-tqplus-dbpedia-suite/suite.json --artifact-dir reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real100k --host /Users/peter/.pgrx --port 28818 --only-tag real100k
+```
+
+- Database: `tqvector_bench`
+- Socket: `/Users/peter/.pgrx`
+- Port: `28818`
+- Selected steps: 8 succeeded, remaining 16 skipped by `--only-tag real100k`
+- Normalized rows: `artifacts/suite-real100k/results.jsonl`
+- Manifest: `artifacts/suite-real100k/suite-manifest.json`
+
+Key nprobe=96 rows:
+
+```text
+baseline recall@10=0.9490 mean_q_time=14.49ms latency_p50=14.0ms latency_p95=15.0ms index_per_row=941.2B
+TQ+      recall@10=0.9430 mean_q_time=43.31ms latency_p50=42.2ms latency_p95=46.5ms index_per_row=941.3B
+```
+
+Load timing:
+
+```text
+baseline load total=179.14s
+TQ+      load total=182.43s
+```
+
+Storage:
+
+```text
+baseline total=1.6GiB index=89.8MiB per_row_total=17610.4B
+TQ+      total=1.6GiB index=89.8MiB per_row_total=17610.6B
+```
+
 ## Known Gaps
 
-- DBPedia 100k has suite steps but has not been run in this packet.
 - The local staged DBPedia fixtures are all 1536-dimensional, which uses the
   no-QJL TurboQuant tile path. QJL/gamma-aware TQ+ still needs a separate
   non-tile-dimensional fixture before Task 89 can claim broader format coverage.
