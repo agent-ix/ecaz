@@ -56,6 +56,14 @@ pub struct LoadArgs {
     #[arg(long, default_value_t = 1536)]
     pub dim: usize,
 
+    /// On-disk vector dimensionality when projecting staged rows down to --dim.
+    ///
+    /// Omit when input and loaded dimensions match. When present, the loader
+    /// validates each TSV row against this input dimension and stores only the
+    /// first --dim values.
+    #[arg(long)]
+    pub input_dim: Option<usize>,
+
     /// Access-method profile (drives embedding type, encoder, opclass).
     #[arg(long, default_value = "ec_hnsw")]
     pub profile: String,
@@ -258,6 +266,7 @@ struct DistributedRemoteWriter {
 
 pub async fn run(conn: &ConnectionOptions, args: LoadArgs) -> Result<()> {
     let total_started = Instant::now();
+    let read_shape = tsv::VectorReadShape::projected(args.input_dim.unwrap_or(args.dim), args.dim)?;
     profiles::validate_ident(&args.prefix)
         .wrap_err_with(|| format!("invalid prefix {:?}", args.prefix))?;
     let profile = profiles::resolve(&args.profile).ok_or_else(|| {
@@ -343,6 +352,11 @@ pub async fn run(conn: &ConnectionOptions, args: LoadArgs) -> Result<()> {
         args.dim,
         args.allow_manifest_mismatch,
     )?;
+    if args.input_dim.is_some() && chunked_manifest.is_some() {
+        return Err(eyre!(
+            "--input-dim projection is only supported for direct corpus/queries TSV loads"
+        ));
+    }
     if args.chunked && chunked_manifest.is_none() {
         return Err(eyre!(
             "--chunked requires a chunked manifest passed via --manifest-file"
@@ -442,10 +456,10 @@ pub async fn run(conn: &ConnectionOptions, args: LoadArgs) -> Result<()> {
     // verification, and we want to fail fast on malformed files before we
     // open any transactions.
     crate::ecaz_eprintln!("[loader] inspecting {}", corpus_file.display());
-    let corpus_stats = tsv::inspect(corpus_file, args.dim)?;
+    let corpus_stats = tsv::inspect_with_shape(corpus_file, read_shape)?;
     let query_stats = if let Some(queries_file) = queries_file {
         crate::ecaz_eprintln!("[loader] inspecting {}", queries_file.display());
-        Some(tsv::inspect(queries_file, args.dim)?)
+        Some(tsv::inspect_with_shape(queries_file, read_shape)?)
     } else {
         None
     };
@@ -514,7 +528,7 @@ pub async fn run(conn: &ConnectionOptions, args: LoadArgs) -> Result<()> {
         &mut client,
         &corpus_table,
         corpus_file,
-        args.dim,
+        read_shape,
         args.bits,
         args.seed,
         profile,
@@ -529,7 +543,7 @@ pub async fn run(conn: &ConnectionOptions, args: LoadArgs) -> Result<()> {
                     &client,
                     &queries_table,
                     queries_file,
-                    args.dim,
+                    read_shape,
                     query_stats.rows,
                 )
                 .await?,
@@ -1714,7 +1728,7 @@ async fn ensure_corpus_table(
     client: &mut Client,
     table: &str,
     path: &Path,
-    dim: usize,
+    read_shape: tsv::VectorReadShape,
     bits: i32,
     seed: i64,
     profile: &IndexProfile,
@@ -1756,7 +1770,7 @@ async fn ensure_corpus_table(
     )
     .await
     .wrap_err("creating ecaz_corpus_stage")?;
-    copy_corpus_rows_to_stage(&tx, path, dim, expected_rows).await?;
+    copy_corpus_rows_to_stage(&tx, path, read_shape, expected_rows).await?;
     crate::ecaz_eprintln!(
         "[loader] copied corpus table {table} in {:.2?}",
         copy_started.elapsed()
@@ -1813,7 +1827,7 @@ fn table_reloption_set_clause(table_reloptions: &[(String, String)]) -> String {
 async fn copy_corpus_rows_to_stage(
     tx: &Transaction<'_>,
     path: &Path,
-    dim: usize,
+    read_shape: tsv::VectorReadShape,
     expected_rows: usize,
 ) -> Result<()> {
     let sink = tx
@@ -1836,7 +1850,7 @@ async fn copy_corpus_rows_to_stage(
 
     let mut buf = BytesMut::with_capacity(COPY_CHUNK_BYTES + 4096);
     let mut sent = 0u64;
-    for row in tsv::iter_rows(path, dim)? {
+    for row in tsv::iter_rows_with_shape(path, read_shape)? {
         let row = row?;
         use std::io::Write as _;
         let mut w = (&mut buf).writer();
@@ -1873,7 +1887,7 @@ async fn ensure_queries_table(
     client: &Client,
     table: &str,
     path: &Path,
-    dim: usize,
+    read_shape: tsv::VectorReadShape,
     expected_rows: usize,
 ) -> Result<usize> {
     if psql::relation_exists(client, table, 'r').await? {
@@ -1897,7 +1911,7 @@ async fn ensure_queries_table(
         .await
         .wrap_err_with(|| format!("creating table {table}"))?;
     let copy_started = Instant::now();
-    copy_rows_from_tsv(client, table, path, dim, expected_rows, "queries").await?;
+    copy_rows_from_tsv(client, table, path, read_shape, expected_rows, "queries").await?;
     crate::ecaz_eprintln!(
         "[loader] copied queries table {table} in {:.2?}",
         copy_started.elapsed()
@@ -1909,7 +1923,7 @@ async fn copy_rows_from_tsv(
     client: &Client,
     table: &str,
     path: &Path,
-    dim: usize,
+    read_shape: tsv::VectorReadShape,
     expected_rows: usize,
     label: &str,
 ) -> Result<()> {
@@ -1933,7 +1947,7 @@ async fn copy_rows_from_tsv(
 
     let mut buf = BytesMut::with_capacity(COPY_CHUNK_BYTES + 4096);
     let mut sent = 0u64;
-    for row in tsv::iter_rows(path, dim)? {
+    for row in tsv::iter_rows_with_shape(path, read_shape)? {
         let row = row?;
         use std::io::Write as _;
         let mut w = (&mut buf).writer();

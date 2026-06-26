@@ -272,6 +272,8 @@ struct LoadStep {
     #[serde(default)]
     dim: Option<usize>,
     #[serde(default)]
+    input_dim: Option<usize>,
+    #[serde(default)]
     profile: Option<String>,
     #[serde(default)]
     bits: Option<i32>,
@@ -2332,6 +2334,25 @@ impl SuiteStep {
             }
             SuiteStep::Load(step) => {
                 validate_profile_name("load profile", step.profile.as_deref())?;
+                if step.dim == Some(0) {
+                    bail!("load step {:?} must set dim >= 1 when present", step.name)
+                }
+                if step.input_dim == Some(0) {
+                    bail!(
+                        "load step {:?} must set input_dim >= 1 when present",
+                        step.name
+                    )
+                }
+                if let (Some(input_dim), Some(dim)) = (step.input_dim, step.dim) {
+                    if input_dim < dim {
+                        bail!(
+                            "load step {:?} input_dim {} must be >= dim {}",
+                            step.name,
+                            input_dim,
+                            dim
+                        )
+                    }
+                }
                 if step.corpus_file.is_none()
                     && step.queries_file.is_none()
                     && step.manifest_file.is_none()
@@ -2744,6 +2765,9 @@ fn expand_load(step: &LoadStep, defaults: &SuiteDefaults) -> Vec<String> {
     }
     if let Some(dim) = step.dim {
         push_arg(&mut args, "--dim", &dim.to_string());
+    }
+    if let Some(input_dim) = step.input_dim {
+        push_arg(&mut args, "--input-dim", &input_dim.to_string());
     }
     push_arg(&mut args, "--bits", &bits(defaults, step.bits).to_string());
     push_arg(&mut args, "--seed", &seed(defaults, step.seed).to_string());
@@ -3806,6 +3830,7 @@ mod tests {
                 allow_manifest_mismatch: false,
                 chunked: false,
                 dim: None,
+                input_dim: None,
                 profile: Some("ec_ivf".into()),
                 bits: None,
                 seed: None,
@@ -4161,6 +4186,7 @@ mod tests {
             allow_manifest_mismatch: false,
             chunked: true,
             dim: None,
+            input_dim: None,
             profile: Some("ec_ivf".into()),
             bits: None,
             seed: None,
@@ -4186,6 +4212,43 @@ mod tests {
     }
 
     #[test]
+    fn load_step_expands_input_dim_projection() {
+        let defaults = SuiteDefaults {
+            profile: Some("ec_ivf".into()),
+            bits: Some(4),
+            seed: Some(42),
+            ..SuiteDefaults::default()
+        };
+        let step = LoadStep {
+            name: "load".into(),
+            tags: vec!["load".into()],
+            pgoptions: None,
+            capture_parallel_workers: false,
+            prefix: "surface".into(),
+            corpus_file: Some("corpus.tsv".into()),
+            queries_file: Some("queries.tsv".into()),
+            manifest_file: None,
+            allow_manifest_mismatch: false,
+            chunked: false,
+            dim: Some(768),
+            input_dim: Some(1536),
+            profile: Some("ec_ivf".into()),
+            bits: None,
+            seed: None,
+            m: Vec::new(),
+            ef_construction: None,
+            storage_format: Some("turboquant".into()),
+            index_name: None,
+            table_reloptions: Vec::new(),
+            reloptions: vec!["nlists=64".into()],
+            log_file: Some("load.log".into()),
+        };
+        let args = expand_load(&step, &defaults);
+        assert!(args.windows(2).any(|w| w == ["--dim", "768"]));
+        assert!(args.windows(2).any(|w| w == ["--input-dim", "1536"]));
+    }
+
+    #[test]
     fn load_step_pgoptions_flow_into_manifest_record() {
         let config = SuiteConfig {
             name: "pgoptions-load".into(),
@@ -4205,6 +4268,7 @@ mod tests {
                 allow_manifest_mismatch: false,
                 chunked: false,
                 dim: None,
+                input_dim: None,
                 profile: Some("ec_ivf".into()),
                 bits: None,
                 seed: None,
@@ -4608,6 +4672,7 @@ mod tests {
             allow_manifest_mismatch: false,
             chunked: true,
             dim: None,
+            input_dim: None,
             profile: Some("ec_spire".into()),
             bits: None,
             seed: None,

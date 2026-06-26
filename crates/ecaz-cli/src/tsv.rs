@@ -27,10 +27,49 @@ pub struct VectorFileStats {
     pub last_id: Option<i64>,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct VectorReadShape {
+    pub input_dim: usize,
+    pub output_dim: usize,
+}
+
+impl VectorReadShape {
+    pub fn exact(dim: usize) -> Self {
+        Self {
+            input_dim: dim,
+            output_dim: dim,
+        }
+    }
+
+    pub fn projected(input_dim: usize, output_dim: usize) -> Result<Self> {
+        if output_dim == 0 {
+            return Err(eyre!("output dim must be >= 1"));
+        }
+        if input_dim < output_dim {
+            return Err(eyre!(
+                "input dim {input_dim} must be >= output dim {output_dim}"
+            ));
+        }
+        Ok(Self {
+            input_dim,
+            output_dim,
+        })
+    }
+}
+
 /// Iterate non-empty rows from `path`. Each parsed row is validated to
 /// contain exactly `dim` floats; mismatched rows are surfaced with a
 /// line-number-prefixed error so operators can find bad input fast.
 pub fn iter_rows(path: &Path, dim: usize) -> Result<impl Iterator<Item = Result<VectorLine>>> {
+    iter_rows_with_shape(path, VectorReadShape::exact(dim))
+}
+
+/// Iterate rows while optionally projecting each vector to the first
+/// `output_dim` values after validating the on-disk `input_dim`.
+pub fn iter_rows_with_shape(
+    path: &Path,
+    shape: VectorReadShape,
+) -> Result<impl Iterator<Item = Result<VectorLine>>> {
     let file =
         File::open(path).wrap_err_with(|| format!("opening vector file {}", path.display()))?;
     let reader = BufReader::new(file);
@@ -43,7 +82,12 @@ pub fn iter_rows(path: &Path, dim: usize) -> Result<impl Iterator<Item = Result<
                 if trimmed.is_empty() {
                     None
                 } else {
-                    Some(parse_line(&path_display, line_number, trimmed, dim))
+                    Some(parse_line_with_shape(
+                        &path_display,
+                        line_number,
+                        trimmed,
+                        shape,
+                    ))
                 }
             }
             Err(e) => Some(Err(eyre!(
@@ -59,6 +103,10 @@ pub fn iter_rows(path: &Path, dim: usize) -> Result<impl Iterator<Item = Result<
 /// Single-pass stats computation without materialising the full corpus in
 /// RAM. Intended for manifest verification and the pre-load summary line.
 pub fn inspect(path: &Path, dim: usize) -> Result<VectorFileStats> {
+    inspect_with_shape(path, VectorReadShape::exact(dim))
+}
+
+pub fn inspect_with_shape(path: &Path, shape: VectorReadShape) -> Result<VectorFileStats> {
     use sha2::{Digest, Sha256};
     let file =
         File::open(path).wrap_err_with(|| format!("opening vector file {}", path.display()))?;
@@ -80,7 +128,7 @@ pub fn inspect(path: &Path, dim: usize) -> Result<VectorFileStats> {
         if trimmed.is_empty() {
             continue;
         }
-        let parsed = parse_line(&path_display, line_number, trimmed, dim)?;
+        let parsed = parse_line_with_shape(&path_display, line_number, trimmed, shape)?;
         if first_id.is_none() {
             first_id = Some(parsed.id);
         }
@@ -96,7 +144,12 @@ pub fn inspect(path: &Path, dim: usize) -> Result<VectorFileStats> {
     })
 }
 
-fn parse_line(path: &str, line_number: usize, line: &str, dim: usize) -> Result<VectorLine> {
+fn parse_line_with_shape(
+    path: &str,
+    line_number: usize,
+    line: &str,
+    shape: VectorReadShape,
+) -> Result<VectorLine> {
     let (id_str, json_str) = line.split_once('\t').ok_or_else(|| {
         eyre!(
             "{}:{}: expected '<id>\\t<json_array>' line, got {:?}",
@@ -121,15 +174,20 @@ fn parse_line(path: &str, line_number: usize, line: &str, dim: usize) -> Result<
             e
         )
     })?;
-    if values.len() != dim {
+    if values.len() != shape.input_dim {
         return Err(eyre!(
             "{}:{}: expected dim {}, got {}",
             path,
             line_number,
-            dim,
+            shape.input_dim,
             values.len()
         ));
     }
+    let values = if shape.output_dim == shape.input_dim {
+        values
+    } else {
+        values[..shape.output_dim].to_vec()
+    };
     Ok(VectorLine { id, values })
 }
 
@@ -194,6 +252,24 @@ mod tests {
         let err = it.next().unwrap().unwrap_err().to_string();
         assert!(err.contains(":2:"), "err missing line number: {err}");
         assert!(err.contains("expected dim 2"), "err: {err}");
+    }
+
+    #[test]
+    fn iter_rows_with_shape_projects_prefix_dimensions() {
+        let f = write_temp("1\t[0.1, 0.2, 0.3]\n2\t[0.4,0.5,0.6]\n");
+        let shape = VectorReadShape::projected(3, 2).unwrap();
+        let rows: Vec<_> = iter_rows_with_shape(f.path(), shape)
+            .unwrap()
+            .collect::<Result<Vec<_>>>()
+            .unwrap();
+        assert_eq!(rows[0].values, vec![0.1, 0.2]);
+        assert_eq!(rows[1].values, vec![0.4, 0.5]);
+    }
+
+    #[test]
+    fn projected_shape_rejects_expansion() {
+        let err = VectorReadShape::projected(2, 3).unwrap_err().to_string();
+        assert!(err.contains("input dim 2"), "err: {err}");
     }
 
     #[test]
