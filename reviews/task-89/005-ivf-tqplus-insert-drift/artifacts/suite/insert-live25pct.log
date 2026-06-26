@@ -1,0 +1,11 @@
+Timing is on.
+INSERT 0 1500
+Time: 368.869 ms
+ANALYZE
+Time: 972.994 ms
+          phase          | rows  | min_id | max_id
+-------------------------+-------+--------+--------
+ live_after_25pct_insert | 12500 |      0 |  12499
+(1 row)
+
+Time: 0.924 ms

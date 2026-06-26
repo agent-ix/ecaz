@@ -1,0 +1,25 @@
+Timing is on.
+DROP TABLE
+Time: 0.193 ms
+DROP TABLE
+Time: 0.024 ms
+SELECT 15000
+Time: 1108.594 ms (00:01.109)
+ALTER TABLE
+Time: 6.834 ms
+SELECT 200
+Time: 14.388 ms
+CREATE INDEX
+Time: 1007.855 ms (00:01.008)
+ANALYZE
+Time: 1173.339 ms (00:01.173)
+ANALYZE
+Time: 15.485 ms
+      phase       | rows  | min_id | max_id
+------------------+-------+--------+--------
+ rebuild15k_ready | 15000 |      0 |  14999
+(1 row)
+
+Time: 0.827 ms
+psql:reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/sql/create-rebuild15k-tqplus.sql:3: NOTICE:  table "task89_drift_rebuild15k_tqplus_corpus" does not exist, skipping
+psql:reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/sql/create-rebuild15k-tqplus.sql:4: NOTICE:  table "task89_drift_rebuild15k_tqplus_queries" does not exist, skipping

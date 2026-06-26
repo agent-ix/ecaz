@@ -1,0 +1,256 @@
+[suite:task89-ivf-tqplus-insert-drift] wrote reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/suite/suite-manifest.json
+[suite:task89-ivf-tqplus-insert-drift] wrote reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/suite/suite-manifest.json
+[suite:task89-ivf-tqplus-insert-drift] load-source50k-tq -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 --log-file reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/suite/load-source50k-tq.log corpus load --prefix task89_drift_source50k_tq --profile ec_ivf --corpus-file data/staged-current/ec_real_50k_corpus.tsv --queries-file data/staged-current/ec_real_50k_queries.tsv --manifest-file data/staged-current/ec_real_50k_manifest.json --allow-manifest-mismatch --dim 1536 --bits 4 --seed 42 --storage-format turboquant --reloption nlists=64 --reloption nprobe=48
+[suite:task89-ivf-tqplus-insert-drift] wrote reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/suite/suite-manifest.json
+┌─────────┬────────────────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                                      │
+╞═════════╪════════════════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_ivf                                                                                     │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ task89_drift_source50k_tq_corpus (50000 rows)                                              │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ task89_drift_source50k_tq_queries (1000 rows)                                              │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ task89_drift_source50k_tq_turboquant_idx [nlists=64, nprobe=48, storage_format=turboquant] │
+└─────────┴────────────────────────────────────────────────────────────────────────────────────────────┘
+[loader] inspecting data/staged-current/ec_real_50k_corpus.tsv
+[loader] inspecting data/staged-current/ec_real_50k_queries.tsv
+[loader] corpus: 50000 rows, sha256=56023baaa7bc42f758272e8617603d538808e6290a8a70a3a84e057571240133  queries: 1000 rows, sha256=95ac7992578aa80bb193657f10fbcbf1ea3867e559739244bf5a467f7a5a9fa3
+[loader] warning: manifest verification failed for data/staged-current/ec_real_50k_manifest.json: prefix="ec_real_50k" (expected "task89_drift_source50k_tq")
+[loader] copied corpus table task89_drift_source50k_tq_corpus in 29.68s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table task89_drift_source50k_tq_corpus in 9.45s
+[loader] copied queries table task89_drift_source50k_tq_queries in 598.73ms
+[loader] building task89_drift_source50k_tq_turboquant_idx using ec_ivf (reloptions=[nlists=64, nprobe=48, storage_format=turboquant]) ...
+[loader] built task89_drift_source50k_tq_turboquant_idx in 1.56s
+[loader] ec_ivf build timing: requested_workers=0 workers_launched=0 heap_tuples=50000 index_tuples=50000 heap_ingest_us=672138 train_model_us=278024 stage_build_plan_us=167841 stage_pq_train_us=0 stage_centroids_us=99 stage_assign_us=156879 stage_postings_us=10654 stage_directory_us=4 flush_build_plan_us=426451 parallel_begin_us=0 parallel_drain_us=0 parallel_sort_push_us=0 parallel_worker_tuple_buffer_capacity=0 parallel_worker_tuple_buffer_struct_bytes=0
+[loader] completed prefix task89_drift_source50k_tq in 94.35s
+[suite:task89-ivf-tqplus-insert-drift] wrote reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/suite/suite-manifest.json
+[suite:task89-ivf-tqplus-insert-drift] create-live10-tqplus -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 dev sql --raw --file reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/sql/create-live10-tqplus.sql --log-output reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/suite/create-live10-tqplus.log
+[suite:task89-ivf-tqplus-insert-drift] wrote reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/suite/suite-manifest.json
+Timing is on.
+DROP TABLE
+Time: 0.314 ms
+DROP TABLE
+Time: 0.028 ms
+SELECT 10000
+Time: 1825.371 ms (00:01.825)
+ALTER TABLE
+Time: 2.309 ms
+SELECT 200
+Time: 8.528 ms
+CREATE INDEX
+Time: 984.518 ms
+ANALYZE
+Time: 810.806 ms
+ANALYZE
+Time: 19.840 ms
+    phase     | rows  | min_id | max_id
+--------------+-------+--------+--------
+ live10_ready | 10000 |      0 |   9999
+(1 row)
+
+Time: 0.938 ms
+psql:reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/sql/create-live10-tqplus.sql:3: NOTICE:  table "task89_drift_live_tqplus_corpus" does not exist, skipping
+psql:reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/sql/create-live10-tqplus.sql:4: NOTICE:  table "task89_drift_live_tqplus_queries" does not exist, skipping
+[suite:task89-ivf-tqplus-insert-drift] wrote reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/suite/suite-manifest.json
+[suite:task89-ivf-tqplus-insert-drift] insert-live10pct -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 dev sql --raw --file reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/sql/insert-live10pct.sql --log-output reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/suite/insert-live10pct.log
+[suite:task89-ivf-tqplus-insert-drift] wrote reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/suite/suite-manifest.json
+Timing is on.
+INSERT 0 1000
+Time: 429.848 ms
+ANALYZE
+Time: 867.391 ms
+          phase          | rows  | min_id | max_id
+-------------------------+-------+--------+--------
+ live_after_10pct_insert | 11000 |      0 |  10999
+(1 row)
+
+Time: 0.715 ms
+[suite:task89-ivf-tqplus-insert-drift] wrote reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/suite/suite-manifest.json
+[suite:task89-ivf-tqplus-insert-drift] create-rebuild11k-tqplus -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 dev sql --raw --file reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/sql/create-rebuild11k-tqplus.sql --log-output reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/suite/create-rebuild11k-tqplus.log
+[suite:task89-ivf-tqplus-insert-drift] wrote reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/suite/suite-manifest.json
+Timing is on.
+DROP TABLE
+Time: 0.201 ms
+DROP TABLE
+Time: 0.030 ms
+SELECT 11000
+Time: 1854.640 ms (00:01.855)
+ALTER TABLE
+Time: 7.108 ms
+SELECT 200
+Time: 9.659 ms
+CREATE INDEX
+Time: 896.679 ms
+ANALYZE
+Time: 857.647 ms
+ANALYZE
+Time: 16.041 ms
+      phase       | rows  | min_id | max_id
+------------------+-------+--------+--------
+ rebuild11k_ready | 11000 |      0 |  10999
+(1 row)
+
+Time: 0.683 ms
+psql:reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/sql/create-rebuild11k-tqplus.sql:3: NOTICE:  table "task89_drift_rebuild11k_tqplus_corpus" does not exist, skipping
+psql:reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/sql/create-rebuild11k-tqplus.sql:4: NOTICE:  table "task89_drift_rebuild11k_tqplus_queries" does not exist, skipping
+[suite:task89-ivf-tqplus-insert-drift] wrote reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/suite/suite-manifest.json
+[suite:task89-ivf-tqplus-insert-drift] recall-live10pct -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench recall --prefix task89_drift_live_tqplus --profile ec_ivf --k 10 --sweep 48 --queries-limit 200 --bits 4 --seed 42 --force-index --log-output reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/suite/recall-live10pct.log
+[suite:task89-ivf-tqplus-insert-drift] wrote reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/suite/suite-manifest.json
+┌────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ nprobe ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 48     ┆ 200     ┆ 2000          ┆ 0.9265   ┆ 0.9142          ┆ 0.9371           ┆ 0.8000     ┆ 0.9000     ┆ 1.0000     ┆ 0.6000       ┆ 0.9989 ┆ 9.53 ms     │
+└────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from task89_drift_live_tqplus_queries ...
+[recall] fetching corpus from task89_drift_live_tqplus_corpus ...
+[recall] computing ground truth: 200 queries vs 11000 corpus rows (dim=1536) ...
+[recall] ground truth in 6.50s
+[suite:task89-ivf-tqplus-insert-drift] wrote reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/suite/suite-manifest.json
+[suite:task89-ivf-tqplus-insert-drift] recall-rebuild11k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench recall --prefix task89_drift_rebuild11k_tqplus --profile ec_ivf --k 10 --sweep 48 --queries-limit 200 --bits 4 --seed 42 --force-index --log-output reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/suite/recall-rebuild11k.log
+[suite:task89-ivf-tqplus-insert-drift] wrote reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/suite/suite-manifest.json
+┌────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ nprobe ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 48     ┆ 200     ┆ 2000          ┆ 0.9310   ┆ 0.9190          ┆ 0.9413           ┆ 0.8000     ┆ 0.9000     ┆ 1.0000     ┆ 0.7000       ┆ 0.9990 ┆ 10.45 ms    │
+└────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from task89_drift_rebuild11k_tqplus_queries ...
+[recall] fetching corpus from task89_drift_rebuild11k_tqplus_corpus ...
+[recall] computing ground truth: 200 queries vs 11000 corpus rows (dim=1536) ...
+[recall] ground truth in 6.67s
+[suite:task89-ivf-tqplus-insert-drift] wrote reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/suite/suite-manifest.json
+[suite:task89-ivf-tqplus-insert-drift] insert-live25pct -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 dev sql --raw --file reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/sql/insert-live25pct.sql --log-output reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/suite/insert-live25pct.log
+[suite:task89-ivf-tqplus-insert-drift] wrote reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/suite/suite-manifest.json
+Timing is on.
+INSERT 0 1500
+Time: 368.869 ms
+ANALYZE
+Time: 972.994 ms
+          phase          | rows  | min_id | max_id
+-------------------------+-------+--------+--------
+ live_after_25pct_insert | 12500 |      0 |  12499
+(1 row)
+
+Time: 0.924 ms
+[suite:task89-ivf-tqplus-insert-drift] wrote reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/suite/suite-manifest.json
+[suite:task89-ivf-tqplus-insert-drift] create-rebuild12500-tqplus -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 dev sql --raw --file reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/sql/create-rebuild12500-tqplus.sql --log-output reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/suite/create-rebuild12500-tqplus.log
+[suite:task89-ivf-tqplus-insert-drift] wrote reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/suite/suite-manifest.json
+Timing is on.
+DROP TABLE
+Time: 0.381 ms
+DROP TABLE
+Time: 0.033 ms
+SELECT 12500
+Time: 1016.064 ms (00:01.016)
+ALTER TABLE
+Time: 6.580 ms
+SELECT 200
+Time: 10.878 ms
+CREATE INDEX
+Time: 913.184 ms
+ANALYZE
+Time: 993.896 ms
+ANALYZE
+Time: 15.160 ms
+       phase        | rows  | min_id | max_id
+--------------------+-------+--------+--------
+ rebuild12500_ready | 12500 |      0 |  12499
+(1 row)
+
+Time: 0.814 ms
+psql:reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/sql/create-rebuild12500-tqplus.sql:3: NOTICE:  table "task89_drift_rebuild12500_tqplus_corpus" does not exist, skipping
+psql:reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/sql/create-rebuild12500-tqplus.sql:4: NOTICE:  table "task89_drift_rebuild12500_tqplus_queries" does not exist, skipping
+[suite:task89-ivf-tqplus-insert-drift] wrote reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/suite/suite-manifest.json
+[suite:task89-ivf-tqplus-insert-drift] recall-live25pct -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench recall --prefix task89_drift_live_tqplus --profile ec_ivf --k 10 --sweep 48 --queries-limit 200 --bits 4 --seed 42 --force-index --log-output reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/suite/recall-live25pct.log
+[suite:task89-ivf-tqplus-insert-drift] wrote reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/suite/suite-manifest.json
+┌────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ nprobe ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 48     ┆ 200     ┆ 2000          ┆ 0.9230   ┆ 0.9105          ┆ 0.9339           ┆ 0.8000     ┆ 0.9000     ┆ 1.0000     ┆ 0.6000       ┆ 0.9989 ┆ 10.94 ms    │
+└────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from task89_drift_live_tqplus_queries ...
+[recall] fetching corpus from task89_drift_live_tqplus_corpus ...
+[recall] computing ground truth: 200 queries vs 12500 corpus rows (dim=1536) ...
+[recall] ground truth in 7.48s
+[suite:task89-ivf-tqplus-insert-drift] wrote reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/suite/suite-manifest.json
+[suite:task89-ivf-tqplus-insert-drift] recall-rebuild12500 -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench recall --prefix task89_drift_rebuild12500_tqplus --profile ec_ivf --k 10 --sweep 48 --queries-limit 200 --bits 4 --seed 42 --force-index --log-output reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/suite/recall-rebuild12500.log
+[suite:task89-ivf-tqplus-insert-drift] wrote reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/suite/suite-manifest.json
+┌────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ nprobe ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 48     ┆ 200     ┆ 2000          ┆ 0.9235   ┆ 0.9110          ┆ 0.9344           ┆ 0.8000     ┆ 0.9000     ┆ 1.0000     ┆ 0.7000       ┆ 0.9990 ┆ 10.77 ms    │
+└────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from task89_drift_rebuild12500_tqplus_queries ...
+[recall] fetching corpus from task89_drift_rebuild12500_tqplus_corpus ...
+[recall] computing ground truth: 200 queries vs 12500 corpus rows (dim=1536) ...
+[recall] ground truth in 7.38s
+[suite:task89-ivf-tqplus-insert-drift] wrote reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/suite/suite-manifest.json
+[suite:task89-ivf-tqplus-insert-drift] insert-live50pct -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 dev sql --raw --file reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/sql/insert-live50pct.sql --log-output reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/suite/insert-live50pct.log
+[suite:task89-ivf-tqplus-insert-drift] wrote reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/suite/suite-manifest.json
+Timing is on.
+INSERT 0 2500
+Time: 607.079 ms
+ANALYZE
+Time: 1161.378 ms (00:01.161)
+          phase          | rows  | min_id | max_id
+-------------------------+-------+--------+--------
+ live_after_50pct_insert | 15000 |      0 |  14999
+(1 row)
+
+Time: 0.974 ms
+[suite:task89-ivf-tqplus-insert-drift] wrote reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/suite/suite-manifest.json
+[suite:task89-ivf-tqplus-insert-drift] create-rebuild15k-tqplus -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 dev sql --raw --file reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/sql/create-rebuild15k-tqplus.sql --log-output reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/suite/create-rebuild15k-tqplus.log
+[suite:task89-ivf-tqplus-insert-drift] wrote reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/suite/suite-manifest.json
+Timing is on.
+DROP TABLE
+Time: 0.193 ms
+DROP TABLE
+Time: 0.024 ms
+SELECT 15000
+Time: 1108.594 ms (00:01.109)
+ALTER TABLE
+Time: 6.834 ms
+SELECT 200
+Time: 14.388 ms
+CREATE INDEX
+Time: 1007.855 ms (00:01.008)
+ANALYZE
+Time: 1173.339 ms (00:01.173)
+ANALYZE
+Time: 15.485 ms
+      phase       | rows  | min_id | max_id
+------------------+-------+--------+--------
+ rebuild15k_ready | 15000 |      0 |  14999
+(1 row)
+
+Time: 0.827 ms
+psql:reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/sql/create-rebuild15k-tqplus.sql:3: NOTICE:  table "task89_drift_rebuild15k_tqplus_corpus" does not exist, skipping
+psql:reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/sql/create-rebuild15k-tqplus.sql:4: NOTICE:  table "task89_drift_rebuild15k_tqplus_queries" does not exist, skipping
+[suite:task89-ivf-tqplus-insert-drift] wrote reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/suite/suite-manifest.json
+[suite:task89-ivf-tqplus-insert-drift] recall-live50pct -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench recall --prefix task89_drift_live_tqplus --profile ec_ivf --k 10 --sweep 48 --queries-limit 200 --bits 4 --seed 42 --force-index --log-output reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/suite/recall-live50pct.log
+[suite:task89-ivf-tqplus-insert-drift] wrote reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/suite/suite-manifest.json
+┌────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ nprobe ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 48     ┆ 200     ┆ 2000          ┆ 0.9245   ┆ 0.9121          ┆ 0.9353           ┆ 0.8000     ┆ 0.9000     ┆ 1.0000     ┆ 0.7000       ┆ 0.9987 ┆ 13.23 ms    │
+└────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from task89_drift_live_tqplus_queries ...
+[recall] fetching corpus from task89_drift_live_tqplus_corpus ...
+[recall] computing ground truth: 200 queries vs 15000 corpus rows (dim=1536) ...
+[recall] ground truth in 8.94s
+[suite:task89-ivf-tqplus-insert-drift] wrote reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/suite/suite-manifest.json
+[suite:task89-ivf-tqplus-insert-drift] recall-rebuild15k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench recall --prefix task89_drift_rebuild15k_tqplus --profile ec_ivf --k 10 --sweep 48 --queries-limit 200 --bits 4 --seed 42 --force-index --log-output reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/suite/recall-rebuild15k.log
+[suite:task89-ivf-tqplus-insert-drift] wrote reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/suite/suite-manifest.json
+┌────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ nprobe ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 48     ┆ 200     ┆ 2000          ┆ 0.9220   ┆ 0.9094          ┆ 0.9330           ┆ 0.8000     ┆ 0.9000     ┆ 1.0000     ┆ 0.7000       ┆ 0.9988 ┆ 12.52 ms    │
+└────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from task89_drift_rebuild15k_tqplus_queries ...
+[recall] fetching corpus from task89_drift_rebuild15k_tqplus_corpus ...
+[recall] computing ground truth: 200 queries vs 15000 corpus rows (dim=1536) ...
+[recall] ground truth in 8.70s
+[suite:task89-ivf-tqplus-insert-drift] wrote reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/suite/suite-manifest.json
+[suite:task89-ivf-tqplus-insert-drift] wrote reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/suite/results.jsonl
+[suite:task89-ivf-tqplus-insert-drift] wrote reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/suite/suite-manifest.json

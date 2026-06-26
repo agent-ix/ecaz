@@ -1,0 +1,209 @@
+{
+  "name": "task89-ivf-tqplus-insert-drift",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/suite",
+  "defaults": {
+    "profile": "ec_ivf",
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 200,
+    "force_index": true
+  },
+  "steps": [
+    {
+      "kind": "load",
+      "name": "load-source50k-tq",
+      "prefix": "task89_drift_source50k_tq",
+      "profile": "ec_ivf",
+      "corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_50k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "dim": 1536,
+      "storage_format": "turboquant",
+      "reloptions": [
+        "nlists=64",
+        "nprobe=48"
+      ],
+      "log_file": "${artifact_dir}/load-source50k-tq.log"
+    },
+    {
+      "kind": "raw",
+      "name": "create-live10-tqplus",
+      "args": [
+        "dev",
+        "sql",
+        "--raw",
+        "--file",
+        "reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/sql/create-live10-tqplus.sql",
+        "--log-output",
+        "${artifact_dir}/create-live10-tqplus.log"
+      ],
+      "expected_artifacts": [
+        "${artifact_dir}/create-live10-tqplus.log"
+      ]
+    },
+    {
+      "kind": "raw",
+      "name": "insert-live10pct",
+      "args": [
+        "dev",
+        "sql",
+        "--raw",
+        "--file",
+        "reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/sql/insert-live10pct.sql",
+        "--log-output",
+        "${artifact_dir}/insert-live10pct.log"
+      ],
+      "expected_artifacts": [
+        "${artifact_dir}/insert-live10pct.log"
+      ]
+    },
+    {
+      "kind": "raw",
+      "name": "create-rebuild11k-tqplus",
+      "args": [
+        "dev",
+        "sql",
+        "--raw",
+        "--file",
+        "reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/sql/create-rebuild11k-tqplus.sql",
+        "--log-output",
+        "${artifact_dir}/create-rebuild11k-tqplus.log"
+      ],
+      "expected_artifacts": [
+        "${artifact_dir}/create-rebuild11k-tqplus.log"
+      ]
+    },
+    {
+      "kind": "recall",
+      "name": "recall-live10pct",
+      "prefix": "task89_drift_live_tqplus",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        48
+      ],
+      "log_output": "${artifact_dir}/recall-live10pct.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-rebuild11k",
+      "prefix": "task89_drift_rebuild11k_tqplus",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        48
+      ],
+      "log_output": "${artifact_dir}/recall-rebuild11k.log"
+    },
+    {
+      "kind": "raw",
+      "name": "insert-live25pct",
+      "args": [
+        "dev",
+        "sql",
+        "--raw",
+        "--file",
+        "reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/sql/insert-live25pct.sql",
+        "--log-output",
+        "${artifact_dir}/insert-live25pct.log"
+      ],
+      "expected_artifacts": [
+        "${artifact_dir}/insert-live25pct.log"
+      ]
+    },
+    {
+      "kind": "raw",
+      "name": "create-rebuild12500-tqplus",
+      "args": [
+        "dev",
+        "sql",
+        "--raw",
+        "--file",
+        "reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/sql/create-rebuild12500-tqplus.sql",
+        "--log-output",
+        "${artifact_dir}/create-rebuild12500-tqplus.log"
+      ],
+      "expected_artifacts": [
+        "${artifact_dir}/create-rebuild12500-tqplus.log"
+      ]
+    },
+    {
+      "kind": "recall",
+      "name": "recall-live25pct",
+      "prefix": "task89_drift_live_tqplus",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        48
+      ],
+      "log_output": "${artifact_dir}/recall-live25pct.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-rebuild12500",
+      "prefix": "task89_drift_rebuild12500_tqplus",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        48
+      ],
+      "log_output": "${artifact_dir}/recall-rebuild12500.log"
+    },
+    {
+      "kind": "raw",
+      "name": "insert-live50pct",
+      "args": [
+        "dev",
+        "sql",
+        "--raw",
+        "--file",
+        "reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/sql/insert-live50pct.sql",
+        "--log-output",
+        "${artifact_dir}/insert-live50pct.log"
+      ],
+      "expected_artifacts": [
+        "${artifact_dir}/insert-live50pct.log"
+      ]
+    },
+    {
+      "kind": "raw",
+      "name": "create-rebuild15k-tqplus",
+      "args": [
+        "dev",
+        "sql",
+        "--raw",
+        "--file",
+        "reviews/task-89/005-ivf-tqplus-insert-drift/artifacts/sql/create-rebuild15k-tqplus.sql",
+        "--log-output",
+        "${artifact_dir}/create-rebuild15k-tqplus.log"
+      ],
+      "expected_artifacts": [
+        "${artifact_dir}/create-rebuild15k-tqplus.log"
+      ]
+    },
+    {
+      "kind": "recall",
+      "name": "recall-live50pct",
+      "prefix": "task89_drift_live_tqplus",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        48
+      ],
+      "log_output": "${artifact_dir}/recall-live50pct.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-rebuild15k",
+      "prefix": "task89_drift_rebuild15k_tqplus",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        48
+      ],
+      "log_output": "${artifact_dir}/recall-rebuild15k.log"
+    }
+  ]
+}
