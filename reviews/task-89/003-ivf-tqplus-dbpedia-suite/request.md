@@ -1,10 +1,10 @@
-# Task 89 Review Request: IVF TQ+ DBPedia Suite and 10k Lane
+# Task 89 Review Request: IVF TQ+ DBPedia Suite, 10k, and 50k Lanes
 
 ## Summary
 
 This checkpoint makes the IVF TQ+ calibration reloption reachable from
 `ecaz bench suite`, fixes the first scan-time TQ+ bug found by a real 10k run,
-and records the first successful DBPedia 10k A/B lane.
+and records successful DBPedia 10k and 50k A/B lanes.
 
 Code changes under review:
 
@@ -68,13 +68,37 @@ TQ+      recall@10=0.9720 p50=8.24ms p95=8.63ms index_per_row=985.5B
 This is early evidence only. On DBPedia 10k no-QJL, this TQ+ calibration shape is
 slower and slightly lower recall than baseline TQ at the representative nprobe.
 
+## DBPedia 50k Result
+
+Command:
+
+```text
+./target/debug/ecaz bench suite run --config reviews/task-89/003-ivf-tqplus-dbpedia-suite/suite.json --artifact-dir reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real50k --host /Users/peter/.pgrx --port 28818 --only-tag real50k
+```
+
+Result:
+
+- 8 selected real50k steps succeeded.
+- `artifacts/suite-real50k/results.jsonl` contains normalized recall, latency, and storage rows.
+- `artifacts/suite-real50k/suite-manifest.json` records the selected/succeeded steps.
+
+At `nprobe=64`:
+
+```text
+baseline recall@10=0.9430 p50=8.50ms p95=9.12ms index_per_row=941.6B
+TQ+      recall@10=0.9460 p50=24.6ms p95=26.8ms index_per_row=941.9B
+```
+
+At 50k, TQ+ buys a small recall improvement (+0.3 pp at nprobe=64) but still
+costs about 3x latency on this no-QJL lane.
+
 ## Not Claimed
 
 This is not Task 89 closeout evidence.
 
 Open gates:
 
-- Run DBPedia 50k/100k from the suite.
+- Run DBPedia 100k from the suite.
 - Add and run a non-1536-dimensional QJL/gamma-aware fixture.
 - Measure insert/update drift.
 - Add at least one non-DBPedia corpus.

@@ -9,9 +9,9 @@ timestamp_utc: 2026-06-25T22:12:51Z
 
 ## Scope
 
-Task 89 IVF TQ+ DBPedia suite scaffold plus the first successful real-corpus
-10k A/B lane. This packet does not close Task 89: DBPedia 50k/100k, QJL-active
-fixture coverage, insert drift, and non-DBPedia evidence remain open.
+Task 89 IVF TQ+ DBPedia suite scaffold plus successful real-corpus 10k and 50k
+A/B lanes. This packet does not close Task 89: DBPedia 100k, QJL-active fixture
+coverage, insert drift, and non-DBPedia evidence remain open.
 
 ## Code Checkpoint
 
@@ -160,9 +160,47 @@ baseline total=168.4MiB index=9.4MiB per_row_total=17661.1B
 TQ+      total=168.4MiB index=9.4MiB per_row_total=17662.8B
 ```
 
+## DBPedia 50k Evidence
+
+### `suite-run-real50k.log`
+
+Command:
+
+```text
+./target/debug/ecaz bench suite run --config reviews/task-89/003-ivf-tqplus-dbpedia-suite/suite.json --artifact-dir reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real50k --host /Users/peter/.pgrx --port 28818 --only-tag real50k
+```
+
+- Database: `tqvector_bench`
+- Socket: `/Users/peter/.pgrx`
+- Port: `28818`
+- Selected steps: 8 succeeded, remaining 16 skipped by `--only-tag real50k`
+- Normalized rows: `artifacts/suite-real50k/results.jsonl`
+- Manifest: `artifacts/suite-real50k/suite-manifest.json`
+
+Key nprobe=64 rows:
+
+```text
+baseline recall@10=0.9430 mean_q_time=8.48ms latency_p50=8.50ms latency_p95=9.12ms index_per_row=941.6B
+TQ+      recall@10=0.9460 mean_q_time=24.86ms latency_p50=24.6ms latency_p95=26.8ms index_per_row=941.9B
+```
+
+Load timing:
+
+```text
+baseline load total=89.93s
+TQ+      load total=84.37s
+```
+
+Storage:
+
+```text
+baseline total=839.8MiB index=44.9MiB per_row_total=17611.8B
+TQ+      total=839.8MiB index=44.9MiB per_row_total=17612.1B
+```
+
 ## Known Gaps
 
-- DBPedia 50k/100k have suite steps but have not been run in this packet.
+- DBPedia 100k has suite steps but has not been run in this packet.
 - The local staged DBPedia fixtures are all 1536-dimensional, which uses the
   no-QJL TurboQuant tile path. QJL/gamma-aware TQ+ still needs a separate
   non-tile-dimensional fixture before Task 89 can claim broader format coverage.

@@ -1,0 +1,746 @@
+{
+  "suite": "task89-ivf-tqplus-dbpedia",
+  "schema_version": 1,
+  "config": "reviews/task-89/003-ivf-tqplus-dbpedia-suite/suite.json",
+  "config_sha256": "21a4c9800285224e9e34f179676e4ff395fdd0e9f30afc60f3e20781eb5865c9",
+  "dry_run": false,
+  "generated_at_unix_ms": 1782434093114,
+  "connection": {
+    "database": "tqvector_bench",
+    "host": "/Users/peter/.pgrx",
+    "port": 28818,
+    "user": null,
+    "password_configured": false
+  },
+  "backend": {
+    "build_profile": "release"
+  },
+  "steps": [
+    {
+      "name": "load-dbpedia10k-tq",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "load",
+        "dbpedia",
+        "real10k",
+        "ivf",
+        "turboquant",
+        "baseline",
+        "no-qjl"
+      ],
+      "expected_artifacts": [
+        "reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real50k/load-dbpedia10k-tq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-dbpedia10k-tqplus",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "load",
+        "dbpedia",
+        "real10k",
+        "ivf",
+        "turboquant",
+        "tqplus",
+        "no-qjl"
+      ],
+      "expected_artifacts": [
+        "reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real50k/load-dbpedia10k-tqplus.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall10-dbpedia10k-tq",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "recall",
+        "dbpedia",
+        "real10k",
+        "ivf",
+        "turboquant",
+        "baseline",
+        "no-qjl"
+      ],
+      "expected_artifacts": [
+        "reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real50k/recall10-dbpedia10k-tq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall10-dbpedia10k-tqplus",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "recall",
+        "dbpedia",
+        "real10k",
+        "ivf",
+        "turboquant",
+        "tqplus",
+        "no-qjl"
+      ],
+      "expected_artifacts": [
+        "reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real50k/recall10-dbpedia10k-tqplus.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-dbpedia10k-tq",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "latency",
+        "dbpedia",
+        "real10k",
+        "ivf",
+        "turboquant",
+        "baseline",
+        "no-qjl"
+      ],
+      "expected_artifacts": [
+        "reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real50k/latency-dbpedia10k-tq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-dbpedia10k-tqplus",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "latency",
+        "dbpedia",
+        "real10k",
+        "ivf",
+        "turboquant",
+        "tqplus",
+        "no-qjl"
+      ],
+      "expected_artifacts": [
+        "reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real50k/latency-dbpedia10k-tqplus.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-dbpedia10k-tq",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "storage",
+        "dbpedia",
+        "real10k",
+        "ivf",
+        "turboquant",
+        "baseline",
+        "no-qjl"
+      ],
+      "expected_artifacts": [
+        "reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real50k/storage-dbpedia10k-tq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-dbpedia10k-tqplus",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "storage",
+        "dbpedia",
+        "real10k",
+        "ivf",
+        "turboquant",
+        "tqplus",
+        "no-qjl"
+      ],
+      "expected_artifacts": [
+        "reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real50k/storage-dbpedia10k-tqplus.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-dbpedia50k-tq",
+      "kind": "load",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real50k/load-dbpedia50k-tq.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "task89_dbpedia50k_ivf_tq",
+        "--profile",
+        "ec_ivf",
+        "--corpus-file",
+        "data/staged-current/ec_real_50k_corpus.tsv",
+        "--queries-file",
+        "data/staged-current/ec_real_50k_queries.tsv",
+        "--manifest-file",
+        "data/staged-current/ec_real_50k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--storage-format",
+        "turboquant",
+        "--reloption",
+        "nlists=128",
+        "--reloption",
+        "nprobe=64"
+      ],
+      "selected": true,
+      "quant": "turboquant",
+      "tags": [
+        "load",
+        "dbpedia",
+        "real50k",
+        "ivf",
+        "turboquant",
+        "baseline",
+        "no-qjl"
+      ],
+      "expected_artifacts": [
+        "reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real50k/load-dbpedia50k-tq.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1782434093126,
+      "finished_at_unix_ms": 1782434183070,
+      "duration_ms": 89942,
+      "exit_code": 0
+    },
+    {
+      "name": "load-dbpedia50k-tqplus",
+      "kind": "load",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real50k/load-dbpedia50k-tqplus.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "task89_dbpedia50k_ivf_tqplus",
+        "--profile",
+        "ec_ivf",
+        "--corpus-file",
+        "data/staged-current/ec_real_50k_corpus.tsv",
+        "--queries-file",
+        "data/staged-current/ec_real_50k_queries.tsv",
+        "--manifest-file",
+        "data/staged-current/ec_real_50k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--storage-format",
+        "turboquant",
+        "--reloption",
+        "nlists=128",
+        "--reloption",
+        "nprobe=64",
+        "--reloption",
+        "turboquant_calibration=tqplus_experimental"
+      ],
+      "selected": true,
+      "quant": "turboquant",
+      "tags": [
+        "load",
+        "dbpedia",
+        "real50k",
+        "ivf",
+        "turboquant",
+        "tqplus",
+        "no-qjl"
+      ],
+      "expected_artifacts": [
+        "reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real50k/load-dbpedia50k-tqplus.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1782434183072,
+      "finished_at_unix_ms": 1782434267459,
+      "duration_ms": 84385,
+      "exit_code": 0
+    },
+    {
+      "name": "recall10-dbpedia50k-tq",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "recall",
+        "--prefix",
+        "task89_dbpedia50k_ivf_tq",
+        "--profile",
+        "ec_ivf",
+        "--k",
+        "10",
+        "--sweep",
+        "32,48,64,96",
+        "--queries-limit",
+        "100",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--truth-cache-file",
+        "reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real50k/truth-dbpedia50k-k10.json",
+        "--truth-corpus-file",
+        "data/staged-current/ec_real_50k_corpus.tsv",
+        "--log-output",
+        "reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real50k/recall10-dbpedia50k-tq.log"
+      ],
+      "selected": true,
+      "quant": "turboquant",
+      "tags": [
+        "recall",
+        "dbpedia",
+        "real50k",
+        "ivf",
+        "turboquant",
+        "baseline",
+        "no-qjl"
+      ],
+      "expected_artifacts": [
+        "reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real50k/recall10-dbpedia50k-tq.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1782434267460,
+      "finished_at_unix_ms": 1782434312994,
+      "duration_ms": 45532,
+      "exit_code": 0
+    },
+    {
+      "name": "recall10-dbpedia50k-tqplus",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "recall",
+        "--prefix",
+        "task89_dbpedia50k_ivf_tqplus",
+        "--profile",
+        "ec_ivf",
+        "--k",
+        "10",
+        "--sweep",
+        "32,48,64,96",
+        "--queries-limit",
+        "100",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--truth-cache-file",
+        "reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real50k/truth-dbpedia50k-k10.json",
+        "--truth-corpus-file",
+        "data/staged-current/ec_real_50k_corpus.tsv",
+        "--log-output",
+        "reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real50k/recall10-dbpedia50k-tqplus.log"
+      ],
+      "selected": true,
+      "quant": "turboquant",
+      "tags": [
+        "recall",
+        "dbpedia",
+        "real50k",
+        "ivf",
+        "turboquant",
+        "tqplus",
+        "no-qjl"
+      ],
+      "expected_artifacts": [
+        "reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real50k/recall10-dbpedia50k-tqplus.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1782434312994,
+      "finished_at_unix_ms": 1782434337412,
+      "duration_ms": 24416,
+      "exit_code": 0
+    },
+    {
+      "name": "latency-dbpedia50k-tq",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "latency",
+        "--prefix",
+        "task89_dbpedia50k_ivf_tq",
+        "--profile",
+        "ec_ivf",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "100",
+        "--sweep",
+        "32,48,64,96",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--sample-backend-memory",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real50k/latency-dbpedia50k-tq.log"
+      ],
+      "selected": true,
+      "quant": "turboquant",
+      "tags": [
+        "latency",
+        "dbpedia",
+        "real50k",
+        "ivf",
+        "turboquant",
+        "baseline",
+        "no-qjl"
+      ],
+      "expected_artifacts": [
+        "reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real50k/latency-dbpedia50k-tq.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1782434337413,
+      "finished_at_unix_ms": 1782434340958,
+      "duration_ms": 3544,
+      "exit_code": 0
+    },
+    {
+      "name": "latency-dbpedia50k-tqplus",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "latency",
+        "--prefix",
+        "task89_dbpedia50k_ivf_tqplus",
+        "--profile",
+        "ec_ivf",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "100",
+        "--sweep",
+        "32,48,64,96",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--sample-backend-memory",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real50k/latency-dbpedia50k-tqplus.log"
+      ],
+      "selected": true,
+      "quant": "turboquant",
+      "tags": [
+        "latency",
+        "dbpedia",
+        "real50k",
+        "ivf",
+        "turboquant",
+        "tqplus",
+        "no-qjl"
+      ],
+      "expected_artifacts": [
+        "reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real50k/latency-dbpedia50k-tqplus.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1782434340959,
+      "finished_at_unix_ms": 1782434350680,
+      "duration_ms": 9719,
+      "exit_code": 0
+    },
+    {
+      "name": "storage-dbpedia50k-tq",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real50k/storage-dbpedia50k-tq.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "task89_dbpedia50k_ivf_tq"
+      ],
+      "selected": true,
+      "quant": "turboquant",
+      "tags": [
+        "storage",
+        "dbpedia",
+        "real50k",
+        "ivf",
+        "turboquant",
+        "baseline",
+        "no-qjl"
+      ],
+      "expected_artifacts": [
+        "reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real50k/storage-dbpedia50k-tq.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1782434350681,
+      "finished_at_unix_ms": 1782434350699,
+      "duration_ms": 17,
+      "exit_code": 0
+    },
+    {
+      "name": "storage-dbpedia50k-tqplus",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real50k/storage-dbpedia50k-tqplus.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "task89_dbpedia50k_ivf_tqplus"
+      ],
+      "selected": true,
+      "quant": "turboquant",
+      "tags": [
+        "storage",
+        "dbpedia",
+        "real50k",
+        "ivf",
+        "turboquant",
+        "tqplus",
+        "no-qjl"
+      ],
+      "expected_artifacts": [
+        "reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real50k/storage-dbpedia50k-tqplus.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1782434350700,
+      "finished_at_unix_ms": 1782434350716,
+      "duration_ms": 15,
+      "exit_code": 0
+    },
+    {
+      "name": "load-dbpedia100k-tq",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "load",
+        "dbpedia",
+        "real100k",
+        "ivf",
+        "turboquant",
+        "baseline",
+        "no-qjl"
+      ],
+      "expected_artifacts": [
+        "reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real50k/load-dbpedia100k-tq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-dbpedia100k-tqplus",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "load",
+        "dbpedia",
+        "real100k",
+        "ivf",
+        "turboquant",
+        "tqplus",
+        "no-qjl"
+      ],
+      "expected_artifacts": [
+        "reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real50k/load-dbpedia100k-tqplus.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall10-dbpedia100k-tq",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "recall",
+        "dbpedia",
+        "real100k",
+        "ivf",
+        "turboquant",
+        "baseline",
+        "no-qjl"
+      ],
+      "expected_artifacts": [
+        "reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real50k/recall10-dbpedia100k-tq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall10-dbpedia100k-tqplus",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "recall",
+        "dbpedia",
+        "real100k",
+        "ivf",
+        "turboquant",
+        "tqplus",
+        "no-qjl"
+      ],
+      "expected_artifacts": [
+        "reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real50k/recall10-dbpedia100k-tqplus.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-dbpedia100k-tq",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "latency",
+        "dbpedia",
+        "real100k",
+        "ivf",
+        "turboquant",
+        "baseline",
+        "no-qjl"
+      ],
+      "expected_artifacts": [
+        "reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real50k/latency-dbpedia100k-tq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-dbpedia100k-tqplus",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "latency",
+        "dbpedia",
+        "real100k",
+        "ivf",
+        "turboquant",
+        "tqplus",
+        "no-qjl"
+      ],
+      "expected_artifacts": [
+        "reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real50k/latency-dbpedia100k-tqplus.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-dbpedia100k-tq",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "storage",
+        "dbpedia",
+        "real100k",
+        "ivf",
+        "turboquant",
+        "baseline",
+        "no-qjl"
+      ],
+      "expected_artifacts": [
+        "reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real50k/storage-dbpedia100k-tq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-dbpedia100k-tqplus",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "tags": [
+        "storage",
+        "dbpedia",
+        "real100k",
+        "ivf",
+        "turboquant",
+        "tqplus",
+        "no-qjl"
+      ],
+      "expected_artifacts": [
+        "reviews/task-89/003-ivf-tqplus-dbpedia-suite/artifacts/suite-real50k/storage-dbpedia100k-tqplus.log"
+      ],
+      "status": "skipped"
+    }
+  ]
+}
