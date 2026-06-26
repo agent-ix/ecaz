@@ -332,6 +332,8 @@ struct RecallStep {
     #[serde(default)]
     truth_corpus_file: Option<PathBuf>,
     #[serde(default)]
+    truth_input_dim: Option<usize>,
+    #[serde(default)]
     log_output: Option<PathBuf>,
     #[serde(default)]
     predictions_output: Option<PathBuf>,
@@ -2390,6 +2392,18 @@ impl SuiteStep {
                         step.name
                     )
                 }
+                if step.truth_input_dim == Some(0) {
+                    bail!(
+                        "recall step {:?} must set truth_input_dim >= 1 when present",
+                        step.name
+                    )
+                }
+                if step.truth_input_dim.is_some() && step.truth_corpus_file.is_none() {
+                    bail!(
+                        "recall step {:?} requires truth_corpus_file when truth_input_dim is set",
+                        step.name
+                    )
+                }
                 if step.truth_cache_file.is_some() && step.truth_cache_dir.is_some() {
                     bail!(
                         "recall step {:?} cannot set both truth_cache_file and truth_cache_dir",
@@ -2887,6 +2901,9 @@ fn expand_recall(step: &RecallStep, defaults: &SuiteDefaults) -> Vec<String> {
         "--truth-corpus-file",
         step.truth_corpus_file.as_deref(),
     );
+    if let Some(truth_input_dim) = step.truth_input_dim {
+        push_arg(&mut args, "--truth-input-dim", &truth_input_dim.to_string());
+    }
     push_opt_path(&mut args, "--log-output", step.log_output.as_deref());
     push_opt_path(
         &mut args,
@@ -3966,6 +3983,7 @@ mod tests {
             truth_cache_file: Some("truth.json".into()),
             truth_cache_dir: None,
             truth_corpus_file: Some("corpus.tsv".into()),
+            truth_input_dim: Some(1536),
             log_output: Some("recall.log".into()),
             predictions_output: Some("predictions.json".into()),
         };
@@ -3981,6 +3999,7 @@ mod tests {
         assert!(args
             .windows(2)
             .any(|w| w == ["--truth-corpus-file", "corpus.tsv"]));
+        assert!(args.windows(2).any(|w| w == ["--truth-input-dim", "1536"]));
         assert!(args
             .windows(2)
             .any(|w| w == ["--adaptive-nprobe-score-gap-micros", "1000"]));
@@ -5024,6 +5043,7 @@ mod tests {
             truth_cache_file: None,
             truth_cache_dir: None,
             truth_corpus_file: None,
+            truth_input_dim: None,
             log_output: None,
             predictions_output: None,
         });

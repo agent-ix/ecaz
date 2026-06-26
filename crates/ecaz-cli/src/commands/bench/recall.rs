@@ -101,6 +101,10 @@ pub struct RecallArgs {
     /// when the same staged corpus file is already available to the operator.
     #[arg(long)]
     pub truth_corpus_file: Option<PathBuf>,
+    /// On-disk dimension for --truth-corpus-file when projecting truth rows to
+    /// the loaded query dimension.
+    #[arg(long)]
+    pub truth_input_dim: Option<usize>,
     /// Write the final recall table to this path in addition to stdout.
     #[arg(long)]
     pub log_output: Option<PathBuf>,
@@ -128,6 +132,11 @@ pub async fn run(conn: &ConnectionOptions, args: RecallArgs) -> Result<()> {
     if args.truth_cache_dir.is_some() && args.truth_cache_file.is_some() {
         return Err(eyre!(
             "--truth-cache-dir and --truth-cache-file are mutually exclusive"
+        ));
+    }
+    if args.truth_input_dim.is_some() && args.truth_corpus_file.is_none() {
+        return Err(eyre!(
+            "--truth-input-dim requires --truth-corpus-file so projection happens from a local TSV"
         ));
     }
     let sweep_values: Vec<i32> = if args.sweep.is_empty() {
@@ -173,6 +182,10 @@ pub async fn run(conn: &ConnectionOptions, args: RecallArgs) -> Result<()> {
     if queries.nrows() == 0 {
         return Err(eyre!("queries table {queries_table} is empty"));
     }
+    let truth_read_shape = args
+        .truth_input_dim
+        .map(|input_dim| crate::tsv::VectorReadShape::projected(input_dim, queries.ncols()))
+        .transpose()?;
 
     let mut corpus_for_ndcg: Option<(Vec<i64>, Array2<f32>)> = None;
     let truth = if let Some(path) = args.truth_cache_file.as_deref() {
@@ -183,6 +196,7 @@ pub async fn run(conn: &ConnectionOptions, args: RecallArgs) -> Result<()> {
                         &client,
                         &corpus_table,
                         args.truth_corpus_file.as_deref(),
+                        truth_read_shape,
                     )
                     .await?;
                     validate_corpus_and_queries(&corpus_table, &corpus, &queries)?;
@@ -191,9 +205,13 @@ pub async fn run(conn: &ConnectionOptions, args: RecallArgs) -> Result<()> {
                 truth
             }
             None => {
-                let (corpus_ids, corpus) =
-                    load_truth_corpus(&client, &corpus_table, args.truth_corpus_file.as_deref())
-                        .await?;
+                let (corpus_ids, corpus) = load_truth_corpus(
+                    &client,
+                    &corpus_table,
+                    args.truth_corpus_file.as_deref(),
+                    truth_read_shape,
+                )
+                .await?;
                 validate_corpus_and_queries(&corpus_table, &corpus, &queries)?;
                 let truth = load_or_compute_truth_file(
                     path,
@@ -209,8 +227,13 @@ pub async fn run(conn: &ConnectionOptions, args: RecallArgs) -> Result<()> {
             }
         }
     } else {
-        let (corpus_ids, corpus) =
-            load_truth_corpus(&client, &corpus_table, args.truth_corpus_file.as_deref()).await?;
+        let (corpus_ids, corpus) = load_truth_corpus(
+            &client,
+            &corpus_table,
+            args.truth_corpus_file.as_deref(),
+            truth_read_shape,
+        )
+        .await?;
         validate_corpus_and_queries(&corpus_table, &corpus, &queries)?;
         let truth = load_or_compute_truth(
             args.truth_cache_dir.as_deref(),
@@ -690,6 +713,29 @@ pub async fn fetch_sources_public(
 }
 
 pub fn load_sources_tsv_file(path: &Path) -> Result<(Vec<i64>, Array2<f32>)> {
+    load_sources_tsv_file_with_shape(path, None)
+}
+
+fn load_sources_tsv_file_with_shape(
+    path: &Path,
+    shape: Option<crate::tsv::VectorReadShape>,
+) -> Result<(Vec<i64>, Array2<f32>)> {
+    if let Some(shape) = shape {
+        let mut ids = Vec::new();
+        let mut flat = Vec::new();
+        for row in crate::tsv::iter_rows_with_shape(path, shape)? {
+            let row = row?;
+            ids.push(row.id);
+            flat.extend_from_slice(&row.values);
+        }
+        let arr = if shape.output_dim == 0 {
+            Array2::<f32>::zeros((0, 0))
+        } else {
+            Array2::from_shape_vec((ids.len(), shape.output_dim), flat)?
+        };
+        return Ok((ids, arr));
+    }
+
     let file = File::open(path).wrap_err_with(|| format!("opening {}", path.display()))?;
     let reader = BufReader::new(file);
     let mut ids = Vec::new();
@@ -789,10 +835,11 @@ async fn load_truth_corpus(
     client: &Client,
     corpus_table: &str,
     truth_corpus_file: Option<&Path>,
+    truth_read_shape: Option<crate::tsv::VectorReadShape>,
 ) -> Result<(Vec<i64>, Array2<f32>)> {
     if let Some(path) = truth_corpus_file {
         eprintln!("[recall] loading truth corpus from {} ...", path.display());
-        return load_sources_tsv_file(path)
+        return load_sources_tsv_file_with_shape(path, truth_read_shape)
             .wrap_err_with(|| format!("loading truth corpus from {}", path.display()));
     }
 
