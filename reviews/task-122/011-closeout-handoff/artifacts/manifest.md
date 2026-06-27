@@ -4,7 +4,7 @@
 - task bucket: `reviews/task-122/011-closeout-handoff`
 - timestamp: `2026-06-27T15:00:37Z`
 - scope: closeout handoff metadata, no code or benchmark change
-- outcome: Task 122 closeout follow-up recorded as Task 123
+- outcome: Task 122 closeout follow-up recorded as Task 124
 - review surface: `https://github.com/agent-ix/ecaz/pull/42`
 
 ## Inputs
@@ -12,7 +12,7 @@
 - Task 122 closeout packet:
   `reviews/task-122/010-closeout-keep-experimental/`
 - Follow-up task:
-  `plan/tasks/123-ivf-tq-stage2-rerank-pipeline.md`
+  `plan/tasks/124-ivf-tq-stage2-rerank-pipeline.md`
 - Task index:
   `plan/tasks/README.md`
 - GitHub PR:

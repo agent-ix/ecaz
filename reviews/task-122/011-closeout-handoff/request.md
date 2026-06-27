@@ -4,7 +4,7 @@ This is a no-code handoff packet following packet 010. It records that the
 Task 122 closeout recommendation now has a durable follow-up task:
 
 ```text
-plan/tasks/123-ivf-tq-stage2-rerank-pipeline.md
+plan/tasks/124-ivf-tq-stage2-rerank-pipeline.md
 ```
 
 ## Status
@@ -33,13 +33,13 @@ https://github.com/agent-ix/ecaz/pull/42
 
 ## Handoff
 
-Task 123 owns the promoted implementation path from packet 010:
+Task 124 owns the promoted implementation path from packet 010:
 
 ```text
 ec_ivf RaBitQ candidate frontier -> TurboQuant compact stage-2 reducer -> exact/source f32 final rerank width 25
 ```
 
-The Task 123 gates preserve the Task 122 evidence boundary:
+The Task 124 gates preserve the Task 122 evidence boundary:
 
 - in-engine `ec_ivf` implementation required; sidecar evidence is not enough
   for product promotion;
@@ -53,8 +53,8 @@ The Task 123 gates preserve the Task 122 evidence boundary:
 
 ## Verification
 
-- Task 122 file now points at Task 123 and this handoff packet.
-- `plan/tasks/README.md` lists Task 122 as closeout requested and Task 123 as
+- Task 122 file now points at Task 124 and this handoff packet.
+- `plan/tasks/README.md` lists Task 122 as closeout requested and Task 124 as
   the proposed follow-up.
 - GitHub PR #42 exposes the branch and closeout request for outside review.
 - Packet 010 remains the closeout evidence synthesis.

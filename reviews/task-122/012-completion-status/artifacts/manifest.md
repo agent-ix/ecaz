@@ -4,7 +4,7 @@
 - task bucket: `reviews/task-122/012-completion-status`
 - timestamp: `2026-06-27T17:23:26Z`
 - scope: final completion status after outside review approval
-- outcome: Task 122 complete; follow-up promoted as Task 123
+- outcome: Task 122 complete; follow-up promoted as Task 124
 - review surface: `https://github.com/agent-ix/ecaz/pull/42`
 
 ## Inputs
@@ -16,7 +16,7 @@
 - Handoff packet:
   `reviews/task-122/011-closeout-handoff/request.md`
 - Follow-up task:
-  `plan/tasks/123-ivf-tq-stage2-rerank-pipeline.md`
+  `plan/tasks/124-ivf-tq-stage2-rerank-pipeline.md`
 
 ## Artifacts
 

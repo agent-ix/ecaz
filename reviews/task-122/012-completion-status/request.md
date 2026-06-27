@@ -7,7 +7,7 @@ Task 122 is complete as of 2026-06-27.
 The accepted closeout outcome is:
 
 ```text
-keep experimental / promote follow-up as Task 123
+keep experimental / promote TurboQuant-focused follow-up as Task 124
 ```
 
 The outside reviewer approved the closeout in:
@@ -23,17 +23,17 @@ APPROVE the closeout
 ```
 
 No blocking findings were left. The non-blocking observations were carried into
-Task 123 as follow-up guidance.
+Task 124 as follow-up guidance.
 
 ## Completion Evidence
 
 - Task 122 file status is now `complete`.
 - `plan/tasks/README.md` lists Task 122 as complete.
 - Packet 010 remains the evidence-bearing closeout request.
-- Packet 011 records the handoff to Task 123 and the GitHub review surface.
+- Packet 011 records the handoff to Task 124 and the GitHub review surface.
 - The outside reviewer feedback approves the closeout and verifies the packet
   evidence, code review, and benchmark provenance.
-- Task 123 exists and owns the promoted in-engine TQ stage-2 pipeline.
+- Task 124 exists and owns the promoted in-engine TQ stage-2 pipeline.
 
 ## GitHub Review Surface
 

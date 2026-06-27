@@ -1,16 +1,22 @@
-# Task 123: IVF TurboQuant Stage-2 Rerank Pipeline
+# Task 124: IVF TurboQuant Stage-2 Rerank Pipeline
 
-Status: **proposed** (promoted follow-up from Task 122 closeout).
+Status: **proposed** (TurboQuant-focused follow-up from Task 122 closeout; uses
+124 because Task 123 is reserved externally).
 Owner: coder (to be assigned). One coder, one branch.
 Priority: P1 follow-up for the Task 122 TurboQuant keep-experimental outcome.
 
 ## Why
 
-Task 122 found that TurboQuant should not be promoted as a standalone final
-scorer. The sidecar matrix did, however, identify a narrower product-relevant
-path worth implementing inside the engine: keep the existing strong RaBitQ IVF
-candidate frontier, use TurboQuant as a compact stage-2 reducer, then run exact
-f32 rerank only on a bounded survivor set.
+TurboQuant is still not product-competitive against the strongest RaBitQ + f32
+baseline. The recurring failures are recall and latency, with latency the
+larger blocker: direct TQ scoring and rerank shapes have not produced a durable
+product win.
+
+Task 122 proved one useful but limited point: TurboQuant should not be promoted
+as a standalone final scorer, but a sidecar matrix identified a narrower
+product-relevant path worth implementing inside the engine. Keep the existing
+strong RaBitQ IVF candidate frontier, use TurboQuant as a compact stage-2
+reducer, then run exact f32 rerank only on a bounded survivor set.
 
 The measured sidecar path in `reviews/task-122/009-sidecar-tq-stage2-suite/`
 matched f32 recall at the useful points when final exact rerank width was 25,
@@ -30,7 +36,57 @@ The winning claim is matched recall with lower latency and a clear
 fetch/materialization/storage rationale against the current RaBitQ + f32
 product baseline. A sidecar-only win is not enough.
 
+This is an optimization task, not a measurement-only task. If the first
+in-engine attempt does not improve latency at matched recall, keep drilling into
+TurboQuant-specific bottlenecks before closing:
+
+- scalar or tail-heavy TQ scorer surfaces;
+- candidate batching width and flush histograms;
+- score/top-k/materialization fusion around the TQ stage;
+- final f32 rerank width and source-vector fetch count;
+- compact payload layout and bytes touched;
+- query-prep or per-candidate overhead that hides the nominal compact-code win.
+
+## Focus Guardrails
+
+This task is about making TurboQuant competitive. It is not a general SPIRE,
+RaBitQ, materialization, or benchmark-cleanup bucket.
+
+Allowed work:
+
+- TurboQuant scorer dispatch, SIMD/block use, scalar-tail reduction, and
+  scorer attribution;
+- TurboQuant stage-2 payload placement and scoring inside IVF;
+- TurboQuant score/top-k/final-rerank fusion;
+- TurboQuant recall diagnostics and rerank-width reduction;
+- storage or IO measurements only when they isolate TurboQuant payload behavior.
+
+Out of scope unless it directly blocks the TQ path:
+
+- SPIRE-only optimizations;
+- RaBitQ-only optimizations;
+- generic materialization pruning not tied to TQ stage-2;
+- measurement-only packets that do not lead to a TQ implementation or a
+  specific TQ bottleneck diagnosis.
+
 ## Scope
+
+### Phase 0 - TurboQuant SIMD and Scalar-Surface Audit
+
+Before implementing the stage-2 pipeline, produce a packet-local audit of every
+TurboQuant score surface used or touched by this task:
+
+- no-QJL 4-bit LUT;
+- QJL;
+- tiled-LUT and int8 exact-mode variants if used;
+- IVF single-payload fallbacks;
+- IVF exact-dequant rerank;
+- HNSW/DiskANN/SPIRE only as reference surfaces, not as the main optimization
+  target.
+
+For each surface, record whether it is full block/SIMD, block/SIMD with scalar
+tail, or scalar/per-candidate. The implementation plan must prioritize the
+surfaces that actually sit on the IVF Task 124 hot path.
 
 ### Phase 1 - Engine Path and API Shape
 
@@ -45,6 +101,11 @@ Add a narrow IVF rerank pipeline surface that can express:
 The first supported path should be RaBitQ candidate generation with
 TurboQuant stage-2 scoring and exact/source f32 final rerank. Avoid a broad
 cross-AM abstraction until the IVF evidence proves the shape.
+
+Before relying on any latency result, verify the active TQ stage-2 scorer is
+actually using the intended block/SIMD path. Record the scorer family, ISA,
+flush widths, scalar-tail count, and per-query scorer time. A result dominated
+by scalar fallback is not a valid rejection of TurboQuant.
 
 ### Phase 2 - Persisted or Index-Side TurboQuant Stage-2 Payload
 
@@ -96,6 +157,10 @@ Required gates:
   valid contract;
 - explicit rejection of final exact width 10 unless new evidence overturns the
   Task 122 width result.
+
+If recall fails at width 25, diagnose whether the loss is from TQ score quality,
+candidate frontier containment, final-rerank width, or implementation overhead.
+Do not collapse those into one generic "TQ failed" conclusion.
 
 ### Phase 5 - Benchmark Matrix
 
