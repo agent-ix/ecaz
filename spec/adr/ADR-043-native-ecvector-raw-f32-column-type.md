@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-043
 title: "`ecvector` Raw-f32 Column Type"
 status: IMPLEMENTED

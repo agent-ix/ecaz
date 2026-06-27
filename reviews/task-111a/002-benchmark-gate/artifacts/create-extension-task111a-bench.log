@@ -1,0 +1,11 @@
+CREATE EXTENSION
+ extversion 
+------------
+ 0.1.1
+(1 row)
+
+ ecaz_build_profile 
+--------------------
+ release
+(1 row)
+

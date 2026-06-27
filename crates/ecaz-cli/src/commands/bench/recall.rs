@@ -679,7 +679,7 @@ fn rerank_width_guc(profile: &profiles::IndexProfile) -> Option<&'static str> {
     }
 }
 
-/// `fetch_sources` reachable from sibling modules (e.g. `compare::pgvector`)
+/// `fetch_sources` reachable from sibling modules (e.g. `bench::comparator`)
 /// without exporting from the binary crate root.
 pub async fn fetch_sources_public(
     client: &Client,
@@ -817,10 +817,23 @@ async fn fetch_sources_for_predicted_ids(
     }
 
     let sql = format!("SELECT id, source FROM {table} WHERE id = ANY($1::bigint[])");
-    let rows = client
-        .query(sql.as_str(), &[&ids])
-        .await
-        .wrap_err_with(|| format!("fetching predicted sources from {table}"))?;
+    let rows = match client.query(sql.as_str(), &[&ids]).await {
+        Ok(rows) => rows,
+        Err(_) => {
+            let equality_sql = format!("SELECT id, source FROM {table} WHERE id = $1::bigint");
+            let mut rows = Vec::with_capacity(ids.len());
+            for id in &ids {
+                if let Some(row) = client
+                    .query_opt(equality_sql.as_str(), &[id])
+                    .await
+                    .wrap_err_with(|| format!("fetching predicted source id {id} from {table}"))?
+                {
+                    rows.push(row);
+                }
+            }
+            rows
+        }
+    };
     let mut by_id = std::collections::HashMap::with_capacity(rows.len());
     for row in rows {
         by_id.insert(row.get::<_, i64>(0), row.get::<_, Vec<f32>>(1));

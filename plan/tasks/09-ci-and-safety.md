@@ -1,8 +1,9 @@
 # Task 09: CI Pipeline and Safety
 
-Status: **mostly complete** — fuzz harness, CI pipeline, Makefile targets,
-clippy.toml, property tests, miri tests all landed. Formal unsafe audit
-enforcement is active for new unsafe sites; legacy unsafe debt is tracked under
+Status: **complete** (2026-06-16) — fuzz harness, CI pipeline, Makefile
+targets, clippy.toml, property tests, and miri tests landed on `main` (3
+review packets approved). Formal unsafe audit enforcement is active for
+new unsafe sites; legacy unsafe debt was tracked and burned down under
 Task 35.
 
 ## Scope

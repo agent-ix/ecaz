@@ -1,0 +1,76 @@
+{
+  "name": "task106-spire-recall-supplemental",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-106/003-full-affected-sweep/artifacts/suite-spire-recall-supplemental",
+  "defaults": {
+    "pg": 18,
+    "socket_dir": "/home/peter/.pgrx",
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 100,
+    "force_index": true
+  },
+  "steps": [
+    {
+      "kind": "recall",
+      "name": "recall-1m-spire-rabitq-batch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real1m",
+        "spire",
+        "spire-rabitq",
+        "storage_format=rabitq",
+        "candidate_batch",
+        "option=batch-on",
+        "recall",
+        "supplemental"
+      ],
+      "prefix": "t106_1m_spire_rabitq",
+      "profile": "ec_spire",
+      "k": 10,
+      "sweep": [
+        16,
+        24,
+        32,
+        48
+      ],
+      "queries_limit": 100,
+      "rerank_width": 25,
+      "log_output": "${artifact_dir}/recall-1m-spire-rabitq-batch-on.log",
+      "truth_cache_file": "reviews/task-106/003-full-affected-sweep/artifacts/suite/truth-cache/truth-v1-rows990000-queries100-dim1536-k10-e464037d13c7a53d.json"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-1m-spire-rabitq-batch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real1m",
+        "spire",
+        "spire-rabitq",
+        "storage_format=rabitq",
+        "scalar-ab",
+        "option=batch-off",
+        "recall",
+        "supplemental"
+      ],
+      "prefix": "t106_1m_spire_rabitq",
+      "profile": "ec_spire",
+      "k": 10,
+      "sweep": [
+        16,
+        24,
+        32,
+        48
+      ],
+      "queries_limit": 100,
+      "session_gucs": [
+        "ec_spire.candidate_batch_scoring=off"
+      ],
+      "rerank_width": 25,
+      "log_output": "${artifact_dir}/recall-1m-spire-rabitq-batch-off.log",
+      "truth_cache_file": "reviews/task-106/003-full-affected-sweep/artifacts/suite/truth-cache/truth-v1-rows990000-queries100-dim1536-k10-e464037d13c7a53d.json"
+    }
+  ]
+}

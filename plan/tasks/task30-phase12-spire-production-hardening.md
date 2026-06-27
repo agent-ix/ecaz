@@ -1,6 +1,9 @@
 # Task 30 Phase 12: SPIRE Production Hardening
 
-Status: planned
+Status: **complete** (2026-06-16) — local production-hardening checklist
+fully closed (all rows checked; final review accepted). Subsequent AWS
+verification was carried by the Task 106/107 product-scale runs on the
+newer build; see those packets for the live AWS evidence.
 Owner: coder1 / SPIRE distributed production-hardening track
 Priority: 1 after Phase 11 CustomScan functional delivery
 

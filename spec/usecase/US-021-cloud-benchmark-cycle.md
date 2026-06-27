@@ -1,8 +1,7 @@
 ---
 id: US-021
 title: Run a Complete Cloud Benchmark Cycle
-type: user-story
-artifact_type: US
+type: US
 status: PROPOSED
 relationships:
   - target: "ix://agent-ix/ecaz/StR-007"
@@ -25,7 +24,7 @@ relationships:
 
 ## Story
 
-**As** an Ecaz operator working from a developer workstation with AWS
+**As an** Ecaz operator working from a developer workstation with AWS
 credentials in `AWS_PROFILE`,
 **I want** to provision a cloud-hosted Ecaz database at a chosen scale, load a
 named corpus, run the benchmark suite, capture artifacts, and tear the

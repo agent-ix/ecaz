@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-014
 title: "Define traversal state memory budget per scan descriptor"
 status: DECIDED

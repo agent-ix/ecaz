@@ -1,6 +1,8 @@
 # Task 30 Phase 13d: SPIRE Read Efficiency and Observability
 
-Status: implementation checkpoint ready for review
+Status: **complete** (2026-06-16) — read-efficiency / observability work
+landed and was carried into the Task 106/107 product-scale AWS runs on
+the newer build, which stand as the accepted read-workload evidence.
 Owner: coder1 / SPIRE AWS verification track
 Priority: P1 before first AWS read workload pass
 

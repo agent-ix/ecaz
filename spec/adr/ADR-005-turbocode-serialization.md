@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-005
 title: "TurboCode serialization via serde + bincode"
 status: SUPERSEDED

@@ -53,21 +53,135 @@ pub(crate) fn select_highest_isa(features: HostIsaFeatures) -> Isa {
     if features.x86.avx2 {
         return Isa::Avx2;
     }
+    // ADR-077 §6 (Task 105 / Task 99 G4 measurement, 2026-06-12): on
+    // aarch64, Neon is preferred over Sve/Sve2. Graviton 4's SVE2 is
+    // 128-bit — the same vector width as NEON — and the NEON-capped A/B
+    // (reviews/task-99/008-g4-lane/) measured the SVE2 kernels 2.0–3.3×
+    // slower on lut32, 1.1–1.35× on grouped-pq, and ~6× on the qjl32
+    // block path, costing 27–45% end-to-end p50 on every TurboQuant
+    // cell. SVE kernels stay in-tree; per-family re-entry requires
+    // beating the NEON cell on the production target (which will need a
+    // preference override — the `ecaz.isa_cap` GUC only lowers).
+    if features.aarch64.neon {
+        return Isa::Neon;
+    }
     if features.aarch64.sve2 {
         return Isa::Sve2;
     }
     if features.aarch64.sve {
         return Isa::Sve;
     }
-    if features.aarch64.neon {
-        return Isa::Neon;
-    }
     Isa::Scalar
+}
+
+/// Dispatch-preference rank used by the ISA cap. The cap limits how high
+/// the selector may climb; it never fakes an unavailable ISA. Capping
+/// below the host's only SIMD tier therefore lands on `Scalar` (e.g.
+/// `neon` on an x86 host).
+fn cap_rank(isa: Isa) -> u8 {
+    match isa {
+        Isa::Scalar => 0,
+        Isa::Neon => 1,
+        Isa::Sve => 2,
+        Isa::Sve2 => 3,
+        Isa::Avx2 => 4,
+    }
+}
+
+pub(crate) fn select_highest_isa_capped(features: HostIsaFeatures, cap: Option<Isa>) -> Isa {
+    let selected = select_highest_isa(features);
+    let Some(cap) = cap else {
+        return selected;
+    };
+    if cap_rank(selected) <= cap_rank(cap) {
+        return selected;
+    }
+    let mut candidates = [Isa::Scalar; 4];
+    let mut count = 0usize;
+    if features.aarch64.neon {
+        candidates[count] = Isa::Neon;
+        count += 1;
+    }
+    if features.aarch64.sve {
+        candidates[count] = Isa::Sve;
+        count += 1;
+    }
+    if features.aarch64.sve2 {
+        candidates[count] = Isa::Sve2;
+        count += 1;
+    }
+    if features.x86.avx2 {
+        candidates[count] = Isa::Avx2;
+        count += 1;
+    }
+    candidates[..count]
+        .iter()
+        .copied()
+        .filter(|isa| cap_rank(*isa) <= cap_rank(cap))
+        .max_by_key(|isa| cap_rank(*isa))
+        .unwrap_or(Isa::Scalar)
+}
+
+/// Session-level ISA cap, synced from the `ecaz.isa_cap` GUC at the batch
+/// driver entry (per-backend-process, hence per-session). Sentinel 255 =
+/// no cap. Stored rank-coded per `cap_rank`.
+static SESSION_ISA_CAP: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(CAP_UNSET);
+
+const CAP_UNSET: u8 = u8::MAX;
+
+#[allow(dead_code)] // the GUC sync caller is cfg(not(test))-gated
+pub(crate) fn set_session_isa_cap(cap: Option<Isa>) {
+    let encoded = cap.map_or(CAP_UNSET, cap_rank);
+    SESSION_ISA_CAP.store(encoded, std::sync::atomic::Ordering::Relaxed);
+}
+
+fn session_isa_cap() -> Option<Isa> {
+    decode_cap(SESSION_ISA_CAP.load(std::sync::atomic::Ordering::Relaxed))
+}
+
+fn decode_cap(encoded: u8) -> Option<Isa> {
+    match encoded {
+        0 => Some(Isa::Scalar),
+        1 => Some(Isa::Neon),
+        2 => Some(Isa::Sve),
+        3 => Some(Isa::Sve2),
+        4 => Some(Isa::Avx2),
+        _ => None,
+    }
+}
+
+/// Parses an `ECAZ_ISA_CAP` value. Empty/absent means no cap; an
+/// unsupported value panics (fail-fast, mirroring the `ECAZ_SIMD`
+/// precedent in `quant::simd`) so a mistyped bench configuration is
+/// visible immediately instead of silently measuring the wrong column.
+fn parse_isa_cap(value: &str) -> Option<Isa> {
+    match value {
+        "" => None,
+        "scalar" => Some(Isa::Scalar),
+        "neon" => Some(Isa::Neon),
+        "sve" => Some(Isa::Sve),
+        "sve2" => Some(Isa::Sve2),
+        "avx2" => Some(Isa::Avx2),
+        other => panic!("unsupported ECAZ_ISA_CAP value: {other}"),
+    }
+}
+
+fn env_isa_cap() -> Option<Isa> {
+    static ENV_CAP: std::sync::OnceLock<Option<Isa>> = std::sync::OnceLock::new();
+    *ENV_CAP.get_or_init(|| {
+        std::env::var("ECAZ_ISA_CAP")
+            .ok()
+            .and_then(|value| parse_isa_cap(&value))
+    })
+}
+
+fn effective_isa_cap() -> Option<Isa> {
+    session_isa_cap().or_else(env_isa_cap)
 }
 
 #[allow(dead_code)]
 pub(crate) fn current_isa() -> Isa {
-    select_highest_isa(HostIsaFeatures::detect())
+    select_highest_isa_capped(HostIsaFeatures::detect(), effective_isa_cap())
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -102,10 +216,106 @@ fn detect_x86_features() -> X86Features {
 
 #[cfg(test)]
 mod tests {
-    use super::{select_highest_isa, Aarch64Features, HostIsaFeatures, Isa, X86Features};
+    use super::{
+        parse_isa_cap, select_highest_isa, select_highest_isa_capped, Aarch64Features,
+        HostIsaFeatures, Isa, X86Features,
+    };
+
+    fn graviton4() -> HostIsaFeatures {
+        HostIsaFeatures {
+            aarch64: Aarch64Features {
+                neon: true,
+                sve: true,
+                sve2: true,
+            },
+            x86: X86Features::default(),
+        }
+    }
+
+    fn intel_avx2() -> HostIsaFeatures {
+        HostIsaFeatures {
+            aarch64: Aarch64Features::default(),
+            x86: X86Features { avx2: true },
+        }
+    }
 
     #[test]
-    fn select_highest_isa_prefers_graviton4_sve2() {
+    fn capped_selection_limits_but_never_fakes() {
+        // No cap: the ADR-077 NEON preference applies.
+        assert_eq!(select_highest_isa_capped(graviton4(), None), Isa::Neon);
+        // The cap is a ceiling, never a raise: capping at a higher tier
+        // does not override the NEON preference.
+        assert_eq!(
+            select_highest_isa_capped(graviton4(), Some(Isa::Sve)),
+            Isa::Neon
+        );
+        assert_eq!(
+            select_highest_isa_capped(graviton4(), Some(Isa::Neon)),
+            Isa::Neon
+        );
+        assert_eq!(
+            select_highest_isa_capped(graviton4(), Some(Isa::Scalar)),
+            Isa::Scalar
+        );
+        assert_eq!(
+            select_highest_isa_capped(graviton4(), Some(Isa::Avx2)),
+            Isa::Neon
+        );
+        // Capping to an ISA the host lacks falls to scalar, never fakes.
+        assert_eq!(
+            select_highest_isa_capped(intel_avx2(), Some(Isa::Neon)),
+            Isa::Scalar
+        );
+        assert_eq!(
+            select_highest_isa_capped(HostIsaFeatures::default(), Some(Isa::Sve2)),
+            Isa::Scalar
+        );
+    }
+
+    // NOTE: no unit test mutates the SESSION_ISA_CAP global — per-family
+    // parity tests dispatch through current_isa() concurrently, and a
+    // transient cap would race them (the same isolation class the
+    // CANDIDATE_BATCH_COUNTER_TEST_LOCK exists for). Cap semantics are
+    // covered by the pure select_highest_isa_capped tests above; the
+    // GUC-to-global sync is exercised end-to-end by the capped bench
+    // cells (counter rows must report the capped ISA).
+    #[test]
+    fn cap_encoding_roundtrips() {
+        for cap in [
+            None,
+            Some(Isa::Scalar),
+            Some(Isa::Neon),
+            Some(Isa::Sve),
+            Some(Isa::Sve2),
+            Some(Isa::Avx2),
+        ] {
+            assert_eq!(
+                super::decode_cap(cap.map_or(super::CAP_UNSET, super::cap_rank)),
+                cap
+            );
+        }
+    }
+
+    #[test]
+    fn parse_isa_cap_accepts_known_values() {
+        assert_eq!(parse_isa_cap(""), None);
+        assert_eq!(parse_isa_cap("scalar"), Some(Isa::Scalar));
+        assert_eq!(parse_isa_cap("neon"), Some(Isa::Neon));
+        assert_eq!(parse_isa_cap("sve"), Some(Isa::Sve));
+        assert_eq!(parse_isa_cap("sve2"), Some(Isa::Sve2));
+        assert_eq!(parse_isa_cap("avx2"), Some(Isa::Avx2));
+    }
+
+    #[test]
+    #[should_panic(expected = "unsupported ECAZ_ISA_CAP value")]
+    fn parse_isa_cap_rejects_unknown_values() {
+        let _ = parse_isa_cap("fast");
+    }
+
+    #[test]
+    fn select_highest_isa_prefers_neon_on_graviton4() {
+        // ADR-077 §6: Neon over Sve2 at equal 128-bit width (measured,
+        // reviews/task-99/008-g4-lane/).
         let features = HostIsaFeatures {
             aarch64: Aarch64Features {
                 neon: true,
@@ -115,21 +325,32 @@ mod tests {
             x86: X86Features::default(),
         };
 
-        assert_eq!(select_highest_isa(features), Isa::Sve2);
+        assert_eq!(select_highest_isa(features), Isa::Neon);
     }
 
     #[test]
-    fn select_highest_isa_distinguishes_base_sve() {
-        let features = HostIsaFeatures {
+    fn select_highest_isa_uses_sve_tiers_only_without_neon() {
+        // Synthetic — no real aarch64 host lacks NEON while having SVE;
+        // documents that the SVE tiers remain reachable in the ladder.
+        let sve2_only = HostIsaFeatures {
             aarch64: Aarch64Features {
-                neon: true,
+                neon: false,
+                sve: true,
+                sve2: true,
+            },
+            x86: X86Features::default(),
+        };
+        let sve_only = HostIsaFeatures {
+            aarch64: Aarch64Features {
+                neon: false,
                 sve: true,
                 sve2: false,
             },
             x86: X86Features::default(),
         };
 
-        assert_eq!(select_highest_isa(features), Isa::Sve);
+        assert_eq!(select_highest_isa(sve2_only), Isa::Sve2);
+        assert_eq!(select_highest_isa(sve_only), Isa::Sve);
     }
 
     #[test]

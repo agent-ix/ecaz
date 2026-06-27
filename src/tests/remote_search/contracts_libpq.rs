@@ -566,7 +566,7 @@
         assert_eq!(merge_step_validator, "must_preserve_merge_order_contract");
         assert_eq!(endpoint_count, 15);
         assert_eq!(endpoint_protocol, "ec_spire_remote_search_v1");
-        assert_eq!(endpoint_quantizer, "rabitq_only_pq_and_pqfastscan_reserved");
+        assert_eq!(endpoint_quantizer, "turboquant_and_rabitq_pqfastscan_reserved");
         assert_eq!(endpoint_tuple_transport_default, "pg_binary_attr_v1");
         assert_eq!(
             endpoint_tuple_transport_validator,
@@ -682,7 +682,7 @@
                 .expect("reindexed rabitq identity fingerprint query should succeed")
                 .expect("reindexed rabitq identity fingerprint should exist");
 
-        assert_eq!(default_status, "requires_rabitq_storage_format");
+        assert_eq!(default_status, "ready");
         assert_eq!(default_assignment_payload, "turboquant");
         assert_eq!(rabitq_status, "ready");
         assert_eq!(protocol_version, "ec_spire_remote_search_v1");

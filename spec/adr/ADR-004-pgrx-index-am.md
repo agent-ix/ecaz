@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-004
 title: "Raw pg_sys FFI for IndexAmRoutine with local helper module"
 status: DECIDED

@@ -24,9 +24,54 @@ BUCKET=$(jq -r '.artifact_bucket' "$TOPOLOGY")
 ECAZ_BIN="${ECAZ_BIN:-ecaz}"
 WORK_DIR="${WORK_DIR:-$ARTIFACT_DIR/work}"
 SPIRE_AWS_RESET_COORDINATOR_INDEX="${SPIRE_AWS_RESET_COORDINATOR_INDEX:-1}"
+SPIRE_AWS_SKIP_COORDINATOR_LOAD="${SPIRE_AWS_SKIP_COORDINATOR_LOAD:-0}"
 SPIRE_AWS_STORAGE_FORMAT="${SPIRE_AWS_STORAGE_FORMAT:-rabitq}"
 SPIRE_AWS_NODE_LOAD_BASE_DIR="${SPIRE_AWS_NODE_LOAD_BASE_DIR:-/var/tmp/ecaz-spire-aws-load}"
+SPIRE_AWS_COORD_RELOPTIONS="${SPIRE_AWS_COORD_RELOPTIONS:-}"
+SPIRE_AWS_REMOTE_RELOPTIONS="${SPIRE_AWS_REMOTE_RELOPTIONS:-}"
 mkdir -p "$WORK_DIR"
+
+reloption_args_string() {
+  local raw="$1"
+  local out=""
+  local item
+
+  if [[ -z "$raw" ]]; then
+    return
+  fi
+  IFS=';' read -r -a items <<< "$raw"
+  for item in "${items[@]}"; do
+    [[ -n "$item" ]] || continue
+    out+=" --reloption $(printf '%q' "$item")"
+  done
+  printf '%s' "$out"
+}
+
+reloption_args_array() {
+  local raw="$1"
+  local item
+
+  RELOPTION_ARGS=()
+  if [[ -z "$raw" ]]; then
+    return
+  fi
+  IFS=';' read -r -a items <<< "$raw"
+  for item in "${items[@]}"; do
+    [[ -n "$item" ]] || continue
+    RELOPTION_ARGS+=(--reloption "$item")
+  done
+}
+
+reloptions_json() {
+  local raw="$1"
+
+  printf '%s\n' "$raw" | jq -R 'split(";") | map(select(length > 0))'
+}
+
+COORD_RELOPTION_ARGS_STRING="$(reloption_args_string "$SPIRE_AWS_COORD_RELOPTIONS")"
+REMOTE_RELOPTION_ARGS_STRING="$(reloption_args_string "$SPIRE_AWS_REMOTE_RELOPTIONS")"
+reloption_args_array "$SPIRE_AWS_COORD_RELOPTIONS"
+COORD_RELOPTION_ARGS=("${RELOPTION_ARGS[@]}")
 
 ssm_wait_command() {
   local instance_id="$1"
@@ -270,6 +315,7 @@ load_remote_shards_node_local() {
       --arg remote_index "$remote_index" \
       --arg drop_sql "$drop_sql" \
       --arg storage_format "$SPIRE_AWS_STORAGE_FORMAT" \
+      --arg remote_reloption_args "$REMOTE_RELOPTION_ARGS_STRING" \
       '[
         "set -euo pipefail",
         "command -v /usr/local/bin/ecaz >/dev/null",
@@ -284,7 +330,7 @@ load_remote_shards_node_local() {
         "drop_status=$?",
         "aws s3 cp \($node_dir)/drop.log s3://\($bucket)/\($drop_log_key) --region \($region) || true",
         "if [ \"$drop_status\" -ne 0 ]; then exit \"$drop_status\"; fi",
-        "/usr/local/bin/ecaz corpus load --host 127.0.0.1 --port 5432 --user ecaz_coord --database postgres --profile ec_spire --prefix \($remote_prefix) --dim 1536 --bits 4 --seed 42 --corpus-file \($node_corpus_path) --corpus-only --storage-format \($storage_format) --index-name \($remote_index) --log-file \($node_load_log)",
+        "/usr/local/bin/ecaz corpus load --host 127.0.0.1 --port 5432 --user ecaz_coord --database postgres --profile ec_spire --prefix \($remote_prefix) --dim 1536 --bits 4 --seed 42 --corpus-file \($node_corpus_path) --corpus-only --storage-format \($storage_format) --index-name \($remote_index) \($remote_reloption_args) --log-file \($node_load_log)",
         "load_status=$?",
         "aws s3 cp \($node_load_log) s3://\($bucket)/\($load_log_key) --region \($region) || true",
         "if [ \"$load_status\" -ne 0 ]; then exit \"$load_status\"; fi",
@@ -337,6 +383,7 @@ load_coordinator_representative_node_local() {
     --arg prefix "$PREFIX" \
     --arg coord_index "$COORD_INDEX" \
     --arg storage_format "$SPIRE_AWS_STORAGE_FORMAT" \
+    --arg coord_reloption_args "$COORD_RELOPTION_ARGS_STRING" \
     --arg load_log_key "$load_log_key" \
     --arg reset_log_key "$reset_log_key" \
     --arg reset_requested "$SPIRE_AWS_RESET_COORDINATOR_INDEX" \
@@ -356,7 +403,7 @@ load_coordinator_representative_node_local() {
       "reset_status=$?",
       "aws s3 cp \($node_dir)/reset-index.log s3://\($bucket)/\($reset_log_key) --region \($region) || true",
       "if [ \"$reset_status\" -ne 0 ]; then exit \"$reset_status\"; fi",
-      "/usr/local/bin/ecaz corpus load --host 127.0.0.1 --port 5432 --user ecaz_coord --database postgres --prefix \($prefix) --corpus-file \($node_corpus_path) --queries-file \($node_queries_path) --manifest-file \($node_manifest_path) --allow-manifest-mismatch --profile ec_spire --dim 1536 --bits 4 --seed 42 --storage-format \($storage_format) --index-name \($coord_index) --log-file \($node_dir)/load.log",
+      "/usr/local/bin/ecaz corpus load --host 127.0.0.1 --port 5432 --user ecaz_coord --database postgres --prefix \($prefix) --corpus-file \($node_corpus_path) --queries-file \($node_queries_path) --manifest-file \($node_manifest_path) --allow-manifest-mismatch --profile ec_spire --dim 1536 --bits 4 --seed 42 --storage-format \($storage_format) --index-name \($coord_index) \($coord_reloption_args) --log-file \($node_dir)/load.log",
       "load_status=$?",
       "aws s3 cp \($node_dir)/load.log s3://\($bucket)/\($load_log_key) --region \($region) || true",
       "exit \"$load_status\""
@@ -450,6 +497,7 @@ write_leaf_owned_distributed_plan() {
       --arg corpus_file "$remote_corpus" \
       --arg identity_sql "$identity_sql" \
       --arg storage_format "$storage_format" \
+      --argjson remote_reloptions "$(reloptions_json "$SPIRE_AWS_REMOTE_RELOPTIONS")" \
       --argjson row_count "$row_count" \
       --argjson shard_id "$((node_id - 2))" \
       --argjson dim "$dim" \
@@ -463,7 +511,7 @@ write_leaf_owned_distributed_plan() {
         remote_prefix: $remote_prefix,
         shard_ids: [$shard_id],
         corpus_file: $corpus_file,
-        remote_load_args: [
+        remote_load_args: ([
           "ecaz", "corpus", "load",
           "--profile", "ec_spire",
           "--prefix", $remote_prefix,
@@ -474,7 +522,7 @@ write_leaf_owned_distributed_plan() {
           "--corpus-only",
           "--storage-format", $storage_format,
           "--index-name", $remote_index
-        ],
+        ] + ($remote_reloptions | map(["--reloption", .]) | add // [])),
         remote_identity_query_sql: $identity_sql,
         coordinator_register_descriptor_sql_template: "",
         row_count: $row_count,
@@ -534,13 +582,15 @@ case "$TIER" in
       --profile ec_spire --dim 1536 --bits 4 --seed 42 \
       --storage-format "$SPIRE_AWS_STORAGE_FORMAT" \
       --index-name "$COORD_INDEX" \
+      "${COORD_RELOPTION_ARGS[@]}" \
       --log-file "$ARTIFACT_DIR/coordinator-load-${TIER}.log"
     write_leaf_owned_distributed_plan "$WORK_DIR/${PREFIX}_corpus.tsv" 1536 4 42 ec_spire "$SPIRE_AWS_STORAGE_FORMAT" \
       > "$ARTIFACT_DIR/distributed-plan-${TIER}.log"
     ;;
   representative)
-    PREFIX=ec_spire_aws_repr_1m
-    PREPARED_PREFIX=ec_real_100k
+    PREFIX="${PREFIX:-ec_spire_aws_repr_1m}"
+    PREPARED_PREFIX="${SPIRE_AWS_REPRESENTATIVE_PREPARED_PREFIX:-ec_real_100k}"
+    SOURCE_DATASET="${SPIRE_AWS_REPRESENTATIVE_DATASET:-qdrant-dbpedia-openai3-large-1536-1m}"
     COORD_INDEX="${COORD_INDEX:-${PREFIX}_idx}"
     REMOTE_INDEX="${REMOTE_INDEX:-${PREFIX}_remote_idx}"
     DISTRIBUTED_OUTPUT_DIR="${ARTIFACT_DIR}/distributed-${TIER}"
@@ -548,19 +598,24 @@ case "$TIER" in
     PLAN_FILE="${DISTRIBUTED_OUTPUT_DIR}/distributed-placement-plan.json"
     write_distributed_placement_config
     "$ECAZ_BIN" corpus fetch \
-      --dataset qdrant-dbpedia-openai3-large-1536-1m \
+      --dataset "$SOURCE_DATASET" \
       --output-dir "$WORK_DIR/qdrant-dbpedia/"
     "$ECAZ_BIN" corpus prepare \
       --profile "$PREPARED_PREFIX" \
       --parquet "$WORK_DIR/qdrant-dbpedia/data" \
       --output-dir "$WORK_DIR/qdrant-dbpedia/prepared/" \
       --dim 1536 \
-      --source-dataset qdrant-dbpedia-openai3-large-1536-1m
-    load_coordinator_representative_node_local \
-      "$WORK_DIR/qdrant-dbpedia/prepared/${PREPARED_PREFIX}_corpus.tsv" \
-      "$WORK_DIR/qdrant-dbpedia/prepared/${PREPARED_PREFIX}_queries.tsv" \
-      "$WORK_DIR/qdrant-dbpedia/prepared/${PREPARED_PREFIX}_manifest.json"
-    restart_operator_tunnel_if_available coordinator "$(jq -r '.coordinator.instance_id' "$TOPOLOGY")" "$COORD_PORT"
+      --source-dataset "$SOURCE_DATASET"
+    if [[ "$SPIRE_AWS_SKIP_COORDINATOR_LOAD" != "1" ]]; then
+      load_coordinator_representative_node_local \
+        "$WORK_DIR/qdrant-dbpedia/prepared/${PREPARED_PREFIX}_corpus.tsv" \
+        "$WORK_DIR/qdrant-dbpedia/prepared/${PREPARED_PREFIX}_queries.tsv" \
+        "$WORK_DIR/qdrant-dbpedia/prepared/${PREPARED_PREFIX}_manifest.json"
+      restart_operator_tunnel_if_available coordinator "$(jq -r '.coordinator.instance_id' "$TOPOLOGY")" "$COORD_PORT"
+    else
+      echo "coordinator load skipped for representative tier (SPIRE_AWS_SKIP_COORDINATOR_LOAD=1)" \
+        | tee "$ARTIFACT_DIR/coordinator-load-${TIER}.skipped.log"
+    fi
     write_leaf_owned_distributed_plan "$WORK_DIR/qdrant-dbpedia/prepared/${PREPARED_PREFIX}_corpus.tsv" 1536 4 42 ec_spire "$SPIRE_AWS_STORAGE_FORMAT" \
       > "$ARTIFACT_DIR/distributed-plan-${TIER}.log"
     ;;
@@ -585,6 +640,7 @@ case "$TIER" in
       --profile ec_spire --dim 1536 --bits 4 --seed 42 \
       --storage-format "$SPIRE_AWS_STORAGE_FORMAT" \
       --index-name "$COORD_INDEX" \
+      "${COORD_RELOPTION_ARGS[@]}" \
       --log-file "$ARTIFACT_DIR/coordinator-load-${TIER}.log"
     write_leaf_owned_distributed_plan "$WORK_DIR/${PREFIX}_corpus.tsv" 1536 4 42 ec_spire "$SPIRE_AWS_STORAGE_FORMAT" \
       > "$ARTIFACT_DIR/distributed-plan-${TIER}.log"

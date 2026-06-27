@@ -1,0 +1,2 @@
+DROP DATABASE
+NOTICE:  database "task111a_dense_bench" does not exist, skipping

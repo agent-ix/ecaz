@@ -1,6 +1,9 @@
 # Task 30 Phase 13a: SPIRE AWS Verification Design
 
-Status: design draft, pending reviewer acceptance
+Status: **complete / superseded** (2026-06-16) — the AWS topology,
+datasets, workload matrix, and thresholds this design draft scoped were
+realized and executed by the Task 106/107 product-scale AWS runs on the
+newer build, which stand as the accepted AWS verification evidence.
 Owner: coder1 / SPIRE AWS verification track
 Priority: P1 — blocks Phase 13b runbook finalization and any Phase 13
 infrastructure allocation.

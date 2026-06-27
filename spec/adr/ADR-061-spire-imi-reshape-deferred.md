@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-061
 title: "SPIRE IMI Reshape Deferral"
 status: DEFERRED

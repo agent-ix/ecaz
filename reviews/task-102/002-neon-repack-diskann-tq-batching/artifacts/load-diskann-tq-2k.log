@@ -1,0 +1,23 @@
+[loader] inspecting reviews/task-102/002-neon-repack-diskann-tq-batching/artifacts/task102_diskann_tq_2k_corpus.tsv
+[loader] inspecting reviews/task-102/002-neon-repack-diskann-tq-batching/artifacts/task102_diskann_tq_2k_queries.tsv
+[loader] corpus: 2000 rows, sha256=926bc03f4c9fd2788a37d1b8688eac03b27039e1457dcdff6a546ff378da1624  queries: 64 rows, sha256=e5121cc3d47cc296aed7d5c834c9924d929b8a4bc903d078dec87578b93ed7cd
+[loader] no sibling manifest at reviews/task-102/002-neon-repack-diskann-tq-batching/artifacts/task102_diskann_tq_2k_manifest.json; continuing without verification
+[loader] copied corpus table task102_diskann_tq_2k_corpus in 1.58s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table task102_diskann_tq_2k_corpus in 538.63ms
+[loader] copied queries table task102_diskann_tq_2k_queries in 81.38ms
+[loader] building task102_diskann_tq_2k_turboquant_idx using ec_diskann (reloptions=[storage_format=turboquant]) ...
+[loader] built task102_diskann_tq_2k_turboquant_idx in 6.50s
+[loader] warning: ec_diskann build timing unavailable: db error
+┌─────────┬──────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                            │
+╞═════════╪══════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_diskann                                                       │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ task102_diskann_tq_2k_corpus (2000 rows)                         │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ task102_diskann_tq_2k_queries (64 rows)                          │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ task102_diskann_tq_2k_turboquant_idx [storage_format=turboquant] │
+└─────────┴──────────────────────────────────────────────────────────────────┘
+[loader] completed prefix task102_diskann_tq_2k in 10.93s

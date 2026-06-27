@@ -1,0 +1,35 @@
+{
+  "name": "ivf-attr-lazy-ab",
+  "schema_version": 1,
+  "defaults": {
+    "pg": 18,
+    "socket_dir": "/home/peter/.pgrx",
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 200,
+    "iterations": 200,
+    "force_index": true
+  },
+  "steps": [
+    { "kind": "load", "name": "load-lazy-10k", "tags": ["lazy-ab", "ec_real_10k"], "prefix": "attr_lazy_10k", "profile": "ec_ivf", "corpus_file": "data/staged-current/ec_real_10k_corpus.tsv", "queries_file": "data/staged-current/ec_real_10k_queries.tsv", "manifest_file": "data/staged-current/ec_real_10k_manifest.json", "allow_manifest_mismatch": true, "reloptions": ["nlists=100", "storage_format=coarse_rerank", "rerank_format=f32", "rerank_placement=table", "rerank_width=64"] },
+    { "kind": "recall", "name": "recall-lazy-off-10k", "tags": ["lazy-ab", "lazy-off", "ec_real_10k"], "prefix": "attr_lazy_10k", "profile": "ec_ivf", "k": 10, "sweep": [8, 16, 32, 64, 128, 200], "session_gucs": ["ec_ivf.lazy_heap_rerank=off"] },
+    { "kind": "latency", "name": "latency-lazy-off-10k", "tags": ["lazy-ab", "lazy-off", "ec_real_10k"], "prefix": "attr_lazy_10k", "profile": "ec_ivf", "k": 10, "sweep": [8, 16, 32, 64, 128, 200], "concurrency": 1, "cache_state": "post_recall_warm", "session_gucs": ["ec_ivf.lazy_heap_rerank=off"] },
+    { "kind": "recall", "name": "recall-lazy-on-10k", "tags": ["lazy-ab", "lazy-on", "ec_real_10k"], "prefix": "attr_lazy_10k", "profile": "ec_ivf", "k": 10, "sweep": [8, 16, 32, 64, 128, 200], "session_gucs": ["ec_ivf.lazy_heap_rerank=on"] },
+    { "kind": "latency", "name": "latency-lazy-on-10k", "tags": ["lazy-ab", "lazy-on", "ec_real_10k"], "prefix": "attr_lazy_10k", "profile": "ec_ivf", "k": 10, "sweep": [8, 16, 32, 64, 128, 200], "concurrency": 1, "cache_state": "post_recall_warm", "session_gucs": ["ec_ivf.lazy_heap_rerank=on"] },
+    { "kind": "storage", "name": "storage-lazy-10k", "tags": ["lazy-ab", "ec_real_10k"], "prefix": "attr_lazy_10k" },
+
+    { "kind": "load", "name": "load-lazy-50k", "tags": ["lazy-ab", "ec_real_50k"], "prefix": "attr_lazy_50k", "profile": "ec_ivf", "corpus_file": "data/staged-current/ec_real_50k_corpus.tsv", "queries_file": "data/staged-current/ec_real_50k_queries.tsv", "manifest_file": "data/staged-current/ec_real_50k_manifest.json", "allow_manifest_mismatch": true, "reloptions": ["nlists=224", "storage_format=coarse_rerank", "rerank_format=f32", "rerank_placement=table", "rerank_width=64"] },
+    { "kind": "recall", "name": "recall-lazy-off-50k", "tags": ["lazy-ab", "lazy-off", "ec_real_50k"], "prefix": "attr_lazy_50k", "profile": "ec_ivf", "k": 10, "sweep": [8, 16, 32, 64, 128, 200], "session_gucs": ["ec_ivf.lazy_heap_rerank=off"] },
+    { "kind": "latency", "name": "latency-lazy-off-50k", "tags": ["lazy-ab", "lazy-off", "ec_real_50k"], "prefix": "attr_lazy_50k", "profile": "ec_ivf", "k": 10, "sweep": [8, 16, 32, 64, 128, 200], "concurrency": 1, "cache_state": "post_recall_warm", "session_gucs": ["ec_ivf.lazy_heap_rerank=off"] },
+    { "kind": "recall", "name": "recall-lazy-on-50k", "tags": ["lazy-ab", "lazy-on", "ec_real_50k"], "prefix": "attr_lazy_50k", "profile": "ec_ivf", "k": 10, "sweep": [8, 16, 32, 64, 128, 200], "session_gucs": ["ec_ivf.lazy_heap_rerank=on"] },
+    { "kind": "latency", "name": "latency-lazy-on-50k", "tags": ["lazy-ab", "lazy-on", "ec_real_50k"], "prefix": "attr_lazy_50k", "profile": "ec_ivf", "k": 10, "sweep": [8, 16, 32, 64, 128, 200], "concurrency": 1, "cache_state": "post_recall_warm", "session_gucs": ["ec_ivf.lazy_heap_rerank=on"] },
+    { "kind": "storage", "name": "storage-lazy-50k", "tags": ["lazy-ab", "ec_real_50k"], "prefix": "attr_lazy_50k" },
+
+    { "kind": "load", "name": "load-lazy-100k", "tags": ["lazy-ab", "ec_real_100k"], "prefix": "attr_lazy_100k", "profile": "ec_ivf", "corpus_file": "data/staged-current/ec_real_100k_corpus.tsv", "queries_file": "data/staged-current/ec_real_100k_queries.tsv", "manifest_file": "data/staged-current/ec_real_100k_manifest.json", "allow_manifest_mismatch": true, "reloptions": ["nlists=316", "storage_format=coarse_rerank", "rerank_format=f32", "rerank_placement=table", "rerank_width=64"] },
+    { "kind": "recall", "name": "recall-lazy-off-100k", "tags": ["lazy-ab", "lazy-off", "ec_real_100k"], "prefix": "attr_lazy_100k", "profile": "ec_ivf", "k": 10, "sweep": [8, 16, 32, 64, 128, 200], "session_gucs": ["ec_ivf.lazy_heap_rerank=off"] },
+    { "kind": "latency", "name": "latency-lazy-off-100k", "tags": ["lazy-ab", "lazy-off", "ec_real_100k"], "prefix": "attr_lazy_100k", "profile": "ec_ivf", "k": 10, "sweep": [8, 16, 32, 64, 128, 200], "concurrency": 1, "cache_state": "post_recall_warm", "session_gucs": ["ec_ivf.lazy_heap_rerank=off"] },
+    { "kind": "recall", "name": "recall-lazy-on-100k", "tags": ["lazy-ab", "lazy-on", "ec_real_100k"], "prefix": "attr_lazy_100k", "profile": "ec_ivf", "k": 10, "sweep": [8, 16, 32, 64, 128, 200], "session_gucs": ["ec_ivf.lazy_heap_rerank=on"] },
+    { "kind": "latency", "name": "latency-lazy-on-100k", "tags": ["lazy-ab", "lazy-on", "ec_real_100k"], "prefix": "attr_lazy_100k", "profile": "ec_ivf", "k": 10, "sweep": [8, 16, 32, 64, 128, 200], "concurrency": 1, "cache_state": "post_recall_warm", "session_gucs": ["ec_ivf.lazy_heap_rerank=on"] },
+    { "kind": "storage", "name": "storage-lazy-100k", "tags": ["lazy-ab", "ec_real_100k"], "prefix": "attr_lazy_100k" }
+  ]
+}

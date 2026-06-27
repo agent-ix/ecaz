@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-020
 title: "Embedding Dimension Operating Points: 1024 vs 1536 vs 2048"
 status: PROPOSED

@@ -1,7 +1,7 @@
 # Task 11: Planner Integration
 
-Status: substantially complete — the shared PG18 planner/diagnostics/read-stream slice is live on
-`main`; remaining follow-on is measurement, with parallel-scan callbacks shelved.
+Status: **complete** (2026-06-16) — the shared PG18 planner/diagnostics/read-stream slice is live on
+`main`; the only residual was optional measurement, and parallel-scan callbacks are shelved.
 
 Progress notes:
 - Task 19 has now completed the planned PG18 shared-infrastructure landing on

@@ -1,6 +1,9 @@
 # Task 30 Phase 13c: SPIRE AWS Readiness Follow-ups
 
-Status: implemented locally; review refreshed
+Status: **complete** (2026-06-16) — readiness follow-ups (remote TLS
+connector, PK SELECT schema-drift guard) implemented locally and
+reviewer-accepted; carried into the Task 106/107 AWS runs on the newer
+build.
 Owner: coder1 / SPIRE AWS verification track
 Priority: P1 before Phase 13b AWS execution
 

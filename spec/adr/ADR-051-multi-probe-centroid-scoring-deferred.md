@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-051
 title: "Defer Standalone Multi-Probe Centroid Scoring for SPIRE"
 status: DEFERRED

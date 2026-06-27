@@ -1,0 +1,20 @@
+test am::ec_ivf::options::tests::coarse_rerank_accepts_index_placement_with_rabitq4 ... ok
+test am::ec_ivf::options::tests::coarse_rerank_rejects_index_placement_with_explicit_f32 - should panic ... ok
+test am::ec_ivf::options::tests::coarse_rerank_rejects_index_placement_with_default_f32 - should panic ... ok
+test am::ec_ivf::options::tests::coarse_rerank_accepts_index_placement_with_f16 ... ok
+test tests::pg_test_ec_ivf_index_placement_vacuum_removes_sidecar_entry ... ok
+test tests::pg_test_ec_ivf_index_placement_rabitq4_top_neighbor ... ok
+test tests::pg_test_ec_ivf_index_placement_insert_maintains_sidecar ... ok
+test tests::pg_test_ec_ivf_index_placement_f16_rabitq4_admin_snapshot ... ok
+test tests::pg_test_ec_ivf_index_placement_fewer_rerank_bytes ... ok
+test tests::pg_test_ec_ivf_index_placement_f16_matches_table_f16_ranking ... ok
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 2143 filtered out; finished in 50.39s
+test am::ec_ivf::page::tests::metadata_decode_accepts_v2_width_with_no_sidecar ... ok
+test am::ec_ivf::page::tests::rerank_sidecar_block_decode_rejects_wrong_tag ... ok
+test am::ec_ivf::page::tests::rerank_sidecar_block_rejects_bad_payload_slab ... ok
+test am::ec_ivf::page::tests::rerank_sidecar_block_roundtrips ... ok
+test am::ec_ivf::rerank::tests::f16_sidecar_encoder_matches_pack_helper ... ok
+test am::ec_ivf::rerank::tests::f16_sidecar_payload_scores_match_table_f16_path ... ok
+test tests::pg_test_ec_ivf_table_placement_has_no_sidecar_and_scans ... ok
+test tests::pg_test_ec_ivf_index_placement_vacuum_removes_sidecar_entry ... ok
+test tests::pg_test_ec_ivf_index_placement_insert_maintains_sidecar ... ok

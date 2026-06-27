@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-070
 title: "On-Disk Forward-Compat Encoding Convention"
 status: PROPOSED

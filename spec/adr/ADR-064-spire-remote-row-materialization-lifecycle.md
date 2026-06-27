@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-064
 title: "SPIRE Remote Row Materialization Lifecycle"
 status: PROPOSED

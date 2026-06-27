@@ -1,9 +1,10 @@
 # Task 48: Build Matrix, Cross-Platform, Soak, and Resource Exhaustion
 
-Status: **proposed** — combines the CI-matrix and long-running stability
-work that Task 34 does not cover. ECAZ ships to multiple architectures
-and PG versions; long-lived operator workloads behave differently from
-short test runs.
+Status: **complete** (2026-06-16) — merged; packet 005 (CI matrix)
+APPROVED 2026-05-26 "Task 48 reaches 100% §Exit completion"; 6 new GHA
+workflows landed. Combined the CI-matrix and long-running stability work
+that Task 34 does not cover (multiple architectures × PG versions; soak /
+resource-exhaustion lanes).
 
 ## Scope
 

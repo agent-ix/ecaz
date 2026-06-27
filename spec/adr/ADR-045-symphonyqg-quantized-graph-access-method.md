@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-045
 title: "SymphonyQG: Quantized-Graph Access Method with No-Rerank Query Path"
 status: SHELVED

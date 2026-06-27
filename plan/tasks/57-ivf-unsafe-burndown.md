@@ -1,9 +1,12 @@
 # Task 57: IVF Unsafe Burndown
 
-Status: **deferred** — gated on Task 51 (IVF RaBitQ Second
-Optimization Round) closing. Until that gate opens, this task is on
-hold to avoid the merge friction pattern documented in memory
-`feedback_main_priority_in_conflicts` (2026-05-22).
+Status: **complete** (2026-06-16) — IVF unsafe burndown landed on
+`main` (`f4caf3c23` + `e827d8ee7`): subsystem at 63 (≤65, +2 margin),
+all §Exit Criteria met, bench gate bit-for-bit re-confirmed. Closeout
+`reviews/task-57/005-closeout/`; final acceptance
+`reviews/task-57/005-closeout/feedback/2026-06-16-01-reviewer.md`.
+Optional non-blocking residual: restore `Debug` on `EcIvfScanOpaque`.
+(Prior "deferred" header was a stale pre-start placeholder.)
 
 ## Why
 

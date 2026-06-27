@@ -220,9 +220,41 @@
                  CREATE INDEX ec_spire_remote_executor_loopback_remote_sql_idx \
                      ON ec_spire_remote_executor_loopback_remote_sql USING ec_spire \
                      (embedding ecvector_spire_ip_ops) \
-                     WITH (nlists = 2, storage_format = 'rabitq')",
+                     WITH (nlists = 2, storage_format = 'turboquant')",
             )
             .expect("loopback remote fixture should be created");
+        let remote_identity_row = loopback_client
+            .query_one(
+                "SELECT status, storage_format, assignment_payload_format, quantizer_profile \
+                   FROM ec_spire_remote_search_endpoint_identity(\
+                        'ec_spire_remote_executor_loopback_remote_sql_idx'::regclass)",
+                &[],
+            )
+            .expect("loopback TurboQuant remote endpoint identity should be readable");
+        assert_eq!(
+            remote_identity_row
+                .try_get::<_, String>("status")
+                .expect("remote endpoint status should decode"),
+            "ready"
+        );
+        assert_eq!(
+            remote_identity_row
+                .try_get::<_, String>("storage_format")
+                .expect("remote endpoint storage_format should decode"),
+            "turboquant"
+        );
+        assert_eq!(
+            remote_identity_row
+                .try_get::<_, String>("assignment_payload_format")
+                .expect("remote endpoint assignment_payload_format should decode"),
+            "turboquant"
+        );
+        assert_eq!(
+            remote_identity_row
+                .try_get::<_, String>("quantizer_profile")
+                .expect("remote endpoint quantizer_profile should decode"),
+            "turboquant_v1"
+        );
         let remote_identity_hex = loopback_remote_index_identity_hex(
             &mut loopback_client,
             "ec_spire_remote_executor_loopback_remote_sql_idx",
@@ -242,7 +274,7 @@
         Spi::run(
             "CREATE INDEX ec_spire_remote_executor_loopback_coord_sql_idx \
              ON ec_spire_remote_executor_loopback_coord_sql USING ec_spire \
-             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2, storage_format = 'turboquant')",
         )
         .expect("ec_spire index creation should succeed");
 
@@ -966,13 +998,10 @@
                 "DROP TABLE IF EXISTS ec_spire_remote_executor_non_ready_remote_sql; \
                  CREATE TABLE ec_spire_remote_executor_non_ready_remote_sql \
                      (id bigint primary key, embedding ecvector); \
-                 INSERT INTO ec_spire_remote_executor_non_ready_remote_sql (id, embedding) VALUES \
-                     (10, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
-                     (20, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42)); \
                  CREATE INDEX ec_spire_remote_executor_non_ready_remote_sql_idx \
                      ON ec_spire_remote_executor_non_ready_remote_sql USING ec_spire \
                      (embedding ecvector_spire_ip_ops) \
-                     WITH (nlists = 2)",
+                     WITH (nlists = 2, storage_format = 'pq_fastscan')",
             )
             .expect("loopback non-ready remote fixture should be created");
 
@@ -1085,13 +1114,10 @@
                 "DROP TABLE IF EXISTS ec_spire_remote_heap_non_ready_remote_sql; \
                  CREATE TABLE ec_spire_remote_heap_non_ready_remote_sql \
                      (id bigint primary key, embedding ecvector); \
-                 INSERT INTO ec_spire_remote_heap_non_ready_remote_sql (id, embedding) VALUES \
-                     (10, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
-                     (20, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42)); \
                  CREATE INDEX ec_spire_remote_heap_non_ready_remote_sql_idx \
                      ON ec_spire_remote_heap_non_ready_remote_sql USING ec_spire \
                      (embedding ecvector_spire_ip_ops) \
-                     WITH (nlists = 2)",
+                     WITH (nlists = 2, storage_format = 'pq_fastscan')",
             )
             .expect("loopback heap non-ready remote fixture should be created");
 
@@ -1170,23 +1196,12 @@
                 "DROP TABLE IF EXISTS ec_spire_remote_executor_degraded_non_ready_remote_sql; \
                  CREATE TABLE ec_spire_remote_executor_degraded_non_ready_remote_sql \
                      (id bigint primary key, embedding ecvector); \
-                 INSERT INTO ec_spire_remote_executor_degraded_non_ready_remote_sql (id, embedding) VALUES \
-                     (10, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
-                     (20, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42)); \
                  CREATE INDEX ec_spire_remote_executor_degraded_non_ready_remote_sql_idx \
                      ON ec_spire_remote_executor_degraded_non_ready_remote_sql USING ec_spire \
                      (embedding ecvector_spire_ip_ops) \
-                     WITH (nlists = 2)",
+                     WITH (nlists = 2, storage_format = 'pq_fastscan')",
             )
             .expect("loopback degraded non-ready remote fixture should be created");
-        let remote_index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'ec_spire_remote_executor_degraded_non_ready_remote_sql_idx'::regclass::oid",
-        )
-        .expect("remote index oid query should succeed")
-        .expect("remote index oid should exist");
-        // SAFETY: This pg_test remote-search fixture builds a SPiRE index, derives target pids and epochs from fixture snapshots, and uses test-only debug hooks to force remote-search state.
-        am::debug_spire_rewrite_consistency_mode(remote_index_oid, "degraded");
-
         Spi::run(
             "CREATE TABLE ec_spire_remote_executor_degraded_non_ready_coord_sql \
              (id bigint primary key, embedding ecvector)",

@@ -1,5 +1,5 @@
 ---
-artifact_type: master-requirements
+type: master-requirements
 name: ecaz
 org: agent-ix
 component_type: pgrx-extension
@@ -24,6 +24,7 @@ standards_alignment:
   - iso-iec-ieee-42010
   - iso-iec-25010
   - iso-iec-ieee-15939
+title: "Master Requirements Specification"
 ---
 # Master Requirements Specification
 ## Ecaz - PostgreSQL Extension for Compressed Vector Search
@@ -147,7 +148,7 @@ returns rows without coordinator mirror tables. Coordinator writes route by
 placement metadata and use PostgreSQL two-phase commit for multi-node INSERT
 atomicity; broader shard SQL remains outside v1.
 
-## 4. Architecture
+## 4. System Overview
 
 ```mermaid
 graph TD

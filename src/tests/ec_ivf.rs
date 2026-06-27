@@ -1016,6 +1016,880 @@
     }
 
     #[pg_test]
+    fn test_ec_ivf_coarse_rerank_contract_admin_snapshot() {
+        Spi::run(
+            "CREATE TABLE ec_ivf_coarse_rerank_contract (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_ivf_coarse_rerank_contract VALUES
+             (0, '[1.0,0.0]'::ecvector),
+             (1, '[0.0,1.0]'::ecvector),
+             (2, '[-1.0,0.0]'::ecvector),
+             (3, '[0.0,-1.0]'::ecvector)",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_ivf_coarse_rerank_contract_idx ON ec_ivf_coarse_rerank_contract USING ec_ivf \
+             (embedding ecvector_ip_ops) \
+             WITH (
+                nlists = 2,
+                nprobe = 2,
+                training_sample_rows = 4,
+                storage_format = 'coarse_rerank',
+                coarse_format = 'rabitq',
+                coarse_bits = 1,
+                rerank = 'heap_f32',
+                rerank_placement = 'heap',
+                rerank_format = 'heap_f32',
+                rerank_width = 3
+             )",
+        )
+        .expect("coarse_rerank IVF index creation should succeed");
+
+        let contract = Spi::get_one::<String>(
+            "SELECT storage_format || '/' || coarse_format || '/' || coarse_bits || '/' ||
+                    rerank || '/' || rerank_placement || '/' || rerank_format || '/' ||
+                    relation_rerank_width
+             FROM ec_ivf_index_admin_snapshot('ec_ivf_coarse_rerank_contract_idx'::regclass)",
+        )
+        .expect("admin snapshot should succeed")
+        .expect("contract row should be present");
+        let index_oid = ec_ivf_index_oid("ec_ivf_coarse_rerank_contract_idx");
+        let ctid_to_id = ctid_id_map("ec_ivf_coarse_rerank_contract");
+        let build_ids = ivf_debug_output_ids(index_oid, vec![1.0, 0.0], &ctid_to_id, 4);
+
+        assert_eq!(contract, "coarse_rerank/rabitq/1/heap_f32/source/f32/3");
+        assert!(build_ids.contains(&0));
+    }
+
+    #[pg_test]
+    fn test_ec_ivf_coarse_rerank_compact_admin_snapshot() {
+        // Task 111h: compact rerank formats with auto placement resolve to the
+        // persisted index sidecar, not the legacy source-vector conversion path.
+        for (suffix, rerank_format, expected) in [
+            ("f16", "f16", "coarse_rerank/index/f16"),
+            ("rabitq4", "rabitq4", "coarse_rerank/index/rabitq4"),
+            ("rabitq8", "rabitq8", "coarse_rerank/index/rabitq8"),
+            ("tq", "turboquant", "coarse_rerank/index/turboquant"),
+        ] {
+            let table = format!("ec_ivf_cr_fmt_{suffix}");
+            let index = format!("ec_ivf_cr_fmt_{suffix}_idx");
+            Spi::run(&format!(
+                "CREATE TABLE {table} (id bigint primary key, embedding ecvector)"
+            ))
+            .expect("table creation should succeed");
+            Spi::run(&format!(
+                "INSERT INTO {table} VALUES
+                 (0, '[1.0,0.0]'::ecvector),
+                 (1, '[0.0,1.0]'::ecvector),
+                 (2, '[-1.0,0.0]'::ecvector),
+                 (3, '[0.0,-1.0]'::ecvector)"
+            ))
+            .expect("seed insert should succeed");
+            Spi::run(&format!(
+                "CREATE INDEX {index} ON {table} USING ec_ivf \
+                 (embedding ecvector_ip_ops) \
+                 WITH (
+                    nlists = 2,
+                    nprobe = 2,
+                    training_sample_rows = 4,
+                    storage_format = 'coarse_rerank',
+                    rerank_format = '{rerank_format}',
+                    rerank_width = 3
+                 )"
+            ))
+            .unwrap_or_else(|e| panic!("coarse_rerank {rerank_format} index creation should succeed: {e:?}"));
+
+            let contract = Spi::get_one::<String>(&format!(
+                "SELECT storage_format || '/' || rerank_placement || '/' || rerank_format \
+                 FROM ec_ivf_index_admin_snapshot('{index}'::regclass)"
+            ))
+            .expect("admin snapshot should succeed")
+            .expect("contract row should be present");
+            assert_eq!(contract, expected, "rerank_format {rerank_format} admin snapshot");
+        }
+    }
+
+    #[pg_test]
+    fn test_ec_ivf_coarse_rerank_f16_matches_f32_ranking() {
+        // Task 111h recall parity: an f16 persisted-index rerank returns the
+        // same top-k ranking as the f32 source rerank on a deterministic corpus,
+        // and the f16 scores stay within binary16 precision of the f32 scores.
+        let rows: Vec<(i64, Vec<f32>)> = (0..16)
+            .map(|id| {
+                let base = id as f32;
+                let vector = (0..8)
+                    .map(|d| ((base * 0.37 + d as f32 * 0.11).sin()) * 0.5 + 0.5)
+                    .collect::<Vec<f32>>();
+                (id, vector)
+            })
+            .collect();
+
+        for (table, rerank_format) in [
+            ("ec_ivf_cr_par_f32", "f32"),
+            ("ec_ivf_cr_par_f16", "f16"),
+        ] {
+            Spi::run(&format!(
+                "CREATE TABLE {table} (id bigint primary key, embedding ecvector)"
+            ))
+            .expect("table creation should succeed");
+            for (id, vector) in &rows {
+                let literal = format_recall_vector_sql_literal(vector);
+                Spi::run(&format!(
+                    "INSERT INTO {table} VALUES ({id}, {literal}::ecvector)"
+                ))
+                .expect("seed insert should succeed");
+            }
+            Spi::run(&format!(
+                "CREATE INDEX {table}_idx ON {table} USING ec_ivf \
+                 (embedding ecvector_ip_ops) \
+                 WITH (
+                    nlists = 4,
+                    nprobe = 4,
+                    training_sample_rows = 16,
+                    storage_format = 'coarse_rerank',
+                    rerank_format = '{rerank_format}',
+                    rerank_width = 5
+                 )"
+            ))
+            .expect("coarse_rerank index creation should succeed");
+        }
+
+        let query = rows[3].1.clone();
+        let f32_oid = ec_ivf_index_oid("ec_ivf_cr_par_f32_idx");
+        let f16_oid = ec_ivf_index_oid("ec_ivf_cr_par_f16_idx");
+        let ctid_f32 = ctid_id_map("ec_ivf_cr_par_f32");
+        let ctid_f16 = ctid_id_map("ec_ivf_cr_par_f16");
+
+        let f32_ids = ivf_debug_output_ids(f32_oid, query.clone(), &ctid_f32, 5);
+        let f16_ids = ivf_debug_output_ids(f16_oid, query.clone(), &ctid_f16, 5);
+        assert_eq!(
+            f32_ids, f16_ids,
+            "f16 rerank top-5 ranking should match f32 rerank ranking"
+        );
+
+        // The f16 scores should track the f32 scores within binary16 precision.
+        let (f32_outputs, _) = ec_ivf_debug!(am::debug_ec_ivf_gettuple_outputs(f32_oid, query.clone()));
+        let (f16_outputs, _) = ec_ivf_debug!(am::debug_ec_ivf_gettuple_outputs(f16_oid, query));
+        assert_eq!(f32_outputs.len(), f16_outputs.len());
+        for ((_, _, f32_score), (_, _, f16_score)) in f32_outputs.iter().zip(f16_outputs.iter()) {
+            let tolerance = 0.01_f32.max(f32_score.abs() * 0.01);
+            assert!(
+                (f32_score - f16_score).abs() <= tolerance,
+                "f16 rerank score {f16_score} should track f32 rerank score {f32_score} within binary16 precision"
+            );
+        }
+    }
+
+    #[pg_test]
+    fn test_ec_ivf_coarse_rerank_rabitq4_returns_correct_top_neighbor() {
+        // Task 111g/111h correctness: persisted rabitq4 rerank ranks the exact
+        // nearest neighbor first on a separable corpus.
+        Spi::run(
+            "CREATE TABLE ec_ivf_cr_rb4 (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        let rows: Vec<(i64, Vec<f32>)> = (0..12)
+            .map(|id| {
+                let theta = id as f32 * (std::f32::consts::PI / 6.0);
+                (id, vec![theta.cos(), theta.sin(), 0.0, 0.0])
+            })
+            .collect();
+        for (id, vector) in &rows {
+            let literal = format_recall_vector_sql_literal(vector);
+            Spi::run(&format!(
+                "INSERT INTO ec_ivf_cr_rb4 VALUES ({id}, {literal}::ecvector)"
+            ))
+            .expect("seed insert should succeed");
+        }
+        Spi::run(
+            "CREATE INDEX ec_ivf_cr_rb4_idx ON ec_ivf_cr_rb4 USING ec_ivf \
+             (embedding ecvector_ip_ops) \
+             WITH (
+                nlists = 4,
+                nprobe = 4,
+                training_sample_rows = 12,
+                storage_format = 'coarse_rerank',
+                rerank_format = 'rabitq4',
+                rerank_width = 5
+             )",
+        )
+        .expect("coarse_rerank rabitq4 index creation should succeed");
+
+        // Query aligned with row 0; row 0 is the exact nearest neighbor.
+        let query = rows[0].1.clone();
+        let index_oid = ec_ivf_index_oid("ec_ivf_cr_rb4_idx");
+        let ctid_to_id = ctid_id_map("ec_ivf_cr_rb4");
+        let ids = ivf_debug_output_ids(index_oid, query, &ctid_to_id, 3);
+        assert!(
+            !ids.is_empty(),
+            "rabitq4 rerank should emit candidates"
+        );
+        assert_eq!(
+            ids[0], 0,
+            "rabitq4 rerank should rank the exact nearest neighbor first, got {ids:?}"
+        );
+    }
+
+    #[pg_test]
+    fn test_ec_ivf_index_placement_compact_admin_snapshot() {
+        // Task 111h: index placement is creatable for every persisted compact
+        // rerank format implemented by the common codec.
+        for (suffix, rerank_format, expected) in [
+            ("f16", "f16", "coarse_rerank/index/f16"),
+            ("rabitq4", "rabitq4", "coarse_rerank/index/rabitq4"),
+            ("rabitq8", "rabitq8", "coarse_rerank/index/rabitq8"),
+            ("tq", "turboquant", "coarse_rerank/index/turboquant"),
+        ] {
+            let table = format!("ec_ivf_idx_pl_{suffix}");
+            let index = format!("ec_ivf_idx_pl_{suffix}_idx");
+            Spi::run(&format!(
+                "CREATE TABLE {table} (id bigint primary key, embedding ecvector)"
+            ))
+            .expect("table creation should succeed");
+            Spi::run(&format!(
+                "INSERT INTO {table} VALUES
+                 (0, '[1.0,0.0]'::ecvector),
+                 (1, '[0.0,1.0]'::ecvector),
+                 (2, '[-1.0,0.0]'::ecvector),
+                 (3, '[0.0,-1.0]'::ecvector)"
+            ))
+            .expect("seed insert should succeed");
+            Spi::run(&format!(
+                "CREATE INDEX {index} ON {table} USING ec_ivf \
+                 (embedding ecvector_ip_ops) \
+                 WITH (
+                    nlists = 2,
+                    nprobe = 2,
+                    training_sample_rows = 4,
+                    storage_format = 'coarse_rerank',
+                    rerank_format = '{rerank_format}',
+                    rerank_placement = 'index',
+                    rerank_width = 3
+                 )"
+            ))
+            .unwrap_or_else(|e| {
+                panic!("index-placement {rerank_format} index creation should succeed: {e:?}")
+            });
+
+            let contract = Spi::get_one::<String>(&format!(
+                "SELECT storage_format || '/' || rerank_placement || '/' || rerank_format \
+                 FROM ec_ivf_index_admin_snapshot('{index}'::regclass)"
+            ))
+            .expect("admin snapshot should succeed")
+            .expect("contract row should be present");
+            assert_eq!(contract, expected, "index placement {rerank_format} admin snapshot");
+        }
+    }
+
+    #[pg_test]
+    fn test_ec_ivf_index_f16_matches_source_diagnostic_f16() {
+        // Task 111g (003b) recall parity: the index-side f16 sidecar rerank
+        // returns the SAME top-k ranking and bit-identical scores as the
+        // source-diagnostic f16 rerank (both round-trip the source through
+        // binary16), proving the persisted compact sidecar preserves f16 recall.
+        let rows: Vec<(i64, Vec<f32>)> = (0..16)
+            .map(|id| {
+                let base = id as f32;
+                let vector = (0..8)
+                    .map(|d| ((base * 0.37 + d as f32 * 0.11).sin()) * 0.5 + 0.5)
+                    .collect::<Vec<f32>>();
+                (id, vector)
+            })
+            .collect();
+
+        for (table, placement) in [
+            ("ec_ivf_idx_par_source_diag", "source_diagnostic"),
+            ("ec_ivf_idx_par_index", "index"),
+        ] {
+            Spi::run(&format!(
+                "CREATE TABLE {table} (id bigint primary key, embedding ecvector)"
+            ))
+            .expect("table creation should succeed");
+            for (id, vector) in &rows {
+                let literal = format_recall_vector_sql_literal(vector);
+                Spi::run(&format!("INSERT INTO {table} VALUES ({id}, {literal}::ecvector)"))
+                    .expect("seed insert should succeed");
+            }
+            Spi::run(&format!(
+                "CREATE INDEX {table}_idx ON {table} USING ec_ivf \
+                 (embedding ecvector_ip_ops) \
+                 WITH (
+                    nlists = 4,
+                    nprobe = 4,
+                    training_sample_rows = 16,
+                    storage_format = 'coarse_rerank',
+                    rerank_format = 'f16',
+                    rerank_placement = '{placement}',
+                    rerank_width = 5
+                 )"
+            ))
+            .expect("coarse_rerank f16 index creation should succeed");
+        }
+
+        let query = rows[3].1.clone();
+        let source_diag_oid = ec_ivf_index_oid("ec_ivf_idx_par_source_diag_idx");
+        let index_oid = ec_ivf_index_oid("ec_ivf_idx_par_index_idx");
+        let ctid_source_diag = ctid_id_map("ec_ivf_idx_par_source_diag");
+        let ctid_index = ctid_id_map("ec_ivf_idx_par_index");
+
+        let source_diag_ids =
+            ivf_debug_output_ids(source_diag_oid, query.clone(), &ctid_source_diag, 5);
+        let index_ids = ivf_debug_output_ids(index_oid, query.clone(), &ctid_index, 5);
+        assert_eq!(
+            source_diag_ids, index_ids,
+            "index-side f16 rerank top-5 ranking should match source-diagnostic f16 ranking"
+        );
+
+        let (source_diag_outputs, _) =
+            ec_ivf_debug!(am::debug_ec_ivf_gettuple_outputs(source_diag_oid, query.clone()));
+        let (index_outputs, _) =
+            ec_ivf_debug!(am::debug_ec_ivf_gettuple_outputs(index_oid, query));
+        assert_eq!(source_diag_outputs.len(), index_outputs.len());
+        for ((_, _, source_diag_score), (_, _, index_score)) in
+            source_diag_outputs.iter().zip(index_outputs.iter())
+        {
+            // The sidecar stores the exact f16 round-trip of the source, so the
+            // index-side score is bit-identical to the source-diagnostic f16
+            // score.
+            assert_eq!(
+                index_score.to_bits(),
+                source_diag_score.to_bits(),
+                "index-side f16 score {index_score} should match source-diagnostic f16 score {source_diag_score}"
+            );
+        }
+    }
+
+    #[pg_test]
+    fn test_ec_ivf_index_quant_formats_top_neighbor() {
+        // Task 111h correctness: every quantized index-side sidecar rerank
+        // format implemented by the common payload codec can scan and ranks the
+        // exact nearest neighbor first on a separable corpus.
+        for (suffix, rerank_format) in [
+            ("rb4", "rabitq4"),
+            ("rb8", "rabitq8"),
+            ("tq", "turboquant"),
+        ] {
+            let table = format!("ec_ivf_idx_{suffix}");
+            let index = format!("ec_ivf_idx_{suffix}_idx");
+            Spi::run(&format!(
+                "CREATE TABLE {table} (id bigint primary key, embedding ecvector)"
+            ))
+            .expect("table creation should succeed");
+            let rows: Vec<(i64, Vec<f32>)> = (0..12)
+                .map(|id| {
+                    let theta = id as f32 * (std::f32::consts::PI / 6.0);
+                    (id, vec![theta.cos(), theta.sin(), 0.0, 0.0])
+                })
+                .collect();
+            for (id, vector) in &rows {
+                let literal = format_recall_vector_sql_literal(vector);
+                Spi::run(&format!("INSERT INTO {table} VALUES ({id}, {literal}::ecvector)"))
+                    .expect("seed insert should succeed");
+            }
+            Spi::run(&format!(
+                "CREATE INDEX {index} ON {table} USING ec_ivf \
+                 (embedding ecvector_ip_ops) \
+                 WITH (
+                    nlists = 4,
+                    nprobe = 4,
+                    training_sample_rows = 12,
+                    storage_format = 'coarse_rerank',
+                    rerank_format = '{rerank_format}',
+                    rerank_placement = 'index',
+                    rerank_width = 5
+                 )"
+            ))
+            .unwrap_or_else(|e| {
+                panic!("index-placement {rerank_format} index creation should succeed: {e:?}")
+            });
+
+            let query = rows[0].1.clone();
+            let index_oid = ec_ivf_index_oid(&index);
+            let ctid_to_id = ctid_id_map(&table);
+            let ids = ivf_debug_output_ids(index_oid, query, &ctid_to_id, 3);
+            assert!(
+                !ids.is_empty(),
+                "index-side {rerank_format} rerank should emit candidates"
+            );
+            assert_eq!(
+                ids[0], 0,
+                "index-side {rerank_format} rerank should rank the exact nearest neighbor first, got {ids:?}"
+            );
+        }
+    }
+
+    #[pg_test]
+    fn test_ec_ivf_index_placement_fewer_rerank_bytes() {
+        // Task 111g (003b) WIN EVIDENCE (by counter, no ecaz bench suite): the
+        // index-placement compact sidecar reads strictly fewer rerank *source*
+        // bytes than the source f32 rerank on the same corpus/query.
+        //   - source f32 reads dims*4 per reranked candidate (full heap source).
+        //   - index f16 reads dims*2; index rabitq4 reads the rabitq4 payload
+        //     length (both far smaller than dims*4).
+        let dims = 8usize;
+        let rows: Vec<(i64, Vec<f32>)> = (0..16)
+            .map(|id| {
+                let base = id as f32;
+                let vector = (0..dims)
+                    .map(|d| ((base * 0.41 + d as f32 * 0.13).cos()) * 0.5 + 0.5)
+                    .collect::<Vec<f32>>();
+                (id, vector)
+            })
+            .collect();
+
+        let make_index = |table: &str, rerank_format: &str, placement: &str| {
+            Spi::run(&format!(
+                "CREATE TABLE {table} (id bigint primary key, embedding ecvector)"
+            ))
+            .expect("table creation should succeed");
+            for (id, vector) in &rows {
+                let literal = format_recall_vector_sql_literal(vector);
+                Spi::run(&format!("INSERT INTO {table} VALUES ({id}, {literal}::ecvector)"))
+                    .expect("seed insert should succeed");
+            }
+            Spi::run(&format!(
+                "CREATE INDEX {table}_idx ON {table} USING ec_ivf \
+                 (embedding ecvector_ip_ops) \
+                 WITH (
+                    nlists = 4,
+                    nprobe = 4,
+                    training_sample_rows = 16,
+                    storage_format = 'coarse_rerank',
+                    rerank_format = '{rerank_format}',
+                    rerank_placement = '{placement}',
+                    rerank_width = 8
+                 )"
+            ))
+            .expect("coarse_rerank index creation should succeed");
+            ec_ivf_index_oid(&format!("{table}_idx"))
+        };
+
+        let source_f32_oid = make_index("ec_ivf_bytes_source_f32", "f32", "source");
+        let index_f16_oid = make_index("ec_ivf_bytes_index_f16", "f16", "index");
+        let index_rb4_oid = make_index("ec_ivf_bytes_index_rb4", "rabitq4", "index");
+        let index_rb8_oid = make_index("ec_ivf_bytes_index_rb8", "rabitq8", "index");
+        let index_tq_oid = make_index("ec_ivf_bytes_index_tq", "turboquant", "index");
+
+        let query = rows[2].1.clone();
+        let source_f32 = ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(
+            source_f32_oid,
+            query.clone()
+        ));
+        let index_f16 = ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(
+            index_f16_oid,
+            query.clone()
+        ));
+        let index_rb4 = ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(
+            index_rb4_oid,
+            query.clone()
+        ));
+        let index_rb8 = ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(
+            index_rb8_oid,
+            query.clone()
+        ));
+        let index_tq = ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(
+            index_tq_oid,
+            query
+        ));
+
+        // Every variant reranks the same frontier, so rerank_rows match and the
+        // byte comparison is apples-to-apples.
+        assert!(source_f32.rerank_rows > 0, "source f32 should rerank rows");
+        assert_eq!(source_f32.rerank_placement, "source");
+        assert_eq!(source_f32.rerank_format, "f32");
+        assert_eq!(index_f16.rerank_placement, "index");
+        assert_eq!(index_f16.rerank_format, "f16");
+        assert_eq!(index_rb4.rerank_placement, "index");
+        assert_eq!(index_rb4.rerank_format, "rabitq4");
+        assert_eq!(index_rb8.rerank_placement, "index");
+        assert_eq!(index_rb8.rerank_format, "rabitq8");
+        assert_eq!(index_tq.rerank_placement, "index");
+        assert_eq!(index_tq.rerank_format, "turboquant");
+        assert_eq!(source_f32.rerank_rows, index_f16.rerank_rows);
+        assert_eq!(source_f32.rerank_rows, index_rb4.rerank_rows);
+        assert_eq!(source_f32.rerank_rows, index_rb8.rerank_rows);
+        assert_eq!(source_f32.rerank_rows, index_tq.rerank_rows);
+
+        // f32 reads dims*4 per candidate; f16 reads dims*2 (exactly half).
+        assert_eq!(
+            source_f32.rerank_source_bytes_read,
+            source_f32.rerank_rows * (dims * 4) as u32,
+            "source f32 should read dims*4 per reranked candidate"
+        );
+        assert_eq!(
+            index_f16.rerank_source_bytes_read,
+            0,
+            "index f16 should not read the heap source vector during rerank"
+        );
+        assert_eq!(
+            source_f32.rerank_payload_bytes_scored, 0,
+            "source f32 has no compact packed-group payload to score"
+        );
+        assert_eq!(
+            source_f32.rerank_index_group_header_pages_read, 0,
+            "source f32 should not read packed rerank group headers"
+        );
+        assert_eq!(
+            index_f16.rerank_payload_bytes_scored,
+            index_f16.rerank_rows * (dims * 2) as u32,
+            "index f16 should score exactly the persisted payload bytes read"
+        );
+        assert_eq!(
+            index_f16.rerank_payload_slab_bytes_copied, 0,
+            "index f16 scalar scoring should avoid the batch payload slab"
+        );
+        assert!(
+            index_f16.rerank_index_group_header_pages_read > 0,
+            "index f16 should read packed rerank group headers"
+        );
+        assert!(
+            index_f16.rerank_index_group_metadata_bytes_read > 0,
+            "index f16 should account packed group metadata bytes"
+        );
+        assert!(
+            index_f16.rerank_index_header_payload_bytes_read
+                + index_f16.rerank_index_segment_payload_bytes_read
+                >= index_f16.rerank_payload_bytes_scored,
+            "packed group payload reads should cover scored f16 payload bytes"
+        );
+        assert_eq!(
+            index_rb4.rerank_source_bytes_read, 0,
+            "index rabitq4 should not read the heap source vector during rerank"
+        );
+        assert!(
+            index_rb4.rerank_payload_bytes_scored > 0,
+            "index rabitq4 should score persisted payload bytes"
+        );
+        assert_eq!(
+            index_rb4.rerank_payload_slab_bytes_copied,
+            index_rb4.rerank_payload_bytes_scored,
+            "batched rabitq4 scoring should expose the current slab copy cost"
+        );
+        assert!(
+            index_rb4.rerank_payload_slab_bytes_copied > 0,
+            "batched rabitq4 should copy survivor payloads into a scoring slab"
+        );
+        assert_eq!(
+            index_rb8.rerank_source_bytes_read, 0,
+            "index rabitq8 should not read the heap source vector during rerank"
+        );
+        assert!(
+            index_rb8.rerank_payload_bytes_scored > 0,
+            "index rabitq8 should score persisted payload bytes"
+        );
+        assert_eq!(
+            index_tq.rerank_source_bytes_read, 0,
+            "index turboquant should not read the heap source vector during rerank"
+        );
+        assert!(
+            index_tq.rerank_payload_bytes_scored > 0,
+            "index turboquant should score persisted payload bytes"
+        );
+        assert_eq!(
+            index_tq.rerank_payload_slab_bytes_copied, 0,
+            "index turboquant borrowed batch scoring should avoid the survivor payload slab"
+        );
+
+        assert!(
+            index_f16.rerank_source_bytes_read < source_f32.rerank_source_bytes_read,
+            "index f16 ({}) should read fewer heap source bytes than source f32 ({})",
+            index_f16.rerank_source_bytes_read,
+            source_f32.rerank_source_bytes_read
+        );
+        assert!(
+            index_rb4.rerank_source_bytes_read < source_f32.rerank_source_bytes_read,
+            "index rabitq4 ({}) should read fewer heap source bytes than source f32 ({})",
+            index_rb4.rerank_source_bytes_read,
+            source_f32.rerank_source_bytes_read
+        );
+        assert!(
+            index_rb8.rerank_source_bytes_read < source_f32.rerank_source_bytes_read,
+            "index rabitq8 ({}) should read fewer heap source bytes than source f32 ({})",
+            index_rb8.rerank_source_bytes_read,
+            source_f32.rerank_source_bytes_read
+        );
+        assert!(
+            index_tq.rerank_source_bytes_read < source_f32.rerank_source_bytes_read,
+            "index turboquant ({}) should read fewer heap source bytes than source f32 ({})",
+            index_tq.rerank_source_bytes_read,
+            source_f32.rerank_source_bytes_read
+        );
+    }
+
+    #[pg_test]
+    fn test_ec_ivf_index_placement_insert_maintains_packed_group() {
+        // Task 111h: a row inserted after build into an index-placement index
+        // is reranked from its appended packed group payload, so it is returned
+        // and ranked correctly.
+        Spi::run("CREATE TABLE ec_ivf_idx_ins (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        let rows: Vec<(i64, Vec<f32>)> = (0..12)
+            .map(|id| {
+                let theta = id as f32 * (std::f32::consts::PI / 6.0);
+                (id, vec![theta.cos(), theta.sin(), 0.0, 0.0])
+            })
+            .collect();
+        for (id, vector) in &rows {
+            let literal = format_recall_vector_sql_literal(vector);
+            Spi::run(&format!("INSERT INTO ec_ivf_idx_ins VALUES ({id}, {literal}::ecvector)"))
+                .expect("seed insert should succeed");
+        }
+        Spi::run(
+            "CREATE INDEX ec_ivf_idx_ins_idx ON ec_ivf_idx_ins USING ec_ivf \
+             (embedding ecvector_ip_ops) \
+             WITH (
+                nlists = 4,
+                nprobe = 4,
+                training_sample_rows = 12,
+                storage_format = 'coarse_rerank',
+                rerank_format = 'f16',
+                rerank_placement = 'index',
+                rerank_width = 8
+             )",
+        )
+        .expect("index-placement f16 index creation should succeed");
+
+        // Insert a brand-new row AFTER build with a vector distinct from every
+        // built row (no tie), placed nearest the query; it must flow through
+        // aminsert's sidecar append and then rank first when probed.
+        Spi::run("INSERT INTO ec_ivf_idx_ins VALUES (100, '[0.0,0.0,1.0,0.0]'::ecvector)")
+            .expect("post-build insert should succeed");
+
+        let index_oid = ec_ivf_index_oid("ec_ivf_idx_ins_idx");
+        let ctid_to_id = ctid_id_map("ec_ivf_idx_ins");
+        let ids = ivf_debug_output_ids(index_oid, vec![0.0, 0.0, 1.0, 0.0], &ctid_to_id, 3);
+        let counters = ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(
+            index_oid,
+            vec![0.0, 0.0, 1.0, 0.0]
+        ));
+        assert!(
+            ids.contains(&100),
+            "post-build inserted row should be reranked from the packed group, got {ids:?}"
+        );
+        assert_eq!(
+            ids[0], 100,
+            "the inserted exact match should rank first, got {ids:?}"
+        );
+        assert_eq!(counters.rerank_placement, "index");
+        assert_eq!(counters.rerank_format, "f16");
+        assert!(counters.rerank_index_group_header_pages_read > 0);
+        assert_eq!(
+            counters.rerank_source_bytes_read, 0,
+            "inserted index-side payload should not read the heap source vector during rerank"
+        );
+        assert_eq!(
+            counters.rerank_payload_bytes_scored,
+            counters.rerank_rows * (4 * 2) as u32,
+            "inserted f16 payload should score dims*2 bytes per reranked candidate"
+        );
+        assert_eq!(counters.rerank_payload_slab_bytes_copied, 0);
+    }
+
+    #[pg_test]
+    fn test_ec_ivf_index_placement_mixed_fallback_chain() {
+        // Task 111h: a mixed frontier where one posting lacks a direct group
+        // TID must fall back to the full packed group chain and still produce
+        // the same results as the direct-pointer hot path.
+        Spi::run("CREATE TABLE ec_ivf_idx_mixed (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_ivf_idx_mixed VALUES
+             (0, '[1.0,0.0]'::ecvector),
+             (1, '[0.99,0.01]'::ecvector),
+             (2, '[0.0,1.0]'::ecvector),
+             (3, '[-1.0,0.0]'::ecvector),
+             (4, '[0.0,-1.0]'::ecvector),
+             (5, '[0.7,0.7]'::ecvector),
+             (6, '[-0.7,0.7]'::ecvector),
+             (7, '[0.7,-0.7]'::ecvector)",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_ivf_idx_mixed_idx ON ec_ivf_idx_mixed USING ec_ivf \
+             (embedding ecvector_ip_ops) \
+             WITH (
+                nlists = 1,
+                nprobe = 1,
+                training_sample_rows = 8,
+                storage_format = 'coarse_rerank',
+                rerank_format = 'f16',
+                rerank_placement = 'index',
+                rerank_width = 2
+             )",
+        )
+        .expect("index-placement f16 index creation should succeed");
+
+        let index_oid = ec_ivf_index_oid("ec_ivf_idx_mixed_idx");
+        let query = vec![1.0, 0.0];
+        let direct = ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(
+            index_oid,
+            query.clone()
+        ));
+        let mixed = ec_ivf_debug!(
+            am::debug_ec_ivf_gettuple_counter_snapshot_with_missing_rerank_tid(index_oid, query)
+        );
+        let ctid_to_id = ctid_id_map("ec_ivf_idx_mixed");
+        let output_ids = |outputs: &[(u32, u16, f32)]| {
+            outputs
+                .iter()
+                .map(|(block_number, offset_number, _)| {
+                    *ctid_to_id
+                        .get(&(*block_number, *offset_number))
+                        .expect("debug output ctid should map to a table id")
+                })
+                .collect::<Vec<_>>()
+        };
+
+        assert_eq!(direct.rerank_placement, "index");
+        assert_eq!(direct.rerank_format, "f16");
+        assert_eq!(mixed.rerank_placement, "index");
+        assert_eq!(mixed.rerank_format, "f16");
+        assert_eq!(direct.rerank_rows, 2);
+        assert_eq!(mixed.rerank_rows, direct.rerank_rows);
+        assert_eq!(
+            output_ids(&mixed.outputs),
+            output_ids(&direct.outputs),
+            "mixed missing group TID fallback should preserve direct-path outputs"
+        );
+        assert_eq!(
+            mixed.rerank_payload_bytes_scored,
+            direct.rerank_payload_bytes_scored,
+            "fallback should score the same survivor payload bytes"
+        );
+        assert_eq!(mixed.rerank_payload_slab_bytes_copied, 0);
+        assert_eq!(direct.rerank_full_chain_loads, 0);
+        assert_eq!(
+            mixed.rerank_full_chain_loads, 1,
+            "mixed missing group TID should force one full-chain load"
+        );
+        assert!(
+            mixed.rerank_index_group_header_pages_read
+                >= direct.rerank_index_group_header_pages_read,
+            "fallback should read at least as many group headers as direct, direct={} mixed={}",
+            direct.rerank_index_group_header_pages_read,
+            mixed.rerank_index_group_header_pages_read
+        );
+    }
+
+    #[pg_test]
+    fn test_ec_ivf_index_placement_partial_final_group() {
+        // Task 111h: final packed rerank groups can have valid_count smaller
+        // than scorer_width. Padding is a scorer convenience only; scans must
+        // emit and score only valid/live postings.
+        Spi::run("CREATE TABLE ec_ivf_idx_partial (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_ivf_idx_partial VALUES
+             (0, '[1.0,0.0]'::ecvector),
+             (1, '[0.0,1.0]'::ecvector),
+             (2, '[-1.0,0.0]'::ecvector)",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_ivf_idx_partial_idx ON ec_ivf_idx_partial USING ec_ivf \
+             (embedding ecvector_ip_ops) \
+             WITH (
+                nlists = 1,
+                nprobe = 1,
+                training_sample_rows = 3,
+                storage_format = 'coarse_rerank',
+                rerank_format = 'f16',
+                rerank_placement = 'index',
+                rerank_width = 8
+             )",
+        )
+        .expect("index-placement f16 index creation should succeed");
+
+        let index_oid = ec_ivf_index_oid("ec_ivf_idx_partial_idx");
+        let counters = ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(
+            index_oid,
+            vec![1.0, 0.0]
+        ));
+        let ctid_to_id = ctid_id_map("ec_ivf_idx_partial");
+        let output_ids = counters
+            .outputs
+            .iter()
+            .map(|(block_number, offset_number, _)| {
+                *ctid_to_id
+                    .get(&(*block_number, *offset_number))
+                    .expect("debug output ctid should map to a table id")
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(counters.rerank_placement, "index");
+        assert_eq!(counters.rerank_format, "f16");
+        assert_eq!(counters.rerank_rows, 3);
+        assert_eq!(
+            output_ids.len(),
+            3,
+            "partial final group must not emit padded slots, got {output_ids:?}"
+        );
+        assert!(
+            output_ids.iter().all(|id| *id <= 2),
+            "partial final group emitted an unexpected row id: {output_ids:?}"
+        );
+        assert_eq!(
+            counters.rerank_payload_bytes_scored,
+            3 * (2 * 2),
+            "partial final f16 group should score only valid slots"
+        );
+        assert_eq!(
+            counters.rerank_source_bytes_read, 0,
+            "index-side partial final group should not read heap source vectors"
+        );
+        assert_eq!(counters.rerank_payload_slab_bytes_copied, 0);
+    }
+
+    #[pg_test]
+    fn test_ec_ivf_source_placement_has_no_sidecar_and_scans() {
+        // Task 111h: a source-placement coarse_rerank index carries NO
+        // sidecar (rerank_sidecar_head = INVALID). Such an index must still
+        // scan, reading the heap source. This is the legitimate
+        // "no sidecar -> source fallback" runtime state, not a compat mode.
+        Spi::run("CREATE TABLE ec_ivf_no_sidecar (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_ivf_no_sidecar VALUES
+             (0, '[1.0,0.0]'::ecvector),
+             (1, '[0.0,1.0]'::ecvector),
+             (2, '[-1.0,0.0]'::ecvector),
+             (3, '[0.0,-1.0]'::ecvector)",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_ivf_no_sidecar_idx ON ec_ivf_no_sidecar USING ec_ivf \
+             (embedding ecvector_ip_ops) \
+             WITH (
+                nlists = 2,
+                nprobe = 2,
+                training_sample_rows = 4,
+                storage_format = 'coarse_rerank',
+                rerank_format = 'f32',
+                rerank_placement = 'source',
+                rerank_width = 3
+             )",
+        )
+        .expect("source-placement index creation should succeed");
+
+        let index_oid = ec_ivf_index_oid("ec_ivf_no_sidecar_idx");
+        // No sidecar head persisted: the metadata reads back with an invalid
+        // sidecar head and the scan falls back to the heap/source-vector path.
+        let sidecar_head_valid =
+            ec_ivf_debug!(am::debug_ec_ivf_rerank_sidecar_head_is_valid(index_oid));
+        assert!(
+            !sidecar_head_valid,
+            "source-placement index should have no sidecar head"
+        );
+
+        let ctid_to_id = ctid_id_map("ec_ivf_no_sidecar");
+        let ids = ivf_debug_output_ids(index_oid, vec![1.0, 0.0], &ctid_to_id, 4);
+        assert!(ids.contains(&0), "source-placement scan should return rows, got {ids:?}");
+        assert_eq!(ids[0], 0, "source f32 rerank should rank the exact match first");
+    }
+
+    #[pg_test]
     fn test_ec_ivf_posting_slack_reloption_reserves_list_range() {
         Spi::run(
             "CREATE TABLE ec_ivf_posting_slack_build (id bigint primary key, embedding ecvector)",
@@ -1127,6 +2001,480 @@
             "RaBitQ IVF scan should not include the vacuumed row"
         );
         assert!(after_vacuum.iter().all(|(_, _, score)| score.is_finite()));
+    }
+
+    #[pg_test]
+    fn test_ec_ivf_dense_posting_blocks_scan_build_rows() {
+        Spi::run(
+            "CREATE TABLE ec_ivf_dense_build_scan (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_ivf_dense_build_scan VALUES
+             (0, '[1.0,0.0]'::ecvector),
+             (1, '[0.9,0.1]'::ecvector),
+             (2, '[0.0,1.0]'::ecvector),
+             (3, '[-1.0,0.0]'::ecvector)",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_ivf_dense_build_scan_idx ON ec_ivf_dense_build_scan USING ec_ivf \
+             (embedding ecvector_ip_ops) \
+             WITH (nlists = 1, nprobe = 1, training_sample_rows = 4, storage_format = 'turboquant', dense_posting_blocks = 1)",
+        )
+        .expect("dense IVF index creation should succeed");
+
+        let index_oid = ec_ivf_index_oid("ec_ivf_dense_build_scan_idx");
+        let ctid_to_id = ctid_id_map("ec_ivf_dense_build_scan");
+        let ids = ivf_debug_output_ids(index_oid, vec![1.0, 0.0], &ctid_to_id, 4);
+        let counters =
+            ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(index_oid, vec![1.0, 0.0]));
+
+        assert_eq!(ids.len(), 4);
+        assert!(ids.contains(&0));
+        assert_eq!(counters.outputs.len(), 4);
+        assert_eq!(counters.row_postings_visited, 0);
+        assert_eq!(counters.dense_blocks_visited, 1);
+        assert_eq!(counters.dense_postings_visited, 4);
+        assert_eq!(counters.scratch_soa_flushes, 0);
+        assert_eq!(counters.dense_coalesced_flushes, 1);
+        assert!(counters.orderby_cleared);
+    }
+
+    #[pg_test]
+    fn test_ec_ivf_dense_typed_posting_blocks_scan_build_rows() {
+        Spi::run(
+            "CREATE TABLE ec_ivf_dense_typed_build_scan (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_ivf_dense_typed_build_scan VALUES
+             (0, '[1.0,0.0]'::ecvector),
+             (1, '[0.9,0.1]'::ecvector),
+             (2, '[0.0,1.0]'::ecvector),
+             (3, '[-1.0,0.0]'::ecvector)",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_ivf_dense_typed_build_scan_idx ON ec_ivf_dense_typed_build_scan USING ec_ivf \
+             (embedding ecvector_ip_ops) \
+             WITH (nlists = 1, nprobe = 1, training_sample_rows = 4, storage_format = 'turboquant', dense_posting_blocks = 1, dense_posting_typed_layout = 1)",
+        )
+        .expect("typed dense IVF index creation should succeed");
+
+        let index_oid = ec_ivf_index_oid("ec_ivf_dense_typed_build_scan_idx");
+        let ctid_to_id = ctid_id_map("ec_ivf_dense_typed_build_scan");
+        let ids = ivf_debug_output_ids(index_oid, vec![1.0, 0.0], &ctid_to_id, 4);
+        let counters =
+            ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(index_oid, vec![1.0, 0.0]));
+
+        assert_eq!(ids.len(), 4);
+        assert!(ids.contains(&0));
+        assert_eq!(counters.outputs.len(), 4);
+        assert_eq!(counters.row_postings_visited, 0);
+        assert_eq!(counters.dense_blocks_visited, 1);
+        assert_eq!(counters.dense_postings_visited, 4);
+        assert_eq!(counters.scratch_soa_flushes, 0);
+        assert_eq!(counters.dense_coalesced_flushes, 1);
+        assert!(counters.orderby_cleared);
+    }
+
+    #[pg_test]
+    fn test_ec_ivf_dense_posting_blocks_scan_can_disable_coalescing() {
+        Spi::run(
+            "CREATE TABLE ec_ivf_dense_coalescing_off_scan (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_ivf_dense_coalescing_off_scan VALUES
+             (0, '[1.0,0.0]'::ecvector),
+             (1, '[0.9,0.1]'::ecvector),
+             (2, '[0.0,1.0]'::ecvector),
+             (3, '[-1.0,0.0]'::ecvector)",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_ivf_dense_coalescing_off_scan_idx ON ec_ivf_dense_coalescing_off_scan USING ec_ivf \
+             (embedding ecvector_ip_ops) \
+             WITH (nlists = 1, nprobe = 1, training_sample_rows = 4, storage_format = 'turboquant', dense_posting_blocks = 1)",
+        )
+        .expect("dense IVF index creation should succeed");
+        Spi::run("SET ec_ivf.dense_posting_coalescing = off")
+            .expect("coalescing GUC should be settable");
+
+        let index_oid = ec_ivf_index_oid("ec_ivf_dense_coalescing_off_scan_idx");
+        let ctid_to_id = ctid_id_map("ec_ivf_dense_coalescing_off_scan");
+        let ids = ivf_debug_output_ids(index_oid, vec![1.0, 0.0], &ctid_to_id, 4);
+        let counters =
+            ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(index_oid, vec![1.0, 0.0]));
+
+        Spi::run("RESET ec_ivf.dense_posting_coalescing")
+            .expect("coalescing GUC should be resettable");
+        assert_eq!(ids.len(), 4);
+        assert!(ids.contains(&0));
+        assert_eq!(counters.outputs.len(), 4);
+        assert_eq!(counters.row_postings_visited, 0);
+        assert_eq!(counters.dense_blocks_visited, 1);
+        assert_eq!(counters.dense_postings_visited, 4);
+        assert_eq!(counters.scratch_soa_flushes, 0);
+        assert_eq!(counters.dense_coalesced_flushes, 0);
+        assert!(counters.orderby_cleared);
+    }
+
+    #[pg_test]
+    fn test_ec_ivf_dense_posting_blocks_rabitq_scan_build_rows() {
+        Spi::run(
+            "CREATE TABLE ec_ivf_dense_rabitq_scan (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_ivf_dense_rabitq_scan VALUES
+             (0, '[1.0,0.0]'::ecvector),
+             (1, '[0.9,0.1]'::ecvector),
+             (2, '[0.0,1.0]'::ecvector),
+             (3, '[-1.0,0.0]'::ecvector)",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_ivf_dense_rabitq_scan_idx ON ec_ivf_dense_rabitq_scan USING ec_ivf \
+             (embedding ecvector_ip_ops) \
+             WITH (nlists = 1, nprobe = 1, training_sample_rows = 4, storage_format = 'rabitq', quant_bits = 1, dense_posting_blocks = 1)",
+        )
+        .expect("dense RaBitQ IVF index creation should succeed");
+
+        let index_oid = ec_ivf_index_oid("ec_ivf_dense_rabitq_scan_idx");
+        let ctid_to_id = ctid_id_map("ec_ivf_dense_rabitq_scan");
+        let ids = ivf_debug_output_ids(index_oid, vec![1.0, 0.0], &ctid_to_id, 4);
+        let counters =
+            ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(index_oid, vec![1.0, 0.0]));
+
+        assert_eq!(ids.len(), 4);
+        assert!(ids.contains(&0));
+        assert_eq!(counters.outputs.len(), 4);
+        assert_eq!(counters.row_postings_visited, 0);
+        assert_eq!(counters.dense_blocks_visited, 1);
+        assert_eq!(counters.dense_postings_visited, 4);
+        assert_eq!(counters.scratch_soa_flushes, 0);
+        assert_eq!(counters.dense_coalesced_flushes, 1);
+        assert!(counters.orderby_cleared);
+    }
+
+    #[pg_test]
+    fn test_ec_ivf_dense_posting_blocks_scan_mixed_insert_rows() {
+        Spi::run(
+            "CREATE TABLE ec_ivf_dense_mixed_scan (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_ivf_dense_mixed_scan VALUES
+             (0, '[1.0,0.0]'::ecvector),
+             (1, '[0.9,0.1]'::ecvector),
+             (2, '[0.0,1.0]'::ecvector)",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_ivf_dense_mixed_scan_idx ON ec_ivf_dense_mixed_scan USING ec_ivf \
+             (embedding ecvector_ip_ops) \
+             WITH (nlists = 1, nprobe = 1, training_sample_rows = 3, storage_format = 'turboquant', dense_posting_blocks = 1)",
+        )
+        .expect("dense IVF index creation should succeed");
+        Spi::run("INSERT INTO ec_ivf_dense_mixed_scan VALUES (3, '[1.0,0.2]'::ecvector)")
+            .expect("live insert should succeed");
+
+        let index_oid = ec_ivf_index_oid("ec_ivf_dense_mixed_scan_idx");
+        let inserted_tid = heap_tid_for_row("ec_ivf_dense_mixed_scan", 3);
+        let counters =
+            ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(index_oid, vec![1.0, 0.2]));
+
+        assert_eq!(counters.outputs.len(), 4);
+        assert!(counters.outputs.iter().any(
+            |(block_number, offset_number, _score)| (*block_number, *offset_number)
+                == (inserted_tid.block_number, inserted_tid.offset_number)
+        ));
+        assert!(counters.row_postings_visited >= 1);
+        assert_eq!(counters.dense_blocks_visited, 1);
+        assert_eq!(counters.dense_postings_visited, 3);
+        assert_eq!(counters.dense_coalesced_flushes, 1);
+        assert!(counters.orderby_cleared);
+    }
+
+    #[pg_test]
+    fn test_ec_ivf_dense_posting_blocks_vacuum_removes_build_row() {
+        Spi::run(
+            "CREATE TABLE ec_ivf_dense_vacuum (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_ivf_dense_vacuum VALUES
+             (0, '[1.0,0.0]'::ecvector),
+             (1, '[0.9,0.1]'::ecvector),
+             (2, '[0.0,1.0]'::ecvector)",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_ivf_dense_vacuum_idx ON ec_ivf_dense_vacuum USING ec_ivf \
+             (embedding ecvector_ip_ops) \
+             WITH (nlists = 1, nprobe = 1, training_sample_rows = 3, storage_format = 'turboquant', dense_posting_blocks = 1)",
+        )
+        .expect("dense IVF index creation should succeed");
+
+        let index_oid = ec_ivf_index_oid("ec_ivf_dense_vacuum_idx");
+        let deleted_tid = heap_tid_for_row("ec_ivf_dense_vacuum", 1);
+        Spi::run("DELETE FROM ec_ivf_dense_vacuum WHERE id = 1").expect("delete should succeed");
+        let stats =
+            ec_ivf_debug!(am::debug_ec_ivf_vacuum_remove_heap_tids(index_oid, &[deleted_tid]));
+        let counters =
+            ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(index_oid, vec![1.0, 0.1]));
+        let (_, _, directory_live, directory_dead, inserted_since_build) =
+            ec_ivf_debug!(am::debug_ec_ivf_directory_summary(index_oid));
+        let (_, _, _, total_live, _, _) = ec_ivf_debug!(am::debug_ec_ivf_build_metadata(index_oid));
+
+        assert_eq!(stats.tuples_removed, 1.0);
+        assert_eq!(stats.num_index_tuples, 2.0);
+        assert_eq!(directory_live, 2);
+        assert_eq!(directory_dead, 1);
+        assert_eq!(inserted_since_build, 0);
+        assert_eq!(total_live, 2);
+        assert_eq!(counters.outputs.len(), 2);
+        assert!(counters.outputs.iter().all(
+            |(block_number, offset_number, _score)| (*block_number, *offset_number)
+                != (deleted_tid.block_number, deleted_tid.offset_number)
+        ));
+        assert_eq!(counters.dense_blocks_visited, 1);
+        assert_eq!(counters.dense_postings_visited, 2);
+        assert_eq!(counters.dense_coalesced_flushes, 1);
+    }
+
+    #[pg_test]
+    fn test_ec_ivf_index_placement_vacuum_tombstones_packed_group_slot() {
+        // Task 111h: vacuuming a dead row tombstones its packed rerank group
+        // slot, so it is no longer returned, and surviving rows still rerank
+        // correctly from packed payloads.
+        Spi::run("CREATE TABLE ec_ivf_idx_vac (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_ivf_idx_vac VALUES
+             (0, '[1.0,0.0,0.0,0.0]'::ecvector),
+             (1, '[0.0,1.0,0.0,0.0]'::ecvector),
+             (2, '[0.0,0.0,1.0,0.0]'::ecvector),
+             (3, '[0.0,0.0,0.0,1.0]'::ecvector)",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_ivf_idx_vac_idx ON ec_ivf_idx_vac USING ec_ivf \
+             (embedding ecvector_ip_ops) \
+             WITH (
+                nlists = 2,
+                nprobe = 2,
+                training_sample_rows = 4,
+                storage_format = 'coarse_rerank',
+                rerank_format = 'f16',
+                rerank_placement = 'index',
+                rerank_width = 4
+             )",
+        )
+        .expect("index-placement f16 index creation should succeed");
+
+        let index_oid = ec_ivf_index_oid("ec_ivf_idx_vac_idx");
+        let deleted_tid = heap_tid_for_row("ec_ivf_idx_vac", 1);
+        Spi::run("DELETE FROM ec_ivf_idx_vac WHERE id = 1").expect("delete should succeed");
+        let stats =
+            ec_ivf_debug!(am::debug_ec_ivf_vacuum_remove_heap_tids(index_oid, &[deleted_tid]));
+        assert_eq!(stats.tuples_removed, 1.0);
+
+        // Query aligned with the deleted row's vector: it must not be returned,
+        // and the remaining rows must still be reranked from packed payloads.
+        let ctid_to_id = ctid_id_map("ec_ivf_idx_vac");
+        let ids = ivf_debug_output_ids(index_oid, vec![0.0, 1.0, 0.0, 0.0], &ctid_to_id, 4);
+        let counters = ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(
+            index_oid,
+            vec![0.0, 1.0, 0.0, 0.0]
+        ));
+        assert!(
+            !ids.contains(&1),
+            "vacuumed row should not be returned, got {ids:?}"
+        );
+        assert_eq!(ids.len(), 3, "three live rows should remain, got {ids:?}");
+        assert_eq!(counters.outputs.len(), 3);
+        assert_eq!(counters.rerank_placement, "index");
+        assert_eq!(counters.rerank_format, "f16");
+        assert!(counters.rerank_index_group_header_pages_read > 0);
+        assert!(
+            counters.rerank_index_group_metadata_bytes_read > 0,
+            "vacuumed packed group read should still account header metadata"
+        );
+        assert_eq!(
+            counters.rerank_source_bytes_read, 0,
+            "vacuumed index-side payload should not read the heap source vector during rerank"
+        );
+        assert_eq!(
+            counters.rerank_payload_bytes_scored,
+            counters.rerank_rows * (4 * 2) as u32,
+            "vacuumed f16 payload should score dims*2 bytes per reranked candidate"
+        );
+        assert_eq!(counters.rerank_payload_slab_bytes_copied, 0);
+
+        // A surviving row still reranks correctly from the tombstoned group.
+        let top = ivf_debug_output_ids(index_oid, vec![0.0, 0.0, 1.0, 0.0], &ctid_to_id, 1);
+        assert_eq!(top, vec![2], "surviving row 2 should rank first for its query");
+    }
+
+    #[pg_test]
+    fn test_ec_ivf_index_placement_update_snapshot_payload() {
+        // Task 111h: an UPDATE creates a fresh heap TID and compact rerank
+        // payload. A cursor declared before the UPDATE must continue to see the
+        // old tuple/payload, while a fresh statement must rank the updated
+        // tuple from its new compact payload.
+        Spi::run("CREATE TABLE ec_ivf_idx_update (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_ivf_idx_update VALUES
+             (0, '[1.0,0.0]'::ecvector),
+             (1, '[0.8,0.0]'::ecvector),
+             (2, '[0.0,0.5]'::ecvector),
+             (3, '[-1.0,0.0]'::ecvector)",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_ivf_idx_update_idx ON ec_ivf_idx_update USING ec_ivf \
+             (embedding ecvector_ip_ops) \
+             WITH (
+                nlists = 1,
+                nprobe = 1,
+                training_sample_rows = 4,
+                storage_format = 'coarse_rerank',
+                rerank_format = 'f16',
+                rerank_placement = 'index',
+                rerank_width = 8
+             )",
+        )
+        .expect("index-placement f16 index creation should succeed");
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET LOCAL should succeed");
+
+        let old_query = format_recall_vector_sql_literal(&[1.0, 0.0]);
+        let new_query = format_recall_vector_sql_literal(&[0.0, 1.0]);
+        let plan = Spi::connect(|client| {
+            client
+                .select(
+                    &format!(
+                        "EXPLAIN (COSTS OFF)
+                         SELECT id, embedding <#> {old_query} AS score
+                         FROM ec_ivf_idx_update
+                         ORDER BY embedding <#> {old_query}
+                         LIMIT 1"
+                    ),
+                    None,
+                    &[],
+                )
+                .expect("index-placement UPDATE EXPLAIN should succeed")
+                .map(|row| {
+                    row["QUERY PLAN"]
+                        .value::<String>()
+                        .expect("plan row should decode")
+                        .expect("plan row should not be NULL")
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        });
+        assert!(
+            plan.contains("ec_ivf_idx_update_idx"),
+            "UPDATE visibility fixture should exercise the IVF index plan:\n{plan}"
+        );
+
+        Spi::run(&format!(
+            "DECLARE ec_ivf_idx_update_old CURSOR FOR
+             SELECT id, embedding <#> {old_query} AS score
+             FROM ec_ivf_idx_update
+             ORDER BY embedding <#> {old_query}
+             LIMIT 1"
+        ))
+        .expect("pre-UPDATE cursor declaration should succeed");
+
+        Spi::run("UPDATE ec_ivf_idx_update SET embedding = '[0.0,1.0]'::ecvector WHERE id = 0")
+            .expect("UPDATE should succeed");
+
+        let fetch_ranked = |sql: &str| -> (i64, f32) {
+            Spi::connect(|client| {
+                client
+                    .select(sql, None, &[])
+                    .expect("ranked query should succeed")
+                    .map(|row| {
+                        let id = row["id"]
+                            .value::<i64>()
+                            .expect("id should decode")
+                            .expect("id should not be NULL");
+                        let score = row["score"]
+                            .value::<f32>()
+                            .expect("score should decode")
+                            .expect("score should not be NULL");
+                        (id, score)
+                    })
+                    .next()
+                    .expect("ranked query should return one row")
+            })
+        };
+
+        let stale = fetch_ranked("FETCH FORWARD 1 FROM ec_ivf_idx_update_old");
+        assert_eq!(
+            stale.0, 0,
+            "pre-UPDATE cursor snapshot should still rank the old tuple/payload first"
+        );
+        assert!(
+            (stale.1 + 1.0).abs() <= f32::EPSILON,
+            "pre-UPDATE cursor should score the old vector against the old query, got {}",
+            stale.1
+        );
+
+        let fresh_old = fetch_ranked(&format!(
+            "SELECT id, embedding <#> {old_query} AS score
+             FROM ec_ivf_idx_update
+             ORDER BY embedding <#> {old_query}
+             LIMIT 1"
+        ));
+        assert_eq!(
+            fresh_old.0, 1,
+            "fresh snapshot should not surface the old id=0 version for the old query"
+        );
+        assert!(
+            (fresh_old.1 + 0.8).abs() <= f32::EPSILON,
+            "fresh old-query score should come from visible row 1, got {}",
+            fresh_old.1
+        );
+
+        let fresh_new = fetch_ranked(&format!(
+            "SELECT id, embedding <#> {new_query} AS score
+             FROM ec_ivf_idx_update
+             ORDER BY embedding <#> {new_query}
+             LIMIT 1"
+        ));
+        assert_eq!(
+            fresh_new.0, 0,
+            "fresh snapshot should rank the updated tuple from its new compact payload"
+        );
+        assert!(
+            (fresh_new.1 + 1.0).abs() <= f32::EPSILON,
+            "fresh new-query score should use the updated vector, got {}",
+            fresh_new.1
+        );
+
+        let index_oid = ec_ivf_index_oid("ec_ivf_idx_update_idx");
+        let counters = ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(
+            index_oid,
+            vec![0.0, 1.0]
+        ));
+        assert_eq!(counters.rerank_placement, "index");
+        assert_eq!(counters.rerank_format, "f16");
+        assert_eq!(
+            counters.rerank_source_bytes_read, 0,
+            "updated index-side payload should not read the heap source vector during rerank"
+        );
+        assert_eq!(
+            counters.rerank_payload_bytes_scored,
+            counters.rerank_rows * (2 * 2) as u32,
+            "updated f16 payload should score dims*2 bytes per reranked candidate"
+        );
+        assert_eq!(counters.rerank_payload_slab_bytes_copied, 0);
+        Spi::run("CLOSE ec_ivf_idx_update_old").expect("cursor close should succeed");
     }
 
     #[pg_test]
@@ -2754,4 +4102,554 @@
         );
         assert_eq!(after_outputs.len(), 2);
         assert!(after_outputs.iter().all(|(_, _, score)| score.is_finite()));
+    }
+
+    // ---------------------------------------------------------------------
+    // Task 112: lazy heap-f32 exact rerank.
+    // ---------------------------------------------------------------------
+
+    /// Build a heap-f32 source-side rerank IVF index over `rows` with the given
+    /// `rerank_width`, returning its OID. `storage_format = 'coarse_rerank'`
+    /// keeps the heap source vector and reranks source-side through the f32 path
+    /// (the pre-112 exact rerank), which is exactly the surface Task 112 touches.
+    fn make_lazy_rerank_index(table: &str, rows: &[(i64, Vec<f32>)], rerank_width: i32) -> pg_sys::Oid {
+        Spi::run(&format!(
+            "CREATE TABLE {table} (id bigint primary key, embedding ecvector)"
+        ))
+        .expect("table creation should succeed");
+        for (id, vector) in rows {
+            let literal = format_recall_vector_sql_literal(vector);
+            Spi::run(&format!("INSERT INTO {table} VALUES ({id}, {literal}::ecvector)"))
+                .expect("seed insert should succeed");
+        }
+        Spi::run(&format!(
+            "CREATE INDEX {table}_idx ON {table} USING ec_ivf \
+             (embedding ecvector_ip_ops) \
+             WITH (
+                nlists = 4,
+                nprobe = 4,
+                training_sample_rows = {rows_len},
+                storage_format = 'coarse_rerank',
+                rerank_format = 'f32',
+                rerank_placement = 'source',
+                rerank_width = {rerank_width}
+             )",
+            rows_len = rows.len(),
+        ))
+        .expect("coarse_rerank heap-f32 index creation should succeed");
+        ec_ivf_index_oid(&format!("{table}_idx"))
+    }
+
+    fn lazy_rerank_rows(count: i64, dims: usize) -> Vec<(i64, Vec<f32>)> {
+        (0..count)
+            .map(|id| {
+                let base = id as f32;
+                let vector = (0..dims)
+                    .map(|d| ((base * 0.41 + d as f32 * 0.13).cos()) * 0.5 + 0.5)
+                    .collect::<Vec<f32>>();
+                (id, vector)
+            })
+            .collect()
+    }
+
+    /// RECALL-SAFETY PROOF (in test form): the lazy heap-f32 rerank returns the
+    /// exact same top-k, in the same order, with the same exact scores as the
+    /// fixed-width rerank on the same index and query. Under the sound NoBound
+    /// contract the lazy path never stops early, so this must hold byte-for-byte.
+    #[pg_test]
+    fn test_ec_ivf_lazy_rerank_equals_fixed_width() {
+        let rows = lazy_rerank_rows(16, 8);
+        let index_oid = make_lazy_rerank_index("ec_ivf_lazy_eq", &rows, 8);
+        let query = rows[3].1.clone();
+
+        Spi::run("SET ec_ivf.lazy_heap_rerank = off").expect("gate GUC should be settable");
+        let fixed =
+            ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(index_oid, query.clone()));
+
+        Spi::run("SET ec_ivf.lazy_heap_rerank = on").expect("gate GUC should be settable");
+        let lazy =
+            ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(index_oid, query));
+        Spi::run("RESET ec_ivf.lazy_heap_rerank").expect("gate GUC should be resettable");
+
+        assert!(!fixed.outputs.is_empty(), "fixed-width rerank should emit rows");
+        assert_eq!(
+            fixed.outputs, lazy.outputs,
+            "lazy rerank must return identical (tid, tid, exact score) outputs in identical order"
+        );
+        // Same heap fetch work: under NoBound nothing is skipped, so the lazy
+        // path reranks every candidate the fixed path did.
+        assert_eq!(fixed.rerank_rows, lazy.rerank_rows);
+        assert_eq!(
+            fixed.rerank_source_bytes_read,
+            lazy.rerank_source_bytes_read
+        );
+    }
+
+    /// Counters: the lazy stage exposes considered / skipped, and (under the
+    /// NoBound default) considered == rerank_rows and skipped == 0.
+    #[pg_test]
+    fn test_ec_ivf_lazy_rerank_counters_no_skip_under_no_bound() {
+        let rows = lazy_rerank_rows(16, 8);
+        let index_oid = make_lazy_rerank_index("ec_ivf_lazy_counters", &rows, 8);
+        let query = rows[5].1.clone();
+
+        let snap =
+            ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(index_oid, query));
+
+        assert!(
+            snap.rerank_candidates_considered > 0,
+            "lazy rerank should report considered candidates"
+        );
+        assert_eq!(
+            snap.rerank_candidates_skipped, 0,
+            "NoBound must never skip a candidate (recall-safe)"
+        );
+        assert_eq!(
+            snap.rerank_candidates_considered, snap.rerank_rows,
+            "every considered candidate is reranked under NoBound"
+        );
+    }
+
+    /// Disabling the gate routes the legacy fixed-width path and still reports
+    /// considered, with zero skipped.
+    #[pg_test]
+    fn test_ec_ivf_lazy_rerank_gate_off_reports_zero_skipped() {
+        let rows = lazy_rerank_rows(16, 8);
+        let index_oid = make_lazy_rerank_index("ec_ivf_lazy_gate_off", &rows, 8);
+        let query = rows[1].1.clone();
+
+        Spi::run("SET ec_ivf.lazy_heap_rerank = off").expect("gate GUC should be settable");
+        let snap =
+            ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(index_oid, query));
+        Spi::run("RESET ec_ivf.lazy_heap_rerank").expect("gate GUC should be resettable");
+
+        assert_eq!(snap.rerank_candidates_skipped, 0);
+        assert_eq!(snap.rerank_candidates_considered, snap.rerank_rows);
+    }
+
+    /// Ties: rows that share an exact score must come back in the deterministic
+    /// heap-TID tiebreak order, identical under lazy and fixed width.
+    #[pg_test]
+    fn test_ec_ivf_lazy_rerank_handles_score_ties() {
+        // Several identical vectors => identical exact scores against the query.
+        let mut rows: Vec<(i64, Vec<f32>)> = (0..6)
+            .map(|id| (id, vec![1.0_f32, 0.0]))
+            .collect();
+        // A couple of distinct rows so the frontier is non-trivial.
+        rows.push((6, vec![0.0_f32, 1.0]));
+        rows.push((7, vec![-1.0_f32, 0.0]));
+        let index_oid = make_lazy_rerank_index("ec_ivf_lazy_ties", &rows, 8);
+        let query = vec![1.0_f32, 0.0];
+
+        Spi::run("SET ec_ivf.lazy_heap_rerank = off").expect("gate GUC should be settable");
+        let fixed =
+            ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(index_oid, query.clone()));
+        Spi::run("SET ec_ivf.lazy_heap_rerank = on").expect("gate GUC should be settable");
+        let lazy =
+            ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(index_oid, query));
+        Spi::run("RESET ec_ivf.lazy_heap_rerank").expect("gate GUC should be resettable");
+
+        assert_eq!(
+            fixed.outputs, lazy.outputs,
+            "tie ordering must be identical under lazy and fixed width"
+        );
+        // The tied rows must appear before the distant ones, all with finite
+        // scores, in a stable order.
+        assert!(lazy.outputs.iter().all(|(_, _, score)| score.is_finite()));
+    }
+
+    /// Duplicate heap TIDs: the same heap row referenced from multiple probed
+    /// lists must be reranked once and returned once, identically lazy vs fixed.
+    #[pg_test]
+    fn test_ec_ivf_lazy_rerank_dedupes_duplicate_heap_tids() {
+        let rows = lazy_rerank_rows(12, 8);
+        // nprobe spans all lists so a heap TID reachable from multiple centroids
+        // is exercised through the dedup map before rerank.
+        let index_oid = make_lazy_rerank_index("ec_ivf_lazy_dupe", &rows, 8);
+        let query = rows[2].1.clone();
+
+        Spi::run("SET ec_ivf.lazy_heap_rerank = off").expect("gate GUC should be settable");
+        let fixed =
+            ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(index_oid, query.clone()));
+        Spi::run("SET ec_ivf.lazy_heap_rerank = on").expect("gate GUC should be settable");
+        let lazy =
+            ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(index_oid, query));
+        Spi::run("RESET ec_ivf.lazy_heap_rerank").expect("gate GUC should be resettable");
+
+        // No heap TID appears twice in the output.
+        let mut seen = std::collections::HashSet::new();
+        for (block_number, offset_number, _score) in &lazy.outputs {
+            assert!(
+                seen.insert((*block_number, *offset_number)),
+                "lazy rerank emitted a duplicate heap tid {block_number}:{offset_number}"
+            );
+        }
+        assert_eq!(fixed.outputs, lazy.outputs);
+    }
+
+    /// Empty frontier: when every indexed row has been deleted and vacuumed out
+    /// of the postings, the scan produces no candidates, so the rerank stage
+    /// reranks nothing, skips nothing, and emits nothing.
+    #[pg_test]
+    fn test_ec_ivf_lazy_rerank_empty_frontier_is_a_noop() {
+        Spi::run("CREATE TABLE ec_ivf_lazy_empty (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_ivf_lazy_empty VALUES (0, '[1.0,0.0]'::ecvector), (1, '[0.0,1.0]'::ecvector)",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_ivf_lazy_empty_idx ON ec_ivf_lazy_empty USING ec_ivf \
+             (embedding ecvector_ip_ops) \
+             WITH (nlists = 1, nprobe = 1, training_sample_rows = 2, \
+                   storage_format = 'coarse_rerank', rerank_format = 'f32', \
+                   rerank_placement = 'source', rerank_width = 8)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = ec_ivf_index_oid("ec_ivf_lazy_empty_idx");
+        let tid0 = heap_tid_for_row("ec_ivf_lazy_empty", 0);
+        let tid1 = heap_tid_for_row("ec_ivf_lazy_empty", 1);
+        Spi::run("DELETE FROM ec_ivf_lazy_empty").expect("delete should succeed");
+        // Vacuum the deleted TIDs out of the index so the scan frontier is empty.
+        ec_ivf_debug!(am::debug_ec_ivf_vacuum_remove_heap_tids(index_oid, &[tid0, tid1]));
+
+        let snap =
+            ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(index_oid, vec![1.0, 0.0]));
+
+        assert_eq!(snap.outputs.len(), 0, "empty frontier should emit no rows");
+        assert_eq!(snap.rerank_rows, 0);
+        assert_eq!(snap.rerank_candidates_considered, 0);
+        assert_eq!(snap.rerank_candidates_skipped, 0);
+    }
+
+    /// `rerank_width` boundaries: width smaller than the frontier truncates the
+    /// considered set to the width; width >= frontier considers the whole
+    /// frontier. Lazy and fixed width agree at each boundary.
+    #[pg_test]
+    fn test_ec_ivf_lazy_rerank_width_boundaries() {
+        let rows = lazy_rerank_rows(16, 8);
+        let query = rows[4].1.clone();
+
+        // Narrow width: fewer candidates considered than the frontier.
+        let narrow_oid = make_lazy_rerank_index("ec_ivf_lazy_width_narrow", &rows, 3);
+        let narrow =
+            ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(narrow_oid, query.clone()));
+        assert!(
+            narrow.rerank_candidates_considered <= 3,
+            "narrow rerank_width=3 should consider at most 3 candidates, got {}",
+            narrow.rerank_candidates_considered
+        );
+        assert_eq!(narrow.rerank_candidates_skipped, 0);
+        assert_eq!(narrow.rerank_candidates_considered, narrow.rerank_rows);
+
+        // Wide width: considers the whole reachable frontier; lazy == fixed.
+        let wide_oid = make_lazy_rerank_index("ec_ivf_lazy_width_wide", &rows, 64);
+        Spi::run("SET ec_ivf.lazy_heap_rerank = off").expect("gate GUC should be settable");
+        let wide_fixed =
+            ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(wide_oid, query.clone()));
+        Spi::run("SET ec_ivf.lazy_heap_rerank = on").expect("gate GUC should be settable");
+        let wide_lazy =
+            ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(wide_oid, query));
+        Spi::run("RESET ec_ivf.lazy_heap_rerank").expect("gate GUC should be resettable");
+
+        assert_eq!(wide_fixed.outputs, wide_lazy.outputs);
+        assert_eq!(
+            wide_lazy.rerank_candidates_considered,
+            wide_lazy.rerank_rows
+        );
+        assert_eq!(wide_lazy.rerank_candidates_skipped, 0);
+    }
+
+    // ---------------------------------------------------------------------
+    // Task 113: posting-scan bound pruning recall-safety.
+    // ---------------------------------------------------------------------
+
+    /// Build a RaBitQ IVF index over `rows` so the scan scores through the
+    /// `score_ip_from_parts_with_min_bound` posting path that Task 113's
+    /// `ec_ivf.posting_bound_prune` switch gates.
+    fn make_rabitq_prune_index(table: &str, rows: &[(i64, Vec<f32>)]) -> pg_sys::Oid {
+        Spi::run(&format!(
+            "CREATE TABLE {table} (id bigint primary key, embedding ecvector)"
+        ))
+        .expect("table creation should succeed");
+        for (id, vector) in rows {
+            let literal = format_recall_vector_sql_literal(vector);
+            Spi::run(&format!("INSERT INTO {table} VALUES ({id}, {literal}::ecvector)"))
+                .expect("seed insert should succeed");
+        }
+        Spi::run(&format!(
+            "CREATE INDEX {table}_idx ON {table} USING ec_ivf \
+             (embedding ecvector_ip_ops) \
+             WITH (nlists = 4, nprobe = 4, training_sample_rows = {rows_len}, quantizer = 'rabitq')",
+            rows_len = rows.len(),
+        ))
+        .expect("rabitq index creation should succeed");
+        ec_ivf_index_oid(&format!("{table}_idx"))
+    }
+
+    /// RECALL-SAFETY PROOF (in test form): posting-scan bound pruning never
+    /// changes which candidates survive. The pruned scan
+    /// (`posting_bound_prune = on`) returns the byte-identical top-k, in the
+    /// same order with the same scores, as the unpruned scan
+    /// (`posting_bound_prune = off`). Only the pruned-by-bound work count
+    /// differs — the prune is a pure work reduction, sound by construction.
+    #[pg_test]
+    fn test_ec_ivf_posting_bound_prune_equals_unpruned() {
+        let rows = lazy_rerank_rows(48, 16);
+        let index_oid = make_rabitq_prune_index("ec_ivf_prune_eq", &rows);
+        let query = rows[7].1.clone();
+
+        Spi::run("SET ec_ivf.posting_bound_prune = off")
+            .expect("prune GUC should be settable");
+        let unpruned =
+            ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(index_oid, query.clone()));
+
+        Spi::run("SET ec_ivf.posting_bound_prune = on")
+            .expect("prune GUC should be settable");
+        let pruned =
+            ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(index_oid, query));
+        Spi::run("RESET ec_ivf.posting_bound_prune")
+            .expect("prune GUC should be resettable");
+
+        assert!(
+            !unpruned.outputs.is_empty(),
+            "unpruned scan should emit rows"
+        );
+        assert_eq!(
+            unpruned.outputs, pruned.outputs,
+            "bound pruning must return byte-identical (tid, tid, score) outputs in identical order"
+        );
+        // The unpruned scan prunes nothing; the pruned scan may prune some.
+        assert_eq!(
+            unpruned.postings_pruned_by_bound, 0,
+            "prune-off must record zero pruned-by-bound postings"
+        );
+        assert!(
+            pruned.postings_pruned_by_bound >= unpruned.postings_pruned_by_bound,
+            "prune-on must not prune fewer postings than prune-off"
+        );
+    }
+
+    // ---------------------------------------------------------------------
+    // Task 115 — IVF RaBitQ residual encoding (pgrx).
+    // ---------------------------------------------------------------------
+
+    fn make_rabitq_index_with_opts(
+        table: &str,
+        rows: &[(i64, Vec<f32>)],
+        extra_opts: &str,
+    ) -> pg_sys::Oid {
+        Spi::run(&format!(
+            "CREATE TABLE {table} (id bigint primary key, embedding ecvector)"
+        ))
+        .expect("table creation should succeed");
+        for (id, vector) in rows {
+            let literal = format_recall_vector_sql_literal(vector);
+            Spi::run(&format!("INSERT INTO {table} VALUES ({id}, {literal}::ecvector)"))
+                .expect("seed insert should succeed");
+        }
+        Spi::run(&format!(
+            "CREATE INDEX {table}_idx ON {table} USING ec_ivf \
+             (embedding ecvector_ip_ops) \
+             WITH (nlists = 4, nprobe = 4, training_sample_rows = {rows_len}, \
+             quantizer = 'rabitq'{extra_opts})",
+            rows_len = rows.len(),
+        ))
+        .expect("rabitq index creation should succeed");
+        ec_ivf_index_oid(&format!("{table}_idx"))
+    }
+
+    /// Task 115: plain and residual RaBitQ indexes coexist — both build, both
+    /// scan, and the metadata residual flag is set only on the residual index.
+    /// This is the plain-vs-residual coexistence proof.
+    #[pg_test]
+    fn test_ec_ivf_rabitq_residual_coexists_with_plain() {
+        let rows = lazy_rerank_rows(48, 16);
+        let query = rows[7].1.clone();
+
+        let plain_oid = make_rabitq_index_with_opts("ec_ivf_res_plain", &rows, "");
+        let residual_oid =
+            make_rabitq_index_with_opts("ec_ivf_res_resid", &rows, ", rabitq_residual = 1");
+
+        // The flag distinguishes the two payload formats written by this build.
+        assert!(
+            !ec_ivf_debug!(am::debug_ec_ivf_rabitq_residual(plain_oid)),
+            "plain index must not be flagged residual"
+        );
+        assert!(
+            ec_ivf_debug!(am::debug_ec_ivf_rabitq_residual(residual_oid)),
+            "residual index must be flagged residual"
+        );
+
+        // Scan reads BOTH formats and emits rows for each.
+        let (plain_outputs, _) =
+            ec_ivf_debug!(am::debug_ec_ivf_gettuple_outputs(plain_oid, query.clone()));
+        let (residual_outputs, _) =
+            ec_ivf_debug!(am::debug_ec_ivf_gettuple_outputs(residual_oid, query));
+        assert!(
+            !plain_outputs.is_empty(),
+            "plain RaBitQ scan should emit rows"
+        );
+        assert!(
+            !residual_outputs.is_empty(),
+            "residual RaBitQ scan should emit rows"
+        );
+    }
+
+    /// Task 115: with heap-f32 exact rerank and full nprobe (every list probed),
+    /// the residual and plain indexes return the IDENTICAL exact-reranked top-k.
+    /// The approximate codec only chooses which candidates enter the frontier;
+    /// the heap-f32 rerank rescoring against the exact source vector is unchanged
+    /// by residual encoding. This pins that residual mode preserves heap-f32
+    /// rerank correctness.
+    #[pg_test]
+    fn test_ec_ivf_rabitq_residual_heap_f32_rerank_matches_plain() {
+        let rows = lazy_rerank_rows(40, 16);
+        let query = rows[11].1.clone();
+
+        let plain_oid =
+            make_rabitq_index_with_opts("ec_ivf_res_rr_plain", &rows, ", rerank = 'heap_f32'");
+        let residual_oid = make_rabitq_index_with_opts(
+            "ec_ivf_res_rr_resid",
+            &rows,
+            ", rerank = 'heap_f32', rabitq_residual = 1",
+        );
+
+        let plain = ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(
+            plain_oid,
+            query.clone()
+        ));
+        let residual =
+            ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(residual_oid, query));
+
+        assert!(!plain.outputs.is_empty(), "plain rerank should emit rows");
+        // Heap-f32 rerank rescpres against the exact source: with all lists
+        // probed the candidate set is identical, so the reranked (tid, tid,
+        // exact score) outputs match byte-for-byte across the two codecs.
+        assert_eq!(
+            plain.outputs, residual.outputs,
+            "residual heap-f32 rerank must return the identical exact top-k as plain"
+        );
+    }
+
+    /// RECALL-SAFETY PROOF in RESIDUAL mode (mirrors
+    /// `test_ec_ivf_posting_bound_prune_equals_unpruned`): with residual
+    /// payloads, the posting-prune A/B must still return byte-identical
+    /// (tid, tid, score) outputs. Because residual mode runs the posting scan
+    /// UNPRUNED by construction (the plain-derived Cauchy-Schwarz cutoff is not
+    /// sound against a residual estimate vs a full-score cutoff), toggling the
+    /// prune GUC must be a no-op: identical outputs AND zero pruned-by-bound in
+    /// both states. This guards against the plain-derived bound ever silently
+    /// firing on residual payloads.
+    #[pg_test]
+    fn test_ec_ivf_rabitq_residual_posting_bound_prune_equals_unpruned() {
+        let rows = lazy_rerank_rows(48, 16);
+        let index_oid =
+            make_rabitq_index_with_opts("ec_ivf_res_prune", &rows, ", rabitq_residual = 1");
+        let query = rows[7].1.clone();
+
+        Spi::run("SET ec_ivf.posting_bound_prune = off")
+            .expect("prune GUC should be settable");
+        let unpruned =
+            ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(index_oid, query.clone()));
+
+        Spi::run("SET ec_ivf.posting_bound_prune = on")
+            .expect("prune GUC should be settable");
+        let pruned =
+            ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(index_oid, query));
+        Spi::run("RESET ec_ivf.posting_bound_prune")
+            .expect("prune GUC should be resettable");
+
+        assert!(
+            !unpruned.outputs.is_empty(),
+            "residual unpruned scan should emit rows"
+        );
+        assert_eq!(
+            unpruned.outputs, pruned.outputs,
+            "residual posting prune A/B must return byte-identical outputs in identical order"
+        );
+        // Residual mode never prunes by the plain-derived bound — both states
+        // must record zero pruned-by-bound (the recall-safety guard).
+        assert_eq!(
+            unpruned.postings_pruned_by_bound, 0,
+            "residual mode must record zero pruned-by-bound with prune off"
+        );
+        assert_eq!(
+            pruned.postings_pruned_by_bound, 0,
+            "residual mode must record zero pruned-by-bound even with prune on (gated off)"
+        );
+    }
+
+    /// Task 115: residual indexes accept inserts after build (insert-time
+    /// residual re-encode against the assigned centroid), and the inserted row
+    /// is findable.
+    #[pg_test]
+    fn test_ec_ivf_rabitq_residual_insert_after_build() {
+        let rows = lazy_rerank_rows(32, 16);
+        let index_oid =
+            make_rabitq_index_with_opts("ec_ivf_res_ins", &rows, ", rabitq_residual = 1");
+        assert!(ec_ivf_debug!(am::debug_ec_ivf_rabitq_residual(index_oid)));
+
+        // Insert a new row mirroring an existing vector so it must surface near
+        // the top for that query.
+        let new_vector = rows[5].1.clone();
+        let literal = format_recall_vector_sql_literal(&new_vector);
+        Spi::run(&format!(
+            "INSERT INTO ec_ivf_res_ins VALUES (10_000, {literal}::ecvector)"
+        ))
+        .expect("residual-mode insert should succeed");
+
+        let (outputs, _) =
+            ec_ivf_debug!(am::debug_ec_ivf_gettuple_outputs(index_oid, new_vector));
+        assert!(
+            !outputs.is_empty(),
+            "residual scan after insert should emit rows"
+        );
+    }
+
+    /// Task 115 (reviewer carry-forward 1): a residual posting must score
+    /// identically whether it was encoded at BUILD time or via a later INSERT.
+    /// Both encode the residual against the same frozen list centroid, so a row
+    /// inserted post-build must receive the SAME approximate score as its
+    /// build-time twin in the same index. Build the index on all rows, then
+    /// INSERT a duplicate of an existing row's vector; querying with that vector
+    /// must return the build-time row and the inserted duplicate with the
+    /// identical score (same centroid set, same residual encoder).
+    #[pg_test]
+    fn test_ec_ivf_rabitq_residual_build_equals_insert() {
+        let rows = lazy_rerank_rows(33, 16);
+        let twin_vec = rows[9].1.clone();
+
+        let index_oid =
+            make_rabitq_index_with_opts("ec_ivf_res_bei", &rows, ", rabitq_residual = 1");
+
+        // Insert a duplicate of an existing build-time row's vector. It is
+        // assigned to the same centroid and residual-encoded at insert time.
+        let literal = format_recall_vector_sql_literal(&twin_vec);
+        Spi::run(&format!(
+            "INSERT INTO ec_ivf_res_bei VALUES (9_999, {literal}::ecvector)"
+        ))
+        .expect("residual duplicate insert should succeed");
+
+        let (outputs, _) =
+            ec_ivf_debug!(am::debug_ec_ivf_gettuple_outputs(index_oid, twin_vec));
+        let ctid_to_id = ctid_id_map("ec_ivf_res_bei");
+
+        // Map each emitted (block, offset, score) to its row id, then compare the
+        // build-time twin (id 9) and the inserted duplicate (id 9999). Their
+        // approximate scores must match exactly: same vector, same centroid, same
+        // residual encoder at build and insert.
+        let score_for = |target: usize| -> Option<f32> {
+            outputs.iter().find_map(|&(block, offset, score)| {
+                (ctid_to_id.get(&(block, offset)).copied() == Some(target)).then_some(score)
+            })
+        };
+        let build_score = score_for(9).expect("build-time twin (id 9) should be emitted");
+        let insert_score =
+            score_for(9_999).expect("inserted duplicate (id 9999) should be emitted");
+        assert_eq!(
+            build_score, insert_score,
+            "a residual posting must score identically whether encoded at build or via INSERT"
+        );
     }

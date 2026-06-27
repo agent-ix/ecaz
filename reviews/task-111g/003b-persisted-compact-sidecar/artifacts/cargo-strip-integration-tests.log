@@ -1,0 +1,82 @@
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 46s
+     Running tests/on_disk_fixtures.rs (target/debug/deps/on_disk_fixtures-d2195d632ce80e4b)
+
+running 47 tests
+test diskann_metadata_v3_byteswapped_version_is_rejected ... ok
+test diskann_metadata_v3_fixture_decodes ... ok
+test diskann_vamana_codebook_tuple_v3_fixture_decodes ... ok
+test diskann_vamana_node_tuple_v3_fixture_decodes ... ok
+test diskann_vamana_node_tuple_v3_byteswapped_neighbor_count_is_rejected ... ok
+test diskann_vamana_overflow_tuple_v3_byteswapped_count_is_rejected ... ok
+test diskann_vamana_overflow_tuple_v3_fixture_decodes ... ok
+test hnsw_element_tuple_v3_fixture_decodes ... ok
+test hnsw_grouped_codebook_tuple_v3_fixture_decodes ... ok
+test hnsw_grouped_hot_tuple_v2_fixture_decodes ... ok
+test hnsw_metadata_v3_byteswapped_version_is_rejected ... ok
+test hnsw_metadata_v3_fixture_decodes ... ok
+test hnsw_metadata_v4_rabitq_byteswapped_version_is_rejected ... ok
+test hnsw_metadata_v4_rabitq_fixture_decodes ... ok
+test hnsw_neighbor_tuple_v3_fixture_decodes ... ok
+test hnsw_rerank_tuple_v3_fixture_decodes ... ok
+test hnsw_turbo_hot_tuple_v3_fixture_decodes ... ok
+test ivf_centroid_tuple_v1_byteswapped_dimensions_is_rejected ... ok
+test ivf_centroid_tuple_v1_fixture_decodes ... ok
+test ivf_list_directory_tuple_v1_fixture_decodes ... ok
+test ivf_metadata_byteswapped_version_is_rejected ... ok
+test ivf_metadata_v3_fixture_decodes ... ok
+test ivf_posting_tuple_v1_fixture_decodes ... ok
+test ivf_pq_codebook_tuple_v1_fixture_decodes ... ok
+test spire_delta_partition_object_v1_fixture_decodes ... ok
+test spire_epoch_manifest_v1_byteswapped_version_is_rejected ... ok
+test spire_leaf_partition_object_v1_byteswapped_version_is_rejected ... ok
+test spire_leaf_v2_meta_fixture_decodes ... ok
+test spire_leaf_v2_meta_byteswapped_version_is_rejected ... ok
+test spire_local_store_config_v1_byteswapped_version_is_rejected ... ok
+test spire_leaf_v2_segment_fixture_decodes ... ok
+test spire_local_store_config_v1_fixture_decodes ... ok
+test spire_manifest_entry_v1_byteswapped_version_is_rejected ... ok
+test spire_manifest_entry_v1_fixture_decodes ... ok
+test spire_object_manifest_v1_byteswapped_version_is_rejected ... ok
+test spire_object_manifest_v1_fixture_decodes ... ok
+test spire_partition_object_v2_chain_meta_byteswapped_version_is_rejected ... ok
+test spire_partition_object_v2_chain_meta_fixture_decodes ... ok
+test spire_epoch_manifest_v1_fixture_decodes ... ok
+test spire_placement_directory_v1_byteswapped_version_is_rejected ... ok
+test spire_partition_object_v2_chain_segment_fixture_decodes ... ok
+test spire_leaf_partition_object_v1_fixture_decodes ... ok
+test spire_placement_entry_v1_byteswapped_version_is_rejected ... ok
+test spire_placement_directory_v1_fixture_decodes ... ok
+test spire_routing_root_partition_object_v1_fixture_decodes ... ok
+test spire_placement_entry_v1_fixture_decodes ... ok
+test spire_top_graph_partition_object_v1_fixture_decodes ... ok
+
+test result: ok. 47 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/size_of_assertions.rs (target/debug/deps/size_of_assertions-78f519669c441092)
+
+running 13 tests
+test compression_ratio_1536_4bit ... ok
+test item_pointer_struct_size ... ok
+test heaptid_inline_capacity ... ok
+test element_tuple_encoded_len_1536_4bit ... ok
+test item_pointer_wire_size ... ok
+test mse_code_len_1536_4bit ... ok
+test page_header_size ... ok
+test payload_len_1536_dim_2bit ... ok
+test payload_len_1536_dim_3bit ... ok
+test payload_len_1536_dim_4bit ... ok
+test payload_len_1536_dim_6bit ... ok
+test payload_len_1536_dim_8bit ... ok
+test qjl_code_len_1536 ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/upgrade_matrix.rs (target/debug/deps/upgrade_matrix-0bf6da41145efda4)
+
+running 2 tests
+test upgrade_matrix_has_unique_entries_and_existing_fixtures ... ok
+test upgrade_matrix_names_current_writable_formats ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-057
 title: "SPIRE Local Store Read Scheduling Contract"
 status: ACCEPTED

@@ -169,6 +169,11 @@ pub const EC_IVF: IndexProfile = IndexProfile {
         "storage_format",
         "quantizer",
         "rerank",
+        // Task 111e/111g coarse_rerank knobs (reloption passthrough surface).
+        "coarse_format",
+        "coarse_bits",
+        "rerank_placement",
+        "rerank_format",
     ],
     default_sweep: &[8, 16, 24, 32, 48, 64],
 };

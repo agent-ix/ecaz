@@ -1,9 +1,11 @@
 # Task 67: RaBitQ Intel AVX-512 / AVX2 Optimization
 
-Status: **proposed** 2026-05-28. Depends on Task 66
-(`plan/tasks/66-rabitq-m5-neon-optimization.md`) closing first —
-this task assumes Slice A's dispatch shape and differential-test
-scaffold are landed and stable.
+Status: **complete** (2026-06-16) — the RaBitQ Intel AVX-512/AVX2 kernels
+(bits=1 VPOPCNTDQ + AVX2 popcount fallback, bits=4 nibble FMA, bits=8
+arithmetic-dequant, batched paths) are landed on `main`
+(`src/quant/rabitq.rs`) with full local + AWS measurement across packets
+`reviews/task-67/001`–`041`. Built on Task 66's dispatch shape and
+differential-test scaffold.
 
 ## Amendment — 2026-05-30 Measured Closeout Scope
 

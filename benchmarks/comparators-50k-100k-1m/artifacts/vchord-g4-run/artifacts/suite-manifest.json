@@ -1,0 +1,152 @@
+{
+  "suite": "vchord-g4-probe-sweep",
+  "schema_version": 1,
+  "config": "benchmarks/comparators-50k-100k-1m/artifacts/vchord-g4-run/vchord-sweep-suite.json",
+  "config_sha256": "81fe6d3f572f9f9401dfc54b5fe65de3b117864c308241261e2fc02f563271ac",
+  "dry_run": false,
+  "generated_at_unix_ms": 1781637151441,
+  "connection": {
+    "database": "tqvector_bench",
+    "host": "/var/run/postgresql",
+    "port": null,
+    "user": "postgres",
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "comparator-vchord-50k-probe-sweep",
+      "kind": "comparator",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/var/run/postgresql",
+        "--user",
+        "postgres",
+        "bench",
+        "comparator",
+        "--engine",
+        "vchord",
+        "--prefix",
+        "real_50k_ivf_rabitq",
+        "--k",
+        "10",
+        "--sweep",
+        "1,4,16,64",
+        "--lists",
+        "224",
+        "--queries-limit",
+        "200",
+        "--log-output",
+        "benchmarks/comparators-50k-100k-1m/artifacts/vchord-g4-run/artifacts/comparator-vchord-50k-probe-sweep.log",
+        "--rebuild"
+      ],
+      "selected": true,
+      "tags": [
+        "comparator",
+        "vchord",
+        "real50k",
+        "g4",
+        "probe-sweep"
+      ],
+      "expected_artifacts": [
+        "benchmarks/comparators-50k-100k-1m/artifacts/vchord-g4-run/artifacts/comparator-vchord-50k-probe-sweep.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1781637151442,
+      "finished_at_unix_ms": 1781637350892,
+      "duration_ms": 199449,
+      "exit_code": 0
+    },
+    {
+      "name": "comparator-vchord-100k-probe-sweep",
+      "kind": "comparator",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/var/run/postgresql",
+        "--user",
+        "postgres",
+        "bench",
+        "comparator",
+        "--engine",
+        "vchord",
+        "--prefix",
+        "real_100k_ivf_rabitq1_rerank",
+        "--k",
+        "10",
+        "--sweep",
+        "1,4,16,64",
+        "--lists",
+        "320",
+        "--queries-limit",
+        "200",
+        "--log-output",
+        "benchmarks/comparators-50k-100k-1m/artifacts/vchord-g4-run/artifacts/comparator-vchord-100k-probe-sweep.log",
+        "--rebuild"
+      ],
+      "selected": true,
+      "tags": [
+        "comparator",
+        "vchord",
+        "real100k",
+        "g4",
+        "probe-sweep"
+      ],
+      "expected_artifacts": [
+        "benchmarks/comparators-50k-100k-1m/artifacts/vchord-g4-run/artifacts/comparator-vchord-100k-probe-sweep.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1781637350892,
+      "finished_at_unix_ms": 1781637581093,
+      "duration_ms": 230198,
+      "exit_code": 0
+    },
+    {
+      "name": "comparator-vchord-1m-probe-sweep",
+      "kind": "comparator",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/var/run/postgresql",
+        "--user",
+        "postgres",
+        "bench",
+        "comparator",
+        "--engine",
+        "vchord",
+        "--prefix",
+        "real_1m_ivf_rabitq1_rerank",
+        "--k",
+        "10",
+        "--sweep",
+        "1,4,16,64",
+        "--lists",
+        "1024",
+        "--queries-limit",
+        "200",
+        "--log-output",
+        "benchmarks/comparators-50k-100k-1m/artifacts/vchord-g4-run/artifacts/comparator-vchord-1m-probe-sweep.log",
+        "--rebuild"
+      ],
+      "selected": true,
+      "tags": [
+        "comparator",
+        "vchord",
+        "real1m",
+        "g4",
+        "probe-sweep"
+      ],
+      "expected_artifacts": [
+        "benchmarks/comparators-50k-100k-1m/artifacts/vchord-g4-run/artifacts/comparator-vchord-1m-probe-sweep.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1781637581093,
+      "finished_at_unix_ms": 1781639715174,
+      "duration_ms": 2134080,
+      "exit_code": 0
+    }
+  ]
+}

@@ -1,8 +1,7 @@
 ---
 id: US-018
 title: Operate SPIRE Across Local NVMe Stores
-type: user-story
-artifact_type: US
+type: US
 status: APPROVED
 relationships:
   - target: "ix://agent-ix/ecaz/StR-005"
@@ -20,7 +19,9 @@ relationships:
 ---
 # US-018: Operate SPIRE Across Local NVMe Stores
 
-**As** a database operator,
+## Story
+
+**As a** database operator,
 **I want** to configure SPIRE partition stores across local physical NVMe devices while PostgreSQL remains online,
 **So that** I can scale read bandwidth and write capacity without turning SPIRE partitions into PostgreSQL table partitions.
 

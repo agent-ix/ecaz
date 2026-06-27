@@ -1,0 +1,22 @@
+{
+    "CommandId": "b00b4623-0426-4f94-9602-929401f32d41",
+    "InstanceId": "i-00c2f2aca9dbdd6bd",
+    "Comment": "task107 phase2 rabitq 1m remote node 3 cleanup",
+    "DocumentName": "AWS-RunShellScript",
+    "DocumentVersion": "$DEFAULT",
+    "PluginName": "aws:runShellScript",
+    "ResponseCode": 0,
+    "ExecutionStartDateTime": "2026-06-15T17:44:35.895Z",
+    "ExecutionElapsedTime": "PT2.012S",
+    "ExecutionEndDateTime": "2026-06-15T17:44:37.895Z",
+    "Status": "Success",
+    "StatusDetails": "Success",
+    "StandardOutputContent": "Completed 1.8 KiB/1.8 KiB (25.9 KiB/s) with 1 file(s) remaining\rdownload: s3://ecaz-spire-aws-20260614203301860100000009/task107/004/phase2-rabitq-1m-l1/direct-ssm-distributed/cleanup/config/cleanup-remote-node.sh to ../../var/tmp/ecaz-task107-phase2-rabitq-1m-l1/cleanup-remote-node-3/cleanup-remote-node.sh\nstep=complete\nstep=upload-cleanup-remote-node-3 status=0\nCompleted 1.8 KiB/2.6 KiB (21.3 KiB/s) with 9 file(s) remaining\rupload: ../../var/tmp/ecaz-task107-phase2-rabitq-1m-l1/cleanup-remote-node-3/cleanup-remote-node.sh to s3://ecaz-spire-aws-20260614203301860100000009/task107/004/phase2-rabitq-1m-l1/direct-ssm-distributed/cleanup/remote-node-3/cleanup-remote-node.sh\nCompleted 1.8 KiB/2.6 KiB (21.3 KiB/s) with 8 file(s) remaining\rCompleted 1.9 KiB/2.6 KiB (17.0 KiB/s) with 8 file(s) remaining\rupload: ../../var/tmp/ecaz-task107-phase2-rabitq-1m-l1/cleanup-remote-node-3/df-after.log to s3://ecaz-spire-aws-20260614203301860100000009/task107/004/phase2-rabitq-1m-l1/direct-ssm-distributed/cleanup/remote-node-3/df-after.log\nCompleted 1.9 KiB/2.6 KiB (17.0 KiB/s) with 7 file(s) remaining\rCompleted 2.0 KiB/2.6 KiB (17.7 KiB/s) with 7 file(s) remaining\rupload: ../../var/tmp/ecaz-task107-phase2-rabitq-1m-l1/cleanup-remote-node-3/df-before.log to s3://ecaz-spire-aws-20260614203301860100000009/task107/004/phase2-rabitq-1m-l1/direct-ssm-distributed/cleanup/remote-node-3/df-before.log\nCompleted 2.0 KiB/2.6 KiB (17.7 KiB/s) with 6 file(s) remaining\rCompleted 2.0 KiB/2.6 KiB (17.9 KiB/s) with 6 file(s) remaining\rupload: ../../var/tmp/ecaz-task107-phase2-rabitq-1m-l1/cleanup-remote-node-3/hostname.log to s3://ecaz-spire-aws-20260614203301860100000009/task107/004/phase2-rabitq-1m-l1/direct-ssm-distributed/cleanup/remote-node-3/hostname.log\nCompleted 2.0 KiB/2.6 KiB (17.9 KiB/s) with 5 file(s) remaining\rCompleted 2.1 KiB/2.6 KiB (17.7 KiB/s) with 5 file(s) remaining\rupload: ../../var/tmp/ecaz-task107-phase2-rabitq-1m-l1/cleanup-remote-node-3/drop.log to s3://ecaz-spire-aws-20260614203301860100000009/task107/004/phase2-rabitq-1m-l1/direct-ssm-distributed/cleanup/remote-node-3/drop.log\nCompleted 2.1 KiB/2.6 KiB (17.7 KiB/s) with 4 file(s) remaining\rCompleted 2.2 KiB/2.6 KiB (18.6 KiB/s) with 4 file(s) remaining\rupload: ../../var/tmp/ecaz-task107-phase2-rabitq-1m-l1/cleanup-remote-node-3/residue-before.log to s3://ecaz-spire-aws-20260614203301860100000009/task107/004/phase2-rabitq-1m-l1/direct-ssm-distributed/cleanup/remote-node-3/residue-before.log\nCompleted 2.2 KiB/2.6 KiB (18.6 KiB/s) with 3 file(s) remaining\rCompleted 2.4 KiB/2.6 KiB (19.4 KiB/s) with 3 file(s) remaining\rupload: ../../var/tmp/ecaz-task107-phase2-rabitq-1m-l1/cleanup-remote-node-3/drop.stderr.log to s3://ecaz-spire-aws-20260614203301860100000009/task107/004/phase2-rabitq-1m-l1/direct-ssm-distributed/cleanup/remote-node-3/drop.stderr.log\nCompleted 2.4 KiB/2.6 KiB (19.4 KiB/s) with 2 file(s) remaining\rupload: ../../var/tmp/ecaz-task107-phase2-rabitq-1m-l1/cleanup-remote-node-3/residue-after.log to s3://ecaz-spire-aws-20260614203301860100000009/task107/004/phase2-rabitq-1m-l1/direct-ssm-distributed/cleanup/remote-node-3/residue-after.log\nCompleted 2.4 KiB/2.6 KiB (19.4 KiB/s) with 1 file(s) remaining\rCompleted 2.6 KiB/2.6 KiB (17.8 KiB/s) with 1 file(s) remaining\rupload: ../../var/tmp/ecaz-task107-phase2-rabitq-1m-l1/cleanup-remote-node-3/drop.sql to s3://ecaz-spire-aws-20260614203301860100000009/task107/004/phase2-rabitq-1m-l1/direct-ssm-distributed/cleanup/remote-node-3/drop.sql\n",
+    "StandardOutputUrl": "",
+    "StandardErrorContent": "",
+    "StandardErrorUrl": "",
+    "CloudWatchOutputConfig": {
+        "CloudWatchLogGroupName": "",
+        "CloudWatchOutputEnabled": false
+    }
+}

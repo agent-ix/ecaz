@@ -1,8 +1,7 @@
 ---
 id: US-008
 title: Parallel Index Build
-type: user-story
-artifact_type: US
+type: US
 status: DRAFT
 priority: P2-high
 relationships:
@@ -12,7 +11,9 @@ relationships:
 ---
 # US-008: Parallel Index Build
 
-**As** a platform engineer loading large datasets,
+## Story
+
+**As a** platform engineer loading large datasets,
 **I want** `CREATE INDEX USING ec_hnsw` to parallelize heap scanning and tqvector validation across multiple workers,
 **So that** index build time scales with available CPU cores rather than being single-threaded.
 

@@ -1,0 +1,23 @@
+[loader] inspecting /home/peter/dev/datasets/tqhnsw_real_ann_benchmarks_anchor/ec_hnsw_real_ann_benchmarks_anchor_corpus.tsv
+[loader] inspecting /home/peter/dev/datasets/tqhnsw_real_ann_benchmarks_anchor/ec_hnsw_real_ann_benchmarks_anchor_queries.tsv
+[loader] corpus: 990000 rows, sha256=00d96d7665edc31cd8e4e62712c0ef2679fb714682f3ce4d522305e59faec687  queries: 10000 rows, sha256=34c4874e0e35734574f4ee9e1dd10753fcec2d295955061a407c258df163f5a0
+[loader] warning: manifest verification failed for /home/peter/dev/datasets/tqhnsw_real_ann_benchmarks_anchor/ec_hnsw_real_ann_benchmarks_anchor_manifest.json: prefix="ec_hnsw_real_ann_benchmarks_anchor" (expected "t106_1m_ivf_auto_tq")
+[loader] copied corpus table t106_1m_ivf_auto_tq_corpus in 404.99s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table t106_1m_ivf_auto_tq_corpus in 292.32s
+[loader] copied queries table t106_1m_ivf_auto_tq_queries in 4.81s
+[loader] building t106_1m_ivf_auto_tq_idx using ec_ivf (reloptions=[nlists=256, training_sample_rows=50000, rerank=heap_f32, rerank_width=25]) ...
+[loader] built t106_1m_ivf_auto_tq_idx in 163.03s
+[loader] warning: ec_ivf build timing unavailable: db error
+┌─────────┬────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                                              │
+╞═════════╪════════════════════════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_ivf                                                                                             │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ t106_1m_ivf_auto_tq_corpus (990000 rows)                                                           │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ t106_1m_ivf_auto_tq_queries (10000 rows)                                                           │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ t106_1m_ivf_auto_tq_idx [nlists=256, training_sample_rows=50000, rerank=heap_f32, rerank_width=25] │
+└─────────┴────────────────────────────────────────────────────────────────────────────────────────────────────┘
+[loader] completed prefix t106_1m_ivf_auto_tq in 979.76s

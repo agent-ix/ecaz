@@ -1,0 +1,9 @@
+Script started on 2026-06-14 13:30:28-07:00 [<not executed on terminal>]
+SPIRE AWS residue cleanup mode: dry-run
+No S3 buckets matched prefix ecaz-spire-aws-
+No Secrets Manager secrets matched prefix ecaz-spire-aws
+No VPCs matched Phase=13-spire-aws-verification and Name=ecaz-spire-aws
+No IAM role matched: ecaz-spire-aws-node
+No IAM instance profile matched: ecaz-spire-aws-node
+
+Script done on 2026-06-14 13:30:33-07:00 [COMMAND_EXIT_CODE="0"]

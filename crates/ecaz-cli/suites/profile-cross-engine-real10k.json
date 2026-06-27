@@ -59,18 +59,18 @@
       "log_file": "artifacts/benchmark-profiles/profile-cross-engine-real10k/storage-diskann-real10k.log"
     },
     {
-      "kind": "compare-vectorscale",
-      "name": "compare-vectorscale-real10k",
-      "tags": ["compare", "vectorscale", "diskann", "real10k", "cross-engine"],
+      "kind": "comparator",
+      "name": "comparator-pgvectorscale-real10k",
+      "tags": ["comparator", "pgvectorscale", "diskann", "real10k", "cross-engine"],
+      "engine": "pgvectorscale",
       "prefix": "profile_real10k_diskann",
-      "profile": "ec_diskann",
       "k": 10,
       "sweep": [64, 128, 200, 400, 800],
-      "vectorscale_num_neighbors": 32,
-      "vectorscale_build_search_list_size": 100,
-      "vectorscale_max_alpha": 1.2,
+      "num_neighbors": 32,
+      "build_search_list_size": 100,
+      "max_alpha": 1.2,
       "rebuild": true,
-      "log_file": "artifacts/benchmark-profiles/profile-cross-engine-real10k/compare-vectorscale-real10k.log"
+      "log_output": "artifacts/benchmark-profiles/profile-cross-engine-real10k/comparator-pgvectorscale-real10k.log"
     },
     {
       "kind": "load",
@@ -115,17 +115,17 @@
       "log_file": "artifacts/benchmark-profiles/profile-cross-engine-real10k/storage-hnsw-real10k.log"
     },
     {
-      "kind": "compare-pgvector",
-      "name": "compare-pgvector-real10k",
-      "tags": ["compare", "pgvector", "hnsw", "real10k", "cross-engine"],
+      "kind": "comparator",
+      "name": "comparator-pgvector-hnsw-real10k",
+      "tags": ["comparator", "pgvector_hnsw", "hnsw", "real10k", "cross-engine"],
+      "engine": "pgvector-hnsw",
       "prefix": "profile_real10k_hnsw",
-      "profile": "ec_hnsw",
       "k": 10,
       "sweep": [64, 128, 200, 400, 800],
-      "pgvector_m": 32,
-      "pgvector_ef_construction": 100,
+      "m": 32,
+      "ef_construction": 100,
       "rebuild": true,
-      "log_file": "artifacts/benchmark-profiles/profile-cross-engine-real10k/compare-pgvector-real10k.log"
+      "log_output": "artifacts/benchmark-profiles/profile-cross-engine-real10k/comparator-pgvector-hnsw-real10k.log"
     }
   ]
 }

@@ -1,0 +1,8 @@
+ pid | bytes_processed | tuples_processed 
+-----+-----------------+------------------
+(0 rows)
+
+ pid | phase | tuples_total | tuples_done 
+-----+-------+--------------+-------------
+(0 rows)
+

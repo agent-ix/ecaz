@@ -1,7 +1,8 @@
-use super::options::StorageFormat;
+use super::options::{StorageFormat, EC_IVF_DEFAULT_RABITQ_RERANK_CLIP};
 use super::page;
 use crate::am::common::candidate_batch::{
-    score_grouped_pq_batch_for, score_rabitq_bits1_batch_for,
+    record_ivf_rabitq_arithmetic_batch_flush_width, score_grouped_pq_batch_for,
+    score_rabitq_bits1_batch_for, score_rabitq_bitsn_batch_for,
     score_turboquant_no_qjl_4bit_batch_for, score_turboquant_qjl_batch_for, CandidateBatch,
     CandidateBatchScoringSurface, CandidateMeta, CandidatePayload,
 };
@@ -54,6 +55,18 @@ pub(super) struct IvfQuantizer {
     /// Per-dim code width for the RaBitQ branch. Ignored for
     /// TurboQuant / PqFastScan profiles. Always one of {1, 2, 4, 8}.
     rabitq_bits: u8,
+    /// Integer scalar clip radius for RaBitQ encoders/scorers. Stored as an
+    /// integer because reloptions currently expose the Task 111h A/B values
+    /// {2,3,4}; default 2 preserves the existing profile.
+    rabitq_quant_clip: u8,
+    /// Task 115: when set (RaBitQ profile only), postings are encoded as the
+    /// residual `o − c` against the assigned IVF centroid via
+    /// [`Self::encode_source_residual`], and scan adds the exact per-list
+    /// centroid term `⟨q, c⟩` back. Default false (plain RaBitQ). The payload
+    /// layout/size is identical either way; only the encoded vector and the
+    /// scan-side centroid add differ. The non-residual `encode_source` path
+    /// rejects RaBitQ-residual indexes so a centroid is never silently dropped.
+    rabitq_residual: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -110,6 +123,28 @@ impl IvfQuantizer {
         pq_group_size: Option<usize>,
         rabitq_bits: Option<u8>,
     ) -> Result<Self, String> {
+        Self::resolve_with_pq_group_size_bits_and_residual(
+            storage_format,
+            dimensions,
+            pq_group_size,
+            rabitq_bits,
+            false,
+            None,
+        )
+    }
+
+    /// Task 115: resolve a quantizer, optionally in RaBitQ residual mode.
+    /// `rabitq_residual` is honored only for the RaBitQ profile; it is rejected
+    /// for any other storage format so the gate cannot be set on a quantizer
+    /// that has no centroid-correction scoring path.
+    pub(super) fn resolve_with_pq_group_size_bits_and_residual(
+        storage_format: StorageFormat,
+        dimensions: usize,
+        pq_group_size: Option<usize>,
+        rabitq_bits: Option<u8>,
+        rabitq_residual: bool,
+        rabitq_quant_clip: Option<u8>,
+    ) -> Result<Self, String> {
         storage_format.validate_v1_supported()?;
         let profile = match storage_format {
             StorageFormat::Auto | StorageFormat::TurboQuant => IvfQuantizerProfile::TurboQuant,
@@ -121,8 +156,11 @@ impl IvfQuantizer {
                     group_size,
                 }
             }
-            StorageFormat::RaBitQ => IvfQuantizerProfile::RaBitQ,
+            StorageFormat::RaBitQ | StorageFormat::CoarseRerank => IvfQuantizerProfile::RaBitQ,
         };
+        if rabitq_residual && !matches!(profile, IvfQuantizerProfile::RaBitQ) {
+            return Err("ec_ivf rabitq_residual requires storage_format = 'rabitq'".to_owned());
+        }
         let bits = match rabitq_bits.unwrap_or(crate::DEFAULT_QUANT_BITS) {
             b @ (1 | 2 | 4 | 8) => b,
             other => {
@@ -131,10 +169,16 @@ impl IvfQuantizer {
                 ))
             }
         };
+        let quant_clip = rabitq_quant_clip.unwrap_or(EC_IVF_DEFAULT_RABITQ_RERANK_CLIP as u8);
+        if quant_clip == 0 {
+            return Err("ec_ivf RaBitQ quant_clip must be positive".to_owned());
+        }
         Ok(Self {
             profile,
             dimensions,
             rabitq_bits: bits,
+            rabitq_quant_clip: quant_clip,
+            rabitq_residual,
         })
     }
 
@@ -165,6 +209,11 @@ impl IvfQuantizer {
                 Ok((dimensions, encoded.gamma, payload))
             }
             IvfQuantizerProfile::RaBitQ => {
+                if self.rabitq_residual {
+                    return Err(
+                        "ec_ivf RaBitQ residual mode requires the assigned centroid; use encode_source_residual".to_owned(),
+                    );
+                }
                 let quantizer = self.rabitq_quantizer()?;
                 Ok((dimensions, 0.0, quantizer.encode_code(source).into_vec()))
             }
@@ -172,6 +221,48 @@ impl IvfQuantizer {
                 Err("ec_ivf pq_fastscan encoding requires a trained grouped codebook".to_owned())
             }
         }
+    }
+
+    /// Task 115: encode `source` as the RaBitQ residual against its assigned
+    /// `centroid`. RaBitQ residual mode only. The returned payload has the
+    /// identical length/layout to the plain RaBitQ code; only the encoded vector
+    /// (`source − centroid`) differs. `gamma` is 0.0 (RaBitQ does not use it).
+    pub(super) fn encode_source_residual(
+        self,
+        source: &[f32],
+        centroid: &[f32],
+    ) -> Result<(u16, f32, Vec<u8>), String> {
+        if !self.rabitq_residual || !matches!(self.profile, IvfQuantizerProfile::RaBitQ) {
+            return Err(
+                "ec_ivf encode_source_residual requires a RaBitQ residual-mode quantizer"
+                    .to_owned(),
+            );
+        }
+        if source.is_empty() {
+            return Err("embedding must not be empty".to_owned());
+        }
+        if source.len() != self.dimensions {
+            return Err(format!(
+                "embedding dimension mismatch: got {}, expected {}",
+                source.len(),
+                self.dimensions
+            ));
+        }
+        if centroid.len() != self.dimensions {
+            return Err(format!(
+                "centroid dimension mismatch: got {}, expected {}",
+                centroid.len(),
+                self.dimensions
+            ));
+        }
+        let dimensions = u16::try_from(source.len())
+            .map_err(|_| format!("embedding dimension {} exceeds maximum 65535", source.len()))?;
+        let quantizer = self.rabitq_quantizer()?;
+        Ok((
+            dimensions,
+            0.0,
+            quantizer.encode_code_residual(source, centroid).into_vec(),
+        ))
     }
 
     pub(super) fn encode_source_with_pq_model(
@@ -334,6 +425,41 @@ impl IvfQuantizer {
         }
     }
 
+    pub(super) fn score_ip_dequantized_from_parts(
+        self,
+        query: &[f32],
+        payload: &[u8],
+    ) -> Result<f32, String> {
+        match self.profile {
+            IvfQuantizerProfile::TurboQuant => {
+                if query.len() != self.dimensions {
+                    return Err(format!(
+                        "query dimension mismatch: got {}, expected {}",
+                        query.len(),
+                        self.dimensions
+                    ));
+                }
+                let quantizer = ProdQuantizer::cached(
+                    self.dimensions,
+                    crate::DEFAULT_QUANT_BITS,
+                    crate::DEFAULT_QUANT_SEED,
+                );
+                let decoded = quantizer.decode_approximate_from_code(payload);
+                Ok(query
+                    .iter()
+                    .zip(decoded.iter())
+                    .map(|(query_i, decoded_i)| query_i * decoded_i)
+                    .sum())
+            }
+            IvfQuantizerProfile::RaBitQ => Err(
+                "ec_ivf RaBitQ dequantized scoring is implemented on PreparedEstimator".to_owned(),
+            ),
+            IvfQuantizerProfile::PqFastScan { .. } => {
+                Err("ec_ivf pq_fastscan dequantized scoring is not supported".to_owned())
+            }
+        }
+    }
+
     pub(super) fn score_ip_from_parts_with_min_bound(
         self,
         prepared_query: &IvfPreparedQuery,
@@ -410,9 +536,59 @@ impl IvfQuantizer {
                 Ok(true)
             }
             (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::RaBitQ(prepared_query))
-                if self.rabitq_bits == 8 =>
+                if self.rabitq_bits == 2 =>
             {
+                // bits=2 has no per-candidate SIMD kernel (estimate_ip_batch
+                // supports only 1/4/8), so it would otherwise fall to true
+                // scalar. The multi-bit block kernel is a measured win here:
+                // M5 NEON 30.7µs→11.5µs (2.66×) for a 32-block at dim=1024.
+                if payload_len == 0 || payloads.len() % payload_len != 0 {
+                    return Err(format!(
+                        "ec_ivf RaBitQ bits=2 batch payload slab length {} is not divisible by code length {payload_len}",
+                        payloads.len()
+                    ));
+                }
+                let prepared = prepared_query
+                    .bitsn_block_prepared(payload_len)
+                    .ok_or_else(|| {
+                        "ec_ivf RaBitQ multi-bit prepared query missing block state".to_owned()
+                    })?;
+                let mut batch = CandidateBatch::with_capacity(payloads.len() / payload_len);
+                for (index, payload) in payloads.chunks_exact(payload_len).enumerate() {
+                    batch.push(index, CandidatePayload::new(payload, CandidateMeta::RaBitQ))?;
+                }
+                out_scores.clear();
+                out_scores.resize(batch.len(), 0.0);
+                score_rabitq_bitsn_batch_for(
+                    CandidateBatchScoringSurface::Ivf,
+                    prepared,
+                    &batch,
+                    out_scores,
+                )?;
+                Ok(true)
+            }
+            (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::RaBitQ(prepared_query))
+                if self.rabitq_bits == 4 || self.rabitq_bits == 8 =>
+            {
+                // bits=4 and bits=8 keep the arithmetic batch estimator, which
+                // dispatches to the per-candidate SIMD kernels (NeonBits4/8,
+                // Avx2Bits4/8). The multi-bit *block* kernel measured SLOWER
+                // than NeonBits4 on M5 (bits=4: 12.9µs vs 4.6µs for a 32-block
+                // at dim=1024), so the block kernel is not used here — an
+                // evidence-driven routing choice (Task 106 M5 bench). The AVX2
+                // hardware-gather block path may revisit bits=4 on the Intel
+                // lane. bits=8 is a full-byte level with no LUT fast-scan shape.
+                // No block kernel runs here, but the IVF scan still needs the
+                // wrapper-level flush-width histogram for Task 111a evidence.
+                if payload_len == 0 || payloads.len() % payload_len != 0 {
+                    return Err(format!(
+                        "ec_ivf RaBitQ bits={} batch payload slab length {} is not divisible by code length {payload_len}",
+                        self.rabitq_bits,
+                        payloads.len()
+                    ));
+                }
                 prepared_query.estimate_ip_batch(payloads, payload_len, out_scores)?;
+                record_ivf_rabitq_arithmetic_batch_flush_width(payloads.len() / payload_len);
                 Ok(true)
             }
             (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::RaBitQ(_))
@@ -515,6 +691,162 @@ impl IvfQuantizer {
                 let mut batch = CandidateBatch::with_capacity(gammas.len());
                 for (index, (payload, gamma)) in payloads
                     .chunks_exact(payload_len)
+                    .zip(gammas.iter().copied())
+                    .enumerate()
+                {
+                    batch.push(
+                        index,
+                        CandidatePayload {
+                            code: payload,
+                            meta: CandidateMeta::Gamma(gamma),
+                        },
+                    )?;
+                }
+                out_scores.clear();
+                out_scores.resize(batch.len(), 0.0);
+                score_turboquant_qjl_batch_for(
+                    CandidateBatchScoringSurface::Ivf,
+                    quantizer.as_ref(),
+                    prepared_query,
+                    &batch,
+                    out_scores,
+                )?;
+                Ok(true)
+            }
+            (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::RaBitQ(_))
+            | (IvfQuantizerProfile::PqFastScan { .. }, IvfPreparedQuery::PqFastScan { .. }) => {
+                Ok(false)
+            }
+            (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::RaBitQ(_))
+            | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuant(_))
+            | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuantNoQjl4BitLut(_))
+            | (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::PqFastScan { .. })
+            | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::PqFastScan { .. })
+            | (IvfQuantizerProfile::PqFastScan { .. }, IvfPreparedQuery::TurboQuant(_))
+            | (
+                IvfQuantizerProfile::PqFastScan { .. },
+                IvfPreparedQuery::TurboQuantNoQjl4BitLut(_),
+            )
+            | (IvfQuantizerProfile::PqFastScan { .. }, IvfPreparedQuery::RaBitQ(_)) => {
+                Err("ec_ivf prepared query does not match quantizer profile".to_owned())
+            }
+        }
+    }
+
+    pub(super) fn supports_turboquant_payload_ref_batch(
+        self,
+        prepared_query: &IvfPreparedQuery,
+    ) -> bool {
+        matches!(
+            (self.profile, prepared_query),
+            (
+                IvfQuantizerProfile::TurboQuant,
+                IvfPreparedQuery::TurboQuantNoQjl4BitLut(_)
+            ) | (
+                IvfQuantizerProfile::TurboQuant,
+                IvfPreparedQuery::TurboQuant(_)
+            )
+        )
+    }
+
+    pub(super) fn score_turboquant_batch_from_payload_refs(
+        self,
+        prepared_query: &IvfPreparedQuery,
+        payloads: &[&[u8]],
+        payload_len: usize,
+        gammas: &[f32],
+        out_scores: &mut Vec<f32>,
+    ) -> Result<bool, String> {
+        match (self.profile, prepared_query) {
+            (
+                IvfQuantizerProfile::TurboQuant,
+                IvfPreparedQuery::TurboQuantNoQjl4BitLut(prepared_query),
+            ) => {
+                if payload_len == 0 {
+                    return Err("ec_ivf TurboQuant batch payload length must be nonzero".to_owned());
+                }
+                if payloads.len() != gammas.len() {
+                    return Err(format!(
+                        "ec_ivf TurboQuant borrowed batch payload count {} does not match gamma count {}",
+                        payloads.len(),
+                        gammas.len()
+                    ));
+                }
+                if let Some((index, payload)) = payloads
+                    .iter()
+                    .enumerate()
+                    .find(|(_, payload)| payload.len() != payload_len)
+                {
+                    return Err(format!(
+                        "ec_ivf TurboQuant borrowed batch payload {index} has {} bytes, expected {payload_len}",
+                        payload.len()
+                    ));
+                }
+
+                let quantizer = ProdQuantizer::cached(
+                    self.dimensions,
+                    crate::DEFAULT_QUANT_BITS,
+                    crate::DEFAULT_QUANT_SEED,
+                );
+                let mut batch = CandidateBatch::with_capacity(gammas.len());
+                for (index, (payload, gamma)) in payloads
+                    .iter()
+                    .copied()
+                    .zip(gammas.iter().copied())
+                    .enumerate()
+                {
+                    batch.push(
+                        index,
+                        CandidatePayload {
+                            code: payload,
+                            meta: CandidateMeta::Gamma(gamma),
+                        },
+                    )?;
+                }
+                out_scores.clear();
+                out_scores.resize(batch.len(), 0.0);
+                score_turboquant_no_qjl_4bit_batch_for(
+                    CandidateBatchScoringSurface::Ivf,
+                    quantizer.as_ref(),
+                    prepared_query,
+                    &batch,
+                    out_scores,
+                )?;
+                Ok(true)
+            }
+            (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::TurboQuant(prepared_query)) => {
+                if payload_len == 0 {
+                    return Err(
+                        "ec_ivf TurboQuant QJL batch payload length must be nonzero".to_owned()
+                    );
+                }
+                if payloads.len() != gammas.len() {
+                    return Err(format!(
+                        "ec_ivf TurboQuant QJL borrowed batch payload count {} does not match gamma count {}",
+                        payloads.len(),
+                        gammas.len()
+                    ));
+                }
+                if let Some((index, payload)) = payloads
+                    .iter()
+                    .enumerate()
+                    .find(|(_, payload)| payload.len() != payload_len)
+                {
+                    return Err(format!(
+                        "ec_ivf TurboQuant QJL borrowed batch payload {index} has {} bytes, expected {payload_len}",
+                        payload.len()
+                    ));
+                }
+
+                let quantizer = ProdQuantizer::cached(
+                    self.dimensions,
+                    crate::DEFAULT_QUANT_BITS,
+                    crate::DEFAULT_QUANT_SEED,
+                );
+                let mut batch = CandidateBatch::with_capacity(gammas.len());
+                for (index, (payload, gamma)) in payloads
+                    .iter()
+                    .copied()
                     .zip(gammas.iter().copied())
                     .enumerate()
                 {
@@ -667,6 +999,12 @@ impl IvfQuantizer {
         self.rabitq_bits
     }
 
+    /// Task 115: true when this RaBitQ quantizer encodes/decodes posting
+    /// residuals against the assigned centroid.
+    pub(super) fn rabitq_residual(self) -> bool {
+        self.rabitq_residual
+    }
+
     pub(super) fn quant_codec(self) -> IvfQuantCodec<'static> {
         IvfQuantCodec::new(self)
     }
@@ -686,10 +1024,11 @@ impl IvfQuantizer {
     }
 
     fn rabitq_quantizer(self) -> Result<Arc<RaBitQQuantizer>, String> {
-        RaBitQQuantizer::cached_seeded_srht_bits(
+        RaBitQQuantizer::cached_seeded_srht_bits_clip(
             self.dimensions,
             crate::DEFAULT_QUANT_SEED,
             self.rabitq_bits,
+            f32::from(self.rabitq_quant_clip),
         )
     }
 
@@ -1179,6 +1518,13 @@ mod tests {
     }
 
     #[test]
+    fn coarse_rerank_v1_format_resolves_to_rabitq() {
+        let explicit = IvfQuantizer::resolve(StorageFormat::CoarseRerank, 16).unwrap();
+
+        assert_eq!(explicit.profile, IvfQuantizerProfile::RaBitQ);
+    }
+
+    #[test]
     fn pq_fastscan_v1_format_resolves_to_grouped_profile() {
         let explicit = IvfQuantizer::resolve(StorageFormat::PqFastScan, 16).unwrap();
 
@@ -1465,6 +1811,12 @@ mod tests {
 
     #[test]
     fn common_quant_codec_scores_rabitq_batch() {
+        // bits=2/4 now record block-kernel counters through the unified driver,
+        // so this test serializes on the shared counter lock to avoid polluting
+        // the count-asserting tests running in parallel.
+        let _guard = crate::am::common::candidate_batch::CANDIDATE_BATCH_COUNTER_TEST_LOCK
+            .lock()
+            .unwrap();
         let dimensions = 40;
         let query = unit_vector(dimensions);
         let codec = IvfQuantizer::resolve_with_pq_group_size_and_bits(
@@ -1515,6 +1867,10 @@ mod tests {
 
     #[test]
     fn common_quant_codec_rabitq_batch_is_bit_exact_with_scalar() {
+        // Records block-kernel counters at bits=4; serialize on the shared lock.
+        let _guard = crate::am::common::candidate_batch::CANDIDATE_BATCH_COUNTER_TEST_LOCK
+            .lock()
+            .unwrap();
         let dimensions = 40;
         let query = unit_vector(dimensions);
         let codec = IvfQuantizer::resolve_with_pq_group_size_and_bits(
@@ -1586,6 +1942,12 @@ mod tests {
 
     #[test]
     fn rabitq_bits1_batch_dispatch_matches_scalar_scores() {
+        // Scoring through the batch dispatch mutates the global counters this
+        // lock guards; without it, concurrent counter-asserting tests see
+        // double-counted ivf/rabitq rows.
+        let _guard = crate::am::common::candidate_batch::CANDIDATE_BATCH_COUNTER_TEST_LOCK
+            .lock()
+            .unwrap();
         let dimensions = 40;
         let query = unit_vector(dimensions);
         let dispatch = IvfQuantizer::resolve_with_pq_group_size_and_bits(
@@ -1632,6 +1994,10 @@ mod tests {
 
     #[test]
     fn rabitq_bits1_batch_dispatch_routes_through_block_kernel() {
+        // Same counter-lock requirement as the dispatch test above.
+        let _guard = crate::am::common::candidate_batch::CANDIDATE_BATCH_COUNTER_TEST_LOCK
+            .lock()
+            .unwrap();
         let dimensions = 40;
         let query = unit_vector(dimensions);
         let dispatch = IvfQuantizer::resolve_with_pq_group_size_and_bits(
@@ -1707,31 +2073,165 @@ mod tests {
     }
 
     #[test]
-    fn non_bits1_batch_dispatch_declines_without_scoring() {
-        let dimensions = 40;
+    fn rabitq_bits2_batch_dispatch_routes_through_block_kernel() {
+        // bits=2 has no per-candidate SIMD kernel, so it engages the multi-bit
+        // block kernel (a measured win over scalar; Task 106 M5 bench). Holds
+        // the counter lock because the dispatch records block-kernel rows.
+        let _guard = crate::am::common::candidate_batch::CANDIDATE_BATCH_COUNTER_TEST_LOCK
+            .lock()
+            .unwrap();
+        let dimensions = 48;
         let query = unit_vector(dimensions);
         let dispatch = IvfQuantizer::resolve_with_pq_group_size_and_bits(
             StorageFormat::RaBitQ,
             dimensions,
             None,
-            Some(4),
+            Some(2),
         )
         .unwrap();
         let prepared = dispatch.prepare_ip_query(&query).unwrap();
-        let (_, _, payload) = dispatch.encode_source(&query).unwrap();
-        let mut batch_scores = vec![1.0];
+        let payloads = (0..35)
+            .flat_map(|row| {
+                let source = (0..dimensions)
+                    .map(|col| ((row * 3 + col) as f32).sin())
+                    .collect::<Vec<_>>();
+                let (_, _, payload) = dispatch.encode_source(&source).unwrap();
+                payload
+            })
+            .collect::<Vec<_>>();
+        let mut batch_scores = Vec::new();
 
         let used_batch = dispatch
             .score_ip_bits1_batch_from_payloads(
                 &prepared,
-                &payload,
+                &payloads,
                 dispatch.payload_len(),
                 &mut batch_scores,
             )
             .unwrap();
 
-        assert!(!used_batch);
-        assert_eq!(batch_scores, vec![1.0]);
+        assert!(used_batch, "bits=2 multi-bit block batch should engage");
+        assert_eq!(batch_scores.len(), 35);
+
+        let IvfPreparedQuery::RaBitQ(estimator) = &prepared else {
+            panic!("RaBitQ profile should prepare a RaBitQ query");
+        };
+        let block_prepared = estimator
+            .bitsn_block_prepared(dispatch.payload_len())
+            .expect("bits=2 block prepared should exist");
+        let code_chunks: Vec<&[u8]> = payloads.chunks_exact(dispatch.payload_len()).collect();
+
+        // First 32 route through the dispatched block kernel; reproduce the
+        // same call so the expectation matches the host ISA backend.
+        let block_codes: [&[u8]; 32] = code_chunks[..32].to_vec().try_into().unwrap();
+        let mut expected_block = vec![0.0; 32];
+        crate::quant::rabitq32::score_rabitq_bitsn_block32(
+            block_prepared,
+            block_codes,
+            &mut expected_block,
+        );
+        for (index, expected) in expected_block.iter().enumerate() {
+            assert_eq!(
+                batch_scores[index].to_bits(),
+                expected.to_bits(),
+                "index={index}"
+            );
+        }
+        let mut expected_tail = vec![0.0; code_chunks.len() - 32];
+        crate::quant::rabitq32::score_rabitq_bitsn_partial(
+            block_prepared,
+            &code_chunks[32..],
+            &mut expected_tail,
+        );
+        for (index, expected) in expected_tail.iter().enumerate() {
+            assert_eq!(
+                batch_scores[32 + index].to_bits(),
+                expected.to_bits(),
+                "tail index={index}"
+            );
+        }
+    }
+
+    #[test]
+    fn rabitq_bits4_and_bits8_batch_dispatch_use_arithmetic_estimator_with_width_probe() {
+        // bits=4/8 route to the per-candidate arithmetic estimator
+        // (estimate_ip_batch -> NeonBits4/8 or Avx2Bits4/8), which the M5
+        // bench measured faster than the multi-bit block kernel for bits=4.
+        // They still record a width-only IVF/RaBitQ row so bench suites can
+        // audit scan flush widths without misattributing block-kernel work.
+        let _guard = crate::am::common::candidate_batch::CANDIDATE_BATCH_COUNTER_TEST_LOCK
+            .lock()
+            .unwrap();
+        let dimensions = 48;
+        let query = unit_vector(dimensions);
+
+        for bits in [4, 8] {
+            crate::am::common::candidate_batch::reset_candidate_batch_scoring_counters();
+            let dispatch = IvfQuantizer::resolve_with_pq_group_size_and_bits(
+                StorageFormat::RaBitQ,
+                dimensions,
+                None,
+                Some(bits),
+            )
+            .unwrap();
+            let prepared = dispatch.prepare_ip_query(&query).unwrap();
+            let payloads = (0..35)
+                .flat_map(|row| {
+                    let source = (0..dimensions)
+                        .map(|col| ((row * 3 + col) as f32).sin())
+                        .collect::<Vec<_>>();
+                    let (_, _, payload) = dispatch.encode_source(&source).unwrap();
+                    payload
+                })
+                .collect::<Vec<_>>();
+            let mut batch_scores = Vec::new();
+
+            let used_batch = dispatch
+                .score_ip_bits1_batch_from_payloads(
+                    &prepared,
+                    &payloads,
+                    dispatch.payload_len(),
+                    &mut batch_scores,
+                )
+                .unwrap();
+
+            assert!(used_batch, "bits={bits} batch should engage the estimator");
+            assert_eq!(batch_scores.len(), 35);
+
+            let IvfPreparedQuery::RaBitQ(estimator) = &prepared else {
+                panic!("RaBitQ profile should prepare a RaBitQ query");
+            };
+            for (index, payload) in payloads.chunks_exact(dispatch.payload_len()).enumerate() {
+                let expected = estimator.estimate_ip_scalar_only(payload);
+                let bound = 1e-5_f32 * batch_scores[index].abs().max(expected.abs()).max(1.0);
+                assert!(
+                    (batch_scores[index] - expected).abs() <= bound,
+                    "bits={bits} index={index} batch={} estimate={expected}",
+                    batch_scores[index]
+                );
+            }
+
+            let block_snapshots =
+                crate::am::common::candidate_batch::block_kernel_scoring_snapshots();
+            let row = block_snapshots
+                .iter()
+                .find(|snapshot| {
+                    snapshot.surface == "ivf"
+                        && snapshot.quant_kind == "rabitq"
+                        && snapshot.isa == "scalar"
+                })
+                .expect("arithmetic RaBitQ batch should record a width-only row");
+            assert_eq!(row.width_ge32_flushes, 1);
+            assert_eq!(row.width_lt8_flushes, 0);
+            assert_eq!(row.width_8_15_flushes, 0);
+            assert_eq!(row.width_16_31_flushes, 0);
+            assert_eq!(row.flushes, 0);
+            assert_eq!(row.candidates, 0);
+            assert_eq!(row.kernel_flushes, 0);
+            assert_eq!(row.scalar_flushes, 0);
+        }
+
+        crate::am::common::candidate_batch::reset_candidate_batch_scoring_counters();
     }
 
     #[test]
@@ -1775,6 +2275,9 @@ mod tests {
 
     #[test]
     fn common_quant_codec_scores_grouped_pq_batch_with_prepared_model() {
+        let _guard = crate::am::common::candidate_batch::CANDIDATE_BATCH_COUNTER_TEST_LOCK
+            .lock()
+            .unwrap();
         let dimensions = 16;
         let source = unit_vector(dimensions);
         let query = unit_vector(dimensions);
@@ -1835,6 +2338,9 @@ mod tests {
 
     #[test]
     fn common_quant_codec_grouped_pq_batch_is_bit_exact_with_scalar() {
+        let _guard = crate::am::common::candidate_batch::CANDIDATE_BATCH_COUNTER_TEST_LOCK
+            .lock()
+            .unwrap();
         let dimensions = 16;
         let query = unit_vector(dimensions);
         let model = pq_fastscan_test_model(dimensions);
@@ -1938,12 +2444,23 @@ mod tests {
             .iter()
             .filter(|snapshot| snapshot.surface == "ivf" && snapshot.quant_kind == "grouped_pq")
             .collect::<Vec<_>>();
-        assert!(grouped_pq
+        let kernel_candidates = grouped_pq
             .iter()
-            .any(|snapshot| snapshot.kernel_candidates == 32));
-        assert!(grouped_pq
+            .map(|snapshot| snapshot.kernel_candidates)
+            .sum::<u64>();
+        let scalar_candidates = grouped_pq
             .iter()
-            .any(|snapshot| snapshot.scalar_candidates == 7));
+            .map(|snapshot| snapshot.scalar_candidates)
+            .sum::<u64>();
+        assert_eq!(kernel_candidates + scalar_candidates, 39);
+        assert!(kernel_candidates >= 32);
+        if grouped_pq.iter().any(|snapshot| snapshot.isa != "scalar") {
+            assert_eq!(kernel_candidates, 39);
+            assert_eq!(scalar_candidates, 0);
+        } else {
+            assert_eq!(kernel_candidates, 32);
+            assert_eq!(scalar_candidates, 7);
+        }
 
         crate::am::common::candidate_batch::reset_candidate_batch_scoring_counters();
     }
@@ -1997,6 +2514,9 @@ mod tests {
 
     #[test]
     fn common_quant_codec_pq_fastscan_batch_is_bit_exact_with_direct_path() {
+        let _guard = crate::am::common::candidate_batch::CANDIDATE_BATCH_COUNTER_TEST_LOCK
+            .lock()
+            .unwrap();
         let dimensions = 16;
         let query = unit_vector(dimensions);
         let model = pq_fastscan_test_model(dimensions);
@@ -2062,6 +2582,9 @@ mod tests {
 
     #[test]
     fn common_quant_codec_grouped_pq_rejects_mismatched_candidate_meta() {
+        let _guard = crate::am::common::candidate_batch::CANDIDATE_BATCH_COUNTER_TEST_LOCK
+            .lock()
+            .unwrap();
         let dimensions = 16;
         let source = unit_vector(dimensions);
         let query = unit_vector(dimensions);

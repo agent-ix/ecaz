@@ -1,0 +1,23 @@
+Head: 9cdff9976
+Timestamp: 2026-06-17T13:24:00-07:00
+
+Command: cargo test -q columnar_frozen_list_raw_page_chunks_obey_guard_capacity --lib
+Result: passed
+
+running 1 test
+.
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2127 filtered out; finished in 0.00s
+
+Command: cargo test -q columnar_frozen_list_raw_pages_keep_all_column_items_whole --lib
+Result: passed
+
+running 1 test
+.
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2127 filtered out; finished in 0.00s
+
+Command: cargo test -q columnar_frozen_list_raw_pages_match_header_block_range --lib
+Result: passed
+
+running 1 test
+.
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2127 filtered out; finished in 0.00s

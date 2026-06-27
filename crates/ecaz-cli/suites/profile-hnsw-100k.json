@@ -58,17 +58,17 @@
       "log_file": "artifacts/benchmark-profiles/profile-hnsw-100k/storage-hnsw-real100k-m16.log"
     },
     {
-      "kind": "compare-pgvector",
-      "name": "compare-pgvector-real100k-hnsw",
-      "tags": ["compare", "pgvector", "hnsw", "real100k", "m16"],
+      "kind": "comparator",
+      "name": "comparator-pgvector-hnsw-real100k",
+      "tags": ["comparator", "pgvector_hnsw", "hnsw", "real100k", "m16"],
+      "engine": "pgvector-hnsw",
       "prefix": "profile_real100k_hnsw_m16",
-      "profile": "ec_hnsw",
       "k": 10,
       "sweep": [64, 128, 200, 400],
-      "pgvector_m": 16,
-      "pgvector_ef_construction": 128,
+      "m": 16,
+      "ef_construction": 128,
       "rebuild": true,
-      "log_file": "artifacts/benchmark-profiles/profile-hnsw-100k/compare-pgvector-real100k-hnsw.log"
+      "log_output": "artifacts/benchmark-profiles/profile-hnsw-100k/comparator-pgvector-hnsw-real100k.log"
     }
   ]
 }

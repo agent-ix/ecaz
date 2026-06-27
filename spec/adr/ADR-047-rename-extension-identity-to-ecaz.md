@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-047
 title: Rename extension identity from tqvector to ecaz
 status: DECIDED

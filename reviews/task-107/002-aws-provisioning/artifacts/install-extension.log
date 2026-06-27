@@ -1,0 +1,18 @@
+Script started on 2026-06-14 13:34:18-07:00 [<not executed on terminal>]
+make: Entering directory '/home/peter/dev/ecaz/infra/spire-aws'
+cd /home/peter/dev/ecaz && /home/peter/dev/ecaz/scripts/spire-aws/package-extension.sh /home/peter/dev/ecaz/reviews/task-107/002-aws-provisioning/artifacts /home/peter/dev/ecaz/reviews/task-107/002-aws-provisioning/artifacts/ecaz-latest.tar.gz
+cd /home/peter/dev/ecaz && /home/peter/dev/ecaz/scripts/spire-aws/install.sh /home/peter/dev/ecaz/reviews/task-107/002-aws-provisioning/artifacts/aws-topology.json /home/peter/dev/ecaz/reviews/task-107/002-aws-provisioning/artifacts
+ssm_online instance_count=3 status=ready
+Certificate request self-signature ok
+subject=CN = 10.42.1.154
+Certificate request self-signature ok
+subject=CN = 10.42.1.60
+Certificate request self-signature ok
+subject=CN = 10.42.1.249
+i-0b4386fa5017f1363 ssm command id: 2bb58093-379f-4cad-8c17-a784f32ad19a
+i-07bcc98c3d5d027ee ssm command id: a296cdd1-1b88-4efd-8cb0-f6313ccf8b2a
+i-00c2f2aca9dbdd6bd ssm command id: 96b97b80-dc39-4af8-95a0-cbc48638832f
+coordinator remote conninfo ssm command id: 4712b962-0ae8-4cdf-84db-2664f9e27f35
+make: Leaving directory '/home/peter/dev/ecaz/infra/spire-aws'
+
+Script done on 2026-06-14 13:51:36-07:00 [COMMAND_EXIT_CODE="0"]

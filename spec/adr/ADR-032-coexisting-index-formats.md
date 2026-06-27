@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-032
 title: "Coexisting Index Formats: TurboQuant and PqFastScan as First-Class Peers"
 status: PROPOSED

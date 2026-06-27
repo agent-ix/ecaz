@@ -1,0 +1,9 @@
+CREATE TABLE
+COPY 485266
+SELECT 485266
+DO
+ active_epoch | leaf_count | assignment_count | next_pid | next_local_vec_seq |    status    
+--------------+------------+------------------+----------+--------------------+--------------
+            1 |        497 |           485266 |      996 |             990001 | materialized
+(1 row)
+

@@ -1,0 +1,11 @@
+Script started on 2026-06-20 02:43:26-07:00 [<not executed on terminal>]
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.24s
+     Running unittests src/main.rs (target/debug/deps/ecaz-bdbeafde08ddf599)
+
+running 1 test
+test commands::bench::suite::tests::expands_chunked_load_without_corpus_query_paths ... [32mok(B[m
+
+test result: [32mok(B[m. 1 passed; 0 failed; 0 ignored; 0 measured; 407 filtered out; finished in 0.00s
+
+
+Script done on 2026-06-20 02:43:26-07:00 [COMMAND_EXIT_CODE="0"]

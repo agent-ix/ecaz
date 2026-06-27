@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::ffi::c_void;
 use std::ptr::NonNull;
 
@@ -176,7 +177,71 @@ unsafe fn run_bulkdelete(
         add_index_bulk_delete_tuples_removed(stats_handle, removed_heap_tids);
     }
 
+    // Task 111h: maintain packed rerank groups. Tombstone dead group slots in
+    // the header bitmap so the index-side rerank lookup never matches a reused
+    // heap line pointer to a stale payload. Space is reclaimed on REINDEX.
+    if metadata.rerank_sidecar_head != ItemPointer::INVALID {
+        bulkdelete_rerank_groups(
+            index_relation,
+            metadata.rerank_sidecar_head,
+            callback,
+            callback_state,
+        )
+        .unwrap_or_else(|e| pgrx::error!("{e}"));
+    }
+
     finish_vacuum_stats(index_relation, stats, &metadata)
+}
+
+/// Walk the packed rerank group chain and tombstone entries whose heap TID is
+/// now dead. Each header is rewritten in place at the same byte length; dead
+/// entries keep their payload slot but set the deleted bitmap.
+///
+/// # Safety
+/// `index_relation` is the live IVF index being vacuumed; the chain rooted at
+/// `head` is read page by page; `callback`/`callback_state` are valid for the
+/// call.
+unsafe fn bulkdelete_rerank_groups(
+    index_relation: pg_sys::Relation,
+    head: ItemPointer,
+    callback: BulkDeleteCallback,
+    callback_state: *mut c_void,
+) -> Result<(), String> {
+    let mut visited = HashSet::new();
+    let mut next_tid = head;
+    while next_tid != ItemPointer::INVALID {
+        let group_tid = next_tid;
+        page::remember_rerank_group_chain_tid(&mut visited, group_tid)?;
+        let mut group = page::read_ivf_rerank_group_header(index_relation, group_tid)?;
+        let following = group.next_group_tid;
+        let mut changed = false;
+        for index in 0..group.len() {
+            if group.is_deleted(index) {
+                continue;
+            }
+            let heap_start = usize::try_from(group.heap_tid_offsets[index])
+                .map_err(|_| "ec_ivf rerank group heap offset conversion failed".to_owned())?;
+            let heap_count = usize::from(group.heap_tid_counts[index]);
+            let heap_end = heap_start
+                .checked_add(heap_count)
+                .ok_or_else(|| "ec_ivf rerank group heap range overflow".to_owned())?;
+            if heap_end > group.heap_tids.len() {
+                return Err("ec_ivf rerank group heap range is out of bounds".to_owned());
+            }
+            if group.heap_tids[heap_start..heap_end]
+                .iter()
+                .any(|heap_tid| heap_tid_is_dead(*heap_tid, callback, callback_state))
+            {
+                group.mark_deleted(index);
+                changed = true;
+            }
+        }
+        if changed {
+            page::rewrite_ivf_rerank_group_header(index_relation, group_tid, &group)?;
+        }
+        next_tid = following;
+    }
+    Ok(())
 }
 
 fn page_payload_len(metadata: &page::MetadataPage) -> Result<usize, String> {
@@ -187,10 +252,14 @@ fn page_payload_len(metadata: &page::MetadataPage) -> Result<usize, String> {
     } else {
         None
     };
-    super::quantizer::IvfQuantizer::resolve_with_pq_group_size(
+    // Pass the stored quant_bits: RaBitQ payload width depends on the per-dim
+    // code width (coarse_rerank builds at 1 bit). Resolving without bits would
+    // default to 4-bit and mis-size the dense posting payload during vacuum.
+    super::quantizer::IvfQuantizer::resolve_with_pq_group_size_and_bits(
         metadata.storage_format,
         metadata.dimensions as usize,
         pq_group_size,
+        Some(metadata.quant_bits),
     )
     .map(|quantizer| quantizer.payload_len())
 }
@@ -207,8 +276,8 @@ unsafe fn bulkdelete_list_postings(
     callback: BulkDeleteCallback,
     callback_state: *mut c_void,
 ) -> Result<ListBulkDeleteResult, String> {
-    let mut result = ListBulkDeleteResult::default();
-    page::rewrite_ivf_postings_for_list_blocks(
+    let result = std::cell::RefCell::new(ListBulkDeleteResult::default());
+    page::rewrite_ivf_posting_entries_for_list_blocks(
         index_relation,
         directory.list_id,
         directory.head_block,
@@ -216,6 +285,7 @@ unsafe fn bulkdelete_list_postings(
         payload_len,
         &[directory_block_number],
         |posting_tid, mut posting| {
+            let mut result = result.borrow_mut();
             bulkdelete_posting(
                 &mut result,
                 posting_tid,
@@ -224,9 +294,19 @@ unsafe fn bulkdelete_list_postings(
                 callback_state,
             )
         },
+        |posting_tid, posting_block| {
+            let mut result = result.borrow_mut();
+            bulkdelete_dense_posting_block(
+                &mut result,
+                posting_tid,
+                posting_block,
+                callback,
+                callback_state,
+            )
+        },
     )?;
 
-    Ok(result)
+    Ok(result.into_inner())
 }
 
 fn bulkdelete_posting(
@@ -266,6 +346,58 @@ fn bulkdelete_posting(
     }
 
     Ok(rewrite)
+}
+
+fn bulkdelete_dense_posting_block(
+    result: &mut ListBulkDeleteResult,
+    _posting_tid: ItemPointer,
+    mut posting_block: page::IvfDensePostingBlockTuple,
+    callback: BulkDeleteCallback,
+    callback_state: *mut c_void,
+) -> Result<page::IvfDensePostingBlockRewrite, String> {
+    let mut removed = 0_usize;
+    let mut changed = false;
+    for index in 0..posting_block.len() {
+        if posting_block.is_deleted(index) {
+            continue;
+        }
+        let start = usize::try_from(posting_block.heap_tid_offsets[index])
+            .map_err(|_| "ec_ivf dense posting heap tid offset exceeds usize".to_owned())?;
+        let count = usize::from(posting_block.heap_tid_counts[index]);
+        let end = start
+            .checked_add(count)
+            .ok_or_else(|| "ec_ivf dense posting heap tid range overflow".to_owned())?;
+        let heap_tids = posting_block
+            .heap_tids
+            .get(start..end)
+            .ok_or_else(|| "ec_ivf dense posting heap tid range is out of bounds".to_owned())?;
+        if heap_tids
+            .iter()
+            .all(|heap_tid| heap_tid_is_dead(*heap_tid, callback, callback_state))
+        {
+            posting_block.mark_deleted(index);
+            removed = removed.saturating_add(count);
+            changed = true;
+        } else {
+            result.record_live_posting(count)?;
+        }
+    }
+
+    if removed > 0 {
+        result.removed_heap_tids = result
+            .removed_heap_tids
+            .checked_add(
+                u64::try_from(removed)
+                    .map_err(|_| "ec_ivf removed heap tid count exceeds u64".to_owned())?,
+            )
+            .ok_or_else(|| "ec_ivf removed heap tid count overflow".to_owned())?;
+    }
+
+    if changed {
+        Ok(page::IvfDensePostingBlockRewrite::Rewrite(posting_block))
+    } else {
+        Ok(page::IvfDensePostingBlockRewrite::Keep)
+    }
 }
 
 /// # Safety

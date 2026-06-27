@@ -1,0 +1,42 @@
+{
+  "name": "ivf-attr-sidecar-index-placement",
+  "schema_version": 1,
+  "_comment": "Codex 111g/003b P1: index-side sidecar materializes the FULL 0x2A chain per query (O(N)) while stats_rerank_source_bytes_read reports only survivor bytes (O(W)). This config measures rerank_placement=index latency vs the table-side cells in rerank-format-matrix.json (f16/rabitq4) to confirm or refute whether index-side is actually a latency win at 10/50/100k.",
+  "defaults": {
+    "pg": 18,
+    "socket_dir": "/home/peter/.pgrx",
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 200,
+    "iterations": 200,
+    "force_index": true
+  },
+  "steps": [
+    { "kind": "load", "name": "load-f16idx-10k", "tags": ["sidecar-idx", "f16-index", "ec_real_10k"], "prefix": "attr_idx_f16_10k", "profile": "ec_ivf", "corpus_file": "data/staged-current/ec_real_10k_corpus.tsv", "queries_file": "data/staged-current/ec_real_10k_queries.tsv", "manifest_file": "data/staged-current/ec_real_10k_manifest.json", "allow_manifest_mismatch": true, "reloptions": ["nlists=100", "storage_format=coarse_rerank", "rerank_format=f16", "rerank_placement=index", "rerank_width=64"] },
+    { "kind": "recall", "name": "recall-f16idx-10k", "tags": ["sidecar-idx", "f16-index", "ec_real_10k"], "prefix": "attr_idx_f16_10k", "profile": "ec_ivf", "k": 10, "sweep": [8, 16, 32, 64, 128, 200] },
+    { "kind": "latency", "name": "latency-f16idx-10k", "tags": ["sidecar-idx", "f16-index", "ec_real_10k"], "prefix": "attr_idx_f16_10k", "profile": "ec_ivf", "k": 10, "sweep": [8, 16, 32, 64, 128, 200], "concurrency": 1, "cache_state": "post_recall_warm" },
+    { "kind": "storage", "name": "storage-f16idx-10k", "tags": ["sidecar-idx", "f16-index", "ec_real_10k"], "prefix": "attr_idx_f16_10k" },
+    { "kind": "load", "name": "load-rq4idx-10k", "tags": ["sidecar-idx", "rq4-index", "ec_real_10k"], "prefix": "attr_idx_rq4_10k", "profile": "ec_ivf", "corpus_file": "data/staged-current/ec_real_10k_corpus.tsv", "queries_file": "data/staged-current/ec_real_10k_queries.tsv", "manifest_file": "data/staged-current/ec_real_10k_manifest.json", "allow_manifest_mismatch": true, "reloptions": ["nlists=100", "storage_format=coarse_rerank", "rerank_format=rabitq4", "rerank_placement=index", "rerank_width=64"] },
+    { "kind": "recall", "name": "recall-rq4idx-10k", "tags": ["sidecar-idx", "rq4-index", "ec_real_10k"], "prefix": "attr_idx_rq4_10k", "profile": "ec_ivf", "k": 10, "sweep": [8, 16, 32, 64, 128, 200] },
+    { "kind": "latency", "name": "latency-rq4idx-10k", "tags": ["sidecar-idx", "rq4-index", "ec_real_10k"], "prefix": "attr_idx_rq4_10k", "profile": "ec_ivf", "k": 10, "sweep": [8, 16, 32, 64, 128, 200], "concurrency": 1, "cache_state": "post_recall_warm" },
+    { "kind": "storage", "name": "storage-rq4idx-10k", "tags": ["sidecar-idx", "rq4-index", "ec_real_10k"], "prefix": "attr_idx_rq4_10k" },
+
+    { "kind": "load", "name": "load-f16idx-50k", "tags": ["sidecar-idx", "f16-index", "ec_real_50k"], "prefix": "attr_idx_f16_50k", "profile": "ec_ivf", "corpus_file": "data/staged-current/ec_real_50k_corpus.tsv", "queries_file": "data/staged-current/ec_real_50k_queries.tsv", "manifest_file": "data/staged-current/ec_real_50k_manifest.json", "allow_manifest_mismatch": true, "reloptions": ["nlists=224", "storage_format=coarse_rerank", "rerank_format=f16", "rerank_placement=index", "rerank_width=64"] },
+    { "kind": "recall", "name": "recall-f16idx-50k", "tags": ["sidecar-idx", "f16-index", "ec_real_50k"], "prefix": "attr_idx_f16_50k", "profile": "ec_ivf", "k": 10, "sweep": [8, 16, 32, 64, 128, 200] },
+    { "kind": "latency", "name": "latency-f16idx-50k", "tags": ["sidecar-idx", "f16-index", "ec_real_50k"], "prefix": "attr_idx_f16_50k", "profile": "ec_ivf", "k": 10, "sweep": [8, 16, 32, 64, 128, 200], "concurrency": 1, "cache_state": "post_recall_warm" },
+    { "kind": "storage", "name": "storage-f16idx-50k", "tags": ["sidecar-idx", "f16-index", "ec_real_50k"], "prefix": "attr_idx_f16_50k" },
+    { "kind": "load", "name": "load-rq4idx-50k", "tags": ["sidecar-idx", "rq4-index", "ec_real_50k"], "prefix": "attr_idx_rq4_50k", "profile": "ec_ivf", "corpus_file": "data/staged-current/ec_real_50k_corpus.tsv", "queries_file": "data/staged-current/ec_real_50k_queries.tsv", "manifest_file": "data/staged-current/ec_real_50k_manifest.json", "allow_manifest_mismatch": true, "reloptions": ["nlists=224", "storage_format=coarse_rerank", "rerank_format=rabitq4", "rerank_placement=index", "rerank_width=64"] },
+    { "kind": "recall", "name": "recall-rq4idx-50k", "tags": ["sidecar-idx", "rq4-index", "ec_real_50k"], "prefix": "attr_idx_rq4_50k", "profile": "ec_ivf", "k": 10, "sweep": [8, 16, 32, 64, 128, 200] },
+    { "kind": "latency", "name": "latency-rq4idx-50k", "tags": ["sidecar-idx", "rq4-index", "ec_real_50k"], "prefix": "attr_idx_rq4_50k", "profile": "ec_ivf", "k": 10, "sweep": [8, 16, 32, 64, 128, 200], "concurrency": 1, "cache_state": "post_recall_warm" },
+    { "kind": "storage", "name": "storage-rq4idx-50k", "tags": ["sidecar-idx", "rq4-index", "ec_real_50k"], "prefix": "attr_idx_rq4_50k" },
+
+    { "kind": "load", "name": "load-f16idx-100k", "tags": ["sidecar-idx", "f16-index", "ec_real_100k"], "prefix": "attr_idx_f16_100k", "profile": "ec_ivf", "corpus_file": "data/staged-current/ec_real_100k_corpus.tsv", "queries_file": "data/staged-current/ec_real_100k_queries.tsv", "manifest_file": "data/staged-current/ec_real_100k_manifest.json", "allow_manifest_mismatch": true, "reloptions": ["nlists=316", "storage_format=coarse_rerank", "rerank_format=f16", "rerank_placement=index", "rerank_width=64"] },
+    { "kind": "recall", "name": "recall-f16idx-100k", "tags": ["sidecar-idx", "f16-index", "ec_real_100k"], "prefix": "attr_idx_f16_100k", "profile": "ec_ivf", "k": 10, "sweep": [8, 16, 32, 64, 128, 200] },
+    { "kind": "latency", "name": "latency-f16idx-100k", "tags": ["sidecar-idx", "f16-index", "ec_real_100k"], "prefix": "attr_idx_f16_100k", "profile": "ec_ivf", "k": 10, "sweep": [8, 16, 32, 64, 128, 200], "concurrency": 1, "cache_state": "post_recall_warm" },
+    { "kind": "storage", "name": "storage-f16idx-100k", "tags": ["sidecar-idx", "f16-index", "ec_real_100k"], "prefix": "attr_idx_f16_100k" },
+    { "kind": "load", "name": "load-rq4idx-100k", "tags": ["sidecar-idx", "rq4-index", "ec_real_100k"], "prefix": "attr_idx_rq4_100k", "profile": "ec_ivf", "corpus_file": "data/staged-current/ec_real_100k_corpus.tsv", "queries_file": "data/staged-current/ec_real_100k_queries.tsv", "manifest_file": "data/staged-current/ec_real_100k_manifest.json", "allow_manifest_mismatch": true, "reloptions": ["nlists=316", "storage_format=coarse_rerank", "rerank_format=rabitq4", "rerank_placement=index", "rerank_width=64"] },
+    { "kind": "recall", "name": "recall-rq4idx-100k", "tags": ["sidecar-idx", "rq4-index", "ec_real_100k"], "prefix": "attr_idx_rq4_100k", "profile": "ec_ivf", "k": 10, "sweep": [8, 16, 32, 64, 128, 200] },
+    { "kind": "latency", "name": "latency-rq4idx-100k", "tags": ["sidecar-idx", "rq4-index", "ec_real_100k"], "prefix": "attr_idx_rq4_100k", "profile": "ec_ivf", "k": 10, "sweep": [8, 16, 32, 64, 128, 200], "concurrency": 1, "cache_state": "post_recall_warm" },
+    { "kind": "storage", "name": "storage-rq4idx-100k", "tags": ["sidecar-idx", "rq4-index", "ec_real_100k"], "prefix": "attr_idx_rq4_100k" }
+  ]
+}

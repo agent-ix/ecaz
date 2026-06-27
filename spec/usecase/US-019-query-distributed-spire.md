@@ -1,8 +1,7 @@
 ---
 id: US-019
 title: Query Distributed SPIRE Across Postgres Instances
-type: user-story
-artifact_type: US
+type: US
 status: APPROVED
 relationships:
   - target: "ix://agent-ix/ecaz/StR-005"
@@ -26,7 +25,9 @@ relationships:
 ---
 # US-019: Query Distributed SPIRE Across Postgres Instances
 
-**As** a platform engineer,
+## Story
+
+**As a** platform engineer,
 **I want** a coordinator PostgreSQL instance to execute vector-ordered reads across remote PostgreSQL shard nodes through `EcSpireDistributedScan`,
 **So that** distributed SPIRE can keep row storage near each shard while returning one ordered tuple stream to the client.
 

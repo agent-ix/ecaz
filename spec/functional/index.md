@@ -1,0 +1,57 @@
+---
+type: index
+title: "Functional"
+description: "Index of artifacts in this directory."
+---
+# Functional
+
+## Contents
+
+* [Spire](./spire/index.md) - Spire artifacts.
+* [FR-001: tqvector Data Type Registration](./FR-001-tqvector-data-type-registration.md)
+* [FR-002: tqvector Text I/O](./FR-002-text-io.md)
+* [FR-003: tqvector Binary Protocol (Send/Receive)](./FR-003-binary-protocol.md)
+* [FR-004: encode_to_tqvector — fp32 to Compressed Code](./FR-004-encode-to-tqvector.md)
+* [FR-005: Code-to-Code Inner Product Function](./FR-005-code-to-code-inner-product.md)
+* [FR-006: SQL Operators and Operator Class](./FR-006-sql-operators.md)
+* [FR-007: HNSW Index Access Method — Page Layout](./FR-007-hnsw-page-layout.md)
+* [FR-008: HNSW Index Access Method — Build](./FR-008-hnsw-build.md)
+* [FR-009: HNSW Index Access Method — Scan (Query)](./FR-009-hnsw-scan.md)
+* [FR-010: HNSW Index Access Method — Vacuum](./FR-010-hnsw-vacuum.md)
+* [FR-011: WAL Safety — GenericXLog Usage](./FR-011-wal-safety.md)
+* [FR-012: SQL Bootstrap — Extension Packaging](./FR-012-sql-bootstrap.md)
+* [FR-013: Two-Stage Vector Quantization Pipeline](./FR-013-quantization-pipeline.md)
+* [FR-014: SIMD Acceleration](./FR-014-simd-acceleration.md)
+* [FR-015: ProdQuantizer Orchestrator](./FR-015-prodquantizer.md)
+* [FR-016: HNSW Index Access Method — Insert](./FR-016-hnsw-insert.md)
+* [FR-017: Prepared-Query Inner Product Function](./FR-017-prepared-query-inner-product.md)
+* [FR-018: Negative Inner Product Wrapper Functions](./FR-018-negative-inner-product-wrappers.md)
+* [FR-019: Async I/O — ReadStream Integration](./FR-019-async-io-read-stream.md)
+* [FR-020: Planner Cost Estimation](./FR-020-cost-estimation.md)
+* [FR-021: Parallel Index Build](./FR-021-parallel-build.md)
+* [FR-022: Vacuum Implementation — Soft Delete and Graph Maintenance](./FR-022-vacuum-implementation.md)
+* [FR-023: Strategy Translation Callbacks](./FR-023-strategy-translation.md)
+* [FR-024: Custom EXPLAIN Options — Scan Diagnostics](./FR-024-custom-explain.md)
+* [FR-025: Custom Cumulative Statistics](./FR-025-custom-statistics.md)
+* [FR-026: PG18 Module Identity and Version Reporting](./FR-026-pg18-module-identity.md)
+* [FR-027: pgrx PG18 Support and Build Configuration](./FR-027-pgrx-pg18-upgrade.md)
+* [FR-028: ecvector Canonical Row Type](./FR-028-ecvector-canonical-row-type.md)
+* [FR-029: Multi-AM SQL Bootstrap Contract](./FR-029-multi-am-sql-bootstrap.md)
+* [FR-030: Current HNSW Access Method Surface](./FR-030-current-hnsw-am.md)
+* [FR-031: IVF Build and Storage](./FR-031-ivf-build-and-storage.md)
+* [FR-032: IVF Scan, Rerank, and Costing](./FR-032-ivf-scan-rerank-and-cost.md)
+* [FR-033: IVF Insert, Vacuum, and Admin Snapshots](./FR-033-ivf-insert-vacuum-admin.md)
+* [FR-034: DiskANN Build and Persisted Vamana Storage](./FR-034-diskann-build-and-storage.md)
+* [FR-035: DiskANN Scan, Prefilter, and Rerank](./FR-035-diskann-scan-prefilter-rerank.md)
+* [FR-036: DiskANN Insert, Vacuum, and Diagnostics](./FR-036-diskann-insert-vacuum-diagnostics.md)
+* [FR-037: Ecaz CLI Operator Surface](./FR-037-ecaz-cli-operator-surface.md)
+* [FR-038: Configured Benchmark Suite Runner](./FR-038-configured-benchmark-suite-runner.md)
+* [FR-039: SPIRE Local NVMe Placement (Superseded)](./FR-039-spire-local-nvme-placement.md)
+* [FR-040: SPIRE Routing and Search (Superseded)](./FR-040-spire-routing-and-search.md)
+* [FR-041: SPIRE Epoch Consistency (Superseded)](./FR-041-spire-epoch-consistency.md)
+* [FR-042: SPIRE Distributed libpq Coordinator (Superseded)](./FR-042-spire-distributed-libpq-coordinator.md)
+* [FR-043: SPIRE Update, Split, and Merge Lifecycle (Superseded)](./FR-043-spire-update-split-merge-lifecycle.md)
+* [FR-044: Ecaz Cloud Command Surface](./FR-044-cloud-command-surface.md)
+* [FR-045: Cloud Terraform-Managed Infrastructure](./FR-045-cloud-terraform-infrastructure.md)
+* [FR-046: Cloud Dataset Registry](./FR-046-cloud-dataset-registry.md)
+* [FR-047: In-VPC Corpus Load Fan-Out](./FR-047-cloud-loader-fanout.md)

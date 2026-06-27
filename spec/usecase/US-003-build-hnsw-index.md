@@ -1,8 +1,7 @@
 ---
 id: US-003
 title: Build HNSW Index on Existing Data
-type: user-story
-artifact_type: US
+type: US
 status: APPROVED
 relationships:
   - target: "ix://agent-ix/ecaz/StR-001"
@@ -14,7 +13,9 @@ relationships:
 ---
 # US-003: Build HNSW Index on Existing Data
 
-**As** a platform engineer,
+## Story
+
+**As a** platform engineer,
 **I want** to create an HNSW index on a table that already contains `tqvector` data,
 **So that** I can enable ANN search on existing data without re-inserting rows.
 

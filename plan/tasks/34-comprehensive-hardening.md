@@ -1,8 +1,10 @@
 # Task 34: Comprehensive Hardening
 
-Status: **implemented** — local-first hardening surface, reusable optional-tool
-installer, docs, seed harnesses, and packet-local audit artifacts landed;
-optional/manual lanes remain standalone/reporting until burn-in.
+Status: **complete** (2026-06-16) — umbrella task: the local-first
+hardening surface, reusable optional-tool installer, docs, seed harnesses,
+and packet-local audit artifacts landed on `main`, and the lane spawned
+the dedicated follow-on tasks 35–50. Optional/manual lanes remain
+standalone/reporting by design.
 
 ## Scope
 

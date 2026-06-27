@@ -1,8 +1,11 @@
 # Task 62: HNSW Graviton Full Optimization Follow-Through
 
-Status: **proposed**
+Status: **complete / superseded** (2026-06-16) — the isolated HNSW
+TurboQuant-vs-PqFastScan Graviton comparison this task scoped was produced
+by the Task 105/106/107 production sweep (all-index × all-quant × all-option
+on Graviton 4 at 10k/50k/100k/1M). No standalone Task 62 matrix remains.
 
-Follow-on to Task 61. Task 61 established the first low-cost AWS Graviton
+Was a follow-on to Task 61. Task 61 established the first low-cost AWS Graviton
 `ec_hnsw` lane, but the measured optimization used the default TurboQuant
 storage format. This task completes the HNSW Graviton work by measuring both
 supported HNSW storage formats, deciding whether the next wins are general HNSW

@@ -275,7 +275,15 @@ pub(crate) fn block_kernel_scoring_snapshots() -> Vec<BlockKernelScoringSnapshot
                     isa,
                 };
                 let snapshot = block_kernel_counters(key).snapshot(key);
-                if snapshot.flushes > 0 {
+                // Surface rows that scored a batch (flushes > 0) as well as
+                // width-only samples (Task 106 gap-2 grouped-PQ traversal probe
+                // records flush widths without running a block kernel, so
+                // flushes stays 0 but the width buckets carry the histogram).
+                let has_width_sample = snapshot.width_lt8_flushes > 0
+                    || snapshot.width_8_15_flushes > 0
+                    || snapshot.width_16_31_flushes > 0
+                    || snapshot.width_ge32_flushes > 0;
+                if snapshot.flushes > 0 || has_width_sample {
                     snapshots.push(snapshot);
                 }
             }

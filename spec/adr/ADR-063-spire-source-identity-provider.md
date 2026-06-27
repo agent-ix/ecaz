@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-063
 title: "SPIRE Source Identity Provider"
 status: ACCEPTED

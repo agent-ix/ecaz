@@ -1,6 +1,0 @@
-run_id	gate	status	artifact_dir
-20260526T032538Z	phase13e-static-remote-placement	pass	reviews/task-30/987-spire-phase13e-local-gates/artifacts/core-suite/phase13e-static-remote-placement
-20260526T032538Z	multicluster-customscan-read	pass	reviews/task-30/987-spire-phase13e-local-gates/artifacts/core-suite/multicluster-customscan-read
-20260526T032538Z	insert-read-after-customscan-helper	pass	reviews/task-30/987-spire-phase13e-local-gates/artifacts/core-suite/insert-read-after-customscan-helper
-20260526T032538Z	insert-read-after-customscan-trigger	pass	reviews/task-30/987-spire-phase13e-local-gates/artifacts/core-suite/insert-read-after-customscan-trigger
-20260526T032538Z	transport-overlap	pass	reviews/task-30/987-spire-phase13e-local-gates/artifacts/core-suite/transport-overlap

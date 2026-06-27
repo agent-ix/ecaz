@@ -1,0 +1,12 @@
+  pid   |     phase      
+--------+----------------
+ 634385 | building index
+(1 row)
+
+  pid   | state  | wait_event_type |  wait_event  |       age       |                                   query                                   
+--------+--------+-----------------+--------------+-----------------+---------------------------------------------------------------------------
+ 634385 | active |                 |              | 00:00:03.045658 | CREATE INDEX t106_1m_ivf_auto_tq_idx ON t106_1m_ivf_auto_tq_corpus       +
+        |        |                 |              |                 |         USING ec_ivf (embedding ecvector_ip_ops) WITH (nlists = 256, trai
+ 699893 |        | IO              | DataFileRead |                 | 
+(2 rows)
+

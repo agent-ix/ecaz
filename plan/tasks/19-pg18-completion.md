@@ -1,6 +1,6 @@
 # Task 19: PG18 Completion — Flip from Scaffolding to Primary Target
 
-Status: substantially complete on `main` — the shared PG18 infrastructure slice is wired and validated, PG17 fallback is preserved, preload-aware shared-pgstat activation coverage has a dedicated repo lane, parallel-scan callbacks are shelved indefinitely, and the remaining follow-on is ReadStream measurement.
+Status: **complete** (2026-06-16) — the shared PG18 infrastructure slice is wired and validated on `main` (`task19-parallel-index-build` merged), PG17 fallback is preserved, preload-aware shared-pgstat activation coverage has a dedicated repo lane, parallel-scan callbacks are shelved indefinitely, and the only residual was optional ReadStream measurement.
 
 Executes ADR-016 (PG18 primary target) and ADR-017 (module identity).
 

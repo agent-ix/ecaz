@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-076
 title: "Universal Block Kernel Pattern"
 status: ACCEPTED

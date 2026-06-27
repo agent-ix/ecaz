@@ -1,9 +1,13 @@
 # Task 21: SIMD Modernization — AVX-512 and ARM SVE
 
-Status: proposed — two SIMD backends under existing runtime dispatch.
+Status: **complete / superseded** (2026-06-16) — the AVX-512 + ARM
+SVE/SVE2 backends this task scoped were delivered by the Tasks 92–99
+block-kernel families: AVX-512 + SVE2 runtime dispatch is live in
+`src/quant/{simd,isa}.rs` and was validated on Graviton 4 + Intel in the
+Task 99 `(AM × quant × ISA)` closeout. No standalone Task 21 work remains.
 
-Executes ADR-039 (ARM SVE) and the AVX-512 investigation from the task-08
-`Scoring Hot Path Investigation` note.
+Executed ADR-039 (ARM SVE) and the AVX-512 investigation from the task-08
+`Scoring Hot Path Investigation` note via Tasks 92–99.
 
 ## Scope
 

@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-022
 title: "Drop Scoring LUT in Favor of Direct Codebook Multiply"
 status: PROPOSED

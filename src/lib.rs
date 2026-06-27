@@ -124,6 +124,23 @@ pub mod bench_api {
         crate::quant::qjl32::score_turboquant_qjl_scalar(quantizer, prepared, code, gamma)
     }
 
+    #[cfg(feature = "bench")]
+    pub const RABITQ32_BLOCK_WIDTH: usize = crate::quant::rabitq32::BLOCK_WIDTH;
+    /// Score one 32-candidate block of multi-bit (bits=2/4) RaBitQ codes
+    /// through the dispatched block kernel; returns the ISA label. Task 106.
+    #[cfg(feature = "bench")]
+    pub fn rabitq32_multibit_score_block32(
+        prepared: &crate::quant::rabitq::PreparedEstimator,
+        code_len: usize,
+        codes: [&[u8]; RABITQ32_BLOCK_WIDTH],
+        out_scores: &mut [f32],
+    ) -> &'static str {
+        let block = prepared
+            .bitsn_block_prepared(code_len)
+            .expect("multi-bit (bits=2/4) prepared estimator");
+        crate::quant::rabitq32::score_rabitq_bitsn_block32(block, codes, out_scores).label()
+    }
+
     // Hadamard
     #[cfg(all(feature = "bench", target_arch = "x86_64"))]
     pub use crate::quant::hadamard::fwht_in_place_avx2_for_test;
@@ -258,7 +275,7 @@ pub mod bench_api {
         spire_leaf_v2_segment_vec_ids_offset, vamana_decode_overflow_tuple_fixture,
         vamana_node_neighbors_offset, vamana_node_search_code_offset, IvfBlockRef,
         IvfCentroidTuple, IvfListDirectoryTuple, IvfMetadataPage, IvfPostingTuple,
-        IvfPqCodebookTuple, IvfRerankMode, IvfStorageFormat, MetricSummary,
+        IvfPqCodebookTuple, IvfRerankMode, IvfRerankScoreMode, IvfStorageFormat, MetricSummary,
         SpireAssignmentRowFixture, SpireConsistencyMode, SpireDeltaPartitionObjectFixture,
         SpireEpochManifest, SpireEpochState, SpireLeafPartitionObjectFixture,
         SpireLeafPartitionObjectV2MetaFixture, SpireLeafPartitionObjectV2SegmentFixture,
@@ -280,15 +297,33 @@ pub mod bench_api {
         EC_IVF_METADATA_FORMAT_VERSION_OFFSET, EC_IVF_METADATA_INSERTED_SINCE_BUILD_OFFSET,
         EC_IVF_METADATA_MAGIC, EC_IVF_METADATA_MAGIC_OFFSET, EC_IVF_METADATA_NLISTS_OFFSET,
         EC_IVF_METADATA_NPROBE_OFFSET, EC_IVF_METADATA_PQ_CODEBOOK_HEAD_OFFSET,
-        EC_IVF_METADATA_PQ_GROUP_SIZE_OFFSET, EC_IVF_METADATA_RERANK_OFFSET,
-        EC_IVF_METADATA_SEED_OFFSET, EC_IVF_METADATA_STORAGE_FORMAT_OFFSET,
-        EC_IVF_METADATA_TOTAL_DEAD_TUPLES_OFFSET, EC_IVF_METADATA_TOTAL_LIVE_TUPLES_OFFSET,
-        EC_IVF_METADATA_TRAINING_SAMPLE_ROWS_OFFSET, EC_IVF_METADATA_TRAINING_VERSION_OFFSET,
-        EC_IVF_POSTING_FLAGS_OFFSET, EC_IVF_POSTING_GAMMA_OFFSET, EC_IVF_POSTING_HEAPTIDS_OFFSET,
+        EC_IVF_METADATA_PQ_GROUP_SIZE_OFFSET, EC_IVF_METADATA_RABITQ_RERANK_CLIP_OFFSET,
+        EC_IVF_METADATA_RABITQ_RERANK_SCORE_MODE_OFFSET, EC_IVF_METADATA_RERANK_OFFSET,
+        EC_IVF_METADATA_RERANK_SIDECAR_DIRECTORY_HEAD_OFFSET,
+        EC_IVF_METADATA_RERANK_SIDECAR_HEAD_OFFSET, EC_IVF_METADATA_SEED_OFFSET,
+        EC_IVF_METADATA_STORAGE_FORMAT_OFFSET, EC_IVF_METADATA_TOTAL_DEAD_TUPLES_OFFSET,
+        EC_IVF_METADATA_TOTAL_LIVE_TUPLES_OFFSET, EC_IVF_METADATA_TRAINING_SAMPLE_ROWS_OFFSET,
+        EC_IVF_METADATA_TRAINING_VERSION_OFFSET, EC_IVF_POSTING_FLAGS_OFFSET,
+        EC_IVF_POSTING_GAMMA_OFFSET, EC_IVF_POSTING_HEAPTIDS_OFFSET,
         EC_IVF_POSTING_HEAPTID_COUNT_OFFSET, EC_IVF_POSTING_LIST_ID_OFFSET,
         EC_IVF_POSTING_PAYLOAD_OFFSET, EC_IVF_POSTING_RERANK_TID_OFFSET, EC_IVF_POSTING_TAG_OFFSET,
         EC_IVF_PQ_CODEBOOK_CENTROIDS_OFFSET, EC_IVF_PQ_CODEBOOK_GROUP_INDEX_OFFSET,
-        EC_IVF_PQ_CODEBOOK_NEXT_TID_OFFSET, EC_IVF_PQ_CODEBOOK_TAG_OFFSET, INDEX_FORMAT_V3_DISKANN,
+        EC_IVF_PQ_CODEBOOK_NEXT_TID_OFFSET, EC_IVF_PQ_CODEBOOK_TAG_OFFSET,
+        EC_IVF_RERANK_GROUP_HEADER_FIXED_BYTES,
+        EC_IVF_RERANK_GROUP_HEADER_HEADER_PAYLOAD_BYTES_OFFSET,
+        EC_IVF_RERANK_GROUP_HEADER_LIST_ID_OFFSET,
+        EC_IVF_RERANK_GROUP_HEADER_NEXT_GROUP_TID_OFFSET,
+        EC_IVF_RERANK_GROUP_HEADER_NEXT_SEGMENT_TID_OFFSET,
+        EC_IVF_RERANK_GROUP_HEADER_PAYLOAD_LEN_OFFSET,
+        EC_IVF_RERANK_GROUP_HEADER_RERANK_FORMAT_OFFSET,
+        EC_IVF_RERANK_GROUP_HEADER_RESERVED_OFFSET, EC_IVF_RERANK_GROUP_HEADER_SCORER_WIDTH_OFFSET,
+        EC_IVF_RERANK_GROUP_HEADER_TAG_OFFSET, EC_IVF_RERANK_GROUP_HEADER_TOTAL_HEAP_TIDS_OFFSET,
+        EC_IVF_RERANK_GROUP_HEADER_TOTAL_PAYLOAD_BYTES_OFFSET,
+        EC_IVF_RERANK_GROUP_HEADER_VALID_COUNT_OFFSET,
+        EC_IVF_RERANK_GROUP_PAYLOAD_SEGMENT_HEADER_BYTES,
+        EC_IVF_RERANK_GROUP_PAYLOAD_SEGMENT_NEXT_SEGMENT_TID_OFFSET,
+        EC_IVF_RERANK_GROUP_PAYLOAD_SEGMENT_PAYLOAD_BYTES_OFFSET,
+        EC_IVF_RERANK_GROUP_PAYLOAD_SEGMENT_TAG_OFFSET, INDEX_FORMAT_V3_DISKANN,
         SPIRE_ASSIGNMENT_ROW_FIXED_PREFIX_BYTES, SPIRE_ASSIGNMENT_ROW_FIXED_TAIL_BYTES,
         SPIRE_ASSIGNMENT_ROW_FLAGS_OFFSET, SPIRE_ASSIGNMENT_ROW_VEC_ID_LEN_OFFSET,
         SPIRE_ASSIGNMENT_ROW_VEC_ID_OFFSET, SPIRE_EPOCH_MANIFEST_ACTIVE_QUERY_COUNT_OFFSET,
@@ -1939,7 +1974,11 @@ fn ec_ivf_index_admin_snapshot(
         name!(training_sample_rows, i64),
         name!(training_version, i32),
         name!(storage_format, String),
+        name!(coarse_format, String),
+        name!(coarse_bits, i32),
         name!(rerank, String),
+        name!(rerank_placement, String),
+        name!(rerank_format, String),
         name!(total_live_tuples, i64),
         name!(total_dead_tuples, i64),
         name!(inserted_since_build, i64),
@@ -1975,7 +2014,11 @@ fn ec_ivf_index_admin_snapshot(
         i64::from(snapshot.training_sample_rows),
         i32::from(snapshot.training_version),
         snapshot.storage_format.to_owned(),
+        snapshot.coarse_format.to_owned(),
+        snapshot.coarse_bits,
         snapshot.rerank.to_owned(),
+        snapshot.rerank_placement.to_owned(),
+        snapshot.rerank_format.to_owned(),
         i64::try_from(snapshot.total_live_tuples).expect("total live tuples should fit in i64"),
         i64::try_from(snapshot.total_dead_tuples).expect("total dead tuples should fit in i64"),
         i64::try_from(snapshot.inserted_since_build)

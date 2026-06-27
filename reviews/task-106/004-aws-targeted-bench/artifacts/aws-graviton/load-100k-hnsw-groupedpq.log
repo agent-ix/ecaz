@@ -1,0 +1,22 @@
+[loader] inspecting /var/lib/pgsql/18/datasets/staged-task106-targeted/ec_real_100k_corpus.tsv
+[loader] inspecting /var/lib/pgsql/18/datasets/staged-task106-targeted/ec_real_100k_queries.tsv
+[loader] corpus: 100000 rows, sha256=07275cfd5a7a4b415ddf5eacc086de98294ac978532df46ffae30f9202323a95  queries: 1000 rows, sha256=a7cbec6fc44f6c148234538f61339d00d2f10646febc8f667dcbe75d9cf41782
+[loader] warning: manifest verification failed for /var/lib/pgsql/18/datasets/staged-task106-targeted/ec_real_100k_manifest.json: prefix="ec_real_100k" (expected "t106_aws_graviton_100k_hnsw_groupedpq")
+[loader] copied corpus table t106_aws_graviton_100k_hnsw_groupedpq_corpus in 27.64s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table t106_aws_graviton_100k_hnsw_groupedpq_corpus in 28.59s
+[loader] copied queries table t106_aws_graviton_100k_hnsw_groupedpq_queries in 300.51ms
+[loader] building t106_aws_graviton_100k_hnsw_groupedpq_pq_fastscan_m16_idx using ec_hnsw (reloptions=[m=16, ef_construction=128, build_source_column=source, storage_format=pq_fastscan]) ...
+[loader] built t106_aws_graviton_100k_hnsw_groupedpq_pq_fastscan_m16_idx in 124.81s
+┌─────────┬───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                                                                                         │
+╞═════════╪═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_hnsw                                                                                                                                       │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ t106_aws_graviton_100k_hnsw_groupedpq_corpus (100000 rows)                                                                                    │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ t106_aws_graviton_100k_hnsw_groupedpq_queries (1000 rows)                                                                                     │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ t106_aws_graviton_100k_hnsw_groupedpq_pq_fastscan_m16_idx [m=16, ef_construction=128, build_source_column=source, storage_format=pq_fastscan] │
+└─────────┴───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+[loader] completed prefix t106_aws_graviton_100k_hnsw_groupedpq in 203.20s

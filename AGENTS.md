@@ -90,6 +90,38 @@ Packet directories inside a task bucket must sort in chronological order.
 - `request.md` should summarize the result and point at the packet-local
   artifact files.
 
+### Never Commit: Corpus Data, Operational Logs, and Polling Cruft
+
+A review packet is decision-grade evidence, not a capture of everything the run
+emitted. A packet should be tens of files, not hundreds. The following are
+**banned from commits** and are gitignored (see root `.gitignore`); committing
+them bloats packets and git history with regenerable or throwaway data:
+
+- **Corpus / query / ground-truth data** (`*.tsv`, `*.tsv.gz` under `reviews/`
+  or `benchmarks/`). Regenerable via `ecaz corpus`. Record the corpus prefix,
+  scale, and SHA in `manifest.md` instead of committing the data. The single
+  largest object in this repo's history is a committed corpus `.tsv` — never
+  add more.
+- **SSM / tunnel / polling exhaust**: `tunnel-state/`, `tunnel-*.log`,
+  `*.tunneled.json`, `diagnostic-while-*/` status snapshots, and
+  `pg-readonly-status.log`. These are session/operational state, not evidence.
+- **Raw SSM RunShellScript output trees** (`**/awsrunShellScript/`
+  stdout/stderr dumps, often several MB each). Keep only the cited result
+  lines, copied into a small packet-local log or quoted in `manifest.md`.
+- **Poll snapshots**: `ssm-command-invocation.latest.json`,
+  `list-command-invocations*.json`. Keep the single
+  `ssm-command-invocation.final.json` when the manifest cites its command id /
+  status.
+- **Regenerable caches**: `truth-cache/` recall ground-truth.
+
+What **does** belong in a packet: `manifest.md`, `request.md`, `feedback/*.md`,
+the `ecaz bench suite` config, `suite-manifest*.json` + `suite-results*.jsonl`,
+and the specific recall / latency / storage / load / inspect result logs that
+`request.md` cites. If a packet is accumulating hundreds of files, you are
+committing exhaust — stop and prune before requesting review. `.gitignore`
+prevents new commits of this cruft, but already-tracked copies must be removed
+with an explicit `git rm` pass.
+
 ### Legacy `review/` Holding Area
 
 `review/` is now a temporary legacy holding area only. It currently contains
@@ -113,6 +145,36 @@ on each host class (`m5-local`, `intel-local`, `aws-intel`, `aws-graviton`).
 Do not use a current lane as the only evidence source: its `manifest.md` must
 cite the immutable source packet, head SHA, standard suite config, and raw
 artifacts used for promotion.
+
+### Task Closeout Requires 10/50/100k Benchmark Evidence
+
+**A task that changes quantizer, index, scan, rerank, posting, or storage
+behavior MUST NOT be closed, promoted, or merged-as-done on static code review,
+unit/pgrx tests, or predicted wins alone.** Closeout requires **A/B benchmark
+evidence at 10k / 50k / 100k minimum** (recall + latency + storage) for the
+**relevant quant/index** affected by the change, produced via `ecaz bench suite`
+and stored in the owning packet.
+
+- **Always test and measure; assumptions must be confirmed by facts.** Predictions
+  in this codebase frequently fall flat — "this will be faster / this is
+  recall-neutral / this win is marginal" is not a finding until a benchmark proves
+  it. A recall-safety unit test proves *correctness*, not the *latency/recall
+  effect*.
+- **A/B per change, at each gate.** Measure the effect of each change in isolation
+  (gate on/off, before/after commit, or plain-vs-variant index) so it is clear
+  which change moved the bar and which did not. Do **not** stack several changes
+  and bench only the aggregate — that destroys per-change attribution.
+- **Minimum matrix:** the relevant access method/quantizer × **10k / 50k / 100k**
+  (the staged real-corpus scales) × `recall` + `latency` + `storage`. Add the
+  variant axis the change introduces (e.g. rerank_format, quant_bits, residual
+  on/off, prune on/off). 1m is encouraged when 50k/100k show promise.
+- **"Bench deferred to a host" is not a closeout.** The task stays open until the
+  evidence lands. Local development hosts that have `ecaz` built + PG18 running +
+  the staged corpora (e.g. the Intel desktop) ARE bench hosts — check for the
+  binary and `data/staged-current/` before ever claiming env-blocked.
+- Evidence storage + provenance follow
+  `spec/non-functional/NFR-007-benchmark-provenance.md`; no fabricated numbers,
+  every cited result traces to a `results.jsonl` artifact.
 
 ### Benchmark Runner: `ecaz bench suite` Only
 

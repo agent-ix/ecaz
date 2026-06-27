@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-045
 title: "Page-Layout Discipline for Graph Access Methods"
 status: PROPOSED

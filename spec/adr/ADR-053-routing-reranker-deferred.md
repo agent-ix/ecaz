@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-053
 title: "Defer Learned Routing Reranker for SPIRE"
 status: DEFERRED

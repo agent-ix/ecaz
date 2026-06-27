@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-006
 title: "Reimplement quantizer from TurboQuantDB instead of using turbo-quant crate"
 status: DECIDED

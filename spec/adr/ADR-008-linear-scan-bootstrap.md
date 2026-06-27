@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-008
 title: "Bootstrap non-empty ec_hnsw scans with forward linear page iteration"
 status: DECIDED

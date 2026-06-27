@@ -1,4 +1,5 @@
 locals {
+  coordinator_store_device_suffixes = ["f", "g", "h", "i", "j", "k", "l", "m"]
   tags = {
     Project  = "ecaz"
     Phase    = var.phase_label
@@ -245,6 +246,28 @@ resource "aws_instance" "coordinator" {
   }
 
   tags = { Name = "ecaz-spire-aws-coord", Role = "coordinator" }
+}
+
+resource "aws_ebs_volume" "coordinator_store" {
+  count             = var.coordinator_extra_store_volume_count
+  availability_zone = var.availability_zone
+  type              = "gp3"
+  size              = var.coordinator_extra_store_volume_gb
+  iops              = 3000
+  throughput        = 125
+  encrypted         = true
+
+  tags = merge(local.tags, {
+    Name = "ecaz-spire-aws-coord-store-${count.index + 1}"
+    Role = "coordinator-local-store"
+  })
+}
+
+resource "aws_volume_attachment" "coordinator_store" {
+  count       = var.coordinator_extra_store_volume_count
+  device_name = "/dev/sd${local.coordinator_store_device_suffixes[count.index]}"
+  volume_id   = aws_ebs_volume.coordinator_store[count.index].id
+  instance_id = aws_instance.coordinator.id
 }
 
 resource "aws_instance" "remote" {

@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-054
 title: "SPIRE Top-Graph Frontier Contract"
 status: ACCEPTED

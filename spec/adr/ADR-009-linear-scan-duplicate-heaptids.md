@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-009
 title: "Emit all duplicate heap TIDs during linear scan bootstrap"
 status: DECIDED

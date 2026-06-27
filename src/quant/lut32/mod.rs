@@ -1,10 +1,11 @@
 //! 32-candidate blocked LUT scoring for TurboQuant no-QJL 4-bit codes.
 //!
+//! This is the ADR-076 block-kernel surface for the flagship production
+//! lane (TurboQuant no-QJL 4-bit). Scalar scoring is the bit-exact
+//! reference; ISA-specific modules return the ISA they actually implement.
 //! Block scorers return the ISA actually implemented by the selected backend.
 //! Counter call sites must use that returned value for kernel rows; scalar
-//! tails are still reported separately under `Isa::Scalar`. Fallback backend
-//! stubs that delegate to the scalar implementation return `Isa::Scalar` until
-//! replaced by real ISA kernels.
+//! tails are still reported separately under `Isa::Scalar`.
 
 mod avx2;
 mod neon;
@@ -120,11 +121,25 @@ pub(crate) fn score_lut_no_qjl_4bit_partial(
         return crate::quant::isa::Isa::Scalar;
     }
 
-    if crate::quant::isa::current_isa() == crate::quant::isa::Isa::Scalar {
+    // Scalar hosts score live lanes directly; a single live lane is also
+    // cheaper through the scalar tail than through a padded octet.
+    let host_isa = crate::quant::isa::current_isa();
+    if host_isa == crate::quant::isa::Isa::Scalar || codes.len() == 1 {
         for (code, out_score) in codes.iter().zip(out_scores.iter_mut()) {
             *out_score = scalar::score_scalar_tail(lut, original_dim, code);
         }
         return crate::quant::isa::Isa::Scalar;
+    }
+
+    // SVE hosts score the live width directly: the gather helper's whilelt
+    // loop predicates the tail natively, so no padding at all.
+    if matches!(
+        host_isa,
+        crate::quant::isa::Isa::Sve2 | crate::quant::isa::Isa::Sve
+    ) {
+        if let Some(isa) = sve::score_partial_sve(lut, original_dim, codes, out_scores) {
+            return isa;
+        }
     }
 
     let mut padded_codes = [codes[0]; BLOCK_WIDTH];
@@ -132,6 +147,30 @@ pub(crate) fn score_lut_no_qjl_4bit_partial(
         padded_codes[lane] = *code;
     }
     let mut block_scores = [0.0_f32; BLOCK_WIDTH];
+
+    // AVX2/NEON tails pay only for the octets they occupy; the HNSW
+    // exact-mode flush-width histogram is dominated by sub-8 flushes, where
+    // a full padded block wastes three quarters of the kernel work.
+    let padded_len = codes.len().next_multiple_of(8);
+    if let Some(isa) = avx2::score_octets_avx2(
+        lut,
+        original_dim,
+        &padded_codes[..padded_len],
+        &mut block_scores[..padded_len],
+    ) {
+        out_scores.copy_from_slice(&block_scores[..codes.len()]);
+        return isa;
+    }
+    if let Some(isa) = neon::score_octets_neon(
+        lut,
+        original_dim,
+        &padded_codes[..padded_len],
+        &mut block_scores[..padded_len],
+    ) {
+        out_scores.copy_from_slice(&block_scores[..codes.len()]);
+        return isa;
+    }
+
     let isa = score_lut_no_qjl_4bit_block32(lut, original_dim, padded_codes, &mut block_scores);
     out_scores.copy_from_slice(&block_scores[..codes.len()]);
     isa
@@ -143,10 +182,47 @@ pub(crate) fn score_lut_no_qjl_4bit_scalar(lut: &[f32], original_dim: usize, cod
 }
 
 #[cfg(test)]
+pub(crate) fn score_lut_no_qjl_4bit_block32_avx2_for_test(
+    lut: &[f32],
+    original_dim: usize,
+    codes: [&[u8]; BLOCK_WIDTH],
+    out_scores: &mut [f32],
+) -> Option<crate::quant::isa::Isa> {
+    avx2::score_block32_avx2_for_test(lut, original_dim, &codes, out_scores)
+}
+
+#[cfg(test)]
+pub(crate) fn score_lut_no_qjl_4bit_block32_neon_for_test(
+    lut: &[f32],
+    original_dim: usize,
+    codes: [&[u8]; BLOCK_WIDTH],
+    out_scores: &mut [f32],
+) -> Option<crate::quant::isa::Isa> {
+    neon::score_block32_neon_for_test(lut, original_dim, &codes, out_scores)
+}
+
+#[cfg(test)]
+pub(crate) fn score_lut_no_qjl_4bit_block32_sve_for_test(
+    lut: &[f32],
+    original_dim: usize,
+    codes: [&[u8]; BLOCK_WIDTH],
+    out_scores: &mut [f32],
+) -> Option<crate::quant::isa::Isa> {
+    sve::score_block32_sve_for_test(lut, original_dim, &codes, out_scores)
+}
+
+#[cfg(test)]
+pub(crate) fn runtime_sve_vector_lanes_for_test() -> Option<usize> {
+    sve::runtime_vector_lanes_for_test()
+}
+
+#[cfg(test)]
 mod tests {
     use super::{
-        score_lut_no_qjl_4bit_batch, score_lut_no_qjl_4bit_block32, score_lut_no_qjl_4bit_scalar,
-        BLOCK_WIDTH,
+        runtime_sve_vector_lanes_for_test, score_lut_no_qjl_4bit_batch,
+        score_lut_no_qjl_4bit_block32, score_lut_no_qjl_4bit_block32_avx2_for_test,
+        score_lut_no_qjl_4bit_block32_neon_for_test, score_lut_no_qjl_4bit_block32_sve_for_test,
+        score_lut_no_qjl_4bit_partial, score_lut_no_qjl_4bit_scalar, BLOCK_WIDTH,
     };
 
     fn lut(dim: usize) -> Vec<f32> {
@@ -206,30 +282,167 @@ mod tests {
     }
 
     #[test]
-    fn lut32_block32_matches_scalar_tail_bits() {
+    fn lut32_block32_matches_scalar_tail_bits_across_dims() {
+        for dim in [7usize, 8, 16, 1536] {
+            let lut = lut(dim);
+            let codes: Vec<Vec<u8>> = (0..BLOCK_WIDTH).map(|seed| code(dim, seed as u8)).collect();
+            let code_refs: Vec<&[u8]> = codes.iter().map(Vec::as_slice).collect();
+            let mut scores = vec![0.0; BLOCK_WIDTH];
+
+            let isa = score_lut_no_qjl_4bit_block32(
+                &lut,
+                dim,
+                code_refs
+                    .as_slice()
+                    .try_into()
+                    .expect("test fixture is exactly one block"),
+                &mut scores,
+            );
+
+            for (code, score) in code_refs.iter().zip(scores.iter()) {
+                assert_eq!(
+                    score.to_bits(),
+                    score_lut_no_qjl_4bit_scalar(&lut, dim, code).to_bits(),
+                    "dim={dim}"
+                );
+            }
+            assert!(matches!(
+                isa,
+                crate::quant::isa::Isa::Scalar
+                    | crate::quant::isa::Isa::Neon
+                    | crate::quant::isa::Isa::Sve
+                    | crate::quant::isa::Isa::Sve2
+                    | crate::quant::isa::Isa::Avx2
+            ));
+        }
+    }
+
+    #[test]
+    fn lut32_avx2_backend_matches_scalar_reference_bits_when_available() {
+        for dim in [7usize, 1536] {
+            let lut = lut(dim);
+            let codes: Vec<Vec<u8>> = (0..BLOCK_WIDTH).map(|seed| code(dim, seed as u8)).collect();
+            let code_refs: Vec<&[u8]> = codes.iter().map(Vec::as_slice).collect();
+            let mut scores = vec![0.0; BLOCK_WIDTH];
+
+            let Some(isa) = score_lut_no_qjl_4bit_block32_avx2_for_test(
+                &lut,
+                dim,
+                code_refs
+                    .as_slice()
+                    .try_into()
+                    .expect("test fixture is exactly one block"),
+                &mut scores,
+            ) else {
+                return;
+            };
+
+            assert_eq!(isa, crate::quant::isa::Isa::Avx2);
+            for (code, score) in code_refs.iter().zip(scores.iter()) {
+                assert_eq!(
+                    score.to_bits(),
+                    score_lut_no_qjl_4bit_scalar(&lut, dim, code).to_bits(),
+                    "dim={dim}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn lut32_neon_backend_matches_scalar_reference_bits_when_available() {
+        for dim in [7usize, 1536] {
+            let lut = lut(dim);
+            let codes: Vec<Vec<u8>> = (0..BLOCK_WIDTH).map(|seed| code(dim, seed as u8)).collect();
+            let code_refs: Vec<&[u8]> = codes.iter().map(Vec::as_slice).collect();
+            let mut scores = vec![0.0; BLOCK_WIDTH];
+
+            let Some(isa) = score_lut_no_qjl_4bit_block32_neon_for_test(
+                &lut,
+                dim,
+                code_refs
+                    .as_slice()
+                    .try_into()
+                    .expect("test fixture is exactly one block"),
+                &mut scores,
+            ) else {
+                return;
+            };
+
+            assert_eq!(isa, crate::quant::isa::Isa::Neon);
+            for (code, score) in code_refs.iter().zip(scores.iter()) {
+                assert_eq!(
+                    score.to_bits(),
+                    score_lut_no_qjl_4bit_scalar(&lut, dim, code).to_bits(),
+                    "dim={dim}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn lut32_sve_backend_matches_scalar_reference_bits_when_available() {
+        for dim in [7usize, 1536] {
+            let lut = lut(dim);
+            let codes: Vec<Vec<u8>> = (0..BLOCK_WIDTH).map(|seed| code(dim, seed as u8)).collect();
+            let code_refs: Vec<&[u8]> = codes.iter().map(Vec::as_slice).collect();
+            let mut scores = vec![0.0; BLOCK_WIDTH];
+
+            let Some(isa) = score_lut_no_qjl_4bit_block32_sve_for_test(
+                &lut,
+                dim,
+                code_refs
+                    .as_slice()
+                    .try_into()
+                    .expect("test fixture is exactly one block"),
+                &mut scores,
+            ) else {
+                return;
+            };
+
+            assert!(matches!(
+                isa,
+                crate::quant::isa::Isa::Sve | crate::quant::isa::Isa::Sve2
+            ));
+            assert!(runtime_sve_vector_lanes_for_test().is_some());
+            for (code, score) in code_refs.iter().zip(scores.iter()) {
+                assert_eq!(
+                    score.to_bits(),
+                    score_lut_no_qjl_4bit_scalar(&lut, dim, code).to_bits(),
+                    "dim={dim}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn lut32_partial_matches_scalar_tail_bits_across_widths() {
         let dim = 1536;
         let lut = lut(dim);
-        let codes: Vec<Vec<u8>> = (0..BLOCK_WIDTH).map(|seed| code(dim, seed as u8)).collect();
-        let code_refs: Vec<&[u8]> = codes.iter().map(Vec::as_slice).collect();
-        let mut scores = vec![0.0; BLOCK_WIDTH];
+        // Widths cover the single-lane scalar fast path and every octet
+        // count of the AVX2 partial entry, including exact octet multiples.
+        for width in [1usize, 2, 7, 8, 9, 16, 17, 25, 31] {
+            let codes: Vec<Vec<u8>> = (0..width).map(|seed| code(dim, seed as u8)).collect();
+            let code_refs: Vec<&[u8]> = codes.iter().map(Vec::as_slice).collect();
+            let mut scores = vec![0.0; code_refs.len()];
 
-        let isa = score_lut_no_qjl_4bit_block32(
-            &lut,
-            dim,
-            code_refs
-                .as_slice()
-                .try_into()
-                .expect("test fixture is exactly one block"),
-            &mut scores,
-        );
+            let isa = score_lut_no_qjl_4bit_partial(&lut, dim, &code_refs, &mut scores);
 
-        for (code, score) in code_refs.iter().zip(scores.iter()) {
-            assert_eq!(
-                score.to_bits(),
-                score_lut_no_qjl_4bit_scalar(&lut, dim, code).to_bits()
-            );
+            for (code, score) in code_refs.iter().zip(scores.iter()) {
+                assert_eq!(
+                    score.to_bits(),
+                    score_lut_no_qjl_4bit_scalar(&lut, dim, code).to_bits(),
+                    "width={width}"
+                );
+            }
+            assert!(matches!(
+                isa,
+                crate::quant::isa::Isa::Scalar
+                    | crate::quant::isa::Isa::Neon
+                    | crate::quant::isa::Isa::Sve
+                    | crate::quant::isa::Isa::Sve2
+                    | crate::quant::isa::Isa::Avx2
+            ));
         }
-        assert_eq!(isa, crate::quant::isa::Isa::Scalar);
     }
 
     #[test]

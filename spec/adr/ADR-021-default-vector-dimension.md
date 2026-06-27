@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-021
 title: "Default Vector Dimension: 2048 over 1536, with 1024 and 1536 as Supported Tiers"
 status: PROPOSED

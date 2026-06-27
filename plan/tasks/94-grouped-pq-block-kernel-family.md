@@ -1,6 +1,16 @@
 # Task 94: Grouped-PQ / PqFastScan Block Kernel Family (All AMs × All ISAs)
 
-Status: in review (2026-06-09; implementation, local validation, automatic CI cleanup, local IVF PqFastScan suite-smoke evidence through `reviews/task-94/024-local-bench-smoke/`, and broader local IVF/DiskANN PqFastScan bench matrix evidence through `reviews/task-94/025-local-bench-matrix/`; final Graviton 4 / full benchmark closeout evidence pending approval)
+Status: **complete** (2026-06-16) — grouped-PQ/PqFastScan block kernels,
+all codec registrations, the F8 shuffle-repack slice, and the
+release-backend AC5 rerun landed with reviewer-approved local evidence
+through `reviews/task-94/028-release-ac5-rerun/` (merged via PRs
+#19/#22–#24). The sole remaining item — the deferred Graviton 4 pass —
+was executed as part of the Task 105/106/107 production G4 sweep on the
+newer build. HNSW grouped-PQ traversal stays per-candidate by the packet
+017 disposition (traversal batching is a recommended follow-up task).
+All implementation and local evidence merged to main via PRs #19/#22–#24.
+Status line refreshed 2026-06-11; previously stale at the 2026-06-09
+wording.)
 Owner: coder (to be assigned). Phase III parallel — multiple coders OK across Tasks 93–98.
 Priority: 2 (highest documented kernel-win ROI in Phase III)
 
@@ -34,9 +44,17 @@ now do. The slice:
   `reviews/task-99/000-pre-closeout-architecture-review/feedback/`
   (finding F8).
 
-The Graviton 4 runbook (packet 027) executes after this slice and
-Task 101, so ARM evidence is collected once against the final kernel
-shape.
+The Graviton 4 pass executes after this slice and Task 101, so ARM
+evidence is collected once against the final kernel shape. (Stale
+pointer fixed 2026-06-11: this previously cited a "runbook (packet
+027)", but ordinal 027 was consumed by the local latency-width rerun
+and no Task 94 runbook packet was ever written. The G4 pass now rides
+the Task 99 profile trip — see
+`reviews/task-99/002-profile-suiteconfig/artifacts/t99-profile-design.md`
+— whose grouped-PQ cells (IVF pq_fastscan batch-on/off,
+DiskANN prefilter_kind=grouped_pq batch-on/off, with counters) are this
+task's closing G4 evidence, annotated as measuring the gather-shape
+SVE2 kernel if the SVE repack remains deferred.)
 
 ## Why
 

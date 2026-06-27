@@ -1,6 +1,6 @@
 # Task 10: Full Benchmark Suite
 
-Status: **infrastructure complete** — A3/A5/A6 are merged on `main`; C1 is now in result-capture mode, starting with trustworthy real-corpus `NFR-001` latency reporting
+Status: **complete** (2026-06-16) — benchmark infrastructure (criterion/iai/dhat/property harnesses, A3/A5/A6) merged on `main`; the C1 result-capture work has been exercised extensively by the Task 51/59–107 measurement program (real-corpus recall/latency/storage across AWS Graviton + Intel).
 
 ## Scope
 

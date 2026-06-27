@@ -65,6 +65,23 @@ variable "remote_storage_gb" {
   default     = 100
 }
 
+variable "coordinator_extra_store_volume_count" {
+  description = "Additional gp3 EBS volumes attached to the coordinator for SPIRE local-store tablespace benchmarks."
+  type        = number
+  default     = 0
+
+  validation {
+    condition     = var.coordinator_extra_store_volume_count >= 0 && var.coordinator_extra_store_volume_count <= 8
+    error_message = "coordinator_extra_store_volume_count must be between 0 and 8."
+  }
+}
+
+variable "coordinator_extra_store_volume_gb" {
+  description = "Size in GiB for each additional coordinator local-store benchmark volume."
+  type        = number
+  default     = 200
+}
+
 variable "owner" {
   description = "Owner handle for the cost-tag set defined in Phase 13a.8."
   type        = string

@@ -1,8 +1,7 @@
 ---
 id: US-012
 title: Store and Query Canonical ecvector Columns
-type: user-story
-artifact_type: US
+type: US
 status: APPROVED
 relationships:
   - target: "ix://agent-ix/ecaz/StR-005"
@@ -17,7 +16,9 @@ relationships:
 ---
 # US-012: Store and Query Canonical ecvector Columns
 
-**As** an application developer,
+## Story
+
+**As an** application developer,
 **I want** to store embeddings in `ecvector(dim)` columns,
 **So that** I can use one canonical row type with HNSW, IVF, and DiskANN indexes.
 

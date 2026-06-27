@@ -1,0 +1,17 @@
+┌────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬───────────────────────────────────┐
+│ nprobe ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state                       │
+╞════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═══════════════════════════════════╡
+│ 32     ┆ 300   ┆ 17.6 ms ┆ 1.23 ms ┆ 16.7 ms ┆ 17.3 ms ┆ 19.8 ms ┆ 23.1 ms ┆ 25.5 ms ┆ task102_baseline_spire_real10k_on │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 64     ┆ 300   ┆ 17.4 ms ┆ 1.02 ms ┆ 16.4 ms ┆ 17.2 ms ┆ 18.2 ms ┆ 23.4 ms ┆ 26.7 ms ┆ task102_baseline_spire_real10k_on │
+└────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴───────────────────────────────────┘
+[block-kernel-counters] command=latency label=nprobe=32 surface=spire quant=turboquant isa=scalar flushes=19200 candidates=3000000 elapsed_nanos=3352518592 elapsed_ms=3352.518592 kernel_flushes=9600 kernel_candidates=2851200 kernel_elapsed_nanos=3028187936 kernel_elapsed_ms=3028.187936 scalar_flushes=9600 scalar_candidates=148800 scalar_elapsed_nanos=324330656 scalar_elapsed_ms=324.330656 width_lt8=0 width_8_15=0 width_16_31=0 width_ge32=9600
+[task87-counters] command=latency label=nprobe=32 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=ivf flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=spire flushes=9600 candidates=3000000 elapsed_nanos=3352518592 elapsed_ms=3352.518592 lut32_flushes=9600 lut32_candidates=2851200
+[task87-counters] command=latency label=nprobe=32 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[block-kernel-counters] command=latency label=nprobe=64 surface=spire quant=turboquant isa=scalar flushes=19200 candidates=3000000 elapsed_nanos=3325659946 elapsed_ms=3325.659946 kernel_flushes=9600 kernel_candidates=2851200 kernel_elapsed_nanos=3003756656 kernel_elapsed_ms=3003.756656 scalar_flushes=9600 scalar_candidates=148800 scalar_elapsed_nanos=321903290 scalar_elapsed_ms=321.903290 width_lt8=0 width_8_15=0 width_16_31=0 width_ge32=9600
+[task87-counters] command=latency label=nprobe=64 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=nprobe=64 surface=ivf flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=nprobe=64 surface=spire flushes=9600 candidates=3000000 elapsed_nanos=3325659946 elapsed_ms=3325.659946 lut32_flushes=9600 lut32_candidates=2851200
+[task87-counters] command=latency label=nprobe=64 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0

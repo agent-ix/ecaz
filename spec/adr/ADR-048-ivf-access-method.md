@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-048
 title: "IVF as Optional Access Method"
 status: IMPLEMENTED

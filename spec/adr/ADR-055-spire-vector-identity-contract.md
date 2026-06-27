@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-055
 title: "SPIRE Vector Identity Contract"
 status: ACCEPTED

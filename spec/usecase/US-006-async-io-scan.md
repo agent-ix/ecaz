@@ -1,8 +1,7 @@
 ---
 id: US-006
 title: Async I/O Accelerated Scan
-type: user-story
-artifact_type: US
+type: US
 status: DRAFT
 priority: P1-critical
 relationships:
@@ -12,7 +11,9 @@ relationships:
 ---
 # US-006: Async I/O Accelerated Scan
 
-**As** a platform engineer running tqvector on PostgreSQL 18 with network-attached storage,
+## Story
+
+**As a** platform engineer running tqvector on PostgreSQL 18 with network-attached storage,
 **I want** HNSW index scans to use async I/O prefetch for both graph traversal and linear scan phases,
 **So that** cold-cache query latency is reduced by prefetching pages the scan will need before it blocks on them.
 

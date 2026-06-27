@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-026
 title: "Live Insert Backlink Lock Ordering"
 status: ACCEPTED

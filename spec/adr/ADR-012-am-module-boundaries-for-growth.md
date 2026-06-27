@@ -1,3 +1,8 @@
+---
+id: ADR-012
+title: "AM Module Boundaries For Growth"
+type: ADR
+---
 # ADR-012: AM Module Boundaries For Growth
 
 ## Status

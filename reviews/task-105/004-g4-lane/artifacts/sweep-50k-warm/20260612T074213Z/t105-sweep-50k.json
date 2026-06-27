@@ -1,0 +1,1627 @@
+{
+  "name": "task105-sweep-50k",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-105/002-full-scale-sweep-configs/artifacts",
+  "defaults": {
+    "pg": 18,
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 100,
+    "iterations": 300,
+    "force_index": true,
+    "sample_backend_memory": false
+  },
+  "steps": [
+    {
+      "kind": "recall",
+      "name": "recall-hnsw-tq-full_lut-on-50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "hnsw",
+        "turboquant",
+        "mode=full_lut",
+        "kernel_on"
+      ],
+      "prefix": "t105_hnsw_tq_50k",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80,
+        160
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-hnsw-tq-full_lut-on-50k.log",
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on",
+        "ec_hnsw.turboquant_exact_score_mode=full_lut"
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-hnsw-tq-full_lut-on-50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "hnsw",
+        "turboquant",
+        "mode=full_lut",
+        "kernel_on"
+      ],
+      "prefix": "t105_hnsw_tq_50k",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80,
+        160
+      ],
+      "iterations": 300,
+      "concurrency": 1,
+      "cache_state": "t105_hnsw_tq_full_lut_on_50k",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-hnsw-tq-full_lut-on-50k.log",
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on",
+        "ec_hnsw.turboquant_exact_score_mode=full_lut"
+      ]
+    },
+    {
+      "kind": "recall",
+      "name": "recall-hnsw-tq-full_lut-off-50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "hnsw",
+        "turboquant",
+        "mode=full_lut",
+        "kernel_off"
+      ],
+      "prefix": "t105_hnsw_tq_50k",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80,
+        160
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-hnsw-tq-full_lut-off-50k.log",
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on",
+        "ec_hnsw.turboquant_exact_score_mode=full_lut",
+        "ec_hnsw.candidate_batch_scoring=off"
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-hnsw-tq-full_lut-off-50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "hnsw",
+        "turboquant",
+        "mode=full_lut",
+        "kernel_off"
+      ],
+      "prefix": "t105_hnsw_tq_50k",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80,
+        160
+      ],
+      "iterations": 300,
+      "concurrency": 1,
+      "cache_state": "t105_hnsw_tq_full_lut_off_50k",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-hnsw-tq-full_lut-off-50k.log",
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on",
+        "ec_hnsw.turboquant_exact_score_mode=full_lut",
+        "ec_hnsw.candidate_batch_scoring=off"
+      ]
+    },
+    {
+      "kind": "recall",
+      "name": "recall-hnsw-tq-int8_approx-on-50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "hnsw",
+        "turboquant",
+        "mode=int8_approx",
+        "kernel_on"
+      ],
+      "prefix": "t105_hnsw_tq_50k",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80,
+        160
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-hnsw-tq-int8_approx-on-50k.log",
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on",
+        "ec_hnsw.turboquant_exact_score_mode=int8_approx"
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-hnsw-tq-int8_approx-on-50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "hnsw",
+        "turboquant",
+        "mode=int8_approx",
+        "kernel_on"
+      ],
+      "prefix": "t105_hnsw_tq_50k",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80,
+        160
+      ],
+      "iterations": 300,
+      "concurrency": 1,
+      "cache_state": "t105_hnsw_tq_int8_approx_on_50k",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-hnsw-tq-int8_approx-on-50k.log",
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on",
+        "ec_hnsw.turboquant_exact_score_mode=int8_approx"
+      ]
+    },
+    {
+      "kind": "recall",
+      "name": "recall-hnsw-tq-int8_approx-off-50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "hnsw",
+        "turboquant",
+        "mode=int8_approx",
+        "kernel_off"
+      ],
+      "prefix": "t105_hnsw_tq_50k",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80,
+        160
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-hnsw-tq-int8_approx-off-50k.log",
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on",
+        "ec_hnsw.turboquant_exact_score_mode=int8_approx",
+        "ec_hnsw.candidate_batch_scoring=off"
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-hnsw-tq-int8_approx-off-50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "hnsw",
+        "turboquant",
+        "mode=int8_approx",
+        "kernel_off"
+      ],
+      "prefix": "t105_hnsw_tq_50k",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80,
+        160
+      ],
+      "iterations": 300,
+      "concurrency": 1,
+      "cache_state": "t105_hnsw_tq_int8_approx_off_50k",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-hnsw-tq-int8_approx-off-50k.log",
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on",
+        "ec_hnsw.turboquant_exact_score_mode=int8_approx",
+        "ec_hnsw.candidate_batch_scoring=off"
+      ]
+    },
+    {
+      "kind": "recall",
+      "name": "recall-hnsw-tq-exact-on-50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "hnsw",
+        "turboquant",
+        "mode=exact",
+        "kernel_on",
+        "no_kernel_baseline"
+      ],
+      "prefix": "t105_hnsw_tq_50k",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80,
+        160
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-hnsw-tq-exact-on-50k.log",
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on",
+        "ec_hnsw.turboquant_exact_score_mode=exact"
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-hnsw-tq-exact-on-50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "hnsw",
+        "turboquant",
+        "mode=exact",
+        "kernel_on",
+        "no_kernel_baseline"
+      ],
+      "prefix": "t105_hnsw_tq_50k",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80,
+        160
+      ],
+      "iterations": 300,
+      "concurrency": 1,
+      "cache_state": "t105_hnsw_tq_exact_on_50k",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-hnsw-tq-exact-on-50k.log",
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on",
+        "ec_hnsw.turboquant_exact_score_mode=exact"
+      ]
+    },
+    {
+      "kind": "recall",
+      "name": "recall-hnsw-tq-exact-off-50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "hnsw",
+        "turboquant",
+        "mode=exact",
+        "kernel_off",
+        "no_kernel_baseline"
+      ],
+      "prefix": "t105_hnsw_tq_50k",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80,
+        160
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-hnsw-tq-exact-off-50k.log",
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on",
+        "ec_hnsw.turboquant_exact_score_mode=exact",
+        "ec_hnsw.candidate_batch_scoring=off"
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-hnsw-tq-exact-off-50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "hnsw",
+        "turboquant",
+        "mode=exact",
+        "kernel_off",
+        "no_kernel_baseline"
+      ],
+      "prefix": "t105_hnsw_tq_50k",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80,
+        160
+      ],
+      "iterations": 300,
+      "concurrency": 1,
+      "cache_state": "t105_hnsw_tq_exact_off_50k",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-hnsw-tq-exact-off-50k.log",
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on",
+        "ec_hnsw.turboquant_exact_score_mode=exact",
+        "ec_hnsw.candidate_batch_scoring=off"
+      ]
+    },
+    {
+      "kind": "recall",
+      "name": "recall-hnsw-tq-tiled_lut-on-50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "hnsw",
+        "turboquant",
+        "mode=tiled_lut",
+        "kernel_on",
+        "kernel_status=retired"
+      ],
+      "prefix": "t105_hnsw_tq_50k",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80,
+        160
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-hnsw-tq-tiled_lut-on-50k.log",
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on",
+        "ec_hnsw.turboquant_exact_score_mode=tiled_lut"
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-hnsw-tq-tiled_lut-on-50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "hnsw",
+        "turboquant",
+        "mode=tiled_lut",
+        "kernel_on",
+        "kernel_status=retired"
+      ],
+      "prefix": "t105_hnsw_tq_50k",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80,
+        160
+      ],
+      "iterations": 300,
+      "concurrency": 1,
+      "cache_state": "t105_hnsw_tq_tiled_lut_on_50k",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-hnsw-tq-tiled_lut-on-50k.log",
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on",
+        "ec_hnsw.turboquant_exact_score_mode=tiled_lut"
+      ]
+    },
+    {
+      "kind": "recall",
+      "name": "recall-hnsw-tq-default-on-50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "hnsw",
+        "turboquant",
+        "default_path",
+        "kernel_on"
+      ],
+      "prefix": "t105_hnsw_tq_50k",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80,
+        160
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-hnsw-tq-default-on-50k.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-hnsw-tq-default-on-50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "hnsw",
+        "turboquant",
+        "default_path",
+        "kernel_on"
+      ],
+      "prefix": "t105_hnsw_tq_50k",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80,
+        160
+      ],
+      "iterations": 300,
+      "concurrency": 1,
+      "cache_state": "t105_hnsw_tq_default_on_50k",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-hnsw-tq-default-on-50k.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-hnsw-tq-default-off-50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "hnsw",
+        "turboquant",
+        "default_path",
+        "kernel_off"
+      ],
+      "prefix": "t105_hnsw_tq_50k",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80,
+        160
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-hnsw-tq-default-off-50k.log",
+      "session_gucs": [
+        "ec_hnsw.candidate_batch_scoring=off"
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-hnsw-tq-default-off-50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "hnsw",
+        "turboquant",
+        "default_path",
+        "kernel_off"
+      ],
+      "prefix": "t105_hnsw_tq_50k",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80,
+        160
+      ],
+      "iterations": 300,
+      "concurrency": 1,
+      "cache_state": "t105_hnsw_tq_default_off_50k",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-hnsw-tq-default-off-50k.log",
+      "session_gucs": [
+        "ec_hnsw.candidate_batch_scoring=off"
+      ]
+    },
+    {
+      "kind": "recall",
+      "name": "recall-hnsw-rabitq-on-50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "hnsw",
+        "rabitq",
+        "kernel_on"
+      ],
+      "prefix": "t105_hnsw_rabitq_50k",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80,
+        160
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-hnsw-rabitq-on-50k.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-hnsw-rabitq-on-50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "hnsw",
+        "rabitq",
+        "kernel_on"
+      ],
+      "prefix": "t105_hnsw_rabitq_50k",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80,
+        160
+      ],
+      "iterations": 300,
+      "concurrency": 1,
+      "cache_state": "t105_hnsw_rabitq_on_50k",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-hnsw-rabitq-on-50k.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-hnsw-rabitq-off-50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "hnsw",
+        "rabitq",
+        "kernel_off"
+      ],
+      "prefix": "t105_hnsw_rabitq_50k",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80,
+        160
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-hnsw-rabitq-off-50k.log",
+      "session_gucs": [
+        "ec_hnsw.candidate_batch_scoring=off"
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-hnsw-rabitq-off-50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "hnsw",
+        "rabitq",
+        "kernel_off"
+      ],
+      "prefix": "t105_hnsw_rabitq_50k",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80,
+        160
+      ],
+      "iterations": 300,
+      "concurrency": 1,
+      "cache_state": "t105_hnsw_rabitq_off_50k",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-hnsw-rabitq-off-50k.log",
+      "session_gucs": [
+        "ec_hnsw.candidate_batch_scoring=off"
+      ]
+    },
+    {
+      "kind": "recall",
+      "name": "recall-ivf-turboquant-on-50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "ivf",
+        "turboquant",
+        "kernel_on"
+      ],
+      "prefix": "t105_ivf_tq_50k",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        64
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-ivf-turboquant-on-50k.log",
+      "ivf_scratch_soa_batch_decode": true
+    },
+    {
+      "kind": "latency",
+      "name": "latency-ivf-turboquant-on-50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "ivf",
+        "turboquant",
+        "kernel_on"
+      ],
+      "prefix": "t105_ivf_tq_50k",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        64
+      ],
+      "iterations": 300,
+      "concurrency": 1,
+      "cache_state": "t105_ivf_turboquant_on_50k",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-ivf-turboquant-on-50k.log",
+      "ivf_scratch_soa_batch_decode": true
+    },
+    {
+      "kind": "recall",
+      "name": "recall-ivf-turboquant-off-50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "ivf",
+        "turboquant",
+        "kernel_off"
+      ],
+      "prefix": "t105_ivf_tq_50k",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        64
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-ivf-turboquant-off-50k.log",
+      "ivf_scratch_soa_batch_decode": false
+    },
+    {
+      "kind": "latency",
+      "name": "latency-ivf-turboquant-off-50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "ivf",
+        "turboquant",
+        "kernel_off"
+      ],
+      "prefix": "t105_ivf_tq_50k",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        64
+      ],
+      "iterations": 300,
+      "concurrency": 1,
+      "cache_state": "t105_ivf_turboquant_off_50k",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-ivf-turboquant-off-50k.log",
+      "ivf_scratch_soa_batch_decode": false
+    },
+    {
+      "kind": "recall",
+      "name": "recall-ivf-rabitq1-on-50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "ivf",
+        "rabitq1",
+        "kernel_on"
+      ],
+      "prefix": "t105_ivf_rabitq1_50k",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        64
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-ivf-rabitq1-on-50k.log",
+      "ivf_scratch_soa_batch_decode": true
+    },
+    {
+      "kind": "latency",
+      "name": "latency-ivf-rabitq1-on-50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "ivf",
+        "rabitq1",
+        "kernel_on"
+      ],
+      "prefix": "t105_ivf_rabitq1_50k",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        64
+      ],
+      "iterations": 300,
+      "concurrency": 1,
+      "cache_state": "t105_ivf_rabitq1_on_50k",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-ivf-rabitq1-on-50k.log",
+      "ivf_scratch_soa_batch_decode": true
+    },
+    {
+      "kind": "recall",
+      "name": "recall-ivf-rabitq1-off-50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "ivf",
+        "rabitq1",
+        "kernel_off"
+      ],
+      "prefix": "t105_ivf_rabitq1_50k",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        64
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-ivf-rabitq1-off-50k.log",
+      "ivf_scratch_soa_batch_decode": false
+    },
+    {
+      "kind": "latency",
+      "name": "latency-ivf-rabitq1-off-50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "ivf",
+        "rabitq1",
+        "kernel_off"
+      ],
+      "prefix": "t105_ivf_rabitq1_50k",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        64
+      ],
+      "iterations": 300,
+      "concurrency": 1,
+      "cache_state": "t105_ivf_rabitq1_off_50k",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-ivf-rabitq1-off-50k.log",
+      "ivf_scratch_soa_batch_decode": false
+    },
+    {
+      "kind": "recall",
+      "name": "recall-ivf-rabitq4-on-50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "ivf",
+        "rabitq4",
+        "kernel_on",
+        "no_kernel_storage_lane"
+      ],
+      "prefix": "t105_ivf_rabitq4_50k",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        64
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-ivf-rabitq4-on-50k.log",
+      "ivf_scratch_soa_batch_decode": true
+    },
+    {
+      "kind": "latency",
+      "name": "latency-ivf-rabitq4-on-50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "ivf",
+        "rabitq4",
+        "kernel_on",
+        "no_kernel_storage_lane"
+      ],
+      "prefix": "t105_ivf_rabitq4_50k",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        64
+      ],
+      "iterations": 300,
+      "concurrency": 1,
+      "cache_state": "t105_ivf_rabitq4_on_50k",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-ivf-rabitq4-on-50k.log",
+      "ivf_scratch_soa_batch_decode": true
+    },
+    {
+      "kind": "recall",
+      "name": "recall-ivf-pq_fastscan-on-50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "ivf",
+        "pq_fastscan",
+        "kernel_on"
+      ],
+      "prefix": "t105_ivf_pqfs_50k",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        64
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-ivf-pq_fastscan-on-50k.log",
+      "ivf_scratch_soa_batch_decode": true
+    },
+    {
+      "kind": "latency",
+      "name": "latency-ivf-pq_fastscan-on-50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "ivf",
+        "pq_fastscan",
+        "kernel_on"
+      ],
+      "prefix": "t105_ivf_pqfs_50k",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        64
+      ],
+      "iterations": 300,
+      "concurrency": 1,
+      "cache_state": "t105_ivf_pq_fastscan_on_50k",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-ivf-pq_fastscan-on-50k.log",
+      "ivf_scratch_soa_batch_decode": true
+    },
+    {
+      "kind": "recall",
+      "name": "recall-ivf-pq_fastscan-off-50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "ivf",
+        "pq_fastscan",
+        "kernel_off"
+      ],
+      "prefix": "t105_ivf_pqfs_50k",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        64
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-ivf-pq_fastscan-off-50k.log",
+      "ivf_scratch_soa_batch_decode": false
+    },
+    {
+      "kind": "latency",
+      "name": "latency-ivf-pq_fastscan-off-50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "ivf",
+        "pq_fastscan",
+        "kernel_off"
+      ],
+      "prefix": "t105_ivf_pqfs_50k",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        64
+      ],
+      "iterations": 300,
+      "concurrency": 1,
+      "cache_state": "t105_ivf_pq_fastscan_off_50k",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-ivf-pq_fastscan-off-50k.log",
+      "ivf_scratch_soa_batch_decode": false
+    },
+    {
+      "kind": "recall",
+      "name": "recall-spire-turboquant-on-50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "spire",
+        "turboquant",
+        "kernel_on"
+      ],
+      "prefix": "t105_spire_tq_50k",
+      "profile": "ec_spire",
+      "k": 10,
+      "sweep": [
+        16,
+        64
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-spire-turboquant-on-50k.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-spire-turboquant-on-50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "spire",
+        "turboquant",
+        "kernel_on"
+      ],
+      "prefix": "t105_spire_tq_50k",
+      "profile": "ec_spire",
+      "k": 10,
+      "sweep": [
+        16,
+        64
+      ],
+      "iterations": 300,
+      "concurrency": 1,
+      "cache_state": "t105_spire_turboquant_on_50k",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-spire-turboquant-on-50k.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-spire-turboquant-off-50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "spire",
+        "turboquant",
+        "kernel_off"
+      ],
+      "prefix": "t105_spire_tq_50k",
+      "profile": "ec_spire",
+      "k": 10,
+      "sweep": [
+        16,
+        64
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-spire-turboquant-off-50k.log",
+      "session_gucs": [
+        "ec_spire.candidate_batch_scoring=off"
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-spire-turboquant-off-50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "spire",
+        "turboquant",
+        "kernel_off"
+      ],
+      "prefix": "t105_spire_tq_50k",
+      "profile": "ec_spire",
+      "k": 10,
+      "sweep": [
+        16,
+        64
+      ],
+      "iterations": 300,
+      "concurrency": 1,
+      "cache_state": "t105_spire_turboquant_off_50k",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-spire-turboquant-off-50k.log",
+      "session_gucs": [
+        "ec_spire.candidate_batch_scoring=off"
+      ]
+    },
+    {
+      "kind": "recall",
+      "name": "recall-spire-rabitq-on-50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "spire",
+        "rabitq",
+        "kernel_on",
+        "attribution_check"
+      ],
+      "prefix": "t105_spire_rabitq_50k",
+      "profile": "ec_spire",
+      "k": 10,
+      "sweep": [
+        16,
+        64
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-spire-rabitq-on-50k.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-spire-rabitq-on-50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "spire",
+        "rabitq",
+        "kernel_on",
+        "attribution_check"
+      ],
+      "prefix": "t105_spire_rabitq_50k",
+      "profile": "ec_spire",
+      "k": 10,
+      "sweep": [
+        16,
+        64
+      ],
+      "iterations": 300,
+      "concurrency": 1,
+      "cache_state": "t105_spire_rabitq_on_50k",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-spire-rabitq-on-50k.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-spire-rabitq-off-50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "spire",
+        "rabitq",
+        "kernel_off",
+        "attribution_check"
+      ],
+      "prefix": "t105_spire_rabitq_50k",
+      "profile": "ec_spire",
+      "k": 10,
+      "sweep": [
+        16,
+        64
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-spire-rabitq-off-50k.log",
+      "session_gucs": [
+        "ec_spire.candidate_batch_scoring=off"
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-spire-rabitq-off-50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "spire",
+        "rabitq",
+        "kernel_off",
+        "attribution_check"
+      ],
+      "prefix": "t105_spire_rabitq_50k",
+      "profile": "ec_spire",
+      "k": 10,
+      "sweep": [
+        16,
+        64
+      ],
+      "iterations": 300,
+      "concurrency": 1,
+      "cache_state": "t105_spire_rabitq_off_50k",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-spire-rabitq-off-50k.log",
+      "session_gucs": [
+        "ec_spire.candidate_batch_scoring=off"
+      ]
+    },
+    {
+      "kind": "recall",
+      "name": "recall-diskann-pqfs-binary-on-50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "diskann",
+        "binary",
+        "kernel_on"
+      ],
+      "prefix": "t105_diskann_pqfs_50k",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-diskann-pqfs-binary-on-50k.log",
+      "session_gucs": [
+        "ec_diskann.prefilter_kind=binary_sidecar"
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-diskann-pqfs-binary-on-50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "diskann",
+        "binary",
+        "kernel_on"
+      ],
+      "prefix": "t105_diskann_pqfs_50k",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128
+      ],
+      "iterations": 300,
+      "concurrency": 1,
+      "cache_state": "t105_diskann_pqfs_binary_on_50k",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-diskann-pqfs-binary-on-50k.log",
+      "session_gucs": [
+        "ec_diskann.prefilter_kind=binary_sidecar"
+      ]
+    },
+    {
+      "kind": "recall",
+      "name": "recall-diskann-pqfs-binary-off-50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "diskann",
+        "binary",
+        "kernel_off"
+      ],
+      "prefix": "t105_diskann_pqfs_50k",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-diskann-pqfs-binary-off-50k.log",
+      "session_gucs": [
+        "ec_diskann.prefilter_kind=binary_sidecar",
+        "ec_diskann.candidate_batch_scoring=off"
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-diskann-pqfs-binary-off-50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "diskann",
+        "binary",
+        "kernel_off"
+      ],
+      "prefix": "t105_diskann_pqfs_50k",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128
+      ],
+      "iterations": 300,
+      "concurrency": 1,
+      "cache_state": "t105_diskann_pqfs_binary_off_50k",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-diskann-pqfs-binary-off-50k.log",
+      "session_gucs": [
+        "ec_diskann.prefilter_kind=binary_sidecar",
+        "ec_diskann.candidate_batch_scoring=off"
+      ]
+    },
+    {
+      "kind": "recall",
+      "name": "recall-diskann-pqfs-grouped-pq-on-50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "diskann",
+        "grouped_pq",
+        "kernel_on"
+      ],
+      "prefix": "t105_diskann_pqfs_50k",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-diskann-pqfs-grouped-pq-on-50k.log",
+      "session_gucs": [
+        "ec_diskann.prefilter_kind=grouped_pq"
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-diskann-pqfs-grouped-pq-on-50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "diskann",
+        "grouped_pq",
+        "kernel_on"
+      ],
+      "prefix": "t105_diskann_pqfs_50k",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128
+      ],
+      "iterations": 300,
+      "concurrency": 1,
+      "cache_state": "t105_diskann_pqfs_grouped_pq_on_50k",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-diskann-pqfs-grouped-pq-on-50k.log",
+      "session_gucs": [
+        "ec_diskann.prefilter_kind=grouped_pq"
+      ]
+    },
+    {
+      "kind": "recall",
+      "name": "recall-diskann-pqfs-grouped-pq-off-50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "diskann",
+        "grouped_pq",
+        "kernel_off"
+      ],
+      "prefix": "t105_diskann_pqfs_50k",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-diskann-pqfs-grouped-pq-off-50k.log",
+      "session_gucs": [
+        "ec_diskann.prefilter_kind=grouped_pq",
+        "ec_diskann.candidate_batch_scoring=off"
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-diskann-pqfs-grouped-pq-off-50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "diskann",
+        "grouped_pq",
+        "kernel_off"
+      ],
+      "prefix": "t105_diskann_pqfs_50k",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128
+      ],
+      "iterations": 300,
+      "concurrency": 1,
+      "cache_state": "t105_diskann_pqfs_grouped_pq_off_50k",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-diskann-pqfs-grouped-pq-off-50k.log",
+      "session_gucs": [
+        "ec_diskann.prefilter_kind=grouped_pq",
+        "ec_diskann.candidate_batch_scoring=off"
+      ]
+    },
+    {
+      "kind": "recall",
+      "name": "recall-diskann-rabitq-on-50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "diskann",
+        "rabitq",
+        "kernel_on"
+      ],
+      "prefix": "t105_diskann_rabitq_50k",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-diskann-rabitq-on-50k.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-diskann-rabitq-on-50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "diskann",
+        "rabitq",
+        "kernel_on"
+      ],
+      "prefix": "t105_diskann_rabitq_50k",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128
+      ],
+      "iterations": 300,
+      "concurrency": 1,
+      "cache_state": "t105_diskann_rabitq_on_50k",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-diskann-rabitq-on-50k.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-diskann-rabitq-off-50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "diskann",
+        "rabitq",
+        "kernel_off"
+      ],
+      "prefix": "t105_diskann_rabitq_50k",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-diskann-rabitq-off-50k.log",
+      "session_gucs": [
+        "ec_diskann.candidate_batch_scoring=off"
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-diskann-rabitq-off-50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "diskann",
+        "rabitq",
+        "kernel_off"
+      ],
+      "prefix": "t105_diskann_rabitq_50k",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128
+      ],
+      "iterations": 300,
+      "concurrency": 1,
+      "cache_state": "t105_diskann_rabitq_off_50k",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-diskann-rabitq-off-50k.log",
+      "session_gucs": [
+        "ec_diskann.candidate_batch_scoring=off"
+      ]
+    },
+    {
+      "kind": "recall",
+      "name": "recall-diskann-tq-on-50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "diskann",
+        "turboquant",
+        "kernel_on"
+      ],
+      "prefix": "t105_diskann_tq_50k",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-diskann-tq-on-50k.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-diskann-tq-on-50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "diskann",
+        "turboquant",
+        "kernel_on"
+      ],
+      "prefix": "t105_diskann_tq_50k",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128
+      ],
+      "iterations": 300,
+      "concurrency": 1,
+      "cache_state": "t105_diskann_tq_on_50k",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-diskann-tq-on-50k.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-diskann-tq-off-50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "diskann",
+        "turboquant",
+        "kernel_off"
+      ],
+      "prefix": "t105_diskann_tq_50k",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-diskann-tq-off-50k.log",
+      "session_gucs": [
+        "ec_diskann.candidate_batch_scoring=off"
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-diskann-tq-off-50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "diskann",
+        "turboquant",
+        "kernel_off"
+      ],
+      "prefix": "t105_diskann_tq_50k",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128
+      ],
+      "iterations": 300,
+      "concurrency": 1,
+      "cache_state": "t105_diskann_tq_off_50k",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-diskann-tq-off-50k.log",
+      "session_gucs": [
+        "ec_diskann.candidate_batch_scoring=off"
+      ]
+    },
+    {
+      "kind": "storage",
+      "name": "storage-t105_hnsw_tq_50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "storage"
+      ],
+      "prefix": "t105_hnsw_tq_50k",
+      "log_file": "${artifact_dir}/storage-t105_hnsw_tq_50k.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-t105_hnsw_rabitq_50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "storage"
+      ],
+      "prefix": "t105_hnsw_rabitq_50k",
+      "log_file": "${artifact_dir}/storage-t105_hnsw_rabitq_50k.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-t105_ivf_tq_50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "storage"
+      ],
+      "prefix": "t105_ivf_tq_50k",
+      "log_file": "${artifact_dir}/storage-t105_ivf_tq_50k.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-t105_ivf_rabitq1_50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "storage"
+      ],
+      "prefix": "t105_ivf_rabitq1_50k",
+      "log_file": "${artifact_dir}/storage-t105_ivf_rabitq1_50k.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-t105_ivf_rabitq4_50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "storage"
+      ],
+      "prefix": "t105_ivf_rabitq4_50k",
+      "log_file": "${artifact_dir}/storage-t105_ivf_rabitq4_50k.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-t105_ivf_pqfs_50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "storage"
+      ],
+      "prefix": "t105_ivf_pqfs_50k",
+      "log_file": "${artifact_dir}/storage-t105_ivf_pqfs_50k.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-t105_spire_tq_50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "storage"
+      ],
+      "prefix": "t105_spire_tq_50k",
+      "log_file": "${artifact_dir}/storage-t105_spire_tq_50k.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-t105_spire_rabitq_50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "storage"
+      ],
+      "prefix": "t105_spire_rabitq_50k",
+      "log_file": "${artifact_dir}/storage-t105_spire_rabitq_50k.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-t105_diskann_pqfs_50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "storage"
+      ],
+      "prefix": "t105_diskann_pqfs_50k",
+      "log_file": "${artifact_dir}/storage-t105_diskann_pqfs_50k.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-t105_diskann_rabitq_50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "storage"
+      ],
+      "prefix": "t105_diskann_rabitq_50k",
+      "log_file": "${artifact_dir}/storage-t105_diskann_rabitq_50k.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-t105_diskann_tq_50k",
+      "tags": [
+        "task105",
+        "scale=50k",
+        "storage"
+      ],
+      "prefix": "t105_diskann_tq_50k",
+      "log_file": "${artifact_dir}/storage-t105_diskann_tq_50k.log"
+    }
+  ]
+}

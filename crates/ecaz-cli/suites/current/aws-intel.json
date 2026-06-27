@@ -13,11 +13,17 @@
     "sample_backend_memory": true,
     "memory_sample_interval_ms": 25
   },
+  "thresholds": [],
   "steps": [
     {
       "kind": "raw",
       "name": "precheck-host",
-      "tags": ["setup", "precheck", "current", "aws-intel"],
+      "tags": [
+        "setup",
+        "precheck",
+        "current",
+        "aws-intel"
+      ],
       "args": [
         "dev",
         "sql",
@@ -33,46 +39,1201 @@
         "--log-output",
         "${artifact_dir}/precheck-host.log"
       ],
-      "expected_artifacts": ["${artifact_dir}/precheck-host.log"]
+      "expected_artifacts": [
+        "${artifact_dir}/precheck-host.log"
+      ]
     },
     {
       "kind": "load",
-      "name": "load-100k-ivf-rabitq",
-      "tags": ["load", "current", "aws-intel", "ec_real_100k", "ivf", "rabitq"],
-      "prefix": "current_aws_intel_real100k_ivf_rabitq",
-      "profile": "ec_ivf",
-      "corpus_file": "/var/lib/pgsql/18/datasets/staged-current/ec_real_100k_corpus.tsv",
-      "queries_file": "/var/lib/pgsql/18/datasets/staged-current/ec_real_100k_queries.tsv",
-      "manifest_file": "/var/lib/pgsql/18/datasets/staged-current/ec_real_100k_manifest.json",
+      "name": "load-10k-hnsw",
+      "tags": [
+        "load",
+        "current",
+        "aws-intel",
+        "ec_real_10k",
+        "hnsw"
+      ],
+      "prefix": "current_aws_intel_real10k_hnsw",
+      "profile": "ec_hnsw",
+      "corpus_file": "/var/lib/pgsql/18/datasets/staged-current/ec_real_10k_corpus.tsv",
+      "queries_file": "/var/lib/pgsql/18/datasets/staged-current/ec_real_10k_queries.tsv",
+      "manifest_file": "/var/lib/pgsql/18/datasets/staged-current/ec_real_10k_manifest.json",
       "allow_manifest_mismatch": true,
-      "storage_format": "rabitq",
-      "reloptions": ["nlists=128", "nprobe=64", "rerank=off"]
+      "m": [
+        16
+      ],
+      "ef_construction": 128
     },
     {
       "kind": "recall",
-      "name": "recall-100k-ivf-rabitq-nprobe-sweep",
-      "tags": ["recall", "current", "aws-intel", "ec_real_100k", "ivf", "rabitq"],
-      "prefix": "current_aws_intel_real100k_ivf_rabitq",
-      "profile": "ec_ivf",
+      "name": "recall-10k-hnsw",
+      "tags": [
+        "recall",
+        "current",
+        "aws-intel",
+        "ec_real_10k",
+        "hnsw"
+      ],
+      "prefix": "current_aws_intel_real10k_hnsw",
+      "profile": "ec_hnsw",
       "k": 10,
-      "sweep": [16, 32, 64, 128]
+      "sweep": [
+        40,
+        64,
+        100,
+        128,
+        160,
+        200
+      ]
     },
     {
       "kind": "latency",
-      "name": "latency-100k-ivf-rabitq-nprobe-sweep",
-      "tags": ["latency", "current", "aws-intel", "ec_real_100k", "ivf", "rabitq"],
-      "prefix": "current_aws_intel_real100k_ivf_rabitq",
-      "profile": "ec_ivf",
+      "name": "latency-10k-hnsw",
+      "tags": [
+        "latency",
+        "current",
+        "aws-intel",
+        "ec_real_10k",
+        "hnsw"
+      ],
+      "prefix": "current_aws_intel_real10k_hnsw",
+      "profile": "ec_hnsw",
       "k": 10,
-      "sweep": [16, 32, 64, 128],
+      "sweep": [
+        40,
+        64,
+        100,
+        128,
+        160,
+        200
+      ],
       "concurrency": 1,
       "cache_state": "post_recall_warm"
     },
     {
       "kind": "storage",
-      "name": "storage-100k-ivf-rabitq",
-      "tags": ["storage", "current", "aws-intel", "ec_real_100k", "ivf", "rabitq"],
-      "prefix": "current_aws_intel_real100k_ivf_rabitq"
+      "name": "storage-10k-hnsw",
+      "tags": [
+        "storage",
+        "current",
+        "aws-intel",
+        "ec_real_10k",
+        "hnsw"
+      ],
+      "prefix": "current_aws_intel_real10k_hnsw"
+    },
+    {
+      "kind": "load",
+      "name": "load-10k-ivf",
+      "tags": [
+        "load",
+        "current",
+        "aws-intel",
+        "ec_real_10k",
+        "ivf"
+      ],
+      "prefix": "current_aws_intel_real10k_ivf",
+      "profile": "ec_ivf",
+      "corpus_file": "/var/lib/pgsql/18/datasets/staged-current/ec_real_10k_corpus.tsv",
+      "queries_file": "/var/lib/pgsql/18/datasets/staged-current/ec_real_10k_queries.tsv",
+      "manifest_file": "/var/lib/pgsql/18/datasets/staged-current/ec_real_10k_manifest.json",
+      "allow_manifest_mismatch": true
+    },
+    {
+      "kind": "recall",
+      "name": "recall-10k-ivf",
+      "tags": [
+        "recall",
+        "current",
+        "aws-intel",
+        "ec_real_10k",
+        "ivf"
+      ],
+      "prefix": "current_aws_intel_real10k_ivf",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-10k-ivf",
+      "tags": [
+        "latency",
+        "current",
+        "aws-intel",
+        "ec_real_10k",
+        "ivf"
+      ],
+      "prefix": "current_aws_intel_real10k_ivf",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-10k-ivf",
+      "tags": [
+        "storage",
+        "current",
+        "aws-intel",
+        "ec_real_10k",
+        "ivf"
+      ],
+      "prefix": "current_aws_intel_real10k_ivf"
+    },
+    {
+      "kind": "load",
+      "name": "load-10k-diskann",
+      "tags": [
+        "load",
+        "current",
+        "aws-intel",
+        "ec_real_10k",
+        "diskann"
+      ],
+      "prefix": "current_aws_intel_real10k_diskann",
+      "profile": "ec_diskann",
+      "corpus_file": "/var/lib/pgsql/18/datasets/staged-current/ec_real_10k_corpus.tsv",
+      "queries_file": "/var/lib/pgsql/18/datasets/staged-current/ec_real_10k_queries.tsv",
+      "manifest_file": "/var/lib/pgsql/18/datasets/staged-current/ec_real_10k_manifest.json",
+      "allow_manifest_mismatch": true
+    },
+    {
+      "kind": "recall",
+      "name": "recall-10k-diskann",
+      "tags": [
+        "recall",
+        "current",
+        "aws-intel",
+        "ec_real_10k",
+        "diskann"
+      ],
+      "prefix": "current_aws_intel_real10k_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128,
+        200,
+        400,
+        800
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-10k-diskann",
+      "tags": [
+        "latency",
+        "current",
+        "aws-intel",
+        "ec_real_10k",
+        "diskann"
+      ],
+      "prefix": "current_aws_intel_real10k_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128,
+        200,
+        400,
+        800
+      ],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-10k-diskann",
+      "tags": [
+        "storage",
+        "current",
+        "aws-intel",
+        "ec_real_10k",
+        "diskann"
+      ],
+      "prefix": "current_aws_intel_real10k_diskann"
+    },
+    {
+      "kind": "load",
+      "name": "load-10k-spire",
+      "tags": [
+        "load",
+        "current",
+        "aws-intel",
+        "ec_real_10k",
+        "spire"
+      ],
+      "prefix": "current_aws_intel_real10k_spire",
+      "profile": "ec_spire",
+      "corpus_file": "/var/lib/pgsql/18/datasets/staged-current/ec_real_10k_corpus.tsv",
+      "queries_file": "/var/lib/pgsql/18/datasets/staged-current/ec_real_10k_queries.tsv",
+      "manifest_file": "/var/lib/pgsql/18/datasets/staged-current/ec_real_10k_manifest.json",
+      "allow_manifest_mismatch": true
+    },
+    {
+      "kind": "recall",
+      "name": "recall-10k-spire",
+      "tags": [
+        "recall",
+        "current",
+        "aws-intel",
+        "ec_real_10k",
+        "spire"
+      ],
+      "prefix": "current_aws_intel_real10k_spire",
+      "profile": "ec_spire",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-10k-spire",
+      "tags": [
+        "latency",
+        "current",
+        "aws-intel",
+        "ec_real_10k",
+        "spire"
+      ],
+      "prefix": "current_aws_intel_real10k_spire",
+      "profile": "ec_spire",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32
+      ],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-10k-spire",
+      "tags": [
+        "storage",
+        "current",
+        "aws-intel",
+        "ec_real_10k",
+        "spire"
+      ],
+      "prefix": "current_aws_intel_real10k_spire"
+    },
+    {
+      "kind": "load",
+      "name": "load-50k-hnsw",
+      "tags": [
+        "load",
+        "current",
+        "aws-intel",
+        "ec_real_50k",
+        "hnsw"
+      ],
+      "prefix": "current_aws_intel_real50k_hnsw",
+      "profile": "ec_hnsw",
+      "corpus_file": "/var/lib/pgsql/18/datasets/staged-current/ec_real_50k_corpus.tsv",
+      "queries_file": "/var/lib/pgsql/18/datasets/staged-current/ec_real_50k_queries.tsv",
+      "manifest_file": "/var/lib/pgsql/18/datasets/staged-current/ec_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "m": [
+        16
+      ],
+      "ef_construction": 128
+    },
+    {
+      "kind": "recall",
+      "name": "recall-50k-hnsw",
+      "tags": [
+        "recall",
+        "current",
+        "aws-intel",
+        "ec_real_50k",
+        "hnsw"
+      ],
+      "prefix": "current_aws_intel_real50k_hnsw",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        40,
+        64,
+        100,
+        128,
+        160,
+        200
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-50k-hnsw",
+      "tags": [
+        "latency",
+        "current",
+        "aws-intel",
+        "ec_real_50k",
+        "hnsw"
+      ],
+      "prefix": "current_aws_intel_real50k_hnsw",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        40,
+        64,
+        100,
+        128,
+        160,
+        200
+      ],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-50k-hnsw",
+      "tags": [
+        "storage",
+        "current",
+        "aws-intel",
+        "ec_real_50k",
+        "hnsw"
+      ],
+      "prefix": "current_aws_intel_real50k_hnsw"
+    },
+    {
+      "kind": "load",
+      "name": "load-50k-ivf",
+      "tags": [
+        "load",
+        "current",
+        "aws-intel",
+        "ec_real_50k",
+        "ivf"
+      ],
+      "prefix": "current_aws_intel_real50k_ivf",
+      "profile": "ec_ivf",
+      "corpus_file": "/var/lib/pgsql/18/datasets/staged-current/ec_real_50k_corpus.tsv",
+      "queries_file": "/var/lib/pgsql/18/datasets/staged-current/ec_real_50k_queries.tsv",
+      "manifest_file": "/var/lib/pgsql/18/datasets/staged-current/ec_real_50k_manifest.json",
+      "allow_manifest_mismatch": true
+    },
+    {
+      "kind": "recall",
+      "name": "recall-50k-ivf",
+      "tags": [
+        "recall",
+        "current",
+        "aws-intel",
+        "ec_real_50k",
+        "ivf"
+      ],
+      "prefix": "current_aws_intel_real50k_ivf",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-50k-ivf",
+      "tags": [
+        "latency",
+        "current",
+        "aws-intel",
+        "ec_real_50k",
+        "ivf"
+      ],
+      "prefix": "current_aws_intel_real50k_ivf",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-50k-ivf",
+      "tags": [
+        "storage",
+        "current",
+        "aws-intel",
+        "ec_real_50k",
+        "ivf"
+      ],
+      "prefix": "current_aws_intel_real50k_ivf"
+    },
+    {
+      "kind": "load",
+      "name": "load-50k-diskann",
+      "tags": [
+        "load",
+        "current",
+        "aws-intel",
+        "ec_real_50k",
+        "diskann"
+      ],
+      "prefix": "current_aws_intel_real50k_diskann",
+      "profile": "ec_diskann",
+      "corpus_file": "/var/lib/pgsql/18/datasets/staged-current/ec_real_50k_corpus.tsv",
+      "queries_file": "/var/lib/pgsql/18/datasets/staged-current/ec_real_50k_queries.tsv",
+      "manifest_file": "/var/lib/pgsql/18/datasets/staged-current/ec_real_50k_manifest.json",
+      "allow_manifest_mismatch": true
+    },
+    {
+      "kind": "recall",
+      "name": "recall-50k-diskann",
+      "tags": [
+        "recall",
+        "current",
+        "aws-intel",
+        "ec_real_50k",
+        "diskann"
+      ],
+      "prefix": "current_aws_intel_real50k_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128,
+        200,
+        400,
+        800
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-50k-diskann",
+      "tags": [
+        "latency",
+        "current",
+        "aws-intel",
+        "ec_real_50k",
+        "diskann"
+      ],
+      "prefix": "current_aws_intel_real50k_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128,
+        200,
+        400,
+        800
+      ],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-50k-diskann",
+      "tags": [
+        "storage",
+        "current",
+        "aws-intel",
+        "ec_real_50k",
+        "diskann"
+      ],
+      "prefix": "current_aws_intel_real50k_diskann"
+    },
+    {
+      "kind": "load",
+      "name": "load-50k-spire",
+      "tags": [
+        "load",
+        "current",
+        "aws-intel",
+        "ec_real_50k",
+        "spire"
+      ],
+      "prefix": "current_aws_intel_real50k_spire",
+      "profile": "ec_spire",
+      "corpus_file": "/var/lib/pgsql/18/datasets/staged-current/ec_real_50k_corpus.tsv",
+      "queries_file": "/var/lib/pgsql/18/datasets/staged-current/ec_real_50k_queries.tsv",
+      "manifest_file": "/var/lib/pgsql/18/datasets/staged-current/ec_real_50k_manifest.json",
+      "allow_manifest_mismatch": true
+    },
+    {
+      "kind": "recall",
+      "name": "recall-50k-spire",
+      "tags": [
+        "recall",
+        "current",
+        "aws-intel",
+        "ec_real_50k",
+        "spire"
+      ],
+      "prefix": "current_aws_intel_real50k_spire",
+      "profile": "ec_spire",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-50k-spire",
+      "tags": [
+        "latency",
+        "current",
+        "aws-intel",
+        "ec_real_50k",
+        "spire"
+      ],
+      "prefix": "current_aws_intel_real50k_spire",
+      "profile": "ec_spire",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32
+      ],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-50k-spire",
+      "tags": [
+        "storage",
+        "current",
+        "aws-intel",
+        "ec_real_50k",
+        "spire"
+      ],
+      "prefix": "current_aws_intel_real50k_spire"
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-hnsw",
+      "tags": [
+        "load",
+        "current",
+        "aws-intel",
+        "ec_real_100k",
+        "hnsw"
+      ],
+      "prefix": "current_aws_intel_real100k_hnsw",
+      "profile": "ec_hnsw",
+      "corpus_file": "/var/lib/pgsql/18/datasets/staged-current/ec_real_100k_corpus.tsv",
+      "queries_file": "/var/lib/pgsql/18/datasets/staged-current/ec_real_100k_queries.tsv",
+      "manifest_file": "/var/lib/pgsql/18/datasets/staged-current/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "m": [
+        16
+      ],
+      "ef_construction": 128
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-hnsw",
+      "tags": [
+        "recall",
+        "current",
+        "aws-intel",
+        "ec_real_100k",
+        "hnsw"
+      ],
+      "prefix": "current_aws_intel_real100k_hnsw",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        40,
+        64,
+        100,
+        128,
+        160,
+        200
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-hnsw",
+      "tags": [
+        "latency",
+        "current",
+        "aws-intel",
+        "ec_real_100k",
+        "hnsw"
+      ],
+      "prefix": "current_aws_intel_real100k_hnsw",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        40,
+        64,
+        100,
+        128,
+        160,
+        200
+      ],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k-hnsw",
+      "tags": [
+        "storage",
+        "current",
+        "aws-intel",
+        "ec_real_100k",
+        "hnsw"
+      ],
+      "prefix": "current_aws_intel_real100k_hnsw"
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-ivf",
+      "tags": [
+        "load",
+        "current",
+        "aws-intel",
+        "ec_real_100k",
+        "ivf"
+      ],
+      "prefix": "current_aws_intel_real100k_ivf",
+      "profile": "ec_ivf",
+      "corpus_file": "/var/lib/pgsql/18/datasets/staged-current/ec_real_100k_corpus.tsv",
+      "queries_file": "/var/lib/pgsql/18/datasets/staged-current/ec_real_100k_queries.tsv",
+      "manifest_file": "/var/lib/pgsql/18/datasets/staged-current/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-ivf",
+      "tags": [
+        "recall",
+        "current",
+        "aws-intel",
+        "ec_real_100k",
+        "ivf"
+      ],
+      "prefix": "current_aws_intel_real100k_ivf",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-ivf",
+      "tags": [
+        "latency",
+        "current",
+        "aws-intel",
+        "ec_real_100k",
+        "ivf"
+      ],
+      "prefix": "current_aws_intel_real100k_ivf",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k-ivf",
+      "tags": [
+        "storage",
+        "current",
+        "aws-intel",
+        "ec_real_100k",
+        "ivf"
+      ],
+      "prefix": "current_aws_intel_real100k_ivf"
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-diskann",
+      "tags": [
+        "load",
+        "current",
+        "aws-intel",
+        "ec_real_100k",
+        "diskann"
+      ],
+      "prefix": "current_aws_intel_real100k_diskann",
+      "profile": "ec_diskann",
+      "corpus_file": "/var/lib/pgsql/18/datasets/staged-current/ec_real_100k_corpus.tsv",
+      "queries_file": "/var/lib/pgsql/18/datasets/staged-current/ec_real_100k_queries.tsv",
+      "manifest_file": "/var/lib/pgsql/18/datasets/staged-current/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-diskann",
+      "tags": [
+        "recall",
+        "current",
+        "aws-intel",
+        "ec_real_100k",
+        "diskann"
+      ],
+      "prefix": "current_aws_intel_real100k_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128,
+        200,
+        400,
+        800
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-diskann",
+      "tags": [
+        "latency",
+        "current",
+        "aws-intel",
+        "ec_real_100k",
+        "diskann"
+      ],
+      "prefix": "current_aws_intel_real100k_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128,
+        200,
+        400,
+        800
+      ],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k-diskann",
+      "tags": [
+        "storage",
+        "current",
+        "aws-intel",
+        "ec_real_100k",
+        "diskann"
+      ],
+      "prefix": "current_aws_intel_real100k_diskann"
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-spire",
+      "tags": [
+        "load",
+        "current",
+        "aws-intel",
+        "ec_real_100k",
+        "spire"
+      ],
+      "prefix": "current_aws_intel_real100k_spire",
+      "profile": "ec_spire",
+      "corpus_file": "/var/lib/pgsql/18/datasets/staged-current/ec_real_100k_corpus.tsv",
+      "queries_file": "/var/lib/pgsql/18/datasets/staged-current/ec_real_100k_queries.tsv",
+      "manifest_file": "/var/lib/pgsql/18/datasets/staged-current/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-spire",
+      "tags": [
+        "recall",
+        "current",
+        "aws-intel",
+        "ec_real_100k",
+        "spire"
+      ],
+      "prefix": "current_aws_intel_real100k_spire",
+      "profile": "ec_spire",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-spire",
+      "tags": [
+        "latency",
+        "current",
+        "aws-intel",
+        "ec_real_100k",
+        "spire"
+      ],
+      "prefix": "current_aws_intel_real100k_spire",
+      "profile": "ec_spire",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32
+      ],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k-spire",
+      "tags": [
+        "storage",
+        "current",
+        "aws-intel",
+        "ec_real_100k",
+        "spire"
+      ],
+      "prefix": "current_aws_intel_real100k_spire"
+    },
+    {
+      "kind": "load",
+      "name": "load-1m-hnsw",
+      "tags": [
+        "load",
+        "current",
+        "aws-intel",
+        "ec_real_1m",
+        "hnsw"
+      ],
+      "prefix": "current_aws_intel_real1m_hnsw",
+      "profile": "ec_hnsw",
+      "corpus_file": "/var/lib/pgsql/18/datasets/staged-current/ec_real_1m_corpus.tsv",
+      "queries_file": "/var/lib/pgsql/18/datasets/staged-current/ec_real_1m_queries.tsv",
+      "manifest_file": "/var/lib/pgsql/18/datasets/staged-current/ec_real_1m_manifest.json",
+      "allow_manifest_mismatch": true,
+      "m": [
+        16
+      ],
+      "ef_construction": 128
+    },
+    {
+      "kind": "recall",
+      "name": "recall-1m-hnsw",
+      "tags": [
+        "recall",
+        "current",
+        "aws-intel",
+        "ec_real_1m",
+        "hnsw"
+      ],
+      "prefix": "current_aws_intel_real1m_hnsw",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        40,
+        64,
+        100,
+        128,
+        160,
+        200
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-1m-hnsw",
+      "tags": [
+        "latency",
+        "current",
+        "aws-intel",
+        "ec_real_1m",
+        "hnsw"
+      ],
+      "prefix": "current_aws_intel_real1m_hnsw",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        40,
+        64,
+        100,
+        128,
+        160,
+        200
+      ],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-1m-hnsw",
+      "tags": [
+        "storage",
+        "current",
+        "aws-intel",
+        "ec_real_1m",
+        "hnsw"
+      ],
+      "prefix": "current_aws_intel_real1m_hnsw"
+    },
+    {
+      "kind": "load",
+      "name": "load-1m-ivf",
+      "tags": [
+        "load",
+        "current",
+        "aws-intel",
+        "ec_real_1m",
+        "ivf"
+      ],
+      "prefix": "current_aws_intel_real1m_ivf",
+      "profile": "ec_ivf",
+      "corpus_file": "/var/lib/pgsql/18/datasets/staged-current/ec_real_1m_corpus.tsv",
+      "queries_file": "/var/lib/pgsql/18/datasets/staged-current/ec_real_1m_queries.tsv",
+      "manifest_file": "/var/lib/pgsql/18/datasets/staged-current/ec_real_1m_manifest.json",
+      "allow_manifest_mismatch": true
+    },
+    {
+      "kind": "recall",
+      "name": "recall-1m-ivf",
+      "tags": [
+        "recall",
+        "current",
+        "aws-intel",
+        "ec_real_1m",
+        "ivf"
+      ],
+      "prefix": "current_aws_intel_real1m_ivf",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-1m-ivf",
+      "tags": [
+        "latency",
+        "current",
+        "aws-intel",
+        "ec_real_1m",
+        "ivf"
+      ],
+      "prefix": "current_aws_intel_real1m_ivf",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-1m-ivf",
+      "tags": [
+        "storage",
+        "current",
+        "aws-intel",
+        "ec_real_1m",
+        "ivf"
+      ],
+      "prefix": "current_aws_intel_real1m_ivf"
+    },
+    {
+      "kind": "load",
+      "name": "load-1m-diskann",
+      "tags": [
+        "load",
+        "current",
+        "aws-intel",
+        "ec_real_1m",
+        "diskann"
+      ],
+      "prefix": "current_aws_intel_real1m_diskann",
+      "profile": "ec_diskann",
+      "corpus_file": "/var/lib/pgsql/18/datasets/staged-current/ec_real_1m_corpus.tsv",
+      "queries_file": "/var/lib/pgsql/18/datasets/staged-current/ec_real_1m_queries.tsv",
+      "manifest_file": "/var/lib/pgsql/18/datasets/staged-current/ec_real_1m_manifest.json",
+      "allow_manifest_mismatch": true
+    },
+    {
+      "kind": "recall",
+      "name": "recall-1m-diskann",
+      "tags": [
+        "recall",
+        "current",
+        "aws-intel",
+        "ec_real_1m",
+        "diskann"
+      ],
+      "prefix": "current_aws_intel_real1m_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128,
+        200,
+        400,
+        800
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-1m-diskann",
+      "tags": [
+        "latency",
+        "current",
+        "aws-intel",
+        "ec_real_1m",
+        "diskann"
+      ],
+      "prefix": "current_aws_intel_real1m_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128,
+        200,
+        400,
+        800
+      ],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-1m-diskann",
+      "tags": [
+        "storage",
+        "current",
+        "aws-intel",
+        "ec_real_1m",
+        "diskann"
+      ],
+      "prefix": "current_aws_intel_real1m_diskann"
+    },
+    {
+      "kind": "load",
+      "name": "load-1m-spire",
+      "tags": [
+        "load",
+        "current",
+        "aws-intel",
+        "ec_real_1m",
+        "spire"
+      ],
+      "prefix": "current_aws_intel_real1m_spire",
+      "profile": "ec_spire",
+      "corpus_file": "/var/lib/pgsql/18/datasets/staged-current/ec_real_1m_corpus.tsv",
+      "queries_file": "/var/lib/pgsql/18/datasets/staged-current/ec_real_1m_queries.tsv",
+      "manifest_file": "/var/lib/pgsql/18/datasets/staged-current/ec_real_1m_manifest.json",
+      "allow_manifest_mismatch": true
+    },
+    {
+      "kind": "recall",
+      "name": "recall-1m-spire",
+      "tags": [
+        "recall",
+        "current",
+        "aws-intel",
+        "ec_real_1m",
+        "spire"
+      ],
+      "prefix": "current_aws_intel_real1m_spire",
+      "profile": "ec_spire",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-1m-spire",
+      "tags": [
+        "latency",
+        "current",
+        "aws-intel",
+        "ec_real_1m",
+        "spire"
+      ],
+      "prefix": "current_aws_intel_real1m_spire",
+      "profile": "ec_spire",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32
+      ],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-1m-spire",
+      "tags": [
+        "storage",
+        "current",
+        "aws-intel",
+        "ec_real_1m",
+        "spire"
+      ],
+      "prefix": "current_aws_intel_real1m_spire"
     }
   ]
 }

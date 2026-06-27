@@ -1,0 +1,10 @@
+Script started on 2026-06-14 15:36:31-07:00 [<not executed on terminal>]
+tunnel coordinator ready on port 15432
+tunnel remote-2 ready on port 15433
+tunnel remote-3 ready on port 15434
+DROP TABLE
+DROP TABLE
+DROP INDEX
+NOTICE:  index "task107_rabitq_100k_l4_idx" does not exist, skipping
+
+Script done on 2026-06-14 15:36:34-07:00 [COMMAND_EXIT_CODE="0"]

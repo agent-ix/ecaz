@@ -83,6 +83,7 @@ struct SeededSrhtCacheKey {
     dimensions: usize,
     seed: u64,
     bits_per_dim: u8,
+    quant_clip_bits: u32,
 }
 
 static SEEDED_SRHT_CACHE: OnceLock<Mutex<HashMap<SeededSrhtCacheKey, Arc<RaBitQQuantizer>>>> =
@@ -291,10 +292,25 @@ impl RaBitQQuantizer {
         seed: u64,
         bits: u8,
     ) -> Result<Arc<Self>, String> {
+        Self::cached_seeded_srht_bits_clip(dimensions, seed, bits, RABITQ_DEFAULT_QUANT_CLIP)
+    }
+
+    pub fn cached_seeded_srht_bits_clip(
+        dimensions: usize,
+        seed: u64,
+        bits: u8,
+        quant_clip: f32,
+    ) -> Result<Arc<Self>, String> {
+        if quant_clip <= 0.0 || !quant_clip.is_finite() {
+            return Err(format!(
+                "RaBitQ quant_clip must be positive and finite, got {quant_clip}",
+            ));
+        }
         let key = SeededSrhtCacheKey {
             dimensions,
             seed,
             bits_per_dim: bits,
+            quant_clip_bits: quant_clip.to_bits(),
         };
         let cache = SEEDED_SRHT_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
         let mut cache_guard = cache
@@ -303,7 +319,9 @@ impl RaBitQQuantizer {
         if let Some(quantizer) = cache_guard.get(&key) {
             return Ok(Arc::clone(quantizer));
         }
-        let quantizer = Arc::new(Self::with_seeded_srht_bits(dimensions, seed, bits)?);
+        let quantizer = Arc::new(Self::with_seeded_srht_bits_clip(
+            dimensions, seed, bits, quant_clip,
+        )?);
         cache_guard.insert(key, Arc::clone(&quantizer));
         Ok(quantizer)
     }
@@ -386,10 +404,19 @@ impl RaBitQQuantizer {
     /// for prod call sites where the seed is recorded in the
     /// index metadata so different indexes get independent rotations.
     pub fn with_seeded_srht_bits(dimensions: usize, seed: u64, bits: u8) -> Result<Self, String> {
+        Self::with_seeded_srht_bits_clip(dimensions, seed, bits, RABITQ_DEFAULT_QUANT_CLIP)
+    }
+
+    pub fn with_seeded_srht_bits_clip(
+        dimensions: usize,
+        seed: u64,
+        bits: u8,
+        quant_clip: f32,
+    ) -> Result<Self, String> {
         #[cfg(test)]
         note_seeded_srht_construction_for_test(dimensions);
         let rotation: Arc<dyn Rotation> = Arc::new(SrhtRotation::with_seed(dimensions, seed));
-        Self::with_bits(rotation, bits)
+        Self::with_bits_clip(rotation, bits, quant_clip)
     }
 
     pub fn dimensions(&self) -> usize {
@@ -516,6 +543,77 @@ impl crate::quant::Quantizer for RaBitQQuantizer {
 }
 
 impl RaBitQQuantizer {
+    /// IVF residual encode (Task 115).
+    ///
+    /// Encodes the **residual** `o − c` of a posting vector `o` against its
+    /// assigned IVF centroid `c`, using the identical code layout, scalar tail,
+    /// and estimator as [`Quantizer::encode_code`]. The only difference is the
+    /// vector that gets rotated/quantized: `o − c` instead of `o`.
+    ///
+    /// ## Scoring identity
+    ///
+    /// IVF inner-product search wants `⟨q, o⟩`. Decompose against the centroid:
+    ///
+    /// ```text
+    /// ⟨q, o⟩ = ⟨q, c⟩ + ⟨q, o − c⟩
+    /// ```
+    ///
+    /// `⟨q, c⟩` is computed **exactly** once per probed list (the centroid is
+    /// already loaded for list selection — zero per-posting cost). The residual
+    /// term `⟨q, o − c⟩` is estimated by the standard RaBitQ asymmetric
+    /// estimator on this residual code: because [`Self::prepare_estimator`]
+    /// rotates `q` and the residual code packs `sign(rotate(o − c)) =
+    /// sign(rotate(o) − rotate(c))` (rotation is linear), the unchanged
+    /// estimator's output **is** `≈ ⟨q, o − c⟩`. No query-side change, no new
+    /// estimator, and no per-posting correction scalar are needed.
+    ///
+    /// ## Correction-metadata size (Phase-1 stop condition)
+    ///
+    /// The residual code is byte-for-byte the same shape as the plain code:
+    /// `⌈D·bits/8⌉` packed bytes + the 12-byte scalar tail (`||r||`, `r_dot`,
+    /// `||x_dec||`). The scalars now describe the residual `r = o − c` rather
+    /// than `o`, but there is **zero extra per-posting metadata**. The centroid
+    /// term is amortized per-list, not stored per-posting. The Phase-1 stop
+    /// condition ("correction metadata large enough to undermine the compact
+    /// index") therefore does **not** fire: residual mode has identical index
+    /// size to plain RaBitQ. This mirrors the existing Symphony centered path
+    /// ([`Self::encode_code_centered`]), specialized to a fixed per-list center.
+    pub fn encode_code_residual(&self, v: &[f32], centroid: &[f32]) -> Box<[u8]> {
+        assert_eq!(
+            v.len(),
+            self.dimensions,
+            "residual encode input length mismatch: got {}, expected {}",
+            v.len(),
+            self.dimensions,
+        );
+        assert_eq!(
+            centroid.len(),
+            self.dimensions,
+            "residual encode centroid length mismatch: got {}, expected {}",
+            centroid.len(),
+            self.dimensions,
+        );
+        let residual: Vec<f32> = v
+            .iter()
+            .zip(centroid.iter())
+            .map(|(&v_i, &c_i)| v_i - c_i)
+            .collect();
+        <Self as crate::quant::Quantizer>::encode_code(self, &residual)
+    }
+
+    /// Combine an exact centroid inner product `⟨q, c⟩` with the RaBitQ residual
+    /// estimate of `⟨q, o − c⟩` (from a code produced by
+    /// [`Self::encode_code_residual`]) into the full IVF estimate `⟨q, o⟩`.
+    ///
+    /// `residual_estimate` is the scalar the AM already computes via
+    /// `PreparedEstimator::estimate_ip_scalar_only` on the residual code; this
+    /// helper is the one-line `+` that documents the residual scoring identity
+    /// in one place so the AM scan and the reference tests share it.
+    #[inline]
+    pub fn combine_residual_estimate(centroid_ip: f32, residual_estimate: f32) -> f32 {
+        centroid_ip + residual_estimate
+    }
+
     /// Prepare the estimator state for `query`. The returned
     /// `PreparedEstimator` holds the rotated query coordinates in
     /// full f32 precision (the asymmetric half of the estimator) and
@@ -906,6 +1004,24 @@ impl PreparedEstimator {
         })
     }
 
+    /// Prepared view for the multi-bit (bits=2/4) RaBitQ block kernel, or
+    /// `None` when this estimator is not a 2/4-bit lane.
+    pub(crate) fn bitsn_block_prepared(
+        &self,
+        code_len: usize,
+    ) -> Option<crate::quant::rabitq32::PreparedBitsN<'_>> {
+        if !matches!(self.bits_per_dim, 2 | 4) {
+            return None;
+        }
+        Some(crate::quant::rabitq32::PreparedBitsN {
+            dimensions: self.dimensions,
+            bits: self.bits_per_dim,
+            code_len,
+            query_rotated: &self.query_rotated,
+            dequant_lut: &self.dequant_lut,
+        })
+    }
+
     pub fn estimate_ip(&self, code: &[u8]) -> DistanceEstimate {
         estimate_ip_impl(
             &self.query_rotated,
@@ -952,6 +1068,28 @@ impl PreparedEstimator {
     #[inline]
     pub fn estimate_ip_least_squares_scalar_only(&self, code: &[u8]) -> f32 {
         estimate_ip_least_squares_scalar_only_impl(
+            &self.query_rotated,
+            Some(&self.query_bf16),
+            Some(&self.dequant_lut_bf16),
+            self.dimensions,
+            self.bits_per_dim,
+            &self.dequant_lut,
+            self.bits1_byte_lut.as_deref(),
+            self.bits8_query_scale.as_slice(),
+            self.bits8_query_offset.as_slice(),
+            code,
+        )
+    }
+
+    /// Exact dot product against the norm-rescaled dequantized code vector:
+    /// `||o|| * <q, x_dec> / ||x_dec||`.
+    ///
+    /// This is a diagnostic rerank mode, not the paper estimator. It exposes
+    /// the "score the persisted compact payload as the vector it reconstructs"
+    /// lever for Task 111h sweeps.
+    #[inline]
+    pub fn estimate_ip_dequantized_scalar_only(&self, code: &[u8]) -> f32 {
+        estimate_ip_dequantized_scalar_only_impl(
             &self.query_rotated,
             Some(&self.query_bf16),
             Some(&self.dequant_lut_bf16),
@@ -1105,9 +1243,36 @@ impl PreparedEstimator {
     /// `dimensions`-wide SIMD inner product when even the most
     /// optimistic estimate falls below `min_ip_to_keep`.
     ///
+    /// # Task 113 Phase 1 — bound contract audit
+    ///
+    /// RaBitQ carries **two distinct bound surfaces**, and only this one
+    /// is sound for recall-safe pruning:
+    ///
+    /// 1. **Cauchy-Schwarz prune cutoff (this method, and
+    ///    [`Self::try_estimate_ip`]).** `max_estimate = ||o|| · ||q|| /
+    ///    |o_dot|` is a *deterministic* upper bound on the estimate. The
+    ///    true estimate provably cannot exceed it, so pruning when
+    ///    `max_estimate < min_ip_to_keep` never drops a candidate that
+    ///    could reach the frontier. This is the surface the IVF scan
+    ///    threads its running top-k cutoff into. Monotone in
+    ///    `min_ip_to_keep` (raising it only prunes more). Pinned by the
+    ///    `try_estimate_*_cutoff_*` tests.
+    /// 2. **ε-concentration envelope ([`DistanceEstimate::bound`]).** A
+    ///    *probabilistic* ~99% Gaussian-tail bound (`RABITQ_BOUND_CONFIDENCE
+    ///    = 2.5`). It is NOT a deterministic/sound bound: a candidate's true
+    ///    error can exceed it. Using it as a hard skip threshold would be
+    ///    recall-risky — the explicit Task 113 Non-Goal — so it is **not**
+    ///    used to prune. Note neither surface is the right reference for Task
+    ///    113 Phase 4's lazy *exact*-rerank stop: that needs a sound lower
+    ///    bound on the EXACT score, i.e. on the quantization residual
+    ///    `||q|| · ||o − x_dec||`, distinct from this estimate cutoff (see
+    ///    `ec_ivf::lazy::RaBitQLazyBound`).
+    ///
     /// Correctness: the asymmetric RaBitQ estimator is
-    /// `α · ⟨q, x_dec⟩` with `α = ||o|| · o_dot / ||x_dec||`. By
-    /// Cauchy-Schwarz, `|⟨q, x_dec⟩| ≤ ||q|| · ||x_dec||`, so the
+    /// `α · ⟨q, x_dec⟩` with `α = ||o|| · o_dot / ||x_dec||`, where
+    /// `o_dot = ⟨o/||o||, x_dec/||x_dec||⟩` is the cosine between the true
+    /// vector and its dequantized code (the unit-vector correction term).
+    /// By Cauchy-Schwarz, `|⟨q, x_dec⟩| ≤ ||q|| · ||x_dec||`, so the
     /// estimate is bounded by `||o|| · ||q|| / o_dot` (positive side).
     /// Skipping when that upper bound is below the running top-K cutoff
     /// is recall-safe: this candidate can never reach top-K.
@@ -4517,6 +4682,64 @@ fn estimate_ip_least_squares_scalar_only_impl(
     candidate_norm * candidate_o_dot * sum_q_dequant / candidate_x_norm
 }
 
+#[inline]
+fn estimate_ip_dequantized_scalar_only_impl(
+    query_rotated: &[f32],
+    query_bf16: Option<&[u16]>,
+    dequant_lut_bf16: Option<&[u16; 256]>,
+    dimensions: usize,
+    bits_per_dim: u8,
+    dequant_lut: &[f32; 256],
+    bits1_byte_lut: Option<&[[f32; 8]; 256]>,
+    bits8_query_scale: &[f32],
+    bits8_query_offset: &[f32],
+    code: &[u8],
+) -> f32 {
+    debug_assert_eq!(query_rotated.len(), dimensions);
+    let bits = bits_per_dim as usize;
+    let packed_bytes = (dimensions * bits).div_ceil(8);
+    assert!(
+        code.len() >= packed_bytes + RABITQ_SCALAR_LEN,
+        "RaBitQ code too short: got {}, expected at least {}",
+        code.len(),
+        packed_bytes + RABITQ_SCALAR_LEN,
+    );
+    let s = packed_bytes;
+    let candidate_norm = f32::from_le_bytes(
+        code[s..s + RABITQ_NORM_LEN]
+            .try_into()
+            .expect("norm slice is always 4 bytes"),
+    );
+    let candidate_x_norm = f32::from_le_bytes(
+        code[s + RABITQ_NORM_LEN + RABITQ_UNIT_DOT_LEN..s + RABITQ_SCALAR_LEN]
+            .try_into()
+            .expect("x_norm slice is always 4 bytes"),
+    );
+
+    if candidate_norm <= 0.0
+        || !candidate_norm.is_finite()
+        || candidate_x_norm <= 0.0
+        || !candidate_x_norm.is_finite()
+    {
+        return 0.0;
+    }
+
+    let sum_q_dequant = sum_query_dequant_with_bf16(
+        query_rotated,
+        query_bf16,
+        dequant_lut_bf16,
+        dimensions,
+        bits,
+        dequant_lut,
+        bits1_byte_lut,
+        bits8_query_scale,
+        bits8_query_offset,
+        code,
+    );
+
+    candidate_norm * sum_q_dequant / candidate_x_norm
+}
+
 fn sign_words_from_byte_slice(bytes: &[u8], dim: usize) -> Vec<u64> {
     let mut words = vec![0_u64; dim.div_ceil(64)];
     for index in 0..dim {
@@ -5317,6 +5540,72 @@ mod tests {
     }
 
     #[test]
+    fn dequantized_estimator_scores_reconstructed_payload_and_guards_tail_scalars() {
+        let q = identity_quantizer(5, 4);
+        let query = [0.75_f32, -0.25, 1.25, -1.5, 0.5];
+        let candidate = [-0.25_f32, 0.0, 0.25, 0.5, -0.5];
+        let mut code =
+            <RaBitQQuantizer as crate::quant::Quantizer>::encode_code(&q, &candidate).into_vec();
+        let prepared = q.prepare_estimator(&query);
+        let packed_bytes = q.packed_bytes();
+
+        let candidate_norm = read_tail_f32(&code, packed_bytes, 0);
+        let x_norm = read_tail_f32(&code, packed_bytes, RABITQ_NORM_LEN + RABITQ_UNIT_DOT_LEN);
+        let sqrt_d = (q.dimensions() as f32).sqrt();
+        let mut sum_q_dequant = 0.0_f32;
+        for (i, &query_i) in query.iter().enumerate() {
+            sum_q_dequant += query_i
+                * dequant_level(
+                    read_level(&code, i, 4),
+                    4,
+                    sqrt_d,
+                    RABITQ_DEFAULT_QUANT_CLIP,
+                );
+        }
+        let expected = candidate_norm * sum_q_dequant / x_norm;
+
+        let estimate = prepared.estimate_ip_dequantized_scalar_only(&code);
+        assert!((estimate - expected).abs() < 1e-6);
+        assert_ne!(estimate, prepared.estimate_ip_scalar_only(&code));
+
+        write_tail_f32(&mut code, packed_bytes, 0, 0.0);
+        assert_eq!(prepared.estimate_ip_dequantized_scalar_only(&code), 0.0);
+        write_tail_f32(&mut code, packed_bytes, 0, candidate_norm);
+        write_tail_f32(
+            &mut code,
+            packed_bytes,
+            RABITQ_NORM_LEN + RABITQ_UNIT_DOT_LEN,
+            f32::NAN,
+        );
+        assert_eq!(prepared.estimate_ip_dequantized_scalar_only(&code), 0.0);
+    }
+
+    #[test]
+    fn seeded_srht_cache_keys_include_bits_seed_and_clip() {
+        clear_seeded_srht_cache_for_test();
+        reset_seeded_srht_construction_count_for_test(8);
+
+        let q1 = RaBitQQuantizer::cached_seeded_srht_bits_clip(8, 42, 4, 2.0).unwrap();
+        let q2 = RaBitQQuantizer::cached_seeded_srht_bits_clip(8, 42, 4, 2.0).unwrap();
+        assert!(Arc::ptr_eq(&q1, &q2));
+        assert_eq!(seeded_srht_construction_count_for_test(), 1);
+
+        let q3 = RaBitQQuantizer::cached_seeded_srht_bits_clip(8, 42, 4, 3.0).unwrap();
+        assert!(!Arc::ptr_eq(&q1, &q3));
+        assert_eq!(seeded_srht_construction_count_for_test(), 2);
+
+        let default_clip = RaBitQQuantizer::cached_seeded_srht_bits(8, 7, 1).unwrap();
+        let explicit_default =
+            RaBitQQuantizer::cached_seeded_srht_bits_clip(8, 7, 1, RABITQ_DEFAULT_QUANT_CLIP)
+                .unwrap();
+        assert!(Arc::ptr_eq(&default_clip, &explicit_default));
+
+        assert!(RaBitQQuantizer::cached_seeded_srht_bits_clip(8, 7, 4, 0.0).is_err());
+        assert!(RaBitQQuantizer::with_seeded_srht_bits(8, 99, 4).is_ok());
+        assert!(RaBitQQuantizer::with_seeded_srht_bits_clip(8, 99, 4, 2.5).is_ok());
+    }
+
+    #[test]
     fn estimate_ip_o_dot_floor_covers_below_equal_and_above() {
         let q = identity_quantizer(5, 2);
         let query = [0.75_f32, -0.25, 1.25, -1.5, 0.5];
@@ -6009,6 +6298,145 @@ mod tests {
         }
     }
 
+    // -----------------------------------------------------------------
+    // Task 113 Phase 1 — Cauchy-Schwarz prune-cutoff soundness.
+    //
+    // `try_estimate_ip_scalar` / `try_estimate_ip` are the IVF candidate
+    // prune surface (`min_ip_to_keep`). Unlike the ε-concentration bound
+    // (probabilistic), the cutoff used here is the *deterministic*
+    // Cauchy-Schwarz upper bound `||o|| * ||q|| / |o_dot|` on the
+    // estimate. Pruning when that upper bound is below the running cutoff
+    // is recall-safe: the candidate's true estimate can never reach the
+    // frontier. These tests pin (a) soundness — a pruned candidate's
+    // returned estimate (recomputed with no cutoff) is below the cutoff —
+    // and (b) monotonicity — raising the cutoff never un-prunes.
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn try_estimate_scalar_cutoff_never_prunes_a_keepable_candidate() {
+        // For a grid of cutoffs, any candidate the cutoff prunes (returns
+        // None) must have an unpruned estimate strictly below the cutoff:
+        // the Cauchy-Schwarz upper bound dominated the true estimate, so
+        // dropping it was sound.
+        let dim = 256;
+        let rotation: Arc<dyn Rotation> = Arc::new(Identity { dim });
+        let q = RaBitQQuantizer::new(rotation);
+        let query = deterministic_gaussian(dim, 11);
+        let prepared = q.prepare_estimator(&query);
+
+        let codes: Vec<Vec<u8>> = (0..64u64)
+            .map(|seed| {
+                let c = deterministic_gaussian(dim, seed.wrapping_add(100));
+                <RaBitQQuantizer as crate::quant::Quantizer>::encode_code(&q, &c).into_vec()
+            })
+            .collect();
+
+        for cutoff_bits in -40i32..=40 {
+            let cutoff = cutoff_bits as f32 * 0.25;
+            for code in &codes {
+                // Estimate with no effective cutoff (NEG_INFINITY never
+                // prunes), i.e. the value that would survive.
+                let unpruned = prepared
+                    .try_estimate_ip_scalar(code, f32::NEG_INFINITY)
+                    .expect("NEG_INFINITY cutoff never prunes");
+                match prepared.try_estimate_ip_scalar(code, cutoff) {
+                    None => assert!(
+                        unpruned < cutoff,
+                        "pruned a keepable candidate: estimate {unpruned} >= cutoff {cutoff}",
+                    ),
+                    Some(kept) => assert!(
+                        (kept - unpruned).abs() <= 1e-3,
+                        "kept estimate {kept} disagrees with unpruned {unpruned}",
+                    ),
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn try_estimate_scalar_cutoff_is_monotone_in_threshold() {
+        // Raising the cutoff can only prune more, never fewer: if a
+        // candidate is pruned at `lo`, it stays pruned at every `hi >= lo`.
+        let dim = 128;
+        let rotation: Arc<dyn Rotation> = Arc::new(Identity { dim });
+        let q = RaBitQQuantizer::new(rotation);
+        let query = deterministic_gaussian(dim, 5);
+        let prepared = q.prepare_estimator(&query);
+
+        for seed in 0..48u64 {
+            let c = deterministic_gaussian(dim, seed.wrapping_add(7));
+            let code = <RaBitQQuantizer as crate::quant::Quantizer>::encode_code(&q, &c).into_vec();
+            let mut last_pruned = false;
+            for cutoff_bits in -32i32..=32 {
+                let cutoff = cutoff_bits as f32 * 0.5;
+                let pruned = prepared.try_estimate_ip_scalar(&code, cutoff).is_none();
+                if last_pruned {
+                    assert!(
+                        pruned,
+                        "candidate un-pruned at higher cutoff {cutoff} (seed={seed})",
+                    );
+                }
+                last_pruned = pruned;
+            }
+        }
+    }
+
+    #[test]
+    fn try_estimate_scalar_cutoff_is_sound_under_non_identity_rotation() {
+        // Belt-and-suspenders against a norm/o_dot read bug that only manifests
+        // post-rotation: re-run the soundness check through a real SRHT
+        // rotation rather than Identity. The Cauchy-Schwarz cutoff is
+        // rotation-invariant, so soundness must still hold.
+        let dim = 256;
+        let rotation: Arc<dyn Rotation> = Arc::new(SrhtRotation::with_seed(dim, 1234));
+        let q = RaBitQQuantizer::new(rotation);
+        let query = deterministic_gaussian(dim, 13);
+        let prepared = q.prepare_estimator(&query);
+
+        for seed in 0..48u64 {
+            let c = deterministic_gaussian(dim, seed.wrapping_add(300));
+            let code = <RaBitQQuantizer as crate::quant::Quantizer>::encode_code(&q, &c).into_vec();
+            let unpruned = prepared
+                .try_estimate_ip_scalar(&code, f32::NEG_INFINITY)
+                .expect("NEG_INFINITY cutoff never prunes");
+            for cutoff_bits in -24i32..=24 {
+                let cutoff = cutoff_bits as f32 * 0.5;
+                if prepared.try_estimate_ip_scalar(&code, cutoff).is_none() {
+                    assert!(
+                        unpruned < cutoff,
+                        "rotated: pruned a keepable candidate ({unpruned} >= {cutoff})",
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn try_estimate_bound_carrying_cutoff_agrees_with_scalar() {
+        // The bound-carrying `try_estimate_ip` must prune on the same
+        // deterministic Cauchy-Schwarz cutoff as the scalar fast path, so
+        // AM tooling and the IVF scan share one prune frontier.
+        let dim = 256;
+        let rotation: Arc<dyn Rotation> = Arc::new(Identity { dim });
+        let q = RaBitQQuantizer::new(rotation);
+        let query = deterministic_gaussian(dim, 3);
+        let prepared = q.prepare_estimator(&query);
+
+        for seed in 0..48u64 {
+            let c = deterministic_gaussian(dim, seed.wrapping_add(200));
+            let code = <RaBitQQuantizer as crate::quant::Quantizer>::encode_code(&q, &c).into_vec();
+            for cutoff_bits in -24i32..=24 {
+                let cutoff = cutoff_bits as f32 * 0.5;
+                let scalar_pruned = prepared.try_estimate_ip_scalar(&code, cutoff).is_none();
+                let bound_pruned = prepared.try_estimate_ip(&code, cutoff).is_none();
+                assert_eq!(
+                    scalar_pruned, bound_pruned,
+                    "scalar/bound cutoff disagree at {cutoff} (seed={seed})",
+                );
+            }
+        }
+    }
+
     fn deterministic_gaussian(dim: usize, seed: u64) -> Vec<f32> {
         // Cheap Box-Muller over a splitmix64-seeded LCG. We only
         // need reproducibility and a finite-variance distribution;
@@ -6560,5 +6988,206 @@ mod tests {
                 "bits=8 dim={dim}: scalar={scalar} neon={neon}"
             );
         }
+    }
+
+    // -----------------------------------------------------------------
+    // Task 115 — IVF residual RaBitQ scalar reference tests.
+    //
+    // These pin the Phase-1 scoring identity:
+    //   ⟨q, o⟩  =  ⟨q, c⟩ (exact)  +  ⟨q, o − c⟩ (RaBitQ-estimated)
+    // against the exact source inner product, on small fixtures, within
+    // quantization tolerance — and prove residual encoding adds zero
+    // bytes vs the plain (absolute) code.
+    // -----------------------------------------------------------------
+
+    fn seeded_residual_quantizer(dim: usize, bits: u8) -> RaBitQQuantizer {
+        // Use a real SRHT rotation (not identity) so the residual scoring
+        // identity is exercised under the production rotation front-end.
+        let rotation: Arc<dyn Rotation> = Arc::new(SrhtRotation::with_seed(dim, 42));
+        RaBitQQuantizer::with_bits(rotation, bits).unwrap()
+    }
+
+    fn exact_inner_product(a: &[f32], b: &[f32]) -> f32 {
+        a.iter().zip(b.iter()).map(|(&x, &y)| x * y).sum()
+    }
+
+    fn pseudo_vector(dim: usize, seed: u64) -> Vec<f32> {
+        // Deterministic-but-spread coordinates; not normalized so the test
+        // covers arbitrary-magnitude postings and centroids.
+        let mut state = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15).wrapping_add(1);
+        (0..dim)
+            .map(|_| {
+                state ^= state << 13;
+                state ^= state >> 7;
+                state ^= state << 17;
+                ((state >> 11) as f32 / (1u64 << 53) as f32) * 2.0 - 1.0
+            })
+            .collect()
+    }
+
+    #[test]
+    fn residual_code_is_byte_identical_shape_to_absolute_code() {
+        for &dim in &[8_usize, 64, 256] {
+            for &bits in &RABITQ_SUPPORTED_BITS {
+                let q = seeded_residual_quantizer(dim, bits);
+                let v = pseudo_vector(dim, 1);
+                let c = pseudo_vector(dim, 2);
+                let absolute = <RaBitQQuantizer as crate::quant::Quantizer>::encode_code(&q, &v);
+                let residual = q.encode_code_residual(&v, &c);
+                // Phase-1 stop-condition evidence: residual encoding adds zero
+                // per-posting metadata; same length as the plain code.
+                assert_eq!(
+                    residual.len(),
+                    absolute.len(),
+                    "residual code must match plain code length (dim={dim}, bits={bits})"
+                );
+                assert_eq!(
+                    residual.len(),
+                    <RaBitQQuantizer as crate::quant::Quantizer>::code_len(&q)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn residual_scoring_matches_exact_within_tolerance() {
+        // Residuals concentrate near a centroid: model a list whose members
+        // are the centroid plus a small jitter, which is exactly the regime
+        // residual encoding is meant to win in.
+        for &dim in &[64_usize, 256, 768] {
+            for &bits in &[1_u8, 2, 4, 8] {
+                let q = seeded_residual_quantizer(dim, bits);
+                let query = pseudo_vector(dim, 100);
+                let centroid = pseudo_vector(dim, 200);
+                let centroid_ip = exact_inner_product(&query, &centroid);
+                let prepared = q.prepare_estimator(&query);
+                let query_norm = exact_inner_product(&query, &query).sqrt();
+
+                // Build a few postings as centroid + small jitter. The error is
+                // measured against the residual-term scale `||q||·||o − c||`
+                // (Cauchy–Schwarz on the only quantized quantity); normalizing
+                // by the full `⟨q,o⟩` is meaningless when that sum is near zero
+                // for a random query/centroid, even though the absolute error
+                // is tiny.
+                let mut max_rel_err = 0.0_f32;
+                for member_seed in 0..8_u64 {
+                    let jitter = pseudo_vector(dim, 1_000 + member_seed);
+                    let o: Vec<f32> = centroid
+                        .iter()
+                        .zip(jitter.iter())
+                        .map(|(&c_i, &j_i)| c_i + 0.05 * j_i)
+                        .collect();
+
+                    let code = q.encode_code_residual(&o, &centroid);
+                    let residual_estimate = prepared.estimate_ip_scalar_only(&code);
+                    let combined =
+                        RaBitQQuantizer::combine_residual_estimate(centroid_ip, residual_estimate);
+
+                    let exact = exact_inner_product(&query, &o);
+                    let residual_norm: f32 = o
+                        .iter()
+                        .zip(centroid.iter())
+                        .map(|(&o_i, &c_i)| {
+                            let d = o_i - c_i;
+                            d * d
+                        })
+                        .sum::<f32>()
+                        .sqrt();
+                    let scale = (query_norm * residual_norm).max(1e-3);
+                    let rel_err = (combined - exact).abs() / scale;
+                    max_rel_err = max_rel_err.max(rel_err);
+                }
+                // RaBitQ is a coarse quantizer at low bits; the bound here is
+                // loose but pins that the residual identity is wired correctly
+                // (no sign error, no missing centroid term). Higher bits are
+                // tighter. Error is relative to the residual-term magnitude.
+                let tol = match bits {
+                    1 => 0.55,
+                    2 => 0.45,
+                    _ => 0.30,
+                };
+                assert!(
+                    max_rel_err <= tol,
+                    "residual scoring rel_err {max_rel_err} exceeds tol {tol} (dim={dim}, bits={bits})"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn residual_estimate_recovers_exact_residual_term() {
+        // The residual code alone (no centroid term) must estimate ⟨q, o − c⟩,
+        // matching what the plain estimator yields when fed the residual vector
+        // directly. This isolates the residual estimator from the centroid add.
+        let dim = 256;
+        for &bits in &[1_u8, 2, 4, 8] {
+            let q = seeded_residual_quantizer(dim, bits);
+            let query = pseudo_vector(dim, 7);
+            let centroid = pseudo_vector(dim, 8);
+            let o = pseudo_vector(dim, 9);
+            let residual: Vec<f32> = o
+                .iter()
+                .zip(centroid.iter())
+                .map(|(&o_i, &c_i)| o_i - c_i)
+                .collect();
+
+            let prepared = q.prepare_estimator(&query);
+            let via_residual_encode =
+                prepared.estimate_ip_scalar_only(&q.encode_code_residual(&o, &centroid));
+            let via_plain_encode_of_residual = prepared.estimate_ip_scalar_only(
+                &<RaBitQQuantizer as crate::quant::Quantizer>::encode_code(&q, &residual),
+            );
+            // encode_code_residual(o, c) must produce the identical code to
+            // encode_code(o − c): same estimate, bit-for-bit.
+            assert_eq!(
+                q.encode_code_residual(&o, &centroid),
+                <RaBitQQuantizer as crate::quant::Quantizer>::encode_code(&q, &residual),
+                "residual encode must equal plain encode of the residual vector (bits={bits})"
+            );
+            assert_eq!(via_residual_encode, via_plain_encode_of_residual);
+        }
+    }
+
+    #[test]
+    fn residual_beats_absolute_on_concentrated_lists() {
+        // The product justification for Task 115: when postings concentrate
+        // near the centroid, residual encoding has lower estimation error than
+        // absolute encoding at the same bit width. Average over a small list.
+        let dim = 768;
+        let bits = 1_u8;
+        let q = seeded_residual_quantizer(dim, bits);
+        let query = pseudo_vector(dim, 555);
+        let centroid = pseudo_vector(dim, 556);
+        let centroid_ip = exact_inner_product(&query, &centroid);
+        let prepared = q.prepare_estimator(&query);
+
+        let mut residual_err = 0.0_f32;
+        let mut absolute_err = 0.0_f32;
+        let members = 32;
+        for member_seed in 0..members as u64 {
+            let jitter = pseudo_vector(dim, 9_000 + member_seed);
+            let o: Vec<f32> = centroid
+                .iter()
+                .zip(jitter.iter())
+                .map(|(&c_i, &j_i)| c_i + 0.03 * j_i)
+                .collect();
+            let exact = exact_inner_product(&query, &o);
+
+            let residual_est = RaBitQQuantizer::combine_residual_estimate(
+                centroid_ip,
+                prepared.estimate_ip_scalar_only(&q.encode_code_residual(&o, &centroid)),
+            );
+            let absolute_est = prepared.estimate_ip_scalar_only(
+                &<RaBitQQuantizer as crate::quant::Quantizer>::encode_code(&q, &o),
+            );
+            residual_err += (residual_est - exact).abs();
+            absolute_err += (absolute_est - exact).abs();
+        }
+        residual_err /= members as f32;
+        absolute_err /= members as f32;
+        assert!(
+            residual_err < absolute_err,
+            "residual mean abs err {residual_err} should beat absolute {absolute_err} on a concentrated list"
+        );
     }
 }

@@ -11,6 +11,7 @@ use crate::psql::ConnectionOptions;
 mod fault;
 mod install;
 mod pg_upgrade;
+mod relation_cache;
 mod resource_test;
 mod scratch;
 mod spire_multicluster;
@@ -44,6 +45,8 @@ pub enum DevCommand {
     Sql(sql::SqlArgs),
     /// Run PG18-to-PG18 pg_upgrade with ECAZ data and post-upgrade checks.
     PgUpgradeSmoke(pg_upgrade::PgUpgradeSmokeArgs),
+    /// Evict local PostgreSQL relation files from the OS page cache.
+    EvictRelationCache(relation_cache::EvictRelationCacheArgs),
     /// Validation/test entry points.
     Test {
         #[command(subcommand)]
@@ -64,6 +67,7 @@ impl DevCommand {
             DevCommand::SpireMulticluster { command } => command.run(&conn.database).await,
             DevCommand::Sql(args) => sql::run(conn, args).await,
             DevCommand::PgUpgradeSmoke(args) => pg_upgrade::run(args).await,
+            DevCommand::EvictRelationCache(args) => relation_cache::run(conn, args).await,
             DevCommand::Test { command } => command.run(conn).await,
             DevCommand::ResourceTest(args) => resource_test::run(conn, args).await,
         }

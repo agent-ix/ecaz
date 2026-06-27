@@ -1,8 +1,7 @@
 ---
 id: US-004
 title: Install and Manage Extension Lifecycle
-type: user-story
-artifact_type: US
+type: US
 status: APPROVED
 relationships:
   - target: "ix://agent-ix/ecaz/StR-002"
@@ -11,7 +10,9 @@ relationships:
 ---
 # US-004: Install and Manage Extension Lifecycle
 
-**As** a platform engineer,
+## Story
+
+**As a** platform engineer,
 **I want** to install, upgrade, and remove the extension using standard PostgreSQL commands,
 **So that** it integrates with existing database management tooling and workflows.
 

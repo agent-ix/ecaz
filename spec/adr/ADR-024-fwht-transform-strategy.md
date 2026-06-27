@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-024
 title: "FWHT Transform Strategy: Full vs Tiled for Non-Power-of-2 Dimensions"
 status: PROPOSED

@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-017
 title: "Keep a single tqvector extension identity through the PostgreSQL 18 upgrade"
 status: SUPERSEDED

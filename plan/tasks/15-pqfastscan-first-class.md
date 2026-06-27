@@ -1,6 +1,9 @@
 # Task 15: Land PqFastScan as First-Class Index Format
 
-Status: proposed — unblocks merge of the `adr030-v2-*` branch line to `main`.
+Status: **complete** (2026-06-16) — ADR-032 landed: the `StorageFormat`
+enum + `storage_format` reloption selector and the TurboQuant /
+PqFastScan variants are live in `src/am/ec_hnsw/{options,graph}.rs`, with
+insert/vacuum parity. The `adr030-v2-*` line merged to `main`.
 
 Executes ADR-032.
 

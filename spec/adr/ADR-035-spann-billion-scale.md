@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-035
 title: "SPANN as Third Access Method for Billion-Scale"
 status: DROPPED

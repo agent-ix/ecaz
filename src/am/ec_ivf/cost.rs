@@ -366,7 +366,7 @@ fn scoring_mode_name(storage_format: options::StorageFormat) -> &'static str {
     match storage_format {
         options::StorageFormat::Auto | options::StorageFormat::TurboQuant => "turboquant_lut",
         options::StorageFormat::PqFastScan => "pq_fastscan_lut",
-        options::StorageFormat::RaBitQ => "rabitq_binary",
+        options::StorageFormat::RaBitQ | options::StorageFormat::CoarseRerank => "rabitq_binary",
     }
 }
 
@@ -374,7 +374,7 @@ fn storage_scoring_multiplier(storage_format: options::StorageFormat) -> f64 {
     match storage_format {
         options::StorageFormat::Auto | options::StorageFormat::TurboQuant => 1.0,
         options::StorageFormat::PqFastScan => 0.65,
-        options::StorageFormat::RaBitQ => 0.45,
+        options::StorageFormat::RaBitQ | options::StorageFormat::CoarseRerank => 0.45,
     }
 }
 
@@ -404,8 +404,17 @@ mod tests {
             pq_group_size: 0,
             posting_slack_percent: 0,
             quant_bits: 4,
+            coarse_bits: 0,
+            dense_posting_blocks: false,
+            dense_posting_typed_layout: false,
+            rabitq_residual: false,
+            rabitq_rerank_score: options::RaBitQRerankScoreMode::Estimator,
+            rabitq_rerank_clip: options::EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
             storage_format: options::StorageFormat::TurboQuant,
             rerank: options::RerankMode::HeapF32,
+            coarse_format: options::CoarseFormat::Auto,
+            rerank_placement: options::RerankPlacement::Auto,
+            rerank_format: options::RerankFormat::Auto,
         });
         metadata.dimensions = dimensions;
         metadata.training_version = 1;

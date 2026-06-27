@@ -18,6 +18,7 @@ mod list;
 mod load;
 mod prepare;
 mod render_spire_registrations;
+mod subset;
 
 pub use fetch::FetchArgs;
 pub use generate::GenerateArgs;
@@ -25,6 +26,7 @@ pub use inspect::InspectArgs;
 pub use load::LoadArgs;
 pub use prepare::PrepareArgs;
 pub use render_spire_registrations::RenderSpireRegistrationsArgs;
+pub use subset::SubsetArgs;
 
 #[derive(Subcommand, Debug)]
 pub enum CorpusCommand {
@@ -43,6 +45,8 @@ pub enum CorpusCommand {
     /// Convert a Qdrant-DBpedia-style parquet release into canonical
     /// `<prefix>_corpus.tsv` + `<prefix>_queries.tsv` + manifest.
     Prepare(PrepareArgs),
+    /// Derive a smaller canonical TSV subset from a larger prepared corpus TSV.
+    Subset(SubsetArgs),
     /// Render coordinator SPIRE remote descriptor registration SQL from
     /// distributed placement output and per-remote identity JSON.
     RenderSpireRegistrations(RenderSpireRegistrationsArgs),
@@ -57,6 +61,7 @@ impl CorpusCommand {
             CorpusCommand::List => list::run(conn).await,
             CorpusCommand::Generate(args) => generate::run(conn, args).await,
             CorpusCommand::Prepare(args) => prepare::run(conn, args).await,
+            CorpusCommand::Subset(args) => subset::run(args).await,
             CorpusCommand::RenderSpireRegistrations(args) => {
                 render_spire_registrations::run(args).await
             }

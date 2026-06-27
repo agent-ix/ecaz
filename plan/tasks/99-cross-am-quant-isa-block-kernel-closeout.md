@@ -1,7 +1,27 @@
 # Task 99: Cross-(AM × Quant × ISA) Block Kernel Completeness Closeout
 
-Status: proposed (2026-06-08)
-Owner: coder (to be assigned). One coder.
+Status: complete (2026-06-12; accepted by operator decision — the
+operator's explicit completion directive — with no outside-reviewer
+feedback yet on packets 001–009; the outside reviewer is invited to
+review post-hoc and may reopen, findings routing through this bucket.
+Mirrors the Task 103 operator-acceptance precedent.)
+All phases executed; evidence:
+`reviews/task-99/` packets 001–009. Phases 1–2 = packet 001 (aggregate
+matrix + structural exclusions); item 9 profile = packets 002/003
+(SuiteConfig + local validation, 91/91, 34/34 recall pairs byte-equal);
+`ecaz.isa_cap` = packet 004; ADR-077 draft = packet 005 (PROPOSED,
+§4/§6 decisions now data-filled); trip runbook = packet 006; Phase 3 =
+packet 007 (final, all five ISA columns); AWS trip 2026-06-12 =
+packets 008 (G4: sve2-128, 91/91 + neon-cap + Task 97 cells; **SVE2
+loses to NEON at every family** — dispatch-preference decision in
+ADR-077 §6) and 009 (Intel: 91/91, 1-ULP codegen finding documented).
+Snapshots: `snap-097eb8a8e881384dd` (G4), `snap-0dc395f4f6458c37b`
+(Intel); both stacks destroyed. ADR-077 → ACCEPTED (operator decision,
+provenance recorded in the ADR header).
+Follow-up slices decided in ADR-077 but not yet implemented:
+aarch64 dispatch-preference flip; `ec_ivf.scratch_soa_batch_decode`
+default-on; rabitq32 strict-test contract fix.
+Owner: coder (assigned 2026-06-11: the Task 102/103 author). One coder.
 Priority: 2 (project-level closeout for the kernel-completeness initiative)
 
 ## Why
@@ -90,6 +110,18 @@ initiative was the completeness matrix; Task 99 produces it.
      was a Graviton cache-spill argument), and the per-ISA
      comparison (AC 4) needs the same cells on both hosts. Runs
      after Tasks 101 / 94-F8 / 102 so every family is final-shape.
+   - **AWS Intel lane required (pinned 2026-06-10)**: the Intel side
+     of the per-ISA comparison runs on an AWS Intel instance, not the
+     local desktop, so the Graviton-vs-Intel price/performance
+     question is answered on controlled, citable, currently-purchasable
+     hardware (record instance types and on-demand pricing for both
+     lanes in the profile manifest). Both lanes execute the same
+     locally-validated profile SuiteConfig, restored from the same
+     corpus base snapshot. The local Intel desktop remains the
+     dev/iteration host; per-family closeout packets that already
+     closed on local-Intel evidence stand and are not re-run. The
+     Intel lane runs after Task 103 so the Intel kernel matrix is
+     final-shape (same single-trip economics as the G4 pin).
    The reevaluation decision itself (ADR-025 flip or revision,
    any new storage surface) is follow-up scope informed by this
    profile, not owned by Task 99.
@@ -99,8 +131,11 @@ initiative was the completeness matrix; Task 99 produces it.
 - New kernel work. All kernels are Tasks 93–98.
 - AVX-512 variants. Follow-up if measurement post-Task-99
   justifies.
-- Apple silicon (M-series) production variants. M5 NEON is for
-  development validation, not production.
+- Apple silicon (M-series) bench/optimization work — owned by Task 104
+  (operator decision 2026-06-11: Apple silicon is a supported target).
+  Task 104 supplies an M5 supported-target column for this task's
+  aggregate matrix; the per-ISA *production* comparison (AC 4) remains
+  Graviton 4 + AWS Intel.
 - Any new quant added during the initiative — those open as
   separate tasks following the same pattern.
 
@@ -176,12 +211,46 @@ accurately represents what shipped.
   value beyond NEON's 2.7-3.6x — and the Intel AVX2 compile/runtime/bench
   validation of the landed rabitq32 AVX2 backend.
 
+- Task 94 (recorded 2026-06-11): the **deferred Graviton 4 pass** — per the
+  packet 028 reviewer verdict the only remaining Task 94 item. No Task 94
+  runbook packet exists (the task file's "packet 027" pointer was stale and
+  has been corrected); the pass rides this task's G4 profile lane. Closing
+  evidence: the profile's grouped-PQ cells (IVF pq_fastscan batch-on/off at
+  nprobe 16/64, DiskANN prefilter_kind=grouped_pq batch-on/off at
+  list_size 64/128, 100k fixtures, counters on) with `isa=sve2` attribution
+  and measured vector length; annotated as measuring the **gather-shape**
+  SVE2 kernel if the SVE repack remains deferred (Task 94 reopened-scope
+  rule). The Apple-silicon NEON column is owned by the M5 lane (Task 104:
+  IVF grouped-PQ 30.4–30.9 ns/c, PASS). **G4 NEON-capped cells are in
+  scope (operator decision 2026-06-11, data-driven):** the `ecaz.isa_cap`
+  GUC (Task 99 slice, `reviews/task-99/004-isa-cap-dispatch/`) caps
+  block-kernel dispatch so the G4 lane can measure the NEON kernels that
+  SVE2 otherwise always out-dispatches at equal 128-bit width — turning
+  "SVE2 is the right default over NEON on G4" into a measured fact per
+  family. Supplemental config: `t99-g4-neon-cap-suite.json` (32 steps,
+  derived from the main profile's kernel-on cells).
+  Supplemental 10k/25k IVF cells matching the packet-025 matrix shape can
+  be added on-instance from the same source tables if the Task 94 reviewer
+  asks; default is the 100k profile cells. Task 94's status flip to
+  `complete` stays owned by Task 94, citing these cells.
 - Task 95: the AVX2-vs-hardware-POPCNT question for hamming32 (Intel lane;
   expected return bounded by the measured NEON 1.10-1.17x).
 - Task 98: AVX2 variants for tiled_lut32/int8_approx32 (Intel lane;
   vpmaddubsw named for int8). Key profile fact: HNSW exact-mode payoff is
   governed by partial-width behavior — >=32-wide flushes are <0.1% of the
   distribution at 10k/50k/100k.
+
+- Quantized-LUT (u8 fast-scan) lut32 variant — **deferred indefinitely**
+  (operator decision 2026-06-10, recorded ahead of the Graviton 4 evidence
+  pass; carry into ADR-077). Rationale: (a) it breaks the byte-equal recall
+  regime — it would need the ADR-076 tolerance + forced-scalar-anchor lane;
+  (b) post-Task-102 the lut32 lane is no longer scoring-dominated (235
+  ns/candidate AVX2; ~2.4 ms of SPIRE's 8.5 ms p50), so the residual
+  end-to-end upside is ~20%; (c) landing it after the G4 pass would change
+  the lut32 kernel inner loop and invalidate the paid lut32 ARM evidence.
+  Any revisit routes through this task's index × quant × mode profile data
+  and a new confirmed task, and must land **before** — never after — an ARM
+  evidence trip.
 ## Coordination
 
 - **Depends on Tasks 87, 91, 92, 93, 94, 95, 96, 97, 98** all

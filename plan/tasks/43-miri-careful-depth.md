@@ -1,8 +1,10 @@
 # Task 43: Miri / cargo-careful Depth Expansion
 
-Status: **proposed** — pushes the Miri and cargo-careful lanes from Task 34
-beyond seed coverage into systematic, aliasing-strict, multi-seed runs over
-every pure-Rust subsystem ECAZ has.
+Status: **complete** (2026-06-16) — merged; packet 014 final-campaign
+audit APPROVED 2026-05-18 (87 Miri tests across expanded + tree borrows,
+69 careful tests, non-vacuous many-seeds). Pushed the Miri and
+cargo-careful lanes from Task 34 beyond seed coverage into systematic,
+aliasing-strict, multi-seed runs over every pure-Rust subsystem.
 
 ## Scope
 

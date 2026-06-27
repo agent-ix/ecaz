@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-050
 title: Configured benchmark suite runner for indexes and architectures
 status: PROPOSED

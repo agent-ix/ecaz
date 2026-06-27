@@ -1,7 +1,9 @@
 # Task 46: Structure-Aware Fuzzing and ECAZ-Grammar SQLsmith
 
-Status: **proposed** — moves the fuzz lanes from byte-level libFuzzer over
-decoders to structure-aware fuzzing of higher-level inputs and grammar-aware
+Status: **complete** (2026-06-16) — merged; packet 007 (sqlsmith-ecaz)
+APPROVED 2026-05-26 "Task 46 reaches 100% §Exit completion" (all 5 exit
+criteria). Moved the fuzz lanes from byte-level libFuzzer over decoders
+to structure-aware fuzzing of higher-level inputs and grammar-aware
 fuzzing of SQL inputs that exercise ECAZ scan paths.
 
 ## Scope

@@ -43,6 +43,11 @@ pub(super) fn score_width_cascade<T: Copy, O>(
     debug_assert!(block_width > 0);
     debug_assert_eq!(items.len(), out_scores.len());
 
+    // Session ISA cap (ecaz.isa_cap) is synced here, at the single batch
+    // dispatch chokepoint, so every block/octet/partial kernel selection
+    // below sees the capped current_isa().
+    crate::am::common::isa_cap::sync_session_isa_cap();
+
     let mut timing = BatchScoringTiming::default();
     let mut block_start = 0usize;
     while block_start + block_width <= items.len() {

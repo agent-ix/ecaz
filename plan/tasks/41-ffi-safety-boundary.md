@@ -1,8 +1,11 @@
 # Task 41: FFI Safety Boundary (Panic, `pg_guard`, Memory Context Lifetimes)
 
-Status: **in progress** — closes a class of latent bugs that no existing lane
-catches: Rust code crossing the C boundary into PostgreSQL in a way that is
-formally UB or that leaks Postgres-side resources.
+Status: **complete** (2026-06-16) — FFI safety-boundary lane landed and
+reviewer-accepted (closeouts `139546129` invariant 2, `602bd391d`
+invariants 1+3; acceptance `reviews/task-41/127-*/feedback/2026-05-18-01-reviewer.md`).
+Closed a class of latent bugs no existing lane catches: Rust code
+crossing the C boundary into PostgreSQL in a way that is formally UB or
+that leaks Postgres-side resources.
 
 ## Current PG Resource Wrapper Track
 

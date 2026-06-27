@@ -1,9 +1,12 @@
 # Task 56: SPIRE Unsafe Burndown
 
-Status: **deferred** — gated on SPIRE optimization + AWS testing
-stabilizing. Until that gate opens, this task is on hold to avoid
-the merge friction pattern documented in memory
-`feedback_main_priority_in_conflicts` (2026-05-22).
+Status: **complete** (2026-06-16) — SPIRE unsafe burndown merged
+(`392432134`): 194 → 135 `unsafe` blocks (−30% floor, bench gate
+green). The 12 pre-existing missing `/// # Safety` docs were closed
+as Task 56.1 (`2c6766503`) with reviewer-approved 100% SPIRE doc
+parity. Closeout `reviews/task-56/006-closeout/` +
+`007-doc-parity-followup/`. (Prior "deferred" header was a stale
+pre-start placeholder.)
 
 ## Why
 

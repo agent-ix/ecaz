@@ -24,6 +24,8 @@ TUNNELED_TOPOLOGY ?= $(ARTIFACT_DIR)/aws-topology.tunneled.json
 WORK_DIR ?= $(ARTIFACT_DIR)/work
 ECAZ_BIN ?= $(REPO_ROOT)/target/release/ecaz
 PREFIX       ?= ec_spire_aws_synth_10k
+COORD_INDEX  ?= $(PREFIX)_idx
+REMOTE_INDEX ?= $(PREFIX)_remote_idx
 DISTRIBUTED_PLAN ?= $(ARTIFACT_DIR)/distributed-correctness/distributed-placement-plan.json
 
 ifeq ($(filter /%,$(ARTIFACT_DIR)),)
@@ -52,10 +54,10 @@ override WORK_DIR := $(abspath $(WORK_DIR))
 override DISTRIBUTED_PLAN := $(abspath $(DISTRIBUTED_PLAN))
 
 export SPIRE_AWS_DIR REPO_ROOT ARTIFACT_DIR TOPOLOGY PACKAGE_TARBALL
-export ECAZ_BIN WORK_DIR
+export ECAZ_BIN WORK_DIR PREFIX COORD_INDEX REMOTE_INDEX
 export ECAZ_SPIRE_AWS_TARBALL_PATH ?= $(PACKAGE_TARBALL)
 
-.PHONY: preflight preflight-operator preflight-state preflight-permissions preflight-representative-performance mark-representative-performance-start confirm-provision archive-local-state cleanup-residue build-operator-cli provision topology setup package-extension install-extension install configure-pg-hba register-remotes register register-correctness register-representative register-stress \
+.PHONY: preflight preflight-operator preflight-state preflight-permissions preflight-representative-performance mark-representative-performance-start confirm-provision archive-local-state cleanup-residue build-operator-cli provision topology setup package-extension install-extension install setup-coordinator-store-volumes configure-pg-hba register-remotes register register-correctness register-representative register-stress \
         load-correctness load-representative load-stress \
         smoke smoke-correctness smoke-representative smoke-stress \
         bench-correctness bench-representative-priority bench-representative bench-representative-pooling summarize-representative-performance verify-representative-performance-summary bench-stress \
@@ -123,6 +125,9 @@ install-extension: package-extension
 
 install: install-extension
 
+setup-coordinator-store-volumes:
+	cd $(REPO_ROOT) && $(SCRIPTS)/setup-coordinator-store-volumes.sh $(TOPOLOGY) $(ARTIFACT_DIR)
+
 configure-pg-hba:
 	cd $(REPO_ROOT) && $(SCRIPTS)/configure-pg-hba.sh $(TOPOLOGY) $(ARTIFACT_DIR)
 
@@ -141,24 +146,24 @@ register-stress: DISTRIBUTED_PLAN = $(ARTIFACT_DIR)/distributed-stress/distribut
 register-stress: register-remotes
 
 load-correctness:
-	cd $(REPO_ROOT) && $(SCRIPTS)/load.sh correctness $(TOPOLOGY) $(ARTIFACT_DIR)
+	cd $(REPO_ROOT) && PREFIX=$(PREFIX) COORD_INDEX=$(COORD_INDEX) REMOTE_INDEX=$(REMOTE_INDEX) $(SCRIPTS)/load.sh correctness $(TOPOLOGY) $(ARTIFACT_DIR)
 
 load-representative:
-	cd $(REPO_ROOT) && $(SCRIPTS)/load.sh representative $(TOPOLOGY) $(ARTIFACT_DIR)
+	cd $(REPO_ROOT) && PREFIX=$(PREFIX) COORD_INDEX=$(COORD_INDEX) REMOTE_INDEX=$(REMOTE_INDEX) $(SCRIPTS)/load.sh representative $(TOPOLOGY) $(ARTIFACT_DIR)
 
 load-stress:
-	cd $(REPO_ROOT) && $(SCRIPTS)/load.sh stress $(TOPOLOGY) $(ARTIFACT_DIR)
+	cd $(REPO_ROOT) && PREFIX=$(PREFIX) COORD_INDEX=$(COORD_INDEX) REMOTE_INDEX=$(REMOTE_INDEX) $(SCRIPTS)/load.sh stress $(TOPOLOGY) $(ARTIFACT_DIR)
 
 smoke:
 	cd $(REPO_ROOT) && PREFIX=$(PREFIX) $(SCRIPTS)/smoke.sh $(TOPOLOGY) $(ARTIFACT_DIR)
 
-smoke-correctness: PREFIX = ec_spire_aws_synth_10k
+smoke-correctness: PREFIX ?= ec_spire_aws_synth_10k
 smoke-correctness: smoke
 
-smoke-representative: PREFIX = ec_spire_aws_repr_1m
+smoke-representative: PREFIX ?= ec_spire_aws_repr_1m
 smoke-representative: smoke
 
-smoke-stress: PREFIX = ec_spire_aws_synth_10m
+smoke-stress: PREFIX ?= ec_spire_aws_synth_10m
 smoke-stress: smoke
 
 verify-correctness-tunneled:
@@ -183,16 +188,16 @@ verify-representative-performance-tunneled:
 	$(MAKE) -C $(SPIRE_AWS_DIR) ARTIFACT_DIR=$(ARTIFACT_DIR) summarize-representative-performance verify-representative-performance-summary
 
 bench-correctness:
-	cd $(REPO_ROOT) && $(SCRIPTS)/bench.sh correctness $(TOPOLOGY) $(ARTIFACT_DIR)
+	cd $(REPO_ROOT) && PREFIX=$(PREFIX) COORD_INDEX=$(COORD_INDEX) REMOTE_INDEX=$(REMOTE_INDEX) $(SCRIPTS)/bench.sh correctness $(TOPOLOGY) $(ARTIFACT_DIR)
 
 bench-representative-priority:
-	cd $(REPO_ROOT) && $(SCRIPTS)/bench.sh representative-priority $(TOPOLOGY) $(ARTIFACT_DIR)
+	cd $(REPO_ROOT) && PREFIX=$(PREFIX) COORD_INDEX=$(COORD_INDEX) REMOTE_INDEX=$(REMOTE_INDEX) $(SCRIPTS)/bench.sh representative-priority $(TOPOLOGY) $(ARTIFACT_DIR)
 
 bench-representative:
-	cd $(REPO_ROOT) && $(SCRIPTS)/bench.sh representative $(TOPOLOGY) $(ARTIFACT_DIR)
+	cd $(REPO_ROOT) && PREFIX=$(PREFIX) COORD_INDEX=$(COORD_INDEX) REMOTE_INDEX=$(REMOTE_INDEX) $(SCRIPTS)/bench.sh representative $(TOPOLOGY) $(ARTIFACT_DIR)
 
 bench-representative-pooling:
-	cd $(REPO_ROOT) && $(SCRIPTS)/bench.sh representative-pooling $(TOPOLOGY) $(ARTIFACT_DIR)
+	cd $(REPO_ROOT) && PREFIX=$(PREFIX) COORD_INDEX=$(COORD_INDEX) REMOTE_INDEX=$(REMOTE_INDEX) $(SCRIPTS)/bench.sh representative-pooling $(TOPOLOGY) $(ARTIFACT_DIR)
 
 summarize-representative-performance:
 	cd $(REPO_ROOT) && $(SCRIPTS)/summarize-representative-performance.sh $(ARTIFACT_DIR)

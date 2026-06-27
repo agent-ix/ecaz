@@ -1,7 +1,10 @@
 # Task 102: lut32 SIMD Block Kernels (TQ no-QJL 4-bit, All ISAs)
 
-Status: proposed (2026-06-10; in-epic per operator decision — ALL
-optimization work lands inside the unify/batching epic)
+Status: **complete** (2026-06-16; in-epic — landed inside the
+unify/batching epic) — real AVX2/NEON/SVE2 kernels for the flagship
+lut32 TQ no-QJL 4-bit lane landed (NEON repack approved in packet 002
+for local/x86); the Graviton 4 compile/runtime evidence pass was
+covered by the Task 105/106/107 production G4 sweep on the newer build.
 Owner: coder (to be assigned; the Task 94/97 author is the natural
 fit — same candidate-parallel kernel shape as the qjl32 transpose and
 the F8 repack). Phase III.

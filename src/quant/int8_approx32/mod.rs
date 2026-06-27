@@ -145,6 +145,96 @@ mod tests {
         }
     }
 
+    /// The no-QJL lane only exists at the tiled dim (1536), so the quantizer
+    /// prep cannot produce small-dim fixtures; hand-built queries/codes cover
+    /// the SIMD backends' scalar dim-tails instead: all-tail (7), one AVX2
+    /// chunk exactly / two NEON chunks (64), chunk + tail (100), odd
+    /// chunk + tail (191).
+    #[test]
+    fn simd_dim_tails_are_bit_equal_with_scalar_reference() {
+        for dimensions in [7usize, 64, 100, 191] {
+            let prepared = crate::quant::prod::Int8ApproxNoQjl4BitQuery {
+                codebook: [
+                    -128, 127, -90, 64, -33, 17, -5, 1, 0, -2, 8, -21, 47, -76, 101, -120,
+                ],
+                rotated: (0..dimensions)
+                    .map(|dim| (((dim * 37 + 11) % 255) as i16 - 128) as i8)
+                    .collect(),
+                score_scale: 0.25,
+            };
+            let codes: Vec<Vec<u8>> = (0..BLOCK_WIDTH + 5)
+                .map(|lane| {
+                    (0..dimensions.div_ceil(2))
+                        .map(|byte| {
+                            let low = (lane + 3 * byte) % 16;
+                            let high = (lane * 5 + byte) % 16;
+                            (low | (high << 4)) as u8
+                        })
+                        .collect()
+                })
+                .collect();
+            let code_refs: Vec<&[u8]> = codes.iter().map(Vec::as_slice).collect();
+
+            let block: &[&[u8]; BLOCK_WIDTH] = code_refs[..BLOCK_WIDTH].try_into().unwrap();
+            let mut block_scores = vec![0.0; BLOCK_WIDTH];
+            score_int8_approx_block32(&prepared, dimensions, block, &mut block_scores);
+            for (score, code) in block_scores.iter().zip(code_refs[..BLOCK_WIDTH].iter()) {
+                let reference = score_int8_approx_scalar(&prepared, dimensions, code);
+                assert_eq!(score.to_bits(), reference.to_bits());
+            }
+
+            let mut partial_scores = vec![0.0; 5];
+            score_int8_approx_partial(
+                &prepared,
+                dimensions,
+                &code_refs[BLOCK_WIDTH..],
+                &mut partial_scores,
+            );
+            for (score, code) in partial_scores.iter().zip(code_refs[BLOCK_WIDTH..].iter()) {
+                let reference = score_int8_approx_scalar(&prepared, dimensions, code);
+                assert_eq!(score.to_bits(), reference.to_bits());
+            }
+        }
+    }
+
+    /// Full-range i8 operands at the ±128 corner: 128 * 128 pair sums exceed
+    /// i16::MAX, which is exactly where a saturating `vpmaddubsw` path would
+    /// diverge from the scalar reference. SIMD backends must stay bit-equal.
+    #[test]
+    fn block32_is_bit_equal_at_extreme_i8_values() {
+        let dimensions = 1536;
+        let mut codebook = [0_i8; 16];
+        for (index, entry) in codebook.iter_mut().enumerate() {
+            *entry = [-128, 127, -127, 126, -1, 1, -64, 64][index % 8];
+        }
+        let prepared = crate::quant::prod::Int8ApproxNoQjl4BitQuery {
+            codebook,
+            rotated: (0..dimensions)
+                .map(|dim| [-128_i8, 127, -1, 64][dim % 4])
+                .collect(),
+            score_scale: 1.0,
+        };
+        let codes: Vec<Vec<u8>> = (0..BLOCK_WIDTH)
+            .map(|lane| {
+                (0..dimensions.div_ceil(2))
+                    .map(|byte| {
+                        let low = (lane + byte) % 16;
+                        let high = (lane + 7 * byte + 3) % 16;
+                        (low | (high << 4)) as u8
+                    })
+                    .collect()
+            })
+            .collect();
+        let code_refs: Vec<&[u8]> = codes.iter().map(Vec::as_slice).collect();
+        let block: &[&[u8]; BLOCK_WIDTH] = code_refs[..BLOCK_WIDTH].try_into().unwrap();
+        let mut block_scores = vec![0.0; BLOCK_WIDTH];
+        score_int8_approx_block32(&prepared, dimensions, block, &mut block_scores);
+        for (score, code) in block_scores.iter().zip(code_refs.iter()) {
+            let reference = score_int8_approx_scalar(&prepared, dimensions, code);
+            assert_eq!(score.to_bits(), reference.to_bits());
+        }
+    }
+
     #[test]
     fn scalar_reference_matches_production_scorer_bits() {
         let dimensions = 1536;

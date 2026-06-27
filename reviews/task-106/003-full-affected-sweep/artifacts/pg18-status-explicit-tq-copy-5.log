@@ -1,0 +1,10 @@
+  pid   | bytes_processed | tuples_processed 
+--------+-----------------+------------------
+ 704220 |     18651052836 |           969816
+(1 row)
+
+  pid   | state  | wait_event_type | wait_event |       age       |                                       query                                        
+--------+--------+-----------------+------------+-----------------+------------------------------------------------------------------------------------
+ 704220 | active |                 |            | 00:06:20.720707 | COPY ecaz_corpus_stage (id, source) FROM STDIN WITH (FORMAT text, DELIMITER E'\t')
+(1 row)
+

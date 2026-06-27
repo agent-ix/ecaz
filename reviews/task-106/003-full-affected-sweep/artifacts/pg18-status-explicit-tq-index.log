@@ -1,0 +1,9 @@
+ pid | phase 
+-----+-------
+(0 rows)
+
+  pid   | state  | wait_event_type | wait_event |       age       | query  
+--------+--------+-----------------+------------+-----------------+--------
+ 704220 | active |                 |            | 00:00:00.045931 | COMMIT
+(1 row)
+

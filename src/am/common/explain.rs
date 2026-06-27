@@ -31,6 +31,7 @@ pub(crate) struct ExplainCounterDefinition {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ExplainPropertyValue {
+    Text(&'static str),
     Integer(u32),
     Bool(bool),
 }
@@ -72,14 +73,25 @@ pub(crate) struct TqExplainCounters {
     pub stats_quantizer_cache_hit: bool,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct IvfExplainCounters {
+    pub stats_rerank_placement: &'static str,
+    pub stats_rerank_format: &'static str,
     pub stats_centroid_scores: u32,
     pub stats_selected_lists: u32,
     pub stats_posting_pages_read: u32,
     pub stats_postings_visited: u32,
+    pub stats_row_postings_visited: u32,
+    pub stats_dense_blocks_visited: u32,
+    pub stats_dense_postings_visited: u32,
     pub stats_postings_scored: u32,
     pub stats_postings_pruned_by_bound: u32,
+    pub stats_scratch_soa_flushes: u32,
+    pub stats_scratch_payload_bytes_copied: u32,
+    pub stats_scratch_heap_tid_bytes_copied: u32,
+    pub stats_dense_coalesced_flushes: u32,
+    pub stats_dense_coalesced_payload_bytes_copied: u32,
+    pub stats_dense_coalesced_heap_tid_bytes_copied: u32,
     pub stats_heap_tids_scored: u32,
     pub stats_candidates_scored: u32,
     pub stats_candidates_inserted: u32,
@@ -88,7 +100,98 @@ pub(crate) struct IvfExplainCounters {
     pub stats_heap_blocks_fetched: u32,
     pub stats_approximate_scan_elapsed_us: u32,
     pub stats_exact_rerank_elapsed_us: u32,
+    /// Task 111h: time spent fetching and decoding rerank payloads before
+    /// exact scoring. For source placement this includes heap-row fetch and
+    /// source-vector extraction; for index placement this includes packed group
+    /// reads, payload-slice resolution, and batch slab materialization.
+    pub stats_rerank_payload_decode_elapsed_us: u32,
+    /// Task 111h: time spent in the exact rerank scorer after payloads have
+    /// been fetched/decoded.
+    pub stats_rerank_payload_score_elapsed_us: u32,
     pub stats_filtered_duplicates: u32,
+    /// Task 112: number of frontier candidates considered for exact heap-f32
+    /// rerank (the `rerank_width`-bounded approximate frontier handed to the
+    /// rerank stage). With the lazy driver this is `reranked + skipped`.
+    pub stats_rerank_candidates_considered: u32,
+    /// Task 112: number of considered candidates the lazy rerank stop proved
+    /// could not enter the executor's result and therefore skipped (no heap
+    /// fetch, no exact score). Zero under the sound `NoBound` default that holds
+    /// until Task 113 supplies a calibrated lower bound; non-zero once a real
+    /// bound lets the stop fire safely.
+    pub stats_rerank_candidates_skipped: u32,
+    /// Task 111h: total bytes read from the heap source-vector column for the
+    /// reranked frontier. Source f32 accumulates `dims * 4` per candidate; the
+    /// persisted index-placement compact path keeps this at zero and reports
+    /// compact payload reads/scored bytes through the packed-group counters.
+    pub stats_rerank_source_bytes_read: u32,
+    /// Task 111h: number of packed rerank group header pages read during
+    /// index-placement rerank. Packed groups store list/local metadata once in
+    /// the header (`0x2B`) and continuation payload bytes in `0x2C` segments.
+    pub stats_rerank_index_group_header_pages_read: u32,
+    /// Task 111h: number of packed rerank payload continuation segment pages
+    /// read during index-placement rerank.
+    pub stats_rerank_index_payload_segment_pages_read: u32,
+    /// Task 111h: bytes of group metadata read from `0x2B` headers, excluding
+    /// the payload fragment that also lives in the header.
+    pub stats_rerank_index_group_metadata_bytes_read: u32,
+    /// Task 111h: payload bytes read directly from `0x2B` header fragments.
+    pub stats_rerank_index_header_payload_bytes_read: u32,
+    /// Task 111h: payload bytes read from `0x2C` continuation segments.
+    pub stats_rerank_index_segment_payload_bytes_read: u32,
+    /// Task 111h: compact rerank payload bytes handed to the scorer for the
+    /// exact rerank frontier. This is per-survivor scored payload width, not
+    /// the full packed-group payload bytes physically read from index pages.
+    pub stats_rerank_payload_bytes_scored: u32,
+    /// Task 111h: compact rerank payload bytes copied into the current batch
+    /// scoring slab. Non-batched f16 stays zero here; batched compact formats
+    /// report the remaining copy that still needs to be optimized or
+    /// benchmarked away.
+    pub stats_rerank_payload_slab_bytes_copied: u32,
+}
+
+impl Default for IvfExplainCounters {
+    fn default() -> Self {
+        Self {
+            stats_rerank_placement: "none",
+            stats_rerank_format: "none",
+            stats_centroid_scores: 0,
+            stats_selected_lists: 0,
+            stats_posting_pages_read: 0,
+            stats_postings_visited: 0,
+            stats_row_postings_visited: 0,
+            stats_dense_blocks_visited: 0,
+            stats_dense_postings_visited: 0,
+            stats_postings_scored: 0,
+            stats_postings_pruned_by_bound: 0,
+            stats_scratch_soa_flushes: 0,
+            stats_scratch_payload_bytes_copied: 0,
+            stats_scratch_heap_tid_bytes_copied: 0,
+            stats_dense_coalesced_flushes: 0,
+            stats_dense_coalesced_payload_bytes_copied: 0,
+            stats_dense_coalesced_heap_tid_bytes_copied: 0,
+            stats_heap_tids_scored: 0,
+            stats_candidates_scored: 0,
+            stats_candidates_inserted: 0,
+            stats_candidates_emitted: 0,
+            stats_rerank_rows: 0,
+            stats_heap_blocks_fetched: 0,
+            stats_approximate_scan_elapsed_us: 0,
+            stats_exact_rerank_elapsed_us: 0,
+            stats_rerank_payload_decode_elapsed_us: 0,
+            stats_rerank_payload_score_elapsed_us: 0,
+            stats_filtered_duplicates: 0,
+            stats_rerank_candidates_considered: 0,
+            stats_rerank_candidates_skipped: 0,
+            stats_rerank_source_bytes_read: 0,
+            stats_rerank_index_group_header_pages_read: 0,
+            stats_rerank_index_payload_segment_pages_read: 0,
+            stats_rerank_index_group_metadata_bytes_read: 0,
+            stats_rerank_index_header_payload_bytes_read: 0,
+            stats_rerank_index_segment_payload_bytes_read: 0,
+            stats_rerank_payload_bytes_scored: 0,
+            stats_rerank_payload_slab_bytes_copied: 0,
+        }
+    }
 }
 
 const EXPLAIN_COUNTER_DEFINITIONS: [ExplainCounterDefinition; 7] = [
@@ -223,6 +326,11 @@ impl TqExplainCounters {
 }
 
 impl IvfExplainCounters {
+    pub(crate) fn record_rerank_surface(&mut self, placement: &'static str, format: &'static str) {
+        self.stats_rerank_placement = placement;
+        self.stats_rerank_format = format;
+    }
+
     pub(crate) fn record_centroid_scores(&mut self, count: usize) {
         self.stats_centroid_scores = self
             .stats_centroid_scores
@@ -243,12 +351,54 @@ impl IvfExplainCounters {
         self.stats_postings_visited = self.stats_postings_visited.saturating_add(1);
     }
 
+    pub(crate) fn record_row_posting_visited(&mut self) {
+        self.record_posting_visited();
+        self.stats_row_postings_visited = self.stats_row_postings_visited.saturating_add(1);
+    }
+
+    pub(crate) fn record_dense_block_visited(&mut self) {
+        self.stats_dense_blocks_visited = self.stats_dense_blocks_visited.saturating_add(1);
+    }
+
+    pub(crate) fn record_dense_posting_visited(&mut self) {
+        self.record_posting_visited();
+        self.stats_dense_postings_visited = self.stats_dense_postings_visited.saturating_add(1);
+    }
+
     pub(crate) fn record_posting_scored(&mut self) {
         self.stats_postings_scored = self.stats_postings_scored.saturating_add(1);
     }
 
     pub(crate) fn record_posting_pruned_by_bound(&mut self) {
         self.stats_postings_pruned_by_bound = self.stats_postings_pruned_by_bound.saturating_add(1);
+    }
+
+    pub(crate) fn record_scratch_soa_flush(
+        &mut self,
+        payload_bytes_copied: usize,
+        heap_tid_bytes_copied: usize,
+    ) {
+        self.stats_scratch_soa_flushes = self.stats_scratch_soa_flushes.saturating_add(1);
+        self.stats_scratch_payload_bytes_copied = self
+            .stats_scratch_payload_bytes_copied
+            .saturating_add(u32::try_from(payload_bytes_copied).unwrap_or(u32::MAX));
+        self.stats_scratch_heap_tid_bytes_copied = self
+            .stats_scratch_heap_tid_bytes_copied
+            .saturating_add(u32::try_from(heap_tid_bytes_copied).unwrap_or(u32::MAX));
+    }
+
+    pub(crate) fn record_dense_coalesced_flush(
+        &mut self,
+        payload_bytes_copied: usize,
+        heap_tid_bytes_copied: usize,
+    ) {
+        self.stats_dense_coalesced_flushes = self.stats_dense_coalesced_flushes.saturating_add(1);
+        self.stats_dense_coalesced_payload_bytes_copied = self
+            .stats_dense_coalesced_payload_bytes_copied
+            .saturating_add(u32::try_from(payload_bytes_copied).unwrap_or(u32::MAX));
+        self.stats_dense_coalesced_heap_tid_bytes_copied = self
+            .stats_dense_coalesced_heap_tid_bytes_copied
+            .saturating_add(u32::try_from(heap_tid_bytes_copied).unwrap_or(u32::MAX));
     }
 
     pub(crate) fn record_heap_tids_scored(&mut self, count: usize) {
@@ -273,6 +423,19 @@ impl IvfExplainCounters {
         self.stats_rerank_rows = self.stats_rerank_rows.saturating_add(1);
     }
 
+    /// Task 112: record one lazy-rerank planning decision over a frontier of
+    /// `considered` candidates, `skipped` of which the lazy stop proved safe to
+    /// skip. Both accumulate across the scan (a scan has a single rerank pass
+    /// today, but the counters are additive for forward compatibility).
+    pub(crate) fn record_lazy_rerank_plan(&mut self, considered: usize, skipped: usize) {
+        self.stats_rerank_candidates_considered = self
+            .stats_rerank_candidates_considered
+            .saturating_add(u32::try_from(considered).unwrap_or(u32::MAX));
+        self.stats_rerank_candidates_skipped = self
+            .stats_rerank_candidates_skipped
+            .saturating_add(u32::try_from(skipped).unwrap_or(u32::MAX));
+    }
+
     pub(crate) fn record_heap_blocks_fetched(&mut self, count: usize) {
         self.stats_heap_blocks_fetched = self
             .stats_heap_blocks_fetched
@@ -291,16 +454,79 @@ impl IvfExplainCounters {
             .saturating_add(elapsed_us);
     }
 
+    pub(crate) fn record_rerank_payload_decode_elapsed_us(&mut self, elapsed_us: u32) {
+        self.stats_rerank_payload_decode_elapsed_us = self
+            .stats_rerank_payload_decode_elapsed_us
+            .saturating_add(elapsed_us);
+    }
+
+    pub(crate) fn record_rerank_payload_score_elapsed_us(&mut self, elapsed_us: u32) {
+        self.stats_rerank_payload_score_elapsed_us = self
+            .stats_rerank_payload_score_elapsed_us
+            .saturating_add(elapsed_us);
+    }
+
     pub(crate) fn record_filtered_duplicate(&mut self) {
         self.stats_filtered_duplicates = self.stats_filtered_duplicates.saturating_add(1);
+    }
+
+    pub(crate) fn record_rerank_source_bytes_read(&mut self, bytes: usize) {
+        self.stats_rerank_source_bytes_read = self
+            .stats_rerank_source_bytes_read
+            .saturating_add(u32::try_from(bytes).unwrap_or(u32::MAX));
+    }
+
+    pub(crate) fn record_rerank_index_group_reads(
+        &mut self,
+        group_header_pages: u32,
+        payload_segment_pages: u32,
+        group_metadata_bytes: usize,
+        header_payload_bytes: usize,
+        segment_payload_bytes: usize,
+    ) {
+        self.stats_rerank_index_group_header_pages_read = self
+            .stats_rerank_index_group_header_pages_read
+            .saturating_add(group_header_pages);
+        self.stats_rerank_index_payload_segment_pages_read = self
+            .stats_rerank_index_payload_segment_pages_read
+            .saturating_add(payload_segment_pages);
+        self.stats_rerank_index_group_metadata_bytes_read = self
+            .stats_rerank_index_group_metadata_bytes_read
+            .saturating_add(u32::try_from(group_metadata_bytes).unwrap_or(u32::MAX));
+        self.stats_rerank_index_header_payload_bytes_read = self
+            .stats_rerank_index_header_payload_bytes_read
+            .saturating_add(u32::try_from(header_payload_bytes).unwrap_or(u32::MAX));
+        self.stats_rerank_index_segment_payload_bytes_read = self
+            .stats_rerank_index_segment_payload_bytes_read
+            .saturating_add(u32::try_from(segment_payload_bytes).unwrap_or(u32::MAX));
+    }
+
+    pub(crate) fn record_rerank_payload_bytes_scored(&mut self, bytes: usize) {
+        self.stats_rerank_payload_bytes_scored = self
+            .stats_rerank_payload_bytes_scored
+            .saturating_add(u32::try_from(bytes).unwrap_or(u32::MAX));
+    }
+
+    pub(crate) fn record_rerank_payload_slab_bytes_copied(&mut self, bytes: usize) {
+        self.stats_rerank_payload_slab_bytes_copied = self
+            .stats_rerank_payload_slab_bytes_copied
+            .saturating_add(u32::try_from(bytes).unwrap_or(u32::MAX));
     }
 
     pub(crate) fn reset(&mut self) {
         *self = Self::default();
     }
 
-    pub(crate) fn explain_properties(self) -> [ExplainProperty; 15] {
+    pub(crate) fn explain_properties(self) -> [ExplainProperty; 38] {
         [
+            ExplainProperty {
+                property_name: "Rerank Placement",
+                value: ExplainPropertyValue::Text(self.stats_rerank_placement),
+            },
+            ExplainProperty {
+                property_name: "Rerank Format",
+                value: ExplainPropertyValue::Text(self.stats_rerank_format),
+            },
             ExplainProperty {
                 property_name: "Centroid Scores",
                 value: ExplainPropertyValue::Integer(self.stats_centroid_scores),
@@ -318,12 +544,52 @@ impl IvfExplainCounters {
                 value: ExplainPropertyValue::Integer(self.stats_postings_visited),
             },
             ExplainProperty {
+                property_name: "Row Postings Visited",
+                value: ExplainPropertyValue::Integer(self.stats_row_postings_visited),
+            },
+            ExplainProperty {
+                property_name: "Dense Blocks Visited",
+                value: ExplainPropertyValue::Integer(self.stats_dense_blocks_visited),
+            },
+            ExplainProperty {
+                property_name: "Dense Postings Visited",
+                value: ExplainPropertyValue::Integer(self.stats_dense_postings_visited),
+            },
+            ExplainProperty {
                 property_name: "Postings Scored",
                 value: ExplainPropertyValue::Integer(self.stats_postings_scored),
             },
             ExplainProperty {
                 property_name: "Postings Pruned By Bound",
                 value: ExplainPropertyValue::Integer(self.stats_postings_pruned_by_bound),
+            },
+            ExplainProperty {
+                property_name: "Scratch SoA Flushes",
+                value: ExplainPropertyValue::Integer(self.stats_scratch_soa_flushes),
+            },
+            ExplainProperty {
+                property_name: "Scratch Payload Bytes Copied",
+                value: ExplainPropertyValue::Integer(self.stats_scratch_payload_bytes_copied),
+            },
+            ExplainProperty {
+                property_name: "Scratch Heap TID Bytes Copied",
+                value: ExplainPropertyValue::Integer(self.stats_scratch_heap_tid_bytes_copied),
+            },
+            ExplainProperty {
+                property_name: "Dense Coalesced Flushes",
+                value: ExplainPropertyValue::Integer(self.stats_dense_coalesced_flushes),
+            },
+            ExplainProperty {
+                property_name: "Dense Coalesced Payload Bytes Copied",
+                value: ExplainPropertyValue::Integer(
+                    self.stats_dense_coalesced_payload_bytes_copied,
+                ),
+            },
+            ExplainProperty {
+                property_name: "Dense Coalesced Heap TID Bytes Copied",
+                value: ExplainPropertyValue::Integer(
+                    self.stats_dense_coalesced_heap_tid_bytes_copied,
+                ),
             },
             ExplainProperty {
                 property_name: "Heap TIDs Scored",
@@ -358,8 +624,66 @@ impl IvfExplainCounters {
                 value: ExplainPropertyValue::Integer(self.stats_exact_rerank_elapsed_us),
             },
             ExplainProperty {
+                property_name: "Rerank Payload Decode Elapsed Us",
+                value: ExplainPropertyValue::Integer(self.stats_rerank_payload_decode_elapsed_us),
+            },
+            ExplainProperty {
+                property_name: "Rerank Payload Score Elapsed Us",
+                value: ExplainPropertyValue::Integer(self.stats_rerank_payload_score_elapsed_us),
+            },
+            ExplainProperty {
                 property_name: "Filtered Duplicates",
                 value: ExplainPropertyValue::Integer(self.stats_filtered_duplicates),
+            },
+            ExplainProperty {
+                property_name: "Rerank Source Bytes Read",
+                value: ExplainPropertyValue::Integer(self.stats_rerank_source_bytes_read),
+            },
+            ExplainProperty {
+                property_name: "Rerank Candidates Considered",
+                value: ExplainPropertyValue::Integer(self.stats_rerank_candidates_considered),
+            },
+            ExplainProperty {
+                property_name: "Rerank Candidates Skipped",
+                value: ExplainPropertyValue::Integer(self.stats_rerank_candidates_skipped),
+            },
+            ExplainProperty {
+                property_name: "Rerank Index Group Header Pages Read",
+                value: ExplainPropertyValue::Integer(
+                    self.stats_rerank_index_group_header_pages_read,
+                ),
+            },
+            ExplainProperty {
+                property_name: "Rerank Index Payload Segment Pages Read",
+                value: ExplainPropertyValue::Integer(
+                    self.stats_rerank_index_payload_segment_pages_read,
+                ),
+            },
+            ExplainProperty {
+                property_name: "Rerank Index Group Metadata Bytes Read",
+                value: ExplainPropertyValue::Integer(
+                    self.stats_rerank_index_group_metadata_bytes_read,
+                ),
+            },
+            ExplainProperty {
+                property_name: "Rerank Index Header Payload Bytes Read",
+                value: ExplainPropertyValue::Integer(
+                    self.stats_rerank_index_header_payload_bytes_read,
+                ),
+            },
+            ExplainProperty {
+                property_name: "Rerank Index Segment Payload Bytes Read",
+                value: ExplainPropertyValue::Integer(
+                    self.stats_rerank_index_segment_payload_bytes_read,
+                ),
+            },
+            ExplainProperty {
+                property_name: "Rerank Payload Bytes Scored",
+                value: ExplainPropertyValue::Integer(self.stats_rerank_payload_bytes_scored),
+            },
+            ExplainProperty {
+                property_name: "Rerank Payload Slab Bytes Copied",
+                value: ExplainPropertyValue::Integer(self.stats_rerank_payload_slab_bytes_copied),
             },
         ]
     }
@@ -456,6 +780,10 @@ unsafe fn emit_explain_properties(es: *mut pg_sys::ExplainState, properties: &[E
             let property_name =
                 CString::new(property.property_name).expect("property name should not contain NUL");
             match property.value {
+                ExplainPropertyValue::Text(value) => {
+                    let value = CString::new(value).expect("property text should not contain NUL");
+                    pg_sys::ExplainPropertyText(property_name.as_ptr(), value.as_ptr(), es)
+                }
                 ExplainPropertyValue::Integer(value) => pg_sys::ExplainPropertyInteger(
                     property_name.as_ptr(),
                     ptr::null(),
@@ -742,9 +1070,13 @@ mod tests {
         counters.record_centroid_scores(4);
         counters.record_selected_lists(2);
         counters.record_posting_pages_read(3);
-        counters.record_posting_visited();
+        counters.record_row_posting_visited();
+        counters.record_dense_block_visited();
+        counters.record_dense_posting_visited();
         counters.record_posting_scored();
         counters.record_posting_pruned_by_bound();
+        counters.record_scratch_soa_flush(17, 23);
+        counters.record_dense_coalesced_flush(29, 31);
         counters.record_heap_tids_scored(9);
         counters.record_candidate_scored();
         counters.record_candidate_scored();
@@ -754,17 +1086,36 @@ mod tests {
         counters.record_heap_blocks_fetched(31);
         counters.record_approximate_scan_elapsed_us(37);
         counters.record_exact_rerank_elapsed_us(41);
+        counters.record_rerank_payload_decode_elapsed_us(43);
+        counters.record_rerank_payload_score_elapsed_us(47);
         counters.record_filtered_duplicate();
+        counters.record_rerank_source_bytes_read(53);
+        counters.record_lazy_rerank_plan(59, 5);
+        counters.record_rerank_surface("index", "f16");
+        counters.record_rerank_index_group_reads(2, 3, 61, 67, 71);
+        counters.record_rerank_payload_bytes_scored(73);
+        counters.record_rerank_payload_slab_bytes_copied(79);
 
         assert_eq!(
             counters,
             IvfExplainCounters {
+                stats_rerank_placement: "index",
+                stats_rerank_format: "f16",
                 stats_centroid_scores: 4,
                 stats_selected_lists: 2,
                 stats_posting_pages_read: 3,
-                stats_postings_visited: 1,
+                stats_postings_visited: 2,
+                stats_row_postings_visited: 1,
+                stats_dense_blocks_visited: 1,
+                stats_dense_postings_visited: 1,
                 stats_postings_scored: 1,
                 stats_postings_pruned_by_bound: 1,
+                stats_scratch_soa_flushes: 1,
+                stats_scratch_payload_bytes_copied: 17,
+                stats_scratch_heap_tid_bytes_copied: 23,
+                stats_dense_coalesced_flushes: 1,
+                stats_dense_coalesced_payload_bytes_copied: 29,
+                stats_dense_coalesced_heap_tid_bytes_copied: 31,
                 stats_heap_tids_scored: 9,
                 stats_candidates_scored: 2,
                 stats_candidates_inserted: 1,
@@ -773,7 +1124,19 @@ mod tests {
                 stats_heap_blocks_fetched: 31,
                 stats_approximate_scan_elapsed_us: 37,
                 stats_exact_rerank_elapsed_us: 41,
+                stats_rerank_payload_decode_elapsed_us: 43,
+                stats_rerank_payload_score_elapsed_us: 47,
                 stats_filtered_duplicates: 1,
+                stats_rerank_candidates_considered: 59,
+                stats_rerank_candidates_skipped: 5,
+                stats_rerank_source_bytes_read: 53,
+                stats_rerank_index_group_header_pages_read: 2,
+                stats_rerank_index_payload_segment_pages_read: 3,
+                stats_rerank_index_group_metadata_bytes_read: 61,
+                stats_rerank_index_header_payload_bytes_read: 67,
+                stats_rerank_index_segment_payload_bytes_read: 71,
+                stats_rerank_payload_bytes_scored: 73,
+                stats_rerank_payload_slab_bytes_copied: 79,
             }
         );
     }
@@ -781,26 +1144,57 @@ mod tests {
     #[test]
     fn ivf_explain_properties_render_the_current_counter_values() {
         let counters = IvfExplainCounters {
+            stats_rerank_placement: "index",
+            stats_rerank_format: "rabitq8",
             stats_centroid_scores: 4,
             stats_selected_lists: 2,
             stats_posting_pages_read: 3,
             stats_postings_visited: 5,
-            stats_postings_scored: 7,
-            stats_postings_pruned_by_bound: 11,
-            stats_heap_tids_scored: 13,
-            stats_candidates_scored: 17,
-            stats_candidates_inserted: 19,
-            stats_candidates_emitted: 23,
-            stats_rerank_rows: 29,
-            stats_heap_blocks_fetched: 31,
-            stats_approximate_scan_elapsed_us: 37,
-            stats_exact_rerank_elapsed_us: 41,
-            stats_filtered_duplicates: 43,
+            stats_row_postings_visited: 7,
+            stats_dense_blocks_visited: 11,
+            stats_dense_postings_visited: 13,
+            stats_postings_scored: 31,
+            stats_postings_pruned_by_bound: 37,
+            stats_scratch_soa_flushes: 41,
+            stats_scratch_payload_bytes_copied: 43,
+            stats_scratch_heap_tid_bytes_copied: 47,
+            stats_dense_coalesced_flushes: 53,
+            stats_dense_coalesced_payload_bytes_copied: 59,
+            stats_dense_coalesced_heap_tid_bytes_copied: 61,
+            stats_heap_tids_scored: 89,
+            stats_candidates_scored: 97,
+            stats_candidates_inserted: 101,
+            stats_candidates_emitted: 103,
+            stats_rerank_rows: 107,
+            stats_heap_blocks_fetched: 109,
+            stats_approximate_scan_elapsed_us: 113,
+            stats_exact_rerank_elapsed_us: 127,
+            stats_rerank_payload_decode_elapsed_us: 131,
+            stats_rerank_payload_score_elapsed_us: 133,
+            stats_filtered_duplicates: 137,
+            stats_rerank_candidates_considered: 139,
+            stats_rerank_candidates_skipped: 149,
+            stats_rerank_source_bytes_read: 151,
+            stats_rerank_index_group_header_pages_read: 157,
+            stats_rerank_index_payload_segment_pages_read: 163,
+            stats_rerank_index_group_metadata_bytes_read: 167,
+            stats_rerank_index_header_payload_bytes_read: 173,
+            stats_rerank_index_segment_payload_bytes_read: 179,
+            stats_rerank_payload_bytes_scored: 181,
+            stats_rerank_payload_slab_bytes_copied: 191,
         };
 
         assert_eq!(
             counters.explain_properties(),
             [
+                ExplainProperty {
+                    property_name: "Rerank Placement",
+                    value: ExplainPropertyValue::Text("index"),
+                },
+                ExplainProperty {
+                    property_name: "Rerank Format",
+                    value: ExplainPropertyValue::Text("rabitq8"),
+                },
                 ExplainProperty {
                     property_name: "Centroid Scores",
                     value: ExplainPropertyValue::Integer(4),
@@ -818,48 +1212,132 @@ mod tests {
                     value: ExplainPropertyValue::Integer(5),
                 },
                 ExplainProperty {
-                    property_name: "Postings Scored",
+                    property_name: "Row Postings Visited",
                     value: ExplainPropertyValue::Integer(7),
                 },
                 ExplainProperty {
-                    property_name: "Postings Pruned By Bound",
+                    property_name: "Dense Blocks Visited",
                     value: ExplainPropertyValue::Integer(11),
                 },
                 ExplainProperty {
-                    property_name: "Heap TIDs Scored",
+                    property_name: "Dense Postings Visited",
                     value: ExplainPropertyValue::Integer(13),
                 },
                 ExplainProperty {
-                    property_name: "Candidates Scored",
-                    value: ExplainPropertyValue::Integer(17),
-                },
-                ExplainProperty {
-                    property_name: "Candidates Inserted",
-                    value: ExplainPropertyValue::Integer(19),
-                },
-                ExplainProperty {
-                    property_name: "Candidates Emitted",
-                    value: ExplainPropertyValue::Integer(23),
-                },
-                ExplainProperty {
-                    property_name: "Rerank Rows",
-                    value: ExplainPropertyValue::Integer(29),
-                },
-                ExplainProperty {
-                    property_name: "Heap Blocks Fetched",
+                    property_name: "Postings Scored",
                     value: ExplainPropertyValue::Integer(31),
                 },
                 ExplainProperty {
-                    property_name: "Approximate Scan Elapsed Us",
+                    property_name: "Postings Pruned By Bound",
                     value: ExplainPropertyValue::Integer(37),
                 },
                 ExplainProperty {
-                    property_name: "Exact Rerank Elapsed Us",
+                    property_name: "Scratch SoA Flushes",
                     value: ExplainPropertyValue::Integer(41),
                 },
                 ExplainProperty {
-                    property_name: "Filtered Duplicates",
+                    property_name: "Scratch Payload Bytes Copied",
                     value: ExplainPropertyValue::Integer(43),
+                },
+                ExplainProperty {
+                    property_name: "Scratch Heap TID Bytes Copied",
+                    value: ExplainPropertyValue::Integer(47),
+                },
+                ExplainProperty {
+                    property_name: "Dense Coalesced Flushes",
+                    value: ExplainPropertyValue::Integer(53),
+                },
+                ExplainProperty {
+                    property_name: "Dense Coalesced Payload Bytes Copied",
+                    value: ExplainPropertyValue::Integer(59),
+                },
+                ExplainProperty {
+                    property_name: "Dense Coalesced Heap TID Bytes Copied",
+                    value: ExplainPropertyValue::Integer(61),
+                },
+                ExplainProperty {
+                    property_name: "Heap TIDs Scored",
+                    value: ExplainPropertyValue::Integer(89),
+                },
+                ExplainProperty {
+                    property_name: "Candidates Scored",
+                    value: ExplainPropertyValue::Integer(97),
+                },
+                ExplainProperty {
+                    property_name: "Candidates Inserted",
+                    value: ExplainPropertyValue::Integer(101),
+                },
+                ExplainProperty {
+                    property_name: "Candidates Emitted",
+                    value: ExplainPropertyValue::Integer(103),
+                },
+                ExplainProperty {
+                    property_name: "Rerank Rows",
+                    value: ExplainPropertyValue::Integer(107),
+                },
+                ExplainProperty {
+                    property_name: "Heap Blocks Fetched",
+                    value: ExplainPropertyValue::Integer(109),
+                },
+                ExplainProperty {
+                    property_name: "Approximate Scan Elapsed Us",
+                    value: ExplainPropertyValue::Integer(113),
+                },
+                ExplainProperty {
+                    property_name: "Exact Rerank Elapsed Us",
+                    value: ExplainPropertyValue::Integer(127),
+                },
+                ExplainProperty {
+                    property_name: "Rerank Payload Decode Elapsed Us",
+                    value: ExplainPropertyValue::Integer(131),
+                },
+                ExplainProperty {
+                    property_name: "Rerank Payload Score Elapsed Us",
+                    value: ExplainPropertyValue::Integer(133),
+                },
+                ExplainProperty {
+                    property_name: "Filtered Duplicates",
+                    value: ExplainPropertyValue::Integer(137),
+                },
+                ExplainProperty {
+                    property_name: "Rerank Source Bytes Read",
+                    value: ExplainPropertyValue::Integer(151),
+                },
+                ExplainProperty {
+                    property_name: "Rerank Candidates Considered",
+                    value: ExplainPropertyValue::Integer(139),
+                },
+                ExplainProperty {
+                    property_name: "Rerank Candidates Skipped",
+                    value: ExplainPropertyValue::Integer(149),
+                },
+                ExplainProperty {
+                    property_name: "Rerank Index Group Header Pages Read",
+                    value: ExplainPropertyValue::Integer(157),
+                },
+                ExplainProperty {
+                    property_name: "Rerank Index Payload Segment Pages Read",
+                    value: ExplainPropertyValue::Integer(163),
+                },
+                ExplainProperty {
+                    property_name: "Rerank Index Group Metadata Bytes Read",
+                    value: ExplainPropertyValue::Integer(167),
+                },
+                ExplainProperty {
+                    property_name: "Rerank Index Header Payload Bytes Read",
+                    value: ExplainPropertyValue::Integer(173),
+                },
+                ExplainProperty {
+                    property_name: "Rerank Index Segment Payload Bytes Read",
+                    value: ExplainPropertyValue::Integer(179),
+                },
+                ExplainProperty {
+                    property_name: "Rerank Payload Bytes Scored",
+                    value: ExplainPropertyValue::Integer(181),
+                },
+                ExplainProperty {
+                    property_name: "Rerank Payload Slab Bytes Copied",
+                    value: ExplainPropertyValue::Integer(191),
                 },
             ]
         );

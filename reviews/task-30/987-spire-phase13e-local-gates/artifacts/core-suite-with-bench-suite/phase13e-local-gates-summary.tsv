@@ -1,6 +1,0 @@
-run_id	gate	status	artifact_dir
-20260526T144604Z	phase13e-static-remote-placement	pass	reviews/task-30/987-spire-phase13e-local-gates/artifacts/core-suite-with-bench-suite/phase13e-static-remote-placement
-20260526T144604Z	multicluster-customscan-read	pass	reviews/task-30/987-spire-phase13e-local-gates/artifacts/core-suite-with-bench-suite/multicluster-customscan-read
-20260526T144604Z	insert-read-after-customscan-helper	pass	reviews/task-30/987-spire-phase13e-local-gates/artifacts/core-suite-with-bench-suite/insert-read-after-customscan-helper
-20260526T144604Z	insert-read-after-customscan-trigger	pass	reviews/task-30/987-spire-phase13e-local-gates/artifacts/core-suite-with-bench-suite/insert-read-after-customscan-trigger
-20260526T144604Z	transport-overlap	pass	reviews/task-30/987-spire-phase13e-local-gates/artifacts/core-suite-with-bench-suite/transport-overlap

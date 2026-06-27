@@ -118,6 +118,36 @@ fn record_batch_scoring_timing(
     record_flush_width(surface, quant_kind, isa, batch_width);
 }
 
+/// Records a grouped-PQ HNSW traversal flush-width sample for the Task 106
+/// gap-2 (HNSW × grouped-PQ) measure-first histogram. Grouped-PQ traversal
+/// scores per candidate today, so no block kernel runs; this samples the
+/// would-be batch width at a natural traversal boundary so the flush-width
+/// distribution can decide whether a traversal block kernel is justified.
+/// Width-only: it does not touch flush/kernel/scalar counts. The `Isa::Scalar`
+/// key reflects that no SIMD kernel dispatched — the signal is the width-bucket
+/// distribution, not the isa label.
+pub(crate) fn record_grouped_pq_traversal_flush_width(batch_width: usize) {
+    record_flush_width(
+        CandidateBatchScoringSurface::Hnsw,
+        QuantCodecKind::GroupedPq,
+        Isa::Scalar,
+        batch_width,
+    );
+}
+
+/// Records an IVF RaBitQ arithmetic-batch flush-width sample for bits=4/8.
+/// Those lanes intentionally use the per-candidate arithmetic SIMD estimator
+/// instead of the block-kernel wrapper, so this exposes the scan flush-width
+/// histogram without attributing kernel/scalar scoring work.
+pub(crate) fn record_ivf_rabitq_arithmetic_batch_flush_width(batch_width: usize) {
+    record_flush_width(
+        CandidateBatchScoringSurface::Ivf,
+        QuantCodecKind::RaBitQ,
+        Isa::Scalar,
+        batch_width,
+    );
+}
+
 pub(crate) fn score_turboquant_no_qjl_4bit_batch<Id>(
     quantizer: &ProdQuantizer,
     prepared: &PreparedLutNoQjl4BitQuery,
@@ -333,6 +363,22 @@ pub(crate) fn score_rabitq_bits1_batch_for<Id>(
     out_scores: &mut [f32],
 ) -> Result<(), String> {
     let result = score_rabitq_bits1_batch_inner(prepared, batch, out_scores);
+    if let Ok(timing) = &result {
+        record_batch_scoring_timing(surface, QuantCodecKind::RaBitQ, batch.len(), timing);
+    }
+    result.map(|_| ())
+}
+
+/// Multi-bit (bits=2/4) RaBitQ block scoring through the width-cascade driver.
+/// Records under `QuantCodecKind::RaBitQ` exactly like the bits=1 lane; the bit
+/// width is implied by which kernel ran (the `isa`/kernel attribution).
+pub(crate) fn score_rabitq_bitsn_batch_for<Id>(
+    surface: CandidateBatchScoringSurface,
+    prepared: crate::quant::rabitq32::PreparedBitsN<'_>,
+    batch: &CandidateBatch<'_, Id>,
+    out_scores: &mut [f32],
+) -> Result<(), String> {
+    let result = score_rabitq_bitsn_batch_inner(prepared, batch, out_scores);
     if let Ok(timing) = &result {
         record_batch_scoring_timing(surface, QuantCodecKind::RaBitQ, batch.len(), timing);
     }
@@ -632,6 +678,72 @@ fn score_rabitq_bits1_batch_blocked<Id>(
     )
 }
 
+fn score_rabitq_bitsn_batch_inner<Id>(
+    prepared: crate::quant::rabitq32::PreparedBitsN<'_>,
+    batch: &CandidateBatch<'_, Id>,
+    out_scores: &mut [f32],
+) -> Result<BatchScoringTiming, String> {
+    if batch.len() != out_scores.len() {
+        return Err(format!(
+            "rabitq32 multi-bit score output count {} does not match candidate count {}",
+            out_scores.len(),
+            batch.len()
+        ));
+    }
+    prepared.validate()?;
+
+    for (index, payload) in batch.payloads().iter().enumerate() {
+        // Multi-bit RaBitQ carries the same zero-gamma meta contract as bits=1.
+        validate_rabitq_bits1_meta(payload.meta)?;
+        crate::quant::rabitq32::validate_multibit_code_shape(index, prepared, payload.code)?;
+    }
+
+    Ok(score_rabitq_bitsn_batch_blocked(
+        prepared, batch, out_scores,
+    ))
+}
+
+fn score_rabitq_bitsn_batch_blocked<Id>(
+    prepared: crate::quant::rabitq32::PreparedBitsN<'_>,
+    batch: &CandidateBatch<'_, Id>,
+    out_scores: &mut [f32],
+) -> BatchScoringTiming {
+    let codes: Vec<&[u8]> = batch
+        .payloads()
+        .iter()
+        .map(|payload| payload.code)
+        .collect();
+    score_width_cascade(
+        &codes,
+        out_scores,
+        crate::quant::rabitq32::BLOCK_WIDTH,
+        false,
+        |block_codes, block_scores| {
+            let codes: [&[u8]; crate::quant::rabitq32::BLOCK_WIDTH] = block_codes
+                .try_into()
+                .expect("width-cascade block length is exact");
+            crate::quant::rabitq32::score_rabitq_bitsn_block32(prepared, codes, block_scores)
+        },
+        |tail_codes, tail_scores, timing| {
+            if tail_codes.is_empty() {
+                return;
+            }
+            let started = Instant::now();
+            let isa = crate::quant::rabitq32::score_rabitq_bitsn_partial(
+                prepared,
+                tail_codes,
+                tail_scores,
+            );
+            timing.record_run(
+                isa,
+                tail_codes.len(),
+                u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX),
+                false,
+            );
+        },
+    )
+}
+
 fn score_turboquant_qjl_batch_inner<Id>(
     quantizer: &ProdQuantizer,
     prepared: &PreparedQuery,
@@ -709,7 +821,7 @@ fn score_turboquant_qjl_remainder(
             codes[lane] = *code;
             gammas[lane] = *gamma;
         }
-        let Some(isa) = crate::quant::qjl32::score_turboquant_qjl_octet8_avx2(
+        let Some(isa) = crate::quant::qjl32::score_turboquant_qjl_octet8(
             quantizer,
             prepared,
             codes,
@@ -916,37 +1028,54 @@ mod tests {
         )
         .unwrap();
 
+        let block_snapshots = super::block_kernel_scoring_snapshots();
+        let turboquant: Vec<_> = block_snapshots
+            .iter()
+            .filter(|snapshot| snapshot.surface == "ivf" && snapshot.quant_kind == "turboquant")
+            .collect();
+        assert!(!turboquant.is_empty());
+        let kernel_candidates = turboquant
+            .iter()
+            .map(|snapshot| snapshot.kernel_candidates)
+            .sum::<u64>();
+        let scalar_candidates = turboquant
+            .iter()
+            .map(|snapshot| snapshot.scalar_candidates)
+            .sum::<u64>();
+        assert_eq!(kernel_candidates + scalar_candidates, 39);
+        assert!(kernel_candidates >= 32);
+        for block in &turboquant {
+            assert_eq!(
+                block.elapsed_nanos,
+                block.kernel_elapsed_nanos + block.scalar_elapsed_nanos
+            );
+        }
+        let simd_host = turboquant.iter().any(|snapshot| snapshot.isa != "scalar");
+        if simd_host {
+            // Real lut32 block kernel: the 32-block and the padded 7-tail both
+            // dispatch under the detected ISA (Task 102).
+            assert_eq!(kernel_candidates, 39);
+            assert_eq!(scalar_candidates, 0);
+        } else {
+            // Scalar-only host: legacy block-as-kernel attribution plus a
+            // scalar partial tail.
+            assert_eq!(kernel_candidates, 32);
+            assert_eq!(scalar_candidates, 7);
+        }
+
         let snapshots = super::candidate_batch_scoring_snapshots();
         let ivf = snapshots
             .iter()
             .find(|snapshot| snapshot.surface == "ivf")
             .unwrap();
-        assert_eq!(ivf.flushes, 1);
         assert_eq!(ivf.candidates, 39);
+        assert_eq!(ivf.flushes, 1);
         assert_eq!(ivf.lut32_flushes, 1);
-        assert_eq!(ivf.lut32_candidates, 32);
-        let block_snapshots = super::block_kernel_scoring_snapshots();
-        let block = block_snapshots
-            .iter()
-            .find(|snapshot| {
-                snapshot.surface == "ivf"
-                    && snapshot.quant_kind == "turboquant"
-                    && snapshot.isa == "scalar"
-            })
-            .unwrap();
-        assert_eq!(block.surface, "ivf");
-        assert_eq!(block.quant_kind, "turboquant");
-        assert_eq!(block.isa, "scalar");
-        assert_eq!(block.flushes, 2);
-        assert_eq!(block.candidates, 39);
-        assert_eq!(
-            block.elapsed_nanos,
-            block.kernel_elapsed_nanos + block.scalar_elapsed_nanos
-        );
-        assert_eq!(block.kernel_flushes, 1);
-        assert_eq!(block.kernel_candidates, 32);
-        assert_eq!(block.scalar_flushes, 1);
-        assert_eq!(block.scalar_candidates, 7);
+        if simd_host {
+            assert_eq!(ivf.lut32_candidates, 39);
+        } else {
+            assert_eq!(ivf.lut32_candidates, 32);
+        }
         let spire = snapshots
             .iter()
             .find(|snapshot| snapshot.surface == "spire")
@@ -1214,6 +1343,43 @@ mod tests {
         assert_eq!(scalar.scalar_flushes, 1);
         assert_eq!(scalar.scalar_candidates, 7);
         assert_eq!(scalar.scalar_elapsed_nanos, 20);
+    }
+
+    #[test]
+    fn grouped_pq_traversal_flush_width_probe_records_width_only_histogram() {
+        let _guard = super::CANDIDATE_BATCH_COUNTER_TEST_LOCK.lock().unwrap();
+        super::reset_candidate_batch_scoring_counters();
+
+        // Task 106 gap-2 measure-first probe: width samples from the grouped-PQ
+        // HNSW traversal boundary land in the hnsw × grouped_pq × scalar
+        // histogram and touch only the width buckets — no kernel ran, so the
+        // flush/kernel/scalar counts stay zero. The snapshot must still surface
+        // the row (width-only), or the histogram would be invisible to benches.
+        super::record_grouped_pq_traversal_flush_width(3); // bucket 1-7
+        super::record_grouped_pq_traversal_flush_width(12); // bucket 8-15
+        super::record_grouped_pq_traversal_flush_width(40); // bucket >=32
+        super::record_grouped_pq_traversal_flush_width(0); // ignored (no sample)
+
+        let snapshots = super::block_kernel_scoring_snapshots();
+        let grouped = snapshots
+            .iter()
+            .find(|snapshot| {
+                snapshot.surface == "hnsw"
+                    && snapshot.quant_kind == "grouped_pq"
+                    && snapshot.isa == "scalar"
+            })
+            .expect("grouped-PQ traversal width sample should surface a snapshot row");
+        assert_eq!(grouped.width_lt8_flushes, 1);
+        assert_eq!(grouped.width_8_15_flushes, 1);
+        assert_eq!(grouped.width_16_31_flushes, 0);
+        assert_eq!(grouped.width_ge32_flushes, 1);
+        // Width-only: no block kernel ran, so scoring counts stay zero.
+        assert_eq!(grouped.flushes, 0);
+        assert_eq!(grouped.candidates, 0);
+        assert_eq!(grouped.kernel_flushes, 0);
+        assert_eq!(grouped.scalar_flushes, 0);
+
+        super::reset_candidate_batch_scoring_counters();
     }
 
     #[test]

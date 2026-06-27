@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-044
 title: "`ecvector` Rerank-Source Location and Storage Policy"
 status: PROPOSED

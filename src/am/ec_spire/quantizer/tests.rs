@@ -542,6 +542,89 @@ mod tests {
     }
 
     #[test]
+    fn rabitq_bits1_slab_routes_through_block_kernel_driver() {
+        // ADR-077 §9.1: a bits=1 RaBitQ slab must engage the rabitq32
+        // unified block-kernel driver (counters + width cascade), not the
+        // legacy per-payload estimator. SPIRE's production lane is bits=4 by
+        // default, but the dispatch must route bits=1 through the driver so
+        // the surface is no longer counter-invisible. Scores grade under the
+        // rabitq32 family envelope vs the forced-scalar anchor.
+        use crate::quant::Quantizer;
+
+        let _guard = crate::am::common::candidate_batch::CANDIDATE_BATCH_COUNTER_TEST_LOCK
+            .lock()
+            .unwrap();
+        crate::am::common::candidate_batch::reset_candidate_batch_scoring_counters();
+
+        let dim = 96;
+        let query = (0..dim)
+            .map(|index| ((index as f32) * 0.021).sin())
+            .collect::<Vec<_>>();
+        let quantizer =
+            RaBitQQuantizer::cached_seeded_srht_bits(dim, crate::DEFAULT_QUANT_SEED, 1).unwrap();
+        let prepared = quantizer.prepare_estimator(&query);
+        let payload_stride = quantizer.code_len();
+
+        // 39 candidates = one 32-wide block + a 7-wide tail.
+        let candidate_count = 39usize;
+        let mut slab = Vec::with_capacity(payload_stride * candidate_count);
+        for row in 0..candidate_count {
+            let source = (0..dim)
+                .map(|col| (((row * 7 + col * 3) % 23) as f32 / dim as f32) - 0.4)
+                .collect::<Vec<_>>();
+            slab.extend_from_slice(&Quantizer::encode_code(&*quantizer, &source));
+        }
+
+        let mut scores = vec![0.0_f32; candidate_count];
+        super::score_rabitq_payload_slab(
+            &prepared,
+            payload_stride,
+            &slab,
+            candidate_count,
+            &mut scores,
+        )
+        .unwrap();
+
+        // Correctness: each score agrees with the per-payload scalar estimate
+        // under the rabitq32 family envelope (1e-5 relative; FMA reorder).
+        for (index, payload) in slab.chunks_exact(payload_stride).enumerate() {
+            let anchor = prepared.estimate_ip_scalar_only(payload);
+            let bound = 1e-5_f32 * scores[index].abs().max(anchor.abs()).max(1.0);
+            assert!(
+                (scores[index] - anchor).abs() <= bound,
+                "index={index} driver={} anchor={anchor}",
+                scores[index]
+            );
+        }
+
+        // Counter attribution: block-kernel rows now appear for (spire, rabitq).
+        let snapshots = crate::am::common::candidate_batch::block_kernel_scoring_snapshots();
+        let spire_rabitq = snapshots
+            .iter()
+            .filter(|s| s.surface == "spire" && s.quant_kind == "rabitq")
+            .collect::<Vec<_>>();
+        assert!(
+            !spire_rabitq.is_empty(),
+            "expected spire/rabitq block-kernel counter rows, got {snapshots:?}"
+        );
+        // One 32-wide block flush happened (block + tail share an (surface,
+        // quant, isa) row on SIMD hosts, so assert the width bucket rather than
+        // an exact per-row candidate count).
+        let width_ge32: u64 = spire_rabitq.iter().map(|s| s.width_ge32_flushes).sum();
+        assert!(
+            width_ge32 >= 1,
+            "expected a 32-wide block-kernel flush, got {spire_rabitq:?}"
+        );
+        let total: u64 = spire_rabitq
+            .iter()
+            .map(|s| s.kernel_candidates + s.scalar_candidates)
+            .sum();
+        assert_eq!(total, candidate_count as u64);
+
+        crate::am::common::candidate_batch::reset_candidate_batch_scoring_counters();
+    }
+
+    #[test]
     fn common_quant_codec_rejects_spire_pq_fastscan_without_model() {
         let query = vec![1.0, 0.5, -0.25, 0.125];
         let source = vec![0.25, -0.5, 0.75, 1.0];

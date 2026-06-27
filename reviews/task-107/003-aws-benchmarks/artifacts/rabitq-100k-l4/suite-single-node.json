@@ -1,0 +1,122 @@
+{
+  "name": "task107-rabitq-100k-l4-single-node",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-107/003-aws-benchmarks/artifacts/rabitq-100k-l4",
+  "defaults": {
+    "profile": "ec_spire",
+    "bits": 4,
+    "seed": 42,
+    "pg": 18
+  },
+  "thresholds": [
+    {
+      "name": "representative-recall-k10-nprobe64-floor",
+      "step": "13a3a-recall-k10",
+      "metric": "recall",
+      "filters": {
+        "nprobe": "64"
+      },
+      "field": "recall@k",
+      "op": "gte",
+      "value": 0.95
+    },
+    {
+      "name": "representative-production-read-k10-nprobe64-recall-floor",
+      "step": "13e3-production-read-profile-k10",
+      "metric": "spire-pipeline",
+      "filters": {
+        "nprobe": "64"
+      },
+      "field": "recall@k",
+      "op": "gte",
+      "value": 0.95
+    }
+  ],
+  "steps": [
+    {
+      "kind": "recall",
+      "name": "13a3a-recall-k10",
+      "prefix": "task107_rabitq_100k_l4",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        64
+      ],
+      "queries_limit": 1000,
+      "truth_corpus_file": "reviews/task-107/003-aws-benchmarks/work/qdrant-dbpedia/prepared/ec_real_100k_corpus.tsv",
+      "truth_cache_file": "reviews/task-107/003-aws-benchmarks/artifacts/rabitq-100k-l4/truth-cache/13a3a-recall-k10.json"
+    },
+    {
+      "kind": "recall",
+      "name": "13a3a-recall-k100",
+      "prefix": "task107_rabitq_100k_l4",
+      "k": 100,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        64
+      ],
+      "queries_limit": 1000,
+      "truth_corpus_file": "reviews/task-107/003-aws-benchmarks/work/qdrant-dbpedia/prepared/ec_real_100k_corpus.tsv",
+      "truth_cache_file": "reviews/task-107/003-aws-benchmarks/artifacts/rabitq-100k-l4/truth-cache/13a3a-recall-k100.json"
+    },
+    {
+      "kind": "latency",
+      "name": "13a3a-latency-k10-c1",
+      "prefix": "task107_rabitq_100k_l4",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32
+      ],
+      "concurrency": 1,
+      "iterations": 1000
+    },
+    {
+      "kind": "latency",
+      "name": "13a3a-latency-k10-c4",
+      "prefix": "task107_rabitq_100k_l4",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32
+      ],
+      "concurrency": 4,
+      "iterations": 1000
+    },
+    {
+      "kind": "latency",
+      "name": "13a3a-latency-k10-c8",
+      "prefix": "task107_rabitq_100k_l4",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32
+      ],
+      "concurrency": 8,
+      "iterations": 1000
+    },
+    {
+      "kind": "latency",
+      "name": "13a3f-pk-c32",
+      "prefix": "task107_rabitq_100k_l4",
+      "k": 1,
+      "sweep": [
+        32
+      ],
+      "concurrency": 32,
+      "iterations": 5000
+    }
+  ]
+}

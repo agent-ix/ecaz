@@ -1,8 +1,7 @@
 ---
 id: US-015
 title: Compare Access Method Benchmarks
-type: user-story
-artifact_type: US
+type: US
 status: APPROVED
 relationships:
   - target: "ix://agent-ix/ecaz/StR-006"
@@ -20,7 +19,9 @@ relationships:
 ---
 # US-015: Compare Access Method Benchmarks
 
-**As** a reviewer or platform engineer,
+## Story
+
+**As a** reviewer or platform engineer,
 **I want** benchmark rows to cite the exact AM profile, quantizer or storage format, commands, settings, metrics, and raw artifacts,
 **So that** I can distinguish landed local evidence from future product claims.
 

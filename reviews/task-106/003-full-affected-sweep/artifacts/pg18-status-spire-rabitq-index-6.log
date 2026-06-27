@@ -1,0 +1,11 @@
+  pid   |     phase      
+--------+----------------
+ 715916 | building index
+(1 row)
+
+  pid   | state  | wait_event_type | wait_event |       age       |                                    query                                    
+--------+--------+-----------------+------------+-----------------+-----------------------------------------------------------------------------
+ 715916 | active |                 |            | 00:11:26.549554 | CREATE INDEX t106_1m_spire_rabitq_rabitq_idx ON t106_1m_spire_rabitq_corpus+
+        |        |                 |            |                 |         USING ec_spire (embedding ecvector_spire_ip_ops) WITH (n
+(1 row)
+

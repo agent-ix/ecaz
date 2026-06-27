@@ -1,0 +1,6 @@
+NOTICE:  index "task107_phase1_turboquant_1m_l2_idx" does not exist, skipping
+NOTICE:  table "task107_phase1_turboquant_1m_l2_queries" does not exist, skipping
+NOTICE:  table "task107_phase1_turboquant_1m_l2_corpus" does not exist, skipping
+DROP INDEX
+DROP TABLE
+DROP TABLE

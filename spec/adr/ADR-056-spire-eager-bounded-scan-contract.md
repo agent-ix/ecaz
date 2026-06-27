@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-056
 title: "SPIRE Eager Bounded Scan Contract"
 status: ACCEPTED

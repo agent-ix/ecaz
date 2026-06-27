@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-028
 title: "Partial-Dimension Pre-Filter for Beam Search Candidate Scoring"
 status: PROPOSED

@@ -1,6 +1,9 @@
 # Task 30 Phase 13b: SPIRE AWS Verification Runbook
 
-Status: runbook draft, pending reviewer acceptance
+Status: **complete / superseded** (2026-06-16) — the AWS bring-up /
+stage-run operator surface this runbook scoped was exercised by the
+Task 106/107 product-scale AWS runs on the newer build, which stand as
+the accepted AWS verification evidence.
 Owner: coder1 / SPIRE AWS verification track
 Priority: P1 — blocks any Phase 13 execution; pairs with
 `task30-phase13a-spire-aws-verification-design.md`.

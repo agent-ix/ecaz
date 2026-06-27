@@ -1,5 +1,0 @@
-row	global_blocks	radius_weight	candidates	latency_p50_ms	latency_p95_ms	recall_at_10	returned_sum	gate
-k3	512	0.25	3239966	44.708	52.527	0.9855	2000	fail_recall
-k3	640	0.25	4050130	49.910	60.820	0.9910	2000	fail_recall_p50
-k3	704	0.25	4454827	48.199	56.595	0.9920	2000	fail_recall_p50
-k3	768	0.25	4860209	49.252	59.120	0.9925	2000	fail_p50

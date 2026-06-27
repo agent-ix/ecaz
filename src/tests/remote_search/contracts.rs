@@ -13,7 +13,7 @@
         Spi::run(
             "CREATE INDEX ec_spire_remote_search_sql_idx \
              ON ec_spire_remote_search_sql USING ec_spire \
-             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2, storage_format = 'turboquant')",
         )
         .expect("ec_spire index creation should succeed");
 
@@ -96,7 +96,7 @@
         assert!(row_locator_len);
         assert!(protocol_matches);
         assert!(extension_matches);
-        assert_eq!(endpoint_status, "requires_rabitq_storage_format");
+        assert_eq!(endpoint_status, "ready");
         assert!(fingerprint_len);
     }
     #[pg_test]

@@ -1,0 +1,36 @@
+Script started on 2026-06-20 15:22:05-07:00 [<not executed on terminal>]
+   Compiling rustix v1.1.4
+   Compiling crossterm v0.29.0
+   Compiling comfy-table v7.2.2
+   Compiling ecaz-cli v0.1.0 (/tmp/ecaz-111h-clean/crates/ecaz-cli)
+warning: field `path` is never read
+   --> crates/ecaz-cli/src/commands/corpus/load.rs:170:5
+    |
+169 | struct LoadedDistributedPlacementConfig {
+    |        -------------------------------- field in this struct
+170 |     path: PathBuf,
+    |     ^^^^
+    |
+    = note: `LoadedDistributedPlacementConfig` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `ecaz-cli` (bin "ecaz") generated 1 warning
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 54.91s
+     Running `/home/peter/dev/ecaz/target/debug/ecaz dev evict-relation-cache --help`
+Evict local PostgreSQL relation files from the OS page cache
+
+Usage: ecaz dev evict-relation-cache [OPTIONS]
+
+Options:
+      --prefix <PREFIXES>     Benchmark prefix whose `<prefix>_corpus` table and related indexes/toast files should be evicted from the local OS page cache
+      --relation <RELATIONS>  Explicit relation to evict. Repeatable; resolved as a PostgreSQL regclass in the target database
+      --dry-run               Print the files that would be evicted without calling posix_fadvise
+      --database <DATABASE>   PostgreSQL database name. Defaults to $PGDATABASE or 'tqvector_bench' [env: PGDATABASE=] [default: tqvector_bench]
+      --host <HOST>           PostgreSQL host name or Unix socket directory [env: PGHOST=]
+      --port <PORT>           PostgreSQL port [env: PGPORT=]
+      --user <USER>           PostgreSQL user name [env: PGUSER=]
+      --password <PASSWORD>   PostgreSQL password. Prefer `.pgpass` for non-local use [env: PGPASSWORD]
+      --log-file <LOG_FILE>   Mirror CLI stdout/stderr into a file for packet-local artifact capture. Progress bars are suppressed so the file stays stable and diffable
+  -h, --help                  Print help
+
+Script done on 2026-06-20 15:23:00-07:00 [COMMAND_EXIT_CODE="0"]

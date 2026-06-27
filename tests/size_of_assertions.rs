@@ -113,10 +113,16 @@ const _: () = {
 };
 
 const _: () = {
-    // v2 added quant_bits at byte 34 (was reserved); v1 indexes decode as bits=4.
-    assert!(EC_IVF_INDEX_FORMAT_VERSION == 2);
+    // v9 metadata: 92 bytes. Bytes 22..24 persist compact rerank score mode
+    // and RaBitQ clip knobs.
+    // Bytes 80..86 point at the packed 0x2B rerank group
+    // header chain for index-side compact rerank; bytes 86..92 retain the
+    // legacy directory-head slot but are INVALID for v9 packed groups.
+    assert!(EC_IVF_INDEX_FORMAT_VERSION == 9);
     assert!(EC_IVF_METADATA_MAGIC == 0x5649_4345);
-    assert!(EC_IVF_METADATA_BYTES == 80);
+    assert!(EC_IVF_METADATA_BYTES == 92);
+    assert!(EC_IVF_METADATA_RERANK_SIDECAR_HEAD_OFFSET == 80);
+    assert!(EC_IVF_METADATA_RERANK_SIDECAR_DIRECTORY_HEAD_OFFSET == 86);
     assert!(EC_IVF_METADATA_MAGIC_OFFSET == 0);
     assert!(EC_IVF_METADATA_FORMAT_VERSION_OFFSET == 4);
     assert!(EC_IVF_METADATA_DIMENSIONS_OFFSET == 6);
@@ -124,6 +130,8 @@ const _: () = {
     assert!(EC_IVF_METADATA_NPROBE_OFFSET == 12);
     assert!(EC_IVF_METADATA_TRAINING_SAMPLE_ROWS_OFFSET == 16);
     assert!(EC_IVF_METADATA_TRAINING_VERSION_OFFSET == 20);
+    assert!(EC_IVF_METADATA_RABITQ_RERANK_SCORE_MODE_OFFSET == 22);
+    assert!(EC_IVF_METADATA_RABITQ_RERANK_CLIP_OFFSET == 23);
     assert!(EC_IVF_METADATA_SEED_OFFSET == 24);
     assert!(EC_IVF_METADATA_STORAGE_FORMAT_OFFSET == 32);
     assert!(EC_IVF_METADATA_RERANK_OFFSET == 33);
@@ -164,6 +172,25 @@ const _: () = {
     assert!(EC_IVF_PQ_CODEBOOK_GROUP_INDEX_OFFSET == 1);
     assert!(EC_IVF_PQ_CODEBOOK_NEXT_TID_OFFSET == 3);
     assert!(EC_IVF_PQ_CODEBOOK_CENTROIDS_OFFSET == 9);
+
+    assert!(EC_IVF_RERANK_GROUP_HEADER_FIXED_BYTES == 36);
+    assert!(EC_IVF_RERANK_GROUP_HEADER_TAG_OFFSET == 0);
+    assert!(EC_IVF_RERANK_GROUP_HEADER_RERANK_FORMAT_OFFSET == 1);
+    assert!(EC_IVF_RERANK_GROUP_HEADER_LIST_ID_OFFSET == 2);
+    assert!(EC_IVF_RERANK_GROUP_HEADER_SCORER_WIDTH_OFFSET == 6);
+    assert!(EC_IVF_RERANK_GROUP_HEADER_VALID_COUNT_OFFSET == 8);
+    assert!(EC_IVF_RERANK_GROUP_HEADER_PAYLOAD_LEN_OFFSET == 10);
+    assert!(EC_IVF_RERANK_GROUP_HEADER_TOTAL_HEAP_TIDS_OFFSET == 12);
+    assert!(EC_IVF_RERANK_GROUP_HEADER_TOTAL_PAYLOAD_BYTES_OFFSET == 16);
+    assert!(EC_IVF_RERANK_GROUP_HEADER_HEADER_PAYLOAD_BYTES_OFFSET == 20);
+    assert!(EC_IVF_RERANK_GROUP_HEADER_NEXT_SEGMENT_TID_OFFSET == 22);
+    assert!(EC_IVF_RERANK_GROUP_HEADER_NEXT_GROUP_TID_OFFSET == 28);
+    assert!(EC_IVF_RERANK_GROUP_HEADER_RESERVED_OFFSET == 34);
+
+    assert!(EC_IVF_RERANK_GROUP_PAYLOAD_SEGMENT_HEADER_BYTES == 9);
+    assert!(EC_IVF_RERANK_GROUP_PAYLOAD_SEGMENT_TAG_OFFSET == 0);
+    assert!(EC_IVF_RERANK_GROUP_PAYLOAD_SEGMENT_PAYLOAD_BYTES_OFFSET == 1);
+    assert!(EC_IVF_RERANK_GROUP_PAYLOAD_SEGMENT_NEXT_SEGMENT_TID_OFFSET == 3);
 };
 
 const _: () = {

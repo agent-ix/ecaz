@@ -1,8 +1,7 @@
 ---
 id: US-020
 title: Manage SPIRE Epochs, Updates, and Rebalancing
-type: user-story
-artifact_type: US
+type: US
 status: APPROVED
 relationships:
   - target: "ix://agent-ix/ecaz/StR-005"
@@ -20,7 +19,9 @@ relationships:
 ---
 # US-020: Manage SPIRE Epochs, Updates, and Rebalancing
 
-**As** a database operator,
+## Story
+
+**As a** database operator,
 **I want** SPIRE to publish, retain, and retire index epochs while handling inserts, deletes, splits, merges, and placement changes,
 **So that** queries can run against coherent index state while the system evolves.
 

@@ -1,10 +1,10 @@
 # Task 54: Common P3 — Page / WAL / Buffer Typed Wrappers
 
-Status: **proposed** — supersedes the §P3 disposition in
-`reviews/task-50/030-comprehensive-unsafe-burndown-plan/request.md`
-and the build.rs structural-ceiling rationale in
-`reviews/task-50/448-hnsw-burndown-refreshed-closeout/request.md`.
-Third Phase-1 lane in the post-Task-50 hardening sequence.
+Status: **complete** (2026-06-16) — Common P3 page/WAL/buffer
+wrappers + the 006 HNSW insert/shared stretch landed on `main`
+(merge `4b063a33b`). Closeout `reviews/task-54/005-closeout/`; final
+acceptance `reviews/task-54/005-closeout/feedback/2026-06-16-01-reviewer.md`.
+Was the third Phase-1 lane in the post-Task-50 hardening sequence.
 
 ## Why
 

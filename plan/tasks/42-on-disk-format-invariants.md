@@ -1,9 +1,39 @@
 # Task 42: On-Disk Format and Cross-Arch / Cross-Version Invariants
 
-Status: **partial smoke checkpoint** — current fixture, matrix, layout, qemu,
-WAL-policy, and PG18 same-binary `pg_upgrade` smoke infrastructure is in place.
-Broader CI stabilization and richer live-upgrade coverage remain deferred until
-the CI surface is steadier and a second writable format version ships.
+Status: **complete** (2026-06-16; closeout `788a074a4`, reviewer-accepted
+honest-audit feedback under `reviews/task-42/018-*/`) — fixture, matrix,
+layout, qemu, WAL-policy, and PG18 same-binary `pg_upgrade` smoke
+infrastructure landed. Broader CI stabilization and richer live-upgrade
+coverage are intentionally deferred until the CI surface is steadier and
+a second writable format version ships (documented follow-on, not a gap).
+
+## Update — IVF metadata is v3, clean-break (Task 111g, 2026-06-18)
+
+Task 111g (packet `reviews/task-111g/003b-persisted-compact-sidecar/`) set the
+IVF metadata format to **v3**. This is a research project with no users and no
+backward-compat requirement, so v3 is a **clean break**: the reader accepts
+version `3` only and rejects everything else. An index written by an older
+format is simply rebuilt.
+
+- `EC_IVF_METADATA_BYTES = 86`; field
+  `EC_IVF_METADATA_RERANK_SIDECAR_HEAD_OFFSET = 80` holds the compact rerank
+  sidecar chain head (tag `0x2A`).
+- `rerank_sidecar_head = INVALID` is the legitimate "no sidecar" runtime state
+  for `rerank_placement = 'table'` / f32 storage (rerank reads the heap/table
+  source path). That is a placement state, not a compatibility mode.
+
+Reconciled by 111g (registry-consistency layer of this task):
+
+- `tests/size_of_assertions.rs`: pins `EC_IVF_INDEX_FORMAT_VERSION == 3`,
+  `EC_IVF_METADATA_BYTES == 86`,
+  `EC_IVF_METADATA_RERANK_SIDECAR_HEAD_OFFSET == 80`.
+- `fixtures/upgrade/matrix.csv`: ivf lists only `3` (read+write);
+  `tests/upgrade_matrix.rs` expects ivf writable set `{3}`.
+- `tests/on_disk_fixtures.rs::ivf_metadata_v3_fixture_decodes`: asserts the
+  committed 86-byte **v3** on-disk image decodes with
+  `rerank_sidecar_head == INVALID`.
+- `docs/on-disk-format.md`: version-policy table (IVF `3` only), the IVF metadata
+  format section, and the `0x2A` rerank-sidecar tag.
 
 ## Scope
 

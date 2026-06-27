@@ -296,6 +296,9 @@ pub async fn run(conn: &ConnectionOptions, args: SidecarRerankArgs) -> Result<()
         "recall_p50",
         "recall_p90",
         "ndcg@k",
+        "candidate_count_min",
+        "candidate_count_p50",
+        "candidate_count_p95",
         "candidate_sql_p50",
         "sidecar_io_p50",
         "sidecar_score_p50",
@@ -312,6 +315,8 @@ pub async fn run(conn: &ConnectionOptions, args: SidecarRerankArgs) -> Result<()
         "sidecar_p99",
         "total_bound_p99",
         "sidecar_bytes_per_vector",
+        "sidecar_bytes_touched_p50",
+        "sidecar_bytes_touched_p95",
         "sidecar_size",
     ]);
 
@@ -406,6 +411,13 @@ pub async fn run(conn: &ConnectionOptions, args: SidecarRerankArgs) -> Result<()
                 let sidecar_score_summary = summarize_ns(&reranked.score_elapsed_ns);
                 let sidecar_summary = summarize_ns(&reranked.elapsed_ns);
                 let total_summary = summarize_ns(&total_ns);
+                let candidate_count_summary = summarize_counts(&candidate_run.candidate_counts());
+                let sidecar_bytes_touched_p50 = sidecar
+                    .bytes_per_vector
+                    .saturating_mul(candidate_count_summary.p50);
+                let sidecar_bytes_touched_p95 = sidecar
+                    .bytes_per_vector
+                    .saturating_mul(candidate_count_summary.p95);
                 table.add_row(vec![
                     Cell::new(value),
                     Cell::new(sidecar.variant.label()),
@@ -418,6 +430,9 @@ pub async fn run(conn: &ConnectionOptions, args: SidecarRerankArgs) -> Result<()
                     Cell::new(format!("{:.4}", recall.p50)),
                     Cell::new(format!("{:.4}", recall.p90)),
                     Cell::new(format!("{:.4}", ndcg)),
+                    Cell::new(candidate_count_summary.min),
+                    Cell::new(candidate_count_summary.p50),
+                    Cell::new(candidate_count_summary.p95),
                     Cell::new(format_ms(candidate_summary.p50_ms)),
                     Cell::new(format_ms(sidecar_io_summary.p50_ms)),
                     Cell::new(format_ms(sidecar_score_summary.p50_ms)),
@@ -434,6 +449,8 @@ pub async fn run(conn: &ConnectionOptions, args: SidecarRerankArgs) -> Result<()
                     Cell::new(format_ms(sidecar_summary.p99_ms)),
                     Cell::new(format_ms(total_summary.p99_ms)),
                     Cell::new(sidecar.bytes_per_vector),
+                    Cell::new(format_bytes(sidecar_bytes_touched_p50)),
+                    Cell::new(format_bytes(sidecar_bytes_touched_p95)),
                     Cell::new(format_bytes(sidecar.total_bytes(corpus.nrows()))),
                 ]);
             }
@@ -517,6 +534,41 @@ fn validate_corpus_and_queries(
 struct CandidateRun {
     ids: Vec<Vec<i64>>,
     elapsed_ns: Vec<u128>,
+}
+
+impl CandidateRun {
+    fn candidate_counts(&self) -> Vec<usize> {
+        self.ids.iter().map(Vec::len).collect()
+    }
+}
+
+#[derive(Clone, Copy)]
+struct CountSummary {
+    min: usize,
+    p50: usize,
+    p95: usize,
+}
+
+fn summarize_counts(values: &[usize]) -> CountSummary {
+    if values.is_empty() {
+        return CountSummary {
+            min: 0,
+            p50: 0,
+            p95: 0,
+        };
+    }
+    let mut sorted = values.to_vec();
+    sorted.sort_unstable();
+    CountSummary {
+        min: sorted[0],
+        p50: percentile_usize(&sorted, 0.50),
+        p95: percentile_usize(&sorted, 0.95),
+    }
+}
+
+fn percentile_usize(sorted: &[usize], p: f64) -> usize {
+    let idx = ((sorted.len() - 1) as f64 * p).round() as usize;
+    sorted[idx.min(sorted.len() - 1)]
 }
 
 async fn collect_candidates(

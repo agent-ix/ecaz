@@ -1,0 +1,44 @@
+                    relname                    |  total  
+-----------------------------------------------+---------
+ t106_1m_ivf_rabitq_b8_corpus                  | 17 GB
+ t106_1m_hnsw_pqfastscan_groupedpq_corpus      | 17 GB
+ ec_hnsw_real_ann_benchmarks_anchor_corpus     | 17 GB
+ t106_1m_ivf_rabitq_b4_corpus                  | 16 GB
+ t106_1m_ivf_explicit_tq_corpus                | 16 GB
+ t106_1m_ivf_auto_tq_corpus                    | 16 GB
+ t106_1m_spire_rabitq_corpus                   | 16 GB
+ t106_1m_ivf_rabitq_b2_corpus                  | 16 GB
+ t106_1m_ivf_rabitq_b1_corpus                  | 16 GB
+ task28_ivf_pqg990k_g8_n128_corpus             | 16 GB
+ t106_1m_spire_pqfastscan_gap_corpus           | 15 GB
+ t106_1m_ivf_rabitq_b8_rabitq_idx              | 1936 MB
+ task67_local_fullq_100k_hnsw_corpus           | 1838 MB
+ t106_100k_ivf_rabitq_b8_corpus                | 1786 MB
+ t106_100k_hnsw_pqfastscan_groupedpq_corpus    | 1720 MB
+ t99_hnsw_rabitq_100k_corpus                   | 1720 MB
+ t99_hnsw_tq_100k_corpus                       | 1720 MB
+ current_intel_real100k_hnsw_corpus            | 1720 MB
+ t99_diskann_tq_100k_corpus                    | 1687 MB
+ task67_local_fullq_100k_ivfrabitq_corpus      | 1680 MB
+ t106_100k_ivf_rabitq_b4_corpus                | 1678 MB
+ t106_100k_ivf_auto_tq_corpus                  | 1678 MB
+ t106_100k_ivf_explicit_tq_corpus              | 1678 MB
+ task28_ivf_tq100k_n64w25_corpus               | 1677 MB
+ t99_ivf_rabitq4_100k_corpus                   | 1677 MB
+ t99_ivf_tq_100k_corpus                        | 1677 MB
+ t99_spire_rabitq_100k_corpus                  | 1669 MB
+ task74_intel_spire_highrecall_tg128_b0_corpus | 1669 MB
+ t106_100k_spire_rabitq_corpus                 | 1669 MB
+ t99_spire_tq_100k_corpus                      | 1669 MB
+ tqhnsw_real_50k_reloaded_corpus               | 1645 MB
+ t106_100k_ivf_rabitq_b2_corpus                | 1640 MB
+ t99_diskann_pqfs_100k_corpus                  | 1636 MB
+ task67_local_fullq_100k_diskann_corpus        | 1636 MB
+ t99_diskann_rabitq_100k_corpus                | 1631 MB
+ t106_100k_ivf_rabitq_b1_corpus                | 1620 MB
+ t99_ivf_rabitq1_100k_corpus                   | 1619 MB
+ task28_ivf_pqg100k_g8_n256_corpus             | 1610 MB
+ task74_intel_ivf_control_corpus               | 1609 MB
+ task28_a9_100k_ivf_corpus                     | 1609 MB
+(40 rows)
+

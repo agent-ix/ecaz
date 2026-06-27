@@ -1,0 +1,74 @@
+SET
+SET
+=== Registered remote nodes ===
+0	active	1
+2	active	159
+3	active	158
+=== EXPLAIN ANALYZE: vector ORDER BY LIMIT through CustomScan ===
+Limit  (cost=5.28..5.67 rows=10 width=12) (actual time=56.816..56.825 rows=10.00 loops=1)
+  Buffers: shared hit=972
+  ->  Custom Scan (EcSpireDistributedScan) on task107_rabitq_100k_l1_corpus  (cost=5.28..5.67 rows=10 width=12) (actual time=56.815..56.822 rows=10.00 loops=1)
+        node: EcSpireDistributedScan
+        remote_fanout: 2
+        tuple_transport_status: ready
+        nprobe: 0
+        rerank_width: 0
+        Buffers: shared hit=972
+Planning:
+  Buffers: shared hit=1905 read=3 dirtied=1
+Planning Time: 12.198 ms
+Execution Time: 56.943 ms
+=== Handoff summary ===
+1	ec_spire.remote_search_consistency_mode	strict	18	18	0	18	0	2	2	0	0	none	20	10	0	requires_remote_heap_resolution	remote_heap_resolution	requires_remote_heap_resolution	add origin-node row locator resolution before returning remote heap rows
+=== Production read profile ===
+requested_epoch	1
+consistency_mode_source	ec_spire.remote_search_consistency_mode
+consistency_mode	strict
+effective_nprobe	18
+selected_pid_count	18
+local_pid_count	0
+remote_pid_count	18
+skipped_pid_count	0
+dispatch_count	2
+compact_candidate_count	20
+remote_heap_ready_dispatch_count	2
+remote_heap_failed_dispatch_count	0
+remote_heap_candidate_count	20
+local_heap_candidate_count	0
+returned_candidate_count	10
+result_source	remote_heap_candidates
+final_heap_fetch_status	remote_ready
+next_blocker	none
+status	ready
+recommendation	none
+planning_elapsed_ms	24
+fingerprint_guard_elapsed_ms	17
+conninfo_secret_lookup_elapsed_ms	0
+connect_elapsed_ms	0
+statement_timeout_setup_elapsed_ms	0
+regclass_probe_elapsed_ms	0
+endpoint_identity_elapsed_ms	0
+candidate_receive_elapsed_ms	6
+heap_receive_elapsed_ms	6
+payload_decode_elapsed_ms	0
+merge_elapsed_ms	0
+total_elapsed_ms	33
+conninfo_secret_lookup_count	2
+socket_open_count	0
+tls_disable_count	0
+tls_require_count	0
+tls_verify_full_count	0
+statement_timeout_setup_count	0
+regclass_probe_count	2
+endpoint_identity_query_count	2
+candidate_receive_query_count	2
+heap_receive_query_count	2
+payload_decode_row_count	20
+payload_decode_bytes	0
+merge_input_count	20
+merge_duplicate_vec_id_count	0
+merge_output_count	10
+strict_fail_count	0
+remote_timeout_count	0
+remote_cancel_count	0
+degraded_skipped_dispatch_count	0

@@ -4,8 +4,8 @@
 
 - [Rust](https://rustup.rs/) stable + nightly (for fuzzing and Miri)
 - [cargo-pgrx](https://github.com/pgcentralfoundation/pgrx) 0.17
-- Native PostgreSQL build dependencies, or PostgreSQL 17/18 development
-  headers if using an existing server
+- Native PostgreSQL build dependencies, or PostgreSQL 18 development headers if
+  using an existing server (PG17 only for compatibility coverage)
 - [valgrind](https://valgrind.org/) (for iai-callgrind benchmarks)
 - [cargo-fuzz](https://github.com/rust-fuzz/cargo-fuzz) (for fuzzing)
 

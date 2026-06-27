@@ -208,6 +208,11 @@ impl SpireStorageFormat {
         match value {
             "auto" => Ok(Self::Auto),
             "turboquant" => Ok(Self::TurboQuant),
+            // Pq-FastScan parses and the index can be created empty, but it is a
+            // permanent exclusion (Task 106 slice 4): SPIRE has no grouped-PQ
+            // model persistence, so a populated build errors and the assignment
+            // payload reports `deferred_model_metadata` / unscannable via the
+            // options snapshot. Documented in ADR-077 §8 / aggregate matrix §4.
             "pq_fastscan" => Ok(Self::PqFastScan),
             "rabitq" => Ok(Self::RaBitQ),
             other => Err(format!(

@@ -140,14 +140,27 @@ pub(crate) fn score_turboquant_qjl_block32(
     }
 }
 
-pub(crate) fn score_turboquant_qjl_octet8_avx2(
+/// ISA-dispatched octet entry for the 8-31-candidate remainder band.
+/// On aarch64 the SVE ladder positions also take the NEON octet (no SVE
+/// octet kernel exists); `None` means the caller's scalar tail applies.
+pub(crate) fn score_turboquant_qjl_octet8(
     quantizer: &ProdQuantizer,
     prepared: &PreparedQuery,
     codes: [&[u8]; OCTET_WIDTH],
     gammas: [f32; OCTET_WIDTH],
     out_scores: &mut [f32],
 ) -> Option<crate::quant::isa::Isa> {
-    avx2::score_octet8_avx2(quantizer, prepared, &codes, &gammas, out_scores)
+    match crate::quant::isa::current_isa() {
+        crate::quant::isa::Isa::Avx2 => {
+            avx2::score_octet8_avx2(quantizer, prepared, &codes, &gammas, out_scores)
+        }
+        crate::quant::isa::Isa::Neon
+        | crate::quant::isa::Isa::Sve
+        | crate::quant::isa::Isa::Sve2 => {
+            neon::score_octet8_neon(quantizer, prepared, &codes, &gammas, out_scores)
+        }
+        crate::quant::isa::Isa::Scalar => None,
+    }
 }
 
 pub(crate) fn score_turboquant_qjl_scalar(
@@ -201,7 +214,7 @@ mod tests {
     use super::{
         runtime_sve_vector_lanes_for_test, score_turboquant_qjl_batch,
         score_turboquant_qjl_block32, score_turboquant_qjl_block32_neon_for_test,
-        score_turboquant_qjl_block32_sve_for_test, score_turboquant_qjl_octet8_avx2,
+        score_turboquant_qjl_block32_sve_for_test, score_turboquant_qjl_octet8,
         score_turboquant_qjl_scalar, validate_qjl_shape, BLOCK_WIDTH, OCTET_WIDTH,
     };
     use crate::quant::isa::Isa;
@@ -304,7 +317,10 @@ mod tests {
                 assert_close(*score, pre_slice, 4);
             }
         }
-        assert!(matches!(isa, Isa::Scalar | Isa::Avx2));
+        assert!(matches!(
+            isa,
+            Isa::Scalar | Isa::Avx2 | Isa::Neon | Isa::Sve2
+        ));
     }
 
     #[test]
@@ -355,7 +371,7 @@ mod tests {
     }
 
     #[test]
-    fn qjl32_avx2_octet8_matches_pre_slice_scorer_tolerance() {
+    fn qjl32_octet8_matches_pre_slice_scorer_tolerance() {
         let quantizer = crate::quant::prod::ProdQuantizer::new(1024, 4, 42);
         let query = random_unit_vector(1024, 213);
         let prepared = quantizer.prepare_ip_query(&query);
@@ -381,7 +397,7 @@ mod tests {
             .unwrap();
         let mut scores = vec![0.0; OCTET_WIDTH];
 
-        let Some(isa) = score_turboquant_qjl_octet8_avx2(
+        let Some(isa) = score_turboquant_qjl_octet8(
             &quantizer,
             &prepared,
             code_refs
@@ -394,7 +410,7 @@ mod tests {
             return;
         };
 
-        assert_eq!(isa, Isa::Avx2);
+        assert!(matches!(isa, Isa::Avx2 | Isa::Neon));
         for ((code, gamma), score) in code_refs.iter().zip(gammas.iter()).zip(scores.iter()) {
             let pre_slice = quantizer.score_ip_from_parts_scalar_reference(&prepared, *gamma, code);
             assert_close(*score, pre_slice, 4);

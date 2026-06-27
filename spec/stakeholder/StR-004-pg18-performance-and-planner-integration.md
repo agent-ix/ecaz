@@ -1,7 +1,7 @@
 ---
 id: StR-004
 title: PG18 Performance and Planner Integration
-type: stakeholder-requirement
+type: StR
 status: IMPLEMENTED
 derived_usecases:
   - US-006
@@ -13,7 +13,7 @@ derived_usecases:
 ---
 # StR-004: PG18 Performance and Planner Integration
 
-## Need
+## Stakeholder Need
 
 PostgreSQL 18 is now Ecaz's primary target. The extension uses PG18-only callback and diagnostics surfaces where available while preserving PG17 compatibility behind feature flags. The remaining PG18 work is no longer basic enablement; it is measurement, tuning, and deferred scale validation.
 
@@ -37,7 +37,7 @@ The extension SHALL:
 - ReadStream and parallel build are important for cold-cache and build-time scaling, but their product claims require controlled hardware measurements.
 - Parallel index scan was investigated and is shelved because it is not the current frontier for scaling research.
 
-## Success Criteria
+## Validation Criteria
 
 - PG18 is the default build target and PG17 remains a compatibility fallback.
 - Planner selection, strategy translation, and EXPLAIN diagnostics are live for the implemented access-method surfaces.

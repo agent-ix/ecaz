@@ -1,7 +1,13 @@
 # Task 101: Batch-Driver Width-Cascade Unification
 
-Status: proposed (2026-06-10; in-epic per operator decision — these are
-consolidation defects of the 91–98 unify/batching epic, not follow-ups)
+Status: complete (2026-06-10, closeout
+`reviews/task-101/004-release-ac5-rerun/` — reviewer approval
+`50a86029c` "Task 101 ACs all met": generic width-cascade unification
+landed, full-coverage sub-width dispatch backported to lut32/grouped-PQ,
+release-backend AC5 rerun verified cell-by-cell with batch-on faster at
+all six IVF cells and the debug-backend suite guard approved. Merged to
+main via PRs #22–#24. Status line flipped 2026-06-11; the flip commit
+was missed at closeout time.)
 Owner: coder (to be assigned; the Task 93/95/98 partial-width author is
 the natural fit). Phase III.
 Priority: 1 (closes the epic's own consistency debts before closeout)

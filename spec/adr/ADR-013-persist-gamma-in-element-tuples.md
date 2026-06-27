@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-013
 title: "Persist gamma in element tuples to eliminate heap fetches during scan and insert"
 status: ACCEPTED

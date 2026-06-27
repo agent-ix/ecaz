@@ -1,0 +1,102 @@
+Script started on 2026-06-14 16:55:06-07:00 [<not executed on terminal>]
+tunnel coordinator ready on port 15432
+tunnel remote-2 ready on port 15433
+tunnel remote-3 ready on port 15434
+[suite:task107-turboquant-100k-l1-single-node] wrote reviews/task-107/003-aws-benchmarks/artifacts/turboquant-100k-l1/suite-manifest-single-node.json
+[suite:task107-turboquant-100k-l1-single-node] wrote reviews/task-107/003-aws-benchmarks/artifacts/turboquant-100k-l1/suite-manifest-single-node.json
+[suite:task107-turboquant-100k-l1-single-node] 13a3a-recall-k10 -> --database postgres --host 127.0.0.1 --port 15432 --user ecaz_coord bench recall --prefix task107_turboquant_100k_l1 --profile ec_spire --k 10 --sweep "8,16,24,32,64" --queries-limit 1000 --bits 4 --seed 42 --truth-cache-file reviews/task-107/003-aws-benchmarks/artifacts/turboquant-100k-l1/truth-cache/13a3a-recall-k10.json --truth-corpus-file reviews/task-107/003-aws-benchmarks/work/qdrant-dbpedia/prepared/ec_real_100k_corpus.tsv --log-output reviews/task-107/003-aws-benchmarks/artifacts/turboquant-100k-l1/13a3a-recall-k10.log
+[suite:task107-turboquant-100k-l1-single-node] wrote reviews/task-107/003-aws-benchmarks/artifacts/turboquant-100k-l1/suite-manifest-single-node.json
+┌────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ nprobe ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 8      ┆ 1000    ┆ 10000         ┆ 0.7939   ┆ 0.7859          ┆ 0.8017           ┆ 0.5000     ┆ 0.8000     ┆ 1.0000     ┆ 0.1000       ┆ 0.9821 ┆ 80.91 ms    │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 16     ┆ 1000    ┆ 10000         ┆ 0.8703   ┆ 0.8636          ┆ 0.8767           ┆ 0.7000     ┆ 0.9000     ┆ 1.0000     ┆ 0.1000       ┆ 0.9895 ┆ 114.33 ms   │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 24     ┆ 1000    ┆ 10000         ┆ 0.9041   ┆ 0.8982          ┆ 0.9097           ┆ 0.7000     ┆ 0.9000     ┆ 1.0000     ┆ 0.3000       ┆ 0.9929 ┆ 147.70 ms   │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 32     ┆ 1000    ┆ 10000         ┆ 0.9268   ┆ 0.9215          ┆ 0.9317           ┆ 0.8000     ┆ 1.0000     ┆ 1.0000     ┆ 0.3000       ┆ 0.9949 ┆ 182.00 ms   │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 64     ┆ 1000    ┆ 10000         ┆ 0.9661   ┆ 0.9624          ┆ 0.9695           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.3000       ┆ 0.9978 ┆ 326.51 ms   │
+└────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from task107_turboquant_100k_l1_queries ...
+[recall] loading truth corpus from reviews/task-107/003-aws-benchmarks/work/qdrant-dbpedia/prepared/ec_real_100k_corpus.tsv ...
+[recall] computing ground truth: 1000 queries vs 100000 corpus rows (dim=1536) ...
+[recall] ground truth in 3.53s
+[recall] wrote ground truth cache reviews/task-107/003-aws-benchmarks/artifacts/turboquant-100k-l1/truth-cache/13a3a-recall-k10.json
+[suite:task107-turboquant-100k-l1-single-node] wrote reviews/task-107/003-aws-benchmarks/artifacts/turboquant-100k-l1/suite-manifest-single-node.json
+[suite:task107-turboquant-100k-l1-single-node] 13a3a-recall-k100 -> --database postgres --host 127.0.0.1 --port 15432 --user ecaz_coord bench recall --prefix task107_turboquant_100k_l1 --profile ec_spire --k 100 --sweep "8,16,24,32,64" --queries-limit 1000 --bits 4 --seed 42 --truth-cache-file reviews/task-107/003-aws-benchmarks/artifacts/turboquant-100k-l1/truth-cache/13a3a-recall-k100.json --truth-corpus-file reviews/task-107/003-aws-benchmarks/work/qdrant-dbpedia/prepared/ec_real_100k_corpus.tsv --log-output reviews/task-107/003-aws-benchmarks/artifacts/turboquant-100k-l1/13a3a-recall-k100.log
+[suite:task107-turboquant-100k-l1-single-node] wrote reviews/task-107/003-aws-benchmarks/artifacts/turboquant-100k-l1/suite-manifest-single-node.json
+┌────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ nprobe ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 8      ┆ 1000    ┆ 100000        ┆ 0.6862   ┆ 0.6834          ┆ 0.6891           ┆ 0.4900     ┆ 0.7000     ┆ 0.8800     ┆ 0.1400       ┆ 0.9699 ┆ 82.55 ms    │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 16     ┆ 1000    ┆ 100000        ┆ 0.7899   ┆ 0.7874          ┆ 0.7924           ┆ 0.6400     ┆ 0.8000     ┆ 0.9200     ┆ 0.3500       ┆ 0.9824 ┆ 115.77 ms   │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 24     ┆ 1000    ┆ 100000        ┆ 0.8362   ┆ 0.8339          ┆ 0.8385           ┆ 0.7100     ┆ 0.8500     ┆ 0.9500     ┆ 0.4400       ┆ 0.9873 ┆ 149.20 ms   │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 32     ┆ 1000    ┆ 100000        ┆ 0.8687   ┆ 0.8665          ┆ 0.8707           ┆ 0.7600     ┆ 0.8800     ┆ 0.9600     ┆ 0.4800       ┆ 0.9904 ┆ 183.86 ms   │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 64     ┆ 1000    ┆ 100000        ┆ 0.9336   ┆ 0.9321          ┆ 0.9351           ┆ 0.8700     ┆ 0.9400     ┆ 0.9900     ┆ 0.7300       ┆ 0.9956 ┆ 326.97 ms   │
+└────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from task107_turboquant_100k_l1_queries ...
+[recall] loading truth corpus from reviews/task-107/003-aws-benchmarks/work/qdrant-dbpedia/prepared/ec_real_100k_corpus.tsv ...
+[recall] computing ground truth: 1000 queries vs 100000 corpus rows (dim=1536) ...
+[recall] ground truth in 3.54s
+[recall] wrote ground truth cache reviews/task-107/003-aws-benchmarks/artifacts/turboquant-100k-l1/truth-cache/13a3a-recall-k100.json
+[suite:task107-turboquant-100k-l1-single-node] wrote reviews/task-107/003-aws-benchmarks/artifacts/turboquant-100k-l1/suite-manifest-single-node.json
+[suite:task107-turboquant-100k-l1-single-node] 13a3a-latency-k10-c1 -> --database postgres --host 127.0.0.1 --port 15432 --user ecaz_coord bench latency --prefix task107_turboquant_100k_l1 --profile ec_spire --k 10 --concurrency 1 --iterations 1000 --sweep "8,16,24,32" --bits 4 --seed 42 --memory-sample-interval-ms 25 --log-output reviews/task-107/003-aws-benchmarks/artifacts/turboquant-100k-l1/13a3a-latency-k10-c1.log
+[suite:task107-turboquant-100k-l1-single-node] wrote reviews/task-107/003-aws-benchmarks/artifacts/turboquant-100k-l1/suite-manifest-single-node.json
+┌────────┬───────┬──────────┬─────────┬──────────┬──────────┬──────────┬──────────┬──────────┬─────────────┐
+│ nprobe ┆ count ┆ mean     ┆ stddev  ┆ min      ┆ p50      ┆ p95      ┆ p99      ┆ max      ┆ cache_state │
+╞════════╪═══════╪══════════╪═════════╪══════════╪══════════╪══════════╪══════════╪══════════╪═════════════╡
+│ 8      ┆ 1000  ┆ 80.4 ms  ┆ 7.03 ms ┆ 64.5 ms  ┆ 79.4 ms  ┆ 93.3 ms  ┆ 99.6 ms  ┆ 107.7 ms ┆ unspecified │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 16     ┆ 1000  ┆ 113.7 ms ┆ 9.02 ms ┆ 91.4 ms  ┆ 112.8 ms ┆ 128.3 ms ┆ 139.5 ms ┆ 175.8 ms ┆ unspecified │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 24     ┆ 1000  ┆ 147.4 ms ┆ 11.9 ms ┆ 114.3 ms ┆ 148.3 ms ┆ 164.4 ms ┆ 172.3 ms ┆ 267.4 ms ┆ unspecified │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 32     ┆ 1000  ┆ 182.5 ms ┆ 12.9 ms ┆ 148.7 ms ┆ 182.1 ms ┆ 202.4 ms ┆ 212.6 ms ┆ 292.6 ms ┆ unspecified │
+└────────┴───────┴──────────┴─────────┴──────────┴──────────┴──────────┴──────────┴──────────┴─────────────┘
+[suite:task107-turboquant-100k-l1-single-node] wrote reviews/task-107/003-aws-benchmarks/artifacts/turboquant-100k-l1/suite-manifest-single-node.json
+[suite:task107-turboquant-100k-l1-single-node] 13a3a-latency-k10-c4 -> --database postgres --host 127.0.0.1 --port 15432 --user ecaz_coord bench latency --prefix task107_turboquant_100k_l1 --profile ec_spire --k 10 --concurrency 4 --iterations 1000 --sweep "8,16,24,32" --bits 4 --seed 42 --memory-sample-interval-ms 25 --log-output reviews/task-107/003-aws-benchmarks/artifacts/turboquant-100k-l1/13a3a-latency-k10-c4.log
+[suite:task107-turboquant-100k-l1-single-node] wrote reviews/task-107/003-aws-benchmarks/artifacts/turboquant-100k-l1/suite-manifest-single-node.json
+┌────────┬───────┬──────────┬─────────┬──────────┬──────────┬──────────┬──────────┬──────────┬─────────────┐
+│ nprobe ┆ count ┆ mean     ┆ stddev  ┆ min      ┆ p50      ┆ p95      ┆ p99      ┆ max      ┆ cache_state │
+╞════════╪═══════╪══════════╪═════════╪══════════╪══════════╪══════════╪══════════╪══════════╪═════════════╡
+│ 8      ┆ 1000  ┆ 86.7 ms  ┆ 8.49 ms ┆ 64.4 ms  ┆ 85.7 ms  ┆ 101.8 ms ┆ 109.8 ms ┆ 151.3 ms ┆ unspecified │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 16     ┆ 1000  ┆ 120.1 ms ┆ 13.1 ms ┆ 95.3 ms  ┆ 118.9 ms ┆ 136.5 ms ┆ 155.7 ms ┆ 317.3 ms ┆ unspecified │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 24     ┆ 1000  ┆ 154.3 ms ┆ 13.0 ms ┆ 122.0 ms ┆ 154.2 ms ┆ 175.1 ms ┆ 190.0 ms ┆ 213.5 ms ┆ unspecified │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 32     ┆ 1000  ┆ 189.2 ms ┆ 13.6 ms ┆ 152.8 ms ┆ 188.6 ms ┆ 212.1 ms ┆ 224.2 ms ┆ 266.0 ms ┆ unspecified │
+└────────┴───────┴──────────┴─────────┴──────────┴──────────┴──────────┴──────────┴──────────┴─────────────┘
+[suite:task107-turboquant-100k-l1-single-node] wrote reviews/task-107/003-aws-benchmarks/artifacts/turboquant-100k-l1/suite-manifest-single-node.json
+[suite:task107-turboquant-100k-l1-single-node] 13a3a-latency-k10-c8 -> --database postgres --host 127.0.0.1 --port 15432 --user ecaz_coord bench latency --prefix task107_turboquant_100k_l1 --profile ec_spire --k 10 --concurrency 8 --iterations 1000 --sweep "8,16,24,32" --bits 4 --seed 42 --memory-sample-interval-ms 25 --log-output reviews/task-107/003-aws-benchmarks/artifacts/turboquant-100k-l1/13a3a-latency-k10-c8.log
+[suite:task107-turboquant-100k-l1-single-node] wrote reviews/task-107/003-aws-benchmarks/artifacts/turboquant-100k-l1/suite-manifest-single-node.json
+┌────────┬───────┬──────────┬─────────┬──────────┬──────────┬──────────┬──────────┬──────────┬─────────────┐
+│ nprobe ┆ count ┆ mean     ┆ stddev  ┆ min      ┆ p50      ┆ p95      ┆ p99      ┆ max      ┆ cache_state │
+╞════════╪═══════╪══════════╪═════════╪══════════╪══════════╪══════════╪══════════╪══════════╪═════════════╡
+│ 8      ┆ 1000  ┆ 124.8 ms ┆ 11.0 ms ┆ 90.8 ms  ┆ 125.0 ms ┆ 142.4 ms ┆ 151.3 ms ┆ 195.6 ms ┆ unspecified │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 16     ┆ 1000  ┆ 129.5 ms ┆ 13.1 ms ┆ 92.6 ms  ┆ 128.1 ms ┆ 150.1 ms ┆ 162.8 ms ┆ 254.7 ms ┆ unspecified │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 24     ┆ 1000  ┆ 161.3 ms ┆ 16.2 ms ┆ 120.3 ms ┆ 160.8 ms ┆ 184.5 ms ┆ 203.7 ms ┆ 315.2 ms ┆ unspecified │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 32     ┆ 1000  ┆ 193.7 ms ┆ 16.1 ms ┆ 152.9 ms ┆ 193.0 ms ┆ 218.8 ms ┆ 229.6 ms ┆ 346.6 ms ┆ unspecified │
+└────────┴───────┴──────────┴─────────┴──────────┴──────────┴──────────┴──────────┴──────────┴─────────────┘
+[suite:task107-turboquant-100k-l1-single-node] wrote reviews/task-107/003-aws-benchmarks/artifacts/turboquant-100k-l1/suite-manifest-single-node.json
+[suite:task107-turboquant-100k-l1-single-node] 13a3f-pk-c32 -> --database postgres --host 127.0.0.1 --port 15432 --user ecaz_coord bench latency --prefix task107_turboquant_100k_l1 --profile ec_spire --k 1 --concurrency 32 --iterations 5000 --sweep 32 --bits 4 --seed 42 --memory-sample-interval-ms 25 --log-output reviews/task-107/003-aws-benchmarks/artifacts/turboquant-100k-l1/13a3f-pk-c32.log
+[suite:task107-turboquant-100k-l1-single-node] wrote reviews/task-107/003-aws-benchmarks/artifacts/turboquant-100k-l1/suite-manifest-single-node.json
+┌────────┬───────┬──────────┬──────────┬──────────┬──────────┬──────────┬──────────┬───────────┬─────────────┐
+│ nprobe ┆ count ┆ mean     ┆ stddev   ┆ min      ┆ p50      ┆ p95      ┆ p99      ┆ max       ┆ cache_state │
+╞════════╪═══════╪══════════╪══════════╪══════════╪══════════╪══════════╪══════════╪═══════════╪═════════════╡
+│ 32     ┆ 5000  ┆ 499.0 ms ┆ 136.4 ms ┆ 219.3 ms ┆ 485.6 ms ┆ 769.0 ms ┆ 942.1 ms ┆ 1022.0 ms ┆ unspecified │
+└────────┴───────┴──────────┴──────────┴──────────┴──────────┴──────────┴──────────┴───────────┴─────────────┘
+[suite:task107-turboquant-100k-l1-single-node] wrote reviews/task-107/003-aws-benchmarks/artifacts/turboquant-100k-l1/suite-manifest-single-node.json
+[suite:task107-turboquant-100k-l1-single-node] wrote reviews/task-107/003-aws-benchmarks/artifacts/turboquant-100k-l1/suite-results-single-node.jsonl
+[suite:task107-turboquant-100k-l1-single-node] wrote reviews/task-107/003-aws-benchmarks/artifacts/turboquant-100k-l1/suite-manifest-single-node.json
+
+Script done on 2026-06-14 17:38:59-07:00 [COMMAND_EXIT_CODE="0"]

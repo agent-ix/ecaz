@@ -16,6 +16,8 @@ ARTIFACT_DIR="${3:?artifact directory required}"
 mkdir -p "$ARTIFACT_DIR"
 
 ECAZ_BIN="${ECAZ_BIN:-ecaz}"
+BENCH_PREFIX="${SPIRE_AWS_BENCH_PREFIX:-${PREFIX:-}}"
+PREPARED_PREFIX="${SPIRE_AWS_REPRESENTATIVE_PREPARED_PREFIX:-ec_real_100k}"
 
 case "$TIER" in
   correctness)   SUITE=scripts/spire-aws/suite-correctness.json ;;
@@ -29,14 +31,22 @@ esac
 RUN_SUITE="$ARTIFACT_DIR/suite-${TIER}.json"
 case "$TIER" in
   representative|representative-priority|representative-pooling)
-    truth_corpus_file="${SPIRE_AWS_REPRESENTATIVE_TRUTH_CORPUS_FILE:-${WORK_DIR:-$ARTIFACT_DIR/work}/qdrant-dbpedia/prepared/ec_real_100k_corpus.tsv}"
+    truth_corpus_file="${SPIRE_AWS_REPRESENTATIVE_TRUTH_CORPUS_FILE:-${WORK_DIR:-$ARTIFACT_DIR/work}/qdrant-dbpedia/prepared/${PREPARED_PREFIX}_corpus.tsv}"
     truth_cache_dir="${SPIRE_AWS_REPRESENTATIVE_TRUTH_CACHE_DIR:-$ARTIFACT_DIR/truth-cache}"
     jq \
       --arg artifact_dir "$ARTIFACT_DIR" \
       --arg truth_corpus_file "$truth_corpus_file" \
       --arg truth_cache_dir "$truth_cache_dir" \
+      --arg bench_prefix "$BENCH_PREFIX" \
       '
         .artifact_dir = $artifact_dir
+        | .steps |= map(
+            if $bench_prefix != "" and has("prefix") then
+              .prefix = $bench_prefix
+            else
+              .
+            end
+          )
         | .steps |= map(
             if .kind == "recall" then
               .truth_corpus_file = $truth_corpus_file

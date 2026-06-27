@@ -1,8 +1,7 @@
 ---
 id: US-013
 title: Build and Tune IVF Indexes
-type: user-story
-artifact_type: US
+type: US
 status: APPROVED
 relationships:
   - target: "ix://agent-ix/ecaz/StR-005"
@@ -20,7 +19,9 @@ relationships:
 ---
 # US-013: Build and Tune IVF Indexes
 
-**As** a platform engineer,
+## Story
+
+**As a** platform engineer,
 **I want** to create and tune `ec_ivf` indexes on `ecvector` data,
 **So that** I can measure posting-list tradeoffs for recall, latency, storage, and ingest.
 

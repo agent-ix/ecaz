@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-015
 title: "Bootstrap frontier to ordered traversal transition plan"
 status: DECIDED

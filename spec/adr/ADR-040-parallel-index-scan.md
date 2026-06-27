@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-040
 title: "Parallel Index Scan via amcanparallel"
 status: SHELVED

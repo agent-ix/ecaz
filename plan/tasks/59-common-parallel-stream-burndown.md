@@ -1,7 +1,12 @@
 # Task 59: Common `parallel.rs` + `stream.rs` Unsafe Burndown
 
-Status: **proposed** — post-Task-50 hardening sequence; addresses the
-two largest unaddressed-by-prior-tasks files in `src/am/common/`.
+Status: **complete** (2026-06-16) — parallel.rs + stream.rs burndown
+merged (`14f535fce`): combined subsystem 51 → 33 (−35.3%, target met),
+bench gate green; 1M scale evidence + `cache_state` latency labeling
+landed and approved (`reviews/task-59/008-final-graviton-suite/`).
+Closeout `reviews/task-59/004-closeout/`; final acceptance
+`.../feedback/2026-06-16-01-reviewer.md`. Was a post-Task-50 hardening
+lane for the two largest unaddressed files in `src/am/common/`.
 
 ## Why
 

@@ -1,8 +1,7 @@
 ---
 id: US-001
 title: Store a Compressed Embedding
-type: user-story
-artifact_type: US
+type: US
 status: APPROVED
 relationships:
   - target: "ix://agent-ix/ecaz/StR-001"
@@ -11,7 +10,9 @@ relationships:
 ---
 # US-001: Store a Compressed Embedding
 
-**As** an application developer inserting agent memories,
+## Story
+
+**As an** application developer inserting agent memories,
 **I want** to compress an fp32 embedding into a `tqvector` column during INSERT,
 **So that** the vector is stored at approximately 7–8x compression with no separate encoding step.
 

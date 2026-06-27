@@ -1,6 +1,6 @@
+use std::collections::HashMap;
 use std::ffi::c_void;
-use std::ptr;
-use std::ptr::NonNull;
+use std::ptr::{self, NonNull};
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::time::Instant;
 
@@ -119,9 +119,9 @@ impl IvfBuildPlan {
     }
 
     fn posting_count(&self) -> usize {
-        self.posting_tids_by_list
+        self.directory_entries
             .iter()
-            .map(Vec::len)
+            .map(|entry| usize::try_from(entry.live_count).unwrap_or(usize::MAX))
             .sum::<usize>()
     }
 
@@ -629,43 +629,139 @@ impl BuildState {
         } else {
             None
         };
+        // Task 115: when residual encoding is gated on (RaBitQ only), resolve a
+        // residual-mode quantizer once; postings are re-encoded against their
+        // assigned centroid inside the per-list loop below.
+        let residual_posting_quantizer = if self.options.rabitq_residual {
+            Some(IvfQuantizer::resolve_with_pq_group_size_bits_and_residual(
+                self.options.storage_format,
+                usize::from(dimensions),
+                self.options.requested_pq_group_size(),
+                Some(self.options.effective_quant_bits()),
+                true,
+                None,
+            )?)
+        } else {
+            None
+        };
+
+        // Build the compact rerank groups before postings so each posting can
+        // persist a direct pointer to its group header. That lets scan read only
+        // the survivor groups without a heap-TID sidecar directory.
+        data_pages.start_new_page_if_current_has_tuples();
+        let (rerank_sidecar_head, rerank_sidecar_directory_head, rerank_tids_by_heap_tid) =
+            build_rerank_group_chain(
+                &mut data_pages,
+                &self.heap_tuples,
+                &tuple_indices_by_list,
+                &model.centroids,
+                &self.options,
+                dimensions,
+            )?;
 
         let mut posting_tids_by_list = vec![Vec::new(); nlists];
         let mut directory_tail_blocks_by_list = vec![None; nlists];
+        let mut live_posting_counts_by_list = vec![0_u64; nlists];
         data_pages.start_new_page_if_current_has_tuples();
         let postings_start = Instant::now();
+        let use_dense_posting_blocks = dense_posting_blocks_enabled(self.options);
+        let dense_posting_typed_layout = self.options.dense_posting_typed_layout;
         for (list_id, tuple_indices) in tuple_indices_by_list.iter().enumerate() {
             if !tuple_indices.is_empty() {
                 data_pages.start_new_page_if_current_has_tuples();
             }
-            for tuple_index in tuple_indices {
-                let tuple = &self.heap_tuples[*tuple_index];
-                let (gamma, payload) = match &pq_model {
-                    Some(pq_model) => {
-                        let (_, gamma, payload) = pq_posting_quantizer
-                            .expect("pq posting quantizer should exist for pq model")
-                            .encode_source_with_pq_model(&tuple.source_vector, pq_model)?;
-                        (gamma, payload)
+            live_posting_counts_by_list[list_id] = u64::try_from(tuple_indices.len())
+                .map_err(|_| "posting count exceeds u64".to_owned())?;
+            if use_dense_posting_blocks && !tuple_indices.is_empty() {
+                let list_id_u32 = list_id_u32(list_id)?;
+                let mut pending = Vec::new();
+                let mut pending_payload_len = None;
+                let mut pending_posting_limit = usize::MAX;
+                let residual_posting =
+                    residual_posting_quantizer.map(|q| (q, model.centroids[list_id].as_slice()));
+                for tuple_index in tuple_indices {
+                    let (heap_tid, gamma, payload) = encode_build_posting(
+                        &self.heap_tuples[*tuple_index],
+                        &pq_model,
+                        pq_posting_quantizer,
+                        residual_posting,
+                    )?;
+                    let payload_len = payload.len();
+                    if let Some(existing) = pending_payload_len {
+                        if existing != payload_len {
+                            return Err(
+                                "ec_ivf dense posting block payload length changed within a list"
+                                    .to_owned(),
+                            );
+                        }
+                    } else {
+                        pending_payload_len = Some(payload_len);
+                        pending_posting_limit =
+                            dense_posting_group_limit(payload_len, self.page_size)?;
                     }
-                    None => (tuple.gamma, tuple.payload.clone()),
-                };
-                posting_tids_by_list[list_id].push(data_pages.insert_ivf_single_heaptid_posting(
-                    list_id_u32(list_id)?,
-                    tuple.heap_tid,
-                    gamma,
-                    ItemPointer::INVALID,
-                    &payload,
-                )?);
+                    if pending.len() >= pending_posting_limit {
+                        insert_dense_posting_group(
+                            &mut data_pages,
+                            &mut posting_tids_by_list[list_id],
+                            list_id_u32,
+                            &pending,
+                            payload_len,
+                            dense_posting_typed_layout,
+                        )?;
+                        pending.clear();
+                    }
+                    let rerank_tid = rerank_tids_by_heap_tid
+                        .get(&heap_tid)
+                        .copied()
+                        .unwrap_or(ItemPointer::INVALID);
+                    pending.push((heap_tid, gamma, rerank_tid, payload));
+                }
+                if !pending.is_empty() {
+                    let payload_len = pending_payload_len.expect("pending postings have payloads");
+                    insert_dense_posting_group(
+                        &mut data_pages,
+                        &mut posting_tids_by_list[list_id],
+                        list_id_u32,
+                        &pending,
+                        payload_len,
+                        dense_posting_typed_layout,
+                    )?;
+                }
+            } else {
+                let residual_posting =
+                    residual_posting_quantizer.map(|q| (q, model.centroids[list_id].as_slice()));
+                for tuple_index in tuple_indices {
+                    let (heap_tid, gamma, payload) = encode_build_posting(
+                        &self.heap_tuples[*tuple_index],
+                        &pq_model,
+                        pq_posting_quantizer,
+                        residual_posting,
+                    )?;
+                    posting_tids_by_list[list_id].push(
+                        data_pages.insert_ivf_single_heaptid_posting(
+                            list_id_u32(list_id)?,
+                            heap_tid,
+                            gamma,
+                            rerank_tids_by_heap_tid
+                                .get(&heap_tid)
+                                .copied()
+                                .unwrap_or(ItemPointer::INVALID),
+                            &payload,
+                        )?,
+                    );
+                }
             }
             if !tuple_indices.is_empty() {
                 let head = posting_tids_by_list[list_id]
                     .first()
                     .expect("non-empty list should have posting tids")
                     .block_number;
-                let tail = posting_tids_by_list[list_id]
-                    .last()
-                    .expect("non-empty list should have posting tids")
-                    .block_number;
+                let tail = directory_tail_blocks_by_list[list_id].unwrap_or_else(|| {
+                    posting_tids_by_list[list_id]
+                        .last()
+                        .expect("non-empty list should have posting tids")
+                        .block_number
+                });
                 let posting_pages = tail - head + 1;
                 directory_tail_blocks_by_list[list_id] = Some(tail);
                 let slack_pages =
@@ -702,8 +798,7 @@ impl BuildState {
                     block_number: directory_tail_blocks_by_list[list_id]
                         .unwrap_or(tail.block_number),
                 };
-                directory.live_count = u64::try_from(posting_tids.len())
-                    .map_err(|_| "posting count exceeds u64".to_owned())?;
+                directory.live_count = live_posting_counts_by_list[list_id];
             }
             directory_tids.push(data_pages.insert_ivf_list_directory(directory)?);
             directory_entries.push(directory);
@@ -730,6 +825,8 @@ impl BuildState {
         }
         metadata.total_live_tuples = u64::try_from(self.heap_tuples.len())
             .map_err(|_| "heap tuple count exceeds u64".to_owned())?;
+        metadata.rerank_sidecar_head = rerank_sidecar_head;
+        metadata.rerank_sidecar_directory_head = rerank_sidecar_directory_head;
 
         Ok((
             IvfBuildPlan {
@@ -786,6 +883,328 @@ fn posting_slack_pages(posting_pages: u32, slack_percent: i32) -> Result<usize, 
         .ok_or_else(|| "posting slack page count overflow".to_owned())?
         / 100;
     usize::try_from(slack_pages).map_err(|_| "posting slack page count exceeds usize".to_owned())
+}
+
+fn dense_posting_blocks_enabled(options: options::EcIvfOptions) -> bool {
+    options.dense_posting_blocks
+        && matches!(
+            options.storage_format,
+            options::StorageFormat::Auto
+                | options::StorageFormat::TurboQuant
+                | options::StorageFormat::RaBitQ
+                | options::StorageFormat::CoarseRerank
+        )
+}
+
+fn dense_posting_group_limit(payload_len: usize, page_size: usize) -> Result<usize, String> {
+    let fit = page::dense_posting_block_tuple_fits;
+    let mut segment_capacity = 1_usize;
+    if !fit(1, 1, payload_len, page_size) {
+        return Err(format!(
+            "ec_ivf dense posting payload length {payload_len} does not fit on a page"
+        ));
+    }
+    while segment_capacity < u16::MAX as usize
+        && fit(
+            segment_capacity + 1,
+            segment_capacity + 1,
+            payload_len,
+            page_size,
+        )
+    {
+        segment_capacity += 1;
+    }
+    Ok(segment_capacity.min(u16::MAX as usize).max(1))
+}
+
+/// Task 111h: build the packed compact rerank group chain (tags 0x2B/0x2C) for
+/// `rerank_placement = 'index'`. Returns the head ItemPointer, or `INVALID`
+/// when no compact payload is persisted (source placement, or an f32/auto
+/// rerank_format that keeps the heap source). Groups are list-local and flush at
+/// scorer-width completion or list boundary; postings carry direct pointers to
+/// their group headers.
+fn build_rerank_group_chain(
+    data_pages: &mut DataPageChain,
+    heap_tuples: &[BuildTuple],
+    tuple_indices_by_list: &[Vec<usize>],
+    centroids: &[Vec<f32>],
+    options: &options::EcIvfOptions,
+    dimensions: u16,
+) -> Result<(ItemPointer, ItemPointer, HashMap<ItemPointer, ItemPointer>), String> {
+    // Returns (group_head, directory_head, heap_tid -> group header tid).
+    // The directory head is intentionally INVALID for the packed group layout;
+    // direct posting pointers are the hot query path, and the group header chain
+    // is the fallback/inspection/vacuum path.
+    if options.rerank_placement != options::RerankPlacement::Index {
+        return Ok((ItemPointer::INVALID, ItemPointer::INVALID, HashMap::new()));
+    }
+    let Some(encoder) = super::rerank::RerankSidecarEncoder::resolve(
+        options.rerank_format,
+        usize::from(dimensions),
+        options.rabitq_rerank_clip,
+    )?
+    else {
+        // f32 / auto keep the heap source: no sidecar.
+        return Ok((ItemPointer::INVALID, ItemPointer::INVALID, HashMap::new()));
+    };
+    if heap_tuples.is_empty() {
+        return Ok((ItemPointer::INVALID, ItemPointer::INVALID, HashMap::new()));
+    }
+    let payload_len = encoder.payload_len(usize::from(dimensions));
+    let rerank_format = options.rerank_format as u8;
+    let page_size = data_pages.page_size();
+    let scorer_width = rerank_group_scorer_width(options)?;
+    let segment_payload_capacity = rerank_group_payload_segment_capacity(page_size)?;
+
+    data_pages.start_new_page_if_current_has_tuples();
+    let mut group_tids: Vec<ItemPointer> = Vec::new();
+    let mut rerank_tids_by_heap_tid: HashMap<ItemPointer, ItemPointer> =
+        HashMap::with_capacity(heap_tuples.len());
+
+    for (list_id, tuple_indices) in tuple_indices_by_list.iter().enumerate() {
+        let list_id = list_id_u32(list_id)?;
+        let centroid = centroids
+            .get(list_id as usize)
+            .ok_or_else(|| format!("ec_ivf rerank group list {list_id} has no centroid"))?;
+        let mut pending: Vec<(ItemPointer, f32, Vec<u8>)> = Vec::with_capacity(scorer_width);
+        for &tuple_index in tuple_indices {
+            let tuple = &heap_tuples[tuple_index];
+            let payload = encoder.encode_with_centroid(&tuple.source_vector, centroid)?;
+            if payload.len() != payload_len {
+                return Err(format!(
+                    "ec_ivf rerank group payload length {} does not match expected {payload_len}",
+                    payload.len()
+                ));
+            }
+            pending.push((tuple.heap_tid, tuple.gamma, payload));
+            if pending.len() >= scorer_width {
+                flush_rerank_group(
+                    data_pages,
+                    &mut group_tids,
+                    &mut rerank_tids_by_heap_tid,
+                    rerank_format,
+                    list_id,
+                    scorer_width,
+                    payload_len,
+                    segment_payload_capacity,
+                    page_size,
+                    &mut pending,
+                )?;
+            }
+        }
+        flush_rerank_group(
+            data_pages,
+            &mut group_tids,
+            &mut rerank_tids_by_heap_tid,
+            rerank_format,
+            list_id,
+            scorer_width,
+            payload_len,
+            segment_payload_capacity,
+            page_size,
+            &mut pending,
+        )?;
+    }
+
+    // Link each group header to the next group header. Payload continuation
+    // segments are chained independently through next_segment_tid.
+    for i in 0..group_tids.len() {
+        let next_tid = group_tids
+            .get(i + 1)
+            .copied()
+            .unwrap_or(ItemPointer::INVALID);
+        let mut group = data_pages.read_ivf_rerank_group_header_staged(group_tids[i])?;
+        group.next_group_tid = next_tid;
+        data_pages.update_ivf_rerank_group_header(group_tids[i], &group)?;
+    }
+
+    let sidecar_head = group_tids.first().copied().unwrap_or(ItemPointer::INVALID);
+    Ok((sidecar_head, ItemPointer::INVALID, rerank_tids_by_heap_tid))
+}
+
+fn flush_rerank_group(
+    data_pages: &mut DataPageChain,
+    group_tids: &mut Vec<ItemPointer>,
+    rerank_tids_by_heap_tid: &mut HashMap<ItemPointer, ItemPointer>,
+    rerank_format: u8,
+    list_id: u32,
+    scorer_width: usize,
+    payload_len: usize,
+    segment_payload_capacity: usize,
+    page_size: usize,
+    pending: &mut Vec<(ItemPointer, f32, Vec<u8>)>,
+) -> Result<(), String> {
+    if pending.is_empty() {
+        return Ok(());
+    }
+    let entries = std::mem::take(pending);
+    let total_payload_bytes = entries
+        .len()
+        .checked_mul(payload_len)
+        .ok_or_else(|| "ec_ivf rerank group payload bytes overflow".to_owned())?;
+    let header_payload_bytes = rerank_group_header_payload_capacity(
+        entries.len(),
+        scorer_width,
+        entries.len(),
+        total_payload_bytes,
+        page_size,
+    )?;
+    let mut all_payloads = Vec::with_capacity(total_payload_bytes);
+    for (_heap_tid, _gamma, payload) in &entries {
+        all_payloads.extend_from_slice(payload);
+    }
+    let next_segment_tid = insert_rerank_group_payload_segments(
+        data_pages,
+        &all_payloads[header_payload_bytes..],
+        segment_payload_capacity,
+    )?;
+    let mut header = page::IvfRerankGroupHeaderTuple::from_single_heaptid_postings(
+        rerank_format,
+        list_id,
+        scorer_width,
+        &entries,
+        payload_len,
+        header_payload_bytes,
+    )?;
+    header.next_segment_tid = next_segment_tid;
+    let header_tid = data_pages.insert_ivf_rerank_group_header(&header)?;
+    for (heap_tid, _gamma, _payload) in entries {
+        rerank_tids_by_heap_tid.insert(heap_tid, header_tid);
+    }
+    group_tids.push(header_tid);
+    Ok(())
+}
+
+fn insert_rerank_group_payload_segments(
+    data_pages: &mut DataPageChain,
+    payload_tail: &[u8],
+    segment_payload_capacity: usize,
+) -> Result<ItemPointer, String> {
+    if payload_tail.is_empty() {
+        return Ok(ItemPointer::INVALID);
+    }
+    if segment_payload_capacity == 0 {
+        return Err("ec_ivf rerank group payload segment capacity is zero".to_owned());
+    }
+    let mut next_segment_tid = ItemPointer::INVALID;
+    for chunk in payload_tail.chunks(segment_payload_capacity).rev() {
+        let segment = page::IvfRerankGroupPayloadSegmentTuple {
+            next_segment_tid,
+            payloads: chunk.to_vec(),
+        };
+        next_segment_tid = data_pages.insert_ivf_rerank_group_payload_segment(&segment)?;
+    }
+    Ok(next_segment_tid)
+}
+
+fn rerank_group_scorer_width(options: &options::EcIvfOptions) -> Result<usize, String> {
+    let width = if options.rerank_width > 0 {
+        options.rerank_width
+    } else {
+        super::EC_IVF_DEFAULT_RERANK_WIDTH
+    };
+    let width = usize::try_from(width)
+        .map_err(|_| format!("ec_ivf rerank group scorer width {width} is out of range"))?;
+    if width == 0 || width > u16::MAX as usize {
+        return Err(format!(
+            "ec_ivf rerank group scorer width {width} must be in 1..={}",
+            u16::MAX
+        ));
+    }
+    Ok(width)
+}
+
+fn rerank_group_header_payload_capacity(
+    valid_count: usize,
+    scorer_width: usize,
+    total_heap_tids: usize,
+    total_payload_bytes: usize,
+    page_size: usize,
+) -> Result<usize, String> {
+    let mut capacity = total_payload_bytes.min(u16::MAX as usize);
+    while capacity > 0
+        && !page::rerank_group_header_tuple_fits(
+            valid_count,
+            scorer_width,
+            total_heap_tids,
+            capacity,
+            page_size,
+        )
+    {
+        capacity -= 1;
+    }
+    if page::rerank_group_header_tuple_fits(
+        valid_count,
+        scorer_width,
+        total_heap_tids,
+        capacity,
+        page_size,
+    ) {
+        Ok(capacity)
+    } else {
+        Err(format!(
+            "ec_ivf rerank group header for {valid_count} entries at scorer width {scorer_width} does not fit on a page"
+        ))
+    }
+}
+
+fn rerank_group_payload_segment_capacity(page_size: usize) -> Result<usize, String> {
+    let mut capacity = (u16::MAX as usize).min(page_size);
+    while capacity > 0 && !page::rerank_group_payload_segment_tuple_fits(capacity, page_size) {
+        capacity -= 1;
+    }
+    if capacity == 0 {
+        Err("ec_ivf rerank group payload segment cannot fit payload bytes on a page".to_owned())
+    } else {
+        Ok(capacity)
+    }
+}
+
+fn insert_dense_posting_group(
+    data_pages: &mut DataPageChain,
+    posting_tids: &mut Vec<ItemPointer>,
+    list_id: u32,
+    postings: &[(ItemPointer, f32, ItemPointer, Vec<u8>)],
+    payload_len: usize,
+    typed_layout: bool,
+) -> Result<(), String> {
+    let dense = page::IvfDensePostingBlockTuple::from_single_heaptid_postings(
+        list_id,
+        postings,
+        payload_len,
+    )?;
+    posting_tids.push(if typed_layout {
+        data_pages.insert_ivf_dense_posting_aligned_block(&dense)?
+    } else {
+        data_pages.insert_ivf_dense_posting_block(&dense)?
+    });
+    Ok(())
+}
+
+fn encode_build_posting(
+    tuple: &BuildTuple,
+    pq_model: &Option<IvfPqFastScanModel>,
+    pq_posting_quantizer: Option<IvfQuantizer>,
+    residual_posting: Option<(IvfQuantizer, &[f32])>,
+) -> Result<(ItemPointer, f32, Vec<u8>), String> {
+    let (gamma, payload) = match (pq_model, residual_posting) {
+        (Some(pq_model), _) => {
+            let (_, gamma, payload) = pq_posting_quantizer
+                .expect("pq posting quantizer should exist for pq model")
+                .encode_source_with_pq_model(&tuple.source_vector, pq_model)?;
+            (gamma, payload)
+        }
+        // Task 115: residual mode re-encodes the source against the assigned
+        // centroid here (the only point in the build where the list's centroid
+        // is in hand), mirroring the deferred PQ re-encode path above.
+        (None, Some((residual_quantizer, centroid))) => {
+            let (_, gamma, payload) =
+                residual_quantizer.encode_source_residual(&tuple.source_vector, centroid)?;
+            (gamma, payload)
+        }
+        (None, None) => (tuple.gamma, tuple.payload.clone()),
+    };
+    Ok((tuple.heap_tid, gamma, payload))
 }
 
 fn resolve_training_sample_count(requested_sample_rows: i32, row_count: usize) -> usize {
@@ -1089,8 +1508,17 @@ mod tests {
             pq_group_size: 0,
             posting_slack_percent: 0,
             quant_bits: 4,
+            coarse_bits: 0,
+            dense_posting_blocks: false,
+            dense_posting_typed_layout: false,
+            rabitq_residual: false,
+            rabitq_rerank_score: options::RaBitQRerankScoreMode::Estimator,
+            rabitq_rerank_clip: options::EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
             storage_format: options::StorageFormat::Auto,
             rerank: options::RerankMode::Auto,
+            coarse_format: options::CoarseFormat::Auto,
+            rerank_placement: options::RerankPlacement::Auto,
+            rerank_format: options::RerankFormat::Auto,
         }
     }
 
@@ -1211,6 +1639,37 @@ mod tests {
                 assert!(!posting.deleted);
             }
         }
+    }
+
+    #[test]
+    fn build_state_can_stage_dense_posting_blocks_when_gated() {
+        let mut opts = options(0, 2);
+        opts.dense_posting_blocks = true;
+        opts.storage_format = options::StorageFormat::TurboQuant;
+        let mut state = BuildState::new(opts, IndexedVectorKind::Ecvector);
+        state.try_push(tuple(1, vec![1.0, 0.0])).unwrap();
+        state.try_push(tuple(2, vec![0.9, 0.1])).unwrap();
+        state.try_push(tuple(3, vec![-1.0, 0.0])).unwrap();
+
+        let plan = state
+            .stage_build_plan(&model(vec![vec![1.0, 0.0], vec![-1.0, 0.0]]))
+            .unwrap();
+
+        assert_eq!(plan.posting_count(), 3);
+        assert_eq!(plan.directory_entries[0].live_count, 2);
+        assert_eq!(plan.directory_entries[1].live_count, 1);
+        assert_eq!(plan.posting_tids_by_list[0].len(), 1);
+        assert_eq!(plan.posting_tids_by_list[1].len(), 1);
+
+        let payload_len = state.heap_tuples[0].payload.len();
+        let dense = plan
+            .data_pages
+            .read_ivf_dense_posting_block(plan.posting_tids_by_list[0][0], payload_len)
+            .unwrap();
+        assert_eq!(dense.list_id, 0);
+        assert_eq!(dense.gammas.len(), 2);
+        assert_eq!(dense.heap_tids.len(), 2);
+        assert_eq!(dense.payloads.len(), 2 * payload_len);
     }
 
     #[test]

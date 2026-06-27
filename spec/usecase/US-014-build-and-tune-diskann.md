@@ -1,8 +1,7 @@
 ---
 id: US-014
 title: Build and Tune DiskANN Indexes
-type: user-story
-artifact_type: US
+type: US
 status: APPROVED
 relationships:
   - target: "ix://agent-ix/ecaz/StR-005"
@@ -20,7 +19,9 @@ relationships:
 ---
 # US-014: Build and Tune DiskANN Indexes
 
-**As** a platform engineer,
+## Story
+
+**As a** platform engineer,
 **I want** to create and tune `ec_diskann` indexes,
 **So that** I can compare Vamana/DiskANN behavior against HNSW and external DiskANN references.
 
