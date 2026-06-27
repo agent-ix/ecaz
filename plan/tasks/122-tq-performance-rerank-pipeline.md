@@ -1,6 +1,6 @@
 # Task 122: TurboQuant Performance and Rerank Pipeline Optimization
 
-Status: closeout requested (2026-06-27; outcome: keep experimental / promote follow-up, pending review in `reviews/task-122/010-closeout-keep-experimental/`)
+Status: closeout requested (2026-06-27; outcome: keep experimental / promote follow-up as Task 123, pending review in `reviews/task-122/010-closeout-keep-experimental/` and handoff packet `reviews/task-122/011-closeout-handoff/`)
 Owner: coder (to be assigned). One coder, one branch.
 Priority: 2 (post-Task 89 TurboQuant performance follow-up)
 
@@ -202,3 +202,4 @@ One of:
 - Task 111h persisted rerank format sweep: `plan/tasks/111h-ivf-persisted-rerank-format-sweep.md`
 - Task 112 lazy f32 rerank: `plan/tasks/112-ivf-lazy-heap-f32-rerank.md`
 - Task 120 SPIRE coarse-rerank measurement program: `plan/tasks/120-spire-coarse-rerank-measurement-program.md`
+- Task 123 IVF TQ stage-2 follow-up: `plan/tasks/123-ivf-tq-stage2-rerank-pipeline.md`
