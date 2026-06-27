@@ -76,6 +76,10 @@ This index is the canonical navigation surface for Ecaz architecture decisions. 
 | Universal block kernel pattern | `ADR-076-universal-block-kernel-pattern.md` | ACCEPTED | Task 92 standardizes block width, runtime ISA detection, `(AM, quant, ISA)` counters, off-path scalar accounting, and the per-kernel module layout for Tasks 93-99. |
 | Block kernel completeness closing record | `ADR-077-block-kernel-completeness-closing-record.md` | ACCEPTED | Task 99 closes the kernel-completeness initiative: aggregate matrix as coverage gate, anchor-regime menu, per-AM enablement policy (IVF batch default → on), ISA dispatch policy incl. `ecaz.isa_cap` and the measured NEON-over-SVE2 G4 decision, deliberate exclusions, and named open gaps. |
 | IVF dense format negative result | `ADR-078-ivf-dense-format-negative-result.md` | ACCEPTED | Task 111f keeps page-local/aligned dense blocks, coalescing, typed views, and coarse rerank; removes the dominated page-spanning packed, columnar frozen-list, and page-scatter experimental formats. |
+| IVF index-side rerank sidecar directory | `ADR-079-ivf-rerank-sidecar-directory.md` | PROPOSED | Task 111g: a flat heap-TID-keyed `0x2A` rerank sidecar produces O(N) bounded-read regressions; motivates a directory over the sidecar. |
+| IVF rerank sidecar two-level directory | `ADR-080-ivf-rerank-sidecar-two-level-directory.md` | PROPOSED | Refines ADR-079: the rerank sidecar directory must be two-level for fat f16/rabitq4 payloads. |
+| TQ+ experimental calibration profile | `ADR-081-tqplus-experimental-calibration-profile.md` | ACCEPTED | Task 89: TQ+ is an experimental TurboQuant calibration profile (learned transform), not a separate quantizer family; affects FR-013/FR-038 and ADR-070/071/072. |
+| TurboQuant TQ+ format and validation | `ADR-082-turboquant-tqplus-format-and-validation.md` | PROPOSED | Task 89 TQ+ re-landing format/validation across IVF, SPIRE, HNSW, DiskANN (renumbered from a draft that collided with ADR-076). |
 
 ## Superseded Historical Decisions
 
