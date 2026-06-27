@@ -1,12 +1,16 @@
 # Task 123: SPIRE Route Precision vs. Scan Cost — Floor, Granularity, Soft-Routing
 
-Status: **complete - evidence-backed no-go / re-scope result** (2026-06-27;
-completion record `reviews/task-123/008-completion-record/`). Phase A local
-evidence failed the high-recall flat-floor gate; the 100k `nlists=1024`
-spot-check found finer leaves are fast but do not recover route containment at
-low or moderate nprobe. The boundary-2 follow-up improved recall but still
-reached only `309 / 320 = 0.9656` at nprobe 64 while p50 rose to `526.0 ms`.
-No SPIRE promotion candidate lands from this task.
+Status: **complete - local 100k evidence-backed no-go / re-scope result**
+(2026-06-27; completion record `reviews/task-123/008-completion-record/`,
+reviewer sign-off
+`reviews/task-123/008-completion-record/feedback/2026-06-27-01-reviewer.md`).
+Phase A local evidence failed the high-recall flat-floor gate; the 100k
+`nlists=1024` spot-check found finer leaves are fast but do not recover route
+containment at low or moderate nprobe. The decisive local-regime result is that
+flat exact dominates every tested 100k SPIRE point: flat returns recall 1.0 at
+`161-204 ms`, while the best SPIRE spot-check row reaches only
+`309 / 320 = 0.9656` at `526.0 ms`. No local 100k SPIRE promotion candidate
+lands from this task.
 Owner: coder. Worked on the `task-121-spire-coarse-routing-recall-doe` branch
 (shared with the closed-out Task 121 DOE).
 Priority: P1 follow-up to Task 121. **Local-only** until a promotion candidate
@@ -191,9 +195,18 @@ unattractive.
 
 ## Completion Record (2026-06-27)
 
-Task 123 is complete as an evidence-backed no-go / re-scope result. The operator
-explicitly directed that development should not stop waiting on intermediate
-review timing after the Phase B follow-up packet.
+Task 123 is complete as an evidence-backed local 100k no-go / re-scope result.
+The operator explicitly directed that development should not stop waiting on
+intermediate review timing after the Phase B follow-up packet, and the outside
+reviewer signed off on packet 008 in
+`reviews/task-123/008-completion-record/feedback/2026-06-27-01-reviewer.md`.
+
+The sharpest completion finding is flat-exact dominance in the local 100k
+regime: same-run flat exact returns recall 1.0 at `161-204 ms`, while the best
+tested SPIRE spot-check row (`n1024,b2,np64`) is slower and less accurate at
+`309 / 320 = 0.9656` recall and `526.0 ms` p50. Chasing approximately 0.99
+recall would only move SPIRE farther beyond the flat exact latency envelope, so
+no further local 100k spot-check runs are warranted.
 
 Completion evidence:
 
@@ -214,7 +227,16 @@ Completion evidence:
   and the flat-floor latency comparison.
 
 No Phase C work starts from Task 123 because Phase A and the Phase B spot-check
-do not produce a promising local promotion candidate. The owning follow-up
-direction remains scan/candidate efficiency and, if SPIRE is revisited, a
-cheaper route-precision mechanism than boundary replication or finer-leaf
-boundary replication.
+do not produce a promising local 100k promotion candidate. This does not claim
+SPIRE is globally dead: the no-go is scoped to the local single-node 100k regime
+where flat exact is feasible. SPIRE's intended opportunity remains larger
+distributed / disk-resident regimes where flat exact is not the comparator to
+beat.
+
+Owning follow-ups:
+
+- IVF/SPIRE scan-efficiency line: Tasks `111` and `111e`, especially
+  candidate-frontier and scan-locality work.
+- SPIRE distributed read/transport line:
+  `121-spire-distributed-read-transport-efficiency`, where SPIRE should prove
+  value in its intended distributed regime.

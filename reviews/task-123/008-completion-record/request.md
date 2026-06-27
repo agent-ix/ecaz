@@ -5,7 +5,7 @@
 This packet records Task 123 completion after the Phase B boundary-2 follow-up.
 It adds no new benchmark run and no code change; it updates canonical task
 status from **Phase B boundary-2 follow-up closeout requested** to **complete -
-evidence-backed no-go / re-scope result**.
+local 100k evidence-backed no-go / re-scope result**.
 
 Status update commit: `a3148af85 Mark task 123 complete`.
 
@@ -26,7 +26,7 @@ stop waiting on intermediate review timing.
 
 ## Completion Read
 
-Task 123 is complete as a no-go / re-scope result:
+Task 123 is complete as a local 100k no-go / re-scope result:
 
 - Phase A satisfies the gate and names the binding wall. High-recall SPIRE is
   outside the 5-10x flat-floor envelope at 10k / 50k / 100k, with the decisive
@@ -40,13 +40,31 @@ Task 123 is complete as a no-go / re-scope result:
   spot-check row, tying the recommendation to the route-stage funnel and the
   flat-floor latency comparison.
 
+The decisive local 100k headline is flat-exact dominance. Same-run flat exact
+returns recall 1.0 at `161-204 ms`; every tested SPIRE point is either much
+slower at high recall or, for the best `nlists=1024` spot-check row, both slower
+and less accurate (`0.9656` recall at `526.0 ms`). Chasing approximately 0.99
+recall would push SPIRE farther past the flat exact envelope, so no further local
+100k runs are warranted.
+
 ## Result
 
-No SPIRE promotion candidate lands from Task 123. Phase C is skipped because the
-Phase A gate and Phase B spot-check did not produce a promising local candidate.
-The follow-up direction is scan/candidate efficiency or a cheaper
-route-precision mechanism than boundary replication / finer-leaf boundary
-replication.
+No local 100k SPIRE promotion candidate lands from Task 123. Phase C is skipped
+because the Phase A gate and Phase B spot-check did not produce a promising
+local candidate.
+
+This does not claim SPIRE is globally dead. The no-go is scoped to the local
+single-node 100k regime, where flat exact is feasible and dominates. SPIRE's
+intended opportunity remains larger distributed / disk-resident regimes where
+flat exact is not the comparator to beat.
+
+Owning follow-ups:
+
+- IVF/SPIRE scan-efficiency line: Tasks `111` and `111e`, especially
+  candidate-frontier and scan-locality work.
+- SPIRE distributed read/transport line:
+  `121-spire-distributed-read-transport-efficiency`, where SPIRE should prove
+  value in its intended distributed regime.
 
 Async review may still audit packets 006-008, but the task is not blocked on
 that timing.
