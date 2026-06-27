@@ -1,6 +1,10 @@
 # Task 123: SPIRE Route Precision vs. Scan Cost — Floor, Granularity, Soft-Routing
 
-Status: **proposed** (2026-06-27).
+Status: **Phase A closeout requested** (2026-06-27;
+`reviews/task-123/001-phase-a-latency-floor-decomposition/`). Phase A local
+evidence fails the high-recall flat-floor gate and names the scan/candidate
+path as the binding wall; Phase B/C are deferred unless reviewer acceptance
+explicitly overrides the gate.
 Owner: coder. Worked on the `task-121-spire-coarse-routing-recall-doe` branch
 (shared with the closed-out Task 121 DOE).
 Priority: P1 follow-up to Task 121. **Local-only** until a promotion candidate
@@ -107,3 +111,30 @@ read, storage.
 4. **Finding-tied:** every recommendation traces to the route-stage funnel and
    the flat-floor latency comparison; evidence per
    `spec/non-functional/NFR-007-benchmark-provenance.md`.
+
+## Phase A Gate Status (2026-06-27)
+
+Packet `reviews/task-123/001-phase-a-latency-floor-decomposition/` ran the
+required flat exact floor and SPIRE decomposition at 10k / 50k / 100k against
+the existing Task 121 Phase 3 `b4/tr50/f8` surfaces.
+
+The recall-1.0 nprobe 96 path is outside the task's 5-10x flat-floor gate:
+
+| Scale | Flat exact p50 | SPIRE nprobe 96 p50 | Ratio | Recall@10 |
+| --- | ---: | ---: | ---: | ---: |
+| 10k | 29.4 ms | 496.2 ms | 16.9x | 1.0000 |
+| 50k | 80.2 ms | 2159.5 ms | 26.9x | 1.0000 |
+| 100k | 223.3 ms | 5483.0 ms | 24.6x | 1.0000 |
+
+Route-stage containment equals final recall in every Phase A row. The
+high-recall 100k path scans about 379k candidates/query and reads about
+303.7 MiB/query from local-store objects, so the binding wall is the
+post-route local scan/candidate path rather than candidate scoring/rerank
+loss or route precision alone.
+
+Per the Phase A gate, the next owner should re-scope toward the IVF/SPIRE
+scan-efficiency line instead of running the full Phase B factorial by default.
+The closest existing owners are the dense IVF scan/candidate tasks
+(`111`/`111e`) for candidate-frontier and scan-locality architecture, plus a
+SPIRE-specific local-store/transport-efficiency follow-up if SPIRE continues
+as a local-store index after this no-go.
