@@ -12,6 +12,10 @@ timestamp_utc: 2026-06-26T04:47:12Z
 Task 89 deferred closeout request. This packet introduces no new benchmarks or
 code changes. It maps Task 89 acceptance criteria to the existing evidence
 packets and requests reviewer approval to close the task as complete-deferred.
+Reviewer feedback approved the Defer outcome and public-shape gate, with the
+required reframe that the closeout rests primarily on the real-corpus no-win
+and uses the synthetic cross-corpus regression as corroborating stop-condition
+evidence.
 
 ## Evidence Inputs
 
@@ -30,15 +34,19 @@ packets and requests reviewer approval to close the task as complete-deferred.
 - IVF no-QJL DBPedia evidence is mixed, not a durable quality win.
 - IVF QJL/gamma evidence shows only a small recall gain.
 - Insert drift passes measured thresholds.
-- Cross-corpus synthetic evidence shows systematic recall regression:
+- Cross-corpus synthetic evidence corroborates the defer decision and shows
+  systematic recall regression:
   - -0.45 pp at `nprobe=16`.
   - -2.95 pp at `nprobe=32`.
   - -5.00 pp at `nprobe=48`.
   - -7.30 pp at `nprobe=64`.
+- No real non-DBPedia embedder was measured; future promotion must clear a real
+  cross-corpus recall pass.
 - Existing latency rows are not used as closeout evidence because TQ+ and
   baseline TurboQuant scorer implementations are not comparable yet.
 
 ## Requested Review Outcome
 
-Reviewer approval to close Task 89 as **complete (deferred)** after accepting
-the packet 007 public-shape gate.
+Reviewer approval to close Task 89 as **complete (deferred)**. Packet 008
+feedback approved the Defer outcome and public-shape gate after the closeout
+reason is reframed as above.

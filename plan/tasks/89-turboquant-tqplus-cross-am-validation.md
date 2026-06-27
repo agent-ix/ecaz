@@ -1,9 +1,19 @@
 # Task 89: TurboQuant TQ+ Cross-AM and Cross-Corpus Validation
 
-Status: proposed (2026-06-07); Phase 1 direction selected by
+Status: complete (deferred) (2026-06-26); closeout
+`reviews/task-89/008-closeout-deferred/`; Phase 1 direction selected by
 ADR-081 (2026-06-25)
 Owner: coder (to be assigned). One coder, one branch.
 Priority: 2 (TQ+ validation follow-up to Task 86 slim closeout)
+
+Closeout: Task 89 defers TQ+ in its current IVF experimental form. The
+real-corpus IVF evidence did not show a durable recall win: DBPedia no-QJL was
+mixed across 10k/50k/100k, projected QJL/gamma gained only +0.30 pp, storage
+was neutral-to-slightly-worse, and drift was acceptable but not promotional.
+The synthetic non-DBPedia unit-sphere run corroborated the defer decision and
+served as the formal cross-corpus stop trigger, but no real non-DBPedia embedder
+was measured. No public `turboquant_tqplus` format or public calibration option
+lands, and SPIRE/HNSW/DiskANN ports do not start from this evidence.
 
 ## Why
 

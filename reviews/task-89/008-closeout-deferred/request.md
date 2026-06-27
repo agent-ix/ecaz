@@ -5,11 +5,14 @@
 This packet requests reviewer approval to close Task 89 as:
 
 **complete (deferred)** — TQ+ should remain unpromoted and shelved in its
-current IVF experimental form because the measured cross-corpus recall
-regression blocks public exposure and cross-AM ports.
+current IVF experimental form because the real-corpus IVF evidence does not
+show a reliable recall win, and the synthetic cross-corpus run corroborates
+that this shape is not ready for public exposure or cross-AM ports.
 
-This closeout is contingent on accepting the public-shape gate in
-`reviews/task-89/007-public-shape-defer-gate/`.
+Reviewer feedback in
+`reviews/task-89/008-closeout-deferred/feedback/2026-06-25-01-reviewer.md`
+approves the Defer outcome and public-shape gate with this documentation
+reframe.
 
 ## Requested Closeout Decision
 
@@ -19,8 +22,15 @@ This closeout is contingent on accepting the public-shape gate in
   `turboquant_calibration = 'tqplus_experimental'` as an operator-facing
   production option.
 - **Cross-AM scope:** do not port this TQ+ shape to SPIRE, HNSW, or DiskANN.
-- **Reason:** recall evidence does not show a durable quality win, and the
-  non-DBPedia synthetic corpus shows systematic recall regression.
+- **Primary reason:** real-corpus recall evidence does not show a durable
+  quality win. DBPedia no-QJL is mixed, projected QJL/gamma gives only a small
+  gain, and storage is neutral-to-slightly-worse.
+- **Corroborating stop trigger:** the deterministic synthetic non-DBPedia
+  corpus shows systematic recall regression. This is the formal cross-corpus
+  stop condition, but not the primary reason to defer.
+- **Caveat:** no real non-DBPedia embedder was measured. Any future promotion
+  attempt must clear a real cross-corpus recall pass before public format or
+  cross-AM validation can restart.
 
 Latency is intentionally not used as the closeout reason. Packet 001 feedback
 identified current TQ+ scoring as scalar-only while baseline TurboQuant can use
@@ -36,9 +46,9 @@ exists.
 | IVF mode matrix: no-QJL and reachable QJL/gamma | Packet 003 DBPedia 10k/50k/100k no-QJL; packet 004 projected QJL/gamma | satisfied |
 | Cross-corpus evidence | Packet 006 deterministic synthetic non-DBPedia corpus | explicit stop condition |
 | Streaming-insert drift evidence | Packet 005 10%, 25%, 50% live insert vs rebuild | satisfied |
-| Public-shape gate | Packet 007 recommends defer/no public format/no cross-AM ports | pending reviewer approval |
-| Closeout packet naming a Goal outcome | This packet names **Defer TQ+** | pending reviewer approval |
-| Closeout only after pass/scoped-defer/explicit-stop | Cross-corpus regression in packet 006 is the explicit stop condition | satisfied if reviewer accepts defer gate |
+| Public-shape gate | Packet 007 recommends defer/no public format/no cross-AM ports; packet 008 feedback approves the gate | satisfied |
+| Closeout packet naming a Goal outcome | This packet names **Defer TQ+**; packet 008 feedback approves it | satisfied |
+| Closeout only after pass/scoped-defer/explicit-stop | Real-corpus no-win supports defer; synthetic cross-corpus regression is the explicit stop trigger | satisfied |
 
 ## Evidence Summary
 
@@ -77,20 +87,26 @@ TQ+ regressed recall at every measured probe:
 - `nprobe=48`: -5.00 pp.
 - `nprobe=64`: -7.30 pp.
 
-This satisfies Task 89's cross-corpus stop condition and is the closeout reason.
+This satisfies Task 89's cross-corpus stop condition and corroborates the
+defer decision. The primary closeout reason remains the lack of a durable
+quality win on the real DBPedia/QJL evidence.
 
 ## Follow-Up Guidance
 
 Future TQ+ work should start as a redesign, not as a porting effort:
 
+- measure at least one real non-DBPedia embedder before any future promotion
+  attempt;
 - investigate why the calibration hurts the synthetic distribution;
+- test whether calibration adds quantization error when there is little
+  per-coordinate structure to exploit;
 - add score-error diagnostics before more AM code;
 - only revisit latency after a tiled/SIMD TQ+ scorer exists;
 - require a new cross-corpus recall pass before any public format or cross-AM
   validation claim.
 
-## Not Claimed
+## Closeout Status
 
-This request does not itself update `plan/tasks/89...` to complete. If the
-reviewer accepts packet 007 and this closeout, the next mechanical step is to
-mark Task 89 `complete (deferred)` and update the task index/status references.
+Reviewer feedback approved the Defer outcome and public-shape gate after the
+reframe above. This packet supports marking Task 89 `complete (deferred)` and
+updating the task index/status references.
