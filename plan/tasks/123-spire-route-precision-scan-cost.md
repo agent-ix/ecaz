@@ -1,10 +1,11 @@
 # Task 123: SPIRE Route Precision vs. Scan Cost — Floor, Granularity, Soft-Routing
 
-Status: **Phase A closeout requested** (2026-06-27;
-`reviews/task-123/001-phase-a-latency-floor-decomposition/`). Phase A local
-evidence fails the high-recall flat-floor gate and names the scan/candidate
-path as the binding wall; Phase B/C are deferred unless reviewer acceptance
-explicitly overrides the gate.
+Status: **Phase B spot-check closeout requested** (2026-06-27;
+`reviews/task-123/004-phase-b-100k-nlists-spotcheck/`). Phase A local evidence
+failed the high-recall flat-floor gate; the reviewer-requested 100k
+`nlists=1024` boundary 0/1 spot-check found finer leaves are fast but do not
+recover route containment at low nprobe. Awaiting reviewer sign-off before
+marking complete.
 Owner: coder. Worked on the `task-121-spire-coarse-routing-recall-doe` branch
 (shared with the closed-out Task 121 DOE).
 Priority: P1 follow-up to Task 121. **Local-only** until a promotion candidate
@@ -138,3 +139,34 @@ The closest existing owners are the dense IVF scan/candidate tasks
 (`111`/`111e`) for candidate-frontier and scan-locality architecture, plus a
 SPIRE-specific local-store/transport-efficiency follow-up if SPIRE continues
 as a local-store index after this no-go.
+
+## Phase B Spot-Check Status (2026-06-27)
+
+Reviewer feedback in
+`reviews/task-123/003-final-closeout-request/feedback/2026-06-27-01-reviewer.md`
+requested a cheap 100k `nlists=1024` spot-check before accepting closeout.
+Packet `reviews/task-123/004-phase-b-100k-nlists-spotcheck/` ran that check for
+`boundary_replica_count in {0,1}` at nprobe 8 / 16 / 32.
+
+The spot-check separates scan cost from route precision:
+
+| Config | nprobe | Clean p50 | Route containment / recall |
+| --- | ---: | ---: | ---: |
+| n1024 b0 | 8 | 75.5 ms | 223 / 320 = 0.6969 |
+| n1024 b0 | 16 | 95.1 ms | 256 / 320 = 0.8000 |
+| n1024 b0 | 32 | 153.8 ms | 280 / 320 = 0.8750 |
+| n1024 b1 | 8 | 102.3 ms | 251 / 320 = 0.7844 |
+| n1024 b1 | 16 | 143.8 ms | 282 / 320 = 0.8812 |
+| n1024 b1 | 32 | 236.1 ms | 298 / 320 = 0.9313 |
+
+The repeated 100k flat exact p50 was 203.8 ms. Finer leaves dramatically reduce
+candidate volume and latency compared with Phase A `nlists=128,b4,np8`, but the
+best tested spot-check cell (`n1024,b1,np32`) remains below Phase A
+`n128,b4,np8` recall (`300 / 320 = 0.9375`) and far from the reviewer's
+viability target of approximately 0.99 recall at low nprobe.
+
+Route containment equals final recall in every spot-check row. The current
+closeout request is therefore to accept Task 123 as a no-go / re-scope result:
+`nlists=128` can recover recall only at high scan cost, while `nlists=1024`
+keeps scan cost low but does not recover enough route containment at low probes.
+Do not mark complete until an outside reviewer signs off on packet 004.
