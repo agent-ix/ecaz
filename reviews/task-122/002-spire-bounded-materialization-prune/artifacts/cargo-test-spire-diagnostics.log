@@ -1,0 +1,21 @@
+Command:
+
+`cargo test -p ecaz --lib --no-default-features --features pg18 collect_scan_placement_diagnostics_reports_candidate_truncation`
+
+Result:
+
+```text
+Finished `test` profile [unoptimized + debuginfo] target(s) in 0.24s
+Running unittests src/lib.rs (target/debug/deps/ecaz-cf818e07e808d9a6)
+
+running 1 test
+test am::ec_spire::scan::tests::collect_scan_placement_diagnostics_reports_candidate_truncation ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2219 filtered out; finished in 0.05s
+```
+
+Build warnings:
+
+```text
+warning: ecaz@0.1.1: csrc/pg18_pgstat_shim.c included PostgreSQL 18 headers that emitted 6 unused-parameter warnings.
+```
