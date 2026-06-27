@@ -1,7 +1,9 @@
 # Task 121 - SPIRE Coarse-Routing Recall Broad Exploration (DOE)
 
-Status: **Phase 0 tooling under review** (2026-06-22;
-`reviews/task-121/002-phase0-local-multinode-suite-lane/`). **Local-only.**
+Status: **complete - evidence-backed no-promote / wall result** (2026-06-26;
+closeout `reviews/task-121/026-phase4-final-pareto-verdict/`, reviewer sign-off
+`reviews/task-121/026-phase4-final-pareto-verdict/feedback/2026-06-26-01-reviewer.md`).
+Local-only evidence; no new SPIRE default promoted.
 
 ## Why
 
@@ -155,3 +157,35 @@ here is the wall and why."
    hand-waving.
 6. **Finding-tied AC:** the final recommendation must demonstrate that the
    tested levers address the route-stage loss the Phase 1 funnel localized.
+
+## Closeout (2026-06-26)
+
+Task 121 closed as an evidence-backed no-promote result. Packet
+`reviews/task-121/026-phase4-final-pareto-verdict/` synthesizes the Phase 1-4
+evidence, and the outside reviewer signed off on closeout in
+`reviews/task-121/026-phase4-final-pareto-verdict/feedback/2026-06-26-01-reviewer.md`.
+
+The final finding is narrow and evidence-backed:
+
+- route-stage containment equals final recall in every measured run, so the
+  lossy stage is route/leaf selection rather than candidate scoring, block
+  pruning, or exact rerank;
+- boundary replication is the primary recovery lever, with
+  `boundary_replica_count=4`, `training_sample_rows=50000`, and
+  `recursive_fanout=8` as the practical local follow-up candidate;
+- the b4 candidate is not a default: at 100k it reaches high recall only with
+  high low-nprobe latency and about `392 MiB` SPIRE index storage, while b8
+  proves saturation but is a storage/latency wall;
+- retuned sampled block pruning is recall-neutral and useful only at high
+  nprobe; it does not move the low/mid operating point and does not reduce
+  object bytes in the local pipeline counters.
+
+No code or on-disk format change is promoted by this task. Carry `b4/tr50/f8`
+only as a named non-default research candidate if a future task introduces a
+cheaper route-precision mechanism than boundary replication.
+
+Reviewer loose thread for any future pruning-as-I/O work: packets 019/022/024
+show object bytes unchanged while candidates drop. Before claiming block
+pruning saves scan I/O, a follow-up must prove whether pruning is structurally
+post-read or whether the current local single-node scan path simply cannot
+surface read-byte reduction.
