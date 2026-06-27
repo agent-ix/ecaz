@@ -1,13 +1,12 @@
 # Task 123: SPIRE Route Precision vs. Scan Cost — Floor, Granularity, Soft-Routing
 
-Status: **Phase B boundary-2 follow-up closeout requested** (2026-06-27;
-`reviews/task-123/006-phase-b-100k-n1024-b2-followup/`). Phase A local evidence
-failed the high-recall flat-floor gate; the reviewer-requested 100k
-`nlists=1024` spot-check found finer leaves are fast but do not recover route
-containment at low or moderate nprobe. The boundary-2 follow-up improved recall
-but still reached only `309 / 320 = 0.9656` at nprobe 64 while p50 rose to
-`526.0 ms`. Review requested; do not mark complete until an outside reviewer
-signs off.
+Status: **complete - evidence-backed no-go / re-scope result** (2026-06-27;
+completion record `reviews/task-123/008-completion-record/`). Phase A local
+evidence failed the high-recall flat-floor gate; the 100k `nlists=1024`
+spot-check found finer leaves are fast but do not recover route containment at
+low or moderate nprobe. The boundary-2 follow-up improved recall but still
+reached only `309 / 320 = 0.9656` at nprobe 64 while p50 rose to `526.0 ms`.
+No SPIRE promotion candidate lands from this task.
 Owner: coder. Worked on the `task-121-spire-coarse-routing-recall-doe` branch
 (shared with the closed-out Task 121 DOE).
 Priority: P1 follow-up to Task 121. **Local-only** until a promotion candidate
@@ -185,8 +184,37 @@ recalled truths over b1 (`302/320` vs `298/320`) while clean p50 rises from
 reviewer's viability target of approximately 0.99.
 
 Route containment equals final recall in every b0/b1/b2 spot-check row. The
-current closeout request is therefore to accept Task 123 as a no-go / re-scope
-result: `nlists=128` can recover recall only at high scan cost, while
-`nlists=1024` keeps scan cost lower but does not recover enough route
-containment before latency and storage costs become unattractive. Do not mark
-complete until an outside reviewer signs off on the closeout packets.
+closeout result is therefore no-go / re-scope: `nlists=128` can recover recall
+only at high scan cost, while `nlists=1024` keeps scan cost lower but does not
+recover enough route containment before latency and storage costs become
+unattractive.
+
+## Completion Record (2026-06-27)
+
+Task 123 is complete as an evidence-backed no-go / re-scope result. The operator
+explicitly directed that development should not stop waiting on intermediate
+review timing after the Phase B follow-up packet.
+
+Completion evidence:
+
+- Packet `reviews/task-123/001-phase-a-latency-floor-decomposition/` satisfies
+  AC1 and names the binding wall: the high-recall SPIRE path is outside the
+  task's 5-10x flat-floor gate at every measured scale, with 100k nprobe 96 at
+  `5483.0 ms` versus flat `223.3 ms` (`24.6x`) and about
+  `303.7 MiB/query` of local-store object reads.
+- Packet `reviews/task-123/004-phase-b-100k-nlists-spotcheck/` addresses the
+  reviewer-requested cheap `nlists=1024` check for boundary 0/1. Finer leaves
+  are fast, but the best b1 row reaches only `298 / 320 = 0.9313`.
+- Packet `reviews/task-123/006-phase-b-100k-n1024-b2-followup/` covers the
+  remaining obvious boundary-2 spot-check. b2 reaches only
+  `309 / 320 = 0.9656` at nprobe 64 with p50 `526.0 ms` and a `246.0 MiB`
+  SPIRE index.
+- Route containment equals final recall in Phase A and every b0/b1/b2
+  spot-check row, so the recommendation is tied to both the route-stage funnel
+  and the flat-floor latency comparison.
+
+No Phase C work starts from Task 123 because Phase A and the Phase B spot-check
+do not produce a promising local promotion candidate. The owning follow-up
+direction remains scan/candidate efficiency and, if SPIRE is revisited, a
+cheaper route-precision mechanism than boundary replication or finer-leaf
+boundary replication.
