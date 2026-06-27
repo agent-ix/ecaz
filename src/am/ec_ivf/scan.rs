@@ -2402,12 +2402,43 @@ unsafe fn rerank_probe_candidates(
                     )
                 },
             }
-            // The reranked prefix is sorted by exact score; the skipped suffix
-            // (provably worse by the lazy contract) keeps its approximate score
-            // and stays after the prefix. Today `reranked_prefix_len ==
-            // rerank_len`, so this sorts the whole reranked frontier exactly as
-            // the pre-112 path did.
             candidates[..reranked_prefix_len].sort_by(candidate_cmp);
+
+            if should_run_tq_stage2_final_exact_rerank(index_options, sidecar_head) {
+                let final_width = super::options::resolve_scan_stage2_final_rerank_width(
+                    index_options.stage2_final_rerank_width,
+                )
+                .effective_rerank_width;
+                if final_width > 0 {
+                    let final_len = resolve_rerank_len(final_width, reranked_prefix_len);
+                    let exact_scorer = super::rerank::RerankScorer::resolve(
+                        super::options::RerankFormat::F32,
+                        super::options::RerankPlacement::SourceDiagnostic,
+                        index_options.storage_format,
+                        opaque.scan_dimensions as usize,
+                        opaque.query_values(),
+                        index_options.rabitq_rerank_score,
+                        index_options.rabitq_rerank_clip,
+                    )
+                    .unwrap_or_else(|e| pgrx::error!("{e}"));
+                    unsafe {
+                        rerank_probe_candidates_source_side(
+                            opaque,
+                            &exact_scorer,
+                            &mut candidates[..final_len],
+                        )
+                    };
+                    candidates[..final_len].sort_by(candidate_cmp);
+                    candidates.truncate(final_len);
+                    return;
+                }
+            }
+
+            // The reranked prefix is sorted by the configured rerank score; the
+            // skipped suffix (provably worse by the lazy contract) keeps its
+            // approximate score and stays after the prefix. Today
+            // `reranked_prefix_len == rerank_len`, so this sorts the whole
+            // reranked frontier exactly as the pre-112 path did.
             if rerank_width > 0 {
                 candidates.truncate(rerank_len);
             }
@@ -2416,6 +2447,21 @@ unsafe fn rerank_probe_candidates(
             pgrx::error!("ec_ivf rerank mode source_column is not supported yet")
         }
     }
+}
+
+fn should_run_tq_stage2_final_exact_rerank(
+    index_options: &super::options::EcIvfOptions,
+    sidecar_head: Option<ItemPointer>,
+) -> bool {
+    sidecar_head.is_some()
+        && index_options.storage_format == super::options::StorageFormat::CoarseRerank
+        && index_options.rerank_placement == super::options::RerankPlacement::Index
+        && index_options.rerank_format == super::options::RerankFormat::TurboQuant
+        && super::options::resolve_scan_stage2_final_rerank_width(
+            index_options.stage2_final_rerank_width,
+        )
+        .effective_rerank_width
+            > 0
 }
 
 /// Returns the persisted packed rerank group-chain head when this scan should
@@ -4293,6 +4339,7 @@ mod tests {
             nlists: 16,
             nprobe: 4,
             rerank_width,
+            stage2_final_rerank_width: 0,
             training_sample_rows: 0,
             seed: 42,
             pq_group_size: 0,

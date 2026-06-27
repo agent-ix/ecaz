@@ -1503,6 +1503,7 @@ mod tests {
             nlists,
             nprobe: 0,
             rerank_width: 0,
+            stage2_final_rerank_width: 0,
             training_sample_rows,
             seed: 7,
             pq_group_size: 0,
