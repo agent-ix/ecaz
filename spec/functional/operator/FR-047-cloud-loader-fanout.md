@@ -24,11 +24,12 @@ workstation.
 ## Behavior
 
 1. The loader EC2 SHALL be running and reachable via SSM during a
-   `corpus load`. If stopped, `corpus load` SHALL start it and stop
-   it on exit (configurable via `--keep-loader`).
-2. Parquet shards staged in S3 SHALL be sharded across N workers
-   (default `min(8, num_shards)`); workers run in parallel on the
-   loader EC2.
+   `corpus load` (provisioned by `ecaz cloud up` and resumed by
+   `ecaz cloud resume`); `corpus load` dispatches the load over SSM
+   and does not itself start or stop the instance.
+2. Parquet shards staged in S3 SHALL be loaded by N parallel workers
+   on the loader EC2 (the `--workers` flag, default `8`, fanned out
+   via `xargs -P<workers>`).
 3. Each worker SHALL invoke the existing
    `ecaz corpus prepare` + `ecaz corpus load` code paths against
    the DB's private IP, reusing the streaming COPY implementation

@@ -31,13 +31,12 @@ Little-endian, packed:
 | Offset | Size (bytes) | Field | Type | Description |
 |---|---|---|---|---|
 | 0 | 2 | dim | u16 | Vector dimensionality |
-| 2 | 1 | bits | u8 | Quantization bits (2–8) |
-| 3 | 8 | seed | u64 | Quantizer seed |
-| 11 | 4 | gamma | f32 | Residual norm used by the QJL correction term |
-| 15 | variable | code_bytes | [u8] | Bit-packed MSE indices followed by bit-packed QJL signs |
+| 2 | 4 | gamma | f32 | Residual norm used by the QJL correction term |
+| 6 | variable | code_bytes | [u8] | Bit-packed MSE indices followed by bit-packed QJL signs |
 
 Definitions:
-- Datum prefix length = `2 + 1 + 8 = 11` bytes (`dim`, `bits`, `seed`)
+- Datum prefix length = `2 + 4 = 6` bytes (`dim` + `gamma`; `MIN_BINARY_BYTES` in `src/lib.rs`)
+- `bits` and `seed` are NOT serialized on the wire; they are pinned to the canonical defaults (`DEFAULT_QUANT_BITS = 4`, `DEFAULT_QUANT_SEED = 42`) and re-derived on `unpack`
 - Quantized payload length = `4 + ceil(dim * (bits-1) / 8) + ceil(dim / 8)` bytes (`gamma` + `code_bytes`)
 - Code-bytes length = `ceil(dim * (bits-1) / 8) + ceil(dim / 8)` bytes (`mse_packed` + `qjl_packed`)
 
@@ -68,14 +67,14 @@ For a 1536-dim, 4-bit datum (QJL active, `mse_bits = 3`) the packed wire size is
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-001-AC-1 | `tqvector` is visible in `pg_type` after `CREATE EXTENSION ecaz` | Test |
-| FR-001-AC-2 | `tqvector` values are TOASTable; a 1536-dim 4-bit datum occupies 783 bytes total | Test |
+| FR-001-AC-2 | `tqvector` values are TOASTable; a 1536-dim 4-bit datum occupies 774 bytes total | Test |
 | FR-001-AC-3 | Pack/unpack of `(dim, bits, seed, gamma, code_bytes)` round-trips losslessly for all valid parameter combinations | Test |
 
 ### FR-001-AC-1: Type exists after CREATE EXTENSION
 After `CREATE EXTENSION ecaz`, the type `tqvector` SHALL be visible in `pg_type`.
 
 ### FR-001-AC-2: Varlena storage
-Values stored in `tqvector` columns SHALL be TOASTable. A 1536-dim, 4-bit datum SHALL occupy `11 + 4 + 576 + 192 = 783` bytes total: 11-byte datum prefix, 772-byte quantized payload, and 768-byte `code_bytes` section.
+Values stored in `tqvector` columns SHALL be TOASTable. A 1536-dim, 4-bit datum SHALL occupy `2 + 4 + 576 + 192 = 774` bytes total: 6-byte datum prefix (`dim` + `gamma`), 768-byte `code_bytes` section (`mse_packed` + `qjl_packed`).
 
 ### FR-001-AC-3: Binary layout correctness
 Pack/unpack of `(dim, bits, seed, gamma, code_bytes)` SHALL round-trip losslessly for all valid parameter combinations.

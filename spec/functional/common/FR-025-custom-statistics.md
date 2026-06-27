@@ -36,15 +36,14 @@ PG18 introduces `pgstat_register_kind()` which allows extensions to register cus
 ### Statistics Structure
 
 ```rust
-#[repr(C)]
-struct EcazStats {
-    total_distance_calcs: i64,       // Total score_ip_from_parts calls
-    total_graph_hops: i64,           // Total bootstrap expansion node visits
-    total_linear_pages: i64,         // Total linear scan pages read
-    total_scans_started: i64,        // Total amrescan calls
-    total_scans_bootstrap_only: i64, // Scans that returned all results from bootstrap
-    quantizer_cache_hits: i64,       // ProdQuantizer cache hits
-    quantizer_cache_misses: i64,     // ProdQuantizer cache misses (new codebook)
+struct TqStatsCounters {
+    total_distance_calcs: u64,       // Total candidate scoring calls
+    total_graph_hops: u64,           // Total bootstrap expansion node visits
+    total_linear_pages: u64,         // Total linear scan pages read
+    total_scans_started: u64,        // Total amrescan calls
+    total_scans_bootstrap_only: u64, // Scans that returned all results from bootstrap
+    quantizer_cache_hits: u64,       // ProdQuantizer cache hits
+    quantizer_cache_misses: u64,     // ProdQuantizer cache misses (new codebook)
 }
 ```
 

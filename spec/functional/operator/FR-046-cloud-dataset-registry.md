@@ -41,9 +41,11 @@ third-party benchmarks each dataset is comparable against.
    DEEP1B SHALL be converted to parquet during the
    `corpus stage` step via a new adapter; downstream load logic is
    unchanged.
-5. Each registry entry SHALL declare `dim`, `distance`, `row_count`,
-   and an `expected_sha256` for the staged parquet manifest so
-   `corpus stage` is verifiable and re-runnable.
+5. Each registry entry SHALL declare `dim`, `distance`, `rows`, and
+   `format` so `corpus stage` is deterministic and re-runnable.
+   Staging verification SHALL rely on the staged `_manifest.json`
+   written into S3 (`{name, format, rows, dim}`); the registry does
+   not store a per-entry `expected_sha256`.
 6. `ecaz cloud corpus list-datasets` SHALL print the registry as a
    human-readable table and as JSON with `--json`.
 
@@ -53,7 +55,7 @@ third-party benchmarks each dataset is comparable against.
 |---|---|---|
 | FR-046-AC-1 | Every registered dataset has a non-empty `source`, `dim`, `row_count`, and `comparable_to` field | Test |
 | FR-046-AC-2 | `corpus stage --dataset bigann-1b --dry-run` reports the planned S3 keys and total bytes without downloading | Test |
-| FR-046-AC-3 | A staged dataset's manifest SHA matches the registry's `expected_sha256` after a successful `corpus stage` run | Demonstration |
+| FR-046-AC-3 | A staged dataset's `_manifest.json` records `{name, format, rows, dim}` matching the registry entry after a successful `corpus stage` run | Demonstration |
 
 ### FR-046-AC-1
 
@@ -67,8 +69,9 @@ S3 keys and total bytes without downloading.
 
 ### FR-046-AC-3
 
-A staged dataset's manifest SHA matches the registry's
-`expected_sha256` after a successful `corpus stage` run.
+A staged dataset's `_manifest.json` (written to S3 by `corpus stage`)
+records `{name, format, rows, dim}` matching the registry entry after a
+successful `corpus stage` run.
 
 ## Schema
 
