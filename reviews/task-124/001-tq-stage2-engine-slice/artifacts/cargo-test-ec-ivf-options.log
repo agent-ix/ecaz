@@ -1,0 +1,128 @@
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: In file included from /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:19:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:537:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   537 | dlist_next_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:547:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   547 | dlist_prev_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:1054:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:  1054 | slist_next_node(slist_head *head, slist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:58: warning: unused parameter 'size' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                          ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:70: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                                      ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:882:56: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   882 | pgstat_hash_hash_key(const void *d, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                        ^
+warning: ecaz@0.1.1: 6 warnings generated.
+   Compiling ecaz v0.1.1 (/Users/peter/tqvector)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 20s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-c79dd5955b9ccdf7)
+
+running 26 tests
+test am::ec_ivf::options::tests::coarse_rerank_accepts_rabitq4_rerank_format ... ok
+test am::ec_ivf::options::tests::coarse_rerank_accepts_source_diagnostic_with_compact_format ... ok
+test am::ec_ivf::options::tests::coarse_rerank_accepts_f16_rerank_format ... ok
+test am::ec_ivf::options::tests::coarse_rerank_accepts_rabitq8_rerank_format ... ok
+test am::ec_ivf::options::tests::coarse_rerank_accepts_turboquant_rerank_format ... ok
+test am::ec_ivf::options::tests::coarse_rerank_accepts_rabitq_rerank_scoring_knobs ... ok
+test am::ec_ivf::options::tests::coarse_rerank_accepts_index_placement_with_f16 ... ok
+test am::ec_ivf::options::tests::coarse_rerank_preset_resolves_dense_rabitq1_heap_f32 ... ok
+test am::ec_ivf::options::tests::coarse_rerank_accepts_exact_dequant_for_compact_quantized_formats ... ok
+test am::ec_ivf::options::tests::coarse_rerank_accepts_index_placement_with_turboquant ... ok
+test am::ec_ivf::options::tests::coarse_rerank_keeps_explicit_source_f32 ... ok
+test am::ec_ivf::options::tests::coarse_rerank_accepts_index_placement_with_rabitq8 ... ok
+test am::ec_ivf::options::tests::coarse_rerank_accepts_index_placement_with_rabitq4 ... ok
+test am::ec_ivf::options::tests::coarse_rerank_accepts_turboquant_stage2_final_width ... ok
+test am::ec_ivf::options::tests::coarse_rerank_accepts_explicit_phase2_contract ... ok
+test am::ec_ivf::options::tests::rerank_format_parse_accepts_f16 ... ok
+test am::ec_ivf::options::tests::storage_format_parse_accepts_coarse_rerank ... ok
+test am::ec_ivf::options::tests::coarse_rerank_rejects_rabitq_rerank_knobs_for_non_rabitq_format - should panic ... ok
+test am::ec_ivf::options::tests::coarse_rerank_rejects_rabitq2_rerank_format - should panic ... ok
+test am::ec_ivf::options::tests::coarse_rerank_rejects_source_placement_with_compact_format - should panic ... ok
+test am::ec_ivf::options::tests::coarse_rerank_rejects_index_placement_with_explicit_f32 - should panic ... ok
+test am::ec_ivf::options::tests::coarse_rerank_rejects_index_placement_with_default_f32 - should panic ... ok
+test am::ec_ivf::options::tests::coarse_rerank_rejects_exact_dequant_for_f16 - should panic ... ok
+test am::ec_ivf::options::tests::stage2_final_width_rejects_non_turboquant_rerank_format - should panic ... ok
+test am::ec_ivf::options::tests::coarse_rerank_rejects_conflicting_score_mode_flags - should panic ... ok
+test am::ec_ivf::options::tests::coarse_rerank_rejects_table_placement_until_real_table_payloads_exist - should panic ... ok
+
+test result: ok. 26 passed; 0 failed; 0 ignored; 0 measured; 2197 filtered out; finished in 0.00s
+
+     Running unittests src/bin/approx_score_study.rs (target/debug/deps/approx_score_study-f1c59d6c9ac09eb4)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+     Running unittests src/bin/pgrx_embed.rs (target/debug/deps/pgrx_embed_ecaz-5cd76937edea4d98)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/simd_bench.rs (target/debug/deps/simd_bench-040e3a9f968fa1ec)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/kani_item_pointer.rs (target/debug/deps/kani_item_pointer-55d957a65fb25088)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/on_disk_fixtures.rs (target/debug/deps/on_disk_fixtures-51ad2860882fdb74)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 53 filtered out; finished in 0.00s
+
+     Running tests/proptest_page.rs (target/debug/deps/proptest_page-70bcd5f895a84c0c)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+     Running tests/proptest_quant.rs (target/debug/deps/proptest_quant-24afc4943fb859d6)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.00s
+
+     Running tests/recall_integration.rs (target/debug/deps/recall_integration-ed27617becd9e8cf)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 23 filtered out; finished in 0.00s
+
+     Running tests/simd_diff.rs (target/debug/deps/simd_diff-6353871c80e25173)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/size_of_assertions.rs (target/debug/deps/size_of_assertions-694a1b838f8082c0)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.00s
+
+     Running tests/upgrade_matrix.rs (target/debug/deps/upgrade_matrix-8b1c80ffda236dfd)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+     Running tests/wal_policy.rs (target/debug/deps/wal_policy-4bb33c5685cffb2b)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
