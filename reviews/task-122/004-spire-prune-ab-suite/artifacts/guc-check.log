@@ -1,0 +1,10 @@
+ ecaz_build_profile 
+--------------------
+ debug
+(1 row)
+
+ pre_materialization_prune 
+---------------------------
+ on
+(1 row)
+
