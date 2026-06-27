@@ -2473,6 +2473,14 @@ fn append_quantized_v2_scored_column_candidate(
     if !ip.is_finite() {
         return Err("ec_spire routed candidate batch scorer returned a non-finite score".to_owned());
     }
+    if deleted_vec_ids.is_empty()
+        && accumulator
+            .pre_materialization_min_ip_to_keep()
+            .is_some_and(|min_ip_to_keep| ip < min_ip_to_keep)
+    {
+        observer.truncated_candidate(epoch, placement, columns.flags[row_offset]);
+        return Ok(());
+    }
 
     let materialize_started = observer.wants_candidate_timing().then(Instant::now);
     let row = columns.row(row_offset)?;
