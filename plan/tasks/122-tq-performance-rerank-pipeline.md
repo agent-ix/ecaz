@@ -1,6 +1,6 @@
 # Task 122: TurboQuant Performance and Rerank Pipeline Optimization
 
-Status: proposed (2026-06-26)
+Status: closeout requested (2026-06-27; outcome: keep experimental / promote follow-up, pending review in `reviews/task-122/010-closeout-keep-experimental/`)
 Owner: coder (to be assigned). One coder, one branch.
 Priority: 2 (post-Task 89 TurboQuant performance follow-up)
 
