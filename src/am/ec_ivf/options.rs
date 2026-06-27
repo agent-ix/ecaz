@@ -10,13 +10,14 @@ use super::{
     EC_IVF_DEFAULT_ADAPTIVE_NPROBE_SCORE_MARGIN_RATIO_BPS, EC_IVF_DEFAULT_NLISTS,
     EC_IVF_DEFAULT_NPROBE, EC_IVF_DEFAULT_POSTING_SLACK_PERCENT, EC_IVF_DEFAULT_PQ_GROUP_SIZE,
     EC_IVF_DEFAULT_QUANT_BITS, EC_IVF_DEFAULT_RERANK_WIDTH, EC_IVF_DEFAULT_SEED,
-    EC_IVF_DEFAULT_TRAINING_SAMPLE_ROWS, EC_IVF_MAX_ADAPTIVE_NPROBE_SCORE_GAP_MICROS,
-    EC_IVF_MAX_ADAPTIVE_NPROBE_SCORE_MARGIN_RATIO_BPS, EC_IVF_MAX_NLISTS, EC_IVF_MAX_NPROBE,
-    EC_IVF_MAX_POSTING_SLACK_PERCENT, EC_IVF_MAX_PQ_GROUP_SIZE, EC_IVF_MAX_QUANT_BITS,
-    EC_IVF_MAX_RERANK_WIDTH, EC_IVF_MAX_SEED, EC_IVF_MAX_TRAINING_SAMPLE_ROWS, EC_IVF_MIN_NLISTS,
+    EC_IVF_DEFAULT_STAGE2_FINAL_RERANK_WIDTH, EC_IVF_DEFAULT_TRAINING_SAMPLE_ROWS,
+    EC_IVF_MAX_ADAPTIVE_NPROBE_SCORE_GAP_MICROS, EC_IVF_MAX_ADAPTIVE_NPROBE_SCORE_MARGIN_RATIO_BPS,
+    EC_IVF_MAX_NLISTS, EC_IVF_MAX_NPROBE, EC_IVF_MAX_POSTING_SLACK_PERCENT,
+    EC_IVF_MAX_PQ_GROUP_SIZE, EC_IVF_MAX_QUANT_BITS, EC_IVF_MAX_RERANK_WIDTH, EC_IVF_MAX_SEED,
+    EC_IVF_MAX_STAGE2_FINAL_RERANK_WIDTH, EC_IVF_MAX_TRAINING_SAMPLE_ROWS, EC_IVF_MIN_NLISTS,
     EC_IVF_MIN_NPROBE, EC_IVF_MIN_POSTING_SLACK_PERCENT, EC_IVF_MIN_PQ_GROUP_SIZE,
     EC_IVF_MIN_QUANT_BITS, EC_IVF_MIN_RERANK_WIDTH, EC_IVF_MIN_SEED,
-    EC_IVF_MIN_TRAINING_SAMPLE_ROWS,
+    EC_IVF_MIN_STAGE2_FINAL_RERANK_WIDTH, EC_IVF_MIN_TRAINING_SAMPLE_ROWS,
 };
 
 const EC_IVF_SESSION_NPROBE_UNSET: i32 = -1;
@@ -27,6 +28,8 @@ const EC_IVF_MAX_RABITQ_RERANK_CLIP: i32 = 8;
 
 static EC_IVF_NPROBE_GUC: GucSetting<i32> = GucSetting::<i32>::new(EC_IVF_SESSION_NPROBE_UNSET);
 static EC_IVF_RERANK_WIDTH_GUC: GucSetting<i32> =
+    GucSetting::<i32>::new(EC_IVF_SESSION_RERANK_WIDTH_UNSET);
+static EC_IVF_STAGE2_FINAL_RERANK_WIDTH_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(EC_IVF_SESSION_RERANK_WIDTH_UNSET);
 static EC_IVF_ADAPTIVE_NPROBE_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
 static EC_IVF_ADAPTIVE_NPROBE_SCORE_GAP_MICROS_GUC: GucSetting<i32> =
@@ -65,6 +68,7 @@ struct EcIvfReloptions {
     nlists: i32,
     nprobe: i32,
     rerank_width: i32,
+    stage2_final_rerank_width: i32,
     training_sample_rows: i32,
     seed: i32,
     pq_group_size: i32,
@@ -349,6 +353,7 @@ pub(super) struct EcIvfOptions {
     pub(super) nlists: i32,
     pub(super) nprobe: i32,
     pub(super) rerank_width: i32,
+    pub(super) stage2_final_rerank_width: i32,
     pub(super) training_sample_rows: i32,
     pub(super) seed: i32,
     pub(super) pq_group_size: i32,
@@ -379,6 +384,7 @@ impl EcIvfOptions {
         nlists: EC_IVF_DEFAULT_NLISTS,
         nprobe: EC_IVF_DEFAULT_NPROBE,
         rerank_width: EC_IVF_DEFAULT_RERANK_WIDTH,
+        stage2_final_rerank_width: EC_IVF_DEFAULT_STAGE2_FINAL_RERANK_WIDTH,
         training_sample_rows: EC_IVF_DEFAULT_TRAINING_SAMPLE_ROWS,
         seed: EC_IVF_DEFAULT_SEED,
         pq_group_size: EC_IVF_DEFAULT_PQ_GROUP_SIZE,
@@ -459,6 +465,16 @@ pub(super) fn register_gucs() {
         GucContext::Userset,
         GucFlags::default(),
     );
+    GucRegistry::define_int_guc(
+        c"ec_ivf.stage2_final_rerank_width",
+        c"Session override for ec_ivf TQ stage-2 final exact f32 rerank width.",
+        c"Overrides ec_ivf index stage2_final_rerank_width reloption when set to 0 or higher; 0 disables the final exact stage and -1 uses the relation value.",
+        &EC_IVF_STAGE2_FINAL_RERANK_WIDTH_GUC,
+        EC_IVF_SESSION_RERANK_WIDTH_UNSET,
+        EC_IVF_MAX_STAGE2_FINAL_RERANK_WIDTH,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
     GucRegistry::define_bool_guc(
         c"ec_ivf.adaptive_nprobe",
         c"Enable deterministic adaptive ec_ivf nprobe reduction.",
@@ -535,6 +551,10 @@ pub(super) fn current_session_nprobe() -> i32 {
 
 pub(super) fn current_session_rerank_width() -> i32 {
     EC_IVF_RERANK_WIDTH_GUC.get()
+}
+
+pub(super) fn current_session_stage2_final_rerank_width() -> i32 {
+    EC_IVF_STAGE2_FINAL_RERANK_WIDTH_GUC.get()
 }
 
 pub(super) fn current_session_adaptive_nprobe() -> bool {
@@ -643,6 +663,38 @@ pub(super) fn resolve_scan_rerank_width(relation_rerank_width: i32) -> RerankWid
     }
 }
 
+pub(super) fn resolve_scan_stage2_final_rerank_width(
+    relation_stage2_final_rerank_width: i32,
+) -> RerankWidthResolution {
+    let session_rerank_width = match current_session_stage2_final_rerank_width() {
+        value if value >= 0 => Some(value),
+        _ => None,
+    };
+    let (effective_rerank_width, source) = match session_rerank_width {
+        Some(value) => (
+            value.clamp(
+                EC_IVF_MIN_STAGE2_FINAL_RERANK_WIDTH,
+                EC_IVF_MAX_STAGE2_FINAL_RERANK_WIDTH,
+            ),
+            "session",
+        ),
+        None => (
+            relation_stage2_final_rerank_width.clamp(
+                EC_IVF_MIN_STAGE2_FINAL_RERANK_WIDTH,
+                EC_IVF_MAX_STAGE2_FINAL_RERANK_WIDTH,
+            ),
+            "relation",
+        ),
+    };
+
+    RerankWidthResolution {
+        relation_rerank_width: relation_stage2_final_rerank_width,
+        session_rerank_width,
+        effective_rerank_width,
+        source,
+    }
+}
+
 fn auto_nprobe(nlists: u32) -> u32 {
     if nlists == 0 {
         return 0;
@@ -686,6 +738,16 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amoptions(
                 EC_IVF_MIN_RERANK_WIDTH,
                 EC_IVF_MAX_RERANK_WIDTH,
                 offset_of!(EcIvfReloptions, rerank_width) as i32,
+            );
+        pg_sys::add_local_int_reloption(
+                &mut relopts,
+                c"stage2_final_rerank_width".as_ptr(),
+                c"Task 124: exact/source f32 rerank width after index-side TurboQuant stage-2; 0 disables the second exact stage."
+                    .as_ptr(),
+                EC_IVF_DEFAULT_STAGE2_FINAL_RERANK_WIDTH,
+                EC_IVF_MIN_STAGE2_FINAL_RERANK_WIDTH,
+                EC_IVF_MAX_STAGE2_FINAL_RERANK_WIDTH,
+                offset_of!(EcIvfReloptions, stage2_final_rerank_width) as i32,
             );
         pg_sys::add_local_int_reloption(
             &mut relopts,
@@ -1103,11 +1165,21 @@ fn build_options_from_reloptions(
             "ec_ivf rerank_exact_dequant requires storage_format = 'coarse_rerank' with rerank_format = 'rabitq4', 'rabitq8', or 'turboquant'"
         );
     }
+    if reloptions.stage2_final_rerank_width > 0
+        && !(storage_format == StorageFormat::CoarseRerank
+            && rerank_placement == RerankPlacement::Index
+            && rerank_format == RerankFormat::TurboQuant)
+    {
+        pgrx::error!(
+            "ec_ivf stage2_final_rerank_width requires storage_format = 'coarse_rerank', rerank_placement = 'index', and rerank_format = 'turboquant'"
+        );
+    }
 
     EcIvfOptions {
         nlists: reloptions.nlists,
         nprobe: reloptions.nprobe,
         rerank_width: reloptions.rerank_width,
+        stage2_final_rerank_width: reloptions.stage2_final_rerank_width,
         training_sample_rows: reloptions.training_sample_rows,
         seed: reloptions.seed,
         pq_group_size: reloptions.pq_group_size,
@@ -1150,6 +1222,7 @@ mod tests {
             nlists: 64,
             nprobe: 32,
             rerank_width: 50,
+            stage2_final_rerank_width: 0,
             training_sample_rows: 10_000,
             seed: 42,
             pq_group_size: 0,
@@ -1440,6 +1513,47 @@ mod tests {
         assert_eq!(options.rerank, RerankMode::HeapF32);
         assert_eq!(options.rerank_placement, RerankPlacement::Index);
         assert_eq!(options.rerank_format, RerankFormat::TurboQuant);
+    }
+
+    #[test]
+    fn coarse_rerank_accepts_turboquant_stage2_final_width() {
+        let mut reloptions = reloptions();
+        reloptions.rerank_width = 100;
+        reloptions.stage2_final_rerank_width = 25;
+
+        let options = build_options_from_reloptions(
+            &reloptions,
+            Some("coarse_rerank".into()),
+            None,
+            None,
+            None,
+            Some("index".into()),
+            Some("turboquant".into()),
+        );
+
+        assert_eq!(options.storage_format, StorageFormat::CoarseRerank);
+        assert_eq!(options.rerank, RerankMode::HeapF32);
+        assert_eq!(options.rerank_width, 100);
+        assert_eq!(options.stage2_final_rerank_width, 25);
+        assert_eq!(options.rerank_placement, RerankPlacement::Index);
+        assert_eq!(options.rerank_format, RerankFormat::TurboQuant);
+    }
+
+    #[test]
+    #[should_panic]
+    fn stage2_final_width_rejects_non_turboquant_rerank_format() {
+        let mut reloptions = reloptions();
+        reloptions.stage2_final_rerank_width = 25;
+
+        build_options_from_reloptions(
+            &reloptions,
+            Some("coarse_rerank".into()),
+            None,
+            None,
+            None,
+            Some("index".into()),
+            Some("rabitq8".into()),
+        );
     }
 
     #[test]
