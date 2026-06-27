@@ -142,60 +142,92 @@ erDiagram
 
 ## Bounded Context
 
-> TODO: describe the bounded context for this domain — the scope, the ubiquitous language, and the dominant interactions inside the boundary.
+The SPIRE bounded context owns everything between a vector `ORDER BY` over an
+`ec_spire`-indexed relation and the candidate rows that reach PostgreSQL's
+executor: partition-object storage (`FR-049`..`FR-051`), epoch publication and
+build (`FR-052`), local eager bounded search (`FR-053`), update/maintenance
+lifecycle (`FR-054`), distributed topology and placement (`FR-055`..`FR-058`),
+coordinator-routed DML with 2PC (`FR-059`), and operator diagnostics
+(`FR-060`).
+
+Its ubiquitous language is the Domain Terms table above: PID, partition
+object, object version, epoch, placement entry, local store, `SpireVecId`,
+boundary replica, and placement directory. Inside the boundary, "partition"
+always means a PID-addressed SPIRE object — never a PostgreSQL declarative
+table partition — and "publish" always means epoch publication, the only
+visibility boundary for coherent object sets.
+
+Dominant interactions inside the boundary:
+
+- **Local read path**: index AM → root/control → active epoch → routing
+  objects → leaf/delta objects in local stores → heap TIDs.
+- **Distributed read path**: `EcSpireDistributedScan` CustomScan → routing
+  metadata → production remote executor → origin-node SPIRE scoring → typed
+  tuple payload merge with `SpireVecId` dedupe.
+- **Write path**: coordinator DML frontdoor → placement directory →
+  origin-node primitives with two-phase commit.
+- **Maintenance path**: deltas, replacement objects, and replacement epochs;
+  published objects are never mutated in place.
+
+Outside the boundary remain: quantizer math and block kernels (owned by the
+quant context through the `QuantCodec` adapter), generic AM contracts and WAL
+discipline (common context), heap row storage and visibility (PostgreSQL),
+and benchmark orchestration (operator context). Cross-shard non-vector SQL,
+automatic DDL propagation, and cross-shard embedding moves are explicit v1
+non-goals at this boundary.
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-048-AC-1 | The spec defines the SPIRE bounded context using PIDs, partition objects, object versions, epochs, placements, local stores, vector identity, remote nodes, and placement directory rows | Test |
-| FR-048-AC-2 | The spec distinguishes local index-AM scans from distributed CustomScan reads and does not describe remote-origin tuple delivery as index-AM heap-TID materialization | Test |
-| FR-048-AC-3 | The spec defines local and global vector identity semantics, including node-scoped local ID dedupe and cross-node global ID dedupe | Test |
-| FR-048-AC-4 | The spec requires fail-closed strict behavior and explicit degraded diagnostics for stale or unavailable placements and remotes | Test |
-| FR-048-AC-5 | The spec defines epoch publication as the only visibility boundary for coherent partition-object sets | Test |
-| FR-048-AC-6 | The spec identifies all SPIRE object families required to reproduce the storage model: root/control, routing, leaf, delta, top-graph, replacement, and placement objects | Test |
-| FR-048-AC-7 | The spec distinguishes read placement metadata from write placement-directory metadata and states when each is consulted | Test |
-| FR-048-AC-8 | The spec records the explicit v1 deferrals for product-scale evidence, true parallel local-store execution, cross-shard non-vector SQL, automatic DDL, and cross-shard embedding moves | Test |
+| FR-048-AC-1 | The spec defines the SPIRE bounded context using PIDs, partition objects, object versions, epochs, placements, local stores, vector identity, remote nodes, and placement directory rows | Inspection |
+| FR-048-AC-2 | The spec distinguishes local index-AM scans from distributed CustomScan reads, never describing remote-origin tuple delivery as index-AM heap-TID materialization | Inspection |
+| FR-048-AC-3 | The spec defines local and global vector identity semantics, including node-scoped local ID dedupe and cross-node global ID dedupe | Inspection |
+| FR-048-AC-4 | The spec requires fail-closed strict behavior and explicit degraded diagnostics for stale or unavailable placements and remotes | Inspection |
+| FR-048-AC-5 | The spec defines epoch publication as the only visibility boundary for coherent partition-object sets | Inspection |
+| FR-048-AC-6 | The spec identifies all SPIRE object families required to reproduce the storage model: root/control, routing, leaf, delta, top-graph, replacement, and placement objects | Inspection |
+| FR-048-AC-7 | The spec distinguishes read placement metadata from write placement-directory metadata and states when each is consulted | Inspection |
+| FR-048-AC-8 | The spec records the explicit v1 deferrals for product-scale evidence, parallel local-store execution, cross-shard non-vector SQL, automatic DDL, and cross-shard embedding moves | Inspection |
 
-### FR-048-AC-1
+### FR-048-AC-1: Domain vocabulary
 
 The spec defines the SPIRE bounded context using PIDs, partition objects,
 object versions, epochs, placements, local stores, vector identity, remote
 nodes, and placement directory rows.
 
-### FR-048-AC-2
+### FR-048-AC-2: Local vs distributed scan paths
 
 The spec distinguishes local index-AM scans from distributed CustomScan reads
 and does not describe remote-origin tuple delivery as index-AM heap-TID
 materialization.
 
-### FR-048-AC-3
+### FR-048-AC-3: Vector identity semantics
 
 The spec defines local and global vector identity semantics, including
 node-scoped local ID dedupe and cross-node global ID dedupe.
 
-### FR-048-AC-4
+### FR-048-AC-4: Fail-closed and degraded behavior
 
 The spec requires fail-closed strict behavior and explicit degraded diagnostics
 for stale or unavailable placements and remotes.
 
-### FR-048-AC-5
+### FR-048-AC-5: Epoch visibility boundary
 
 The spec defines epoch publication as the only visibility boundary for
 coherent partition-object sets.
 
-### FR-048-AC-6
+### FR-048-AC-6: Object families
 
 The spec identifies all SPIRE object families required to reproduce the
 storage model: root/control, routing, leaf, delta, top-graph, replacement, and
 placement objects.
 
-### FR-048-AC-7
+### FR-048-AC-7: Read vs write placement metadata
 
 The spec distinguishes read placement metadata from write placement-directory
 metadata and states when each is consulted.
 
-### FR-048-AC-8
+### FR-048-AC-8: V1 deferrals
 
 The spec records the explicit v1 deferrals for product-scale evidence, true
 parallel local-store execution, cross-shard non-vector SQL, automatic DDL, and
@@ -203,4 +235,10 @@ cross-shard embedding moves.
 
 ## Dependencies
 
-- **Related**: US-018, US-019, US-020, US-022
+- **Upstream**: US-018, US-019, US-020, US-022 (this FR implements those user
+  stories per its frontmatter relationships).
+- **Downstream**: FR-049, FR-050, FR-051 (partition-object storage), FR-052
+  (build and epoch publish), FR-053 (local search), FR-054
+  (update/maintenance), FR-055, FR-056, FR-057, FR-058 (distributed topology
+  and reads), FR-059 (coordinator DML/2PC), FR-060 (diagnostics) — the
+  requirements scoped by the Bounded Context section above.

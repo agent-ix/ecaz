@@ -16,7 +16,7 @@ relationships:
 
 ## Description
 
-Distributed SPIRE SHALL support coordinator-routed INSERT, non-embedding
+Distributed SPIRE SHALL execute coordinator-routed INSERT, non-embedding
 UPDATE, DELETE, and PK-keyed SELECT for the v1 narrow table shape while keeping
 remote heap changes and coordinator placement-directory state atomic where both
 sides mutate.
@@ -101,60 +101,64 @@ manual outcome confirmation if remote commit resolution failed.
 |----|----------|--------------|
 | FR-059-AC-1 | Coordinator-routed INSERT and DELETE commit or roll back remote heap state and coordinator placement-directory state together | Test |
 | FR-059-AC-2 | The v1 front-door limitations are explicit and fail closed rather than silently executing unsupported distributed semantics | Test |
-| FR-059-AC-3 | The prepared-xact GID, intent states, lost-ack recovery window, and reaper decision rule are defined well enough for operator recovery and repeated branches cannot collide in one coordinator transaction | Test |
-| FR-059-AC-4 | Coordinator-routed INSERT defines source identity, target node selection, remote payload construction, placement-directory registration, and 2PC ordering | Test |
-| FR-059-AC-5 | PK-keyed UPDATE and DELETE route through the placement directory and validate that exactly the v1 supported table shape is being modified | Test |
+| FR-059-AC-3 | The prepared-xact GID, intent states, recovery window, and reaper rule support operator recovery; repeated branches cannot collide in one transaction | Test |
+| FR-059-AC-4 | Coordinator-routed INSERT defines source identity, target node selection, remote payload construction, placement-directory registration, and 2PC ordering | Inspection |
+| FR-059-AC-5 | PK-keyed UPDATE and DELETE route through the placement directory and validate that exactly the v1 supported table shape is modified | Test |
 | FR-059-AC-6 | Embedding-changing UPDATE is rejected with an explicit distributed SPIRE error instead of silently moving rows across shards | Test |
 | FR-059-AC-7 | PK-keyed SELECT can use placement-directory routing without pretending to be a general cross-shard SQL planner | Test |
-| FR-059-AC-8 | Bulk-load registration is identified as an operational mode outside the transparent coordinator DML front door | Test |
+| FR-059-AC-8 | Bulk-load registration is identified as an operational mode outside the transparent coordinator DML front door | Inspection |
 | FR-059-AC-9 | Every unsupported DML shape fails before remote mutation and points operators at the v1 SPIRE distributed DML contract | Test |
 
-### FR-059-AC-1
+### FR-059-AC-1: Atomic INSERT and DELETE
 
 Coordinator-routed INSERT and DELETE commit or roll back remote heap state and
 coordinator placement-directory state together.
 
-### FR-059-AC-2
+### FR-059-AC-2: Explicit v1 limitations
 
 The v1 front-door limitations are explicit and fail closed rather than
 silently executing unsupported distributed semantics.
 
-### FR-059-AC-3
+### FR-059-AC-3: GID and reaper contract
 
 The prepared-xact GID, intent states, lost-ack recovery window, and reaper
 decision rule are defined well enough for operator recovery and repeated
 branches cannot collide in one coordinator transaction.
 
-### FR-059-AC-4
+### FR-059-AC-4: INSERT pipeline definition
 
 Coordinator-routed INSERT defines source identity, target node selection,
 remote payload construction, placement-directory registration, and 2PC ordering.
 
-### FR-059-AC-5
+### FR-059-AC-5: PK UPDATE and DELETE routing
 
 PK-keyed UPDATE and DELETE route through the placement directory and validate
 that exactly the v1 supported table shape is being modified.
 
-### FR-059-AC-6
+### FR-059-AC-6: Embedding UPDATE rejection
 
 Embedding-changing UPDATE is rejected with an explicit distributed SPIRE error
 instead of silently moving rows across shards.
 
-### FR-059-AC-7
+### FR-059-AC-7: PK SELECT routing
 
 PK-keyed SELECT can use placement-directory routing without pretending to be a
 general cross-shard SQL planner.
 
-### FR-059-AC-8
+### FR-059-AC-8: Bulk-load mode boundary
 
 Bulk-load registration is identified as an operational mode outside the
 transparent coordinator DML front door.
 
-### FR-059-AC-9
+### FR-059-AC-9: Fail-before-mutation
 
 Every unsupported DML shape fails before remote mutation and points operators at
 the v1 SPIRE distributed DML contract.
 
 ## Dependencies
 
-- **Related**: FR-055, FR-057
+- **Upstream**: FR-055 (placement directory and `ec_spire_placement` schema
+  used for write routing and PK reads), FR-057 (production remote executor
+  used for remote dispatch).
+- **Downstream**: FR-060 (DML/2PC diagnostics and operator recovery surface),
+  per its declared dependency on this FR.

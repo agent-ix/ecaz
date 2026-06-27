@@ -81,7 +81,22 @@ support lookup by `(index_oid, source_identity)`.
 
 ```json
 {
-  "TODO": "describe the schema shape here"
+  "$id": "ix://agent-ix/ecaz/spire-placement-directory",
+  "title": "ec_spire_placement coordinator table",
+  "storage": "PostgreSQL table on the coordinator; write-routing and PK-read source of truth, not a read-path materialization catalog",
+  "columns": [
+    { "name": "index_oid", "type": "oid", "description": "coordinator SPIRE index" },
+    { "name": "pk_value", "type": "bytea", "description": "canonical primary-key encoding; v1 bigint uses PostgreSQL int8send bytes" },
+    { "name": "node_id", "type": "integer", "description": "0 for coordinator-local, positive for remotes" },
+    { "name": "centroid_id", "type": "bigint", "description": "active-epoch routing leaf identity, opaque across retraining" },
+    { "name": "served_epoch", "type": "bigint", "minimum": 1, "description": "positive remote/coordinator epoch" },
+    { "name": "source_identity", "type": "bytea", "length": 16, "description": "exact 16-byte stable identity payload" }
+  ],
+  "primary_key": ["index_oid", "pk_value"],
+  "indexes": [
+    { "name": "identity lookup", "columns": ["index_oid", "source_identity"] }
+  ],
+  "out_of_scope_v1": ["non-vector non-PK scatter-gather reads", "automatic DDL propagation"]
 }
 ```
 
@@ -89,25 +104,30 @@ support lookup by `(index_oid, source_identity)`.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-055-AC-1 | The topology distinguishes coordinator routing metadata from remote shard row storage and local SPIRE scoring | Test |
-| FR-055-AC-2 | The placement directory is defined as the write-routing and PK-read source of truth, not as a read-path materialization catalog | Test |
-| FR-055-AC-3 | The v1 schema states that non-vector non-PK scatter-gather reads and automatic DDL propagation are out of scope | Test |
+| FR-055-AC-1 | The topology distinguishes coordinator routing metadata from remote shard row storage and local SPIRE scoring | Inspection |
+| FR-055-AC-2 | The placement directory is defined as the write-routing and PK-read source of truth, not a read-path materialization catalog | Inspection |
+| FR-055-AC-3 | The v1 schema states that non-vector non-PK scatter-gather reads and automatic DDL propagation are out of scope | Inspection |
 
-### FR-055-AC-1
+### FR-055-AC-1: Role separation
 
 The topology distinguishes coordinator routing metadata from remote shard row
 storage and local SPIRE scoring.
 
-### FR-055-AC-2
+### FR-055-AC-2: Directory source of truth
 
 The placement directory is defined as the write-routing and PK-read source of
 truth, not as a read-path materialization catalog.
 
-### FR-055-AC-3
+### FR-055-AC-3: V1 scope exclusions
 
 The v1 schema states that non-vector non-PK scatter-gather reads and automatic
 DDL propagation are out of scope.
 
 ## Dependencies
 
-- **Related**: FR-048
+- **Upstream**: FR-048 (domain model: placement directory, remote nodes,
+  epochs).
+- **Downstream**: FR-056 (remote endpoint and typed transport), FR-057
+  (production remote executor), FR-058 (distributed CustomScan read), and
+  FR-059 (coordinator-routed DML/2PC), which all build on this topology and
+  placement-directory contract.

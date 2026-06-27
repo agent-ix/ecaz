@@ -3,7 +3,7 @@ id: FR-056
 title: SPIRE Remote Endpoint and Typed Tuple Transport
 type: FR
 status: APPROVED
-object: dto
+object: value_object
 relationships:
   - target: "ix://agent-ix/ecaz/FR-048"
     type: "depends_on"
@@ -99,12 +99,32 @@ sequenceDiagram
     C->>Slot: receive binary attrs into virtual tuple
 ```
 
+## Properties
+
+The decoded `pg_binary_attr_v1` payload value object
+(`SpireRemoteTypedTuplePayload`). All array fields share an identical length
+equal to the number of requested attributes for the candidate row.
+
+| Property | Type | Rule |
+| --- | --- | --- |
+| `payload_attnums` | `Vec<i16>` | heap attribute numbers; SHALL match the remote heap tuple descriptor |
+| `payload_names` | `Vec<String>` | attribute names; SHALL match the coordinator CustomScan output descriptor |
+| `payload_type_oids` | `Vec<Oid>` | attribute type OIDs; SHALL match the expected descriptor |
+| `payload_typmods` | `Vec<i32>` | attribute typmods; SHALL match the expected descriptor |
+| `payload_collations` | `Vec<Oid>` | attribute collation OIDs; SHALL match the expected descriptor |
+| `payload_nulls` | `Vec<bool>` | per-attribute SQL NULL flags; when true the coordinator ignores the value |
+| `payload_values` | `Vec<Vec<u8>>` | per-attribute binary `send`-function bytes (decoded from hex on the wire) |
+| `payload_formats` | `Vec<String>` | per-value encoding; SHALL be `pg_binary_send` for every non-null value |
+| `tuple_transport` | `&'static str` | transport tag, fixed `pg_binary_attr_v1` for the production read path |
+| `tuple_transport_status` | `&'static str` | stable status label (ready or a fail-closed reason) |
+
 ## Behavior
 
 1. Production dispatch SHALL fail closed when a selected endpoint does not
    advertise ready `pg_binary_attr_v1`.
-2. The legacy JSON tuple endpoint MAY remain for compatibility/measurement, but
-   SHALL NOT be selected by the production tuple-payload dispatch path.
+2. The production tuple-payload dispatch path SHALL NOT select the legacy JSON
+   tuple endpoint, which remains available only for compatibility and
+   measurement.
 3. Typed metadata mismatch SHALL report schema drift or typed-transport failure
    instead of falling back after malformed typed rows are received.
 4. Payload row and batch byte caps SHALL fail closed before accepting oversized
@@ -114,25 +134,30 @@ sequenceDiagram
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-056-AC-1 | The endpoint request, candidate envelope, and typed tuple payload arrays are defined without relying on JSON as the production read transport | Test |
+| FR-056-AC-1 | The endpoint request, candidate envelope, and typed tuple payload arrays are defined without relying on JSON as the production read transport | Inspection |
 | FR-056-AC-2 | The coordinator validates name, type OID, typmod, collation, NULL status, and binary payload shape before constructing a CustomScan tuple | Test |
 | FR-056-AC-3 | Unsupported typed transport, unsupported binary I/O, payload caps, and schema drift have stable fail-closed status labels | Test |
 
-### FR-056-AC-1
+### FR-056-AC-1: Non-JSON production transport
 
 The endpoint request, candidate envelope, and typed tuple payload arrays are
 defined without relying on JSON as the production read transport.
 
-### FR-056-AC-2
+### FR-056-AC-2: Typed metadata validation
 
 The coordinator validates name, type OID, typmod, collation, NULL status, and
 binary payload shape before constructing a CustomScan tuple.
 
-### FR-056-AC-3
+### FR-056-AC-3: Fail-closed status labels
 
 Unsupported typed transport, unsupported binary I/O, payload caps, and schema
 drift have stable fail-closed status labels.
 
 ## Dependencies
 
-- **Related**: FR-048, FR-055
+- **Upstream**: FR-048 (domain model: `SpireVecId`, opaque row locators,
+  strict/degraded consistency), FR-055 (topology, remote descriptors, and
+  placement boundaries this endpoint serves).
+- **Downstream**: FR-057 (production remote executor dispatches this typed
+  transport) and FR-058 (distributed CustomScan consumes the typed tuple
+  payloads), per their declared dependencies on this FR.

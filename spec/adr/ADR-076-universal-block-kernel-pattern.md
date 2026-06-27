@@ -22,7 +22,9 @@ to compare and would make AM integrations depend on per-quant special
 cases.
 
 Task 91 owns the common `QuantCodec` scoring interface. Task 92 owns the
-kernel-side infrastructure that registers into that interface.
+kernel-side infrastructure that registers into that interface. Task 101
+extends the initial block32 convention with the accepted width cascade used by
+production dispatch.
 
 ## Decision
 
@@ -42,24 +44,31 @@ real scan paths later, add a metric-specific sibling instead of renaming
 the current method during Task 92.
 
 Each `QuantCodec` implementation owns its per-quant dispatch decision:
-shape validation, width gating, runtime ISA choice, scalar tail routing,
-and counter attribution happen under that method. AM code should not call
-ISA-specific kernel functions directly.
+shape validation, width gating, runtime ISA choice, partial-width routing,
+scalar remainder routing, and counter attribution happen under that method. AM
+code should not call ISA-specific kernel functions directly.
 
 ### Block Width
 
-Use a universal block width of 32 candidates.
+Use a universal base block width of 32 candidates.
 
 The dispatch contract is:
 
-- `batch.len() >= 32`: use the kernel module for the largest whole
-  block range, then score any tail through the scalar reference path.
-- `batch.len() < 32`: use the scalar path directly.
-- Shape mismatches fail before scoring and before counter increments.
+- shape mismatches fail before scoring, before output mutation, and before
+  counter increments;
+- `batch.len() >= 32`: dispatch the largest whole block32 range through the
+  selected kernel family;
+- supported remainders use the family-specific partial-width cascade
+  (`partial`, `octet`, or equivalent) before scalar fallback; and
+- unsupported widths, disabled kernels, or missing runtime features use the
+  scalar reference path with off-path scalar counter attribution.
 
 The 32-candidate block is the common unit for AVX2 byte shuffle style
 kernels, NEON table kernels, SVE vector-length agnostic loops, grouped-PQ
-block layouts, and the already-landed LUT32 scorer.
+block layouts, and the already-landed LUT32 scorer. The width cascade is part
+of the universal contract because Task 101 showed that measuring only exact
+block32 flushes can hide performance regressions or wins on real AM batch
+distributions.
 
 ### Module Layout
 
@@ -77,7 +86,8 @@ src/quant/<kernel>/
 Module responsibilities:
 
 - `mod.rs`: public batch entry point, shape validation, width gating,
-  runtime dispatch, counter attribution, and scalar tail fallback.
+  runtime dispatch, counter attribution, partial-width routing, and scalar
+  remainder fallback.
 - `scalar.rs`: bit-exact scalar reference implementation plus
   `score_scalar_tail`.
 - `neon.rs`: NEON implementation behind `#[cfg(target_arch = "aarch64")]`.
@@ -130,8 +140,12 @@ Counters must distinguish:
 
 - total batch flushes, candidates, and elapsed nanos;
 - kernel flushes, candidates, elapsed nanos, and selected ISA;
-- off-path scalar flushes, candidates, and elapsed nanos when kernel
-  routing is disabled or width gating sends candidates to scalar.
+- off-path scalar flushes, candidates, and elapsed nanos when kernel routing is
+  disabled, width gating sends candidates to scalar, or prevalidation rejects
+  the batch; and
+- flush-width histogram buckets (`<8`, `8..15`, `16..31`, `>=32`) recorded per
+  wrapper flush, so exact block32, partial/octet, and scalar-remainder
+  dispatch can be attributed from the measured width distribution.
 
 The off-path scalar counter is the canonical comparison for later
 `>= 2x` scoring-share claims. It must not change the scalar scorer's
@@ -157,8 +171,11 @@ for accepting a SIMD variant.
   `QuantCodec::score_ip_batch` and receive scores in candidate order.
 - The Task 87 LUT32 scorer must be backfilled into this layout before
   Task 92 closes.
-- Tasks 93-98 can implement quant-specific math without redefining
-  counters, dispatch, width gating, or tolerance rules.
+- Tasks 93-98 can implement quant-specific math without redefining counters,
+  dispatch, width gating, partial-width routing, or tolerance rules.
+- Task 99's completeness matrix treats the kernel family, quant kind, ISA,
+  and width-bucket surface as one reporting contract. Missing cells must be
+  labeled as absent or deferred instead of inferred from nearby kernels.
 - SVE/SVE2 kernels must be portable across vector lengths. Graviton 4 is the
   target ARM server host and uses the SVE2 dispatch branch when available, but
   the code must not assume a hard-coded vector length unless dispatch validates
@@ -200,3 +217,5 @@ the measured ISA-width label, such as `sve2-128`.
 - Task 87: Candidate batching and first LUT32 kernel.
 - Task 91: Cross-AM `QuantCodec` migration.
 - Task 92: Cross-quant block kernel infrastructure and ISA gating.
+- Task 99: Block-kernel completeness matrix and benchmark attribution.
+- Task 101: Universal width cascade and partial-dispatch convention.

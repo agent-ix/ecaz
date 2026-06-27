@@ -2,6 +2,7 @@
 id: NFR-004
 title: Safety and Stability
 type: NFR
+quality_attribute: reliability
 status: APPROVED
 relationships:
   - target: "ix://agent-ix/ecaz/StR-002"
@@ -135,11 +136,13 @@ skip, or manual-gate interpretation.
 ## Measurement and Evaluation
 
 | Metric | Target | Threshold | Method |
-|--------|--------|-----------|--------|
-| New uncommented `unsafe` blocks | 0 | 0 | `make audit-unsafe` Gate |
-| Hardening lanes (Miri, fuzz, Kani, Loom, Shuttle, sanitizers) | Pass | Pass | `make hardening-nightly-local` |
-| Supply-chain audit (`cargo-audit`, `deny-full`, `cargo-vet`) | Clean | Clean | Supply-Chain Audit |
-
+|---|---|---|---|
+| Backend crashes under any input | zero (all errors via `ereport(ERROR)`) | zero uncaught panics or segfaults | fuzz testing of parsers/decoders + PG18 live lanes (`make pg-test`, sanitizers, SQLsmith) |
+| New uncommented `unsafe` lines | zero (all `unsafe` blocks carry `// SAFETY:` comments) | zero new uncommented unsafe vs baseline | `make audit-unsafe` baseline diff |
+| Memory leaks in scan/build/vacuum state | zero (all freed in end/cleanup callbacks) | zero | Miri/cargo-careful/sanitizer lanes (`make miri-expanded`, `make careful`) |
+| WAL recovery after crash + replay | index usable without REINDEX | no REINDEX required | crash + WAL replay verification on PG18 |
+| License audit | all transitive deps MIT/Apache-2.0/BSD-2-Clause/BSD-3-Clause/ISC | `cargo deny check licenses` passes | `cargo deny check licenses` (`make deny-full`) |
+| Hardening-lane evidence completeness | 100% of cited lanes backed by packet-local raw logs | no unpacketed lane cited as completed evidence for TC-034 | review packet audit |
 
 - `make hardening-local` for stable local checks that do not need a live cluster.
 - `make hardening-nightly-local` for slower Miri, cargo-careful, fuzz, Kani,
@@ -154,7 +157,15 @@ skip, or manual-gate interpretation.
 
 ## Verification
 
-The local and nightly hardening Make targets, the unsafe-baseline audit, and the supply-chain audit lanes are run and their results reviewed against the gates above, with fuzzing exercising parser, tuple/metadata/item-pointer decoders, and vector normalization paths; findings are captured in packet-local logs.
+Compliance is checked by running the documented hardening lanes —
+`make hardening-local` for stable local checks, `make hardening-nightly-local`
+for Miri, cargo-careful, fuzz, Kani, Loom, Shuttle, and sanitizer smoke lanes,
+`make audit-unsafe` against the unsafe baseline file, and `make cargo-audit`,
+`make deny-full`, `make cargo-vet` for supply chain — plus PG18/live lanes
+(`make pg-test`, sanitizer lanes, SQLsmith) for callback safety. Each lane's
+gate level, evidence artifact, and interpretation rule are evaluated per the
+Ecaz Application table; only lanes with packet-local raw logs count as
+completed evidence.
 
 ## Acceptance Criteria
 

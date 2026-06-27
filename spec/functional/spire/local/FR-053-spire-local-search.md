@@ -52,8 +52,8 @@ sequenceDiagram
 ## Behavior
 
 1. `amrescan` SHALL replace all previous scan-local work.
-2. `amgettuple` SHALL require a completed `amrescan` and SHALL support only
-   forward scan direction.
+2. `amgettuple` SHALL require a completed `amrescan`. `amgettuple` SHALL scan
+   only in the forward direction.
 3. `amgettuple` SHALL NOT perform routing expansion, object reads, delta decode,
    scoring, or heap rerank under the eager contract.
 4. Route budgets SHALL bound recursive frontier work using effective `nprobe`,
@@ -68,6 +68,15 @@ sequenceDiagram
    score and deterministic tie-break.
 9. Stale heap locators SHALL be suppressed or repaired by the update/vacuum
    policy; scans SHALL NOT emit unrelated heap rows.
+10. Leaf-local block summaries MAY reduce row-segment decode and candidate
+    scoring, but any pruning policy SHALL preserve the accepted candidate
+    surface unless a benchmark packet proves a better recall/latency point.
+11. Local search diagnostics SHALL distinguish routing misses, selected-leaf
+    block containment misses, candidate-budget misses, heap rerank work, and
+    scored candidate surface.
+12. Product-scale recall recovery SHALL NOT be claimed from wider top-graph
+    search, blanket global-cap expansion, or near-cap rescue unless the
+    evidence keeps candidate growth within the stated benchmark gate.
 
 ## Acceptance Criteria
 
@@ -75,23 +84,40 @@ sequenceDiagram
 |----|----------|--------------|
 | FR-053-AC-1 | Local scans expose route, store, candidate, dedupe, truncation, rerank, and cursor-drain diagnostics sufficient to identify the limiting stage | Test |
 | FR-053-AC-2 | `amgettuple` drains a pre-ranked cursor and does not perform object-store or heap-rerank work | Test |
-| FR-053-AC-3 | Store-grouped prefetch is distinguishable from true parallel multi-store execution in diagnostics and product claims | Test |
+| FR-053-AC-3 | Store-grouped prefetch is distinguishable from true parallel multi-store execution in diagnostics and product claims | Inspection |
+| FR-053-AC-4 | SPIRE local recall/latency packets report candidate-surface and miss-attribution fields that separate routing errors from containment or candidate-budget misses | Analysis |
+| FR-053-AC-5 | Leaf block-summary or pruning changes preserve recall and candidate-surface gates versus the accepted baseline or record the tradeoff explicitly | Analysis |
 
-### FR-053-AC-1
+### FR-053-AC-1: Stage diagnostics
 
 Local scans expose route, store, candidate, dedupe, truncation, rerank, and
 cursor-drain diagnostics sufficient to identify the limiting stage.
 
-### FR-053-AC-2
+### FR-053-AC-2: Cursor-drain contract
 
 `amgettuple` drains a pre-ranked cursor and does not perform object-store or
 heap-rerank work.
 
-### FR-053-AC-3
+### FR-053-AC-3: Prefetch vs parallel claims
 
 Store-grouped prefetch is distinguishable from true parallel multi-store
 execution in diagnostics and product claims.
 
+### FR-053-AC-4: Miss-attribution reporting
+
+SPIRE local recall/latency packets report candidate-surface and miss-attribution
+fields sufficient to tell routing errors apart from selected-leaf block
+containment or candidate-budget misses.
+
+### FR-053-AC-5: Pruning-change gates
+
+Leaf block-summary or pruning changes preserve recall and candidate-surface
+gates relative to the accepted Task 79/81 baseline or explicitly record the
+tradeoff as a rejected/diagnostic point.
+
 ## Dependencies
 
-- **Related**: FR-048, FR-050, FR-051
+- **Upstream**: FR-048 (domain model: epochs, placements, `SpireVecId`
+  dedupe), FR-050 (leaf V2 and block-summary decode), FR-051 (routing, delta,
+  and top-graph objects used for query routing).
+- **Downstream**: none identified.

@@ -2,6 +2,7 @@
 id: NFR-010
 title: Cloud Cost Discipline
 type: NFR
+quality_attribute: compliance
 status: PROPOSED
 relationships:
   - target: "ix://agent-ix/ecaz/StR-007"
@@ -16,8 +17,19 @@ relationships:
 ## Statement
 
 The cloud harness SHALL make ongoing AWS spend visible, bounded, and
-reversible. A forgotten profile SHALL NOT be able to silently accrue
+reversible. A forgotten profile SHALL NOT silently accrue
 material spend.
+
+## Measurement and Evaluation
+
+| Metric | Target | Threshold | Method |
+|---|---|---|---|
+| Paid compute resources after `ecaz cloud down` | zero (only intentionally-retained snapshot/bucket remain) | zero compute resources | `ecaz cloud status` after teardown |
+| Cost visibility fields in status output | `estimated_hourly_usd` and `retained_monthly_usd` populated | non-null numeric values | `ecaz cloud status --json` |
+| Instance compute charges while paused | $0/hr with EBS data retained, no auto-resume | zero compute charges | `ecaz cloud status` cost report |
+| Oversized-profile provisioning guard | profiles larger than `dev` require `--confirm-cost` matching projected $/day | provisioning refused without matching flag | attempted `ecaz cloud up` without the flag |
+| NAT gateway resources in Terraform plan | 0 | 0 | Terraform plan audit |
+| S3 raw-parquet retention | lifecycle expiry at configured retention (default 30 days), bench artifacts retained indefinitely under a separate prefix | lifecycle rule present | S3 lifecycle configuration audit |
 
 ## Policy
 
@@ -43,17 +55,17 @@ material spend.
    `dev` without an explicit `--confirm-cost` flag whose argument
    matches the projected $/day for that profile.
 
-## Measurement and Evaluation
-
-| Metric | Target | Threshold | Method |
-|--------|--------|-----------|--------|
-| Paid resources remaining after `ecaz cloud down` | Only intentionally retained snapshot/bucket | Only retained | Demonstration |
-| Cost fields in `ecaz cloud status --json` (`estimated_hourly_usd`, `retained_monthly_usd`) | Present, non-null numeric | Present | Inspection |
-| NAT gateway resources in Terraform plan | 0 | 0 | Inspection |
-
 ## Verification
 
-A teardown demonstration runs `ecaz cloud down` then `ecaz cloud status` to confirm zero compute resources and only retained storage, the `--json` status output is inspected for cost fields, and the Terraform plan is inspected for absence of NAT gateways and presence of the `--confirm-cost` guard.
+Compliance is checked by exercising the harness commands and inspecting
+infrastructure outputs: tearing down a profile via `ecaz cloud down` and
+confirming `ecaz cloud status` reports zero compute resources and only the
+intentionally-retained snapshot/bucket; checking `ecaz cloud status --json`
+for non-null `estimated_hourly_usd` and `retained_monthly_usd` sourced from
+the committed cost table; attempting to `up` a profile larger than `dev`
+without `--confirm-cost` and confirming refusal; and auditing the Terraform
+plan for zero NAT gateway resources and the S3 bucket for the parquet
+lifecycle rule.
 
 ## Acceptance Criteria
 

@@ -1,3 +1,11 @@
+---
+type: ADR
+id: ADR-079
+title: "IVF Index-Side Rerank Sidecar Needs a Directory for Bounded Reads"
+status: PROPOSED
+impact: Affects IVF index-side rerank placement (`rerank_placement='index'`), the `0x2A` rerank sidecar format, FR-032, and NFR-001; records that a flat heap-TID-keyed sidecar produces O(N) bounded-read regressions and motivates a directory.
+date: 2026-06-19
+---
 # ADR-079: IVF index-side rerank sidecar needs a directory for bounded reads
 
 Status: Proposed (2026-06-19)

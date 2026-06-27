@@ -3,7 +3,7 @@ id: FR-051
 title: SPIRE Routing Delta and Top Graph Formats
 type: FR
 status: APPROVED
-object: data_schema
+object: binary_format
 relationships:
   - target: "ix://agent-ix/ecaz/FR-048"
     type: "depends_on"
@@ -102,37 +102,80 @@ flowchart TD
     Leaf --> Delta
 ```
 
-## Schema
+## Layout
 
-```json
-{
-  "TODO": "describe the schema shape here"
-}
+```yaml
+format: spire-routing-delta-topgraph
+title: SPIRE routing, delta, and top-graph object payloads
+endianness: little
+encoding: "binary, no implicit padding, after the FR-049 common header"
+record_types:
+  - name: routing_object
+    header: { $ref: "ix://agent-ix/ecaz/spire-partition-object-header", kind: [root, internal], format_version: 1 }
+    fields:
+      - { name: dimensions, offset: 0, type: u16, minimum: 1 }
+      - { name: reserved, offset: 2, type: u16, const: 0 }
+      - { name: children, offset: 4, type: "child_entry[child_count]", stride: "child_stride = 12 + 4*dimensions" }
+    child_entry:
+      - { name: centroid_ordinal, type: u32 }
+      - { name: child_pid, type: u64, description: internal or leaf partition object in the same epoch manifest }
+      - { name: centroid, type: "f32[dimensions]" }
+    validation: "payload byte length must equal exactly 4 + child_count*child_stride; root has parent_pid=0, internal has nonzero parent_pid"
+  - name: delta_object
+    header: { $ref: "ix://agent-ix/ecaz/spire-partition-object-header", kind: delta, format_version: 1, level: 0, parent_pid: nonzero parent leaf PID }
+    payload: { $ref: "ix://agent-ix/ecaz/spire-leaf-v2#segment_tuple", segment_no: 0, row_base: 0, segment_chain: none }
+    row_rules:
+      - insert rows set delta_insert plus a primary or boundary_replica role
+      - delete rows set delta_delete with tombstone semantics and payload_format=none
+      - a row never sets both delta_insert and delta_delete
+      - stale_locator rows suppress affected candidates until repair or replacement publication
+  - name: top_graph_object
+    header: { $ref: "ix://agent-ix/ecaz/spire-partition-object-header", kind: top_graph, format_version: 1, assignment_count: 0 }
+    fields:
+      - { name: root_pid, offset: 0, type: u64, description: PID of the active root/top routing object }
+      - { name: dimensions, offset: 8, type: u16, minimum: 1 }
+      - { name: reserved, offset: 10, type: u16, const: 0 }
+      - { name: graph_degree, offset: 12, type: u32, minimum: 1 }
+      - { name: build_list_size, offset: 16, type: u32, minimum: 1 }
+      - { name: alpha, offset: 20, type: f32, constraint: finite and >= 1.0 }
+      - { name: entry_node, offset: 24, type: u32, constraint: "< child_count" }
+      - { name: nodes, offset: 28, type: "top_graph_node[child_count]", variable_length: true }
+    top_graph_node:
+      - { name: child_pid, type: u64, constraint: no duplicate child PIDs }
+      - { name: centroid_ordinal, type: u32 }
+      - { name: neighbor_count, type: u32 }
+      - { name: neighbors, type: "u32[neighbor_count]", constraint: "ordinals < child_count; no self-neighbor duplicates" }
+    validation: "reject trailing bytes; node set must equal the active root/top routing object's child frontier"
 ```
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-051-AC-1 | Routing object payloads define dimensions, child PIDs, centroid ordinals, and centroid vectors with enough precision to rebuild the routing hierarchy | Test |
+| FR-051-AC-1 | Routing object payloads define dimensions, child PIDs, centroid ordinals, and centroid vectors precisely enough to rebuild the routing hierarchy | Inspection |
 | FR-051-AC-2 | Delta object rows distinguish insert, delete, tombstone, stale-locator, primary, and boundary-replica semantics without mutating published base leaves | Test |
-| FR-051-AC-3 | Top graph objects validate root PID, node count, entry node, graph degree, neighbor ordinals, finite alpha, and the root/top frontier ownership contract | Test |
+| FR-051-AC-3 | Top graph objects validate root PID, node count, entry node, graph degree, neighbor ordinals, finite alpha, and frontier ownership | Test |
 
-### FR-051-AC-1
+### FR-051-AC-1: Routing payload completeness
 
 Routing object payloads define dimensions, child PIDs, centroid ordinals, and
 centroid vectors with enough precision to rebuild the routing hierarchy.
 
-### FR-051-AC-2
+### FR-051-AC-2: Delta row semantics
 
 Delta object rows distinguish insert, delete, tombstone, stale-locator, primary,
 and boundary-replica semantics without mutating published base leaves.
 
-### FR-051-AC-3
+### FR-051-AC-3: Top-graph validation
 
 Top graph objects validate root PID, node count, entry node, graph degree,
 neighbor ordinals, finite alpha, and the root/top frontier ownership contract.
 
 ## Dependencies
 
-- **Related**: FR-048, FR-049, FR-050
+- **Upstream**: FR-048 (domain model: routing hierarchy, deltas, epochs),
+  FR-049 (common partition object header), FR-050 (Leaf V2 segment payload
+  reused by delta objects).
+- **Downstream**: FR-052 (build writes routing, delta, and top-graph objects)
+  and FR-053 (local search routes queries through these objects), per their
+  declared dependencies on this FR.
