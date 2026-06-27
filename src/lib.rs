@@ -13753,6 +13753,9 @@ fn ec_spire_remote_search_production_read_timeline(
         name!(completed_after_ms, i64),
         name!(elapsed_ms, i64),
         name!(candidate_count, i64),
+        name!(payload_decode_elapsed_ms, i64),
+        name!(payload_decode_row_count, i64),
+        name!(payload_decode_bytes, i64),
         name!(status, &'static str),
         name!(failure_category, &'static str),
     ),
@@ -13783,6 +13786,12 @@ fn ec_spire_remote_search_production_read_timeline(
             i64::try_from(row.completed_after_ms).expect("completed_after_ms should fit in i64"),
             i64::try_from(row.elapsed_ms).expect("elapsed_ms should fit in i64"),
             i64::try_from(row.candidate_count).expect("candidate count should fit in i64"),
+            i64::try_from(row.payload_decode_elapsed_ms)
+                .expect("payload decode elapsed should fit in i64"),
+            i64::try_from(row.payload_decode_row_count)
+                .expect("payload decode row count should fit in i64"),
+            i64::try_from(row.payload_decode_bytes)
+                .expect("payload decode bytes should fit in i64"),
             row.status,
             row.failure_category,
         )

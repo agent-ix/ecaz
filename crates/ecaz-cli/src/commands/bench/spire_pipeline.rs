@@ -337,6 +337,8 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
     let mut degraded_skip = BTreeMap::<DegradedSkipKey, DegradedSkipAggregate>::new();
     let mut query_metrics = BTreeMap::<i32, QueryMetricAggregate>::new();
     let mut production_read_profile = BTreeMap::<i32, ProductionReadProfileAggregate>::new();
+    let mut production_read_timeline =
+        BTreeMap::<ProductionReadTimelineKey, ProductionReadTimelineAggregate>::new();
     let mut cost_tuning = BTreeMap::<i32, CostTuningRow>::new();
     let mut funnel_rows = Vec::<FunnelRecord>::new();
     let mut stage_containment_rows = Vec::<StageContainmentRecord>::new();
@@ -821,6 +823,22 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
                     .entry(*nprobe)
                     .or_default()
                     .record(row);
+                let payload_columns =
+                    production_read_payload_columns(&args.query_metric_projection_columns);
+                let rows = query_production_read_timeline_rows(
+                    &client,
+                    &index,
+                    &query.source,
+                    args.query_metric_k,
+                    &payload_columns,
+                )
+                .await?;
+                for row in rows {
+                    production_read_timeline
+                        .entry(ProductionReadTimelineKey::from_row(*nprobe, &row))
+                        .or_default()
+                        .record(row);
+                }
             }
             if args.funnel_output.is_some() && !args.production_read_only {
                 funnel_rows.push(FunnelRecord::from_query(
@@ -891,6 +909,7 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
         degraded_skip: &degraded_skip,
         query_metrics: &query_metrics,
         production_read_profile: &production_read_profile,
+        production_read_timeline: &production_read_timeline,
     });
     if !task87_counter_lines.is_empty() {
         output.push('\n');
@@ -1103,6 +1122,16 @@ fn build_query_metric_sql(corpus_table: &str, projection_columns: &[String]) -> 
          LIMIT $2",
         select_columns = select_columns.join(", ")
     )
+}
+
+fn production_read_payload_columns(projection_columns: &[String]) -> Vec<String> {
+    let mut columns = vec!["id".to_owned()];
+    for column in projection_columns {
+        if column != "id" && !columns.iter().any(|existing| existing == column) {
+            columns.push(column.clone());
+        }
+    }
+    columns
 }
 
 fn query_matrix(queries: &[QueryVector]) -> Result<Array2<f32>> {
@@ -1612,6 +1641,28 @@ async fn query_production_read_profile_row(
     Ok(ProductionReadProfileRow::from_metric_rows(rows))
 }
 
+async fn query_production_read_timeline_rows(
+    client: &Client,
+    index: &str,
+    query: &[f32],
+    top_k: usize,
+    payload_columns: &[String],
+) -> Result<Vec<ProductionReadTimelineRow>> {
+    let top_k = i32::try_from(top_k).map_err(|_| eyre!("query metric k exceeds i32"))?;
+    let payload_columns = payload_columns.to_vec();
+    let rows = client
+        .query(
+            production_read_timeline_sql(),
+            &[&index, &query, &top_k, &payload_columns],
+        )
+        .await
+        .wrap_err("querying ec_spire_remote_search_production_read_timeline")?;
+    Ok(rows
+        .into_iter()
+        .map(ProductionReadTimelineRow::from)
+        .collect())
+}
+
 async fn query_remote_placement_gate(client: &Client, index: &str) -> Result<RemotePlacementGate> {
     let row = client
         .query_one(remote_placement_gate_sql(), &[&index])
@@ -1763,6 +1814,14 @@ fn production_read_profile_sql() -> &'static str {
     "SELECT metric, value
        FROM ec_spire_remote_search_production_read_profile(
             $1::text::regclass::oid, $2::real[], $3::integer)"
+}
+
+fn production_read_timeline_sql() -> &'static str {
+    "SELECT requested_epoch, node_id, phase, started_after_ms, completed_after_ms,
+            elapsed_ms, candidate_count, payload_decode_elapsed_ms,
+            payload_decode_row_count, payload_decode_bytes, status, failure_category
+       FROM ec_spire_remote_search_production_read_timeline(
+            $1::text::regclass::oid, $2::real[], $3::integer, $4::text[])"
 }
 
 fn endpoint_identity_sql() -> &'static str {
@@ -3508,6 +3567,35 @@ impl ProductionReadProfileRow {
 }
 
 #[derive(Debug)]
+struct ProductionReadTimelineRow {
+    node_id: i32,
+    phase: String,
+    elapsed: Duration,
+    candidate_count: i64,
+    payload_decode_elapsed: Duration,
+    payload_decode_row_count: i64,
+    payload_decode_bytes: i64,
+    status: String,
+    failure_category: String,
+}
+
+impl From<Row> for ProductionReadTimelineRow {
+    fn from(row: Row) -> Self {
+        Self {
+            node_id: row.get(1),
+            phase: row.get(2),
+            elapsed: Duration::from_millis(row.get::<_, i64>(5).max(0) as u64),
+            candidate_count: row.get(6),
+            payload_decode_elapsed: Duration::from_millis(row.get::<_, i64>(7).max(0) as u64),
+            payload_decode_row_count: row.get(8),
+            payload_decode_bytes: row.get(9),
+            status: row.get(10),
+            failure_category: row.get(11),
+        }
+    }
+}
+
+#[derive(Debug)]
 struct EndpointIdentityRow {
     tuple_transport_capabilities: Vec<String>,
     tuple_transport_default: String,
@@ -3817,6 +3905,7 @@ struct ProductionReadProfileAggregate {
     endpoint_identity_elapsed: Vec<Duration>,
     candidate_receive_elapsed: Vec<Duration>,
     heap_receive_elapsed: Vec<Duration>,
+    payload_decode_elapsed: Vec<Duration>,
     merge_elapsed: Vec<Duration>,
     total_elapsed: Vec<Duration>,
 }
@@ -3862,10 +3951,54 @@ impl ProductionReadProfileAggregate {
             .push(row.duration_metric("candidate_receive_elapsed_ms"));
         self.heap_receive_elapsed
             .push(row.duration_metric("heap_receive_elapsed_ms"));
+        self.payload_decode_elapsed
+            .push(row.duration_metric("payload_decode_elapsed_ms"));
         self.merge_elapsed
             .push(row.duration_metric("merge_elapsed_ms"));
         self.total_elapsed
             .push(row.duration_metric("total_elapsed_ms"));
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct ProductionReadTimelineKey {
+    nprobe: i32,
+    node_id: i32,
+    phase: String,
+}
+
+impl ProductionReadTimelineKey {
+    fn from_row(nprobe: i32, row: &ProductionReadTimelineRow) -> Self {
+        Self {
+            nprobe,
+            node_id: row.node_id,
+            phase: row.phase.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+struct ProductionReadTimelineAggregate {
+    queries: usize,
+    status: MixedValue,
+    failure_category: MixedValue,
+    elapsed: Vec<Duration>,
+    candidate_count_sum: i64,
+    payload_decode_elapsed: Vec<Duration>,
+    payload_decode_row_count_sum: i64,
+    payload_decode_bytes_sum: i64,
+}
+
+impl ProductionReadTimelineAggregate {
+    fn record(&mut self, row: ProductionReadTimelineRow) {
+        self.queries += 1;
+        self.status.record(row.status);
+        self.failure_category.record(row.failure_category);
+        self.elapsed.push(row.elapsed);
+        self.candidate_count_sum += row.candidate_count;
+        self.payload_decode_elapsed.push(row.payload_decode_elapsed);
+        self.payload_decode_row_count_sum += row.payload_decode_row_count;
+        self.payload_decode_bytes_sum += row.payload_decode_bytes;
     }
 }
 
@@ -3970,6 +4103,8 @@ struct ReportInput<'a> {
     degraded_skip: &'a BTreeMap<DegradedSkipKey, DegradedSkipAggregate>,
     query_metrics: &'a BTreeMap<i32, QueryMetricAggregate>,
     production_read_profile: &'a BTreeMap<i32, ProductionReadProfileAggregate>,
+    production_read_timeline:
+        &'a BTreeMap<ProductionReadTimelineKey, ProductionReadTimelineAggregate>,
 }
 
 fn render_report(input: ReportInput<'_>) -> String {
@@ -3996,6 +4131,9 @@ fn render_report(input: ReportInput<'_>) -> String {
     if input.production_read_profile_enabled {
         sections.push(render_production_read_profile_table(
             input.production_read_profile,
+        ));
+        sections.push(render_production_read_timeline_table(
+            input.production_read_timeline,
         ));
     }
     sections.join("\n\n")
@@ -4349,6 +4487,8 @@ fn render_production_read_profile_table(
         "candidate_p95",
         "heap_p50",
         "heap_p95",
+        "payload_decode_p50",
+        "payload_decode_p95",
         "merge_p50",
         "merge_p95",
         "total_p50",
@@ -4372,6 +4512,7 @@ fn render_production_read_profile_table(
         let endpoint_identity = summarize_durations(&aggregate.endpoint_identity_elapsed);
         let candidate = summarize_durations(&aggregate.candidate_receive_elapsed);
         let heap = summarize_durations(&aggregate.heap_receive_elapsed);
+        let payload_decode = summarize_durations(&aggregate.payload_decode_elapsed);
         let merge = summarize_durations(&aggregate.merge_elapsed);
         let total = summarize_durations(&aggregate.total_elapsed);
         table.add_row(vec![
@@ -4398,6 +4539,8 @@ fn render_production_read_profile_table(
             Cell::new(format_duration_ms(candidate.p95)),
             Cell::new(format_duration_ms(heap.p50)),
             Cell::new(format_duration_ms(heap.p95)),
+            Cell::new(format_duration_ms(payload_decode.p50)),
+            Cell::new(format_duration_ms(payload_decode.p95)),
             Cell::new(format_duration_ms(merge.p50)),
             Cell::new(format_duration_ms(merge.p95)),
             Cell::new(format_duration_ms(total.p50)),
@@ -4418,6 +4561,48 @@ fn render_production_read_profile_table(
         ]);
     }
     format!("Production read profile\n{table}")
+}
+
+fn render_production_read_timeline_table(
+    rows: &BTreeMap<ProductionReadTimelineKey, ProductionReadTimelineAggregate>,
+) -> String {
+    let mut table = Table::new();
+    table.load_preset(UTF8_FULL);
+    table.set_header(vec![
+        "nprobe",
+        "node_id",
+        "phase",
+        "queries",
+        "status",
+        "failure_category",
+        "candidate_sum",
+        "elapsed_p50",
+        "elapsed_p95",
+        "payload_decode_p50",
+        "payload_decode_p95",
+        "payload_rows_sum",
+        "payload_bytes_sum",
+    ]);
+    for (key, aggregate) in rows {
+        let elapsed = summarize_durations(&aggregate.elapsed);
+        let payload_decode = summarize_durations(&aggregate.payload_decode_elapsed);
+        table.add_row(vec![
+            Cell::new(key.nprobe),
+            Cell::new(key.node_id),
+            Cell::new(&key.phase),
+            Cell::new(aggregate.queries),
+            Cell::new(aggregate.status.label()),
+            Cell::new(aggregate.failure_category.label()),
+            Cell::new(aggregate.candidate_count_sum),
+            Cell::new(format_duration_ms(elapsed.p50)),
+            Cell::new(format_duration_ms(elapsed.p95)),
+            Cell::new(format_duration_ms(payload_decode.p50)),
+            Cell::new(format_duration_ms(payload_decode.p95)),
+            Cell::new(aggregate.payload_decode_row_count_sum),
+            Cell::new(aggregate.payload_decode_bytes_sum),
+        ]);
+    }
+    format!("Production read per-node timeline\n{table}")
 }
 
 fn option_label<T: std::fmt::Display>(value: Option<T>) -> String {
@@ -4980,6 +5165,10 @@ mod tests {
         assert!(production_read_profile_sql()
             .contains("ec_spire_remote_search_production_read_profile"));
         assert!(production_read_profile_sql().contains("$2::real[]"));
+        assert!(production_read_timeline_sql()
+            .contains("ec_spire_remote_search_production_read_timeline"));
+        assert!(production_read_timeline_sql().contains("payload_decode_bytes"));
+        assert!(production_read_timeline_sql().contains("$4::text[]"));
         assert!(endpoint_identity_sql().contains("ec_spire_remote_search_endpoint_identity"));
         assert!(endpoint_identity_sql().contains("tuple_transport_capabilities"));
         assert!(remote_placement_gate_sql().contains("ec_spire_remote_node_snapshot"));
@@ -5078,6 +5267,7 @@ mod tests {
             degraded_skip: &BTreeMap::new(),
             query_metrics: &BTreeMap::new(),
             production_read_profile: &BTreeMap::new(),
+            production_read_timeline: &BTreeMap::new(),
         });
         assert!(header.contains("remote_tuple_transport: pg_binary_attr_v1"));
         assert!(header.contains("cost_snapshot: true"));
@@ -5221,6 +5411,7 @@ mod tests {
                 ("endpoint_identity_elapsed_ms".into(), "2".into()),
                 ("candidate_receive_elapsed_ms".into(), "5".into()),
                 ("heap_receive_elapsed_ms".into(), "7".into()),
+                ("payload_decode_elapsed_ms".into(), "3".into()),
                 ("merge_elapsed_ms".into(), "1".into()),
                 ("total_elapsed_ms".into(), "10".into()),
                 ("candidate_receive_query_count".into(), "2".into()),
@@ -5247,9 +5438,42 @@ mod tests {
         assert!(rendered.contains("endpoint_identity_query_sum"));
         assert!(rendered.contains("remote_heap_candidates"));
         assert!(rendered.contains("payload_bytes_sum"));
+        assert!(rendered.contains("payload_decode_p95"));
         assert!(rendered.contains("compact_candidate_sum"));
         assert!(rendered.contains("merge_duplicate_vec_id_sum"));
         assert!(rendered.contains("256"));
+    }
+
+    #[test]
+    fn spire_pipeline_renders_production_read_timeline() {
+        let mut aggregate = ProductionReadTimelineAggregate::default();
+        aggregate.record(ProductionReadTimelineRow {
+            node_id: 2,
+            phase: "heap_receive".to_owned(),
+            elapsed: Duration::from_millis(11),
+            candidate_count: 10,
+            payload_decode_elapsed: Duration::from_millis(3),
+            payload_decode_row_count: 10,
+            payload_decode_bytes: 80,
+            status: "ready".to_owned(),
+            failure_category: "none".to_owned(),
+        });
+        let mut rows = BTreeMap::new();
+        rows.insert(
+            ProductionReadTimelineKey {
+                nprobe: 8,
+                node_id: 2,
+                phase: "heap_receive".to_owned(),
+            },
+            aggregate,
+        );
+
+        let rendered = render_production_read_timeline_table(&rows);
+        assert!(rendered.contains("Production read per-node timeline"));
+        assert!(rendered.contains("payload_decode_p95"));
+        assert!(rendered.contains("payload_rows_sum"));
+        assert!(rendered.contains("payload_bytes_sum"));
+        assert!(rendered.contains("80"));
     }
 
     #[test]

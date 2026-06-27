@@ -989,6 +989,9 @@ pub(crate) struct SpireRemoteProductionReadTimelineRow {
     pub(crate) completed_after_ms: u64,
     pub(crate) elapsed_ms: u64,
     pub(crate) candidate_count: u64,
+    pub(crate) payload_decode_elapsed_ms: u64,
+    pub(crate) payload_decode_row_count: u64,
+    pub(crate) payload_decode_bytes: u64,
     pub(crate) status: &'static str,
     pub(crate) failure_category: &'static str,
 }
