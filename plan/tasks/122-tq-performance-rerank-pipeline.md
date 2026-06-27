@@ -1,6 +1,6 @@
 # Task 122: TurboQuant Performance and Rerank Pipeline Optimization
 
-Status: **complete** (2026-06-27; reviewer-approved outcome: keep experimental / promote TurboQuant-focused follow-up as Task 124; closeout `reviews/task-122/010-closeout-keep-experimental/`, approval `reviews/task-122/010-closeout-keep-experimental/feedback/2026-06-27-01-reviewer.md`, completion marker `reviews/task-122/012-completion-status/`, numbering correction `reviews/task-122/013-task124-correction/`)
+Status: **complete** (2026-06-27; TQ-only closeout after split: keep experimental / promote TurboQuant-focused follow-up as Task 124; closeout `reviews/task-122/010-closeout-keep-experimental/`, original approval `reviews/task-122/010-closeout-keep-experimental/feedback/2026-06-27-01-reviewer.md`, completion marker `reviews/task-122/012-completion-status/`, numbering correction `reviews/task-122/013-task124-correction/`, TQ-only split `reviews/task-122/014-tq-only-split/`)
 Owner: coder (to be assigned). One coder, one branch.
 Priority: 2 (post-Task 89 TurboQuant performance follow-up)
 

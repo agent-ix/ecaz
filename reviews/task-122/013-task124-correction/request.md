@@ -37,6 +37,9 @@ The task file now has focus guardrails: SPIRE-only, RaBitQ-only, generic
 materialization, and measurement-only work are out of scope unless they directly
 block or explain the TurboQuant stage-2 path.
 
+Packet 014 applies the same focus rule to the landing set by removing the
+SPIRE-only implementation and packets from this branch.
+
 ## Notes
 
 The outside reviewer feedback in packet 010 still says "Task 123" because that

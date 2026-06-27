@@ -163,9 +163,10 @@ pub(crate) fn score_turboquant_no_qjl_4bit_batch<Id>(
     )
 }
 
-/// Task 98: no-QJL 4-bit tiled-LUT batch scoring. The tile scorer now runs
-/// through the shared width cascade so full-width and partial-width backend
-/// attribution is recorded like the other block scorer families.
+/// Task 98: HNSW TiledLut exact-mode batch scoring. The scalar tile walk
+/// is currently the only backend (SIMD gated on the Phase A width
+/// distribution), so the whole run records as scalar work plus one width
+/// sample.
 pub(crate) fn score_turboquant_tiled_lut_batch_for<Id>(
     surface: CandidateBatchScoringSurface,
     quantizer: &ProdQuantizer,

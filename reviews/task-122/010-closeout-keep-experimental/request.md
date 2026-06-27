@@ -22,11 +22,12 @@ Phase 1, scorer parity:
 
 Phase 2, fuse score/top-k/materialization:
 
-- Packets 002/003 added GUC-gated SPIRE pre-materialization pruning.
-- Packet 005 release A/B showed equal recall/NDCG and materialization reduction
-  at 10k/50k/100k.
-- Materialization dropped from `251,555 -> 8,495`, `525,067 -> 11,796`, and
-  `766,494 -> 10,517`; heap rerank output stayed `2,500`.
+- The SPIRE pre-materialization prune explored during this branch was split out
+  of the Task 122 landing set after user clarification that Task 122 should stay
+  TurboQuant-focused.
+- No Phase 2 engine optimization is promoted by this TQ-only closeout.
+- The TQ-specific follow-up is Task 124, which must implement score/top-k/final
+  rerank fusion around the in-engine IVF TQ stage-2 path.
 
 Phase 3, TQ as candidate reducer before f32 rerank:
 
@@ -38,8 +39,6 @@ Phase 3, TQ as candidate reducer before f32 rerank:
 Phase 4, block-level pruning:
 
 - No durable block-level upper-bound pruning rule was promoted in this task.
-- Packet 005’s pre-materialization pruning is a materialization/retention win,
-  not a block-skip proof.
 - This remains follow-up work if the in-engine stage-2 path needs more
   candidate-surface reduction.
 
@@ -60,10 +59,10 @@ Phase 6, storage/IO cases:
 
 Phase 7, correct comparator matrix:
 
-- Packet 007 covered direct SPIRE TQ-vs-RaBitQ at 10k/50k/100k and found no
-  direct SPIRE win.
 - Packet 009 covered RaBitQ frontier -> f32, RaBitQ frontier -> RaBitQ8 -> f32,
   and RaBitQ frontier -> TQ -> f32 at 10k/50k/100k.
+- Direct SPIRE evidence is intentionally not part of the Task 122 landing set
+  after the TQ-only split.
 
 ## Closeout Decision
 

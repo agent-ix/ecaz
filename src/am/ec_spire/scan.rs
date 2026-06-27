@@ -20,8 +20,8 @@ use super::options::{
     current_session_leaf_block_pruning_route_prior_weight,
     current_session_leaf_block_pruning_sample_rows_per_block,
     current_session_leaf_block_pruning_sample_summary_prior_weight,
-    current_session_leaf_block_pruning_summary_radius_weight, pre_materialization_prune_enabled,
-    relation_options, resolve_single_level_scan_plan, EcSpireOptions, SpireCandidateDedupeMode,
+    current_session_leaf_block_pruning_summary_radius_weight, relation_options,
+    resolve_single_level_scan_plan, EcSpireOptions, SpireCandidateDedupeMode,
     SpireRecursiveNprobePolicy, SpireRecursiveRouteBudget, SpireSingleLevelScanPlan,
     SpireTopGraphOptionPlan,
 };

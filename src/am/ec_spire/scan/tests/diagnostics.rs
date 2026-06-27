@@ -441,15 +441,17 @@
 
         assert_eq!(diagnostics.stores.len(), 1);
         let store = &diagnostics.stores[0];
-        assert_eq!(store.candidate_row_count, 1);
+        assert_eq!(store.candidate_row_count, 2);
         assert_eq!(store.deduped_candidate_row_count, 0);
         assert_eq!(store.truncated_candidate_row_count, 1);
         assert_eq!(store.truncated_primary_candidate_row_count, 1);
         assert_eq!(store.truncated_boundary_replica_candidate_row_count, 0);
         assert_eq!(store.candidate_winner_count, 1);
         assert_eq!(
-            store.candidate_row_count + store.truncated_candidate_row_count,
-            2
+            store.candidate_row_count,
+            store.deduped_candidate_row_count
+                + store.truncated_candidate_row_count
+                + store.candidate_winner_count
         );
     }
 

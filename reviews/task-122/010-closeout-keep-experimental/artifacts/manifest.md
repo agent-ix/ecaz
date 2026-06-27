@@ -11,9 +11,6 @@
 This packet synthesizes existing Task 122 evidence:
 
 - `reviews/task-122/001-tq-scorer-inventory/`
-- `reviews/task-122/005-spire-prune-release-suite/`
-- `reviews/task-122/006-spire-recall-width-sweep/`
-- `reviews/task-122/007-spire-latency-storage-width25/`
 - `reviews/task-122/009-sidecar-tq-stage2-suite/`
 
 ## Artifacts
@@ -25,21 +22,6 @@ No new test, benchmark, corpus, truth-cache, or generated data artifacts are
 created in this packet.
 
 ## Key Cited Evidence
-
-Packet 005:
-
-```text
-Candidate materialization drops from:
-10k: 251,555 to 8,495
-50k: 525,067 to 11,796
-100k: 766,494 to 10,517
-```
-
-Packet 007:
-
-```text
-TQ and RaBitQ are latency-equivalent and storage-equivalent in this SPIRE width-25 matrix.
-```
 
 Packet 009:
 
