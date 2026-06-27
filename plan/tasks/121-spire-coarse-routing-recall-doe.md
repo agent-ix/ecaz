@@ -1,9 +1,42 @@
 # Task 121 - SPIRE Coarse-Routing Recall Broad Exploration (DOE)
 
-Status: **complete - evidence-backed no-promote / wall result** (2026-06-26;
-closeout `reviews/task-121/026-phase4-final-pareto-verdict/`, reviewer sign-off
-`reviews/task-121/026-phase4-final-pareto-verdict/feedback/2026-06-26-01-reviewer.md`).
-Local-only evidence; no new SPIRE default promoted.
+Status: **reopened / amended (2026-06-27) — re-scoped to the contained
+multi-instance substrate and a dual latency+recall mandate (see Amendment
+below).** The prior single-instance closeout
+(2026-06-26; `reviews/task-121/026-phase4-final-pareto-verdict/`, reviewer
+sign-off `.../feedback/2026-06-26-01-reviewer.md`) stands as record: the
+recall / route-containment findings are topology-independent and retained, and
+no SPIRE default was promoted. What reopens is (a) measurement on the local
+multi-instance lane and (b) latency as a co-equal objective to recall.
+
+## Amendment (2026-06-27): multi-instance substrate + dual latency/recall mandate
+
+This task — together with Task 123 — is reopened under a sharper mandate. Two
+**co-equal** research paths, with the **routing algorithm as the shared lever for
+both**:
+
+1. **Improved recall** — better route/leaf selection so truth is contained at
+   lower nprobe (this task's original DOE; those findings are retained).
+2. **Improved latency** — make the post-route path cheap: efficient **scoring,
+   traversal, planning, and communications** (tuple materialize / encode /
+   transport), while holding or improving recall.
+
+The routing algorithm drives both: better routing raises containment (recall)
+*and* shrinks how much must be scanned/shipped to reach a recall target
+(latency).
+
+**Substrate: the contained local multi-instance lane** (coordinator + N worker PG
+instances on one host — the Phase 0 lane) **wherever a measurement is
+topology-sensitive.** SPIRE is a distributed AM; single-instance runs do not
+faithfully exercise its executor (coordinator-routed scan, remote leaf
+materialization, libpq tuple transport). Same-machine multi-instance has ~0
+network RTT, so it is a *clean* efficiency instrument: it runs the real
+distributed path with the network term removed, leaving per-stage engine cost
+(scoring / traversal / planning / communications) as genuine, attributable,
+improvable work. Recall is topology-independent and may stay single-instance;
+**all latency / scan-cost / transport measurement moves to the multi-instance
+lane where possible.** AWS stays out of scope until a contained multi-instance
+candidate exists.
 
 ## Why
 

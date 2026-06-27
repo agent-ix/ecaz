@@ -1,20 +1,55 @@
 # Task 123: SPIRE Route Precision vs. Scan Cost — Floor, Granularity, Soft-Routing
 
-Status: **complete - local 100k evidence-backed no-go / re-scope result**
-(2026-06-27; completion record `reviews/task-123/008-completion-record/`,
-reviewer sign-off
-`reviews/task-123/008-completion-record/feedback/2026-06-27-01-reviewer.md`).
-Phase A local evidence failed the high-recall flat-floor gate; the 100k
-`nlists=1024` spot-check found finer leaves are fast but do not recover route
-containment at low or moderate nprobe. The decisive local-regime result is that
-flat exact dominates every tested 100k SPIRE point: flat returns recall 1.0 at
-`161-204 ms`, while the best SPIRE spot-check row reaches only
-`309 / 320 = 0.9656` at `526.0 ms`. No local 100k SPIRE promotion candidate
-lands from this task.
-Owner: coder. Worked on the `task-121-spire-coarse-routing-recall-doe` branch
-(shared with the closed-out Task 121 DOE).
-Priority: P1 follow-up to Task 121. **Local-only** until a promotion candidate
-exists.
+Status: **reopened / amended (2026-06-27) — the cost verdict was single-INSTANCE;
+re-scoped to the contained multi-instance substrate and a dual latency+recall
+mandate (see Amendment below).** The prior single-instance closeout
+(2026-06-27; completion record `reviews/task-123/008-completion-record/`, reviewer
+sign-offs `.../feedback/2026-06-27-01..03-reviewer.md`) stands as record: the
+recall / route-containment findings are topology-independent and retained, and no
+single-instance promotion candidate landed. What reopens is the **efficiency /
+latency** verdict — it was measured on the single-instance code path, which does
+not faithfully exercise SPIRE's distributed executor, and must be re-measured on
+the multi-instance lane.
+Owner: coder. Worked on the `task-121-spire-coarse-routing-recall-doe` branch.
+Priority: P1. **Local-only** (single host) — single-instance for recall,
+contained multi-instance for latency/efficiency — until a candidate exists.
+
+## Amendment (2026-06-27): multi-instance substrate + dual latency/recall mandate
+
+This task — together with Task 121 — is reopened under a sharper mandate. Two
+**co-equal** paths, with the **routing algorithm as the shared lever for both**:
+
+1. **Improved latency** — make the post-route path cheap on the real distributed
+   executor.
+2. **Improved recall** — better routing so truth is contained at lower nprobe.
+
+The original single-instance Phase A/B evidence stands as record but does **not**
+settle the efficiency question: SPIRE is a distributed AM, and the
+`flat-dominates` / `scan-path-is-the-wall` verdict was taken on the
+single-instance path. Same-machine multi-instance has ~0 network RTT, so it runs
+the real distributed executor with the network term removed — the correct, clean,
+pre-AWS efficiency instrument. **Re-measure on the contained multi-instance lane.**
+
+### Efficiency dimensions to measure and improve (the latency path)
+
+On the multi-instance lane, attribute and improve each per-stage cost while
+holding/improving recall:
+
+- **Scoring** — candidate distance/quant scoring cost and volume.
+- **Traversal** — route/leaf selection and graph/beam walk (the routing
+  algorithm itself; shared with the recall path).
+- **Planning** — coordinator query planning / leaf-set selection / fan-out
+  decisioning.
+- **Communications** — coordinator↔worker tuple transport: serialization /
+  materialization (hex-text vs typed `bytea[]`), projection width, object bytes
+  shipped per worker. (Network RTT ≈ 0 on one host, so this isolates the
+  encode/materialize CPU surface — see
+  `121-spire-distributed-read-transport-efficiency`.)
+
+The Phase A latency floor + per-stage decomposition and the Phase B
+`nlists × boundary` granularity work are re-run on the multi-instance lane where
+topology-sensitive; recall containment may remain single-instance. AWS stays out
+of scope until a contained multi-instance candidate exists.
 
 ## Why
 
