@@ -2473,7 +2473,8 @@ fn append_quantized_v2_scored_column_candidate(
     if !ip.is_finite() {
         return Err("ec_spire routed candidate batch scorer returned a non-finite score".to_owned());
     }
-    if deleted_vec_ids.is_empty()
+    if pre_materialization_prune_enabled()
+        && deleted_vec_ids.is_empty()
         && accumulator
             .pre_materialization_min_ip_to_keep()
             .is_some_and(|min_ip_to_keep| ip < min_ip_to_keep)
@@ -2662,7 +2663,8 @@ fn append_quantized_v2_column_candidates(
                 "ec_spire routed candidate batch scorer returned a non-finite score".to_owned(),
             );
         }
-        if deleted_vec_ids.is_empty()
+        if pre_materialization_prune_enabled()
+            && deleted_vec_ids.is_empty()
             && accumulator
                 .pre_materialization_min_ip_to_keep()
                 .is_some_and(|min_ip_to_keep| ip < min_ip_to_keep)
