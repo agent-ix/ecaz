@@ -1,0 +1,157 @@
+{
+  "name": "task123-phase-b-100k-nlists-spotcheck",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-123/004-phase-b-100k-nlists-spotcheck/artifacts",
+  "defaults": {
+    "profile": "ec_spire",
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 32,
+    "iterations": 32,
+    "sample_backend_memory": false,
+    "memory_sample_interval_ms": 25,
+    "pg": 18,
+    "socket_dir": "/tmp"
+  },
+  "steps": [
+    {
+      "kind": "load",
+      "name": "load-100k-n1024-b0-tr50-f8",
+      "tags": ["task123", "phase_b", "load", "100k", "nlists1024", "boundary0"],
+      "prefix": "t123_p4_100k_n1024_b0_tr50_f8",
+      "corpus_file": "/home/peter/dev/ecaz/data/staged-current/ec_real_100k_corpus.tsv",
+      "queries_file": "/home/peter/dev/ecaz/data/staged-current/ec_real_100k_queries.tsv",
+      "manifest_file": "/home/peter/dev/ecaz/data/staged-current/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "dim": 1536,
+      "reloptions": [
+        "storage_format=rabitq",
+        "nlists=1024",
+        "recursive_fanout=8",
+        "top_graph_enabled=1",
+        "top_graph_degree=32",
+        "top_graph_build_list_size=100",
+        "top_graph_search_list_size=96",
+        "boundary_replica_count=0",
+        "training_sample_rows=50000"
+      ],
+      "log_file": "${artifact_dir}/load-100k-n1024-b0-tr50-f8.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-n1024-b1-tr50-f8",
+      "tags": ["task123", "phase_b", "load", "100k", "nlists1024", "boundary1"],
+      "prefix": "t123_p4_100k_n1024_b1_tr50_f8",
+      "corpus_file": "/home/peter/dev/ecaz/data/staged-current/ec_real_100k_corpus.tsv",
+      "queries_file": "/home/peter/dev/ecaz/data/staged-current/ec_real_100k_queries.tsv",
+      "manifest_file": "/home/peter/dev/ecaz/data/staged-current/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "dim": 1536,
+      "reloptions": [
+        "storage_format=rabitq",
+        "nlists=1024",
+        "recursive_fanout=8",
+        "top_graph_enabled=1",
+        "top_graph_degree=32",
+        "top_graph_build_list_size=100",
+        "top_graph_search_list_size=96",
+        "boundary_replica_count=1",
+        "training_sample_rows=50000"
+      ],
+      "log_file": "${artifact_dir}/load-100k-n1024-b1-tr50-f8.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k-n1024-b0-tr50-f8",
+      "tags": ["task123", "phase_b", "storage", "100k", "nlists1024", "boundary0"],
+      "prefix": "t123_p4_100k_n1024_b0_tr50_f8",
+      "log_file": "${artifact_dir}/storage-100k-n1024-b0-tr50-f8.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k-n1024-b1-tr50-f8",
+      "tags": ["task123", "phase_b", "storage", "100k", "nlists1024", "boundary1"],
+      "prefix": "t123_p4_100k_n1024_b1_tr50_f8",
+      "log_file": "${artifact_dir}/storage-100k-n1024-b1-tr50-f8.log"
+    },
+    {
+      "kind": "latency",
+      "name": "flat-floor-latency-100k-repeat",
+      "tags": ["task123", "phase_b", "flat_floor", "latency", "100k"],
+      "prefix": "t121_s3_100k_b4_tr50_f8_b64",
+      "k": 10,
+      "sweep": [1],
+      "iterations": 32,
+      "concurrency": 1,
+      "force_index": false,
+      "cache_state": "task123_phase_b_flat_floor_100k_cache_warm",
+      "session_gucs": [
+        "enable_seqscan=on",
+        "enable_indexscan=off",
+        "enable_indexonlyscan=off",
+        "enable_bitmapscan=off"
+      ],
+      "log_output": "${artifact_dir}/latency-flat-floor-100k-repeat.log"
+    },
+    {
+      "kind": "latency",
+      "name": "spire-latency-100k-n1024-b0-nprobe-8-16-32",
+      "tags": ["task123", "phase_b", "spire", "latency", "100k", "nlists1024", "boundary0"],
+      "prefix": "t123_p4_100k_n1024_b0_tr50_f8",
+      "k": 10,
+      "sweep": [8, 16, 32],
+      "iterations": 32,
+      "concurrency": 1,
+      "force_index": true,
+      "cache_state": "task123_phase_b_spire_100k_n1024_b0_cache_warm",
+      "log_output": "${artifact_dir}/latency-spire-100k-n1024-b0-nprobe-8-16-32.log"
+    },
+    {
+      "kind": "latency",
+      "name": "spire-latency-100k-n1024-b1-nprobe-8-16-32",
+      "tags": ["task123", "phase_b", "spire", "latency", "100k", "nlists1024", "boundary1"],
+      "prefix": "t123_p4_100k_n1024_b1_tr50_f8",
+      "k": 10,
+      "sweep": [8, 16, 32],
+      "iterations": 32,
+      "concurrency": 1,
+      "force_index": true,
+      "cache_state": "task123_phase_b_spire_100k_n1024_b1_cache_warm",
+      "log_output": "${artifact_dir}/latency-spire-100k-n1024-b1-nprobe-8-16-32.log"
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "spire-pipeline-100k-n1024-b0-nprobe-8-16-32",
+      "tags": ["task123", "phase_b", "spire", "pipeline", "stage_decomposition", "100k", "nlists1024", "boundary0"],
+      "prefix": "t123_p4_100k_n1024_b0_tr50_f8",
+      "queries_limit": 32,
+      "sweep": [8, 16, 32],
+      "include_local_store_overlap": true,
+      "include_cost_snapshot": true,
+      "include_query_metrics": true,
+      "include_recall": true,
+      "truth_corpus_file": "/home/peter/dev/ecaz/data/staged-current/ec_real_100k_corpus.tsv",
+      "query_metric_k": 10,
+      "log_output": "${artifact_dir}/spire-pipeline-100k-n1024-b0-nprobe-8-16-32.log",
+      "funnel_output": "${artifact_dir}/funnel-100k-n1024-b0-nprobe-8-16-32.jsonl",
+      "stage_containment_output": "${artifact_dir}/stage-containment-100k-n1024-b0-nprobe-8-16-32.jsonl"
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "spire-pipeline-100k-n1024-b1-nprobe-8-16-32",
+      "tags": ["task123", "phase_b", "spire", "pipeline", "stage_decomposition", "100k", "nlists1024", "boundary1"],
+      "prefix": "t123_p4_100k_n1024_b1_tr50_f8",
+      "queries_limit": 32,
+      "sweep": [8, 16, 32],
+      "include_local_store_overlap": true,
+      "include_cost_snapshot": true,
+      "include_query_metrics": true,
+      "include_recall": true,
+      "truth_corpus_file": "/home/peter/dev/ecaz/data/staged-current/ec_real_100k_corpus.tsv",
+      "query_metric_k": 10,
+      "log_output": "${artifact_dir}/spire-pipeline-100k-n1024-b1-nprobe-8-16-32.log",
+      "funnel_output": "${artifact_dir}/funnel-100k-n1024-b1-nprobe-8-16-32.jsonl",
+      "stage_containment_output": "${artifact_dir}/stage-containment-100k-n1024-b1-nprobe-8-16-32.jsonl"
+    }
+  ]
+}
