@@ -21,7 +21,7 @@ The extension SHALL register `ecvector` as the canonical exact/raw fp32 row type
 2. Typmod-less `ecvector` SHALL be accepted where index metadata or caller context owns dimensional consistency.
 3. Text and binary I/O SHALL round-trip finite fp32 vectors.
 4. Casts between `real[]`, `bytea`, and `ecvector` SHALL preserve fp32 payloads according to the registered cast functions.
-5. `encode_to_ecvector(real[], integer, bigint)` SHALL accept only the canonical quantizer defaults `(4, 42)` on current main and SHALL reject other bit/seed pairs with a clear error.
+5. `encode_to_ecvector(real[], integer, bigint)` SHALL accept only the canonical quantizer defaults `(4, 42)` on current main. `encode_to_ecvector` SHALL reject other bit/seed pairs with a clear error.
 6. Non-finite values SHALL be rejected.
 
 ## Properties

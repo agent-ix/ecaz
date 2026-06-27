@@ -12,11 +12,12 @@ traces:
 
 ## Statement
 
-On PG18 with asynchronous I/O enabled, cold-cache HNSW top-10 query latency
-SHALL improve by at least 2x over `effective_io_concurrency=0` on the same
-dataset and hardware, and the streaming linear-scan path SHALL NOT regress
-warm-cache performance. Cold-cache results SHALL be reported across the
-declared `io_method` and concurrency matrix.
+While running on PG18 with asynchronous I/O enabled, ecaz SHALL improve
+cold-cache HNSW top-10 query latency by at least 2x over
+`effective_io_concurrency=0` on the same dataset and hardware. While running on
+PG18 with asynchronous I/O enabled, ecaz SHALL NOT regress warm-cache
+performance on the streaming linear-scan path. ecaz SHALL report cold-cache
+results across the declared `io_method` and concurrency matrix.
 
 ### Cold-Cache HNSW Scan
 

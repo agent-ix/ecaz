@@ -13,7 +13,7 @@ traces:
 
 ## Description
 
-On PG18, the extension SHALL implement `amtranslatestrategy` and `amtranslatecmptype` callbacks and set the `amconsistentordering` flag to enable the optimizer to reason about the `<#>` operator's ordering semantics.
+While running on PG18, the extension SHALL implement `amtranslatestrategy` and `amtranslatecmptype` callbacks and set the `amconsistentordering` flag to enable the optimizer to reason about the `<#>` operator's ordering semantics.
 
 Current staged behavior:
 - On PG18, `amconsistentordering`, `amtranslatestrategy`, and `amtranslatecmptype` are now bound in

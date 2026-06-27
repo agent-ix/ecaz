@@ -17,7 +17,7 @@ traces:
 
 The extension SHALL implement the scan callbacks for the `ec_hnsw` access method: `ambeginscan`, `amrescan`, `amgettuple`, `amendscan`. All scan operations work directly on Postgres buffer pages — no `hnsw_rs` involvement.
 
-On partitioned tables, a scan of a partition-local index SHALL traverse only that partition's index relation.
+Where the table is partitioned, a scan of a partition-local index SHALL traverse only that partition's index relation.
 
 Implementation stages:
 - Bootstrap stage: scan lifecycle, query validation, and a forward linear non-empty scan MAY exist as an intermediate implementation state for validating page decoding and tuple production.

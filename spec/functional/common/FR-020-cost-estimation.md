@@ -13,7 +13,7 @@ traces:
 
 ## Description
 
-The extension SHALL provide production cost-estimation callbacks that let the PostgreSQL query planner compare Ecaz index scans against sequential scans. ADR-011's former prohibitive-cost override is superseded. On PG18, the extension SHALL additionally implement `amgettreeheight` where the access method has meaningful height metadata.
+The extension SHALL provide production cost-estimation callbacks that let the PostgreSQL query planner compare Ecaz index scans against sequential scans. ADR-011's former prohibitive-cost override is superseded. While running on PG18, the extension SHALL additionally implement `amgettreeheight` where the access method has meaningful height metadata.
 
 Current staged behavior:
 - `amcostestimate` now uses modeled cost functions instead of ADR-011's former prohibitive

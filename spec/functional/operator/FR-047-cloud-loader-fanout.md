@@ -33,14 +33,14 @@ workstation.
    `ecaz corpus prepare` + `ecaz corpus load` code paths against
    the DB's private IP, reusing the streaming COPY implementation
    in `crates/ecaz-cli/src/corpus/load.rs` unchanged.
-4. Index builds SHALL run after load, not during; build time SHALL
+4. Index builds SHALL run after load, not during. Build time SHALL
    be measured and recorded as a separate artifact.
 5. Worker progress (shard id, rows loaded, bytes streamed) SHALL be
    reported back to the operator's terminal in real time and
    persisted to S3 so a re-run with `--resume` skips completed
    shards.
-6. On failure of a single worker, other workers SHALL continue;
-   the overall command SHALL exit non-zero with a summary of failed
+6. When a single worker fails, other workers SHALL continue. The
+   overall command SHALL exit non-zero with a summary of failed
    shards.
 
 ## Acceptance Criteria

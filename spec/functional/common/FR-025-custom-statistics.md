@@ -12,7 +12,7 @@ traces:
 
 ## Description
 
-On PG18, the extension SHALL register a custom pgstat kind to track aggregate operational metrics across all queries, visible via a SQL function and resettable via standard PostgreSQL statistics reset.
+While running on PG18, the extension SHALL register a custom pgstat kind to track aggregate operational metrics across all queries, visible via a SQL function and resettable via standard PostgreSQL statistics reset.
 
 Current staged behavior:
 - On PG18, `ecaz_stats()` is live.

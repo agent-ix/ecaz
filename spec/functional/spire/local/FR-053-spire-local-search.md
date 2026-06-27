@@ -52,8 +52,8 @@ sequenceDiagram
 ## Behavior
 
 1. `amrescan` SHALL replace all previous scan-local work.
-2. `amgettuple` SHALL require a completed `amrescan` and SHALL support only
-   forward scan direction.
+2. `amgettuple` SHALL require a completed `amrescan`. `amgettuple` SHALL scan
+   only in the forward direction.
 3. `amgettuple` SHALL NOT perform routing expansion, object reads, delta decode,
    scoring, or heap rerank under the eager contract.
 4. Route budgets SHALL bound recursive frontier work using effective `nprobe`,

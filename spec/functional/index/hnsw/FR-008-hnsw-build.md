@@ -14,7 +14,7 @@ traces:
 
 The extension SHALL implement the `ambuild`, `ambuildempty`, and `amoptions` callbacks for the `ec_hnsw` access method.
 
-All build behavior SHALL be relation-local. On partitioned tables, a partition index build SHALL touch only the heap rows and index pages of that partition.
+All build behavior SHALL be relation-local. Where the table is partitioned, a partition index build SHALL touch only the heap rows and index pages of that partition.
 
 ### Index Parameters — `amoptions`
 

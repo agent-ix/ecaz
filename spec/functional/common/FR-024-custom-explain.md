@@ -13,7 +13,7 @@ traces:
 
 ## Description
 
-On PG18, the extension SHALL register a custom EXPLAIN option `ecaz` that, when enabled, causes EXPLAIN output to include Ecaz-specific scan statistics for each Index Scan node using the `ec_hnsw` access method.
+While running on PG18, the extension SHALL register a custom EXPLAIN option `ecaz` that, when enabled, causes EXPLAIN output to include Ecaz-specific scan statistics for each Index Scan node using the `ec_hnsw` access method.
 
 Current staged behavior:
 - On PG18, `_PG_init()` now registers the `ecaz` EXPLAIN option and chains

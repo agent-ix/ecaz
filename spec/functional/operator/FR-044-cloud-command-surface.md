@@ -51,10 +51,10 @@ without AWS console access, SSH, or manual SQL.
 9. `corpus load` and `bench` SHALL accept a `--resume` flag that
    skips already-completed shards or suite entries (mirroring the
    existing suite-runner pattern in `crates/ecaz-cli/src/bench/`).
-10. AWS credentials SHALL be sourced from the standard AWS SDK chain
-    (`AWS_PROFILE`, env vars, instance profile). Missing credentials
-    SHALL produce a remediation message and a non-zero exit; no
-    interactive prompting.
+10. ecaz SHALL source AWS credentials from the standard AWS SDK chain
+    (`AWS_PROFILE`, env vars, instance profile).
+    If AWS credentials are missing, then ecaz SHALL print a remediation
+    message and exit non-zero, without interactive prompting.
 
 ## Acceptance Criteria
 

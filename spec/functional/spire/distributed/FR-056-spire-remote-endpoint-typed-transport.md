@@ -122,8 +122,9 @@ equal to the number of requested attributes for the candidate row.
 
 1. Production dispatch SHALL fail closed when a selected endpoint does not
    advertise ready `pg_binary_attr_v1`.
-2. The legacy JSON tuple endpoint MAY remain for compatibility/measurement, but
-   SHALL NOT be selected by the production tuple-payload dispatch path.
+2. The production tuple-payload dispatch path SHALL NOT select the legacy JSON
+   tuple endpoint, which remains available only for compatibility and
+   measurement.
 3. Typed metadata mismatch SHALL report schema drift or typed-transport failure
    instead of falling back after malformed typed rows are received.
 4. Payload row and batch byte caps SHALL fail closed before accepting oversized

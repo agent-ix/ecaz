@@ -17,7 +17,7 @@ relationships:
 ## Statement
 
 The cloud harness SHALL make ongoing AWS spend visible, bounded, and
-reversible. A forgotten profile SHALL NOT be able to silently accrue
+reversible. A forgotten profile SHALL NOT silently accrue
 material spend.
 
 ## Measurement and Evaluation

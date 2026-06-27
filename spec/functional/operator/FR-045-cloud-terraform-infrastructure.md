@@ -33,8 +33,9 @@ file per profile so multiple sizes can coexist.
 3. EC2 instance families SHALL be Graviton (`m7g`/`c7g`/`r7g`/`r8g`)
    for both DB and loader hosts. The Postgres host AMI SHALL boot a
    `aarch64-unknown-linux-gnu` userspace.
-4. SSH SHALL NOT be exposed on any instance. Operator shell access
-   SHALL be via SSM Session Manager only.
+4. The Terraform configuration SHALL NOT expose SSH on any instance.
+   The Terraform configuration SHALL restrict operator shell access to
+   SSM Session Manager only.
 5. The DB host's `cloud-init` SHALL install Postgres 18, fetch the
    ecaz source at the SHA passed via user-data, and run
    `cargo pgrx install --release` (mirroring the local

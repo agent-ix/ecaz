@@ -16,7 +16,7 @@ relationships:
 
 ## Description
 
-`ec_hnsw` SHALL remain the default general-purpose ANN access method and SHALL support the current main-branch build, scan, insert, vacuum, planner, diagnostics, parallel-build, storage-format, and compressed-domain scoring surfaces.
+`ec_hnsw` SHALL remain the default general-purpose ANN access method. `ec_hnsw` SHALL implement the current main-branch build, scan, insert, vacuum, planner, diagnostics, parallel-build, storage-format, and compressed-domain scoring surfaces.
 
 ## Behavior
 

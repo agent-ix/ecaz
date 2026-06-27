@@ -14,9 +14,9 @@ relationships:
 ## Description
 
 `ec_diskann` SHALL implement a Vamana/DiskANN-style access method with AM-owned
-persisted graph storage. The build path SHALL support the current deterministic
-single-process Vamana core and the Task 65b parallel graph-construction
-stepping-stone when enabled.
+persisted graph storage. The build path SHALL construct the graph via the
+current deterministic single-process Vamana core and, when enabled, the Task
+65b parallel graph-construction stepping-stone.
 
 ## Behavior
 

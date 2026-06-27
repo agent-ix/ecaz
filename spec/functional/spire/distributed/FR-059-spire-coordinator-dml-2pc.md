@@ -16,7 +16,7 @@ relationships:
 
 ## Description
 
-Distributed SPIRE SHALL support coordinator-routed INSERT, non-embedding
+Distributed SPIRE SHALL execute coordinator-routed INSERT, non-embedding
 UPDATE, DELETE, and PK-keyed SELECT for the v1 narrow table shape while keeping
 remote heap changes and coordinator placement-directory state atomic where both
 sides mutate.

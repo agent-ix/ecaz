@@ -12,7 +12,7 @@ traces:
 
 ## Description
 
-On PG18, the extension SHALL use `PG_MODULE_MAGIC_EXT` to declare its name and version, making this information available via `pg_get_loaded_modules()` for diagnostics and version tracking.
+While running on PG18, the extension SHALL use `PG_MODULE_MAGIC_EXT` to declare its name and version, making this information available via `pg_get_loaded_modules()` for diagnostics and version tracking.
 
 Current staged behavior:
 - On PG18, module identity and version reporting are now live via explicit `pg_module_magic!`

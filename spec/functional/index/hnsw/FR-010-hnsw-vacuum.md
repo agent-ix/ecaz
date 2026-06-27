@@ -15,7 +15,7 @@ traces:
 
 The extension SHALL implement `ambulkdelete` and `amvacuumcleanup` using the three-pass algorithm from pgvector's `hnswvacuum.c`.
 
-On partitioned tables, vacuuming one partition index SHALL NOT read or modify any other partition's index pages.
+Where the table is partitioned, vacuuming one partition index SHALL NOT read or modify any other partition's index pages.
 
 ### `ambulkdelete` — Three-Pass Delete
 

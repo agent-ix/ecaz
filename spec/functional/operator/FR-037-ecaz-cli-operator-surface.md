@@ -24,7 +24,7 @@ Ecaz SHALL provide a single `ecaz` CLI for operator workflows that prepare and l
 5. `ecaz corpus` SHALL expose `fetch`, `prepare`, `generate`, `load`, `inspect`, and `list`.
 6. `ecaz bench` SHALL expose `recall`, `latency`, `storage`, `overhead`, `diskann-graph`, `diskann-build-probe`, and `suite`.
 7. `ecaz compare` SHALL expose `pgvector` and `vectorscale`.
-8. `ecaz dev` SHALL expose `install`, `scratch`, `sql`, and `test`; nested commands SHALL cover local ecaz/pgvector install, pgrx scratch restart/sql/debug-helper flows, pgrx SQL execution, pgrx tests, and PG18 preload/pgstat validation.
+8. `ecaz dev` SHALL expose `install`, `scratch`, `sql`, and `test`. The `ecaz dev` nested commands SHALL cover local ecaz/pgvector install, pgrx scratch restart/sql/debug-helper flows, pgrx SQL execution, pgrx tests, and PG18 preload/pgstat validation.
 9. `ecaz quant` SHALL expose `feasibility` for offline quantizer recall and error-bound calibration.
 10. `ecaz stress` SHALL expose `vacuum`, `ivf-insert`, and `ivf-vacuum-scale`.
 11. Commands that interpolate relation, schema, or option names into SQL SHALL validate identifiers or reloption ownership before execution.

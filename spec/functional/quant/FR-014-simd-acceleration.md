@@ -14,13 +14,13 @@ traces:
 
 ## Description
 
-The extension SHALL provide scalar-correct compressed-domain scoring and
+The extension SHALL implement scalar-correct compressed-domain scoring and
 SIMD-accelerated block kernels for access-method batch scoring where a shipped
 quantized storage surface can form candidate batches.
 
-The primary integration point is `QuantCodec::score_ip_batch`. Access methods
-SHALL route compressed-domain scan scoring through the selected codec batch
-method rather than calling ISA-specific functions directly.
+The access method SHALL route compressed-domain scan scoring through the
+selected codec batch method (`QuantCodec::score_ip_batch`) rather than calling
+ISA-specific functions directly.
 
 ### Accelerated Surfaces
 

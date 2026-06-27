@@ -28,7 +28,7 @@ Ecaz SHALL provide a configured benchmark suite runner under `ecaz bench suite` 
 3. `run` SHALL execute selected steps sequentially and record per-step status,
    timing, exit code, command, and expected artifacts in
    `suite-manifest.json`.
-4. `run --only <name>` SHALL restrict execution to matching step names and SHALL leave other steps marked skipped.
+4. `run --only <name>` SHALL restrict execution to matching step names, leaving all other steps marked skipped.
 5. `run --only-tag <tag>` SHALL restrict execution to steps that declare matching tags.
 6. `run --resume-from <manifest>` SHALL skip selected steps that already succeeded in the referenced manifest only when the config hash and expanded step command match the current run.
 7. `run` SHALL stop after the first failed selected step unless `--continue-on-error` is set.
@@ -51,7 +51,7 @@ Ecaz SHALL provide a configured benchmark suite runner under `ecaz bench suite` 
    identified.
 17. `run` SHALL refuse latency or recall steps against a debug-built backend
    unless `--allow-debug-backend` is explicitly passed. Debug-backend runs are
-   valid only as diagnostic evidence and SHALL NOT support product latency or
+   valid only as diagnostic evidence and SHALL NOT be cited for product latency or
    recall claims.
 
 ## Acceptance Criteria

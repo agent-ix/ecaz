@@ -14,7 +14,7 @@ traces:
 
 ## Description
 
-On PostgreSQL 18, the extension SHALL replace synchronous `ReadBufferExtended` calls in scan and vacuum hot paths with the PG18 `read_stream` API, enabling transparent async I/O via the configured `io_method` (sync, worker, or io_uring). On PostgreSQL 17 and earlier, the extension SHALL fall back to the existing synchronous path.
+While running on PostgreSQL 18, the extension SHALL replace synchronous `ReadBufferExtended` calls in scan and vacuum hot paths with the PG18 `read_stream` API, enabling transparent async I/O via the configured `io_method` (sync, worker, or io_uring). While running on PostgreSQL 17 and earlier, the extension SHALL fall back to the existing synchronous path.
 
 Current staged behavior:
 - On PG18, graph-neighbor prefetch, linear fallback scans, and vacuum tuple counting now use live

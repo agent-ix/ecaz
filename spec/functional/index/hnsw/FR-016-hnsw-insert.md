@@ -15,7 +15,7 @@ traces:
 
 The extension SHALL implement the `aminsert` callback for the `ec_hnsw` access method.
 
-All insert behavior SHALL be relation-local. On partitioned tables, a partition index insert SHALL touch only the heap rows and index pages of that partition.
+All insert behavior SHALL be relation-local. Where the table is partitioned, a partition index insert SHALL touch only the heap rows and index pages of that partition.
 
 ### `aminsert` — Single Row Insert (Page-Level)
 

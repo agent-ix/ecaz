@@ -22,16 +22,16 @@ encode_to_tqvector(embedding float4[], bits int, seed bigint DEFAULT 42) RETURNS
 
 ## Behavior
 
-1. SHALL pad the input vector to the next power-of-two length (zero-padded) for the internal FWHT workspace only
-2. SHALL apply SRHT rotation (diagonal random signs + Fast Walsh-Hadamard Transform) seeded by `seed`
-3. SHALL quantize the first `original_dim` rotated coordinates to `bits - 1` bits using the Lloyd-Max codebook for the given dimension
-4. SHALL compute the QJL residual correction: 1-bit Gaussian projection of the quantization residual, bit-packed
-5. SHALL compute `gamma = ||x - x_tilde_mse||_2` where `x_tilde_mse` is the decoded MSE-only reconstruction in the original input domain
-6. SHALL pack `gamma`, MSE indices, and QJL bits for the original input dimensionality into the quantized payload format: `[gamma][mse_packed][qjl_packed]`
-7. SHALL reject `bits` outside range 2–8 with ERROR
-8. SHALL accept any positive dimensionality (internally padded to next power of two for FWHT, but persisted at the original dimensionality)
-9. SHALL return a valid `tqvector` value that round-trips through text and binary I/O
-10. SHALL be marked `IMMUTABLE`, `STRICT`, `PARALLEL SAFE`
+1. `encode_to_tqvector` SHALL pad the input vector to the next power-of-two length (zero-padded) for the internal FWHT workspace only
+2. `encode_to_tqvector` SHALL apply SRHT rotation (diagonal random signs + Fast Walsh-Hadamard Transform) seeded by `seed`
+3. `encode_to_tqvector` SHALL quantize the first `original_dim` rotated coordinates to `bits - 1` bits using the Lloyd-Max codebook for the given dimension
+4. `encode_to_tqvector` SHALL compute the QJL residual correction: 1-bit Gaussian projection of the quantization residual, bit-packed
+5. `encode_to_tqvector` SHALL compute `gamma = ||x - x_tilde_mse||_2` where `x_tilde_mse` is the decoded MSE-only reconstruction in the original input domain
+6. `encode_to_tqvector` SHALL pack `gamma`, MSE indices, and QJL bits for the original input dimensionality into the quantized payload format: `[gamma][mse_packed][qjl_packed]`
+7. `encode_to_tqvector` SHALL reject `bits` outside range 2–8 with ERROR
+8. `encode_to_tqvector` SHALL accept any positive dimensionality (internally padded to next power of two for FWHT, but persisted at the original dimensionality)
+9. `encode_to_tqvector` SHALL return a valid `tqvector` value that round-trips through text and binary I/O
+10. `encode_to_tqvector` SHALL be marked `IMMUTABLE`, `STRICT`, `PARALLEL SAFE`
 
 ## Determinism
 

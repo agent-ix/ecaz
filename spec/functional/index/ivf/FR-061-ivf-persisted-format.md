@@ -22,7 +22,7 @@ relationships:
 `ec_ivf` SHALL persist its index state in the byte-level layout defined here.
 All multi-byte integers and `float4` values are little-endian. Tuples live on
 standard 8KB PostgreSQL pages with line pointers; the metadata block uses the
-page special area. An independent implementation SHALL be able to decode the
+page special area. An independent implementation SHALL decode the
 metadata block, centroid chain, list directory, posting entries, and PQ
 codebook chain from this schema without consulting Rust struct definitions.
 

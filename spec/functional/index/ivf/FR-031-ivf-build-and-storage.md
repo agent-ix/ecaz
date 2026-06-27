@@ -15,7 +15,7 @@ relationships:
 
 `ec_ivf` SHALL implement a PostgreSQL index access method that trains centroids,
 assigns heap rows to posting lists, and persists AM-owned metadata and
-posting-list pages. Eligible PG18 builds SHALL support the current parallel
+posting-list pages. Eligible PG18 builds SHALL use the current parallel
 heap-ingestion and tuple-buffer capture surface when enabled.
 
 ## Behavior
@@ -23,7 +23,7 @@ heap-ingestion and tuple-buffer capture surface when enabled.
 1. `ec_ivf` SHALL support `ecvector_ip_ops` and `tqvector_ip_ops`.
 2. Build reloptions SHALL include `nlists`, `nprobe`, `rerank_width`, `training_sample_rows`, `seed`, `pq_group_size`, `posting_slack_percent`, `storage_format`, and `rerank`.
 3. `storage_format` SHALL accept `auto`, `turboquant`, `pq_fastscan`, and `rabitq`.
-4. `rerank` SHALL accept `auto`, `off`, and `heap_f32`; `source_column` SHALL be rejected until implemented.
+4. `rerank` SHALL accept `auto`, `off`, and `heap_f32`. `source_column` SHALL be rejected until implemented.
 5. Training and assignment SHALL be deterministic for the same data and seed.
 6. Posting slack pages SHALL be reserved when configured for churn reuse.
 7. Parallel IVF build SHALL preserve serial/parallel equivalence for centroid

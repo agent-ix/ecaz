@@ -12,7 +12,7 @@ traces:
 
 ## Description
 
-The extension SHALL provide binary send/receive functions for efficient client-server transfer (e.g., COPY BINARY, libpq binary format).
+The extension SHALL register binary send/receive functions (`tqvector_send`, `tqvector_recv`) for efficient client-server transfer (e.g., COPY BINARY, libpq binary format).
 
 ### Send Function: `tqvector_send`
 
