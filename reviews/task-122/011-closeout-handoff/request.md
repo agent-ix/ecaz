@@ -25,6 +25,12 @@ There is no reviewer feedback under `reviews/task-122/*/feedback/` at the time
 of this packet. The coder-side work is therefore ready for outside closeout
 review, but this packet does not self-approve or close the request.
 
+GitHub review surface:
+
+```text
+https://github.com/agent-ix/ecaz/pull/42
+```
+
 ## Handoff
 
 Task 123 owns the promoted implementation path from packet 010:
@@ -50,6 +56,7 @@ The Task 123 gates preserve the Task 122 evidence boundary:
 - Task 122 file now points at Task 123 and this handoff packet.
 - `plan/tasks/README.md` lists Task 122 as closeout requested and Task 123 as
   the proposed follow-up.
+- GitHub PR #42 exposes the branch and closeout request for outside review.
 - Packet 010 remains the closeout evidence synthesis.
 - This packet adds no tests or benchmarks because it changes only planning and
   review metadata.
