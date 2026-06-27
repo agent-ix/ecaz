@@ -74,6 +74,17 @@ Expose counters sufficient to prove where the win came from:
 Counters must be available through the existing explain/profile surfaces used
 by `ecaz bench suite`.
 
+Carry forward the non-blocking Task 122 reviewer notes:
+
+- keep an off-path unit test for the stage-2 disabled path rather than forcing
+  one branch under `#[cfg(test)]`;
+- document or preserve the meaning of public diagnostic counters when a
+  materialization prune or stage-2 boundary changes what `candidate_row_count`
+  represents;
+- prefer a dedicated materializations-avoided counter instead of overloading
+  truncation counters if the stage-2 implementation needs to distinguish heap
+  eviction from pre-materialization discard.
+
 ### Phase 4 - Correctness and Recall Gates
 
 Prove the in-engine path preserves final results at the intended recall point.
