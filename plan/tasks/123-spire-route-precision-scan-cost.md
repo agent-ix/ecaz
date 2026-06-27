@@ -1,11 +1,13 @@
 # Task 123: SPIRE Route Precision vs. Scan Cost — Floor, Granularity, Soft-Routing
 
-Status: **Phase B spot-check closeout requested** (2026-06-27;
-`reviews/task-123/004-phase-b-100k-nlists-spotcheck/`). Phase A local evidence
+Status: **Phase B boundary-2 follow-up closeout requested** (2026-06-27;
+`reviews/task-123/006-phase-b-100k-n1024-b2-followup/`). Phase A local evidence
 failed the high-recall flat-floor gate; the reviewer-requested 100k
-`nlists=1024` boundary 0/1 spot-check found finer leaves are fast but do not
-recover route containment at low nprobe. Awaiting reviewer sign-off before
-marking complete.
+`nlists=1024` spot-check found finer leaves are fast but do not recover route
+containment at low or moderate nprobe. The boundary-2 follow-up improved recall
+but still reached only `309 / 320 = 0.9656` at nprobe 64 while p50 rose to
+`526.0 ms`. Review requested; do not mark complete until an outside reviewer
+signs off.
 Owner: coder. Worked on the `task-121-spire-coarse-routing-recall-doe` branch
 (shared with the closed-out Task 121 DOE).
 Priority: P1 follow-up to Task 121. **Local-only** until a promotion candidate
@@ -165,8 +167,26 @@ best tested spot-check cell (`n1024,b1,np32`) remains below Phase A
 `n128,b4,np8` recall (`300 / 320 = 0.9375`) and far from the reviewer's
 viability target of approximately 0.99 recall at low nprobe.
 
-Route containment equals final recall in every spot-check row. The current
-closeout request is therefore to accept Task 123 as a no-go / re-scope result:
-`nlists=128` can recover recall only at high scan cost, while `nlists=1024`
-keeps scan cost low but does not recover enough route containment at low probes.
-Do not mark complete until an outside reviewer signs off on packet 004.
+Packet `reviews/task-123/006-phase-b-100k-n1024-b2-followup/` then added the
+obvious missing `boundary_replica_count=2` cell at `nlists=1024`, extending the
+sweep to nprobe 64:
+
+| Config | nprobe | Clean p50 | Route containment / recall |
+| --- | ---: | ---: | ---: |
+| n1024 b2 | 8 | 120.1 ms | 268 / 320 = 0.8375 |
+| n1024 b2 | 16 | 179.6 ms | 292 / 320 = 0.9125 |
+| n1024 b2 | 32 | 312.3 ms | 302 / 320 = 0.9438 |
+| n1024 b2 | 64 | 526.0 ms | 309 / 320 = 0.9656 |
+
+The b2 SPIRE index is `246.0 MiB`; by comparison, packet 004 measured
+`167.9 MiB` for b1 and `89.8 MiB` for b0. At nprobe 32, b2 adds only four
+recalled truths over b1 (`302/320` vs `298/320`) while clean p50 rises from
+`236.1 ms` to `312.3 ms`. At nprobe 64, recall still remains below the
+reviewer's viability target of approximately 0.99.
+
+Route containment equals final recall in every b0/b1/b2 spot-check row. The
+current closeout request is therefore to accept Task 123 as a no-go / re-scope
+result: `nlists=128` can recover recall only at high scan cost, while
+`nlists=1024` keeps scan cost lower but does not recover enough route
+containment before latency and storage costs become unattractive. Do not mark
+complete until an outside reviewer signs off on the closeout packets.
