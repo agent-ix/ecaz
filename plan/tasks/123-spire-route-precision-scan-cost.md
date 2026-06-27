@@ -3,7 +3,9 @@
 Status: **reopened / amended (2026-06-27) — the cost verdict was single-INSTANCE;
 re-scoped to the contained multi-instance substrate and a dual latency+recall
 mandate (see Amendment below); contained multi-instance Phase A baseline is
-under review in `reviews/task-123/009-multi-instance-phase-a-baseline/`.** The prior single-instance closeout
+under review in `reviews/task-123/009-multi-instance-phase-a-baseline/`, with
+per-worker payload timeline instrumentation under review in
+`reviews/task-123/010-production-read-timeline-instrumentation/`.** The prior single-instance closeout
 (2026-06-27; completion record `reviews/task-123/008-completion-record/`, reviewer
 sign-offs `.../feedback/2026-06-27-01..03-reviewer.md`) stands as record: the
 recall / route-containment findings are topology-independent and retained, and no
@@ -196,11 +198,14 @@ the multi-second single-instance scan wall. `n1024 b2/tr50/f8` reaches recall
 coordinator index, while `n128 b4/tr50/f8` reaches recall 1.0000 at nprobe 96
 with p50 337.096 ms / p95 479.785 ms and a 392.2 MiB coordinator index.
 
-Residual instrumentation gap: the current local multi-instance production-read
-profile exposes candidate/heap/endpoint/total timings, remote dispatch/candidate
-counts, and projected payload rows/bytes. It does not yet expose per-worker
-object bytes shipped or the full requested leaf-read /
-materialize+transport-encode / candidate-score / heap split.
+Instrumentation follow-up: packet
+`reviews/task-123/010-production-read-timeline-instrumentation/` adds and
+validates per-worker production-read timeline payload counters on the contained
+multi-instance path. The default correctness smoke reports per-worker
+`heap_receive` payload rows/bytes, for example nodes 2/3/4 each report
+40 payload rows / 320 bytes for the projected `id` payload over 4 queries.
+The remaining limitation is that packet 009's 100k baseline predates this
+timeline, so its 100k rows still have aggregate profile timings only.
 
 ## Phase B Spot-Check Status (2026-06-27)
 

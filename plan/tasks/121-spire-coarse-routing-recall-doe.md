@@ -3,7 +3,9 @@
 Status: **reopened / amended (2026-06-27) — re-scoped to the contained
 multi-instance substrate and a dual latency+recall mandate (see Amendment
 below); contained multi-instance Phase A baseline is under review in
-`reviews/task-123/009-multi-instance-phase-a-baseline/`.** The prior single-instance closeout
+`reviews/task-123/009-multi-instance-phase-a-baseline/`, with per-worker
+payload timeline instrumentation under review in
+`reviews/task-123/010-production-read-timeline-instrumentation/`.** The prior single-instance closeout
 (2026-06-26; `reviews/task-121/026-phase4-final-pareto-verdict/`, reviewer
 sign-off `.../feedback/2026-06-26-01-reviewer.md`) stands as record: the
 recall / route-containment findings are topology-independent and retained, and
