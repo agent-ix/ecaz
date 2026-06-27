@@ -1,7 +1,7 @@
 ---
 id: FR-063
 title: "Block-Kernel Counter Snapshot"
-artifact_type: FR
+type: FR
 status: IMPLEMENTED
 object: data_schema
 relationships:

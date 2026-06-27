@@ -1,8 +1,7 @@
 ---
 id: FR-037
 title: Ecaz CLI Operator Surface
-type: functional-requirement
-artifact_type: FR
+type: FR
 status: IMPLEMENTED
 object: interface
 relationships:
@@ -55,6 +54,68 @@ Commands that produce review evidence can write packet-local logs without shell 
 ### FR-037-AC-4
 
 The operator README and user docs list the full implemented command surface.
+
+## Contract
+
+```yaml
+interface: ecaz
+description: >-
+  Top-level operator CLI. A single binary named `ecaz` dispatches to one of
+  six command groups; PostgreSQL connection and logging flags are global and
+  apply to every group.
+global_flags:
+  - name: --database
+    type: string
+    default: tqvector_bench
+    env: PGDATABASE
+    semantics: target PostgreSQL database name
+  - name: --host
+    type: string
+    env: PGHOST
+    semantics: host name or Unix socket directory; optional
+  - name: --port
+    type: u16
+    env: PGPORT
+    semantics: PostgreSQL port; optional
+  - name: --user
+    type: string
+    env: PGUSER
+    semantics: PostgreSQL user; optional
+  - name: --password
+    type: string
+    env: PGPASSWORD
+    semantics: PostgreSQL password (env values hidden); prefer .pgpass for non-local use
+  - name: --log-file
+    type: path
+    semantics: >-
+      mirror stdout/stderr into a packet-local artifact file and suppress
+      progress bars so the file stays stable and diffable
+operations:
+  - name: corpus
+    inputs: { subcommand: [fetch, prepare, generate, load, inspect, list] }
+    output: corpus data moved in/out of Postgres or manifest report
+    semantics: corpus plumbing - load fixtures, inspect what is loaded, verify manifests
+  - name: bench
+    inputs: { subcommand: [recall, latency, storage, overhead, diskann-graph, diskann-build-probe, suite, comparator, spire-pipeline] }
+    output: measurement artifacts against a loaded corpus
+    semantics: benchmarks (recall/latency/storage), plus standalone competitor measurement via `bench comparator`
+  - name: dev
+    inputs: { subcommand: [install, scratch, sql, test, fault, spire-multicluster, pg-upgrade-smoke, ...] }
+    output: local install / pgrx scratch / SQL / test side effects
+    semantics: development, setup, and test helpers owning the old wrapper-script surface
+  - name: quant
+    inputs: { subcommand: [feasibility], database_only: true }
+    output: offline quantizer recall / error-bound study (no DB required)
+    semantics: offline quantizer feasibility and recall studies
+  - name: stress
+    inputs: { subcommand: [vacuum, ivf-insert, ivf-vacuum-scale] }
+    output: correctness-under-load result
+    semantics: correctness-under-load harnesses (vacuum concurrency, crash recovery, ...)
+  - name: cloud
+    inputs: { subcommand: ecaz_cloud::CloudCommand }
+    output: AWS stack lifecycle (delegated to the ecaz-cloud crate)
+    semantics: cloud benchmark harness - provision, install, load, bench, teardown on AWS (FR-044)
+```
 
 ## Dependencies
 

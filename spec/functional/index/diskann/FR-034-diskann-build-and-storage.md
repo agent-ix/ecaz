@@ -1,8 +1,7 @@
 ---
 id: FR-034
 title: DiskANN Build and Persisted Vamana Storage
-type: functional-requirement
-artifact_type: FR
+type: FR
 status: IMPLEMENTED
 object: process
 relationships:
@@ -63,6 +62,22 @@ equivalence for the accepted stepping-stone configuration.
 
 Suite build artifacts include parseable DiskANN phase timing for build
 benchmark packets.
+
+## Workflow
+
+```mermaid
+flowchart TD
+    A["ambuild: validate single ecvector column"] --> B["Init empty metadata page"]
+    B --> C["Heap scan via table_index_build_scan (collect source vectors + heap TIDs)"]
+    C --> D["Warn on non-unit-norm source-vector sample"]
+    D --> E["Train grouped-PQ codebook (+ optional binary sidecars) on subsample"]
+    E --> F["Encode per-node payloads (search_code, binary words)"]
+    F --> G["Approximate medoid from seeded sample (entry point)"]
+    G --> H["Build Vamana graph: greedy search + alpha-prune to degree R, add backlinks"]
+    H --> I["Persist node tuples (payload + neighbor adjacency)"]
+    I --> J["Stage grouped-PQ codebook chain"]
+    J --> K["Write data pages + metadata (entry point, R, L, alpha, dims, seed, codec kinds, payload flags) under WAL"]
+```
 
 ## Dependencies
 

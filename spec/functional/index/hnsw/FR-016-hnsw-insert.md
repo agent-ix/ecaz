@@ -1,8 +1,7 @@
 ---
 id: FR-016
 title: HNSW Index Access Method — Insert
-artifact_type: FR
-type: functional-requirement
+type: FR
 status: APPROVED
 object: process
 traces:
@@ -150,6 +149,29 @@ Current staged behavior:
 #### Layer Assignment
 
 The new point's layer is drawn from the geometric distribution: `floor(-ln(random()) * (1 / ln(M)))`, matching the standard HNSW layer probability.
+
+## Workflow
+
+`ec_hnsw_aminsert` (`src/am/ec_hnsw/insert.rs`) inserts a single row directly on Postgres buffer pages using compressed-domain scoring (`score_ip_encoded_lite`). All page writes are GenericXLog-wrapped; metadata is updated last to keep lock ordering intact.
+
+```mermaid
+flowchart TD
+    start([aminsert index_rel values heap_tid]) --> code[Extract tqvector code bytes from datum]
+    code --> layer["Layer assignment level equals floor of minus ln rand over ln M"]
+    layer --> readep[Read entry point and max_level from metadata page 0]
+    readep --> descent[Greedy descent from max_level down to new level plus 1]
+    descent --> scorelite["score_ip_encoded_lite, move to closest neighbor"]
+    scorelite --> beam[Beam search ef_construction at insertion layers down to 0]
+    beam --> select[Select top M neighbors, 2M at layer 0]
+    select --> alloc[Find free page or extend relation]
+    alloc --> write["Write TqElementTuple and TqNeighborTuple GenericXLog"]
+    write --> backlinks[Update back-links on each selected neighbor]
+    backlinks --> pruneweak["Append or prune weakest connection if at capacity, bounded replan on drift"]
+    pruneweak --> ep{new level greater than max_level}
+    ep -->|yes| updatemeta["Update metadata entry point and max_level GenericXLog"]
+    ep -->|no| done([Return success])
+    updatemeta --> done
+```
 
 ## Acceptance Criteria
 

@@ -1,8 +1,7 @@
 ---
 id: FR-031
 title: IVF Build and Storage
-type: functional-requirement
-artifact_type: FR
+type: FR
 status: IMPLEMENTED
 object: process
 relationships:
@@ -57,6 +56,23 @@ Invalid reloption values raise ERROR during index creation.
 Parallel IVF build diagnostics can prove that worker tuple capture is live and
 that serial and parallel build paths produce equivalent index-visible results
 on the validation fixtures used for Task 71.
+
+## Workflow
+
+```mermaid
+flowchart TD
+    A["ambuild: validate reloptions (storage_format, rerank)"] --> B["Init empty metadata page (magic ECIV, version, options)"]
+    B --> C["Heap scan via table_index_build_scan (collect source vectors + heap TIDs)"]
+    C --> D["Draw deterministic training subsample (seed, training_sample_rows)"]
+    D --> E["Train spherical k-means centroids (auto nlists, several iterations)"]
+    E --> F["Assign each heap row to nearest centroid (inner product)"]
+    F --> G["Persist centroid chain (one tuple per list, in list order)"]
+    G --> H["Optional: train + persist grouped-PQ codebook chain (pq_fastscan)"]
+    H --> I["Persist posting-list pages (heap-TID chains, optional dense blocks + slack)"]
+    I --> J["Persist list directory (head/tail pointers, live_count per list)"]
+    J --> K["Populate metadata (dims, nlists, nprobe, heads, total_live_tuples)"]
+    K --> L["Flush data pages + metadata page under WAL"]
+```
 
 ## Dependencies
 

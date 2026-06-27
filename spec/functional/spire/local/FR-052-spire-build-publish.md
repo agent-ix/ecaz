@@ -1,8 +1,7 @@
 ---
 id: FR-052
 title: SPIRE Build and Epoch Publish
-type: functional-requirement
-artifact_type: FR
+type: FR
 status: APPROVED
 object: process
 relationships:

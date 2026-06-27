@@ -1,8 +1,7 @@
 ---
 id: FR-047
 title: In-VPC Corpus Load Fan-Out
-type: functional-requirement
-artifact_type: FR
+type: FR
 status: PROPOSED
 object: process
 relationships:
@@ -71,6 +70,36 @@ the load without duplicating rows in already-loaded shards.
 ### FR-047-AC-4
 
 Load throughput meets or exceeds NFR-011 targets for the profile.
+
+## Workflow
+
+```mermaid
+sequenceDiagram
+    participant Op as "Operator (ecaz cloud corpus load)"
+    participant TF as Terraform state
+    participant SSM as SSM
+    participant Loader as "Loader EC2"
+    participant S3 as "S3 bucket"
+    participant DB as "DB host (private IP)"
+
+    Op->>Op: lookup dataset in registry (FR-046)
+    Op->>Op: ensure AWS credentials
+    Op->>TF: read outputs (s3_bucket, db_private_ip, loader_instance_id, region)
+    Op->>Op: resolve table (default = dataset name with dashes to underscores)
+    Op->>SSM: run_shell fan-out script on loader_instance_id
+    SSM->>Loader: execute load script as user loader
+    Loader->>S3: list parquet shards under parquet/<dataset>/
+    Loader->>Loader: xargs -P<workers> fans shards to N parallel workers
+    loop per shard worker
+        Loader->>S3: if --resume head-object state/load/<dataset>/<shard>.done then skip
+        Loader->>S3: copy shard parquet to local workdir
+        Loader->>Loader: ecaz corpus prepare (parquet to tsv)
+        Loader->>DB: ecaz corpus load via PGHOST=db_private_ip (streaming COPY)
+        Loader->>S3: write state/load/<dataset>/<shard>.done receipt
+    end
+    Loader-->>SSM: aggregate exit (non-zero if any worker failed, others still ran)
+    SSM-->>Op: report load result (dataset, table, workers)
+```
 
 ## Dependencies
 

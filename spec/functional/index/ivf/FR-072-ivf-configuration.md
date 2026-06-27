@@ -1,7 +1,7 @@
 ---
 id: FR-072
 title: "IVF Configuration Surface"
-artifact_type: FR
+type: FR
 status: IMPLEMENTED
 object: configuration
 relationships:

@@ -1,7 +1,7 @@
 ---
 id: FR-069
 title: "IVF Parallel Build Process"
-artifact_type: FR
+type: FR
 status: IMPLEMENTED
 object: process
 relationships:

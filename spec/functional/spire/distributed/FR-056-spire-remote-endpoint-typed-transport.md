@@ -1,10 +1,9 @@
 ---
 id: FR-056
 title: SPIRE Remote Endpoint and Typed Tuple Transport
-type: functional-requirement
-artifact_type: FR
+type: FR
 status: APPROVED
-object: dto
+object: value_object
 relationships:
   - target: "ix://agent-ix/ecaz/FR-048"
     type: "depends_on"
@@ -99,6 +98,25 @@ sequenceDiagram
     C->>C: validate metadata against tuple descriptor
     C->>Slot: receive binary attrs into virtual tuple
 ```
+
+## Properties
+
+The decoded `pg_binary_attr_v1` payload value object
+(`SpireRemoteTypedTuplePayload`). All array fields share an identical length
+equal to the number of requested attributes for the candidate row.
+
+| Property | Type | Rule |
+| --- | --- | --- |
+| `payload_attnums` | `Vec<i16>` | heap attribute numbers; SHALL match the remote heap tuple descriptor |
+| `payload_names` | `Vec<String>` | attribute names; SHALL match the coordinator CustomScan output descriptor |
+| `payload_type_oids` | `Vec<Oid>` | attribute type OIDs; SHALL match the expected descriptor |
+| `payload_typmods` | `Vec<i32>` | attribute typmods; SHALL match the expected descriptor |
+| `payload_collations` | `Vec<Oid>` | attribute collation OIDs; SHALL match the expected descriptor |
+| `payload_nulls` | `Vec<bool>` | per-attribute SQL NULL flags; when true the coordinator ignores the value |
+| `payload_values` | `Vec<Vec<u8>>` | per-attribute binary `send`-function bytes (decoded from hex on the wire) |
+| `payload_formats` | `Vec<String>` | per-value encoding; SHALL be `pg_binary_send` for every non-null value |
+| `tuple_transport` | `&'static str` | transport tag, fixed `pg_binary_attr_v1` for the production read path |
+| `tuple_transport_status` | `&'static str` | stable status label (ready or a fail-closed reason) |
 
 ## Behavior
 

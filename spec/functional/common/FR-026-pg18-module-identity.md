@@ -1,8 +1,7 @@
 ---
 id: FR-026
 title: PG18 Module Identity and Version Reporting
-artifact_type: FR
-type: functional-requirement
+type: FR
 status: DRAFT
 object: configuration
 traces:
@@ -46,6 +45,15 @@ SELECT * FROM pg_get_loaded_modules() WHERE module_name = 'ecaz';
 ### PG Version Compatibility
 
 On PG17, the standard `PG_MODULE_MAGIC` macro is used. The extension name and version are not available via `pg_get_loaded_modules()`.
+
+## Configuration
+
+The module identity declared via `pgrx::pg_module_magic!` in `src/lib.rs` is fixed at build/creation time.
+
+| Name | Scope | Type | Default | Description |
+|---|---|---|---|---|
+| name | creation | string | `ecaz` | Module name passed as `name = c"ecaz"`; reported by `pg_get_loaded_modules()`. |
+| version | creation | string | `CARGO_PKG_VERSION` (`0.1.1`) | Module version derived at compile time from `env!("CARGO_PKG_VERSION")` (the `Cargo.toml` package version). |
 
 ## Acceptance Criteria
 

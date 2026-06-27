@@ -1,8 +1,7 @@
 ---
 id: FR-020
 title: Planner Cost Estimation
-artifact_type: FR
-type: functional-requirement
+type: FR
 status: IMPLEMENTED
 object: process
 traces:
@@ -132,6 +131,32 @@ The planner compares index scan cost against sequential scan cost. For ec_hnsw:
 | `max_level = 0` (no graph layers) | Treat as linear-only scan: `startup_cost = 0`, `total_cost = index_pages × seq_page_cost` |
 | `dimensions = 0` in metadata | `ereport(ERROR)` — invalid index metadata |
 | `reltuples = 0` (ANALYZE not run) | Use `index_pages × 10` as tuple estimate (same heuristic as btree) |
+
+## Workflow
+
+`amcostestimate` reads relation stats and metadata, computes a two-phase cost
+(graph traversal + residual linear coverage), and returns startup/total cost to
+the planner. On PG18 `tree_height` comes from the live `amgettreeheight`
+callback; on PG17 it falls back to the metadata `max_level`.
+
+```mermaid
+flowchart TD
+    A["Planner calls amcostestimate(root, path, loop_count)"] --> B[Read index_pages, reltuples from pg_class]
+    B --> C["Read m, ef_search, tree_height, dimensions from metadata page (block 0)"]
+    C --> Err{Index valid?}
+    Err -->|"Empty / corrupt metadata"| EH[Prohibitive cost or ereport ERROR]
+    Err -->|Valid| G1["graph_pages = tree_height + ef_search"]
+    G1 --> G2["graph_cost = graph_pages x random_page_cost (+ CPU term)"]
+    G2 --> L1["linear_pages = max(0, index_pages - graph_pages)"]
+    L1 --> L2["linear_cost = linear_pages x seq_page_cost (+ CPU term)"]
+    L2 --> O1["startup_cost = graph_cost + graph_cpu"]
+    O1 --> O2["total_cost = startup_cost + linear_cost + linear_cpu"]
+    O2 --> LIM{"LIMIT k <= ef_search?"}
+    LIM -->|Yes| LS["Linear phase may be skipped: total_cost ~= startup_cost"]
+    LIM -->|No| FULL[Keep full two-phase total_cost]
+    LS --> R["Return startup_cost, total_cost, selectivity=1.0, correlation=0.0"]
+    FULL --> R
+```
 
 ## Acceptance Criteria
 

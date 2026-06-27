@@ -1,7 +1,7 @@
 ---
 id: FR-068
 title: "IVF Scan Pipeline"
-artifact_type: FR
+type: FR
 status: IMPLEMENTED
 object: process
 relationships:

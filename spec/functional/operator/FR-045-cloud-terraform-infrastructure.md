@@ -1,10 +1,9 @@
 ---
 id: FR-045
 title: Cloud Terraform-Managed Infrastructure
-type: functional-requirement
-artifact_type: FR
+type: FR
 status: PROPOSED
-object: infrastructure
+object: deployment
 relationships:
   - target: "ix://agent-ix/ecaz/US-021"
     type: "implements"
@@ -85,6 +84,45 @@ is not open in any security group.
 ### FR-045-AC-4
 
 S3 bucket has the configured lifecycle rule on the parquet prefix.
+
+## Topology
+
+```mermaid
+flowchart TB
+    operator["Operator workstation (ecaz cloud)"]
+
+    subgraph aws["AWS account"]
+        igw["Internet Gateway"]
+        subgraph vpc["VPC (aws_vpc.this)"]
+            subgraph subnet["Private subnet + route table"]
+                db["DB EC2 (aws_instance.db, Graviton)"]
+                loader["Loader EC2 (aws_instance.loader, Graviton)"]
+                ssmEp["SSM interface endpoints (ssm, ssmmessages, ec2messages)"]
+                s3Ep["S3 Gateway VPC endpoint"]
+            end
+            sgDb["SG db (5432 from VPC only, no SSH)"]
+            sgLoader["SG loader (egress only)"]
+        end
+        ebs["EBS gp3 volume (aws_ebs_volume.db)"]
+        s3["S3 bucket (parquet/ expires, bench artifacts retained)"]
+        iam["IAM role + instance profile (SSM + S3 read/write)"]
+    end
+
+    operator -->|"AWS API / SSM Session Manager"| ssmEp
+    igw --> subnet
+    db --- sgDb
+    loader --- sgLoader
+    ebs -->|"aws_volume_attachment /dev/sdf"| db
+    loader -->|"Postgres 5432 to private IP"| db
+    loader -->|"stage / load parquet"| s3
+    db --> s3Ep
+    loader --> s3Ep
+    s3Ep --> s3
+    iam -.attached to.-> db
+    iam -.attached to.-> loader
+    ssmEp --- db
+    ssmEp --- loader
+```
 
 ## Dependencies
 

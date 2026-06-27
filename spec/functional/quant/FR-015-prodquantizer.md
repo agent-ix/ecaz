@@ -1,8 +1,7 @@
 ---
 id: FR-015
 title: ProdQuantizer Orchestrator
-artifact_type: FR
-type: functional-requirement
+type: FR
 status: APPROVED
 object: entity
 traces:
@@ -180,6 +179,21 @@ pub fn unpack_qjl_signs(packed: &[u8], dim: usize) -> Vec<bool>
 ### Thread Safety
 
 `ProdQuantizer` is `Send + Sync` — all state is immutable after construction. Multiple scoring calls may execute concurrently (relevant for parallel sequential scan in Postgres 14+).
+
+## Properties
+
+The fields of the `ProdQuantizer` struct (`src/quant/prod.rs`), all immutable
+after construction and fully derived from `(original_dim, bits, seed)`:
+
+| Field | Type | Description |
+|---|---|---|
+| `transform_dim` | `usize` | Padded power-of-two dimension used by the FWHT workspace |
+| `original_dim` | `usize` | Original persisted dimensionality of the input vector |
+| `bits` | `u8` | Quantization bit width (constructor asserts the range 2..=8) |
+| `seed` | `u64` | PRNG seed driving the SRHT diagonal signs and (XOR'd) the QJL projection |
+| `codebook` | `Vec<f32>` | Lloyd-Max scalar centroids, length `2^(bits-1)` (data-oblivious) |
+| `signs` | `Vec<f32>` | SRHT diagonal sign vector for the MSE rotation, length `transform_dim` |
+| `qjl_signs` | `Vec<f32>` | SRHT diagonal sign vector for the QJL projection (seed `^ 0x9E3779B97F4A7C15`); empty when QJL is disabled |
 
 ## Acceptance Criteria
 

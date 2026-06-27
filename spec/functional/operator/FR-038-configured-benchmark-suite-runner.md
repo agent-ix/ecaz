@@ -1,8 +1,7 @@
 ---
 id: FR-038
 title: Configured Benchmark Suite Runner
-type: functional-requirement
-artifact_type: FR
+type: FR
 status: APPROVED
 object: interface
 relationships:
@@ -112,6 +111,74 @@ before executing selected benchmark steps.
 
 Latency and recall suite runs fail fast on a debug backend unless
 `--allow-debug-backend` is present.
+
+## Contract
+
+```yaml
+interface: ecaz bench suite
+description: >-
+  Configured benchmark suite runner. A JSON SuiteConfig expands into ordinary
+  `ecaz` commands; the runner keeps the expansion visible in a manifest and
+  optionally executes each selected step in sequence.
+operations:
+  - name: run
+    inputs:
+      - { flag: --config, type: path, required: true, semantics: JSON suite configuration file }
+      - { flag: --dry-run, type: bool, semantics: write manifest and print expanded commands without executing }
+      - { flag: --continue-on-error, type: bool, semantics: keep running remaining selected steps after a failure }
+      - { flag: --only, type: string[], semantics: run only steps with this name (repeatable) }
+      - { flag: --only-tag, type: string[], semantics: run only steps with this tag (repeatable) }
+      - { flag: --resume-from, type: path, semantics: reuse successful step records from an earlier manifest when config hash and expanded command match }
+      - { flag: --results-output, type: path, semantics: where to write normalized result rows; defaults to <artifact_dir>/results.jsonl }
+      - { flag: --artifact-dir, type: path, semantics: override the config artifact directory for logs/manifest/results }
+      - { flag: --manifest-output, type: path, semantics: where to write the manifest; defaults to <artifact_dir>/suite-manifest.json }
+      - { flag: --allow-debug-backend, type: bool, semantics: permit latency/recall steps against a debug-built backend }
+    output: suite-manifest.json (+ results.jsonl); thresholds evaluated against parsed rows
+    semantics: >-
+      execute selected steps sequentially, recording per-step status, timing,
+      exit code, command, and expected artifacts; stop after first failure
+      unless --continue-on-error; preflight latency/recall against the backend
+      build profile and refuse a debug backend unless --allow-debug-backend
+  - name: audit
+    inputs:
+      - { flag: --config, type: path, required: true }
+    output: validation result (no PostgreSQL connection required)
+    semantics: validate suite shape and required load input files before a long run
+  - name: status
+    inputs:
+      - { flag: --manifest, type: path, required: true }
+    output: completion summary (completed, failed, skipped, dry-run, stale, missing-artifact)
+    semantics: summarize completion state from a suite manifest (no PostgreSQL connection required)
+  - name: report
+    inputs:
+      - { flag: --manifest, type: path, required: true }
+      - { flag: --results-output, type: path, semantics: also write normalized rows parsed from manifest artifacts }
+    output: markdown report from manifest metadata and parsed result rows
+    semantics: emit a markdown report carrying candidate identity and metric provenance (NFR-015)
+legacy_alias:
+  # `ecaz bench suite --config <path> --dry-run` (top-level flags on SuiteArgs)
+  # remains accepted as a compatibility alias for the first dry-run slice.
+  flags: [--config, --dry-run, --only, --manifest-output]
+config_inputs:
+  SuiteConfig:
+    - { field: name, type: string }
+    - { field: schema_version, type: u32 }
+    - { field: artifact_dir, type: path, optional: true }
+    - { field: defaults, type: SuiteDefaults, optional: true }
+    - { field: thresholds, type: ThresholdConfig[], optional: true }
+    - { field: steps, type: SuiteStep[] }
+  ThresholdConfig:
+    - { field: name, type: string }
+    - { field: step, type: string }
+    - { field: metric, type: string }
+    - { field: filters, type: map<string,string>, semantics: exact-match row filters to target a single sweep row }
+    - { field: field, type: string }
+    - { field: op, type: enum[gt, gte, lt, lte, eq] }
+    - { field: value, type: f64 }
+outputs:
+  - { artifact: suite-manifest.json, semantics: config SHA256, redacted connection metadata, expanded commands, tags, step selection, status, timing, artifact paths, recorded thresholds, backend build profile }
+  - { artifact: results.jsonl, semantics: normalized rows for recall/latency/storage/load/build-timing/block-kernel-counter artifacts }
+```
 
 ## Dependencies
 

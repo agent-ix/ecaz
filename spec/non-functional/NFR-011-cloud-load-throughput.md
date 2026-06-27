@@ -1,8 +1,7 @@
 ---
 id: NFR-011
 title: Cloud Corpus Load Throughput
-type: non-functional-requirement
-artifact_type: NFR
+type: NFR
 quality_attribute: performance_efficiency
 status: PROPOSED
 relationships:

@@ -1,8 +1,7 @@
 ---
 id: NFR-003
 title: Recall Quality
-type: non-functional-requirement
-artifact_type: NFR
+type: NFR
 quality_attribute: functional_suitability
 status: APPROVED
 traces:

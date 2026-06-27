@@ -1,10 +1,9 @@
 ---
 id: FR-004
 title: encode_to_tqvector — fp32 to Compressed Code
-artifact_type: FR
-type: functional-requirement
+type: FR
 status: APPROVED
-object: api
+object: api_endpoint
 traces:
   - US-001
   - FR-013
@@ -37,6 +36,28 @@ encode_to_tqvector(embedding float4[], bits int, seed bigint DEFAULT 42) RETURNS
 ## Determinism
 
 Given the same `(embedding, bits, seed)`, the function SHALL always produce the same output. The quantizer is data-oblivious — fully determined by `(original_dim, bits, seed)` with no training or fitting step.
+
+## Endpoint
+
+SQL-callable C function declared in `sql/bootstrap.sql` (backed by the
+`encode_to_tqvector_wrapper` symbol):
+
+```sql
+encode_to_tqvector(real[], integer, bigint) RETURNS tqvector
+  IMMUTABLE STRICT PARALLEL SAFE LANGUAGE c
+```
+
+- **Arguments**:
+  - `real[]` — the raw fp32 (`float4[]`) embedding to compress; any positive
+    dimensionality is accepted (`original_dim`).
+  - `integer` — `bits`, the quantization bit width; values outside 2–8 raise ERROR.
+  - `bigint` — `seed` for the SRHT rotation and QJL projection.
+- **Returns**: a `tqvector` value carrying the packed
+  `[gamma][mse_packed][qjl_packed]` payload.
+- **Behavior**: runs the FR-013 two-stage pipeline (SRHT rotation + Lloyd-Max
+  MSE quantization, then QJL residual correction) and is deterministic for a
+  given `(embedding, bits, seed)`. Marked `IMMUTABLE`, `STRICT`, `PARALLEL SAFE`;
+  `STRICT` means a NULL argument yields NULL without invoking the wrapper.
 
 ## Acceptance Criteria
 

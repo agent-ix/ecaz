@@ -1,10 +1,9 @@
 ---
 id: FR-017
 title: Prepared-Query Inner Product Function
-artifact_type: FR
-type: functional-requirement
+type: FR
 status: APPROVED
-object: api
+object: api_endpoint
 traces:
   - US-002
   - FR-013
@@ -77,6 +76,29 @@ For each candidate code:
 
 When PostgreSQL executes `ORDER BY tqvector_query_inner_product(candidate, query)` or `candidate <#> query` without an index, evaluation is row-by-row through the SQL function contract above. This path is approximate and throughput-bound. The extension SHALL NOT rely on hidden scan-local state inside the immutable SQL function. Any future prepared-query reuse for sequential scan SHALL be introduced through an explicit executor integration or separate API.
 The specification treats this row-by-row query preparation cost as an accepted v0.1 performance tradeoff. Sequential scan throughput SHALL therefore be characterized explicitly by benchmarks rather than assumed to match index-scan prepared-query reuse.
+
+## Endpoint
+
+SQL-callable C function declared in `sql/bootstrap.sql` (backed by the
+`tqvector_query_inner_product_wrapper` symbol):
+
+```sql
+tqvector_query_inner_product(tqvector, real[]) RETURNS float4
+  IMMUTABLE STRICT PARALLEL SAFE LANGUAGE c
+```
+
+- **Arguments**: a stored `tqvector` candidate and a raw fp32 `real[]`
+  (`float4[]`) query.
+- **Returns**: `float4`, the prepared-query (query-to-code) inner product estimate.
+- **Behavior**: builds prepared-query state via
+  `ProdQuantizer::prepare_ip_query` (SRHT-rotated query LUT
+  `lut[i][c] = centroid[c] * y_q[i]`, the QJL projection `sq`, and
+  `qjl_scale = sqrt(pi/2) / d`), then scores the candidate with
+  `score_ip_encoded`. The result is the MSE LUT sum plus the gamma-weighted QJL
+  term `gamma * qjl_scale * sum(sq[i] * sign(qjl[i]))`, dispatched through the
+  SIMD path (FR-014) with a scalar fallback. Dimension mismatch raises ERROR.
+  Marked `IMMUTABLE`, `STRICT`, `PARALLEL SAFE`; the immutable contract carries
+  no scan-local state, so each row re-prepares the query under sequential scan.
 
 ## Acceptance Criteria
 

@@ -1,7 +1,7 @@
 ---
 id: FR-064
 title: "Benchmark Suite Configuration Schema"
-artifact_type: FR
+type: FR
 status: IMPLEMENTED
 object: data_schema
 relationships:

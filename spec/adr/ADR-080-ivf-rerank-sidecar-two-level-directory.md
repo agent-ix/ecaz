@@ -1,3 +1,11 @@
+---
+type: ADR
+id: ADR-080
+title: "IVF Rerank Sidecar Directory Must Be Two-Level for Fat Payloads"
+status: PROPOSED
+impact: Refines ADR-079; affects the IVF rerank sidecar directory format (two-level for fat f16/rabitq4 payloads), FR-032, and NFR-001.
+date: 2026-06-19
+---
 # ADR-080: IVF rerank sidecar directory must be two-level for fat payloads
 
 Status: Proposed (2026-06-19)

@@ -1,8 +1,7 @@
 ---
 id: FR-013
 title: Two-Stage Vector Quantization Pipeline
-artifact_type: FR
-type: functional-requirement
+type: FR
 status: APPROVED
 object: process
 traces:
@@ -106,6 +105,28 @@ For two stored codes `a = idx_a[0..d)` and `b = idx_b[0..d)`:
 `score_code_to_code(a, b) = Σ_{i=0}^{d-1} centroid[idx_a_i] * centroid[idx_b_i]`
 
 The symmetric code-to-code estimator SHALL NOT apply the QJL residual term in v0.1.
+
+## Workflow
+
+```mermaid
+flowchart TD
+    X["input vector x (original_dim)"] --> PAD["zero-pad to transform_dim = next_power_of_two(d)"]
+    PAD --> SIGN["Stage 1: apply seeded diagonal signs (plus/minus 1)"]
+    SIGN --> FWHT["Fast Walsh-Hadamard Transform in place, scale 1/sqrt(transform_dim)"]
+    FWHT --> ROT["rotated coordinates y"]
+    CB["Lloyd-Max codebook (2^(bits-1) centroids, data-oblivious)"] --> QUANT
+    ROT --> QUANT["quantize first original_dim coords to nearest centroid -> MSE indices"]
+    QUANT --> PACKMSE["bit-pack indices -> mse_packed"]
+    QUANT --> RECON["decode indices, zero-fill tail, inverse SRHT -> x_approx (MSE only)"]
+    RECON --> RES["residual r = x - x_approx"]
+    RES --> GAMMA["gamma = L2 norm of r"]
+    RES --> QJL["Stage 2 (if QJL enabled): project r through second seeded SRHT (seed XOR constant)"]
+    QJL --> SIGNS["take sign of first original_dim projected coords (1 bit each)"]
+    SIGNS --> PACKQJL["bit-pack signs -> qjl_packed"]
+    GAMMA --> OUT["payload = [gamma][mse_packed][qjl_packed]"]
+    PACKMSE --> OUT
+    PACKQJL --> OUT
+```
 
 ## Acceptance Criteria
 

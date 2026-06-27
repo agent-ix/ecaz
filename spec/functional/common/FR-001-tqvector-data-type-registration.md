@@ -1,8 +1,7 @@
 ---
 id: FR-001
 title: tqvector Data Type Registration
-artifact_type: FR
-type: functional-requirement
+type: FR
 status: APPROVED
 object: entity
 traces:
@@ -48,6 +47,21 @@ The persisted representation stores:
 - one `gamma` scalar
 
 The implementation MAY use an internal transform workspace whose dimension is `next_power_of_two(dim)`, but the persisted type SHALL store only the first `dim` MSE coordinates, the first `dim` QJL signs, and `gamma`.
+
+## Properties
+
+The packed `tqvector` datum (`pack`/`unpack` in `src/lib.rs`; `EncodedTq` in `src/quant/prod.rs`) carries the following fields. The on-disk wire form is `dim` (`HEADER_BYTES = 2`) followed by `gamma` (4 bytes) followed by the code bytes. `bits` and `seed` are NOT serialized — they are re-derived from the canonical defaults on `unpack`.
+
+| Field | Type | Description |
+|---|---|---|
+| dim | u16 (2 bytes, little-endian) | Vector dimensionality; first field of the packed datum (`HEADER_BYTES = 2`). |
+| gamma | f32 (4 bytes, little-endian) | Residual L2 norm of the MSE-decode residual; used by the QJL correction term. |
+| mse_packed | `[u8]`, `ceil(dim * mse_bits / 8)` bytes | Bit-packed MSE centroid indices, where `mse_bits = bits - 1` when QJL is active and `bits` otherwise. |
+| qjl_packed | `[u8]`, `ceil(dim / 8)` bytes (empty when QJL inactive) | Bit-packed QJL sign bits; concatenated after `mse_packed` to form the code-bytes section. |
+| bits | u8 (not persisted on wire) | Quantization bits; pinned to the canonical default `DEFAULT_QUANT_BITS = 4` and re-derived on `unpack`. |
+| seed | u64 (not persisted on wire) | Quantizer seed; pinned to the canonical default `DEFAULT_QUANT_SEED = 42` and re-derived on `unpack`. |
+
+For a 1536-dim, 4-bit datum (QJL active, `mse_bits = 3`) the packed wire size is `2 (dim) + 4 (gamma) + 576 (mse_packed) + 192 (qjl_packed) = 774` bytes.
 
 ## Acceptance Criteria
 

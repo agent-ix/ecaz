@@ -1,8 +1,7 @@
 ---
 id: NFR-010
 title: Cloud Cost Discipline
-type: non-functional-requirement
-artifact_type: NFR
+type: NFR
 quality_attribute: compliance
 status: PROPOSED
 relationships:

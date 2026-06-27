@@ -1,8 +1,7 @@
 ---
 id: NFR-005
 title: Build and CI
-type: non-functional-requirement
-artifact_type: NFR
+type: NFR
 quality_attribute: maintainability
 status: APPROVED
 traces:

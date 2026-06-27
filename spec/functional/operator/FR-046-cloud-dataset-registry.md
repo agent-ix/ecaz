@@ -1,10 +1,9 @@
 ---
 id: FR-046
 title: Cloud Dataset Registry
-type: functional-requirement
-artifact_type: FR
+type: FR
 status: PROPOSED
-object: data-source
+object: data_schema
 relationships:
   - target: "ix://agent-ix/ecaz/US-021"
     type: "implements"
@@ -70,6 +69,43 @@ S3 keys and total bytes without downloading.
 
 A staged dataset's manifest SHA matches the registry's
 `expected_sha256` after a successful `corpus stage` run.
+
+## Schema
+
+The registry is a static array (`datasets::REGISTRY`) of `Dataset` records.
+The schema below reflects the implemented `Dataset` struct (the
+`distance` and `format` fields are enums; `comparable_to` is an array). The
+struct currently has no `expected_sha256` field — staging verification relies on
+the staged `_manifest.json` written into S3 (`{name, format, rows, dim}`).
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Dataset",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["name", "source", "source_path", "rows", "dim", "distance", "format", "comparable_to"],
+  "properties": {
+    "name": { "type": "string", "description": "short registry key, e.g. dbpedia-1m" },
+    "source": { "type": "string", "description": "HF repo path or canonical mirror URL" },
+    "source_path": { "type": "string", "description": "glob or path under the source pointing at the data, e.g. *.parquet" },
+    "rows": { "type": "integer", "minimum": 0, "description": "declared row count (u64)" },
+    "dim": { "type": "integer", "minimum": 1, "description": "embedding dimensionality (u32)" },
+    "distance": { "type": "string", "enum": ["Cosine", "InnerProduct", "L2"] },
+    "format": {
+      "type": "string",
+      "enum": ["Parquet", "BigAnnFbin"],
+      "description": "Parquet flows through corpus prepare/load unchanged; BigAnnFbin (.u8bin/.fbin) is converted to parquet during corpus stage"
+    },
+    "comparable_to": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1,
+      "description": "third-party benchmarks this dataset is comparable against"
+    }
+  }
+}
+```
 
 ## Dependencies
 

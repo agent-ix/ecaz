@@ -1,8 +1,7 @@
 ---
 id: FR-014
 title: SIMD Acceleration
-artifact_type: FR
-type: functional-requirement
+type: FR
 status: APPROVED
 object: process
 traces:
@@ -103,6 +102,20 @@ pure scalar build SHALL produce correct results on every supported
 architecture, with degraded throughput. SIMD functions SHALL use
 `#[target_feature(enable = "...")]` guarded by runtime detection at the call
 site or safe family-local dispatch wrappers.
+
+## Workflow
+
+```mermaid
+flowchart TD
+    A["QuantCodec::score_ip_batch(candidates)"] --> B["dispatch by quant family (turboquant, turboquant_qjl, tiled_lut, int8, rabitq, grouped_pq, binary)"]
+    B --> C["runtime ISA detection (AVX2 / NEON / SVE2, else scalar)"]
+    C --> D["validate candidate shapes and metadata before mutating any score or counter"]
+    D --> E["score whole 32-wide blocks via family block scorer"]
+    E --> F["remainder via best supported sub-width: 8-wide, arbitrary partial, or scalar fallback"]
+    F --> G["record wrapper flush width histogram buckets (under 8, 8 to 15, 16 to 31, 32 or more)"]
+    G --> H["record counters keyed by (surface, quant_kind, isa), kernel work separate from scalar fallback"]
+    H --> I["scalar reference exists for every family as correctness anchor"]
+```
 
 ## Acceptance Criteria
 

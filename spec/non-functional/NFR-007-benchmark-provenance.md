@@ -1,8 +1,7 @@
 ---
 id: NFR-007
 title: Benchmark Provenance
-type: non-functional-requirement
-artifact_type: NFR
+type: NFR
 quality_attribute: compliance
 status: APPROVED
 relationships:

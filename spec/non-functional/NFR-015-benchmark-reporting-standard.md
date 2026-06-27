@@ -1,8 +1,7 @@
 ---
 id: NFR-015
 title: Benchmark Reporting Standard
-type: non-functional-requirement
-artifact_type: NFR
+type: NFR
 quality_attribute: compliance
 status: APPROVED
 relationships:

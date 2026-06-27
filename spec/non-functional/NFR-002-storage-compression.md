@@ -1,8 +1,7 @@
 ---
 id: NFR-002
 title: Storage Compression
-type: non-functional-requirement
-artifact_type: NFR
+type: NFR
 quality_attribute: performance_efficiency
 status: APPROVED
 traces:

@@ -1,8 +1,7 @@
 ---
 id: FR-010
 title: HNSW Index Access Method — Vacuum
-artifact_type: FR
-type: functional-requirement
+type: FR
 status: APPROVED
 object: process
 traces:
@@ -45,6 +44,25 @@ On partitioned tables, vacuuming one partition index SHALL NOT read or modify an
 - Vacuum SHALL NOT block concurrent INSERT or SELECT operations
 - Scans that started before vacuum began SHALL still see consistent results (MVCC)
 - All page modifications SHALL use GenericXLog
+
+## Workflow
+
+`ec_hnsw_ambulkdelete` and `ec_hnsw_amvacuumcleanup` (`src/am/ec_hnsw/vacuum.rs`) implement the three-pass delete plus the cleanup statistics update. Every page modification is GenericXLog-wrapped and MVCC-safe so concurrent INSERT and SELECT are not blocked.
+
+```mermaid
+flowchart TD
+    bulk([ambulkdelete dead-tuple callback]) --> pass1[Pass 1 mark deletions]
+    pass1 --> scanelem[Scan element tuples, drop dead heap TIDs from heaptid arrays]
+    scanelem --> collect[Collect elements whose heaptids are all removed]
+    collect --> pass2[Pass 2 repair graph]
+    pass2 --> findbroken[Find nodes whose neighbor was deleted]
+    findbroken --> search["Search for replacement candidates and rewrite TqNeighborTuple GenericXLog"]
+    search --> pass3[Pass 3 finalize]
+    pass3 --> mark[Set deleted true on elements with no remaining heaptids]
+    mark --> cleanup([amvacuumcleanup])
+    cleanup --> stats[Update pg_class reltuples and relpages]
+    stats --> report[Report pages, tuples, deleted tuples to vacuum coordinator]
+```
 
 ## Acceptance Criteria
 

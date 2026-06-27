@@ -1,8 +1,7 @@
 ---
 id: FR-009
 title: HNSW Index Access Method — Scan (Query)
-artifact_type: FR
-type: functional-requirement
+type: FR
 status: APPROVED
 object: process
 traces:
@@ -217,6 +216,31 @@ Current staged behavior:
 ### Buffer Access Pattern
 
 All page reads during scan use `ReadBuffer` + `LockBuffer(BUFFER_LOCK_SHARE)`. Pages are pinned only for the duration of reading a single tuple, then released immediately. This ensures scans do not hold excessive buffer pins and do not block concurrent writers.
+
+## Workflow
+
+The scan callbacks live in `src/am/ec_hnsw/scan.rs` with the traversal core in `src/am/ec_hnsw/search.rs`. `ambeginscan` allocates `TqScanState`; `amrescan` builds the prepared query, runs greedy descent then layer-0 beam search, and loads the result heap; `amgettuple` drains it; `amendscan` frees state.
+
+```mermaid
+flowchart TD
+    begin([ambeginscan]) --> alloc[Allocate TqScanState candidates heap, first flag, prepared_query]
+    alloc --> rescan([amrescan orderbys])
+    rescan --> extract[Extract raw query float4 array]
+    extract --> prep["prepare_ip_query build LUT and QJL correction state"]
+    prep --> readmeta[Read metadata page 0 entry point and max_level]
+    readmeta --> resolveef["Resolve ef_search GUC override else reloption"]
+    resolveef --> greedy[Greedy descent layers max_level down to 1]
+    greedy --> scoreenc["score_ip_encoded each neighbor, move to closest"]
+    scoreenc --> beam[Beam search at layer 0 with ef_search candidate set]
+    beam --> track[Track ef_search best results, mark visited]
+    track --> load[Sort results, load into candidates BinaryHeap]
+    load --> gettuple([amgettuple])
+    gettuple --> pop[Pop best candidate, read TqElementTuple heap_tid]
+    pop --> emit["Set xs_heaptid and xs_recheck false, return true"]
+    emit --> gettuple
+    gettuple --> exhausted[Return false when heap empty]
+    exhausted --> endscan([amendscan free TqScanState])
+```
 
 ## Acceptance Criteria
 

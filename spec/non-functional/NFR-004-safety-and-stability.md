@@ -1,8 +1,7 @@
 ---
 id: NFR-004
 title: Safety and Stability
-type: non-functional-requirement
-artifact_type: NFR
+type: NFR
 quality_attribute: reliability
 status: APPROVED
 relationships:

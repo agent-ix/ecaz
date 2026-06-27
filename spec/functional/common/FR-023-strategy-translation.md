@@ -1,8 +1,7 @@
 ---
 id: FR-023
 title: Strategy Translation Callbacks
-artifact_type: FR
-type: functional-requirement
+type: FR
 status: DRAFT
 object: entity
 traces:
@@ -75,6 +74,17 @@ On PG17, these fields do not exist in `IndexAmRoutine`. The implementation SHALL
     amroutine.amtranslatecmptype = Some(ec_hnsw_amtranslatecmptype);
 }
 ```
+
+## Properties
+
+The strategy-translation surface is captured by `StrategyTranslationSnapshot` (`src/am/common/cost.rs`), which records the single ordering strategy and its mapped generic compare type.
+
+| Field | Type | Description |
+|---|---|---|
+| ordering_strategy | i32 | The single ordering strategy number for the `<#>` order-by operator; value `1`. |
+| ordering_compare_type | PlannerCompareType | Generic compare type strategy `1` maps to: `COMPARE_LT` (ascending order of the distance metric). Produced by `amtranslatestrategy_callback(1)`. |
+
+`amtranslatestrategy_callback` maps strategy `1 → Lt` and every other strategy → `Invalid`. `amtranslatecmptype_callback` maps `Lt → 1` and every other compare type → `0` (`InvalidStrategy`).
 
 ## Acceptance Criteria
 

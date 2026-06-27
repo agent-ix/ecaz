@@ -1,8 +1,7 @@
 ---
 id: FR-054
 title: SPIRE Update Maintenance and Cleanup
-type: functional-requirement
-artifact_type: FR
+type: FR
 status: APPROVED
 object: process
 relationships:

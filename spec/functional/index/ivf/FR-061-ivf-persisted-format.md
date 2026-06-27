@@ -1,7 +1,7 @@
 ---
 id: FR-061
 title: "IVF Persisted Index Format"
-artifact_type: FR
+type: FR
 status: IMPLEMENTED
 object: binary_format
 relationships:

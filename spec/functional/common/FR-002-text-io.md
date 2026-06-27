@@ -1,10 +1,9 @@
 ---
 id: FR-002
 title: tqvector Text I/O
-artifact_type: FR
-type: functional-requirement
+type: FR
 status: APPROVED
-object: api
+object: api_endpoint
 traces:
   - US-001
   - FR-001
@@ -46,6 +45,15 @@ For this requirement:
 - SHALL produce the canonical text format from the internal binary representation
 - SHALL always include `dim`, `bits`, `seed`, and `gamma` fields
 - SHALL hex-encode the code bytes in lowercase
+
+## Endpoint
+
+The text I/O surface is registered as two `LANGUAGE c` SQL functions in `sql/bootstrap.sql`, backed by the parse/format helpers in `src/lib.rs`. Both are `IMMUTABLE STRICT PARALLEL SAFE`.
+
+| Function | Signature | Direction | Description |
+|---|---|---|---|
+| `tqvector_in` | `tqvector_in(cstring) → tqvector` | cstring → tqvector | Parses the canonical text form `[dim=<D>,bits=<B>,seed=<S>,gamma=<G>]:<hex_codes>` and packs the internal datum. Defaults `seed` to 42 and `gamma` to 0.0 when omitted; errors on bad hex or a code length mismatch. |
+| `tqvector_out` | `tqvector_out(tqvector) → cstring` | tqvector → cstring | Emits the canonical text form, always including `dim`, `bits`, `seed`, and `gamma`, with the code bytes hex-encoded in lowercase. |
 
 ## Acceptance Criteria
 

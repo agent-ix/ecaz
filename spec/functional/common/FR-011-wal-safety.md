@@ -1,8 +1,7 @@
 ---
 id: FR-011
 title: WAL Safety — GenericXLog Usage
-artifact_type: FR
-type: functional-requirement
+type: FR
 status: APPROVED
 object: process
 traces:
@@ -33,6 +32,28 @@ GenericXLogFinish(state);  // atomically writes WAL record
 2. If an error occurs between `GenericXLogStart` and `GenericXLogFinish`, the changes SHALL be rolled back automatically (standard GenericXLog guarantee)
 3. After a crash and WAL replay, the index SHALL be in a consistent state
 4. pgrx wraps these C functions — use the pgrx wrappers
+
+## Workflow
+
+The `GenericXLogTxn` RAII wrapper (`src/storage/wal.rs`) drives every page
+modification: `start(relation)` opens the WAL state, `register_locked_buffer_full_image`
+yields the writable page image, the caller mutates it in place, and `finish()`
+atomically emits the WAL record. Any early return drops the txn, whose `Drop`
+impl calls `GenericXLogAbort` to roll back.
+
+```mermaid
+flowchart TD
+    A["GenericXLogTxn::start(relation)"] --> B["GenericXLogStart(relation)"]
+    B --> C["register_locked_buffer_full_image(buffer)"]
+    C --> D["GenericXLogRegisterBuffer(state, buffer, GENERIC_XLOG_FULL_IMAGE)"]
+    D --> E[Modify page contents in place]
+    E --> F{Error before finish?}
+    F -->|No| G["finish() -> GenericXLogFinish(state)"]
+    G --> H[WAL record written atomically, returns XLogRecPtr]
+    F -->|Yes| I["Drop: GenericXLogAbort(state)"]
+    I --> J[Changes rolled back, no WAL record]
+    H --> K[Crash + WAL replay leaves index consistent]
+```
 
 ## Acceptance Criteria
 

@@ -1,10 +1,9 @@
 ---
 id: FR-003
 title: tqvector Binary Protocol (Send/Receive)
-artifact_type: FR
-type: functional-requirement
+type: FR
 status: APPROVED
-object: api
+object: api_endpoint
 traces:
   - US-001
   - FR-001
@@ -23,6 +22,15 @@ The extension SHALL provide binary send/receive functions for efficient client-s
 
 - SHALL validate the received bytes (minimum structural payload size, code length matches dim/bits)
 - SHALL reject malformed input with ERROR
+
+## Endpoint
+
+The binary protocol surface is registered as two `LANGUAGE c` SQL functions in `sql/bootstrap.sql`. Both are `IMMUTABLE STRICT PARALLEL SAFE`.
+
+| Function | Signature | Direction | Description |
+|---|---|---|---|
+| `tqvector_send` | `tqvector_send(tqvector) → bytea` | tqvector → bytea | Emits the internal packed representation unchanged — the on-disk packed format IS the wire format. |
+| `tqvector_recv` | `tqvector_recv(internal) → tqvector` | internal (wire bytes) → tqvector | Reads the wire bytes via `unpack`, validating the minimum structural size (`MIN_BINARY_BYTES = 6`: 2-byte `dim` + 4-byte `gamma`) and that the trailing code length matches `code_len(dim, bits)`; rejects malformed input with ERROR. |
 
 ## Acceptance Criteria
 

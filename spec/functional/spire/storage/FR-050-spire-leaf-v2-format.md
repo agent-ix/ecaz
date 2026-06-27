@@ -1,8 +1,7 @@
 ---
 id: FR-050
 title: SPIRE Leaf V2 Format
-type: functional-requirement
-artifact_type: FR
+type: FR
 status: APPROVED
 object: binary_format
 relationships:

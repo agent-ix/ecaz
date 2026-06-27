@@ -1,7 +1,7 @@
 ---
 id: FR-073
 title: "DiskANN Configuration Surface"
-artifact_type: FR
+type: FR
 status: IMPLEMENTED
 object: configuration
 relationships:

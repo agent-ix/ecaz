@@ -1,8 +1,7 @@
 ---
 id: NFR-016
 title: On-Disk Format Evolution Discipline
-type: non-functional-requirement
-artifact_type: NFR
+type: NFR
 quality_attribute: maintainability
 status: PROPOSED
 relationships:

@@ -1,8 +1,7 @@
 ---
 id: FR-022
 title: Vacuum Implementation — Soft Delete and Graph Maintenance
-artifact_type: FR
-type: functional-requirement
+type: FR
 status: DRAFT
 object: process
 traces:
@@ -177,6 +176,41 @@ After `ambulkdelete`, `amvacuumcleanup` SHALL:
 ### Page Compaction (Future)
 
 This version does not compact pages after deletion. Deleted element tuples remain on the page with `deleted = true` and consume space. Page compaction (reclaiming space from deleted tuples) is a future optimization.
+
+## Workflow
+
+`ambulkdelete` runs three passes over the index (`src/am/ec_hnsw/vacuum.rs`):
+Pass 1 marks deletions (drop dead heap TIDs via the vacuum callback, collect
+emptied elements into `delete_set`), Pass 2 repairs the graph (unlink the dead
+node from neighbors' lists, optionally backfill free slots via local search),
+Pass 3 finalizes (`deleted = true`). Scans hold `BUFFER_LOCK_SHARE`; writes
+re-acquire `BUFFER_LOCK_EXCLUSIVE` and are GenericXLog-wrapped. `amvacuumcleanup`
+then counts live elements and reports statistics.
+
+```mermaid
+flowchart TD
+    A["ambulkdelete(info, stats, callback, callback_state)"] --> P1[Pass 1: Mark]
+    P1 --> P1a["Scan data blocks under SHARE lock, walk element tuples"]
+    P1a --> P1b["callback(heap_tid): dead? remove from element.heaptids[]"]
+    P1b --> P1c{All TIDs removed?}
+    P1c -->|Yes| P1d[Add element to delete_set]
+    P1c -->|No| P1e[Keep element live]
+    P1d --> P1f["If page modified: EXCLUSIVE lock + GenericXLog write"]
+    P1e --> P1f
+
+    P1f --> P2[Pass 2: Repair]
+    P2 --> P2a[For each node in delete_set: scan neighbors]
+    P2a --> P2b["Clear slots pointing at dead element (one page at a time)"]
+    P2b --> P2c["Optionally backfill free slots via insert-time graph search + linear top-up"]
+    P2c --> P2d["GenericXLog write neighbor tuples (EXCLUSIVE)"]
+
+    P2d --> P3[Pass 3: Finalize]
+    P3 --> P3a["For each node in delete_set: EXCLUSIVE lock element page"]
+    P3a --> P3b["Set element.deleted = true, GenericXLog write"]
+
+    P3b --> VC["amvacuumcleanup: count live elements (PG18 streaming reads, FR-019)"]
+    VC --> R[Return IndexBulkDeleteResult: num_pages, num_index_tuples, tuples_removed]
+```
 
 ## Acceptance Criteria
 

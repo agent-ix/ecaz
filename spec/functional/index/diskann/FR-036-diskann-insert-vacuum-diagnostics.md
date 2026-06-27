@@ -1,8 +1,7 @@
 ---
 id: FR-036
 title: DiskANN Insert, Vacuum, and Diagnostics
-type: functional-requirement
-artifact_type: FR
+type: FR
 status: IMPLEMENTED
 object: process
 relationships:
@@ -42,6 +41,29 @@ DELETE plus VACUUM removes dead DiskANN entries and repairs affected neighbor sl
 ### FR-036-AC-3
 
 DiskANN diagnostics expose graph summary metadata without mutating the index.
+
+## Workflow
+
+```mermaid
+flowchart TD
+    subgraph Insert["aminsert"]
+        IA["Derive payload from persisted codebooks (SRHT + grouped-PQ)"] --> IB{"empty index?"}
+        IB -->|"yes"| IC["Bootstrap first node"]
+        IB -->|"no"| ID{"exact duplicate of an existing node?"}
+        ID -->|"yes"| IE["Bind heap TID to that node's overflow chain"]
+        ID -->|"no"| IF["Greedy-search + alpha-prune forward neighbors (<= R)"]
+        IF --> IG["Append new node tuple"]
+        IG --> IH["Add backlinks where neighbor slots free, else re-prune (keep degree <= R)"]
+    end
+    subgraph Vacuum["ambulkdelete + amvacuumcleanup"]
+        VA["Strip dead primary heap TIDs (promote live overflow when possible)"] --> VB["Repair neighbor lists (drop dead TIDs, compact, pad INVALID)"]
+        VB --> VC["Tombstone fully-dead nodes"]
+        VC --> VD["Flag needs_medoid_refresh when medoid affected"]
+    end
+    subgraph Diag["ec_diskann_index_admin_snapshot(regclass)"]
+        DA["Materialize persisted graph (read-only)"] --> DB["Report node count, degree stats, medoid, inserted_since_rebuild"]
+    end
+```
 
 ## Dependencies
 

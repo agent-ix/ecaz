@@ -1,7 +1,7 @@
 ---
 id: FR-065
 title: "Suite Manifest Schema"
-artifact_type: FR
+type: FR
 status: IMPLEMENTED
 object: data_schema
 relationships:

@@ -1,8 +1,7 @@
 ---
 id: FR-007
 title: HNSW Index Access Method — Page Layout
-artifact_type: FR
-type: functional-requirement
+type: FR
 status: APPROVED
 object: entity
 traces:
@@ -109,6 +108,40 @@ During **vacuum**:
 | Extend relation | `BUFFER_LOCK_EXCLUSIVE` | New page only |
 
 To prevent deadlocks: always acquire page locks in block number order. Never hold a lock on page A while acquiring a lock on page B where B < A.
+
+## Properties
+
+The on-disk layout is composed of one metadata page (`MetadataPage`) plus interleaved element and neighbor tuples (`TqElementTuple` / `TqNeighborTuple`) defined in `src/am/ec_hnsw/page.rs`. The table below reflects the persisted fields of each on-page structure as implemented.
+
+| Property | Owning structure | Type | Description |
+|---|---|---|---|
+| m | MetadataPage | u16 | Max neighbors per layer (WITH `m`) |
+| ef_construction | MetadataPage | u16 | Build-time beam width |
+| entry_point | MetadataPage | ItemPointer | Graph entry-point TID (block + offset) |
+| dimensions | MetadataPage | u16 | Vector dimensionality |
+| bits | MetadataPage | u8 | Quantization bits |
+| max_level | MetadataPage | u8 | Highest occupied layer |
+| seed | MetadataPage | u64 | Quantizer/layer RNG seed |
+| inserted_since_rebuild | MetadataPage | u64 | Live inserts since last bulk build/REINDEX (insert-drift accounting) |
+| format_version | MetadataPage | u16 | Index format (`v1_scalar`, `v2_grouped`, `v3_turbo_hot_cold`, `v4_rabitq`) |
+| transform_kind | MetadataPage | u8 enum | Rotation transform (`Unknown`/`Srht`/`Opq`) |
+| search_codec_kind | MetadataPage | u8 enum | Search codec (`Unknown`/`ScalarQuantized`/`GroupedPq`/`RaBitQ`) |
+| payload_flags | MetadataPage | u8 | Bitfield (binary sidecar, grouped search code, cold rerank payload) |
+| search_bits / rerank_codec_kind | MetadataPage | u8 | Search-side bit width and rerank codec selection |
+| search_subvector_count / search_subvector_dim | MetadataPage | u16 | Grouped-PQ subvector geometry |
+| grouped_codebook_head | MetadataPage | ItemPointer | Head TID of the grouped-PQ codebook chain |
+| tag | TqElementTuple | u8 | `TQ_ELEMENT_TAG` = `0x01` |
+| level | TqElementTuple | u8 | HNSW layer assigned to this node |
+| deleted | TqElementTuple | bool | Soft-delete flag |
+| heaptids | TqElementTuple | [ItemPointer; 10] | Inline heap TIDs for coalesced duplicates (`HEAPTID_INLINE_CAPACITY` = 10) |
+| heaptid_count | TqElementTuple | u8 | Number of valid inline heap TIDs |
+| gamma | TqElementTuple | f32 | Per-node quantizer gamma scalar |
+| neighbortid | TqElementTuple | ItemPointer | Pointer to this node's `TqNeighborTuple` |
+| code | TqElementTuple | [u8; code_len] | Packed quantizer code bytes |
+| binary_words | TqElementTuple | [u64] | Optional binary sidecar words (when `PAYLOAD_FLAG_BINARY_SIDECAR` set) |
+| tag | TqNeighborTuple | u8 | `TQ_NEIGHBOR_TAG` = `0x02` |
+| count | TqNeighborTuple | u16 | Total neighbor TID slots across layers |
+| tids | TqNeighborTuple | [ItemPointer] | `2M` slots at layer 0, `M` per layer above (`2M + level*M`) |
 
 ## Acceptance Criteria
 

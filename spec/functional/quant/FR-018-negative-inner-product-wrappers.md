@@ -1,10 +1,9 @@
 ---
 id: FR-018
 title: Negative Inner Product Wrapper Functions
-artifact_type: FR
-type: functional-requirement
+type: FR
 status: APPROVED
-object: api
+object: api_endpoint
 traces:
   - US-002
   - FR-005
@@ -28,6 +27,28 @@ The extension SHALL provide negated SQL-visible wrapper functions for ORDER BY s
 
 - SHALL return `-1 * tqvector_query_inner_product(candidate, query)`
 - Exists for the `(tqvector, float4[])` `<#>` operator used by HNSW ordering and sequential scan
+
+## Endpoint
+
+Two SQL-callable C functions declared in `sql/bootstrap.sql`:
+
+```sql
+tqvector_negative_inner_product(tqvector, tqvector) RETURNS float4
+  IMMUTABLE STRICT PARALLEL SAFE LANGUAGE c
+tqvector_negative_query_inner_product(tqvector, real[]) RETURNS float4
+  IMMUTABLE STRICT PARALLEL SAFE LANGUAGE c
+```
+
+- `tqvector_negative_inner_product(a, b)` returns
+  `-1 * tqvector_inner_product(a, b)` (code-to-code; FR-005).
+- `tqvector_negative_query_inner_product(candidate, query)` returns
+  `-1 * tqvector_query_inner_product(candidate, query)` (prepared-query; FR-017).
+- **Relation to `<#>`**: these negated wrappers are the `PROCEDURE` bound to the
+  `<#>` operator family — `(tqvector, tqvector)` (commutative, `COMMUTATOR =
+  <#>`) and `(tqvector, real[])`. Negation makes `ORDER BY ... <#> ...` ASC
+  return the highest-similarity (largest inner product) candidates first, which
+  the HNSW/IVF/DiskANN/SPIRE operator classes use as `FUNCTION 1`. Both are
+  `IMMUTABLE`, `STRICT`, `PARALLEL SAFE`.
 
 ## Acceptance Criteria
 

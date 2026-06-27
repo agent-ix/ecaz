@@ -1,7 +1,7 @@
 ---
 id: FR-067
 title: "DiskANN Scan Pipeline"
-artifact_type: FR
+type: FR
 status: IMPLEMENTED
 object: process
 relationships:

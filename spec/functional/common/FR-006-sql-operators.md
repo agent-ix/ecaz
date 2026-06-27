@@ -1,10 +1,9 @@
 ---
 id: FR-006
 title: SQL Operators and Operator Class
-artifact_type: FR
-type: functional-requirement
+type: FR
 status: APPROVED
-object: api
+object: api_endpoint
 traces:
   - US-002
   - FR-017
@@ -55,6 +54,16 @@ CREATE OPERATOR CLASS tqvector_ip_ops DEFAULT FOR TYPE tqvector
 - Default operator class for `tqvector` under the `ec_hnsw` access method
 - OPERATOR 1 is the ordering operator for raw query vectors
 - FUNCTION 1 is the prepared-query distance function used by the index AM
+
+## Endpoint
+
+The operator surface registered in `sql/bootstrap.sql` for the `tqvector` type. The `<#>` operators return the negative inner product (so `ORDER BY ASC` yields highest similarity first); the `tqvector_negative_*` procedures are `IMMUTABLE STRICT PARALLEL SAFE` C functions.
+
+| Surface | Signature | Description |
+|---|---|---|
+| `<#>` (code-to-code) | `tqvector <#> tqvector → float4` | Procedure `tqvector_negative_inner_product`; `COMMUTATOR = <#>` (`a <#> b = b <#> a`). |
+| `<#>` (query) | `tqvector <#> real[] → float4` | Procedure `tqvector_negative_query_inner_product`; negative query-to-code inner product used by the opclass and seq scan. |
+| `tqvector_ip_ops` | `OPERATOR CLASS ... DEFAULT FOR TYPE tqvector USING ec_hnsw` | `OPERATOR 1 <#>(tqvector, real[]) FOR ORDER BY float_ops`, `FUNCTION 1 tqvector_query_inner_product(tqvector, real[])`. (An equivalent `tqvector_ip_ops` is also registered `USING ec_ivf`.) |
 
 ## Acceptance Criteria
 

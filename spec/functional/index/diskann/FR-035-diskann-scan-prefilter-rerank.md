@@ -1,8 +1,7 @@
 ---
 id: FR-035
 title: DiskANN Scan, Prefilter, and Rerank
-type: functional-requirement
-artifact_type: FR
+type: FR
 status: IMPLEMENTED
 object: process
 relationships:
@@ -66,6 +65,24 @@ compressed-domain batch-scoring wins.
 DiskANN scan optimization packets preserve recall and attribute end-to-end
 latency changes to the dominant scan stage rather than only reporting aggregate
 p50/p95/p99.
+
+## Workflow
+
+```mermaid
+flowchart TD
+    A["amrescan: read metadata + ORDER BY query vector"] --> B["Resolve list_size (session GUC / reloption)"]
+    B --> C["Resolve prefilter_kind (auto: binary sidecar when present, else grouped_pq)"]
+    C --> D["Build query scoring state (SRHT-rotate query, grouped-PQ LUT or RaBitQ)"]
+    D --> E["Resolve entry point (medoid, fallback if deleted)"]
+    E --> F["Greedy descent from entry point + beam search (frontier bounded by list_size)"]
+    F --> G["Score visited nodes via prefilter (QuantCodec::score_ip_batch over neighbor batch)"]
+    G --> H["Take top rerank_budget candidates"]
+    H --> I{"heap f32 rerank enabled?"}
+    I -->|"yes"| J["Fetch heap rows, re-score exact f32"]
+    I -->|"no"| K["Keep prefilter scores"]
+    J --> L["amgettuple: emit ordered results until LIMIT"]
+    K --> L
+```
 
 ## Dependencies
 

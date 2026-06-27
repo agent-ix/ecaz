@@ -1,8 +1,7 @@
 ---
 id: NFR-006
 title: Async I/O Cold-Cache Performance
-type: non-functional-requirement
-artifact_type: NFR
+type: NFR
 quality_attribute: performance_efficiency
 status: DRAFT
 traces:

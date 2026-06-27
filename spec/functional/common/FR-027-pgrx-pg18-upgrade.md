@@ -1,8 +1,7 @@
 ---
 id: FR-027
 title: pgrx PG18 Support and Build Configuration
-artifact_type: FR
-type: functional-requirement
+type: FR
 status: DRAFT
 object: configuration
 traces:
@@ -93,6 +92,16 @@ pub unsafe extern "C-unwind" fn _PG_init() {
     }
 }
 ```
+
+## Configuration
+
+The Cargo feature flags in `[features]` of `Cargo.toml` select the PostgreSQL target version at build (creation) time.
+
+| Name | Scope | Type | Default | Description |
+|---|---|---|---|---|
+| default | creation | cargo feature | `["pg18"]` | Default build target; enables the `pg18` feature when none is specified. |
+| pg17 | creation | cargo feature | `["pgrx/pg17", "pgrx-tests/pg17"]` | PG17 fallback target; activates the pgrx PG17 bindings. |
+| pg18 | creation | cargo feature | `["pgrx/pg18", "pgrx-tests/pg18"]` | PG18 target; activates the pgrx PG18 bindings. |
 
 ## Acceptance Criteria
 

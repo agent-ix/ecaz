@@ -1,8 +1,7 @@
 ---
 id: NFR-009
 title: CLI Drift and Artifact Discipline
-type: non-functional-requirement
-artifact_type: NFR
+type: NFR
 quality_attribute: maintainability
 status: APPROVED
 relationships:

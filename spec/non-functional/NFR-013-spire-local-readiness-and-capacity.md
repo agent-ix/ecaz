@@ -1,8 +1,7 @@
 ---
 id: NFR-013
 title: SPIRE Local Readiness and Capacity
-type: non-functional-requirement
-artifact_type: NFR
+type: NFR
 quality_attribute: scalability
 status: APPROVED
 relationships:

@@ -1,7 +1,7 @@
 ---
 id: FR-066
 title: "Suite Normalized Results Row Schema"
-artifact_type: FR
+type: FR
 status: IMPLEMENTED
 object: data_schema
 relationships:

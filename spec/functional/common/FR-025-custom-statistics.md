@@ -1,8 +1,7 @@
 ---
 id: FR-025
 title: Custom Cumulative Statistics
-artifact_type: FR
-type: functional-requirement
+type: FR
 status: DRAFT
 object: entity
 traces:
@@ -105,6 +104,22 @@ On PG17, the custom statistics API does not exist. The extension SHALL not regis
 kind, `ecaz_stats()` SHALL NOT be defined, and counter increments SHALL be compiled out. On
 PG18, the shared pgstat path requires preload-time activation; without preload, the SQL surface
 falls back to backend-local counters.
+
+## Properties
+
+The cumulative counters are held in `TqStatsCounters` (`src/am/common/stats.rs`), backed by process-wide `AtomicU64` counters. All counters are unsigned 64-bit (`u64`).
+
+| Field | Type | Description |
+|---|---|---|
+| total_distance_calcs | u64 | Total candidate scoring calls (`record_distance_calc`). |
+| total_graph_hops | u64 | Total bootstrap-expansion node visits (`record_graph_hop`). |
+| total_linear_pages | u64 | Total linear-scan pages read (`record_linear_page`). |
+| total_scans_started | u64 | Total `amrescan` calls (scans started). |
+| total_scans_bootstrap_only | u64 | Scans that returned all results from bootstrap without falling through to linear scan. |
+| quantizer_cache_hits | u64 | `ProdQuantizer::cached` cache hits. |
+| quantizer_cache_misses | u64 | `ProdQuantizer::cached` cache misses (new codebook built). |
+
+`TqStatsSummary` exposes the same counters plus the derived `bootstrap_hit_rate` and `quantizer_cache_rate` (`f64`).
 
 ## Acceptance Criteria
 

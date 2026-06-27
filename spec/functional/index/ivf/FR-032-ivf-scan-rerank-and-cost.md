@@ -1,8 +1,7 @@
 ---
 id: FR-032
 title: IVF Scan, Rerank, and Costing
-type: functional-requirement
-artifact_type: FR
+type: FR
 status: IMPLEMENTED
 object: process
 relationships:
@@ -67,6 +66,23 @@ batch-scoring wins.
 Plain non-ORDER-BY statements such as `count(*)` over an IVF-indexed table plan
 and execute without an ANN scan shape error after the Task 100 planner guard is
 implemented.
+
+## Workflow
+
+```mermaid
+flowchart TD
+    A["amrescan: read metadata + ORDER BY query vector"] --> B["Resolve effective nprobe (session GUC / reloption / ceil(sqrt(nlists)))"]
+    B --> C["Score all centroids vs raw f32 query (inner product)"]
+    C --> D["Select top-nprobe lists (optional adaptive nprobe)"]
+    D --> E["Scan selected posting lists (read posting / dense blocks)"]
+    E --> F["Score candidates via QuantCodec::score_ip_batch (turboquant LUT / grouped-PQ / RaBitQ / f32)"]
+    F --> G{"rerank = heap_f32?"}
+    G -->|"yes"| H["Fetch heap ecvector rows, re-score exact f32"]
+    G -->|"no"| I["Keep compressed-domain scores"]
+    H --> J["Maintain top-k candidate heap"]
+    I --> J
+    J --> K["amgettuple: emit ordered heap TIDs until LIMIT"]
+```
 
 ## Dependencies
 

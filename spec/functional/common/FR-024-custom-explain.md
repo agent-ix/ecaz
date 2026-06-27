@@ -1,8 +1,7 @@
 ---
 id: FR-024
 title: Custom EXPLAIN Options — Scan Diagnostics
-artifact_type: FR
-type: functional-requirement
+type: FR
 status: DRAFT
 object: process
 traces:
@@ -135,6 +134,31 @@ When `ecaz` is not specified in the EXPLAIN options, the hook SHALL return immed
 On PG17, the custom EXPLAIN API does not exist, so no EXPLAIN hook is registered. The reusable
 counter contract and pure emission helpers still exist for shared testing, but the live option and
 per-node hook remain PG18-only.
+
+## Workflow
+
+On PG18, `_PG_init` registers the `ecaz` EXPLAIN option and chains the
+`explain_per_node_hook` (`src/am/common/explain.rs`). When `EXPLAIN (ecaz)`
+runs, the option handler records enabled state; scan execution increments
+`TqScanOpaque` counters; and the per-node hook, if the option is enabled and the
+node is an `ec_hnsw` Index Scan, reads those counters and emits them, then chains
+to any previously installed hook. When the option is absent the hook returns
+immediately (zero overhead). PG17 registers no hook.
+
+```mermaid
+flowchart TD
+    Init["_PG_init (PG18)"] --> Reg["register_pg18_explain_hooks: RegisterExtensionExplainOption('ecaz') + chain explain_per_node_hook"]
+    Reg --> Q["EXPLAIN (ecaz[, ANALYZE]) SELECT ... ORDER BY ... LIMIT k"]
+    Q --> H1["Option handler: SetExplainExtensionState(enabled=true)"]
+    H1 --> Exec[Executor runs plan]
+    Exec --> Scan["ec_hnsw scan: ambeginscan/amrescan/amgettuple increment counters (bootstrap_expansions, *_pages_read, elements_scored/skipped, heap_tids_returned, quantizer_cache_hit)"]
+    Scan --> Hook["explain_per_node_hook(planstate, es)"]
+    Hook --> Chk{"ecaz enabled AND node is ec_hnsw Index Scan?"}
+    Chk -->|Yes| Emit["Read counters from TqScanOpaque, emit via ExplainPropertyInteger/Bool (Ecaz Stats group)"]
+    Chk -->|No| Skip[Return immediately, zero overhead]
+    Emit --> Prev[Chain to previous explain_per_node_hook if installed]
+    Skip --> Prev
+```
 
 ## Acceptance Criteria
 

@@ -1,8 +1,7 @@
 ---
 id: NFR-012
 title: Cloud Read QPS and Live Write Throughput Targets
-type: non-functional-requirement
-artifact_type: NFR
+type: NFR
 quality_attribute: performance_efficiency
 status: PROPOSED
 relationships:

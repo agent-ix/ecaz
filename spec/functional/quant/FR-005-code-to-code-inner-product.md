@@ -1,10 +1,9 @@
 ---
 id: FR-005
 title: Code-to-Code Inner Product Function
-artifact_type: FR
-type: functional-requirement
+type: FR
 status: APPROVED
-object: api
+object: api_endpoint
 traces:
   - US-002
   - FR-013
@@ -40,6 +39,25 @@ Used by the public SQL API `tqvector_inner_product(a, b)` and during HNSW runtim
 5. Return `mse_ip`
 
 Lower fidelity than the prepared-query path because the query is compressed and the residual correction term is omitted, but it avoids query preparation and works symmetrically.
+
+## Endpoint
+
+SQL-callable C function declared in `sql/bootstrap.sql` (backed by the
+`tqvector_inner_product_wrapper` symbol):
+
+```sql
+tqvector_inner_product(tqvector, tqvector) RETURNS float4
+  IMMUTABLE STRICT PARALLEL SAFE LANGUAGE c
+```
+
+- **Arguments**: two stored `tqvector` codes `a` and `b`.
+- **Returns**: `float4`, the symmetric code-to-code approximate inner product.
+- **Behavior**: dispatches to `ProdQuantizer::score_ip_codes_lite`
+  (`score_ip_encoded_lite` in `src/quant/prod.rs`), which unpacks the MSE
+  indices of both codes and sums `codebook[idx_a[i]] * codebook[idx_b[i]]` over
+  the original dimensions. The QJL payload and `gamma` are ignored in v0.1, so
+  the estimate is MSE-only and symmetric. Mismatched `dim`/`bits` raise ERROR.
+  Marked `IMMUTABLE`, `STRICT`, `PARALLEL SAFE`.
 
 ## Acceptance Criteria
 

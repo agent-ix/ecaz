@@ -1,7 +1,7 @@
 ---
 id: FR-071
 title: "HNSW Configuration Surface"
-artifact_type: FR
+type: FR
 status: IMPLEMENTED
 object: configuration
 relationships:

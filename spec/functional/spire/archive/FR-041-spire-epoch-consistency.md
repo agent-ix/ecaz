@@ -1,8 +1,7 @@
 ---
 id: FR-041
 title: "SPIRE Epoch Consistency (Superseded)"
-type: functional-requirement
-artifact_type: FR
+type: FR
 status: SUPERSEDED
 relationships:
   - target: "ix://agent-ix/ecaz/FR-048"

@@ -1,8 +1,7 @@
 ---
 id: FR-012
 title: SQL Bootstrap — Extension Packaging
-artifact_type: FR
-type: functional-requirement
+type: FR
 status: APPROVED
 object: configuration
 traces:
@@ -49,6 +48,18 @@ superuser = true
 ### PostgreSQL Version Support
 
 The extension SHALL compile and install on PostgreSQL 17 and 18 via pgrx feature flags, with PG18 as the default build target.
+
+## Configuration
+
+The extension control file (`ecaz.control`) declares the following settings, all fixed at extension-creation time.
+
+| Name | Scope | Type | Default | Description |
+|---|---|---|---|---|
+| comment | creation | string | `Ecaz compressed vector extension with HNSW index` | Human-readable extension comment shown in catalogs. |
+| default_version | creation | string | `0.1.1` | Version installed by `CREATE EXTENSION ecaz` when no version is specified. |
+| module_pathname | creation | string | `$libdir/ecaz` | Path used to resolve the shared library for `LANGUAGE c` functions. |
+| relocatable | creation | boolean | `false` | Extension objects cannot be moved to another schema after install. |
+| superuser | creation | boolean | `true` | Only a superuser may run `CREATE EXTENSION ecaz`. |
 
 ## Acceptance Criteria
 

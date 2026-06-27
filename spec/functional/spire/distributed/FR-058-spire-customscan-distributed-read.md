@@ -1,8 +1,7 @@
 ---
 id: FR-058
 title: SPIRE CustomScan Distributed Read
-type: functional-requirement
-artifact_type: FR
+type: FR
 status: APPROVED
 object: process
 relationships:

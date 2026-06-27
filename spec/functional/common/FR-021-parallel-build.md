@@ -1,8 +1,7 @@
 ---
 id: FR-021
 title: Parallel Index Build
-artifact_type: FR
-type: functional-requirement
+type: FR
 status: DRAFT
 object: process
 traces:
@@ -236,6 +235,32 @@ disabled, the build falls back to the serial graph path (FR-008).
 | Dimension mismatch across heap tuples | First worker sets `dimensions`/`bits`/`seed` in `TqBuildShared` under mutex. Subsequent workers validate against shared values. Mismatch → `ereport(ERROR, "inconsistent tqvector dimensions")`. |
 | Corrupt tqvector datum (detoast fails) | Worker skips the tuple with `ereport(WARNING)` and continues. The skipped tuple is not included in the index. |
 | `maintenance_work_mem` too low for sort | `tuplesort` spills to disk automatically — no special handling needed. Performance degrades but correctness is maintained. |
+
+## Workflow
+
+The leader sets up a parallel context and DSM, launches workers, then proceeds
+through heap ingestion (workers stream encoded tuples via `shm_mq`), tuple
+collection/dedupe, concurrent DSM graph assembly (ADR-048), and page
+serialization. Workers run `_ec_hnsw_parallel_build_main`. Small tables or a
+disabled DSM GUC fall back to the serial path (FR-008).
+
+```mermaid
+flowchart TD
+    A["ambuild(heap_rel, index_rel, index_info)"] --> B["estimate_parallel_workers()"]
+    B --> C{Workers > 0 and DSM available?}
+    C -->|No| SER[Serial build path FR-008]
+    C -->|Yes| D["CreateParallelContext('postgres', '_ec_hnsw_parallel_build_main', n)"]
+    D --> E[Allocate DSM: BuildShared + shm_mq queues + ParallelTableScanDesc]
+    E --> F["InitializeParallelDSM + LaunchParallelWorkers()"]
+    F --> W["Workers: table_beginscan_parallel, detoast + validate, shm_mq_send encoded tuples"]
+    W --> X[Workers signal completion via ConditionVariable]
+    X --> G[Leader drains shm_mq, sorts by heap TID, dedupes BuildTuples]
+    G --> H[Leader allocates DSM graph surface, precomputes levels + fixed entry point]
+    H --> I["Workers insert node partitions with per-node LWLocks (shared read, exclusive write)"]
+    I --> J["Leader serializes element + neighbor tuples to pages (GenericXLog), fixes TID pointers, writes metadata page"]
+    J --> K["DestroyParallelContext(), return IndexBuildResult"]
+    SER --> K
+```
 
 ## Acceptance Criteria
 

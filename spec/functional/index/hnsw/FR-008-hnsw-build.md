@@ -1,8 +1,7 @@
 ---
 id: FR-008
 title: HNSW Index Access Method — Build
-artifact_type: FR
-type: functional-requirement
+type: FR
 status: APPROVED
 object: process
 traces:
@@ -188,6 +187,27 @@ Called for `CREATE INDEX` before any data exists:
 - No element or neighbor pages
 
 ---
+
+## Workflow
+
+`ec_hnsw_ambuild` (`src/am/ec_hnsw/build.rs`) runs the three-phase bulk build: heap scan into build tuples, native in-crate graph construction, then a two-pass page serialization followed by the metadata page. All page writes are GenericXLog-wrapped.
+
+```mermaid
+flowchart TD
+    start([ambuild heap_rel index_rel index_info]) --> opts[Parse amoptions m, ef_construction, build_source_column, storage_format]
+    opts --> p1[Phase 1 heap scan]
+    p1 --> collect["Collect BuildTuple heap_tid, code bytes, optional raw f32 source"]
+    collect --> p2[Phase 2 native graph construction]
+    p2 --> assign["Layer assignment floor of minus ln rand over ln M"]
+    assign --> descent[Greedy descent then beam-search neighbor selection]
+    descent --> prune[Backlink pruning into HnswBuildNode set]
+    prune --> p3a[Phase 3 pass 1 persist tuples]
+    p3a --> writeelem["Write TqElementTuple plus TqNeighborTuple placeholder, record origin_id to page TID in tid_map"]
+    writeelem --> p3b[Phase 3 pass 2 resolve neighbors]
+    p3b --> fixup["Rewrite TqNeighborTuple resolving neighbor origin_ids to page TIDs via tid_map"]
+    fixup --> meta[Write metadata page 0 M, ef_construction, entry point, dim, bits, seed]
+    meta --> done([Drop build state and heap cache, report tuple count])
+```
 
 ## Acceptance Criteria
 

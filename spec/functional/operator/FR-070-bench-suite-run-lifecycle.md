@@ -1,7 +1,7 @@
 ---
 id: FR-070
 title: "Benchmark Suite Run Lifecycle"
-artifact_type: FR
+type: FR
 status: IMPLEMENTED
 object: process
 relationships:

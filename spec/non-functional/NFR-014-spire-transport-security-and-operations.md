@@ -1,8 +1,7 @@
 ---
 id: NFR-014
 title: SPIRE Transport Security and Operations
-type: non-functional-requirement
-artifact_type: NFR
+type: NFR
 quality_attribute: security
 status: APPROVED
 relationships:

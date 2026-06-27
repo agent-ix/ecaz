@@ -1,8 +1,7 @@
 ---
 id: FR-059
 title: SPIRE Coordinator Routed DML and 2PC
-type: functional-requirement
-artifact_type: FR
+type: FR
 status: APPROVED
 object: process
 relationships:

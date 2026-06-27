@@ -1,7 +1,7 @@
 ---
 id: FR-074
 title: "QuantCodec Scoring Contract"
-artifact_type: FR
+type: FR
 status: IMPLEMENTED
 object: interface
 relationships:

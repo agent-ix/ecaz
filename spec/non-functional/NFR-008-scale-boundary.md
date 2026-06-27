@@ -1,8 +1,7 @@
 ---
 id: NFR-008
 title: Scale Boundary and Hardware Claim Policy
-type: non-functional-requirement
-artifact_type: NFR
+type: NFR
 quality_attribute: scalability
 status: APPROVED
 relationships:

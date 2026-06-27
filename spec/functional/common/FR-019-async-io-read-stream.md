@@ -1,8 +1,7 @@
 ---
 id: FR-019
 title: Async I/O — ReadStream Integration
-artifact_type: FR
-type: functional-requirement
+type: FR
 status: DRAFT
 object: process
 traces:
@@ -227,6 +226,43 @@ The dispatch is compile-time via Cargo features, not runtime. This avoids any ov
 2. `read_stream_reset()` resets the adaptive readahead distance to 1. If neighbor batch sizes are consistent, the stream ramps back up within 2-3 batches. If this proves problematic, the implementation MAY use `read_stream_pause()`/`read_stream_resume()` instead
 3. The graph stream and linear stream SHALL be independent instances — they serve different I/O patterns and SHALL NOT share adaptive distance state
 4. All buffers returned by `read_stream_next_buffer()` SHALL be released via `UnlockReleaseBuffer()` before the next call, matching the current pin discipline
+
+## Workflow
+
+Dispatch is compile-time (`#[cfg(feature = "pg18")]`). On PG18 the scan drives
+two independent `ReadStream` instances (graph: random prefetch via
+`graph_prefetch_cb`; linear: sequential prefetch via `linear_prefetch_cb`,
+`READ_STREAM_SEQUENTIAL`), and vacuum tuple counting uses a sequential stream.
+On PG17 the synchronous `ReadBufferExtended` path is compiled instead.
+
+```mermaid
+flowchart TD
+    Start[amgettuple / vacuum page read] --> Ver{Compiled feature?}
+
+    Ver -->|pg18| P18[ReadStream prefetch path]
+    Ver -->|pg17| P17["Synchronous ReadBufferExtended (fallback)"]
+
+    P18 --> Phase{Scan phase}
+    Phase -->|Graph bootstrap| G1["graph_prefetch_cb returns neighbor block numbers"]
+    G1 --> G2["AIO StartReadBuffers, merges consecutive blocks up to io_combine_limit"]
+    G2 --> G3["read_stream_next_buffer() returns pinned buffer"]
+    G3 --> G4[Lock SHARE, decode + score element, UnlockReleaseBuffer]
+
+    Phase -->|Linear fallback| L1["linear_prefetch_cb returns next_block++ until max_block"]
+    L1 --> L2[Vectored sequential prefetch]
+    L2 --> L3["read_stream_next_buffer() returns pinned buffer"]
+    L3 --> L4[Walk line pointers, score, return heap TID]
+
+    Phase -->|Vacuum count| V1["count_element_tuples uses sequential ReadStream"]
+
+    P17 --> S1[ReadBufferExtended + LockBuffer per page]
+    S1 --> S2[Decode + score, UnlockReleaseBuffer]
+
+    G4 --> End[amendscan: read_stream_end on both streams, zero pins]
+    L4 --> End
+    V1 --> End
+    S2 --> End
+```
 
 ## Acceptance Criteria
 

@@ -1,8 +1,7 @@
 ---
 id: FR-060
 title: SPIRE Diagnostics Configuration and Operator Surface
-type: functional-requirement
-artifact_type: FR
+type: FR
 status: APPROVED
 object: api_endpoint
 relationships:

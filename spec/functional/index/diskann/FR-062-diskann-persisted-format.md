@@ -1,7 +1,7 @@
 ---
 id: FR-062
 title: "DiskANN Persisted Vamana Graph Format"
-artifact_type: FR
+type: FR
 status: IMPLEMENTED
 object: binary_format
 relationships:
