@@ -194,7 +194,8 @@ One of:
 
 ## References
 
-- Task 89 closeout: `reviews/task-89/008-closeout-deferred/`
+- Task 89 closeout: branch `task-89-ivf-tqplus-profile`, commit
+  `e157af931`, packet `reviews/task-89/008-closeout-deferred/` on that branch.
 - Task 87 candidate batching: `plan/tasks/87-candidate-batched-scoring-across-ams.md`
 - Task 97 QJL block kernels: `plan/tasks/97-tq-qjl-block-kernel-family.md`
 - Task 99 block-kernel closeout: `plan/tasks/99-cross-am-quant-isa-block-kernel-closeout.md`
