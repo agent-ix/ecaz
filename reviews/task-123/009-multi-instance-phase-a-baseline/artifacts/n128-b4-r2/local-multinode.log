@@ -1,0 +1,9 @@
+run_dir=/tmp/ecaz-task123/target/spire-local-multinode-task123-p9-mi-n128-b4-r2
+coord_port=40200
+remote1_port=40201
+remote2_port=40202
+remote3_port=40203
+tier=representative
+prefix=ec_real_100k
+SPIRE local multinode fixture passed
+HARNESS PASSED

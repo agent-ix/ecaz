@@ -2,7 +2,8 @@
 
 Status: **reopened / amended (2026-06-27) — the cost verdict was single-INSTANCE;
 re-scoped to the contained multi-instance substrate and a dual latency+recall
-mandate (see Amendment below).** The prior single-instance closeout
+mandate (see Amendment below); contained multi-instance Phase A baseline is
+under review in `reviews/task-123/009-multi-instance-phase-a-baseline/`.** The prior single-instance closeout
 (2026-06-27; completion record `reviews/task-123/008-completion-record/`, reviewer
 sign-offs `.../feedback/2026-06-27-01..03-reviewer.md`) stands as record: the
 recall / route-containment findings are topology-independent and retained, and no
@@ -179,6 +180,27 @@ The closest existing owners are the dense IVF scan/candidate tasks
 (`111`/`111e`) for candidate-frontier and scan-locality architecture, plus a
 SPIRE-specific local-store/transport-efficiency follow-up if SPIRE continues
 as a local-store index after this no-go.
+
+## Contained Multi-Instance Phase A Baseline Status (2026-06-27)
+
+Reviewer feedback in
+`reviews/task-123/008-completion-record/feedback/2026-06-27-03-reviewer.md`
+correctly scoped the prior cost verdict as **single-instance**. Packet
+`reviews/task-123/009-multi-instance-phase-a-baseline/` reruns the requested
+100k contained local multi-instance baseline for `n128 b4/tr50/f8` and
+`n1024 b2/tr50/f8`.
+
+Initial read, pending review: the real distributed executor path does not show
+the multi-second single-instance scan wall. `n1024 b2/tr50/f8` reaches recall
+1.0000 at nprobe 64 with p50 87.323 ms / p95 90.365 ms and a 246.1 MiB
+coordinator index, while `n128 b4/tr50/f8` reaches recall 1.0000 at nprobe 96
+with p50 337.096 ms / p95 479.785 ms and a 392.2 MiB coordinator index.
+
+Residual instrumentation gap: the current local multi-instance production-read
+profile exposes candidate/heap/endpoint/total timings, remote dispatch/candidate
+counts, and projected payload rows/bytes. It does not yet expose per-worker
+object bytes shipped or the full requested leaf-read /
+materialize+transport-encode / candidate-score / heap split.
 
 ## Phase B Spot-Check Status (2026-06-27)
 

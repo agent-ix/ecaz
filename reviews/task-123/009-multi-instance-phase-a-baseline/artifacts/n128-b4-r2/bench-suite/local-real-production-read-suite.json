@@ -1,0 +1,87 @@
+{
+  "artifact_dir": "reviews/task-123/009-multi-instance-phase-a-baseline/artifacts/n128-b4-r2/bench-suite",
+  "defaults": {
+    "pg": 18,
+    "queries_limit": 32
+  },
+  "name": "local-multinode-production-read",
+  "schema_version": 1,
+  "steps": [
+    {
+      "kind": "storage",
+      "log_file": "reviews/task-123/009-multi-instance-phase-a-baseline/artifacts/n128-b4-r2/bench-suite/storage.log",
+      "name": "storage-local-coordinator",
+      "prefix": "ec_real_100k",
+      "tags": [
+        "local",
+        "multinode",
+        "storage"
+      ]
+    },
+    {
+      "include_cost_snapshot": true,
+      "include_production_read_profile": true,
+      "include_query_metrics": true,
+      "include_recall": true,
+      "include_remote": true,
+      "index": "t123_p9_mi_100k_n128_b4_coord_idx",
+      "kind": "spire-pipeline",
+      "log_output": "reviews/task-123/009-multi-instance-phase-a-baseline/artifacts/n128-b4-r2/bench-suite/production-read-k10-default.log",
+      "name": "production-read-k10-default",
+      "prefix": "ec_real_100k",
+      "production_read_only": true,
+      "queries_limit": 32,
+      "query_metric_k": 10,
+      "query_metric_projection_columns": [
+        "id"
+      ],
+      "require_remote_placements": true,
+      "sweep": [
+        8,
+        96
+      ],
+      "tags": [
+        "phase5",
+        "local",
+        "multinode",
+        "production-read",
+        "default-cap"
+      ],
+      "top_k": 10,
+      "truth_corpus_file": "/home/peter/dev/ecaz/data/staged-current/ec_real_100k_corpus.tsv"
+    },
+    {
+      "include_cost_snapshot": true,
+      "include_production_read_profile": true,
+      "include_query_metrics": true,
+      "include_recall": true,
+      "include_remote": true,
+      "index": "t123_p9_mi_100k_n128_b4_coord_idx",
+      "kind": "spire-pipeline",
+      "log_output": "reviews/task-123/009-multi-instance-phase-a-baseline/artifacts/n128-b4-r2/bench-suite/production-read-k10-rowcap25k.log",
+      "max_routed_candidate_rows": 25000,
+      "name": "production-read-k10-rowcap25k",
+      "prefix": "ec_real_100k",
+      "production_read_only": true,
+      "queries_limit": 32,
+      "query_metric_k": 10,
+      "query_metric_projection_columns": [
+        "id"
+      ],
+      "require_remote_placements": true,
+      "sweep": [
+        8,
+        96
+      ],
+      "tags": [
+        "phase5",
+        "local",
+        "multinode",
+        "production-read",
+        "rowcap25k"
+      ],
+      "top_k": 10,
+      "truth_corpus_file": "/home/peter/dev/ecaz/data/staged-current/ec_real_100k_corpus.tsv"
+    }
+  ]
+}
