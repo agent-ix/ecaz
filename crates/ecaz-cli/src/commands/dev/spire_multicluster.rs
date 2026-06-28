@@ -482,6 +482,10 @@ pub struct LocalMultinodePg18Args {
     #[arg(long)]
     bench_truth_corpus_file: Option<PathBuf>,
 
+    /// Comma-separated payload projection columns for production-read query metrics.
+    #[arg(long, value_delimiter = ',')]
+    bench_query_metric_projection_columns: Vec<String>,
+
     /// Skip the packet-local bench suite step.
     #[arg(long)]
     skip_bench_suite: bool,
@@ -1262,6 +1266,7 @@ async fn run_native_local_multinode_pg18(
                 args.bench_truth_corpus_file
                     .as_deref()
                     .or(fixture.truth_corpus_file.as_deref()),
+                &args.bench_query_metric_projection_columns,
             )
             .await?;
         }
@@ -2285,11 +2290,17 @@ async fn run_local_multinode_bench_suite(
     bench_sweep: &str,
     bench_rowcap_sweep: &str,
     truth_corpus_file: Option<&Path>,
+    query_metric_projection_columns: &[String],
 ) -> Result<()> {
     let suite_artifact_dir = log_dir.join("bench-suite");
     fs::create_dir_all(&suite_artifact_dir)
         .wrap_err_with(|| format!("creating {}", suite_artifact_dir.display()))?;
     let suite_config = suite_artifact_dir.join("local-real-production-read-suite.json");
+    let projection_columns = if query_metric_projection_columns.is_empty() {
+        vec!["id".to_owned()]
+    } else {
+        query_metric_projection_columns.to_vec()
+    };
     let mut default_step = json!({
         "kind": "spire-pipeline",
         "name": "production-read-k10-default",
@@ -2307,9 +2318,14 @@ async fn run_local_multinode_bench_suite(
         "include_production_read_profile": true,
         "production_read_only": true,
         "query_metric_k": bench_top_k,
-        "query_metric_projection_columns": ["id"],
+        "query_metric_projection_columns": projection_columns,
         "log_output": suite_artifact_dir.join("production-read-k10-default.log")
     });
+    let projection_columns = if query_metric_projection_columns.is_empty() {
+        vec!["id".to_owned()]
+    } else {
+        query_metric_projection_columns.to_vec()
+    };
     let mut rowcap_step = json!({
         "kind": "spire-pipeline",
         "name": "production-read-k10-rowcap25k",
@@ -2328,7 +2344,7 @@ async fn run_local_multinode_bench_suite(
         "include_production_read_profile": true,
         "production_read_only": true,
         "query_metric_k": bench_top_k,
-        "query_metric_projection_columns": ["id"],
+        "query_metric_projection_columns": projection_columns,
         "log_output": suite_artifact_dir.join("production-read-k10-rowcap25k.log")
     });
     if let Some(truth_corpus_file) = truth_corpus_file {

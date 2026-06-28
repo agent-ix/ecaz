@@ -451,6 +451,8 @@ struct SpireLocalMultinodeStep {
     #[serde(default)]
     bench_truth_corpus_file: Option<PathBuf>,
     #[serde(default)]
+    bench_query_metric_projection_columns: Vec<String>,
+    #[serde(default)]
     skip_bench_suite: bool,
     #[serde(default)]
     skip_fault_drills: bool,
@@ -3239,6 +3241,13 @@ fn expand_spire_local_multinode(
         "--bench-truth-corpus-file",
         step.bench_truth_corpus_file.as_deref(),
     );
+    if !step.bench_query_metric_projection_columns.is_empty() {
+        push_arg(
+            &mut args,
+            "--bench-query-metric-projection-columns",
+            &step.bench_query_metric_projection_columns.join(","),
+        );
+    }
     if step.skip_bench_suite {
         args.push("--skip-bench-suite".into());
     }
@@ -4162,6 +4171,7 @@ mod tests {
             "bench_top_k": 6,
             "bench_queries_limit": 1,
             "bench_sweep": "3",
+            "bench_query_metric_projection_columns": ["id", "source"],
             "skip_bench_suite": true,
             "skip_fault_drills": true,
             "skip_install": true
@@ -4232,6 +4242,10 @@ mod tests {
             .command
             .windows(2)
             .any(|w| w == ["--remote-reloption", "boundary_replica_count=1"]));
+        assert!(step
+            .command
+            .windows(2)
+            .any(|w| w == ["--bench-query-metric-projection-columns", "id,source"]));
         assert!(step.command.contains(&"--skip-bench-suite".into()));
         assert!(step.command.contains(&"--skip-fault-drills".into()));
         assert!(step
