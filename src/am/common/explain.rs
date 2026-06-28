@@ -147,6 +147,21 @@ pub(crate) struct IvfExplainCounters {
     /// report the remaining copy that still needs to be optimized or
     /// benchmarked away.
     pub stats_rerank_payload_slab_bytes_copied: u32,
+    /// Task 124: approximate frontier rows handed to the TQ stage-2 scorer
+    /// before the final exact/source f32 boundary.
+    pub stats_tq_stage2_candidate_rows: u32,
+    /// Task 124: rows actually scored by the TurboQuant stage-2 sidecar.
+    pub stats_tq_stage2_rows_scored: u32,
+    /// Task 124: rows retained after TQ stage-2 for final exact/source f32
+    /// rerank.
+    pub stats_tq_stage2_rows_retained: u32,
+    /// Task 124: compact TQ sidecar payload bytes handed to the stage-2 scorer.
+    pub stats_tq_stage2_payload_bytes_scored: u32,
+    /// Task 124: exact/source f32 rows fetched and reranked after TQ stage-2.
+    pub stats_tq_stage2_final_exact_rows: u32,
+    /// Task 124: source-vector bytes read by the final exact f32 pass after TQ
+    /// stage-2.
+    pub stats_tq_stage2_final_source_bytes_read: u32,
 }
 
 impl Default for IvfExplainCounters {
@@ -190,6 +205,12 @@ impl Default for IvfExplainCounters {
             stats_rerank_index_segment_payload_bytes_read: 0,
             stats_rerank_payload_bytes_scored: 0,
             stats_rerank_payload_slab_bytes_copied: 0,
+            stats_tq_stage2_candidate_rows: 0,
+            stats_tq_stage2_rows_scored: 0,
+            stats_tq_stage2_rows_retained: 0,
+            stats_tq_stage2_payload_bytes_scored: 0,
+            stats_tq_stage2_final_exact_rows: 0,
+            stats_tq_stage2_final_source_bytes_read: 0,
         }
     }
 }
@@ -513,11 +534,45 @@ impl IvfExplainCounters {
             .saturating_add(u32::try_from(bytes).unwrap_or(u32::MAX));
     }
 
+    pub(crate) fn record_tq_stage2_pass(
+        &mut self,
+        candidate_rows: usize,
+        rows_scored: usize,
+        rows_retained: usize,
+        payload_bytes_scored: usize,
+    ) {
+        self.stats_tq_stage2_candidate_rows = self
+            .stats_tq_stage2_candidate_rows
+            .saturating_add(u32::try_from(candidate_rows).unwrap_or(u32::MAX));
+        self.stats_tq_stage2_rows_scored = self
+            .stats_tq_stage2_rows_scored
+            .saturating_add(u32::try_from(rows_scored).unwrap_or(u32::MAX));
+        self.stats_tq_stage2_rows_retained = self
+            .stats_tq_stage2_rows_retained
+            .saturating_add(u32::try_from(rows_retained).unwrap_or(u32::MAX));
+        self.stats_tq_stage2_payload_bytes_scored = self
+            .stats_tq_stage2_payload_bytes_scored
+            .saturating_add(u32::try_from(payload_bytes_scored).unwrap_or(u32::MAX));
+    }
+
+    pub(crate) fn record_tq_stage2_final_exact_pass(
+        &mut self,
+        rows: usize,
+        source_bytes_read: usize,
+    ) {
+        self.stats_tq_stage2_final_exact_rows = self
+            .stats_tq_stage2_final_exact_rows
+            .saturating_add(u32::try_from(rows).unwrap_or(u32::MAX));
+        self.stats_tq_stage2_final_source_bytes_read = self
+            .stats_tq_stage2_final_source_bytes_read
+            .saturating_add(u32::try_from(source_bytes_read).unwrap_or(u32::MAX));
+    }
+
     pub(crate) fn reset(&mut self) {
         *self = Self::default();
     }
 
-    pub(crate) fn explain_properties(self) -> [ExplainProperty; 38] {
+    pub(crate) fn explain_properties(self) -> [ExplainProperty; 44] {
         [
             ExplainProperty {
                 property_name: "Rerank Placement",
@@ -684,6 +739,30 @@ impl IvfExplainCounters {
             ExplainProperty {
                 property_name: "Rerank Payload Slab Bytes Copied",
                 value: ExplainPropertyValue::Integer(self.stats_rerank_payload_slab_bytes_copied),
+            },
+            ExplainProperty {
+                property_name: "TQ Stage2 Candidate Rows",
+                value: ExplainPropertyValue::Integer(self.stats_tq_stage2_candidate_rows),
+            },
+            ExplainProperty {
+                property_name: "TQ Stage2 Rows Scored",
+                value: ExplainPropertyValue::Integer(self.stats_tq_stage2_rows_scored),
+            },
+            ExplainProperty {
+                property_name: "TQ Stage2 Rows Retained",
+                value: ExplainPropertyValue::Integer(self.stats_tq_stage2_rows_retained),
+            },
+            ExplainProperty {
+                property_name: "TQ Stage2 Payload Bytes Scored",
+                value: ExplainPropertyValue::Integer(self.stats_tq_stage2_payload_bytes_scored),
+            },
+            ExplainProperty {
+                property_name: "TQ Stage2 Final Exact Rows",
+                value: ExplainPropertyValue::Integer(self.stats_tq_stage2_final_exact_rows),
+            },
+            ExplainProperty {
+                property_name: "TQ Stage2 Final Source Bytes Read",
+                value: ExplainPropertyValue::Integer(self.stats_tq_stage2_final_source_bytes_read),
             },
         ]
     }
@@ -1095,6 +1174,8 @@ mod tests {
         counters.record_rerank_index_group_reads(2, 3, 61, 67, 71);
         counters.record_rerank_payload_bytes_scored(73);
         counters.record_rerank_payload_slab_bytes_copied(79);
+        counters.record_tq_stage2_pass(83, 87, 91, 95);
+        counters.record_tq_stage2_final_exact_pass(97, 101);
 
         assert_eq!(
             counters,
@@ -1137,6 +1218,12 @@ mod tests {
                 stats_rerank_index_segment_payload_bytes_read: 71,
                 stats_rerank_payload_bytes_scored: 73,
                 stats_rerank_payload_slab_bytes_copied: 79,
+                stats_tq_stage2_candidate_rows: 83,
+                stats_tq_stage2_rows_scored: 87,
+                stats_tq_stage2_rows_retained: 91,
+                stats_tq_stage2_payload_bytes_scored: 95,
+                stats_tq_stage2_final_exact_rows: 97,
+                stats_tq_stage2_final_source_bytes_read: 101,
             }
         );
     }
@@ -1182,6 +1269,12 @@ mod tests {
             stats_rerank_index_segment_payload_bytes_read: 179,
             stats_rerank_payload_bytes_scored: 181,
             stats_rerank_payload_slab_bytes_copied: 191,
+            stats_tq_stage2_candidate_rows: 193,
+            stats_tq_stage2_rows_scored: 197,
+            stats_tq_stage2_rows_retained: 199,
+            stats_tq_stage2_payload_bytes_scored: 211,
+            stats_tq_stage2_final_exact_rows: 223,
+            stats_tq_stage2_final_source_bytes_read: 227,
         };
 
         assert_eq!(
@@ -1338,6 +1431,30 @@ mod tests {
                 ExplainProperty {
                     property_name: "Rerank Payload Slab Bytes Copied",
                     value: ExplainPropertyValue::Integer(191),
+                },
+                ExplainProperty {
+                    property_name: "TQ Stage2 Candidate Rows",
+                    value: ExplainPropertyValue::Integer(193),
+                },
+                ExplainProperty {
+                    property_name: "TQ Stage2 Rows Scored",
+                    value: ExplainPropertyValue::Integer(197),
+                },
+                ExplainProperty {
+                    property_name: "TQ Stage2 Rows Retained",
+                    value: ExplainPropertyValue::Integer(199),
+                },
+                ExplainProperty {
+                    property_name: "TQ Stage2 Payload Bytes Scored",
+                    value: ExplainPropertyValue::Integer(211),
+                },
+                ExplainProperty {
+                    property_name: "TQ Stage2 Final Exact Rows",
+                    value: ExplainPropertyValue::Integer(223),
+                },
+                ExplainProperty {
+                    property_name: "TQ Stage2 Final Source Bytes Read",
+                    value: ExplainPropertyValue::Integer(227),
                 },
             ]
         );
