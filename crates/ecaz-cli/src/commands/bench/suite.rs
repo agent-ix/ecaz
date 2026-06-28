@@ -455,6 +455,8 @@ struct SpireLocalMultinodeStep {
     #[serde(default)]
     bench_session_gucs: Vec<String>,
     #[serde(default)]
+    bench_production_read_variants: Vec<String>,
+    #[serde(default)]
     skip_bench_suite: bool,
     #[serde(default)]
     skip_fault_drills: bool,
@@ -3261,6 +3263,9 @@ fn expand_spire_local_multinode(
     for guc in &step.bench_session_gucs {
         push_arg(&mut args, "--bench-session-guc", guc);
     }
+    for variant in &step.bench_production_read_variants {
+        push_arg(&mut args, "--bench-production-read-variant", variant);
+    }
     if step.skip_bench_suite {
         args.push("--skip-bench-suite".into());
     }
@@ -4192,6 +4197,10 @@ mod tests {
               "ec_spire.max_remote_payload_bytes_per_row=16384",
               "ec_spire.pre_materialization_prune=off"
             ],
+            "bench_production_read_variants": [
+              "name=source-prune-on;projection=id,source;guc=ec_spire.pre_materialization_prune=on",
+              "name=id-prune-off;projection=id;guc=ec_spire.pre_materialization_prune=off"
+            ],
             "skip_bench_suite": true,
             "skip_fault_drills": true,
             "skip_install": true
@@ -4275,6 +4284,15 @@ mod tests {
             == [
                 "--bench-session-guc",
                 "ec_spire.pre_materialization_prune=off"
+            ]));
+        assert!(step.command.windows(2).any(|w| w == [
+            "--bench-production-read-variant",
+            "name=source-prune-on;projection=id,source;guc=ec_spire.pre_materialization_prune=on"
+        ]));
+        assert!(step.command.windows(2).any(|w| w
+            == [
+                "--bench-production-read-variant",
+                "name=id-prune-off;projection=id;guc=ec_spire.pre_materialization_prune=off"
             ]));
         assert!(step.command.contains(&"--skip-bench-suite".into()));
         assert!(step.command.contains(&"--skip-fault-drills".into()));

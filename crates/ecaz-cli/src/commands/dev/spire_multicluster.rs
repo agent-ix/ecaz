@@ -1,6 +1,6 @@
 use clap::{Args, Subcommand, ValueEnum};
 use color_eyre::eyre::{bail, eyre, Context, Result};
-use serde_json::json;
+use serde_json::{json, Value};
 use std::collections::BTreeSet;
 use std::env;
 use std::fs;
@@ -489,6 +489,10 @@ pub struct LocalMultinodePg18Args {
     /// Extra session GUCs for packet-local production-read bench suite steps, as name=value.
     #[arg(long = "bench-session-guc")]
     bench_session_gucs: Vec<String>,
+
+    /// Extra production-read bench variant as name=<slug>;projection=id,source;guc=name=value.
+    #[arg(long = "bench-production-read-variant")]
+    bench_production_read_variants: Vec<String>,
 
     /// Skip the packet-local bench suite step.
     #[arg(long)]
@@ -1272,6 +1276,7 @@ async fn run_native_local_multinode_pg18(
                     .or(fixture.truth_corpus_file.as_deref()),
                 &args.bench_query_metric_projection_columns,
                 &args.bench_session_gucs,
+                &args.bench_production_read_variants,
             )
             .await?;
         }
@@ -2297,68 +2302,83 @@ async fn run_local_multinode_bench_suite(
     truth_corpus_file: Option<&Path>,
     query_metric_projection_columns: &[String],
     session_gucs: &[String],
+    production_read_variants: &[String],
 ) -> Result<()> {
     let suite_artifact_dir = log_dir.join("bench-suite");
     fs::create_dir_all(&suite_artifact_dir)
         .wrap_err_with(|| format!("creating {}", suite_artifact_dir.display()))?;
     let suite_config = suite_artifact_dir.join("local-real-production-read-suite.json");
-    let projection_columns = if query_metric_projection_columns.is_empty() {
+    let base_projection_columns = if query_metric_projection_columns.is_empty() {
         vec!["id".to_owned()]
     } else {
         query_metric_projection_columns.to_vec()
     };
-    let mut default_step = json!({
-        "kind": "spire-pipeline",
-        "name": "production-read-k10-default",
-        "tags": ["phase5", "local", "multinode", "production-read", "default-cap"],
-        "prefix": prefix,
-        "index": coord_index,
-        "queries_limit": bench_queries_limit,
-        "sweep": parse_u16_list(bench_sweep)?,
-        "top_k": bench_top_k,
-        "include_remote": true,
-        "require_remote_placements": true,
-        "include_cost_snapshot": true,
-        "include_query_metrics": true,
-        "include_recall": true,
-        "include_production_read_profile": true,
-        "production_read_only": true,
-        "query_metric_k": bench_top_k,
-        "query_metric_projection_columns": projection_columns,
-        "session_gucs": session_gucs,
-        "log_output": suite_artifact_dir.join("production-read-k10-default.log")
-    });
-    let projection_columns = if query_metric_projection_columns.is_empty() {
-        vec!["id".to_owned()]
+    let variants = if production_read_variants.is_empty() {
+        vec![BenchProductionReadVariant {
+            name: None,
+            projection_columns: None,
+            session_gucs: Vec::new(),
+        }]
     } else {
-        query_metric_projection_columns.to_vec()
+        production_read_variants
+            .iter()
+            .map(|raw| parse_bench_production_read_variant(raw))
+            .collect::<Result<Vec<_>>>()?
     };
-    let mut rowcap_step = json!({
-        "kind": "spire-pipeline",
-        "name": "production-read-k10-rowcap25k",
-        "tags": ["phase5", "local", "multinode", "production-read", "rowcap25k"],
+
+    let default_sweep = parse_u16_list(bench_sweep)?;
+    let rowcap_sweep = parse_u16_list(bench_rowcap_sweep)?;
+    let mut steps = vec![json!({
+        "kind": "storage",
+        "name": "storage-local-coordinator",
+        "tags": ["local", "multinode", "storage"],
         "prefix": prefix,
-        "index": coord_index,
-        "queries_limit": bench_queries_limit,
-        "sweep": parse_u16_list(bench_rowcap_sweep)?,
-        "top_k": bench_top_k,
-        "max_routed_candidate_rows": 25000,
-        "include_remote": true,
-        "require_remote_placements": true,
-        "include_cost_snapshot": true,
-        "include_query_metrics": true,
-        "include_recall": true,
-        "include_production_read_profile": true,
-        "production_read_only": true,
-        "query_metric_k": bench_top_k,
-        "query_metric_projection_columns": projection_columns,
-        "session_gucs": session_gucs,
-        "log_output": suite_artifact_dir.join("production-read-k10-rowcap25k.log")
-    });
-    if let Some(truth_corpus_file) = truth_corpus_file {
-        default_step["truth_corpus_file"] = json!(truth_corpus_file);
-        rowcap_step["truth_corpus_file"] = json!(truth_corpus_file);
+        "log_file": suite_artifact_dir.join("storage.log")
+    })];
+    for variant in variants {
+        let projection_columns = variant
+            .projection_columns
+            .unwrap_or_else(|| base_projection_columns.clone());
+        let mut variant_session_gucs = session_gucs.to_vec();
+        variant_session_gucs.extend(variant.session_gucs);
+        let name_suffix = variant
+            .name
+            .map(|name| format!("-{name}"))
+            .unwrap_or_default();
+        let mut default_step = production_read_step_json(
+            prefix,
+            coord_index,
+            bench_queries_limit,
+            &default_sweep,
+            bench_top_k,
+            &projection_columns,
+            &variant_session_gucs,
+            &suite_artifact_dir.join(format!("production-read-k10{name_suffix}-default.log")),
+            format!("production-read-k10{name_suffix}-default"),
+            "default-cap",
+            None,
+        );
+        let mut rowcap_step = production_read_step_json(
+            prefix,
+            coord_index,
+            bench_queries_limit,
+            &rowcap_sweep,
+            bench_top_k,
+            &projection_columns,
+            &variant_session_gucs,
+            &suite_artifact_dir.join(format!("production-read-k10{name_suffix}-rowcap25k.log")),
+            format!("production-read-k10{name_suffix}-rowcap25k"),
+            "rowcap25k",
+            Some(25000),
+        );
+        if let Some(truth_corpus_file) = truth_corpus_file {
+            default_step["truth_corpus_file"] = json!(truth_corpus_file);
+            rowcap_step["truth_corpus_file"] = json!(truth_corpus_file);
+        }
+        steps.push(default_step);
+        steps.push(rowcap_step);
     }
+
     let suite = json!({
         "name": "local-multinode-production-read",
         "schema_version": 1,
@@ -2367,17 +2387,7 @@ async fn run_local_multinode_bench_suite(
             "queries_limit": bench_queries_limit,
             "pg": 18
         },
-        "steps": [
-            {
-                "kind": "storage",
-                "name": "storage-local-coordinator",
-                "tags": ["local", "multinode", "storage"],
-                "prefix": prefix,
-                "log_file": suite_artifact_dir.join("storage.log")
-            },
-            default_step,
-            rowcap_step
-        ]
+        "steps": steps
     });
     fs::write(
         &suite_config,
@@ -2413,6 +2423,111 @@ async fn run_local_multinode_bench_suite(
         .wrap_err("running local multinode nested bench suite")
 }
 
+#[allow(clippy::too_many_arguments)]
+fn production_read_step_json(
+    prefix: &str,
+    coord_index: &str,
+    queries_limit: usize,
+    sweep: &[u16],
+    top_k: u16,
+    projection_columns: &[String],
+    session_gucs: &[String],
+    log_output: &Path,
+    name: String,
+    cap_tag: &str,
+    max_routed_candidate_rows: Option<usize>,
+) -> Value {
+    let mut step = json!({
+        "kind": "spire-pipeline",
+        "name": name,
+        "tags": ["phase5", "local", "multinode", "production-read", cap_tag],
+        "prefix": prefix,
+        "index": coord_index,
+        "queries_limit": queries_limit,
+        "sweep": sweep,
+        "top_k": top_k,
+        "include_remote": true,
+        "require_remote_placements": true,
+        "include_cost_snapshot": true,
+        "include_query_metrics": true,
+        "include_recall": true,
+        "include_production_read_profile": true,
+        "production_read_only": true,
+        "query_metric_k": top_k,
+        "query_metric_projection_columns": projection_columns,
+        "session_gucs": session_gucs,
+        "log_output": log_output
+    });
+    if let Some(max_routed_candidate_rows) = max_routed_candidate_rows {
+        step["max_routed_candidate_rows"] = json!(max_routed_candidate_rows);
+    }
+    step
+}
+
+#[derive(Debug, Eq, PartialEq)]
+struct BenchProductionReadVariant {
+    name: Option<String>,
+    projection_columns: Option<Vec<String>>,
+    session_gucs: Vec<String>,
+}
+
+fn parse_bench_production_read_variant(raw: &str) -> Result<BenchProductionReadVariant> {
+    let mut name = None;
+    let mut projection_columns = None;
+    let mut session_gucs = Vec::new();
+    for part in raw.split(';').filter(|part| !part.trim().is_empty()) {
+        let (key, value) = part.split_once('=').ok_or_else(|| {
+            eyre!("bench production-read variant part {part:?} must be key=value")
+        })?;
+        let key = key.trim();
+        let value = value.trim();
+        match key {
+            "name" => {
+                validate_bench_variant_name(value)?;
+                name = Some(value.to_owned());
+            }
+            "projection" => {
+                let columns = value
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|column| !column.is_empty())
+                    .map(ToOwned::to_owned)
+                    .collect::<Vec<_>>();
+                if columns.is_empty() {
+                    bail!("bench production-read variant projection must include a column");
+                }
+                projection_columns = Some(columns);
+            }
+            "guc" => {
+                if !value.contains('=') {
+                    bail!("bench production-read variant guc {value:?} must be name=value");
+                }
+                session_gucs.push(value.to_owned());
+            }
+            other => bail!("unsupported bench production-read variant key {other:?}"),
+        }
+    }
+    if name.is_none() {
+        bail!("bench production-read variant must include name=<slug>");
+    }
+    Ok(BenchProductionReadVariant {
+        name,
+        projection_columns,
+        session_gucs,
+    })
+}
+
+fn validate_bench_variant_name(name: &str) -> Result<()> {
+    if name.is_empty()
+        || !name
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
+    {
+        bail!("bench production-read variant name {name:?} must use [A-Za-z0-9_-]");
+    }
+    Ok(())
+}
+
 fn parse_u16_list(raw: &str) -> Result<Vec<u16>> {
     raw.split(',')
         .map(|value| {
@@ -2422,6 +2537,28 @@ fn parse_u16_list(raw: &str) -> Result<Vec<u16>> {
                 .wrap_err_with(|| format!("parsing sweep value {value:?}"))
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_bench_production_read_variant() {
+        let variant = parse_bench_production_read_variant(
+            "name=source-prune-on;projection=id,source;guc=ec_spire.pre_materialization_prune=on",
+        )
+        .expect("variant parses");
+
+        assert_eq!(
+            variant,
+            BenchProductionReadVariant {
+                name: Some("source-prune-on".into()),
+                projection_columns: Some(vec!["id".into(), "source".into()]),
+                session_gucs: vec!["ec_spire.pre_materialization_prune=on".into()],
+            }
+        );
+    }
 }
 
 fn joined_reloption_args(shared: &[String], specific: &[String]) -> Vec<String> {
