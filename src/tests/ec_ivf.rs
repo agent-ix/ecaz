@@ -1674,6 +1674,23 @@
             "stage-2 should score persisted TQ payloads before exact final rerank"
         );
         assert_eq!(
+            counters.tq_stage2_candidate_rows, 8,
+            "stage-2 should receive the rerank_width-bounded frontier"
+        );
+        assert_eq!(
+            counters.tq_stage2_rows_scored, 8,
+            "TQ stage-2 should score the whole stage-2 frontier"
+        );
+        assert_eq!(
+            counters.tq_stage2_rows_retained, 3,
+            "TQ stage-2 should retain only the final exact width"
+        );
+        assert_eq!(
+            counters.tq_stage2_payload_bytes_scored,
+            counters.rerank_payload_bytes_scored,
+            "stage-2 payload-byte attribution should match the TQ payload scorer"
+        );
+        assert_eq!(
             counters.rerank_payload_slab_bytes_copied, 0,
             "TQ stage-2 scoring should keep using borrowed batch payload refs"
         );
@@ -1681,6 +1698,15 @@
             counters.rerank_source_bytes_read,
             3 * (dims * 4) as u32,
             "exact final stage should fetch heap/source f32 only for final width"
+        );
+        assert_eq!(
+            counters.tq_stage2_final_exact_rows, 3,
+            "final exact attribution should report only final width rows"
+        );
+        assert_eq!(
+            counters.tq_stage2_final_source_bytes_read,
+            counters.rerank_source_bytes_read,
+            "final exact source-byte attribution should match source bytes read"
         );
         assert!(
             counters.rerank_rows > counters.outputs.len() as u32,

@@ -2383,7 +2383,7 @@ unsafe fn rerank_probe_candidates(
             // fetching. Only the reranked prefix is exact-scored; the skipped
             // suffix (empty today under NoBound) keeps its approximate score and
             // is ordered after the reranked prefix below.
-            match sidecar_head {
+            let stage2_stats = match sidecar_head {
                 Some(sidecar_head) => unsafe {
                     rerank_probe_candidates_index_side(
                         scan,
@@ -2401,7 +2401,7 @@ unsafe fn rerank_probe_candidates(
                         &mut candidates[..reranked_prefix_len],
                     )
                 },
-            }
+            };
             candidates[..reranked_prefix_len].sort_by(candidate_cmp);
 
             if should_run_tq_stage2_final_exact_rerank(index_options, sidecar_head) {
@@ -2411,6 +2411,12 @@ unsafe fn rerank_probe_candidates(
                 .effective_rerank_width;
                 if final_width > 0 {
                     let final_len = resolve_rerank_len(final_width, reranked_prefix_len);
+                    opaque.explain_counters.record_tq_stage2_pass(
+                        reranked_prefix_len,
+                        stage2_stats.rows,
+                        final_len,
+                        stage2_stats.payload_bytes_scored,
+                    );
                     let exact_scorer = super::rerank::RerankScorer::resolve(
                         super::options::RerankFormat::F32,
                         super::options::RerankPlacement::SourceDiagnostic,
@@ -2421,13 +2427,17 @@ unsafe fn rerank_probe_candidates(
                         index_options.rabitq_rerank_clip,
                     )
                     .unwrap_or_else(|e| pgrx::error!("{e}"));
-                    unsafe {
+                    let final_stats = unsafe {
                         rerank_probe_candidates_source_side(
                             opaque,
                             &exact_scorer,
                             &mut candidates[..final_len],
                         )
                     };
+                    opaque.explain_counters.record_tq_stage2_final_exact_pass(
+                        final_stats.rows,
+                        final_stats.source_bytes_read,
+                    );
                     candidates[..final_len].sort_by(candidate_cmp);
                     candidates.truncate(final_len);
                     return;
@@ -2496,6 +2506,13 @@ fn resolve_rerank_len(rerank_width: i32, candidate_len: usize) -> usize {
         .min(candidate_len)
 }
 
+#[derive(Clone, Copy, Debug, Default)]
+struct RerankPassStats {
+    rows: usize,
+    source_bytes_read: usize,
+    payload_bytes_scored: usize,
+}
+
 /// # Safety
 /// `opaque.heap_rerank_state` was created with `Box::into_raw` during scan
 /// configuration and remains live for the duration of this rerank pass.
@@ -2510,9 +2527,9 @@ unsafe fn rerank_probe_candidates_source_side(
     opaque: &mut EcIvfScanOpaque,
     scorer: &super::rerank::RerankScorer,
     candidates: &mut [EcIvfScoredCandidate],
-) {
+) -> RerankPassStats {
     if candidates.is_empty() {
-        return;
+        return RerankPassStats::default();
     }
     candidates.sort_by(candidate_heap_tid_cmp);
     let state = opaque
@@ -2610,9 +2627,10 @@ unsafe fn rerank_probe_candidates_source_side(
     // candidate: `dimensions * 4` bytes each. Record it so the index-placement
     // compact sidecar's byte reduction is comparable by counter.
     let source_bytes_per_candidate = (opaque.scan_dimensions as usize) * std::mem::size_of::<f32>();
+    let source_bytes_read = rerank_rows.saturating_mul(source_bytes_per_candidate);
     opaque
         .explain_counters
-        .record_rerank_source_bytes_read(rerank_rows.saturating_mul(source_bytes_per_candidate));
+        .record_rerank_source_bytes_read(source_bytes_read);
     opaque
         .explain_counters
         .record_rerank_payload_decode_elapsed_us(elapsed_us_u32(payload_decode_elapsed));
@@ -2622,6 +2640,11 @@ unsafe fn rerank_probe_candidates_source_side(
 
     for _ in 0..rerank_rows {
         opaque.explain_counters.record_rerank_row();
+    }
+    RerankPassStats {
+        rows: rerank_rows,
+        source_bytes_read,
+        payload_bytes_scored: 0,
     }
 }
 
@@ -2641,9 +2664,9 @@ unsafe fn rerank_probe_candidates_index_side(
     sidecar_head: ItemPointer,
     centroid_scores: &[EcIvfCentroidScore],
     candidates: &mut [EcIvfScoredCandidate],
-) {
+) -> RerankPassStats {
     if candidates.is_empty() {
-        return;
+        return RerankPassStats::default();
     }
     // Read tid-sorted (matches the heap_f32 read shape and keeps the lookup
     // map probes ascending).
@@ -2816,6 +2839,11 @@ unsafe fn rerank_probe_candidates_index_side(
         .record_rerank_payload_score_elapsed_us(elapsed_us_u32(payload_score_elapsed));
     for _ in 0..rerank_rows {
         opaque.explain_counters.record_rerank_row();
+    }
+    RerankPassStats {
+        rows: rerank_rows,
+        source_bytes_read: 0,
+        payload_bytes_scored,
     }
 }
 
@@ -3976,6 +4004,12 @@ pub(crate) struct EcIvfGettupleCounterDebugSnapshot {
     pub(crate) rerank_index_segment_payload_bytes_read: u32,
     pub(crate) rerank_payload_bytes_scored: u32,
     pub(crate) rerank_payload_slab_bytes_copied: u32,
+    pub(crate) tq_stage2_candidate_rows: u32,
+    pub(crate) tq_stage2_rows_scored: u32,
+    pub(crate) tq_stage2_rows_retained: u32,
+    pub(crate) tq_stage2_payload_bytes_scored: u32,
+    pub(crate) tq_stage2_final_exact_rows: u32,
+    pub(crate) tq_stage2_final_source_bytes_read: u32,
     pub(crate) rerank_full_chain_loads: u32,
     pub(crate) rerank_candidates_considered: u32,
     pub(crate) rerank_candidates_skipped: u32,
@@ -4066,6 +4100,12 @@ unsafe fn debug_ec_ivf_gettuple_counter_snapshot_inner(
             .stats_rerank_index_segment_payload_bytes_read,
         rerank_payload_bytes_scored: counters.stats_rerank_payload_bytes_scored,
         rerank_payload_slab_bytes_copied: counters.stats_rerank_payload_slab_bytes_copied,
+        tq_stage2_candidate_rows: counters.stats_tq_stage2_candidate_rows,
+        tq_stage2_rows_scored: counters.stats_tq_stage2_rows_scored,
+        tq_stage2_rows_retained: counters.stats_tq_stage2_rows_retained,
+        tq_stage2_payload_bytes_scored: counters.stats_tq_stage2_payload_bytes_scored,
+        tq_stage2_final_exact_rows: counters.stats_tq_stage2_final_exact_rows,
+        tq_stage2_final_source_bytes_read: counters.stats_tq_stage2_final_source_bytes_read,
         rerank_full_chain_loads,
         rerank_candidates_considered: counters.stats_rerank_candidates_considered,
         rerank_candidates_skipped: counters.stats_rerank_candidates_skipped,
