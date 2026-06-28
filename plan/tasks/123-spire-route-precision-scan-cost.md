@@ -1,6 +1,6 @@
 # Task 123: SPIRE Route Precision vs. Scan Cost — Floor, Granularity, Soft-Routing
 
-Status: **completion requested under revised core-algorithm scope
+Status: **reopened multi-instance latency + communications scope not complete
 (2026-06-28).** The prior single-instance closeout (2026-06-27; completion
 record `reviews/task-123/008-completion-record/`, reviewer sign-offs
 `.../feedback/2026-06-27-01..03-reviewer.md`) stands as record: the recall /
@@ -11,11 +11,14 @@ distributed executor. Packets `009` and `010` supplied the first contained
 multi-instance baseline and timeline instrumentation; packet
 `011-multi-instance-100k-timeline-rerun` supplies the requested 200-query
 contained multi-instance core rerun. Packet
-`012-revised-core-algorithm-closeout` records this revised completion request.
-The current claim is intentionally scoped to **local multi-instance core
-routing/recall behavior**. It does not claim true cross-network performance,
-realistic payload transport, PR #43 pre-materialization-prune attribution, or a
-default promotion.
+`012-revised-core-algorithm-closeout` requested revised closeout, but the
+reviewer declined it in
+`reviews/task-123/012-revised-core-algorithm-closeout/feedback/2026-06-28-01-reviewer.md`.
+Packet `013-closeout-decline-response` retracts the closeout request and the
+packet 009 32-query latency interpretation. Packet 011 remains interim
+multi-instance route/recall validation only; clean latency, realistic payload
+transport, PR #43 pre-materialization-prune attribution, and the final
+communications verdict remain open.
 Owner: coder. Worked on the `task-121-spire-coarse-routing-recall-doe` branch.
 Priority: P1. **Local-only** (single host) — single-instance for recall,
 contained multi-instance for latency/efficiency — until a candidate exists.
@@ -307,7 +310,7 @@ Owning follow-ups:
   `125-spire-distributed-read-transport-efficiency`, where SPIRE should prove
   value in its intended distributed regime.
 
-## Revised Core-Algorithm Completion Request (2026-06-28)
+## Revised Core-Algorithm Completion Request (2026-06-28, declined)
 
 Reviewer feedback on packets 009 and 010 correctly identified that the first
 multi-instance baseline was under-powered at 32 queries and still lacked a
@@ -322,18 +325,17 @@ requested 100k contained local multi-instance cells:
 | n1024 b2/tr50/f8 | 8 | 200 | 555.397 ms | 581.701 ms | 0.9290 | 246.1 MiB |
 | n1024 b2/tr50/f8 | 64 | 200 | 770.595 ms | 860.296 ms | 1.0000 | 246.1 MiB |
 
-The core route-precision conclusion is now measured on the real
-coordinator/worker executor at the reviewer-requested sample size: `n1024
-b2/tr50/f8` remains the better high-recall multi-instance research candidate
-than `n128 b4/tr50/f8`, reaching recall 1.0 with lower high-nprobe latency and
-lower coordinator-index storage. This is not a default-promotion claim.
+The packet 012 reviewer declined this as a closeout. The table remains interim
+evidence that `n1024 b2/tr50/f8` is the better high-recall research candidate
+than `n128 b4/tr50/f8`, but it also retracts the packet 009 32-query latency
+headline: n128 b4/tr50/f8 np96 moved from `337 ms` to `5408.521 ms`, and n1024
+b2/tr50/f8 np64 moved from `87 ms` to `770.595 ms`.
 
-Packet 011 also attempted the realistic `id,source` projection requested by the
-reviewer. The clean n1024 run built and materialized successfully, then failed
-inside production read with `remote_heap_resolution_failed` before producing
-timing rows. Under the revised intent for this completion request, that failure
-is recorded as a transport/materialization follow-up rather than blocking the
-core routing/recall result. True cross-network measurement, realistic payload
-bytes, complete communications attribution, and PR #43
-`ec_spire.pre_materialization_prune` A/B remain explicitly outside this
-core-algorithm closeout.
+Packet 013 records the response. It adds an explicit structured latency trace
+artifact for the packet 011 rows and diagnoses the realistic `id,source`
+projection failure as the remote payload cap: the committed PostgreSQL log shows
+`12316` bytes per typed tuple payload against
+`ec_spire.max_remote_payload_bytes_per_row=1024`. The reopened task remains
+open until clean non-disk-confounded latency, realistic payload bytes, PR #43
+`ec_spire.pre_materialization_prune` A/B, and the final latency +
+communications verdict land.
