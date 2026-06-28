@@ -453,6 +453,8 @@ struct SpireLocalMultinodeStep {
     #[serde(default)]
     bench_query_metric_projection_columns: Vec<String>,
     #[serde(default)]
+    bench_session_gucs: Vec<String>,
+    #[serde(default)]
     skip_bench_suite: bool,
     #[serde(default)]
     skip_fault_drills: bool,
@@ -3256,6 +3258,9 @@ fn expand_spire_local_multinode(
             &step.bench_query_metric_projection_columns.join(","),
         );
     }
+    for guc in &step.bench_session_gucs {
+        push_arg(&mut args, "--bench-session-guc", guc);
+    }
     if step.skip_bench_suite {
         args.push("--skip-bench-suite".into());
     }
@@ -4183,6 +4188,10 @@ mod tests {
             "bench_queries_limit": 1,
             "bench_sweep": "3",
             "bench_query_metric_projection_columns": ["id", "source"],
+            "bench_session_gucs": [
+              "ec_spire.max_remote_payload_bytes_per_row=16384",
+              "ec_spire.pre_materialization_prune=off"
+            ],
             "skip_bench_suite": true,
             "skip_fault_drills": true,
             "skip_install": true
@@ -4257,6 +4266,16 @@ mod tests {
             .command
             .windows(2)
             .any(|w| w == ["--bench-query-metric-projection-columns", "id,source"]));
+        assert!(step.command.windows(2).any(|w| w
+            == [
+                "--bench-session-guc",
+                "ec_spire.max_remote_payload_bytes_per_row=16384"
+            ]));
+        assert!(step.command.windows(2).any(|w| w
+            == [
+                "--bench-session-guc",
+                "ec_spire.pre_materialization_prune=off"
+            ]));
         assert!(step.command.contains(&"--skip-bench-suite".into()));
         assert!(step.command.contains(&"--skip-fault-drills".into()));
         assert!(step

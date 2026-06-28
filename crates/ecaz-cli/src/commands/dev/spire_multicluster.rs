@@ -486,6 +486,10 @@ pub struct LocalMultinodePg18Args {
     #[arg(long, value_delimiter = ',')]
     bench_query_metric_projection_columns: Vec<String>,
 
+    /// Extra session GUCs for packet-local production-read bench suite steps, as name=value.
+    #[arg(long = "bench-session-guc")]
+    bench_session_gucs: Vec<String>,
+
     /// Skip the packet-local bench suite step.
     #[arg(long)]
     skip_bench_suite: bool,
@@ -1267,6 +1271,7 @@ async fn run_native_local_multinode_pg18(
                     .as_deref()
                     .or(fixture.truth_corpus_file.as_deref()),
                 &args.bench_query_metric_projection_columns,
+                &args.bench_session_gucs,
             )
             .await?;
         }
@@ -2291,6 +2296,7 @@ async fn run_local_multinode_bench_suite(
     bench_rowcap_sweep: &str,
     truth_corpus_file: Option<&Path>,
     query_metric_projection_columns: &[String],
+    session_gucs: &[String],
 ) -> Result<()> {
     let suite_artifact_dir = log_dir.join("bench-suite");
     fs::create_dir_all(&suite_artifact_dir)
@@ -2319,6 +2325,7 @@ async fn run_local_multinode_bench_suite(
         "production_read_only": true,
         "query_metric_k": bench_top_k,
         "query_metric_projection_columns": projection_columns,
+        "session_gucs": session_gucs,
         "log_output": suite_artifact_dir.join("production-read-k10-default.log")
     });
     let projection_columns = if query_metric_projection_columns.is_empty() {
@@ -2345,6 +2352,7 @@ async fn run_local_multinode_bench_suite(
         "production_read_only": true,
         "query_metric_k": bench_top_k,
         "query_metric_projection_columns": projection_columns,
+        "session_gucs": session_gucs,
         "log_output": suite_artifact_dir.join("production-read-k10-rowcap25k.log")
     });
     if let Some(truth_corpus_file) = truth_corpus_file {
