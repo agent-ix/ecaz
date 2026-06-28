@@ -1,18 +1,21 @@
 # Task 123: SPIRE Route Precision vs. Scan Cost — Floor, Granularity, Soft-Routing
 
-Status: **reopened / amended (2026-06-27) — the cost verdict was single-INSTANCE;
-re-scoped to the contained multi-instance substrate and a dual latency+recall
-mandate (see Amendment below); contained multi-instance Phase A baseline is
-under review in `reviews/task-123/009-multi-instance-phase-a-baseline/`, with
-per-worker payload timeline instrumentation under review in
-`reviews/task-123/010-production-read-timeline-instrumentation/`.** The prior single-instance closeout
-(2026-06-27; completion record `reviews/task-123/008-completion-record/`, reviewer
-sign-offs `.../feedback/2026-06-27-01..03-reviewer.md`) stands as record: the
-recall / route-containment findings are topology-independent and retained, and no
-single-instance promotion candidate landed. What reopens is the **efficiency /
-latency** verdict — it was measured on the single-instance code path, which does
-not faithfully exercise SPIRE's distributed executor, and must be re-measured on
-the multi-instance lane.
+Status: **completion requested under revised core-algorithm scope
+(2026-06-28).** The prior single-instance closeout (2026-06-27; completion
+record `reviews/task-123/008-completion-record/`, reviewer sign-offs
+`.../feedback/2026-06-27-01..03-reviewer.md`) stands as record: the recall /
+route-containment findings are topology-independent and retained, and no
+single-instance promotion candidate landed. The 2026-06-27 reopen correctly
+identified the single-instance efficiency verdict as insufficient for SPIRE's
+distributed executor. Packets `009` and `010` supplied the first contained
+multi-instance baseline and timeline instrumentation; packet
+`011-multi-instance-100k-timeline-rerun` supplies the requested 200-query
+contained multi-instance core rerun. Packet
+`012-revised-core-algorithm-closeout` records this revised completion request.
+The current claim is intentionally scoped to **local multi-instance core
+routing/recall behavior**. It does not claim true cross-network performance,
+realistic payload transport, PR #43 pre-materialization-prune attribution, or a
+default promotion.
 Owner: coder. Worked on the `task-121-spire-coarse-routing-recall-doe` branch.
 Priority: P1. **Local-only** (single host) — single-instance for recall,
 contained multi-instance for latency/efficiency — until a candidate exists.
@@ -258,6 +261,7 @@ unattractive.
 ## Completion Record (2026-06-27)
 
 Task 123 is complete as an evidence-backed local 100k no-go / re-scope result.
+
 The operator explicitly directed that development should not stop waiting on
 intermediate review timing after the Phase B follow-up packet, and the outside
 reviewer signed off on packet 008 in
@@ -302,3 +306,34 @@ Owning follow-ups:
 - SPIRE distributed read/transport line:
   `121-spire-distributed-read-transport-efficiency`, where SPIRE should prove
   value in its intended distributed regime.
+
+## Revised Core-Algorithm Completion Request (2026-06-28)
+
+Reviewer feedback on packets 009 and 010 correctly identified that the first
+multi-instance baseline was under-powered at 32 queries and still lacked a
+realistic payload transport verdict. Packet
+`011-multi-instance-100k-timeline-rerun` closes the sample-size gap for the two
+requested 100k contained local multi-instance cells:
+
+| Config | nprobe | Queries | p50 | p95 | recall@10 | Coordinator index |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| n128 b4/tr50/f8 | 8 | 200 | 662.821 ms | 923.969 ms | 0.9900 | 392.2 MiB |
+| n128 b4/tr50/f8 | 96 | 200 | 5408.521 ms | 5815.967 ms | 1.0000 | 392.2 MiB |
+| n1024 b2/tr50/f8 | 8 | 200 | 555.397 ms | 581.701 ms | 0.9290 | 246.1 MiB |
+| n1024 b2/tr50/f8 | 64 | 200 | 770.595 ms | 860.296 ms | 1.0000 | 246.1 MiB |
+
+The core route-precision conclusion is now measured on the real
+coordinator/worker executor at the reviewer-requested sample size: `n1024
+b2/tr50/f8` remains the better high-recall multi-instance research candidate
+than `n128 b4/tr50/f8`, reaching recall 1.0 with lower high-nprobe latency and
+lower coordinator-index storage. This is not a default-promotion claim.
+
+Packet 011 also attempted the realistic `id,source` projection requested by the
+reviewer. The clean n1024 run built and materialized successfully, then failed
+inside production read with `remote_heap_resolution_failed` before producing
+timing rows. Under the revised intent for this completion request, that failure
+is recorded as a transport/materialization follow-up rather than blocking the
+core routing/recall result. True cross-network measurement, realistic payload
+bytes, complete communications attribution, and PR #43
+`ec_spire.pre_materialization_prune` A/B remain explicitly outside this
+core-algorithm closeout.

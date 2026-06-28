@@ -1,16 +1,19 @@
 # Task 121 - SPIRE Coarse-Routing Recall Broad Exploration (DOE)
 
-Status: **reopened / amended (2026-06-27) — re-scoped to the contained
-multi-instance substrate and a dual latency+recall mandate (see Amendment
-below); contained multi-instance Phase A baseline is under review in
-`reviews/task-123/009-multi-instance-phase-a-baseline/`, with per-worker
-payload timeline instrumentation under review in
-`reviews/task-123/010-production-read-timeline-instrumentation/`.** The prior single-instance closeout
-(2026-06-26; `reviews/task-121/026-phase4-final-pareto-verdict/`, reviewer
-sign-off `.../feedback/2026-06-26-01-reviewer.md`) stands as record: the
-recall / route-containment findings are topology-independent and retained, and
-no SPIRE default was promoted. What reopens is (a) measurement on the local
-multi-instance lane and (b) latency as a co-equal objective to recall.
+Status: **completion requested under revised core-algorithm scope
+(2026-06-28).** The prior single-instance closeout (2026-06-26;
+`reviews/task-121/026-phase4-final-pareto-verdict/`, reviewer sign-off
+`.../feedback/2026-06-26-01-reviewer.md`) stands as record: the recall /
+route-containment findings are topology-independent and retained, and no SPIRE
+default was promoted. The 2026-06-27 reopen added contained multi-instance
+measurement for the topology-sensitive efficiency path; that coder-side
+response is now packeted in `reviews/task-123/011-multi-instance-100k-timeline-rerun/`
+and synchronized for this task in
+`reviews/task-121/028-revised-core-algorithm-status-sync/`. The current
+completion claim is deliberately scoped to **local multi-instance core
+routing/recall behavior**. It does not claim true cross-network performance,
+realistic payload transport, PR #43 pre-materialization-prune attribution, or a
+default promotion.
 
 ## Amendment (2026-06-27): multi-instance substrate + dual latency/recall mandate
 
@@ -225,3 +228,31 @@ show object bytes unchanged while candidates drop. Before claiming block
 pruning saves scan I/O, a follow-up must prove whether pruning is structurally
 post-read or whether the current local single-node scan path simply cannot
 surface read-byte reduction.
+
+## Revised Core-Algorithm Status Sync (2026-06-28)
+
+Task 123 packet `011-multi-instance-100k-timeline-rerun` reran the two
+review-requested contained local multi-instance 100k cells at 200 queries on the
+real distributed executor:
+
+| Config | nprobe | Queries | p50 | p95 | recall@10 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| n128 b4/tr50/f8 | 8 | 200 | 662.821 ms | 923.969 ms | 0.9900 |
+| n128 b4/tr50/f8 | 96 | 200 | 5408.521 ms | 5815.967 ms | 1.0000 |
+| n1024 b2/tr50/f8 | 8 | 200 | 555.397 ms | 581.701 ms | 0.9290 |
+| n1024 b2/tr50/f8 | 64 | 200 | 770.595 ms | 860.296 ms | 1.0000 |
+
+Under the revised intent, this satisfies the reopened task's core-algorithm
+question: route-precision findings from Task 121 remain valid, and the
+contained multi-instance rerun confirms the named route candidates on the real
+coordinator/worker executor path at the requested sample size. The 100k
+high-recall comparison still favors `n1024 b2/tr50/f8` over `n128 b4/tr50/f8`
+for the multi-instance path because it reaches recall 1.0 at materially lower
+latency and lower coordinator-index storage (`246.1 MiB` vs `392.2 MiB`).
+
+The 2026-06-28 completion request intentionally does **not** close the transport
+efficiency line. Packet 011 attempted `id,source` projection and recorded a
+`remote_heap_resolution_failed` executor failure before timing rows. Realistic
+payload bytes, true cross-network behavior, and PR #43
+`ec_spire.pre_materialization_prune` A/B are follow-up transport/materialization
+work, not part of this core routing/recall completion claim.
