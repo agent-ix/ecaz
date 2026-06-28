@@ -1,0 +1,163 @@
+{
+  "suite": "local-multinode-production-read",
+  "schema_version": 1,
+  "config": "reviews/task-123/011-multi-instance-100k-timeline-rerun/artifacts/n1024-b2-200q-source/bench-suite/local-real-production-read-suite.json",
+  "config_sha256": "fac97abcce32cf809597020c5301a3f3c8619698a1b8f06aab83ddfdff37cba4",
+  "dry_run": false,
+  "generated_at_unix_ms": 1782644204346,
+  "connection": {
+    "database": "postgres",
+    "host": "/tmp/ecaz-task123/target/spire-local-multinode-sockets-task123-p11-mi-n1024-b2-200q-source",
+    "port": 40330,
+    "user": "ecaz_coord",
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "storage-local-coordinator",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/tmp/ecaz-task123/target/spire-local-multinode-sockets-task123-p11-mi-n1024-b2-200q-source",
+        "--port",
+        "40330",
+        "--user",
+        "ecaz_coord",
+        "--log-file",
+        "reviews/task-123/011-multi-instance-100k-timeline-rerun/artifacts/n1024-b2-200q-source/bench-suite/storage.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "ec_real_100k"
+      ],
+      "selected": true,
+      "tags": [
+        "local",
+        "multinode",
+        "storage"
+      ],
+      "expected_artifacts": [
+        "reviews/task-123/011-multi-instance-100k-timeline-rerun/artifacts/n1024-b2-200q-source/bench-suite/storage.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1782644204346,
+      "finished_at_unix_ms": 1782644204476,
+      "duration_ms": 129,
+      "exit_code": 0
+    },
+    {
+      "name": "production-read-k10-default",
+      "kind": "spire-pipeline",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/tmp/ecaz-task123/target/spire-local-multinode-sockets-task123-p11-mi-n1024-b2-200q-source",
+        "--port",
+        "40330",
+        "--user",
+        "ecaz_coord",
+        "bench",
+        "spire-pipeline",
+        "--prefix",
+        "ec_real_100k",
+        "--index",
+        "t123_p11_mi_100k_n1024_b2_200q_source_coord_idx",
+        "--queries-limit",
+        "200",
+        "--sweep",
+        "8,64",
+        "--include-remote",
+        "--require-remote-placements",
+        "--top-k",
+        "10",
+        "--include-cost-snapshot",
+        "--include-query-metrics",
+        "--include-recall",
+        "--truth-corpus-file",
+        "/home/peter/dev/ecaz/data/staged-current/ec_real_100k_corpus.tsv",
+        "--include-production-read-profile",
+        "--production-read-only",
+        "--query-metric-k",
+        "10",
+        "--query-metric-projection-columns",
+        "id,source",
+        "--log-output",
+        "reviews/task-123/011-multi-instance-100k-timeline-rerun/artifacts/n1024-b2-200q-source/bench-suite/production-read-k10-default.log"
+      ],
+      "selected": true,
+      "tags": [
+        "phase5",
+        "local",
+        "multinode",
+        "production-read",
+        "default-cap"
+      ],
+      "expected_artifacts": [
+        "reviews/task-123/011-multi-instance-100k-timeline-rerun/artifacts/n1024-b2-200q-source/bench-suite/production-read-k10-default.log"
+      ],
+      "status": "failed",
+      "started_at_unix_ms": 1782644204477,
+      "finished_at_unix_ms": 1782644281386,
+      "duration_ms": 81925,
+      "exit_code": 1
+    },
+    {
+      "name": "production-read-k10-rowcap25k",
+      "kind": "spire-pipeline",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/tmp/ecaz-task123/target/spire-local-multinode-sockets-task123-p11-mi-n1024-b2-200q-source",
+        "--port",
+        "40330",
+        "--user",
+        "ecaz_coord",
+        "bench",
+        "spire-pipeline",
+        "--prefix",
+        "ec_real_100k",
+        "--index",
+        "t123_p11_mi_100k_n1024_b2_200q_source_coord_idx",
+        "--queries-limit",
+        "200",
+        "--sweep",
+        "8,64",
+        "--max-routed-candidate-rows",
+        "25000",
+        "--include-remote",
+        "--require-remote-placements",
+        "--top-k",
+        "10",
+        "--include-cost-snapshot",
+        "--include-query-metrics",
+        "--include-recall",
+        "--truth-corpus-file",
+        "/home/peter/dev/ecaz/data/staged-current/ec_real_100k_corpus.tsv",
+        "--include-production-read-profile",
+        "--production-read-only",
+        "--query-metric-k",
+        "10",
+        "--query-metric-projection-columns",
+        "id,source",
+        "--log-output",
+        "reviews/task-123/011-multi-instance-100k-timeline-rerun/artifacts/n1024-b2-200q-source/bench-suite/production-read-k10-rowcap25k.log"
+      ],
+      "selected": true,
+      "tags": [
+        "phase5",
+        "local",
+        "multinode",
+        "production-read",
+        "rowcap25k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-123/011-multi-instance-100k-timeline-rerun/artifacts/n1024-b2-200q-source/bench-suite/production-read-k10-rowcap25k.log"
+      ],
+      "status": "pending"
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+run_dir=/tmp/ecaz-task123/target/spire-local-multinode-task123-p11-mi-n1024-b2-200q-source
+coord_port=40330
+remote1_port=40331
+remote2_port=40332
+remote3_port=40333
+tier=representative
+prefix=ec_real_100k

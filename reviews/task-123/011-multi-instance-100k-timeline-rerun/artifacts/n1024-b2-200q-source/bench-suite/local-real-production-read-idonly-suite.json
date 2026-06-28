@@ -1,0 +1,80 @@
+{
+  "name": "local-multinode-production-read-n1024-200q-idonly",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-123/011-multi-instance-100k-timeline-rerun/artifacts/n1024-b2-200q-source/bench-suite",
+  "defaults": {
+    "queries_limit": 200,
+    "pg": 18
+  },
+  "steps": [
+    {
+      "kind": "spire-pipeline",
+      "name": "production-read-k10-default-idonly",
+      "tags": [
+        "phase-a",
+        "local",
+        "multinode",
+        "production-read",
+        "default-cap",
+        "queries-200",
+        "id-projection"
+      ],
+      "prefix": "ec_real_100k",
+      "index": "t123_p11_mi_100k_n1024_b2_200q_source_coord_idx",
+      "queries_limit": 200,
+      "sweep": [
+        8,
+        64
+      ],
+      "top_k": 10,
+      "include_remote": true,
+      "require_remote_placements": true,
+      "include_cost_snapshot": true,
+      "include_query_metrics": true,
+      "include_recall": true,
+      "truth_corpus_file": "/home/peter/dev/ecaz/data/staged-current/ec_real_100k_corpus.tsv",
+      "include_production_read_profile": true,
+      "production_read_only": true,
+      "query_metric_k": 10,
+      "query_metric_projection_columns": [
+        "id"
+      ],
+      "log_output": "reviews/task-123/011-multi-instance-100k-timeline-rerun/artifacts/n1024-b2-200q-source/bench-suite/production-read-k10-default-idonly.log"
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "production-read-k10-rowcap25k-idonly",
+      "tags": [
+        "phase-a",
+        "local",
+        "multinode",
+        "production-read",
+        "rowcap25k",
+        "queries-200",
+        "id-projection"
+      ],
+      "prefix": "ec_real_100k",
+      "index": "t123_p11_mi_100k_n1024_b2_200q_source_coord_idx",
+      "queries_limit": 200,
+      "sweep": [
+        8,
+        64
+      ],
+      "top_k": 10,
+      "max_routed_candidate_rows": 25000,
+      "include_remote": true,
+      "require_remote_placements": true,
+      "include_cost_snapshot": true,
+      "include_query_metrics": true,
+      "include_recall": true,
+      "truth_corpus_file": "/home/peter/dev/ecaz/data/staged-current/ec_real_100k_corpus.tsv",
+      "include_production_read_profile": true,
+      "production_read_only": true,
+      "query_metric_k": 10,
+      "query_metric_projection_columns": [
+        "id"
+      ],
+      "log_output": "reviews/task-123/011-multi-instance-100k-timeline-rerun/artifacts/n1024-b2-200q-source/bench-suite/production-read-k10-rowcap25k-idonly.log"
+    }
+  ]
+}

@@ -1,0 +1,82 @@
+2026-06-27 23:30:00.840 PDT [1851169] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-06-27 23:30:00.842 PDT [1851169] LOG:  listening on Unix socket "/tmp/ecaz-task123/target/spire-local-multinode-sockets-task123-p11-mi-n1024-b2-200q-source/.s.PGSQL.40331"
+2026-06-27 23:30:00.849 PDT [1851175] LOG:  database system was shut down at 2026-06-27 23:29:58 PDT
+2026-06-27 23:30:00.852 PDT [1851169] LOG:  database system is ready to accept connections
+2026-06-27 23:35:00.274 PDT [1851173] LOG:  checkpoint starting: time
+2026-06-27 23:35:37.358 PDT [1851173] LOG:  checkpoint complete: wrote 383 buffers (2.3%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=36.871 s, sync=0.182 s, total=37.085 s; sync files=145, longest=0.009 s, average=0.002 s; distance=3008 kB, estimate=3008 kB; lsn=0/1A44638, redo lsn=0/1A445A8
+2026-06-28 00:54:39.815 PDT [1851173] LOG:  checkpoint starting: wal
+2026-06-28 00:55:31.891 PDT [1862302] LOG:  skipping vacuum of "ec_real_100k_node_2_corpus" --- lock not available
+2026-06-28 00:55:38.575 PDT [1851173] LOG:  checkpoint complete: wrote 77 buffers (0.5%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=57.933 s, sync=0.148 s, total=58.760 s; sync files=49, longest=0.045 s, average=0.004 s; distance=532862 kB, estimate=532862 kB; lsn=0/400C1D58, redo lsn=0/222A3EE8
+2026-06-28 00:55:40.824 PDT [1851173] LOG:  checkpoint starting: wal
+2026-06-28 00:55:56.564 PDT [1851173] LOG:  checkpoint complete: wrote 1 buffers (0.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=15.281 s, sync=0.237 s, total=15.740 s; sync files=3, longest=0.195 s, average=0.079 s; distance=538741 kB, estimate=538741 kB; lsn=0/56368F70, redo lsn=0/430C1338
+2026-06-28 00:56:09.501 PDT [1851173] LOG:  checkpoints are occurring too frequently (29 seconds apart)
+2026-06-28 00:56:09.501 PDT [1851173] HINT:  Consider increasing the configuration parameter "max_wal_size".
+2026-06-28 00:56:09.501 PDT [1851173] LOG:  checkpoint starting: wal
+2026-06-28 00:56:26.767 PDT [1851173] LOG:  checkpoint complete: wrote 4 buffers (0.0%), wrote 0 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=16.640 s, sync=0.298 s, total=17.266 s; sync files=3, longest=0.232 s, average=0.100 s; distance=540451 kB, estimate=540451 kB; lsn=0/711154D8, redo lsn=0/64089F38
+2026-06-28 00:56:31.898 PDT [1862908] LOG:  skipping vacuum of "ec_real_100k_node_2_corpus" --- lock not available
+2026-06-28 00:57:31.897 PDT [1862986] LOG:  skipping vacuum of "ec_real_100k_node_2_corpus" --- lock not available
+2026-06-28 00:58:31.901 PDT [1863080] LOG:  skipping vacuum of "ec_real_100k_node_2_corpus" --- lock not available
+2026-06-28 00:59:31.907 PDT [1863146] LOG:  skipping vacuum of "ec_real_100k_node_2_corpus" --- lock not available
+2026-06-28 01:00:31.903 PDT [1863209] LOG:  skipping vacuum of "ec_real_100k_node_2_corpus" --- lock not available
+2026-06-28 01:01:32.002 PDT [1863268] LOG:  skipping vacuum of "ec_real_100k_node_2_corpus" --- lock not available
+2026-06-28 01:02:32.001 PDT [1863329] LOG:  skipping vacuum of "ec_real_100k_node_2_corpus" --- lock not available
+2026-06-28 01:03:32.006 PDT [1863390] LOG:  skipping vacuum of "ec_real_100k_node_2_corpus" --- lock not available
+2026-06-28 01:04:32.102 PDT [1863641] LOG:  skipping vacuum of "ec_real_100k_node_2_corpus" --- lock not available
+2026-06-28 01:05:32.103 PDT [1863707] LOG:  skipping vacuum of "ec_real_100k_node_2_corpus" --- lock not available
+2026-06-28 01:06:32.104 PDT [1863772] LOG:  skipping vacuum of "ec_real_100k_node_2_corpus" --- lock not available
+2026-06-28 01:07:32.106 PDT [1863829] LOG:  skipping vacuum of "ec_real_100k_node_2_corpus" --- lock not available
+2026-06-28 01:08:32.209 PDT [1863903] LOG:  skipping vacuum of "ec_real_100k_node_2_corpus" --- lock not available
+2026-06-28 01:09:32.209 PDT [1863963] LOG:  skipping vacuum of "ec_real_100k_node_2_corpus" --- lock not available
+2026-06-28 01:10:32.211 PDT [1864098] LOG:  skipping vacuum of "ec_real_100k_node_2_corpus" --- lock not available
+2026-06-28 01:11:32.210 PDT [1864163] LOG:  skipping vacuum of "ec_real_100k_node_2_corpus" --- lock not available
+2026-06-28 01:12:32.211 PDT [1864236] LOG:  skipping vacuum of "ec_real_100k_node_2_corpus" --- lock not available
+2026-06-28 01:13:32.306 PDT [1864389] LOG:  skipping vacuum of "ec_real_100k_node_2_corpus" --- lock not available
+2026-06-28 01:14:32.308 PDT [1864629] LOG:  skipping vacuum of "ec_real_100k_node_2_corpus" --- lock not available
+2026-06-28 01:15:32.310 PDT [1864693] LOG:  skipping vacuum of "ec_real_100k_node_2_corpus" --- lock not available
+2026-06-28 01:16:32.311 PDT [1865278] LOG:  skipping vacuum of "ec_real_100k_node_2_corpus" --- lock not available
+2026-06-28 01:17:32.312 PDT [1865344] LOG:  skipping vacuum of "ec_real_100k_node_2_corpus" --- lock not available
+2026-06-28 01:18:32.314 PDT [1865404] LOG:  skipping vacuum of "ec_real_100k_node_2_corpus" --- lock not available
+2026-06-28 01:19:32.315 PDT [1865464] LOG:  skipping vacuum of "ec_real_100k_node_2_corpus" --- lock not available
+2026-06-28 01:20:32.315 PDT [1865530] LOG:  skipping vacuum of "ec_real_100k_node_2_corpus" --- lock not available
+2026-06-28 01:21:32.316 PDT [1865650] LOG:  skipping vacuum of "ec_real_100k_node_2_corpus" --- lock not available
+2026-06-28 01:22:32.316 PDT [1865688] LOG:  skipping vacuum of "ec_real_100k_node_2_corpus" --- lock not available
+2026-06-28 01:23:32.317 PDT [1865756] LOG:  skipping vacuum of "ec_real_100k_node_2_corpus" --- lock not available
+2026-06-28 01:24:32.318 PDT [1865983] LOG:  skipping vacuum of "ec_real_100k_node_2_corpus" --- lock not available
+2026-06-28 01:25:32.320 PDT [1866064] LOG:  skipping vacuum of "ec_real_100k_node_2_corpus" --- lock not available
+2026-06-28 01:26:32.421 PDT [1866141] LOG:  skipping vacuum of "ec_real_100k_node_2_corpus" --- lock not available
+2026-06-28 01:27:32.422 PDT [1866195] LOG:  skipping vacuum of "ec_real_100k_node_2_corpus" --- lock not available
+2026-06-28 01:28:32.522 PDT [1866252] LOG:  skipping vacuum of "ec_real_100k_node_2_corpus" --- lock not available
+2026-06-28 01:29:32.523 PDT [1866312] LOG:  skipping vacuum of "ec_real_100k_node_2_corpus" --- lock not available
+2026-06-28 01:30:32.524 PDT [1866469] LOG:  skipping vacuum of "ec_real_100k_node_2_corpus" --- lock not available
+2026-06-28 01:31:32.623 PDT [1866542] LOG:  skipping vacuum of "ec_real_100k_node_2_corpus" --- lock not available
+2026-06-28 01:32:32.625 PDT [1866601] LOG:  skipping vacuum of "ec_real_100k_node_2_corpus" --- lock not available
+2026-06-28 01:33:32.628 PDT [1866752] LOG:  skipping vacuum of "ec_real_100k_node_2_corpus" --- lock not available
+2026-06-28 01:34:32.629 PDT [1867014] LOG:  skipping vacuum of "ec_real_100k_node_2_corpus" --- lock not available
+2026-06-28 01:35:32.728 PDT [1867099] LOG:  skipping vacuum of "ec_real_100k_node_2_corpus" --- lock not available
+2026-06-28 01:36:32.732 PDT [1867695] LOG:  skipping vacuum of "ec_real_100k_node_2_corpus" --- lock not available
+2026-06-28 01:37:32.733 PDT [1867770] LOG:  skipping vacuum of "ec_real_100k_node_2_corpus" --- lock not available
+2026-06-28 01:38:32.734 PDT [1867851] LOG:  skipping vacuum of "ec_real_100k_node_2_corpus" --- lock not available
+2026-06-28 01:39:32.736 PDT [1867926] LOG:  skipping vacuum of "ec_real_100k_node_2_corpus" --- lock not available
+2026-06-28 01:40:32.739 PDT [1867989] LOG:  skipping vacuum of "ec_real_100k_node_2_corpus" --- lock not available
+2026-06-28 01:41:32.750 PDT [1868049] LOG:  skipping vacuum of "ec_real_100k_node_2_corpus" --- lock not available
+2026-06-28 01:42:32.751 PDT [1868107] LOG:  skipping vacuum of "ec_real_100k_node_2_corpus" --- lock not available
+2026-06-28 01:43:32.755 PDT [1868183] LOG:  skipping vacuum of "ec_real_100k_node_2_corpus" --- lock not available
+2026-06-28 01:44:32.756 PDT [1868498] LOG:  skipping vacuum of "ec_real_100k_node_2_corpus" --- lock not available
+2026-06-28 01:45:32.758 PDT [1868578] LOG:  skipping vacuum of "ec_real_100k_node_2_corpus" --- lock not available
+2026-06-28 01:46:32.759 PDT [1868649] LOG:  skipping vacuum of "ec_real_100k_node_2_corpus" --- lock not available
+2026-06-28 01:47:32.761 PDT [1868723] LOG:  skipping vacuum of "ec_real_100k_node_2_corpus" --- lock not available
+2026-06-28 01:48:32.764 PDT [1868803] LOG:  skipping vacuum of "ec_real_100k_node_2_corpus" --- lock not available
+2026-06-28 01:49:32.766 PDT [1868868] LOG:  skipping vacuum of "ec_real_100k_node_2_corpus" --- lock not available
+2026-06-28 01:50:32.769 PDT [1868926] LOG:  skipping vacuum of "ec_real_100k_node_2_corpus" --- lock not available
+2026-06-28 01:51:32.769 PDT [1868990] LOG:  skipping vacuum of "ec_real_100k_node_2_corpus" --- lock not available
+2026-06-28 01:56:09.228 PDT [1851173] LOG:  checkpoint starting: time
+2026-06-28 01:56:37.376 PDT [1851173] LOG:  checkpoint complete: wrote 293 buffers (1.8%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 24 recycled; write=27.827 s, sync=0.076 s, total=28.149 s; sync files=20, longest=0.005 s, average=0.004 s; distance=398889 kB, estimate=526294 kB; lsn=0/7C614550, redo lsn=0/7C6144C0
+2026-06-28 03:56:09.699 PDT [1851173] LOG:  checkpoint starting: time
+2026-06-28 03:58:01.493 PDT [1851169] LOG:  received fast shutdown request
+2026-06-28 03:58:01.502 PDT [1851169] LOG:  aborting any active transactions
+2026-06-28 03:58:01.503 PDT [1851169] LOG:  background worker "logical replication launcher" (PID 1851178) exited with exit code 1
+2026-06-28 03:58:01.562 PDT [1851173] LOG:  checkpoint complete: wrote 10084 buffers (61.5%), wrote 1 SLRU buffers; 0 WAL file(s) added, 1 removed, 4 recycled; write=111.828 s, sync=0.015 s, total=111.863 s; sync files=41, longest=0.003 s, average=0.001 s; distance=81090 kB, estimate=481774 kB; lsn=0/8154EDF8, redo lsn=0/81545058
+2026-06-28 03:58:01.562 PDT [1851173] LOG:  shutting down
+2026-06-28 03:58:01.564 PDT [1851173] LOG:  checkpoint starting: shutdown immediate
+2026-06-28 03:58:01.579 PDT [1851173] LOG:  checkpoint complete: wrote 7 buffers (0.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.002 s, sync=0.004 s, total=0.017 s; sync files=6, longest=0.003 s, average=0.001 s; distance=39 kB, estimate=433600 kB; lsn=0/8154EE70, redo lsn=0/8154EE70
+2026-06-28 03:58:01.600 PDT [1851169] LOG:  database system is shut down

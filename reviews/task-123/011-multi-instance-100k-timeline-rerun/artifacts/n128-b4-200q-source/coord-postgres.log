@@ -1,0 +1,35 @@
+2026-06-27 20:20:02.163 PDT [1816099] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-06-27 20:20:02.165 PDT [1816099] LOG:  listening on Unix socket "/tmp/ecaz-task123/target/spire-local-multinode-sockets-task123-p11-mi-n128-b4-200q-source/.s.PGSQL.40320"
+2026-06-27 20:20:02.173 PDT [1816105] LOG:  database system was shut down at 2026-06-27 20:19:57 PDT
+2026-06-27 20:20:02.177 PDT [1816099] LOG:  database system is ready to accept connections
+2026-06-27 20:24:42.337 PDT [1816103] LOG:  checkpoint starting: wal
+2026-06-27 20:24:51.975 PDT [1816103] LOG:  checkpoint complete: wrote 78 buffers (0.5%), wrote 3 SLRU buffers; 0 WAL file(s) added, 1 removed, 32 recycled; write=8.668 s, sync=0.854 s, total=9.638 s; sync files=155, longest=0.650 s, average=0.006 s; distance=536960 kB, estimate=536960 kB; lsn=0/41701BD0, redo lsn=0/223B47E8
+2026-06-27 20:24:52.326 PDT [1816103] LOG:  checkpoints are occurring too frequently (10 seconds apart)
+2026-06-27 20:24:52.326 PDT [1816103] HINT:  Consider increasing the configuration parameter "max_wal_size".
+2026-06-27 20:24:52.326 PDT [1816103] LOG:  checkpoint starting: wal
+2026-06-27 20:25:32.202 PDT [1817168] LOG:  skipping vacuum of "ec_real_100k_corpus" --- lock not available
+2026-06-27 20:25:44.601 PDT [1816103] LOG:  checkpoint complete: wrote 76 buffers (0.5%), wrote 0 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=51.515 s, sync=0.338 s, total=52.275 s; sync files=46, longest=0.133 s, average=0.008 s; distance=537873 kB, estimate=537873 kB; lsn=0/611951F0, redo lsn=0/430F8E10
+2026-06-27 20:25:46.780 PDT [1816103] LOG:  checkpoint starting: wal
+2026-06-27 20:26:03.771 PDT [1816103] LOG:  checkpoint complete: wrote 8 buffers (0.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=16.469 s, sync=0.125 s, total=16.992 s; sync files=8, longest=0.089 s, average=0.016 s; distance=540026 kB, estimate=540026 kB; lsn=0/78337288, redo lsn=0/640576A0
+2026-06-27 20:26:14.999 PDT [1816103] LOG:  checkpoints are occurring too frequently (28 seconds apart)
+2026-06-27 20:26:14.999 PDT [1816103] HINT:  Consider increasing the configuration parameter "max_wal_size".
+2026-06-27 20:26:14.999 PDT [1816103] LOG:  checkpoint starting: wal
+2026-06-27 20:26:32.173 PDT [1816103] LOG:  checkpoint complete: wrote 2 buffers (0.0%), wrote 0 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=16.632 s, sync=0.179 s, total=17.174 s; sync files=3, longest=0.166 s, average=0.060 s; distance=541160 kB, estimate=541160 kB; lsn=0/98B32F98, redo lsn=0/850D1838
+2026-06-27 20:26:32.196 PDT [1817290] LOG:  skipping vacuum of "ec_real_100k_corpus" --- lock not available
+2026-06-27 20:27:32.196 PDT [1817355] LOG:  skipping vacuum of "ec_real_100k_corpus" --- lock not available
+2026-06-27 20:28:32.292 PDT [1817481] LOG:  skipping vacuum of "ec_real_100k_corpus" --- lock not available
+2026-06-27 20:29:32.293 PDT [1817557] LOG:  skipping vacuum of "ec_real_100k_corpus" --- lock not available
+2026-06-27 20:30:32.293 PDT [1817689] LOG:  skipping vacuum of "ec_real_100k_corpus" --- lock not available
+2026-06-27 20:31:14.692 PDT [1816103] LOG:  checkpoint starting: time
+2026-06-27 20:31:32.294 PDT [1817758] LOG:  skipping vacuum of "ec_real_100k_corpus" --- lock not available
+2026-06-27 20:32:32.295 PDT [1817948] LOG:  skipping vacuum of "ec_real_100k_corpus" --- lock not available
+2026-06-27 20:33:32.296 PDT [1818345] LOG:  skipping vacuum of "ec_real_100k_corpus" --- lock not available
+2026-06-27 20:34:32.298 PDT [1818482] LOG:  skipping vacuum of "ec_real_100k_corpus" --- lock not available
+2026-06-27 20:35:44.177 PDT [1816103] LOG:  checkpoint complete: wrote 12005 buffers (73.3%), wrote 0 SLRU buffers; 0 WAL file(s) added, 0 removed, 29 recycled; write=269.389 s, sync=0.026 s, total=269.486 s; sync files=19, longest=0.007 s, average=0.002 s; distance=475892 kB, estimate=534633 kB; lsn=0/BB44E650, redo lsn=0/A218EB20
+2026-06-27 21:15:54.460 PDT [1816099] LOG:  received fast shutdown request
+2026-06-27 21:15:54.463 PDT [1816099] LOG:  aborting any active transactions
+2026-06-27 21:15:54.463 PDT [1816099] LOG:  background worker "logical replication launcher" (PID 1816108) exited with exit code 1
+2026-06-27 21:15:54.467 PDT [1816103] LOG:  shutting down
+2026-06-27 21:15:54.469 PDT [1816103] LOG:  checkpoint starting: shutdown immediate
+2026-06-27 21:15:54.530 PDT [1816103] LOG:  checkpoint complete: wrote 3 buffers (0.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 25 recycled; write=0.002 s, sync=0.004 s, total=0.064 s; sync files=4, longest=0.002 s, average=0.001 s; distance=412414 kB, estimate=522411 kB; lsn=0/BB44E700, redo lsn=0/BB44E700
+2026-06-27 21:15:54.553 PDT [1816099] LOG:  database system is shut down
