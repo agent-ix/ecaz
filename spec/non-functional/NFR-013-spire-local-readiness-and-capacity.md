@@ -2,6 +2,7 @@
 id: NFR-013
 title: SPIRE Local Readiness and Capacity
 type: NFR
+quality_attribute: scalability
 status: APPROVED
 relationships:
   - target: "ix://agent-ix/ecaz/FR-052"
@@ -28,9 +29,18 @@ as AWS/RDS or product-scale evidence.
 ## Measurement and Evaluation
 
 | Metric | Target | Threshold | Method |
-|--------|--------|-----------|--------|
-| SPIRE local-store readiness and capacity baseline | Reported per the measurement contract | Reported | SPIRE Capacity Benchmark |
-
+|---|---|---|---|
+| Ready remotes per coordinator query (smoke boundary) | 8 | 8 unless a review packet records a stricter or measured replacement | local production-readiness smoke packet |
+| Remote leaf PIDs per coordinator query | 256 | 256 | local production-readiness smoke packet |
+| Selected PIDs per remote node | 64 | 64 | local production-readiness smoke packet |
+| Tuple payload bytes per row | 1024 | 1024 | local production-readiness smoke packet |
+| Tuple payload rows per batch | 64 | 64 | local production-readiness smoke packet |
+| Concurrent distributed-read coordinator sessions | 1 | 1 | local production-readiness smoke packet |
+| Concurrent remote-search dispatches across coordinator backends | 8 | 8 | local production-readiness smoke packet |
+| Concurrent remote-search dispatches per remote node | 1 | 1 | local production-readiness smoke packet |
+| Concurrent coordinator-routed writer workloads | 1 | 1 | local production-readiness smoke packet |
+| Concurrent work per remote node | 1 read dispatch or 1 prepared write branch | 1 | local production-readiness smoke packet |
+| Readiness packet completeness | 100% of packets record the required counters, GUCs, and evidence label | no exceptions | review packet audit |
 
 Local readiness packets SHALL record:
 
@@ -68,7 +78,16 @@ fixture.
 
 ## Verification
 
-The SPIRE local readiness and capacity baseline is measured according to the measurement contract and capacity-baseline sections, scoped by the stated claim boundary, with raw artifacts stored in the owning review packet.
+Compliance is checked by auditing local readiness review packets and spec
+rows: each packet carries the evidence label `local production-readiness
+smoke` and records node count, selected PID count, remote fanout, candidate
+counts, heap rows, route counts, object bytes, local-store counters, strict
+failures, degraded skips, timeout/cancel counts, placement contention when
+available, typed tuple transport status, and the active remote fanout,
+payload, timeout, and concurrency GUCs. Spec rows are checked to distinguish
+local functionality, local production-readiness smoke, and AWS/RDS
+product-scale evidence, and to confirm no local smoke result is promoted into
+a product-scale claim.
 
 ## Acceptance Criteria
 

@@ -3,7 +3,7 @@ id: FR-049
 title: SPIRE Partition Object Header
 type: FR
 status: APPROVED
-object: data_schema
+object: binary_format
 relationships:
   - target: "ix://agent-ix/ecaz/FR-048"
     type: "depends_on"
@@ -58,37 +58,59 @@ Header size SHALL be exactly 54 bytes.
    against their own format-specific invariants before returning structured
    objects.
 
-## Schema
+## Layout
 
-```json
-{
-  "TODO": "describe the schema shape here"
-}
+```yaml
+format: spire-partition-object-header
+title: SPIRE partition object header
+endianness: little
+encoding: "binary, exactly 54 bytes"
+record_types:
+  - name: partition_object_header
+    magic: 0x4f505345
+    size: 54
+    fields:
+      - { name: magic, offset: 0, size: 4, type: u32, const: 0x4f505345, description: "'ESPO' in little-endian bytes" }
+      - { name: format_version, offset: 4, size: 2, type: u16, enum: [1, 2] }
+      - { name: kind, offset: 6, size: 1, type: u8, enum: { 1: root, 2: internal, 3: leaf, 4: delta, 5: top_graph } }
+      - { name: reserved, offset: 7, size: 1, type: u8, const: 0 }
+      - { name: pid, offset: 8, size: 8, type: u64, minimum: 1 }
+      - { name: object_version, offset: 16, size: 8, type: u64, minimum: 1 }
+      - { name: published_epoch_backref, offset: 24, size: 8, type: u64, description: "0 for draft routing/top-graph objects; nonzero for published leaf V2 objects" }
+      - { name: level, offset: 32, size: 2, type: u16, description: "0 for leaves/deltas; positive for routing/top-graph objects" }
+      - { name: parent_pid, offset: 34, size: 8, type: u64, description: "0 only for root; otherwise parent PID" }
+      - { name: child_count, offset: 42, size: 4, type: u32, description: routing child count or top-graph node count }
+      - { name: assignment_count, offset: 46, size: 4, type: u32, description: leaf/delta row count }
+      - { name: flags, offset: 50, size: 4, type: u32, description: format-specific flags }
 ```
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-049-AC-1 | A binary partition object with an invalid magic, unsupported version, unknown kind, nonzero reserved byte, zero PID, or zero object version is rejected | Test |
+| FR-049-AC-1 | A binary object with invalid magic, unsupported version, unknown kind, nonzero reserved byte, zero PID, or zero object version is rejected | Test |
 | FR-049-AC-2 | Every object-specific decoder validates that the common header kind and flags match the payload type being decoded | Test |
-| FR-049-AC-3 | The object kind table is stable enough for an independent implementation to route encoded bytes to the correct decoder | Test |
+| FR-049-AC-3 | The object kind table is stable enough for an independent implementation to route encoded bytes to the correct decoder | Inspection |
 
-### FR-049-AC-1
+### FR-049-AC-1: Header rejection
 
 A binary partition object with an invalid magic, unsupported version, unknown
 kind, nonzero reserved byte, zero PID, or zero object version is rejected.
 
-### FR-049-AC-2
+### FR-049-AC-2: Decoder kind and flag checks
 
 Every object-specific decoder validates that the common header kind and flags
 match the payload type being decoded.
 
-### FR-049-AC-3
+### FR-049-AC-3: Kind-table routing stability
 
 The object kind table is stable enough for an independent implementation to
 route encoded bytes to the correct decoder.
 
 ## Dependencies
 
-- **Related**: FR-048
+- **Upstream**: FR-048 (SPIRE domain model: PIDs, object versions, epochs, and
+  object kinds this header encodes).
+- **Downstream**: FR-050 (leaf object payloads) and FR-051 (routing, delta, and
+  top-graph payloads), which own the format-specific payloads behind this
+  common header; FR-052 writes header-bearing objects during build.

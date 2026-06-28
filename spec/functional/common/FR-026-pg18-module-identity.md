@@ -1,0 +1,80 @@
+---
+id: FR-026
+title: PG18 Module Identity and Version Reporting
+type: FR
+status: DRAFT
+object: configuration
+traces:
+  - US-004
+  - StR-004
+---
+# FR-026: PG18 Module Identity and Version Reporting
+
+## Description
+
+While running on PG18, the extension SHALL use `PG_MODULE_MAGIC_EXT` to declare its name and version, making this information available via `pg_get_loaded_modules()` for diagnostics and version tracking.
+
+Current staged behavior:
+- On PG18, module identity and version reporting are now live via explicit `pg_module_magic!`
+  name/version fields, preserving the single `ecaz` extension identity.
+- The explicit-field form is used as a repo-local workaround for current `pgrx 0.17` PG18
+  shorthand behavior.
+- PG17 still uses the standard module magic surface without name/version reporting.
+
+### Implementation
+
+```rust
+#[cfg(feature = "pg18")]
+PG_MODULE_MAGIC_EXT(
+    .name = "ecaz",
+    .version = env!("CARGO_PKG_VERSION"),  // reads from Cargo.toml
+);
+
+#[cfg(not(feature = "pg18"))]
+PG_MODULE_MAGIC;
+```
+
+### Observable Behavior
+
+```sql
+SELECT * FROM pg_get_loaded_modules() WHERE module_name = 'ecaz';
+-- module_name | version
+-- ecaz | 0.1.1
+```
+
+### PG Version Compatibility
+
+On PG17, the standard `PG_MODULE_MAGIC` macro is used. The extension name and version are not available via `pg_get_loaded_modules()`.
+
+## Configuration
+
+The module identity declared via `pgrx::pg_module_magic!` in `src/lib.rs` is fixed at build/creation time.
+
+| Name | Scope | Type | Default | Description |
+|---|---|---|---|---|
+| name | creation | string | `ecaz` | Module name passed as `name = c"ecaz"`; reported by `pg_get_loaded_modules()`. |
+| version | creation | string | `CARGO_PKG_VERSION` (`0.1.1`) | Module version derived at compile time from `env!("CARGO_PKG_VERSION")` (the `Cargo.toml` package version). |
+
+## Acceptance Criteria
+
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-026-AC-1 | On PG18, `pg_get_loaded_modules()` returns one `ecaz` row with the correct version | Test |
+| FR-026-AC-2 | The reported version matches the `version` field in `Cargo.toml` | Test |
+
+### FR-026-AC-1: Module visible
+On PG18, `SELECT module_name, version FROM pg_get_loaded_modules() WHERE module_name = 'ecaz'`
+SHALL return one row with the correct version.
+
+### FR-026-AC-2: Version matches Cargo.toml
+The reported version SHALL match the `version` field in `Cargo.toml`.
+
+## References
+
+- PG source: `src/include/fmgr.h` — `Pg_magic_struct` definition (`.name`, `.version` fields), `PG_MODULE_MAGIC_EXT` macro, `PG_MODULE_MAGIC_DATA` initializer
+- PG source: `src/backend/utils/fmgr/dfmgr.c` — `pg_get_loaded_modules()` function that exposes module name/version
+
+## Dependencies
+
+- **Upstream**: US-004, StR-004 (traces)
+- **Downstream**: none identified

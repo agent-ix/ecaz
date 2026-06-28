@@ -2,6 +2,7 @@
 id: NFR-008
 title: Scale Boundary and Hardware Claim Policy
 type: NFR
+quality_attribute: scalability
 status: APPROVED
 relationships:
   - target: "ix://agent-ix/ecaz/StR-006"
@@ -14,6 +15,13 @@ relationships:
 
 Ecaz SHALL separate local implementation-readiness evidence from larger scale claims that require AWS/RDS-class hardware.
 
+## Measurement and Evaluation
+
+| Metric | Target | Threshold | Method |
+|---|---|---|---|
+| Scale-claim labeling compliance | 100% of local IVF/DiskANN results labeled as local evidence, not product-scale claims | no exceptions | docs/spec audit |
+| Shelved-work discipline | parallel index scan not listed as active work without a new accepted ADR | no exceptions | spec audit |
+
 ## Policy
 
 1. HNSW parallel build larger-scale validation SHALL be deferred to AWS/RDS-class hardware.
@@ -21,16 +29,13 @@ Ecaz SHALL separate local implementation-readiness evidence from larger scale cl
 3. DiskANN local Task 29 readiness SHALL establish implementation readiness, not billion-scale product claims.
 4. Parallel index scan SHALL remain shelved until a new accepted ADR reopens it.
 
-## Measurement and Evaluation
-
-| Metric | Target | Threshold | Method |
-|--------|--------|-----------|--------|
-| Local vs AWS/RDS-scale evidence separation in docs/specs | Enforced | Enforced | Inspection |
-| Shelved/deferred work not listed as active blocker | Enforced | Enforced | Inspection |
-
 ## Verification
 
-Reviewers inspect docs and specs to confirm local IVF/DiskANN results are labeled as local evidence, parallel index scan is not listed as active work, and AWS/RDS-scale work is tracked as deferred measurement rather than an open blocker.
+Compliance is checked by auditing docs and specs: local IVF 990K and DiskANN
+Task 29 results are identified as directional local evidence, parallel index
+scan does not appear as active work (it remains shelved until a new accepted
+ADR reopens it), and AWS/RDS-scale work is tracked as deferred measurement
+rather than as an unfinished blocker for landed local implementation tasks.
 
 ## Acceptance Criteria
 

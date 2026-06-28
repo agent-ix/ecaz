@@ -72,23 +72,26 @@ sequenceDiagram
 |----|----------|--------------|
 | FR-058-AC-1 | Eligible distributed vector queries produce an `EcSpireDistributedScan` plan instead of a local index scan | Test |
 | FR-058-AC-2 | Remote-origin rows are returned as virtual tuple payloads without requiring a coordinator-local heap TID | Test |
-| FR-058-AC-3 | The spec states the v1 distributed read isolation limitation and the absence of cross-shard EvalPlanQual semantics | Test |
+| FR-058-AC-3 | The spec states the v1 distributed read isolation limitation and the absence of cross-shard EvalPlanQual semantics | Inspection |
 
-### FR-058-AC-1
+### FR-058-AC-1: Plan selection
 
 Eligible distributed vector queries produce an `EcSpireDistributedScan` plan
 instead of a local index scan.
 
-### FR-058-AC-2
+### FR-058-AC-2: Virtual tuple delivery
 
 Remote-origin rows are returned as virtual tuple payloads without requiring a
 coordinator-local heap TID.
 
-### FR-058-AC-3
+### FR-058-AC-3: Isolation limitation stated
 
 The spec states the v1 distributed read isolation limitation and the absence of
 cross-shard EvalPlanQual semantics.
 
 ## Dependencies
 
-- **Related**: FR-055, FR-056, FR-057
+- **Upstream**: FR-055 (topology and placement metadata), FR-056 (typed tuple
+  transport consumed for remote rows), FR-057 (production remote executor
+  that dispatches remote PID groups).
+- **Downstream**: none identified.

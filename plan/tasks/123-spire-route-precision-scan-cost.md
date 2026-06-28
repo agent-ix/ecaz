@@ -50,7 +50,7 @@ holding/improving recall:
   materialization (hex-text vs typed `bytea[]`), projection width, object bytes
   shipped per worker. (Network RTT ≈ 0 on one host, so this isolates the
   encode/materialize CPU surface — see
-  `121-spire-distributed-read-transport-efficiency`.)
+  `125-spire-distributed-read-transport-efficiency`.)
 
 The Phase A latency floor + per-stage decomposition and the Phase B
 `nlists × boundary` granularity work are re-run on the multi-instance lane where
@@ -304,7 +304,7 @@ Owning follow-ups:
 - IVF/SPIRE scan-efficiency line: Tasks `111` and `111e`, especially
   candidate-frontier and scan-locality work.
 - SPIRE distributed read/transport line:
-  `121-spire-distributed-read-transport-efficiency`, where SPIRE should prove
+  `125-spire-distributed-read-transport-efficiency`, where SPIRE should prove
   value in its intended distributed regime.
 
 ## Revised Core-Algorithm Completion Request (2026-06-28)

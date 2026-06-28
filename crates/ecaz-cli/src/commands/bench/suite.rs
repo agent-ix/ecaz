@@ -608,6 +608,8 @@ struct SidecarRerankStep {
     #[serde(default)]
     candidate_k: Option<usize>,
     #[serde(default)]
+    final_rerank_k: Option<usize>,
+    #[serde(default)]
     concurrency: Option<usize>,
     sweep: Vec<i32>,
     #[serde(default)]
@@ -2643,6 +2645,12 @@ impl SuiteStep {
                         step.name
                     )
                 }
+                if step.final_rerank_k == Some(0) {
+                    bail!(
+                        "sidecar-rerank step {:?} must set final_rerank_k >= 1",
+                        step.name
+                    )
+                }
                 if step.concurrency == Some(0) {
                     bail!(
                         "sidecar-rerank step {:?} must set concurrency >= 1",
@@ -3496,6 +3504,9 @@ fn expand_sidecar_rerank(step: &SidecarRerankStep, defaults: &SuiteDefaults) -> 
         "--candidate-k",
         &step.candidate_k.unwrap_or(50).to_string(),
     );
+    if let Some(final_rerank_k) = step.final_rerank_k {
+        push_arg(&mut args, "--final-rerank-k", &final_rerank_k.to_string());
+    }
     if let Some(concurrency) = step.concurrency {
         push_arg(&mut args, "--concurrency", &concurrency.to_string());
     }
@@ -4730,6 +4741,7 @@ mod tests {
             profile: None,
             k: Some(10),
             candidate_k: Some(50),
+            final_rerank_k: Some(25),
             concurrency: Some(4),
             sweep: vec![64, 128],
             queries_limit: None,
@@ -4746,6 +4758,7 @@ mod tests {
         let args = expand_sidecar_rerank(&step, &defaults);
         assert!(args.windows(2).any(|w| w == ["--profile", "ec_ivf"]));
         assert!(args.windows(2).any(|w| w == ["--candidate-k", "50"]));
+        assert!(args.windows(2).any(|w| w == ["--final-rerank-k", "25"]));
         assert!(args.windows(2).any(|w| w == ["--concurrency", "4"]));
         assert!(args.windows(2).any(|w| w == ["--sweep", "64,128"]));
         assert!(args.windows(2).any(|w| w == ["--warmup-queries", "25"]));

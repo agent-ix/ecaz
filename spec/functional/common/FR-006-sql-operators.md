@@ -1,0 +1,96 @@
+---
+id: FR-006
+title: SQL Operators and Operator Class
+type: FR
+status: APPROVED
+object: api_endpoint
+traces:
+  - US-002
+  - FR-017
+  - FR-018
+---
+# FR-006: SQL Operators and Operator Class
+
+## Description
+
+The extension SHALL register SQL operators and an operator class for HNSW index integration.
+
+### Code-to-Code Operator: `<#>`
+
+```sql
+CREATE OPERATOR <#> (
+    leftarg   = tqvector,
+    rightarg  = tqvector,
+    procedure = tqvector_negative_inner_product,
+    commutator = <#>
+);
+```
+
+- Returns negative inner product (for ORDER BY ASC = highest similarity first)
+- Commutative: `a <#> b = b <#> a`
+
+### Query Operator: `<#>`
+
+```sql
+CREATE OPERATOR <#> (
+    leftarg   = tqvector,
+    rightarg  = float4[],
+    procedure = tqvector_negative_query_inner_product
+);
+```
+
+- Returns negative query-to-code inner product
+- Used by the HNSW operator class and by sequential scan over raw query vectors
+
+### Operator Class: `tqvector_ip_ops`
+
+```sql
+CREATE OPERATOR CLASS tqvector_ip_ops DEFAULT FOR TYPE tqvector
+    USING ec_hnsw AS
+    OPERATOR 1 <#>(tqvector, float4[]) FOR ORDER BY float_ops,
+    FUNCTION 1 tqvector_query_inner_product(tqvector, float4[]);
+```
+
+- Default operator class for `tqvector` under the `ec_hnsw` access method
+- OPERATOR 1 is the ordering operator for raw query vectors
+- FUNCTION 1 is the prepared-query distance function used by the index AM
+
+## Endpoint
+
+The operator surface registered in `sql/bootstrap.sql` for the `tqvector` type. The `<#>` operators return the negative inner product (so `ORDER BY ASC` yields highest similarity first); the `tqvector_negative_*` procedures are `IMMUTABLE STRICT PARALLEL SAFE` C functions.
+
+| Surface | Signature | Description |
+|---|---|---|
+| `<#>` (code-to-code) | `tqvector <#> tqvector → float4` | Procedure `tqvector_negative_inner_product`; `COMMUTATOR = <#>` (`a <#> b = b <#> a`). |
+| `<#>` (query) | `tqvector <#> real[] → float4` | Procedure `tqvector_negative_query_inner_product`; negative query-to-code inner product used by the opclass and seq scan. |
+| `tqvector_ip_ops` | `OPERATOR CLASS ... DEFAULT FOR TYPE tqvector USING ec_hnsw` | `OPERATOR 1 <#>(tqvector, real[]) FOR ORDER BY float_ops`, `FUNCTION 1 tqvector_query_inner_product(tqvector, real[])`. (An equivalent `tqvector_ip_ops` is also registered `USING ec_ivf`.) |
+
+## Acceptance Criteria
+
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-006-AC-1 | `SELECT * FROM t ORDER BY col <#> $query LIMIT 10` parses and executes when `$query` is `float4[]` | Test |
+| FR-006-AC-2 | EXPLAIN of the ORDER BY query on an indexed table shows an Index Scan using `ec_hnsw` | Test |
+| FR-006-AC-3 | `a <#> b` equals `b <#> a` for the `(tqvector, tqvector)` overload | Test |
+
+### FR-006-AC-1: Operator usable in ORDER BY
+`SELECT * FROM t ORDER BY col <#> $query LIMIT 10` SHALL parse and execute when `$query` is `float4[]`.
+
+### FR-006-AC-2: Index scan chosen
+EXPLAIN of the above query on an indexed table SHALL show an Index Scan using `ec_hnsw`.
+
+Current staged behavior:
+- ADR-011 is retired and the live cost model can now select `ec_hnsw` naturally.
+- On PG18, the `<#>` ordering semantics are now exposed through live
+  `amtranslatestrategy` / `amtranslatecmptype` callbacks plus `amconsistentordering = true`.
+- On PG18, `EXPLAIN (ecaz)` is also live through the registered EXPLAIN option and per-node
+  hook. Shared pgstat remains preload-gated, but EXPLAIN and planner selection are no longer
+  descriptive-only.
+
+### FR-006-AC-3: Operator commutativity
+`a <#> b` SHALL equal `b <#> a` for the `(tqvector, tqvector)` overload.
+
+## Dependencies
+
+- **Upstream**: US-002, FR-017, FR-018 (traces)
+- **Downstream**: none identified

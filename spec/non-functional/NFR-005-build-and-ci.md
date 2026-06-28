@@ -2,6 +2,7 @@
 id: NFR-005
 title: Build and CI
 type: NFR
+quality_attribute: maintainability
 status: APPROVED
 traces:
   - StR-002
@@ -10,7 +11,10 @@ traces:
 
 ## Statement
 
-Ecaz SHALL build and pass its continuous-integration gates on every push and pull request across the supported toolchain and target matrix below.
+The extension SHALL build on Rust stable with pgrx 0.17+, pass the full CI
+pipeline (formatting, lint, unit tests, pgrx integration lanes, license audit)
+on every push and PR, and build for the declared PostgreSQL and architecture
+targets.
 
 ### Toolchain
 
@@ -41,15 +45,23 @@ AVX2 SIMD is enabled by default (`-C target-cpu=native`) for development but SHA
 ## Measurement and Evaluation
 
 | Metric | Target | Threshold | Method |
-|--------|--------|-----------|--------|
-| CI pipeline pass rate on push/PR | 100% of required steps | 100% | CI Gate |
-| PG18 primary integration lane (`cargo pgrx test pg18`) | Pass | Pass | Integration Test |
-| Build without AVX2 | Compiles (degraded perf) | Compiles | Build Test |
-
+|---|---|---|---|
+| CI pipeline steps passing per push/PR | all steps pass | any failing step blocks merge | CI pipeline run on every push and PR |
+| Formatting drift | none | `cargo fmt --check` passes | `cargo fmt --check` CI step |
+| Clippy warnings | zero | `-D warnings` (all warnings are errors) | `cargo clippy --all-targets --all-features -- -D warnings` CI step |
+| Unit test failures | zero | `cargo test` passes | `cargo test` CI step |
+| PG18 integration test failures | zero | `cargo pgrx test pg18` passes | `cargo pgrx test pg18` CI step |
+| License audit findings | zero | `cargo deny check licenses` passes | `cargo deny check licenses` CI step |
+| Build target coverage | PG18 primary + PG17 fallback, x86_64 and aarch64 linux; compiles without AVX2 | build succeeds (degraded performance without AVX2 acceptable) | CI build matrix |
 
 CI pipeline runs on every push and PR. All steps must pass for merge.
 
 ## Verification
 
-The CI pipeline runs `cargo fmt --check`, clippy with `-D warnings`, `cargo test`, `cargo pgrx test pg18`, and `cargo deny check licenses` on every push and PR; all required steps must pass for merge, and a no-AVX2 build is exercised to confirm the extension still compiles.
-
+Compliance is checked by the CI pipeline itself: every push and PR runs
+`cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings`,
+`cargo test`, `cargo pgrx test pg18` (with `cargo pgrx test pg17` when PG17
+coverage is requested), and `cargo deny check licenses`. Merge is blocked
+unless all steps pass. Build-target compliance is verified by building for
+PostgreSQL 18/17 on `x86_64-unknown-linux-gnu` and
+`aarch64-unknown-linux-gnu`, including a build without AVX2.

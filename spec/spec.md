@@ -58,19 +58,30 @@ This specification governs:
 - `ecvector(dim)` text I/O, binary I/O, typmod validation, casts, and exact/raw row storage
 - `tqvector` TurboQuant artifact encoding, text I/O, binary I/O, and debug/operator surfaces
 - TurboQuant-family quantization: SRHT rotation, Lloyd-Max MSE quantization, QJL residual correction, deterministic seeding, and prepared-query scoring
-- Shared quantizer profiles used by index access methods: TurboQuant, PQ-FastScan, and RaBitQ where enabled by each AM
+- Shared quantizer profiles and scoring contracts used by index access methods:
+  TurboQuant, QJL, PQ-FastScan/grouped-PQ, RaBitQ, binary sidecars, and HNSW
+  exact-score modes where enabled by each AM
+- Shared `QuantCodec`, candidate-batch, SIMD/block-kernel, and
+  `(surface, quant_kind, isa)` observability requirements for compressed-domain
+  scoring
 - HNSW build, scan, insert, vacuum, page layout, reloptions, GUCs, planner costing, PG18 ReadStream, EXPLAIN, stats, and parallel build behavior
-- IVF centroid training, posting-list persistence, scan/rerank behavior, insert/vacuum/admin snapshots, reloptions, GUCs, planner costing, and measurement evidence
-- DiskANN/Vamana build, persisted graph format, binary sidecar prefilter, grouped-PQ traversal fallback, heap rerank, insert/vacuum repair, unit-normalized v0 contract, reloptions, GUCs, planner costing, and measurement evidence
+- IVF centroid training, posting-list persistence, parallel-build ingestion,
+  scan/rerank behavior, compressed-domain batch scoring, insert/vacuum/admin
+  snapshots, reloptions, GUCs, planner costing, and measurement evidence
+- DiskANN/Vamana build, persisted graph format, parallel build stepping-stone
+  mechanics, binary sidecar prefilter, grouped-PQ traversal fallback, heap
+  rerank, insert/vacuum repair, unit-normalized v0 contract, reloptions, GUCs,
+  planner costing, and measurement evidence
 - SPIRE partition-object storage and execution: PID-addressed root, routing,
   leaf, delta, and top-graph objects; Leaf V2 columnar segments; epoch
-  publication; local partition stores; local eager bounded scans; split, merge,
-  vacuum, and replacement maintenance; placement directories; typed remote
-  transport; production remote execution; CustomScan distributed reads; and
-  coordinator-routed DML with two-phase commit recovery
+  publication; local partition stores; leaf block summaries and block-pruning
+  diagnostics; local eager bounded scans; split, merge, vacuum, and replacement
+  maintenance; placement directories; typed remote transport; production remote
+  execution; CustomScan distributed reads; and coordinator-routed DML with
+  two-phase commit recovery
 - WAL safety for index mutations and crash-safe page writes
 - The `ecaz` operator CLI command tree, access-method profiles, benchmark/comparison/stress workflows, and review-packet logging behavior
-- The `ecaz bench suite` configuration format, dry-run/execution/status/audit/report behavior, and suite manifest provenance
+- The `ecaz bench suite` configuration format, dry-run/execution/status/audit/report behavior, suite manifest provenance, backend build-profile preflight, thresholding, resume, and normalized result rows
 - Benchmark methodology and review-packet artifact provenance for any performance or recall claim
 
 ### 2.2 Out of Scope
@@ -88,7 +99,7 @@ This specification does not govern:
 - GPU/offline build trainers, OPQ/AQ/LSQ successors, SPANN, Symphony, and parallel index scan unless reactivated by a later accepted ADR
 - Cosine and L2 operator families in the current v0 inner-product surface
 
-## 3. Current Product Surface
+## 3. System Overview
 
 ### 3.1 SQL Types
 
@@ -124,13 +135,18 @@ All current index families expose inner-product ordering through `<#>` as negati
 `ec_spire` is the SPIRE-inspired AM for partition-object IVF. Its storage model
 uses PID-addressed objects, not PostgreSQL declarative table partitions. Local
 queries use epoch-pinned root/control metadata, flat routing arrays, bounded
-eager candidate materialization, segmented Leaf V2 reads, heap visibility
-checks, and strict or degraded placement handling. Distributed reads leave the
-index-AM executor boundary and use an `EcSpireDistributedScan` CustomScan that
-dispatches typed `remote_scan_v1` requests to origin nodes, merges remote tuple
-payloads, and returns rows without coordinator mirror tables. Coordinator writes
-route by placement metadata and use PostgreSQL two-phase commit for multi-node
-INSERT atomicity; broader shard SQL remains outside v1.
+eager candidate materialization, segmented Leaf V2 reads, leaf-local block
+summaries, optional block-pruning diagnostics, heap visibility checks, and
+strict or degraded placement handling. Product-scale 1M work after the last
+spec sync showed the accepted Task 79/81 candidate surface remains the
+reference point: wider top-graph or blanket global-cap expansion recovers some
+recall only by growing scored candidates, and retained-recall latency/recovery
+policies remain evidence-gated. Distributed reads leave the index-AM executor
+boundary and use an `EcSpireDistributedScan` CustomScan that dispatches typed
+`remote_scan_v1` requests to origin nodes, merges remote tuple payloads, and
+returns rows without coordinator mirror tables. Coordinator writes route by
+placement metadata and use PostgreSQL two-phase commit for multi-node INSERT
+atomicity; broader shard SQL remains outside v1.
 
 ## 4. System Overview
 
@@ -140,6 +156,7 @@ graph TD
     EC["ecvector(dim)<br/>canonical row type"]
     TQ["tqvector<br/>TurboQuant artifact"]
     Q["Quantizer Core<br/>TurboQuant, PQ-FastScan, RaBitQ"]
+    QC["QuantCodec + CandidateBatch<br/>block kernels and counters"]
     AM["Access Method Layer"]
     H["ec_hnsw"]
     I["ec_ivf"]
@@ -156,7 +173,8 @@ graph TD
     SQL --> TQ
     EC --> AM
     TQ --> AM
-    Q --> AM
+    Q --> QC
+    QC --> AM
     AM --> H
     AM --> I
     AM --> D
@@ -194,6 +212,11 @@ src/
 ```
 
 Shared behavior belongs under `am/common`, `quant`, or `storage`. AM-specific page formats, scan state, insert/vacuum logic, and diagnostics remain under the owning AM.
+
+The requirements mirror that layout. Non-SPIRE functional requirements are
+grouped under `spec/functional/common`, `spec/functional/quant`,
+`spec/functional/index/{hnsw,ivf,diskann}`, and `spec/functional/operator`.
+SPIRE keeps its bounded substructure under `spec/functional/spire`.
 
 ## 5. Data Model
 

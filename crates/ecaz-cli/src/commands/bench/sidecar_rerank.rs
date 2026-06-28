@@ -2,8 +2,8 @@
 //!
 //! This is intentionally a measurement harness, not an index feature. It asks
 //! an isolated `ec_ivf`/RaBitQ `rerank=off` index for an approximate candidate
-//! frontier, then locally reranks only those candidate ids with f32, f16, or
-//! bits=8 RaBitQ sidecar representations.
+//! frontier, then locally reranks only those candidate ids with f32, f16,
+//! TurboQuant, or bits=8 RaBitQ sidecar representations.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -36,6 +36,7 @@ use super::recall::{
 pub enum SidecarVariant {
     F32,
     F16,
+    Turboquant4,
     Rabitq8,
     Rabitq8ls,
     Rabitq8c3,
@@ -47,6 +48,7 @@ impl SidecarVariant {
         match self {
             Self::F32 => "f32",
             Self::F16 => "f16",
+            Self::Turboquant4 => "turboquant4",
             Self::Rabitq8 => "rabitq8",
             Self::Rabitq8ls => "rabitq8ls",
             Self::Rabitq8c3 => "rabitq8c3",
@@ -59,7 +61,7 @@ impl SidecarVariant {
             Self::Rabitq8 | Self::Rabitq8ls => Some(2.0),
             Self::Rabitq8c3 => Some(3.0),
             Self::Rabitq8c4 => Some(4.0),
-            Self::F32 | Self::F16 => None,
+            Self::F32 | Self::F16 | Self::Turboquant4 => None,
         }
     }
 }
@@ -99,6 +101,9 @@ pub struct SidecarRerankArgs {
     /// Candidate frontier size to fetch from the rerank=off IVF index.
     #[arg(long, default_value_t = 50)]
     pub candidate_k: usize,
+    /// Optional exact f32 rerank width after sidecar scoring.
+    #[arg(long)]
+    pub final_rerank_k: Option<usize>,
     /// Concurrent sidecar DB fetch/score tasks per variant/read-mode.
     #[arg(long, default_value_t = 1)]
     pub concurrency: usize,
@@ -145,6 +150,14 @@ pub async fn run(conn: &ConnectionOptions, args: SidecarRerankArgs) -> Result<()
     }
     if args.candidate_k < args.k {
         bail!("--candidate-k must be >= --k");
+    }
+    if let Some(final_rerank_k) = args.final_rerank_k {
+        if final_rerank_k < args.k {
+            bail!("--final-rerank-k must be >= --k");
+        }
+        if final_rerank_k > args.candidate_k {
+            bail!("--final-rerank-k must be <= --candidate-k");
+        }
     }
     if args.concurrency == 0 {
         bail!("--concurrency must be >= 1");
@@ -290,6 +303,7 @@ pub async fn run(conn: &ConnectionOptions, args: SidecarRerankArgs) -> Result<()
         "read_mode",
         "queries",
         "candidate_k",
+        "final_rerank_k",
         "concurrency",
         "recall@k",
         "recall_p10",
@@ -302,16 +316,19 @@ pub async fn run(conn: &ConnectionOptions, args: SidecarRerankArgs) -> Result<()
         "candidate_sql_p50",
         "sidecar_io_p50",
         "sidecar_score_p50",
+        "final_rerank_score_p50",
         "sidecar_p50",
         "total_bound_p50",
         "candidate_sql_p95",
         "sidecar_io_p95",
         "sidecar_score_p95",
+        "final_rerank_score_p95",
         "sidecar_p95",
         "total_bound_p95",
         "candidate_sql_p99",
         "sidecar_io_p99",
         "sidecar_score_p99",
+        "final_rerank_score_p99",
         "sidecar_p99",
         "total_bound_p99",
         "sidecar_bytes_per_vector",
@@ -350,6 +367,7 @@ pub async fn run(conn: &ConnectionOptions, args: SidecarRerankArgs) -> Result<()
                                 &id_to_pos,
                                 &corpus,
                                 warmup_queries,
+                                args.final_rerank_k,
                             )?;
                         }
                         SidecarReadMode::RandomId | SidecarReadMode::TidSorted => {
@@ -360,6 +378,9 @@ pub async fn run(conn: &ConnectionOptions, args: SidecarRerankArgs) -> Result<()
                                 &sidecar_table_name(&args.prefix, sidecar.variant),
                                 &warmup_candidate_run.ids,
                                 warmup_queries,
+                                &id_to_pos,
+                                &corpus,
+                                args.final_rerank_k,
                                 args.concurrency,
                             )
                             .await?;
@@ -377,6 +398,7 @@ pub async fn run(conn: &ConnectionOptions, args: SidecarRerankArgs) -> Result<()
                         &id_to_pos,
                         &corpus,
                         &queries,
+                        args.final_rerank_k,
                     )?,
                     SidecarReadMode::RandomId | SidecarReadMode::TidSorted => {
                         rerank_with_sidecar_db(
@@ -386,6 +408,9 @@ pub async fn run(conn: &ConnectionOptions, args: SidecarRerankArgs) -> Result<()
                             &sidecar_table_name(&args.prefix, sidecar.variant),
                             &candidate_run.ids,
                             &queries,
+                            &id_to_pos,
+                            &corpus,
+                            args.final_rerank_k,
                             args.concurrency,
                         )
                         .await?
@@ -404,12 +429,14 @@ pub async fn run(conn: &ConnectionOptions, args: SidecarRerankArgs) -> Result<()
                     .elapsed_ns
                     .iter()
                     .zip(reranked.elapsed_ns.iter())
-                    .map(|(candidate, sidecar)| candidate + sidecar)
+                    .zip(reranked.final_rerank_elapsed_ns.iter())
+                    .map(|((candidate, sidecar), final_rerank)| candidate + sidecar + final_rerank)
                     .collect();
                 let candidate_summary = summarize_ns(&candidate_run.elapsed_ns);
                 let sidecar_io_summary = summarize_ns(&reranked.io_elapsed_ns);
                 let sidecar_score_summary = summarize_ns(&reranked.score_elapsed_ns);
                 let sidecar_summary = summarize_ns(&reranked.elapsed_ns);
+                let final_rerank_summary = summarize_ns(&reranked.final_rerank_elapsed_ns);
                 let total_summary = summarize_ns(&total_ns);
                 let candidate_count_summary = summarize_counts(&candidate_run.candidate_counts());
                 let sidecar_bytes_touched_p50 = sidecar
@@ -424,6 +451,11 @@ pub async fn run(conn: &ConnectionOptions, args: SidecarRerankArgs) -> Result<()
                     Cell::new(read_mode.label()),
                     Cell::new(recall.queries),
                     Cell::new(args.candidate_k),
+                    Cell::new(
+                        args.final_rerank_k
+                            .map(|value| value.to_string())
+                            .unwrap_or_else(|| "off".to_owned()),
+                    ),
                     Cell::new(args.concurrency),
                     Cell::new(format!("{:.4}", recall.recall)),
                     Cell::new(format!("{:.4}", recall.p10)),
@@ -436,16 +468,19 @@ pub async fn run(conn: &ConnectionOptions, args: SidecarRerankArgs) -> Result<()
                     Cell::new(format_ms(candidate_summary.p50_ms)),
                     Cell::new(format_ms(sidecar_io_summary.p50_ms)),
                     Cell::new(format_ms(sidecar_score_summary.p50_ms)),
+                    Cell::new(format_ms(final_rerank_summary.p50_ms)),
                     Cell::new(format_ms(sidecar_summary.p50_ms)),
                     Cell::new(format_ms(total_summary.p50_ms)),
                     Cell::new(format_ms(candidate_summary.p95_ms)),
                     Cell::new(format_ms(sidecar_io_summary.p95_ms)),
                     Cell::new(format_ms(sidecar_score_summary.p95_ms)),
+                    Cell::new(format_ms(final_rerank_summary.p95_ms)),
                     Cell::new(format_ms(sidecar_summary.p95_ms)),
                     Cell::new(format_ms(total_summary.p95_ms)),
                     Cell::new(format_ms(candidate_summary.p99_ms)),
                     Cell::new(format_ms(sidecar_io_summary.p99_ms)),
                     Cell::new(format_ms(sidecar_score_summary.p99_ms)),
+                    Cell::new(format_ms(final_rerank_summary.p99_ms)),
                     Cell::new(format_ms(sidecar_summary.p99_ms)),
                     Cell::new(format_ms(total_summary.p99_ms)),
                     Cell::new(sidecar.bytes_per_vector),
@@ -616,6 +651,10 @@ impl Sidecar {
 enum SidecarStorage {
     F32,
     F16(Vec<Vec<f16>>),
+    TurboQuant4 {
+        quantizer: Arc<ProdQuantizer>,
+        codes: Vec<Box<[u8]>>,
+    },
     Rabitq8 {
         quantizer: Arc<RaBitQQuantizer>,
         codes: Vec<Box<[u8]>>,
@@ -753,6 +792,7 @@ fn sidecar_payload_bytes(sidecar: &Sidecar, corpus: &Array2<f32>, pos: usize) ->
             .iter()
             .flat_map(|value| value.to_le_bytes())
             .collect()),
+        SidecarStorage::TurboQuant4 { codes, .. } => Ok(codes[pos].to_vec()),
         SidecarStorage::Rabitq8 { codes, .. } => Ok(codes[pos].to_vec()),
     }
 }
@@ -774,6 +814,23 @@ fn build_sidecar(variant: SidecarVariant, corpus: &Array2<f32>, seed: u64) -> Re
                 variant,
                 bytes_per_vector: corpus.ncols() * std::mem::size_of::<f16>(),
                 storage: SidecarStorage::F16(encoded),
+            })
+        }
+        SidecarVariant::Turboquant4 => {
+            let quantizer = ProdQuantizer::cached(corpus.ncols(), 4, seed);
+            let bytes_per_vector = <ProdQuantizer as Quantizer>::code_len(quantizer.as_ref());
+            let codes = corpus
+                .rows()
+                .into_iter()
+                .map(|row| {
+                    let values: Vec<f32> = row.to_vec();
+                    <ProdQuantizer as Quantizer>::encode_code(quantizer.as_ref(), &values)
+                })
+                .collect();
+            Ok(Sidecar {
+                variant,
+                bytes_per_vector,
+                storage: SidecarStorage::TurboQuant4 { quantizer, codes },
             })
         }
         SidecarVariant::Rabitq8
@@ -809,6 +866,7 @@ struct RerankRun {
     predictions: Vec<Vec<i64>>,
     io_elapsed_ns: Vec<u128>,
     score_elapsed_ns: Vec<u128>,
+    final_rerank_elapsed_ns: Vec<u128>,
     elapsed_ns: Vec<u128>,
 }
 
@@ -818,9 +876,11 @@ fn rerank_with_sidecar(
     id_to_pos: &HashMap<i64, usize>,
     corpus: &Array2<f32>,
     queries: &Array2<f32>,
+    final_rerank_k: Option<usize>,
 ) -> Result<RerankRun> {
     let mut predictions = Vec::with_capacity(candidates.len());
     let mut elapsed_ns = Vec::with_capacity(candidates.len());
+    let mut final_rerank_elapsed_ns = Vec::with_capacity(candidates.len());
     for (q, ids) in candidates.iter().enumerate() {
         let query = queries.row(q).to_vec();
         let started = Instant::now();
@@ -841,6 +901,15 @@ fn rerank_with_sidecar(
                         eyre!("candidate id {id} not present in corpus source map")
                     })?;
                     scored.push((*id, dot_f16(&query, &encoded[pos])));
+                }
+            }
+            SidecarStorage::TurboQuant4 { quantizer, codes } => {
+                let prepared = quantizer.prepare_ip_query(&query);
+                for id in ids {
+                    let pos = *id_to_pos.get(id).ok_or_else(|| {
+                        eyre!("candidate id {id} not present in corpus source map")
+                    })?;
+                    scored.push((*id, quantizer.score_ip_encoded(&prepared, &codes[pos])));
                 }
             }
             SidecarStorage::Rabitq8 { quantizer, codes } => {
@@ -876,14 +945,13 @@ fn rerank_with_sidecar(
                 }
             }
         }
-        scored.sort_unstable_by(|a, b| {
-            b.1.partial_cmp(&a.1)
-                .unwrap_or(std::cmp::Ordering::Equal)
-                .then(a.0.cmp(&b.0))
-        });
-        predictions.push(scored.into_iter().map(|(id, _)| id).collect());
-        let elapsed = started.elapsed().as_nanos();
-        elapsed_ns.push(elapsed);
+        sort_scored_desc(&mut scored);
+        let sidecar_elapsed = started.elapsed().as_nanos();
+        let (prediction, final_elapsed) =
+            maybe_final_f32_rerank(scored, final_rerank_k, &query, id_to_pos, corpus)?;
+        predictions.push(prediction);
+        final_rerank_elapsed_ns.push(final_elapsed);
+        elapsed_ns.push(sidecar_elapsed);
     }
     let io_elapsed_ns = vec![0; elapsed_ns.len()];
     let score_elapsed_ns = elapsed_ns.clone();
@@ -891,6 +959,7 @@ fn rerank_with_sidecar(
         predictions,
         io_elapsed_ns,
         score_elapsed_ns,
+        final_rerank_elapsed_ns,
         elapsed_ns,
     })
 }
@@ -902,6 +971,9 @@ async fn rerank_with_sidecar_db(
     table: &str,
     candidates: &[Vec<i64>],
     queries: &Array2<f32>,
+    id_to_pos: &HashMap<i64, usize>,
+    corpus: &Array2<f32>,
+    final_rerank_k: Option<usize>,
     concurrency: usize,
 ) -> Result<RerankRun> {
     let random_stmt = if matches!(read_mode, SidecarReadMode::RandomId) {
@@ -941,6 +1013,9 @@ async fn rerank_with_sidecar_db(
                 tid_sorted_stmt.as_ref(),
                 ids,
                 query,
+                id_to_pos,
+                corpus,
+                final_rerank_k,
             )
         })
         .buffered(concurrency)
@@ -950,11 +1025,13 @@ async fn rerank_with_sidecar_db(
     let mut predictions = Vec::with_capacity(results.len());
     let mut io_elapsed_ns = Vec::with_capacity(results.len());
     let mut score_elapsed_ns = Vec::with_capacity(results.len());
+    let mut final_rerank_elapsed_ns = Vec::with_capacity(results.len());
     let mut elapsed_ns = Vec::with_capacity(results.len());
     for result in results {
         predictions.push(result.prediction);
         io_elapsed_ns.push(result.io_elapsed_ns);
         score_elapsed_ns.push(result.score_elapsed_ns);
+        final_rerank_elapsed_ns.push(result.final_rerank_elapsed_ns);
         elapsed_ns.push(result.elapsed_ns);
     }
 
@@ -962,6 +1039,7 @@ async fn rerank_with_sidecar_db(
         predictions,
         io_elapsed_ns,
         score_elapsed_ns,
+        final_rerank_elapsed_ns,
         elapsed_ns,
     })
 }
@@ -970,6 +1048,7 @@ struct RerankQueryResult {
     prediction: Vec<i64>,
     io_elapsed_ns: u128,
     score_elapsed_ns: u128,
+    final_rerank_elapsed_ns: u128,
     elapsed_ns: u128,
 }
 
@@ -982,6 +1061,9 @@ async fn rerank_one_sidecar_db_query(
     tid_sorted_stmt: Option<&tokio_postgres::Statement>,
     ids: &[i64],
     query: Vec<f32>,
+    id_to_pos: &HashMap<i64, usize>,
+    corpus: &Array2<f32>,
+    final_rerank_k: Option<usize>,
 ) -> Result<RerankQueryResult> {
     let total_started = Instant::now();
     let io_started = Instant::now();
@@ -1022,17 +1104,17 @@ async fn rerank_one_sidecar_db_query(
 
     let score_started = Instant::now();
     let mut scored = score_sidecar_payloads(sidecar, &query, &fetched)?;
-    scored.sort_unstable_by(|a, b| {
-        b.1.partial_cmp(&a.1)
-            .unwrap_or(std::cmp::Ordering::Equal)
-            .then(a.0.cmp(&b.0))
-    });
+    sort_scored_desc(&mut scored);
     let score_elapsed_ns = score_started.elapsed().as_nanos();
+    let sidecar_elapsed_ns = total_started.elapsed().as_nanos();
+    let (prediction, final_rerank_elapsed_ns) =
+        maybe_final_f32_rerank(scored, final_rerank_k, &query, id_to_pos, corpus)?;
     Ok(RerankQueryResult {
-        prediction: scored.into_iter().map(|(id, _)| id).collect(),
+        prediction,
         io_elapsed_ns,
         score_elapsed_ns,
-        elapsed_ns: total_started.elapsed().as_nanos(),
+        final_rerank_elapsed_ns,
+        elapsed_ns: sidecar_elapsed_ns,
     })
 }
 
@@ -1051,6 +1133,20 @@ fn score_sidecar_payloads(
         SidecarStorage::F16(_) => {
             for (id, payload) in payloads {
                 scored.push((*id, dot_f16_bytes(query, payload)?));
+            }
+        }
+        SidecarStorage::TurboQuant4 { quantizer, .. } => {
+            let prepared = quantizer.prepare_ip_query(query);
+            for (id, payload) in payloads {
+                if payload.len() != sidecar.bytes_per_vector {
+                    bail!(
+                        "{} sidecar payload for id {id} has {} bytes, expected {}",
+                        sidecar.variant.label(),
+                        payload.len(),
+                        sidecar.bytes_per_vector
+                    );
+                }
+                scored.push((*id, quantizer.score_ip_encoded(&prepared, payload)));
             }
         }
         SidecarStorage::Rabitq8 { quantizer, .. } => {
@@ -1109,8 +1205,43 @@ fn rabitq_sidecar_score(
             prepared.estimate_ip(code).estimate
         }
         SidecarVariant::Rabitq8ls => prepared.estimate_ip_least_squares_scalar_only(code),
-        SidecarVariant::F32 | SidecarVariant::F16 => unreachable!("not a RaBitQ sidecar variant"),
+        SidecarVariant::F32 | SidecarVariant::F16 | SidecarVariant::Turboquant4 => {
+            unreachable!("not a RaBitQ sidecar variant")
+        }
     }
+}
+
+fn sort_scored_desc(scored: &mut [(i64, f32)]) {
+    scored.sort_unstable_by(|a, b| {
+        b.1.partial_cmp(&a.1)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then(a.0.cmp(&b.0))
+    });
+}
+
+fn maybe_final_f32_rerank(
+    scored: Vec<(i64, f32)>,
+    final_rerank_k: Option<usize>,
+    query: &[f32],
+    id_to_pos: &HashMap<i64, usize>,
+    corpus: &Array2<f32>,
+) -> Result<(Vec<i64>, u128)> {
+    let Some(final_rerank_k) = final_rerank_k else {
+        return Ok((scored.into_iter().map(|(id, _)| id).collect(), 0));
+    };
+    let started = Instant::now();
+    let mut exact = Vec::with_capacity(final_rerank_k.min(scored.len()));
+    for (id, _) in scored.into_iter().take(final_rerank_k) {
+        let pos = *id_to_pos
+            .get(&id)
+            .ok_or_else(|| eyre!("candidate id {id} not present in corpus source map"))?;
+        exact.push((id, dot_f32(query, corpus, pos)));
+    }
+    sort_scored_desc(&mut exact);
+    Ok((
+        exact.into_iter().map(|(id, _)| id).collect(),
+        started.elapsed().as_nanos(),
+    ))
 }
 
 fn dot_f32(query: &[f32], corpus: &Array2<f32>, pos: usize) -> f32 {
@@ -1270,5 +1401,47 @@ mod tests {
         assert!(SidecarReadMode::RandomId.uses_db());
         assert_eq!(SidecarReadMode::TidSorted.label(), "tid-sorted");
         assert!(SidecarReadMode::TidSorted.uses_db());
+    }
+
+    #[test]
+    fn turboquant4_sidecar_variant_has_stable_label() {
+        assert_eq!(SidecarVariant::Turboquant4.label(), "turboquant4");
+        assert_eq!(SidecarVariant::Turboquant4.rabitq_clip(), None);
+    }
+
+    #[test]
+    fn final_f32_rerank_rescores_only_sidecar_prefix() {
+        let scored = vec![(2, 10.0), (1, 9.0), (3, 8.0)];
+        let query = [1.0_f32, 0.0];
+        let corpus = Array2::from_shape_vec(
+            (3, 2),
+            vec![
+                1.0, 0.0, // id 1
+                0.0, 1.0, // id 2
+                2.0, 0.0, // id 3, excluded by sidecar prefix
+            ],
+        )
+        .unwrap();
+        let id_to_pos = HashMap::from([(1_i64, 0_usize), (2, 1), (3, 2)]);
+
+        let (predictions, elapsed) =
+            maybe_final_f32_rerank(scored, Some(2), &query, &id_to_pos, &corpus).unwrap();
+
+        assert_eq!(predictions, vec![1, 2]);
+        assert!(elapsed > 0);
+    }
+
+    #[test]
+    fn final_f32_rerank_off_preserves_sidecar_order() {
+        let scored = vec![(2, 10.0), (1, 9.0), (3, 8.0)];
+        let query = [1.0_f32, 0.0];
+        let corpus = Array2::from_shape_vec((1, 2), vec![1.0, 0.0]).unwrap();
+        let id_to_pos = HashMap::from([(1_i64, 0_usize)]);
+
+        let (predictions, elapsed) =
+            maybe_final_f32_rerank(scored, None, &query, &id_to_pos, &corpus).unwrap();
+
+        assert_eq!(predictions, vec![2, 1, 3]);
+        assert_eq!(elapsed, 0);
     }
 }

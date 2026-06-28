@@ -72,19 +72,19 @@ sequenceDiagram
 |----|----------|--------------|
 | FR-052-AC-1 | An empty or populated build publishes a root/control state, active epoch, manifest, and placement set that diagnostics can read back | Test |
 | FR-052-AC-2 | Build publication fails closed when required partition-object bytes, placement entries, object versions, or store descriptors are inconsistent | Test |
-| FR-052-AC-3 | The build flow can be reproduced from heap scan through centroid training, draft object creation, object writes, manifest validation, and active epoch publication | Test |
+| FR-052-AC-3 | The build flow is reproducible from heap scan through centroid training, draft objects, object writes, manifest validation, and epoch publication | Demonstration |
 
-### FR-052-AC-1
+### FR-052-AC-1: Readable published state
 
 An empty or populated build publishes a root/control state, active epoch,
 manifest, and placement set that diagnostics can read back.
 
-### FR-052-AC-2
+### FR-052-AC-2: Fail-closed publication
 
 Build publication fails closed when required partition-object bytes, placement
 entries, object versions, or store descriptors are inconsistent.
 
-### FR-052-AC-3
+### FR-052-AC-3: Reproducible build flow
 
 The build flow can be reproduced from heap scan through centroid training,
 draft object creation, object writes, manifest validation, and active epoch
@@ -92,4 +92,9 @@ publication.
 
 ## Dependencies
 
-- **Related**: FR-048, FR-049, FR-050, FR-051
+- **Upstream**: FR-048 (domain model: epochs, PIDs, allocator state, vector
+  identity), FR-049 (partition object header), FR-050 (leaf V2 objects
+  written by build), FR-051 (routing, delta, and top-graph objects written by
+  build).
+- **Downstream**: FR-054 (update/maintenance reuses the epoch publish path
+  defined here), per its declared dependency on this FR.

@@ -2,6 +2,7 @@
 id: NFR-016
 title: On-Disk Format Evolution Discipline
 type: NFR
+quality_attribute: maintainability
 status: PROPOSED
 relationships:
   - target: "ix://agent-ix/ecaz/StR-001"
@@ -37,23 +38,28 @@ relationships:
 ---
 # NFR-016: On-Disk Format Evolution Discipline
 
-## Quality Attribute
-
-Primary quality attribute: **maintainability**. Secondary: **compatibility**.
-
-This NFR governs how every byte ECAZ persists to disk (page payloads,
-metadata pages, codebook artifacts, partition objects, manifests) evolves
-across releases. It does not define *what* the formats are — that is owned
-by the individual FRs (FR-007 HNSW page layout, FR-034 DiskANN build and
-storage, etc.). It defines the *discipline* under which those formats may
-change.
-
 ## Statement
 
 Every on-disk payload Ecaz writes SHALL be governed by an explicit
 format-version tag, an explicit evolution lifecycle, and a fixture-backed
 compatibility matrix. Layout drift, silent breakage, and undocumented
 deprecation are non-conformant.
+
+This NFR governs how every byte ECAZ persists to disk (page payloads,
+metadata pages, codebook artifacts, partition objects, manifests) evolves
+across releases. It does not define *what* the formats are — that is owned
+by the individual FRs (FR-007 HNSW page layout, FR-034 DiskANN build and
+storage, etc.). It defines the *discipline* under which those formats may
+change. Secondary quality attribute: compatibility.
+
+## Measurement and Evaluation
+
+| Metric | Target | Threshold | Method |
+|---|---|---|---|
+| Compatibility-matrix fixture coverage | 100% of `fixtures/upgrade/matrix.csv` entries backed by a golden fixture, decode test, and byte-swap rejection test | no exceptions | `tests/upgrade_matrix.rs` + `tests/on_disk_fixtures.rs` on every PR |
+| Size/offset pinning coverage | 100% of persisted structs size- and offset-pinned by static assertions | compile error on any unpinned size/offset change | `tests/size_of_assertions.rs` (`make layout-check`) |
+| Big-endian decode coverage | every fixture in `fixtures/on-disk/` decodes on a big-endian target | zero cross-endianness decode failures | `make endian-qemu` on the NFR-005 schedule |
+| Format-version bump discipline | 100% of qualifying layout changes ship a new version with matrix row, fixture, decode test, and release note | no exceptions | PR review of matrix diff per NFR-016-EV-2..EV-4 |
 
 ## Evolution Rules
 
@@ -219,14 +225,6 @@ this NFR, not a fixture defect.
 Forward-compatible extension blocks are encoded per the convention
 selected in the governing ADR. A payload kind whose forward-compat
 behavior is not documented in its FR is in violation of NFR-016-EV-5.
-
-## Measurement and Evaluation
-
-| Metric | Target | Threshold | Method |
-|--------|--------|-----------|--------|
-| On-disk payloads carrying an explicit format-version tag | 100% | 100% | Inspection |
-| Fixture-backed compatibility matrix coverage | All versioned formats | All | Compatibility Test |
-| Silent layout drift or undocumented deprecation | None | 0 | Inspection |
 
 ## Verification
 

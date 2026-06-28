@@ -5,13 +5,13 @@ type: StR
 status: APPROVED
 relationships:
   - target: "ix://agent-ix/ecaz/NFR-007"
-    type: "derives"
+    type: "derives_into"
     cardinality: "1:1"
   - target: "ix://agent-ix/ecaz/NFR-008"
-    type: "derives"
+    type: "derives_into"
     cardinality: "1:1"
   - target: "ix://agent-ix/ecaz/NFR-015"
-    type: "derives"
+    type: "derives_into"
     cardinality: "1:1"
 ---
 # StR-006: Benchmark Evidence Discipline

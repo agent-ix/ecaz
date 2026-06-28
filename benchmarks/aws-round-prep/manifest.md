@@ -214,6 +214,6 @@ gives current truth).
 
 - Plan: `/home/peter/.claude/plans/ok-we-re-starting-aws-glistening-sloth.md`
 - Task index: `plan/tasks/README.md`
-- Suite runner spec: `spec/functional/FR-038-configured-benchmark-suite-runner.md`
+- Suite runner spec: `spec/functional/operator/FR-038-configured-benchmark-suite-runner.md`
 - Per-AM isolation rule: `spec/adr/ADR-050-configured-benchmark-suite-runner.md`
 - Bench provenance NFR: `spec/non-functional/NFR-007-benchmark-provenance.md`

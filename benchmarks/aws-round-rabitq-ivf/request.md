@@ -142,4 +142,4 @@ matched nprobe, that is itself a finding worth tagging.
 - Prior real-DBpedia baselines: `benchmarks/cloud-10k-real-baselines/manifest.md`
 - Prior full scaling curve: `benchmarks/cloud-scaling-multi-am/manifest.md`
 - Per-AM isolation rule: `spec/adr/ADR-050-configured-benchmark-suite-runner.md`
-- Suite runner spec: `spec/functional/FR-038-configured-benchmark-suite-runner.md`
+- Suite runner spec: `spec/functional/operator/FR-038-configured-benchmark-suite-runner.md`
