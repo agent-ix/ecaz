@@ -1,0 +1,135 @@
+   Compiling ring v0.17.14
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: In file included from /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:19:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:537:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   537 | dlist_next_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:547:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   547 | dlist_prev_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:1054:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:  1054 | slist_next_node(slist_head *head, slist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:58: warning: unused parameter 'size' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                          ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:70: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                                      ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:882:56: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   882 | pgstat_hash_hash_key(const void *d, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                        ^
+warning: ecaz@0.1.1: 6 warnings generated.
+   Compiling rustls v0.23.41
+   Compiling rustls-webpki v0.103.13
+   Compiling tokio-rustls v0.26.4
+   Compiling ecaz v0.1.1 (/Users/peter/tqvector)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 16s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-c79dd5955b9ccdf7)
+
+running 29 tests
+test am::ec_ivf::scan::tests::adaptive_nprobe_is_disabled_by_default ... ok
+test am::ec_ivf::scan::tests::candidate_top_k_reports_worst_score_only_when_full ... ok
+test am::ec_ivf::scan::tests::consume_live_tid_budget_stops_after_directory_live_count ... ok
+test am::ec_ivf::scan::tests::candidate_top_k_rejects_only_scores_worse_than_full_worst ... ok
+test am::ec_ivf::scan::tests::adaptive_nprobe_keeps_requested_width_when_gap_is_small ... ok
+test am::ec_ivf::scan::tests::adaptive_nprobe_reduces_when_centroid_boundary_gap_is_large ... ok
+test am::ec_ivf::scan::tests::adaptive_nprobe_can_use_boundary_score_margin_ratio ... ok
+test am::ec_ivf::scan::tests::candidate_heap_blocks_collapses_adjacent_sorted_blocks ... ok
+test am::ec_ivf::scan::tests::candidate_top_k_uses_heap_tid_as_score_tiebreaker ... ok
+test am::ec_ivf::scan::tests::candidate_top_k_keeps_best_scores_in_output_order ... ok
+test am::ec_ivf::scan::tests::scratch_soa_batch_decode_gate_admits_turboquant_no_qjl4_and_rabitq_lanes ... ok
+test am::ec_ivf::scan::tests::consume_live_tid_budget_rejects_unknown_list ... ok
+test am::ec_ivf::scan::tests::pre_rerank_candidate_limit_requires_heap_f32_positive_width ... ok
+test am::ec_ivf::scan::tests::posting_scratch_soa_reuses_capacity_when_payload_len_matches ... ok
+test am::ec_ivf::scan::tests::posting_scratch_soa_rebuilds_capacity_when_payload_len_changes ... ok
+test am::ec_ivf::scan::tests::candidate_heap_tid_cmp_orders_by_heap_location_before_score ... ok
+test am::ec_ivf::scan::tests::select_probe_lists_uses_list_id_as_tiebreaker ... ok
+test am::ec_ivf::scan::tests::select_probe_lists_keeps_best_nprobe_without_full_sort_requirement ... ok
+test am::ec_ivf::scan::tests::build_probe_block_sequence_skips_empty_lists ... ok
+test am::ec_ivf::scan::tests::build_probe_block_sequence_merges_overlapping_ranges_once ... ok
+test am::ec_ivf::scan::tests::build_probe_block_sequence_deduplicates_shared_blocks_in_first_range_order ... ok
+test am::ec_ivf::scan::tests::posting_scratch_soa_batches_dense_posting_fields_without_losing_order ... ok
+test am::ec_ivf::scan::tests::posting_scratch_soa_batches_fields_without_losing_order ... ok
+test am::ec_ivf::scan::tests::posting_scratch_soa_preserves_direct_rerank_tid_for_single_heaptid ... ok
+test am::ec_ivf::scan::tests::dense_posting_block_scratch_reuses_gamma_and_score_capacity ... ok
+test am::ec_ivf::scan::tests::inner_product_neon_matches_scalar_at_various_dims ... ok
+test am::ec_ivf::scan::tests::inner_product_panics_on_length_mismatch - should panic ... ok
+test am::ec_ivf::scan::tests::rerank_group_payload_lookup_uses_direct_tid_and_fallback_scan ... ok
+test am::ec_ivf::scan::tests::rerank_group_payload_lookup_skips_deleted_group_slots ... ok
+
+test result: ok. 29 passed; 0 failed; 0 ignored; 0 measured; 2194 filtered out; finished in 0.01s
+
+     Running unittests src/bin/approx_score_study.rs (target/debug/deps/approx_score_study-f1c59d6c9ac09eb4)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+     Running unittests src/bin/pgrx_embed.rs (target/debug/deps/pgrx_embed_ecaz-5cd76937edea4d98)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/simd_bench.rs (target/debug/deps/simd_bench-040e3a9f968fa1ec)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/kani_item_pointer.rs (target/debug/deps/kani_item_pointer-55d957a65fb25088)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/on_disk_fixtures.rs (target/debug/deps/on_disk_fixtures-51ad2860882fdb74)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 53 filtered out; finished in 0.00s
+
+     Running tests/proptest_page.rs (target/debug/deps/proptest_page-70bcd5f895a84c0c)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+     Running tests/proptest_quant.rs (target/debug/deps/proptest_quant-24afc4943fb859d6)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.00s
+
+     Running tests/recall_integration.rs (target/debug/deps/recall_integration-ed27617becd9e8cf)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 23 filtered out; finished in 0.00s
+
+     Running tests/simd_diff.rs (target/debug/deps/simd_diff-6353871c80e25173)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/size_of_assertions.rs (target/debug/deps/size_of_assertions-694a1b838f8082c0)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.00s
+
+     Running tests/upgrade_matrix.rs (target/debug/deps/upgrade_matrix-8b1c80ffda236dfd)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+     Running tests/wal_policy.rs (target/debug/deps/wal_policy-4bb33c5685cffb2b)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
