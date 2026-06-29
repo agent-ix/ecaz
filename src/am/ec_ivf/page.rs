@@ -265,6 +265,7 @@ pub enum RerankFormat {
     F16 = 6,
     TurboQuantBinary = 7,
     TurboQuant2 = 8,
+    TurboQuant3 = 9,
 }
 
 #[cfg(not(any(feature = "pg17", feature = "pg18")))]

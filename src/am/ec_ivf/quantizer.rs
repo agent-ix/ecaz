@@ -53,7 +53,8 @@ pub(super) struct IvfQuantizer {
     profile: IvfQuantizerProfile,
     dimensions: usize,
     /// Per-dim code width for TurboQuant and RaBitQ branches. Ignored for
-    /// PqFastScan. RaBitQ supports {1, 2, 4, 8}; TurboQuant supports {2, 4, 8}.
+    /// PqFastScan. RaBitQ supports {1, 2, 4, 8}; TurboQuant supports
+    /// {2, 3, 4, 8}.
     rabitq_bits: u8,
     /// Integer scalar clip radius for RaBitQ encoders/scorers. Stored as an
     /// integer because reloptions currently expose the Task 111h A/B values
@@ -175,16 +176,29 @@ impl IvfQuantizer {
         if rabitq_residual && !matches!(profile, IvfQuantizerProfile::RaBitQ) {
             return Err("ec_ivf rabitq_residual requires storage_format = 'rabitq'".to_owned());
         }
-        let bits = match rabitq_bits.unwrap_or(crate::DEFAULT_QUANT_BITS) {
-            b @ (1 | 2 | 4 | 8) => b,
-            other => {
-                return Err(format!(
-                    "ec_ivf quant_bits must be one of 1, 2, 4, 8; got {other}"
-                ))
+        let bits = rabitq_bits.unwrap_or(crate::DEFAULT_QUANT_BITS);
+        match profile {
+            IvfQuantizerProfile::TurboQuant => {
+                if !matches!(bits, 2 | 3 | 4 | 8) {
+                    return Err(format!(
+                        "ec_ivf TurboQuant quant_bits must be one of 2, 3, 4, 8; got {bits}"
+                    ));
+                }
             }
-        };
-        if matches!(profile, IvfQuantizerProfile::TurboQuant) && bits == 1 {
-            return Err("ec_ivf TurboQuant quant_bits must be one of 2, 4, 8".to_owned());
+            IvfQuantizerProfile::RaBitQ => {
+                if !matches!(bits, 1 | 2 | 4 | 8) {
+                    return Err(format!(
+                        "ec_ivf RaBitQ quant_bits must be one of 1, 2, 4, 8; got {bits}"
+                    ));
+                }
+            }
+            IvfQuantizerProfile::PqFastScan { .. } => {
+                if !matches!(bits, 1 | 2 | 4 | 8) {
+                    return Err(format!(
+                        "ec_ivf quant_bits must be one of 1, 2, 4, 8; got {bits}"
+                    ));
+                }
+            }
         }
         let quant_clip = rabitq_quant_clip.unwrap_or(EC_IVF_DEFAULT_RABITQ_RERANK_CLIP as u8);
         if quant_clip == 0 {
@@ -1575,6 +1589,27 @@ mod tests {
 
         assert!(err.contains("pq_group_size"));
         assert!(err.contains("must be 8, 16, 32"));
+    }
+
+    #[test]
+    fn turboquant_accepts_three_bit_sidecar_profile() {
+        let quantizer = IvfQuantizer::resolve_turboquant_with_bits(1536, 3).unwrap();
+
+        assert_eq!(quantizer.profile, IvfQuantizerProfile::TurboQuant);
+        assert_eq!(quantizer.payload_len(), crate::code_len(1536, 3));
+    }
+
+    #[test]
+    fn rabitq_rejects_three_bit_profile() {
+        let err = IvfQuantizer::resolve_with_pq_group_size_and_bits(
+            StorageFormat::RaBitQ,
+            1536,
+            None,
+            Some(3),
+        )
+        .unwrap_err();
+
+        assert!(err.contains("RaBitQ quant_bits"));
     }
 
     #[test]
