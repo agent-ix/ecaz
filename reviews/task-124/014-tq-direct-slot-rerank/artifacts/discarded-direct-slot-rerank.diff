@@ -1,0 +1,334 @@
+diff --git a/src/am/ec_ivf/build.rs b/src/am/ec_ivf/build.rs
+index 137fc6a35..a73a25e10 100644
+--- a/src/am/ec_ivf/build.rs
++++ b/src/am/ec_ivf/build.rs
+@@ -1068,8 +1068,9 @@ fn flush_rerank_group(
+     )?;
+     header.next_segment_tid = next_segment_tid;
+     let header_tid = data_pages.insert_ivf_rerank_group_header(&header)?;
+-    for (heap_tid, _gamma, _payload) in entries {
+-        rerank_tids_by_heap_tid.insert(heap_tid, header_tid);
++    for (slot, (heap_tid, _gamma, _payload)) in entries.into_iter().enumerate() {
++        let rerank_tid = page::encode_rerank_group_slot_tid(header_tid, slot).unwrap_or(header_tid);
++        rerank_tids_by_heap_tid.insert(heap_tid, rerank_tid);
+     }
+     group_tids.push(header_tid);
+     Ok(())
+diff --git a/src/am/ec_ivf/insert.rs b/src/am/ec_ivf/insert.rs
+index b317cfe05..244de03f2 100644
+--- a/src/am/ec_ivf/insert.rs
++++ b/src/am/ec_ivf/insert.rs
+@@ -181,7 +181,7 @@ unsafe fn insert_into_trained_index(
+     )?;
+     let rerank_tid = rerank_group
+         .as_ref()
+-        .map(|group| group.tid)
++        .map(|group| group.posting_tid)
+         .unwrap_or(ItemPointer::INVALID);
+ 
+     let posting = page::IvfPostingTuple {
+@@ -214,7 +214,7 @@ unsafe fn insert_into_trained_index(
+     if let Some(group) = rerank_group.as_mut() {
+         page::update_metadata_page_prepending_rerank_group(
+             index_relation,
+-            group.tid,
++            group.header_tid,
+             &mut group.header,
+             |metadata| apply_metadata_insert_stats(metadata),
+         )
+@@ -229,7 +229,8 @@ unsafe fn insert_into_trained_index(
+ }
+ 
+ struct AppendedRerankGroup {
+-    tid: ItemPointer,
++    header_tid: ItemPointer,
++    posting_tid: ItemPointer,
+     header: page::IvfRerankGroupHeaderTuple,
+ }
+ 
+@@ -298,8 +299,13 @@ unsafe fn append_rerank_group_entry(
+     )?;
+     header.next_segment_tid = next_segment_tid;
+     header.next_group_tid = ItemPointer::INVALID;
+-    let tid = page::append_ivf_rerank_group_header_to_new_block(index_relation, &header)?;
+-    Ok(Some(AppendedRerankGroup { tid, header }))
++    let header_tid = page::append_ivf_rerank_group_header_to_new_block(index_relation, &header)?;
++    let posting_tid = page::encode_rerank_group_slot_tid(header_tid, 0).unwrap_or(header_tid);
++    Ok(Some(AppendedRerankGroup {
++        header_tid,
++        posting_tid,
++        header,
++    }))
+ }
+ 
+ unsafe fn append_rerank_group_payload_segments(
+diff --git a/src/am/ec_ivf/page.rs b/src/am/ec_ivf/page.rs
+index 32547a82c..3d562c80c 100644
+--- a/src/am/ec_ivf/page.rs
++++ b/src/am/ec_ivf/page.rs
+@@ -175,6 +175,10 @@ const IVF_RERANK_SIDECAR_BLOCK_TAG: u8 = 0x2A;
+ // logical-group metadata once; payload segments carry only continuation bytes.
+ const IVF_RERANK_GROUP_HEADER_TAG: u8 = 0x2B;
+ const IVF_RERANK_GROUP_PAYLOAD_SEGMENT_TAG: u8 = 0x2C;
++const RERANK_GROUP_SLOT_TID_MARKER: u16 = 0x8000;
++const RERANK_GROUP_SLOT_TID_OFFSET_SHIFT: u16 = 8;
++const RERANK_GROUP_SLOT_TID_OFFSET_MASK: u16 = 0x7F00;
++const RERANK_GROUP_SLOT_TID_SLOT_MASK: u16 = 0x00FF;
+ const POSTING_FLAG_DELETED: u8 = 0b0000_0001;
+ const POSTING_FIXED_BYTES: usize = EC_IVF_POSTING_PAYLOAD_OFFSET;
+ const DENSE_POSTING_BLOCK_HEADER_BYTES: usize = 16;
+@@ -1248,6 +1252,44 @@ pub(super) fn remember_rerank_group_chain_tid(
+     }
+ }
+ 
++pub(super) fn encode_rerank_group_slot_tid(
++    group_tid: ItemPointer,
++    slot: usize,
++) -> Option<ItemPointer> {
++    if group_tid == ItemPointer::INVALID {
++        return None;
++    }
++    if group_tid.offset_number == 0 || group_tid.offset_number > 0x7F || slot > 0xFF {
++        return None;
++    }
++    Some(ItemPointer {
++        block_number: group_tid.block_number,
++        offset_number: RERANK_GROUP_SLOT_TID_MARKER
++            | (group_tid.offset_number << RERANK_GROUP_SLOT_TID_OFFSET_SHIFT)
++            | slot as u16,
++    })
++}
++
++pub(super) fn decode_rerank_group_slot_tid(
++    rerank_tid: ItemPointer,
++) -> (ItemPointer, Option<usize>) {
++    if rerank_tid == ItemPointer::INVALID
++        || rerank_tid.offset_number & RERANK_GROUP_SLOT_TID_MARKER == 0
++    {
++        return (rerank_tid, None);
++    }
++    let offset_number = (rerank_tid.offset_number & RERANK_GROUP_SLOT_TID_OFFSET_MASK)
++        >> RERANK_GROUP_SLOT_TID_OFFSET_SHIFT;
++    let slot = (rerank_tid.offset_number & RERANK_GROUP_SLOT_TID_SLOT_MASK) as usize;
++    (
++        ItemPointer {
++            block_number: rerank_tid.block_number,
++            offset_number,
++        },
++        Some(slot),
++    )
++}
++
+ #[derive(Debug, Clone, PartialEq, Eq)]
+ pub(super) struct IvfRerankGroupPayloadSegmentTuple {
+     pub(super) next_segment_tid: ItemPointer,
+@@ -4849,6 +4891,18 @@ mod tests {
+         );
+     }
+ 
++    #[test]
++    fn rerank_group_slot_tid_roundtrips_when_encodable() {
++        let group_tid = tid(42, 3);
++        let encoded = encode_rerank_group_slot_tid(group_tid, 17).unwrap();
++
++        assert_ne!(encoded, group_tid);
++        assert_eq!(decode_rerank_group_slot_tid(encoded), (group_tid, Some(17)));
++        assert_eq!(decode_rerank_group_slot_tid(group_tid), (group_tid, None));
++        assert!(encode_rerank_group_slot_tid(tid(42, 128), 17).is_none());
++        assert!(encode_rerank_group_slot_tid(group_tid, 256).is_none());
++    }
++
+     #[test]
+     fn metadata_roundtrip() {
+         let mut metadata = MetadataPage::empty(EcIvfOptions {
+diff --git a/src/am/ec_ivf/scan.rs b/src/am/ec_ivf/scan.rs
+index 4afb2ec35..61d9487ca 100644
+--- a/src/am/ec_ivf/scan.rs
++++ b/src/am/ec_ivf/scan.rs
+@@ -2858,6 +2858,11 @@ struct LoadedRerankGroup {
+     selected_payloads: Option<SelectedRerankPayloadSlab>,
+ }
+ 
++struct RequestedRerankPayload {
++    heap_tid: ItemPointer,
++    slot: Option<usize>,
++}
++
+ struct SelectedRerankPayloadSlab {
+     payloads: Vec<u8>,
+     payload_index_by_heap_tid: HashMap<ItemPointer, usize>,
+@@ -2917,7 +2922,8 @@ unsafe fn load_rerank_groups_by_header_tid(
+     candidates: &[EcIvfScoredCandidate],
+     read_stats: &mut RerankGroupReadStats,
+ ) -> Result<HashMap<ItemPointer, LoadedRerankGroup>, String> {
+-    let mut requested_heap_tids_by_group: HashMap<ItemPointer, Vec<ItemPointer>> = HashMap::new();
++    let mut requested_payloads_by_group: HashMap<ItemPointer, Vec<RequestedRerankPayload>> =
++        HashMap::new();
+     for candidate in candidates {
+         if candidate.rerank_tid == ItemPointer::INVALID {
+             return Err(format!(
+@@ -2925,22 +2931,27 @@ unsafe fn load_rerank_groups_by_header_tid(
+                 candidate.heap_tid
+             ));
+         }
+-        let heap_tids = requested_heap_tids_by_group
+-            .entry(candidate.rerank_tid)
+-            .or_default();
+-        if !heap_tids.contains(&candidate.heap_tid) {
+-            heap_tids.push(candidate.heap_tid);
++        let (group_tid, slot) = super::page::decode_rerank_group_slot_tid(candidate.rerank_tid);
++        let payloads = requested_payloads_by_group.entry(group_tid).or_default();
++        if !payloads
++            .iter()
++            .any(|requested| requested.heap_tid == candidate.heap_tid)
++        {
++            payloads.push(RequestedRerankPayload {
++                heap_tid: candidate.heap_tid,
++                slot,
++            });
+         }
+     }
+ 
+-    let mut groups = HashMap::with_capacity(requested_heap_tids_by_group.len());
+-    for (group_tid, requested_heap_tids) in requested_heap_tids_by_group {
++    let mut groups = HashMap::with_capacity(requested_payloads_by_group.len());
++    for (group_tid, requested_payloads) in requested_payloads_by_group {
+         let group = unsafe {
+             load_rerank_group_for_heap_tids(
+                 index_relation,
+                 group_tid,
+                 expected_payload_len,
+-                &requested_heap_tids,
++                &requested_payloads,
+                 read_stats,
+             )
+         }?;
+@@ -3027,7 +3038,7 @@ unsafe fn load_rerank_group_for_heap_tids(
+     index_relation: pg_sys::Relation,
+     group_tid: ItemPointer,
+     expected_payload_len: usize,
+-    requested_heap_tids: &[ItemPointer],
++    requested_payloads: &[RequestedRerankPayload],
+     read_stats: &mut RerankGroupReadStats,
+ ) -> Result<LoadedRerankGroup, String> {
+     let header = unsafe { super::page::read_ivf_rerank_group_header(index_relation, group_tid)? };
+@@ -3040,14 +3051,23 @@ unsafe fn load_rerank_group_for_heap_tids(
+     }
+ 
+     let mut payload_offsets_by_heap_tid: HashMap<ItemPointer, usize> =
+-        HashMap::with_capacity(requested_heap_tids.len());
+-    for requested_heap_tid in requested_heap_tids {
+-        let payload_offset = rerank_group_payload_offset_for_heap_tid(
+-            &header,
+-            *requested_heap_tid,
+-            expected_payload_len,
+-        )?;
+-        payload_offsets_by_heap_tid.insert(*requested_heap_tid, payload_offset);
++        HashMap::with_capacity(requested_payloads.len());
++    for requested in requested_payloads {
++        let payload_offset = if let Some(slot) = requested.slot {
++            rerank_group_payload_offset_for_slot(
++                &header,
++                requested.heap_tid,
++                slot,
++                expected_payload_len,
++            )?
++        } else {
++            rerank_group_payload_offset_for_heap_tid(
++                &header,
++                requested.heap_tid,
++                expected_payload_len,
++            )?
++        };
++        payload_offsets_by_heap_tid.insert(requested.heap_tid, payload_offset);
+     }
+     let max_required_payload_end = payload_offsets_by_heap_tid
+         .values()
+@@ -3189,10 +3209,11 @@ fn rerank_group_payload_for_candidate<'a>(
+     expected_payload_len: usize,
+ ) -> Result<RerankGroupPayloadRef<'a>, String> {
+     if candidate.rerank_tid != ItemPointer::INVALID {
+-        let group = groups.get(&candidate.rerank_tid).ok_or_else(|| {
++        let (group_tid, _slot) = super::page::decode_rerank_group_slot_tid(candidate.rerank_tid);
++        let group = groups.get(&group_tid).ok_or_else(|| {
+             format!(
+                 "ec_ivf index-side rerank is missing group {:?} for heap tid {:?}",
+-                candidate.rerank_tid, candidate.heap_tid
++                group_tid, candidate.heap_tid
+             )
+         })?;
+         return rerank_group_payload_for_heap_tid(group, candidate.heap_tid, expected_payload_len);
+@@ -3263,6 +3284,44 @@ fn rerank_group_payload_for_heap_tid(
+     })
+ }
+ 
++fn rerank_group_payload_offset_for_slot(
++    header: &super::page::IvfRerankGroupHeaderTuple,
++    heap_tid: ItemPointer,
++    slot: usize,
++    expected_payload_len: usize,
++) -> Result<usize, String> {
++    if slot >= header.len() {
++        return Err(format!(
++            "ec_ivf rerank group slot {slot} is out of bounds for {} entries",
++            header.len()
++        ));
++    }
++    if header.is_deleted(slot) {
++        return Err(format!(
++            "ec_ivf rerank group slot {slot} is deleted for heap tid {:?}",
++            heap_tid
++        ));
++    }
++    let heap_start = usize::try_from(header.heap_tid_offsets[slot])
++        .map_err(|_| "ec_ivf rerank group heap offset conversion failed".to_owned())?;
++    let heap_count = usize::from(header.heap_tid_counts[slot]);
++    if heap_count != 1 {
++        return Err("ec_ivf direct rerank group slot requires a single heap tid".to_owned());
++    }
++    if header.heap_tids.get(heap_start).copied() != Some(heap_tid) {
++        return Err(format!(
++            "ec_ivf direct rerank group slot {slot} does not match heap tid {:?}",
++            heap_tid
++        ));
++    }
++    let payload_offset = usize::try_from(header.payload_offsets[slot])
++        .map_err(|_| "ec_ivf rerank group payload offset conversion failed".to_owned())?;
++    payload_offset
++        .checked_add(expected_payload_len)
++        .ok_or_else(|| "ec_ivf rerank group payload range overflow".to_owned())?;
++    Ok(payload_offset)
++}
++
+ fn rerank_group_payload_offset_for_heap_tid(
+     header: &super::page::IvfRerankGroupHeaderTuple,
+     heap_tid: ItemPointer,
+@@ -4543,8 +4602,8 @@ mod tests {
+         RerankPlacement, StorageFormat as IvfStorageFormat, EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
+     };
+     use super::super::page::{
+-        IvfDensePostingBlockRef, IvfDensePostingBlockTuple, IvfDensePostingRef, IvfPostingTuple,
+-        IvfPostingTupleRef, IvfRerankGroupHeaderTuple,
++        encode_rerank_group_slot_tid, IvfDensePostingBlockRef, IvfDensePostingBlockTuple,
++        IvfDensePostingRef, IvfPostingTuple, IvfPostingTupleRef, IvfRerankGroupHeaderTuple,
+     };
+     use super::{
+         build_probe_block_sequence, candidate_heap_blocks, candidate_heap_tid_cmp,
+@@ -4815,7 +4874,7 @@ mod tests {
+         groups.insert(group_tid, group);
+ 
+         let mut direct_candidate = candidate(12, 1, 0.0);
+-        direct_candidate.rerank_tid = group_tid;
++        direct_candidate.rerank_tid = encode_rerank_group_slot_tid(group_tid, 1).unwrap();
+         let direct = rerank_group_payload_for_candidate(&groups, &direct_candidate, 2).unwrap();
+         assert_eq!(direct.payload, &[0x20, 0x21]);
+         assert_eq!(direct.list_id, 7);
+@@ -4851,7 +4910,7 @@ mod tests {
+         groups.insert(group_tid, group);
+ 
+         let mut direct_candidate = candidate(12, 1, 0.0);
+-        direct_candidate.rerank_tid = group_tid;
++        direct_candidate.rerank_tid = encode_rerank_group_slot_tid(group_tid, 1).unwrap();
+         let direct = rerank_group_payload_for_candidate(&groups, &direct_candidate, 2).unwrap();
+         assert_eq!(direct.payload, &[0x20, 0x21]);
+         assert_eq!(direct.list_id, 7);
