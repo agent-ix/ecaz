@@ -1,0 +1,207 @@
+{
+  "name": "task124-tq-final-width-100k-suite",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-124/005-tq-final-width-sweep/artifacts/suite-100k",
+  "defaults": {
+    "profile": "ec_ivf",
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 100,
+    "iterations": 100,
+    "force_index": true,
+    "sample_backend_memory": true,
+    "memory_sample_interval_ms": 25,
+    "pg": 18,
+    "socket_dir": "/Users/peter/.pgrx"
+  },
+  "steps": [
+    {
+      "kind": "load",
+      "name": "load-100k-tq-g100-w100",
+      "tags": ["task124", "load", "tq-stage2", "ec_real_100k", "turboquant", "g100", "w100"],
+      "prefix": "task124_fw_tq_g100_100k",
+      "profile": "ec_ivf",
+      "storage_format": "coarse_rerank",
+      "corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_100k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=64",
+        "nprobe=32",
+        "training_sample_rows=10000",
+        "coarse_format=rabitq",
+        "coarse_bits=1",
+        "rerank=heap_f32",
+        "rerank_placement=index",
+        "rerank_format=turboquant",
+        "rerank_width=100",
+        "stage2_final_rerank_width=25"
+      ],
+      "log_file": "${artifact_dir}/load-100k-tq-g100-w100.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k-tq-g100-w100",
+      "tags": ["task124", "storage", "tq-stage2", "ec_real_100k", "turboquant", "g100", "w100"],
+      "prefix": "task124_fw_tq_g100_100k",
+      "log_file": "${artifact_dir}/storage-100k-tq-g100-w100.log"
+    },
+
+    {
+      "kind": "recall",
+      "name": "recall-100k-tq-g100-w100-final10",
+      "tags": ["task124", "recall", "tq-stage2", "ec_real_100k", "turboquant", "g100", "w100", "final10"],
+      "prefix": "task124_fw_tq_g100_100k",
+      "k": 10,
+      "sweep": [32, 64],
+      "rerank_width": 100,
+      "queries_limit": 100,
+      "session_gucs": ["ec_ivf.stage2_final_rerank_width=10"],
+      "truth_cache_file": "${artifact_dir}/truth-100k-k10.json",
+      "log_output": "${artifact_dir}/recall-100k-tq-g100-w100-final10.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-tq-g100-w100-final10",
+      "tags": ["task124", "latency", "tq-stage2", "ec_real_100k", "turboquant", "g100", "w100", "final10"],
+      "prefix": "task124_fw_tq_g100_100k",
+      "k": 10,
+      "sweep": [32, 64],
+      "rerank_width": 100,
+      "iterations": 100,
+      "session_gucs": ["ec_ivf.stage2_final_rerank_width=10"],
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-100k-tq-g100-w100-final10.log"
+    },
+    {
+      "kind": "explain",
+      "name": "explain-100k-tq-g100-w100-final10-p64",
+      "tags": ["task124", "explain", "tq-stage2", "ec_real_100k", "turboquant", "g100", "w100", "final10", "p64"],
+      "prefix": "task124_fw_tq_g100_100k",
+      "index_name": "task124_fw_tq_g100_100k_coarse_rerank_idx",
+      "nprobe": 64,
+      "rerank_width": 100,
+      "session_gucs": ["ec_ivf.stage2_final_rerank_width=10"],
+      "sql_file": "${artifact_dir}/explain-100k-tq-g100-w100-final10-p64.sql",
+      "log_output": "${artifact_dir}/explain-100k-tq-g100-w100-final10-p64.log"
+    },
+
+    {
+      "kind": "recall",
+      "name": "recall-100k-tq-g100-w100-final15",
+      "tags": ["task124", "recall", "tq-stage2", "ec_real_100k", "turboquant", "g100", "w100", "final15"],
+      "prefix": "task124_fw_tq_g100_100k",
+      "k": 10,
+      "sweep": [32, 64],
+      "rerank_width": 100,
+      "queries_limit": 100,
+      "session_gucs": ["ec_ivf.stage2_final_rerank_width=15"],
+      "truth_cache_file": "${artifact_dir}/truth-100k-k10.json",
+      "log_output": "${artifact_dir}/recall-100k-tq-g100-w100-final15.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-tq-g100-w100-final15",
+      "tags": ["task124", "latency", "tq-stage2", "ec_real_100k", "turboquant", "g100", "w100", "final15"],
+      "prefix": "task124_fw_tq_g100_100k",
+      "k": 10,
+      "sweep": [32, 64],
+      "rerank_width": 100,
+      "iterations": 100,
+      "session_gucs": ["ec_ivf.stage2_final_rerank_width=15"],
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-100k-tq-g100-w100-final15.log"
+    },
+    {
+      "kind": "explain",
+      "name": "explain-100k-tq-g100-w100-final15-p64",
+      "tags": ["task124", "explain", "tq-stage2", "ec_real_100k", "turboquant", "g100", "w100", "final15", "p64"],
+      "prefix": "task124_fw_tq_g100_100k",
+      "index_name": "task124_fw_tq_g100_100k_coarse_rerank_idx",
+      "nprobe": 64,
+      "rerank_width": 100,
+      "session_gucs": ["ec_ivf.stage2_final_rerank_width=15"],
+      "sql_file": "${artifact_dir}/explain-100k-tq-g100-w100-final15-p64.sql",
+      "log_output": "${artifact_dir}/explain-100k-tq-g100-w100-final15-p64.log"
+    },
+
+    {
+      "kind": "recall",
+      "name": "recall-100k-tq-g100-w100-final20",
+      "tags": ["task124", "recall", "tq-stage2", "ec_real_100k", "turboquant", "g100", "w100", "final20"],
+      "prefix": "task124_fw_tq_g100_100k",
+      "k": 10,
+      "sweep": [32, 64],
+      "rerank_width": 100,
+      "queries_limit": 100,
+      "session_gucs": ["ec_ivf.stage2_final_rerank_width=20"],
+      "truth_cache_file": "${artifact_dir}/truth-100k-k10.json",
+      "log_output": "${artifact_dir}/recall-100k-tq-g100-w100-final20.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-tq-g100-w100-final20",
+      "tags": ["task124", "latency", "tq-stage2", "ec_real_100k", "turboquant", "g100", "w100", "final20"],
+      "prefix": "task124_fw_tq_g100_100k",
+      "k": 10,
+      "sweep": [32, 64],
+      "rerank_width": 100,
+      "iterations": 100,
+      "session_gucs": ["ec_ivf.stage2_final_rerank_width=20"],
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-100k-tq-g100-w100-final20.log"
+    },
+    {
+      "kind": "explain",
+      "name": "explain-100k-tq-g100-w100-final20-p64",
+      "tags": ["task124", "explain", "tq-stage2", "ec_real_100k", "turboquant", "g100", "w100", "final20", "p64"],
+      "prefix": "task124_fw_tq_g100_100k",
+      "index_name": "task124_fw_tq_g100_100k_coarse_rerank_idx",
+      "nprobe": 64,
+      "rerank_width": 100,
+      "session_gucs": ["ec_ivf.stage2_final_rerank_width=20"],
+      "sql_file": "${artifact_dir}/explain-100k-tq-g100-w100-final20-p64.sql",
+      "log_output": "${artifact_dir}/explain-100k-tq-g100-w100-final20-p64.log"
+    },
+
+    {
+      "kind": "recall",
+      "name": "recall-100k-tq-g100-w100-final25",
+      "tags": ["task124", "recall", "tq-stage2", "ec_real_100k", "turboquant", "g100", "w100", "final25"],
+      "prefix": "task124_fw_tq_g100_100k",
+      "k": 10,
+      "sweep": [32, 64],
+      "rerank_width": 100,
+      "queries_limit": 100,
+      "session_gucs": ["ec_ivf.stage2_final_rerank_width=25"],
+      "truth_cache_file": "${artifact_dir}/truth-100k-k10.json",
+      "log_output": "${artifact_dir}/recall-100k-tq-g100-w100-final25.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-tq-g100-w100-final25",
+      "tags": ["task124", "latency", "tq-stage2", "ec_real_100k", "turboquant", "g100", "w100", "final25"],
+      "prefix": "task124_fw_tq_g100_100k",
+      "k": 10,
+      "sweep": [32, 64],
+      "rerank_width": 100,
+      "iterations": 100,
+      "session_gucs": ["ec_ivf.stage2_final_rerank_width=25"],
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-100k-tq-g100-w100-final25.log"
+    },
+    {
+      "kind": "explain",
+      "name": "explain-100k-tq-g100-w100-final25-p64",
+      "tags": ["task124", "explain", "tq-stage2", "ec_real_100k", "turboquant", "g100", "w100", "final25", "p64"],
+      "prefix": "task124_fw_tq_g100_100k",
+      "index_name": "task124_fw_tq_g100_100k_coarse_rerank_idx",
+      "nprobe": 64,
+      "rerank_width": 100,
+      "session_gucs": ["ec_ivf.stage2_final_rerank_width=25"],
+      "sql_file": "${artifact_dir}/explain-100k-tq-g100-w100-final25-p64.sql",
+      "log_output": "${artifact_dir}/explain-100k-tq-g100-w100-final25-p64.log"
+    }
+  ]
+}
