@@ -4558,6 +4558,7 @@ mod tests {
             nlists: 16,
             nprobe: 4,
             rerank_width,
+            rerank_group_width: 0,
             stage2_final_rerank_width: 0,
             training_sample_rows: 0,
             seed: 42,

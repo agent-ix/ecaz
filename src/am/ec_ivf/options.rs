@@ -9,14 +9,15 @@ use super::{
     EC_IVF_DEFAULT_ADAPTIVE_NPROBE_SCORE_GAP_MICROS,
     EC_IVF_DEFAULT_ADAPTIVE_NPROBE_SCORE_MARGIN_RATIO_BPS, EC_IVF_DEFAULT_NLISTS,
     EC_IVF_DEFAULT_NPROBE, EC_IVF_DEFAULT_POSTING_SLACK_PERCENT, EC_IVF_DEFAULT_PQ_GROUP_SIZE,
-    EC_IVF_DEFAULT_QUANT_BITS, EC_IVF_DEFAULT_RERANK_WIDTH, EC_IVF_DEFAULT_SEED,
-    EC_IVF_DEFAULT_STAGE2_FINAL_RERANK_WIDTH, EC_IVF_DEFAULT_TRAINING_SAMPLE_ROWS,
-    EC_IVF_MAX_ADAPTIVE_NPROBE_SCORE_GAP_MICROS, EC_IVF_MAX_ADAPTIVE_NPROBE_SCORE_MARGIN_RATIO_BPS,
-    EC_IVF_MAX_NLISTS, EC_IVF_MAX_NPROBE, EC_IVF_MAX_POSTING_SLACK_PERCENT,
-    EC_IVF_MAX_PQ_GROUP_SIZE, EC_IVF_MAX_QUANT_BITS, EC_IVF_MAX_RERANK_WIDTH, EC_IVF_MAX_SEED,
+    EC_IVF_DEFAULT_QUANT_BITS, EC_IVF_DEFAULT_RERANK_GROUP_WIDTH, EC_IVF_DEFAULT_RERANK_WIDTH,
+    EC_IVF_DEFAULT_SEED, EC_IVF_DEFAULT_STAGE2_FINAL_RERANK_WIDTH,
+    EC_IVF_DEFAULT_TRAINING_SAMPLE_ROWS, EC_IVF_MAX_ADAPTIVE_NPROBE_SCORE_GAP_MICROS,
+    EC_IVF_MAX_ADAPTIVE_NPROBE_SCORE_MARGIN_RATIO_BPS, EC_IVF_MAX_NLISTS, EC_IVF_MAX_NPROBE,
+    EC_IVF_MAX_POSTING_SLACK_PERCENT, EC_IVF_MAX_PQ_GROUP_SIZE, EC_IVF_MAX_QUANT_BITS,
+    EC_IVF_MAX_RERANK_GROUP_WIDTH, EC_IVF_MAX_RERANK_WIDTH, EC_IVF_MAX_SEED,
     EC_IVF_MAX_STAGE2_FINAL_RERANK_WIDTH, EC_IVF_MAX_TRAINING_SAMPLE_ROWS, EC_IVF_MIN_NLISTS,
     EC_IVF_MIN_NPROBE, EC_IVF_MIN_POSTING_SLACK_PERCENT, EC_IVF_MIN_PQ_GROUP_SIZE,
-    EC_IVF_MIN_QUANT_BITS, EC_IVF_MIN_RERANK_WIDTH, EC_IVF_MIN_SEED,
+    EC_IVF_MIN_QUANT_BITS, EC_IVF_MIN_RERANK_GROUP_WIDTH, EC_IVF_MIN_RERANK_WIDTH, EC_IVF_MIN_SEED,
     EC_IVF_MIN_STAGE2_FINAL_RERANK_WIDTH, EC_IVF_MIN_TRAINING_SAMPLE_ROWS,
 };
 
@@ -68,6 +69,7 @@ struct EcIvfReloptions {
     nlists: i32,
     nprobe: i32,
     rerank_width: i32,
+    rerank_group_width: i32,
     stage2_final_rerank_width: i32,
     training_sample_rows: i32,
     seed: i32,
@@ -353,6 +355,9 @@ pub(super) struct EcIvfOptions {
     pub(super) nlists: i32,
     pub(super) nprobe: i32,
     pub(super) rerank_width: i32,
+    /// Task 124: build-time compact rerank sidecar group width. A value of 0
+    /// preserves the historical behavior where groups flush at `rerank_width`.
+    pub(super) rerank_group_width: i32,
     pub(super) stage2_final_rerank_width: i32,
     pub(super) training_sample_rows: i32,
     pub(super) seed: i32,
@@ -384,6 +389,7 @@ impl EcIvfOptions {
         nlists: EC_IVF_DEFAULT_NLISTS,
         nprobe: EC_IVF_DEFAULT_NPROBE,
         rerank_width: EC_IVF_DEFAULT_RERANK_WIDTH,
+        rerank_group_width: EC_IVF_DEFAULT_RERANK_GROUP_WIDTH,
         stage2_final_rerank_width: EC_IVF_DEFAULT_STAGE2_FINAL_RERANK_WIDTH,
         training_sample_rows: EC_IVF_DEFAULT_TRAINING_SAMPLE_ROWS,
         seed: EC_IVF_DEFAULT_SEED,
@@ -738,6 +744,16 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amoptions(
                 EC_IVF_MIN_RERANK_WIDTH,
                 EC_IVF_MAX_RERANK_WIDTH,
                 offset_of!(EcIvfReloptions, rerank_width) as i32,
+            );
+        pg_sys::add_local_int_reloption(
+                &mut relopts,
+                c"rerank_group_width".as_ptr(),
+                c"Task 124: build-time compact rerank sidecar group width; 0 uses rerank_width. Smaller values improve index-side TQ payload locality without changing scan frontier width."
+                    .as_ptr(),
+                EC_IVF_DEFAULT_RERANK_GROUP_WIDTH,
+                EC_IVF_MIN_RERANK_GROUP_WIDTH,
+                EC_IVF_MAX_RERANK_GROUP_WIDTH,
+                offset_of!(EcIvfReloptions, rerank_group_width) as i32,
             );
         pg_sys::add_local_int_reloption(
                 &mut relopts,
@@ -1174,11 +1190,27 @@ fn build_options_from_reloptions(
             "ec_ivf stage2_final_rerank_width requires storage_format = 'coarse_rerank', rerank_placement = 'index', and rerank_format = 'turboquant'"
         );
     }
+    if reloptions.rerank_group_width > 0
+        && !(storage_format == StorageFormat::CoarseRerank
+            && rerank_placement == RerankPlacement::Index
+            && matches!(
+                rerank_format,
+                RerankFormat::F16
+                    | RerankFormat::RaBitQ4
+                    | RerankFormat::RaBitQ8
+                    | RerankFormat::TurboQuant
+            ))
+    {
+        pgrx::error!(
+            "ec_ivf rerank_group_width requires storage_format = 'coarse_rerank', rerank_placement = 'index', and a compact rerank_format"
+        );
+    }
 
     EcIvfOptions {
         nlists: reloptions.nlists,
         nprobe: reloptions.nprobe,
         rerank_width: reloptions.rerank_width,
+        rerank_group_width: reloptions.rerank_group_width,
         stage2_final_rerank_width: reloptions.stage2_final_rerank_width,
         training_sample_rows: reloptions.training_sample_rows,
         seed: reloptions.seed,
@@ -1222,6 +1254,7 @@ mod tests {
             nlists: 64,
             nprobe: 32,
             rerank_width: 50,
+            rerank_group_width: 0,
             stage2_final_rerank_width: 0,
             training_sample_rows: 10_000,
             seed: 42,
@@ -1519,6 +1552,7 @@ mod tests {
     fn coarse_rerank_accepts_turboquant_stage2_final_width() {
         let mut reloptions = reloptions();
         reloptions.rerank_width = 100;
+        reloptions.rerank_group_width = 16;
         reloptions.stage2_final_rerank_width = 25;
 
         let options = build_options_from_reloptions(
@@ -1534,9 +1568,27 @@ mod tests {
         assert_eq!(options.storage_format, StorageFormat::CoarseRerank);
         assert_eq!(options.rerank, RerankMode::HeapF32);
         assert_eq!(options.rerank_width, 100);
+        assert_eq!(options.rerank_group_width, 16);
         assert_eq!(options.stage2_final_rerank_width, 25);
         assert_eq!(options.rerank_placement, RerankPlacement::Index);
         assert_eq!(options.rerank_format, RerankFormat::TurboQuant);
+    }
+
+    #[test]
+    #[should_panic]
+    fn rerank_group_width_rejects_non_index_compact_rerank() {
+        let mut reloptions = reloptions();
+        reloptions.rerank_group_width = 16;
+
+        build_options_from_reloptions(
+            &reloptions,
+            Some("coarse_rerank".into()),
+            None,
+            None,
+            None,
+            Some("source".into()),
+            Some("f32".into()),
+        );
     }
 
     #[test]

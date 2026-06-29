@@ -174,6 +174,9 @@ pub const EC_IVF: IndexProfile = IndexProfile {
         "coarse_bits",
         "rerank_placement",
         "rerank_format",
+        // Task 124 TQ stage2 controls.
+        "rerank_group_width",
+        "stage2_final_rerank_width",
     ],
     default_sweep: &[8, 16, 24, 32, 48, 64],
 };
