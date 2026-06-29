@@ -2855,7 +2855,13 @@ unsafe fn rerank_probe_candidates_index_side(
 struct LoadedRerankGroup {
     header: super::page::IvfRerankGroupHeaderTuple,
     payloads: Vec<u8>,
-    selected_payloads_by_heap_tid: Option<HashMap<ItemPointer, Vec<u8>>>,
+    selected_payloads: Option<SelectedRerankPayloadSlab>,
+}
+
+struct SelectedRerankPayloadSlab {
+    payloads: Vec<u8>,
+    payload_index_by_heap_tid: HashMap<ItemPointer, usize>,
+    payload_len: usize,
 }
 
 #[derive(Debug)]
@@ -3013,7 +3019,7 @@ unsafe fn load_rerank_group(
     Ok(LoadedRerankGroup {
         header,
         payloads,
-        selected_payloads_by_heap_tid: None,
+        selected_payloads: None,
     })
 }
 
@@ -3061,14 +3067,28 @@ unsafe fn load_rerank_group_for_heap_tids(
 
     let mut selected_payloads = payload_offsets_by_heap_tid
         .iter()
-        .map(|(heap_tid, payload_offset)| SelectedRerankPayload {
-            heap_tid: *heap_tid,
-            payload_offset: *payload_offset,
-            payload: vec![0; expected_payload_len],
-            copied: 0,
-        })
+        .enumerate()
+        .map(
+            |(payload_index, (heap_tid, payload_offset))| SelectedRerankPayload {
+                heap_tid: *heap_tid,
+                payload_offset: *payload_offset,
+                payload_index,
+                copied: 0,
+            },
+        )
         .collect::<Vec<_>>();
-    copy_selected_rerank_payload_ranges(&mut selected_payloads, 0, &header.payloads);
+    let selected_payload_slab_len = selected_payloads
+        .len()
+        .checked_mul(expected_payload_len)
+        .ok_or_else(|| "ec_ivf selected rerank payload slab length overflow".to_owned())?;
+    let mut selected_payload_slab = vec![0; selected_payload_slab_len];
+    copy_selected_rerank_payload_ranges(
+        &mut selected_payloads,
+        &mut selected_payload_slab,
+        expected_payload_len,
+        0,
+        &header.payloads,
+    );
 
     let mut payload_bytes_seen = header.payloads.len();
     let mut next_segment_tid = header.next_segment_tid;
@@ -3088,6 +3108,8 @@ unsafe fn load_rerank_group_for_heap_tids(
         read_stats.record_segment(&segment);
         copy_selected_rerank_payload_ranges(
             &mut selected_payloads,
+            &mut selected_payload_slab,
+            expected_payload_len,
             payload_bytes_seen,
             &segment.payloads,
         );
@@ -3100,7 +3122,7 @@ unsafe fn load_rerank_group_for_heap_tids(
         next_segment_tid = segment.next_segment_tid;
     }
 
-    let mut selected_payloads_by_heap_tid = HashMap::with_capacity(selected_payloads.len());
+    let mut payload_index_by_heap_tid = HashMap::with_capacity(selected_payloads.len());
     for selected in selected_payloads {
         if selected.copied != expected_payload_len {
             return Err(format!(
@@ -3108,25 +3130,31 @@ unsafe fn load_rerank_group_for_heap_tids(
                 selected.copied, selected.heap_tid
             ));
         }
-        selected_payloads_by_heap_tid.insert(selected.heap_tid, selected.payload);
+        payload_index_by_heap_tid.insert(selected.heap_tid, selected.payload_index);
     }
 
     Ok(LoadedRerankGroup {
         header,
         payloads: Vec::new(),
-        selected_payloads_by_heap_tid: Some(selected_payloads_by_heap_tid),
+        selected_payloads: Some(SelectedRerankPayloadSlab {
+            payloads: selected_payload_slab,
+            payload_index_by_heap_tid,
+            payload_len: expected_payload_len,
+        }),
     })
 }
 
 struct SelectedRerankPayload {
     heap_tid: ItemPointer,
     payload_offset: usize,
-    payload: Vec<u8>,
+    payload_index: usize,
     copied: usize,
 }
 
 fn copy_selected_rerank_payload_ranges(
     selected_payloads: &mut [SelectedRerankPayload],
+    selected_payload_slab: &mut [u8],
+    selected_payload_len: usize,
     chunk_start: usize,
     chunk: &[u8],
 ) {
@@ -3136,7 +3164,7 @@ fn copy_selected_rerank_payload_ranges(
     let chunk_end = chunk_start.saturating_add(chunk.len());
     for selected in selected_payloads {
         let selected_start = selected.payload_offset;
-        let selected_end = selected_start.saturating_add(selected.payload.len());
+        let selected_end = selected_start.saturating_add(selected_payload_len);
         let copy_start = selected_start.max(chunk_start);
         let copy_end = selected_end.min(chunk_end);
         if copy_start >= copy_end {
@@ -3145,7 +3173,11 @@ fn copy_selected_rerank_payload_ranges(
         let chunk_offset = copy_start.saturating_sub(chunk_start);
         let payload_offset = copy_start.saturating_sub(selected_start);
         let copy_len = copy_end.saturating_sub(copy_start);
-        selected.payload[payload_offset..payload_offset + copy_len]
+        let slab_offset = selected
+            .payload_index
+            .saturating_mul(selected_payload_len)
+            .saturating_add(payload_offset);
+        selected_payload_slab[slab_offset..slab_offset + copy_len]
             .copy_from_slice(&chunk[chunk_offset..chunk_offset + copy_len]);
         selected.copied = selected.copied.saturating_add(copy_len);
     }
@@ -3183,21 +3215,36 @@ fn rerank_group_payload_for_heap_tid(
     heap_tid: ItemPointer,
     expected_payload_len: usize,
 ) -> Result<RerankGroupPayloadRef<'_>, String> {
-    if let Some(selected_payloads) = &group.selected_payloads_by_heap_tid {
-        let payload = selected_payloads.get(&heap_tid).ok_or_else(|| {
-            format!(
-                "ec_ivf rerank group did not contain selected heap tid {:?}",
-                heap_tid
-            )
-        })?;
-        if payload.len() != expected_payload_len {
+    if let Some(selected_payloads) = &group.selected_payloads {
+        if selected_payloads.payload_len != expected_payload_len {
             return Err(format!(
                 "ec_ivf rerank group selected payload length {} does not match expected {expected_payload_len}",
-                payload.len()
+                selected_payloads.payload_len
             ));
         }
+        let payload_index = selected_payloads
+            .payload_index_by_heap_tid
+            .get(&heap_tid)
+            .ok_or_else(|| {
+                format!(
+                    "ec_ivf rerank group did not contain selected heap tid {:?}",
+                    heap_tid
+                )
+            })?;
+        let payload_start = payload_index
+            .checked_mul(expected_payload_len)
+            .ok_or_else(|| "ec_ivf rerank group selected payload offset overflow".to_owned())?;
+        let payload_end = payload_start
+            .checked_add(expected_payload_len)
+            .ok_or_else(|| "ec_ivf rerank group selected payload range overflow".to_owned())?;
+        let payload = selected_payloads
+            .payloads
+            .get(payload_start..payload_end)
+            .ok_or_else(|| {
+                "ec_ivf rerank group selected payload range is out of bounds".to_owned()
+            })?;
         return Ok(RerankGroupPayloadRef {
-            payload: payload.as_slice(),
+            payload,
             list_id: group.header.list_id,
         });
     }
@@ -4505,7 +4552,7 @@ mod tests {
         pre_rerank_candidate_limit, rerank_group_payload_for_candidate, select_probe_lists,
         select_probe_lists_with_adaptive, use_scratch_soa_batch_decode_for_format, CandidateTopK,
         EcIvfCentroidScore, EcIvfScoredCandidate, IvfDensePostingBlockScratch,
-        IvfPostingScratchSoa, LoadedRerankGroup, ProbeBlockRange,
+        IvfPostingScratchSoa, LoadedRerankGroup, ProbeBlockRange, SelectedRerankPayloadSlab,
     };
     use crate::storage::page::ItemPointer;
 
@@ -4748,7 +4795,7 @@ mod tests {
                 .flat_map(|(_, _, payload)| payload.iter().copied())
                 .collect(),
             header,
-            selected_payloads_by_heap_tid: None,
+            selected_payloads: None,
         }
     }
 
@@ -4764,6 +4811,42 @@ mod tests {
             ],
             &[],
         );
+        let mut groups = HashMap::new();
+        groups.insert(group_tid, group);
+
+        let mut direct_candidate = candidate(12, 1, 0.0);
+        direct_candidate.rerank_tid = group_tid;
+        let direct = rerank_group_payload_for_candidate(&groups, &direct_candidate, 2).unwrap();
+        assert_eq!(direct.payload, &[0x20, 0x21]);
+        assert_eq!(direct.list_id, 7);
+
+        let fallback_candidate = candidate(11, 1, 0.0);
+        let fallback = rerank_group_payload_for_candidate(&groups, &fallback_candidate, 2).unwrap();
+        assert_eq!(fallback.payload, &[0x10, 0x11]);
+        assert_eq!(fallback.list_id, 7);
+    }
+
+    #[test]
+    fn rerank_group_payload_lookup_uses_selected_payload_slab() {
+        let group_tid = candidate(90, 1, 0.0).heap_tid;
+        let first_heap_tid = candidate(11, 1, 0.0).heap_tid;
+        let second_heap_tid = candidate(12, 1, 0.0).heap_tid;
+        let mut group = loaded_rerank_group(
+            &[
+                (first_heap_tid, vec![0x10, 0x11]),
+                (second_heap_tid, vec![0x20, 0x21]),
+            ],
+            &[],
+        );
+        let mut payload_index_by_heap_tid = HashMap::new();
+        payload_index_by_heap_tid.insert(second_heap_tid, 0);
+        payload_index_by_heap_tid.insert(first_heap_tid, 1);
+        group.payloads.clear();
+        group.selected_payloads = Some(SelectedRerankPayloadSlab {
+            payloads: vec![0x20, 0x21, 0x10, 0x11],
+            payload_index_by_heap_tid,
+            payload_len: 2,
+        });
         let mut groups = HashMap::new();
         groups.insert(group_tid, group);
 
