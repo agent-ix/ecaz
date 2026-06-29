@@ -1,8 +1,10 @@
-# Task 123 Review Request: Local Multi-Instance Communications + Prune A/B
+# Task 123 Review Request: Local Multi-Instance Communications Measurement
 
 ## Scope
 
 This packet responds to the reopened Task 121/123 testing gap with a 200-query local PG18 multi-instance measurement focused on the core SPIRE routing/materialization/remote heap algorithm. It does not claim true cross-network coverage.
+
+This packet also incorporates the pre-positioned reviewer feedback now present at `feedback/2026-06-28-01-reviewer.md`: for `boundary_replica_count > 0`, the current pre-materialization prune is structurally inert because the candidate configs use `VecIdDedupeEnabled`. Therefore the prune on/off arms here are a no-op confirmation and should not be read as a valid prune efficacy A/B for the b2/b4 candidates.
 
 The run covers:
 
@@ -39,7 +41,11 @@ Generated corpus/query TSVs were deleted before commit, per packet rules. The pa
 
 ## Verdict
 
-The local multi-instance core path is now measurable with structured artifacts, clean projection coverage, and no remote heap dispatch failures. The earlier 32-query latency optimism should remain retracted: the 200-query evidence does not show a closeout-quality latency win for pre-materialization prune.
+The local multi-instance core path is now measurable with structured artifacts, clean projection coverage, and no remote heap dispatch failures. The earlier 32-query latency optimism should remain retracted.
+
+The review-relevant result is the projection/communications signal: `id,source` sends about 73.9 MB of heap payload over the three remotes for 200 queries, while `id` sends 48 KB, but latency is close within each surface. That points away from transport payload bytes as the dominant latency driver for this local core path.
+
+This is not a prune closeout: the b2/b4 prune arm is confirmed inert under the current dedupe mode. A meaningful prune A/B still needs either a recall-safe implementation under `VecIdDedupeEnabled` or an explicitly scoped b0 mechanism datapoint.
 
 Both fixtures passed:
 
@@ -88,4 +94,5 @@ Measured heap payload from per-node timeline rows:
 - The projection failure from packet 012 is fixed for the local multi-instance core path by running with `ec_spire.max_remote_payload_bytes_per_row=16384`; both `id,source` and `id` projections complete.
 - The packet preserves structured `results.jsonl` evidence under each fixture's nested bench suite. The top-level suite `results.jsonl` is empty because the local multinode harness writes the production-read result artifacts inside the fixture directories.
 - Disk was not in the prior ENOSPC condition during this run. After cleanup, `/dev/sdf` mounted at `/tmp` had `48G` available and the packet artifact directory was `1.4M`.
-- This packet supports a conservative algorithm verdict: `id` projection materially reduces payload bytes, but `ec_spire.pre_materialization_prune` itself does not materially improve latency in the 200-query local multi-instance A/B.
+- This packet supports a conservative algorithm verdict: `id` projection materially reduces payload bytes, but payload bytes are not the dominant latency driver in this local multi-instance measurement.
+- `ec_spire.pre_materialization_prune` is not evaluated as an engaged b2/b4 candidate lever here; the on/off rows are retained as evidence that the existing guard is inert for these boundary-replica configs.

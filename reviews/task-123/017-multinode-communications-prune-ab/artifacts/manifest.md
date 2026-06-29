@@ -145,8 +145,9 @@ Per-node heap payload from `n1024-b2-200q/bench-suite/results.jsonl`:
 - The earlier 32-query claim that multi-instance reversed the latency no-go is not supported by this 200-query evidence.
 - The prior projection-column failure is resolved for this local multi-instance path: both `id,source` and `id` projections complete with `remote_heap_failed_dispatch_sum=0`.
 - The `id` projection greatly reduces measured heap payload bytes, from `73896000` total bytes to `48000` total bytes over 200 queries.
-- `ec_spire.pre_materialization_prune` does not show a material latency win in this 200-query A/B:
+- Per reviewer feedback now committed at `reviews/task-123/017-multinode-communications-prune-ab/feedback/2026-06-28-01-reviewer.md`, the current prune guard is structurally inert for these b2/b4 configs because `boundary_replica_count > 0` selects `VecIdDedupeEnabled`. The on/off rows below are therefore a no-op confirmation, not a meaningful prune efficacy A/B:
   - n128 source default: prune on `5524.614 ms` p50 vs prune off `5508.976 ms`.
   - n1024 source default: prune on `851.406 ms` p50 vs prune off `836.644 ms`.
   - n1024 id default: prune on `803.108 ms` p50 vs prune off `796.862 ms`.
 - n1024/b2 is substantially faster than n128/b4 in this local multi-instance core path, but still far above the earlier 32-query optimistic numbers.
+- The communications/projection result is the usable signal from this packet: shrinking remote heap payload from `73896000` bytes to `48000` bytes did not produce a matching latency collapse, so transport payload bytes are unlikely to be the dominant local core-path cost at this scale.
