@@ -161,11 +161,10 @@ impl RerankPayloadCodec {
                     residual: rabitq_residual,
                 }))
             }
-            RerankFormat::TurboQuant | RerankFormat::TurboQuant2 | RerankFormat::TurboQuant3 => {
+            RerankFormat::TurboQuant | RerankFormat::TurboQuant2 => {
                 let bits = match rerank_format {
                     RerankFormat::TurboQuant => crate::DEFAULT_QUANT_BITS,
                     RerankFormat::TurboQuant2 => 2,
-                    RerankFormat::TurboQuant3 => 3,
                     _ => unreachable!("matched only concrete TurboQuant rerank formats"),
                 };
                 let quantizer = IvfQuantizer::resolve_turboquant_with_bits(dimensions, bits)?;
@@ -1078,7 +1077,6 @@ impl RerankScorer {
             | RerankFormat::RaBitQ8
             | RerankFormat::TurboQuant
             | RerankFormat::TurboQuant2
-            | RerankFormat::TurboQuant3
             | RerankFormat::TurboQuantBinary => {
                 if storage_format != StorageFormat::CoarseRerank {
                     return Err(format!(
@@ -1790,7 +1788,7 @@ mod tests {
     }
 
     #[test]
-    fn turboquant_low_bit_sidecars_use_compact_qjl_payload() {
+    fn turboquant2_sidecar_uses_compact_qjl_payload() {
         let tq4 = RerankSidecarEncoder::resolve(
             RerankFormat::TurboQuant,
             1536,
@@ -1805,26 +1803,13 @@ mod tests {
         )
         .unwrap()
         .unwrap();
-        let tq3 = RerankSidecarEncoder::resolve(
-            RerankFormat::TurboQuant3,
-            1536,
-            EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
-        )
-        .unwrap()
-        .unwrap();
 
         assert_eq!(tq4.payload_len(1536), crate::code_len(1536, 4));
         assert_eq!(
             tq2.payload_len(1536),
             crate::code_len(1536, 2) + std::mem::size_of::<f32>()
         );
-        assert_eq!(
-            tq3.payload_len(1536),
-            crate::code_len(1536, 3) + std::mem::size_of::<f32>()
-        );
         assert!(tq2.payload_len(1536) < tq4.payload_len(1536));
-        assert!(tq2.payload_len(1536) < tq3.payload_len(1536));
-        assert!(tq3.payload_len(1536) < tq4.payload_len(1536));
     }
 
     #[test]
@@ -1904,7 +1889,6 @@ mod tests {
             RerankFormat::RaBitQ8,
             RerankFormat::TurboQuant,
             RerankFormat::TurboQuant2,
-            RerankFormat::TurboQuant3,
         ] {
             let scorer = RerankScorer::resolve(
                 format,
@@ -1947,7 +1931,6 @@ mod tests {
             RerankFormat::RaBitQ8,
             RerankFormat::TurboQuant,
             RerankFormat::TurboQuant2,
-            RerankFormat::TurboQuant3,
         ] {
             let encoder = RerankSidecarEncoder::resolve(
                 format,
@@ -1995,10 +1978,7 @@ mod tests {
                 .unwrap();
             assert_eq!(scores[0].to_bits(), corrected_score.to_bits());
             assert_eq!(scores[1].to_bits(), corrected_score.to_bits());
-            if matches!(
-                format,
-                RerankFormat::TurboQuant | RerankFormat::TurboQuant2 | RerankFormat::TurboQuant3
-            ) {
+            if matches!(format, RerankFormat::TurboQuant | RerankFormat::TurboQuant2) {
                 assert!(scorer.supports_sidecar_payload_ref_batch());
                 let payload_refs = [&payload[..], &payload[..]];
                 let mut ref_scores = [0.0_f32; 2];
