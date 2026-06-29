@@ -79,7 +79,9 @@ pub(super) enum RerankPayloadCodec {
         residual: bool,
     },
     TurboQuant {
+        format: RerankFormat,
         score_mode: RaBitQRerankScoreMode,
+        bits: u8,
         quantizer: IvfQuantizer,
         code_len: usize,
         payload_len: usize,
@@ -159,10 +161,15 @@ impl RerankPayloadCodec {
                     residual: rabitq_residual,
                 }))
             }
-            RerankFormat::TurboQuant => {
-                let quantizer = IvfQuantizer::resolve(StorageFormat::TurboQuant, dimensions)?;
+            RerankFormat::TurboQuant | RerankFormat::TurboQuant2 => {
+                let bits = match rerank_format {
+                    RerankFormat::TurboQuant => crate::DEFAULT_QUANT_BITS,
+                    RerankFormat::TurboQuant2 => 2,
+                    _ => unreachable!("matched only concrete TurboQuant rerank formats"),
+                };
+                let quantizer = IvfQuantizer::resolve_turboquant_with_bits(dimensions, bits)?;
                 let code_len = quantizer.payload_len();
-                let stores_gamma = turboquant_payload_needs_gamma(dimensions);
+                let stores_gamma = turboquant_payload_needs_gamma(dimensions, bits);
                 let payload_len = code_len
                     + if stores_gamma {
                         std::mem::size_of::<f32>()
@@ -170,7 +177,9 @@ impl RerankPayloadCodec {
                         0
                     };
                 Ok(Some(Self::TurboQuant {
+                    format: rerank_format,
                     score_mode: rabitq_score_mode,
+                    bits,
                     quantizer,
                     code_len,
                     payload_len,
@@ -210,7 +219,7 @@ impl RerankPayloadCodec {
         match self {
             Self::F16 { .. } => RerankFormat::F16,
             Self::RaBitQ { format, .. } => *format,
-            Self::TurboQuant { .. } => RerankFormat::TurboQuant,
+            Self::TurboQuant { format, .. } => *format,
             Self::TurboQuantBinary { .. } => RerankFormat::TurboQuantBinary,
         }
     }
@@ -607,6 +616,7 @@ impl RerankPayloadCodec {
             (
                 Self::TurboQuant {
                     score_mode,
+                    bits,
                     quantizer,
                     code_len,
                     payload_len,
@@ -627,6 +637,22 @@ impl RerankPayloadCodec {
                 }
                 match score_mode {
                     RaBitQRerankScoreMode::Estimator | RaBitQRerankScoreMode::LeastSquares => {
+                        if *bits != crate::DEFAULT_QUANT_BITS {
+                            for (out, payload) in out_scores
+                                .iter_mut()
+                                .zip(payloads.chunks_exact(*payload_len))
+                            {
+                                let (gamma, code) = split_turboquant_payload(
+                                    payload,
+                                    *code_len,
+                                    *payload_len,
+                                    *stores_gamma,
+                                )?;
+                                *out =
+                                    -quantizer.score_ip_from_parts(prepared_query, gamma, code)?;
+                            }
+                            return Ok(());
+                        }
                         let mut gammas = Vec::with_capacity(out_scores.len());
                         let mut code_slab = Vec::with_capacity(out_scores.len() * code_len);
                         for payload in payloads.chunks_exact(*payload_len) {
@@ -720,6 +746,7 @@ impl RerankPayloadCodec {
             (
                 Self::TurboQuant {
                     score_mode,
+                    bits,
                     quantizer,
                     code_len,
                     payload_len,
@@ -740,6 +767,22 @@ impl RerankPayloadCodec {
                 }
                 match score_mode {
                     RaBitQRerankScoreMode::Estimator | RaBitQRerankScoreMode::LeastSquares => {
+                        if *bits != crate::DEFAULT_QUANT_BITS {
+                            for (out, payload) in out_scores.iter_mut().zip(payloads.iter()) {
+                                let (gamma, code) = split_turboquant_payload(
+                                    payload,
+                                    *code_len,
+                                    *payload_len,
+                                    *stores_gamma,
+                                )?;
+                                *out = -quantizer.score_ip_from_parts(
+                                    prepared_query,
+                                    gamma,
+                                    code,
+                                )?;
+                            }
+                            return Ok(());
+                        }
                         let mut gammas = Vec::with_capacity(out_scores.len());
                         let mut codes = Vec::with_capacity(out_scores.len());
                         for payload in payloads {
@@ -1005,13 +1048,9 @@ fn turboquant_binary_word_refs(words: &[u64], word_count: usize) -> Vec<&[u64]> 
     words.chunks_exact(word_count).collect()
 }
 
-fn turboquant_payload_needs_gamma(dimensions: usize) -> bool {
-    crate::quant::prod::ProdQuantizer::cached(
-        dimensions,
-        crate::DEFAULT_QUANT_BITS,
-        crate::DEFAULT_QUANT_SEED,
-    )
-    .exact_score_uses_qjl()
+fn turboquant_payload_needs_gamma(dimensions: usize, bits: u8) -> bool {
+    crate::quant::prod::ProdQuantizer::cached(dimensions, bits, crate::DEFAULT_QUANT_SEED)
+        .exact_score_uses_qjl()
 }
 
 impl RerankScorer {
@@ -1037,6 +1076,7 @@ impl RerankScorer {
             | RerankFormat::RaBitQ4
             | RerankFormat::RaBitQ8
             | RerankFormat::TurboQuant
+            | RerankFormat::TurboQuant2
             | RerankFormat::TurboQuantBinary => {
                 if storage_format != StorageFormat::CoarseRerank {
                     return Err(format!(
@@ -1748,6 +1788,31 @@ mod tests {
     }
 
     #[test]
+    fn turboquant2_sidecar_uses_compact_qjl_payload() {
+        let tq4 = RerankSidecarEncoder::resolve(
+            RerankFormat::TurboQuant,
+            1536,
+            EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
+        )
+        .unwrap()
+        .unwrap();
+        let tq2 = RerankSidecarEncoder::resolve(
+            RerankFormat::TurboQuant2,
+            1536,
+            EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(tq4.payload_len(1536), crate::code_len(1536, 4));
+        assert_eq!(
+            tq2.payload_len(1536),
+            crate::code_len(1536, 2) + std::mem::size_of::<f32>()
+        );
+        assert!(tq2.payload_len(1536) < tq4.payload_len(1536));
+    }
+
+    #[test]
     fn turboquant_binary_sidecar_is_compact_no_qjl_sign_payload() {
         let encoder = RerankSidecarEncoder::resolve(
             RerankFormat::TurboQuantBinary,
@@ -1823,6 +1888,7 @@ mod tests {
             RerankFormat::RaBitQ4,
             RerankFormat::RaBitQ8,
             RerankFormat::TurboQuant,
+            RerankFormat::TurboQuant2,
         ] {
             let scorer = RerankScorer::resolve(
                 format,
@@ -1864,6 +1930,7 @@ mod tests {
             RerankFormat::RaBitQ4,
             RerankFormat::RaBitQ8,
             RerankFormat::TurboQuant,
+            RerankFormat::TurboQuant2,
         ] {
             let encoder = RerankSidecarEncoder::resolve(
                 format,
@@ -1911,7 +1978,7 @@ mod tests {
                 .unwrap();
             assert_eq!(scores[0].to_bits(), corrected_score.to_bits());
             assert_eq!(scores[1].to_bits(), corrected_score.to_bits());
-            if format == RerankFormat::TurboQuant {
+            if matches!(format, RerankFormat::TurboQuant | RerankFormat::TurboQuant2) {
                 assert!(scorer.supports_sidecar_payload_ref_batch());
                 let payload_refs = [&payload[..], &payload[..]];
                 let mut ref_scores = [0.0_f32; 2];

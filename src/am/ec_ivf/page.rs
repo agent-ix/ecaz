@@ -263,6 +263,8 @@ pub enum RerankFormat {
     RaBitQ8 = 4,
     TurboQuant = 5,
     F16 = 6,
+    TurboQuantBinary = 7,
+    TurboQuant2 = 8,
 }
 
 #[cfg(not(any(feature = "pg17", feature = "pg18")))]

@@ -52,8 +52,8 @@ pub(super) struct IvfPqFastScanModel {
 pub(super) struct IvfQuantizer {
     profile: IvfQuantizerProfile,
     dimensions: usize,
-    /// Per-dim code width for the RaBitQ branch. Ignored for
-    /// TurboQuant / PqFastScan profiles. Always one of {1, 2, 4, 8}.
+    /// Per-dim code width for TurboQuant and RaBitQ branches. Ignored for
+    /// PqFastScan. RaBitQ supports {1, 2, 4, 8}; TurboQuant supports {2, 4, 8}.
     rabitq_bits: u8,
     /// Integer scalar clip radius for RaBitQ encoders/scorers. Stored as an
     /// integer because reloptions currently expose the Task 111h A/B values
@@ -107,6 +107,20 @@ impl IvfQuantizer {
         dimensions: usize,
     ) -> Result<Self, String> {
         Self::resolve_with_pq_group_size_and_bits(storage_format, dimensions, None, None)
+    }
+
+    pub(super) fn resolve_turboquant_with_bits(
+        dimensions: usize,
+        quant_bits: u8,
+    ) -> Result<Self, String> {
+        Self::resolve_with_pq_group_size_bits_and_residual(
+            StorageFormat::TurboQuant,
+            dimensions,
+            None,
+            Some(quant_bits),
+            false,
+            None,
+        )
     }
 
     pub(super) fn resolve_with_pq_group_size(
@@ -165,10 +179,13 @@ impl IvfQuantizer {
             b @ (1 | 2 | 4 | 8) => b,
             other => {
                 return Err(format!(
-                    "ec_ivf RaBitQ quant_bits must be one of 1, 2, 4, 8; got {other}"
+                    "ec_ivf quant_bits must be one of 1, 2, 4, 8; got {other}"
                 ))
             }
         };
+        if matches!(profile, IvfQuantizerProfile::TurboQuant) && bits == 1 {
+            return Err("ec_ivf TurboQuant quant_bits must be one of 2, 4, 8".to_owned());
+        }
         let quant_clip = rabitq_quant_clip.unwrap_or(EC_IVF_DEFAULT_RABITQ_RERANK_CLIP as u8);
         if quant_clip == 0 {
             return Err("ec_ivf RaBitQ quant_clip must be positive".to_owned());
@@ -200,7 +217,7 @@ impl IvfQuantizer {
             IvfQuantizerProfile::TurboQuant => {
                 let quantizer = ProdQuantizer::cached(
                     self.dimensions,
-                    crate::DEFAULT_QUANT_BITS,
+                    self.rabitq_bits,
                     crate::DEFAULT_QUANT_SEED,
                 );
                 let encoded = quantizer.encode(source);
@@ -304,7 +321,7 @@ impl IvfQuantizer {
             IvfQuantizerProfile::TurboQuant => {
                 let quantizer = ProdQuantizer::cached(
                     self.dimensions,
-                    crate::DEFAULT_QUANT_BITS,
+                    self.rabitq_bits,
                     crate::DEFAULT_QUANT_SEED,
                 );
                 match quantizer.exact_score_mode() {
@@ -375,7 +392,7 @@ impl IvfQuantizer {
             (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::TurboQuant(prepared_query)) => {
                 let quantizer = ProdQuantizer::cached(
                     self.dimensions,
-                    crate::DEFAULT_QUANT_BITS,
+                    self.rabitq_bits,
                     crate::DEFAULT_QUANT_SEED,
                 );
                 Ok(quantizer.score_ip_from_parts(prepared_query, gamma, payload))
@@ -386,7 +403,7 @@ impl IvfQuantizer {
             ) => {
                 let quantizer = ProdQuantizer::cached(
                     self.dimensions,
-                    crate::DEFAULT_QUANT_BITS,
+                    self.rabitq_bits,
                     crate::DEFAULT_QUANT_SEED,
                 );
                 Ok(quantizer.score_ip_from_parts_lut_no_qjl_4bit(prepared_query, payload))
@@ -441,7 +458,7 @@ impl IvfQuantizer {
                 }
                 let quantizer = ProdQuantizer::cached(
                     self.dimensions,
-                    crate::DEFAULT_QUANT_BITS,
+                    self.rabitq_bits,
                     crate::DEFAULT_QUANT_SEED,
                 );
                 let decoded = quantizer.decode_approximate_from_code(payload);
@@ -640,7 +657,7 @@ impl IvfQuantizer {
 
                 let quantizer = ProdQuantizer::cached(
                     self.dimensions,
-                    crate::DEFAULT_QUANT_BITS,
+                    self.rabitq_bits,
                     crate::DEFAULT_QUANT_SEED,
                 );
                 let mut batch = CandidateBatch::with_capacity(gammas.len());
@@ -685,7 +702,7 @@ impl IvfQuantizer {
 
                 let quantizer = ProdQuantizer::cached(
                     self.dimensions,
-                    crate::DEFAULT_QUANT_BITS,
+                    self.rabitq_bits,
                     crate::DEFAULT_QUANT_SEED,
                 );
                 let mut batch = CandidateBatch::with_capacity(gammas.len());
@@ -785,7 +802,7 @@ impl IvfQuantizer {
 
                 let quantizer = ProdQuantizer::cached(
                     self.dimensions,
-                    crate::DEFAULT_QUANT_BITS,
+                    self.rabitq_bits,
                     crate::DEFAULT_QUANT_SEED,
                 );
                 let mut batch = CandidateBatch::with_capacity(gammas.len());
@@ -840,7 +857,7 @@ impl IvfQuantizer {
 
                 let quantizer = ProdQuantizer::cached(
                     self.dimensions,
-                    crate::DEFAULT_QUANT_BITS,
+                    self.rabitq_bits,
                     crate::DEFAULT_QUANT_SEED,
                 );
                 let mut batch = CandidateBatch::with_capacity(gammas.len());
@@ -986,9 +1003,7 @@ impl IvfQuantizer {
 
     pub(super) fn payload_len(self) -> usize {
         match self.profile {
-            IvfQuantizerProfile::TurboQuant => {
-                crate::code_len(self.dimensions, crate::DEFAULT_QUANT_BITS)
-            }
+            IvfQuantizerProfile::TurboQuant => crate::code_len(self.dimensions, self.rabitq_bits),
             IvfQuantizerProfile::PqFastScan { group_count, .. } => group_count.div_ceil(2),
             IvfQuantizerProfile::RaBitQ => code_len_for(self.dimensions, self.rabitq_bits)
                 .expect("RaBitQ quant_bits should be validated at resolve time"),
@@ -1219,7 +1234,7 @@ impl QuantCodec for IvfQuantCodec<'_> {
             ) => {
                 let quantizer = ProdQuantizer::cached(
                     self.quantizer.dimensions,
-                    crate::DEFAULT_QUANT_BITS,
+                    self.quantizer.rabitq_bits,
                     crate::DEFAULT_QUANT_SEED,
                 );
                 score_turboquant_no_qjl_4bit_batch_for(
@@ -1233,7 +1248,7 @@ impl QuantCodec for IvfQuantCodec<'_> {
             (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::TurboQuant(prepared_query)) => {
                 let quantizer = ProdQuantizer::cached(
                     self.quantizer.dimensions,
-                    crate::DEFAULT_QUANT_BITS,
+                    self.quantizer.rabitq_bits,
                     crate::DEFAULT_QUANT_SEED,
                 );
                 score_turboquant_qjl_batch_for(

@@ -2469,6 +2469,7 @@ fn should_run_tq_stage2_final_exact_rerank(
         && matches!(
             index_options.rerank_format,
             super::options::RerankFormat::TurboQuant
+                | super::options::RerankFormat::TurboQuant2
                 | super::options::RerankFormat::TurboQuantBinary
         )
         && super::options::resolve_scan_stage2_final_rerank_width(
