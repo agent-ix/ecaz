@@ -1,0 +1,58 @@
+diff --git a/src/am/ec_ivf/scan.rs b/src/am/ec_ivf/scan.rs
+--- a/src/am/ec_ivf/scan.rs
++++ b/src/am/ec_ivf/scan.rs
+@@
+ fn collect_ranked_probe_candidates<I>(
+     candidates: I,
+     limit: Option<usize>,
+ ) -> Vec<EcIvfScoredCandidate>
+@@
+     }
+ }
+ 
++fn retain_ranked_prefix(
++    candidates: &mut Vec<EcIvfScoredCandidate>,
++    prefix_len: usize,
++    retained_len: usize,
++) {
++    debug_assert!(prefix_len <= candidates.len());
++    if retained_len >= prefix_len {
++        candidates[..prefix_len].sort_by(candidate_cmp);
++        return;
++    }
++    let retained = collect_ranked_probe_candidates(
++        candidates[..prefix_len].iter().copied(),
++        Some(retained_len),
++    );
++    candidates[..retained.len()].copy_from_slice(&retained);
++    candidates.truncate(retained.len());
++}
++
+ fn consume_live_tid_budget(
+     remaining_live_tids_by_list: &mut [u64],
+     list_id: u32,
+@@
+                     )
+                 },
+             };
+-            candidates[..reranked_prefix_len].sort_by(candidate_cmp);
+ 
+             if should_run_tq_stage2_final_exact_rerank(index_options, sidecar_head) {
+                 let final_width = super::options::resolve_scan_stage2_final_rerank_width(
+@@
+                         stage2_stats.rows,
+                         final_len,
+                         stage2_stats.payload_bytes_scored,
+                     );
++                    retain_ranked_prefix(candidates, reranked_prefix_len, final_len);
+                     let exact_scorer = super::rerank::RerankScorer::resolve(
+                         super::options::RerankFormat::F32,
+                         super::options::RerankPlacement::SourceDiagnostic,
+@@
+                 }
+             }
+ 
++            candidates[..reranked_prefix_len].sort_by(candidate_cmp);
+             // The reranked prefix is sorted by the configured rerank score; the
+             // skipped suffix (provably worse by the lazy contract) keeps its
+             // approximate score and stays after the prefix. Today
