@@ -2434,6 +2434,34 @@
     }
 
     #[test]
+    fn miri_pre_materialization_prune_threshold_engages_for_bounded_dedupe() {
+        let mut accumulator = SpireScoredCandidateAccumulator::new(
+            SpireCandidateDedupeMode::VecIdDedupeEnabled,
+            Some(2),
+        );
+
+        assert_eq!(accumulator.pre_materialization_min_ip_to_keep(), None);
+
+        accumulator.append(scored_candidate(1, 10, 1, -10.0));
+        accumulator.append(scored_candidate(2, 10, 2, -7.0));
+
+        assert_eq!(
+            accumulator.pre_materialization_min_ip_to_keep(),
+            Some(7.0)
+        );
+
+        accumulator.append(scored_candidate(3, 10, 3, -6.0));
+        accumulator.append(scored_candidate(1, 10, 4, -6.5));
+
+        let candidates = accumulator.into_ranked();
+        assert_eq!(candidates.len(), 2);
+        assert_eq!(candidates[0].vec_id.local_sequence(), Some(1));
+        assert_eq!(candidates[0].score, -10.0);
+        assert_eq!(candidates[1].vec_id.local_sequence(), Some(2));
+        assert_eq!(candidates[1].score, -7.0);
+    }
+
+    #[test]
     fn miri_rank_routed_leaf_rows_by_ip_keeps_primary_tie_break_under_bounded_dedupe() {
         let routed = vec![SpireRoutedLeafScanRows {
             epoch: 1,

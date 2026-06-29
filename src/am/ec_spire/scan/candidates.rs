@@ -3609,9 +3609,6 @@ impl SpireScoredCandidateAccumulator {
     }
 
     fn pre_materialization_min_ip_to_keep(&mut self) -> Option<f32> {
-        if self.dedupe_mode != SpireCandidateDedupeMode::NoReplicaDedupeDisabled {
-            return None;
-        }
         self.min_ip_to_keep()
     }
 
