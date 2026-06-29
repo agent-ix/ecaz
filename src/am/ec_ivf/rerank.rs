@@ -75,6 +75,7 @@ pub(super) enum RerankPayloadCodec {
         quantizer: IvfQuantizer,
         code_len: usize,
         payload_len: usize,
+        stores_gamma: bool,
         centroid_relative: bool,
     },
 }
@@ -147,12 +148,19 @@ impl RerankPayloadCodec {
             RerankFormat::TurboQuant => {
                 let quantizer = IvfQuantizer::resolve(StorageFormat::TurboQuant, dimensions)?;
                 let code_len = quantizer.payload_len();
-                let payload_len = std::mem::size_of::<f32>() + code_len;
+                let stores_gamma = turboquant_payload_needs_gamma(dimensions);
+                let payload_len = code_len
+                    + if stores_gamma {
+                        std::mem::size_of::<f32>()
+                    } else {
+                        0
+                    };
                 Ok(Some(Self::TurboQuant {
                     score_mode: rabitq_score_mode,
                     quantizer,
                     code_len,
                     payload_len,
+                    stores_gamma,
                     centroid_relative: rabitq_residual,
                 }))
             }
@@ -256,6 +264,7 @@ impl RerankPayloadCodec {
                 quantizer,
                 code_len,
                 payload_len,
+                stores_gamma,
                 centroid_relative,
                 ..
             } => {
@@ -265,7 +274,13 @@ impl RerankPayloadCodec {
                             .to_owned(),
                     );
                 }
-                encode_turboquant_payload(*quantizer, *code_len, *payload_len, source)
+                encode_turboquant_payload(
+                    *quantizer,
+                    *code_len,
+                    *payload_len,
+                    *stores_gamma,
+                    source,
+                )
             }
         }
     }
@@ -297,6 +312,7 @@ impl RerankPayloadCodec {
                 quantizer,
                 code_len,
                 payload_len,
+                stores_gamma,
                 centroid_relative: true,
                 ..
             } => {
@@ -312,7 +328,13 @@ impl RerankPayloadCodec {
                     .zip(centroid.iter())
                     .map(|(value, center)| value - center)
                     .collect::<Vec<_>>();
-                encode_turboquant_payload(*quantizer, *code_len, *payload_len, &residual)
+                encode_turboquant_payload(
+                    *quantizer,
+                    *code_len,
+                    *payload_len,
+                    *stores_gamma,
+                    &residual,
+                )
             }
             _ => self.encode_source(source),
         }
@@ -390,6 +412,7 @@ impl RerankPayloadCodec {
                     quantizer,
                     code_len,
                     payload_len,
+                    stores_gamma,
                     ..
                 },
                 RerankPreparedQuery::Quantized {
@@ -397,7 +420,8 @@ impl RerankPayloadCodec {
                     query,
                 },
             ) => {
-                let (gamma, code) = split_turboquant_payload(payload, *code_len, *payload_len)?;
+                let (gamma, code) =
+                    split_turboquant_payload(payload, *code_len, *payload_len, *stores_gamma)?;
                 let estimate = match score_mode {
                     RaBitQRerankScoreMode::Estimator | RaBitQRerankScoreMode::LeastSquares => {
                         quantizer.score_ip_from_parts(prepared_query, gamma, code)?
@@ -502,6 +526,7 @@ impl RerankPayloadCodec {
                     quantizer,
                     code_len,
                     payload_len,
+                    stores_gamma,
                     ..
                 },
                 RerankPreparedQuery::Quantized {
@@ -521,8 +546,12 @@ impl RerankPayloadCodec {
                         let mut gammas = Vec::with_capacity(out_scores.len());
                         let mut code_slab = Vec::with_capacity(out_scores.len() * code_len);
                         for payload in payloads.chunks_exact(*payload_len) {
-                            let (gamma, code) =
-                                split_turboquant_payload(payload, *code_len, *payload_len)?;
+                            let (gamma, code) = split_turboquant_payload(
+                                payload,
+                                *code_len,
+                                *payload_len,
+                                *stores_gamma,
+                            )?;
                             gammas.push(gamma);
                             code_slab.extend_from_slice(code);
                         }
@@ -550,8 +579,12 @@ impl RerankPayloadCodec {
                             .iter_mut()
                             .zip(payloads.chunks_exact(*payload_len))
                         {
-                            let (_gamma, code) =
-                                split_turboquant_payload(payload, *code_len, *payload_len)?;
+                            let (_gamma, code) = split_turboquant_payload(
+                                payload,
+                                *code_len,
+                                *payload_len,
+                                *stores_gamma,
+                            )?;
                             *out = -quantizer.score_ip_dequantized_from_parts(query, code)?;
                         }
                     }
@@ -578,6 +611,7 @@ impl RerankPayloadCodec {
                     quantizer,
                     code_len,
                     payload_len,
+                    stores_gamma,
                     ..
                 },
                 RerankPreparedQuery::Quantized {
@@ -598,7 +632,12 @@ impl RerankPayloadCodec {
                         let mut codes = Vec::with_capacity(out_scores.len());
                         for payload in payloads {
                             let (gamma, code) =
-                                split_turboquant_payload(payload, *code_len, *payload_len)?;
+                                split_turboquant_payload(
+                                    payload,
+                                    *code_len,
+                                    *payload_len,
+                                    *stores_gamma,
+                                )?;
                             gammas.push(gamma);
                             codes.push(code);
                         }
@@ -624,7 +663,12 @@ impl RerankPayloadCodec {
                     RaBitQRerankScoreMode::ExactDequant => {
                         for (out, payload) in out_scores.iter_mut().zip(payloads.iter()) {
                             let (_gamma, code) =
-                                split_turboquant_payload(payload, *code_len, *payload_len)?;
+                                split_turboquant_payload(
+                                    payload,
+                                    *code_len,
+                                    *payload_len,
+                                    *stores_gamma,
+                                )?;
                             *out = -quantizer.score_ip_dequantized_from_parts(query, code)?;
                         }
                     }
@@ -686,6 +730,7 @@ fn encode_turboquant_payload(
     quantizer: IvfQuantizer,
     code_len: usize,
     payload_len: usize,
+    stores_gamma: bool,
     source: &[f32],
 ) -> Result<Vec<u8>, String> {
     let (_dimensions, gamma, code) = quantizer.encode_source(source)?;
@@ -696,7 +741,9 @@ fn encode_turboquant_payload(
         ));
     }
     let mut payload = Vec::with_capacity(payload_len);
-    payload.extend_from_slice(&gamma.to_le_bytes());
+    if stores_gamma {
+        payload.extend_from_slice(&gamma.to_le_bytes());
+    }
     payload.extend_from_slice(&code);
     if payload.len() != payload_len {
         return Err(format!(
@@ -711,6 +758,7 @@ fn split_turboquant_payload(
     payload: &[u8],
     code_len: usize,
     payload_len: usize,
+    stores_gamma: bool,
 ) -> Result<(f32, &[u8]), String> {
     if payload.len() != payload_len {
         return Err(format!(
@@ -718,12 +766,18 @@ fn split_turboquant_payload(
             payload.len()
         ));
     }
-    let gamma = f32::from_le_bytes(
-        payload[..std::mem::size_of::<f32>()]
-            .try_into()
-            .expect("turboquant gamma slice should be four bytes"),
-    );
-    let code = &payload[std::mem::size_of::<f32>()..];
+    let (gamma, code) = if stores_gamma {
+        (
+            f32::from_le_bytes(
+                payload[..std::mem::size_of::<f32>()]
+                    .try_into()
+                    .expect("turboquant gamma slice should be four bytes"),
+            ),
+            &payload[std::mem::size_of::<f32>()..],
+        )
+    } else {
+        (0.0, payload)
+    };
     if code.len() != code_len {
         return Err(format!(
             "ec_ivf turboquant rerank code length {} does not match expected {code_len}",
@@ -731,6 +785,15 @@ fn split_turboquant_payload(
         ));
     }
     Ok((gamma, code))
+}
+
+fn turboquant_payload_needs_gamma(dimensions: usize) -> bool {
+    crate::quant::prod::ProdQuantizer::cached(
+        dimensions,
+        crate::DEFAULT_QUANT_BITS,
+        crate::DEFAULT_QUANT_SEED,
+    )
+    .exact_score_uses_qjl()
 }
 
 impl RerankScorer {
@@ -1433,6 +1496,30 @@ mod tests {
         assert_eq!(encoder.payload_len(source.len()), source.len() * 2);
         assert_eq!(encoder.payload_alignment(), 2);
         assert_eq!(encoder.encode(&source).unwrap(), pack_f16_payload(&source));
+    }
+
+    #[test]
+    fn turboquant_sidecar_omits_gamma_for_no_qjl_lane_only() {
+        let no_qjl = RerankSidecarEncoder::resolve(
+            RerankFormat::TurboQuant,
+            1536,
+            EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
+        )
+        .unwrap()
+        .unwrap();
+        let qjl_active = RerankSidecarEncoder::resolve(
+            RerankFormat::TurboQuant,
+            1024,
+            EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(no_qjl.payload_len(1536), crate::code_len(1536, 4));
+        assert_eq!(
+            qjl_active.payload_len(1024),
+            crate::code_len(1024, 4) + std::mem::size_of::<f32>()
+        );
     }
 
     #[test]
