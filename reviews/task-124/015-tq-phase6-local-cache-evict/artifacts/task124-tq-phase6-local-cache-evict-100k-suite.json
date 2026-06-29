@@ -1,0 +1,129 @@
+{
+  "name": "task124-tq-phase6-local-cache-evict-100k-suite",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-124/015-tq-phase6-local-cache-evict/artifacts/local-cache-evict-100k",
+  "defaults": {
+    "profile": "ec_ivf",
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 100,
+    "iterations": 100,
+    "force_index": true,
+    "sample_backend_memory": true,
+    "memory_sample_interval_ms": 25,
+    "pg": 18,
+    "socket_dir": "/Users/peter/.pgrx"
+  },
+  "steps": [
+    {
+      "kind": "load",
+      "name": "load-100k-f32-w100",
+      "tags": ["task124", "phase6", "load", "baseline", "ec_real_100k", "f32", "w100"],
+      "prefix": "task124_phase6_f32_100k",
+      "profile": "ec_ivf",
+      "storage_format": "coarse_rerank",
+      "corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_100k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": ["nlists=64", "nprobe=32", "training_sample_rows=10000", "coarse_format=rabitq", "coarse_bits=1", "rerank=heap_f32", "rerank_placement=source", "rerank_format=f32", "rerank_width=100"],
+      "log_file": "${artifact_dir}/load-100k-f32-w100.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-tq-w75-g50-final15",
+      "tags": ["task124", "phase6", "load", "tq-stage2", "ec_real_100k", "turboquant", "w75", "g50", "final15"],
+      "prefix": "task124_phase6_tq_100k",
+      "profile": "ec_ivf",
+      "storage_format": "coarse_rerank",
+      "corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_100k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": ["nlists=64", "nprobe=32", "training_sample_rows=10000", "coarse_format=rabitq", "coarse_bits=1", "rerank=heap_f32", "rerank_placement=index", "rerank_format=turboquant", "rerank_width=75", "rerank_group_width=50", "stage2_final_rerank_width=15"],
+      "log_file": "${artifact_dir}/load-100k-tq-w75-g50-final15.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k-f32-w100",
+      "tags": ["task124", "phase6", "storage", "baseline", "ec_real_100k", "f32", "w100"],
+      "prefix": "task124_phase6_f32_100k",
+      "log_file": "${artifact_dir}/storage-100k-f32-w100.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k-tq-w75-g50-final15",
+      "tags": ["task124", "phase6", "storage", "tq-stage2", "ec_real_100k", "turboquant", "w75", "g50", "final15"],
+      "prefix": "task124_phase6_tq_100k",
+      "log_file": "${artifact_dir}/storage-100k-tq-w75-g50-final15.log"
+    },
+    {
+      "kind": "raw",
+      "name": "evict-100k-f32-before-latency",
+      "tags": ["task124", "phase6", "cache-evict", "baseline", "ec_real_100k", "f32"],
+      "args": ["--log-file", "reviews/task-124/015-tq-phase6-local-cache-evict/artifacts/local-cache-evict-100k/evict-100k-f32-before-latency.log", "dev", "evict-relation-cache", "--prefix", "task124_phase6_f32_100k"],
+      "expected_artifacts": ["${artifact_dir}/evict-100k-f32-before-latency.log"]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-f32-w100-cache-evict",
+      "tags": ["task124", "phase6", "latency", "cache-evict", "baseline", "ec_real_100k", "f32", "w100"],
+      "prefix": "task124_phase6_f32_100k",
+      "k": 10,
+      "sweep": [32, 64],
+      "rerank_width": 100,
+      "iterations": 100,
+      "cache_state": "local_macos_relation_f_nocache",
+      "session_gucs": ["ec_ivf.stage2_final_rerank_width=0"],
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-100k-f32-w100-cache-evict.log"
+    },
+    {
+      "kind": "raw",
+      "name": "evict-100k-tq-before-latency",
+      "tags": ["task124", "phase6", "cache-evict", "tq-stage2", "ec_real_100k", "turboquant"],
+      "args": ["--log-file", "reviews/task-124/015-tq-phase6-local-cache-evict/artifacts/local-cache-evict-100k/evict-100k-tq-before-latency.log", "dev", "evict-relation-cache", "--prefix", "task124_phase6_tq_100k"],
+      "expected_artifacts": ["${artifact_dir}/evict-100k-tq-before-latency.log"]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-tq-w75-g50-final15-cache-evict",
+      "tags": ["task124", "phase6", "latency", "cache-evict", "tq-stage2", "ec_real_100k", "turboquant", "w75", "g50", "final15"],
+      "prefix": "task124_phase6_tq_100k",
+      "k": 10,
+      "sweep": [32, 64],
+      "rerank_width": 75,
+      "iterations": 100,
+      "cache_state": "local_macos_relation_f_nocache",
+      "session_gucs": ["ec_ivf.stage2_final_rerank_width=15"],
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-100k-tq-w75-g50-final15-cache-evict.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-f32-w100",
+      "tags": ["task124", "phase6", "recall", "baseline", "ec_real_100k", "f32", "w100"],
+      "prefix": "task124_phase6_f32_100k",
+      "k": 10,
+      "sweep": [32, 64],
+      "rerank_width": 100,
+      "queries_limit": 100,
+      "session_gucs": ["ec_ivf.stage2_final_rerank_width=0"],
+      "truth_cache_file": "${artifact_dir}/truth-100k-k10.json",
+      "log_output": "${artifact_dir}/recall-100k-f32-w100.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-tq-w75-g50-final15",
+      "tags": ["task124", "phase6", "recall", "tq-stage2", "ec_real_100k", "turboquant", "w75", "g50", "final15"],
+      "prefix": "task124_phase6_tq_100k",
+      "k": 10,
+      "sweep": [32, 64],
+      "rerank_width": 75,
+      "queries_limit": 100,
+      "session_gucs": ["ec_ivf.stage2_final_rerank_width=15"],
+      "truth_cache_file": "${artifact_dir}/truth-100k-k10.json",
+      "log_output": "${artifact_dir}/recall-100k-tq-w75-g50-final15.log"
+    }
+  ]
+}
