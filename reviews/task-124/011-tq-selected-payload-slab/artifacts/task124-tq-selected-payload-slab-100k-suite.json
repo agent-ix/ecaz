@@ -1,0 +1,66 @@
+{
+  "name": "task124-tq-selected-payload-slab-100k-suite",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-124/011-tq-selected-payload-slab/artifacts/slab-100k",
+  "defaults": {
+    "profile": "ec_ivf",
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 100,
+    "iterations": 100,
+    "force_index": true,
+    "sample_backend_memory": true,
+    "memory_sample_interval_ms": 25,
+    "pg": 18,
+    "socket_dir": "/Users/peter/.pgrx"
+  },
+  "steps": [
+    {
+      "kind": "load",
+      "name": "load-100k-tq-w75-g50-final15-slab",
+      "tags": ["task124", "load", "tq-selected-payload-slab", "ec_real_100k", "turboquant", "w75", "g50", "final15"],
+      "prefix": "task124_tq_slab_w75_g50_100k",
+      "profile": "ec_ivf",
+      "storage_format": "coarse_rerank",
+      "corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_100k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": ["nlists=64", "nprobe=32", "training_sample_rows=10000", "coarse_format=rabitq", "coarse_bits=1", "rerank=heap_f32", "rerank_placement=index", "rerank_format=turboquant", "rerank_width=75", "rerank_group_width=50", "stage2_final_rerank_width=15"],
+      "log_file": "${artifact_dir}/load-100k-tq-w75-g50-final15-slab.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-tq-w75-g50-final15-slab",
+      "tags": ["task124", "recall", "tq-selected-payload-slab", "ec_real_100k", "turboquant", "w75", "g50", "final15"],
+      "prefix": "task124_tq_slab_w75_g50_100k",
+      "k": 10,
+      "sweep": [32, 64],
+      "rerank_width": 75,
+      "queries_limit": 100,
+      "session_gucs": ["ec_ivf.stage2_final_rerank_width=15"],
+      "truth_cache_file": "${artifact_dir}/truth-100k-k10.json",
+      "log_output": "${artifact_dir}/recall-100k-tq-w75-g50-final15-slab.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-tq-w75-g50-final15-slab",
+      "tags": ["task124", "latency", "tq-selected-payload-slab", "ec_real_100k", "turboquant", "w75", "g50", "final15"],
+      "prefix": "task124_tq_slab_w75_g50_100k",
+      "k": 10,
+      "sweep": [32, 64],
+      "rerank_width": 75,
+      "iterations": 100,
+      "session_gucs": ["ec_ivf.stage2_final_rerank_width=15"],
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-100k-tq-w75-g50-final15-slab.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k-tq-w75-g50-final15-slab",
+      "tags": ["task124", "storage", "tq-selected-payload-slab", "ec_real_100k", "turboquant", "w75", "g50", "final15"],
+      "prefix": "task124_tq_slab_w75_g50_100k",
+      "log_file": "${artifact_dir}/storage-100k-tq-w75-g50-final15-slab.log"
+    }
+  ]
+}
