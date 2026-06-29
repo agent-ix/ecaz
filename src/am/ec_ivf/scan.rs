@@ -2466,7 +2466,11 @@ fn should_run_tq_stage2_final_exact_rerank(
     sidecar_head.is_some()
         && index_options.storage_format == super::options::StorageFormat::CoarseRerank
         && index_options.rerank_placement == super::options::RerankPlacement::Index
-        && index_options.rerank_format == super::options::RerankFormat::TurboQuant
+        && matches!(
+            index_options.rerank_format,
+            super::options::RerankFormat::TurboQuant
+                | super::options::RerankFormat::TurboQuantBinary
+        )
         && super::options::resolve_scan_stage2_final_rerank_width(
             index_options.stage2_final_rerank_width,
         )

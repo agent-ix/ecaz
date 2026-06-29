@@ -24,8 +24,13 @@
 
 use super::options::{RaBitQRerankScoreMode, RerankFormat, EC_IVF_DEFAULT_RABITQ_RERANK_CLIP};
 use super::quantizer::{IvfPreparedQuery, IvfQuantizer};
+use crate::am::common::candidate_batch::{
+    score_hamming_words_batch_for, CandidateBatchScoringSurface,
+};
 use crate::am::ec_hnsw::source;
 use crate::am::ec_ivf::options::{RerankPlacement, StorageFormat};
+use crate::quant::prod::{BinarySignNoQjl4BitQuery, ProdQuantizer};
+use std::sync::Arc;
 
 /// Resolved rerank scorer for a single scan. Owns whatever per-query state the
 /// chosen representation needs so the per-candidate loop stays allocation-light.
@@ -49,6 +54,9 @@ enum RerankPreparedQuery {
     Quantized {
         prepared_query: IvfPreparedQuery,
         query: Vec<f32>,
+    },
+    TurboQuantBinary {
+        prepared_query: BinarySignNoQjl4BitQuery,
     },
 }
 
@@ -77,6 +85,12 @@ pub(super) enum RerankPayloadCodec {
         payload_len: usize,
         stores_gamma: bool,
         centroid_relative: bool,
+    },
+    TurboQuantBinary {
+        quantizer: Arc<ProdQuantizer>,
+        dimensions: usize,
+        word_count: usize,
+        payload_len: usize,
     },
 }
 
@@ -164,6 +178,27 @@ impl RerankPayloadCodec {
                     centroid_relative: rabitq_residual,
                 }))
             }
+            RerankFormat::TurboQuantBinary => {
+                let _ = rabitq_residual;
+                let quantizer = ProdQuantizer::cached(
+                    dimensions,
+                    crate::DEFAULT_QUANT_BITS,
+                    crate::DEFAULT_QUANT_SEED,
+                );
+                if !quantizer.binary_sign_no_qjl_4bit_supported() {
+                    return Err(
+                        "ec_ivf turboquant_binary rerank requires a no-QJL 4-bit TurboQuant lane"
+                            .to_owned(),
+                    );
+                }
+                let word_count = dimensions.div_ceil(u64::BITS as usize);
+                Ok(Some(Self::TurboQuantBinary {
+                    quantizer,
+                    dimensions,
+                    word_count,
+                    payload_len: word_count * std::mem::size_of::<u64>(),
+                }))
+            }
             RerankFormat::RaBitQ2 => Err(format!(
                 "ec_ivf rerank_format = '{}' is not implemented",
                 rerank_format.reloption_name()
@@ -176,13 +211,16 @@ impl RerankPayloadCodec {
             Self::F16 { .. } => RerankFormat::F16,
             Self::RaBitQ { format, .. } => *format,
             Self::TurboQuant { .. } => RerankFormat::TurboQuant,
+            Self::TurboQuantBinary { .. } => RerankFormat::TurboQuantBinary,
         }
     }
 
     pub(super) fn payload_len(&self) -> usize {
         match self {
             Self::F16 { dimensions } => dimensions * 2,
-            Self::RaBitQ { payload_len, .. } | Self::TurboQuant { payload_len, .. } => *payload_len,
+            Self::RaBitQ { payload_len, .. }
+            | Self::TurboQuant { payload_len, .. }
+            | Self::TurboQuantBinary { payload_len, .. } => *payload_len,
         }
     }
 
@@ -191,6 +229,7 @@ impl RerankPayloadCodec {
             Self::F16 { .. } => 2,
             Self::RaBitQ { .. } => 1,
             Self::TurboQuant { .. } => std::mem::align_of::<f32>(),
+            Self::TurboQuantBinary { .. } => std::mem::align_of::<u64>(),
         }
     }
 
@@ -224,6 +263,21 @@ impl RerankPayloadCodec {
                     prepared_query,
                     query: query.to_vec(),
                 }),
+            Self::TurboQuantBinary {
+                quantizer,
+                dimensions,
+                ..
+            } => {
+                if query.len() != *dimensions {
+                    return Err(format!(
+                        "ec_ivf turboquant_binary rerank query dimension mismatch: got {}, expected {dimensions}",
+                        query.len()
+                    ));
+                }
+                Ok(RerankPreparedQuery::TurboQuantBinary {
+                    prepared_query: quantizer.prepare_ip_query_binary_sign_no_qjl_4bit(query),
+                })
+            }
         }
     }
 
@@ -282,6 +336,17 @@ impl RerankPayloadCodec {
                     source,
                 )
             }
+            Self::TurboQuantBinary {
+                quantizer,
+                dimensions,
+                payload_len,
+                ..
+            } => encode_turboquant_binary_payload(
+                quantizer.as_ref(),
+                *dimensions,
+                *payload_len,
+                source,
+            ),
         }
     }
 
@@ -336,6 +401,7 @@ impl RerankPayloadCodec {
                     &residual,
                 )
             }
+            Self::TurboQuantBinary { .. } => self.encode_source(source),
             _ => self.encode_source(source),
         }
     }
@@ -361,7 +427,11 @@ impl RerankPayloadCodec {
                 let payload = self.encode_source(source)?;
                 self.score_payload(prepared_query, &payload)
             }
-            (_, RerankPreparedQuery::F16 { .. }) => {
+            (Self::TurboQuantBinary { .. }, RerankPreparedQuery::TurboQuantBinary { .. }) => {
+                let payload = self.encode_source(source)?;
+                self.score_payload(prepared_query, &payload)
+            }
+            (_, RerankPreparedQuery::F16 { .. } | RerankPreparedQuery::TurboQuantBinary { .. }) => {
                 Err("ec_ivf rerank payload codec and prepared query do not match".to_owned())
             }
         }
@@ -431,6 +501,20 @@ impl RerankPayloadCodec {
                     }
                 };
                 Ok(-estimate)
+            }
+            (
+                Self::TurboQuantBinary {
+                    quantizer,
+                    dimensions,
+                    word_count,
+                    payload_len,
+                },
+                RerankPreparedQuery::TurboQuantBinary { prepared_query },
+            ) => {
+                let words = decode_turboquant_binary_words(payload, *word_count, *payload_len)?;
+                let similarity =
+                    quantizer.score_binary_sign_words_no_qjl_4bit(prepared_query, &words);
+                Ok(((*dimensions as f32) - similarity) * 0.5)
             }
             _ => Err("ec_ivf rerank payload codec and prepared query do not match".to_owned()),
         }
@@ -591,6 +675,34 @@ impl RerankPayloadCodec {
                 }
                 Ok(())
             }
+            (
+                Self::TurboQuantBinary {
+                    word_count,
+                    payload_len,
+                    ..
+                },
+                RerankPreparedQuery::TurboQuantBinary { prepared_query },
+            ) => {
+                if payloads.len() != out_scores.len() * payload_len {
+                    return Err(format!(
+                        "ec_ivf turboquant_binary rerank payload slab {} does not match {} entries * {payload_len}",
+                        payloads.len(),
+                        out_scores.len()
+                    ));
+                }
+                let words = decode_turboquant_binary_word_slab(
+                    payloads.chunks_exact(*payload_len),
+                    *word_count,
+                    *payload_len,
+                )?;
+                let candidates = turboquant_binary_word_refs(&words, *word_count);
+                score_hamming_words_batch_for(
+                    CandidateBatchScoringSurface::Ivf,
+                    &prepared_query.words,
+                    &candidates,
+                    out_scores,
+                )
+            }
             (Self::F16 { .. }, RerankPreparedQuery::F16 { .. }) => {
                 Err("ec_ivf f16 rerank scores scalar packed payloads".to_owned())
             }
@@ -674,6 +786,31 @@ impl RerankPayloadCodec {
                     }
                 }
                 Ok(())
+            }
+            (
+                Self::TurboQuantBinary {
+                    word_count,
+                    payload_len,
+                    ..
+                },
+                RerankPreparedQuery::TurboQuantBinary { prepared_query },
+            ) => {
+                if payloads.len() != out_scores.len() {
+                    return Err(format!(
+                        "ec_ivf turboquant_binary borrowed rerank payload count {} does not match score count {}",
+                        payloads.len(),
+                        out_scores.len()
+                    ));
+                }
+                let words =
+                    decode_turboquant_binary_word_slab(payloads.iter().copied(), *word_count, *payload_len)?;
+                let candidates = turboquant_binary_word_refs(&words, *word_count);
+                score_hamming_words_batch_for(
+                    CandidateBatchScoringSurface::Ivf,
+                    &prepared_query.words,
+                    &candidates,
+                    out_scores,
+                )
             }
             (
                 Self::RaBitQ {
@@ -787,6 +924,87 @@ fn split_turboquant_payload(
     Ok((gamma, code))
 }
 
+fn encode_turboquant_binary_payload(
+    quantizer: &ProdQuantizer,
+    dimensions: usize,
+    payload_len: usize,
+    source: &[f32],
+) -> Result<Vec<u8>, String> {
+    if source.len() != dimensions {
+        return Err(format!(
+            "ec_ivf turboquant_binary rerank source dimension mismatch: got {}, expected {dimensions}",
+            source.len()
+        ));
+    }
+    let encoded = quantizer.encode(source);
+    let words = quantizer.binary_sign_words_from_packed_no_qjl_4bit(&encoded.mse_packed);
+    let mut payload = Vec::with_capacity(payload_len);
+    for word in words {
+        payload.extend_from_slice(&word.to_le_bytes());
+    }
+    if payload.len() != payload_len {
+        return Err(format!(
+            "ec_ivf turboquant_binary rerank payload length {} does not match expected {payload_len}",
+            payload.len()
+        ));
+    }
+    Ok(payload)
+}
+
+fn decode_turboquant_binary_words(
+    payload: &[u8],
+    word_count: usize,
+    payload_len: usize,
+) -> Result<Vec<u64>, String> {
+    if payload.len() != payload_len {
+        return Err(format!(
+            "ec_ivf turboquant_binary rerank payload length {} does not match expected {payload_len}",
+            payload.len()
+        ));
+    }
+    let mut words = Vec::with_capacity(word_count);
+    for word_bytes in payload.chunks_exact(std::mem::size_of::<u64>()) {
+        words.push(u64::from_le_bytes(
+            word_bytes
+                .try_into()
+                .expect("u64 chunk should be exactly eight bytes"),
+        ));
+    }
+    if words.len() != word_count {
+        return Err(format!(
+            "ec_ivf turboquant_binary rerank word count {} does not match expected {word_count}",
+            words.len()
+        ));
+    }
+    Ok(words)
+}
+
+fn decode_turboquant_binary_word_slab<'a, I>(
+    payloads: I,
+    word_count: usize,
+    payload_len: usize,
+) -> Result<Vec<u64>, String>
+where
+    I: IntoIterator<Item = &'a [u8]>,
+{
+    let mut words = Vec::new();
+    for payload in payloads {
+        words.extend_from_slice(&decode_turboquant_binary_words(
+            payload,
+            word_count,
+            payload_len,
+        )?);
+    }
+    Ok(words)
+}
+
+fn turboquant_binary_word_refs(words: &[u64], word_count: usize) -> Vec<&[u64]> {
+    if word_count == 0 {
+        return Vec::new();
+    }
+    words.chunks_exact(word_count).collect()
+}
+
 fn turboquant_payload_needs_gamma(dimensions: usize) -> bool {
     crate::quant::prod::ProdQuantizer::cached(
         dimensions,
@@ -818,7 +1036,8 @@ impl RerankScorer {
             RerankFormat::F16
             | RerankFormat::RaBitQ4
             | RerankFormat::RaBitQ8
-            | RerankFormat::TurboQuant => {
+            | RerankFormat::TurboQuant
+            | RerankFormat::TurboQuantBinary => {
                 if storage_format != StorageFormat::CoarseRerank {
                     return Err(format!(
                         "ec_ivf rerank_format = '{}' requires storage_format = 'coarse_rerank', got {}",
@@ -886,7 +1105,9 @@ impl RerankScorer {
         matches!(
             self,
             Self::Payload(RerankPayloadScorer {
-                codec: RerankPayloadCodec::RaBitQ { .. } | RerankPayloadCodec::TurboQuant { .. },
+                codec: RerankPayloadCodec::RaBitQ { .. }
+                    | RerankPayloadCodec::TurboQuant { .. }
+                    | RerankPayloadCodec::TurboQuantBinary { .. },
                 ..
             })
         )
@@ -902,7 +1123,11 @@ impl RerankScorer {
     pub(super) fn supports_sidecar_payload_ref_batch(&self) -> bool {
         match self {
             Self::Payload(payload) => {
-                matches!(payload.codec, RerankPayloadCodec::TurboQuant { .. })
+                matches!(
+                    payload.codec,
+                    RerankPayloadCodec::TurboQuant { .. }
+                        | RerankPayloadCodec::TurboQuantBinary { .. }
+                )
             }
             Self::F32 => false,
         }
@@ -1520,6 +1745,71 @@ mod tests {
             qjl_active.payload_len(1024),
             crate::code_len(1024, 4) + std::mem::size_of::<f32>()
         );
+    }
+
+    #[test]
+    fn turboquant_binary_sidecar_is_compact_no_qjl_sign_payload() {
+        let encoder = RerankSidecarEncoder::resolve(
+            RerankFormat::TurboQuantBinary,
+            1536,
+            EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
+        )
+        .unwrap()
+        .unwrap();
+        let source = (0..1536)
+            .map(|index| ((index % 17) as f32 - 8.0) * 0.01)
+            .collect::<Vec<_>>();
+        let payload = encoder.encode(&source).unwrap();
+
+        assert_eq!(encoder.payload_len(1536), 1536 / 8);
+        assert_eq!(payload.len(), 192);
+        assert_eq!(encoder.payload_alignment(), std::mem::align_of::<u64>());
+    }
+
+    #[test]
+    fn turboquant_binary_sidecar_batch_matches_single_scores() {
+        let dimensions = 1536;
+        let query = (0..dimensions)
+            .map(|index| ((index % 29) as f32 - 14.0) * 0.002)
+            .collect::<Vec<_>>();
+        let sources = (0..3)
+            .map(|seed| {
+                (0..dimensions)
+                    .map(|index| (((index + seed * 7) % 31) as f32 - 15.0) * 0.0025)
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        let scorer = RerankScorer::resolve(
+            RerankFormat::TurboQuantBinary,
+            RerankPlacement::Index,
+            StorageFormat::CoarseRerank,
+            dimensions,
+            &query,
+            RaBitQRerankScoreMode::Estimator,
+            EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
+        )
+        .unwrap();
+        let encoder = RerankSidecarEncoder::resolve(
+            RerankFormat::TurboQuantBinary,
+            dimensions,
+            EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
+        )
+        .unwrap()
+        .unwrap();
+        let payloads = sources
+            .iter()
+            .map(|source| encoder.encode(source).unwrap())
+            .collect::<Vec<_>>();
+        let payload_slab = payloads.concat();
+        let mut batch_scores = vec![0.0; payloads.len()];
+
+        scorer
+            .score_sidecar_payloads_batch(&payload_slab, &mut batch_scores)
+            .unwrap();
+
+        for (payload, batch_score) in payloads.iter().zip(batch_scores.iter()) {
+            assert_eq!(scorer.score_sidecar_payload(payload), *batch_score);
+        }
     }
 
     #[test]

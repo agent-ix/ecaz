@@ -216,6 +216,7 @@ pub enum RerankFormat {
     RaBitQ8 = 4,
     TurboQuant = 5,
     F16 = 6,
+    TurboQuantBinary = 7,
 }
 
 impl RerankFormat {
@@ -228,8 +229,9 @@ impl RerankFormat {
             "rabitq4" | "rabitq_4" => Ok(Self::RaBitQ4),
             "rabitq8" | "rabitq_8" => Ok(Self::RaBitQ8),
             "turboquant" => Ok(Self::TurboQuant),
+            "turboquant_binary" | "tq_binary" => Ok(Self::TurboQuantBinary),
             other => Err(format!(
-                "invalid ec_ivf rerank_format reloption: expected 'auto', 'f32', 'f16', 'heap_f32', 'rabitq2', 'rabitq4', 'rabitq8', or 'turboquant', got '{other}'"
+                "invalid ec_ivf rerank_format reloption: expected 'auto', 'f32', 'f16', 'heap_f32', 'rabitq2', 'rabitq4', 'rabitq8', 'turboquant', or 'turboquant_binary', got '{other}'"
             )),
         }
     }
@@ -243,6 +245,7 @@ impl RerankFormat {
             Self::RaBitQ4 => "rabitq4",
             Self::RaBitQ8 => "rabitq8",
             Self::TurboQuant => "turboquant",
+            Self::TurboQuantBinary => "turboquant_binary",
         }
     }
 }
@@ -933,7 +936,7 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amoptions(
         pg_sys::add_local_string_reloption(
             &mut relopts,
             c"rerank_format".as_ptr(),
-            c"Task 111e coarse_rerank rerank representation: 'f32', 'f16', 'rabitq4', 'rabitq8', 'turboquant', or 'auto'."
+            c"Task 111e coarse_rerank rerank representation: 'f32', 'f16', 'rabitq4', 'rabitq8', 'turboquant', 'turboquant_binary', or 'auto'."
                 .as_ptr(),
             ptr::null(),
             None,
@@ -1079,10 +1082,11 @@ fn build_options_from_reloptions(
             | RerankFormat::F16
             | RerankFormat::RaBitQ4
             | RerankFormat::RaBitQ8
-            | RerankFormat::TurboQuant => {}
+            | RerankFormat::TurboQuant
+            | RerankFormat::TurboQuantBinary => {}
             RerankFormat::RaBitQ2 => {
                 pgrx::error!(
-                    "ec_ivf storage_format = 'coarse_rerank' supports rerank_format = 'f32', 'f16', 'rabitq4', 'rabitq8', or 'turboquant'; '{}' is not implemented",
+                    "ec_ivf storage_format = 'coarse_rerank' supports rerank_format = 'f32', 'f16', 'rabitq4', 'rabitq8', 'turboquant', or 'turboquant_binary'; '{}' is not implemented",
                     rerank_format.reloption_name()
                 )
             }
@@ -1094,7 +1098,8 @@ fn build_options_from_reloptions(
                     RerankFormat::F16
                     | RerankFormat::RaBitQ4
                     | RerankFormat::RaBitQ8
-                    | RerankFormat::TurboQuant => RerankPlacement::Index,
+                    | RerankFormat::TurboQuant
+                    | RerankFormat::TurboQuantBinary => RerankPlacement::Index,
                     RerankFormat::Auto
                     | RerankFormat::RaBitQ2 => unreachable!(
                         "coarse_rerank rerank_format should be resolved or rejected"
@@ -1106,7 +1111,8 @@ fn build_options_from_reloptions(
                 RerankFormat::F16
                 | RerankFormat::RaBitQ4
                 | RerankFormat::RaBitQ8
-                | RerankFormat::TurboQuant => pgrx::error!(
+                | RerankFormat::TurboQuant
+                | RerankFormat::TurboQuantBinary => pgrx::error!(
                     "ec_ivf rerank_placement = 'source' reads the existing f32 source vector and only supports rerank_format = 'f32'; use rerank_placement = 'index' for persisted compact payloads or 'source_diagnostic' for the legacy query-time conversion benchmark"
                 ),
                 RerankFormat::Auto | RerankFormat::RaBitQ2 => unreachable!(
@@ -1124,12 +1130,13 @@ fn build_options_from_reloptions(
                 RerankFormat::F16
                 | RerankFormat::RaBitQ4
                 | RerankFormat::RaBitQ8
-                | RerankFormat::TurboQuant => {}
+                | RerankFormat::TurboQuant
+                | RerankFormat::TurboQuantBinary => {}
                 RerankFormat::F32 => pgrx::error!(
-                    "ec_ivf rerank_placement = 'index' requires a compact rerank_format ('f16', 'rabitq4', 'rabitq8', or 'turboquant'); 'f32' keeps the source vector, so use rerank_placement = 'source'"
+                    "ec_ivf rerank_placement = 'index' requires a compact rerank_format ('f16', 'rabitq4', 'rabitq8', 'turboquant', or 'turboquant_binary'); 'f32' keeps the source vector, so use rerank_placement = 'source'"
                 ),
                 RerankFormat::Auto | RerankFormat::RaBitQ2 => pgrx::error!(
-                    "ec_ivf rerank_placement = 'index' supports rerank_format = 'f16', 'rabitq4', 'rabitq8', or 'turboquant'; '{}' is not implemented",
+                    "ec_ivf rerank_placement = 'index' supports rerank_format = 'f16', 'rabitq4', 'rabitq8', 'turboquant', or 'turboquant_binary'; '{}' is not implemented",
                     rerank_format.reloption_name()
                 ),
             },
@@ -1138,7 +1145,8 @@ fn build_options_from_reloptions(
                 | RerankFormat::F16
                 | RerankFormat::RaBitQ4
                 | RerankFormat::RaBitQ8
-                | RerankFormat::TurboQuant => {}
+                | RerankFormat::TurboQuant
+                | RerankFormat::TurboQuantBinary => {}
                 RerankFormat::Auto | RerankFormat::RaBitQ2 => unreachable!(
                     "coarse_rerank rerank_format should be resolved or rejected"
                 ),
@@ -1184,10 +1192,13 @@ fn build_options_from_reloptions(
     if reloptions.stage2_final_rerank_width > 0
         && !(storage_format == StorageFormat::CoarseRerank
             && rerank_placement == RerankPlacement::Index
-            && rerank_format == RerankFormat::TurboQuant)
+            && matches!(
+                rerank_format,
+                RerankFormat::TurboQuant | RerankFormat::TurboQuantBinary
+            ))
     {
         pgrx::error!(
-            "ec_ivf stage2_final_rerank_width requires storage_format = 'coarse_rerank', rerank_placement = 'index', and rerank_format = 'turboquant'"
+            "ec_ivf stage2_final_rerank_width requires storage_format = 'coarse_rerank', rerank_placement = 'index', and a TurboQuant stage-2 rerank_format"
         );
     }
     if reloptions.rerank_group_width > 0
@@ -1199,6 +1210,7 @@ fn build_options_from_reloptions(
                     | RerankFormat::RaBitQ4
                     | RerankFormat::RaBitQ8
                     | RerankFormat::TurboQuant
+                    | RerankFormat::TurboQuantBinary
             ))
     {
         pgrx::error!(
@@ -1378,6 +1390,22 @@ mod tests {
     }
 
     #[test]
+    fn rerank_format_parse_accepts_turboquant_binary() {
+        assert_eq!(
+            RerankFormat::parse_reloption("turboquant_binary").unwrap(),
+            RerankFormat::TurboQuantBinary
+        );
+        assert_eq!(
+            RerankFormat::parse_reloption("tq_binary").unwrap(),
+            RerankFormat::TurboQuantBinary
+        );
+        assert_eq!(
+            RerankFormat::TurboQuantBinary.reloption_name(),
+            "turboquant_binary"
+        );
+    }
+
+    #[test]
     fn coarse_rerank_accepts_f16_rerank_format() {
         let options = build_options_from_reloptions(
             &reloptions(),
@@ -1549,6 +1577,24 @@ mod tests {
     }
 
     #[test]
+    fn coarse_rerank_accepts_turboquant_binary_rerank_format() {
+        let options = build_options_from_reloptions(
+            &reloptions(),
+            Some("coarse_rerank".into()),
+            None,
+            None,
+            None,
+            None,
+            Some("turboquant_binary".into()),
+        );
+
+        assert_eq!(options.storage_format, StorageFormat::CoarseRerank);
+        assert_eq!(options.rerank, RerankMode::HeapF32);
+        assert_eq!(options.rerank_placement, RerankPlacement::Index);
+        assert_eq!(options.rerank_format, RerankFormat::TurboQuantBinary);
+    }
+
+    #[test]
     fn coarse_rerank_accepts_turboquant_stage2_final_width() {
         let mut reloptions = reloptions();
         reloptions.rerank_width = 100;
@@ -1572,6 +1618,31 @@ mod tests {
         assert_eq!(options.stage2_final_rerank_width, 25);
         assert_eq!(options.rerank_placement, RerankPlacement::Index);
         assert_eq!(options.rerank_format, RerankFormat::TurboQuant);
+    }
+
+    #[test]
+    fn coarse_rerank_accepts_turboquant_binary_stage2_final_width() {
+        let mut reloptions = reloptions();
+        reloptions.rerank_width = 100;
+        reloptions.rerank_group_width = 16;
+        reloptions.stage2_final_rerank_width = 25;
+
+        let options = build_options_from_reloptions(
+            &reloptions,
+            Some("coarse_rerank".into()),
+            None,
+            None,
+            None,
+            Some("index".into()),
+            Some("turboquant_binary".into()),
+        );
+
+        assert_eq!(options.storage_format, StorageFormat::CoarseRerank);
+        assert_eq!(options.rerank_width, 100);
+        assert_eq!(options.rerank_group_width, 16);
+        assert_eq!(options.stage2_final_rerank_width, 25);
+        assert_eq!(options.rerank_placement, RerankPlacement::Index);
+        assert_eq!(options.rerank_format, RerankFormat::TurboQuantBinary);
     }
 
     #[test]
