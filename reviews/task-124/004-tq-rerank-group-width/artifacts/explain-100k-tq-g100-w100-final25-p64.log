@@ -1,0 +1,206 @@
+Pager usage is off.
+Timing is on.
+SET
+Time: 0.062 ms
+SET
+Time: 0.023 ms
+SET
+Time: 0.025 ms
+SET
+Time: 0.014 ms
+ server_version  | sweep_value | rerank_width | profile 
+-----------------+-------------+--------------+---------
+ 18.3 (Homebrew) | 64          | 100          | ec_ivf
+(1 row)
+
+Time: 0.177 ms
+                index_name                 | index_bytes | index_size 
+-------------------------------------------+-------------+------------
+ task124_gw_tq_g100_100k_coarse_rerank_idx |   105684992 | 101 MB
+(1 row)
+
+Time: 1.104 ms
+ planner_scan_enabled |                      planner_gate_reason                      | dimensions | nlists | relation_nprobe | session_nprobe | effective_nprobe | effective_nprobe_source | resolved_tree_height |    tree_height_source    | pg18_tree_height_callback_ready | ordering_compare_type | pg18_strategy_translation_ready | average_list_live_count | estimated_centroid_scores | estimated_selected_lists | estimated_candidate_rows | estimated_posting_pages | storage_format | scoring_mode  | scoring_multiplier |  rerank  | rerank_multiplier | index_pages | reltuples | random_page_cost | seq_page_cost | cpu_operator_cost | modeled_startup_cost | modeled_total_cost | modeled_selectivity | modeled_correlation 
+----------------------+---------------------------------------------------------------+------------+--------+-----------------+----------------+------------------+-------------------------+----------------------+--------------------------+---------------------------------+-----------------------+---------------------------------+-------------------------+---------------------------+--------------------------+--------------------------+-------------------------+----------------+---------------+--------------------+----------+-------------------+-------------+-----------+------------------+---------------+-------------------+----------------------+--------------------+---------------------+---------------------
+ t                    | planner scan selection is live: Task 28 IVF cost model active |       1536 |     64 |              32 |             64 |               64 | session                 |                    0 | amgettreeheight_callback | t                               | COMPARE_LT            | t                               |                  1562.5 |                        64 |                       64 |                   100000 |                   12851 | coarse_rerank  | rabitq_binary |               0.45 | heap_f32 |              1.35 |       12901 |    100000 |                4 |             1 |            0.0025 |              55.4576 |         15239.2576 |                   1 |                   0
+(1 row)
+
+Time: 0.363 ms
+                              QUERY PLAN                              
+----------------------------------------------------------------------
+ [                                                                   +
+   {                                                                 +
+     "Plan": {                                                       +
+       "Node Type": "Limit",                                         +
+       "Parallel Aware": false,                                      +
+       "Async Capable": false,                                       +
+       "Actual Startup Time": 13.852,                                +
+       "Actual Total Time": 13.905,                                  +
+       "Actual Rows": 10.00,                                         +
+       "Actual Loops": 1,                                            +
+       "Disabled": false,                                            +
+       "Shared Hit Blocks": 3554,                                    +
+       "Shared Read Blocks": 0,                                      +
+       "Shared Dirtied Blocks": 0,                                   +
+       "Shared Written Blocks": 0,                                   +
+       "Local Hit Blocks": 0,                                        +
+       "Local Read Blocks": 0,                                       +
+       "Local Dirtied Blocks": 0,                                    +
+       "Local Written Blocks": 0,                                    +
+       "Temp Read Blocks": 0,                                        +
+       "Temp Written Blocks": 0,                                     +
+       "Plans": [                                                    +
+         {                                                           +
+           "Node Type": "Limit",                                     +
+           "Parent Relationship": "InitPlan",                        +
+           "Subplan Name": "InitPlan 1",                             +
+           "Parallel Aware": false,                                  +
+           "Async Capable": false,                                   +
+           "Actual Startup Time": 0.006,                             +
+           "Actual Total Time": 0.006,                               +
+           "Actual Rows": 1.00,                                      +
+           "Actual Loops": 1,                                        +
+           "Disabled": false,                                        +
+           "Shared Hit Blocks": 3,                                   +
+           "Shared Read Blocks": 0,                                  +
+           "Shared Dirtied Blocks": 0,                               +
+           "Shared Written Blocks": 0,                               +
+           "Local Hit Blocks": 0,                                    +
+           "Local Read Blocks": 0,                                   +
+           "Local Dirtied Blocks": 0,                                +
+           "Local Written Blocks": 0,                                +
+           "Temp Read Blocks": 0,                                    +
+           "Temp Written Blocks": 0,                                 +
+           "Plans": [                                                +
+             {                                                       +
+               "Node Type": "Index Scan",                            +
+               "Parent Relationship": "Outer",                       +
+               "Parallel Aware": false,                              +
+               "Async Capable": false,                               +
+               "Scan Direction": "Forward",                          +
+               "Index Name": "task124_gw_tq_g100_100k_queries_pkey", +
+               "Relation Name": "task124_gw_tq_g100_100k_queries",   +
+               "Alias": "task124_gw_tq_g100_100k_queries",           +
+               "Actual Startup Time": 0.006,                         +
+               "Actual Total Time": 0.006,                           +
+               "Actual Rows": 1.00,                                  +
+               "Actual Loops": 1,                                    +
+               "Disabled": false,                                    +
+               "Index Searches": 1,                                  +
+               "Shared Hit Blocks": 3,                               +
+               "Shared Read Blocks": 0,                              +
+               "Shared Dirtied Blocks": 0,                           +
+               "Shared Written Blocks": 0,                           +
+               "Local Hit Blocks": 0,                                +
+               "Local Read Blocks": 0,                               +
+               "Local Dirtied Blocks": 0,                            +
+               "Local Written Blocks": 0,                            +
+               "Temp Read Blocks": 0,                                +
+               "Temp Written Blocks": 0                              +
+             }                                                       +
+           ]                                                         +
+         },                                                          +
+         {                                                           +
+           "Node Type": "Index Scan",                                +
+           "Parent Relationship": "Outer",                           +
+           "Parallel Aware": false,                                  +
+           "Async Capable": false,                                   +
+           "Scan Direction": "Forward",                              +
+           "Index Name": "task124_gw_tq_g100_100k_coarse_rerank_idx",+
+           "Relation Name": "task124_gw_tq_g100_100k_corpus",        +
+           "Alias": "task124_gw_tq_g100_100k_corpus",                +
+           "Actual Startup Time": 13.852,                            +
+           "Actual Total Time": 13.905,                              +
+           "Actual Rows": 10.00,                                     +
+           "Actual Loops": 1,                                        +
+           "Disabled": false,                                        +
+           "Order By": "(embedding <#> (InitPlan 1).col1)",          +
+           "Index Searches": 0,                                      +
+           "Shared Hit Blocks": 3554,                                +
+           "Shared Read Blocks": 0,                                  +
+           "Shared Dirtied Blocks": 0,                               +
+           "Shared Written Blocks": 0,                               +
+           "Local Hit Blocks": 0,                                    +
+           "Local Read Blocks": 0,                                   +
+           "Local Dirtied Blocks": 0,                                +
+           "Local Written Blocks": 0,                                +
+           "Temp Read Blocks": 0,                                    +
+           "Temp Written Blocks": 0,                                 +
+           "Ecaz Stats": {                                           +
+             "Rerank Placement": "index",                            +
+             "Rerank Format": "turboquant",                          +
+             "Centroid Scores": 64,                                  +
+             "Selected Lists": 64,                                   +
+             "Posting Pages Read": 2813,                             +
+             "Postings Visited": 100000,                             +
+             "Row Postings Visited": 0,                              +
+             "Dense Blocks Visited": 2813,                           +
+             "Dense Postings Visited": 100000,                       +
+             "Postings Scored": 100000,                              +
+             "Postings Pruned By Bound": 0,                          +
+             "Scratch SoA Flushes": 0,                               +
+             "Scratch Payload Bytes Copied": 0,                      +
+             "Scratch Heap TID Bytes Copied": 0,                     +
+             "Dense Coalesced Flushes": 420,                         +
+             "Dense Coalesced Payload Bytes Copied": 20400000,       +
+             "Dense Coalesced Heap TID Bytes Copied": 600000,        +
+             "Heap TIDs Scored": 100000,                             +
+             "Candidates Scored": 540,                               +
+             "Candidates Inserted": 540,                             +
+             "Candidates Emitted": 10,                               +
+             "Rerank Rows": 125,                                     +
+             "Heap Blocks Fetched": 20,                              +
+             "Approximate Scan Elapsed Us": 11962,                   +
+             "Exact Rerank Elapsed Us": 1602,                        +
+             "Rerank Payload Decode Elapsed Us": 496,                +
+             "Rerank Payload Score Elapsed Us": 28,                  +
+             "Filtered Duplicates": 0,                               +
+             "Rerank Source Bytes Read": 153600,                     +
+             "Rerank Candidates Considered": 100,                    +
+             "Rerank Candidates Skipped": 0,                         +
+             "Rerank Index Group Header Pages Read": 45,             +
+             "Rerank Index Payload Segment Pages Read": 216,         +
+             "Rerank Index Group Metadata Bytes Read": 82865,        +
+             "Rerank Index Header Payload Bytes Read": 274449,       +
+             "Rerank Index Segment Payload Bytes Read": 1748632,     +
+             "Rerank Payload Bytes Scored": 77200,                   +
+             "Rerank Payload Slab Bytes Copied": 0,                  +
+             "TQ Stage2 Candidate Rows": 100,                        +
+             "TQ Stage2 Rows Scored": 100,                           +
+             "TQ Stage2 Rows Retained": 25,                          +
+             "TQ Stage2 Payload Bytes Scored": 77200,                +
+             "TQ Stage2 Final Exact Rows": 25,                       +
+             "TQ Stage2 Final Source Bytes Read": 153600             +
+           }                                                         +
+         }                                                           +
+       ]                                                             +
+     },                                                              +
+     "Planning": {                                                   +
+       "Shared Hit Blocks": 83,                                      +
+       "Shared Read Blocks": 0,                                      +
+       "Shared Dirtied Blocks": 0,                                   +
+       "Shared Written Blocks": 0,                                   +
+       "Local Hit Blocks": 0,                                        +
+       "Local Read Blocks": 0,                                       +
+       "Local Dirtied Blocks": 0,                                    +
+       "Local Written Blocks": 0,                                    +
+       "Temp Read Blocks": 0,                                        +
+       "Temp Written Blocks": 0                                      +
+     },                                                              +
+     "Planning Time": 0.143,                                         +
+     "Triggers": [                                                   +
+     ],                                                              +
+     "Execution Time": 13.926                                        +
+   }                                                                 +
+ ]
+(1 row)
+
+Time: 14.303 ms
+RESET
+Time: 0.019 ms
+RESET
+Time: 0.015 ms
+RESET
+Time: 0.015 ms
+RESET
+Time: 0.009 ms
