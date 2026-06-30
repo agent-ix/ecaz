@@ -1,11 +1,10 @@
 # Task 124: IVF TurboQuant Stage-2 Rerank Pipeline
 
-Status: **complete / shelved** (2026-06-29; closeout
-`reviews/task-124/016-closeout-shelve/`: in-engine TurboQuant stage-2 matched
-recall and used full SIMD, but did not beat the current RaBitQ + f32 path at the
-product-relevant matrix; persisted TQ sidecar storage stayed about 4.5x the f32
-baseline and Phase 6 local IO-sensitive validation did not produce a durable
-latency win).
+Status: **reopened for TQ speed improvement** (2026-06-29; correction
+`reviews/task-124/017-speed-objective-correction/` supersedes the premature
+`016-closeout-shelve` decision. The immediate goal is to improve TurboQuant
+stage-2 speed and document the delta, not to require a full product win over the
+current RaBitQ + f32 baseline before useful Task 124 work can land).
 Owner: coder (to be assigned). One coder, one branch.
 Priority: P1 follow-up for the Task 122 TurboQuant keep-experimental outcome.
 
