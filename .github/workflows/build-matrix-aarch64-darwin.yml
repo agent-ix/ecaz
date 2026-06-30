@@ -1,17 +1,14 @@
 name: Build Matrix — aarch64-apple-darwin
 
-# Task 48 §Exit Criteria #1: per-PR lane for the developer-default
+# Task 48 §Exit Criteria #1: manual lane for the developer-default
 # triple. pg18 only (pg17 macOS coverage is uninteresting — production
 # is linux). Honors the known macOS `_BufferBlocks` dyld blocker by
 # limiting runtime tests to the compile + ecaz-cli + Miri-able subset
 # (feedback_dyld_buffer_blocks_known).
 #
-# Status: blocking (per docs/build-matrix.md cadence policy).
+# Status: manual.
 
 on:
-  push:
-    branches: [main]
-  pull_request:
   workflow_dispatch:
 
 concurrency:

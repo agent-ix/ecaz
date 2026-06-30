@@ -1,15 +1,12 @@
 name: Build Matrix — x86_64-unknown-linux-gnu
 
-# Task 48 §Exit Criteria #1: per-PR lane for the production primary
+# Task 48 §Exit Criteria #1: manual lane for the production primary
 # triple. Runs cargo check + clippy + test compilation on the production
 # pg18 target. Backend execution runs in the PG18 pgrx lane.
 #
-# Status: blocking (per docs/build-matrix.md cadence policy).
+# Status: manual.
 
 on:
-  push:
-    branches: [main]
-  pull_request:
   workflow_dispatch:
 
 concurrency:

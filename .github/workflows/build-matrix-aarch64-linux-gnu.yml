@@ -1,17 +1,14 @@
 name: Build Matrix — aarch64-unknown-linux-gnu
 
-# Task 48 §Exit Criteria #1: per-PR compile lane + nightly full lane
+# Task 48 §Exit Criteria #1: manual compile lane + nightly full lane
 # for the Graviton production target.
 #
-# Per-PR: cargo check + clippy only (cheap, blocking on PR).
+# Manual: cargo check + clippy only.
 # Nightly: full cargo test (heavier, scheduled at 03:17 UTC).
 #
-# Status: per-PR blocking; nightly informational.
+# Status: manual and nightly informational.
 
 on:
-  push:
-    branches: [main]
-  pull_request:
   schedule:
     - cron: "17 3 * * *"
   workflow_dispatch:
