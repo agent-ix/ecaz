@@ -671,7 +671,18 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amrescan(
         let requested_nprobe = if metadata.dimensions == 0 {
             0
         } else {
-            resolve_effective_nprobe(&metadata)
+            let resolved = resolve_effective_nprobe(&metadata);
+            let stage2_final_width = super::options::resolve_scan_stage2_final_rerank_width(
+                index_options.stage2_final_rerank_width,
+            )
+            .effective_rerank_width;
+            apply_tq_stage2_nprobe_cap(
+                resolved,
+                super::options::current_session_tq_stage2_nprobe_cap(),
+                &index_options,
+                metadata.rerank_sidecar_head != ItemPointer::INVALID,
+                stage2_final_width,
+            )
         };
         opaque.scan_nprobe = requested_nprobe;
         store_scan_query(opaque, &query);
@@ -1183,6 +1194,43 @@ unsafe fn configure_heap_rerank_state(
 
 fn resolve_effective_nprobe(metadata: &super::page::MetadataPage) -> u32 {
     super::options::resolve_scan_nprobe(metadata.nlists, metadata.nprobe).effective_nprobe
+}
+
+fn apply_tq_stage2_nprobe_cap(
+    requested_nprobe: u32,
+    cap: i32,
+    index_options: &super::options::EcIvfOptions,
+    has_index_side_sidecar: bool,
+    effective_stage2_final_rerank_width: i32,
+) -> u32 {
+    if requested_nprobe == 0 || cap <= 0 {
+        return requested_nprobe;
+    }
+    if !is_tq_stage2_final_exact_scan(
+        index_options,
+        has_index_side_sidecar,
+        effective_stage2_final_rerank_width,
+    ) {
+        return requested_nprobe;
+    }
+    requested_nprobe.min(cap as u32)
+}
+
+fn is_tq_stage2_final_exact_scan(
+    index_options: &super::options::EcIvfOptions,
+    has_index_side_sidecar: bool,
+    effective_stage2_final_rerank_width: i32,
+) -> bool {
+    has_index_side_sidecar
+        && index_options.storage_format == super::options::StorageFormat::CoarseRerank
+        && index_options.rerank_placement == super::options::RerankPlacement::Index
+        && matches!(
+            index_options.rerank_format,
+            super::options::RerankFormat::TurboQuant
+                | super::options::RerankFormat::TurboQuant2
+                | super::options::RerankFormat::TurboQuantBinary
+        )
+        && effective_stage2_final_rerank_width > 0
 }
 
 /// # Safety
@@ -4547,12 +4595,13 @@ mod tests {
         IvfPostingTupleRef, IvfRerankGroupHeaderTuple,
     };
     use super::{
-        build_probe_block_sequence, candidate_heap_blocks, candidate_heap_tid_cmp,
-        choose_adaptive_nprobe, consume_live_tid_budget, inner_product, inner_product_scalar,
-        pre_rerank_candidate_limit, rerank_group_payload_for_candidate, select_probe_lists,
-        select_probe_lists_with_adaptive, use_scratch_soa_batch_decode_for_format, CandidateTopK,
-        EcIvfCentroidScore, EcIvfScoredCandidate, IvfDensePostingBlockScratch,
-        IvfPostingScratchSoa, LoadedRerankGroup, ProbeBlockRange, SelectedRerankPayloadSlab,
+        apply_tq_stage2_nprobe_cap, build_probe_block_sequence, candidate_heap_blocks,
+        candidate_heap_tid_cmp, choose_adaptive_nprobe, consume_live_tid_budget, inner_product,
+        inner_product_scalar, pre_rerank_candidate_limit, rerank_group_payload_for_candidate,
+        select_probe_lists, select_probe_lists_with_adaptive,
+        use_scratch_soa_batch_decode_for_format, CandidateTopK, EcIvfCentroidScore,
+        EcIvfScoredCandidate, IvfDensePostingBlockScratch, IvfPostingScratchSoa, LoadedRerankGroup,
+        ProbeBlockRange, SelectedRerankPayloadSlab,
     };
     use crate::storage::page::ItemPointer;
 
@@ -4628,6 +4677,19 @@ mod tests {
             coarse_format: CoarseFormat::Auto,
             rerank_placement: RerankPlacement::Auto,
             rerank_format: RerankFormat::Auto,
+        }
+    }
+
+    fn tq_stage2_options() -> EcIvfOptions {
+        EcIvfOptions {
+            storage_format: IvfStorageFormat::CoarseRerank,
+            rerank: RerankMode::HeapF32,
+            rerank_placement: RerankPlacement::Index,
+            rerank_format: RerankFormat::TurboQuant,
+            stage2_final_rerank_width: 15,
+            rerank_width: 75,
+            rerank_group_width: 50,
+            ..options_with_rerank(RerankMode::HeapF32, 75)
         }
     }
 
@@ -5143,6 +5205,32 @@ mod tests {
         );
 
         assert_eq!(selected, vec![1, 3, 7]);
+    }
+
+    #[test]
+    fn tq_stage2_nprobe_cap_reduces_only_matching_stage2_scan() {
+        let options = tq_stage2_options();
+
+        assert_eq!(apply_tq_stage2_nprobe_cap(64, 60, &options, true, 15), 60);
+        assert_eq!(apply_tq_stage2_nprobe_cap(60, 64, &options, true, 15), 60);
+        assert_eq!(apply_tq_stage2_nprobe_cap(64, -1, &options, true, 15), 64);
+        assert_eq!(apply_tq_stage2_nprobe_cap(64, 60, &options, false, 15), 64);
+    }
+
+    #[test]
+    fn tq_stage2_nprobe_cap_ignores_non_tq_stage2_scans() {
+        let mut options = tq_stage2_options();
+
+        options.stage2_final_rerank_width = 0;
+        assert_eq!(apply_tq_stage2_nprobe_cap(64, 60, &options, true, 0), 64);
+
+        options = tq_stage2_options();
+        options.rerank_format = RerankFormat::RaBitQ8;
+        assert_eq!(apply_tq_stage2_nprobe_cap(64, 60, &options, true, 15), 64);
+
+        options = tq_stage2_options();
+        options.rerank_placement = RerankPlacement::Source;
+        assert_eq!(apply_tq_stage2_nprobe_cap(64, 60, &options, true, 15), 64);
     }
 
     #[test]

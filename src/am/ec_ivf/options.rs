@@ -23,6 +23,7 @@ use super::{
 
 const EC_IVF_SESSION_NPROBE_UNSET: i32 = -1;
 const EC_IVF_SESSION_RERANK_WIDTH_UNSET: i32 = -1;
+const EC_IVF_SESSION_TQ_STAGE2_NPROBE_CAP_UNSET: i32 = -1;
 pub(super) const EC_IVF_DEFAULT_RABITQ_RERANK_CLIP: i32 = 2;
 const EC_IVF_MIN_RABITQ_RERANK_CLIP: i32 = 1;
 const EC_IVF_MAX_RABITQ_RERANK_CLIP: i32 = 8;
@@ -32,6 +33,8 @@ static EC_IVF_RERANK_WIDTH_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(EC_IVF_SESSION_RERANK_WIDTH_UNSET);
 static EC_IVF_STAGE2_FINAL_RERANK_WIDTH_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(EC_IVF_SESSION_RERANK_WIDTH_UNSET);
+static EC_IVF_TQ_STAGE2_NPROBE_CAP_GUC: GucSetting<i32> =
+    GucSetting::<i32>::new(EC_IVF_SESSION_TQ_STAGE2_NPROBE_CAP_UNSET);
 static EC_IVF_ADAPTIVE_NPROBE_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
 static EC_IVF_ADAPTIVE_NPROBE_SCORE_GAP_MICROS_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(EC_IVF_DEFAULT_ADAPTIVE_NPROBE_SCORE_GAP_MICROS);
@@ -487,6 +490,16 @@ pub(super) fn register_gucs() {
         GucContext::Userset,
         GucFlags::default(),
     );
+    GucRegistry::define_int_guc(
+        c"ec_ivf.tq_stage2_nprobe_cap",
+        c"Optional nprobe cap for ec_ivf TurboQuant stage-2 scans.",
+        c"Caps effective ec_ivf.nprobe only for persisted index-side TurboQuant stage-2 scans with final exact rerank. -1 disables the cap.",
+        &EC_IVF_TQ_STAGE2_NPROBE_CAP_GUC,
+        EC_IVF_SESSION_TQ_STAGE2_NPROBE_CAP_UNSET,
+        EC_IVF_MAX_NPROBE,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
     GucRegistry::define_bool_guc(
         c"ec_ivf.adaptive_nprobe",
         c"Enable deterministic adaptive ec_ivf nprobe reduction.",
@@ -567,6 +580,10 @@ pub(super) fn current_session_rerank_width() -> i32 {
 
 pub(super) fn current_session_stage2_final_rerank_width() -> i32 {
     EC_IVF_STAGE2_FINAL_RERANK_WIDTH_GUC.get()
+}
+
+pub(super) fn current_session_tq_stage2_nprobe_cap() -> i32 {
+    EC_IVF_TQ_STAGE2_NPROBE_CAP_GUC.get()
 }
 
 pub(super) fn current_session_adaptive_nprobe() -> bool {
