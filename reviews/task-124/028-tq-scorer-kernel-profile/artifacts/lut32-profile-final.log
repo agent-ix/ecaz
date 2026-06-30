@@ -1,0 +1,3 @@
+task124_lut32_profile backend=neon dim=1536 iterations=200000
+score_ip_lut_no_qjl_4bit_block32 isa=neon total=2.164024916s candidates=6400000 ns_per_candidate=338.1
+prepare_ip_query_lut_no_qjl_4bit iterations=50000 total=233.17175ms ns_per_iter=4663.4
