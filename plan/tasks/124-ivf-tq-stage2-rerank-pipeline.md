@@ -1,14 +1,84 @@
 # Task 124: IVF TurboQuant Stage-2 Rerank Pipeline
 
-Status: **complete / shelved under the TQ speed objective** (2026-06-30;
-`reviews/task-124/027-speed-closeout-shelve/` supersedes the 2026-06-29 reopen
-after TurboQuant-specific speed exploration and the reviewer-requested
-`f32@60` vs `TQ@60` discriminator. The discriminator in
-`reviews/task-124/026-f32-vs-tq-nprobe60-discriminator/` was negative for a
-TQ-attributable frontier win: f32/source also held recall at `nprobe=60`, while
-TQ retained the established storage gap and lower 50k recall in that run).
+Status: **REOPENED — optimize the TurboQuant scorer/compute path** (2026-06-30).
+Reopened by the user after the `027` shelve. The shelve is REJECTED: it claimed
+TQ speed levers were "exhausted," but **the TQ scoring kernel itself was never
+touched.** Every code change on this branch is IVF scan/rerank/options plumbing
+in `src/am/ec_ivf/`; nothing in the actual TurboQuant scorer at
+`src/am/common/candidate_batch/` or `src/quant/`. See
+`reviews/task-124/027-speed-closeout-shelve/feedback/2026-06-30-02-reviewer.md`.
 Owner: coder (to be assigned). One coder, one branch.
-Priority: P1 follow-up for the Task 122 TurboQuant keep-experimental outcome.
+Priority: P1.
+
+## PRIMARY INTENT — READ FIRST (non-negotiable)
+
+The single goal of this task is to **make TurboQuant itself faster** — the TQ
+scoring/compute path. This intent has now been restated 4-5 times and keeps not
+happening; the work keeps drifting into plumbing, baseline comparisons, and
+storage/promotion verdicts. To remove all ambiguity:
+
+Every slice MUST report a **TQ-internal before/after speed delta measured on the
+TQ scorer** (e.g. ns/candidate or TQ scorer elapsed µs), not end-to-end query
+latency that is dominated by the shared coarse frontier.
+
+**Out of scope — do NOT bring these up as the answer:**
+
+- comparisons against the f32/source baseline — this task is not a bake-off;
+- storage size, "is it worth it," promotion, or product-competitiveness
+  judgments — not the question here, and not the reviewer's or coder's call;
+- IVF / RaBitQ frontier (`nprobe`) tuning — shared work, not TurboQuant;
+- further scan-path materialization/allocation micro-tweaks — that envelope is
+  already at its floor (see State At Reopen) and is NOT where remaining TQ speed
+  lives.
+
+A slice that returns an f32 comparison, a storage/promotion verdict, or an
+nprobe-frontier result instead of a TQ-scorer speed delta does **not** satisfy
+this task.
+
+## State At Reopen — done vs never attempted
+
+TQ speed changes that worked (kept) — all memory-traffic reductions **around**
+the scorer:
+
+- selected-payload loader (003): TQ decode `1202 µs → 514 µs`, segment bytes
+  `2.84 MB → 1.75 MB` at 100k/nprobe64;
+- contiguous slab (011); final exact width `25 → 15` (005); group-width locality
+  (004): group-16 cut segment reads `1.75 MB → 147 KB`.
+
+TQ speed changes that failed (reverted) — micro-allocation/addressing tweaks;
+this materialization micro-overhead is genuinely at its floor:
+
+- top-k fusion (012), compact group headers (013), direct-slot rerank (014),
+  vector-index lookup (018), borrowed score buffer (020), slab-vector lookup
+  (025).
+
+The `027` closeout claim that TQ speed levers were "exhausted" is INCORRECT and
+is superseded by this reopen.
+
+## Required Next Phase — TQ speed levers never attempted (ALL REQUIRED, NO DEFERMENTS)
+
+Every one of the following is **required** work for this task. None may be
+deferred, descoped, or closed as "not worth it." Each is a TQ-scorer/compute-path
+optimization and each must land with a measured TQ-internal before/after speed
+delta on the TQ scorer:
+
+1. **The TQ scoring kernel itself** — register/accumulator blocking, LUT layout,
+   prefetch, batch-accumulation width, dequant/FMA fusion. Never profiled. This
+   is the biggest untouched lever.
+2. **Per-query LUT / query-prep cost** — never measured (on the task's lever
+   list).
+3. **Batch/flush width** — confirmed at 100, never swept as a throughput lever.
+4. **Dimension/subspace reduction** — only bit-depth (4/2/1) was tried, never
+   fewer dims.
+5. **TQ2 with a real SIMD kernel** — TQ2 was rejected as "slow," but its packet
+   shows it ran scalar (no kernel was written); its SIMD speed was never
+   measured.
+6. **QJL scoring speed** — all work was no-QJL 4-bit; QJL never speed-tested.
+7. **Prefetch / pipelining payload reads ahead of scoring.**
+
+This task is not complete until all seven are implemented and measured with TQ
+scorer before/after deltas. A shelve/closeout is not permitted while any of the
+seven remains unattempted.
 
 ## Why
 
@@ -205,12 +275,15 @@ Do not promote from hot local latency alone if the rationale is IO avoidance.
 
 ## Closeout Outcomes
 
-Closeout 2026-06-30: **Shelve**. The in-engine TQ stage-2 path was implemented,
-instrumented, and benchmarked at 10k / 50k / 100k, and the TQ scoring surface
-used by the path is full SIMD (`scalar_candidates=0`). TQ-specific speed levers
-measured after the speed-objective correction were negative or exhausted; the
-only observed speed win came from a shallower shared IVF frontier that the f32
-baseline can also use.
+~~Closeout 2026-06-30: **Shelve**.~~ **SUPERSEDED / REOPENED 2026-06-30.** The
+prior shelve was rejected by the user: it asserted TQ speed levers were
+"exhausted," but the TQ scoring kernel and six other TQ-compute-path levers were
+never attempted (see Required Next Phase). The in-engine TQ stage-2 path was
+implemented, instrumented, and benchmarked at 10k / 50k / 100k, and the
+materialization envelope around the scorer was optimized — but the scorer compute
+path itself was never touched. This task remains **open** until the seven
+required TQ-scorer speed levers are implemented and measured. No shelve/closeout
+is permitted while any remain unattempted.
 
 One of:
 
