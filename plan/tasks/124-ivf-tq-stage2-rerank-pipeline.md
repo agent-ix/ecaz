@@ -1,6 +1,6 @@
 # Task 124: IVF TurboQuant Stage-2 Rerank Pipeline
 
-Status: **OPEN — TQ scorer optimization pass partially validated; workload validation still pending** (2026-06-30).
+Status: **COMPLETION CANDIDATE — all seven TQ scorer levers implemented/measured; reduced-dimension workload validation failed the recall contract** (2026-06-30).
 Reopened by the user after the `027` shelve. The shelve is REJECTED: it claimed
 TQ speed levers were "exhausted," but **the TQ scoring kernel itself was never
 touched at the time of that closeout.** The pre-reopen code changes were IVF
@@ -13,7 +13,12 @@ closeout framing was rejected by reviewer feedback and is superseded. Packet
 `reviews/task-124/036-tq2-real-index-validation/` validates TQ2 in a real IVF
 index: the SIMD scorer row now appears in the workload, but recall remains
 unchanged from packet 008 and still broken at 50k/100k, so TQ2 SIMD must not be
-claimed as a usable TQ speedup yet.
+claimed as a usable TQ speedup. Packet
+`reviews/task-124/037-tq2-dim768-real-index/` validates a real reduced-dimension
+TQ2 format (`rerank_format=turboquant2_768`) in real IVF indexes at 10k / 50k /
+100k. It cuts in-engine TQ2 scorer elapsed by about 49-53% versus full-dim TQ2,
+but recall remains broken at 50k/100k, so reduced-dimension TQ2 also must not be
+claimed as a usable stage-2 speedup.
 Owner: coder (to be assigned). One coder, one branch.
 Priority: P1.
 
@@ -87,7 +92,9 @@ This task is not complete until all seven are implemented and measured with TQ
 scorer before/after deltas in the relevant workload where a production path
 exists. Packets 028-034 provide scorer-level evidence; packet 035 provides
 4-bit TQ in-engine validation; packet 036 shows TQ2 now has in-engine SIMD
-attribution but remains recall-broken in the real index.
+attribution but remains recall-broken in the real index; packet 037 adds and
+validates a real reduced-dimension TQ2 format and shows the scorer win is real
+but recall-broken.
 
 ## Why
 
@@ -293,8 +300,12 @@ while remaining on the NEON/SIMD path. Reviewer feedback rejected the product
 promotion/shelve framing because TQ2 and reduced-dimension wins were still only
 microbenchmark results. Packet `036-tq2-real-index-validation` resolves the TQ2
 workload-validation gap and shows TQ2 recall is unchanged from packet 008 and
-still broken at 50k/100k. The task remains **open** until the remaining
-workload-validation gap is closed.
+still broken at 50k/100k. Packet `037-tq2-dim768-real-index` resolves the
+remaining reduced-dimension workload-validation gap with a real index-side
+format and 10k / 50k / 100k recall + latency + TQ scorer attribution. The
+reduced-dimension scorer delta is real (`~49-53%` lower TQ2 scorer elapsed than
+full-dim TQ2), but recall is also broken at 50k/100k, so the correct closeout
+candidate is **Shelve**, not promotion.
 
 ~~Closeout 2026-06-30: **Shelve**.~~ **SUPERSEDED / REOPENED 2026-06-30.** The
 prior shelve was rejected by the user: it asserted TQ speed levers were

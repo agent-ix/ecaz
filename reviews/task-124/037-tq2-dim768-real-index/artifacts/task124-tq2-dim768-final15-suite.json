@@ -1,0 +1,160 @@
+{
+  "name": "task124-tq2-dim768-final15-suite",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-124/037-tq2-dim768-real-index/artifacts/tq2-dim768-final15-suite",
+  "defaults": {
+    "profile": "ec_ivf",
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 100,
+    "iterations": 100,
+    "force_index": true,
+    "sample_backend_memory": true,
+    "memory_sample_interval_ms": 25,
+    "pg": 18,
+    "socket_dir": "/Users/peter/.pgrx"
+  },
+  "steps": [
+    {
+      "kind": "load",
+      "name": "load-10k-tq2-dim768-g100-w100-final15",
+      "tags": ["task124", "load", "tq2-dim768-stage2", "ec_real_10k", "turboquant2_768", "g100", "w100", "final15"],
+      "prefix": "task124_tq2d768_10k",
+      "profile": "ec_ivf",
+      "storage_format": "coarse_rerank",
+      "corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_10k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_10k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": ["nlists=64", "nprobe=32", "training_sample_rows=10000", "coarse_format=rabitq", "coarse_bits=1", "rerank=heap_f32", "rerank_placement=index", "rerank_format=turboquant2_768", "rerank_width=100", "stage2_final_rerank_width=15"],
+      "log_file": "${artifact_dir}/load-10k-tq2-dim768-g100-w100-final15.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-10k-tq2-dim768-g100-w100-final15",
+      "tags": ["task124", "recall", "tq2-dim768-stage2", "ec_real_10k", "turboquant2_768", "g100", "w100", "final15"],
+      "prefix": "task124_tq2d768_10k",
+      "k": 10,
+      "sweep": [32, 64],
+      "rerank_width": 100,
+      "queries_limit": 100,
+      "session_gucs": ["ec_ivf.stage2_final_rerank_width=15"],
+      "truth_cache_file": "${artifact_dir}/truth-10k-k10.json",
+      "log_output": "${artifact_dir}/recall-10k-tq2-dim768-g100-w100-final15.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-10k-tq2-dim768-g100-w100-final15",
+      "tags": ["task124", "latency", "tq2-dim768-stage2", "ec_real_10k", "turboquant2_768", "g100", "w100", "final15"],
+      "prefix": "task124_tq2d768_10k",
+      "k": 10,
+      "sweep": [32, 64],
+      "rerank_width": 100,
+      "iterations": 100,
+      "session_gucs": ["ec_ivf.stage2_final_rerank_width=15"],
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-10k-tq2-dim768-g100-w100-final15.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-10k-tq2-dim768-g100-w100-final15",
+      "tags": ["task124", "storage", "tq2-dim768-stage2", "ec_real_10k", "turboquant2_768", "g100", "w100", "final15"],
+      "prefix": "task124_tq2d768_10k",
+      "log_file": "${artifact_dir}/storage-10k-tq2-dim768-g100-w100-final15.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-50k-tq2-dim768-g100-w100-final15",
+      "tags": ["task124", "load", "tq2-dim768-stage2", "ec_real_50k", "turboquant2_768", "g100", "w100", "final15"],
+      "prefix": "task124_tq2d768_50k",
+      "profile": "ec_ivf",
+      "storage_format": "coarse_rerank",
+      "corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_50k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": ["nlists=64", "nprobe=32", "training_sample_rows=10000", "coarse_format=rabitq", "coarse_bits=1", "rerank=heap_f32", "rerank_placement=index", "rerank_format=turboquant2_768", "rerank_width=100", "stage2_final_rerank_width=15"],
+      "log_file": "${artifact_dir}/load-50k-tq2-dim768-g100-w100-final15.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-50k-tq2-dim768-g100-w100-final15",
+      "tags": ["task124", "recall", "tq2-dim768-stage2", "ec_real_50k", "turboquant2_768", "g100", "w100", "final15"],
+      "prefix": "task124_tq2d768_50k",
+      "k": 10,
+      "sweep": [32, 64],
+      "rerank_width": 100,
+      "queries_limit": 100,
+      "session_gucs": ["ec_ivf.stage2_final_rerank_width=15"],
+      "truth_cache_file": "${artifact_dir}/truth-50k-k10.json",
+      "log_output": "${artifact_dir}/recall-50k-tq2-dim768-g100-w100-final15.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-50k-tq2-dim768-g100-w100-final15",
+      "tags": ["task124", "latency", "tq2-dim768-stage2", "ec_real_50k", "turboquant2_768", "g100", "w100", "final15"],
+      "prefix": "task124_tq2d768_50k",
+      "k": 10,
+      "sweep": [32, 64],
+      "rerank_width": 100,
+      "iterations": 100,
+      "session_gucs": ["ec_ivf.stage2_final_rerank_width=15"],
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-50k-tq2-dim768-g100-w100-final15.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-50k-tq2-dim768-g100-w100-final15",
+      "tags": ["task124", "storage", "tq2-dim768-stage2", "ec_real_50k", "turboquant2_768", "g100", "w100", "final15"],
+      "prefix": "task124_tq2d768_50k",
+      "log_file": "${artifact_dir}/storage-50k-tq2-dim768-g100-w100-final15.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-tq2-dim768-g100-w100-final15",
+      "tags": ["task124", "load", "tq2-dim768-stage2", "ec_real_100k", "turboquant2_768", "g100", "w100", "final15"],
+      "prefix": "task124_tq2d768_100k",
+      "profile": "ec_ivf",
+      "storage_format": "coarse_rerank",
+      "corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_100k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": ["nlists=64", "nprobe=32", "training_sample_rows=10000", "coarse_format=rabitq", "coarse_bits=1", "rerank=heap_f32", "rerank_placement=index", "rerank_format=turboquant2_768", "rerank_width=100", "stage2_final_rerank_width=15"],
+      "log_file": "${artifact_dir}/load-100k-tq2-dim768-g100-w100-final15.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-tq2-dim768-g100-w100-final15",
+      "tags": ["task124", "recall", "tq2-dim768-stage2", "ec_real_100k", "turboquant2_768", "g100", "w100", "final15"],
+      "prefix": "task124_tq2d768_100k",
+      "k": 10,
+      "sweep": [32, 64],
+      "rerank_width": 100,
+      "queries_limit": 100,
+      "session_gucs": ["ec_ivf.stage2_final_rerank_width=15"],
+      "truth_cache_file": "${artifact_dir}/truth-100k-k10.json",
+      "log_output": "${artifact_dir}/recall-100k-tq2-dim768-g100-w100-final15.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-tq2-dim768-g100-w100-final15",
+      "tags": ["task124", "latency", "tq2-dim768-stage2", "ec_real_100k", "turboquant2_768", "g100", "w100", "final15"],
+      "prefix": "task124_tq2d768_100k",
+      "k": 10,
+      "sweep": [32, 64],
+      "rerank_width": 100,
+      "iterations": 100,
+      "session_gucs": ["ec_ivf.stage2_final_rerank_width=15"],
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-100k-tq2-dim768-g100-w100-final15.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k-tq2-dim768-g100-w100-final15",
+      "tags": ["task124", "storage", "tq2-dim768-stage2", "ec_real_100k", "turboquant2_768", "g100", "w100", "final15"],
+      "prefix": "task124_tq2d768_100k",
+      "log_file": "${artifact_dir}/storage-100k-tq2-dim768-g100-w100-final15.log"
+    }
+  ]
+}
