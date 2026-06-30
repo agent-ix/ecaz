@@ -1501,6 +1501,86 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "Task 124 TQ2 dimension/subspace scorer microprofile; run explicitly with ECAZ_TQ2_DIM_PROFILE_LOG"]
+    fn task124_profile_tq2_dimension_sweep() {
+        let total_candidates = task124_tq2_dim_profile_candidates();
+        let dims = [1536_usize, 1280, 1024, 768, 512, 384, 256];
+        let widths = [32_usize, 100];
+
+        let mut output = format!(
+            "task124_tq2_dimension_profile backend={} total_candidates={total_candidates}\n",
+            crate::quant::simd_backend_name(),
+        );
+
+        for &dim in &dims {
+            let max_width = *widths.iter().max().expect("width list is nonempty");
+            let quantizer = crate::quant::prod::ProdQuantizer::new(dim, 2, 42);
+            let query = random_unit_vector(dim, 4240 + dim as u64);
+            let prepared = quantizer.prepare_ip_query(&query);
+            crate::quant::qjl2_32::validate_qjl2_shape(&quantizer, &prepared).unwrap();
+            let encoded: Vec<(Vec<u8>, f32)> = (0..max_width)
+                .map(|seed| {
+                    let encoded = quantizer.encode(&random_unit_vector(dim, 32_000 + seed as u64));
+                    let mut code =
+                        Vec::with_capacity(encoded.mse_packed.len() + encoded.qjl_packed.len());
+                    code.extend_from_slice(&encoded.mse_packed);
+                    code.extend_from_slice(&encoded.qjl_packed);
+                    (code, encoded.gamma)
+                })
+                .collect();
+            let code_bytes = encoded[0].0.len();
+
+            for &width in &widths {
+                let mut batch = CandidateBatch::with_capacity(width);
+                for (index, (code, gamma)) in encoded[..width].iter().enumerate() {
+                    batch
+                        .push(
+                            index,
+                            CandidatePayload::new(code, CandidateMeta::Gamma(*gamma)),
+                        )
+                        .unwrap();
+                }
+                let mut batch_scores = vec![0.0_f32; width];
+                let iterations = (total_candidates / width).max(1);
+
+                for _ in 0..iterations.min(128) {
+                    super::score_turboquant_qjl2_batch_for(
+                        CandidateBatchScoringSurface::Ivf,
+                        black_box(&quantizer),
+                        black_box(&prepared),
+                        black_box(&batch),
+                        black_box(&mut batch_scores),
+                    )
+                    .unwrap();
+                    black_box(batch_scores[0]);
+                }
+
+                let started = Instant::now();
+                for _ in 0..iterations {
+                    super::score_turboquant_qjl2_batch_for(
+                        CandidateBatchScoringSurface::Ivf,
+                        black_box(&quantizer),
+                        black_box(&prepared),
+                        black_box(&batch),
+                        black_box(&mut batch_scores),
+                    )
+                    .unwrap();
+                    black_box(batch_scores[0]);
+                }
+                let elapsed = started.elapsed();
+                let candidates = iterations * width;
+                let ns_per_candidate = elapsed.as_secs_f64() * 1e9 / candidates as f64;
+                output.push_str(&format!(
+                    "dim={dim} width={width} code_bytes={code_bytes} iterations={iterations} candidates={candidates} total={elapsed:?} batch_ns_per_candidate={ns_per_candidate:.1}\n"
+                ));
+            }
+        }
+
+        print!("{output}");
+        write_task124_tq2_dim_profile_log(&output);
+    }
+
+    #[test]
     fn turboquant_lut_batch_records_surface_counters() {
         let _guard = super::CANDIDATE_BATCH_COUNTER_TEST_LOCK.lock().unwrap();
         super::reset_candidate_batch_scoring_counters();
@@ -2236,6 +2316,14 @@ mod tests {
             .max(1)
     }
 
+    fn task124_tq2_dim_profile_candidates() -> usize {
+        std::env::var("ECAZ_TQ2_DIM_PROFILE_CANDIDATES")
+            .ok()
+            .and_then(|value| value.parse::<usize>().ok())
+            .unwrap_or(192_000)
+            .max(1)
+    }
+
     fn write_task124_batch_width_profile_log(contents: &str) {
         let Ok(path) = std::env::var("ECAZ_TQ_BATCH_WIDTH_PROFILE_LOG") else {
             return;
@@ -2267,6 +2355,17 @@ mod tests {
             std::fs::create_dir_all(parent).expect("create TQ2 profile log parent");
         }
         std::fs::write(&path, contents).expect("write TQ2 profile log");
+    }
+
+    fn write_task124_tq2_dim_profile_log(contents: &str) {
+        let Ok(path) = std::env::var("ECAZ_TQ2_DIM_PROFILE_LOG") else {
+            return;
+        };
+        let path = std::path::PathBuf::from(path);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).expect("create TQ2 dimension profile log parent");
+        }
+        std::fs::write(&path, contents).expect("write TQ2 dimension profile log");
     }
 
     fn grouped_pq_lut(group_count: usize) -> Vec<f32> {
