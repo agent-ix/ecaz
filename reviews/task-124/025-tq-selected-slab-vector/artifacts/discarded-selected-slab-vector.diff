@@ -1,0 +1,109 @@
+diff --git a/src/am/ec_ivf/scan.rs b/src/am/ec_ivf/scan.rs
+index a24c89eb9..e3325017a 100644
+--- a/src/am/ec_ivf/scan.rs
++++ b/src/am/ec_ivf/scan.rs
+@@ -2908,7 +2908,7 @@ struct LoadedRerankGroup {
+ 
+ struct SelectedRerankPayloadSlab {
+     payloads: Vec<u8>,
+-    payload_index_by_heap_tid: HashMap<ItemPointer, usize>,
++    payload_index_by_heap_tid: Vec<(ItemPointer, usize)>,
+     payload_len: usize,
+ }
+ 
+@@ -3087,19 +3087,23 @@ unsafe fn load_rerank_group_for_heap_tids(
+         ));
+     }
+ 
+-    let mut payload_offsets_by_heap_tid: HashMap<ItemPointer, usize> =
+-        HashMap::with_capacity(requested_heap_tids.len());
+-    for requested_heap_tid in requested_heap_tids {
++    let mut selected_payloads = Vec::with_capacity(requested_heap_tids.len());
++    for (payload_index, requested_heap_tid) in requested_heap_tids.iter().copied().enumerate() {
+         let payload_offset = rerank_group_payload_offset_for_heap_tid(
+             &header,
+-            *requested_heap_tid,
++            requested_heap_tid,
+             expected_payload_len,
+         )?;
+-        payload_offsets_by_heap_tid.insert(*requested_heap_tid, payload_offset);
++        selected_payloads.push(SelectedRerankPayload {
++            heap_tid: requested_heap_tid,
++            payload_offset,
++            payload_index,
++            copied: 0,
++        });
+     }
+-    let max_required_payload_end = payload_offsets_by_heap_tid
+-        .values()
+-        .map(|offset| offset.saturating_add(expected_payload_len))
++    let max_required_payload_end = selected_payloads
++        .iter()
++        .map(|selected| selected.payload_offset.saturating_add(expected_payload_len))
+         .max()
+         .unwrap_or(header.payloads.len());
+ 
+@@ -3113,18 +3117,6 @@ unsafe fn load_rerank_group_for_heap_tids(
+         ));
+     }
+ 
+-    let mut selected_payloads = payload_offsets_by_heap_tid
+-        .iter()
+-        .enumerate()
+-        .map(
+-            |(payload_index, (heap_tid, payload_offset))| SelectedRerankPayload {
+-                heap_tid: *heap_tid,
+-                payload_offset: *payload_offset,
+-                payload_index,
+-                copied: 0,
+-            },
+-        )
+-        .collect::<Vec<_>>();
+     let selected_payload_slab_len = selected_payloads
+         .len()
+         .checked_mul(expected_payload_len)
+@@ -3170,7 +3162,7 @@ unsafe fn load_rerank_group_for_heap_tids(
+         next_segment_tid = segment.next_segment_tid;
+     }
+ 
+-    let mut payload_index_by_heap_tid = HashMap::with_capacity(selected_payloads.len());
++    let mut payload_index_by_heap_tid = Vec::with_capacity(selected_payloads.len());
+     for selected in selected_payloads {
+         if selected.copied != expected_payload_len {
+             return Err(format!(
+@@ -3178,7 +3170,7 @@ unsafe fn load_rerank_group_for_heap_tids(
+                 selected.copied, selected.heap_tid
+             ));
+         }
+-        payload_index_by_heap_tid.insert(selected.heap_tid, selected.payload_index);
++        payload_index_by_heap_tid.push((selected.heap_tid, selected.payload_index));
+     }
+ 
+     Ok(LoadedRerankGroup {
+@@ -3272,7 +3264,10 @@ fn rerank_group_payload_for_heap_tid(
+         }
+         let payload_index = selected_payloads
+             .payload_index_by_heap_tid
+-            .get(&heap_tid)
++            .iter()
++            .find_map(|(selected_heap_tid, payload_index)| {
++                (*selected_heap_tid == heap_tid).then_some(*payload_index)
++            })
+             .ok_or_else(|| {
+                 format!(
+                     "ec_ivf rerank group did not contain selected heap tid {:?}",
+@@ -4900,13 +4895,10 @@ mod tests {
+             ],
+             &[],
+         );
+-        let mut payload_index_by_heap_tid = HashMap::new();
+-        payload_index_by_heap_tid.insert(second_heap_tid, 0);
+-        payload_index_by_heap_tid.insert(first_heap_tid, 1);
+         group.payloads.clear();
+         group.selected_payloads = Some(SelectedRerankPayloadSlab {
+             payloads: vec![0x20, 0x21, 0x10, 0x11],
+-            payload_index_by_heap_tid,
++            payload_index_by_heap_tid: vec![(second_heap_tid, 0), (first_heap_tid, 1)],
+             payload_len: 2,
+         });
+         let mut groups = HashMap::new();
