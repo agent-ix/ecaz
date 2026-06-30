@@ -1,0 +1,4 @@
+task124_query_prep_profile backend=neon dim=1536 iterations=2000
+prepare_ip_query_lut_no_qjl_4bit total=8.31825ms ns_per_iter=4159.1
+srht_padded total=3.764292ms ns_per_iter=1882.1
+build_prepared_query_lut_16 total=3.059959ms ns_per_iter=1530.0
