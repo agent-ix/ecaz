@@ -17,9 +17,10 @@ The reopened scorer phase is now complete:
 | Prefetch / pipelining | `033-tq-prefetch-pipeline` |
 | Dimension/subspace reduction | `034-tq-dimension-subspace` |
 
-This packet answers the remaining closeout question with current-HEAD product
-evidence. It is not an f32 bake-off substitution for scorer work; it is the
-required post-change 10k / 50k / 100k validation after the scorer work landed.
+This packet is retained as current-HEAD 4-bit TQ workload validation evidence.
+It is not a product-promotion closeout, not an f32 bake-off substitution for
+scorer work, and not evidence for the TQ2 or reduced-dimension microbenchmark
+wins.
 
 ## Validation
 
@@ -36,7 +37,7 @@ The first suite run omitted explicit PG host/port and failed before any step
 executed. The authoritative run is `suite-run-r2.log` with
 `--host /Users/peter/.pgrx --port 28818`.
 
-## Product Matrix Result
+## Workload Matrix Result
 
 Config: `artifacts/task124-post-scorer-product-suite.json`, run with
 `--artifact-dir artifacts/post-scorer-suite`.
@@ -69,20 +70,20 @@ in-engine path. It did not turn the product matrix into a durable promotion
 result because the shared frontier dominates and the TQ sidecar still has recall
 and storage costs at the relevant scales.
 
-## Decision
+## Scope Correction
 
-Closeout outcome: **Shelve product promotion after completing the TQ scorer
-optimization pass.**
+The earlier closeout framing in this packet was too broad. This packet does not
+shelve or promote product use. It records one validated in-engine result for
+4-bit TQ: the scorer component improved versus packet 026 while staying on the
+NEON path.
 
-Task 124 should not claim that TQ final15 is product-ready. The completed
-scorer work produced real TQ-internal speed improvements and confirmed full
-SIMD dispatch, but the current product matrix still fails the promote condition:
+The following product-matrix facts are retained as context only and are not the
+Task 124 answer:
 
 - 50k TQ recall is lower than f32/source (`0.9980` vs `1.0000`).
 - 50k and 100k TQ tail latency is not better than f32/source.
 - TQ index storage remains much larger than the f32/source index.
 
-The branch now has the evidence that was missing from the rejected `027`
-shelve: all seven reopened TQ scorer/compute-path levers were implemented or
-attempted and measured with TQ-internal deltas, and the current product matrix
-was rerun after those changes.
+Reviewer feedback on this packet requires separate real-index validation before
+the TQ2 SIMD and reduced-dimension microbenchmark wins can count as workload
+speedups. Packet `036-tq2-real-index-validation` addresses the TQ2 part.
