@@ -32,8 +32,6 @@ use crate::am::ec_ivf::options::{RerankPlacement, StorageFormat};
 use crate::quant::prod::{BinarySignNoQjl4BitQuery, ProdQuantizer};
 use std::sync::Arc;
 
-const TURBOQUANT2_DIM768_DIMENSIONS: usize = 768;
-
 /// Resolved rerank scorer for a single scan. Owns whatever per-query state the
 /// chosen representation needs so the per-candidate loop stays allocation-light.
 pub(super) enum RerankScorer {
@@ -85,8 +83,6 @@ pub(super) enum RerankPayloadCodec {
         score_mode: RaBitQRerankScoreMode,
         bits: u8,
         quantizer: IvfQuantizer,
-        source_dimensions: usize,
-        score_dimensions: usize,
         code_len: usize,
         payload_len: usize,
         stores_gamma: bool,
@@ -165,18 +161,15 @@ impl RerankPayloadCodec {
                     residual: rabitq_residual,
                 }))
             }
-            RerankFormat::TurboQuant
-            | RerankFormat::TurboQuant2
-            | RerankFormat::TurboQuant2Dim768 => {
+            RerankFormat::TurboQuant | RerankFormat::TurboQuant2 => {
                 let bits = match rerank_format {
                     RerankFormat::TurboQuant => crate::DEFAULT_QUANT_BITS,
-                    RerankFormat::TurboQuant2 | RerankFormat::TurboQuant2Dim768 => 2,
+                    RerankFormat::TurboQuant2 => 2,
                     _ => unreachable!("matched only concrete TurboQuant rerank formats"),
                 };
-                let score_dimensions = turboquant_score_dimensions(rerank_format, dimensions)?;
-                let quantizer = IvfQuantizer::resolve_turboquant_with_bits(score_dimensions, bits)?;
+                let quantizer = IvfQuantizer::resolve_turboquant_with_bits(dimensions, bits)?;
                 let code_len = quantizer.payload_len();
-                let stores_gamma = turboquant_payload_needs_gamma(score_dimensions, bits);
+                let stores_gamma = turboquant_payload_needs_gamma(dimensions, bits);
                 let payload_len = code_len
                     + if stores_gamma {
                         std::mem::size_of::<f32>()
@@ -188,12 +181,10 @@ impl RerankPayloadCodec {
                     score_mode: rabitq_score_mode,
                     bits,
                     quantizer,
-                    source_dimensions: dimensions,
-                    score_dimensions,
                     code_len,
                     payload_len,
                     stores_gamma,
-                    centroid_relative: rabitq_residual && score_dimensions == dimensions,
+                    centroid_relative: rabitq_residual,
                 }))
             }
             RerankFormat::TurboQuantBinary => {
@@ -275,29 +266,12 @@ impl RerankPayloadCodec {
                     query_f16: query.iter().copied().map(f16_round_trip).collect(),
                 })
             }
-            Self::RaBitQ { quantizer, .. } => {
-                quantizer.prepare_ip_query(query).map(|prepared_query| {
-                    RerankPreparedQuery::Quantized {
-                        prepared_query,
-                        query: query.to_vec(),
-                    }
-                })
-            }
-            Self::TurboQuant {
-                quantizer,
-                source_dimensions,
-                score_dimensions,
-                ..
-            } => {
-                validate_turboquant_dimension("query", query.len(), *source_dimensions)?;
-                let query = prefix_subspace(query, *score_dimensions)?;
-                quantizer.prepare_ip_query(query).map(|prepared_query| {
-                    RerankPreparedQuery::Quantized {
-                        prepared_query,
-                        query: query.to_vec(),
-                    }
-                })
-            }
+            Self::RaBitQ { quantizer, .. } | Self::TurboQuant { quantizer, .. } => quantizer
+                .prepare_ip_query(query)
+                .map(|prepared_query| RerankPreparedQuery::Quantized {
+                    prepared_query,
+                    query: query.to_vec(),
+                }),
             Self::TurboQuantBinary {
                 quantizer,
                 dimensions,
@@ -351,8 +325,6 @@ impl RerankPayloadCodec {
             }
             Self::TurboQuant {
                 quantizer,
-                source_dimensions,
-                score_dimensions,
                 code_len,
                 payload_len,
                 stores_gamma,
@@ -365,13 +337,12 @@ impl RerankPayloadCodec {
                             .to_owned(),
                     );
                 }
-                validate_turboquant_dimension("source", source.len(), *source_dimensions)?;
                 encode_turboquant_payload(
                     *quantizer,
                     *code_len,
                     *payload_len,
                     *stores_gamma,
-                    prefix_subspace(source, *score_dimensions)?,
+                    source,
                 )
             }
             Self::TurboQuantBinary {
@@ -413,8 +384,6 @@ impl RerankPayloadCodec {
             }
             Self::TurboQuant {
                 quantizer,
-                source_dimensions,
-                score_dimensions,
                 code_len,
                 payload_len,
                 stores_gamma,
@@ -428,11 +397,9 @@ impl RerankPayloadCodec {
                         centroid.len()
                     ));
                 }
-                validate_turboquant_dimension("source", source.len(), *source_dimensions)?;
                 let residual = source
                     .iter()
                     .zip(centroid.iter())
-                    .take(*score_dimensions)
                     .map(|(value, center)| value - center)
                     .collect::<Vec<_>>();
                 encode_turboquant_payload(
@@ -1086,47 +1053,6 @@ fn turboquant_payload_needs_gamma(dimensions: usize, bits: u8) -> bool {
         .exact_score_uses_qjl()
 }
 
-fn turboquant_score_dimensions(
-    format: RerankFormat,
-    source_dimensions: usize,
-) -> Result<usize, String> {
-    let score_dimensions = match format {
-        RerankFormat::TurboQuant2Dim768 => TURBOQUANT2_DIM768_DIMENSIONS,
-        RerankFormat::TurboQuant | RerankFormat::TurboQuant2 => source_dimensions,
-        _ => {
-            return Err(format!(
-                "ec_ivf rerank_format '{}' is not a TurboQuant format",
-                format.reloption_name()
-            ))
-        }
-    };
-    if source_dimensions < score_dimensions {
-        return Err(format!(
-            "ec_ivf rerank_format '{}' requires at least {score_dimensions} dimensions, got {source_dimensions}",
-            format.reloption_name()
-        ));
-    }
-    Ok(score_dimensions)
-}
-
-fn validate_turboquant_dimension(kind: &str, got: usize, expected: usize) -> Result<(), String> {
-    if got != expected {
-        return Err(format!(
-            "ec_ivf turboquant rerank {kind} dimension mismatch: got {got}, expected {expected}"
-        ));
-    }
-    Ok(())
-}
-
-fn prefix_subspace(values: &[f32], dimensions: usize) -> Result<&[f32], String> {
-    values.get(..dimensions).ok_or_else(|| {
-        format!(
-            "ec_ivf turboquant rerank requested {dimensions} dimensions from {} values",
-            values.len()
-        )
-    })
-}
-
 impl RerankScorer {
     /// Build the scorer for `rerank_format`. Compact payload formats are only
     /// valid for the `coarse_rerank` storage format; the caller has already
@@ -1151,7 +1077,6 @@ impl RerankScorer {
             | RerankFormat::RaBitQ8
             | RerankFormat::TurboQuant
             | RerankFormat::TurboQuant2
-            | RerankFormat::TurboQuant2Dim768
             | RerankFormat::TurboQuantBinary => {
                 if storage_format != StorageFormat::CoarseRerank {
                     return Err(format!(
@@ -1885,73 +1810,6 @@ mod tests {
             crate::code_len(1536, 2) + std::mem::size_of::<f32>()
         );
         assert!(tq2.payload_len(1536) < tq4.payload_len(1536));
-    }
-
-    #[test]
-    fn turboquant2_768_sidecar_scores_fixed_prefix_subspace() {
-        let dimensions = 1024;
-        let score_dimensions = TURBOQUANT2_DIM768_DIMENSIONS;
-        let mut query = vec![0.0_f32; dimensions];
-        let mut source_a = vec![0.0_f32; dimensions];
-        let mut source_b = vec![0.0_f32; dimensions];
-        let centroid = vec![0.01_f32; dimensions];
-        for index in 0..dimensions {
-            query[index] = ((index % 19) as f32 - 9.0) * 0.001;
-            source_a[index] = ((index % 23) as f32 - 11.0) * 0.0015;
-            source_b[index] = source_a[index];
-        }
-        for value in &mut source_b[score_dimensions..] {
-            *value += 10.0;
-        }
-
-        let encoder = RerankSidecarEncoder::resolve(
-            RerankFormat::TurboQuant2Dim768,
-            dimensions,
-            EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
-        )
-        .unwrap()
-        .unwrap();
-        assert_eq!(
-            encoder.payload_len(dimensions),
-            crate::code_len(score_dimensions, 2) + std::mem::size_of::<f32>()
-        );
-        let payload_a = encoder.encode(&source_a).unwrap();
-        let payload_b = encoder.encode(&source_b).unwrap();
-        assert_eq!(
-            payload_a, payload_b,
-            "tail dimensions beyond 768 must not affect the reduced-dimension payload"
-        );
-        assert_eq!(
-            payload_a,
-            encoder.encode_with_centroid(&source_a, &centroid).unwrap(),
-            "reduced-dimension TQ2 is direct-prefix scoring, not centroid-relative residual scoring"
-        );
-
-        let scorer = RerankScorer::resolve(
-            RerankFormat::TurboQuant2Dim768,
-            RerankPlacement::Index,
-            StorageFormat::CoarseRerank,
-            dimensions,
-            &query,
-            RaBitQRerankScoreMode::Estimator,
-            EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
-        )
-        .unwrap();
-        assert!(!scorer.uses_sidecar_centroid_ip());
-        assert!(scorer.supports_sidecar_payload_ref_batch());
-        let score_a = scorer.score_sidecar_payload(&payload_a);
-        let score_b = scorer.score_sidecar_payload(&payload_b);
-        assert_eq!(score_a.to_bits(), score_b.to_bits());
-
-        let mut batch_scores = [0.0_f32; 2];
-        scorer
-            .score_sidecar_payloads_batch(
-                &[payload_a.clone(), payload_b.clone()].concat(),
-                &mut batch_scores,
-            )
-            .unwrap();
-        assert_eq!(batch_scores[0].to_bits(), score_a.to_bits());
-        assert_eq!(batch_scores[1].to_bits(), score_a.to_bits());
     }
 
     #[test]
