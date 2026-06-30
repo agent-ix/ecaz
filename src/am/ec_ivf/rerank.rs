@@ -637,7 +637,7 @@ impl RerankPayloadCodec {
                 }
                 match score_mode {
                     RaBitQRerankScoreMode::Estimator | RaBitQRerankScoreMode::LeastSquares => {
-                        if *bits != crate::DEFAULT_QUANT_BITS {
+                        if *bits != crate::DEFAULT_QUANT_BITS && *bits != 2 {
                             for (out, payload) in out_scores
                                 .iter_mut()
                                 .zip(payloads.chunks_exact(*payload_len))
@@ -767,7 +767,7 @@ impl RerankPayloadCodec {
                 }
                 match score_mode {
                     RaBitQRerankScoreMode::Estimator | RaBitQRerankScoreMode::LeastSquares => {
-                        if *bits != crate::DEFAULT_QUANT_BITS {
+                        if *bits != crate::DEFAULT_QUANT_BITS && *bits != 2 {
                             for (out, payload) in out_scores.iter_mut().zip(payloads.iter()) {
                                 let (gamma, code) = split_turboquant_payload(
                                     payload,

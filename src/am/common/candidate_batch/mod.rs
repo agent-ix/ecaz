@@ -342,6 +342,20 @@ pub(crate) fn score_turboquant_qjl_batch_for<Id>(
     result.map(|_| ())
 }
 
+pub(crate) fn score_turboquant_qjl2_batch_for<Id>(
+    surface: CandidateBatchScoringSurface,
+    quantizer: &ProdQuantizer,
+    prepared: &PreparedQuery,
+    batch: &CandidateBatch<'_, Id>,
+    out_scores: &mut [f32],
+) -> Result<(), String> {
+    let result = score_turboquant_qjl2_batch_inner(quantizer, prepared, batch, out_scores);
+    if let Ok(timing) = &result {
+        record_batch_scoring_timing(surface, QuantCodecKind::TurboQuantQjl, batch.len(), timing);
+    }
+    result.map(|_| ())
+}
+
 pub(crate) fn score_grouped_pq_batch_for<Id>(
     surface: CandidateBatchScoringSurface,
     lut: &[f32],
@@ -857,6 +871,121 @@ fn validate_turboquant_qjl_batch_shapes<Id>(
     Ok(())
 }
 
+fn score_turboquant_qjl2_batch_inner<Id>(
+    quantizer: &ProdQuantizer,
+    prepared: &PreparedQuery,
+    batch: &CandidateBatch<'_, Id>,
+    out_scores: &mut [f32],
+) -> Result<BatchScoringTiming, String> {
+    if batch.len() != out_scores.len() {
+        return Err(format!(
+            "candidate batch score output count {} does not match candidate count {}",
+            out_scores.len(),
+            batch.len()
+        ));
+    }
+    crate::quant::qjl2_32::validate_qjl2_shape(quantizer, prepared)?;
+    validate_turboquant_qjl2_batch_shapes(quantizer.original_dim, batch)?;
+
+    Ok(score_width_cascade(
+        batch.payloads(),
+        out_scores,
+        crate::quant::qjl2_32::BLOCK_WIDTH,
+        true,
+        |block_payloads, block_scores| {
+            let codes: [&[u8]; crate::quant::qjl2_32::BLOCK_WIDTH] =
+                std::array::from_fn(|index| block_payloads[index].code);
+            let gammas: [f32; crate::quant::qjl2_32::BLOCK_WIDTH] = std::array::from_fn(|index| {
+                turboquant_qjl_gamma_after_validation(block_payloads[index].meta)
+            });
+            crate::quant::qjl2_32::score_turboquant_qjl2_block32(
+                quantizer,
+                prepared,
+                codes,
+                gammas,
+                block_scores,
+            )
+        },
+        |tail_payloads, tail_scores, timing| {
+            score_turboquant_qjl2_remainder(
+                quantizer,
+                prepared,
+                tail_payloads,
+                tail_scores,
+                timing,
+            );
+        },
+    ))
+}
+
+fn score_turboquant_qjl2_remainder(
+    quantizer: &ProdQuantizer,
+    prepared: &PreparedQuery,
+    payloads: &[CandidatePayload<'_>],
+    out_scores: &mut [f32],
+    timing: &mut BatchScoringTiming,
+) {
+    let mut block_start = 0usize;
+    while block_start + crate::quant::qjl2_32::OCTET_WIDTH <= payloads.len() {
+        let block_started = Instant::now();
+        let block_payloads =
+            &payloads[block_start..block_start + crate::quant::qjl2_32::OCTET_WIDTH];
+        let codes: [&[u8]; crate::quant::qjl2_32::OCTET_WIDTH] =
+            std::array::from_fn(|index| block_payloads[index].code);
+        let gammas: [f32; crate::quant::qjl2_32::OCTET_WIDTH] = std::array::from_fn(|index| {
+            turboquant_qjl_gamma_after_validation(block_payloads[index].meta)
+        });
+        let Some(isa) = crate::quant::qjl2_32::score_turboquant_qjl2_octet8(
+            quantizer,
+            prepared,
+            codes,
+            gammas,
+            &mut out_scores[block_start..block_start + crate::quant::qjl2_32::OCTET_WIDTH],
+        ) else {
+            break;
+        };
+        timing.record_run(
+            isa,
+            crate::quant::qjl2_32::OCTET_WIDTH,
+            u64::try_from(block_started.elapsed().as_nanos()).unwrap_or(u64::MAX),
+            true,
+        );
+        block_start += crate::quant::qjl2_32::OCTET_WIDTH;
+    }
+
+    if block_start >= payloads.len() {
+        return;
+    }
+
+    let scalar_started = Instant::now();
+    for (payload, out_score) in payloads[block_start..]
+        .iter()
+        .zip(out_scores[block_start..].iter_mut())
+    {
+        *out_score = crate::quant::qjl2_32::score_turboquant_qjl2_scalar(
+            quantizer,
+            prepared,
+            payload.code,
+            turboquant_qjl_gamma_after_validation(payload.meta),
+        );
+    }
+    timing.scalar_candidates += payloads.len() - block_start;
+    timing.scalar_elapsed_nanos = timing
+        .scalar_elapsed_nanos
+        .saturating_add(u64::try_from(scalar_started.elapsed().as_nanos()).unwrap_or(u64::MAX));
+}
+
+fn validate_turboquant_qjl2_batch_shapes<Id>(
+    original_dim: usize,
+    batch: &CandidateBatch<'_, Id>,
+) -> Result<(), String> {
+    for (candidate_index, payload) in batch.payloads().iter().enumerate() {
+        validate_turboquant_qjl_meta(payload.meta)?;
+        crate::quant::qjl2_32::validate_code_shape(candidate_index, original_dim, payload.code)?;
+    }
+    Ok(())
+}
+
 fn turboquant_qjl_gamma_after_validation(meta: CandidateMeta<'_>) -> f32 {
     match meta {
         CandidateMeta::Gamma(gamma) | CandidateMeta::GammaAndResidualSigns { gamma, .. } => gamma,
@@ -1145,6 +1274,108 @@ mod tests {
 
         print!("{output}");
         write_task124_qjl_profile_log(&output);
+    }
+
+    #[test]
+    #[ignore = "Task 124 TQ2 scorer microprofile; run explicitly with ECAZ_TQ2_QJL_PROFILE_LOG"]
+    fn task124_profile_tq2_qjl_flush_widths() {
+        let dim = 1536;
+        let total_candidates = task124_tq2_profile_candidates();
+        let widths = [1_usize, 7, 8, 15, 16, 25, 31, 32, 33, 64, 96, 100, 128];
+        let max_width = *widths.iter().max().expect("width list is nonempty");
+        let quantizer = crate::quant::prod::ProdQuantizer::new(dim, 2, 42);
+        let query = random_unit_vector(dim, 3240);
+        let prepared = quantizer.prepare_ip_query(&query);
+        crate::quant::qjl2_32::validate_qjl2_shape(&quantizer, &prepared).unwrap();
+        let encoded: Vec<(Vec<u8>, f32)> = (0..max_width)
+            .map(|seed| {
+                let encoded = quantizer.encode(&random_unit_vector(dim, 22_000 + seed as u64));
+                let mut code =
+                    Vec::with_capacity(encoded.mse_packed.len() + encoded.qjl_packed.len());
+                code.extend_from_slice(&encoded.mse_packed);
+                code.extend_from_slice(&encoded.qjl_packed);
+                (code, encoded.gamma)
+            })
+            .collect();
+
+        let mut output = format!(
+            "task124_tq2_qjl_profile backend={} dim={dim} total_candidates={total_candidates}\n",
+            crate::quant::simd_backend_name(),
+        );
+
+        for &width in &widths {
+            let mut batch = CandidateBatch::with_capacity(width);
+            for (index, (code, gamma)) in encoded[..width].iter().enumerate() {
+                batch
+                    .push(
+                        index,
+                        CandidatePayload::new(code, CandidateMeta::Gamma(*gamma)),
+                    )
+                    .unwrap();
+            }
+            let mut scalar_scores = vec![0.0_f32; width];
+            let mut batch_scores = vec![0.0_f32; width];
+            let iterations = (total_candidates / width).max(1);
+
+            for _ in 0..iterations.min(128) {
+                for ((code, gamma), out) in encoded[..width].iter().zip(scalar_scores.iter_mut()) {
+                    *out = black_box(&quantizer).score_ip_from_parts(
+                        black_box(&prepared),
+                        *gamma,
+                        black_box(code),
+                    );
+                }
+                super::score_turboquant_qjl2_batch_for(
+                    CandidateBatchScoringSurface::Ivf,
+                    black_box(&quantizer),
+                    black_box(&prepared),
+                    black_box(&batch),
+                    black_box(&mut batch_scores),
+                )
+                .unwrap();
+                black_box(batch_scores[0] + scalar_scores[0]);
+            }
+
+            let scalar_started = Instant::now();
+            for _ in 0..iterations {
+                for ((code, gamma), out) in encoded[..width].iter().zip(scalar_scores.iter_mut()) {
+                    *out = black_box(&quantizer).score_ip_from_parts(
+                        black_box(&prepared),
+                        *gamma,
+                        black_box(code),
+                    );
+                }
+                black_box(scalar_scores[0]);
+            }
+            let scalar_elapsed = scalar_started.elapsed();
+
+            let batch_started = Instant::now();
+            for _ in 0..iterations {
+                super::score_turboquant_qjl2_batch_for(
+                    CandidateBatchScoringSurface::Ivf,
+                    black_box(&quantizer),
+                    black_box(&prepared),
+                    black_box(&batch),
+                    black_box(&mut batch_scores),
+                )
+                .unwrap();
+                black_box(batch_scores[0]);
+            }
+            let batch_elapsed = batch_started.elapsed();
+
+            for (scalar, batch) in scalar_scores.iter().zip(batch_scores.iter()) {
+                assert!((scalar - batch).abs() <= 1.0e-4);
+            }
+            let candidates = iterations * width;
+            let scalar_ns = scalar_elapsed.as_secs_f64() * 1e9 / candidates as f64;
+            let batch_ns = batch_elapsed.as_secs_f64() * 1e9 / candidates as f64;
+            output.push_str(&format!(
+                "width={width} iterations={iterations} candidates={candidates} scalar_total={scalar_elapsed:?} scalar_ns_per_candidate={scalar_ns:.1} batch_total={batch_elapsed:?} batch_ns_per_candidate={batch_ns:.1}\n"
+            ));
+        }
+
+        print!("{output}");
+        write_task124_tq2_profile_log(&output);
     }
 
     #[test]
@@ -1875,6 +2106,14 @@ mod tests {
             .max(1)
     }
 
+    fn task124_tq2_profile_candidates() -> usize {
+        std::env::var("ECAZ_TQ2_QJL_PROFILE_CANDIDATES")
+            .ok()
+            .and_then(|value| value.parse::<usize>().ok())
+            .unwrap_or(192_000)
+            .max(1)
+    }
+
     fn write_task124_batch_width_profile_log(contents: &str) {
         let Ok(path) = std::env::var("ECAZ_TQ_BATCH_WIDTH_PROFILE_LOG") else {
             return;
@@ -1895,6 +2134,17 @@ mod tests {
             std::fs::create_dir_all(parent).expect("create QJL profile log parent");
         }
         std::fs::write(&path, contents).expect("write QJL profile log");
+    }
+
+    fn write_task124_tq2_profile_log(contents: &str) {
+        let Ok(path) = std::env::var("ECAZ_TQ2_QJL_PROFILE_LOG") else {
+            return;
+        };
+        let path = std::path::PathBuf::from(path);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).expect("create TQ2 profile log parent");
+        }
+        std::fs::write(&path, contents).expect("write TQ2 profile log");
     }
 
     fn grouped_pq_lut(group_count: usize) -> Vec<f32> {

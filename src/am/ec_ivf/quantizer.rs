@@ -3,8 +3,9 @@ use super::page;
 use crate::am::common::candidate_batch::{
     record_ivf_rabitq_arithmetic_batch_flush_width, score_grouped_pq_batch_for,
     score_rabitq_bits1_batch_for, score_rabitq_bitsn_batch_for,
-    score_turboquant_no_qjl_4bit_batch_for, score_turboquant_qjl_batch_for, CandidateBatch,
-    CandidateBatchScoringSurface, CandidateMeta, CandidatePayload,
+    score_turboquant_no_qjl_4bit_batch_for, score_turboquant_qjl2_batch_for,
+    score_turboquant_qjl_batch_for, CandidateBatch, CandidateBatchScoringSurface, CandidateMeta,
+    CandidatePayload,
 };
 use crate::am::common::quant_codec::{
     EncodedQuantPayload, QuantCodec, QuantCodecKind, QuantSearchCodecTag,
@@ -721,14 +722,27 @@ impl IvfQuantizer {
                 }
                 out_scores.clear();
                 out_scores.resize(batch.len(), 0.0);
-                score_turboquant_qjl_batch_for(
-                    CandidateBatchScoringSurface::Ivf,
-                    quantizer.as_ref(),
-                    prepared_query,
-                    &batch,
-                    out_scores,
-                )?;
-                Ok(true)
+                if self.rabitq_bits == 2 {
+                    score_turboquant_qjl2_batch_for(
+                        CandidateBatchScoringSurface::Ivf,
+                        quantizer.as_ref(),
+                        prepared_query,
+                        &batch,
+                        out_scores,
+                    )?;
+                    Ok(true)
+                } else if self.rabitq_bits == crate::DEFAULT_QUANT_BITS {
+                    score_turboquant_qjl_batch_for(
+                        CandidateBatchScoringSurface::Ivf,
+                        quantizer.as_ref(),
+                        prepared_query,
+                        &batch,
+                        out_scores,
+                    )?;
+                    Ok(true)
+                } else {
+                    Ok(false)
+                }
             }
             (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::RaBitQ(_))
             | (IvfQuantizerProfile::PqFastScan { .. }, IvfPreparedQuery::PqFastScan { .. }) => {
@@ -877,14 +891,27 @@ impl IvfQuantizer {
                 }
                 out_scores.clear();
                 out_scores.resize(batch.len(), 0.0);
-                score_turboquant_qjl_batch_for(
-                    CandidateBatchScoringSurface::Ivf,
-                    quantizer.as_ref(),
-                    prepared_query,
-                    &batch,
-                    out_scores,
-                )?;
-                Ok(true)
+                if self.rabitq_bits == 2 {
+                    score_turboquant_qjl2_batch_for(
+                        CandidateBatchScoringSurface::Ivf,
+                        quantizer.as_ref(),
+                        prepared_query,
+                        &batch,
+                        out_scores,
+                    )?;
+                    Ok(true)
+                } else if self.rabitq_bits == crate::DEFAULT_QUANT_BITS {
+                    score_turboquant_qjl_batch_for(
+                        CandidateBatchScoringSurface::Ivf,
+                        quantizer.as_ref(),
+                        prepared_query,
+                        &batch,
+                        out_scores,
+                    )?;
+                    Ok(true)
+                } else {
+                    Ok(false)
+                }
             }
             (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::RaBitQ(_))
             | (IvfQuantizerProfile::PqFastScan { .. }, IvfPreparedQuery::PqFastScan { .. }) => {
