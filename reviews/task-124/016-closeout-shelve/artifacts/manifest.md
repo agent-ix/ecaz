@@ -19,14 +19,14 @@
 - `reviews/task-124/012-tq-stage2-topk-fusion/`: score/top-k/materialization fusion attempt rejected and reverted.
 - `reviews/task-124/013-tq-compact-rerank-groups/`: compact header structural storage slice rejected and reverted.
 - `reviews/task-124/014-tq-direct-slot-rerank/`: direct slot materialization slice rejected and reverted.
-- `reviews/task-124/015-tq-phase6-local-cache-evict/`: required Phase 6 local IO-sensitive validation.
+- `reviews/task-124/015-tq-phase6-local-cache-evict/`: attempted Phase 6 local validation; later reviewer feedback corrected that this was not controlled cold-cache evidence.
 
 ## Closeout Criteria Check
 
 Task 124 allowed three closeout outcomes:
 
 - Promote: not satisfied. Recall matched, but p50/p95/p99 latency was not lower across product-relevant cells, and storage/IO tradeoff was not justified.
-- Iterate: no longer the right task-local outcome after the reviewer-directed fork. The cheap and medium structural TQ levers were tested, the scorer was proven SIMD, and Phase 6 did not reveal the IO win needed to justify the 4.5x index footprint.
+- Iterate: no longer the right task-local outcome under the old product-win framing after the cheap and medium structural TQ levers were tested and the scorer was proven SIMD. Phase 6 did not supply valid cold-cache evidence; the closeout rationale rests on the storage wall and sidecar-read shape, not packet 015 latency numbers.
 - Shelve: satisfied. In-engine TQ stage-2 cannot beat current RaBitQ + f32 at the measured product matrix.
 
 ## Key Facts
@@ -35,11 +35,19 @@ Task 124 allowed three closeout outcomes:
 - Required 10k/50k/100k A/B evidence exists in packet 003; recall matched the f32 baseline after the partial payload loader.
 - Final width 10 was explicitly rejected because it broke recall; final15 was the best measured narrower final exact width but still did not close the task.
 - Storage remained the blocker: 100k f32/source ec_ivf index `22.5 MiB` vs TQ ec_ivf index `100.8 MiB`.
-- Phase 6 local macOS relation `F_NOCACHE` validation at 100k did not produce a product latency win:
+- Phase 6 local macOS relation `F_NOCACHE` validation at 100k was attempted, but later reviewer feedback corrected that it was not controlled cold-cache evidence because `F_NOCACHE` is per-fd and PostgreSQL reads through separate relation fds. The numbers below are preserved only as a local run record, not as an IO-sensitive gate result:
   - nprobe32 f32 `p50=5.74 ms`, `p95=9.53 ms`, `p99=13.8 ms`;
   - nprobe32 TQ `p50=6.76 ms`, `p95=10.9 ms`, `p99=14.3 ms`;
   - nprobe64 f32 `p50=9.01 ms`, `p95=11.5 ms`, `p99=11.8 ms`;
   - nprobe64 TQ `p50=9.24 ms`, `p95=9.98 ms`, `p99=12.8 ms`.
+
+## Reviewer Correction
+
+Reviewer feedback in `reviews/task-124/016-closeout-shelve/feedback/2026-06-29-01-reviewer.md`
+corrected that packet 015 must not be cited as completed Phase 6 IO-sensitive
+evidence. The valid closeout basis under the old framing was the measured
+storage wall and sidecar-read shape; Task 124 was later reopened by packet 017
+for the narrower TQ speed-improvement objective.
 
 ## Validation For This Packet
 

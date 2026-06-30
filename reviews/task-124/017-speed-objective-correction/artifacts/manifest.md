@@ -20,7 +20,9 @@ the TQ focus guardrails and measurement discipline.
 - Packet 005: final15 was the best measured final exact width; final10 broke recall.
 - Packet 011: selected-payload slab produced a small measured TQ latency improvement and should remain part of the speed-improvement baseline.
 - Packets 012-014: three structural attempts were measured and rejected, but they do not exhaust all TQ speed work.
-- Packet 015: Phase 6 local IO-sensitive evidence is useful context, but it is not a reason to stop TQ speed optimization.
+- Packet 015: Phase 6 local macOS `F_NOCACHE` validation was attempted, but later
+  reviewer feedback corrected that it is not controlled cold-cache evidence; it
+  is not a reason to stop TQ speed optimization.
 
 ## Next Work
 

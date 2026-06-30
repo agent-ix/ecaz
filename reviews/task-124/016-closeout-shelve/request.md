@@ -11,7 +11,9 @@ TurboQuant stage-2 is now implemented and measured in-engine, and the task was f
 - final f32 fetches can be reduced;
 - but latency is not durably better at the product matrix;
 - persisted TQ sidecar storage remains about 4.5x the f32/source ec_ivf index;
-- Phase 6 IO-sensitive validation did not convert the source-read reduction into a clear latency win.
+- Phase 6 local macOS validation was attempted, but later reviewer feedback
+  corrected that it did not produce controlled cold-cache evidence because
+  `F_NOCACHE` is per-fd and PostgreSQL reads relation files through separate fds.
 
 ## Requirement Audit
 
@@ -23,7 +25,7 @@ TurboQuant stage-2 is now implemented and measured in-engine, and the task was f
 | Phase 3 counters/attribution | `002-tq-stage2-attribution-counters/request.md` | Complete. Stage-2 candidate/scored/retained rows, compact payload bytes, final exact rows, and final source bytes are exposed. |
 | Phase 4 correctness/recall gates | packets 001, 002, 003, 005, 015 | Complete. Focused tests passed; recall matrices identify final10 as invalid and show matched recall for viable TQ configs. |
 | Phase 5 10k/50k/100k benchmark matrix | `003-tq-stage2-ab-suite/` and follow-up matrix packets 005-008 | Complete. Recall/latency/storage measured via `ecaz bench suite`; no promotion win. |
-| Phase 6 IO-sensitive validation | `015-tq-phase6-local-cache-evict/` | Complete. Local macOS relation `F_NOCACHE` run was negative/mixed, not a product win. |
+| Phase 6 IO-sensitive validation | `015-tq-phase6-local-cache-evict/`; `016-closeout-shelve/feedback/2026-06-29-01-reviewer.md` | Attempted, but not satisfied as controlled cold-cache evidence. Packet 015 remains a local run record, not a valid IO-sensitive gate result. |
 
 ## Why Not Promote
 
@@ -34,7 +36,9 @@ The best measured path got recall alignment and full SIMD scoring, but failed th
 - Packet 003 post-change 10k/50k/100k A/B: TQ stayed near parity but did not beat f32 consistently; 100k TQ p50/p95/p99 remained worse at both nprobe32 and nprobe64.
 - Packet 005: final15 helped, but final10 broke recall and 100k/nprobe64 tail latency regressed.
 - Packet 011: selected slab improved 100k latency slightly, but storage stayed `100.8 MiB` vs `22.5 MiB`.
-- Packet 015: local IO-sensitive validation did not rescue the TQ thesis; TQ was worse at nprobe32 and mixed at nprobe64.
+- Packet 015: local macOS cache-evict validation was attempted, but the reviewer
+  correctly identified that the `F_NOCACHE` helper did not evict PostgreSQL's
+  page-cache reads. Do not cite those latency numbers as Phase 6 evidence.
 
 ## What Was Explored
 
@@ -49,9 +53,11 @@ This was more than measurement:
 - tried stage-2 width changes;
 - kept the selected-payload slab improvement;
 - tested and rejected top-k fusion, compact group headers, and direct slot addressing;
-- ran the reviewer-requested Phase 6 local IO-sensitive validation.
+- attempted the reviewer-requested Phase 6 local IO-sensitive validation; later
+  feedback corrected that the macOS `F_NOCACHE` path was not a controlled
+  cold-cache result.
 
-The reviewer’s packet 011 directive asked for either a Phase 2 structural slice or Shelve after Phase 6. Packets 012-014 tested structural slices and reverted them on evidence; packet 015 supplied Phase 6 evidence. That resolves the fork.
+The reviewer’s packet 011 directive asked for either a Phase 2 structural slice or Shelve after Phase 6. Packets 012-014 tested structural slices and reverted them on evidence; packet 015 attempted Phase 6 but did not obtain controlled cold-cache evidence. The remaining shelve rationale was the storage wall and source-read shape, not a valid packet 015 latency result.
 
 ## Landing Recommendation
 

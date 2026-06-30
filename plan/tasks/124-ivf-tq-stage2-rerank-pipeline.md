@@ -186,6 +186,11 @@ Required metrics:
 
 ### Phase 6 - IO-Sensitive Validation
 
+Correction 2026-06-29: packet `015-tq-phase6-local-cache-evict` attempted this
+locally, but the macOS `F_NOCACHE` helper was per-fd and did not evict
+PostgreSQL's separate relation reads. Treat packet 015 as an attempted local run,
+not controlled cold-cache evidence.
+
 If the local hot-cache result is close or depends on avoiding source f32 reads,
 run one IO-sensitive validation before making a product latency claim:
 

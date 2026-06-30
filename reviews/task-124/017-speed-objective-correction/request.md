@@ -18,6 +18,8 @@ The evidence from packets 001-015 is still useful:
 - final15 is the best measured final exact width so far;
 - selected payload slabs produced a measured TQ speed improvement;
 - top-k fusion, compact headers, and direct-slot rerank did not help enough and should not be repeated unchanged.
+- packet 015 should no longer be treated as valid cold-cache evidence; it remains
+  a record of an attempted local run.
 
 ## Revised Acceptance For The Next Slice
 

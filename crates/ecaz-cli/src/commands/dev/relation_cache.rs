@@ -2,7 +2,7 @@ use clap::Args;
 use color_eyre::eyre::{bail, Context, Result};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::File;
-#[cfg(any(target_os = "linux", target_os = "android", target_os = "macos"))]
+#[cfg(any(target_os = "linux", target_os = "android"))]
 use std::os::fd::AsRawFd;
 use std::path::{Path, PathBuf};
 
@@ -82,11 +82,9 @@ pub async fn run(conn: &ConnectionOptions, args: EvictRelationCacheArgs) -> Resu
         total_bytes
     );
 
-    let eviction_mode = if args.dry_run {
-        None
-    } else {
-        Some(evict_files(&files)?)
-    };
+    if !args.dry_run {
+        evict_files(&files)?;
+    }
     let mut relation_bytes: BTreeMap<String, u64> = BTreeMap::new();
     for file in &files {
         *relation_bytes
@@ -102,13 +100,7 @@ pub async fn run(conn: &ConnectionOptions, args: EvictRelationCacheArgs) -> Resu
             );
             continue;
         }
-        let status = match eviction_mode {
-            #[cfg(any(target_os = "linux", target_os = "android"))]
-            Some(EvictionMode::PerFile) => "evicted",
-            #[cfg(target_os = "macos")]
-            Some(EvictionMode::MacNoCache) => "evicted_macos_f_nocache",
-            None => "dry_run",
-        };
+        let status = if args.dry_run { "dry_run" } else { "evicted" };
         println!(
             "cache_evict_file status={} relation={} relkind={} bytes={} path={}",
             status,
@@ -272,47 +264,22 @@ fn relation_file_name_matches(base: &str, name: &str) -> bool {
             .is_some_and(|tail| tail.starts_with('.') || tail.starts_with('_'))
 }
 
-#[derive(Clone, Copy)]
-enum EvictionMode {
-    #[cfg(any(target_os = "linux", target_os = "android"))]
-    PerFile,
-    #[cfg(target_os = "macos")]
-    MacNoCache,
-}
-
 #[cfg(any(target_os = "linux", target_os = "android"))]
-fn evict_files(files: &[EvictFile]) -> Result<EvictionMode> {
+fn evict_files(files: &[EvictFile]) -> Result<()> {
     for file in files {
         evict_file(file)?;
     }
-    Ok(EvictionMode::PerFile)
+    Ok(())
 }
 
-#[cfg(target_os = "macos")]
-fn evict_files(files: &[EvictFile]) -> Result<EvictionMode> {
-    for file in files {
-        let handle = File::open(&file.path)
-            .wrap_err_with(|| format!("opening relation file {}", file.path.display()))?;
-        let rc = unsafe { libc::fcntl(handle.as_raw_fd(), libc::F_NOCACHE, 1) };
-        if rc == -1 {
-            let error = std::io::Error::last_os_error();
-            bail!(
-                "fcntl(F_NOCACHE) failed for {}: {error}",
-                file.path.display()
-            );
-        }
-    }
-    Ok(EvictionMode::MacNoCache)
-}
-
-#[cfg(not(any(target_os = "linux", target_os = "android", target_os = "macos")))]
-fn evict_files(files: &[EvictFile]) -> Result<EvictionMode> {
+#[cfg(not(any(target_os = "linux", target_os = "android")))]
+fn evict_files(files: &[EvictFile]) -> Result<()> {
     let Some(file) = files.first() else {
         bail!("no relation files to evict");
     };
     let _handle = File::open(&file.path)
         .wrap_err_with(|| format!("opening relation file {}", file.path.display()))?;
-    bail!("relation-cache eviction requires posix_fadvise(DONTNEED) or macOS F_NOCACHE, unavailable on this platform");
+    bail!("relation-cache eviction requires posix_fadvise(DONTNEED); macOS F_NOCACHE is per-fd and does not evict PostgreSQL's page-cache reads");
 }
 
 #[cfg(any(target_os = "linux", target_os = "android"))]
