@@ -554,37 +554,37 @@ fn score_turboquant_no_qjl_4bit_batch_inner<Id>(
         ));
     }
     crate::quant::lut32::validate_lut_shape(&prepared.lut, quantizer.original_dim)?;
-    let mut mse_codes: Vec<&[u8]> = Vec::with_capacity(batch.len());
     for (index, payload) in batch.payloads().iter().enumerate() {
         validate_turboquant_no_qjl_4bit_meta(payload.meta)?;
         let mse_code = checked_mse_code_bytes_no_qjl_4bit("lut32", index, quantizer, payload.code)?;
         crate::quant::lut32::validate_mse_code_shape(index, quantizer.original_dim, mse_code)?;
-        mse_codes.push(mse_code);
     }
 
-    Ok(score_turboquant_no_qjl_4bit_codes_lut32(
+    Ok(score_turboquant_no_qjl_4bit_payloads_lut32(
         quantizer.original_dim,
+        quantizer,
         &prepared.lut,
-        &mse_codes,
+        batch.payloads(),
         out_scores,
     ))
 }
 
-fn score_turboquant_no_qjl_4bit_codes_lut32(
+fn score_turboquant_no_qjl_4bit_payloads_lut32(
     original_dim: usize,
+    quantizer: &ProdQuantizer,
     lut: &[f32],
-    mse_codes: &[&[u8]],
+    payloads: &[CandidatePayload<'_>],
     out_scores: &mut [f32],
 ) -> BatchScoringTiming {
     score_width_cascade(
-        mse_codes,
+        payloads,
         out_scores,
         crate::quant::lut32::BLOCK_WIDTH,
         true,
-        |block_codes, block_scores| {
-            let codes: [&[u8]; crate::quant::lut32::BLOCK_WIDTH] = block_codes
-                .try_into()
-                .expect("width-cascade block length is exact");
+        |block_payloads, block_scores| {
+            let codes: [&[u8]; crate::quant::lut32::BLOCK_WIDTH] = std::array::from_fn(|index| {
+                quantizer.mse_code_bytes_no_qjl_4bit(block_payloads[index].code)
+            });
             crate::quant::lut32::score_lut_no_qjl_4bit_block32(
                 lut,
                 original_dim,
@@ -592,20 +592,25 @@ fn score_turboquant_no_qjl_4bit_codes_lut32(
                 block_scores,
             )
         },
-        |tail_codes, tail_scores, timing| {
-            if tail_codes.is_empty() {
+        |tail_payloads, tail_scores, timing| {
+            if tail_payloads.is_empty() {
                 return;
+            }
+            let mut codes = [quantizer.mse_code_bytes_no_qjl_4bit(tail_payloads[0].code);
+                crate::quant::lut32::BLOCK_WIDTH];
+            for (index, payload) in tail_payloads.iter().enumerate() {
+                codes[index] = quantizer.mse_code_bytes_no_qjl_4bit(payload.code);
             }
             let started = Instant::now();
             let isa = crate::quant::lut32::score_lut_no_qjl_4bit_partial(
                 lut,
                 original_dim,
-                tail_codes,
+                &codes[..tail_payloads.len()],
                 tail_scores,
             );
             timing.record_run(
                 isa,
-                tail_codes.len(),
+                tail_payloads.len(),
                 u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX),
                 false,
             );
@@ -934,6 +939,8 @@ mod tests {
     use crate::am::common::quant_codec::QuantCodecKind;
     use crate::quant::grouped_pq::{grouped_pq_score_f32, pack_grouped_pq_nibbles};
     use crate::quant::isa::Isa;
+    use std::hint::black_box;
+    use std::time::Instant;
 
     #[test]
     fn candidate_batch_preserves_ids_and_payloads() {
@@ -995,6 +1002,77 @@ mod tests {
             let scalar = quantizer.score_ip_from_parts_lut_no_qjl_4bit(&prepared, payload);
             assert_eq!(score.to_bits(), scalar.to_bits());
         }
+    }
+
+    #[test]
+    #[ignore = "Task 124 TQ batch-width microprofile; run explicitly with ECAZ_TQ_BATCH_WIDTH_PROFILE_LOG"]
+    fn task124_profile_tq_no_qjl_flush_widths() {
+        let dim = 1536;
+        let total_candidates = task124_batch_width_profile_candidates();
+        let widths = [
+            1_usize, 7, 8, 15, 16, 25, 31, 32, 33, 50, 64, 75, 96, 100, 128, 256,
+        ];
+        let max_width = *widths.iter().max().expect("width list is nonempty");
+        let quantizer = crate::quant::prod::ProdQuantizer::new(dim, 4, 42);
+        let query = random_unit_vector(dim, 1240);
+        let prepared = quantizer.prepare_ip_query_lut_no_qjl_4bit(&query);
+        let encoded: Vec<_> = (0..max_width)
+            .map(|seed| {
+                quantizer
+                    .encode(&random_unit_vector(dim, 9000 + seed as u64))
+                    .mse_packed
+            })
+            .collect();
+
+        let mut output = format!(
+            "task124_tq_batch_width_profile backend={} dim={dim} total_candidates={total_candidates}\n",
+            crate::quant::simd_backend_name(),
+        );
+
+        for &width in &widths {
+            let mut batch = CandidateBatch::with_capacity(width);
+            for (index, payload) in encoded[..width].iter().enumerate() {
+                batch
+                    .push(index, CandidatePayload::new(payload, CandidateMeta::None))
+                    .unwrap();
+            }
+            let mut scores = vec![0.0_f32; width];
+            let iterations = (total_candidates / width).max(1);
+
+            for _ in 0..iterations.min(128) {
+                super::score_turboquant_no_qjl_4bit_batch_for(
+                    CandidateBatchScoringSurface::Ivf,
+                    black_box(&quantizer),
+                    black_box(&prepared),
+                    black_box(&batch),
+                    black_box(&mut scores),
+                )
+                .unwrap();
+                black_box(scores[0]);
+            }
+
+            let started = Instant::now();
+            for _ in 0..iterations {
+                super::score_turboquant_no_qjl_4bit_batch_for(
+                    CandidateBatchScoringSurface::Ivf,
+                    black_box(&quantizer),
+                    black_box(&prepared),
+                    black_box(&batch),
+                    black_box(&mut scores),
+                )
+                .unwrap();
+                black_box(scores[0]);
+            }
+            let elapsed = started.elapsed();
+            let candidates = iterations * width;
+            let ns_per_candidate = elapsed.as_secs_f64() * 1e9 / candidates as f64;
+            output.push_str(&format!(
+                "width={width} iterations={iterations} candidates={candidates} total={elapsed:?} ns_per_candidate={ns_per_candidate:.1}\n"
+            ));
+        }
+
+        print!("{output}");
+        write_task124_batch_width_profile_log(&output);
     }
 
     #[test]
@@ -1707,6 +1785,25 @@ mod tests {
             *value /= norm;
         }
         values
+    }
+
+    fn task124_batch_width_profile_candidates() -> usize {
+        std::env::var("ECAZ_TQ_BATCH_WIDTH_PROFILE_CANDIDATES")
+            .ok()
+            .and_then(|value| value.parse::<usize>().ok())
+            .unwrap_or(256_000)
+            .max(1)
+    }
+
+    fn write_task124_batch_width_profile_log(contents: &str) {
+        let Ok(path) = std::env::var("ECAZ_TQ_BATCH_WIDTH_PROFILE_LOG") else {
+            return;
+        };
+        let path = std::path::PathBuf::from(path);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).expect("create batch-width profile log parent");
+        }
+        std::fs::write(&path, contents).expect("write batch-width profile log");
     }
 
     fn grouped_pq_lut(group_count: usize) -> Vec<f32> {
