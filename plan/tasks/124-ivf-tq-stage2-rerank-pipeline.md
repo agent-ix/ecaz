@@ -1,10 +1,12 @@
 # Task 124: IVF TurboQuant Stage-2 Rerank Pipeline
 
-Status: **reopened for TQ speed improvement** (2026-06-29; correction
-`reviews/task-124/017-speed-objective-correction/` supersedes the premature
-`016-closeout-shelve` decision. The immediate goal is to improve TurboQuant
-stage-2 speed and document the delta, not to require a full product win over the
-current RaBitQ + f32 baseline before useful Task 124 work can land).
+Status: **complete / shelved under the TQ speed objective** (2026-06-30;
+`reviews/task-124/027-speed-closeout-shelve/` supersedes the 2026-06-29 reopen
+after TurboQuant-specific speed exploration and the reviewer-requested
+`f32@60` vs `TQ@60` discriminator. The discriminator in
+`reviews/task-124/026-f32-vs-tq-nprobe60-discriminator/` was negative for a
+TQ-attributable frontier win: f32/source also held recall at `nprobe=60`, while
+TQ retained the established storage gap and lower 50k recall in that run).
 Owner: coder (to be assigned). One coder, one branch.
 Priority: P1 follow-up for the Task 122 TurboQuant keep-experimental outcome.
 
@@ -202,6 +204,13 @@ run one IO-sensitive validation before making a product latency claim:
 Do not promote from hot local latency alone if the rationale is IO avoidance.
 
 ## Closeout Outcomes
+
+Closeout 2026-06-30: **Shelve**. The in-engine TQ stage-2 path was implemented,
+instrumented, and benchmarked at 10k / 50k / 100k, and the TQ scoring surface
+used by the path is full SIMD (`scalar_candidates=0`). TQ-specific speed levers
+measured after the speed-objective correction were negative or exhausted; the
+only observed speed win came from a shallower shared IVF frontier that the f32
+baseline can also use.
 
 One of:
 
