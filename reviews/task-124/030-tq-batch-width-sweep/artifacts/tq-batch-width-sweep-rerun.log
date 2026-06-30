@@ -1,0 +1,17 @@
+task124_tq_batch_width_profile backend=neon dim=1536 total_candidates=256000
+width=1 iterations=256000 candidates=256000 total=243.959417ms ns_per_candidate=953.0
+width=7 iterations=36571 candidates=255997 total=70.842667ms ns_per_candidate=276.7
+width=8 iterations=32000 candidates=256000 total=62.113042ms ns_per_candidate=242.6
+width=15 iterations=17066 candidates=255990 total=65.8735ms ns_per_candidate=257.3
+width=16 iterations=16000 candidates=256000 total=65.156667ms ns_per_candidate=254.5
+width=25 iterations=10240 candidates=256000 total=83.016834ms ns_per_candidate=324.3
+width=31 iterations=8258 candidates=255998 total=67.168375ms ns_per_candidate=262.4
+width=32 iterations=8000 candidates=256000 total=65.043625ms ns_per_candidate=254.1
+width=33 iterations=7757 candidates=255981 total=70.944792ms ns_per_candidate=277.1
+width=50 iterations=5120 candidates=256000 total=76.200042ms ns_per_candidate=297.7
+width=64 iterations=4000 candidates=256000 total=67.915125ms ns_per_candidate=265.3
+width=75 iterations=3413 candidates=255975 total=72.295417ms ns_per_candidate=282.4
+width=96 iterations=2666 candidates=255936 total=68.22625ms ns_per_candidate=266.6
+width=100 iterations=2560 candidates=256000 total=70.506208ms ns_per_candidate=275.4
+width=128 iterations=2000 candidates=256000 total=67.707792ms ns_per_candidate=264.5
+width=256 iterations=1000 candidates=256000 total=68.200375ms ns_per_candidate=266.4
