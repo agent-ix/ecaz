@@ -1792,6 +1792,28 @@ fn build_prepared_query_lut(rotated: &[f32], codebook: &[f32], num_centroids: us
         return lut;
     }
 
+    if let [c0, c1, c2, c3, c4, c5, c6, c7, c8, c9, c10, c11, c12, c13, c14, c15] = codebook {
+        for (row, &value) in lut.chunks_exact_mut(16).zip(rotated.iter()) {
+            row[0] = c0 * value;
+            row[1] = c1 * value;
+            row[2] = c2 * value;
+            row[3] = c3 * value;
+            row[4] = c4 * value;
+            row[5] = c5 * value;
+            row[6] = c6 * value;
+            row[7] = c7 * value;
+            row[8] = c8 * value;
+            row[9] = c9 * value;
+            row[10] = c10 * value;
+            row[11] = c11 * value;
+            row[12] = c12 * value;
+            row[13] = c13 * value;
+            row[14] = c14 * value;
+            row[15] = c15 * value;
+        }
+        return lut;
+    }
+
     for (row, &value) in lut.chunks_exact_mut(num_centroids).zip(rotated.iter()) {
         for (slot, &centroid) in row.iter_mut().zip(codebook.iter()) {
             *slot = centroid * value;
@@ -2095,6 +2117,8 @@ mod tests {
     use rand::Rng;
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
+    use std::hint::black_box;
+    use std::time::Instant;
 
     fn random_unit_vector(dim: usize, seed: u64) -> Vec<f32> {
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
@@ -2113,6 +2137,25 @@ mod tests {
         let norm_a = a.iter().map(|v| v * v).sum::<f32>().sqrt();
         let norm_b = b.iter().map(|v| v * v).sum::<f32>().sqrt();
         dot / (norm_a * norm_b).max(f32::EPSILON)
+    }
+
+    fn task124_query_prep_profile_iterations() -> usize {
+        std::env::var("ECAZ_TQ_QUERY_PREP_PROFILE_ITERS")
+            .ok()
+            .and_then(|value| value.parse::<usize>().ok())
+            .unwrap_or(200_000)
+            .max(1)
+    }
+
+    fn write_task124_query_prep_profile_log(contents: &str) {
+        let Ok(path) = std::env::var("ECAZ_TQ_QUERY_PREP_PROFILE_LOG") else {
+            return;
+        };
+        let path = std::path::PathBuf::from(path);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).expect("create query-prep profile log parent");
+        }
+        std::fs::write(&path, contents).expect("write query-prep profile log");
     }
 
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
@@ -2303,6 +2346,71 @@ mod tests {
         let prepared = quantizer.prepare_ip_query_lut_no_qjl_4bit(&query);
 
         assert_eq!(prepared.lut.len(), 1536 * 16);
+    }
+
+    #[test]
+    #[ignore = "Task 124 query-prep microprofile; run explicitly with ECAZ_TQ_QUERY_PREP_PROFILE_LOG"]
+    fn task124_profile_no_qjl_lut_query_prep() {
+        let dim = 1536;
+        let iterations = task124_query_prep_profile_iterations();
+        let quantizer = ProdQuantizer::new(dim, 4, 42);
+        let query = random_unit_vector(dim, 124);
+        let rotated = rotation::srht_padded(&query, &quantizer.signs);
+        let rotated = &rotated[..quantizer.original_dim];
+
+        for _ in 0..iterations.min(256) {
+            let prepared = quantizer.prepare_ip_query_lut_no_qjl_4bit(black_box(&query));
+            black_box(prepared.lut[0]);
+        }
+        let full_started = Instant::now();
+        for _ in 0..iterations {
+            let prepared = quantizer.prepare_ip_query_lut_no_qjl_4bit(black_box(&query));
+            black_box(prepared.lut[0]);
+        }
+        let full_elapsed = full_started.elapsed();
+        let full_ns = full_elapsed.as_secs_f64() * 1e9 / iterations as f64;
+
+        for _ in 0..iterations.min(256) {
+            let rotated = rotation::srht_padded(black_box(&query), black_box(&quantizer.signs));
+            black_box(rotated[0]);
+        }
+        let srht_started = Instant::now();
+        for _ in 0..iterations {
+            let rotated = rotation::srht_padded(black_box(&query), black_box(&quantizer.signs));
+            black_box(rotated[0]);
+        }
+        let srht_elapsed = srht_started.elapsed();
+        let srht_ns = srht_elapsed.as_secs_f64() * 1e9 / iterations as f64;
+
+        for _ in 0..iterations.min(256) {
+            let lut = build_prepared_query_lut(
+                black_box(rotated),
+                black_box(&quantizer.codebook),
+                black_box(16),
+            );
+            black_box(lut[0]);
+        }
+        let lut_started = Instant::now();
+        for _ in 0..iterations {
+            let lut = build_prepared_query_lut(
+                black_box(rotated),
+                black_box(&quantizer.codebook),
+                black_box(16),
+            );
+            black_box(lut[0]);
+        }
+        let lut_elapsed = lut_started.elapsed();
+        let lut_ns = lut_elapsed.as_secs_f64() * 1e9 / iterations as f64;
+
+        let output = format!(
+            "task124_query_prep_profile backend={} dim={dim} iterations={iterations}\n\
+             prepare_ip_query_lut_no_qjl_4bit total={full_elapsed:?} ns_per_iter={full_ns:.1}\n\
+             srht_padded total={srht_elapsed:?} ns_per_iter={srht_ns:.1}\n\
+             build_prepared_query_lut_16 total={lut_elapsed:?} ns_per_iter={lut_ns:.1}\n",
+            crate::quant::simd_backend_name(),
+        );
+        print!("{output}");
+        write_task124_query_prep_profile_log(&output);
     }
 
     #[test]
