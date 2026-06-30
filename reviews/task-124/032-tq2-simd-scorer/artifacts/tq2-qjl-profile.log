@@ -1,0 +1,14 @@
+task124_tq2_qjl_profile backend=neon dim=1536 total_candidates=192000
+width=1 iterations=192000 candidates=192000 scalar_total=403.02125ms scalar_ns_per_candidate=2099.1 batch_total=251.63475ms batch_ns_per_candidate=1310.6
+width=7 iterations=27428 candidates=191996 scalar_total=402.639958ms scalar_ns_per_candidate=2097.1 batch_total=246.5155ms batch_ns_per_candidate=1284.0
+width=8 iterations=24000 candidates=192000 scalar_total=402.892958ms scalar_ns_per_candidate=2098.4 batch_total=54.291959ms batch_ns_per_candidate=282.8
+width=15 iterations=12800 candidates=192000 scalar_total=405.612792ms scalar_ns_per_candidate=2112.6 batch_total=142.734584ms batch_ns_per_candidate=743.4
+width=16 iterations=12000 candidates=192000 scalar_total=403.314042ms scalar_ns_per_candidate=2100.6 batch_total=54.103792ms batch_ns_per_candidate=281.8
+width=25 iterations=7680 candidates=192000 scalar_total=403.940917ms scalar_ns_per_candidate=2103.9 batch_total=61.206541ms batch_ns_per_candidate=318.8
+width=31 iterations=6193 candidates=191983 scalar_total=410.947209ms scalar_ns_per_candidate=2140.5 batch_total=95.6375ms batch_ns_per_candidate=498.2
+width=32 iterations=6000 candidates=192000 scalar_total=406.051459ms scalar_ns_per_candidate=2114.9 batch_total=54.744792ms batch_ns_per_candidate=285.1
+width=33 iterations=5818 candidates=191994 scalar_total=403.578917ms scalar_ns_per_candidate=2102.0 batch_total=59.222166ms batch_ns_per_candidate=308.5
+width=64 iterations=3000 candidates=192000 scalar_total=404.210417ms scalar_ns_per_candidate=2105.3 batch_total=54.252416ms batch_ns_per_candidate=282.6
+width=96 iterations=2000 candidates=192000 scalar_total=404.44575ms scalar_ns_per_candidate=2106.5 batch_total=53.867083ms batch_ns_per_candidate=280.6
+width=100 iterations=1920 candidates=192000 scalar_total=403.304208ms scalar_ns_per_candidate=2100.5 batch_total=61.495542ms batch_ns_per_candidate=320.3
+width=128 iterations=1500 candidates=192000 scalar_total=404.846542ms scalar_ns_per_candidate=2108.6 batch_total=53.88025ms batch_ns_per_candidate=280.6

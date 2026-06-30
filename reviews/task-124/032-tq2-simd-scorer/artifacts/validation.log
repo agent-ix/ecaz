@@ -1,0 +1,31 @@
+head_sha=10d734062a0a1fe60d02ecb017e705bd124d68c2
+
+command: cargo fmt --check
+result: passed
+note: stable rustfmt emitted warnings that imports_granularity and group_imports are nightly-only options in this repo.
+
+command: cargo test --release --lib --features bench qjl2 -- --nocapture
+result: passed
+key result:
+running 3 tests
+test quant::qjl2_32::tests::qjl2_octet8_matches_production_dispatch_tolerance ... ok
+test quant::qjl2_32::tests::qjl2_block32_matches_production_dispatch_tolerance ... ok
+test quant::qjl2_32::tests::qjl2_scalar_matches_pre_slice_scorer_bits ... ok
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 2243 filtered out
+
+command: cargo test --release --lib --features bench turboquant2 -- --nocapture
+result: passed
+key result:
+running 4 tests
+test am::ec_ivf::options::tests::rerank_format_parse_accepts_turboquant2 ... ok
+test am::ec_ivf::options::tests::coarse_rerank_accepts_turboquant2_rerank_format ... ok
+test am::ec_ivf::options::tests::coarse_rerank_accepts_turboquant2_stage2_final_width ... ok
+test am::ec_ivf::rerank::tests::turboquant2_sidecar_uses_compact_qjl_payload ... ok
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 2242 filtered out
+
+command: ECAZ_TQ2_QJL_PROFILE_LOG=reviews/task-124/032-tq2-simd-scorer/artifacts/tq2-qjl-profile.log cargo test --release --lib --features bench task124_profile_tq2_qjl_flush_widths -- --ignored --nocapture
+result: passed
+key result:
+running 1 test
+test am::common::candidate_batch::tests::task124_profile_tq2_qjl_flush_widths ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2245 filtered out
