@@ -1228,6 +1228,7 @@ fn is_tq_stage2_final_exact_scan(
             index_options.rerank_format,
             super::options::RerankFormat::TurboQuant
                 | super::options::RerankFormat::TurboQuant2
+                | super::options::RerankFormat::TurboQuant2Dim768
                 | super::options::RerankFormat::TurboQuantBinary
         )
         && effective_stage2_final_rerank_width > 0
@@ -2518,6 +2519,7 @@ fn should_run_tq_stage2_final_exact_rerank(
             index_options.rerank_format,
             super::options::RerankFormat::TurboQuant
                 | super::options::RerankFormat::TurboQuant2
+                | super::options::RerankFormat::TurboQuant2Dim768
                 | super::options::RerankFormat::TurboQuantBinary
         )
         && super::options::resolve_scan_stage2_final_rerank_width(
