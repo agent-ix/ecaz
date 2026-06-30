@@ -1,0 +1,12 @@
+head_sha=1285dd489fc5e44540b19930b6b615d4259b2747
+
+command: cargo fmt --check
+result: passed
+note: stable rustfmt emitted warnings that imports_granularity and group_imports are nightly-only options in this repo.
+
+command: ECAZ_TQ2_DIM_PROFILE_LOG=reviews/task-124/034-tq-dimension-subspace/artifacts/tq2-dimension-profile.log cargo test --release --lib --features bench task124_profile_tq2_dimension_sweep -- --ignored --nocapture
+result: passed
+key result:
+running 1 test
+test am::common::candidate_batch::tests::task124_profile_tq2_dimension_sweep ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2246 filtered out
