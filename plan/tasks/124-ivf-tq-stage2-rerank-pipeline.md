@@ -1,12 +1,18 @@
 # Task 124: IVF TurboQuant Stage-2 Rerank Pipeline
 
-Status: **REOPENED — optimize the TurboQuant scorer/compute path** (2026-06-30).
+Status: **COMPLETED — TQ scorer optimization pass complete; product promotion shelved** (2026-06-30).
 Reopened by the user after the `027` shelve. The shelve is REJECTED: it claimed
 TQ speed levers were "exhausted," but **the TQ scoring kernel itself was never
-touched.** Every code change on this branch is IVF scan/rerank/options plumbing
-in `src/am/ec_ivf/`; nothing in the actual TurboQuant scorer at
-`src/am/common/candidate_batch/` or `src/quant/`. See
+touched at the time of that closeout.** The pre-reopen code changes were IVF
+scan/rerank/options plumbing in `src/am/ec_ivf/`; nothing in the actual
+TurboQuant scorer at `src/am/common/candidate_batch/` or `src/quant/`. See
 `reviews/task-124/027-speed-closeout-shelve/feedback/2026-06-30-02-reviewer.md`.
+Closeout packet `reviews/task-124/035-post-scorer-product-suite/` supersedes
+the reopen: packets 028-034 covered all seven required TQ scorer/compute-path
+levers with TQ-internal evidence, then packet 035 reran the 10k / 50k / 100k
+product matrix on current HEAD. The TQ scorer component improved and remained
+fully NEON/SIMD, but the product matrix still failed promotion at 50k/100k, so
+the product outcome is shelve/no promote.
 Owner: coder (to be assigned). One coder, one branch.
 Priority: P1.
 
@@ -76,9 +82,9 @@ delta on the TQ scorer:
 6. **QJL scoring speed** — all work was no-QJL 4-bit; QJL never speed-tested.
 7. **Prefetch / pipelining payload reads ahead of scoring.**
 
-This task is not complete until all seven are implemented and measured with TQ
-scorer before/after deltas. A shelve/closeout is not permitted while any of the
-seven remains unattempted.
+This task was not complete until all seven were implemented and measured with TQ
+scorer before/after deltas. Packets 028-034 now provide that evidence; packet
+035 provides the post-scorer product matrix closeout.
 
 ## Why
 
@@ -275,15 +281,27 @@ Do not promote from hot local latency alone if the rationale is IO avoidance.
 
 ## Closeout Outcomes
 
+Closeout 2026-06-30: **Shelve product promotion after completing the TQ scorer
+optimization pass.** Packet `035-post-scorer-product-suite` reran the 10k /
+50k / 100k matrix on current HEAD after packets 028-034 completed all seven
+reopened TQ scorer/compute-path levers. The in-engine TQ scorer component
+improved versus packet 026 (`1.811008 ms → 1.779246 ms` at 10k,
+`1.851708 ms → 1.788211 ms` at 50k, `1.907458 ms → 1.804748 ms` at 100k)
+and remained fully NEON/SIMD (`scalar_candidates=0`). Product promotion still
+fails: 50k TQ recall remains lower than f32/source (`0.9980` vs `1.0000`), TQ
+tail latency is not better at 50k/100k, and TQ index storage remains materially
+larger. The correct outcome is no promote; the missing scorer-space audit from
+the rejected `027` closeout is now complete.
+
 ~~Closeout 2026-06-30: **Shelve**.~~ **SUPERSEDED / REOPENED 2026-06-30.** The
 prior shelve was rejected by the user: it asserted TQ speed levers were
 "exhausted," but the TQ scoring kernel and six other TQ-compute-path levers were
 never attempted (see Required Next Phase). The in-engine TQ stage-2 path was
 implemented, instrumented, and benchmarked at 10k / 50k / 100k, and the
 materialization envelope around the scorer was optimized — but the scorer compute
-path itself was never touched. This task remains **open** until the seven
-required TQ-scorer speed levers are implemented and measured. No shelve/closeout
-is permitted while any remain unattempted.
+path itself was never touched. At that point, the task had to remain **open**
+until the seven required TQ-scorer speed levers were implemented and measured.
+No shelve/closeout was permitted while any remained unattempted.
 
 One of:
 
