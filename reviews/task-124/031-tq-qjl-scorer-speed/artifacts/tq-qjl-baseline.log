@@ -1,0 +1,14 @@
+task124_tq_qjl_profile backend=neon dim=1024 total_candidates=192000
+width=1 iterations=192000 candidates=192000 total=146.362375ms ns_per_candidate=762.3
+width=7 iterations=27428 candidates=191996 total=118.328042ms ns_per_candidate=616.3
+width=8 iterations=24000 candidates=192000 total=35.353833ms ns_per_candidate=184.1
+width=15 iterations=12800 candidates=192000 total=74.344917ms ns_per_candidate=387.2
+width=16 iterations=12000 candidates=192000 total=35.087958ms ns_per_candidate=182.7
+width=25 iterations=7680 candidates=192000 total=38.67275ms ns_per_candidate=201.4
+width=31 iterations=6193 candidates=191983 total=53.979791ms ns_per_candidate=281.2
+width=32 iterations=6000 candidates=192000 total=34.494208ms ns_per_candidate=179.7
+width=33 iterations=5818 candidates=191994 total=37.392208ms ns_per_candidate=194.8
+width=64 iterations=3000 candidates=192000 total=34.380584ms ns_per_candidate=179.1
+width=96 iterations=2000 candidates=192000 total=34.44525ms ns_per_candidate=179.4
+width=100 iterations=1920 candidates=192000 total=37.921292ms ns_per_candidate=197.5
+width=128 iterations=1500 candidates=192000 total=34.304833ms ns_per_candidate=178.7
