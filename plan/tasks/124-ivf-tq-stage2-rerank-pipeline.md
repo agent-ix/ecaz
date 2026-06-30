@@ -18,7 +18,9 @@ claimed as a usable TQ speedup. Packet
 TQ2 format (`rerank_format=turboquant2_768`) in real IVF indexes at 10k / 50k /
 100k. It cuts in-engine TQ2 scorer elapsed by about 49-53% versus full-dim TQ2,
 but recall remains broken at 50k/100k, so reduced-dimension TQ2 also must not be
-claimed as a usable stage-2 speedup.
+claimed as a usable stage-2 speedup. Task 130 removes the validation-only
+`turboquant2_768` reloption from the production-facing code surface while
+preserving packet 037 as negative evidence.
 Owner: coder (to be assigned). One coder, one branch.
 Priority: P1.
 
@@ -94,7 +96,8 @@ exists. Packets 028-034 provide scorer-level evidence; packet 035 provides
 4-bit TQ in-engine validation; packet 036 shows TQ2 now has in-engine SIMD
 attribution but remains recall-broken in the real index; packet 037 adds and
 validates a real reduced-dimension TQ2 format and shows the scorer win is real
-but recall-broken.
+but recall-broken. Task 130 is the cleanup lane that removes that failed
+validation-only format from the callable reloption surface.
 
 ## Why
 
@@ -305,7 +308,9 @@ remaining reduced-dimension workload-validation gap with a real index-side
 format and 10k / 50k / 100k recall + latency + TQ scorer attribution. The
 reduced-dimension scorer delta is real (`~49-53%` lower TQ2 scorer elapsed than
 full-dim TQ2), but recall is also broken at 50k/100k, so the correct closeout
-candidate is **Shelve**, not promotion.
+candidate is **Shelve**, not promotion. Task 130 records the follow-up cleanup
+that keeps packet 037 as evidence but removes the failed validation-only
+`turboquant2_768` reloption from the production-facing code surface.
 
 ~~Closeout 2026-06-30: **Shelve**.~~ **SUPERSEDED / REOPENED 2026-06-30.** The
 prior shelve was rejected by the user: it asserted TQ speed levers were

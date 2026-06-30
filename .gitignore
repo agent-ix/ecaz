@@ -57,3 +57,5 @@ reviews/**/list-command-invocations*.json
 # Regenerable recall ground-truth caches.
 reviews/**/truth-cache/
 benchmarks/**/truth-cache/
+reviews/**/truth-*.json
+benchmarks/**/truth-*.json
