@@ -79,4 +79,53 @@ An earlier all-chunk activation attempt is intentionally not part of the review 
 - Final suite: `candidate-final-suite-manifest.json`, `candidate-final-results.jsonl`, `candidate-final-results-report.jsonl`, `candidate-final/*.log`
 - Sparse Task 127 suite: `candidate-t127-sparse-suite-manifest.json`, `candidate-t127-sparse-results.jsonl`, `candidate-t127-sparse-results-report.jsonl`, `candidate-t127-sparse/*.log`
 - Final int16 LUT suite: `candidate-int16-lut-suite-manifest.json`, `candidate-int16-lut-results.jsonl`, `candidate-int16-lut-results-report.jsonl`, `candidate-int16-lut/*.log`
+- Closeout tiled suite: `candidate-closeout-tiled/suite-manifest.json`, `candidate-closeout-tiled/results.jsonl`, `candidate-closeout-tiled/*.log`
+- Task 126 width profile: `task126-width-profile.log`
 - Ignored and not committed: `*/truth-cache/`
+
+## Closeout Update: 2026-07-01
+
+- code commit: `96782e209010a70538e94c63dd46e8b2dd54cec2`
+- lane: local PG18, aarch64/NEON, `tqvector_bench`
+- fixture: staged real corpus, `ec_ivf`, `storage_format=turboquant`, `bits=4`, `seed=42`, `nprobe=32`
+- isolation: existing one-index-per-prefix tables were reused; load steps skipped reload/rebuild when reloptions matched.
+
+Commands:
+
+```sh
+cargo fmt --check
+cargo check -p ecaz --lib
+cargo test -p ecaz --lib lut32_tiled_batch_matches_scalar_tail_bits_across_widths_and_dims -- --test-threads=1
+cargo test -p ecaz --lib turboquant_lut_bounded_batch_keeps_and_prunes -- --test-threads=1
+cargo test -p ecaz --lib lut32_ -- --test-threads=1
+cargo test -p ecaz --lib turboquant_no_qjl -- --test-threads=1
+cargo test -p ecaz-cli block_kernel_counter_lines_include_transition_formats -- --test-threads=1
+ECAZ_TQ_BATCH_WIDTH_PROFILE_LOG=reviews/task-125/001-tq-scorer-optimization/artifacts/task126-width-profile.log ECAZ_TQ_BATCH_WIDTH_PROFILE_CANDIDATES=20000 cargo test -p ecaz --lib task124_profile_tq_no_qjl_flush_widths -- --ignored --nocapture --test-threads=1
+cargo build --release -p ecaz
+cargo pgrx install --release --pg-config /opt/homebrew/opt/postgresql@18/bin/pg_config
+cargo build --release -p ecaz-cli
+target/release/ecaz --host /Users/peter/.pgrx --port 28818 bench suite run --config reviews/task-125/001-tq-scorer-optimization/artifacts/tq-ivf-suite.json --artifact-dir reviews/task-125/001-tq-scorer-optimization/artifacts/candidate-closeout-tiled
+target/release/ecaz --host /Users/peter/.pgrx --port 28818 bench latency --prefix task125_tq_ivf_real10k --profile ec_ivf --k 10 --concurrency 1 --iterations 64 --sweep 32 --bits 4 --seed 42 --force-index --sample-backend-memory --cache-state task125_tq_ivf_real10k_warm --task87-candidate-batch-counters --memory-sample-interval-ms 25 --log-output reviews/task-125/001-tq-scorer-optimization/artifacts/candidate-closeout-tiled/latency-ivf-tq-real10k-prune-counters.log
+target/release/ecaz --host /Users/peter/.pgrx --port 28818 bench latency --prefix task125_tq_ivf_real50k --profile ec_ivf --k 10 --concurrency 1 --iterations 48 --sweep 32 --bits 4 --seed 42 --force-index --sample-backend-memory --cache-state task125_tq_ivf_real50k_warm --task87-candidate-batch-counters --memory-sample-interval-ms 25 --log-output reviews/task-125/001-tq-scorer-optimization/artifacts/candidate-closeout-tiled/latency-ivf-tq-real50k-prune-counters.log
+target/release/ecaz --host /Users/peter/.pgrx --port 28818 bench latency --prefix task125_tq_ivf_real100k --profile ec_ivf --k 10 --concurrency 1 --iterations 32 --sweep 32 --bits 4 --seed 42 --force-index --sample-backend-memory --cache-state task125_tq_ivf_real100k_warm --task87-candidate-batch-counters --memory-sample-interval-ms 25 --log-output reviews/task-125/001-tq-scorer-optimization/artifacts/candidate-closeout-tiled/latency-ivf-tq-real100k-prune-counters.log
+```
+
+Closeout suite key result lines:
+
+- 10k: recall `0.9734`, latency mean `0.91 ms`, p50 `0.87 ms`, p95 `1.04 ms`, TurboQuant NEON kernel `24.348035 ms`, index storage `1028.1 B/row`, total storage `17705.4 B/row`.
+- 50k: recall `0.9521`, latency mean `1.83 ms`, p50 `1.76 ms`, p95 `2.03 ms`, TurboQuant NEON kernel `39.530475 ms`, index storage `964.7 B/row`, total storage `17634.9 B/row`.
+- 100k: recall `0.8969`, latency mean `2.70 ms`, p50 `2.60 ms`, p95 `3.38 ms`, TurboQuant NEON kernel `38.176593 ms`, index storage `948.2 B/row`, total storage `17617.5 B/row`.
+
+Task 126 width profile (`task126-width-profile.log`, debug microprofile):
+
+- width 32: `12662.2 ns/candidate`
+- width 64: `11578.1 ns/candidate`
+- width 128: `11084.1 ns/candidate`
+
+Task 127 prune-counter evidence:
+
+- `turboquant_lut_bounded_batch_keeps_and_prunes` verifies the bounded TurboQuant scorer records all-kept and all-pruned batches through `lut32_kept_candidates` / `lut32_pruned_candidates`.
+- Release IVF latency logs with the updated counter formatter report no bounded scorer dispatch for the current 10k/50k/100k suite shape:
+  - 10k: `pruned_candidates=0 kept_candidates=0`, `lut32_pruned_candidates=0 lut32_kept_candidates=0`
+  - 50k: `pruned_candidates=0 kept_candidates=0`, `lut32_pruned_candidates=0 lut32_kept_candidates=0`
+  - 100k: `pruned_candidates=0 kept_candidates=0`, `lut32_pruned_candidates=0 lut32_kept_candidates=0`
