@@ -44,3 +44,12 @@ Requested review:
 - If accepted, continue with a follow-up implementation packet for the missing
   Task 125 cross-block dimension cache-blocking and Task 126 128-wide sweep
   before marking 125-129 complete.
+
+Superseded closeout note, 2026-07-01:
+
+- Follow-up code commit `96782e209010a70538e94c63dd46e8b2dd54cec2` added the
+  Task 125 cross-block NEON batch-tiled scorer and Task 126 width profile.
+- Follow-up evidence in
+  `reviews/task-125/001-tq-scorer-optimization/artifacts/manifest.md` adds
+  heap-rerank production Task 127 prune-fraction measurements at 10k/50k/100k
+  with exact prune-on/prune-off recall parity.

@@ -66,3 +66,23 @@ Recommended next implementation packet:
 After those are present, rerun the same 10k/50k/100k suite and update
 `reviews/task-125/001-tq-scorer-optimization/artifacts/manifest.md` or a new
 closeout packet with the final evidence.
+
+## Superseded Closeout Note: 2026-07-01
+
+This audit was accurate for audited head `371db1bdc`, but the missing closeout
+items were subsequently addressed:
+
+- Task 125: code commit `96782e209010a70538e94c63dd46e8b2dd54cec2` added
+  `score_lut_no_qjl_4bit_batch_tiled` and the NEON `score_batch_tiled_neon`
+  path, which walks each dimension chunk across every candidate octet before
+  moving to the next chunk.
+- Task 126: `task126-width-profile.log` reports the 32/64/128 width curve at
+  `12662.2`, `11578.1`, and `11084.1 ns/candidate`.
+- Task 127: heap-rerank TurboQuant IVF logs now report exact prune-on/prune-off
+  recall parity plus bounded prune fractions at 10k/50k/100k:
+  - 10k: recall `1.0000 -> 1.0000`; `98.3%` bounded prune fraction.
+  - 50k: recall `0.9641 -> 0.9641`; `97.7%` bounded prune fraction.
+  - 100k: recall `0.9268 -> 0.9268`; `97.8%` bounded prune fraction.
+
+The superseding evidence lives in
+`reviews/task-125/001-tq-scorer-optimization/artifacts/manifest.md`.

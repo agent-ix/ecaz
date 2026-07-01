@@ -45,7 +45,10 @@ Closeout evidence added after the audit:
 
 - Task 125 literal tiling: `score_lut_no_qjl_4bit_batch_tiled` now routes normal no-QJL flushes through a NEON dim-tile -> all-candidate-octets loop, with scalar/block fallback for other ISAs.
 - Task 126 width curve: debug microprofile reports width 32/64/128 at `12662.2`, `11578.1`, and `11084.1 ns/candidate` respectively in `artifacts/task126-width-profile.log`.
-- Task 127 prune fraction reporting: release latency logs now include `pruned_candidates` / `kept_candidates`; the 10k/50k/100k suite observed no bounded dispatch for this IVF configuration (`0/0`), and the focused bounded scorer test verifies both all-kept and all-pruned accounting.
+- Task 127 prune fraction reporting: standard non-heap IVF still observes no bounded dispatch (`0/0`) because it has no running top-k cutoff, so the closeout reran TurboQuant IVF with `rerank=heap_f32,rerank_width=100`. The production heap-rerank logs report exact prune-on/prune-off recall parity and nonzero bounded dispatch at 10k/50k/100k:
+  - 10k: recall `1.0000 -> 1.0000`; latency mean `1.50 ms`; `lut32_pruned_candidates=186274`, `lut32_kept_candidates=3301` (`98.3%` pruned among bounded candidates).
+  - 50k: recall `0.9641 -> 0.9641`; latency mean `2.58 ms`; `lut32_pruned_candidates=320421`, `lut32_kept_candidates=7698` (`97.7%` pruned among bounded candidates).
+  - 100k: recall `0.9268 -> 0.9268`; latency mean `3.80 ms`; `lut32_pruned_candidates=316516`, `lut32_kept_candidates=7049` (`97.8%` pruned among bounded candidates).
 
 Review focus:
 
