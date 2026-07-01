@@ -1,0 +1,27 @@
+2026-06-30 23:02:31.558 PDT [145986] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-06-30 23:02:31.560 PDT [145986] LOG:  listening on Unix socket "/home/peter/dev/ecaz/target/spire-local-multinode-sockets-task131-p4-mi-10k-n1024-b2/.s.PGSQL.40522"
+2026-06-30 23:02:31.567 PDT [145992] LOG:  database system was shut down at 2026-06-30 23:02:29 PDT
+2026-06-30 23:02:31.571 PDT [145986] LOG:  database system is ready to accept connections
+2026-06-30 23:07:31.386 PDT [145990] LOG:  checkpoint starting: time
+2026-06-30 23:08:08.327 PDT [145990] LOG:  checkpoint complete: wrote 382 buffers (2.3%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=36.888 s, sync=0.044 s, total=36.942 s; sync files=145, longest=0.005 s, average=0.001 s; distance=3007 kB, estimate=3007 kB; lsn=0/1A44250, redo lsn=0/1A441C0
+2026-06-30 23:20:01.793 PDT [147281] LOG:  skipping vacuum of "ec_real_10k_node_3_corpus" --- lock not available
+2026-06-30 23:21:01.887 PDT [147330] LOG:  skipping vacuum of "ec_real_10k_node_3_corpus" --- lock not available
+2026-06-30 23:22:01.992 PDT [147371] LOG:  skipping vacuum of "ec_real_10k_node_3_corpus" --- lock not available
+2026-06-30 23:22:31.809 PDT [145990] LOG:  checkpoint starting: time
+2026-06-30 23:23:01.985 PDT [147413] LOG:  skipping vacuum of "ec_real_10k_node_3_corpus" --- lock not available
+2026-06-30 23:24:01.985 PDT [147462] LOG:  skipping vacuum of "ec_real_10k_node_3_corpus" --- lock not available
+2026-06-30 23:25:01.986 PDT [147567] LOG:  skipping vacuum of "ec_real_10k_node_3_corpus" --- lock not available
+2026-06-30 23:26:01.986 PDT [147611] LOG:  skipping vacuum of "ec_real_10k_node_3_corpus" --- lock not available
+2026-06-30 23:27:01.264 PDT [145990] LOG:  checkpoint complete: wrote 14289 buffers (87.2%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 6 recycled; write=269.209 s, sync=0.183 s, total=269.456 s; sync files=49, longest=0.019 s, average=0.004 s; distance=95194 kB, estimate=95194 kB; lsn=0/93C4A28, redo lsn=0/773ABB8
+2026-06-30 23:27:31.570 PDT [145990] LOG:  checkpoint starting: time
+2026-06-30 23:31:23.748 PDT [145990] LOG:  checkpoint complete: wrote 2376 buffers (14.5%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 2 recycled; write=232.136 s, sync=0.022 s, total=232.179 s; sync files=16, longest=0.017 s, average=0.002 s; distance=29822 kB, estimate=88657 kB; lsn=0/945A5E8, redo lsn=0/945A558
+2026-06-30 23:33:37.755 PDT [148356] LOG:  could not receive data from client: Connection reset by peer
+2026-06-30 23:37:31.339 PDT [145990] LOG:  checkpoint starting: time
+2026-06-30 23:39:31.816 PDT [145990] LOG:  checkpoint complete: wrote 1231 buffers (7.5%), wrote 2 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=120.433 s, sync=0.035 s, total=120.477 s; sync files=41, longest=0.021 s, average=0.001 s; distance=9985 kB, estimate=80790 kB; lsn=0/9E23878, redo lsn=0/9E1A958
+2026-06-30 23:41:27.602 PDT [145986] LOG:  received fast shutdown request
+2026-06-30 23:41:27.610 PDT [145986] LOG:  aborting any active transactions
+2026-06-30 23:41:27.611 PDT [145986] LOG:  background worker "logical replication launcher" (PID 145995) exited with exit code 1
+2026-06-30 23:41:27.612 PDT [145990] LOG:  shutting down
+2026-06-30 23:41:27.615 PDT [145990] LOG:  checkpoint starting: shutdown immediate
+2026-06-30 23:41:27.631 PDT [145990] LOG:  checkpoint complete: wrote 0 buffers (0.0%), wrote 2 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.006 s, sync=0.001 s, total=0.020 s; sync files=1, longest=0.001 s, average=0.001 s; distance=74 kB, estimate=72718 kB; lsn=0/9E2D288, redo lsn=0/9E2D288
+2026-06-30 23:41:27.678 PDT [145986] LOG:  database system is shut down
