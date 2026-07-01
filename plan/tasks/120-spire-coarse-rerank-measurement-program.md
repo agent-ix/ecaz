@@ -1,6 +1,10 @@
 # Task 120: SPIRE Coarse-Rerank Measurement Program
 
-Status: **proposed**.
+Status: **final no-promotion recommendation under review** (2026-06-22;
+closeout synthesis in `reviews/task-120/018-final-recommendation/`). Task 120
+does not authorize AWS work: the required local multi-node gate passed in
+`reviews/task-120/017-phase5-local-multinode-gate/`, and any future AWS 1M
+distributed product-claim matrix requires explicit user approval.
 Owner: coder (to be assigned). One coder, one branch.
 Priority: P0 for any renewed SPIRE algorithm work.
 
@@ -128,6 +132,24 @@ For distributed SPIRE, evaluate the contract where workers do local candidate
 generation and local exact/source rerank before returning compact exact-scored
 streams to the coordinator.
 
+Phase 5 MUST be validated on a local multi-node setup before any AWS run. This
+local gate must be a **local multi-node distributed test**: one local
+coordinator plus one or more local worker PostgreSQL nodes/databases, with
+remote placements and remote dispatch enabled. The coordinator and worker may
+run on the same physical machine, but they must be distinct SPIRE node
+identities and the evidence must show that the worker path was used. A
+single-node local scan, even on the same corpus and host, does not satisfy this
+gate. The local multi-node test must exercise the same distributed
+production-read path, static remote placements, worker/fanout controls, shipping
+counters, and merge/dedupe counters. Start with a tiny local fixture, then scale
+to the required local 10k/50k/100k matrices only after the production-read suite
+path is known to complete and emit the required counters.
+
+Do not run Phase 5 in AWS until the local multi-node gate passes and the user
+explicitly approves the specific AWS run. Approval must be affirmative and tied
+to the intended AWS matrix; a prior general task request is not approval to
+provision or benchmark in AWS.
+
 Required measurements:
 
 - worker-local candidates generated;
@@ -161,8 +183,20 @@ exact/full-leaf behavior, but must not silently drop candidates.
 
 - Use `ecaz bench suite` for every benchmark matrix.
 - Minimum local matrix before product claims: 10k, 50k, and 100k.
+- Distributed Phase 5 evidence must first run locally as a multi-node test
+  against a coordinator plus at least one worker PostgreSQL node/database.
+  Running those PostgreSQL nodes/databases on the same machine is acceptable;
+  replacing the gate with a single-node scan is not. The packet manifest must
+  identify the local coordinator node and local worker node(s), and cite
+  evidence that remote placements/dispatch were active. Local distributed
+  evidence must prove the production-read path completes and reports
+  recall/latency, shipped rows/bytes, merge/dedupe counters, rowcap behavior,
+  and worker/fanout effects before any AWS benchmark is considered.
+- AWS is opt-in only. Do not provision, resume, or run AWS benchmarks for this
+  task without explicit user approval for that specific AWS run.
 - AWS 1M runs are required before any SPIRE product-default or product-claim
-  decision.
+  decision, but only after the local distributed gate above passes and explicit
+  AWS approval is given.
 - Required metrics: recall@10, NDCG@10 where available, p50/p95/p99 latency,
   storage, build time, per-stage candidate counts, row payload reads,
   shipped bytes/rows for distributed paths, and exact truth containment.

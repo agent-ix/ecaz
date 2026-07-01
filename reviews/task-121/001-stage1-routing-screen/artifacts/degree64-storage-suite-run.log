@@ -1,0 +1,6 @@
+[suite:task121-stage1-routing-screen-100k] wrote reviews/task-121/001-stage1-routing-screen/artifacts/degree64-storage-suite-manifest.json
+[suite:task121-stage1-routing-screen-100k] storage-degree64 -> --database tqvector_bench_task121 --host /home/peter/.pgrx --port 28818 --log-file reviews/task-121/001-stage1-routing-screen/artifacts/storage-degree64.log bench storage --prefix t121_s1_100k_degree64
+[suite:task121-stage1-routing-screen-100k] wrote reviews/task-121/001-stage1-routing-screen/artifacts/degree64-storage-suite-manifest.json
+[suite:task121-stage1-routing-screen-100k] wrote reviews/task-121/001-stage1-routing-screen/artifacts/degree64-storage-suite-manifest.json
+[suite:task121-stage1-routing-screen-100k] wrote reviews/task-121/001-stage1-routing-screen/artifacts/degree64-storage-suite-results.jsonl
+[suite:task121-stage1-routing-screen-100k] wrote reviews/task-121/001-stage1-routing-screen/artifacts/degree64-storage-suite-manifest.json

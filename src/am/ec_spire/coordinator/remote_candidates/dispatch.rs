@@ -295,6 +295,9 @@ pub(crate) struct SpireRemoteProductionHeapReceiveResult {
     pub(crate) completed_after_ms: u64,
     pub(crate) elapsed_ms: u64,
     pub(crate) candidate_count: u64,
+    pub(crate) payload_decode_elapsed_ms: u64,
+    pub(crate) payload_decode_row_count: u64,
+    pub(crate) payload_decode_bytes: u64,
     pub(crate) status: &'static str,
     pub(crate) failure_category: &'static str,
     pub(crate) candidates: Vec<SpireRemoteSearchLocalHeapCandidateRow>,
@@ -335,6 +338,34 @@ struct SpireRemoteProductionHeapSessionResult {
     heap_result: SpireRemoteProductionHeapReceiveResult,
     metrics: SpireRemoteProductionReadMetrics,
     reusable_connection: Option<SpireRemotePooledConnection>,
+}
+
+fn remote_heap_payload_decode_bytes(candidates: &[SpireRemoteSearchLocalHeapCandidateRow]) -> u64 {
+    candidates
+        .iter()
+        .map(|candidate| {
+            let typed_bytes = candidate
+                .typed_tuple_payload
+                .as_ref()
+                .map(|payload| {
+                    payload
+                        .payload_values
+                        .iter()
+                        .map(Vec::len)
+                        .try_fold(0_u64, |acc, len| {
+                            u64::try_from(len).ok().and_then(|len| acc.checked_add(len))
+                        })
+                        .unwrap_or(u64::MAX)
+                })
+                .unwrap_or(0);
+            let json_bytes = candidate
+                .tuple_payload_json
+                .as_ref()
+                .map(|payload_json| u64::try_from(payload_json.len()).unwrap_or(u64::MAX))
+                .unwrap_or(0);
+            typed_bytes.saturating_add(json_bytes)
+        })
+        .fold(0_u64, u64::saturating_add)
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1380,25 +1411,10 @@ impl SpireRemoteProductionTransportAdapter {
             &mut metrics.payload_decode_row_count,
             u64::try_from(candidates.len()).unwrap_or(u64::MAX),
         );
-        for candidate in &candidates {
-            if let Some(payload) = candidate.typed_tuple_payload.as_ref() {
-                let row_bytes = payload
-                    .payload_values
-                    .iter()
-                    .map(Vec::len)
-                    .try_fold(0_u64, |acc, len| {
-                        u64::try_from(len).ok().and_then(|len| acc.checked_add(len))
-                    })
-                    .unwrap_or(u64::MAX);
-                add_profile_count(&mut metrics.payload_decode_bytes, row_bytes);
-            }
-            if let Some(payload_json) = candidate.tuple_payload_json.as_ref() {
-                add_profile_count(
-                    &mut metrics.payload_decode_bytes,
-                    u64::try_from(payload_json.len()).unwrap_or(u64::MAX),
-                );
-            }
-        }
+        add_profile_count(
+            &mut metrics.payload_decode_bytes,
+            remote_heap_payload_decode_bytes(&candidates),
+        );
         let merge_candidates = candidates
             .iter()
             .map(|candidate| SpireRemoteSearchCandidateRow {
@@ -1440,6 +1456,9 @@ impl SpireRemoteProductionTransportAdapter {
                 completed_after_ms: elapsed_millis_u64(batch_start),
                 elapsed_ms: elapsed_millis_u64(request_start),
                 candidate_count,
+                payload_decode_elapsed_ms: metrics.payload_decode_elapsed_ms,
+                payload_decode_row_count: metrics.payload_decode_row_count,
+                payload_decode_bytes: metrics.payload_decode_bytes,
                 status: SPIRE_REMOTE_STATUS_READY,
                 failure_category: SPIRE_REMOTE_NONE,
                 candidates,
@@ -1888,6 +1907,7 @@ impl SpireRemoteProductionTransportAdapter {
                 SPIRE_REMOTE_STATUS_REMOTE_PAYLOAD_TOO_LARGE,
             );
         }
+        let decode_start = std::time::Instant::now();
         let candidates = match result_rows
             .iter()
             .map(|candidate_row| {
@@ -1910,6 +1930,9 @@ impl SpireRemoteProductionTransportAdapter {
                 );
             }
         };
+        let payload_decode_elapsed_ms = elapsed_millis_u64(decode_start);
+        let payload_decode_row_count = u64::try_from(candidates.len()).unwrap_or(u64::MAX);
+        let payload_decode_bytes = remote_heap_payload_decode_bytes(&candidates);
         let merge_candidates = candidates
             .iter()
             .map(|candidate| SpireRemoteSearchCandidateRow {
@@ -1944,6 +1967,9 @@ impl SpireRemoteProductionTransportAdapter {
             completed_after_ms: elapsed_millis_u64(batch_start),
             elapsed_ms: elapsed_millis_u64(request_start),
             candidate_count,
+            payload_decode_elapsed_ms,
+            payload_decode_row_count,
+            payload_decode_bytes,
             status: SPIRE_REMOTE_STATUS_READY,
             failure_category: SPIRE_REMOTE_NONE,
             candidates,

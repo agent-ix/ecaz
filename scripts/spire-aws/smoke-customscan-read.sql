@@ -6,10 +6,13 @@
 \else
 \set prefix 'ec_spire_aws_synth_10k'
 \endif
+\if :{?index_name}
+\else
+\set index_name :prefix _idx
+\endif
 
 SELECT format('%I_corpus', :'prefix') AS corpus_table,
-       format('%I_queries', :'prefix') AS queries_table,
-       format('%I_idx', :'prefix') AS index_name
+       format('%I_queries', :'prefix') AS queries_table
 \gset
 
 SET enable_seqscan = off;

@@ -464,24 +464,97 @@ pub(super) fn collect_scan_rerank_locality_diagnostics(
     let leaf_count =
         count_recursive_routing_leaf_pids(&hierarchy.root_object, &hierarchy.internal_objects_by_pid)?;
     let scan_plan = resolve_single_level_scan_plan(leaf_count, options)?;
-    let candidates = if top_graph_plan.enabled {
-        collect_validated_top_graph_scan_plan_approx_candidates(
+    let candidates = collect_validated_scan_plan_approx_candidates(
+        &snapshot,
+        object_store,
+        query,
+        &hierarchy,
+        scan_plan,
+        top_graph_plan,
+        "rerank locality diagnostics",
+    )?;
+
+    Ok(rerank_prefix_heap_locality(
+        snapshot.epoch_manifest().epoch,
+        scan_plan,
+        &candidates,
+    ))
+}
+
+pub(super) fn collect_scan_target_candidate_rank_snapshot(
+    snapshot: &SpirePublishedEpochSnapshot<'_>,
+    object_store: &impl SpireObjectReader,
+    query: &SpireScanQuery,
+    options: EcSpireOptions,
+    target_local_sequences: &[u64],
+) -> Result<Vec<SpireTargetCandidateRankSnapshotRow>, String> {
+    let top_graph_plan = options.top_graph_plan()?;
+    let snapshot = SpireValidatedEpochSnapshot::from_snapshot(*snapshot)?;
+    let hierarchy = load_snapshot_routing_hierarchy(&snapshot, object_store)?;
+    let leaf_count =
+        count_recursive_routing_leaf_pids(&hierarchy.root_object, &hierarchy.internal_objects_by_pid)?;
+    let scan_plan = resolve_single_level_scan_plan(leaf_count, options)?;
+    if target_local_sequences.is_empty() {
+        return Ok(Vec::new());
+    }
+    if scan_plan.nprobe == 0 {
+        return missing_target_candidate_rank_rows(
             &snapshot,
+            scan_plan,
+            target_local_sequences,
+            "nprobe_zero",
+            0,
+            0,
+            None,
+            None,
+        );
+    }
+
+    let candidates = collect_validated_scan_plan_approx_candidates(
+        &snapshot,
+        object_store,
+        query,
+        &hierarchy,
+        scan_plan,
+        top_graph_plan,
+        "target candidate rank snapshot",
+    )?;
+    target_candidate_rank_rows_from_candidates(
+        &snapshot,
+        scan_plan,
+        target_local_sequences,
+        &candidates,
+    )
+}
+
+fn collect_validated_scan_plan_approx_candidates(
+    snapshot: &SpireValidatedEpochSnapshot<'_>,
+    object_store: &impl SpireObjectReader,
+    query: &SpireScanQuery,
+    hierarchy: &SpireLoadedRoutingHierarchy,
+    scan_plan: SpireSingleLevelScanPlan,
+    top_graph_plan: SpireTopGraphOptionPlan,
+    context: &str,
+) -> Result<Vec<SpireScoredScanCandidate>, String> {
+    if top_graph_plan.enabled {
+        collect_validated_top_graph_scan_plan_approx_candidates(
+            snapshot,
             object_store,
             query,
-            &hierarchy,
+            hierarchy,
             scan_plan,
             top_graph_plan,
-        )?
+            context,
+        )
     } else if scan_plan.nprobe == 0 {
-        Vec::new()
+        Ok(Vec::new())
     } else {
         let mut observer = SpireNoopRoutedScanObserver;
         collect_validated_recursive_quantized_routed_probe_candidates(
-            &snapshot,
+            snapshot,
             object_store,
             query.values(),
-            &hierarchy,
+            hierarchy,
             &scan_plan.recursive_nprobe_policy,
             scan_plan.recursive_route_budget,
             scan_plan.max_routed_candidate_rows,
@@ -489,14 +562,8 @@ pub(super) fn collect_scan_rerank_locality_diagnostics(
             scan_plan.dedupe_mode,
             scan_plan.candidate_limit,
             &mut observer,
-        )?
-    };
-
-    Ok(rerank_prefix_heap_locality(
-        snapshot.epoch_manifest().epoch,
-        scan_plan,
-        &candidates,
-    ))
+        )
+    }
 }
 
 fn collect_validated_top_graph_scan_plan_approx_candidates(
@@ -506,13 +573,14 @@ fn collect_validated_top_graph_scan_plan_approx_candidates(
     hierarchy: &SpireLoadedRoutingHierarchy,
     scan_plan: SpireSingleLevelScanPlan,
     top_graph_plan: SpireTopGraphOptionPlan,
+    context: &str,
 ) -> Result<Vec<SpireScoredScanCandidate>, String> {
     if scan_plan.nprobe == 0 {
         return Ok(Vec::new());
     }
 
     let (_top_graph_pid, top_graph) = load_snapshot_top_graph_object(snapshot, object_store)?
-        .ok_or_else(|| "ec_spire rerank locality diagnostics has no available top graph object".to_owned())?;
+        .ok_or_else(|| format!("ec_spire {context} has no available top graph object"))?;
     let scorer = SpirePreparedAssignmentScorer::prepare(
         scan_plan.payload_format,
         query.values().len(),
@@ -601,6 +669,152 @@ fn rerank_prefix_heap_locality(
         heap_block_jump_sum: jump_sum,
         heap_block_jump_max: jump_max,
     }
+}
+
+fn target_candidate_rank_rows_from_candidates(
+    snapshot: &SpireValidatedEpochSnapshot<'_>,
+    scan_plan: SpireSingleLevelScanPlan,
+    target_local_sequences: &[u64],
+    candidates: &[SpireScoredScanCandidate],
+) -> Result<Vec<SpireTargetCandidateRankSnapshotRow>, String> {
+    let approximate_candidate_count = u64::try_from(candidates.len())
+        .map_err(|_| "ec_spire target candidate rank count exceeds u64".to_owned())?;
+    let rerank_prefix_len = if scan_plan.rerank_width == 0 {
+        candidates.len()
+    } else {
+        scan_plan.rerank_width.min(candidates.len())
+    };
+    let rerank_prefix_count = u64::try_from(rerank_prefix_len)
+        .map_err(|_| "ec_spire target candidate rank rerank prefix count exceeds u64".to_owned())?;
+    let mut target_ordinals_by_sequence = HashMap::<u64, Vec<u64>>::new();
+    for (target_ordinal, target_local_sequence) in target_local_sequences.iter().enumerate() {
+        let target_ordinal = u64::try_from(target_ordinal)
+            .map_err(|_| "ec_spire target ordinal exceeds u64".to_owned())?;
+        target_ordinals_by_sequence
+            .entry(*target_local_sequence)
+            .or_default()
+            .push(target_ordinal);
+    }
+
+    let mut found_target_ordinals = HashSet::<u64>::new();
+    let mut rows = Vec::new();
+    for (rank_index, candidate) in candidates.iter().enumerate() {
+        let Some(target_local_sequence) = candidate.vec_id.local_sequence() else {
+            continue;
+        };
+        let Some(target_ordinals) = target_ordinals_by_sequence.get(&target_local_sequence) else {
+            continue;
+        };
+        let approximate_rank = u64::try_from(rank_index)
+            .map_err(|_| "ec_spire target candidate rank exceeds u64".to_owned())?
+            .checked_add(1)
+            .ok_or_else(|| "ec_spire target candidate rank overflow".to_owned())?;
+        let placement = snapshot
+            .require_lookup(candidate.pid, "target candidate rank snapshot candidate")?
+            .placement;
+        for target_ordinal in target_ordinals {
+            if !found_target_ordinals.insert(*target_ordinal) {
+                continue;
+            }
+            rows.push(SpireTargetCandidateRankSnapshotRow {
+                active_epoch: snapshot.epoch_manifest().epoch,
+                effective_nprobe: scan_plan.nprobe,
+                effective_nprobe_source: scan_plan.nprobe_source,
+                effective_rerank_width: u64::try_from(scan_plan.rerank_width)
+                    .map_err(|_| "ec_spire rerank width exceeds u64".to_owned())?,
+                effective_rerank_width_source: scan_plan.rerank_width_source,
+                target_ordinal: *target_ordinal,
+                target_local_sequence,
+                status: "target_candidate_ranked",
+                approximate_candidate_count,
+                rerank_prefix_count,
+                approximate_rank: Some(approximate_rank),
+                selected_by_rerank_prefix: Some(approximate_rank <= rerank_prefix_count),
+                pid: Some(candidate.pid),
+                node_id: Some(placement.node_id),
+                local_store_id: Some(placement.local_store_id),
+                object_version: Some(candidate.object_version),
+                row_index: Some(candidate.row_index),
+                assignment_flags: Some(candidate.assignment_flags),
+                approximate_score: Some(candidate.score),
+                heap_block: Some(candidate.heap_tid.block_number),
+                heap_offset: Some(candidate.heap_tid.offset_number),
+            });
+        }
+    }
+
+    rows.extend(missing_target_candidate_rank_rows(
+        snapshot,
+        scan_plan,
+        target_local_sequences,
+        "candidate_not_retained",
+        approximate_candidate_count,
+        rerank_prefix_count,
+        Some(false),
+        Some(&found_target_ordinals),
+    )?);
+    rows.sort_by(|left, right| {
+        left.target_ordinal
+            .cmp(&right.target_ordinal)
+            .then_with(|| {
+                left.approximate_rank
+                    .unwrap_or(u64::MAX)
+                    .cmp(&right.approximate_rank.unwrap_or(u64::MAX))
+            })
+            .then_with(|| left.pid.unwrap_or(u64::MAX).cmp(&right.pid.unwrap_or(u64::MAX)))
+            .then_with(|| {
+                left.row_index
+                    .unwrap_or(u32::MAX)
+                    .cmp(&right.row_index.unwrap_or(u32::MAX))
+            })
+    });
+    Ok(rows)
+}
+
+fn missing_target_candidate_rank_rows(
+    snapshot: &SpireValidatedEpochSnapshot<'_>,
+    scan_plan: SpireSingleLevelScanPlan,
+    target_local_sequences: &[u64],
+    status: &'static str,
+    approximate_candidate_count: u64,
+    rerank_prefix_count: u64,
+    selected_by_rerank_prefix: Option<bool>,
+    found_target_ordinals: Option<&HashSet<u64>>,
+) -> Result<Vec<SpireTargetCandidateRankSnapshotRow>, String> {
+    let effective_rerank_width = u64::try_from(scan_plan.rerank_width)
+        .map_err(|_| "ec_spire rerank width exceeds u64".to_owned())?;
+    let mut rows = Vec::new();
+    for (target_ordinal, target_local_sequence) in target_local_sequences.iter().enumerate() {
+        let target_ordinal = u64::try_from(target_ordinal)
+            .map_err(|_| "ec_spire target ordinal exceeds u64".to_owned())?;
+        if found_target_ordinals.is_some_and(|found| found.contains(&target_ordinal)) {
+            continue;
+        }
+        rows.push(SpireTargetCandidateRankSnapshotRow {
+            active_epoch: snapshot.epoch_manifest().epoch,
+            effective_nprobe: scan_plan.nprobe,
+            effective_nprobe_source: scan_plan.nprobe_source,
+            effective_rerank_width,
+            effective_rerank_width_source: scan_plan.rerank_width_source,
+            target_ordinal,
+            target_local_sequence: *target_local_sequence,
+            status,
+            approximate_candidate_count,
+            rerank_prefix_count,
+            approximate_rank: None,
+            selected_by_rerank_prefix,
+            pid: None,
+            node_id: None,
+            local_store_id: None,
+            object_version: None,
+            row_index: None,
+            assignment_flags: None,
+            approximate_score: None,
+            heap_block: None,
+            heap_offset: None,
+        });
+    }
+    Ok(rows)
 }
 
 pub(super) fn collect_scan_leaf_block_rank_snapshot(
@@ -1033,6 +1247,29 @@ fn collect_validated_leaf_target_block_rank_snapshot(
             .push(target_ordinal);
     }
 
+    if scored_ranges.is_empty() {
+        let candidates = collect_validated_scan_plan_approx_candidates(
+            snapshot,
+            object_store,
+            query,
+            hierarchy,
+            scan_plan,
+            top_graph_plan,
+            "leaf target block rank no-summary fallback",
+        )?;
+        return no_summary_leaf_target_block_rank_rows_from_candidates(
+            snapshot,
+            scan_plan,
+            target_local_sequences,
+            &candidates,
+            max_global_blocks,
+            radius_weight,
+            scored_block_count,
+            cap_block_ip,
+            &route_context_by_pid,
+        );
+    }
+
     let target_hits = collect_loaded_leaf_target_block_hits(
         &loaded_leaf_routes,
         &target_ordinals_by_sequence,
@@ -1090,6 +1327,107 @@ fn collect_validated_leaf_target_block_rank_snapshot(
                 route_rank: route_context.map(|(rank, _score)| rank),
                 route_score: route_context.map(|(_rank, score)| score),
                 assignment_flags: Some(hit.assignment_flags),
+            });
+        }
+    }
+
+    rows.extend(missing_leaf_block_rank_rows(
+        snapshot,
+        scan_plan,
+        target_local_sequences,
+        "not_found_in_routed_leaves",
+        max_global_blocks,
+        radius_weight,
+        scored_block_count,
+        cap_block_ip,
+        &found_target_ordinals,
+    ));
+    rows.sort_by(|left, right| {
+        left.target_ordinal
+            .cmp(&right.target_ordinal)
+            .then_with(|| {
+                left.block_rank
+                    .unwrap_or(u64::MAX)
+                    .cmp(&right.block_rank.unwrap_or(u64::MAX))
+            })
+            .then_with(|| left.pid.unwrap_or(u64::MAX).cmp(&right.pid.unwrap_or(u64::MAX)))
+            .then_with(|| {
+                left.row_index
+                    .unwrap_or(u32::MAX)
+                    .cmp(&right.row_index.unwrap_or(u32::MAX))
+            })
+    });
+    Ok(rows)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn no_summary_leaf_target_block_rank_rows_from_candidates(
+    snapshot: &SpireValidatedEpochSnapshot<'_>,
+    scan_plan: SpireSingleLevelScanPlan,
+    target_local_sequences: &[u64],
+    candidates: &[SpireScoredScanCandidate],
+    max_global_blocks: u64,
+    radius_weight: f64,
+    scored_block_count: u64,
+    cap_block_ip: Option<f32>,
+    route_context_by_pid: &HashMap<u64, (u64, f32)>,
+) -> Result<Vec<SpireLeafBlockRankSnapshotRow>, String> {
+    let mut target_ordinals_by_sequence = HashMap::<u64, Vec<u64>>::new();
+    for (target_ordinal, target_local_sequence) in target_local_sequences.iter().enumerate() {
+        let target_ordinal = u64::try_from(target_ordinal)
+            .map_err(|_| "ec_spire target ordinal exceeds u64".to_owned())?;
+        target_ordinals_by_sequence
+            .entry(*target_local_sequence)
+            .or_default()
+            .push(target_ordinal);
+    }
+
+    let mut found_target_ordinals = HashSet::<u64>::new();
+    let mut rows = Vec::new();
+    for candidate in candidates {
+        let Some(target_local_sequence) = candidate.vec_id.local_sequence() else {
+            continue;
+        };
+        let Some(target_ordinals) = target_ordinals_by_sequence.get(&target_local_sequence) else {
+            continue;
+        };
+        let placement = snapshot
+            .require_lookup(candidate.pid, "leaf target block rank no-summary candidate")?
+            .placement;
+        let route_context = route_context_by_pid.get(&candidate.pid).copied();
+        for target_ordinal in target_ordinals {
+            if !found_target_ordinals.insert(*target_ordinal) {
+                continue;
+            }
+            rows.push(SpireLeafBlockRankSnapshotRow {
+                active_epoch: snapshot.epoch_manifest().epoch,
+                effective_nprobe: scan_plan.nprobe,
+                effective_nprobe_source: scan_plan.nprobe_source,
+                effective_rerank_width: u64::try_from(scan_plan.rerank_width)
+                    .map_err(|_| "ec_spire rerank width exceeds u64".to_owned())?,
+                effective_rerank_width_source: scan_plan.rerank_width_source,
+                target_ordinal: *target_ordinal,
+                target_local_sequence,
+                status: "target_no_block_summaries",
+                max_global_blocks,
+                radius_weight,
+                scored_block_count,
+                block_rank: None,
+                selected_by_global_cap: Some(true),
+                pid: Some(candidate.pid),
+                node_id: Some(placement.node_id),
+                local_store_id: Some(placement.local_store_id),
+                object_version: Some(candidate.object_version),
+                row_index: Some(candidate.row_index),
+                row_base: None,
+                row_end: None,
+                row_count: None,
+                block_ip: None,
+                cap_block_ip,
+                block_ip_margin_to_cap: None,
+                route_rank: route_context.map(|(rank, _score)| rank),
+                route_score: route_context.map(|(_rank, score)| score),
+                assignment_flags: Some(candidate.assignment_flags),
             });
         }
     }
@@ -2473,6 +2811,15 @@ fn append_quantized_v2_scored_column_candidate(
     if !ip.is_finite() {
         return Err("ec_spire routed candidate batch scorer returned a non-finite score".to_owned());
     }
+    if pre_materialization_prune_enabled()
+        && deleted_vec_ids.is_empty()
+        && accumulator
+            .pre_materialization_min_ip_to_keep()
+            .is_some_and(|min_ip_to_keep| ip < min_ip_to_keep)
+    {
+        observer.truncated_candidate(epoch, placement, columns.flags[row_offset]);
+        return Ok(());
+    }
 
     let materialize_started = observer.wants_candidate_timing().then(Instant::now);
     let row = columns.row(row_offset)?;
@@ -2653,6 +3000,15 @@ fn append_quantized_v2_column_candidates(
             return Err(
                 "ec_spire routed candidate batch scorer returned a non-finite score".to_owned(),
             );
+        }
+        if pre_materialization_prune_enabled()
+            && deleted_vec_ids.is_empty()
+            && accumulator
+                .pre_materialization_min_ip_to_keep()
+                .is_some_and(|min_ip_to_keep| ip < min_ip_to_keep)
+        {
+            observer.truncated_candidate(epoch, placement, columns.flags[row_offset]);
+            continue;
         }
 
         let materialize_started = observer.wants_candidate_timing().then(Instant::now);
@@ -3250,6 +3606,10 @@ impl SpireScoredCandidateAccumulator {
 
     fn is_bounded(&self) -> bool {
         self.limit.is_some()
+    }
+
+    fn pre_materialization_min_ip_to_keep(&mut self) -> Option<f32> {
+        self.min_ip_to_keep()
     }
 
     fn min_ip_to_keep(&mut self) -> Option<f32> {

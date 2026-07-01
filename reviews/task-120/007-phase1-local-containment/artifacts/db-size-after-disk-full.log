@@ -1,0 +1,20 @@
+ db_size
+---------
+ 1348 MB
+(1 row)
+
+                  relname                  | total_size
+-------------------------------------------+------------
+ task120_phase1_real50k_spire_corpus       | 836 MB
+ task120_phase1_real100k_spire_corpus      | 326 MB
+ task120_phase1_real10k_spire_corpus       | 168 MB
+ task120_phase1_real50k_spire_idx          | 41 MB
+ task120_phase1_real10k_spire_idx          | 9120 kB
+ task120_phase1_real50k_spire_queries      | 8264 kB
+ task120_phase1_real10k_spire_queries      | 1720 kB
+ task120_phase1_real50k_spire_corpus_pkey  | 1112 kB
+ task120_phase1_real100k_spire_corpus_pkey | 464 kB
+ task120_phase1_real10k_spire_corpus_pkey  | 240 kB
+ task120_phase1_real50k_spire_queries_pkey | 40 kB
+ task120_phase1_real10k_spire_queries_pkey | 16 kB
+(12 rows)

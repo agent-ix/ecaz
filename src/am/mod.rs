@@ -172,6 +172,7 @@ pub(crate) use self::ec_spire::{
     index_scan_rerank_locality_snapshot as spire_index_scan_rerank_locality_snapshot,
     index_scan_routing_snapshot as spire_index_scan_routing_snapshot,
     index_scan_sanity_snapshot as spire_index_scan_sanity_snapshot,
+    index_scan_target_candidate_rank_snapshot as spire_index_scan_target_candidate_rank_snapshot,
     index_selected_pid_placement_snapshot as spire_index_selected_pid_placement_snapshot,
     index_top_graph_snapshot as spire_index_top_graph_snapshot,
     index_writer_identity_snapshot as spire_index_writer_identity_snapshot,

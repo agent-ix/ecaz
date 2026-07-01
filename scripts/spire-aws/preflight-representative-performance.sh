@@ -53,10 +53,10 @@ require_representative_artifact_dir() {
   absolute_artifact_dir="$(realpath -m -- "$absolute_artifact_dir")"
 
   case "$absolute_artifact_dir" in
-    "$repo_root"/reviews/task-30/*/artifacts)
+    "$repo_root"/reviews/task-*/*/artifacts)
       ;;
     *)
-      die "ARTIFACT_DIR must be packet-local under reviews/task-30/<packet>/artifacts: $artifact_dir"
+      die "ARTIFACT_DIR must be packet-local under reviews/task-<id>/<packet>/artifacts: $artifact_dir"
       ;;
   esac
 
@@ -456,6 +456,9 @@ require_script_contains "$representative_load_script" 'PG_BIN=/usr/pgsql-18/bin'
 require_script_contains "$representative_load_script" 'ON_ERROR_STOP=1 -h 127.0.0.1'
 require_script_contains "$representative_load_script" "restart_all_operator_tunnels_if_available"
 require_script_contains "$representative_load_script" 'if [[ "$TIER" == "representative" ]]; then'
+require_script_contains "$representative_bench_script" "SPIRE_AWS_REPRESENTATIVE_PRIORITY_SUITE"
+require_script_contains "$representative_bench_script" "SPIRE_AWS_REPRESENTATIVE_SUITE"
+require_script_contains "$representative_bench_script" "SPIRE_AWS_REPRESENTATIVE_POOLING_SUITE"
 require_script_contains "$representative_bench_script" "SPIRE_AWS_REPRESENTATIVE_TRUTH_CORPUS_FILE"
 require_script_contains "$representative_bench_script" "SPIRE_AWS_BENCH_RENDER_SUITE_ONLY"
 require_script_contains "$representative_bench_script" "truth_corpus_file"

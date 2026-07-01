@@ -1,0 +1,20 @@
+2026-06-27 21:17:31.514 PDT [1826315] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-06-27 21:17:31.516 PDT [1826315] LOG:  listening on Unix socket "/tmp/ecaz-task123/target/spire-local-multinode-sockets-task123-p11-mi-n128-b4-200q-source/.s.PGSQL.40320"
+2026-06-27 21:17:31.523 PDT [1826321] LOG:  database system was shut down at 2026-06-27 21:15:54 PDT
+2026-06-27 21:17:31.527 PDT [1826315] LOG:  database system is ready to accept connections
+2026-06-27 21:22:31.314 PDT [1826319] LOG:  checkpoint starting: time
+2026-06-27 21:22:33.445 PDT [1826319] LOG:  checkpoint complete: wrote 21 buffers (0.1%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=2.113 s, sync=0.008 s, total=2.131 s; sync files=13, longest=0.004 s, average=0.001 s; distance=118 kB, estimate=118 kB; lsn=0/BB46C0F0, redo lsn=0/BB46C098
+2026-06-27 21:23:40.544 PDT [1827336] ERROR:  ec_spire production executor cannot merge remote heap candidates while node_id 2 is in state CandidateReceiveFailed with status remote_candidate_receive_failed
+2026-06-27 21:23:40.544 PDT [1827336] STATEMENT:  SELECT id, source FROM ec_real_100k_corpus ORDER BY embedding <#> $1::real[] LIMIT $2
+2026-06-27 21:23:40.545 PDT [1827336] LOG:  could not receive data from client: Connection reset by peer
+2026-06-27 21:27:31.229 PDT [1826319] LOG:  checkpoint starting: time
+2026-06-27 21:27:31.504 PDT [1826319] LOG:  checkpoint complete: wrote 2 buffers (0.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.206 s, sync=0.012 s, total=0.276 s; sync files=3, longest=0.010 s, average=0.004 s; distance=15 kB, estimate=108 kB; lsn=0/BB46FF90, redo lsn=0/BB46FF38
+2026-06-27 21:27:41.698 PDT [1828262] ERROR:  ec_spire production executor cannot merge remote heap candidates while node_id 2 is in state CandidateReceiveFailed with status remote_candidate_receive_failed
+2026-06-27 21:27:41.698 PDT [1828262] STATEMENT:  SELECT id FROM ec_real_100k_corpus ORDER BY embedding <#> $1::real[] LIMIT $2
+2026-06-27 21:29:45.038 PDT [1826315] LOG:  received fast shutdown request
+2026-06-27 21:29:45.042 PDT [1826315] LOG:  aborting any active transactions
+2026-06-27 21:29:45.043 PDT [1826315] LOG:  background worker "logical replication launcher" (PID 1826324) exited with exit code 1
+2026-06-27 21:29:45.043 PDT [1826319] LOG:  shutting down
+2026-06-27 21:29:45.045 PDT [1826319] LOG:  checkpoint starting: shutdown immediate
+2026-06-27 21:29:45.057 PDT [1826319] LOG:  checkpoint complete: wrote 0 buffers (0.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.003 s, sync=0.002 s, total=0.015 s; sync files=1, longest=0.002 s, average=0.002 s; distance=0 kB, estimate=97 kB; lsn=0/BB4700B8, redo lsn=0/BB4700B8
+2026-06-27 21:29:45.086 PDT [1826315] LOG:  database system is shut down

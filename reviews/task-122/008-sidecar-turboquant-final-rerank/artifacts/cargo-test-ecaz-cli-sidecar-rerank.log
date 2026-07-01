@@ -33,4 +33,3 @@ test commands::bench::sidecar_rerank::tests::final_f32_rerank_rescores_only_side
 test commands::bench::suite::tests::expands_sidecar_rerank_with_variants ... ok
 
 test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 405 filtered out; finished in 0.00s
-

@@ -340,6 +340,31 @@ pub(super) struct SpireLeafBlockRankSnapshotRow {
     pub(super) assignment_flags: Option<u16>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct SpireTargetCandidateRankSnapshotRow {
+    pub(super) active_epoch: u64,
+    pub(super) effective_nprobe: u32,
+    pub(super) effective_nprobe_source: &'static str,
+    pub(super) effective_rerank_width: u64,
+    pub(super) effective_rerank_width_source: &'static str,
+    pub(super) target_ordinal: u64,
+    pub(super) target_local_sequence: u64,
+    pub(super) status: &'static str,
+    pub(super) approximate_candidate_count: u64,
+    pub(super) rerank_prefix_count: u64,
+    pub(super) approximate_rank: Option<u64>,
+    pub(super) selected_by_rerank_prefix: Option<bool>,
+    pub(super) pid: Option<u64>,
+    pub(super) node_id: Option<u32>,
+    pub(super) local_store_id: Option<u32>,
+    pub(super) object_version: Option<u64>,
+    pub(super) row_index: Option<u32>,
+    pub(super) assignment_flags: Option<u16>,
+    pub(super) approximate_score: Option<f32>,
+    pub(super) heap_block: Option<u32>,
+    pub(super) heap_offset: Option<u16>,
+}
+
 trait SpireRoutedScanObserver {
     fn wants_candidate_timing(&self) -> bool {
         false

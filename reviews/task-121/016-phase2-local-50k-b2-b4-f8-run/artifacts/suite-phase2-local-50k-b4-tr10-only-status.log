@@ -1,0 +1,15 @@
+[suite:task121-phase2-local-50k-b2-b4-f8-run] completed=1 failed=0 skipped=13 dry_run=0 missing_artifacts=0 stale=0
+Skipped      precheck-host
+Skipped      load-50k_b2_tr10_f8
+Skipped      storage-50k_b2_tr10_f8
+Skipped      load-50k_b2_tr50_f8
+Skipped      storage-50k_b2_tr50_f8
+Skipped      load-50k_b4_tr10_f8
+Skipped      storage-50k_b4_tr10_f8
+Skipped      load-50k_b4_tr50_f8
+Skipped      storage-50k_b4_tr50_f8
+Skipped      truth-cache-50k-q200-k10
+Skipped      pipeline-50k_b2_tr10_f8
+Skipped      pipeline-50k_b2_tr50_f8
+Succeeded    pipeline-50k_b4_tr10_f8              --database tqvector_bench_task121 --host /home/peter/.pgrx --port 28818 bench spire-pipeline --prefix t121_s2_50k_b4_tr10_f8 --queries-limit 200 --sweep "4,8,12,16,24,32,48,64,96" --include-local-store-overlap --include-cost-snapshot --include-query-metrics --include-recall --truth-corpus-file data/staged-current/ec_real_50k_corpus.tsv --truth-cache-file reviews/task-121/016-phase2-local-50k-b2-b4-f8-run/artifacts/truth-cache-50k-q200-k10.json --log-output reviews/task-121/016-phase2-local-50k-b2-b4-f8-run/artifacts/pipeline-50k_b4_tr10_f8.log --funnel-output reviews/task-121/016-phase2-local-50k-b2-b4-f8-run/artifacts/pipeline-50k_b4_tr10_f8-funnel.jsonl --stage-containment-output reviews/task-121/016-phase2-local-50k-b2-b4-f8-run/artifacts/pipeline-50k_b4_tr10_f8-stage-containment.jsonl
+Skipped      pipeline-50k_b4_tr50_f8

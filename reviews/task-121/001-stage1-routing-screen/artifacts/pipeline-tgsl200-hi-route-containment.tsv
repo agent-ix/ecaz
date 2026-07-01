@@ -1,0 +1,4 @@
+nprobe	queries	contained_truth	truth_total	route_stage_containment
+128	200	2000	2000	1.0000
+160	200	2000	2000	1.0000
+200	200	2000	2000	1.0000

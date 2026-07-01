@@ -1,0 +1,5 @@
+LOAD
+          captured_at          |                                            postgres_version                                             | ecaz_build_profile | session_nprobe | session_rerank_width | session_max_candidate_rows | session_max_routed_candidate_rows | adaptive_nprobe | adaptive_nprobe_score_gap_micros
+-------------------------------+---------------------------------------------------------------------------------------------------------+--------------------+----------------+----------------------+----------------------------+-----------------------------------+-----------------+----------------------------------
+ 2026-06-21 13:13:19.695639-07 | PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit | release            | -1             | -1                   | -1                         | 0                                 | off             | 1000
+(1 row)

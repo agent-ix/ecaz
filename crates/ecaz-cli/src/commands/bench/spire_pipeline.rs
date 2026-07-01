@@ -136,6 +136,12 @@ pub struct SpirePipelineArgs {
     /// leaves first and emits only the containing block rank.
     #[arg(long)]
     pub target_block_rank_output: Option<PathBuf>,
+    /// Write per-exact-neighbor target candidate-rank rows as JSONL.
+    ///
+    /// This records retained approximate candidate rank and rerank-prefix
+    /// membership for each exact truth row.
+    #[arg(long)]
+    pub target_candidate_rank_output: Option<PathBuf>,
     /// Write per-exact-neighbor recall miss attribution rows as JSONL.
     ///
     /// Requires `--include-recall` and query metrics. The output joins exact
@@ -173,6 +179,12 @@ pub struct SpirePipelineArgs {
     /// Write per-query candidate funnel rows as JSONL.
     #[arg(long)]
     pub funnel_output: Option<PathBuf>,
+    /// Write per-query, per-stage exact-truth containment rows as JSONL.
+    ///
+    /// Requires `--include-recall` and query metrics. Candidate/rerank
+    /// containment uses the target candidate-rank SQL snapshot.
+    #[arg(long)]
+    pub stage_containment_output: Option<PathBuf>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
@@ -325,10 +337,14 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
     let mut degraded_skip = BTreeMap::<DegradedSkipKey, DegradedSkipAggregate>::new();
     let mut query_metrics = BTreeMap::<i32, QueryMetricAggregate>::new();
     let mut production_read_profile = BTreeMap::<i32, ProductionReadProfileAggregate>::new();
+    let mut production_read_timeline =
+        BTreeMap::<ProductionReadTimelineKey, ProductionReadTimelineAggregate>::new();
     let mut cost_tuning = BTreeMap::<i32, CostTuningRow>::new();
     let mut funnel_rows = Vec::<FunnelRecord>::new();
+    let mut stage_containment_rows = Vec::<StageContainmentRecord>::new();
     let mut leaf_block_rank_rows = Vec::<LeafBlockRankRecord>::new();
     let mut target_block_rank_rows = Vec::<LeafBlockRankRecord>::new();
+    let mut target_candidate_rank_rows = Vec::<TargetCandidateRankRecord>::new();
     let mut miss_attribution_rows = Vec::<MissAttributionRecord>::new();
     let mut remote_epoch = args.remote_requested_epoch;
     let mut task87_counter_lines = Vec::new();
@@ -427,7 +443,7 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
                         .find(|row| row.active_epoch > 0)
                         .map(|row| row.active_epoch);
                 }
-                if args.funnel_output.is_some() {
+                if args.funnel_output.is_some() || args.stage_containment_output.is_some() {
                     funnel_local_rows = local_rows.clone();
                     funnel_leaf_rows =
                         query_leaf_candidate_rows(&client, &index, &query.source).await?;
@@ -677,6 +693,120 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
                     ));
                 }
             }
+            let mut candidate_rank_rows_for_stage = None::<Vec<TargetCandidateRankRow>>;
+            if args.target_candidate_rank_output.is_some() {
+                let truth_ids = query_truth
+                    .as_ref()
+                    .expect("target candidate rank output is validated to require recall truth");
+                let query_truth_ids = truth_ids.get(query_index).ok_or_else(|| {
+                    eyre!(
+                        "exact-truth ids missing for query ordinal {}",
+                        query_index + 1
+                    )
+                })?;
+                let target_local_sequences = query_truth_ids
+                    .iter()
+                    .map(|truth_id| {
+                        truth_id
+                            .checked_add(args.leaf_block_rank_local_sequence_offset)
+                            .ok_or_else(|| {
+                                eyre!(
+                                    "target candidate rank local sequence overflow for truth id {truth_id}"
+                                )
+                            })
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+                let rank_rows = query_target_candidate_rank_rows(
+                    &client,
+                    &index,
+                    &query.source,
+                    &target_local_sequences,
+                )
+                .await?;
+                for row in &rank_rows {
+                    let truth_index = usize::try_from(row.target_ordinal).map_err(|_| {
+                        eyre!(
+                            "target candidate rank target ordinal {} exceeds usize",
+                            row.target_ordinal
+                        )
+                    })?;
+                    let truth_id = *query_truth_ids.get(truth_index).ok_or_else(|| {
+                        eyre!(
+                            "target candidate rank target ordinal {} exceeds truth id count {}",
+                            row.target_ordinal,
+                            query_truth_ids.len()
+                        )
+                    })?;
+                    target_candidate_rank_rows.push(TargetCandidateRankRecord::from_row(
+                        *nprobe,
+                        query_index + 1,
+                        query.id,
+                        truth_id,
+                        row.clone(),
+                    ));
+                }
+                candidate_rank_rows_for_stage = Some(rank_rows);
+            }
+            if args.stage_containment_output.is_some() {
+                let truth_ids = query_truth
+                    .as_ref()
+                    .expect("stage containment output is validated to require recall truth");
+                let query_truth_ids = truth_ids.get(query_index).ok_or_else(|| {
+                    eyre!(
+                        "exact-truth ids missing for query ordinal {}",
+                        query_index + 1
+                    )
+                })?;
+                let predicted_ids = predicted_ids_for_query.as_ref().ok_or_else(|| {
+                    eyre!(
+                        "--stage-containment-output requires query metrics for query ordinal {}",
+                        query_index + 1
+                    )
+                })?;
+                let target_local_sequences = query_truth_ids
+                    .iter()
+                    .map(|truth_id| {
+                        truth_id
+                            .checked_add(args.leaf_block_rank_local_sequence_offset)
+                            .ok_or_else(|| {
+                                eyre!(
+                                    "stage containment local sequence overflow for truth id {truth_id}"
+                                )
+                            })
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+                let rank_rows = query_leaf_target_block_rank_rows(
+                    &client,
+                    &index,
+                    &query.source,
+                    &target_local_sequences,
+                )
+                .await?;
+                let candidate_rank_rows = match candidate_rank_rows_for_stage {
+                    Some(rows) => rows,
+                    None => {
+                        query_target_candidate_rank_rows(
+                            &client,
+                            &index,
+                            &query.source,
+                            &target_local_sequences,
+                        )
+                        .await?
+                    }
+                };
+                stage_containment_rows.extend(StageContainmentRecord::from_query(
+                    *nprobe,
+                    query_index + 1,
+                    query.id,
+                    query_truth_ids,
+                    predicted_ids,
+                    &funnel_local_rows,
+                    &funnel_leaf_rows,
+                    funnel_rerank_locality.as_ref(),
+                    &candidate_rank_rows,
+                    &rank_rows,
+                )?);
+            }
             if args.include_production_read_profile {
                 let row = query_production_read_profile_row(
                     &client,
@@ -693,6 +823,22 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
                     .entry(*nprobe)
                     .or_default()
                     .record(row);
+                let payload_columns =
+                    production_read_payload_columns(&args.query_metric_projection_columns);
+                let rows = query_production_read_timeline_rows(
+                    &client,
+                    &index,
+                    &query.source,
+                    args.query_metric_k,
+                    &payload_columns,
+                )
+                .await?;
+                for row in rows {
+                    production_read_timeline
+                        .entry(ProductionReadTimelineKey::from_row(*nprobe, &row))
+                        .or_default()
+                        .record(row);
+                }
             }
             if args.funnel_output.is_some() && !args.production_read_only {
                 funnel_rows.push(FunnelRecord::from_query(
@@ -705,6 +851,16 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
                     returned_to_k_count,
                 )?);
             }
+            flush_pipeline_jsonl_outputs(
+                &args,
+                &funnel_rows,
+                &stage_containment_rows,
+                &leaf_block_rank_rows,
+                &target_block_rank_rows,
+                &target_candidate_rank_rows,
+                &miss_attribution_rows,
+            )
+            .await?;
             bar.inc(1);
         }
         bar.finish_and_clear();
@@ -753,34 +909,33 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
         degraded_skip: &degraded_skip,
         query_metrics: &query_metrics,
         production_read_profile: &production_read_profile,
+        production_read_timeline: &production_read_timeline,
     });
     if !task87_counter_lines.is_empty() {
         output.push('\n');
         output.push_str(&task87_counter_lines.join("\n"));
     }
     println!("{output}");
-    if let Some(path) = args.log_output {
+    if let Some(path) = args.log_output.as_ref() {
         if let Some(parent) = path.parent() {
             tokio::fs::create_dir_all(parent)
                 .await
                 .wrap_err_with(|| format!("creating {}", parent.display()))?;
         }
-        tokio::fs::write(&path, format!("{output}\n"))
+        tokio::fs::write(path, format!("{output}\n"))
             .await
             .wrap_err_with(|| format!("writing {}", path.display()))?;
     }
-    if let Some(path) = args.funnel_output {
-        write_funnel_jsonl(&path, &funnel_rows).await?;
-    }
-    if let Some(path) = args.leaf_block_rank_output {
-        write_leaf_block_rank_jsonl(&path, &leaf_block_rank_rows).await?;
-    }
-    if let Some(path) = args.target_block_rank_output {
-        write_leaf_block_rank_jsonl(&path, &target_block_rank_rows).await?;
-    }
-    if let Some(path) = args.miss_attribution_output {
-        write_miss_attribution_jsonl(&path, &miss_attribution_rows).await?;
-    }
+    flush_pipeline_jsonl_outputs(
+        &args,
+        &funnel_rows,
+        &stage_containment_rows,
+        &leaf_block_rank_rows,
+        &target_block_rank_rows,
+        &target_candidate_rank_rows,
+        &miss_attribution_rows,
+    )
+    .await?;
     Ok(())
 }
 
@@ -825,6 +980,11 @@ fn validate_args(args: &SpirePipelineArgs) -> Result<()> {
             "--funnel-output requires SQL-visible local pipeline diagnostics; remove --production-read-only"
         ));
     }
+    if args.production_read_only && args.stage_containment_output.is_some() {
+        return Err(eyre!(
+            "--stage-containment-output requires SQL-visible local pipeline diagnostics; remove --production-read-only"
+        ));
+    }
     if args.leaf_block_rank_output.is_some() && !args.include_recall {
         return Err(eyre!(
             "--leaf-block-rank-output requires --include-recall so exact truth ids are available"
@@ -835,14 +995,29 @@ fn validate_args(args: &SpirePipelineArgs) -> Result<()> {
             "--target-block-rank-output requires --include-recall so exact truth ids are available"
         ));
     }
+    if args.target_candidate_rank_output.is_some() && !args.include_recall {
+        return Err(eyre!(
+            "--target-candidate-rank-output requires --include-recall so exact truth ids are available"
+        ));
+    }
     if args.miss_attribution_output.is_some() && !args.include_recall {
         return Err(eyre!(
             "--miss-attribution-output requires --include-recall so exact truth ids are available"
         ));
     }
+    if args.stage_containment_output.is_some() && !args.include_recall {
+        return Err(eyre!(
+            "--stage-containment-output requires --include-recall so exact truth ids are available"
+        ));
+    }
     if args.miss_attribution_output.is_some() && !args.include_query_metrics {
         return Err(eyre!(
             "--miss-attribution-output requires --include-query-metrics so returned ids are available"
+        ));
+    }
+    if args.stage_containment_output.is_some() && !args.include_query_metrics {
+        return Err(eyre!(
+            "--stage-containment-output requires --include-query-metrics so returned ids are available"
         ));
     }
     if args.truth_cache_file.is_some() && !args.include_recall {
@@ -852,7 +1027,9 @@ fn validate_args(args: &SpirePipelineArgs) -> Result<()> {
     }
     if (args.leaf_block_rank_output.is_some()
         || args.target_block_rank_output.is_some()
-        || args.miss_attribution_output.is_some())
+        || args.target_candidate_rank_output.is_some()
+        || args.miss_attribution_output.is_some()
+        || args.stage_containment_output.is_some())
         && args.leaf_block_rank_local_sequence_offset < 0
     {
         return Err(eyre!(
@@ -945,6 +1122,16 @@ fn build_query_metric_sql(corpus_table: &str, projection_columns: &[String]) -> 
          LIMIT $2",
         select_columns = select_columns.join(", ")
     )
+}
+
+fn production_read_payload_columns(projection_columns: &[String]) -> Vec<String> {
+    let mut columns = vec!["id".to_owned()];
+    for column in projection_columns {
+        if column != "id" && !columns.iter().any(|existing| existing == column) {
+            columns.push(column.clone());
+        }
+    }
+    columns
 }
 
 fn query_matrix(queries: &[QueryVector]) -> Result<Array2<f32>> {
@@ -1368,6 +1555,23 @@ async fn query_leaf_target_block_rank_rows(
     Ok(rows.into_iter().map(LeafBlockRankRow::from).collect())
 }
 
+async fn query_target_candidate_rank_rows(
+    client: &Client,
+    index: &str,
+    query: &[f32],
+    target_local_sequences: &[i64],
+) -> Result<Vec<TargetCandidateRankRow>> {
+    let target_local_sequences = target_local_sequences.to_vec();
+    let rows = client
+        .query(
+            target_candidate_rank_snapshot_sql(),
+            &[&index, &query, &target_local_sequences],
+        )
+        .await
+        .wrap_err("querying ec_spire_index_scan_target_candidate_rank_snapshot")?;
+    Ok(rows.into_iter().map(TargetCandidateRankRow::from).collect())
+}
+
 async fn query_remote_pipeline_rows(
     client: &Client,
     index: &str,
@@ -1435,6 +1639,28 @@ async fn query_production_read_profile_row(
         .await
         .wrap_err("querying ec_spire_remote_search_production_read_profile")?;
     Ok(ProductionReadProfileRow::from_metric_rows(rows))
+}
+
+async fn query_production_read_timeline_rows(
+    client: &Client,
+    index: &str,
+    query: &[f32],
+    top_k: usize,
+    payload_columns: &[String],
+) -> Result<Vec<ProductionReadTimelineRow>> {
+    let top_k = i32::try_from(top_k).map_err(|_| eyre!("query metric k exceeds i32"))?;
+    let payload_columns = payload_columns.to_vec();
+    let rows = client
+        .query(
+            production_read_timeline_sql(),
+            &[&index, &query, &top_k, &payload_columns],
+        )
+        .await
+        .wrap_err("querying ec_spire_remote_search_production_read_timeline")?;
+    Ok(rows
+        .into_iter()
+        .map(ProductionReadTimelineRow::from)
+        .collect())
 }
 
 async fn query_remote_placement_gate(client: &Client, index: &str) -> Result<RemotePlacementGate> {
@@ -1554,6 +1780,17 @@ fn leaf_target_block_rank_snapshot_sql() -> &'static str {
      ORDER BY target_ordinal, block_rank NULLS LAST, pid NULLS LAST, row_index NULLS LAST"
 }
 
+fn target_candidate_rank_snapshot_sql() -> &'static str {
+    "SELECT target_ordinal, target_local_sequence, status,
+            approximate_candidate_count, rerank_prefix_count, approximate_rank,
+            selected_by_rerank_prefix, pid, node_id, local_store_id,
+            object_version, row_index, assignment_flags, approximate_score,
+            heap_block, heap_offset
+     FROM ec_spire_index_scan_target_candidate_rank_snapshot(
+            $1::text::regclass::oid, $2::real[], $3::bigint[])
+     ORDER BY target_ordinal, approximate_rank NULLS LAST, pid NULLS LAST, row_index NULLS LAST"
+}
+
 fn remote_pipeline_steps_sql() -> &'static str {
     "SELECT step_ordinal, step_name, requested_epoch, status, item_count,
             ready_count, blocked_count, remote_pid_count, next_blocker,
@@ -1577,6 +1814,14 @@ fn production_read_profile_sql() -> &'static str {
     "SELECT metric, value
        FROM ec_spire_remote_search_production_read_profile(
             $1::text::regclass::oid, $2::real[], $3::integer)"
+}
+
+fn production_read_timeline_sql() -> &'static str {
+    "SELECT requested_epoch, node_id, phase, started_after_ms, completed_after_ms,
+            elapsed_ms, candidate_count, payload_decode_elapsed_ms,
+            payload_decode_row_count, payload_decode_bytes, status, failure_category
+       FROM ec_spire_remote_search_production_read_timeline(
+            $1::text::regclass::oid, $2::real[], $3::integer, $4::text[])"
 }
 
 fn endpoint_identity_sql() -> &'static str {
@@ -1692,6 +1937,7 @@ struct LocalPipelineRow {
     heap_rerank_row_count: i64,
     remote_fanout_count: i64,
     next_blocker: String,
+    recommendation: String,
 }
 
 impl From<Row> for LocalPipelineRow {
@@ -1709,6 +1955,44 @@ impl From<Row> for LocalPipelineRow {
             heap_rerank_row_count: row.get(9),
             remote_fanout_count: row.get(10),
             next_blocker: row.get(11),
+            recommendation: row.get(12),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct FunnelPipelineStageRecord {
+    step_ordinal: i64,
+    step_name: String,
+    active_epoch: i64,
+    status: String,
+    item_count: i64,
+    ready_count: i64,
+    blocked_count: i64,
+    route_count: i64,
+    candidate_count: i64,
+    heap_rerank_row_count: i64,
+    remote_fanout_count: i64,
+    next_blocker: String,
+    recommendation: String,
+}
+
+impl From<&LocalPipelineRow> for FunnelPipelineStageRecord {
+    fn from(row: &LocalPipelineRow) -> Self {
+        Self {
+            step_ordinal: row.step_ordinal,
+            step_name: row.step_name.clone(),
+            active_epoch: row.active_epoch,
+            status: row.status.clone(),
+            item_count: row.item_count,
+            ready_count: row.ready_count,
+            blocked_count: row.blocked_count,
+            route_count: row.route_count,
+            candidate_count: row.candidate_count,
+            heap_rerank_row_count: row.heap_rerank_row_count,
+            remote_fanout_count: row.remote_fanout_count,
+            next_blocker: row.next_blocker.clone(),
+            recommendation: row.recommendation.clone(),
         }
     }
 }
@@ -1916,6 +2200,118 @@ impl From<Row> for LeafBlockRankRow {
             route_rank: row.get(19),
             route_score: row.get(20),
             assignment_flags: row.get(21),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct TargetCandidateRankRow {
+    target_ordinal: i64,
+    #[allow(dead_code)]
+    target_local_sequence: i64,
+    status: String,
+    approximate_candidate_count: i64,
+    rerank_prefix_count: i64,
+    approximate_rank: Option<i64>,
+    selected_by_rerank_prefix: Option<bool>,
+    #[allow(dead_code)]
+    pid: Option<i64>,
+    #[allow(dead_code)]
+    node_id: Option<i64>,
+    #[allow(dead_code)]
+    local_store_id: Option<i64>,
+    #[allow(dead_code)]
+    object_version: Option<i64>,
+    #[allow(dead_code)]
+    row_index: Option<i64>,
+    #[allow(dead_code)]
+    assignment_flags: Option<i64>,
+    #[allow(dead_code)]
+    approximate_score: Option<f32>,
+    #[allow(dead_code)]
+    heap_block: Option<i64>,
+    #[allow(dead_code)]
+    heap_offset: Option<i64>,
+}
+
+impl From<Row> for TargetCandidateRankRow {
+    fn from(row: Row) -> Self {
+        Self {
+            target_ordinal: row.get(0),
+            target_local_sequence: row.get(1),
+            status: row.get(2),
+            approximate_candidate_count: row.get(3),
+            rerank_prefix_count: row.get(4),
+            approximate_rank: row.get(5),
+            selected_by_rerank_prefix: row.get(6),
+            pid: row.get(7),
+            node_id: row.get(8),
+            local_store_id: row.get(9),
+            object_version: row.get(10),
+            row_index: row.get(11),
+            assignment_flags: row.get(12),
+            approximate_score: row.get(13),
+            heap_block: row.get(14),
+            heap_offset: row.get(15),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct TargetCandidateRankRecord {
+    kind: &'static str,
+    nprobe: i32,
+    query_ordinal: usize,
+    query_id: i64,
+    truth_rank: i64,
+    truth_id: i64,
+    target_local_sequence: i64,
+    status: String,
+    approximate_candidate_count: i64,
+    rerank_prefix_count: i64,
+    approximate_rank: Option<i64>,
+    selected_by_rerank_prefix: Option<bool>,
+    pid: Option<i64>,
+    node_id: Option<i64>,
+    local_store_id: Option<i64>,
+    object_version: Option<i64>,
+    row_index: Option<i64>,
+    assignment_flags: Option<i64>,
+    approximate_score: Option<f32>,
+    heap_block: Option<i64>,
+    heap_offset: Option<i64>,
+}
+
+impl TargetCandidateRankRecord {
+    fn from_row(
+        nprobe: i32,
+        query_ordinal: usize,
+        query_id: i64,
+        truth_id: i64,
+        row: TargetCandidateRankRow,
+    ) -> Self {
+        Self {
+            kind: "spire_target_candidate_rank",
+            nprobe,
+            query_ordinal,
+            query_id,
+            truth_rank: row.target_ordinal + 1,
+            truth_id,
+            target_local_sequence: row.target_local_sequence,
+            status: row.status,
+            approximate_candidate_count: row.approximate_candidate_count,
+            rerank_prefix_count: row.rerank_prefix_count,
+            approximate_rank: row.approximate_rank,
+            selected_by_rerank_prefix: row.selected_by_rerank_prefix,
+            pid: row.pid,
+            node_id: row.node_id,
+            local_store_id: row.local_store_id,
+            object_version: row.object_version,
+            row_index: row.row_index,
+            assignment_flags: row.assignment_flags,
+            approximate_score: row.approximate_score,
+            heap_block: row.heap_block,
+            heap_offset: row.heap_offset,
         }
     }
 }
@@ -2248,11 +2644,13 @@ fn classify_miss_stage(rank_row: Option<&LeafBlockRankRow>) -> &'static str {
     };
     match row.status.as_str() {
         "not_found_in_routed_leaves" | "nprobe_zero" => "routing_miss",
-        "block_ranked" => match row.selected_by_global_cap {
-            Some(false) => "block_pruned_global_cap",
-            Some(true) => "candidate_or_rerank_cap",
-            None => "candidate_or_rerank_cap",
-        },
+        "block_ranked" | "target_block_ranked" | "target_no_block_summaries" => {
+            match row.selected_by_global_cap {
+                Some(false) => "block_pruned_global_cap",
+                Some(true) => "candidate_or_rerank_cap",
+                None => "candidate_or_rerank_cap",
+            }
+        }
         _ => "attribution_unknown",
     }
 }
@@ -2263,6 +2661,7 @@ struct FunnelRecord {
     nprobe: i32,
     query_ordinal: usize,
     query_id: i64,
+    pipeline_stages: Vec<FunnelPipelineStageRecord>,
     leaf_route_count: i64,
     scanned_leaf_count: i64,
     candidate_count: i64,
@@ -2310,6 +2709,10 @@ impl FunnelRecord {
         rerank_locality: Option<&RerankLocalityRow>,
         returned_to_k_count: Option<usize>,
     ) -> Result<Self> {
+        let pipeline_stages = local_rows
+            .iter()
+            .map(FunnelPipelineStageRecord::from)
+            .collect();
         let candidate_count = local_step_value(local_rows, "candidates", |row| row.candidate_count)
             .unwrap_or_else(|| leaf_rows.iter().map(|row| row.candidate_row_count).sum());
         let retained_after_rerank_count =
@@ -2402,6 +2805,7 @@ impl FunnelRecord {
             nprobe,
             query_ordinal,
             query_id,
+            pipeline_stages,
             leaf_route_count,
             scanned_leaf_count,
             candidate_count,
@@ -2441,6 +2845,505 @@ impl FunnelRecord {
     }
 }
 
+#[derive(Debug, Default)]
+struct LeafStageTotals {
+    route_count: i64,
+    scanned_count: i64,
+    candidate_row_count: i64,
+    leaf_block_available_count: i64,
+    leaf_block_selected_count: i64,
+    leaf_block_skipped_count: i64,
+    leaf_object_bytes: i64,
+    leaf_summary_object_bytes: i64,
+    leaf_row_object_bytes: i64,
+    leaf_row_segment_read_bytes: i64,
+    leaf_object_read_nanos: i64,
+    leaf_summary_score_nanos: i64,
+    leaf_row_score_nanos: i64,
+    candidate_materialize_nanos: i64,
+    candidate_heap_append_nanos: i64,
+}
+
+impl LeafStageTotals {
+    fn from_rows(rows: &[LeafCandidateRow]) -> Self {
+        rows.iter().fold(Self::default(), |mut totals, row| {
+            totals.route_count += row.route_count;
+            totals.scanned_count += row.scanned_count;
+            totals.candidate_row_count += row.candidate_row_count;
+            totals.leaf_block_available_count += row.leaf_block_available_count;
+            totals.leaf_block_selected_count += row.leaf_block_selected_count;
+            totals.leaf_block_skipped_count += row.leaf_block_skipped_count;
+            totals.leaf_object_bytes += row.object_bytes;
+            totals.leaf_summary_object_bytes += row.leaf_summary_object_bytes;
+            totals.leaf_row_object_bytes += row.leaf_row_object_bytes;
+            totals.leaf_row_segment_read_bytes += row.leaf_row_segment_read_bytes;
+            totals.leaf_object_read_nanos += row.leaf_object_read_nanos;
+            totals.leaf_summary_score_nanos += row.leaf_summary_score_nanos;
+            totals.leaf_row_score_nanos += row.leaf_row_score_nanos;
+            totals.candidate_materialize_nanos += row.candidate_materialize_nanos;
+            totals.candidate_heap_append_nanos += row.candidate_heap_append_nanos;
+            totals
+        })
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct StageContainmentRecord {
+    kind: &'static str,
+    nprobe: i32,
+    query_ordinal: usize,
+    query_id: i64,
+    stage_ordinal: u8,
+    stage_name: &'static str,
+    containment_basis: &'static str,
+    truth_top_k_count: usize,
+    contained_truth_count: usize,
+    missing_truth_count: usize,
+    contained_truth_ranks: Vec<usize>,
+    missing_truth_ranks: Vec<usize>,
+    missing_reason_counts: BTreeMap<String, usize>,
+    candidate_or_object_count: i64,
+    bytes_read_or_shipped: i64,
+    leaf_object_bytes: i64,
+    leaf_summary_object_bytes: i64,
+    leaf_row_object_bytes: i64,
+    leaf_row_segment_read_bytes: i64,
+    leaf_block_available_count: i64,
+    leaf_block_selected_count: i64,
+    leaf_block_skipped_count: i64,
+    latency_nanos: Option<i64>,
+    route_count: i64,
+    candidate_count: i64,
+    heap_rerank_row_count: i64,
+    remote_fanout_count: i64,
+    budget_count: Option<i64>,
+    blocked_count: i64,
+    next_blocker: String,
+    recommendation: String,
+}
+
+impl StageContainmentRecord {
+    #[allow(clippy::too_many_arguments)]
+    fn from_query(
+        nprobe: i32,
+        query_ordinal: usize,
+        query_id: i64,
+        truth_ids: &[i64],
+        predicted_ids: &[i64],
+        local_rows: &[LocalPipelineRow],
+        leaf_rows: &[LeafCandidateRow],
+        rerank_locality: Option<&RerankLocalityRow>,
+        candidate_rank_rows: &[TargetCandidateRankRow],
+        rank_rows: &[LeafBlockRankRow],
+    ) -> Result<Vec<Self>> {
+        let rank_by_ordinal = rank_rows
+            .iter()
+            .map(|row| {
+                let ordinal = usize::try_from(row.target_ordinal).map_err(|_| {
+                    eyre!(
+                        "stage containment target ordinal {} exceeds usize",
+                        row.target_ordinal
+                    )
+                })?;
+                Ok((ordinal, row))
+            })
+            .collect::<Result<HashMap<_, _>>>()?;
+        let candidate_rank_by_ordinal = candidate_rank_rows
+            .iter()
+            .map(|row| {
+                let ordinal = usize::try_from(row.target_ordinal).map_err(|_| {
+                    eyre!(
+                        "stage containment target candidate ordinal {} exceeds usize",
+                        row.target_ordinal
+                    )
+                })?;
+                Ok((ordinal, row))
+            })
+            .collect::<Result<HashMap<_, _>>>()?;
+        let predicted_id_set = predicted_ids.iter().copied().collect::<HashSet<_>>();
+        let totals = LeafStageTotals::from_rows(leaf_rows);
+        let routing_step = local_step(local_rows, "routing");
+        let placement_step = local_step(local_rows, "placement");
+        let prefetch_step = local_step(local_rows, "prefetch");
+        let candidate_step = local_step(local_rows, "candidates");
+        let rerank_step = local_step(local_rows, "heap_rerank");
+        let candidate_snapshot_count = candidate_rank_rows.first().map_or_else(
+            || candidate_step.map_or(totals.candidate_row_count, |row| row.candidate_count),
+            |row| row.approximate_candidate_count,
+        );
+        let rerank_snapshot_prefix_count = candidate_rank_rows.first().map_or_else(
+            || rerank_locality.map_or(0, |row| row.rerank_prefix_count),
+            |row| row.rerank_prefix_count,
+        );
+
+        let mut rows = Vec::with_capacity(6);
+        rows.push(Self::build(
+            nprobe,
+            query_ordinal,
+            query_id,
+            1,
+            "topology_route_set",
+            "target_block_rank_routed_leaf_lookup",
+            truth_ids,
+            |truth_index, _truth_id| {
+                target_rank_row_is_routed(rank_by_ordinal.get(&truth_index).copied())
+            },
+            |truth_index, _truth_id| {
+                stage_missing_reason_for_route(rank_by_ordinal.get(&truth_index).copied())
+            },
+            routing_step,
+            routing_step.map_or(0, |row| row.route_count),
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            None,
+        ));
+        rows.push(Self::build(
+            nprobe,
+            query_ordinal,
+            query_id,
+            2,
+            "selected_leaves",
+            "target_block_rank_routed_leaf_lookup",
+            truth_ids,
+            |truth_index, _truth_id| {
+                target_rank_row_is_routed(rank_by_ordinal.get(&truth_index).copied())
+            },
+            |truth_index, _truth_id| {
+                stage_missing_reason_for_route(rank_by_ordinal.get(&truth_index).copied())
+            },
+            placement_step.or(prefetch_step),
+            totals.scanned_count,
+            totals.leaf_object_bytes,
+            totals.leaf_object_bytes,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            Some(totals.leaf_object_read_nanos),
+        ));
+        rows.push(Self::build(
+            nprobe,
+            query_ordinal,
+            query_id,
+            3,
+            "selected_leaf_blocks",
+            "target_block_rank_selected_by_global_cap",
+            truth_ids,
+            |truth_index, _truth_id| {
+                target_rank_row_block_selected(rank_by_ordinal.get(&truth_index).copied())
+            },
+            |truth_index, _truth_id| {
+                stage_missing_reason_for_block(rank_by_ordinal.get(&truth_index).copied())
+            },
+            candidate_step,
+            totals.leaf_block_selected_count,
+            totals.leaf_summary_object_bytes,
+            totals.leaf_object_bytes,
+            totals.leaf_summary_object_bytes,
+            totals.leaf_row_object_bytes,
+            totals.leaf_row_segment_read_bytes,
+            totals.leaf_block_available_count,
+            totals.leaf_block_selected_count,
+            totals.leaf_block_skipped_count,
+            Some(totals.leaf_summary_score_nanos),
+        ));
+        rows.push(Self::build(
+            nprobe,
+            query_ordinal,
+            query_id,
+            4,
+            "local_candidate_frontier",
+            "target_candidate_rank_snapshot",
+            truth_ids,
+            |truth_index, _truth_id| {
+                target_candidate_rank_row_retained(
+                    candidate_rank_by_ordinal.get(&truth_index).copied(),
+                )
+            },
+            |truth_index, _truth_id| {
+                stage_missing_reason_for_candidate_frontier(
+                    candidate_rank_by_ordinal.get(&truth_index).copied(),
+                    rank_by_ordinal.get(&truth_index).copied(),
+                )
+            },
+            candidate_step,
+            candidate_snapshot_count,
+            totals.leaf_row_segment_read_bytes,
+            totals.leaf_object_bytes,
+            totals.leaf_summary_object_bytes,
+            totals.leaf_row_object_bytes,
+            totals.leaf_row_segment_read_bytes,
+            totals.leaf_block_available_count,
+            totals.leaf_block_selected_count,
+            totals.leaf_block_skipped_count,
+            Some(
+                totals.leaf_row_score_nanos
+                    + totals.candidate_materialize_nanos
+                    + totals.candidate_heap_append_nanos,
+            ),
+        ));
+        rows.push(Self::build(
+            nprobe,
+            query_ordinal,
+            query_id,
+            5,
+            "exact_source_rerank_frontier",
+            "target_candidate_rank_snapshot",
+            truth_ids,
+            |truth_index, _truth_id| {
+                target_candidate_rank_row_in_rerank_prefix(
+                    candidate_rank_by_ordinal.get(&truth_index).copied(),
+                )
+            },
+            |truth_index, _truth_id| {
+                stage_missing_reason_for_rerank_frontier(
+                    candidate_rank_by_ordinal.get(&truth_index).copied(),
+                    rank_by_ordinal.get(&truth_index).copied(),
+                )
+            },
+            rerank_step,
+            rerank_snapshot_prefix_count,
+            0,
+            totals.leaf_object_bytes,
+            totals.leaf_summary_object_bytes,
+            totals.leaf_row_object_bytes,
+            totals.leaf_row_segment_read_bytes,
+            totals.leaf_block_available_count,
+            totals.leaf_block_selected_count,
+            totals.leaf_block_skipped_count,
+            None,
+        ));
+        rows.push(Self::build(
+            nprobe,
+            query_ordinal,
+            query_id,
+            6,
+            "final_top_k",
+            "query_metric_returned_ids",
+            truth_ids,
+            |_truth_index, truth_id| predicted_id_set.contains(truth_id),
+            |truth_index, truth_id| {
+                stage_missing_reason_for_final(
+                    rank_by_ordinal.get(&truth_index).copied(),
+                    candidate_rank_by_ordinal.get(&truth_index).copied(),
+                    predicted_id_set.contains(truth_id),
+                )
+            },
+            rerank_step,
+            i64::try_from(predicted_ids.len())
+                .map_err(|_| eyre!("predicted id count exceeds i64"))?,
+            0,
+            totals.leaf_object_bytes,
+            totals.leaf_summary_object_bytes,
+            totals.leaf_row_object_bytes,
+            totals.leaf_row_segment_read_bytes,
+            totals.leaf_block_available_count,
+            totals.leaf_block_selected_count,
+            totals.leaf_block_skipped_count,
+            None,
+        ));
+        Ok(rows)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn build<C, R>(
+        nprobe: i32,
+        query_ordinal: usize,
+        query_id: i64,
+        stage_ordinal: u8,
+        stage_name: &'static str,
+        containment_basis: &'static str,
+        truth_ids: &[i64],
+        contains_truth: C,
+        missing_reason: R,
+        pipeline_stage: Option<&LocalPipelineRow>,
+        candidate_or_object_count: i64,
+        bytes_read_or_shipped: i64,
+        leaf_object_bytes: i64,
+        leaf_summary_object_bytes: i64,
+        leaf_row_object_bytes: i64,
+        leaf_row_segment_read_bytes: i64,
+        leaf_block_available_count: i64,
+        leaf_block_selected_count: i64,
+        leaf_block_skipped_count: i64,
+        latency_nanos: Option<i64>,
+    ) -> Self
+    where
+        C: Fn(usize, &i64) -> bool,
+        R: Fn(usize, &i64) -> &'static str,
+    {
+        let mut contained_truth_ranks = Vec::new();
+        let mut missing_truth_ranks = Vec::new();
+        let mut missing_reason_counts = BTreeMap::<String, usize>::new();
+        for (truth_index, truth_id) in truth_ids.iter().enumerate() {
+            let truth_rank = truth_index + 1;
+            if contains_truth(truth_index, truth_id) {
+                contained_truth_ranks.push(truth_rank);
+            } else {
+                missing_truth_ranks.push(truth_rank);
+                *missing_reason_counts
+                    .entry(missing_reason(truth_index, truth_id).to_owned())
+                    .or_default() += 1;
+            }
+        }
+
+        Self {
+            kind: "spire_stage_containment",
+            nprobe,
+            query_ordinal,
+            query_id,
+            stage_ordinal,
+            stage_name,
+            containment_basis,
+            truth_top_k_count: truth_ids.len(),
+            contained_truth_count: contained_truth_ranks.len(),
+            missing_truth_count: missing_truth_ranks.len(),
+            contained_truth_ranks,
+            missing_truth_ranks,
+            missing_reason_counts,
+            candidate_or_object_count,
+            bytes_read_or_shipped,
+            leaf_object_bytes,
+            leaf_summary_object_bytes,
+            leaf_row_object_bytes,
+            leaf_row_segment_read_bytes,
+            leaf_block_available_count,
+            leaf_block_selected_count,
+            leaf_block_skipped_count,
+            latency_nanos,
+            route_count: pipeline_stage.map_or(0, |row| row.route_count),
+            candidate_count: pipeline_stage.map_or(0, |row| row.candidate_count),
+            heap_rerank_row_count: pipeline_stage.map_or(0, |row| row.heap_rerank_row_count),
+            remote_fanout_count: pipeline_stage.map_or(0, |row| row.remote_fanout_count),
+            budget_count: pipeline_stage.map(|row| row.item_count),
+            blocked_count: pipeline_stage.map_or(0, |row| row.blocked_count),
+            next_blocker: pipeline_stage
+                .map(|row| row.next_blocker.clone())
+                .unwrap_or_else(|| "none".to_owned()),
+            recommendation: pipeline_stage
+                .map(|row| row.recommendation.clone())
+                .unwrap_or_else(|| "none".to_owned()),
+        }
+    }
+}
+
+fn local_step<'a>(rows: &'a [LocalPipelineRow], step_name: &str) -> Option<&'a LocalPipelineRow> {
+    rows.iter().find(|row| row.step_name == step_name)
+}
+
+fn target_rank_row_is_routed(row: Option<&LeafBlockRankRow>) -> bool {
+    row.is_some_and(|row| {
+        !matches!(
+            row.status.as_str(),
+            "not_found_in_routed_leaves" | "nprobe_zero"
+        )
+    })
+}
+
+fn target_rank_row_block_selected(row: Option<&LeafBlockRankRow>) -> bool {
+    row.is_some_and(|row| {
+        matches!(
+            row.status.as_str(),
+            "block_ranked" | "target_block_ranked" | "target_no_block_summaries"
+        ) && row.selected_by_global_cap != Some(false)
+    })
+}
+
+fn stage_missing_reason_for_route(row: Option<&LeafBlockRankRow>) -> &'static str {
+    match row.map(|row| row.status.as_str()) {
+        Some("nprobe_zero") => "nprobe_zero",
+        Some("not_found_in_routed_leaves") => "routing_miss",
+        Some(_) => "contained",
+        None => "rank_row_missing",
+    }
+}
+
+fn stage_missing_reason_for_block(row: Option<&LeafBlockRankRow>) -> &'static str {
+    if !target_rank_row_is_routed(row) {
+        return stage_missing_reason_for_route(row);
+    }
+    match row.and_then(|row| row.selected_by_global_cap) {
+        Some(false) => "block_pruned_global_cap",
+        _ if target_rank_row_block_selected(row) => "contained",
+        _ => "block_rank_missing",
+    }
+}
+
+fn target_candidate_rank_row_retained(row: Option<&TargetCandidateRankRow>) -> bool {
+    row.is_some_and(|row| row.status == "target_candidate_ranked" && row.approximate_rank.is_some())
+}
+
+fn target_candidate_rank_row_in_rerank_prefix(row: Option<&TargetCandidateRankRow>) -> bool {
+    row.is_some_and(|row| {
+        row.status == "target_candidate_ranked"
+            && row.approximate_rank.is_some()
+            && row.selected_by_rerank_prefix == Some(true)
+    })
+}
+
+fn stage_missing_reason_for_candidate_frontier(
+    candidate_row: Option<&TargetCandidateRankRow>,
+    row: Option<&LeafBlockRankRow>,
+) -> &'static str {
+    if target_candidate_rank_row_retained(candidate_row) {
+        return "contained";
+    }
+    if !target_rank_row_block_selected(row) {
+        return stage_missing_reason_for_block(row);
+    }
+    match candidate_row.map(|row| row.status.as_str()) {
+        Some("nprobe_zero") => "nprobe_zero",
+        Some("candidate_not_retained") => "candidate_not_retained",
+        Some(_) => "candidate_rank_missing",
+        None => "candidate_rank_row_missing",
+    }
+}
+
+fn stage_missing_reason_for_rerank_frontier(
+    candidate_row: Option<&TargetCandidateRankRow>,
+    row: Option<&LeafBlockRankRow>,
+) -> &'static str {
+    if target_candidate_rank_row_in_rerank_prefix(candidate_row) {
+        return "contained";
+    }
+    if !target_candidate_rank_row_retained(candidate_row) {
+        return stage_missing_reason_for_candidate_frontier(candidate_row, row);
+    }
+    match candidate_row.and_then(|row| row.selected_by_rerank_prefix) {
+        Some(false) => "rerank_width_cap",
+        Some(true) => "contained",
+        None => "rerank_prefix_unknown",
+    }
+}
+
+fn stage_missing_reason_for_final(
+    row: Option<&LeafBlockRankRow>,
+    candidate_row: Option<&TargetCandidateRankRow>,
+    final_hit: bool,
+) -> &'static str {
+    if final_hit {
+        return "contained";
+    }
+    if !target_rank_row_block_selected(row) {
+        return stage_missing_reason_for_block(row);
+    }
+    if !target_candidate_rank_row_retained(candidate_row) {
+        return stage_missing_reason_for_candidate_frontier(candidate_row, row);
+    }
+    if !target_candidate_rank_row_in_rerank_prefix(candidate_row) {
+        return stage_missing_reason_for_rerank_frontier(candidate_row, row);
+    }
+    "not_returned_in_topk"
+}
+
 fn local_step_value<F>(rows: &[LocalPipelineRow], step_name: &str, value: F) -> Option<i64>
 where
     F: Fn(&LocalPipelineRow) -> i64,
@@ -2448,6 +3351,36 @@ where
     rows.iter()
         .find(|row| row.step_name == step_name)
         .map(value)
+}
+
+async fn flush_pipeline_jsonl_outputs(
+    args: &SpirePipelineArgs,
+    funnel_rows: &[FunnelRecord],
+    stage_containment_rows: &[StageContainmentRecord],
+    leaf_block_rank_rows: &[LeafBlockRankRecord],
+    target_block_rank_rows: &[LeafBlockRankRecord],
+    target_candidate_rank_rows: &[TargetCandidateRankRecord],
+    miss_attribution_rows: &[MissAttributionRecord],
+) -> Result<()> {
+    if let Some(path) = args.funnel_output.as_ref() {
+        write_funnel_jsonl(path, funnel_rows).await?;
+    }
+    if let Some(path) = args.stage_containment_output.as_ref() {
+        write_stage_containment_jsonl(path, stage_containment_rows).await?;
+    }
+    if let Some(path) = args.leaf_block_rank_output.as_ref() {
+        write_leaf_block_rank_jsonl(path, leaf_block_rank_rows).await?;
+    }
+    if let Some(path) = args.target_block_rank_output.as_ref() {
+        write_leaf_block_rank_jsonl(path, target_block_rank_rows).await?;
+    }
+    if let Some(path) = args.target_candidate_rank_output.as_ref() {
+        write_target_candidate_rank_jsonl(path, target_candidate_rank_rows).await?;
+    }
+    if let Some(path) = args.miss_attribution_output.as_ref() {
+        write_miss_attribution_jsonl(path, miss_attribution_rows).await?;
+    }
+    Ok(())
 }
 
 fn percentile_nearest_rank(values: &mut [i64], percentile: usize) -> i64 {
@@ -2476,6 +3409,25 @@ async fn write_funnel_jsonl(path: &PathBuf, rows: &[FunnelRecord]) -> Result<()>
         .wrap_err_with(|| format!("writing {}", path.display()))
 }
 
+async fn write_stage_containment_jsonl(
+    path: &PathBuf,
+    rows: &[StageContainmentRecord],
+) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .wrap_err_with(|| format!("creating {}", parent.display()))?;
+    }
+    let mut output = String::new();
+    for row in rows {
+        output.push_str(&serde_json::to_string(row).wrap_err("serializing containment row")?);
+        output.push('\n');
+    }
+    tokio::fs::write(path, output)
+        .await
+        .wrap_err_with(|| format!("writing {}", path.display()))
+}
+
 async fn write_leaf_block_rank_jsonl(path: &PathBuf, rows: &[LeafBlockRankRecord]) -> Result<()> {
     if let Some(parent) = path.parent() {
         tokio::fs::create_dir_all(parent)
@@ -2485,6 +3437,27 @@ async fn write_leaf_block_rank_jsonl(path: &PathBuf, rows: &[LeafBlockRankRecord
     let mut output = String::new();
     for row in rows {
         output.push_str(&serde_json::to_string(row).wrap_err("serializing leaf block rank row")?);
+        output.push('\n');
+    }
+    tokio::fs::write(path, output)
+        .await
+        .wrap_err_with(|| format!("writing {}", path.display()))
+}
+
+async fn write_target_candidate_rank_jsonl(
+    path: &PathBuf,
+    rows: &[TargetCandidateRankRecord],
+) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .wrap_err_with(|| format!("creating {}", parent.display()))?;
+    }
+    let mut output = String::new();
+    for row in rows {
+        output.push_str(
+            &serde_json::to_string(row).wrap_err("serializing target candidate rank row")?,
+        );
         output.push('\n');
     }
     tokio::fs::write(path, output)
@@ -2590,6 +3563,35 @@ impl ProductionReadProfileRow {
     fn duration_metric(&self, metric: &str) -> Duration {
         let millis = self.i64_metric(metric).max(0) as u64;
         Duration::from_millis(millis)
+    }
+}
+
+#[derive(Debug)]
+struct ProductionReadTimelineRow {
+    node_id: i32,
+    phase: String,
+    elapsed: Duration,
+    candidate_count: i64,
+    payload_decode_elapsed: Duration,
+    payload_decode_row_count: i64,
+    payload_decode_bytes: i64,
+    status: String,
+    failure_category: String,
+}
+
+impl From<Row> for ProductionReadTimelineRow {
+    fn from(row: Row) -> Self {
+        Self {
+            node_id: row.get(1),
+            phase: row.get(2),
+            elapsed: Duration::from_millis(row.get::<_, i64>(5).max(0) as u64),
+            candidate_count: row.get(6),
+            payload_decode_elapsed: Duration::from_millis(row.get::<_, i64>(7).max(0) as u64),
+            payload_decode_row_count: row.get(8),
+            payload_decode_bytes: row.get(9),
+            status: row.get(10),
+            failure_category: row.get(11),
+        }
     }
 }
 
@@ -2876,13 +3878,25 @@ struct ProductionReadProfileAggregate {
     status: MixedValue,
     result_source: MixedValue,
     selected_pid_count_sum: i64,
+    local_pid_count_sum: i64,
     remote_pid_count_sum: i64,
+    skipped_pid_count_sum: i64,
     dispatch_count_sum: i64,
+    compact_candidate_count_sum: i64,
+    remote_heap_ready_dispatch_count_sum: i64,
+    remote_heap_failed_dispatch_count_sum: i64,
+    remote_heap_candidate_count_sum: i64,
+    local_heap_candidate_count_sum: i64,
     socket_open_count_sum: i64,
     candidate_receive_query_count_sum: i64,
     heap_receive_query_count_sum: i64,
     endpoint_identity_query_count_sum: i64,
+    payload_decode_row_count_sum: i64,
     payload_decode_bytes_sum: i64,
+    merge_input_count_sum: i64,
+    merge_duplicate_vec_id_count_sum: i64,
+    merge_output_count_sum: i64,
+    strict_fail_count_sum: i64,
     remote_timeout_count_sum: i64,
     remote_cancel_count_sum: i64,
     degraded_skipped_dispatch_count_sum: i64,
@@ -2891,6 +3905,7 @@ struct ProductionReadProfileAggregate {
     endpoint_identity_elapsed: Vec<Duration>,
     candidate_receive_elapsed: Vec<Duration>,
     heap_receive_elapsed: Vec<Duration>,
+    payload_decode_elapsed: Vec<Duration>,
     merge_elapsed: Vec<Duration>,
     total_elapsed: Vec<Duration>,
 }
@@ -2902,13 +3917,27 @@ impl ProductionReadProfileAggregate {
         self.result_source
             .record(row.string_metric("result_source"));
         self.selected_pid_count_sum += row.i64_metric("selected_pid_count");
+        self.local_pid_count_sum += row.i64_metric("local_pid_count");
         self.remote_pid_count_sum += row.i64_metric("remote_pid_count");
+        self.skipped_pid_count_sum += row.i64_metric("skipped_pid_count");
         self.dispatch_count_sum += row.i64_metric("dispatch_count");
+        self.compact_candidate_count_sum += row.i64_metric("compact_candidate_count");
+        self.remote_heap_ready_dispatch_count_sum +=
+            row.i64_metric("remote_heap_ready_dispatch_count");
+        self.remote_heap_failed_dispatch_count_sum +=
+            row.i64_metric("remote_heap_failed_dispatch_count");
+        self.remote_heap_candidate_count_sum += row.i64_metric("remote_heap_candidate_count");
+        self.local_heap_candidate_count_sum += row.i64_metric("local_heap_candidate_count");
         self.socket_open_count_sum += row.i64_metric("socket_open_count");
         self.candidate_receive_query_count_sum += row.i64_metric("candidate_receive_query_count");
         self.heap_receive_query_count_sum += row.i64_metric("heap_receive_query_count");
         self.endpoint_identity_query_count_sum += row.i64_metric("endpoint_identity_query_count");
+        self.payload_decode_row_count_sum += row.i64_metric("payload_decode_row_count");
         self.payload_decode_bytes_sum += row.i64_metric("payload_decode_bytes");
+        self.merge_input_count_sum += row.i64_metric("merge_input_count");
+        self.merge_duplicate_vec_id_count_sum += row.i64_metric("merge_duplicate_vec_id_count");
+        self.merge_output_count_sum += row.i64_metric("merge_output_count");
+        self.strict_fail_count_sum += row.i64_metric("strict_fail_count");
         self.remote_timeout_count_sum += row.i64_metric("remote_timeout_count");
         self.remote_cancel_count_sum += row.i64_metric("remote_cancel_count");
         self.degraded_skipped_dispatch_count_sum +=
@@ -2922,10 +3951,54 @@ impl ProductionReadProfileAggregate {
             .push(row.duration_metric("candidate_receive_elapsed_ms"));
         self.heap_receive_elapsed
             .push(row.duration_metric("heap_receive_elapsed_ms"));
+        self.payload_decode_elapsed
+            .push(row.duration_metric("payload_decode_elapsed_ms"));
         self.merge_elapsed
             .push(row.duration_metric("merge_elapsed_ms"));
         self.total_elapsed
             .push(row.duration_metric("total_elapsed_ms"));
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct ProductionReadTimelineKey {
+    nprobe: i32,
+    node_id: i32,
+    phase: String,
+}
+
+impl ProductionReadTimelineKey {
+    fn from_row(nprobe: i32, row: &ProductionReadTimelineRow) -> Self {
+        Self {
+            nprobe,
+            node_id: row.node_id,
+            phase: row.phase.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+struct ProductionReadTimelineAggregate {
+    queries: usize,
+    status: MixedValue,
+    failure_category: MixedValue,
+    elapsed: Vec<Duration>,
+    candidate_count_sum: i64,
+    payload_decode_elapsed: Vec<Duration>,
+    payload_decode_row_count_sum: i64,
+    payload_decode_bytes_sum: i64,
+}
+
+impl ProductionReadTimelineAggregate {
+    fn record(&mut self, row: ProductionReadTimelineRow) {
+        self.queries += 1;
+        self.status.record(row.status);
+        self.failure_category.record(row.failure_category);
+        self.elapsed.push(row.elapsed);
+        self.candidate_count_sum += row.candidate_count;
+        self.payload_decode_elapsed.push(row.payload_decode_elapsed);
+        self.payload_decode_row_count_sum += row.payload_decode_row_count;
+        self.payload_decode_bytes_sum += row.payload_decode_bytes;
     }
 }
 
@@ -3030,6 +4103,8 @@ struct ReportInput<'a> {
     degraded_skip: &'a BTreeMap<DegradedSkipKey, DegradedSkipAggregate>,
     query_metrics: &'a BTreeMap<i32, QueryMetricAggregate>,
     production_read_profile: &'a BTreeMap<i32, ProductionReadProfileAggregate>,
+    production_read_timeline:
+        &'a BTreeMap<ProductionReadTimelineKey, ProductionReadTimelineAggregate>,
 }
 
 fn render_report(input: ReportInput<'_>) -> String {
@@ -3056,6 +4131,9 @@ fn render_report(input: ReportInput<'_>) -> String {
     if input.production_read_profile_enabled {
         sections.push(render_production_read_profile_table(
             input.production_read_profile,
+        ));
+        sections.push(render_production_read_timeline_table(
+            input.production_read_timeline,
         ));
     }
     sections.join("\n\n")
@@ -3391,8 +4469,15 @@ fn render_production_read_profile_table(
         "status",
         "result_source",
         "selected_pid_sum",
+        "local_pid_sum",
         "remote_pid_sum",
+        "skipped_pid_sum",
         "dispatch_sum",
+        "compact_candidate_sum",
+        "remote_heap_ready_dispatch_sum",
+        "remote_heap_failed_dispatch_sum",
+        "remote_heap_candidate_sum",
+        "local_heap_candidate_sum",
         "socket_open_sum",
         "connect_p50",
         "connect_p95",
@@ -3402,6 +4487,8 @@ fn render_production_read_profile_table(
         "candidate_p95",
         "heap_p50",
         "heap_p95",
+        "payload_decode_p50",
+        "payload_decode_p95",
         "merge_p50",
         "merge_p95",
         "total_p50",
@@ -3409,7 +4496,12 @@ fn render_production_read_profile_table(
         "candidate_query_sum",
         "heap_query_sum",
         "endpoint_identity_query_sum",
+        "payload_rows_sum",
         "payload_bytes_sum",
+        "merge_input_sum",
+        "merge_duplicate_vec_id_sum",
+        "merge_output_sum",
+        "strict_fail_sum",
         "timeout_sum",
         "cancel_sum",
         "degraded_skip_sum",
@@ -3420,6 +4512,7 @@ fn render_production_read_profile_table(
         let endpoint_identity = summarize_durations(&aggregate.endpoint_identity_elapsed);
         let candidate = summarize_durations(&aggregate.candidate_receive_elapsed);
         let heap = summarize_durations(&aggregate.heap_receive_elapsed);
+        let payload_decode = summarize_durations(&aggregate.payload_decode_elapsed);
         let merge = summarize_durations(&aggregate.merge_elapsed);
         let total = summarize_durations(&aggregate.total_elapsed);
         table.add_row(vec![
@@ -3428,8 +4521,15 @@ fn render_production_read_profile_table(
             Cell::new(aggregate.status.label()),
             Cell::new(aggregate.result_source.label()),
             Cell::new(aggregate.selected_pid_count_sum),
+            Cell::new(aggregate.local_pid_count_sum),
             Cell::new(aggregate.remote_pid_count_sum),
+            Cell::new(aggregate.skipped_pid_count_sum),
             Cell::new(aggregate.dispatch_count_sum),
+            Cell::new(aggregate.compact_candidate_count_sum),
+            Cell::new(aggregate.remote_heap_ready_dispatch_count_sum),
+            Cell::new(aggregate.remote_heap_failed_dispatch_count_sum),
+            Cell::new(aggregate.remote_heap_candidate_count_sum),
+            Cell::new(aggregate.local_heap_candidate_count_sum),
             Cell::new(aggregate.socket_open_count_sum),
             Cell::new(format_duration_ms(connect.p50)),
             Cell::new(format_duration_ms(connect.p95)),
@@ -3439,6 +4539,8 @@ fn render_production_read_profile_table(
             Cell::new(format_duration_ms(candidate.p95)),
             Cell::new(format_duration_ms(heap.p50)),
             Cell::new(format_duration_ms(heap.p95)),
+            Cell::new(format_duration_ms(payload_decode.p50)),
+            Cell::new(format_duration_ms(payload_decode.p95)),
             Cell::new(format_duration_ms(merge.p50)),
             Cell::new(format_duration_ms(merge.p95)),
             Cell::new(format_duration_ms(total.p50)),
@@ -3446,7 +4548,12 @@ fn render_production_read_profile_table(
             Cell::new(aggregate.candidate_receive_query_count_sum),
             Cell::new(aggregate.heap_receive_query_count_sum),
             Cell::new(aggregate.endpoint_identity_query_count_sum),
+            Cell::new(aggregate.payload_decode_row_count_sum),
             Cell::new(aggregate.payload_decode_bytes_sum),
+            Cell::new(aggregate.merge_input_count_sum),
+            Cell::new(aggregate.merge_duplicate_vec_id_count_sum),
+            Cell::new(aggregate.merge_output_count_sum),
+            Cell::new(aggregate.strict_fail_count_sum),
             Cell::new(aggregate.remote_timeout_count_sum),
             Cell::new(aggregate.remote_cancel_count_sum),
             Cell::new(aggregate.degraded_skipped_dispatch_count_sum),
@@ -3454,6 +4561,48 @@ fn render_production_read_profile_table(
         ]);
     }
     format!("Production read profile\n{table}")
+}
+
+fn render_production_read_timeline_table(
+    rows: &BTreeMap<ProductionReadTimelineKey, ProductionReadTimelineAggregate>,
+) -> String {
+    let mut table = Table::new();
+    table.load_preset(UTF8_FULL);
+    table.set_header(vec![
+        "nprobe",
+        "node_id",
+        "phase",
+        "queries",
+        "status",
+        "failure_category",
+        "candidate_sum",
+        "elapsed_p50",
+        "elapsed_p95",
+        "payload_decode_p50",
+        "payload_decode_p95",
+        "payload_rows_sum",
+        "payload_bytes_sum",
+    ]);
+    for (key, aggregate) in rows {
+        let elapsed = summarize_durations(&aggregate.elapsed);
+        let payload_decode = summarize_durations(&aggregate.payload_decode_elapsed);
+        table.add_row(vec![
+            Cell::new(key.nprobe),
+            Cell::new(key.node_id),
+            Cell::new(&key.phase),
+            Cell::new(aggregate.queries),
+            Cell::new(aggregate.status.label()),
+            Cell::new(aggregate.failure_category.label()),
+            Cell::new(aggregate.candidate_count_sum),
+            Cell::new(format_duration_ms(elapsed.p50)),
+            Cell::new(format_duration_ms(elapsed.p95)),
+            Cell::new(format_duration_ms(payload_decode.p50)),
+            Cell::new(format_duration_ms(payload_decode.p95)),
+            Cell::new(aggregate.payload_decode_row_count_sum),
+            Cell::new(aggregate.payload_decode_bytes_sum),
+        ]);
+    }
+    format!("Production read per-node timeline\n{table}")
 }
 
 fn option_label<T: std::fmt::Display>(value: Option<T>) -> String {
@@ -3489,6 +4638,7 @@ mod tests {
             truth_cache_file: None,
             leaf_block_rank_output: None,
             target_block_rank_output: None,
+            target_candidate_rank_output: None,
             miss_attribution_output: None,
             leaf_block_rank_local_sequence_offset: 0,
             include_production_read_profile: false,
@@ -3508,6 +4658,7 @@ mod tests {
             consistency_mode: "epoch".to_owned(),
             log_output: None,
             funnel_output: None,
+            stage_containment_output: None,
         }
     }
 
@@ -3539,6 +4690,32 @@ mod tests {
             route_rank: Some(target_ordinal + 1),
             route_score: Some(0.2),
             assignment_flags: Some(0),
+        }
+    }
+
+    fn candidate_ranked_row(
+        target_ordinal: i64,
+        status: &str,
+        approximate_rank: Option<i64>,
+        selected_by_rerank_prefix: Option<bool>,
+    ) -> TargetCandidateRankRow {
+        TargetCandidateRankRow {
+            target_ordinal,
+            target_local_sequence: 100 + target_ordinal,
+            status: status.to_owned(),
+            approximate_candidate_count: 300,
+            rerank_prefix_count: 25,
+            approximate_rank,
+            selected_by_rerank_prefix,
+            pid: Some(10 + target_ordinal),
+            node_id: Some(1),
+            local_store_id: Some(1),
+            object_version: Some(1),
+            row_index: Some(target_ordinal),
+            assignment_flags: Some(0),
+            approximate_score: Some(0.1),
+            heap_block: Some(200 + target_ordinal),
+            heap_offset: Some(1),
         }
     }
 
@@ -3601,6 +4778,32 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("--cost-index-page-scale"));
+
+        let mut args = default_args();
+        args.stage_containment_output = Some("stage.jsonl".into());
+        args.include_recall = false;
+        args.include_query_metrics = true;
+        assert!(validate_args(&args)
+            .unwrap_err()
+            .to_string()
+            .contains("--stage-containment-output requires --include-recall"));
+
+        let mut args = default_args();
+        args.target_candidate_rank_output = Some("target-candidate-rank.jsonl".into());
+        args.include_recall = false;
+        assert!(validate_args(&args)
+            .unwrap_err()
+            .to_string()
+            .contains("--target-candidate-rank-output requires --include-recall"));
+
+        let mut args = default_args();
+        args.stage_containment_output = Some("stage.jsonl".into());
+        args.include_recall = true;
+        args.include_query_metrics = false;
+        assert!(validate_args(&args)
+            .unwrap_err()
+            .to_string()
+            .contains("--stage-containment-output requires --include-query-metrics"));
     }
 
     #[test]
@@ -3609,14 +4812,15 @@ mod tests {
             96,
             1,
             990000,
-            &[1, 2, 3, 4],
-            &[101, 102, 103, 104],
+            &[1, 2, 3, 4, 5],
+            &[101, 102, 103, 104, 105],
             &[1],
             &[
                 ranked_row(0, "block_ranked", Some(true)),
                 ranked_row(1, "not_found_in_routed_leaves", None),
                 ranked_row(2, "block_ranked", Some(false)),
-                ranked_row(3, "block_ranked", Some(true)),
+                ranked_row(3, "target_block_ranked", Some(true)),
+                ranked_row(4, "target_no_block_summaries", Some(true)),
             ],
         )
         .expect("attribution rows");
@@ -3625,6 +4829,181 @@ mod tests {
         assert_eq!(rows[1].miss_stage, "routing_miss");
         assert_eq!(rows[2].miss_stage, "block_pruned_global_cap");
         assert_eq!(rows[3].miss_stage, "candidate_or_rerank_cap");
+        assert_eq!(rows[4].miss_stage, "candidate_or_rerank_cap");
+    }
+
+    #[test]
+    fn stage_containment_records_per_stage_truth_retention() {
+        let local_rows = vec![
+            LocalPipelineRow {
+                step_ordinal: 1,
+                step_name: "routing".to_owned(),
+                active_epoch: 1,
+                status: "ready".to_owned(),
+                item_count: 1,
+                ready_count: 1,
+                blocked_count: 0,
+                route_count: 3,
+                candidate_count: 0,
+                heap_rerank_row_count: 0,
+                remote_fanout_count: 0,
+                next_blocker: "none".to_owned(),
+                recommendation: "none".to_owned(),
+            },
+            LocalPipelineRow {
+                step_ordinal: 4,
+                step_name: "candidates".to_owned(),
+                active_epoch: 1,
+                status: "truncated".to_owned(),
+                item_count: 300,
+                ready_count: 25,
+                blocked_count: 275,
+                route_count: 3,
+                candidate_count: 300,
+                heap_rerank_row_count: 0,
+                remote_fanout_count: 0,
+                next_blocker: "candidate_budget".to_owned(),
+                recommendation: "increase max_candidate_rows".to_owned(),
+            },
+            LocalPipelineRow {
+                step_ordinal: 5,
+                step_name: "heap_rerank".to_owned(),
+                active_epoch: 1,
+                status: "ready".to_owned(),
+                item_count: 25,
+                ready_count: 25,
+                blocked_count: 0,
+                route_count: 0,
+                candidate_count: 25,
+                heap_rerank_row_count: 25,
+                remote_fanout_count: 0,
+                next_blocker: "none".to_owned(),
+                recommendation: "none".to_owned(),
+            },
+        ];
+        let leaf_rows = vec![LeafCandidateRow {
+            pid: 10,
+            node_id: 1,
+            local_store_id: 1,
+            object_bytes: 1024,
+            route_count: 3,
+            scanned_count: 3,
+            candidate_row_count: 300,
+            leaf_block_available_count: 12,
+            leaf_block_selected_count: 6,
+            leaf_block_skipped_count: 6,
+            leaf_summary_object_bytes: 384,
+            leaf_row_object_bytes: 2048,
+            leaf_row_segment_read_count: 4,
+            leaf_row_segment_read_bytes: 512,
+            primary_candidate_row_count: 300,
+            boundary_replica_candidate_row_count: 0,
+            deduped_candidate_row_count: 0,
+            truncated_candidate_row_count: 275,
+            candidate_winner_count: 25,
+            leaf_object_read_nanos: 1000,
+            leaf_summary_score_nanos: 200,
+            leaf_row_score_nanos: 300,
+            candidate_score_nanos: 500,
+            candidate_materialize_nanos: 50,
+            candidate_heap_append_nanos: 25,
+        }];
+        let rerank_locality = RerankLocalityRow {
+            candidate_count: 300,
+            rerank_prefix_count: 25,
+            unique_heap_block_count: 20,
+            heap_block_transition_count: 24,
+            heap_block_span: 1024,
+            heap_block_jump_sum: 4096,
+            heap_block_jump_max: 512,
+        };
+        let rows = StageContainmentRecord::from_query(
+            96,
+            1,
+            42,
+            &[1, 2, 3, 4, 5, 6],
+            &[1],
+            &local_rows,
+            &leaf_rows,
+            Some(&rerank_locality),
+            &[
+                candidate_ranked_row(0, "target_candidate_ranked", Some(1), Some(true)),
+                candidate_ranked_row(1, "candidate_not_retained", None, Some(false)),
+                candidate_ranked_row(2, "candidate_not_retained", None, Some(false)),
+                candidate_ranked_row(3, "target_candidate_ranked", Some(50), Some(false)),
+                candidate_ranked_row(4, "target_candidate_ranked", Some(10), Some(true)),
+                candidate_ranked_row(5, "candidate_not_retained", None, Some(false)),
+            ],
+            &[
+                ranked_row(0, "target_block_ranked", Some(true)),
+                ranked_row(1, "not_found_in_routed_leaves", None),
+                ranked_row(2, "target_block_ranked", Some(false)),
+                ranked_row(3, "target_block_ranked", Some(true)),
+                ranked_row(4, "target_block_ranked", Some(true)),
+                ranked_row(5, "target_no_block_summaries", Some(true)),
+            ],
+        )
+        .expect("stage containment rows");
+
+        assert_eq!(rows.len(), 6);
+        let route = rows
+            .iter()
+            .find(|row| row.stage_name == "topology_route_set")
+            .expect("route stage");
+        assert_eq!(route.contained_truth_count, 5);
+        assert_eq!(route.missing_reason_counts["routing_miss"], 1);
+
+        let blocks = rows
+            .iter()
+            .find(|row| row.stage_name == "selected_leaf_blocks")
+            .expect("block stage");
+        assert_eq!(blocks.contained_truth_count, 4);
+        assert_eq!(blocks.missing_reason_counts["routing_miss"], 1);
+        assert_eq!(blocks.missing_reason_counts["block_pruned_global_cap"], 1);
+        assert_eq!(blocks.leaf_block_selected_count, 6);
+
+        let candidates = rows
+            .iter()
+            .find(|row| row.stage_name == "local_candidate_frontier")
+            .expect("candidate stage");
+        assert_eq!(
+            candidates.containment_basis,
+            "target_candidate_rank_snapshot"
+        );
+        assert_eq!(candidates.contained_truth_count, 3);
+        assert_eq!(candidates.candidate_or_object_count, 300);
+        assert_eq!(candidates.blocked_count, 275);
+        assert_eq!(candidates.missing_reason_counts["routing_miss"], 1);
+        assert_eq!(
+            candidates.missing_reason_counts["block_pruned_global_cap"],
+            1
+        );
+        assert_eq!(
+            candidates.missing_reason_counts["candidate_not_retained"],
+            1
+        );
+
+        let rerank = rows
+            .iter()
+            .find(|row| row.stage_name == "exact_source_rerank_frontier")
+            .expect("rerank stage");
+        assert_eq!(rerank.containment_basis, "target_candidate_rank_snapshot");
+        assert_eq!(rerank.contained_truth_count, 2);
+        assert_eq!(rerank.candidate_or_object_count, 25);
+        assert_eq!(rerank.missing_reason_counts["rerank_width_cap"], 1);
+        assert_eq!(rerank.missing_reason_counts["candidate_not_retained"], 1);
+
+        let final_topk = rows
+            .iter()
+            .find(|row| row.stage_name == "final_top_k")
+            .expect("final stage");
+        assert_eq!(final_topk.contained_truth_ranks, vec![1]);
+        assert_eq!(final_topk.missing_reason_counts["rerank_width_cap"], 1);
+        assert_eq!(
+            final_topk.missing_reason_counts["candidate_not_retained"],
+            1
+        );
+        assert_eq!(final_topk.missing_reason_counts["not_returned_in_topk"], 1);
     }
 
     #[test]
@@ -3642,6 +5021,8 @@ mod tests {
             heap_rerank_row_count: 0,
             remote_fanout_count: 0,
             next_blocker: "candidate_budget".to_owned(),
+            recommendation: "increase max_candidate_rows or inspect candidate diagnostics"
+                .to_owned(),
         }];
         let leaf_rows = vec![
             LeafCandidateRow {
@@ -3721,6 +5102,15 @@ mod tests {
         .expect("funnel record");
 
         assert_eq!(record.candidate_count, 300);
+        assert_eq!(record.pipeline_stages.len(), 1);
+        assert_eq!(record.pipeline_stages[0].step_name, "candidates");
+        assert_eq!(record.pipeline_stages[0].status, "truncated");
+        assert_eq!(record.pipeline_stages[0].blocked_count, 275);
+        assert_eq!(record.pipeline_stages[0].next_blocker, "candidate_budget");
+        assert_eq!(
+            record.pipeline_stages[0].recommendation,
+            "increase max_candidate_rows or inspect candidate diagnostics"
+        );
         assert_eq!(record.leaf_object_bytes, 3000);
         assert_eq!(record.leaf_summary_object_bytes, 384);
         assert_eq!(record.leaf_row_object_bytes, 1536);
@@ -3775,6 +5165,10 @@ mod tests {
         assert!(production_read_profile_sql()
             .contains("ec_spire_remote_search_production_read_profile"));
         assert!(production_read_profile_sql().contains("$2::real[]"));
+        assert!(production_read_timeline_sql()
+            .contains("ec_spire_remote_search_production_read_timeline"));
+        assert!(production_read_timeline_sql().contains("payload_decode_bytes"));
+        assert!(production_read_timeline_sql().contains("$4::text[]"));
         assert!(endpoint_identity_sql().contains("ec_spire_remote_search_endpoint_identity"));
         assert!(endpoint_identity_sql().contains("tuple_transport_capabilities"));
         assert!(remote_placement_gate_sql().contains("ec_spire_remote_node_snapshot"));
@@ -3873,6 +5267,7 @@ mod tests {
             degraded_skip: &BTreeMap::new(),
             query_metrics: &BTreeMap::new(),
             production_read_profile: &BTreeMap::new(),
+            production_read_timeline: &BTreeMap::new(),
         });
         assert!(header.contains("remote_tuple_transport: pg_binary_attr_v1"));
         assert!(header.contains("cost_snapshot: true"));
@@ -4002,19 +5397,32 @@ mod tests {
                 ("status".into(), "ready".into()),
                 ("result_source".into(), "remote_heap_candidates".into()),
                 ("selected_pid_count".into(), "3".into()),
+                ("local_pid_count".into(), "1".into()),
                 ("remote_pid_count".into(), "3".into()),
+                ("skipped_pid_count".into(), "0".into()),
                 ("dispatch_count".into(), "2".into()),
+                ("compact_candidate_count".into(), "4".into()),
+                ("remote_heap_ready_dispatch_count".into(), "2".into()),
+                ("remote_heap_failed_dispatch_count".into(), "0".into()),
+                ("remote_heap_candidate_count".into(), "5".into()),
+                ("local_heap_candidate_count".into(), "1".into()),
                 ("socket_open_count".into(), "2".into()),
                 ("connect_elapsed_ms".into(), "1".into()),
                 ("endpoint_identity_elapsed_ms".into(), "2".into()),
                 ("candidate_receive_elapsed_ms".into(), "5".into()),
                 ("heap_receive_elapsed_ms".into(), "7".into()),
+                ("payload_decode_elapsed_ms".into(), "3".into()),
                 ("merge_elapsed_ms".into(), "1".into()),
                 ("total_elapsed_ms".into(), "10".into()),
                 ("candidate_receive_query_count".into(), "2".into()),
                 ("heap_receive_query_count".into(), "2".into()),
                 ("endpoint_identity_query_count".into(), "2".into()),
+                ("payload_decode_row_count".into(), "6".into()),
                 ("payload_decode_bytes".into(), "256".into()),
+                ("merge_input_count".into(), "6".into()),
+                ("merge_duplicate_vec_id_count".into(), "1".into()),
+                ("merge_output_count".into(), "5".into()),
+                ("strict_fail_count".into(), "0".into()),
                 ("remote_timeout_count".into(), "0".into()),
                 ("remote_cancel_count".into(), "0".into()),
                 ("degraded_skipped_dispatch_count".into(), "0".into()),
@@ -4030,7 +5438,42 @@ mod tests {
         assert!(rendered.contains("endpoint_identity_query_sum"));
         assert!(rendered.contains("remote_heap_candidates"));
         assert!(rendered.contains("payload_bytes_sum"));
+        assert!(rendered.contains("payload_decode_p95"));
+        assert!(rendered.contains("compact_candidate_sum"));
+        assert!(rendered.contains("merge_duplicate_vec_id_sum"));
         assert!(rendered.contains("256"));
+    }
+
+    #[test]
+    fn spire_pipeline_renders_production_read_timeline() {
+        let mut aggregate = ProductionReadTimelineAggregate::default();
+        aggregate.record(ProductionReadTimelineRow {
+            node_id: 2,
+            phase: "heap_receive".to_owned(),
+            elapsed: Duration::from_millis(11),
+            candidate_count: 10,
+            payload_decode_elapsed: Duration::from_millis(3),
+            payload_decode_row_count: 10,
+            payload_decode_bytes: 80,
+            status: "ready".to_owned(),
+            failure_category: "none".to_owned(),
+        });
+        let mut rows = BTreeMap::new();
+        rows.insert(
+            ProductionReadTimelineKey {
+                nprobe: 8,
+                node_id: 2,
+                phase: "heap_receive".to_owned(),
+            },
+            aggregate,
+        );
+
+        let rendered = render_production_read_timeline_table(&rows);
+        assert!(rendered.contains("Production read per-node timeline"));
+        assert!(rendered.contains("payload_decode_p95"));
+        assert!(rendered.contains("payload_rows_sum"));
+        assert!(rendered.contains("payload_bytes_sum"));
+        assert!(rendered.contains("80"));
     }
 
     #[test]
