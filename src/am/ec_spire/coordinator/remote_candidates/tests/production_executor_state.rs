@@ -117,6 +117,29 @@ mod production_executor_state_tests {
         }
     }
 
+    #[test]
+    fn explicit_heap_candidate_parameters_encode_binary_fields_as_hex() {
+        let candidates = vec![candidate_for_state_test(2, 10, 3)];
+
+        let parameters =
+            explicit_heap_candidate_parameters(&candidates).expect("parameters should encode");
+
+        assert_eq!(parameters.served_epochs, vec![7]);
+        assert_eq!(parameters.pids, vec![10]);
+        assert_eq!(parameters.object_versions, vec![1]);
+        assert_eq!(parameters.row_indices, vec![3]);
+        assert_eq!(
+            parameters.assignment_flags,
+            vec![i16::try_from(storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY).unwrap()]
+        );
+        assert_eq!(parameters.vec_id_hex_values, vec![hex::encode(&candidates[0].vec_id)]);
+        assert_eq!(
+            parameters.row_locator_hex_values,
+            vec![hex::encode(&candidates[0].row_locator)]
+        );
+        assert_eq!(parameters.scores, vec![3.0]);
+    }
+
     fn failed_candidate_receive_result(
         node_id: u32,
         failure_category: &'static str,

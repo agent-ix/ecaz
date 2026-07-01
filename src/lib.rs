@@ -15429,6 +15429,157 @@ fn ec_spire_remote_search_local_heap_candidates(
     }))
 }
 
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
+fn ec_spire_remote_search_explicit_local_heap_candidates(
+    index_oid: pg_sys::Oid,
+    requested_epoch: i64,
+    query: Vec<f32>,
+    served_epochs: Vec<i64>,
+    pids: Vec<i64>,
+    object_versions: Vec<i64>,
+    row_indices: Vec<i64>,
+    assignment_flags: Vec<i16>,
+    vec_id_hex_values: Vec<String>,
+    row_locator_hex_values: Vec<String>,
+    scores: Vec<f32>,
+) -> TableIterator<
+    'static,
+    (
+        name!(requested_epoch, i64),
+        name!(served_epoch, i64),
+        name!(node_id, i64),
+        name!(pid, i64),
+        name!(object_version, i64),
+        name!(row_index, i64),
+        name!(assignment_flags, i16),
+        name!(vec_id, Vec<u8>),
+        name!(row_locator, Vec<u8>),
+        name!(heap_block, i64),
+        name!(heap_offset, i32),
+        name!(score, f32),
+        name!(heap_lookup_owner, &'static str),
+        name!(status, &'static str),
+    ),
+> {
+    if requested_epoch <= 0 {
+        pgrx::error!(
+            "ec_spire_remote_search_explicit_local_heap_candidates requested_epoch must be greater than 0"
+        );
+    }
+    let served_epochs = served_epochs
+        .into_iter()
+        .map(|value| {
+            u64::try_from(value).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_remote_search_explicit_local_heap_candidates served_epoch {value} is negative"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let pids = pids
+        .into_iter()
+        .map(|value| {
+            u64::try_from(value).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_remote_search_explicit_local_heap_candidates pid {value} is negative"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let object_versions = object_versions
+        .into_iter()
+        .map(|value| {
+            u64::try_from(value).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_remote_search_explicit_local_heap_candidates object_version {value} is negative"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let row_indices = row_indices
+        .into_iter()
+        .map(|value| {
+            u32::try_from(value).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_remote_search_explicit_local_heap_candidates row_index {value} is invalid"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let assignment_flags = assignment_flags
+        .into_iter()
+        .map(|value| {
+            u16::try_from(value).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_remote_search_explicit_local_heap_candidates assignment_flags {value} is negative"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let vec_ids = vec_id_hex_values
+        .into_iter()
+        .map(|value| {
+            hex::decode(&value).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_remote_search_explicit_local_heap_candidates vec_id hex is invalid"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let row_locators = row_locator_hex_values
+        .into_iter()
+        .map(|value| {
+            hex::decode(&value).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_remote_search_explicit_local_heap_candidates row_locator hex is invalid"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let requested_epoch =
+        u64::try_from(requested_epoch).expect("positive requested_epoch should fit u64");
+
+    let index_relation = open_valid_ec_spire_index_guard(
+        index_oid,
+        "ec_spire_remote_search_explicit_local_heap_candidates",
+    );
+    let rows = with_spire_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_explicit_local_heap_candidate_rows,
+        requested_epoch,
+        query,
+        served_epochs,
+        pids,
+        object_versions,
+        row_indices,
+        assignment_flags,
+        vec_ids,
+        row_locators,
+        scores,
+    );
+    drop(index_relation);
+
+    TableIterator::new(rows.into_iter().map(|row| {
+        (
+            i64::try_from(row.requested_epoch).expect("requested epoch should fit in i64"),
+            i64::try_from(row.served_epoch).expect("served epoch should fit in i64"),
+            i64::from(row.node_id),
+            i64::try_from(row.pid).expect("pid should fit in i64"),
+            i64::try_from(row.object_version).expect("object version should fit in i64"),
+            i64::from(row.row_index),
+            i16::try_from(row.assignment_flags).expect("assignment flags should fit in i16"),
+            row.vec_id,
+            row.row_locator,
+            i64::from(row.heap_block),
+            i32::from(row.heap_offset),
+            row.score,
+            row.heap_lookup_owner,
+            row.status,
+        )
+    }))
+}
+
 fn ec_spire_validate_tuple_payload_columns(
     heap_relation_oid: pg_sys::Oid,
     requested_columns: &[String],

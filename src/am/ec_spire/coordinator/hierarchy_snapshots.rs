@@ -727,6 +727,76 @@ pub(crate) fn remote_search_local_heap_candidate_rows(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
+pub(crate) fn remote_search_explicit_local_heap_candidate_rows(
+    index: SpireLiveIndexRelation,
+    requested_epoch: u64,
+    query: Vec<f32>,
+    served_epochs: Vec<u64>,
+    pids: Vec<u64>,
+    object_versions: Vec<u64>,
+    row_indices: Vec<u32>,
+    assignment_flags: Vec<u16>,
+    vec_ids: Vec<Vec<u8>>,
+    row_locators: Vec<Vec<u8>>,
+    scores: Vec<f32>,
+) -> Vec<SpireRemoteSearchLocalHeapCandidateRow> {
+    let result = (|| -> Result<Vec<SpireRemoteSearchLocalHeapCandidateRow>, String> {
+        let row_count = served_epochs.len();
+        for (label, len) in [
+            ("pids", pids.len()),
+            ("object_versions", object_versions.len()),
+            ("row_indices", row_indices.len()),
+            ("assignment_flags", assignment_flags.len()),
+            ("vec_ids", vec_ids.len()),
+            ("row_locators", row_locators.len()),
+            ("scores", scores.len()),
+        ] {
+            if len != row_count {
+                return Err(format!(
+                    "ec_spire explicit remote heap candidates {label} length {len} does not match served_epochs length {row_count}"
+                ));
+            }
+        }
+
+        let scan_query = scan::SpireScanQuery::new(query)?;
+        let candidates = served_epochs
+            .into_iter()
+            .zip(pids)
+            .zip(object_versions)
+            .zip(row_indices)
+            .zip(assignment_flags)
+            .zip(vec_ids)
+            .zip(row_locators)
+            .zip(scores)
+            .map(
+                |(((((((served_epoch, pid), object_version), row_index), assignment_flags), vec_id), row_locator), score)| {
+                    SpireRemoteSearchCandidateRow {
+                        served_epoch,
+                        node_id: meta::SPIRE_LOCAL_NODE_ID,
+                        pid,
+                        object_version,
+                        row_index,
+                        assignment_flags,
+                        vec_id,
+                        row_locator,
+                        score,
+                    }
+                },
+            )
+            .collect::<Vec<_>>();
+
+        remote_search_heap_candidate_rows_from_compact_candidates(
+            index,
+            requested_epoch,
+            &scan_query,
+            candidates,
+            SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION,
+            "explicit local heap candidates",
+        )
+    })();
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
 fn remote_search_local_heap_candidate_rows_for_result_summary(
     index: SpireLiveIndexRelation,
     requested_epoch: u64,
