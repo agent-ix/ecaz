@@ -113,6 +113,140 @@ pub(super) fn collect_quantized_selected_leaf_candidates(
     )
 }
 
+pub(super) fn collect_quantized_selected_leaf_scan_profile(
+    snapshot: &SpirePublishedEpochSnapshot<'_>,
+    object_store: &impl SpireObjectReader,
+    query_vector: &[f32],
+    selected_leaf_pids: &[u64],
+    payload_format: SpireAssignmentPayloadFormat,
+    dedupe_mode: SpireCandidateDedupeMode,
+    limit: Option<usize>,
+) -> Result<SpireSelectedLeafScanProfile, String> {
+    let served_epoch = snapshot.epoch_manifest.epoch;
+    let selected_pid_count = u64::try_from(selected_leaf_pids.len())
+        .map_err(|_| "ec_spire selected-leaf scan profile selected PID count exceeds u64")?;
+    if selected_leaf_pids.is_empty() || limit == Some(0) {
+        return Ok(SpireSelectedLeafScanProfile {
+            served_epoch,
+            node_id: super::meta::SPIRE_LOCAL_NODE_ID,
+            selected_pid_count,
+            scanned_pid_count: 0,
+            leaf_candidate_row_count: 0,
+            deduped_candidate_row_count: 0,
+            truncated_candidate_row_count: 0,
+            candidate_winner_count: 0,
+            leaf_block_available_count: 0,
+            leaf_block_selected_count: 0,
+            leaf_block_skipped_count: 0,
+            sound_upper_bound_available_count: 0,
+            sound_upper_bound_missing_count: 0,
+            leaf_summary_score_nanos: 0,
+            leaf_row_score_nanos: 0,
+            candidate_score_nanos: 0,
+            local_kth_score: None,
+        });
+    }
+
+    let snapshot = SpireValidatedEpochSnapshot::from_snapshot(*snapshot)?;
+    let scorer =
+        SpirePreparedAssignmentScorer::prepare(payload_format, query_vector.len(), query_vector)?;
+    let leaf_routes =
+        selected_leaf_routes_from_snapshot(&snapshot, object_store, selected_leaf_pids)?;
+    let mut observer = SpireScanPlacementDiagnosticsObserver::new();
+    let candidates = collect_validated_quantized_leaf_route_candidates(
+        &snapshot,
+        object_store,
+        leaf_routes,
+        &scorer,
+        dedupe_mode,
+        limit,
+        &mut observer,
+    )?;
+    let (stores, _leaves) = observer.into_diagnostics();
+    let local_kth_score = limit
+        .and_then(|k| k.checked_sub(1))
+        .and_then(|idx| candidates.get(idx))
+        .map(|candidate| candidate.score);
+
+    let mut scanned_pid_count = 0_u64;
+    let mut leaf_candidate_row_count = 0_u64;
+    let mut deduped_candidate_row_count = 0_u64;
+    let mut truncated_candidate_row_count = 0_u64;
+    let mut candidate_winner_count = 0_u64;
+    let mut leaf_block_available_count = 0_u64;
+    let mut leaf_block_selected_count = 0_u64;
+    let mut leaf_block_skipped_count = 0_u64;
+    let mut leaf_summary_score_nanos = 0_u64;
+    let mut leaf_row_score_nanos = 0_u64;
+    let mut candidate_score_nanos = 0_u64;
+
+    for store in stores {
+        scanned_pid_count = scanned_pid_count.saturating_add(
+            u64::try_from(store.scanned_pid_count)
+                .map_err(|_| "ec_spire selected-leaf scan profile scanned PID count exceeds u64")?,
+        );
+        leaf_candidate_row_count = leaf_candidate_row_count.saturating_add(
+            u64::try_from(store.leaf_candidate_row_count).map_err(|_| {
+                "ec_spire selected-leaf scan profile leaf candidate count exceeds u64"
+            })?,
+        );
+        deduped_candidate_row_count = deduped_candidate_row_count.saturating_add(
+            u64::try_from(store.deduped_candidate_row_count).map_err(|_| {
+                "ec_spire selected-leaf scan profile deduped candidate count exceeds u64"
+            })?,
+        );
+        truncated_candidate_row_count = truncated_candidate_row_count.saturating_add(
+            u64::try_from(store.truncated_candidate_row_count).map_err(|_| {
+                "ec_spire selected-leaf scan profile truncated candidate count exceeds u64"
+            })?,
+        );
+        candidate_winner_count = candidate_winner_count.saturating_add(
+            u64::try_from(store.candidate_winner_count).map_err(|_| {
+                "ec_spire selected-leaf scan profile candidate winner count exceeds u64"
+            })?,
+        );
+        leaf_block_available_count = leaf_block_available_count.saturating_add(
+            u64::try_from(store.leaf_block_available_count).map_err(|_| {
+                "ec_spire selected-leaf scan profile available block count exceeds u64"
+            })?,
+        );
+        leaf_block_selected_count = leaf_block_selected_count.saturating_add(
+            u64::try_from(store.leaf_block_selected_count).map_err(|_| {
+                "ec_spire selected-leaf scan profile selected block count exceeds u64"
+            })?,
+        );
+        leaf_block_skipped_count = leaf_block_skipped_count.saturating_add(
+            u64::try_from(store.leaf_block_skipped_count).map_err(|_| {
+                "ec_spire selected-leaf scan profile skipped block count exceeds u64"
+            })?,
+        );
+        leaf_summary_score_nanos =
+            leaf_summary_score_nanos.saturating_add(store.leaf_summary_score_nanos);
+        leaf_row_score_nanos = leaf_row_score_nanos.saturating_add(store.leaf_row_score_nanos);
+        candidate_score_nanos = candidate_score_nanos.saturating_add(store.candidate_score_nanos);
+    }
+
+    Ok(SpireSelectedLeafScanProfile {
+        served_epoch,
+        node_id: super::meta::SPIRE_LOCAL_NODE_ID,
+        selected_pid_count,
+        scanned_pid_count,
+        leaf_candidate_row_count,
+        deduped_candidate_row_count,
+        truncated_candidate_row_count,
+        candidate_winner_count,
+        leaf_block_available_count,
+        leaf_block_selected_count,
+        leaf_block_skipped_count,
+        sound_upper_bound_available_count: leaf_block_available_count,
+        sound_upper_bound_missing_count: scanned_pid_count.saturating_sub(leaf_block_available_count),
+        leaf_summary_score_nanos,
+        leaf_row_score_nanos,
+        candidate_score_nanos,
+        local_kth_score,
+    })
+}
+
 fn selected_leaf_routes_from_snapshot(
     snapshot: &SpireValidatedEpochSnapshot<'_>,
     object_store: &impl SpireObjectReader,

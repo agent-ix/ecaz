@@ -424,6 +424,88 @@ pub(crate) fn remote_search_coordinator_local_candidates(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
+pub(crate) fn remote_search_coordinator_local_scan_profile(
+    index: SpireLiveIndexRelation,
+    requested_epoch: u64,
+    query: Vec<f32>,
+    selected_pids: Vec<u64>,
+    top_k: usize,
+    consistency_mode: &str,
+) -> scan::SpireSelectedLeafScanProfile {
+    let result = remote_search_coordinator_local_scan_profile_result(
+        index,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        consistency_mode,
+    );
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+fn remote_search_coordinator_local_scan_profile_result(
+    index: SpireLiveIndexRelation,
+    requested_epoch: u64,
+    query: Vec<f32>,
+    selected_pids: Vec<u64>,
+    top_k: usize,
+    consistency_mode: &str,
+) -> Result<scan::SpireSelectedLeafScanProfile, String> {
+    if requested_epoch == 0 {
+        return Err(
+            "ec_spire remote search coordinator scan profile requested_epoch must be greater than 0"
+                .to_owned(),
+        );
+    }
+
+    let requested_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;
+    let query = scan::SpireScanQuery::new(query)?;
+    let root_control = index.root_control();
+    if root_control.active_epoch != requested_epoch {
+        return Err(format!(
+            "ec_spire remote search coordinator scan profile requested epoch {requested_epoch} does not match active epoch {}",
+            root_control.active_epoch
+        ));
+    }
+
+    let Some(anchor) = index.coordinator_fanout_anchor(root_control)? else {
+        return Err("ec_spire cannot load manifests for empty active epoch".to_owned());
+    };
+    if anchor.epoch_manifest.consistency_mode != requested_consistency_mode {
+        return Err(format!(
+            "ec_spire remote search coordinator scan profile requested consistency_mode '{consistency_mode}' does not match active epoch consistency mode '{}'",
+            consistency_mode_name(anchor.epoch_manifest.consistency_mode)
+        ));
+    }
+    let snapshot = anchor.snapshot()?;
+    let plan = plan_remote_search_fanout(&snapshot, &selected_pids)?;
+    if !plan.remote_targets.is_empty() {
+        return Err(format!(
+            "ec_spire remote search coordinator scan profile requires libpq transport for {} remote target(s)",
+            plan.remote_targets.len()
+        ));
+    }
+
+    let object_store = index.object_store_set(
+        &anchor.placement_directory,
+        pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+    )?;
+    let relation_options = index.relation_options();
+    scan::collect_quantized_selected_leaf_scan_profile(
+        &snapshot,
+        &object_store,
+        query.values(),
+        &plan.local_selected_pids,
+        relation_options.assignment_payload_format(),
+        if relation_options.boundary_replica_count > 0 {
+            options::SpireCandidateDedupeMode::VecIdDedupeEnabled
+        } else {
+            options::SpireCandidateDedupeMode::NoReplicaDedupeDisabled
+        },
+        Some(top_k),
+    )
+}
+
 fn remote_search_coordinator_local_candidates_result(
     index: SpireLiveIndexRelation,
     requested_epoch: u64,

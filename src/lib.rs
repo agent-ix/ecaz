@@ -17124,6 +17124,107 @@ fn ec_spire_remote_search_coordinator_local(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_remote_search_coordinator_local_scan_profile(
+    index_oid: pg_sys::Oid,
+    requested_epoch: i64,
+    query: Vec<f32>,
+    selected_pids: Vec<i64>,
+    top_k: i32,
+    consistency_mode: String,
+) -> TableIterator<
+    'static,
+    (
+        name!(served_epoch, i64),
+        name!(node_id, i64),
+        name!(selected_pid_count, i64),
+        name!(scanned_pid_count, i64),
+        name!(leaf_candidate_row_count, i64),
+        name!(deduped_candidate_row_count, i64),
+        name!(truncated_candidate_row_count, i64),
+        name!(candidate_winner_count, i64),
+        name!(leaf_block_available_count, i64),
+        name!(leaf_block_selected_count, i64),
+        name!(leaf_block_skipped_count, i64),
+        name!(sound_upper_bound_available_count, i64),
+        name!(sound_upper_bound_missing_count, i64),
+        name!(leaf_summary_score_nanos, i64),
+        name!(leaf_row_score_nanos, i64),
+        name!(candidate_score_nanos, i64),
+        name!(local_kth_score, Option<f32>),
+    ),
+> {
+    if requested_epoch <= 0 {
+        pgrx::error!(
+            "ec_spire_remote_search_coordinator_local_scan_profile requested_epoch must be greater than 0"
+        );
+    }
+    if top_k < 0 {
+        pgrx::error!(
+            "ec_spire_remote_search_coordinator_local_scan_profile top_k must be non-negative"
+        );
+    }
+    let selected_pids = selected_pids
+        .into_iter()
+        .map(|pid| {
+            u64::try_from(pid).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_remote_search_coordinator_local_scan_profile selected PID {pid} is negative"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let top_k = usize::try_from(top_k).expect("non-negative top_k should fit usize");
+    let requested_epoch =
+        u64::try_from(requested_epoch).expect("positive requested_epoch should fit u64");
+
+    let index_relation = open_valid_ec_spire_index_guard(
+        index_oid,
+        "ec_spire_remote_search_coordinator_local_scan_profile",
+    );
+    let row = with_spire_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_coordinator_local_scan_profile,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        &consistency_mode,
+    );
+    drop(index_relation);
+
+    TableIterator::once((
+        i64::try_from(row.served_epoch).expect("served epoch should fit in i64"),
+        i64::from(row.node_id),
+        i64::try_from(row.selected_pid_count).expect("selected PID count should fit in i64"),
+        i64::try_from(row.scanned_pid_count).expect("scanned PID count should fit in i64"),
+        i64::try_from(row.leaf_candidate_row_count)
+            .expect("leaf candidate row count should fit in i64"),
+        i64::try_from(row.deduped_candidate_row_count)
+            .expect("deduped candidate row count should fit in i64"),
+        i64::try_from(row.truncated_candidate_row_count)
+            .expect("truncated candidate row count should fit in i64"),
+        i64::try_from(row.candidate_winner_count)
+            .expect("candidate winner count should fit in i64"),
+        i64::try_from(row.leaf_block_available_count)
+            .expect("leaf block available count should fit in i64"),
+        i64::try_from(row.leaf_block_selected_count)
+            .expect("leaf block selected count should fit in i64"),
+        i64::try_from(row.leaf_block_skipped_count)
+            .expect("leaf block skipped count should fit in i64"),
+        i64::try_from(row.sound_upper_bound_available_count)
+            .expect("sound upper bound available count should fit in i64"),
+        i64::try_from(row.sound_upper_bound_missing_count)
+            .expect("sound upper bound missing count should fit in i64"),
+        i64::try_from(row.leaf_summary_score_nanos)
+            .expect("leaf summary score nanos should fit in i64"),
+        i64::try_from(row.leaf_row_score_nanos).expect("leaf row score nanos should fit in i64"),
+        i64::try_from(row.candidate_score_nanos).expect("candidate score nanos should fit in i64"),
+        row.local_kth_score,
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_remote_search_coordinator_local_summary(
     index_oid: pg_sys::Oid,
     requested_epoch: i64,

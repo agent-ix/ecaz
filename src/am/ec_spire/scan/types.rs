@@ -310,6 +310,27 @@ pub(super) struct SpireScanPlacementDiagnostics {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub(crate) struct SpireSelectedLeafScanProfile {
+    pub(crate) served_epoch: u64,
+    pub(crate) node_id: u32,
+    pub(crate) selected_pid_count: u64,
+    pub(crate) scanned_pid_count: u64,
+    pub(crate) leaf_candidate_row_count: u64,
+    pub(crate) deduped_candidate_row_count: u64,
+    pub(crate) truncated_candidate_row_count: u64,
+    pub(crate) candidate_winner_count: u64,
+    pub(crate) leaf_block_available_count: u64,
+    pub(crate) leaf_block_selected_count: u64,
+    pub(crate) leaf_block_skipped_count: u64,
+    pub(crate) sound_upper_bound_available_count: u64,
+    pub(crate) sound_upper_bound_missing_count: u64,
+    pub(crate) leaf_summary_score_nanos: u64,
+    pub(crate) leaf_row_score_nanos: u64,
+    pub(crate) candidate_score_nanos: u64,
+    pub(crate) local_kth_score: Option<f32>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub(super) struct SpireLeafBlockRankSnapshotRow {
     pub(super) active_epoch: u64,
     pub(super) effective_nprobe: u32,
