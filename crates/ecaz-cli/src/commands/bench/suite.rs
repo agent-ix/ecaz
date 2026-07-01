@@ -540,6 +540,8 @@ struct SpirePipelineStep {
     #[serde(default)]
     production_read_only: Option<bool>,
     #[serde(default)]
+    production_read_timeline_no_payload: Option<bool>,
+    #[serde(default)]
     query_metric_k: Option<usize>,
     #[serde(default)]
     query_metric_projection_columns: Vec<String>,
@@ -3429,6 +3431,9 @@ fn expand_spire_pipeline(step: &SpirePipelineStep, defaults: &SuiteDefaults) -> 
     if step.production_read_only.unwrap_or(false) {
         args.push("--production-read-only".into());
     }
+    if step.production_read_timeline_no_payload.unwrap_or(false) {
+        args.push("--production-read-timeline-no-payload".into());
+    }
     if let Some(k) = step.query_metric_k {
         push_arg(&mut args, "--query-metric-k", &k.to_string());
     }
@@ -4199,7 +4204,8 @@ mod tests {
             ],
             "bench_production_read_variants": [
               "name=source-prune-on;projection=id,source;guc=ec_spire.pre_materialization_prune=on",
-              "name=id-prune-off;projection=id;guc=ec_spire.pre_materialization_prune=off"
+              "name=id-prune-off;projection=id;guc=ec_spire.pre_materialization_prune=off",
+              "name=global-preheap-on;timeline_payload=none;guc=ec_spire.remote_search_global_pre_heap_merge=on"
             ],
             "skip_bench_suite": true,
             "skip_fault_drills": true,
@@ -4293,6 +4299,11 @@ mod tests {
             == [
                 "--bench-production-read-variant",
                 "name=id-prune-off;projection=id;guc=ec_spire.pre_materialization_prune=off"
+            ]));
+        assert!(step.command.windows(2).any(|w| w
+            == [
+                "--bench-production-read-variant",
+                "name=global-preheap-on;timeline_payload=none;guc=ec_spire.remote_search_global_pre_heap_merge=on"
             ]));
         assert!(step.command.contains(&"--skip-bench-suite".into()));
         assert!(step.command.contains(&"--skip-fault-drills".into()));
@@ -4442,6 +4453,7 @@ mod tests {
                 leaf_block_rank_local_sequence_offset: None,
                 include_production_read_profile: None,
                 production_read_only: None,
+                production_read_timeline_no_payload: None,
                 query_metric_k: None,
                 query_metric_projection_columns: Vec::new(),
                 session_gucs: Vec::new(),
@@ -5376,6 +5388,7 @@ mod tests {
             leaf_block_rank_local_sequence_offset: None,
             include_production_read_profile: Some(true),
             production_read_only: Some(true),
+            production_read_timeline_no_payload: Some(true),
             query_metric_k: Some(10),
             query_metric_projection_columns: vec!["title".into()],
             session_gucs: vec!["ec_spire.candidate_batch_scoring=off".into()],
@@ -5398,6 +5411,7 @@ mod tests {
         assert!(args.contains(&"--require-remote-placements".into()));
         assert!(args.contains(&"--include-production-read-profile".into()));
         assert!(args.contains(&"--production-read-only".into()));
+        assert!(args.contains(&"--production-read-timeline-no-payload".into()));
         assert!(args
             .windows(2)
             .any(|w| w == ["--remote-selected-pids", "10,11"]));
@@ -5483,6 +5497,7 @@ mod tests {
                 leaf_block_rank_local_sequence_offset: None,
                 include_production_read_profile: Some(true),
                 production_read_only: Some(true),
+                production_read_timeline_no_payload: None,
                 query_metric_k: Some(10),
                 query_metric_projection_columns: Vec::new(),
                 session_gucs: Vec::new(),

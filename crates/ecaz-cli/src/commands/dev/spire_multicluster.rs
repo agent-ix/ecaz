@@ -2318,6 +2318,7 @@ async fn run_local_multinode_bench_suite(
             name: None,
             projection_columns: None,
             session_gucs: Vec::new(),
+            timeline_no_payload: false,
         }]
     } else {
         production_read_variants
@@ -2357,6 +2358,7 @@ async fn run_local_multinode_bench_suite(
             format!("production-read-k10{name_suffix}-default"),
             "default-cap",
             None,
+            variant.timeline_no_payload,
         );
         let mut rowcap_step = production_read_step_json(
             prefix,
@@ -2370,6 +2372,7 @@ async fn run_local_multinode_bench_suite(
             format!("production-read-k10{name_suffix}-rowcap25k"),
             "rowcap25k",
             Some(25000),
+            variant.timeline_no_payload,
         );
         if let Some(truth_corpus_file) = truth_corpus_file {
             default_step["truth_corpus_file"] = json!(truth_corpus_file);
@@ -2436,6 +2439,7 @@ fn production_read_step_json(
     name: String,
     cap_tag: &str,
     max_routed_candidate_rows: Option<usize>,
+    production_read_timeline_no_payload: bool,
 ) -> Value {
     let mut step = json!({
         "kind": "spire-pipeline",
@@ -2461,6 +2465,9 @@ fn production_read_step_json(
     if let Some(max_routed_candidate_rows) = max_routed_candidate_rows {
         step["max_routed_candidate_rows"] = json!(max_routed_candidate_rows);
     }
+    if production_read_timeline_no_payload {
+        step["production_read_timeline_no_payload"] = json!(true);
+    }
     step
 }
 
@@ -2469,12 +2476,14 @@ struct BenchProductionReadVariant {
     name: Option<String>,
     projection_columns: Option<Vec<String>>,
     session_gucs: Vec<String>,
+    timeline_no_payload: bool,
 }
 
 fn parse_bench_production_read_variant(raw: &str) -> Result<BenchProductionReadVariant> {
     let mut name = None;
     let mut projection_columns = None;
     let mut session_gucs = Vec::new();
+    let mut timeline_no_payload = false;
     for part in raw.split(';').filter(|part| !part.trim().is_empty()) {
         let (key, value) = part.split_once('=').ok_or_else(|| {
             eyre!("bench production-read variant part {part:?} must be key=value")
@@ -2504,6 +2513,13 @@ fn parse_bench_production_read_variant(raw: &str) -> Result<BenchProductionReadV
                 }
                 session_gucs.push(value.to_owned());
             }
+            "timeline_payload" => match value {
+                "projection" => timeline_no_payload = false,
+                "none" => timeline_no_payload = true,
+                other => bail!(
+                    "bench production-read variant timeline_payload {other:?} must be projection or none"
+                ),
+            },
             other => bail!("unsupported bench production-read variant key {other:?}"),
         }
     }
@@ -2514,6 +2530,7 @@ fn parse_bench_production_read_variant(raw: &str) -> Result<BenchProductionReadV
         name,
         projection_columns,
         session_gucs,
+        timeline_no_payload,
     })
 }
 
@@ -2556,6 +2573,22 @@ mod tests {
                 name: Some("source-prune-on".into()),
                 projection_columns: Some(vec!["id".into(), "source".into()]),
                 session_gucs: vec!["ec_spire.pre_materialization_prune=on".into()],
+                timeline_no_payload: false,
+            }
+        );
+
+        let no_payload = parse_bench_production_read_variant(
+            "name=global-preheap-on;timeline_payload=none;guc=ec_spire.remote_search_global_pre_heap_merge=on",
+        )
+        .expect("variant parses");
+
+        assert_eq!(
+            no_payload,
+            BenchProductionReadVariant {
+                name: Some("global-preheap-on".into()),
+                projection_columns: None,
+                session_gucs: vec!["ec_spire.remote_search_global_pre_heap_merge=on".into()],
+                timeline_no_payload: true,
             }
         );
     }

@@ -160,6 +160,12 @@ pub struct SpirePipelineArgs {
     /// local heap diagnostics intentionally fail closed.
     #[arg(long)]
     pub production_read_only: bool,
+    /// Call the production-read timeline function with no tuple payload columns.
+    ///
+    /// This preserves coordinator query metrics while measuring the compact
+    /// remote-heap path used by Task 131 global pre-heap pruning.
+    #[arg(long)]
+    pub production_read_timeline_no_payload: bool,
     /// k for optional query latency and recall metrics.
     #[arg(long, default_value_t = 10)]
     pub query_metric_k: usize,
@@ -823,8 +829,11 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
                     .entry(*nprobe)
                     .or_default()
                     .record(row);
-                let payload_columns =
-                    production_read_payload_columns(&args.query_metric_projection_columns);
+                let payload_columns = if args.production_read_timeline_no_payload {
+                    Vec::new()
+                } else {
+                    production_read_payload_columns(&args.query_metric_projection_columns)
+                };
                 let rows = query_production_read_timeline_rows(
                     &client,
                     &index,
@@ -901,6 +910,7 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
         query_metric_projection_columns: &args.query_metric_projection_columns,
         production_read_profile_enabled: args.include_production_read_profile,
         production_read_only: args.production_read_only,
+        production_read_timeline_no_payload: args.production_read_timeline_no_payload,
         local_store_overlap_enabled: args.include_local_store_overlap,
         routing: &routing,
         local: &local,
@@ -4106,6 +4116,7 @@ struct ReportInput<'a> {
     query_metric_projection_columns: &'a [String],
     production_read_profile_enabled: bool,
     production_read_only: bool,
+    production_read_timeline_no_payload: bool,
     local_store_overlap_enabled: bool,
     routing: &'a BTreeMap<RoutingKey, RoutingAggregate>,
     local: &'a BTreeMap<StepKey, LocalStepAggregate>,
@@ -4160,7 +4171,7 @@ fn render_header(input: &ReportInput<'_>) -> String {
         "off".to_owned()
     };
     format!(
-        "SPIRE pipeline benchmark\nprefix: {prefix}\nindex: {index}\nqueries: {queries}\nsweep: {sweep:?}\nrerank_width: {rerank_width}\nmax_candidate_rows: {max_candidate_rows}\nmax_routed_candidate_rows: {max_routed_candidate_rows}\nremote_tuple_transport: {remote_tuple_transport}\nadaptive_nprobe: {adaptive}\ncost_snapshot: {cost_snapshot}\nremote: {remote}\nremote_selected_pids: {remote_selected_pids:?}\nremote_requested_epoch: {remote_epoch}\nlocal_store_overlap: {local_store_overlap}\nquery_metrics: {query_metrics}\nquery_metric_k: {query_metric_k}\nquery_metric_projection_columns: {query_metric_projection_columns}\nquery_recall: {query_recall}\nproduction_read_profile: {production_read_profile}\nproduction_read_only: {production_read_only}",
+        "SPIRE pipeline benchmark\nprefix: {prefix}\nindex: {index}\nqueries: {queries}\nsweep: {sweep:?}\nrerank_width: {rerank_width}\nmax_candidate_rows: {max_candidate_rows}\nmax_routed_candidate_rows: {max_routed_candidate_rows}\nremote_tuple_transport: {remote_tuple_transport}\nadaptive_nprobe: {adaptive}\ncost_snapshot: {cost_snapshot}\nremote: {remote}\nremote_selected_pids: {remote_selected_pids:?}\nremote_requested_epoch: {remote_epoch}\nlocal_store_overlap: {local_store_overlap}\nquery_metrics: {query_metrics}\nquery_metric_k: {query_metric_k}\nquery_metric_projection_columns: {query_metric_projection_columns}\nquery_recall: {query_recall}\nproduction_read_profile: {production_read_profile}\nproduction_read_only: {production_read_only}\nproduction_read_timeline_no_payload: {production_read_timeline_no_payload}",
         prefix = input.prefix,
         index = input.index,
         queries = input.queries,
@@ -4184,6 +4195,7 @@ fn render_header(input: &ReportInput<'_>) -> String {
         query_recall = input.include_recall,
         production_read_profile = input.production_read_profile_enabled,
         production_read_only = input.production_read_only,
+        production_read_timeline_no_payload = input.production_read_timeline_no_payload,
     )
 }
 
@@ -4680,6 +4692,7 @@ mod tests {
             leaf_block_rank_local_sequence_offset: 0,
             include_production_read_profile: false,
             production_read_only: false,
+            production_read_timeline_no_payload: false,
             query_metric_k: 10,
             query_metric_projection_columns: vec![],
             session_gucs: vec![],
@@ -5296,6 +5309,7 @@ mod tests {
             query_metric_projection_columns: &["title".to_owned(), "body".to_owned()],
             production_read_profile_enabled: true,
             production_read_only: true,
+            production_read_timeline_no_payload: true,
             local_store_overlap_enabled: true,
             routing: &routing,
             local: &local,
@@ -5315,6 +5329,7 @@ mod tests {
         assert!(header.contains("query_recall: false"));
         assert!(header.contains("production_read_profile: true"));
         assert!(header.contains("production_read_only: true"));
+        assert!(header.contains("production_read_timeline_no_payload: true"));
     }
 
     #[test]
