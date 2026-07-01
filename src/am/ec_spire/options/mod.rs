@@ -77,7 +77,7 @@ static EC_SPIRE_MAX_CANDIDATE_ROWS_GUC: GucSetting<i32> =
 static EC_SPIRE_MAX_ROUTED_CANDIDATE_ROWS_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(EC_SPIRE_SESSION_MAX_ROUTED_CANDIDATE_ROWS_DISABLED);
 static EC_SPIRE_CANDIDATE_BATCH_SCORING_GUC: GucSetting<bool> = GucSetting::<bool>::new(true);
-static EC_SPIRE_PRE_MATERIALIZATION_PRUNE_GUC: GucSetting<bool> = GucSetting::<bool>::new(true);
+static EC_SPIRE_PRE_MATERIALIZATION_PRUNE_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
 static EC_SPIRE_LEAF_BLOCK_ROWS_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(EC_SPIRE_SESSION_LEAF_BLOCK_ROWS_DISABLED);
 static EC_SPIRE_LEAF_BLOCK_SUMMARY_REPRESENTATIVES_GUC: GucSetting<i32> =
@@ -806,7 +806,7 @@ pub(super) fn register_gucs() {
     GucRegistry::define_bool_guc(
         c"ec_spire.pre_materialization_prune",
         c"Enable Task 122 ec_spire bounded pre-materialization candidate pruning.",
-        c"Diagnostic Task 122 switch; enabled by default. Disable only for A/B measurement of the bounded score/top-k/materialization prune.",
+        c"Diagnostic Task 122/123 switch; disabled by default pending Task 131. Recall-safe and latency-neutral in the Task 123 packet 019 b2/b4 A/B, but its leaf-side engagement (rows pruned) was never measured, so it ships as opt-in plumbing rather than a promoted default. Enable for A/B measurement of the bounded score/top-k/materialization prune.",
         &EC_SPIRE_PRE_MATERIALIZATION_PRUNE_GUC,
         GucContext::Userset,
         GucFlags::default(),

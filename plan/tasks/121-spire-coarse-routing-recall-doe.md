@@ -1,20 +1,22 @@
 # Task 121 - SPIRE Coarse-Routing Recall Broad Exploration (DOE)
 
-Status: **reopened multi-instance efficiency scope not complete
-(2026-06-28).** The prior single-instance closeout (2026-06-26;
+Status: **closed (2026-06-30).** The original single-instance route-containment
+recall DOE remains closed as record (2026-06-26;
 `reviews/task-121/026-phase4-final-pareto-verdict/`, reviewer sign-off
-`.../feedback/2026-06-26-01-reviewer.md`) stands as record: the recall /
-route-containment findings are topology-independent and retained, and no SPIRE
-default was promoted. The 2026-06-27 reopen added contained multi-instance
-measurement for the topology-sensitive efficiency path; that coder-side
-response is now packeted in `reviews/task-123/011-multi-instance-100k-timeline-rerun/`.
-The 2026-06-28 completion request in
-`reviews/task-121/028-revised-core-algorithm-status-sync/` was declined via the
-Task 123 packet 012 reviewer feedback and retracted in
-`reviews/task-121/029-closeout-decline-status-sync/`. Packet 011 remains interim
-multi-instance route/recall validation only. It does not close clean latency,
-realistic payload transport, PR #43 pre-materialization-prune attribution, or a
-default promotion.
+`.../feedback/2026-06-26-01-reviewer.md`): the recall / route-containment
+findings are topology-independent and retained, and no SPIRE default was
+promoted. The 2026-06-27 reopen added contained multi-instance measurement for
+the topology-sensitive efficiency path; that scope is now **closed via the Task
+123 negative result** — recall stable, communications not the dominant latency
+driver, and the pre-materialization prune recall-safe/latency-neutral but not a
+demonstrated lever (Task 123 packets `017`/`019`, closeout accepted in
+`reviews/task-123/020-post-ab-closeout-request/feedback/2026-06-30-01-reviewer.md`).
+Status sync `reviews/task-121/030-multi-instance-closeout/`; the superseded
+2026-06-28 completion request
+(`reviews/task-121/028-revised-core-algorithm-status-sync/`) and its retraction
+(`reviews/task-121/029-closeout-decline-status-sync/`) stand as history. No
+default promotion. Follow-up optimization moves to newer SPIRE tasks, primarily
+`plan/tasks/131-spire-streaming-global-topk-pruning.md`.
 
 ## Amendment (2026-06-27): multi-instance substrate + dual latency/recall mandate
 

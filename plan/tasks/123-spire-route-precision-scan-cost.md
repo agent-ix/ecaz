@@ -1,24 +1,25 @@
 # Task 123: SPIRE Route Precision vs. Scan Cost — Floor, Granularity, Soft-Routing
 
-Status: **reopened multi-instance latency + communications scope not complete
-(2026-06-28).** The prior single-instance closeout (2026-06-27; completion
+Status: **closed — multi-instance core-algorithm scope, no-promote / re-scope
+(2026-06-30).** The prior single-instance closeout (2026-06-27; completion
 record `reviews/task-123/008-completion-record/`, reviewer sign-offs
 `.../feedback/2026-06-27-01..03-reviewer.md`) stands as record: the recall /
 route-containment findings are topology-independent and retained, and no
-single-instance promotion candidate landed. The 2026-06-27 reopen correctly
-identified the single-instance efficiency verdict as insufficient for SPIRE's
-distributed executor. Packets `009` and `010` supplied the first contained
-multi-instance baseline and timeline instrumentation; packet
-`011-multi-instance-100k-timeline-rerun` supplies the requested 200-query
-contained multi-instance core rerun. Packet
-`012-revised-core-algorithm-closeout` requested revised closeout, but the
-reviewer declined it in
-`reviews/task-123/012-revised-core-algorithm-closeout/feedback/2026-06-28-01-reviewer.md`.
-Packet `013-closeout-decline-response` retracts the closeout request and the
-packet 009 32-query latency interpretation. Packet 011 remains interim
-multi-instance route/recall validation only; clean latency, realistic payload
-transport, PR #43 pre-materialization-prune attribution, and the final
-communications verdict remain open.
+single-instance promotion candidate landed. The 2026-06-27 reopen added
+contained multi-instance measurement for the topology-sensitive efficiency path;
+that mandate is now closed as a negative result. Recall is stable (1.0000) on
+the contained multi-instance executor; communications payload bytes are not the
+dominant local latency driver (packet `017`, accepted); and the dedupe-aware
+pre-materialization prune (commit `d2ffbdaa9`) is recall-safe and
+latency-neutral but **not** a demonstrated latency win — its leaf-side
+engagement (rows pruned) was never captured, so it ships as opt-in plumbing with
+`ec_spire.pre_materialization_prune` defaulted **off**, not as a promoted
+default. Closeout accepted in
+`reviews/task-123/020-post-ab-closeout-request/feedback/2026-06-30-01-reviewer.md`;
+status sync `reviews/task-123/021-post-ab-closeout/`. No default promotion.
+Follow-up optimization (engagement-instrumented prune, off-disk clean latency)
+moves to newer SPIRE tasks, primarily
+`plan/tasks/131-spire-streaming-global-topk-pruning.md`.
 Owner: coder. Worked on the `task-121-spire-coarse-routing-recall-doe` branch.
 Priority: P1. **Local-only** (single host) — single-instance for recall,
 contained multi-instance for latency/efficiency — until a candidate exists.
