@@ -5,7 +5,8 @@ use crate::quant::isa::Isa;
 use std::arch::is_x86_feature_detected;
 
 pub(super) fn score_block32_avx2(
-    lut: &[f32],
+    lut: &[i16],
+    lut_scale: f32,
     original_dim: usize,
     codes: &[&[u8]; BLOCK_WIDTH],
     out_scores: &mut [f32],
@@ -15,18 +16,21 @@ pub(super) fn score_block32_avx2(
         if is_x86_feature_detected!("avx2") {
             // SAFETY: runtime feature detection above guarantees AVX2 support,
             // and callers validate LUT/code/output shapes before dispatch.
-            return unsafe { score_octets_avx2_impl(lut, original_dim, codes, out_scores) };
+            return unsafe {
+                score_octets_avx2_impl(lut, lut_scale, original_dim, codes, out_scores)
+            };
         }
     }
 
-    scalar::score_block32_scalar(lut, original_dim, codes, out_scores)
+    scalar::score_block32_scalar(lut, lut_scale, original_dim, codes, out_scores)
 }
 
 /// Octet-granular entry for sub-block tails: `codes.len()` must be a
 /// nonzero multiple of 8 and at most `BLOCK_WIDTH`. Returns `None` when
 /// AVX2 is unavailable so the caller can fall back.
 pub(super) fn score_octets_avx2(
-    lut: &[f32],
+    lut: &[i16],
+    lut_scale: f32,
     original_dim: usize,
     codes: &[&[u8]],
     out_scores: &mut [f32],
@@ -37,17 +41,20 @@ pub(super) fn score_octets_avx2(
         if is_x86_feature_detected!("avx2") {
             // SAFETY: runtime feature detection above guarantees AVX2 support,
             // and callers validate LUT/code/output shapes before dispatch.
-            return Some(unsafe { score_octets_avx2_impl(lut, original_dim, codes, out_scores) });
+            return Some(unsafe {
+                score_octets_avx2_impl(lut, lut_scale, original_dim, codes, out_scores)
+            });
         }
     }
 
-    let _ = (lut, original_dim, codes, out_scores);
+    let _ = (lut, lut_scale, original_dim, codes, out_scores);
     None
 }
 
 #[cfg(test)]
 pub(super) fn score_block32_avx2_for_test(
-    lut: &[f32],
+    lut: &[i16],
+    lut_scale: f32,
     original_dim: usize,
     codes: &[&[u8]; BLOCK_WIDTH],
     out_scores: &mut [f32],
@@ -57,11 +64,13 @@ pub(super) fn score_block32_avx2_for_test(
         if is_x86_feature_detected!("avx2") {
             // SAFETY: runtime feature detection above guarantees AVX2 support;
             // test fixtures use the same validated shapes as the public block path.
-            return Some(unsafe { score_octets_avx2_impl(lut, original_dim, codes, out_scores) });
+            return Some(unsafe {
+                score_octets_avx2_impl(lut, lut_scale, original_dim, codes, out_scores)
+            });
         }
     }
 
-    let _ = (lut, original_dim, codes, out_scores);
+    let _ = (lut, lut_scale, original_dim, codes, out_scores);
     None
 }
 
@@ -91,7 +100,8 @@ const CHUNK_BYTES: usize = 16;
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
 unsafe fn score_octets_avx2_impl(
-    lut: &[f32],
+    lut: &[i16],
+    lut_scale: f32,
     original_dim: usize,
     codes: &[&[u8]],
     out_scores: &mut [f32],
@@ -139,8 +149,9 @@ unsafe fn score_octets_avx2_impl(
 
         for b in 0..chunk_len {
             let dim_low = (byte_base + b) * 2;
-            let low_lut = load_dim_table(lut, dim_low);
-            let high_lut = (dim_low + 1 < original_dim).then(|| load_dim_table(lut, dim_low + 1));
+            let low_lut = load_dim_table(lut, lut_scale, dim_low);
+            let high_lut =
+                (dim_low + 1 < original_dim).then(|| load_dim_table(lut, lut_scale, dim_low + 1));
             for (octet, acc_slot) in acc.iter_mut().enumerate().take(octet_count) {
                 let pair = cols_by_octet[octet][b / 2];
                 let col = if b & 1 == 0 {
@@ -185,12 +196,15 @@ unsafe fn select_lut_entries(table: (__m256, __m256), indexes: __m256i, seven: _
     _mm256_blendv_ps(low_values, high_values, high_select)
 }
 
-/// Loads one dim's 16-entry f32 LUT as two AVX vectors.
+/// Loads one compact dim table and expands it to two AVX f32 vectors.
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[inline(always)]
-unsafe fn load_dim_table(lut: &[f32], dim_index: usize) -> (__m256, __m256) {
-    let lut_ptr = lut.as_ptr().add(dim_index * 16);
-    (_mm256_loadu_ps(lut_ptr), _mm256_loadu_ps(lut_ptr.add(8)))
+unsafe fn load_dim_table(lut: &[i16], lut_scale: f32, dim_index: usize) -> (__m256, __m256) {
+    let table = super::load_dim_table_f32(lut, lut_scale, dim_index);
+    (
+        _mm256_loadu_ps(table.as_ptr()),
+        _mm256_loadu_ps(table.as_ptr().add(8)),
+    )
 }
 
 /// Transposes eight 16-byte candidate rows into byte columns. Output

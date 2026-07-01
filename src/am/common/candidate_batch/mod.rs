@@ -587,6 +587,7 @@ fn score_turboquant_no_qjl_4bit_batch_inner<Id>(
         quantizer.original_dim,
         quantizer,
         &prepared.lut,
+        prepared.lut_scale,
         batch.payloads(),
         out_scores,
         false,
@@ -630,6 +631,7 @@ fn score_turboquant_no_qjl_4bit_batch_with_min_bound_inner<Id>(
     let started = Instant::now();
     let isa = crate::quant::lut32::score_lut_no_qjl_4bit_batch_with_min_bound(
         &prepared.lut,
+        prepared.lut_scale,
         &prepared.suffix_max,
         quantizer.original_dim,
         &mse_codes,
@@ -646,7 +648,8 @@ fn score_turboquant_no_qjl_4bit_batch_with_min_bound_inner<Id>(
 fn score_turboquant_no_qjl_4bit_payloads_lut32(
     original_dim: usize,
     quantizer: &ProdQuantizer,
-    lut: &[f32],
+    lut: &[i16],
+    lut_scale: f32,
     payloads: &[CandidatePayload<'_>],
     out_scores: &mut [f32],
     prefetch_next_block: bool,
@@ -664,6 +667,7 @@ fn score_turboquant_no_qjl_4bit_payloads_lut32(
                     });
                 crate::quant::lut32::score_lut_no_qjl_4bit_block32(
                     lut,
+                    lut_scale,
                     original_dim,
                     codes,
                     block_scores,
@@ -681,6 +685,7 @@ fn score_turboquant_no_qjl_4bit_payloads_lut32(
                 let started = Instant::now();
                 let isa = crate::quant::lut32::score_lut_no_qjl_4bit_partial(
                     lut,
+                    lut_scale,
                     original_dim,
                     &codes[..tail_payloads.len()],
                     tail_scores,
@@ -717,6 +722,7 @@ fn score_turboquant_no_qjl_4bit_payloads_lut32(
         let block_started = Instant::now();
         let isa = crate::quant::lut32::score_lut_no_qjl_4bit_block32(
             lut,
+            lut_scale,
             original_dim,
             codes,
             &mut out_scores[block_start..block_end],
@@ -741,6 +747,7 @@ fn score_turboquant_no_qjl_4bit_payloads_lut32(
         let started = Instant::now();
         let isa = crate::quant::lut32::score_lut_no_qjl_4bit_partial(
             lut,
+            lut_scale,
             original_dim,
             &codes[..tail_payloads.len()],
             tail_scores,
@@ -1268,6 +1275,7 @@ mod tests {
                     dim,
                     black_box(&quantizer),
                     black_box(&prepared.lut),
+                    black_box(prepared.lut_scale),
                     black_box(batch.payloads()),
                     black_box(&mut scores),
                     false,
@@ -1276,6 +1284,7 @@ mod tests {
                     dim,
                     black_box(&quantizer),
                     black_box(&prepared.lut),
+                    black_box(prepared.lut_scale),
                     black_box(batch.payloads()),
                     black_box(&mut prefetched_scores),
                     true,
@@ -1289,6 +1298,7 @@ mod tests {
                     dim,
                     black_box(&quantizer),
                     black_box(&prepared.lut),
+                    black_box(prepared.lut_scale),
                     black_box(batch.payloads()),
                     black_box(&mut scores),
                     false,
@@ -1303,6 +1313,7 @@ mod tests {
                     dim,
                     black_box(&quantizer),
                     black_box(&prepared.lut),
+                    black_box(prepared.lut_scale),
                     black_box(batch.payloads()),
                     black_box(&mut prefetched_scores),
                     true,
