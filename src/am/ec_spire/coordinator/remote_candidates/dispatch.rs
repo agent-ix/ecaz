@@ -1402,17 +1402,18 @@ impl SpireRemoteProductionTransportAdapter {
             selected_pids,
             requested_epoch,
             top_k,
-            started_after_ms,
-            request_start,
+            started_after_ms: _candidate_started_after_ms,
+            request_start: _candidate_request_start,
             global_heap_candidates,
         } = session;
         if matches!(global_heap_candidates.as_ref(), Some(candidates) if candidates.is_empty()) {
+            let completed_after_ms = elapsed_millis_u64(batch_start);
             return SpireRemoteProductionHeapSessionResult {
                 heap_result: SpireRemoteProductionHeapReceiveResult {
                     node_id: request.node_id,
-                    started_after_ms,
-                    completed_after_ms: elapsed_millis_u64(batch_start),
-                    elapsed_ms: elapsed_millis_u64(request_start),
+                    started_after_ms: completed_after_ms,
+                    completed_after_ms,
+                    elapsed_ms: 0,
                     candidate_count: 0,
                     payload_decode_elapsed_ms: 0,
                     payload_decode_row_count: 0,
@@ -1427,12 +1428,13 @@ impl SpireRemoteProductionTransportAdapter {
         }
         let cancel_token = connection.client.cancel_token();
         let cancel_tls_config = connection.tls_config.clone();
+        let heap_start = std::time::Instant::now();
+        let heap_started_after_ms = elapsed_millis_u64(batch_start);
         let result_rows = Self::run_query_with_optional_local_cancel(
             cancel_token,
             cancel_tls_config,
             async {
                 let mut query_metrics = SpireRemoteProductionReadMetrics::default();
-                let heap_start = std::time::Instant::now();
                 add_profile_count(&mut query_metrics.heap_receive_query_count, 1);
                 let result = match tuple_payload_columns {
                     None if global_heap_candidates.is_some() => {
@@ -1512,7 +1514,7 @@ impl SpireRemoteProductionTransportAdapter {
                     heap_result: failed_production_heap_receive_result(
                         request.node_id,
                         batch_start,
-                        request_start,
+                        heap_start,
                         failure_category,
                     ),
                     metrics,
@@ -1529,7 +1531,7 @@ impl SpireRemoteProductionTransportAdapter {
                 heap_result: failed_production_heap_receive_result(
                     request.node_id,
                     batch_start,
-                    request_start,
+                    heap_start,
                     failure_category,
                 ),
                 metrics,
@@ -1557,7 +1559,7 @@ impl SpireRemoteProductionTransportAdapter {
                     heap_result: failed_production_heap_receive_result(
                         request.node_id,
                         batch_start,
-                        request_start,
+                        heap_start,
                         failure_category,
                     ),
                     metrics,
@@ -1600,7 +1602,7 @@ impl SpireRemoteProductionTransportAdapter {
                 heap_result: failed_production_heap_receive_result(
                     request.node_id,
                     batch_start,
-                    request_start,
+                    heap_start,
                     failure_category,
                 ),
                 metrics,
@@ -1611,9 +1613,9 @@ impl SpireRemoteProductionTransportAdapter {
         SpireRemoteProductionHeapSessionResult {
             heap_result: SpireRemoteProductionHeapReceiveResult {
                 node_id: request.node_id,
-                started_after_ms,
+                started_after_ms: heap_started_after_ms,
                 completed_after_ms: elapsed_millis_u64(batch_start),
-                elapsed_ms: elapsed_millis_u64(request_start),
+                elapsed_ms: elapsed_millis_u64(heap_start),
                 candidate_count,
                 payload_decode_elapsed_ms: metrics.payload_decode_elapsed_ms,
                 payload_decode_row_count: metrics.payload_decode_row_count,
