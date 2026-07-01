@@ -45,6 +45,63 @@ pub(super) fn score_octets_neon(
     None
 }
 
+#[cfg(target_arch = "aarch64")]
+pub(super) fn score_block32_neon_with_min_bound(
+    lut: &[f32],
+    suffix_max: &[f32],
+    original_dim: usize,
+    codes: &[&[u8]; BLOCK_WIDTH],
+    min_ip_to_keep: f32,
+    out_scores: &mut [f32],
+    out_kept: &mut [bool],
+) -> Option<Isa> {
+    if is_aarch64_feature_detected!("neon") {
+        // SAFETY: runtime feature detection above guarantees NEON support,
+        // and callers validate LUT/code/output shapes before dispatch.
+        return Some(unsafe {
+            score_octets_neon_with_min_bound_impl(
+                lut,
+                suffix_max,
+                original_dim,
+                codes,
+                min_ip_to_keep,
+                out_scores,
+                out_kept,
+            )
+        });
+    }
+    None
+}
+
+#[cfg(target_arch = "aarch64")]
+pub(super) fn score_octets_neon_with_min_bound(
+    lut: &[f32],
+    suffix_max: &[f32],
+    original_dim: usize,
+    codes: &[&[u8]],
+    min_ip_to_keep: f32,
+    out_scores: &mut [f32],
+    out_kept: &mut [bool],
+) -> Option<Isa> {
+    debug_assert!(!codes.is_empty() && codes.len() % 8 == 0 && codes.len() <= BLOCK_WIDTH);
+    if is_aarch64_feature_detected!("neon") {
+        // SAFETY: runtime feature detection above guarantees NEON support,
+        // and callers validate LUT/code/output shapes before dispatch.
+        return Some(unsafe {
+            score_octets_neon_with_min_bound_impl(
+                lut,
+                suffix_max,
+                original_dim,
+                codes,
+                min_ip_to_keep,
+                out_scores,
+                out_kept,
+            )
+        });
+    }
+    None
+}
+
 #[cfg(test)]
 pub(super) fn score_block32_neon_for_test(
     lut: &[f32],
@@ -94,8 +151,8 @@ unsafe fn score_octets_neon_impl(
     // held as a four-register byte table and selected per quad with
     // vqtbl4q_u8 over in-vector byte indexes. Per-lane accumulation stays in
     // dim order, so scores remain bit-exact against the scalar block
-    // reference. Lane count is octet granular (8..=32 in steps of 8) so
-    // sub-block tails only pay for the octets they occupy.
+    // reference. Lane count is octet granular (8..=BLOCK_WIDTH in steps of 8)
+    // so sub-block tails only pay for the octets they occupy.
     let octet_count = codes.len() / 8;
     debug_assert!(octet_count >= 1 && octet_count <= OCTET_COUNT);
     debug_assert_eq!(codes.len(), octet_count * 8);
@@ -109,7 +166,8 @@ unsafe fn score_octets_neon_impl(
     let mut byte_base = 0usize;
     while byte_base < total_bytes {
         let chunk_len = CHUNK_BYTES.min(total_bytes - byte_base);
-        for (octet, acc_pair) in acc.chunks_exact_mut(2).enumerate().take(octet_count) {
+        let mut cols_by_octet = [[vdupq_n_u8(0); 8]; OCTET_COUNT];
+        for (octet, cols_slot) in cols_by_octet.iter_mut().enumerate().take(octet_count) {
             let lane_base = octet * 8;
             let mut rows = [vdupq_n_u8(0); 8];
             if chunk_len == CHUNK_BYTES {
@@ -123,17 +181,20 @@ unsafe fn score_octets_neon_impl(
                     *row = vld1q_u8(padded.as_ptr());
                 }
             }
-            let cols = transpose_8x16(rows);
+            *cols_slot = transpose_8x16(rows);
+        }
 
-            for b in 0..chunk_len {
-                let pair = cols[b / 2];
+        for b in 0..chunk_len {
+            let dim_low = (byte_base + b) * 2;
+            let low_table = load_dim_table(lut, dim_low);
+            let high_table = (dim_low + 1 < original_dim).then(|| load_dim_table(lut, dim_low + 1));
+            for (octet, acc_pair) in acc.chunks_exact_mut(2).enumerate().take(octet_count) {
+                let pair = cols_by_octet[octet][b / 2];
                 let col = if b & 1 == 0 {
                     vget_low_u8(pair)
                 } else {
                     vget_high_u8(pair)
                 };
-                let dim_low = (byte_base + b) * 2;
-                let low_table = load_dim_table(lut, dim_low);
                 // Accumulate one dim at a time: float addition is not
                 // associative, and bit-exactness requires the scalar
                 // reference's per-lane dim-order sums.
@@ -146,9 +207,7 @@ unsafe fn score_octets_neon_impl(
                     acc_pair[1],
                     select_lut_entries(low_table, vmovl_u16(vget_high_u16(low_wide))),
                 );
-                let dim_high = dim_low + 1;
-                if dim_high < original_dim {
-                    let high_table = load_dim_table(lut, dim_high);
+                if let Some(high_table) = high_table {
                     let high_wide = vmovl_u8(vshr_n_u8::<4>(col));
                     acc_pair[0] = vaddq_f32(
                         acc_pair[0],
@@ -170,6 +229,142 @@ unsafe fn score_octets_neon_impl(
     }
 
     Isa::Neon
+}
+
+#[cfg(target_arch = "aarch64")]
+#[target_feature(enable = "neon")]
+unsafe fn score_octets_neon_with_min_bound_impl(
+    lut: &[f32],
+    suffix_max: &[f32],
+    original_dim: usize,
+    codes: &[&[u8]],
+    min_ip_to_keep: f32,
+    out_scores: &mut [f32],
+    out_kept: &mut [bool],
+) -> Isa {
+    use std::arch::aarch64::{
+        vaddq_f32, vand_u8, vdup_n_u8, vdupq_n_f32, vdupq_n_u8, vget_high_u16, vget_high_u8,
+        vget_low_u16, vget_low_u8, vld1q_u8, vmovl_u16, vmovl_u8, vshr_n_u8, vst1q_f32,
+    };
+
+    let octet_count = codes.len() / 8;
+    debug_assert!(octet_count >= 1 && octet_count <= OCTET_COUNT);
+    debug_assert_eq!(codes.len(), octet_count * 8);
+    debug_assert_eq!(out_scores.len(), codes.len());
+    debug_assert_eq!(out_kept.len(), codes.len());
+    debug_assert_eq!(suffix_max.len(), original_dim + 1);
+
+    let mut acc = [vdupq_n_f32(0.0); 2 * OCTET_COUNT];
+    let mut octet_live = [true; OCTET_COUNT];
+    let mut lane_live = [true; BLOCK_WIDTH];
+    let nibble_mask = vdup_n_u8(0x0F);
+    let total_bytes = super::expected_mse_code_len(original_dim);
+
+    let mut byte_base = 0usize;
+    while byte_base < total_bytes {
+        if !octet_live[..octet_count].iter().any(|live| *live) {
+            break;
+        }
+
+        let chunk_len = CHUNK_BYTES.min(total_bytes - byte_base);
+        let mut cols_by_octet = [[vdupq_n_u8(0); 8]; OCTET_COUNT];
+        for (octet, cols_slot) in cols_by_octet.iter_mut().enumerate().take(octet_count) {
+            if !octet_live[octet] {
+                continue;
+            }
+            let lane_base = octet * 8;
+            let mut rows = [vdupq_n_u8(0); 8];
+            if chunk_len == CHUNK_BYTES {
+                for (row, code) in rows.iter_mut().zip(&codes[lane_base..lane_base + 8]) {
+                    *row = vld1q_u8(code.as_ptr().add(byte_base));
+                }
+            } else {
+                for (row, code) in rows.iter_mut().zip(&codes[lane_base..lane_base + 8]) {
+                    let mut padded = [0u8; CHUNK_BYTES];
+                    padded[..chunk_len].copy_from_slice(&code[byte_base..byte_base + chunk_len]);
+                    *row = vld1q_u8(padded.as_ptr());
+                }
+            }
+            *cols_slot = transpose_8x16(rows);
+        }
+
+        for b in 0..chunk_len {
+            let dim_low = (byte_base + b) * 2;
+            let low_table = load_dim_table(lut, dim_low);
+            let high_table = (dim_low + 1 < original_dim).then(|| load_dim_table(lut, dim_low + 1));
+            for (octet, acc_pair) in acc.chunks_exact_mut(2).enumerate().take(octet_count) {
+                if !octet_live[octet] {
+                    continue;
+                }
+                let pair = cols_by_octet[octet][b / 2];
+                let col = if b & 1 == 0 {
+                    vget_low_u8(pair)
+                } else {
+                    vget_high_u8(pair)
+                };
+                let low_wide = vmovl_u8(vand_u8(col, nibble_mask));
+                acc_pair[0] = vaddq_f32(
+                    acc_pair[0],
+                    select_lut_entries(low_table, vmovl_u16(vget_low_u16(low_wide))),
+                );
+                acc_pair[1] = vaddq_f32(
+                    acc_pair[1],
+                    select_lut_entries(low_table, vmovl_u16(vget_high_u16(low_wide))),
+                );
+                if let Some(high_table) = high_table {
+                    let high_wide = vmovl_u8(vshr_n_u8::<4>(col));
+                    acc_pair[0] = vaddq_f32(
+                        acc_pair[0],
+                        select_lut_entries(high_table, vmovl_u16(vget_low_u16(high_wide))),
+                    );
+                    acc_pair[1] = vaddq_f32(
+                        acc_pair[1],
+                        select_lut_entries(high_table, vmovl_u16(vget_high_u16(high_wide))),
+                    );
+                }
+            }
+        }
+        let next_dim = ((byte_base + chunk_len) * 2).min(original_dim);
+        for (octet, acc_pair) in acc.chunks_exact_mut(2).enumerate().take(octet_count) {
+            if !octet_live[octet] {
+                continue;
+            }
+            update_live_lanes(
+                acc_pair,
+                suffix_max[next_dim],
+                min_ip_to_keep,
+                &mut lane_live[octet * 8..octet * 8 + 8],
+            );
+            octet_live[octet] = lane_live[octet * 8..octet * 8 + 8].iter().any(|live| *live);
+        }
+        byte_base += chunk_len;
+    }
+
+    for (octet, acc_pair) in acc.chunks_exact(2).enumerate().take(octet_count) {
+        vst1q_f32(out_scores.as_mut_ptr().add(octet * 8), acc_pair[0]);
+        vst1q_f32(out_scores.as_mut_ptr().add(octet * 8 + 4), acc_pair[1]);
+    }
+    out_kept.copy_from_slice(&lane_live[..codes.len()]);
+
+    Isa::Neon
+}
+
+#[cfg(target_arch = "aarch64")]
+#[inline(always)]
+unsafe fn update_live_lanes(
+    acc_pair: &[std::arch::aarch64::float32x4_t],
+    suffix_bound: f32,
+    min_ip_to_keep: f32,
+    lane_live: &mut [bool],
+) {
+    let mut scores = [0.0_f32; 8];
+    std::arch::aarch64::vst1q_f32(scores.as_mut_ptr(), acc_pair[0]);
+    std::arch::aarch64::vst1q_f32(scores.as_mut_ptr().add(4), acc_pair[1]);
+    for (live, score) in lane_live.iter_mut().zip(scores) {
+        if *live && score + suffix_bound < min_ip_to_keep {
+            *live = false;
+        }
+    }
 }
 
 /// Selects `lut_table[index]` f32 entries for the four dword lane indexes

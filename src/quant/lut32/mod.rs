@@ -1,4 +1,4 @@
-//! 32-candidate blocked LUT scoring for TurboQuant no-QJL 4-bit codes.
+//! Blocked LUT scoring for TurboQuant no-QJL 4-bit codes.
 //!
 //! This is the ADR-076 block-kernel surface for the flagship production
 //! lane (TurboQuant no-QJL 4-bit). Scalar scoring is the bit-exact
@@ -12,7 +12,7 @@ mod neon;
 mod scalar;
 mod sve;
 
-pub(crate) const BLOCK_WIDTH: usize = 32;
+pub(crate) const BLOCK_WIDTH: usize = 64;
 
 pub(crate) fn expected_mse_code_len(original_dim: usize) -> usize {
     original_dim.div_ceil(2)
@@ -174,6 +174,178 @@ pub(crate) fn score_lut_no_qjl_4bit_partial(
     let isa = score_lut_no_qjl_4bit_block32(lut, original_dim, padded_codes, &mut block_scores);
     out_scores.copy_from_slice(&block_scores[..codes.len()]);
     isa
+}
+
+pub(crate) fn score_lut_no_qjl_4bit_batch_with_min_bound(
+    lut: &[f32],
+    suffix_max: &[f32],
+    original_dim: usize,
+    mse_codes: &[&[u8]],
+    min_ip_to_keep: f32,
+    out_scores: &mut [f32],
+    out_kept: &mut [bool],
+) -> crate::quant::isa::Isa {
+    debug_assert_eq!(mse_codes.len(), out_scores.len());
+    debug_assert_eq!(mse_codes.len(), out_kept.len());
+    debug_assert_eq!(suffix_max.len(), original_dim + 1);
+    out_kept.fill(false);
+    if mse_codes.is_empty() {
+        return crate::quant::isa::Isa::Scalar;
+    }
+
+    let mut timing_isa = crate::quant::isa::Isa::Scalar;
+    let mut block_start = 0usize;
+    while block_start + BLOCK_WIDTH <= mse_codes.len() {
+        let block = mse_codes[block_start..block_start + BLOCK_WIDTH]
+            .try_into()
+            .expect("slice length is exactly one block");
+        timing_isa = score_lut_no_qjl_4bit_block32_with_min_bound(
+            lut,
+            suffix_max,
+            original_dim,
+            block,
+            min_ip_to_keep,
+            &mut out_scores[block_start..block_start + BLOCK_WIDTH],
+            &mut out_kept[block_start..block_start + BLOCK_WIDTH],
+        );
+        block_start += BLOCK_WIDTH;
+    }
+
+    if block_start < mse_codes.len() {
+        let isa = score_lut_no_qjl_4bit_partial_with_min_bound(
+            lut,
+            suffix_max,
+            original_dim,
+            &mse_codes[block_start..],
+            min_ip_to_keep,
+            &mut out_scores[block_start..],
+            &mut out_kept[block_start..],
+        );
+        if block_start == 0 {
+            timing_isa = isa;
+        }
+    }
+
+    timing_isa
+}
+
+fn score_lut_no_qjl_4bit_block32_with_min_bound(
+    lut: &[f32],
+    suffix_max: &[f32],
+    original_dim: usize,
+    codes: [&[u8]; BLOCK_WIDTH],
+    min_ip_to_keep: f32,
+    out_scores: &mut [f32],
+    out_kept: &mut [bool],
+) -> crate::quant::isa::Isa {
+    #[cfg(target_arch = "aarch64")]
+    {
+        if let Some(isa) = neon::score_block32_neon_with_min_bound(
+            lut,
+            suffix_max,
+            original_dim,
+            &codes,
+            min_ip_to_keep,
+            out_scores,
+            out_kept,
+        ) {
+            return isa;
+        }
+    }
+
+    let _ = codes;
+    score_lut_no_qjl_4bit_scalar_batch_with_min_bound(
+        lut,
+        suffix_max,
+        original_dim,
+        &codes,
+        min_ip_to_keep,
+        out_scores,
+        out_kept,
+    )
+}
+
+fn score_lut_no_qjl_4bit_partial_with_min_bound(
+    lut: &[f32],
+    suffix_max: &[f32],
+    original_dim: usize,
+    codes: &[&[u8]],
+    min_ip_to_keep: f32,
+    out_scores: &mut [f32],
+    out_kept: &mut [bool],
+) -> crate::quant::isa::Isa {
+    #[cfg(target_arch = "aarch64")]
+    {
+        let padded_len = codes.len().next_multiple_of(8);
+        if padded_len <= BLOCK_WIDTH && codes.len() > 1 {
+            let mut padded_codes = [codes[0]; BLOCK_WIDTH];
+            for (lane, code) in codes.iter().enumerate() {
+                padded_codes[lane] = *code;
+            }
+            let mut block_scores = [0.0_f32; BLOCK_WIDTH];
+            let mut block_kept = [false; BLOCK_WIDTH];
+            if let Some(isa) = neon::score_octets_neon_with_min_bound(
+                lut,
+                suffix_max,
+                original_dim,
+                &padded_codes[..padded_len],
+                min_ip_to_keep,
+                &mut block_scores[..padded_len],
+                &mut block_kept[..padded_len],
+            ) {
+                out_scores.copy_from_slice(&block_scores[..codes.len()]);
+                out_kept.copy_from_slice(&block_kept[..codes.len()]);
+                return isa;
+            }
+        }
+    }
+
+    score_lut_no_qjl_4bit_scalar_batch_with_min_bound(
+        lut,
+        suffix_max,
+        original_dim,
+        codes,
+        min_ip_to_keep,
+        out_scores,
+        out_kept,
+    )
+}
+
+fn score_lut_no_qjl_4bit_scalar_batch_with_min_bound(
+    lut: &[f32],
+    suffix_max: &[f32],
+    original_dim: usize,
+    codes: &[&[u8]],
+    min_ip_to_keep: f32,
+    out_scores: &mut [f32],
+    out_kept: &mut [bool],
+) -> crate::quant::isa::Isa {
+    for ((code, out_score), kept) in codes
+        .iter()
+        .zip(out_scores.iter_mut())
+        .zip(out_kept.iter_mut())
+    {
+        let mut sum = 0.0_f32;
+        for dim_index in 0..original_dim {
+            let packed = code[dim_index / 2];
+            let code = if dim_index & 1 == 0 {
+                packed & 0x0F
+            } else {
+                packed >> 4
+            } as usize;
+            sum += lut[dim_index * 16 + code];
+            if sum + suffix_max[dim_index + 1] < min_ip_to_keep {
+                *out_score = sum;
+                *kept = false;
+                break;
+            }
+        }
+        if sum + suffix_max[original_dim] >= min_ip_to_keep {
+            *out_score = sum;
+            *kept = true;
+        }
+    }
+    crate::quant::isa::Isa::Scalar
 }
 
 #[cfg(test)]

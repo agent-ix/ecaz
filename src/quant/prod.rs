@@ -36,6 +36,7 @@ pub struct Int8ApproxNoQjl4BitQuery {
 #[derive(Debug, Clone, PartialEq)]
 pub struct PreparedLutNoQjl4BitQuery {
     pub lut: Vec<f32>,
+    pub suffix_max: Vec<f32>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -387,8 +388,10 @@ impl ProdQuantizer {
         );
 
         let rotated = rotation::srht_padded(query, &self.signs);
+        let lut = build_prepared_query_lut(&rotated[..self.original_dim], &self.codebook, 16);
         PreparedLutNoQjl4BitQuery {
-            lut: build_prepared_query_lut(&rotated[..self.original_dim], &self.codebook, 16),
+            suffix_max: build_lut_suffix_max(&lut, 16),
+            lut,
         }
     }
 
@@ -721,6 +724,49 @@ impl ProdQuantizer {
         }
 
         sum
+    }
+
+    pub(crate) fn score_ip_from_parts_lut_no_qjl_4bit_with_min_bound(
+        &self,
+        prepared: &PreparedLutNoQjl4BitQuery,
+        code_bytes: &[u8],
+        min_ip_to_keep: f32,
+    ) -> Option<f32> {
+        assert!(
+            self.bits == 4 && !qjl_enabled(self.original_dim, self.bits),
+            "bounded LUT scoring requires the no-QJL 4-bit lane"
+        );
+        let (mse_packed, qjl_packed) = self.split_code_bytes(code_bytes);
+        debug_assert!(qjl_packed.is_empty());
+        self.score_ip_from_split_parts_lut_no_qjl_4bit_with_min_bound(
+            &prepared.lut,
+            &prepared.suffix_max,
+            mse_packed,
+            min_ip_to_keep,
+        )
+    }
+
+    fn score_ip_from_split_parts_lut_no_qjl_4bit_with_min_bound(
+        &self,
+        lut: &[f32],
+        suffix_max: &[f32],
+        mse_packed: &[u8],
+        min_ip_to_keep: f32,
+    ) -> Option<f32> {
+        debug_assert_eq!(self.bits, 4);
+        debug_assert!(!qjl_enabled(self.original_dim, self.bits));
+        debug_assert_eq!(lut.len(), self.original_dim * 16);
+        debug_assert_eq!(suffix_max.len(), self.original_dim + 1);
+
+        let mut sum = 0.0_f32;
+        for dim_index in 0..self.original_dim {
+            let centroid_index = mse_index_at(mse_packed, dim_index, 4) as usize;
+            sum += lut[dim_index * 16 + centroid_index];
+            if sum + suffix_max[dim_index + 1] < min_ip_to_keep {
+                return None;
+            }
+        }
+        Some(sum)
     }
 
     fn score_ip_from_split_parts_scalar(
@@ -1823,6 +1869,22 @@ fn build_prepared_query_lut(rotated: &[f32], codebook: &[f32], num_centroids: us
     lut
 }
 
+fn build_lut_suffix_max(lut: &[f32], num_centroids: usize) -> Vec<f32> {
+    debug_assert_eq!(lut.len() % num_centroids, 0);
+    let row_count = lut.len() / num_centroids;
+    let mut suffix_max = vec![0.0_f32; row_count + 1];
+    for row_index in (0..row_count).rev() {
+        let row_start = row_index * num_centroids;
+        let row_end = row_start + num_centroids;
+        let row_max = lut[row_start..row_end]
+            .iter()
+            .copied()
+            .fold(f32::NEG_INFINITY, f32::max);
+        suffix_max[row_index] = suffix_max[row_index + 1] + row_max;
+    }
+    suffix_max
+}
+
 fn quantize_i8(values: &[f32]) -> (Vec<i8>, f32) {
     let max_abs = values
         .iter()
@@ -2346,6 +2408,35 @@ mod tests {
         let prepared = quantizer.prepare_ip_query_lut_no_qjl_4bit(&query);
 
         assert_eq!(prepared.lut.len(), 1536 * 16);
+        assert_eq!(prepared.suffix_max.len(), 1536 + 1);
+        assert_eq!(prepared.suffix_max[1536].to_bits(), 0.0_f32.to_bits());
+    }
+
+    #[test]
+    fn quantizer_no_qjl_lut_min_bound_keeps_or_prunes_exact_score() {
+        let quantizer = ProdQuantizer::new(1536, 4, 42);
+        let query = random_unit_vector(1536, 16);
+        let source = random_unit_vector(1536, 17);
+        let prepared = quantizer.prepare_ip_query_lut_no_qjl_4bit(&query);
+        let encoded = quantizer.encode(&source);
+        let score = quantizer.score_ip_from_parts_lut_no_qjl_4bit(&prepared, &encoded.mse_packed);
+
+        assert_eq!(
+            quantizer.score_ip_from_parts_lut_no_qjl_4bit_with_min_bound(
+                &prepared,
+                &encoded.mse_packed,
+                score - 1.0
+            ),
+            Some(score)
+        );
+        assert_eq!(
+            quantizer.score_ip_from_parts_lut_no_qjl_4bit_with_min_bound(
+                &prepared,
+                &encoded.mse_packed,
+                score + 1.0
+            ),
+            None
+        );
     }
 
     #[test]
