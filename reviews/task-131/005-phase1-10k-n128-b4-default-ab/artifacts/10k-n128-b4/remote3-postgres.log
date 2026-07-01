@@ -1,0 +1,18 @@
+2026-06-30 22:37:45.815 PDT [133646] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-06-30 22:37:45.817 PDT [133646] LOG:  listening on Unix socket "/home/peter/dev/ecaz/target/spire-local-multinode-sockets-task131-p4-mi-10k-n128-b4/.s.PGSQL.40513"
+2026-06-30 22:37:45.823 PDT [133652] LOG:  database system was shut down at 2026-06-30 22:37:45 PDT
+2026-06-30 22:37:45.827 PDT [133646] LOG:  database system is ready to accept connections
+2026-06-30 22:42:45.548 PDT [133650] LOG:  checkpoint starting: time
+2026-06-30 22:43:15.940 PDT [134250] LOG:  skipping vacuum of "ec_real_10k_node_4_corpus" --- lock not available
+2026-06-30 22:43:20.831 PDT [133650] LOG:  checkpoint complete: wrote 82 buffers (0.5%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=35.097 s, sync=0.177 s, total=35.284 s; sync files=156, longest=0.078 s, average=0.002 s; distance=3038 kB, estimate=3038 kB; lsn=0/872AD78, redo lsn=0/1A4BF80
+2026-06-30 22:47:45.948 PDT [133650] LOG:  checkpoint starting: time
+2026-06-30 22:52:15.103 PDT [133650] LOG:  checkpoint complete: wrote 7782 buffers (47.5%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 10 recycled; write=269.111 s, sync=0.015 s, total=269.155 s; sync files=51, longest=0.003 s, average=0.001 s; distance=160642 kB, estimate=160642 kB; lsn=0/B73B200, redo lsn=0/B72C808
+2026-06-30 22:52:45.448 PDT [133650] LOG:  checkpoint starting: time
+2026-06-30 22:52:45.462 PDT [133650] LOG:  checkpoint complete: wrote 0 buffers (0.0%), wrote 2 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.004 s, sync=0.001 s, total=0.015 s; sync files=1, longest=0.001 s, average=0.001 s; distance=65 kB, estimate=144584 kB; lsn=0/B73CF78, redo lsn=0/B73CF20
+2026-06-30 22:55:07.881 PDT [133646] LOG:  received fast shutdown request
+2026-06-30 22:55:07.887 PDT [133646] LOG:  aborting any active transactions
+2026-06-30 22:55:07.888 PDT [133646] LOG:  background worker "logical replication launcher" (PID 133655) exited with exit code 1
+2026-06-30 22:55:07.892 PDT [133650] LOG:  shutting down
+2026-06-30 22:55:07.894 PDT [133650] LOG:  checkpoint starting: shutdown immediate
+2026-06-30 22:55:07.906 PDT [133650] LOG:  checkpoint complete: wrote 0 buffers (0.0%), wrote 2 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.004 s, sync=0.001 s, total=0.015 s; sync files=1, longest=0.001 s, average=0.001 s; distance=34 kB, estimate=130129 kB; lsn=0/B7459A0, redo lsn=0/B7459A0
+2026-06-30 22:55:07.930 PDT [133646] LOG:  database system is shut down

@@ -45,6 +45,7 @@
       "bench_queries_limit": 200,
       "bench_sweep": "96",
       "bench_rowcap_sweep": "96",
+      "skip_bench_rowcap": true,
       "bench_production_read_variants": [
         "name=baseline;timeline_payload=none;guc=ec_spire.remote_search_global_pre_heap_merge=off",
         "name=global-preheap-on;timeline_payload=none;guc=ec_spire.remote_search_global_pre_heap_merge=on"
@@ -90,6 +91,7 @@
       "bench_queries_limit": 200,
       "bench_sweep": "64",
       "bench_rowcap_sweep": "64",
+      "skip_bench_rowcap": true,
       "bench_production_read_variants": [
         "name=baseline;timeline_payload=none;guc=ec_spire.remote_search_global_pre_heap_merge=off",
         "name=global-preheap-on;timeline_payload=none;guc=ec_spire.remote_search_global_pre_heap_merge=on"
@@ -135,6 +137,7 @@
       "bench_queries_limit": 200,
       "bench_sweep": "96",
       "bench_rowcap_sweep": "96",
+      "skip_bench_rowcap": true,
       "bench_production_read_variants": [
         "name=baseline;timeline_payload=none;guc=ec_spire.remote_search_global_pre_heap_merge=off",
         "name=global-preheap-on;timeline_payload=none;guc=ec_spire.remote_search_global_pre_heap_merge=on"
@@ -180,6 +183,7 @@
       "bench_queries_limit": 200,
       "bench_sweep": "64",
       "bench_rowcap_sweep": "64",
+      "skip_bench_rowcap": true,
       "bench_production_read_variants": [
         "name=baseline;timeline_payload=none;guc=ec_spire.remote_search_global_pre_heap_merge=off",
         "name=global-preheap-on;timeline_payload=none;guc=ec_spire.remote_search_global_pre_heap_merge=on"
@@ -225,6 +229,7 @@
       "bench_queries_limit": 200,
       "bench_sweep": "96",
       "bench_rowcap_sweep": "96",
+      "skip_bench_rowcap": true,
       "bench_production_read_variants": [
         "name=baseline;timeline_payload=none;guc=ec_spire.remote_search_global_pre_heap_merge=off",
         "name=global-preheap-on;timeline_payload=none;guc=ec_spire.remote_search_global_pre_heap_merge=on"
@@ -270,6 +275,7 @@
       "bench_queries_limit": 200,
       "bench_sweep": "64",
       "bench_rowcap_sweep": "64",
+      "skip_bench_rowcap": true,
       "bench_production_read_variants": [
         "name=baseline;timeline_payload=none;guc=ec_spire.remote_search_global_pre_heap_merge=off",
         "name=global-preheap-on;timeline_payload=none;guc=ec_spire.remote_search_global_pre_heap_merge=on"
