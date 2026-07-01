@@ -3654,7 +3654,7 @@ impl From<Row> for ProductionReadTimelineRow {
 #[derive(Debug)]
 struct ProductionScanProfileRow {
     served_epoch: i64,
-    node_id: i32,
+    node_id: i64,
     selected_pid_count: i64,
     scanned_pid_count: i64,
     leaf_candidate_row_count: i64,
@@ -4075,7 +4075,7 @@ impl ProductionReadProfileAggregate {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct ProductionScanProfileKey {
     nprobe: i32,
-    node_id: i32,
+    node_id: i64,
 }
 
 impl ProductionScanProfileKey {
