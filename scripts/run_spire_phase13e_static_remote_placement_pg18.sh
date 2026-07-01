@@ -17,6 +17,7 @@ FIXTURE_ROWS="${FIXTURE_ROWS:-12}"
 BENCH_TOP_K="${BENCH_TOP_K:-6}"
 BENCH_QUERIES_LIMIT="${BENCH_QUERIES_LIMIT:-1}"
 BENCH_SWEEP="${BENCH_SWEEP:-3}"
+SLOW_CANDIDATE_NODE2_MS="${SLOW_CANDIDATE_NODE2_MS:-0}"
 
 usage() {
   cat <<'USAGE'
@@ -36,6 +37,9 @@ Options:
   --bench-queries-limit N
                       Query count for the local ecaz bench suite gate. Default: 1.
   --bench-sweep LIST   Comma-separated nprobe sweep for the suite gate. Default: 3.
+  --slow-candidate-node2-ms MS
+                      Slow node 2 compact candidate receive through a search_path wrapper.
+                      Default: 0.
   --skip-install       Skip cargo pgrx install.
   --smoke-log FILE     Tee smoke output to FILE.
   -h, --help           Show this help.
@@ -92,6 +96,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --bench-sweep)
       BENCH_SWEEP="$2"
+      shift 2
+      ;;
+    --slow-candidate-node2-ms)
+      SLOW_CANDIDATE_NODE2_MS="$2"
       shift 2
       ;;
     --skip-install)
@@ -163,6 +171,7 @@ echo "fixture_rows=$FIXTURE_ROWS"
 echo "bench_top_k=$BENCH_TOP_K"
 echo "bench_queries_limit=$BENCH_QUERIES_LIMIT"
 echo "bench_sweep=$BENCH_SWEEP"
+echo "slow_candidate_node2_ms=$SLOW_CANDIDATE_NODE2_MS"
 
 if [[ "${ECAZ_SKIP_INSTALL:-0}" != "1" ]]; then
   (cd "$ROOT_DIR" && cargo pgrx install --test --pg-config "$PGBIN/pg_config" \
@@ -174,7 +183,11 @@ fi
 "$PG_CTL" initdb -D "$REMOTE2_DATA" -o "-A trust -U postgres" >/dev/null
 "$PG_CTL" initdb -D "$REMOTE3_DATA" -o "-A trust -U postgres" >/dev/null
 
-export EC_SPIRE_REMOTE_CONNINFO_SPIRE_REMOTE_PHASE13E_NODE2="host=$SOCKET_DIR port=$REMOTE1_PORT dbname=postgres user=postgres connect_timeout=1"
+node2_conninfo="host=$SOCKET_DIR port=$REMOTE1_PORT dbname=postgres user=postgres connect_timeout=1"
+if [[ "$SLOW_CANDIDATE_NODE2_MS" != "0" ]]; then
+  node2_conninfo="$node2_conninfo options='-c search_path=ec_spire_phase13e_slow_candidate,public'"
+fi
+export EC_SPIRE_REMOTE_CONNINFO_SPIRE_REMOTE_PHASE13E_NODE2="$node2_conninfo"
 export EC_SPIRE_REMOTE_CONNINFO_SPIRE_REMOTE_PHASE13E_NODE3="host=$SOCKET_DIR port=$REMOTE2_PORT dbname=postgres user=postgres connect_timeout=1"
 export EC_SPIRE_REMOTE_CONNINFO_SPIRE_REMOTE_PHASE13E_NODE4="host=$SOCKET_DIR port=$REMOTE3_PORT dbname=postgres user=postgres connect_timeout=1"
 
@@ -196,6 +209,64 @@ remote3_psql=("$PSQL" -v ON_ERROR_STOP=1 -h "$SOCKET_DIR" -p "$REMOTE3_PORT" -U 
 "${remote1_psql[@]}" -c "CREATE EXTENSION ecaz" >/dev/null
 "${remote2_psql[@]}" -c "CREATE EXTENSION ecaz" >/dev/null
 "${remote3_psql[@]}" -c "CREATE EXTENSION ecaz" >/dev/null
+
+if [[ "$SLOW_CANDIDATE_NODE2_MS" != "0" ]]; then
+  "${remote1_psql[@]}" -v slow_ms="$SLOW_CANDIDATE_NODE2_MS" <<'SQL' >/dev/null
+CREATE SCHEMA ec_spire_phase13e_slow_candidate;
+CREATE TABLE ec_spire_phase13e_slow_candidate.config (slow_ms double precision NOT NULL);
+INSERT INTO ec_spire_phase13e_slow_candidate.config VALUES (:slow_ms::double precision);
+CREATE FUNCTION ec_spire_phase13e_slow_candidate.ec_spire_remote_search(
+    index_oid oid,
+    requested_epoch bigint,
+    query real[],
+    selected_pids bigint[],
+    top_k integer,
+    consistency_mode text
+) RETURNS TABLE (
+    served_epoch bigint,
+    node_id bigint,
+    pid bigint,
+    object_version bigint,
+    row_index bigint,
+    assignment_flags smallint,
+    vec_id bytea,
+    row_locator bytea,
+    score real,
+    protocol_version text,
+    extension_version text,
+    opclass_identity text,
+    storage_format text,
+    assignment_payload_format text,
+    quantizer_profile text,
+    scoring_profile text,
+    profile_fingerprint text,
+    endpoint_status text
+)
+LANGUAGE plpgsql
+STABLE
+AS $$
+DECLARE
+    delay_ms double precision;
+BEGIN
+    SELECT config.slow_ms
+      INTO delay_ms
+      FROM ec_spire_phase13e_slow_candidate.config
+     LIMIT 1;
+    PERFORM pg_sleep(delay_ms / 1000.0);
+    RETURN QUERY
+    SELECT *
+      FROM public.ec_spire_remote_search(
+          index_oid,
+          requested_epoch,
+          query,
+          selected_pids,
+          top_k,
+          consistency_mode
+      );
+END;
+$$;
+SQL
+fi
 
 "${coord_psql[@]}" -v fixture_rows="$FIXTURE_ROWS" <<'SQL' >/dev/null
 CREATE TABLE ec_spire_phase13e_coord_corpus
@@ -611,6 +682,8 @@ BEGIN {
   heap_count = 0;
   slow_heap_completed = -1;
   fastest_heap_completed = -1;
+  slow_candidate_completed = -1;
+  earliest_heap_started = -1;
   bad_status_count = 0;
 }
 $3 == "candidate_receive" {
@@ -618,11 +691,17 @@ $3 == "candidate_receive" {
   if ($8 != "ready") {
     bad_status_count++;
   }
+  if ($2 == "2") {
+    slow_candidate_completed = $5 + 0;
+  }
 }
 $3 == "heap_receive" {
   heap_count++;
   if ($8 != "ready") {
     bad_status_count++;
+  }
+  if (earliest_heap_started < 0 || ($4 + 0) < earliest_heap_started) {
+    earliest_heap_started = $4 + 0;
   }
   if ($2 == "2") {
     slow_heap_completed = $5 + 0;
@@ -631,12 +710,14 @@ $3 == "heap_receive" {
   }
 }
 END {
-  print candidate_count "|" heap_count "|" slow_heap_completed "|" fastest_heap_completed "|" bad_status_count;
+  heap_started_before_slow_candidate = (earliest_heap_started >= 0 && slow_candidate_completed >= 0 && earliest_heap_started < slow_candidate_completed) ? 1 : 0;
+  print candidate_count "|" heap_count "|" slow_heap_completed "|" fastest_heap_completed "|" bad_status_count "|" slow_candidate_completed "|" earliest_heap_started "|" heap_started_before_slow_candidate;
 }
 ' "$timeline_log")"
 timeline_rows="$(tr '\n' ';' < "$timeline_log")"
 IFS='|' read -r timeline_candidate_count timeline_heap_count \
   timeline_slow_heap_completed timeline_fastest_heap_completed timeline_bad_status_count \
+  timeline_slow_candidate_completed timeline_earliest_heap_started timeline_heap_before_slow_candidate \
   <<< "$timeline_summary"
 
 echo "production_timeline_rows=$timeline_rows"
@@ -648,6 +729,10 @@ echo "production_timeline_summary=$timeline_summary"
 [[ "$timeline_slow_heap_completed" -ge 250 ]]
 [[ "$timeline_fastest_heap_completed" -ge 0 ]]
 [[ "$timeline_fastest_heap_completed" -lt "$timeline_slow_heap_completed" ]]
+if [[ "$SLOW_CANDIDATE_NODE2_MS" != "0" ]]; then
+  [[ "$timeline_slow_candidate_completed" -ge "$SLOW_CANDIDATE_NODE2_MS" ]]
+  [[ "$timeline_heap_before_slow_candidate" == "1" ]]
+fi
 
 echo "stopping_remote_node=2"
 "$PG_CTL" -D "$REMOTE1_DATA" -m fast stop >/dev/null

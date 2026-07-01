@@ -709,75 +709,177 @@ impl SpireRemoteProductionTransportAdapter {
                 .collect::<Vec<_>>();
             let execution = state.runtime.block_on(async move {
                 let batch_start = std::time::Instant::now();
-                let futures = requests
-                    .into_iter()
-                    .map(|(request, pooled_connection)| async move {
-                        Self::run_one_candidate_session_request(
-                            request,
-                            pooled_connection,
-                            batch_start,
-                            SpireRemoteLocalCancelSource::production(),
-                        )
-                        .await
-                    });
-                let mut session_results = futures_util::future::join_all(futures).await;
                 let mut metrics = SpireRemoteProductionReadMetrics::default();
-                let candidate_results = session_results
-                    .iter()
-                    .map(|result| result.candidate_result.clone())
-                    .collect::<Vec<_>>();
-                for result in &session_results {
-                    metrics.add_transport_metrics(&result.metrics);
-                }
-
-                let allow_heap = Self::candidate_results_allow_heap(
-                    &candidate_results,
-                    consistency_mode.as_str(),
-                )?;
                 let mut heap_results = Vec::new();
                 let mut reusable_connections = Vec::new();
-                if allow_heap {
-                    if options::remote_search_global_pre_heap_merge_enabled()
-                        && tuple_payload_columns.is_none()
-                    {
+                let global_pre_heap_merge =
+                    options::remote_search_global_pre_heap_merge_enabled()
+                        && tuple_payload_columns.is_none();
+                let mut candidate_results = Vec::new();
+
+                if global_pre_heap_merge {
+                    let futures = requests
+                        .into_iter()
+                        .map(|(request, pooled_connection)| async move {
+                            Self::run_one_candidate_session_request(
+                                request,
+                                pooled_connection,
+                                batch_start,
+                                SpireRemoteLocalCancelSource::production(),
+                            )
+                            .await
+                        });
+                    let mut session_results = futures_util::future::join_all(futures).await;
+                    candidate_results = session_results
+                        .iter()
+                        .map(|result| result.candidate_result.clone())
+                        .collect::<Vec<_>>();
+                    for result in &session_results {
+                        metrics.add_transport_metrics(&result.metrics);
+                    }
+
+                    let allow_heap = Self::candidate_results_allow_heap(
+                        &candidate_results,
+                        consistency_mode.as_str(),
+                    )?;
+                    if allow_heap {
                         Self::assign_global_heap_candidate_subsets(
                             &mut session_results,
                             &mut metrics,
                         )?;
-                    }
-                    let futures = session_results
-                        .drain(..)
-                        .filter_map(|session_result| session_result.session)
-                        .map(|session| {
-                            let tuple_payload_columns = tuple_payload_columns.clone();
-                            let consistency_mode = consistency_mode.clone();
-                            async move {
-                                Self::run_heap_receive_on_candidate_session(
-                                    session,
-                                    tuple_payload_columns.as_deref(),
-                                    consistency_mode.as_str(),
-                                    batch_start,
-                                )
-                                .await
+                        let futures = session_results
+                            .drain(..)
+                            .filter_map(|session_result| session_result.session)
+                            .map(|session| {
+                                let tuple_payload_columns = tuple_payload_columns.clone();
+                                let consistency_mode = consistency_mode.clone();
+                                async move {
+                                    Self::run_heap_receive_on_candidate_session(
+                                        session,
+                                        tuple_payload_columns.as_deref(),
+                                        consistency_mode.as_str(),
+                                        batch_start,
+                                    )
+                                    .await
+                                }
+                            });
+                        for mut heap_result in futures_util::future::join_all(futures).await {
+                            metrics.add_transport_metrics(&heap_result.metrics);
+                            if let Some(connection) = heap_result.reusable_connection.take() {
+                                reusable_connections.push(connection);
                             }
-                        });
-                    for mut heap_result in futures_util::future::join_all(futures).await {
-                        metrics.add_transport_metrics(&heap_result.metrics);
-                        if let Some(connection) = heap_result.reusable_connection.take() {
-                            reusable_connections.push(connection);
+                            heap_results.push(heap_result.heap_result);
                         }
-                        heap_results.push(heap_result.heap_result);
+                    }
+                } else {
+                    let mut candidate_futures = requests
+                        .into_iter()
+                        .map(|(request, pooled_connection)| {
+                            Self::run_one_candidate_session_request(
+                                request,
+                                pooled_connection,
+                                batch_start,
+                                SpireRemoteLocalCancelSource::production(),
+                            )
+                        })
+                        .collect::<futures_util::stream::FuturesUnordered<_>>();
+                    let mut heap_futures = futures_util::stream::FuturesUnordered::<
+                        futures_util::future::BoxFuture<
+                            'static,
+                            SpireRemoteProductionHeapSessionResult,
+                        >,
+                    >::new();
+                    let degraded = parse_remote_search_consistency_mode(
+                        consistency_mode.as_str(),
+                    )? == meta::SpireConsistencyMode::Degraded;
+                    let mut launch_heap_for_ready_candidates = true;
+                    macro_rules! process_candidate_result {
+                        ($candidate_result:expr) => {{
+                            let candidate_result = $candidate_result;
+                            metrics.add_transport_metrics(&candidate_result.metrics);
+                            let status = candidate_result.candidate_result.status;
+                            let failure_category =
+                                candidate_result.candidate_result.failure_category;
+                            let session = candidate_result.session;
+                            candidate_results.push(candidate_result.candidate_result);
+                            if is_local_cancellation_failure_category(failure_category) {
+                                launch_heap_for_ready_candidates = false;
+                            } else if status != SPIRE_REMOTE_STATUS_READY && !degraded {
+                                launch_heap_for_ready_candidates = false;
+                            }
+                            if launch_heap_for_ready_candidates
+                                && status == SPIRE_REMOTE_STATUS_READY
+                            {
+                                if let Some(session) = session {
+                                    let tuple_payload_columns = tuple_payload_columns.clone();
+                                    let consistency_mode = consistency_mode.clone();
+                                    heap_futures.push(Box::pin(async move {
+                                        Self::run_heap_receive_on_candidate_session(
+                                            session,
+                                            tuple_payload_columns.as_deref(),
+                                            consistency_mode.as_str(),
+                                            batch_start,
+                                        )
+                                        .await
+                                    }));
+                                }
+                            }
+                        }};
+                    }
+                    macro_rules! process_heap_result {
+                        ($heap_result:expr) => {{
+                            let mut heap_result = $heap_result;
+                            metrics.add_transport_metrics(&heap_result.metrics);
+                            if let Some(connection) = heap_result.reusable_connection.take() {
+                                reusable_connections.push(connection);
+                            }
+                            heap_results.push(heap_result.heap_result);
+                        }};
+                    }
+                    while !candidate_futures.is_empty() || !heap_futures.is_empty() {
+                        if candidate_futures.is_empty() {
+                            if let Some(heap_result) =
+                                futures_util::StreamExt::next(&mut heap_futures).await
+                            {
+                                process_heap_result!(heap_result);
+                            }
+                        } else if heap_futures.is_empty() {
+                            if let Some(candidate_result) =
+                                futures_util::StreamExt::next(&mut candidate_futures).await
+                            {
+                                process_candidate_result!(candidate_result);
+                            }
+                        } else {
+                            match futures_util::future::select(
+                                futures_util::StreamExt::next(&mut candidate_futures),
+                                futures_util::StreamExt::next(&mut heap_futures),
+                            )
+                            .await
+                            {
+                                futures_util::future::Either::Left((
+                                    Some(candidate_result),
+                                    _,
+                                )) => {
+                                    process_candidate_result!(candidate_result);
+                                }
+                                futures_util::future::Either::Right((Some(heap_result), _)) => {
+                                    process_heap_result!(heap_result);
+                                }
+                                futures_util::future::Either::Left((None, _))
+                                | futures_util::future::Either::Right((None, _)) => {}
+                            }
+                        }
                     }
                 }
 
                 Ok::<SpireRemoteProductionCandidateAndHeapExecution, String>(
                     SpireRemoteProductionCandidateAndHeapExecution {
-                    result: SpireRemoteProductionCandidateAndHeapResult {
-                        candidate_results,
-                        heap_results,
-                        metrics,
-                    },
-                    reusable_connections,
+                        result: SpireRemoteProductionCandidateAndHeapResult {
+                            candidate_results,
+                            heap_results,
+                            metrics,
+                        },
+                        reusable_connections,
                     },
                 )
             })?;
