@@ -869,6 +869,179 @@ pub(crate) fn remote_search_production_read_profile_row(
     production_read_profile_row(&profiled.stream.summary, &profiled.metrics)
 }
 
+pub(crate) fn remote_search_production_scan_profile_rows(
+    index: SpireLiveIndexRelation,
+    query: Vec<f32>,
+    top_k: usize,
+) -> Vec<scan::SpireSelectedLeafScanProfile> {
+    let result = remote_search_production_scan_profile_rows_result(index, query, top_k);
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+fn remote_search_production_scan_profile_rows_result(
+    index: SpireLiveIndexRelation,
+    query: Vec<f32>,
+    top_k: usize,
+) -> Result<Vec<scan::SpireSelectedLeafScanProfile>, String> {
+    let query_for_scan = scan::SpireScanQuery::new(query.clone())?;
+    let consistency_mode = options::current_session_remote_search_consistency_mode_name();
+    let root_control = index.root_control();
+    if root_control.active_epoch == 0 || top_k == 0 {
+        return Ok(Vec::new());
+    }
+
+    let (epoch_manifest, object_manifest, placement_directory) =
+        load_relation_epoch_manifests_for_coordinator_fanout(index, root_control)?;
+    let snapshot = meta::SpirePublishedEpochSnapshot::new(
+        &epoch_manifest,
+        &object_manifest,
+        &placement_directory,
+    )?;
+    let object_store = index.object_store_set(
+        &placement_directory,
+        pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+    )?;
+    let relation_options = index.relation_options();
+    let payload_format = relation_options.assignment_payload_format();
+    let dedupe_mode = if relation_options.boundary_replica_count > 0 {
+        options::SpireCandidateDedupeMode::VecIdDedupeEnabled
+    } else {
+        options::SpireCandidateDedupeMode::NoReplicaDedupeDisabled
+    };
+    let top_graph_plan = relation_options.top_graph_plan()?;
+    let leaf_count = scan::count_scan_plan_routable_leaf_pids(&snapshot, &object_store)?;
+    let scan_plan = options::resolve_single_level_scan_plan(leaf_count, relation_options)?;
+    let selected_leaf_pids = scan::collect_scan_plan_selected_leaf_pids(
+        &snapshot,
+        &object_store,
+        &query_for_scan,
+        scan_plan,
+        top_graph_plan,
+    )?;
+    let fanout_plan = plan_remote_search_fanout(&snapshot, &selected_leaf_pids)?;
+    let mut rows = Vec::new();
+    if !fanout_plan.local_selected_pids.is_empty() {
+        rows.push(scan::collect_quantized_selected_leaf_scan_profile(
+            &snapshot,
+            &object_store,
+            query_for_scan.values(),
+            &fanout_plan.local_selected_pids,
+            payload_format,
+            dedupe_mode,
+            Some(top_k),
+        )?);
+    }
+
+    let dispatch_rows = remote_search_libpq_dispatch_plan_rows(
+        index,
+        root_control.active_epoch,
+        query,
+        selected_leaf_pids,
+        top_k,
+        consistency_mode,
+    );
+    let index_relid = remote_candidate_index_oid(index, "ec_spire production scan profile");
+    let mut executor_state = SpireRemoteSearchLibpqExecutorState::default();
+    for row in &dispatch_rows {
+        if row.dispatch_action != SPIRE_REMOTE_DISPATCH_PIPELINE_ACTION {
+            return Err(format!(
+                "ec_spire production scan profile dispatch for node_id {} is blocked with status {}",
+                row.node_id, row.status
+            ));
+        }
+        rows.push(remote_search_libpq_executor_scan_profile_for_dispatch(
+            index_relid,
+            row,
+            query_for_scan.values(),
+            top_k,
+            consistency_mode,
+            &mut executor_state,
+        )?);
+    }
+    Ok(rows)
+}
+
+fn remote_search_libpq_executor_scan_profile_for_dispatch(
+    index_relid: pg_sys::Oid,
+    row: &SpireRemoteSearchLibpqDispatchPlanRow,
+    query: &[f32],
+    top_k: usize,
+    consistency_mode: &str,
+    executor_state: &mut SpireRemoteSearchLibpqExecutorState,
+) -> Result<scan::SpireSelectedLeafScanProfile, String> {
+    let _governance_permit = remote_search_libpq_executor_governance_permit(row)?;
+    let conninfo = remote_conninfo_secret_value(&row.conninfo_secret_name).map_err(|status| {
+        format!(
+            "ec_spire production scan profile conninfo secret for node_id {} is not resolved: {status}",
+            row.node_id
+        )
+    })?;
+    let mut client =
+        remote_search_libpq_connect_with_session_timeouts(&conninfo, row.node_id, "production scan profile")?;
+    let remote_index_oid = client
+        .query_one(
+            "SELECT to_regclass($1)::oid",
+            &[&row.remote_index_regclass.as_str()],
+        )
+        .map_err(|_| {
+            format!(
+                "ec_spire production scan profile failed to resolve remote index for node_id {}",
+                row.node_id
+            )
+        })?
+        .try_get::<_, Option<u32>>(0)
+        .map_err(|_| {
+            format!(
+                "ec_spire production scan profile remote index oid decode failed for node_id {}",
+                row.node_id
+            )
+        })?
+        .ok_or_else(|| {
+            format!(
+                "ec_spire production scan profile remote index is missing for node_id {}",
+                row.node_id
+            )
+        })?;
+    validate_remote_search_libpq_endpoint_identity_for_dispatch(
+        &mut client,
+        index_relid,
+        remote_index_oid,
+        row,
+        executor_state,
+    )?;
+    let requested_epoch = i64::try_from(row.requested_epoch)
+        .map_err(|_| "ec_spire production scan profile requested_epoch exceeds i64")?;
+    let selected_pids = row
+        .selected_pids
+        .iter()
+        .map(|pid| {
+            i64::try_from(*pid)
+                .map_err(|_| "ec_spire production scan profile selected PID exceeds i64")
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let top_k = i32::try_from(top_k)
+        .map_err(|_| "ec_spire production scan profile top_k exceeds i32")?;
+    let result_row = client
+        .query_one(
+            SPIRE_REMOTE_SEARCH_LIBPQ_SCAN_PROFILE_SQL_TEMPLATE,
+            &[
+                &remote_index_oid,
+                &requested_epoch,
+                &query,
+                &selected_pids,
+                &top_k,
+                &consistency_mode,
+            ],
+        )
+        .map_err(|_| {
+            format!(
+                "ec_spire production scan profile query failed for node_id {}",
+                row.node_id
+            )
+        })?;
+    decode_remote_search_scan_profile_pg_row(&result_row, row.requested_epoch, row.node_id)
+}
+
 pub(crate) fn remote_search_production_read_timeline_rows(
     index: SpireLiveIndexRelation,
     query: Vec<f32>,

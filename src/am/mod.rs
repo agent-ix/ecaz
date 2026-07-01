@@ -257,6 +257,7 @@ pub(crate) use self::ec_spire::{
     remote_search_production_read_timeline_rows as spire_remote_search_production_read_timeline_rows,
     remote_search_production_scan_handoff_summary_row as spire_remote_search_production_scan_handoff_summary_row,
     remote_search_production_scan_heap_resolution_summary_row as spire_remote_search_production_scan_heap_resolution_summary_row,
+    remote_search_production_scan_profile_rows as spire_remote_search_production_scan_profile_rows,
     remote_search_production_session_consistency_policy_summary_row as spire_remote_search_production_session_consistency_policy_summary_row,
     remote_search_readiness_summary_row as spire_remote_search_readiness_summary_row,
     remote_search_receive_plan_rows as spire_remote_search_receive_plan_rows,

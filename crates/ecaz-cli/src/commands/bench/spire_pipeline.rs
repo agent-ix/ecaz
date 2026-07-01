@@ -343,6 +343,8 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
     let mut degraded_skip = BTreeMap::<DegradedSkipKey, DegradedSkipAggregate>::new();
     let mut query_metrics = BTreeMap::<i32, QueryMetricAggregate>::new();
     let mut production_read_profile = BTreeMap::<i32, ProductionReadProfileAggregate>::new();
+    let mut production_scan_profile =
+        BTreeMap::<ProductionScanProfileKey, ProductionScanProfileAggregate>::new();
     let mut production_read_timeline =
         BTreeMap::<ProductionReadTimelineKey, ProductionReadTimelineAggregate>::new();
     let mut cost_tuning = BTreeMap::<i32, CostTuningRow>::new();
@@ -829,6 +831,19 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
                     .entry(*nprobe)
                     .or_default()
                     .record(row);
+                let rows = query_production_scan_profile_rows(
+                    &client,
+                    &index,
+                    &query.source,
+                    args.query_metric_k,
+                )
+                .await?;
+                for row in rows {
+                    production_scan_profile
+                        .entry(ProductionScanProfileKey::from_row(*nprobe, &row))
+                        .or_default()
+                        .record(row);
+                }
                 let payload_columns = if args.production_read_timeline_no_payload {
                     Vec::new()
                 } else {
@@ -919,6 +934,7 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
         degraded_skip: &degraded_skip,
         query_metrics: &query_metrics,
         production_read_profile: &production_read_profile,
+        production_scan_profile: &production_scan_profile,
         production_read_timeline: &production_read_timeline,
     });
     if !task87_counter_lines.is_empty() {
@@ -1673,6 +1689,23 @@ async fn query_production_read_timeline_rows(
         .collect())
 }
 
+async fn query_production_scan_profile_rows(
+    client: &Client,
+    index: &str,
+    query: &[f32],
+    top_k: usize,
+) -> Result<Vec<ProductionScanProfileRow>> {
+    let top_k = i32::try_from(top_k).map_err(|_| eyre!("query metric k exceeds i32"))?;
+    let rows = client
+        .query(production_scan_profile_sql(), &[&index, &query, &top_k])
+        .await
+        .wrap_err("querying ec_spire_remote_search_production_scan_profile")?;
+    Ok(rows
+        .into_iter()
+        .map(ProductionScanProfileRow::from)
+        .collect())
+}
+
 async fn query_remote_placement_gate(client: &Client, index: &str) -> Result<RemotePlacementGate> {
     let row = client
         .query_one(remote_placement_gate_sql(), &[&index])
@@ -1832,6 +1865,19 @@ fn production_read_timeline_sql() -> &'static str {
             payload_decode_row_count, payload_decode_bytes, status, failure_category
        FROM ec_spire_remote_search_production_read_timeline(
             $1::text::regclass::oid, $2::real[], $3::integer, $4::text[])"
+}
+
+fn production_scan_profile_sql() -> &'static str {
+    "SELECT served_epoch, node_id, selected_pid_count, scanned_pid_count,
+            leaf_candidate_row_count, deduped_candidate_row_count,
+            truncated_candidate_row_count, candidate_winner_count,
+            leaf_block_available_count, leaf_block_selected_count,
+            leaf_block_skipped_count, sound_upper_bound_available_count,
+            sound_upper_bound_missing_count, leaf_summary_score_nanos,
+            leaf_row_score_nanos, candidate_score_nanos, local_kth_score
+       FROM ec_spire_remote_search_production_scan_profile(
+            $1::text::regclass::oid, $2::real[], $3::integer)
+       ORDER BY node_id"
 }
 
 fn endpoint_identity_sql() -> &'static str {
@@ -3606,6 +3652,51 @@ impl From<Row> for ProductionReadTimelineRow {
 }
 
 #[derive(Debug)]
+struct ProductionScanProfileRow {
+    served_epoch: i64,
+    node_id: i32,
+    selected_pid_count: i64,
+    scanned_pid_count: i64,
+    leaf_candidate_row_count: i64,
+    deduped_candidate_row_count: i64,
+    truncated_candidate_row_count: i64,
+    candidate_winner_count: i64,
+    leaf_block_available_count: i64,
+    leaf_block_selected_count: i64,
+    leaf_block_skipped_count: i64,
+    sound_upper_bound_available_count: i64,
+    sound_upper_bound_missing_count: i64,
+    leaf_summary_score_nanos: i64,
+    leaf_row_score_nanos: i64,
+    candidate_score_nanos: i64,
+    local_kth_score: Option<f32>,
+}
+
+impl From<Row> for ProductionScanProfileRow {
+    fn from(row: Row) -> Self {
+        Self {
+            served_epoch: row.get(0),
+            node_id: row.get(1),
+            selected_pid_count: row.get(2),
+            scanned_pid_count: row.get(3),
+            leaf_candidate_row_count: row.get(4),
+            deduped_candidate_row_count: row.get(5),
+            truncated_candidate_row_count: row.get(6),
+            candidate_winner_count: row.get(7),
+            leaf_block_available_count: row.get(8),
+            leaf_block_selected_count: row.get(9),
+            leaf_block_skipped_count: row.get(10),
+            sound_upper_bound_available_count: row.get(11),
+            sound_upper_bound_missing_count: row.get(12),
+            leaf_summary_score_nanos: row.get(13),
+            leaf_row_score_nanos: row.get(14),
+            candidate_score_nanos: row.get(15),
+            local_kth_score: row.get(16),
+        }
+    }
+}
+
+#[derive(Debug)]
 struct EndpointIdentityRow {
     tuple_transport_capabilities: Vec<String>,
     tuple_transport_default: String,
@@ -3982,6 +4073,80 @@ impl ProductionReadProfileAggregate {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct ProductionScanProfileKey {
+    nprobe: i32,
+    node_id: i32,
+}
+
+impl ProductionScanProfileKey {
+    fn from_row(nprobe: i32, row: &ProductionScanProfileRow) -> Self {
+        Self {
+            nprobe,
+            node_id: row.node_id,
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+struct ProductionScanProfileAggregate {
+    profiles: usize,
+    served_epoch: MixedValue,
+    selected_pid_count_sum: i64,
+    scanned_pid_count_sum: i64,
+    leaf_candidate_row_count_sum: i64,
+    deduped_candidate_row_count_sum: i64,
+    truncated_candidate_row_count_sum: i64,
+    candidate_winner_count_sum: i64,
+    leaf_block_available_count_sum: i64,
+    leaf_block_selected_count_sum: i64,
+    leaf_block_skipped_count_sum: i64,
+    sound_upper_bound_available_count_sum: i64,
+    sound_upper_bound_missing_count_sum: i64,
+    leaf_summary_score_nanos_sum: i64,
+    leaf_row_score_nanos_sum: i64,
+    candidate_score_nanos_sum: i64,
+    local_kth_scores: Vec<f32>,
+}
+
+impl ProductionScanProfileAggregate {
+    fn record(&mut self, row: ProductionScanProfileRow) {
+        self.profiles += 1;
+        self.served_epoch.record(row.served_epoch.to_string());
+        self.selected_pid_count_sum += row.selected_pid_count;
+        self.scanned_pid_count_sum += row.scanned_pid_count;
+        self.leaf_candidate_row_count_sum += row.leaf_candidate_row_count;
+        self.deduped_candidate_row_count_sum += row.deduped_candidate_row_count;
+        self.truncated_candidate_row_count_sum += row.truncated_candidate_row_count;
+        self.candidate_winner_count_sum += row.candidate_winner_count;
+        self.leaf_block_available_count_sum += row.leaf_block_available_count;
+        self.leaf_block_selected_count_sum += row.leaf_block_selected_count;
+        self.leaf_block_skipped_count_sum += row.leaf_block_skipped_count;
+        self.sound_upper_bound_available_count_sum += row.sound_upper_bound_available_count;
+        self.sound_upper_bound_missing_count_sum += row.sound_upper_bound_missing_count;
+        self.leaf_summary_score_nanos_sum += row.leaf_summary_score_nanos;
+        self.leaf_row_score_nanos_sum += row.leaf_row_score_nanos;
+        self.candidate_score_nanos_sum += row.candidate_score_nanos;
+        if let Some(local_kth_score) = row.local_kth_score {
+            self.local_kth_scores.push(local_kth_score);
+        }
+    }
+
+    fn local_kth_min_max(&self) -> (Option<f32>, Option<f32>) {
+        let min = self
+            .local_kth_scores
+            .iter()
+            .copied()
+            .min_by(|lhs, rhs| lhs.total_cmp(rhs));
+        let max = self
+            .local_kth_scores
+            .iter()
+            .copied()
+            .max_by(|lhs, rhs| lhs.total_cmp(rhs));
+        (min, max)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct ProductionReadTimelineKey {
     nprobe: i32,
     node_id: i32,
@@ -4125,6 +4290,7 @@ struct ReportInput<'a> {
     degraded_skip: &'a BTreeMap<DegradedSkipKey, DegradedSkipAggregate>,
     query_metrics: &'a BTreeMap<i32, QueryMetricAggregate>,
     production_read_profile: &'a BTreeMap<i32, ProductionReadProfileAggregate>,
+    production_scan_profile: &'a BTreeMap<ProductionScanProfileKey, ProductionScanProfileAggregate>,
     production_read_timeline:
         &'a BTreeMap<ProductionReadTimelineKey, ProductionReadTimelineAggregate>,
 }
@@ -4153,6 +4319,9 @@ fn render_report(input: ReportInput<'_>) -> String {
     if input.production_read_profile_enabled {
         sections.push(render_production_read_profile_table(
             input.production_read_profile,
+        ));
+        sections.push(render_production_scan_profile_table(
+            input.production_scan_profile,
         ));
         sections.push(render_production_read_timeline_table(
             input.production_read_timeline,
@@ -4652,6 +4821,69 @@ fn render_production_read_timeline_table(
         ]);
     }
     format!("Production read per-node timeline\n{table}")
+}
+
+fn render_production_scan_profile_table(
+    rows: &BTreeMap<ProductionScanProfileKey, ProductionScanProfileAggregate>,
+) -> String {
+    let mut table = Table::new();
+    table.load_preset(UTF8_FULL);
+    table.set_header(vec![
+        "nprobe",
+        "node_id",
+        "profiles",
+        "served_epoch",
+        "selected_pid_sum",
+        "scanned_pid_sum",
+        "leaf_candidate_sum",
+        "deduped_candidate_sum",
+        "truncated_candidate_sum",
+        "winner_sum",
+        "leaf_block_available_sum",
+        "leaf_block_selected_sum",
+        "leaf_block_skipped_sum",
+        "sound_bound_available_sum",
+        "sound_bound_missing_sum",
+        "leaf_summary_score_nanos_sum",
+        "leaf_row_score_nanos_sum",
+        "candidate_score_nanos_sum",
+        "local_kth_count",
+        "local_kth_min",
+        "local_kth_max",
+    ]);
+    for (key, aggregate) in rows {
+        let (local_kth_min, local_kth_max) = aggregate.local_kth_min_max();
+        table.add_row(vec![
+            Cell::new(key.nprobe),
+            Cell::new(key.node_id),
+            Cell::new(aggregate.profiles),
+            Cell::new(aggregate.served_epoch.label()),
+            Cell::new(aggregate.selected_pid_count_sum),
+            Cell::new(aggregate.scanned_pid_count_sum),
+            Cell::new(aggregate.leaf_candidate_row_count_sum),
+            Cell::new(aggregate.deduped_candidate_row_count_sum),
+            Cell::new(aggregate.truncated_candidate_row_count_sum),
+            Cell::new(aggregate.candidate_winner_count_sum),
+            Cell::new(aggregate.leaf_block_available_count_sum),
+            Cell::new(aggregate.leaf_block_selected_count_sum),
+            Cell::new(aggregate.leaf_block_skipped_count_sum),
+            Cell::new(aggregate.sound_upper_bound_available_count_sum),
+            Cell::new(aggregate.sound_upper_bound_missing_count_sum),
+            Cell::new(aggregate.leaf_summary_score_nanos_sum),
+            Cell::new(aggregate.leaf_row_score_nanos_sum),
+            Cell::new(aggregate.candidate_score_nanos_sum),
+            Cell::new(aggregate.local_kth_scores.len()),
+            Cell::new(format_optional_score(local_kth_min)),
+            Cell::new(format_optional_score(local_kth_max)),
+        ]);
+    }
+    format!("Production selected-leaf scan profile\n{table}")
+}
+
+fn format_optional_score(value: Option<f32>) -> String {
+    value
+        .map(|value| format!("{value:.6}"))
+        .unwrap_or_else(|| "none".to_owned())
 }
 
 fn option_label<T: std::fmt::Display>(value: Option<T>) -> String {
@@ -5219,6 +5451,10 @@ mod tests {
             .contains("ec_spire_remote_search_production_read_timeline"));
         assert!(production_read_timeline_sql().contains("payload_decode_bytes"));
         assert!(production_read_timeline_sql().contains("$4::text[]"));
+        assert!(production_scan_profile_sql()
+            .contains("ec_spire_remote_search_production_scan_profile"));
+        assert!(production_scan_profile_sql().contains("local_kth_score"));
+        assert!(production_scan_profile_sql().contains("sound_upper_bound_available_count"));
         assert!(endpoint_identity_sql().contains("ec_spire_remote_search_endpoint_identity"));
         assert!(endpoint_identity_sql().contains("tuple_transport_capabilities"));
         assert!(remote_placement_gate_sql().contains("ec_spire_remote_node_snapshot"));
@@ -5318,6 +5554,7 @@ mod tests {
             degraded_skip: &BTreeMap::new(),
             query_metrics: &BTreeMap::new(),
             production_read_profile: &BTreeMap::new(),
+            production_scan_profile: &BTreeMap::new(),
             production_read_timeline: &BTreeMap::new(),
         });
         assert!(header.contains("remote_tuple_transport: pg_binary_attr_v1"));
@@ -5536,6 +5773,65 @@ mod tests {
         assert!(rendered.contains("payload_rows_sum"));
         assert!(rendered.contains("payload_bytes_sum"));
         assert!(rendered.contains("80"));
+    }
+
+    #[test]
+    fn spire_pipeline_renders_production_scan_profile() {
+        let mut aggregate = ProductionScanProfileAggregate::default();
+        aggregate.record(ProductionScanProfileRow {
+            served_epoch: 7,
+            node_id: 2,
+            selected_pid_count: 3,
+            scanned_pid_count: 2,
+            leaf_candidate_row_count: 20,
+            deduped_candidate_row_count: 18,
+            truncated_candidate_row_count: 10,
+            candidate_winner_count: 9,
+            leaf_block_available_count: 5,
+            leaf_block_selected_count: 4,
+            leaf_block_skipped_count: 1,
+            sound_upper_bound_available_count: 4,
+            sound_upper_bound_missing_count: 1,
+            leaf_summary_score_nanos: 100,
+            leaf_row_score_nanos: 200,
+            candidate_score_nanos: 300,
+            local_kth_score: Some(0.25),
+        });
+        aggregate.record(ProductionScanProfileRow {
+            served_epoch: 7,
+            node_id: 2,
+            selected_pid_count: 2,
+            scanned_pid_count: 2,
+            leaf_candidate_row_count: 12,
+            deduped_candidate_row_count: 11,
+            truncated_candidate_row_count: 8,
+            candidate_winner_count: 8,
+            leaf_block_available_count: 3,
+            leaf_block_selected_count: 3,
+            leaf_block_skipped_count: 0,
+            sound_upper_bound_available_count: 3,
+            sound_upper_bound_missing_count: 0,
+            leaf_summary_score_nanos: 80,
+            leaf_row_score_nanos: 120,
+            candidate_score_nanos: 180,
+            local_kth_score: Some(0.75),
+        });
+        let mut rows = BTreeMap::new();
+        rows.insert(
+            ProductionScanProfileKey {
+                nprobe: 8,
+                node_id: 2,
+            },
+            aggregate,
+        );
+
+        let rendered = render_production_scan_profile_table(&rows);
+        assert!(rendered.contains("Production selected-leaf scan profile"));
+        assert!(rendered.contains("scanned_pid_sum"));
+        assert!(rendered.contains("sound_bound_available_sum"));
+        assert!(rendered.contains("local_kth_count"));
+        assert!(rendered.contains("0.250000"));
+        assert!(rendered.contains("0.750000"));
     }
 
     #[test]
