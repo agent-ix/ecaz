@@ -478,6 +478,10 @@ pub struct LocalMultinodePg18Args {
     #[arg(long)]
     bench_rowcap_sweep: Option<String>,
 
+    /// Skip rowcap production-read bench steps.
+    #[arg(long)]
+    skip_bench_rowcap: bool,
+
     /// Local corpus TSV for exact truth in bench spire-pipeline.
     #[arg(long)]
     bench_truth_corpus_file: Option<PathBuf>,
@@ -1271,6 +1275,7 @@ async fn run_native_local_multinode_pg18(
                 args.bench_queries_limit.unwrap_or(200),
                 args.bench_sweep.as_deref().unwrap_or("64,96"),
                 args.bench_rowcap_sweep.as_deref().unwrap_or("96"),
+                args.skip_bench_rowcap,
                 args.bench_truth_corpus_file
                     .as_deref()
                     .or(fixture.truth_corpus_file.as_deref()),
@@ -2299,6 +2304,7 @@ async fn run_local_multinode_bench_suite(
     bench_queries_limit: usize,
     bench_sweep: &str,
     bench_rowcap_sweep: &str,
+    skip_bench_rowcap: bool,
     truth_corpus_file: Option<&Path>,
     query_metric_projection_columns: &[String],
     session_gucs: &[String],
@@ -2360,26 +2366,30 @@ async fn run_local_multinode_bench_suite(
             None,
             variant.timeline_no_payload,
         );
-        let mut rowcap_step = production_read_step_json(
-            prefix,
-            coord_index,
-            bench_queries_limit,
-            &rowcap_sweep,
-            bench_top_k,
-            &projection_columns,
-            &variant_session_gucs,
-            &suite_artifact_dir.join(format!("production-read-k10{name_suffix}-rowcap25k.log")),
-            format!("production-read-k10{name_suffix}-rowcap25k"),
-            "rowcap25k",
-            Some(25000),
-            variant.timeline_no_payload,
-        );
         if let Some(truth_corpus_file) = truth_corpus_file {
             default_step["truth_corpus_file"] = json!(truth_corpus_file);
-            rowcap_step["truth_corpus_file"] = json!(truth_corpus_file);
         }
         steps.push(default_step);
-        steps.push(rowcap_step);
+        if !skip_bench_rowcap {
+            let mut rowcap_step = production_read_step_json(
+                prefix,
+                coord_index,
+                bench_queries_limit,
+                &rowcap_sweep,
+                bench_top_k,
+                &projection_columns,
+                &variant_session_gucs,
+                &suite_artifact_dir.join(format!("production-read-k10{name_suffix}-rowcap25k.log")),
+                format!("production-read-k10{name_suffix}-rowcap25k"),
+                "rowcap25k",
+                Some(25000),
+                variant.timeline_no_payload,
+            );
+            if let Some(truth_corpus_file) = truth_corpus_file {
+                rowcap_step["truth_corpus_file"] = json!(truth_corpus_file);
+            }
+            steps.push(rowcap_step);
+        }
     }
 
     let suite = json!({

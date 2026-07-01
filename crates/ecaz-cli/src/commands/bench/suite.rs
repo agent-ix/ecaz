@@ -449,6 +449,8 @@ struct SpireLocalMultinodeStep {
     #[serde(default)]
     bench_rowcap_sweep: Option<String>,
     #[serde(default)]
+    skip_bench_rowcap: bool,
+    #[serde(default)]
     bench_truth_corpus_file: Option<PathBuf>,
     #[serde(default)]
     bench_query_metric_projection_columns: Vec<String>,
@@ -3250,6 +3252,9 @@ fn expand_spire_local_multinode(
         "--bench-rowcap-sweep",
         step.bench_rowcap_sweep.as_deref(),
     );
+    if step.skip_bench_rowcap {
+        args.push("--skip-bench-rowcap".into());
+    }
     push_opt_path(
         &mut args,
         "--bench-truth-corpus-file",
@@ -4339,6 +4344,7 @@ mod tests {
             "remote2_port": 39802,
             "remote3_port": 39803,
             "tier": "correctness",
+            "skip_bench_rowcap": true,
             "skip_fault_drills": true,
             "skip_install": true
           }]
@@ -4363,6 +4369,7 @@ mod tests {
         let manifest = build_manifest(&conn(), &args, raw, &config).expect("manifest builds");
         let step = &manifest.steps[0];
 
+        assert!(step.command.contains(&"--skip-bench-rowcap".into()));
         assert!(step
             .expected_artifacts
             .iter()
