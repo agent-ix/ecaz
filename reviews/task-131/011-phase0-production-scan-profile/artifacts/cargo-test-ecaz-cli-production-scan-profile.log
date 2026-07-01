@@ -1,0 +1,11 @@
+Script started on 2026-07-01 08:38:19-07:00 [<not executed on terminal>]
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.18s
+     Running unittests src/main.rs (target/debug/deps/ecaz-bdbeafde08ddf599)
+
+running 1 test
+test commands::bench::spire_pipeline::tests::spire_pipeline_renders_production_scan_profile ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 419 filtered out; finished in 0.00s
+
+
+Script done on 2026-07-01 08:38:20-07:00 [COMMAND_EXIT_CODE="0"]
