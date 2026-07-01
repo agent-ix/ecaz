@@ -249,6 +249,7 @@ pub(crate) use self::ec_spire::{
     remote_search_merge_input_summary_row as spire_remote_search_merge_input_summary_row,
     remote_search_merge_order_contract_rows as spire_remote_search_merge_order_contract_rows,
     remote_search_operator_diagnostics_row as spire_remote_search_operator_diagnostics_row,
+    remote_search_production_candidate_threshold_profile_rows as spire_remote_search_production_candidate_threshold_profile_rows,
     remote_search_production_consistency_policy_summary_row as spire_remote_search_production_consistency_policy_summary_row,
     remote_search_production_degraded_skip_report_rows as spire_remote_search_production_degraded_skip_report_rows,
     remote_search_production_executor_session_summary_row as spire_remote_search_production_executor_session_summary_row,

@@ -118,6 +118,29 @@ mod production_executor_state_tests {
     }
 
     #[test]
+    fn global_compact_candidate_threshold_score_requires_full_top_k_frontier() {
+        let mut best = candidate_for_state_test(2, 20, 0);
+        best.score = 0.1;
+        let mut kth = candidate_for_state_test(3, 30, 0);
+        kth.score = 0.3;
+        let mut below_k = candidate_for_state_test(4, 40, 0);
+        below_k.score = 0.7;
+
+        assert_eq!(
+            global_compact_candidate_threshold_score(&[best.clone(), kth.clone(), below_k], 2),
+            Some(kth.score)
+        );
+        assert_eq!(
+            global_compact_candidate_threshold_score(&[best], 2),
+            None
+        );
+        assert_eq!(
+            global_compact_candidate_threshold_score(&[kth], 0),
+            None
+        );
+    }
+
+    #[test]
     fn explicit_heap_candidate_parameters_encode_binary_fields_as_hex() {
         let candidates = vec![candidate_for_state_test(2, 10, 3)];
 
