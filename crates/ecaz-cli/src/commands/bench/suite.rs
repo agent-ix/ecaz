@@ -1825,14 +1825,25 @@ fn known_tag_value(tags: &[String], known: &[&str]) -> Option<String> {
 fn parse_table_rows(raw: &str) -> Vec<BTreeMap<String, String>> {
     let mut header: Option<Vec<String>> = None;
     let mut rows = Vec::new();
-    for cells in table_lines(raw) {
-        if cells.iter().any(|cell| cell.chars().all(|ch| ch == '═')) {
+    for line in raw.lines() {
+        let Some(cells) = table_cells(line) else {
+            if is_table_boundary_line(line) {
+                continue;
+            }
+            header = None;
+            continue;
+        };
+        if cells.is_empty() || cells.iter().any(|cell| cell.chars().all(|ch| ch == '═')) {
             continue;
         }
         if header.as_ref().map(|h| h.len()) != Some(cells.len()) {
             header = Some(cells);
             continue;
         }
+        if header.as_deref() == Some(cells.as_slice()) {
+            continue;
+        }
+
         if let Some(header) = &header {
             rows.push(
                 header
@@ -2059,11 +2070,31 @@ fn duration_seconds(value: &str) -> Option<String> {
     Some(format!("{seconds:.6}"))
 }
 
-fn table_lines(raw: &str) -> Vec<Vec<String>> {
-    raw.lines()
-        .filter_map(table_cells)
-        .filter(|cells| !cells.is_empty())
-        .collect()
+fn is_table_boundary_line(line: &str) -> bool {
+    let trimmed = line.trim();
+    !trimmed.is_empty()
+        && trimmed.chars().all(|ch| {
+            matches!(
+                ch,
+                '┌' | '┬'
+                    | '┐'
+                    | '╞'
+                    | '╪'
+                    | '╡'
+                    | '├'
+                    | '┼'
+                    | '┤'
+                    | '└'
+                    | '┴'
+                    | '┘'
+                    | '─'
+                    | '═'
+                    | '╌'
+                    | '+'
+                    | '-'
+                    | ' '
+            )
+        })
 }
 
 fn table_cells(line: &str) -> Option<Vec<String>> {
@@ -5708,6 +5739,31 @@ mod tests {
             rows[0].get("recall_p50").map(String::as_str),
             Some("1.0000")
         );
+    }
+
+    #[test]
+    fn parse_table_rows_resets_headers_between_same_width_tables() {
+        let rows = parse_table_rows(
+            "First table\n\
+             ┌───┬───┐\n\
+             │ a ┆ b │\n\
+             ╞═══╪═══╡\n\
+             │ 1 ┆ 2 │\n\
+             └───┴───┘\n\
+             \n\
+             Second table\n\
+             ┌───┬───┐\n\
+             │ c ┆ d │\n\
+             ╞═══╪═══╡\n\
+             │ 3 ┆ 4 │\n\
+             └───┴───┘\n",
+        );
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].get("a").map(String::as_str), Some("1"));
+        assert_eq!(rows[0].get("b").map(String::as_str), Some("2"));
+        assert_eq!(rows[1].get("c").map(String::as_str), Some("3"));
+        assert_eq!(rows[1].get("d").map(String::as_str), Some("4"));
+        assert!(!rows[1].contains_key("a"));
     }
 
     #[test]

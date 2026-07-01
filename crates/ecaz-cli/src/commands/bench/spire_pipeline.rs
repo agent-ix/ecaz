@@ -347,6 +347,7 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
         BTreeMap::<ProductionScanProfileKey, ProductionScanProfileAggregate>::new();
     let mut production_read_timeline =
         BTreeMap::<ProductionReadTimelineKey, ProductionReadTimelineAggregate>::new();
+    let mut production_read_overlap = BTreeMap::<i32, ProductionReadOverlapAggregate>::new();
     let mut cost_tuning = BTreeMap::<i32, CostTuningRow>::new();
     let mut funnel_rows = Vec::<FunnelRecord>::new();
     let mut stage_containment_rows = Vec::<StageContainmentRecord>::new();
@@ -857,6 +858,10 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
                     &payload_columns,
                 )
                 .await?;
+                production_read_overlap
+                    .entry(*nprobe)
+                    .or_default()
+                    .record(&rows);
                 for row in rows {
                     production_read_timeline
                         .entry(ProductionReadTimelineKey::from_row(*nprobe, &row))
@@ -935,6 +940,7 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
         query_metrics: &query_metrics,
         production_read_profile: &production_read_profile,
         production_scan_profile: &production_scan_profile,
+        production_read_overlap: &production_read_overlap,
         production_read_timeline: &production_read_timeline,
     });
     if !task87_counter_lines.is_empty() {
@@ -3626,6 +3632,8 @@ impl ProductionReadProfileRow {
 struct ProductionReadTimelineRow {
     node_id: i32,
     phase: String,
+    started_after_ms: i64,
+    completed_after_ms: i64,
     elapsed: Duration,
     candidate_count: i64,
     payload_decode_elapsed: Duration,
@@ -3640,6 +3648,8 @@ impl From<Row> for ProductionReadTimelineRow {
         Self {
             node_id: row.get(1),
             phase: row.get(2),
+            started_after_ms: row.get(3),
+            completed_after_ms: row.get(4),
             elapsed: Duration::from_millis(row.get::<_, i64>(5).max(0) as u64),
             candidate_count: row.get(6),
             payload_decode_elapsed: Duration::from_millis(row.get::<_, i64>(7).max(0) as u64),
@@ -4188,6 +4198,60 @@ impl ProductionReadTimelineAggregate {
     }
 }
 
+#[derive(Debug, Default)]
+struct ProductionReadOverlapAggregate {
+    queries: usize,
+    complete_timeline_queries: usize,
+    candidate_phase_rows_sum: i64,
+    heap_phase_rows_sum: i64,
+    heap_started_before_all_candidates_done_count: usize,
+    fast_heap_completed_before_slowest_heap_count: usize,
+    heap_start_minus_candidate_done_ms: Vec<i64>,
+    fast_heap_lead_ms: Vec<i64>,
+}
+
+impl ProductionReadOverlapAggregate {
+    fn record(&mut self, rows: &[ProductionReadTimelineRow]) {
+        self.queries += 1;
+        let candidate_rows = rows
+            .iter()
+            .filter(|row| row.phase == "candidate_receive")
+            .collect::<Vec<_>>();
+        let heap_rows = rows
+            .iter()
+            .filter(|row| row.phase == "heap_receive")
+            .collect::<Vec<_>>();
+        self.candidate_phase_rows_sum += i64::try_from(candidate_rows.len()).unwrap_or(i64::MAX);
+        self.heap_phase_rows_sum += i64::try_from(heap_rows.len()).unwrap_or(i64::MAX);
+
+        let candidate_done_max = candidate_rows
+            .iter()
+            .map(|row| row.completed_after_ms)
+            .max();
+        let heap_start_min = heap_rows.iter().map(|row| row.started_after_ms).min();
+        let heap_done_min = heap_rows.iter().map(|row| row.completed_after_ms).min();
+        let heap_done_max = heap_rows.iter().map(|row| row.completed_after_ms).max();
+
+        if let (Some(candidate_done_max), Some(heap_start_min)) =
+            (candidate_done_max, heap_start_min)
+        {
+            self.complete_timeline_queries += 1;
+            let delta = heap_start_min - candidate_done_max;
+            if delta < 0 {
+                self.heap_started_before_all_candidates_done_count += 1;
+            }
+            self.heap_start_minus_candidate_done_ms.push(delta);
+        }
+        if let (Some(heap_done_min), Some(heap_done_max)) = (heap_done_min, heap_done_max) {
+            let lead = heap_done_max - heap_done_min;
+            if lead > 0 {
+                self.fast_heap_completed_before_slowest_heap_count += 1;
+            }
+            self.fast_heap_lead_ms.push(lead);
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 struct DurationStats {
     count: usize,
@@ -4231,6 +4295,37 @@ fn percentile_duration(sorted: &[Duration], percentile: f64) -> Duration {
 
 fn format_duration_ms(duration: Duration) -> String {
     format!("{:.3} ms", duration.as_secs_f64() * 1000.0)
+}
+
+#[derive(Debug, Clone, Copy)]
+struct SignedMillisStats {
+    count: usize,
+    min: i64,
+    p50: i64,
+    max: i64,
+}
+
+fn summarize_signed_millis(values: &[i64]) -> SignedMillisStats {
+    if values.is_empty() {
+        return SignedMillisStats {
+            count: 0,
+            min: 0,
+            p50: 0,
+            max: 0,
+        };
+    }
+    let mut sorted = values.to_vec();
+    sorted.sort_unstable();
+    SignedMillisStats {
+        count: sorted.len(),
+        min: sorted[0],
+        p50: sorted[((sorted.len() - 1) as f64 * 0.50).round() as usize],
+        max: sorted[sorted.len() - 1],
+    }
+}
+
+fn format_signed_ms(value: i64) -> String {
+    format!("{value} ms")
 }
 
 #[derive(Debug, Default)]
@@ -4291,6 +4386,7 @@ struct ReportInput<'a> {
     query_metrics: &'a BTreeMap<i32, QueryMetricAggregate>,
     production_read_profile: &'a BTreeMap<i32, ProductionReadProfileAggregate>,
     production_scan_profile: &'a BTreeMap<ProductionScanProfileKey, ProductionScanProfileAggregate>,
+    production_read_overlap: &'a BTreeMap<i32, ProductionReadOverlapAggregate>,
     production_read_timeline:
         &'a BTreeMap<ProductionReadTimelineKey, ProductionReadTimelineAggregate>,
 }
@@ -4322,6 +4418,9 @@ fn render_report(input: ReportInput<'_>) -> String {
         ));
         sections.push(render_production_scan_profile_table(
             input.production_scan_profile,
+        ));
+        sections.push(render_production_read_overlap_table(
+            input.production_read_overlap,
         ));
         sections.push(render_production_read_timeline_table(
             input.production_read_timeline,
@@ -4821,6 +4920,52 @@ fn render_production_read_timeline_table(
         ]);
     }
     format!("Production read per-node timeline\n{table}")
+}
+
+fn render_production_read_overlap_table(
+    rows: &BTreeMap<i32, ProductionReadOverlapAggregate>,
+) -> String {
+    let mut table = Table::new();
+    table.load_preset(UTF8_FULL);
+    table.set_header(vec![
+        "nprobe",
+        "queries",
+        "complete_timeline_queries",
+        "candidate_rows_sum",
+        "heap_rows_sum",
+        "heap_started_before_all_candidates_done",
+        "fast_heap_before_slowest_heap",
+        "heap_start_minus_candidate_done_count",
+        "heap_start_minus_candidate_done_min",
+        "heap_start_minus_candidate_done_p50",
+        "heap_start_minus_candidate_done_max",
+        "fast_heap_lead_count",
+        "fast_heap_lead_min",
+        "fast_heap_lead_p50",
+        "fast_heap_lead_max",
+    ]);
+    for (nprobe, aggregate) in rows {
+        let barrier = summarize_signed_millis(&aggregate.heap_start_minus_candidate_done_ms);
+        let lead = summarize_signed_millis(&aggregate.fast_heap_lead_ms);
+        table.add_row(vec![
+            Cell::new(nprobe),
+            Cell::new(aggregate.queries),
+            Cell::new(aggregate.complete_timeline_queries),
+            Cell::new(aggregate.candidate_phase_rows_sum),
+            Cell::new(aggregate.heap_phase_rows_sum),
+            Cell::new(aggregate.heap_started_before_all_candidates_done_count),
+            Cell::new(aggregate.fast_heap_completed_before_slowest_heap_count),
+            Cell::new(barrier.count),
+            Cell::new(format_signed_ms(barrier.min)),
+            Cell::new(format_signed_ms(barrier.p50)),
+            Cell::new(format_signed_ms(barrier.max)),
+            Cell::new(lead.count),
+            Cell::new(format_signed_ms(lead.min)),
+            Cell::new(format_signed_ms(lead.p50)),
+            Cell::new(format_signed_ms(lead.max)),
+        ]);
+    }
+    format!("Production read phase overlap\n{table}")
 }
 
 fn render_production_scan_profile_table(
@@ -5555,6 +5700,7 @@ mod tests {
             query_metrics: &BTreeMap::new(),
             production_read_profile: &BTreeMap::new(),
             production_scan_profile: &BTreeMap::new(),
+            production_read_overlap: &BTreeMap::new(),
             production_read_timeline: &BTreeMap::new(),
         });
         assert!(header.contains("remote_tuple_transport: pg_binary_attr_v1"));
@@ -5747,6 +5893,8 @@ mod tests {
         aggregate.record(ProductionReadTimelineRow {
             node_id: 2,
             phase: "heap_receive".to_owned(),
+            started_after_ms: 13,
+            completed_after_ms: 24,
             elapsed: Duration::from_millis(11),
             candidate_count: 10,
             payload_decode_elapsed: Duration::from_millis(3),
@@ -5773,6 +5921,73 @@ mod tests {
         assert!(rendered.contains("payload_rows_sum"));
         assert!(rendered.contains("payload_bytes_sum"));
         assert!(rendered.contains("80"));
+    }
+
+    #[test]
+    fn spire_pipeline_renders_production_read_overlap() {
+        let mut aggregate = ProductionReadOverlapAggregate::default();
+        aggregate.record(&[
+            ProductionReadTimelineRow {
+                node_id: 2,
+                phase: "candidate_receive".to_owned(),
+                started_after_ms: 0,
+                completed_after_ms: 50,
+                elapsed: Duration::from_millis(50),
+                candidate_count: 10,
+                payload_decode_elapsed: Duration::ZERO,
+                payload_decode_row_count: 0,
+                payload_decode_bytes: 0,
+                status: "ready".to_owned(),
+                failure_category: "none".to_owned(),
+            },
+            ProductionReadTimelineRow {
+                node_id: 3,
+                phase: "candidate_receive".to_owned(),
+                started_after_ms: 0,
+                completed_after_ms: 100,
+                elapsed: Duration::from_millis(100),
+                candidate_count: 10,
+                payload_decode_elapsed: Duration::ZERO,
+                payload_decode_row_count: 0,
+                payload_decode_bytes: 0,
+                status: "ready".to_owned(),
+                failure_category: "none".to_owned(),
+            },
+            ProductionReadTimelineRow {
+                node_id: 2,
+                phase: "heap_receive".to_owned(),
+                started_after_ms: 55,
+                completed_after_ms: 70,
+                elapsed: Duration::from_millis(15),
+                candidate_count: 10,
+                payload_decode_elapsed: Duration::ZERO,
+                payload_decode_row_count: 10,
+                payload_decode_bytes: 80,
+                status: "ready".to_owned(),
+                failure_category: "none".to_owned(),
+            },
+            ProductionReadTimelineRow {
+                node_id: 3,
+                phase: "heap_receive".to_owned(),
+                started_after_ms: 100,
+                completed_after_ms: 140,
+                elapsed: Duration::from_millis(40),
+                candidate_count: 10,
+                payload_decode_elapsed: Duration::ZERO,
+                payload_decode_row_count: 10,
+                payload_decode_bytes: 80,
+                status: "ready".to_owned(),
+                failure_category: "none".to_owned(),
+            },
+        ]);
+        let mut rows = BTreeMap::new();
+        rows.insert(8, aggregate);
+
+        let rendered = render_production_read_overlap_table(&rows);
+        assert!(rendered.contains("Production read phase overlap"));
+        assert!(rendered.contains("heap_started_before_all_candidates_done"));
+        assert!(rendered.contains("-45 ms"));
+        assert!(rendered.contains("70 ms"));
     }
 
     #[test]
