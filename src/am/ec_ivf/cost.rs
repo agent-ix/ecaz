@@ -399,6 +399,8 @@ mod tests {
             nlists: nlists as i32,
             nprobe: nprobe as i32,
             rerank_width: 25,
+            rerank_group_width: 0,
+            stage2_final_rerank_width: 0,
             training_sample_rows: 1000,
             seed: 7,
             pq_group_size: 0,

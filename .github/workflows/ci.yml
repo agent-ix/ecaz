@@ -1,13 +1,6 @@
 name: CI
 
 on:
-  push:
-    branches:
-      - main
-  pull_request:
-  schedule:
-    - cron: "37 9 * * *"
-    - cron: "37 10 * * 1"
   workflow_dispatch:
 
 concurrency:

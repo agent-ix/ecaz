@@ -1619,6 +1619,102 @@
     }
 
     #[pg_test]
+    fn test_ec_ivf_tq_stage2_final_exact_width_bounds_heap_reads() {
+        // Task 124: the TQ sidecar is the stage-2 scorer over the wider
+        // frontier; exact f32 heap/source rerank is only the final bounded pass.
+        let dims = 8usize;
+        let rows: Vec<(i64, Vec<f32>)> = (0..16)
+            .map(|id| {
+                let base = id as f32;
+                let vector = (0..dims)
+                    .map(|d| ((base * 0.29 + d as f32 * 0.17).sin()) * 0.5 + 0.5)
+                    .collect::<Vec<f32>>();
+                (id, vector)
+            })
+            .collect();
+
+        Spi::run("CREATE TABLE ec_ivf_tq_stage2_final (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        for (id, vector) in &rows {
+            let literal = format_recall_vector_sql_literal(vector);
+            Spi::run(&format!(
+                "INSERT INTO ec_ivf_tq_stage2_final VALUES ({id}, {literal}::ecvector)"
+            ))
+            .expect("seed insert should succeed");
+        }
+        Spi::run(
+            "CREATE INDEX ec_ivf_tq_stage2_final_idx ON ec_ivf_tq_stage2_final USING ec_ivf \
+             (embedding ecvector_ip_ops) \
+             WITH (
+                nlists = 1,
+                nprobe = 1,
+                training_sample_rows = 16,
+                storage_format = 'coarse_rerank',
+                rerank_format = 'turboquant',
+                rerank_placement = 'index',
+                rerank_width = 8,
+                stage2_final_rerank_width = 3
+             )",
+        )
+        .expect("TQ stage2-final index creation should succeed");
+
+        let index_oid = ec_ivf_index_oid("ec_ivf_tq_stage2_final_idx");
+        let counters =
+            ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(index_oid, rows[2].1.clone()));
+
+        assert_eq!(counters.rerank_placement, "index");
+        assert_eq!(counters.rerank_format, "turboquant");
+        assert_eq!(
+            counters.outputs.len(),
+            3,
+            "final exact stage should truncate emitted candidates to its width"
+        );
+        assert!(
+            counters.rerank_payload_bytes_scored > 0,
+            "stage-2 should score persisted TQ payloads before exact final rerank"
+        );
+        assert_eq!(
+            counters.tq_stage2_candidate_rows, 8,
+            "stage-2 should receive the rerank_width-bounded frontier"
+        );
+        assert_eq!(
+            counters.tq_stage2_rows_scored, 8,
+            "TQ stage-2 should score the whole stage-2 frontier"
+        );
+        assert_eq!(
+            counters.tq_stage2_rows_retained, 3,
+            "TQ stage-2 should retain only the final exact width"
+        );
+        assert_eq!(
+            counters.tq_stage2_payload_bytes_scored,
+            counters.rerank_payload_bytes_scored,
+            "stage-2 payload-byte attribution should match the TQ payload scorer"
+        );
+        assert_eq!(
+            counters.rerank_payload_slab_bytes_copied, 0,
+            "TQ stage-2 scoring should keep using borrowed batch payload refs"
+        );
+        assert_eq!(
+            counters.rerank_source_bytes_read,
+            3 * (dims * 4) as u32,
+            "exact final stage should fetch heap/source f32 only for final width"
+        );
+        assert_eq!(
+            counters.tq_stage2_final_exact_rows, 3,
+            "final exact attribution should report only final width rows"
+        );
+        assert_eq!(
+            counters.tq_stage2_final_source_bytes_read,
+            counters.rerank_source_bytes_read,
+            "final exact source-byte attribution should match source bytes read"
+        );
+        assert!(
+            counters.rerank_rows > counters.outputs.len() as u32,
+            "counter rows should include TQ stage-2 plus the exact final pass"
+        );
+    }
+
+    #[pg_test]
     fn test_ec_ivf_index_placement_insert_maintains_packed_group() {
         // Task 111h: a row inserted after build into an index-placement index
         // is reranked from its appended packed group payload, so it is returned

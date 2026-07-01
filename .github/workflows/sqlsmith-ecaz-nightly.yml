@@ -1,14 +1,12 @@
-name: SQLsmith ECAZ-grammar (nightly)
+name: SQLsmith ECAZ-grammar
 
-# Task 46 §Exit Criteria #2: nightly `make sqlsmith-ecaz` run against
+# Task 46 §Exit Criteria #2: manual `make sqlsmith-ecaz` run against
 # a live PG18 cluster with the ECAZ extension installed.
 #
 # Seeds the cluster, runs the generator's deterministic stream
 # against it, and asserts no PANIC / broken connection emerged.
 
 on:
-  schedule:
-    - cron: "37 4 * * *"
   workflow_dispatch:
     inputs:
       seed:

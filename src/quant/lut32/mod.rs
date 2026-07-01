@@ -224,6 +224,8 @@ mod tests {
         score_lut_no_qjl_4bit_block32_neon_for_test, score_lut_no_qjl_4bit_block32_sve_for_test,
         score_lut_no_qjl_4bit_partial, score_lut_no_qjl_4bit_scalar, BLOCK_WIDTH,
     };
+    use std::hint::black_box;
+    use std::time::Instant;
 
     fn lut(dim: usize) -> Vec<f32> {
         (0..dim * 16)
@@ -239,6 +241,94 @@ mod tests {
             bytes.push(low | (high << 4));
         }
         bytes
+    }
+
+    fn profile_iterations() -> usize {
+        std::env::var("ECAZ_TQ_PROFILE_ITERS")
+            .ok()
+            .and_then(|value| value.parse::<usize>().ok())
+            .unwrap_or(200_000)
+            .max(1)
+    }
+
+    fn unit_vector(dim: usize, seed: u64) -> Vec<f32> {
+        let mut state = seed;
+        let mut values = Vec::with_capacity(dim);
+        for _ in 0..dim {
+            state = state.wrapping_mul(6364136223846793005).wrapping_add(1);
+            let unit = ((state >> 40) as u32) as f32 / ((1u32 << 24) as f32);
+            values.push(unit * 2.0 - 1.0);
+        }
+        let norm = values.iter().map(|value| value * value).sum::<f32>().sqrt();
+        for value in &mut values {
+            *value /= norm.max(f32::EPSILON);
+        }
+        values
+    }
+
+    fn write_profile_log(contents: &str) {
+        let Ok(path) = std::env::var("ECAZ_TQ_PROFILE_LOG") else {
+            return;
+        };
+        let path = std::path::PathBuf::from(path);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).expect("create profile log parent");
+        }
+        std::fs::write(&path, contents).expect("write profile log");
+    }
+
+    #[test]
+    #[ignore = "Task 124 scorer microprofile; run explicitly with ECAZ_TQ_PROFILE_LOG"]
+    fn task124_profile_lut32_block32_and_query_prep() {
+        let dim = 1536;
+        let iterations = profile_iterations();
+        let lut = lut(dim);
+        let codes: Vec<Vec<u8>> = (0..BLOCK_WIDTH).map(|seed| code(dim, seed as u8)).collect();
+        let code_refs: Vec<&[u8]> = codes.iter().map(Vec::as_slice).collect();
+        let code_block: [&[u8]; BLOCK_WIDTH] = code_refs
+            .as_slice()
+            .try_into()
+            .expect("profile fixture has exactly one block");
+        let mut scores = [0.0_f32; BLOCK_WIDTH];
+        let mut isa = crate::quant::isa::Isa::Scalar;
+
+        for _ in 0..iterations.min(256) {
+            isa = score_lut_no_qjl_4bit_block32(black_box(&lut), dim, code_block, &mut scores);
+            black_box(scores[0]);
+        }
+        let block_started = Instant::now();
+        for _ in 0..iterations {
+            isa = score_lut_no_qjl_4bit_block32(black_box(&lut), dim, code_block, &mut scores);
+            black_box(scores[0]);
+        }
+        let block_elapsed = block_started.elapsed();
+        let block_candidates = iterations * BLOCK_WIDTH;
+        let block_ns_per_candidate = block_elapsed.as_secs_f64() * 1e9 / block_candidates as f64;
+
+        let quantizer = crate::quant::prod::ProdQuantizer::new(dim, 4, 42);
+        let query = unit_vector(dim, 17);
+        let prep_iterations = (iterations / 4).max(1);
+        for _ in 0..prep_iterations.min(256) {
+            let prepared = quantizer.prepare_ip_query_lut_no_qjl_4bit(black_box(&query));
+            black_box(prepared.lut[0]);
+        }
+        let prep_started = Instant::now();
+        for _ in 0..prep_iterations {
+            let prepared = quantizer.prepare_ip_query_lut_no_qjl_4bit(black_box(&query));
+            black_box(prepared.lut[0]);
+        }
+        let prep_elapsed = prep_started.elapsed();
+        let prep_ns = prep_elapsed.as_secs_f64() * 1e9 / prep_iterations as f64;
+
+        let output = format!(
+            "task124_lut32_profile backend={} dim={dim} iterations={iterations}\n\
+             score_ip_lut_no_qjl_4bit_block32 isa={} total={block_elapsed:?} candidates={block_candidates} ns_per_candidate={block_ns_per_candidate:.1}\n\
+             prepare_ip_query_lut_no_qjl_4bit iterations={prep_iterations} total={prep_elapsed:?} ns_per_iter={prep_ns:.1}\n",
+            crate::quant::simd_backend_name(),
+            isa.label(),
+        );
+        print!("{output}");
+        write_profile_log(&output);
     }
 
     #[test]

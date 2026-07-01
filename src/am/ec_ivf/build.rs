@@ -1098,7 +1098,9 @@ fn insert_rerank_group_payload_segments(
 }
 
 fn rerank_group_scorer_width(options: &options::EcIvfOptions) -> Result<usize, String> {
-    let width = if options.rerank_width > 0 {
+    let width = if options.rerank_group_width > 0 {
+        options.rerank_group_width
+    } else if options.rerank_width > 0 {
         options.rerank_width
     } else {
         super::EC_IVF_DEFAULT_RERANK_WIDTH
@@ -1503,6 +1505,8 @@ mod tests {
             nlists,
             nprobe: 0,
             rerank_width: 0,
+            rerank_group_width: 0,
+            stage2_final_rerank_width: 0,
             training_sample_rows,
             seed: 7,
             pq_group_size: 0,
@@ -1550,6 +1554,15 @@ mod tests {
             dimensions: centroids.first().map_or(0, Vec::len),
             centroids,
         }
+    }
+
+    #[test]
+    fn rerank_group_scorer_width_uses_group_width_override() {
+        let mut options = options(10_000, 64);
+        options.rerank_width = 100;
+        options.rerank_group_width = 16;
+
+        assert_eq!(rerank_group_scorer_width(&options).unwrap(), 16);
     }
 
     #[test]

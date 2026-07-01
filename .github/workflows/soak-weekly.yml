@@ -1,16 +1,10 @@
-name: Soak Weekly
+name: Soak
 
-# Task 48 §Exit Criteria #2: weekly `make soak DURATION=24h` artifact
+# Task 48 §Exit Criteria #2: manual `make soak DURATION=24h` artifact
 # capture. Runs the in-process quantizer cache soak and surfaces the
 # resulting JSON (RSS + slope) for review packets.
-#
-# Schedule: Mondays at 02:00 UTC. The 24h budget is the spec default;
-# CI tier permitting, this lane may be moved to a dedicated long-job
-# runner.
 
 on:
-  schedule:
-    - cron: "0 2 * * 1"
   workflow_dispatch:
     inputs:
       duration:

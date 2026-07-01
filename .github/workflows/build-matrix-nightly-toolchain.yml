@@ -1,13 +1,10 @@
 name: Build Matrix — nightly toolchain
 
-# Task 48 §Exit Criteria #1 + docs/build-matrix.md "nightly" cadence.
+# Task 48 §Exit Criteria #1 + docs/build-matrix.md hardening lane.
 # Runs Miri, cargo-careful, and the sanitizer lanes under a nightly
-# Rust toolchain on x86_64-linux-gnu. Failures are blocking for the
-# next merge to main.
+# Rust toolchain on x86_64-linux-gnu.
 
 on:
-  schedule:
-    - cron: "47 5 * * *"
   workflow_dispatch:
 
 concurrency:

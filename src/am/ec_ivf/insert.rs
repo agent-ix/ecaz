@@ -268,7 +268,8 @@ unsafe fn append_rerank_group_entry(
             payload.len()
         ));
     }
-    let scorer_width = rerank_group_scorer_width(reloptions.rerank_width)?;
+    let scorer_width =
+        rerank_group_scorer_width(reloptions.rerank_width, reloptions.rerank_group_width)?;
     let header_payload_bytes = rerank_group_header_payload_capacity(
         1,
         scorer_width,
@@ -324,8 +325,10 @@ unsafe fn append_rerank_group_payload_segments(
     Ok(next_segment_tid)
 }
 
-fn rerank_group_scorer_width(rerank_width: i32) -> Result<usize, String> {
-    let width = if rerank_width > 0 {
+fn rerank_group_scorer_width(rerank_width: i32, rerank_group_width: i32) -> Result<usize, String> {
+    let width = if rerank_group_width > 0 {
+        rerank_group_width
+    } else if rerank_width > 0 {
         rerank_width
     } else {
         super::EC_IVF_DEFAULT_RERANK_WIDTH
@@ -466,6 +469,8 @@ fn options_from_metadata(
         nprobe: i32::try_from(metadata.nprobe)
             .map_err(|_| "metadata nprobe exceeds i32".to_owned())?,
         rerank_width: 0,
+        rerank_group_width: reloptions.rerank_group_width,
+        stage2_final_rerank_width: 0,
         training_sample_rows: i32::try_from(metadata.training_sample_rows)
             .map_err(|_| "metadata training sample rows exceeds i32".to_owned())?,
         seed: i32::try_from(metadata.seed).map_err(|_| "metadata seed exceeds i32".to_owned())?,
