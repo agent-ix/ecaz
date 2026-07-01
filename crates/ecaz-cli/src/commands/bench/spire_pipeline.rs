@@ -4492,18 +4492,25 @@ fn render_production_read_profile_table(
         "socket_open_sum",
         "connect_p50",
         "connect_p95",
+        "connect_p99",
         "endpoint_identity_p50",
         "endpoint_identity_p95",
+        "endpoint_identity_p99",
         "candidate_p50",
         "candidate_p95",
+        "candidate_p99",
         "heap_p50",
         "heap_p95",
+        "heap_p99",
         "payload_decode_p50",
         "payload_decode_p95",
+        "payload_decode_p99",
         "merge_p50",
         "merge_p95",
+        "merge_p99",
         "total_p50",
         "total_p95",
+        "total_p99",
         "candidate_query_sum",
         "heap_query_sum",
         "endpoint_identity_query_sum",
@@ -4548,18 +4555,25 @@ fn render_production_read_profile_table(
             Cell::new(aggregate.socket_open_count_sum),
             Cell::new(format_duration_ms(connect.p50)),
             Cell::new(format_duration_ms(connect.p95)),
+            Cell::new(format_duration_ms(connect.p99)),
             Cell::new(format_duration_ms(endpoint_identity.p50)),
             Cell::new(format_duration_ms(endpoint_identity.p95)),
+            Cell::new(format_duration_ms(endpoint_identity.p99)),
             Cell::new(format_duration_ms(candidate.p50)),
             Cell::new(format_duration_ms(candidate.p95)),
+            Cell::new(format_duration_ms(candidate.p99)),
             Cell::new(format_duration_ms(heap.p50)),
             Cell::new(format_duration_ms(heap.p95)),
+            Cell::new(format_duration_ms(heap.p99)),
             Cell::new(format_duration_ms(payload_decode.p50)),
             Cell::new(format_duration_ms(payload_decode.p95)),
+            Cell::new(format_duration_ms(payload_decode.p99)),
             Cell::new(format_duration_ms(merge.p50)),
             Cell::new(format_duration_ms(merge.p95)),
+            Cell::new(format_duration_ms(merge.p99)),
             Cell::new(format_duration_ms(total.p50)),
             Cell::new(format_duration_ms(total.p95)),
+            Cell::new(format_duration_ms(total.p99)),
             Cell::new(aggregate.candidate_receive_query_count_sum),
             Cell::new(aggregate.heap_receive_query_count_sum),
             Cell::new(aggregate.endpoint_identity_query_count_sum),
@@ -4597,8 +4611,10 @@ fn render_production_read_timeline_table(
         "candidate_sum",
         "elapsed_p50",
         "elapsed_p95",
+        "elapsed_p99",
         "payload_decode_p50",
         "payload_decode_p95",
+        "payload_decode_p99",
         "payload_rows_sum",
         "payload_bytes_sum",
     ]);
@@ -4615,8 +4631,10 @@ fn render_production_read_timeline_table(
             Cell::new(aggregate.candidate_count_sum),
             Cell::new(format_duration_ms(elapsed.p50)),
             Cell::new(format_duration_ms(elapsed.p95)),
+            Cell::new(format_duration_ms(elapsed.p99)),
             Cell::new(format_duration_ms(payload_decode.p50)),
             Cell::new(format_duration_ms(payload_decode.p95)),
+            Cell::new(format_duration_ms(payload_decode.p99)),
             Cell::new(aggregate.payload_decode_row_count_sum),
             Cell::new(aggregate.payload_decode_bytes_sum),
         ]);
@@ -5438,6 +5456,10 @@ mod tests {
                 ("endpoint_identity_query_count".into(), "2".into()),
                 ("payload_decode_row_count".into(), "6".into()),
                 ("payload_decode_bytes".into(), "256".into()),
+                ("global_pre_heap_input_count".into(), "6".into()),
+                ("global_pre_heap_candidate_count".into(), "5".into()),
+                ("global_pre_heap_duplicate_vec_id_count".into(), "1".into()),
+                ("global_pre_heap_pruned_candidate_count".into(), "1".into()),
                 ("merge_input_count".into(), "6".into()),
                 ("merge_duplicate_vec_id_count".into(), "1".into()),
                 ("merge_output_count".into(), "5".into()),
@@ -5453,12 +5475,16 @@ mod tests {
 
         let rendered = render_production_read_profile_table(&rows);
         assert!(rendered.contains("Production read profile"));
+        assert!(rendered.contains("connect_p99"));
         assert!(rendered.contains("connect_p95"));
+        assert!(rendered.contains("heap_p99"));
         assert!(rendered.contains("endpoint_identity_query_sum"));
         assert!(rendered.contains("remote_heap_candidates"));
         assert!(rendered.contains("payload_bytes_sum"));
         assert!(rendered.contains("payload_decode_p95"));
+        assert!(rendered.contains("payload_decode_p99"));
         assert!(rendered.contains("compact_candidate_sum"));
+        assert!(rendered.contains("global_pre_heap_pruned_sum"));
         assert!(rendered.contains("merge_duplicate_vec_id_sum"));
         assert!(rendered.contains("256"));
     }
@@ -5490,6 +5516,8 @@ mod tests {
         let rendered = render_production_read_timeline_table(&rows);
         assert!(rendered.contains("Production read per-node timeline"));
         assert!(rendered.contains("payload_decode_p95"));
+        assert!(rendered.contains("payload_decode_p99"));
+        assert!(rendered.contains("elapsed_p99"));
         assert!(rendered.contains("payload_rows_sum"));
         assert!(rendered.contains("payload_bytes_sum"));
         assert!(rendered.contains("80"));
