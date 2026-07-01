@@ -2,6 +2,8 @@ const SPIRE_REMOTE_SEARCH_LIBPQ_SQL_TEMPLATE: &str =
     "SELECT * FROM ec_spire_remote_search($1::oid, $2::bigint, $3::real[], $4::bigint[], $5::integer, $6::text)";
 const SPIRE_REMOTE_SEARCH_LIBPQ_SCAN_PROFILE_SQL_TEMPLATE: &str =
     "SELECT * FROM ec_spire_remote_search_coordinator_local_scan_profile($1::oid, $2::bigint, $3::real[], $4::bigint[], $5::integer, $6::text)";
+const SPIRE_REMOTE_SEARCH_LIBPQ_THRESHOLD_PROFILE_SQL_TEMPLATE: &str =
+    "SELECT * FROM ec_spire_remote_search_coordinator_local_threshold_profile($1::oid, $2::bigint, $3::real[], $4::bigint[], $5::real, $6::text)";
 const SPIRE_REMOTE_SEARCH_LIBPQ_HEAP_SQL_TEMPLATE: &str =
     "SELECT * FROM ec_spire_remote_search_local_heap_candidates($1::oid, $2::bigint, $3::real[], $4::bigint[], $5::integer, $6::text)";
 const SPIRE_REMOTE_SEARCH_LIBPQ_EXPLICIT_HEAP_SQL_TEMPLATE: &str =
