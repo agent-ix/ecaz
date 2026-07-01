@@ -264,6 +264,10 @@ mod production_executor_state_tests {
             heap_receive_query_count: 1,
             payload_decode_row_count: 2,
             payload_decode_bytes: 128,
+            global_pre_heap_input_count: 4,
+            global_pre_heap_candidate_count: 2,
+            global_pre_heap_duplicate_vec_id_count: 1,
+            global_pre_heap_pruned_candidate_count: 2,
             merge_input_count: 5,
             merge_duplicate_vec_id_count: 2,
             merge_output_count: 3,
@@ -279,6 +283,8 @@ mod production_executor_state_tests {
         assert_eq!(row.requested_epoch, 7);
         assert_eq!(row.socket_open_count, 1);
         assert_eq!(row.tls_require_count, 1);
+        assert_eq!(row.global_pre_heap_candidate_count, 2);
+        assert_eq!(row.global_pre_heap_pruned_candidate_count, 2);
         assert_eq!(row.merge_duplicate_vec_id_count, 2);
         assert_eq!(row.strict_fail_count, 1);
         assert_eq!(row.remote_timeout_count, 1);

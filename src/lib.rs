@@ -13718,6 +13718,26 @@ fn ec_spire_remote_search_production_read_profile(
         row.payload_decode_row_count
     );
     metric!(rows, "payload_decode_bytes", row.payload_decode_bytes);
+    metric!(
+        rows,
+        "global_pre_heap_input_count",
+        row.global_pre_heap_input_count
+    );
+    metric!(
+        rows,
+        "global_pre_heap_candidate_count",
+        row.global_pre_heap_candidate_count
+    );
+    metric!(
+        rows,
+        "global_pre_heap_duplicate_vec_id_count",
+        row.global_pre_heap_duplicate_vec_id_count
+    );
+    metric!(
+        rows,
+        "global_pre_heap_pruned_candidate_count",
+        row.global_pre_heap_pruned_candidate_count
+    );
     metric!(rows, "merge_input_count", row.merge_input_count);
     metric!(
         rows,

@@ -3893,6 +3893,10 @@ struct ProductionReadProfileAggregate {
     endpoint_identity_query_count_sum: i64,
     payload_decode_row_count_sum: i64,
     payload_decode_bytes_sum: i64,
+    global_pre_heap_input_count_sum: i64,
+    global_pre_heap_candidate_count_sum: i64,
+    global_pre_heap_duplicate_vec_id_count_sum: i64,
+    global_pre_heap_pruned_candidate_count_sum: i64,
     merge_input_count_sum: i64,
     merge_duplicate_vec_id_count_sum: i64,
     merge_output_count_sum: i64,
@@ -3934,6 +3938,13 @@ impl ProductionReadProfileAggregate {
         self.endpoint_identity_query_count_sum += row.i64_metric("endpoint_identity_query_count");
         self.payload_decode_row_count_sum += row.i64_metric("payload_decode_row_count");
         self.payload_decode_bytes_sum += row.i64_metric("payload_decode_bytes");
+        self.global_pre_heap_input_count_sum += row.i64_metric("global_pre_heap_input_count");
+        self.global_pre_heap_candidate_count_sum +=
+            row.i64_metric("global_pre_heap_candidate_count");
+        self.global_pre_heap_duplicate_vec_id_count_sum +=
+            row.i64_metric("global_pre_heap_duplicate_vec_id_count");
+        self.global_pre_heap_pruned_candidate_count_sum +=
+            row.i64_metric("global_pre_heap_pruned_candidate_count");
         self.merge_input_count_sum += row.i64_metric("merge_input_count");
         self.merge_duplicate_vec_id_count_sum += row.i64_metric("merge_duplicate_vec_id_count");
         self.merge_output_count_sum += row.i64_metric("merge_output_count");
@@ -4498,6 +4509,10 @@ fn render_production_read_profile_table(
         "endpoint_identity_query_sum",
         "payload_rows_sum",
         "payload_bytes_sum",
+        "global_pre_heap_input_sum",
+        "global_pre_heap_candidate_sum",
+        "global_pre_heap_duplicate_vec_id_sum",
+        "global_pre_heap_pruned_sum",
         "merge_input_sum",
         "merge_duplicate_vec_id_sum",
         "merge_output_sum",
@@ -4550,6 +4565,10 @@ fn render_production_read_profile_table(
             Cell::new(aggregate.endpoint_identity_query_count_sum),
             Cell::new(aggregate.payload_decode_row_count_sum),
             Cell::new(aggregate.payload_decode_bytes_sum),
+            Cell::new(aggregate.global_pre_heap_input_count_sum),
+            Cell::new(aggregate.global_pre_heap_candidate_count_sum),
+            Cell::new(aggregate.global_pre_heap_duplicate_vec_id_count_sum),
+            Cell::new(aggregate.global_pre_heap_pruned_candidate_count_sum),
             Cell::new(aggregate.merge_input_count_sum),
             Cell::new(aggregate.merge_duplicate_vec_id_count_sum),
             Cell::new(aggregate.merge_output_count_sum),

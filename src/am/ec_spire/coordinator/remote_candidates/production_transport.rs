@@ -61,6 +61,10 @@ struct SpireRemoteProductionReadMetrics {
     heap_receive_query_count: u64,
     payload_decode_row_count: u64,
     payload_decode_bytes: u64,
+    global_pre_heap_input_count: u64,
+    global_pre_heap_candidate_count: u64,
+    global_pre_heap_duplicate_vec_id_count: u64,
+    global_pre_heap_pruned_candidate_count: u64,
     merge_input_count: u64,
     merge_duplicate_vec_id_count: u64,
     merge_output_count: u64,
@@ -124,6 +128,18 @@ impl SpireRemoteProductionReadMetrics {
         self.payload_decode_bytes = self
             .payload_decode_bytes
             .saturating_add(other.payload_decode_bytes);
+        self.global_pre_heap_input_count = self
+            .global_pre_heap_input_count
+            .saturating_add(other.global_pre_heap_input_count);
+        self.global_pre_heap_candidate_count = self
+            .global_pre_heap_candidate_count
+            .saturating_add(other.global_pre_heap_candidate_count);
+        self.global_pre_heap_duplicate_vec_id_count = self
+            .global_pre_heap_duplicate_vec_id_count
+            .saturating_add(other.global_pre_heap_duplicate_vec_id_count);
+        self.global_pre_heap_pruned_candidate_count = self
+            .global_pre_heap_pruned_candidate_count
+            .saturating_add(other.global_pre_heap_pruned_candidate_count);
         self.strict_fail_count = self
             .strict_fail_count
             .saturating_add(other.strict_fail_count);
@@ -990,6 +1006,7 @@ impl SpireRemoteFanoutExecutor {
             &result.candidate_results,
             consistency_mode,
         )?;
+        self.record_global_pre_heap_candidate_metrics(top_k, metrics)?;
         if !result.heap_results.is_empty() {
             self.apply_remote_heap_receive_results_with_consistency_mode(
                 &result.heap_results,
@@ -1109,6 +1126,24 @@ impl SpireRemoteFanoutExecutor {
             self.ready_candidate_batches()?,
             limit,
         )
+    }
+
+    fn record_global_pre_heap_candidate_metrics(
+        &self,
+        top_k: usize,
+        metrics: &mut SpireRemoteProductionReadMetrics,
+    ) -> Result<(), String> {
+        let merged = self.merge_ready_candidate_batches(Some(top_k))?;
+        metrics.global_pre_heap_input_count = merged.input_count;
+        metrics.global_pre_heap_candidate_count =
+            u64::try_from(merged.candidates.len()).map_err(|_| {
+                "ec_spire production read global pre-heap candidate count exceeds u64".to_owned()
+            })?;
+        metrics.global_pre_heap_duplicate_vec_id_count = merged.duplicate_vec_id_count;
+        metrics.global_pre_heap_pruned_candidate_count = merged
+            .input_count
+            .saturating_sub(metrics.global_pre_heap_candidate_count);
+        Ok(())
     }
 
     fn ready_remote_heap_candidate_rows(

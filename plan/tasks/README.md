@@ -174,6 +174,7 @@ These pre-lane task files are retained only for historical context under
 124. `124-ivf-tq-stage2-rerank-pipeline.md` — **proposed** (2026-06-27): TurboQuant-focused competitiveness push inside `ec_ivf`: verify TQ SIMD/block scorer use, implement RaBitQ candidate frontier -> TurboQuant compact stage-2 reducer -> exact/source f32 final rerank at bounded width, and require 10k/50k/100k recall, latency, storage, counter, and IO-sensitive evidence before any product claim.
 125. `125-spire-distributed-read-transport-efficiency.md` — **proposed**: measurement-first SPIRE distributed read executor/transport follow-up covering true phase timeline evidence, tuple-heavy distributed baselines, direct typed `bytea[]` receive vs hex text, metadata/projection-width reduction, and candidate-to-heap scheduling after the algorithmic route/candidate/rerank shape is selected.
 130. `130-tq-post-task124-cleanup.md` — **review requested** (2026-06-30): clean main-based landing branch for the Task 124 keep-set only: retain validated production 4-bit TQ stage-2/scorer-path wins, prune recall-broken IVF `turboquant_binary` / `turboquant2` / `turboquant2_768` formats and `qjl2_32`, and fix truth-cache ignore hygiene.
+131. `131-spire-streaming-global-topk-pruning.md` — **proposed**: local multi-instance SPIRE follow-up for coordinator global top-k pruning, candidate-to-heap streaming, and threshold-feedback research after Task 123 showed heap payload bytes alone are not the dominant latency driver.
 
 ## Coordination rules
 
