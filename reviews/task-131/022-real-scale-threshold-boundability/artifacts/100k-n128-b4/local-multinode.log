@@ -1,0 +1,7 @@
+run_dir=/home/peter/dev/ecaz/target/spire-local-multinode-task131-p3-bound-q20-100k-n128-b4
+coord_port=40750
+remote1_port=40751
+remote2_port=40752
+remote3_port=40753
+tier=representative
+prefix=ec_real_100k
