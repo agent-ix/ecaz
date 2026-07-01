@@ -212,6 +212,7 @@ pub(crate) use self::ec_spire::{
     remote_search_coordinator_local_candidates as spire_remote_search_coordinator_local_candidates,
     remote_search_coordinator_local_scan_profile as spire_remote_search_coordinator_local_scan_profile,
     remote_search_coordinator_local_summary as spire_remote_search_coordinator_local_summary,
+    remote_search_coordinator_local_threshold_profile as spire_remote_search_coordinator_local_threshold_profile,
     remote_search_coordinator_result_summary_row as spire_remote_search_coordinator_result_summary_row,
     remote_search_endpoint_contract_rows as spire_remote_search_endpoint_contract_rows,
     remote_search_endpoint_identity_row as spire_remote_search_endpoint_identity_row,

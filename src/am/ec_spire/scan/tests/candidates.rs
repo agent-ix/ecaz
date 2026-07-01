@@ -1967,6 +1967,140 @@
     }
 
     #[test]
+    fn collect_quantized_selected_leaf_threshold_profile_reports_safe_skips() {
+        let mut pid_allocator = SpirePidAllocator::default();
+        let mut local_vec_id_allocator = SpireLocalVecIdAllocator::default();
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let payload_format = SpireAssignmentPayloadFormat::RaBitQ;
+        let draft = build_partitioned_single_level_leaf_epoch_draft(
+            SpirePartitionedSingleLevelBuildInput {
+                epoch: 7,
+                object_version: 1,
+                published_at_micros: 1000,
+                retain_until_micros: 2000,
+                consistency_mode: SpireConsistencyMode::Strict,
+                root_placement_tid: tid(60, 3),
+                placement_tids: vec![tid(60, 1), tid(60, 2), tid(60, 4)],
+                assignments: vec![
+                    quantized_assignment_input(10, 1, payload_format, &[1.0, 0.0]),
+                    quantized_assignment_input(10, 2, payload_format, &[1.0, 0.0]),
+                    quantized_assignment_input(10, 3, payload_format, &[0.8, 0.0]),
+                    quantized_assignment_input(10, 4, payload_format, &[-1.0, 0.0]),
+                    quantized_assignment_input(10, 5, payload_format, &[-1.0, 0.0]),
+                ],
+                centroid_plan: SpireSingleLevelCentroidPlan {
+                    dimensions: 2,
+                    centroids: vec![vec![1.0, 0.0], vec![0.8, 0.0], vec![-1.0, 0.0]],
+                    assignment_indexes: vec![0, 0, 1, 2, 2],
+                },
+            },
+            &mut pid_allocator,
+            &mut local_vec_id_allocator,
+            &mut object_store,
+        )
+        .unwrap();
+        let mut placements = vec![draft
+            .placement_directory
+            .get(draft.root_pid)
+            .copied()
+            .unwrap()];
+        for (leaf_index, leaf_object) in draft.leaf_objects.iter().enumerate() {
+            let summary_vector = match leaf_index {
+                0 => [1.0, 0.0],
+                1 => [0.8, 0.0],
+                _ => [-1.0, 0.0],
+            };
+            let (_gamma, encoded_payload) =
+                encode_assignment_payload(payload_format, &summary_vector).unwrap();
+            let summaries = vec![SpireLeafBlockSummary {
+                row_base: 0,
+                row_count: u32::try_from(leaf_object.assignments.len()).unwrap(),
+                row_segment_locator: ItemPointer::INVALID,
+                payload_format: payload_format.tag(),
+                gamma: 0.0,
+                encoded_payload,
+            }];
+            placements.push(
+                object_store
+                    .insert_leaf_object_v3_from_rows_and_summaries(
+                        draft.epoch_manifest.epoch,
+                        leaf_object.header.pid,
+                        leaf_object.header.object_version,
+                        leaf_object.header.parent_pid,
+                        &leaf_object.assignments,
+                        &summaries,
+                        u32::try_from(leaf_object.assignments.len()).unwrap(),
+                    )
+                    .unwrap(),
+            );
+        }
+        let placement_directory =
+            SpirePlacementDirectory::from_entries(draft.epoch_manifest.epoch, placements).unwrap();
+        let snapshot = SpirePublishedEpochSnapshot::new(
+            &draft.epoch_manifest,
+            &draft.object_manifest,
+            &placement_directory,
+        )
+        .unwrap();
+        let query = SpireScanQuery::new(vec![1.0, 0.0]).unwrap();
+        let scan_plan = SpireSingleLevelScanPlan {
+            leaf_count: 3,
+            nprobe: 3,
+            nprobe_source: "relation",
+            recursive_nprobe_policy: SpireRecursiveNprobePolicy::conservative(3).unwrap(),
+            recursive_route_budget: SpireRecursiveRouteBudget::unbounded(),
+            max_routed_candidate_rows: None,
+            payload_format,
+            rerank_width: 10,
+            rerank_width_source: "relation",
+            candidate_limit: Some(10),
+            dedupe_mode: SpireCandidateDedupeMode::NoReplicaDedupeDisabled,
+        };
+        let diagnostics = collect_single_level_scan_plan_placement_diagnostics(
+            &snapshot,
+            &object_store,
+            &query,
+            scan_plan,
+        )
+        .unwrap();
+        let selected_leaf_pids = diagnostics
+            .leaves
+            .iter()
+            .map(|leaf| leaf.pid)
+            .collect::<Vec<_>>();
+
+        let profile = collect_quantized_selected_leaf_threshold_profile(
+            &snapshot,
+            &object_store,
+            query.values(),
+            &selected_leaf_pids,
+            payload_format,
+            -0.5,
+        )
+        .unwrap();
+
+        assert_eq!(profile.served_epoch, 7);
+        assert_eq!(profile.selected_pid_count, 3);
+        assert_eq!(profile.evaluated_pid_count, 3);
+        assert!(profile.sound_upper_bound_available_count > 0);
+        assert!(profile.threshold_block_available_count > 0);
+        assert!(profile.threshold_block_skipped_count > 0);
+        assert!(profile.threshold_row_skipped_count > 0);
+        assert_eq!(
+            profile.threshold_block_available_count,
+            profile
+                .threshold_block_selected_count
+                .saturating_add(profile.threshold_block_skipped_count)
+        );
+        assert_eq!(
+            profile.threshold_row_available_count,
+            profile
+                .threshold_row_selected_count
+                .saturating_add(profile.threshold_row_skipped_count)
+        );
+    }
+
+    #[test]
     fn prepare_single_level_snapshot_scan_candidates_resolves_plan_and_candidates() {
         let mut pid_allocator = SpirePidAllocator::default();
         let mut local_vec_id_allocator = SpireLocalVecIdAllocator::default();

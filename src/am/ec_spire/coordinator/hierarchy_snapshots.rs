@@ -443,6 +443,83 @@ pub(crate) fn remote_search_coordinator_local_scan_profile(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
+pub(crate) fn remote_search_coordinator_local_threshold_profile(
+    index: SpireLiveIndexRelation,
+    requested_epoch: u64,
+    query: Vec<f32>,
+    selected_pids: Vec<u64>,
+    threshold_score: f32,
+    consistency_mode: &str,
+) -> scan::SpireSelectedLeafThresholdProfile {
+    let result = remote_search_coordinator_local_threshold_profile_result(
+        index,
+        requested_epoch,
+        query,
+        selected_pids,
+        threshold_score,
+        consistency_mode,
+    );
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+fn remote_search_coordinator_local_threshold_profile_result(
+    index: SpireLiveIndexRelation,
+    requested_epoch: u64,
+    query: Vec<f32>,
+    selected_pids: Vec<u64>,
+    threshold_score: f32,
+    consistency_mode: &str,
+) -> Result<scan::SpireSelectedLeafThresholdProfile, String> {
+    if requested_epoch == 0 {
+        return Err(
+            "ec_spire remote search coordinator threshold profile requested_epoch must be greater than 0"
+                .to_owned(),
+        );
+    }
+
+    let requested_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;
+    let query = scan::SpireScanQuery::new(query)?;
+    let root_control = index.root_control();
+    if root_control.active_epoch != requested_epoch {
+        return Err(format!(
+            "ec_spire remote search coordinator threshold profile requested epoch {requested_epoch} does not match active epoch {}",
+            root_control.active_epoch
+        ));
+    }
+
+    let Some(anchor) = index.coordinator_fanout_anchor(root_control)? else {
+        return Err("ec_spire cannot load manifests for empty active epoch".to_owned());
+    };
+    if anchor.epoch_manifest.consistency_mode != requested_consistency_mode {
+        return Err(format!(
+            "ec_spire remote search coordinator threshold profile requested consistency_mode '{consistency_mode}' does not match active epoch consistency mode '{}'",
+            consistency_mode_name(anchor.epoch_manifest.consistency_mode)
+        ));
+    }
+    let snapshot = anchor.snapshot()?;
+    let plan = plan_remote_search_fanout(&snapshot, &selected_pids)?;
+    if !plan.remote_targets.is_empty() {
+        return Err(format!(
+            "ec_spire remote search coordinator threshold profile requires libpq transport for {} remote target(s)",
+            plan.remote_targets.len()
+        ));
+    }
+
+    let object_store = index.object_store_set(
+        &anchor.placement_directory,
+        pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+    )?;
+    let relation_options = index.relation_options();
+    scan::collect_quantized_selected_leaf_threshold_profile(
+        &snapshot,
+        &object_store,
+        query.values(),
+        &plan.local_selected_pids,
+        relation_options.assignment_payload_format(),
+        threshold_score,
+    )
+}
+
 fn remote_search_coordinator_local_scan_profile_result(
     index: SpireLiveIndexRelation,
     requested_epoch: u64,
