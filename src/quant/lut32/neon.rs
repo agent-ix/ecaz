@@ -129,6 +129,13 @@ const OCTET_COUNT: usize = BLOCK_WIDTH / 8;
 #[cfg(target_arch = "aarch64")]
 const CHUNK_BYTES: usize = 16;
 
+/// Bound-prune checkpoints for the progressive TurboQuant scorer. Checking
+/// every repack chunk was measured to dominate the LUT work when no lanes
+/// prune; three 512-dim checkpoints preserve a useful early-exit surface for
+/// 1536-dim production vectors with far lower no-prune overhead.
+#[cfg(target_arch = "aarch64")]
+const BOUND_CHECK_DIM_STRIDE: usize = 512;
+
 #[cfg(target_arch = "aarch64")]
 #[target_feature(enable = "neon")]
 unsafe fn score_octets_neon_impl(
@@ -325,17 +332,19 @@ unsafe fn score_octets_neon_with_min_bound_impl(
             }
         }
         let next_dim = ((byte_base + chunk_len) * 2).min(original_dim);
-        for (octet, acc_pair) in acc.chunks_exact_mut(2).enumerate().take(octet_count) {
-            if !octet_live[octet] {
-                continue;
+        if next_dim == original_dim || next_dim % BOUND_CHECK_DIM_STRIDE == 0 {
+            for (octet, acc_pair) in acc.chunks_exact_mut(2).enumerate().take(octet_count) {
+                if !octet_live[octet] {
+                    continue;
+                }
+                update_live_lanes(
+                    acc_pair,
+                    suffix_max[next_dim],
+                    min_ip_to_keep,
+                    &mut lane_live[octet * 8..octet * 8 + 8],
+                );
+                octet_live[octet] = lane_live[octet * 8..octet * 8 + 8].iter().any(|live| *live);
             }
-            update_live_lanes(
-                acc_pair,
-                suffix_max[next_dim],
-                min_ip_to_keep,
-                &mut lane_live[octet * 8..octet * 8 + 8],
-            );
-            octet_live[octet] = lane_live[octet * 8..octet * 8 + 8].iter().any(|live| *live);
         }
         byte_base += chunk_len;
     }

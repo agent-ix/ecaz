@@ -668,6 +668,10 @@ impl IvfQuantizer {
         if self.profile != IvfQuantizerProfile::TurboQuant {
             return Ok(false);
         }
+        crate::am::common::isa_cap::sync_session_isa_cap();
+        if crate::quant::isa::current_isa() != crate::quant::isa::Isa::Neon {
+            return Ok(false);
+        }
         if payload_len == 0 {
             return Err(
                 "ec_ivf bounded TurboQuant batch payload length must be nonzero".to_owned(),
@@ -1181,7 +1185,9 @@ impl IvfQuantizer {
     pub(super) fn uses_score_bound_pruning(self) -> bool {
         matches!(
             self.profile,
-            IvfQuantizerProfile::PqFastScan { .. } | IvfQuantizerProfile::RaBitQ
+            IvfQuantizerProfile::TurboQuant
+                | IvfQuantizerProfile::PqFastScan { .. }
+                | IvfQuantizerProfile::RaBitQ
         )
     }
 
@@ -2547,6 +2553,13 @@ mod tests {
 
         assert_eq!(retained, Some(score));
         assert_eq!(pruned, None);
+    }
+
+    #[test]
+    fn turboquant_dispatch_uses_score_bound_pruning() {
+        let dispatch = IvfQuantizer::resolve(StorageFormat::TurboQuant, 1536).unwrap();
+
+        assert!(dispatch.uses_score_bound_pruning());
     }
 
     #[test]
