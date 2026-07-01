@@ -345,6 +345,8 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
     let mut production_read_profile = BTreeMap::<i32, ProductionReadProfileAggregate>::new();
     let mut production_scan_profile =
         BTreeMap::<ProductionScanProfileKey, ProductionScanProfileAggregate>::new();
+    let mut production_threshold_profile =
+        BTreeMap::<ProductionThresholdProfileKey, ProductionThresholdProfileAggregate>::new();
     let mut production_read_timeline =
         BTreeMap::<ProductionReadTimelineKey, ProductionReadTimelineAggregate>::new();
     let mut production_read_overlap = BTreeMap::<i32, ProductionReadOverlapAggregate>::new();
@@ -845,6 +847,19 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
                         .or_default()
                         .record(row);
                 }
+                let rows = query_production_threshold_profile_rows(
+                    &client,
+                    &index,
+                    &query.source,
+                    args.query_metric_k,
+                )
+                .await?;
+                for row in rows {
+                    production_threshold_profile
+                        .entry(ProductionThresholdProfileKey::from_row(*nprobe, &row))
+                        .or_default()
+                        .record(row);
+                }
                 let payload_columns = if args.production_read_timeline_no_payload {
                     Vec::new()
                 } else {
@@ -940,6 +955,7 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
         query_metrics: &query_metrics,
         production_read_profile: &production_read_profile,
         production_scan_profile: &production_scan_profile,
+        production_threshold_profile: &production_threshold_profile,
         production_read_overlap: &production_read_overlap,
         production_read_timeline: &production_read_timeline,
     });
@@ -1712,6 +1728,26 @@ async fn query_production_scan_profile_rows(
         .collect())
 }
 
+async fn query_production_threshold_profile_rows(
+    client: &Client,
+    index: &str,
+    query: &[f32],
+    top_k: usize,
+) -> Result<Vec<ProductionThresholdProfileRow>> {
+    let top_k = i32::try_from(top_k).map_err(|_| eyre!("query metric k exceeds i32"))?;
+    let rows = client
+        .query(
+            production_threshold_profile_sql(),
+            &[&index, &query, &top_k],
+        )
+        .await
+        .wrap_err("querying ec_spire_remote_search_production_candidate_threshold_profile")?;
+    Ok(rows
+        .into_iter()
+        .map(ProductionThresholdProfileRow::from)
+        .collect())
+}
+
 async fn query_remote_placement_gate(client: &Client, index: &str) -> Result<RemotePlacementGate> {
     let row = client
         .query_one(remote_placement_gate_sql(), &[&index])
@@ -1882,6 +1918,18 @@ fn production_scan_profile_sql() -> &'static str {
             sound_upper_bound_missing_count, leaf_summary_score_nanos,
             leaf_row_score_nanos, candidate_score_nanos, local_kth_score
        FROM ec_spire_remote_search_production_scan_profile(
+            $1::text::regclass::oid, $2::real[], $3::integer)
+       ORDER BY node_id"
+}
+
+fn production_threshold_profile_sql() -> &'static str {
+    "SELECT served_epoch, node_id, selected_pid_count, evaluated_pid_count,
+            threshold_score, threshold_ip, sound_upper_bound_available_count,
+            sound_upper_bound_missing_count, threshold_block_available_count,
+            threshold_block_selected_count, threshold_block_skipped_count,
+            threshold_row_available_count, threshold_row_selected_count,
+            threshold_row_skipped_count, leaf_summary_score_nanos
+       FROM ec_spire_remote_search_production_candidate_threshold_profile(
             $1::text::regclass::oid, $2::real[], $3::integer)
        ORDER BY node_id"
 }
@@ -3707,6 +3755,47 @@ impl From<Row> for ProductionScanProfileRow {
 }
 
 #[derive(Debug)]
+struct ProductionThresholdProfileRow {
+    served_epoch: i64,
+    node_id: i64,
+    selected_pid_count: i64,
+    evaluated_pid_count: i64,
+    threshold_score: f32,
+    threshold_ip: f32,
+    sound_upper_bound_available_count: i64,
+    sound_upper_bound_missing_count: i64,
+    threshold_block_available_count: i64,
+    threshold_block_selected_count: i64,
+    threshold_block_skipped_count: i64,
+    threshold_row_available_count: i64,
+    threshold_row_selected_count: i64,
+    threshold_row_skipped_count: i64,
+    leaf_summary_score_nanos: i64,
+}
+
+impl From<Row> for ProductionThresholdProfileRow {
+    fn from(row: Row) -> Self {
+        Self {
+            served_epoch: row.get(0),
+            node_id: row.get(1),
+            selected_pid_count: row.get(2),
+            evaluated_pid_count: row.get(3),
+            threshold_score: row.get(4),
+            threshold_ip: row.get(5),
+            sound_upper_bound_available_count: row.get(6),
+            sound_upper_bound_missing_count: row.get(7),
+            threshold_block_available_count: row.get(8),
+            threshold_block_selected_count: row.get(9),
+            threshold_block_skipped_count: row.get(10),
+            threshold_row_available_count: row.get(11),
+            threshold_row_selected_count: row.get(12),
+            threshold_row_skipped_count: row.get(13),
+            leaf_summary_score_nanos: row.get(14),
+        }
+    }
+}
+
+#[derive(Debug)]
 struct EndpointIdentityRow {
     tuple_transport_capabilities: Vec<String>,
     tuple_transport_default: String,
@@ -4118,6 +4207,68 @@ struct ProductionScanProfileAggregate {
     local_kth_scores: Vec<f32>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct ProductionThresholdProfileKey {
+    nprobe: i32,
+    node_id: i64,
+}
+
+impl ProductionThresholdProfileKey {
+    fn from_row(nprobe: i32, row: &ProductionThresholdProfileRow) -> Self {
+        Self {
+            nprobe,
+            node_id: row.node_id,
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+struct ProductionThresholdProfileAggregate {
+    profiles: usize,
+    served_epoch: MixedValue,
+    selected_pid_count_sum: i64,
+    evaluated_pid_count_sum: i64,
+    threshold_scores: Vec<f32>,
+    threshold_ips: Vec<f32>,
+    sound_upper_bound_available_count_sum: i64,
+    sound_upper_bound_missing_count_sum: i64,
+    threshold_block_available_count_sum: i64,
+    threshold_block_selected_count_sum: i64,
+    threshold_block_skipped_count_sum: i64,
+    threshold_row_available_count_sum: i64,
+    threshold_row_selected_count_sum: i64,
+    threshold_row_skipped_count_sum: i64,
+    leaf_summary_score_nanos_sum: i64,
+}
+
+impl ProductionThresholdProfileAggregate {
+    fn record(&mut self, row: ProductionThresholdProfileRow) {
+        self.profiles += 1;
+        self.served_epoch.record(row.served_epoch.to_string());
+        self.selected_pid_count_sum += row.selected_pid_count;
+        self.evaluated_pid_count_sum += row.evaluated_pid_count;
+        self.threshold_scores.push(row.threshold_score);
+        self.threshold_ips.push(row.threshold_ip);
+        self.sound_upper_bound_available_count_sum += row.sound_upper_bound_available_count;
+        self.sound_upper_bound_missing_count_sum += row.sound_upper_bound_missing_count;
+        self.threshold_block_available_count_sum += row.threshold_block_available_count;
+        self.threshold_block_selected_count_sum += row.threshold_block_selected_count;
+        self.threshold_block_skipped_count_sum += row.threshold_block_skipped_count;
+        self.threshold_row_available_count_sum += row.threshold_row_available_count;
+        self.threshold_row_selected_count_sum += row.threshold_row_selected_count;
+        self.threshold_row_skipped_count_sum += row.threshold_row_skipped_count;
+        self.leaf_summary_score_nanos_sum += row.leaf_summary_score_nanos;
+    }
+
+    fn threshold_score_min_max(&self) -> (Option<f32>, Option<f32>) {
+        min_max_f32(&self.threshold_scores)
+    }
+
+    fn threshold_ip_min_max(&self) -> (Option<f32>, Option<f32>) {
+        min_max_f32(&self.threshold_ips)
+    }
+}
+
 impl ProductionScanProfileAggregate {
     fn record(&mut self, row: ProductionScanProfileRow) {
         self.profiles += 1;
@@ -4142,18 +4293,14 @@ impl ProductionScanProfileAggregate {
     }
 
     fn local_kth_min_max(&self) -> (Option<f32>, Option<f32>) {
-        let min = self
-            .local_kth_scores
-            .iter()
-            .copied()
-            .min_by(|lhs, rhs| lhs.total_cmp(rhs));
-        let max = self
-            .local_kth_scores
-            .iter()
-            .copied()
-            .max_by(|lhs, rhs| lhs.total_cmp(rhs));
-        (min, max)
+        min_max_f32(&self.local_kth_scores)
     }
+}
+
+fn min_max_f32(values: &[f32]) -> (Option<f32>, Option<f32>) {
+    let min = values.iter().copied().min_by(|lhs, rhs| lhs.total_cmp(rhs));
+    let max = values.iter().copied().max_by(|lhs, rhs| lhs.total_cmp(rhs));
+    (min, max)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -4386,6 +4533,8 @@ struct ReportInput<'a> {
     query_metrics: &'a BTreeMap<i32, QueryMetricAggregate>,
     production_read_profile: &'a BTreeMap<i32, ProductionReadProfileAggregate>,
     production_scan_profile: &'a BTreeMap<ProductionScanProfileKey, ProductionScanProfileAggregate>,
+    production_threshold_profile:
+        &'a BTreeMap<ProductionThresholdProfileKey, ProductionThresholdProfileAggregate>,
     production_read_overlap: &'a BTreeMap<i32, ProductionReadOverlapAggregate>,
     production_read_timeline:
         &'a BTreeMap<ProductionReadTimelineKey, ProductionReadTimelineAggregate>,
@@ -4418,6 +4567,9 @@ fn render_report(input: ReportInput<'_>) -> String {
         ));
         sections.push(render_production_scan_profile_table(
             input.production_scan_profile,
+        ));
+        sections.push(render_production_threshold_profile_table(
+            input.production_threshold_profile,
         ));
         sections.push(render_production_read_overlap_table(
             input.production_read_overlap,
@@ -5025,6 +5177,62 @@ fn render_production_scan_profile_table(
     format!("Production selected-leaf scan profile\n{table}")
 }
 
+fn render_production_threshold_profile_table(
+    rows: &BTreeMap<ProductionThresholdProfileKey, ProductionThresholdProfileAggregate>,
+) -> String {
+    let mut table = Table::new();
+    table.load_preset(UTF8_FULL);
+    table.set_header(vec![
+        "nprobe",
+        "node_id",
+        "profiles",
+        "served_epoch",
+        "selected_pid_sum",
+        "evaluated_pid_sum",
+        "threshold_score_count",
+        "threshold_score_min",
+        "threshold_score_max",
+        "threshold_ip_min",
+        "threshold_ip_max",
+        "sound_bound_available_sum",
+        "sound_bound_missing_sum",
+        "threshold_block_available_sum",
+        "threshold_block_selected_sum",
+        "threshold_block_skipped_sum",
+        "threshold_row_available_sum",
+        "threshold_row_selected_sum",
+        "threshold_row_skipped_sum",
+        "leaf_summary_score_nanos_sum",
+    ]);
+    for (key, aggregate) in rows {
+        let (threshold_score_min, threshold_score_max) = aggregate.threshold_score_min_max();
+        let (threshold_ip_min, threshold_ip_max) = aggregate.threshold_ip_min_max();
+        table.add_row(vec![
+            Cell::new(key.nprobe),
+            Cell::new(key.node_id),
+            Cell::new(aggregate.profiles),
+            Cell::new(aggregate.served_epoch.label()),
+            Cell::new(aggregate.selected_pid_count_sum),
+            Cell::new(aggregate.evaluated_pid_count_sum),
+            Cell::new(aggregate.threshold_scores.len()),
+            Cell::new(format_optional_score(threshold_score_min)),
+            Cell::new(format_optional_score(threshold_score_max)),
+            Cell::new(format_optional_score(threshold_ip_min)),
+            Cell::new(format_optional_score(threshold_ip_max)),
+            Cell::new(aggregate.sound_upper_bound_available_count_sum),
+            Cell::new(aggregate.sound_upper_bound_missing_count_sum),
+            Cell::new(aggregate.threshold_block_available_count_sum),
+            Cell::new(aggregate.threshold_block_selected_count_sum),
+            Cell::new(aggregate.threshold_block_skipped_count_sum),
+            Cell::new(aggregate.threshold_row_available_count_sum),
+            Cell::new(aggregate.threshold_row_selected_count_sum),
+            Cell::new(aggregate.threshold_row_skipped_count_sum),
+            Cell::new(aggregate.leaf_summary_score_nanos_sum),
+        ]);
+    }
+    format!("Production candidate-derived threshold profile\n{table}")
+}
+
 fn format_optional_score(value: Option<f32>) -> String {
     value
         .map(|value| format!("{value:.6}"))
@@ -5600,6 +5808,9 @@ mod tests {
             .contains("ec_spire_remote_search_production_scan_profile"));
         assert!(production_scan_profile_sql().contains("local_kth_score"));
         assert!(production_scan_profile_sql().contains("sound_upper_bound_available_count"));
+        assert!(production_threshold_profile_sql()
+            .contains("ec_spire_remote_search_production_candidate_threshold_profile"));
+        assert!(production_threshold_profile_sql().contains("threshold_row_skipped_count"));
         assert!(endpoint_identity_sql().contains("ec_spire_remote_search_endpoint_identity"));
         assert!(endpoint_identity_sql().contains("tuple_transport_capabilities"));
         assert!(remote_placement_gate_sql().contains("ec_spire_remote_node_snapshot"));
@@ -5700,6 +5911,7 @@ mod tests {
             query_metrics: &BTreeMap::new(),
             production_read_profile: &BTreeMap::new(),
             production_scan_profile: &BTreeMap::new(),
+            production_threshold_profile: &BTreeMap::new(),
             production_read_overlap: &BTreeMap::new(),
             production_read_timeline: &BTreeMap::new(),
         });
@@ -6047,6 +6259,61 @@ mod tests {
         assert!(rendered.contains("local_kth_count"));
         assert!(rendered.contains("0.250000"));
         assert!(rendered.contains("0.750000"));
+    }
+
+    #[test]
+    fn spire_pipeline_renders_production_threshold_profile() {
+        let mut aggregate = ProductionThresholdProfileAggregate::default();
+        aggregate.record(ProductionThresholdProfileRow {
+            served_epoch: 7,
+            node_id: 2,
+            selected_pid_count: 3,
+            evaluated_pid_count: 3,
+            threshold_score: -0.25,
+            threshold_ip: 0.25,
+            sound_upper_bound_available_count: 2,
+            sound_upper_bound_missing_count: 1,
+            threshold_block_available_count: 10,
+            threshold_block_selected_count: 7,
+            threshold_block_skipped_count: 3,
+            threshold_row_available_count: 100,
+            threshold_row_selected_count: 70,
+            threshold_row_skipped_count: 30,
+            leaf_summary_score_nanos: 120,
+        });
+        aggregate.record(ProductionThresholdProfileRow {
+            served_epoch: 7,
+            node_id: 2,
+            selected_pid_count: 2,
+            evaluated_pid_count: 2,
+            threshold_score: -0.75,
+            threshold_ip: 0.75,
+            sound_upper_bound_available_count: 2,
+            sound_upper_bound_missing_count: 0,
+            threshold_block_available_count: 8,
+            threshold_block_selected_count: 2,
+            threshold_block_skipped_count: 6,
+            threshold_row_available_count: 80,
+            threshold_row_selected_count: 20,
+            threshold_row_skipped_count: 60,
+            leaf_summary_score_nanos: 180,
+        });
+        let mut rows = BTreeMap::new();
+        rows.insert(
+            ProductionThresholdProfileKey {
+                nprobe: 8,
+                node_id: 2,
+            },
+            aggregate,
+        );
+
+        let rendered = render_production_threshold_profile_table(&rows);
+        assert!(rendered.contains("Production candidate-derived threshold profile"));
+        assert!(rendered.contains("threshold_score_min"));
+        assert!(rendered.contains("threshold_row_skipped_sum"));
+        assert!(rendered.contains("-0.750000"));
+        assert!(rendered.contains("-0.250000"));
+        assert!(rendered.contains("90"));
     }
 
     #[test]
