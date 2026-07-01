@@ -51,6 +51,29 @@ pub(super) fn score_octets_neon(
     None
 }
 
+pub(super) fn score_batch_tiled_neon(
+    lut: &[i16],
+    lut_scale: f32,
+    original_dim: usize,
+    codes: &[&[u8]],
+    out_scores: &mut [f32],
+) -> Option<Isa> {
+    #[cfg(target_arch = "aarch64")]
+    {
+        debug_assert!(!codes.is_empty() && codes.len() % 8 == 0);
+        if is_aarch64_feature_detected!("neon") {
+            // SAFETY: runtime feature detection above guarantees NEON support,
+            // and callers validate LUT/code/output shapes before dispatch.
+            return Some(unsafe {
+                score_batch_tiled_neon_impl(lut, lut_scale, original_dim, codes, out_scores)
+            });
+        }
+    }
+
+    let _ = (lut, lut_scale, original_dim, codes, out_scores);
+    None
+}
+
 #[cfg(target_arch = "aarch64")]
 pub(super) fn score_block32_neon_with_min_bound(
     lut: &[i16],
@@ -148,6 +171,91 @@ const CHUNK_BYTES: usize = 16;
 /// 1536-dim production vectors with far lower no-prune overhead.
 #[cfg(target_arch = "aarch64")]
 const BOUND_CHECK_DIM_STRIDE: usize = 512;
+
+#[cfg(target_arch = "aarch64")]
+#[target_feature(enable = "neon")]
+unsafe fn score_batch_tiled_neon_impl(
+    lut: &[i16],
+    lut_scale: f32,
+    original_dim: usize,
+    codes: &[&[u8]],
+    out_scores: &mut [f32],
+) -> Isa {
+    use std::arch::aarch64::{
+        vaddq_s32, vand_u8, vcvtq_f32_s32, vdup_n_u8, vdupq_n_f32, vdupq_n_s32, vdupq_n_u8,
+        vget_high_s16, vget_high_u8, vget_low_s16, vget_low_u8, vld1q_u8, vmovl_s16, vmulq_f32,
+        vshr_n_u8, vst1q_f32,
+    };
+
+    let octet_count = codes.len() / 8;
+    debug_assert!(octet_count >= 1);
+    debug_assert_eq!(codes.len(), octet_count * 8);
+    debug_assert_eq!(out_scores.len(), codes.len());
+
+    let mut acc = vec![vdupq_n_s32(0); 2 * octet_count];
+    let scale = vdupq_n_f32(lut_scale);
+    let nibble_mask = vdup_n_u8(0x0F);
+    let total_bytes = super::expected_mse_code_len(original_dim);
+
+    let mut byte_base = 0usize;
+    while byte_base < total_bytes {
+        let chunk_len = CHUNK_BYTES.min(total_bytes - byte_base);
+        let mut cols_by_octet = vec![[vdupq_n_u8(0); 8]; octet_count];
+        for (octet, cols_slot) in cols_by_octet.iter_mut().enumerate() {
+            let lane_base = octet * 8;
+            let mut rows = [vdupq_n_u8(0); 8];
+            if chunk_len == CHUNK_BYTES {
+                for (row, code) in rows.iter_mut().zip(&codes[lane_base..lane_base + 8]) {
+                    *row = vld1q_u8(code.as_ptr().add(byte_base));
+                }
+            } else {
+                for (row, code) in rows.iter_mut().zip(&codes[lane_base..lane_base + 8]) {
+                    let mut padded = [0u8; CHUNK_BYTES];
+                    padded[..chunk_len].copy_from_slice(&code[byte_base..byte_base + chunk_len]);
+                    *row = vld1q_u8(padded.as_ptr());
+                }
+            }
+            *cols_slot = transpose_8x16(rows);
+        }
+
+        for b in 0..chunk_len {
+            let dim_low = (byte_base + b) * 2;
+            let low_table = load_dim_table(lut, dim_low);
+            let high_table = (dim_low + 1 < original_dim).then(|| load_dim_table(lut, dim_low + 1));
+            for (octet, acc_pair) in acc.chunks_exact_mut(2).enumerate() {
+                let pair = cols_by_octet[octet][b / 2];
+                let col = if b & 1 == 0 {
+                    vget_low_u8(pair)
+                } else {
+                    vget_high_u8(pair)
+                };
+                let low_values = select_lut_entries(low_table, vand_u8(col, nibble_mask));
+                acc_pair[0] = vaddq_s32(acc_pair[0], vmovl_s16(vget_low_s16(low_values)));
+                acc_pair[1] = vaddq_s32(acc_pair[1], vmovl_s16(vget_high_s16(low_values)));
+                if let Some(high_table) = high_table {
+                    let high_nibbles = vshr_n_u8::<4>(col);
+                    let high_values = select_lut_entries(high_table, high_nibbles);
+                    acc_pair[0] = vaddq_s32(acc_pair[0], vmovl_s16(vget_low_s16(high_values)));
+                    acc_pair[1] = vaddq_s32(acc_pair[1], vmovl_s16(vget_high_s16(high_values)));
+                }
+            }
+        }
+        byte_base += chunk_len;
+    }
+
+    for (octet, acc_pair) in acc.chunks_exact(2).enumerate() {
+        vst1q_f32(
+            out_scores.as_mut_ptr().add(octet * 8),
+            vmulq_f32(vcvtq_f32_s32(acc_pair[0]), scale),
+        );
+        vst1q_f32(
+            out_scores.as_mut_ptr().add(octet * 8 + 4),
+            vmulq_f32(vcvtq_f32_s32(acc_pair[1]), scale),
+        );
+    }
+
+    Isa::Neon
+}
 
 #[cfg(target_arch = "aarch64")]
 #[target_feature(enable = "neon")]

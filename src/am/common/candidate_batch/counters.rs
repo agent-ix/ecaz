@@ -83,6 +83,8 @@ pub(crate) struct CandidateBatchScoringSnapshot {
     pub(crate) elapsed_nanos: u64,
     pub(crate) lut32_flushes: u64,
     pub(crate) lut32_candidates: u64,
+    pub(crate) lut32_pruned_candidates: u64,
+    pub(crate) lut32_kept_candidates: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -110,6 +112,8 @@ pub(crate) struct BlockKernelScoringSnapshot {
     pub(crate) width_8_15_flushes: u64,
     pub(crate) width_16_31_flushes: u64,
     pub(crate) width_ge32_flushes: u64,
+    pub(crate) pruned_candidates: u64,
+    pub(crate) kept_candidates: u64,
 }
 
 struct BlockKernelCounters {
@@ -125,6 +129,8 @@ struct BlockKernelCounters {
     /// Per-flush batch-width histogram (Task 98 acceptance criterion 4):
     /// buckets are 1-7, 8-15, 16-31, >=32 candidates per recorded flush.
     width_buckets: [AtomicU64; 4],
+    pruned_candidates: AtomicU64,
+    kept_candidates: AtomicU64,
 }
 
 fn width_bucket_index(candidate_count: u64) -> usize {
@@ -154,6 +160,8 @@ impl BlockKernelCounters {
                 AtomicU64::new(0),
                 AtomicU64::new(0),
             ],
+            pruned_candidates: AtomicU64::new(0),
+            kept_candidates: AtomicU64::new(0),
         }
     }
 
@@ -170,6 +178,8 @@ impl BlockKernelCounters {
         for bucket in &self.width_buckets {
             bucket.store(0, Ordering::Relaxed);
         }
+        self.pruned_candidates.store(0, Ordering::Relaxed);
+        self.kept_candidates.store(0, Ordering::Relaxed);
     }
 
     fn record_kernel(&self, candidate_count: u64, elapsed_nanos: u64) {
@@ -202,6 +212,11 @@ impl BlockKernelCounters {
         self.width_buckets[width_bucket_index(batch_width)].fetch_add(1, Ordering::Relaxed);
     }
 
+    fn record_prune(&self, pruned: u64, kept: u64) {
+        self.pruned_candidates.fetch_add(pruned, Ordering::Relaxed);
+        self.kept_candidates.fetch_add(kept, Ordering::Relaxed);
+    }
+
     fn snapshot(&self, key: BlockKernelCounterKey) -> BlockKernelScoringSnapshot {
         BlockKernelScoringSnapshot {
             surface: key.surface.label(),
@@ -220,6 +235,8 @@ impl BlockKernelCounters {
             width_8_15_flushes: self.width_buckets[1].load(Ordering::Relaxed),
             width_16_31_flushes: self.width_buckets[2].load(Ordering::Relaxed),
             width_ge32_flushes: self.width_buckets[3].load(Ordering::Relaxed),
+            pruned_candidates: self.pruned_candidates.load(Ordering::Relaxed),
+            kept_candidates: self.kept_candidates.load(Ordering::Relaxed),
         }
     }
 }
@@ -300,6 +317,8 @@ fn candidate_batch_surface_snapshot(
     let mut elapsed_nanos = 0;
     let mut lut32_flushes = 0;
     let mut lut32_candidates = 0;
+    let mut lut32_pruned_candidates = 0;
+    let mut lut32_kept_candidates = 0;
     for quant_kind in QuantCodecKind::ALL {
         for isa in Isa::ALL {
             let snapshot = block_kernel_counters(BlockKernelCounterKey {
@@ -323,6 +342,8 @@ fn candidate_batch_surface_snapshot(
             if quant_kind == QuantCodecKind::TurboQuant {
                 lut32_flushes += snapshot.kernel_flushes;
                 lut32_candidates += snapshot.kernel_candidates;
+                lut32_pruned_candidates += snapshot.pruned_candidates;
+                lut32_kept_candidates += snapshot.kept_candidates;
             }
         }
     }
@@ -333,6 +354,8 @@ fn candidate_batch_surface_snapshot(
         elapsed_nanos,
         lut32_flushes,
         lut32_candidates,
+        lut32_pruned_candidates,
+        lut32_kept_candidates,
     }
 }
 
@@ -366,6 +389,20 @@ pub(crate) fn record_flush_width(
     };
     block_kernel_counters(key)
         .record_width(u64::try_from(batch_width).expect("batch width should fit in u64"));
+}
+
+pub(crate) fn record_block_kernel_prune(
+    key: BlockKernelCounterKey,
+    pruned_candidates: usize,
+    kept_candidates: usize,
+) {
+    if pruned_candidates == 0 && kept_candidates == 0 {
+        return;
+    }
+    block_kernel_counters(key).record_prune(
+        u64::try_from(pruned_candidates).expect("pruned candidate count should fit in u64"),
+        u64::try_from(kept_candidates).expect("kept candidate count should fit in u64"),
+    );
 }
 
 pub(crate) fn record_block_scalar_score_for(
