@@ -2,11 +2,11 @@
 
 - Metric commit: `70ab4dfd0` (task-138 branch) — `distinct_recall@k`,
   `distinct_returned_count`, `ecaz bench rescore-identity`.
-- Result head SHA: TBD (filled at result commit)
+- Result head SHA: 26494644a plus the final result commit (this file's commit)
 - Task bucket: `reviews/task-138/001-distinct-recall-rescore`
 - Suite config (re-run cells): `artifacts/task138-n1024-b2-rerun-suite.json`
 - Dry-run manifest: `artifacts/dryrun-manifest.json`
-- Status: TBD
+- Status: measurement complete; review requested (see `request.md`)
 
 ## What this packet contains
 
@@ -40,4 +40,24 @@
 
 ## Key Results
 
-TBD — filled after the re-run cells complete.
+Corrected recall table (multi-instance production read, k=10; current =
+duplicate-tolerant recall@10 as historically published; distinct =
+distinct_recall@10):
+
+- 10k n128/b4 nprobe=96 (packet 027 re-score, 200q): current 0.9985,
+  distinct 0.5195, distinct_returned min 4 / mean 5.21, 183/200 dup queries.
+- 50k n128/b4 nprobe=96 (packet 027 re-score, 1000q): current 1.0000,
+  distinct 0.4146, min 4 / mean 4.15, 1000/1000 dup queries.
+- 10k n1024/b2 nprobe=64 (fresh cell, 200q): current 0.9975, distinct 0.4930,
+  min 4 / mean 4.94, 199/200 dup queries; latency p50/p95/p99
+  537.928/569.824/684.124 ms.
+- 50k n1024/b2 nprobe=64 (fresh cell, 200q): current 0.9980, distinct 0.5095,
+  min 4 / mean 5.11, 200/200 dup queries; latency p50/p95/p99
+  660.366/718.972/841.969 ms (within 0.6% of the Task 131 packet 024
+  before-arms p50 663.809 ms).
+- Cross-validation: the offline re-scorer reproduces packet 027's published
+  recall to 4 decimals at both scales, and matches the live runner's new
+  distinct columns exactly on both fresh cells.
+- Threshold-off vs threshold-on packet 027 arms re-score identically
+  (byte-identical identity files), preserving the Task 131 inter-arm no-op
+  conclusion.

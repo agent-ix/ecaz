@@ -187,8 +187,11 @@
         "reviews/task-138/001-distinct-recall-rescore/artifacts/50k-n1024-b2/bench-suite/suite-manifest.json",
         "reviews/task-138/001-distinct-recall-rescore/artifacts/50k-n1024-b2/bench-suite/results.jsonl"
       ],
-      "status": "pending",
-      "started_at_unix_ms": 1783016953225
+      "status": "succeeded",
+      "started_at_unix_ms": 1783016953225,
+      "finished_at_unix_ms": 1783026527781,
+      "duration_ms": 10041541,
+      "exit_code": 0
     }
   ]
 }
