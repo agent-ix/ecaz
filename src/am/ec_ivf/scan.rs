@@ -374,6 +374,7 @@ struct IvfPostingScratchSoa {
     rerank_tids: Vec<ItemPointer>,
     payloads: Vec<u8>,
     scores: Vec<f32>,
+    kept: Vec<bool>,
     /// Task 115: per-posting exact centroid inner product `⟨q, c⟩` for the
     /// posting's assigned list, added to the RaBitQ residual estimate to recover
     /// the full `⟨q, o⟩`. Always `0.0` in plain (non-residual) mode, so the
@@ -385,12 +386,14 @@ struct IvfPostingScratchSoa {
 struct IvfDensePostingBlockScratch {
     gammas: Vec<f32>,
     scores: Vec<f32>,
+    kept: Vec<bool>,
 }
 
 impl IvfDensePostingBlockScratch {
     fn clear(&mut self) {
         self.gammas.clear();
         self.scores.clear();
+        self.kept.clear();
     }
 
     fn load_gammas(&mut self, block: super::page::IvfDensePostingRef<'_>, use_typed: bool) {
@@ -399,11 +402,13 @@ impl IvfDensePostingBlockScratch {
                 self.gammas.clear();
                 self.gammas.extend_from_slice(gammas);
                 self.scores.clear();
+                self.kept.clear();
                 return;
             }
         }
         block.copy_gammas_to(&mut self.gammas);
         self.scores.clear();
+        self.kept.clear();
     }
 }
 
@@ -418,6 +423,7 @@ impl IvfPostingScratchSoa {
             rerank_tids: Vec::with_capacity(IVF_POSTING_SCRATCH_SOA_BATCH_POSTINGS),
             payloads: Vec::with_capacity(payload_len * IVF_POSTING_SCRATCH_SOA_BATCH_POSTINGS),
             scores: Vec::with_capacity(IVF_POSTING_SCRATCH_SOA_BATCH_POSTINGS),
+            kept: Vec::with_capacity(IVF_POSTING_SCRATCH_SOA_BATCH_POSTINGS),
             centroid_ips: Vec::with_capacity(IVF_POSTING_SCRATCH_SOA_BATCH_POSTINGS),
         }
     }
@@ -438,6 +444,7 @@ impl IvfPostingScratchSoa {
         self.rerank_tids.clear();
         self.payloads.clear();
         self.scores.clear();
+        self.kept.clear();
         self.centroid_ips.clear();
     }
 
@@ -1838,6 +1845,42 @@ fn process_scratch_soa_postings(
             .record_dense_coalesced_flush(payload_bytes, heap_tid_bytes),
     }
 
+    if let Some(min_ip_to_keep) = posting_prune_cutoff(running_top) {
+        if quantizer.score_turboquant_no_qjl_4bit_batch_from_payloads_with_min_bound(
+            prepared_query,
+            &scratch.payloads,
+            scratch.payload_len,
+            min_ip_to_keep,
+            &mut scratch.scores,
+            &mut scratch.kept,
+        )? {
+            if scratch.scores.len() != scratch.len() || scratch.kept.len() != scratch.len() {
+                return Err(format!(
+                    "ec_ivf bounded scratch SoA batch scorer produced {} scores and {} keep flags for {} postings",
+                    scratch.scores.len(),
+                    scratch.kept.len(),
+                    scratch.len()
+                ));
+            }
+            for index in 0..scratch.len() {
+                if !scratch.kept[index] {
+                    opaque.explain_counters.record_posting_pruned_by_bound();
+                    continue;
+                }
+                record_scored_posting_candidates(
+                    opaque,
+                    best_by_heap_tid,
+                    running_top,
+                    scratch.candidate_tids(index),
+                    scratch.heap_tid_counts[index],
+                    -(scratch.scores[index] + scratch.centroid_ip(index)),
+                );
+            }
+            scratch.clear();
+            return Ok(());
+        }
+    }
+
     if quantizer.score_turboquant_batch_from_payloads(
         prepared_query,
         &scratch.payloads,
@@ -2052,25 +2095,43 @@ fn process_dense_posting_block(
             scratch.load_gammas(block, false);
         } else {
             scratch.scores.clear();
+            scratch.kept.clear();
         }
         let gammas = typed_gammas.unwrap_or(&scratch.gammas);
-        quantizer.score_turboquant_batch_from_payloads(
-            prepared_query,
-            block.payloads(),
-            block.payload_len(),
-            gammas,
-            &mut scratch.scores,
-        )? || quantizer.score_ip_bits1_batch_from_payloads(
-            prepared_query,
-            block.payloads(),
-            block.payload_len(),
-            &mut scratch.scores,
-        )? || quantizer.score_grouped_pq_batch_from_payloads(
-            prepared_query,
-            block.payloads(),
-            block.payload_len(),
-            &mut scratch.scores,
-        )?
+        let bounded_scored = if let Some(min_ip_to_keep) = posting_prune_cutoff(running_top) {
+            quantizer.score_turboquant_no_qjl_4bit_batch_from_payloads_with_min_bound(
+                prepared_query,
+                block.payloads(),
+                block.payload_len(),
+                min_ip_to_keep,
+                &mut scratch.scores,
+                &mut scratch.kept,
+            )?
+        } else {
+            false
+        };
+        if bounded_scored {
+            true
+        } else {
+            scratch.kept.clear();
+            quantizer.score_turboquant_batch_from_payloads(
+                prepared_query,
+                block.payloads(),
+                block.payload_len(),
+                gammas,
+                &mut scratch.scores,
+            )? || quantizer.score_ip_bits1_batch_from_payloads(
+                prepared_query,
+                block.payloads(),
+                block.payload_len(),
+                &mut scratch.scores,
+            )? || quantizer.score_grouped_pq_batch_from_payloads(
+                prepared_query,
+                block.payloads(),
+                block.payload_len(),
+                &mut scratch.scores,
+            )?
+        }
     };
 
     if scored_batch {
@@ -2079,6 +2140,13 @@ fn process_dense_posting_block(
             return Err(format!(
                 "ec_ivf dense block batch scorer produced {} scores for {} postings",
                 score_count,
+                block.len(),
+            ));
+        }
+        let keep_count = unsafe { (*scratch).kept.len() };
+        if keep_count != 0 && keep_count != block.len() {
+            return Err(format!(
+                "ec_ivf dense block bounded batch scorer produced {keep_count} keep flags for {} postings",
                 block.len(),
             ));
         }
@@ -2093,6 +2161,10 @@ fn process_dense_posting_block(
                 block.list_id(),
                 heap_tid_count,
             )? {
+                continue;
+            }
+            if keep_count != 0 && !unsafe { (&(*scratch).kept)[index] } {
+                opaque.explain_counters.record_posting_pruned_by_bound();
                 continue;
             }
             record_scored_posting_candidates(

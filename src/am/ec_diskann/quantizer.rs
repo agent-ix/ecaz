@@ -1448,8 +1448,8 @@ mod tests {
             assert_eq!(kernel_candidates, 39);
             assert_eq!(scalar_candidates, 0);
         } else {
-            assert_eq!(kernel_candidates, 32);
-            assert_eq!(scalar_candidates, 7);
+            assert_eq!(kernel_candidates, 0);
+            assert_eq!(scalar_candidates, 39);
         }
         crate::am::common::candidate_batch::reset_candidate_batch_scoring_counters();
     }

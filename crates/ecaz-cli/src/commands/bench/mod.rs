@@ -240,6 +240,8 @@ pub(crate) struct Task87CandidateBatchCounterSnapshot {
     pub(crate) elapsed_nanos: i64,
     pub(crate) lut32_flushes: i64,
     pub(crate) lut32_candidates: i64,
+    pub(crate) lut32_pruned_candidates: i64,
+    pub(crate) lut32_kept_candidates: i64,
 }
 
 impl Task87CandidateBatchCounterSnapshot {
@@ -249,6 +251,8 @@ impl Task87CandidateBatchCounterSnapshot {
         self.elapsed_nanos += other.elapsed_nanos;
         self.lut32_flushes += other.lut32_flushes;
         self.lut32_candidates += other.lut32_candidates;
+        self.lut32_pruned_candidates += other.lut32_pruned_candidates;
+        self.lut32_kept_candidates += other.lut32_kept_candidates;
     }
 }
 
@@ -270,6 +274,8 @@ pub(crate) struct BlockKernelCounterSnapshot {
     pub(crate) width_8_15_flushes: i64,
     pub(crate) width_16_31_flushes: i64,
     pub(crate) width_ge32_flushes: i64,
+    pub(crate) pruned_candidates: i64,
+    pub(crate) kept_candidates: i64,
 }
 
 impl BlockKernelCounterSnapshot {
@@ -287,6 +293,8 @@ impl BlockKernelCounterSnapshot {
         self.width_8_15_flushes += other.width_8_15_flushes;
         self.width_16_31_flushes += other.width_16_31_flushes;
         self.width_ge32_flushes += other.width_ge32_flushes;
+        self.pruned_candidates += other.pruned_candidates;
+        self.kept_candidates += other.kept_candidates;
     }
 }
 
@@ -335,7 +343,7 @@ pub(crate) async fn snapshot_block_kernel_counters(
                     kernel_flushes, kernel_candidates, kernel_elapsed_nanos, \
                     scalar_flushes, scalar_candidates, scalar_elapsed_nanos, \
                     width_lt8_flushes, width_8_15_flushes, width_16_31_flushes, \
-                    width_ge32_flushes \
+                    width_ge32_flushes, pruned_candidates, kept_candidates \
              FROM ec_block_kernel_scoring_snapshot() \
              ORDER BY surface, quant_kind, isa",
             &[],
@@ -361,6 +369,8 @@ pub(crate) async fn snapshot_block_kernel_counters(
                 width_8_15_flushes: row.get(13),
                 width_16_31_flushes: row.get(14),
                 width_ge32_flushes: row.get(15),
+                pruned_candidates: row.get(16),
+                kept_candidates: row.get(17),
             })
             .collect(),
         Err(error) => {
@@ -382,7 +392,8 @@ async fn snapshot_task87_candidate_batch_counters_inner(
 ) -> Result<Vec<Task87CandidateBatchCounterSnapshot>> {
     let rows = client
         .query(
-            "SELECT surface, flushes, candidates, elapsed_nanos, lut32_flushes, lut32_candidates \
+            "SELECT surface, flushes, candidates, elapsed_nanos, lut32_flushes, lut32_candidates, \
+                    lut32_pruned_candidates, lut32_kept_candidates \
              FROM ec_task87_candidate_batch_scoring_snapshot() \
              ORDER BY surface",
             &[],
@@ -398,6 +409,8 @@ async fn snapshot_task87_candidate_batch_counters_inner(
             elapsed_nanos: row.get(3),
             lut32_flushes: row.get(4),
             lut32_candidates: row.get(5),
+            lut32_pruned_candidates: row.get(6),
+            lut32_kept_candidates: row.get(7),
         })
         .collect())
 }
@@ -451,7 +464,7 @@ pub(crate) fn format_block_kernel_counter_lines(
     let mut lines = Vec::new();
     for snapshot in &snapshots.block_kernel {
         lines.push(format!(
-            "[block-kernel-counters] command={command} label={label} surface={} quant={} isa={} flushes={} candidates={} elapsed_nanos={} elapsed_ms={:.6} kernel_flushes={} kernel_candidates={} kernel_elapsed_nanos={} kernel_elapsed_ms={:.6} scalar_flushes={} scalar_candidates={} scalar_elapsed_nanos={} scalar_elapsed_ms={:.6} width_lt8={} width_8_15={} width_16_31={} width_ge32={}",
+            "[block-kernel-counters] command={command} label={label} surface={} quant={} isa={} flushes={} candidates={} elapsed_nanos={} elapsed_ms={:.6} kernel_flushes={} kernel_candidates={} kernel_elapsed_nanos={} kernel_elapsed_ms={:.6} scalar_flushes={} scalar_candidates={} scalar_elapsed_nanos={} scalar_elapsed_ms={:.6} width_lt8={} width_8_15={} width_16_31={} width_ge32={} pruned_candidates={} kept_candidates={}",
             snapshot.surface,
             snapshot.quant_kind,
             snapshot.isa,
@@ -471,6 +484,8 @@ pub(crate) fn format_block_kernel_counter_lines(
             snapshot.width_8_15_flushes,
             snapshot.width_16_31_flushes,
             snapshot.width_ge32_flushes,
+            snapshot.pruned_candidates,
+            snapshot.kept_candidates,
         ));
     }
     let task87_lines =
@@ -489,14 +504,16 @@ pub(crate) fn format_task87_candidate_batch_counter_lines(
     let mut lines = Vec::new();
     for snapshot in snapshots {
         lines.push(format!(
-            "[task87-counters] command={command} label={label} surface={} flushes={} candidates={} elapsed_nanos={} elapsed_ms={:.6} lut32_flushes={} lut32_candidates={}",
+            "[task87-counters] command={command} label={label} surface={} flushes={} candidates={} elapsed_nanos={} elapsed_ms={:.6} lut32_flushes={} lut32_candidates={} lut32_pruned_candidates={} lut32_kept_candidates={}",
             snapshot.surface,
             snapshot.flushes,
             snapshot.candidates,
             snapshot.elapsed_nanos,
             snapshot.elapsed_nanos as f64 / 1_000_000.0,
             snapshot.lut32_flushes,
-            snapshot.lut32_candidates
+            snapshot.lut32_candidates,
+            snapshot.lut32_pruned_candidates,
+            snapshot.lut32_kept_candidates
         ));
     }
     lines.join("\n")
@@ -694,6 +711,8 @@ mod tests {
                 width_8_15_flushes: 0,
                 width_16_31_flushes: 0,
                 width_ge32_flushes: 1,
+                pruned_candidates: 3,
+                kept_candidates: 36,
             }],
             task87_compat: vec![Task87CandidateBatchCounterSnapshot {
                 surface: "ivf".to_owned(),
@@ -702,6 +721,8 @@ mod tests {
                 elapsed_nanos: 1_500_000,
                 lut32_flushes: 1,
                 lut32_candidates: 39,
+                lut32_pruned_candidates: 3,
+                lut32_kept_candidates: 36,
             }],
         };
 
@@ -714,8 +735,10 @@ mod tests {
             lines.contains("kernel_flushes=1 kernel_candidates=32 kernel_elapsed_nanos=1100000")
         );
         assert!(lines.contains("scalar_flushes=1 scalar_candidates=7 scalar_elapsed_nanos=400000"));
+        assert!(lines.contains("pruned_candidates=3 kept_candidates=36"));
         assert!(lines.contains(
             "[task87-counters] command=latency label=nprobe=8 surface=ivf flushes=1 candidates=39"
         ));
+        assert!(lines.contains("lut32_pruned_candidates=3 lut32_kept_candidates=36"));
     }
 }

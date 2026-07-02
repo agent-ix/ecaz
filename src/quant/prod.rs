@@ -35,7 +35,9 @@ pub struct Int8ApproxNoQjl4BitQuery {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct PreparedLutNoQjl4BitQuery {
-    pub lut: Vec<f32>,
+    pub lut: Vec<i16>,
+    pub lut_scale: f32,
+    pub suffix_max: Vec<f32>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -387,8 +389,12 @@ impl ProdQuantizer {
         );
 
         let rotated = rotation::srht_padded(query, &self.signs);
+        let (lut, lut_scale) =
+            build_prepared_query_lut_i16(&rotated[..self.original_dim], &self.codebook, 16);
         PreparedLutNoQjl4BitQuery {
-            lut: build_prepared_query_lut(&rotated[..self.original_dim], &self.codebook, 16),
+            suffix_max: build_lut_suffix_max_i16(&lut, lut_scale, 16),
+            lut_scale,
+            lut,
         }
     }
 
@@ -401,11 +407,9 @@ impl ProdQuantizer {
             tile_size > 0,
             "tiled LUT query prep requires a positive tile size"
         );
-        let prepared = self.prepare_ip_query_lut_no_qjl_4bit(query);
-        PreparedTiledLutNoQjl4BitQuery {
-            lut: prepared.lut,
-            tile_size,
-        }
+        let rotated = rotation::srht_padded(query, &self.signs);
+        let lut = build_prepared_query_lut(&rotated[..self.original_dim], &self.codebook, 16);
+        PreparedTiledLutNoQjl4BitQuery { lut, tile_size }
     }
 
     pub fn binary_sign_no_qjl_4bit_supported(&self) -> bool {
@@ -524,7 +528,11 @@ impl ProdQuantizer {
         );
         let (mse_packed, qjl_packed) = self.split_code_bytes(code_bytes);
         debug_assert!(qjl_packed.is_empty());
-        self.score_ip_from_split_parts_lut_no_qjl_4bit(&prepared.lut, mse_packed)
+        self.score_ip_from_split_parts_lut_no_qjl_4bit(
+            &prepared.lut,
+            prepared.lut_scale,
+            mse_packed,
+        )
     }
 
     pub(crate) fn mse_code_bytes_no_qjl_4bit<'a>(&self, code_bytes: &'a [u8]) -> &'a [u8] {
@@ -661,12 +669,17 @@ impl ProdQuantizer {
         sum as f32 * prepared.score_scale
     }
 
-    fn score_ip_from_split_parts_lut_no_qjl_4bit(&self, lut: &[f32], mse_packed: &[u8]) -> f32 {
+    fn score_ip_from_split_parts_lut_no_qjl_4bit(
+        &self,
+        lut: &[i16],
+        lut_scale: f32,
+        mse_packed: &[u8],
+    ) -> f32 {
         debug_assert_eq!(self.bits, 4);
         debug_assert!(!qjl_enabled(self.original_dim, self.bits));
         debug_assert_eq!(lut.len(), self.original_dim * 16);
 
-        let mut sum = 0.0_f32;
+        let mut sum = 0_i32;
         let mut dim_index = 0usize;
 
         for &packed in mse_packed {
@@ -675,7 +688,7 @@ impl ProdQuantizer {
             }
 
             let low_nibble = (packed & 0x0F) as usize;
-            sum += lut[dim_index * 16 + low_nibble];
+            sum += lut[dim_index * 16 + low_nibble] as i32;
             dim_index += 1;
 
             if dim_index >= self.original_dim {
@@ -683,11 +696,11 @@ impl ProdQuantizer {
             }
 
             let high_nibble = (packed >> 4) as usize;
-            sum += lut[dim_index * 16 + high_nibble];
+            sum += lut[dim_index * 16 + high_nibble] as i32;
             dim_index += 1;
         }
 
-        sum
+        sum as f32 * lut_scale
     }
 
     fn score_ip_from_split_parts_tiled_lut_no_qjl_4bit(
@@ -721,6 +734,52 @@ impl ProdQuantizer {
         }
 
         sum
+    }
+
+    pub(crate) fn score_ip_from_parts_lut_no_qjl_4bit_with_min_bound(
+        &self,
+        prepared: &PreparedLutNoQjl4BitQuery,
+        code_bytes: &[u8],
+        min_ip_to_keep: f32,
+    ) -> Option<f32> {
+        assert!(
+            self.bits == 4 && !qjl_enabled(self.original_dim, self.bits),
+            "bounded LUT scoring requires the no-QJL 4-bit lane"
+        );
+        let (mse_packed, qjl_packed) = self.split_code_bytes(code_bytes);
+        debug_assert!(qjl_packed.is_empty());
+        self.score_ip_from_split_parts_lut_no_qjl_4bit_with_min_bound(
+            &prepared.lut,
+            prepared.lut_scale,
+            &prepared.suffix_max,
+            mse_packed,
+            min_ip_to_keep,
+        )
+    }
+
+    fn score_ip_from_split_parts_lut_no_qjl_4bit_with_min_bound(
+        &self,
+        lut: &[i16],
+        lut_scale: f32,
+        suffix_max: &[f32],
+        mse_packed: &[u8],
+        min_ip_to_keep: f32,
+    ) -> Option<f32> {
+        debug_assert_eq!(self.bits, 4);
+        debug_assert!(!qjl_enabled(self.original_dim, self.bits));
+        debug_assert_eq!(lut.len(), self.original_dim * 16);
+        debug_assert_eq!(suffix_max.len(), self.original_dim + 1);
+
+        let mut sum = 0_i32;
+        for dim_index in 0..self.original_dim {
+            let centroid_index = mse_index_at(mse_packed, dim_index, 4) as usize;
+            sum += lut[dim_index * 16 + centroid_index] as i32;
+            let score = sum as f32 * lut_scale;
+            if score + suffix_max[dim_index + 1] < min_ip_to_keep {
+                return None;
+            }
+        }
+        Some(sum as f32 * lut_scale)
     }
 
     fn score_ip_from_split_parts_scalar(
@@ -1823,6 +1882,47 @@ fn build_prepared_query_lut(rotated: &[f32], codebook: &[f32], num_centroids: us
     lut
 }
 
+fn build_prepared_query_lut_i16(
+    rotated: &[f32],
+    codebook: &[f32],
+    num_centroids: usize,
+) -> (Vec<i16>, f32) {
+    let lut = build_prepared_query_lut(rotated, codebook, num_centroids);
+    let max_abs = lut
+        .iter()
+        .fold(0.0_f32, |max_abs, value| max_abs.max(value.abs()));
+    if max_abs <= f32::EPSILON {
+        return (vec![0_i16; lut.len()], 0.0);
+    }
+    let scale = max_abs / i16::MAX as f32;
+    let compact = lut
+        .into_iter()
+        .map(|value| {
+            (value / scale)
+                .round()
+                .clamp(i16::MIN as f32, i16::MAX as f32) as i16
+        })
+        .collect();
+    (compact, scale)
+}
+
+fn build_lut_suffix_max_i16(lut: &[i16], lut_scale: f32, num_centroids: usize) -> Vec<f32> {
+    debug_assert_eq!(lut.len() % num_centroids, 0);
+    let row_count = lut.len() / num_centroids;
+    let mut suffix_max = vec![0.0_f32; row_count + 1];
+    for row_index in (0..row_count).rev() {
+        let row_start = row_index * num_centroids;
+        let row_end = row_start + num_centroids;
+        let row_max = lut[row_start..row_end]
+            .iter()
+            .copied()
+            .map(|value| value as f32 * lut_scale)
+            .fold(f32::NEG_INFINITY, f32::max);
+        suffix_max[row_index] = suffix_max[row_index + 1] + row_max;
+    }
+    suffix_max
+}
+
 fn quantize_i8(values: &[f32]) -> (Vec<i8>, f32) {
     let max_abs = values
         .iter()
@@ -2346,6 +2446,39 @@ mod tests {
         let prepared = quantizer.prepare_ip_query_lut_no_qjl_4bit(&query);
 
         assert_eq!(prepared.lut.len(), 1536 * 16);
+        assert_eq!(
+            std::mem::size_of_val(prepared.lut.as_slice()),
+            1536 * 16 * 2
+        );
+        assert_eq!(prepared.suffix_max.len(), 1536 + 1);
+        assert_eq!(prepared.suffix_max[1536].to_bits(), 0.0_f32.to_bits());
+    }
+
+    #[test]
+    fn quantizer_no_qjl_lut_min_bound_keeps_or_prunes_exact_score() {
+        let quantizer = ProdQuantizer::new(1536, 4, 42);
+        let query = random_unit_vector(1536, 16);
+        let source = random_unit_vector(1536, 17);
+        let prepared = quantizer.prepare_ip_query_lut_no_qjl_4bit(&query);
+        let encoded = quantizer.encode(&source);
+        let score = quantizer.score_ip_from_parts_lut_no_qjl_4bit(&prepared, &encoded.mse_packed);
+
+        assert_eq!(
+            quantizer.score_ip_from_parts_lut_no_qjl_4bit_with_min_bound(
+                &prepared,
+                &encoded.mse_packed,
+                score - 1.0
+            ),
+            Some(score)
+        );
+        assert_eq!(
+            quantizer.score_ip_from_parts_lut_no_qjl_4bit_with_min_bound(
+                &prepared,
+                &encoded.mse_packed,
+                score + 1.0
+            ),
+            None
+        );
     }
 
     #[test]
@@ -2507,7 +2640,7 @@ mod tests {
     }
 
     #[test]
-    fn explicit_lut_no_qjl_4bit_matches_direct_scoring() {
+    fn explicit_lut_no_qjl_4bit_tracks_direct_scoring_with_int16_lut() {
         let quantizer = ProdQuantizer::new(1536, 4, 42);
         let query = random_unit_vector(1536, 31);
         let prepared_exact = quantizer.prepare_ip_query(&query);
@@ -2521,8 +2654,8 @@ mod tests {
             let lut =
                 quantizer.score_ip_from_parts_lut_no_qjl_4bit(&prepared_lut, &encoded.mse_packed);
             assert!(
-                (direct - lut).abs() < 1e-6,
-                "explicit LUT scorer should match direct scorer: direct={direct} lut={lut}"
+                (direct - lut).abs() < 5e-5,
+                "compact explicit LUT scorer should track direct scorer: direct={direct} lut={lut}"
             );
         }
     }

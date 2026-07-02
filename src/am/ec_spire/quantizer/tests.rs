@@ -113,8 +113,8 @@ mod tests {
             }
         }
         assert!(gamma_a > 0.0);
-        assert!((expected_lut - expected_generic).abs() < 1e-6);
-        assert!((observed - expected_generic).abs() < 1e-6);
+        assert!((expected_lut - expected_generic).abs() < 1e-3);
+        assert!((observed - expected_lut).abs() < 1e-6);
 
         let payload_stride = payload_a.len();
         assert_eq!(payload_stride, payload_b.len());
