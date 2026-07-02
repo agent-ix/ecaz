@@ -2020,6 +2020,17 @@ async fn register_local_remote_shards(
         repo_root.join("scripts/spire-aws/materialize-remote-leaf-base-assignments.sql"),
     )
     .wrap_err("reading remote leaf materialization template")?;
+    let materialization_session_gucs = plan["load_session_gucs"]
+        .as_array()
+        .map(|values| {
+            values
+                .iter()
+                .filter_map(|value| value.as_str().map(ToOwned::to_owned))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let materialization_session_guc_sql =
+        render_materialization_session_guc_sql(&materialization_session_gucs)?;
     for remote in remotes {
         let node_id = remote["node_id"].as_u64().ok_or_else(|| eyre!("node_id"))? as u32;
         let port = remote["operator_port"]
@@ -2042,14 +2053,17 @@ async fn register_local_remote_shards(
             fs::create_dir_all(parent)
                 .wrap_err_with(|| format!("creating {}", parent.display()))?;
         }
-        fs::write(
-            &rendered,
-            materialize_template.replace(
+        let rendered_sql = materialize_template
+            .replace(
+                "__ECAZ_LOAD_SESSION_GUC_SQL__",
+                &materialization_session_guc_sql,
+            )
+            .replace(
                 "__ECAZ_ASSIGNMENT_FILE__",
                 &assignments.display().to_string().replace('\'', "''"),
-            ),
-        )
-        .wrap_err_with(|| format!("writing {}", rendered.display()))?;
+            );
+        fs::write(&rendered, rendered_sql)
+            .wrap_err_with(|| format!("writing {}", rendered.display()))?;
         run_ecaz_dev_sql_logged(
             repo_root,
             ecaz_bin,
@@ -2118,6 +2132,37 @@ async fn register_local_remote_shards(
         log_dir.join("register-remotes.log"),
     )
     .await
+}
+
+fn render_materialization_session_guc_sql(session_gucs: &[String]) -> Result<String> {
+    if session_gucs.is_empty() {
+        return Ok("-- no load session GUCs requested\n".to_owned());
+    }
+    let mut sql = String::new();
+    for guc in session_gucs {
+        let (name, value) = guc
+            .split_once('=')
+            .ok_or_else(|| eyre!("load session GUC must use name=value syntax, got {guc:?}"))?;
+        if name.is_empty()
+            || !name
+                .chars()
+                .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '.')
+            || !name
+                .chars()
+                .next()
+                .is_some_and(|ch| ch.is_ascii_alphabetic())
+        {
+            bail!("invalid load session GUC name {name:?}");
+        }
+        if value.is_empty() {
+            bail!("load session GUC value must not be empty for {name:?}");
+        }
+        if value.contains(';') {
+            bail!("load session GUC value for {name:?} must not contain ';'");
+        }
+        sql.push_str(&format!("SET {name} = {value};\n"));
+    }
+    Ok(sql)
 }
 
 fn read_plan_json(path: &Path) -> Result<serde_json::Value> {

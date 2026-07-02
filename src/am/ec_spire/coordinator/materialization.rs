@@ -79,9 +79,13 @@ pub(crate) fn materialize_static_remote_leaf_assignments_with_mode(
             )?;
             let root_control = page::read_root_control_page(index_relation.as_ptr());
             if target_epoch == 0 {
-                return Err("ec_spire remote leaf materialization target_epoch must be greater than zero".to_owned());
+                return Err(
+                    "ec_spire remote leaf materialization target_epoch must be greater than zero"
+                        .to_owned(),
+                );
             }
-            let consistency_mode = parse_static_remote_leaf_materialization_consistency_mode(consistency_mode)?;
+            let consistency_mode =
+                parse_static_remote_leaf_materialization_consistency_mode(consistency_mode)?;
             let previous_epoch = if root_control.active_epoch == 0 {
                 None
             } else {
@@ -99,6 +103,8 @@ pub(crate) fn materialize_static_remote_leaf_assignments_with_mode(
             let publish_epoch = target_epoch;
             let store =
                 storage::SpireRelationObjectStore::for_index_relation(index_relation.as_ptr())?;
+            let summary_block_rows = build::current_leaf_summary_block_rows()?;
+            let summary_representative_count = build::current_leaf_summary_representative_count()?;
 
             let mut grouped: BTreeMap<u64, Vec<SpireRemoteLeafMaterializationInputRow>> =
                 BTreeMap::new();
@@ -139,10 +145,71 @@ pub(crate) fn materialize_static_remote_leaf_assignments_with_mode(
                     }
                 }
 
-                let assignments = leaf_rows
-                    .into_iter()
-                    .map(|row| row.assignment)
-                    .collect::<Vec<_>>();
+                let mut materialization_rows = if summary_block_rows.is_some() {
+                    let heap_relation =
+                        unsafe { open_spire_heap_relation_for_index(index_relation.as_ptr())? };
+                    let snapshot = crate::storage::snapshot_guard::active_snapshot()
+                        .ok_or_else(|| "ec_spire remote leaf materialization summaries require an active heap snapshot".to_owned())?;
+                    let indexed_attribute =
+                        crate::am::ec_hnsw::source::resolve_indexed_vector_attribute(
+                            heap_relation.as_ptr(),
+                            index_relation.as_ptr(),
+                            "ec_spire remote leaf materialization source vector",
+                        );
+                    let slot =
+                        crate::storage::slot_guard::TupleTableSlotGuard::single_for_heap_guard(
+                            &heap_relation,
+                        )
+                        .ok_or_else(|| {
+                            "ec_spire remote leaf materialization failed to allocate a heap tuple slot"
+                                .to_owned()
+                        })?;
+                    let mut heap_reader = unsafe {
+                        crate::am::common::heap_slot::HeapSlotReader::from_raw(
+                            heap_relation.as_ptr(),
+                            snapshot,
+                            slot.as_ptr(),
+                            "ec_spire",
+                        )?
+                    };
+                    build::SpireLeafBlockMaterializationRows {
+                        source_vectors: remote_leaf_materialization_source_vectors(
+                            &mut heap_reader,
+                            indexed_attribute,
+                            leaf_pid,
+                            &leaf_rows,
+                        )?,
+                        rows: leaf_rows
+                            .into_iter()
+                            .map(|row| row.assignment)
+                            .collect::<Vec<_>>(),
+                    }
+                } else {
+                    build::SpireLeafBlockMaterializationRows {
+                        source_vectors: Vec::new(),
+                        rows: leaf_rows
+                            .into_iter()
+                            .map(|row| row.assignment)
+                            .collect::<Vec<_>>(),
+                    }
+                };
+                let summaries = if let Some(block_rows) = summary_block_rows {
+                    materialization_rows = build::layout_leaf_rows_for_block_summaries(
+                        materialization_rows,
+                        block_rows,
+                        target_epoch,
+                        leaf_pid,
+                    )?;
+                    build::build_leaf_block_summaries(
+                        &materialization_rows.rows,
+                        &materialization_rows.source_vectors,
+                        block_rows,
+                        summary_representative_count,
+                    )?
+                } else {
+                    Vec::new()
+                };
+                let assignments = materialization_rows.rows;
                 assignment_count = assignment_count
                     .checked_add(u64::try_from(assignments.len()).map_err(|_| {
                         "ec_spire remote leaf materialization assignment count exceeds u64"
@@ -152,12 +219,14 @@ pub(crate) fn materialize_static_remote_leaf_assignments_with_mode(
                         "ec_spire remote leaf materialization assignment count overflow".to_owned()
                     })?;
                 max_pid = max_pid.max(leaf_pid);
-                placements.push(store.insert_leaf_object_v2_from_rows(
+                placements.push(store.insert_leaf_object_v3_from_rows_and_summaries(
                     publish_epoch,
                     leaf_pid,
                     object_version,
                     parent_pid,
                     &assignments,
+                    &summaries,
+                    summary_block_rows.unwrap_or(0),
                 )?);
             }
 
@@ -244,6 +313,31 @@ fn parse_static_remote_leaf_materialization_consistency_mode(
             "ec_spire remote leaf materialization consistency_mode must be 'strict' or 'degraded', got '{other}'"
         )),
     }
+}
+
+fn remote_leaf_materialization_source_vectors(
+    heap_reader: &mut crate::am::common::heap_slot::HeapSlotReader<'_>,
+    indexed_attribute: crate::am::ec_hnsw::source::IndexedVectorAttribute,
+    leaf_pid: u64,
+    rows: &[SpireRemoteLeafMaterializationInputRow],
+) -> Result<Vec<Vec<f32>>, String> {
+    let mut source_vectors = Vec::with_capacity(rows.len());
+    for row in rows {
+        let source_vector = scan::load_indexed_source_vector_from_heap_row(
+            heap_reader,
+            indexed_attribute,
+            row.assignment.heap_tid,
+            "ec_spire remote leaf materialization source vector",
+        )?
+        .ok_or_else(|| {
+            format!(
+                "ec_spire remote leaf materialization leaf pid {leaf_pid} could not load heap source vector at block {} offset {}",
+                row.assignment.heap_tid.block_number, row.assignment.heap_tid.offset_number
+            )
+        })?;
+        source_vectors.push(source_vector);
+    }
+    Ok(source_vectors)
 }
 
 fn static_remote_leaf_materialization_rows(
