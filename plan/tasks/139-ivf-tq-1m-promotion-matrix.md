@@ -1,9 +1,15 @@
 # Task 139: IVF TQ 1m promotion matrix (layout × scorer defaults)
 
 Status: **proposed** (2026-07-02). Owner: unassigned. Priority: P2
-Gated on Tasks 137 (SDOT) and 138 (drain policy) landing first — the 1m
-matrix should measure the final candidates once. 1m benches on the m5-local
-lane are authorized (operator, 2026-07-02).
+Gated on: (a) Tasks 137 (SDOT) and 138 (drain policy) landing first — the
+1m matrix should measure the final candidates once; and (b) the
+`task-125-tq-scorer-optimization` + `task-136-rank1-scorer` stack being
+reviewed and landed on `main` — the default-flip and promotion decisions
+must measure what ships, and the expensive 1m run should not precede
+review-driven changes underneath (branch decision, operator 2026-07-02;
+main had not diverged from the stack at that point, so landing is a clean
+linear merge). 1m benches on the m5-local lane are authorized (operator,
+2026-07-02).
 
 ## Why
 
