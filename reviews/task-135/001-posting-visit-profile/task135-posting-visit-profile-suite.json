@@ -1,0 +1,144 @@
+{
+ "name": "task135-posting-visit-profile",
+ "schema_version": 1,
+ "artifact_dir": "reviews/task-135/001-posting-visit-profile/artifacts",
+ "defaults": {
+  "pg": 18,
+  "socket_dir": "/Users/peter/.pgrx",
+  "profile": "ec_ivf",
+  "bits": 4,
+  "seed": 42,
+  "queries_limit": 64,
+  "iterations": 64,
+  "force_index": true,
+  "sample_backend_memory": true,
+  "memory_sample_interval_ms": 25
+ },
+ "thresholds": [],
+ "steps": [
+  {
+   "kind": "raw",
+   "name": "precheck-host",
+   "tags": [
+    "setup",
+    "precheck",
+    "task135",
+    "m5-local"
+   ],
+   "args": [
+    "dev",
+    "sql",
+    "--pg",
+    "18",
+    "--db",
+    "postgres",
+    "--socket-dir",
+    "/Users/peter/.pgrx",
+    "--raw",
+    "--sql",
+    "SELECT now() AS captured_at, version() AS postgres_version, current_setting('shared_buffers') AS shared_buffers;",
+    "--log-output",
+    "${artifact_dir}/precheck-host.log"
+   ],
+   "expected_artifacts": [
+    "${artifact_dir}/precheck-host.log"
+   ]
+  },
+  {
+   "kind": "raw",
+   "name": "precheck-build-sha",
+   "tags": [
+    "setup",
+    "precheck",
+    "task135"
+   ],
+   "args": [
+    "dev",
+    "sql",
+    "--pg",
+    "18",
+    "--db",
+    "tqvector_bench",
+    "--socket-dir",
+    "/Users/peter/.pgrx",
+    "--raw",
+    "--sql",
+    "SELECT ecaz_build_git_sha();",
+    "--log-output",
+    "${artifact_dir}/precheck-build-sha.log"
+   ],
+   "expected_artifacts": [
+    "${artifact_dir}/precheck-build-sha.log"
+   ]
+  },
+  {
+   "kind": "latency",
+   "name": "latency-profile-real10k",
+   "tags": [
+    "latency",
+    "task135",
+    "ivf",
+    "turboquant",
+    "real10k"
+   ],
+   "prefix": "task136_tq_ivf_real10k",
+   "profile": "ec_ivf",
+   "k": 10,
+   "sweep": [
+    32
+   ],
+   "iterations": 64,
+   "concurrency": 1,
+   "cache_state": "task136_tq_ivf_real10k_warm",
+   "task87_candidate_batch_counters": true,
+   "ivf_stage_counters": true,
+   "log_output": "${artifact_dir}/latency-profile-real10k.log"
+  },
+  {
+   "kind": "latency",
+   "name": "latency-profile-real50k",
+   "tags": [
+    "latency",
+    "task135",
+    "ivf",
+    "turboquant",
+    "real50k"
+   ],
+   "prefix": "task136_tq_ivf_real50k",
+   "profile": "ec_ivf",
+   "k": 10,
+   "sweep": [
+    32
+   ],
+   "iterations": 48,
+   "concurrency": 1,
+   "cache_state": "task136_tq_ivf_real50k_warm",
+   "task87_candidate_batch_counters": true,
+   "ivf_stage_counters": true,
+   "log_output": "${artifact_dir}/latency-profile-real50k.log"
+  },
+  {
+   "kind": "latency",
+   "name": "latency-profile-real100k",
+   "tags": [
+    "latency",
+    "task135",
+    "ivf",
+    "turboquant",
+    "real100k"
+   ],
+   "prefix": "task136_tq_ivf_real100k",
+   "profile": "ec_ivf",
+   "k": 10,
+   "sweep": [
+    32
+   ],
+   "iterations": 32,
+   "concurrency": 1,
+   "cache_state": "task136_tq_ivf_real100k_warm",
+   "task87_candidate_batch_counters": true,
+   "ivf_stage_counters": true,
+   "log_output": "${artifact_dir}/latency-profile-real100k.log"
+  }
+ ]
+}

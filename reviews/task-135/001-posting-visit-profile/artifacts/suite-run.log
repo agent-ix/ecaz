@@ -1,0 +1,92 @@
+[suite:task135-posting-visit-profile] wrote reviews/task-135/001-posting-visit-profile/artifacts/suite-manifest.json
+[suite:task135-posting-visit-profile] wrote reviews/task-135/001-posting-visit-profile/artifacts/suite-manifest.json
+[suite:task135-posting-visit-profile] precheck-host -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 dev sql --pg 18 --db postgres --socket-dir /Users/peter/.pgrx --raw --sql "SELECT now() AS captured_at, version() AS postgres_version, current_setting('shared_buffers') AS shared_buffers;" --log-output reviews/task-135/001-posting-visit-profile/artifacts/precheck-host.log
+[suite:task135-posting-visit-profile] wrote reviews/task-135/001-posting-visit-profile/artifacts/suite-manifest.json
+          captured_at          |                                                      postgres_version                                                       | shared_buffers 
+-------------------------------+-----------------------------------------------------------------------------------------------------------------------------+----------------
+ 2026-07-02 08:57:09.910165-07 | PostgreSQL 18.3 (Homebrew) on aarch64-apple-darwin25.2.0, compiled by Apple clang version 17.0.0 (clang-1700.6.3.2), 64-bit | 128MB
+(1 row)
+
+[suite:task135-posting-visit-profile] wrote reviews/task-135/001-posting-visit-profile/artifacts/suite-manifest.json
+[suite:task135-posting-visit-profile] precheck-build-sha -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 dev sql --pg 18 --db tqvector_bench --socket-dir /Users/peter/.pgrx --raw --sql "SELECT ecaz_build_git_sha();" --log-output reviews/task-135/001-posting-visit-profile/artifacts/precheck-build-sha.log
+[suite:task135-posting-visit-profile] wrote reviews/task-135/001-posting-visit-profile/artifacts/suite-manifest.json
+            ecaz_build_git_sha            
+------------------------------------------
+ 8f7bce3cc7bed148b97939d519665dcf922f1878
+(1 row)
+
+[suite:task135-posting-visit-profile] wrote reviews/task-135/001-posting-visit-profile/artifacts/suite-manifest.json
+[suite:task135-posting-visit-profile] latency-profile-real10k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench latency --prefix task136_tq_ivf_real10k --profile ec_ivf --k 10 --concurrency 1 --iterations 64 --sweep 32 --bits 4 --seed 42 --force-index --sample-backend-memory --cache-state task136_tq_ivf_real10k_warm --task87-candidate-batch-counters --ivf-stage-counters --memory-sample-interval-ms 25 --log-output reviews/task-135/001-posting-visit-profile/artifacts/latency-profile-real10k.log
+[suite:task135-posting-visit-profile] wrote reviews/task-135/001-posting-visit-profile/artifacts/suite-manifest.json
+┌────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────────────────────────┬─────────────┬─────────────┬────────────────┐
+│ nprobe ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state                 ┆ rss_peak_kb ┆ hwm_peak_kb ┆ memory_samples │
+╞════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════════════════════════╪═════════════╪═════════════╪════════════════╡
+│ 32     ┆ 64    ┆ 1.23 ms ┆ 0.87 ms ┆ 0.81 ms ┆ 0.95 ms ┆ 2.44 ms ┆ 4.31 ms ┆ 7.22 ms ┆ task136_tq_ivf_real10k_warm ┆ 0           ┆ 0           ┆ 0              │
+└────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────────────────────────┴─────────────┴─────────────┴────────────────┘
+[block-kernel-counters] command=latency label=nprobe=32 surface=ivf quant=turboquant isa=neon flushes=840 candidates=205959 elapsed_nanos=25679710 elapsed_ms=25.679710 kernel_flushes=840 kernel_candidates=205959 kernel_elapsed_nanos=25679710 kernel_elapsed_ms=25.679710 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=0 width_8_15=1 width_16_31=6 width_ge32=833 pruned_candidates=0 kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=ivf flushes=840 candidates=205959 elapsed_nanos=25679710 elapsed_ms=25.679710 lut32_flushes=840 lut32_candidates=205959 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[ivf-stage-counters] command=latency label=nprobe=32 stage=approximate_scan scans=64 samples=64 elapsed_us=54823 elapsed_ms=54.823
+[ivf-stage-counters] command=latency label=nprobe=32 stage=candidate_record scans=64 samples=840 elapsed_us=1745 elapsed_ms=1.745
+[ivf-stage-counters] command=latency label=nprobe=32 stage=exact_rerank scans=64 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=posting_page_decode scans=64 samples=64 elapsed_us=35911 elapsed_ms=35.911
+[ivf-stage-counters] command=latency label=nprobe=32 stage=posting_visit scans=64 samples=64 elapsed_us=50580 elapsed_ms=50.580
+[ivf-stage-counters] command=latency label=nprobe=32 stage=probe_plan scans=64 samples=64 elapsed_us=2868 elapsed_ms=2.868
+[ivf-stage-counters] command=latency label=nprobe=32 stage=rerank_payload_decode scans=64 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=rerank_payload_score scans=64 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=scorer_batch scans=64 samples=840 elapsed_us=26230 elapsed_ms=26.230
+[ivf-stage-counters] command=latency label=nprobe=32 stage=scratch_flush scans=64 samples=840 elapsed_us=28126 elapsed_ms=28.126
+[ivf-stage-counters] command=latency label=nprobe=32 stage=topk_collect scans=64 samples=64 elapsed_us=4130 elapsed_ms=4.130
+[suite:task135-posting-visit-profile] wrote reviews/task-135/001-posting-visit-profile/artifacts/suite-manifest.json
+[suite:task135-posting-visit-profile] latency-profile-real50k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench latency --prefix task136_tq_ivf_real50k --profile ec_ivf --k 10 --concurrency 1 --iterations 48 --sweep 32 --bits 4 --seed 42 --force-index --sample-backend-memory --cache-state task136_tq_ivf_real50k_warm --task87-candidate-batch-counters --ivf-stage-counters --memory-sample-interval-ms 25 --log-output reviews/task-135/001-posting-visit-profile/artifacts/latency-profile-real50k.log
+[suite:task135-posting-visit-profile] wrote reviews/task-135/001-posting-visit-profile/artifacts/suite-manifest.json
+┌────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────────────────────────┬─────────────┬─────────────┬────────────────┐
+│ nprobe ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state                 ┆ rss_peak_kb ┆ hwm_peak_kb ┆ memory_samples │
+╞════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════════════════════════╪═════════════╪═════════════╪════════════════╡
+│ 32     ┆ 48    ┆ 2.28 ms ┆ 0.60 ms ┆ 1.69 ms ┆ 2.14 ms ┆ 3.08 ms ┆ 4.55 ms ┆ 5.69 ms ┆ task136_tq_ivf_real50k_warm ┆ 0           ┆ 0           ┆ 0              │
+└────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────────────────────────┴─────────────┴─────────────┴────────────────┘
+[block-kernel-counters] command=latency label=nprobe=32 surface=ivf quant=turboquant isa=neon flushes=1352 candidates=340407 elapsed_nanos=42263917 elapsed_ms=42.263917 kernel_flushes=1352 kernel_candidates=340407 kernel_elapsed_nanos=42263917 kernel_elapsed_ms=42.263917 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=0 width_8_15=3 width_16_31=3 width_ge32=1346 pruned_candidates=0 kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=ivf flushes=1352 candidates=340407 elapsed_nanos=42263917 elapsed_ms=42.263917 lut32_flushes=1352 lut32_candidates=340407 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[ivf-stage-counters] command=latency label=nprobe=32 stage=approximate_scan scans=48 samples=48 elapsed_us=78052 elapsed_ms=78.052
+[ivf-stage-counters] command=latency label=nprobe=32 stage=candidate_record scans=48 samples=1352 elapsed_us=2965 elapsed_ms=2.965
+[ivf-stage-counters] command=latency label=nprobe=32 stage=exact_rerank scans=48 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=posting_page_decode scans=48 samples=48 elapsed_us=61206 elapsed_ms=61.206
+[ivf-stage-counters] command=latency label=nprobe=32 stage=posting_visit scans=48 samples=48 elapsed_us=70645 elapsed_ms=70.645
+[ivf-stage-counters] command=latency label=nprobe=32 stage=probe_plan scans=48 samples=48 elapsed_us=4585 elapsed_ms=4.585
+[ivf-stage-counters] command=latency label=nprobe=32 stage=rerank_payload_decode scans=48 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=rerank_payload_score scans=48 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=scorer_batch scans=48 samples=1352 elapsed_us=43146 elapsed_ms=43.146
+[ivf-stage-counters] command=latency label=nprobe=32 stage=scratch_flush scans=48 samples=1352 elapsed_us=46340 elapsed_ms=46.340
+[ivf-stage-counters] command=latency label=nprobe=32 stage=topk_collect scans=48 samples=48 elapsed_us=7284 elapsed_ms=7.284
+[suite:task135-posting-visit-profile] wrote reviews/task-135/001-posting-visit-profile/artifacts/suite-manifest.json
+[suite:task135-posting-visit-profile] latency-profile-real100k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench latency --prefix task136_tq_ivf_real100k --profile ec_ivf --k 10 --concurrency 1 --iterations 32 --sweep 32 --bits 4 --seed 42 --force-index --sample-backend-memory --cache-state task136_tq_ivf_real100k_warm --task87-candidate-batch-counters --ivf-stage-counters --memory-sample-interval-ms 25 --log-output reviews/task-135/001-posting-visit-profile/artifacts/latency-profile-real100k.log
+[suite:task135-posting-visit-profile] wrote reviews/task-135/001-posting-visit-profile/artifacts/suite-manifest.json
+┌────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬──────────────────────────────┬─────────────┬─────────────┬────────────────┐
+│ nprobe ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state                  ┆ rss_peak_kb ┆ hwm_peak_kb ┆ memory_samples │
+╞════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪══════════════════════════════╪═════════════╪═════════════╪════════════════╡
+│ 32     ┆ 32    ┆ 3.69 ms ┆ 0.77 ms ┆ 2.67 ms ┆ 3.50 ms ┆ 5.24 ms ┆ 6.02 ms ┆ 6.17 ms ┆ task136_tq_ivf_real100k_warm ┆ 0           ┆ 0           ┆ 0              │
+└────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴──────────────────────────────┴─────────────┴─────────────┴────────────────┘
+[block-kernel-counters] command=latency label=nprobe=32 surface=ivf quant=turboquant isa=neon flushes=1311 candidates=331757 elapsed_nanos=41293834 elapsed_ms=41.293834 kernel_flushes=1311 kernel_candidates=331757 kernel_elapsed_nanos=41293834 kernel_elapsed_ms=41.293834 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=2 width_8_15=0 width_16_31=2 width_ge32=1307 pruned_candidates=0 kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=ivf flushes=1311 candidates=331757 elapsed_nanos=41293834 elapsed_ms=41.293834 lut32_flushes=1311 lut32_candidates=331757 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[ivf-stage-counters] command=latency label=nprobe=32 stage=approximate_scan scans=32 samples=32 elapsed_us=93408 elapsed_ms=93.408
+[ivf-stage-counters] command=latency label=nprobe=32 stage=candidate_record scans=32 samples=1311 elapsed_us=2747 elapsed_ms=2.747
+[ivf-stage-counters] command=latency label=nprobe=32 stage=exact_rerank scans=32 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=posting_page_decode scans=32 samples=32 elapsed_us=63888 elapsed_ms=63.888
+[ivf-stage-counters] command=latency label=nprobe=32 stage=posting_visit scans=32 samples=32 elapsed_us=86012 elapsed_ms=86.012
+[ivf-stage-counters] command=latency label=nprobe=32 stage=probe_plan scans=32 samples=32 elapsed_us=4425 elapsed_ms=4.425
+[ivf-stage-counters] command=latency label=nprobe=32 stage=rerank_payload_decode scans=32 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=rerank_payload_score scans=32 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=scorer_batch scans=32 samples=1311 elapsed_us=42165 elapsed_ms=42.165
+[ivf-stage-counters] command=latency label=nprobe=32 stage=scratch_flush scans=32 samples=1311 elapsed_us=45198 elapsed_ms=45.198
+[ivf-stage-counters] command=latency label=nprobe=32 stage=topk_collect scans=32 samples=32 elapsed_us=7294 elapsed_ms=7.294
+[suite:task135-posting-visit-profile] wrote reviews/task-135/001-posting-visit-profile/artifacts/suite-manifest.json
+[suite:task135-posting-visit-profile] wrote reviews/task-135/001-posting-visit-profile/artifacts/results.jsonl
+[suite:task135-posting-visit-profile] wrote reviews/task-135/001-posting-visit-profile/artifacts/suite-manifest.json
