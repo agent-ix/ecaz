@@ -205,6 +205,7 @@ pub const EC_SPIRE: IndexProfile = IndexProfile {
         "pq_group_size",
         "storage_format",
         "quantizer",
+        "source_identity",
     ],
     default_sweep: &[8, 16, 24, 32],
 };
