@@ -9,7 +9,7 @@ branch `task-136-rank1-scorer`): mean latency 0.92→0.79 / 1.89→1.62 /
 0.9521→0.9521 / 0.8969→0.8938 (all within ci95 noise; i16 fallback not
 needed), scorer_batch −33/−32/−35%. Ships as opt-in
 `ec_ivf.turboquant_scorer=int8_approx` (default still `lut`).
-Follow-ups: Task 137 (SDOT kernel upgrade), Task 139 (1m matrix + the
+Follow-ups: Task 141 (SDOT kernel upgrade), Task 143 (1m matrix + the
 default-flip decision), Graviton/AWS lane evidence standing open for the
 task-125 family.
 

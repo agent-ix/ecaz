@@ -1,7 +1,7 @@
-# Task 139: IVF TQ 1m promotion matrix (layout × scorer defaults)
+# Task 143: IVF TQ 1m promotion matrix (layout × scorer defaults)
 
 Status: **proposed** (2026-07-02). Owner: unassigned. Priority: P2
-Gated on: (a) Tasks 137 (SDOT) and 138 (drain policy) landing first — the
+Gated on: (a) Tasks 141 (SDOT) and 142 (drain policy) landing first — the
 1m matrix should measure the final candidates once; and (b) the
 `task-125-tq-scorer-optimization` + `task-136-rank1-scorer` stack being
 reviewed and landed on `main` — the default-flip and promotion decisions

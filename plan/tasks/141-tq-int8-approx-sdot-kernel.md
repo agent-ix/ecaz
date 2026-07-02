@@ -1,4 +1,4 @@
-# Task 137: int8_approx SDOT kernel (NEON dotprod upgrade)
+# Task 141: int8_approx SDOT kernel (NEON dotprod upgrade)
 
 Status: **proposed** (2026-07-02). Owner: unassigned. Priority: P2
 Follow-up to Task 136 (int8_approx IVF wiring); serves the Task 98 HNSW
@@ -31,13 +31,13 @@ remain the acceptance contract (hamming32-style; no tolerance framing).
 - A/B per the closeout rule: int8_approx pre-SDOT vs post-SDOT, same
   session/tables/binary-pair, IVF 10k/50k/100k recall+latency+storage with
   `ivf_stage_counters`; cite the `scorer_batch` stage delta.
-- 1m evidence is deferred to Task 139's promotion matrix (which is gated on
+- 1m evidence is deferred to Task 143's promotion matrix (which is gated on
   this task).
 
 ## Out of Scope (hard)
 
 - No AVX2-VNNI analog for the Intel lane in this task (record as a
-  possible 137b if the NEON win lands).
+  possible 141b if the NEON win lands).
 - No i8mm/SMMLA experiments; SDOT first.
 - No on-disk or prepared-query format change.
 

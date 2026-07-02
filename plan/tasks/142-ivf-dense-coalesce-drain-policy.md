@@ -1,4 +1,4 @@
-# Task 138: IVF dense-coalesced scratch drain policy
+# Task 142: IVF dense-coalesced scratch drain policy
 
 Status: **proposed** (2026-07-02). Owner: unassigned. Priority: P2
 Follow-up to Task 135 packet 002 (dense-layout A/B) and Task 111a
@@ -35,7 +35,7 @@ it accumulates across pages and lists up to
 
 - No on-disk format change (scan-side policy only).
 - No change to the row scratch path or its flush target.
-- Default promotion of `dense_posting_blocks` (that is Task 139 / the
+- Default promotion of `dense_posting_blocks` (that is Task 143 / the
   Task 111a family decision).
 
 ## Gate / Exit Criteria

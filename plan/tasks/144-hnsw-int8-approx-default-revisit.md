@@ -1,8 +1,8 @@
-# Task 140: HNSW int8_approx exact-score default revisit
+# Task 144: HNSW int8_approx exact-score default revisit
 
 Status: **proposed** (2026-07-02). Owner: unassigned. Priority: P3
 Follow-up to Tasks 98 (int8_approx kernel, HNSW wiring) and 136 (IVF
-evidence); sweetened by Task 137 (SDOT) if it lands first.
+evidence); sweetened by Task 141 (SDOT) if it lands first.
 
 ## Why
 
@@ -27,7 +27,7 @@ is not.
 ## Out of Scope (hard)
 
 - No new on-disk format/mode/reloption.
-- No IVF changes (Task 139 owns the IVF defaults).
+- No IVF changes (Task 143 owns the IVF defaults).
 
 ## Gate / Exit Criteria
 

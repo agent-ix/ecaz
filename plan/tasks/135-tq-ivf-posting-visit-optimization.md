@@ -11,10 +11,10 @@ byte-identical, storage −8 to −10%, e2e mean −8.2/−4.4/−2.8%). Exit cr
 met via the dense-layout lever; prefetch/batched-parse/devirtualization
 recorded as source-grounded non-levers (both row sub-stages near per-unit
 floors). Follow-up lever noted: dense-coalesced drain policy (flush count
-+36% at 100k costs scorer_batch +7.2%) — recorded as Task 138. Default
++36% at 100k costs scorer_batch +7.2%) — recorded as Task 142. Default
 promotion of `dense_posting_blocks` remains Task 111a-family scope; the
-1m evidence it requires is recorded as Task 139 (m5-local 1m authorized
-2026-07-02, gated on Tasks 137/138).
+1m evidence it requires is recorded as Task 143 (m5-local 1m authorized
+2026-07-02, gated on Tasks 141/142).
 
 ## Why
 
