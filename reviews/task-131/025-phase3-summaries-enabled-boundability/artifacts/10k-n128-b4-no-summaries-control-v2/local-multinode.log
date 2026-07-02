@@ -1,0 +1,9 @@
+run_dir=/home/peter/dev/ecaz/target/spire-local-multinode-t131ctl66
+coord_port=40820
+remote1_port=40821
+remote2_port=40822
+remote3_port=40823
+tier=representative
+prefix=ec_real_10k
+SPIRE local multinode fixture passed
+HARNESS PASSED

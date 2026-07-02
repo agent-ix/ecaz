@@ -1,0 +1,49 @@
+2026-06-29 22:31:55.487 PDT [2597145] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-06-29 22:31:55.489 PDT [2597145] LOG:  listening on Unix socket "/tmp/ecaz-task123/target/spire-local-multinode-sockets-task123-p19-mi-n1024-b2-200q/.s.PGSQL.40530"
+2026-06-29 22:31:55.496 PDT [2597151] LOG:  database system was shut down at 2026-06-29 22:28:22 PDT
+2026-06-29 22:31:55.500 PDT [2597145] LOG:  database system is ready to accept connections
+2026-06-29 22:35:28.500 PDT [2598763] LOG:  could not send data to client: Broken pipe
+2026-06-29 22:35:28.500 PDT [2598763] FATAL:  connection to client lost
+2026-06-29 22:36:55.719 PDT [2597149] LOG:  checkpoint starting: time
+2026-06-29 22:36:59.153 PDT [2597149] LOG:  checkpoint complete: wrote 34 buffers (0.2%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=3.411 s, sync=0.012 s, total=3.435 s; sync files=15, longest=0.007 s, average=0.001 s; distance=230 kB, estimate=230 kB; lsn=0/B1F1C6F0, redo lsn=0/B1F1C5D0
+2026-06-29 22:41:55.378 PDT [2597149] LOG:  checkpoint starting: time
+2026-06-29 22:41:55.391 PDT [2597149] LOG:  checkpoint complete: wrote 0 buffers (0.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.002 s, sync=0.001 s, total=0.014 s; sync files=1, longest=0.001 s, average=0.001 s; distance=20 kB, estimate=209 kB; lsn=0/B1F218B8, redo lsn=0/B1F21860
+2026-06-29 22:42:41.618 PDT [2598785] LOG:  could not send data to client: Broken pipe
+2026-06-29 22:42:41.618 PDT [2598785] FATAL:  connection to client lost
+2026-06-29 22:46:55.618 PDT [2597149] LOG:  checkpoint starting: time
+2026-06-29 22:46:55.746 PDT [2597149] LOG:  checkpoint complete: wrote 1 buffers (0.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.102 s, sync=0.004 s, total=0.129 s; sync files=2, longest=0.003 s, average=0.002 s; distance=18 kB, estimate=190 kB; lsn=0/B1F260E0, redo lsn=0/B1F26088
+2026-06-29 22:49:54.417 PDT [2602050] LOG:  could not receive data from client: Connection reset by peer
+2026-06-29 22:51:55.977 PDT [2597149] LOG:  checkpoint starting: time
+2026-06-29 22:51:55.993 PDT [2597149] LOG:  checkpoint complete: wrote 0 buffers (0.0%), wrote 2 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.004 s, sync=0.001 s, total=0.016 s; sync files=1, longest=0.001 s, average=0.001 s; distance=15 kB, estimate=172 kB; lsn=0/B1F2A018, redo lsn=0/B1F29FA8
+2026-06-29 22:56:55.205 PDT [2597149] LOG:  checkpoint starting: time
+2026-06-29 22:56:55.218 PDT [2597149] LOG:  checkpoint complete: wrote 0 buffers (0.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.002 s, sync=0.001 s, total=0.013 s; sync files=1, longest=0.001 s, average=0.001 s; distance=20 kB, estimate=157 kB; lsn=0/B1F2F298, redo lsn=0/B1F2F240
+2026-06-29 22:57:08.081 PDT [2604796] LOG:  could not send data to client: Broken pipe
+2026-06-29 22:57:08.081 PDT [2604796] FATAL:  connection to client lost
+2026-06-29 23:01:55.435 PDT [2597149] LOG:  checkpoint starting: time
+2026-06-29 23:01:55.463 PDT [2597149] LOG:  checkpoint complete: wrote 0 buffers (0.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.003 s, sync=0.001 s, total=0.029 s; sync files=1, longest=0.001 s, average=0.001 s; distance=15 kB, estimate=143 kB; lsn=0/B1F331D0, redo lsn=0/B1F33178
+2026-06-29 23:04:21.779 PDT [2608222] LOG:  could not receive data from client: Connection reset by peer
+2026-06-29 23:06:55.690 PDT [2597149] LOG:  checkpoint starting: time
+2026-06-29 23:06:55.701 PDT [2597149] LOG:  checkpoint complete: wrote 0 buffers (0.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.002 s, sync=0.001 s, total=0.011 s; sync files=1, longest=0.001 s, average=0.001 s; distance=15 kB, estimate=130 kB; lsn=0/B1F371C0, redo lsn=0/B1F37168
+2026-06-29 23:11:19.226 PDT [2610925] LOG:  could not receive data from client: Connection reset by peer
+2026-06-29 23:11:55.886 PDT [2597149] LOG:  checkpoint starting: time
+2026-06-29 23:11:55.898 PDT [2597149] LOG:  checkpoint complete: wrote 0 buffers (0.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.002 s, sync=0.001 s, total=0.013 s; sync files=1, longest=0.001 s, average=0.001 s; distance=19 kB, estimate=119 kB; lsn=0/B1F3BE78, redo lsn=0/B1F3BE20
+2026-06-29 23:16:55.112 PDT [2597149] LOG:  checkpoint starting: time
+2026-06-29 23:16:55.125 PDT [2597149] LOG:  checkpoint complete: wrote 0 buffers (0.0%), wrote 2 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.004 s, sync=0.001 s, total=0.013 s; sync files=1, longest=0.001 s, average=0.001 s; distance=18 kB, estimate=109 kB; lsn=0/B1F409B8, redo lsn=0/B1F40960
+2026-06-29 23:18:17.358 PDT [2613707] LOG:  could not receive data from client: Connection reset by peer
+2026-06-29 23:21:55.310 PDT [2597149] LOG:  checkpoint starting: time
+2026-06-29 23:21:55.323 PDT [2597149] LOG:  checkpoint complete: wrote 0 buffers (0.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.003 s, sync=0.001 s, total=0.014 s; sync files=1, longest=0.001 s, average=0.001 s; distance=16 kB, estimate=100 kB; lsn=0/B1F44B38, redo lsn=0/B1F44AE0
+2026-06-29 23:25:15.194 PDT [2617129] LOG:  could not send data to client: Broken pipe
+2026-06-29 23:25:15.194 PDT [2617129] FATAL:  connection to client lost
+2026-06-29 23:26:55.532 PDT [2597149] LOG:  checkpoint starting: time
+2026-06-29 23:26:55.544 PDT [2597149] LOG:  checkpoint complete: wrote 0 buffers (0.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.002 s, sync=0.001 s, total=0.013 s; sync files=1, longest=0.001 s, average=0.001 s; distance=16 kB, estimate=91 kB; lsn=0/B1F48CE0, redo lsn=0/B1F48C88
+2026-06-29 23:31:55.742 PDT [2597149] LOG:  checkpoint starting: time
+2026-06-29 23:31:55.756 PDT [2597149] LOG:  checkpoint complete: wrote 0 buffers (0.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.002 s, sync=0.002 s, total=0.014 s; sync files=1, longest=0.002 s, average=0.002 s; distance=21 kB, estimate=84 kB; lsn=0/B1F4E370, redo lsn=0/B1F4E318
+2026-06-29 23:32:13.507 PDT [2619904] LOG:  could not send data to client: Broken pipe
+2026-06-29 23:32:13.507 PDT [2619904] FATAL:  connection to client lost
+2026-06-29 23:32:31.801 PDT [2597145] LOG:  received fast shutdown request
+2026-06-29 23:32:31.802 PDT [2597145] LOG:  aborting any active transactions
+2026-06-29 23:32:31.803 PDT [2597145] LOG:  background worker "logical replication launcher" (PID 2597154) exited with exit code 1
+2026-06-29 23:32:31.803 PDT [2597149] LOG:  shutting down
+2026-06-29 23:32:31.805 PDT [2597149] LOG:  checkpoint starting: shutdown immediate
+2026-06-29 23:32:31.818 PDT [2597149] LOG:  checkpoint complete: wrote 0 buffers (0.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.002 s, sync=0.001 s, total=0.015 s; sync files=1, longest=0.001 s, average=0.001 s; distance=1 kB, estimate=76 kB; lsn=0/B1F4E980, redo lsn=0/B1F4E980
+2026-06-29 23:32:31.840 PDT [2597145] LOG:  database system is shut down

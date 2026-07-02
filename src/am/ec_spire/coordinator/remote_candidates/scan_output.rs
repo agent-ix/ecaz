@@ -304,6 +304,28 @@ fn production_scan_outputs_from_heap_candidates(
         .collect()
 }
 
+fn initial_remote_scan_threshold_from_local_heap_rows(
+    local_heap_rows: &[SpireRemoteSearchLocalHeapCandidateRow],
+    top_k: usize,
+) -> Result<Option<f32>, String> {
+    if !options::remote_search_initial_threshold_early_stop_enabled() || top_k == 0 {
+        return Ok(None);
+    }
+    let ready_rows = local_heap_rows
+        .iter()
+        .filter(|row| row.status == SPIRE_REMOTE_STATUS_READY)
+        .cloned()
+        .collect::<Vec<_>>();
+    if ready_rows.len() < top_k {
+        return Ok(None);
+    }
+    let merged = merge_remote_search_heap_candidates_for_result(ready_rows, top_k)?;
+    if merged.len() < top_k {
+        return Ok(None);
+    }
+    Ok(merged.get(top_k - 1).map(|row| row.score))
+}
+
 fn production_scan_output_is_local_heap_tid(output: &SpireRemoteProductionScanOutputRow) -> bool {
     matches!(output.heap_lookup_owner, SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION)
 }
@@ -419,6 +441,9 @@ fn production_read_timeline_rows(
                 completed_after_ms: result.completed_after_ms,
                 elapsed_ms: result.elapsed_ms,
                 candidate_count: result.candidate_count,
+                payload_decode_elapsed_ms: 0,
+                payload_decode_row_count: 0,
+                payload_decode_bytes: 0,
                 status: result.status,
                 failure_category: result.failure_category,
             }),
@@ -435,6 +460,9 @@ fn production_read_timeline_rows(
                 completed_after_ms: result.completed_after_ms,
                 elapsed_ms: result.elapsed_ms,
                 candidate_count: result.candidate_count,
+                payload_decode_elapsed_ms: result.payload_decode_elapsed_ms,
+                payload_decode_row_count: result.payload_decode_row_count,
+                payload_decode_bytes: result.payload_decode_bytes,
                 status: result.status,
                 failure_category: result.failure_category,
             }),
@@ -498,6 +526,10 @@ fn production_read_profile_row(
         heap_receive_query_count: metrics.heap_receive_query_count,
         payload_decode_row_count: metrics.payload_decode_row_count,
         payload_decode_bytes: metrics.payload_decode_bytes,
+        global_pre_heap_input_count: metrics.global_pre_heap_input_count,
+        global_pre_heap_candidate_count: metrics.global_pre_heap_candidate_count,
+        global_pre_heap_duplicate_vec_id_count: metrics.global_pre_heap_duplicate_vec_id_count,
+        global_pre_heap_pruned_candidate_count: metrics.global_pre_heap_pruned_candidate_count,
         merge_input_count: metrics.merge_input_count,
         merge_duplicate_vec_id_count: metrics.merge_duplicate_vec_id_count,
         merge_output_count: metrics.merge_output_count,
@@ -647,6 +679,8 @@ fn remote_search_production_scan_heap_resolution_result_stream_impl(
             .count(),
     )
     .map_err(|_| "ec_spire production scan heap local candidate count exceeds u64")?;
+    let initial_threshold_score =
+        initial_remote_scan_threshold_from_local_heap_rows(&local_heap_rows, top_k)?;
 
     let fingerprint_start = std::time::Instant::now();
     let dispatch_rows = remote_search_libpq_dispatch_plan_rows(
@@ -675,6 +709,7 @@ fn remote_search_production_scan_heap_resolution_result_stream_impl(
         top_k,
         consistency_mode,
         tuple_payload_columns,
+        initial_threshold_score,
         &mut metrics,
     )?;
     let timeline = production_read_timeline_rows(root_control.active_epoch, &fanout_result);
@@ -857,6 +892,483 @@ pub(crate) fn remote_search_production_read_profile_row(
     );
     let profiled = result.unwrap_or_else(|e| pgrx::error!("{e}"));
     production_read_profile_row(&profiled.stream.summary, &profiled.metrics)
+}
+
+pub(crate) fn remote_search_production_scan_profile_rows(
+    index: SpireLiveIndexRelation,
+    query: Vec<f32>,
+    top_k: usize,
+) -> Vec<scan::SpireSelectedLeafScanProfile> {
+    let result = remote_search_production_scan_profile_rows_result(index, query, top_k);
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+pub(crate) fn remote_search_production_threshold_profile_rows(
+    index: SpireLiveIndexRelation,
+    query: Vec<f32>,
+    top_k: usize,
+    threshold_score: f32,
+) -> Vec<scan::SpireSelectedLeafThresholdProfile> {
+    let result =
+        remote_search_production_threshold_profile_rows_result(index, query, top_k, threshold_score);
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+pub(crate) fn remote_search_production_candidate_threshold_profile_rows(
+    index: SpireLiveIndexRelation,
+    query: Vec<f32>,
+    top_k: usize,
+) -> Vec<scan::SpireSelectedLeafThresholdProfile> {
+    let result = remote_search_production_candidate_threshold_profile_rows_result(index, query, top_k);
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+fn remote_search_production_scan_profile_rows_result(
+    index: SpireLiveIndexRelation,
+    query: Vec<f32>,
+    top_k: usize,
+) -> Result<Vec<scan::SpireSelectedLeafScanProfile>, String> {
+    let query_for_scan = scan::SpireScanQuery::new(query.clone())?;
+    let consistency_mode = options::current_session_remote_search_consistency_mode_name();
+    let root_control = index.root_control();
+    if root_control.active_epoch == 0 || top_k == 0 {
+        return Ok(Vec::new());
+    }
+
+    let (epoch_manifest, object_manifest, placement_directory) =
+        load_relation_epoch_manifests_for_coordinator_fanout(index, root_control)?;
+    let snapshot = meta::SpirePublishedEpochSnapshot::new(
+        &epoch_manifest,
+        &object_manifest,
+        &placement_directory,
+    )?;
+    let object_store = index.object_store_set(
+        &placement_directory,
+        pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+    )?;
+    let relation_options = index.relation_options();
+    let payload_format = relation_options.assignment_payload_format();
+    let dedupe_mode = if relation_options.boundary_replica_count > 0 {
+        options::SpireCandidateDedupeMode::VecIdDedupeEnabled
+    } else {
+        options::SpireCandidateDedupeMode::NoReplicaDedupeDisabled
+    };
+    let top_graph_plan = relation_options.top_graph_plan()?;
+    let leaf_count = scan::count_scan_plan_routable_leaf_pids(&snapshot, &object_store)?;
+    let scan_plan = options::resolve_single_level_scan_plan(leaf_count, relation_options)?;
+    let selected_leaf_pids = scan::collect_scan_plan_selected_leaf_pids(
+        &snapshot,
+        &object_store,
+        &query_for_scan,
+        scan_plan,
+        top_graph_plan,
+    )?;
+    let fanout_plan = plan_remote_search_fanout(&snapshot, &selected_leaf_pids)?;
+    let mut rows = Vec::new();
+    if !fanout_plan.local_selected_pids.is_empty() {
+        rows.push(scan::collect_quantized_selected_leaf_scan_profile(
+            &snapshot,
+            &object_store,
+            query_for_scan.values(),
+            &fanout_plan.local_selected_pids,
+            payload_format,
+            dedupe_mode,
+            Some(top_k),
+        )?);
+    }
+
+    let dispatch_rows = remote_search_libpq_dispatch_plan_rows(
+        index,
+        root_control.active_epoch,
+        query,
+        selected_leaf_pids,
+        top_k,
+        consistency_mode,
+    );
+    let index_relid = remote_candidate_index_oid(index, "ec_spire production scan profile");
+    let mut executor_state = SpireRemoteSearchLibpqExecutorState::default();
+    for row in &dispatch_rows {
+        if row.dispatch_action != SPIRE_REMOTE_DISPATCH_PIPELINE_ACTION {
+            return Err(format!(
+                "ec_spire production scan profile dispatch for node_id {} is blocked with status {}",
+                row.node_id, row.status
+            ));
+        }
+        rows.push(remote_search_libpq_executor_scan_profile_for_dispatch(
+            index_relid,
+            row,
+            query_for_scan.values(),
+            top_k,
+            consistency_mode,
+            &mut executor_state,
+        )?);
+    }
+    Ok(rows)
+}
+
+fn remote_search_production_global_candidate_threshold_score_result(
+    index: SpireLiveIndexRelation,
+    query: Vec<f32>,
+    top_k: usize,
+) -> Result<Option<f32>, String> {
+    if top_k == 0 {
+        return Ok(None);
+    }
+    let query_for_scan = scan::SpireScanQuery::new(query.clone())?;
+    let consistency_mode = options::current_session_remote_search_consistency_mode_name();
+    let root_control = index.root_control();
+    if root_control.active_epoch == 0 {
+        return Ok(None);
+    }
+
+    let (epoch_manifest, object_manifest, placement_directory) =
+        load_relation_epoch_manifests_for_coordinator_fanout(index, root_control)?;
+    let snapshot = meta::SpirePublishedEpochSnapshot::new(
+        &epoch_manifest,
+        &object_manifest,
+        &placement_directory,
+    )?;
+    let object_store = index.object_store_set(
+        &placement_directory,
+        pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+    )?;
+    let relation_options = index.relation_options();
+    let payload_format = relation_options.assignment_payload_format();
+    let dedupe_mode = if relation_options.boundary_replica_count > 0 {
+        options::SpireCandidateDedupeMode::VecIdDedupeEnabled
+    } else {
+        options::SpireCandidateDedupeMode::NoReplicaDedupeDisabled
+    };
+    let top_graph_plan = relation_options.top_graph_plan()?;
+    let leaf_count = scan::count_scan_plan_routable_leaf_pids(&snapshot, &object_store)?;
+    let scan_plan = options::resolve_single_level_scan_plan(leaf_count, relation_options)?;
+    let selected_leaf_pids = scan::collect_scan_plan_selected_leaf_pids(
+        &snapshot,
+        &object_store,
+        &query_for_scan,
+        scan_plan,
+        top_graph_plan,
+    )?;
+    let fanout_plan = plan_remote_search_fanout(&snapshot, &selected_leaf_pids)?;
+    let mut batches = Vec::new();
+    if !fanout_plan.local_selected_pids.is_empty() {
+        let local_candidates = scan::collect_quantized_selected_leaf_candidates(
+            &snapshot,
+            &object_store,
+            query_for_scan.values(),
+            &fanout_plan.local_selected_pids,
+            payload_format,
+            dedupe_mode,
+            Some(top_k),
+        )?
+        .into_iter()
+        .map(|candidate| SpireRemoteSearchCandidateRow {
+            served_epoch: candidate.epoch,
+            node_id: meta::SPIRE_LOCAL_NODE_ID,
+            pid: candidate.pid,
+            object_version: candidate.object_version,
+            row_index: candidate.row_index,
+            assignment_flags: candidate.assignment_flags,
+            vec_id: candidate.vec_id.as_bytes().to_vec(),
+            row_locator: remote_search_row_locator(candidate.heap_tid),
+            score: candidate.score,
+        })
+        .collect();
+        batches.push(SpireRemoteSearchCandidateBatch {
+            node_id: meta::SPIRE_LOCAL_NODE_ID,
+            selected_pids: fanout_plan.local_selected_pids,
+            candidates: local_candidates,
+        });
+    }
+
+    let dispatch_rows = remote_search_libpq_dispatch_plan_rows(
+        index,
+        root_control.active_epoch,
+        query,
+        selected_leaf_pids,
+        top_k,
+        consistency_mode,
+    );
+    let mut executor =
+        SpireRemoteFanoutExecutor::from_libpq_dispatch_rows(root_control.active_epoch, &dispatch_rows);
+    let parsed_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;
+    if parsed_consistency_mode == meta::SpireConsistencyMode::Degraded {
+        executor.apply_blocked_before_dispatch_degraded_skips();
+    }
+    executor.mark_planned_dispatches_candidate_receive_ready();
+    executor.run_compact_candidate_receive(query_for_scan.values(), top_k, consistency_mode)?;
+    batches.extend(executor.ready_candidate_batches()?);
+
+    let merged =
+        merge_validated_remote_search_candidate_batches(root_control.active_epoch, batches, Some(top_k))?;
+    Ok(global_compact_candidate_threshold_score(&merged.candidates, top_k))
+}
+
+fn global_compact_candidate_threshold_score(
+    candidates: &[SpireRemoteSearchCandidateRow],
+    top_k: usize,
+) -> Option<f32> {
+    if top_k == 0 || candidates.len() < top_k {
+        return None;
+    }
+    candidates.get(top_k - 1).map(|candidate| candidate.score)
+}
+
+fn remote_search_production_candidate_threshold_profile_rows_result(
+    index: SpireLiveIndexRelation,
+    query: Vec<f32>,
+    top_k: usize,
+) -> Result<Vec<scan::SpireSelectedLeafThresholdProfile>, String> {
+    let Some(threshold_score) =
+        remote_search_production_global_candidate_threshold_score_result(index, query.clone(), top_k)?
+    else {
+        return Ok(Vec::new());
+    };
+    remote_search_production_threshold_profile_rows_result(index, query, top_k, threshold_score)
+}
+
+fn remote_search_production_threshold_profile_rows_result(
+    index: SpireLiveIndexRelation,
+    query: Vec<f32>,
+    top_k: usize,
+    threshold_score: f32,
+) -> Result<Vec<scan::SpireSelectedLeafThresholdProfile>, String> {
+    if !threshold_score.is_finite() {
+        return Err("ec_spire production threshold profile threshold_score must be finite".to_owned());
+    }
+    let query_for_scan = scan::SpireScanQuery::new(query.clone())?;
+    let consistency_mode = options::current_session_remote_search_consistency_mode_name();
+    let root_control = index.root_control();
+    if root_control.active_epoch == 0 || top_k == 0 {
+        return Ok(Vec::new());
+    }
+
+    let (epoch_manifest, object_manifest, placement_directory) =
+        load_relation_epoch_manifests_for_coordinator_fanout(index, root_control)?;
+    let snapshot = meta::SpirePublishedEpochSnapshot::new(
+        &epoch_manifest,
+        &object_manifest,
+        &placement_directory,
+    )?;
+    let object_store = index.object_store_set(
+        &placement_directory,
+        pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+    )?;
+    let relation_options = index.relation_options();
+    let payload_format = relation_options.assignment_payload_format();
+    let top_graph_plan = relation_options.top_graph_plan()?;
+    let leaf_count = scan::count_scan_plan_routable_leaf_pids(&snapshot, &object_store)?;
+    let scan_plan = options::resolve_single_level_scan_plan(leaf_count, relation_options)?;
+    let selected_leaf_pids = scan::collect_scan_plan_selected_leaf_pids(
+        &snapshot,
+        &object_store,
+        &query_for_scan,
+        scan_plan,
+        top_graph_plan,
+    )?;
+    let fanout_plan = plan_remote_search_fanout(&snapshot, &selected_leaf_pids)?;
+    let mut rows = Vec::new();
+    if !fanout_plan.local_selected_pids.is_empty() {
+        rows.push(scan::collect_quantized_selected_leaf_threshold_profile(
+            &snapshot,
+            &object_store,
+            query_for_scan.values(),
+            &fanout_plan.local_selected_pids,
+            payload_format,
+            threshold_score,
+        )?);
+    }
+
+    let dispatch_rows = remote_search_libpq_dispatch_plan_rows(
+        index,
+        root_control.active_epoch,
+        query,
+        selected_leaf_pids,
+        top_k,
+        consistency_mode,
+    );
+    let index_relid = remote_candidate_index_oid(index, "ec_spire production threshold profile");
+    let mut executor_state = SpireRemoteSearchLibpqExecutorState::default();
+    for row in &dispatch_rows {
+        if row.dispatch_action != SPIRE_REMOTE_DISPATCH_PIPELINE_ACTION {
+            return Err(format!(
+                "ec_spire production threshold profile dispatch for node_id {} is blocked with status {}",
+                row.node_id, row.status
+            ));
+        }
+        rows.push(remote_search_libpq_executor_threshold_profile_for_dispatch(
+            index_relid,
+            row,
+            query_for_scan.values(),
+            threshold_score,
+            consistency_mode,
+            &mut executor_state,
+        )?);
+    }
+    Ok(rows)
+}
+
+fn remote_search_libpq_executor_scan_profile_for_dispatch(
+    index_relid: pg_sys::Oid,
+    row: &SpireRemoteSearchLibpqDispatchPlanRow,
+    query: &[f32],
+    top_k: usize,
+    consistency_mode: &str,
+    executor_state: &mut SpireRemoteSearchLibpqExecutorState,
+) -> Result<scan::SpireSelectedLeafScanProfile, String> {
+    let _governance_permit = remote_search_libpq_executor_governance_permit(row)?;
+    let conninfo = remote_conninfo_secret_value(&row.conninfo_secret_name).map_err(|status| {
+        format!(
+            "ec_spire production scan profile conninfo secret for node_id {} is not resolved: {status}",
+            row.node_id
+        )
+    })?;
+    let mut client =
+        remote_search_libpq_connect_with_session_timeouts(&conninfo, row.node_id, "production scan profile")?;
+    let remote_index_oid = client
+        .query_one(
+            "SELECT to_regclass($1)::oid",
+            &[&row.remote_index_regclass.as_str()],
+        )
+        .map_err(|_| {
+            format!(
+                "ec_spire production scan profile failed to resolve remote index for node_id {}",
+                row.node_id
+            )
+        })?
+        .try_get::<_, Option<u32>>(0)
+        .map_err(|_| {
+            format!(
+                "ec_spire production scan profile remote index oid decode failed for node_id {}",
+                row.node_id
+            )
+        })?
+        .ok_or_else(|| {
+            format!(
+                "ec_spire production scan profile remote index is missing for node_id {}",
+                row.node_id
+            )
+        })?;
+    validate_remote_search_libpq_endpoint_identity_for_dispatch(
+        &mut client,
+        index_relid,
+        remote_index_oid,
+        row,
+        executor_state,
+    )?;
+    let requested_epoch = i64::try_from(row.requested_epoch)
+        .map_err(|_| "ec_spire production scan profile requested_epoch exceeds i64")?;
+    let selected_pids = row
+        .selected_pids
+        .iter()
+        .map(|pid| {
+            i64::try_from(*pid)
+                .map_err(|_| "ec_spire production scan profile selected PID exceeds i64")
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let top_k = i32::try_from(top_k)
+        .map_err(|_| "ec_spire production scan profile top_k exceeds i32")?;
+    let result_row = client
+        .query_one(
+            SPIRE_REMOTE_SEARCH_LIBPQ_SCAN_PROFILE_SQL_TEMPLATE,
+            &[
+                &remote_index_oid,
+                &requested_epoch,
+                &query,
+                &selected_pids,
+                &top_k,
+                &consistency_mode,
+            ],
+        )
+        .map_err(|_| {
+            format!(
+                "ec_spire production scan profile query failed for node_id {}",
+                row.node_id
+            )
+        })?;
+    decode_remote_search_scan_profile_pg_row(&result_row, row.requested_epoch, row.node_id)
+}
+
+fn remote_search_libpq_executor_threshold_profile_for_dispatch(
+    index_relid: pg_sys::Oid,
+    row: &SpireRemoteSearchLibpqDispatchPlanRow,
+    query: &[f32],
+    threshold_score: f32,
+    consistency_mode: &str,
+    executor_state: &mut SpireRemoteSearchLibpqExecutorState,
+) -> Result<scan::SpireSelectedLeafThresholdProfile, String> {
+    let _governance_permit = remote_search_libpq_executor_governance_permit(row)?;
+    let conninfo = remote_conninfo_secret_value(&row.conninfo_secret_name).map_err(|status| {
+        format!(
+            "ec_spire production threshold profile conninfo secret for node_id {} is not resolved: {status}",
+            row.node_id
+        )
+    })?;
+    let mut client = remote_search_libpq_connect_with_session_timeouts(
+        &conninfo,
+        row.node_id,
+        "production threshold profile",
+    )?;
+    let remote_index_oid = client
+        .query_one(
+            "SELECT to_regclass($1)::oid",
+            &[&row.remote_index_regclass.as_str()],
+        )
+        .map_err(|_| {
+            format!(
+                "ec_spire production threshold profile failed to resolve remote index for node_id {}",
+                row.node_id
+            )
+        })?
+        .try_get::<_, Option<u32>>(0)
+        .map_err(|_| {
+            format!(
+                "ec_spire production threshold profile remote index oid decode failed for node_id {}",
+                row.node_id
+            )
+        })?
+        .ok_or_else(|| {
+            format!(
+                "ec_spire production threshold profile remote index is missing for node_id {}",
+                row.node_id
+            )
+        })?;
+    validate_remote_search_libpq_endpoint_identity_for_dispatch(
+        &mut client,
+        index_relid,
+        remote_index_oid,
+        row,
+        executor_state,
+    )?;
+    let requested_epoch = i64::try_from(row.requested_epoch)
+        .map_err(|_| "ec_spire production threshold profile requested_epoch exceeds i64")?;
+    let selected_pids = row
+        .selected_pids
+        .iter()
+        .map(|pid| {
+            i64::try_from(*pid)
+                .map_err(|_| "ec_spire production threshold profile selected PID exceeds i64")
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let result_row = client
+        .query_one(
+            SPIRE_REMOTE_SEARCH_LIBPQ_THRESHOLD_PROFILE_SQL_TEMPLATE,
+            &[
+                &remote_index_oid,
+                &requested_epoch,
+                &query,
+                &selected_pids,
+                &threshold_score,
+                &consistency_mode,
+            ],
+        )
+        .map_err(|_| {
+            format!(
+                "ec_spire production threshold profile query failed for node_id {}",
+                row.node_id
+            )
+        })?;
+    decode_remote_search_threshold_profile_pg_row(&result_row, row.requested_epoch, row.node_id)
 }
 
 pub(crate) fn remote_search_production_read_timeline_rows(

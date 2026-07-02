@@ -1,0 +1,86 @@
+{
+  "name": "task131-phase3-summaries-enabled-boundability",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-131/025-phase3-summaries-enabled-boundability/artifacts",
+  "defaults": {
+    "pg": 18
+  },
+  "steps": [
+    {
+      "kind": "spire-local-multinode",
+      "name": "mi-10k-n128-b4-no-summaries-control",
+      "tags": ["task131", "phase3", "boundability", "summaries-off", "10k", "n128", "b4"],
+      "artifact_dir": "reviews/task-131/025-phase3-summaries-enabled-boundability/artifacts/10k-n128-b4-no-summaries-control-v2",
+      "run_id": "t131ctl66",
+      "coord_port": 40820,
+      "remote1_port": 40821,
+      "remote2_port": 40822,
+      "remote3_port": 40823,
+      "tier": "representative",
+      "prefix": "ec_real_10k",
+      "prepared_prefix": "ec_real_10k",
+      "prepared_dir": "data/task106_intel_dbpedia_staged",
+      "storage_format": "rabitq",
+      "coord_index": "t131_p3_bound_q20_10k_n128_b4_ctl66_coord_idx",
+      "remote_index": "t131_p3_bound_q20_10k_n128_b4_ctl66_remote_idx",
+      "reloptions": [
+        "nlists=128",
+        "recursive_fanout=8",
+        "top_graph_enabled=1",
+        "top_graph_degree=32",
+        "top_graph_build_list_size=100",
+        "top_graph_search_list_size=96",
+        "boundary_replica_count=4",
+        "training_sample_rows=10000"
+      ],
+      "bench_top_k": 10,
+      "bench_queries_limit": 20,
+      "bench_sweep": "96",
+      "bench_rowcap_sweep": "96",
+      "skip_bench_rowcap": true,
+      "bench_production_read_variants": [
+        "name=baseline;timeline_payload=none;guc=ec_spire.remote_search_global_pre_heap_merge=off"
+      ],
+      "skip_fault_drills": true
+    },
+    {
+      "kind": "spire-local-multinode",
+      "name": "mi-10k-n128-b4-leaf-block-rows64-threshold-boundability",
+      "tags": ["task131", "phase3", "boundability", "summaries-on", "10k", "n128", "b4"],
+      "pgoptions": "-c ec_spire.leaf_block_rows=64",
+      "artifact_dir": "reviews/task-131/025-phase3-summaries-enabled-boundability/artifacts/10k-n128-b4-leaf-block-rows64-materialized-v3",
+      "run_id": "t131mat66",
+      "coord_port": 40830,
+      "remote1_port": 40831,
+      "remote2_port": 40832,
+      "remote3_port": 40833,
+      "tier": "representative",
+      "prefix": "ec_real_10k",
+      "prepared_prefix": "ec_real_10k",
+      "prepared_dir": "data/task106_intel_dbpedia_staged",
+      "storage_format": "rabitq",
+      "coord_index": "t131_p3_bound_q20_10k_n128_b4_mat66_coord_idx",
+      "remote_index": "t131_p3_bound_q20_10k_n128_b4_mat66_remote_idx",
+      "reloptions": [
+        "nlists=128",
+        "recursive_fanout=8",
+        "top_graph_enabled=1",
+        "top_graph_degree=32",
+        "top_graph_build_list_size=100",
+        "top_graph_search_list_size=96",
+        "boundary_replica_count=4",
+        "training_sample_rows=10000"
+      ],
+      "load_session_gucs": ["ec_spire.leaf_block_rows=64"],
+      "bench_top_k": 10,
+      "bench_queries_limit": 20,
+      "bench_sweep": "96",
+      "bench_rowcap_sweep": "96",
+      "skip_bench_rowcap": true,
+      "bench_production_read_variants": [
+        "name=baseline;timeline_payload=none;guc=ec_spire.remote_search_global_pre_heap_merge=off"
+      ],
+      "skip_fault_drills": true
+    }
+  ]
+}

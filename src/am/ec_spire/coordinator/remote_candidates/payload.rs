@@ -87,6 +87,142 @@ fn decode_remote_search_candidate_pg_row(
     })
 }
 
+fn decode_remote_search_scan_profile_pg_row(
+    row: &postgres::Row,
+    expected_requested_epoch: u64,
+    expected_node_id: u32,
+) -> Result<scan::SpireSelectedLeafScanProfile, String> {
+    let served_epoch = row
+        .try_get::<_, i64>("served_epoch")
+        .map_err(|_| "ec_spire remote scan profile served_epoch decode failed".to_owned())
+        .and_then(|value| {
+            u64::try_from(value)
+                .map_err(|_| "ec_spire remote scan profile served_epoch is negative".to_owned())
+        })?;
+    if served_epoch != expected_requested_epoch {
+        return Err(format!(
+            "ec_spire remote scan profile served_epoch {served_epoch} does not match requested epoch {expected_requested_epoch}"
+        ));
+    }
+    let selected_pid_count = decode_nonnegative_i64_metric(row, "selected_pid_count")?;
+    let scanned_pid_count = decode_nonnegative_i64_metric(row, "scanned_pid_count")?;
+    let leaf_candidate_row_count = decode_nonnegative_i64_metric(row, "leaf_candidate_row_count")?;
+    let deduped_candidate_row_count =
+        decode_nonnegative_i64_metric(row, "deduped_candidate_row_count")?;
+    let truncated_candidate_row_count =
+        decode_nonnegative_i64_metric(row, "truncated_candidate_row_count")?;
+    let candidate_winner_count = decode_nonnegative_i64_metric(row, "candidate_winner_count")?;
+    let leaf_block_available_count =
+        decode_nonnegative_i64_metric(row, "leaf_block_available_count")?;
+    let leaf_block_selected_count =
+        decode_nonnegative_i64_metric(row, "leaf_block_selected_count")?;
+    let leaf_block_skipped_count = decode_nonnegative_i64_metric(row, "leaf_block_skipped_count")?;
+    let sound_upper_bound_available_count =
+        decode_nonnegative_i64_metric(row, "sound_upper_bound_available_count")?;
+    let sound_upper_bound_missing_count =
+        decode_nonnegative_i64_metric(row, "sound_upper_bound_missing_count")?;
+    let leaf_summary_score_nanos =
+        decode_nonnegative_i64_metric(row, "leaf_summary_score_nanos")?;
+    let leaf_row_score_nanos = decode_nonnegative_i64_metric(row, "leaf_row_score_nanos")?;
+    let candidate_score_nanos = decode_nonnegative_i64_metric(row, "candidate_score_nanos")?;
+    let local_kth_score = row
+        .try_get::<_, Option<f32>>("local_kth_score")
+        .map_err(|_| "ec_spire remote scan profile local_kth_score decode failed".to_owned())?;
+
+    Ok(scan::SpireSelectedLeafScanProfile {
+        served_epoch,
+        node_id: expected_node_id,
+        selected_pid_count,
+        scanned_pid_count,
+        leaf_candidate_row_count,
+        deduped_candidate_row_count,
+        truncated_candidate_row_count,
+        candidate_winner_count,
+        leaf_block_available_count,
+        leaf_block_selected_count,
+        leaf_block_skipped_count,
+        sound_upper_bound_available_count,
+        sound_upper_bound_missing_count,
+        leaf_summary_score_nanos,
+        leaf_row_score_nanos,
+        candidate_score_nanos,
+        local_kth_score,
+    })
+}
+
+fn decode_remote_search_threshold_profile_pg_row(
+    row: &postgres::Row,
+    expected_requested_epoch: u64,
+    expected_node_id: u32,
+) -> Result<scan::SpireSelectedLeafThresholdProfile, String> {
+    let served_epoch = row
+        .try_get::<_, i64>("served_epoch")
+        .map_err(|_| "ec_spire remote threshold profile served_epoch decode failed".to_owned())
+        .and_then(|value| {
+            u64::try_from(value).map_err(|_| {
+                "ec_spire remote threshold profile served_epoch is negative".to_owned()
+            })
+        })?;
+    if served_epoch != expected_requested_epoch {
+        return Err(format!(
+            "ec_spire remote threshold profile served_epoch {served_epoch} does not match requested epoch {expected_requested_epoch}"
+        ));
+    }
+    let selected_pid_count = decode_nonnegative_i64_metric(row, "selected_pid_count")?;
+    let evaluated_pid_count = decode_nonnegative_i64_metric(row, "evaluated_pid_count")?;
+    let threshold_score = row
+        .try_get::<_, f32>("threshold_score")
+        .map_err(|_| "ec_spire remote threshold profile threshold_score decode failed".to_owned())?;
+    let threshold_ip = row
+        .try_get::<_, f32>("threshold_ip")
+        .map_err(|_| "ec_spire remote threshold profile threshold_ip decode failed".to_owned())?;
+    let sound_upper_bound_available_count =
+        decode_nonnegative_i64_metric(row, "sound_upper_bound_available_count")?;
+    let sound_upper_bound_missing_count =
+        decode_nonnegative_i64_metric(row, "sound_upper_bound_missing_count")?;
+    let threshold_block_available_count =
+        decode_nonnegative_i64_metric(row, "threshold_block_available_count")?;
+    let threshold_block_selected_count =
+        decode_nonnegative_i64_metric(row, "threshold_block_selected_count")?;
+    let threshold_block_skipped_count =
+        decode_nonnegative_i64_metric(row, "threshold_block_skipped_count")?;
+    let threshold_row_available_count =
+        decode_nonnegative_i64_metric(row, "threshold_row_available_count")?;
+    let threshold_row_selected_count =
+        decode_nonnegative_i64_metric(row, "threshold_row_selected_count")?;
+    let threshold_row_skipped_count =
+        decode_nonnegative_i64_metric(row, "threshold_row_skipped_count")?;
+    let leaf_summary_score_nanos =
+        decode_nonnegative_i64_metric(row, "leaf_summary_score_nanos")?;
+
+    Ok(scan::SpireSelectedLeafThresholdProfile {
+        served_epoch,
+        node_id: expected_node_id,
+        selected_pid_count,
+        evaluated_pid_count,
+        threshold_score,
+        threshold_ip,
+        sound_upper_bound_available_count,
+        sound_upper_bound_missing_count,
+        threshold_block_available_count,
+        threshold_block_selected_count,
+        threshold_block_skipped_count,
+        threshold_row_available_count,
+        threshold_row_selected_count,
+        threshold_row_skipped_count,
+        leaf_summary_score_nanos,
+    })
+}
+
+fn decode_nonnegative_i64_metric(row: &postgres::Row, column: &str) -> Result<u64, String> {
+    row.try_get::<_, i64>(column)
+        .map_err(|_| format!("ec_spire remote scan profile {column} decode failed"))
+        .and_then(|value| {
+            u64::try_from(value)
+                .map_err(|_| format!("ec_spire remote scan profile {column} is negative"))
+        })
+}
+
 fn decode_remote_search_heap_candidate_pg_row(
     row: &postgres::Row,
     expected_requested_epoch: u64,

@@ -236,7 +236,7 @@
             .collect::<Vec<_>>();
 
         let materialization_rows = super::layout_leaf_rows_for_block_summaries(
-            super::SpireRecursiveLeafMaterializationRows {
+            super::SpireLeafBlockMaterializationRows {
                 rows,
                 source_vectors,
             },

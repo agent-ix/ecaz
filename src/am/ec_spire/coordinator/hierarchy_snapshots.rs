@@ -330,6 +330,28 @@ pub(crate) fn remote_search_candidates(
         selected_pids,
         top_k,
         consistency_mode,
+        None,
+    );
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+pub(crate) fn remote_search_candidates_with_initial_threshold(
+    index: SpireLiveIndexRelation,
+    requested_epoch: u64,
+    query: Vec<f32>,
+    selected_pids: Vec<u64>,
+    top_k: usize,
+    consistency_mode: &str,
+    initial_threshold_score: f32,
+) -> Vec<SpireRemoteSearchCandidateRow> {
+    let result = remote_search_candidates_result(
+        index,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        consistency_mode,
+        Some(initial_threshold_score),
     );
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
@@ -341,9 +363,15 @@ fn remote_search_candidates_result(
     selected_pids: Vec<u64>,
     top_k: usize,
     consistency_mode: &str,
+    initial_threshold_score: Option<f32>,
 ) -> Result<Vec<SpireRemoteSearchCandidateRow>, String> {
     if requested_epoch == 0 {
         return Err("ec_spire remote search requested_epoch must be greater than 0".to_owned());
+    }
+    if let Some(threshold_score) = initial_threshold_score {
+        if !threshold_score.is_finite() {
+            return Err("ec_spire remote search initial_threshold_score must be finite".to_owned());
+        }
     }
     if top_k == 0 {
         // Valid empty candidate request, useful for endpoint contract probes.
@@ -375,7 +403,7 @@ fn remote_search_candidates_result(
         pg_sys::AccessShareLock as pg_sys::LOCKMODE,
     )?;
     let relation_options = index.relation_options();
-    let candidates = scan::collect_quantized_selected_leaf_candidates(
+    let candidates = scan::collect_quantized_selected_leaf_candidates_with_initial_threshold(
         &snapshot,
         &object_store,
         query.values(),
@@ -387,6 +415,7 @@ fn remote_search_candidates_result(
             options::SpireCandidateDedupeMode::NoReplicaDedupeDisabled
         },
         Some(top_k),
+        initial_threshold_score,
     )?;
 
     Ok(candidates
@@ -422,6 +451,165 @@ pub(crate) fn remote_search_coordinator_local_candidates(
         consistency_mode,
     );
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+pub(crate) fn remote_search_coordinator_local_scan_profile(
+    index: SpireLiveIndexRelation,
+    requested_epoch: u64,
+    query: Vec<f32>,
+    selected_pids: Vec<u64>,
+    top_k: usize,
+    consistency_mode: &str,
+) -> scan::SpireSelectedLeafScanProfile {
+    let result = remote_search_coordinator_local_scan_profile_result(
+        index,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        consistency_mode,
+    );
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+pub(crate) fn remote_search_coordinator_local_threshold_profile(
+    index: SpireLiveIndexRelation,
+    requested_epoch: u64,
+    query: Vec<f32>,
+    selected_pids: Vec<u64>,
+    threshold_score: f32,
+    consistency_mode: &str,
+) -> scan::SpireSelectedLeafThresholdProfile {
+    let result = remote_search_coordinator_local_threshold_profile_result(
+        index,
+        requested_epoch,
+        query,
+        selected_pids,
+        threshold_score,
+        consistency_mode,
+    );
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+fn remote_search_coordinator_local_threshold_profile_result(
+    index: SpireLiveIndexRelation,
+    requested_epoch: u64,
+    query: Vec<f32>,
+    selected_pids: Vec<u64>,
+    threshold_score: f32,
+    consistency_mode: &str,
+) -> Result<scan::SpireSelectedLeafThresholdProfile, String> {
+    if requested_epoch == 0 {
+        return Err(
+            "ec_spire remote search coordinator threshold profile requested_epoch must be greater than 0"
+                .to_owned(),
+        );
+    }
+
+    let requested_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;
+    let query = scan::SpireScanQuery::new(query)?;
+    let root_control = index.root_control();
+    if root_control.active_epoch != requested_epoch {
+        return Err(format!(
+            "ec_spire remote search coordinator threshold profile requested epoch {requested_epoch} does not match active epoch {}",
+            root_control.active_epoch
+        ));
+    }
+
+    let Some(anchor) = index.coordinator_fanout_anchor(root_control)? else {
+        return Err("ec_spire cannot load manifests for empty active epoch".to_owned());
+    };
+    if anchor.epoch_manifest.consistency_mode != requested_consistency_mode {
+        return Err(format!(
+            "ec_spire remote search coordinator threshold profile requested consistency_mode '{consistency_mode}' does not match active epoch consistency mode '{}'",
+            consistency_mode_name(anchor.epoch_manifest.consistency_mode)
+        ));
+    }
+    let snapshot = anchor.snapshot()?;
+    let plan = plan_remote_search_fanout(&snapshot, &selected_pids)?;
+    if !plan.remote_targets.is_empty() {
+        return Err(format!(
+            "ec_spire remote search coordinator threshold profile requires libpq transport for {} remote target(s)",
+            plan.remote_targets.len()
+        ));
+    }
+
+    let object_store = index.object_store_set(
+        &anchor.placement_directory,
+        pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+    )?;
+    let relation_options = index.relation_options();
+    scan::collect_quantized_selected_leaf_threshold_profile(
+        &snapshot,
+        &object_store,
+        query.values(),
+        &plan.local_selected_pids,
+        relation_options.assignment_payload_format(),
+        threshold_score,
+    )
+}
+
+fn remote_search_coordinator_local_scan_profile_result(
+    index: SpireLiveIndexRelation,
+    requested_epoch: u64,
+    query: Vec<f32>,
+    selected_pids: Vec<u64>,
+    top_k: usize,
+    consistency_mode: &str,
+) -> Result<scan::SpireSelectedLeafScanProfile, String> {
+    if requested_epoch == 0 {
+        return Err(
+            "ec_spire remote search coordinator scan profile requested_epoch must be greater than 0"
+                .to_owned(),
+        );
+    }
+
+    let requested_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;
+    let query = scan::SpireScanQuery::new(query)?;
+    let root_control = index.root_control();
+    if root_control.active_epoch != requested_epoch {
+        return Err(format!(
+            "ec_spire remote search coordinator scan profile requested epoch {requested_epoch} does not match active epoch {}",
+            root_control.active_epoch
+        ));
+    }
+
+    let Some(anchor) = index.coordinator_fanout_anchor(root_control)? else {
+        return Err("ec_spire cannot load manifests for empty active epoch".to_owned());
+    };
+    if anchor.epoch_manifest.consistency_mode != requested_consistency_mode {
+        return Err(format!(
+            "ec_spire remote search coordinator scan profile requested consistency_mode '{consistency_mode}' does not match active epoch consistency mode '{}'",
+            consistency_mode_name(anchor.epoch_manifest.consistency_mode)
+        ));
+    }
+    let snapshot = anchor.snapshot()?;
+    let plan = plan_remote_search_fanout(&snapshot, &selected_pids)?;
+    if !plan.remote_targets.is_empty() {
+        return Err(format!(
+            "ec_spire remote search coordinator scan profile requires libpq transport for {} remote target(s)",
+            plan.remote_targets.len()
+        ));
+    }
+
+    let object_store = index.object_store_set(
+        &anchor.placement_directory,
+        pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+    )?;
+    let relation_options = index.relation_options();
+    scan::collect_quantized_selected_leaf_scan_profile(
+        &snapshot,
+        &object_store,
+        query.values(),
+        &plan.local_selected_pids,
+        relation_options.assignment_payload_format(),
+        if relation_options.boundary_replica_count > 0 {
+            options::SpireCandidateDedupeMode::VecIdDedupeEnabled
+        } else {
+            options::SpireCandidateDedupeMode::NoReplicaDedupeDisabled
+        },
+        Some(top_k),
+    )
 }
 
 fn remote_search_coordinator_local_candidates_result(
@@ -722,6 +910,76 @@ pub(crate) fn remote_search_local_heap_candidate_rows(
             candidates,
             SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION,
             "local heap candidate rows",
+        )
+    })();
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+pub(crate) fn remote_search_explicit_local_heap_candidate_rows(
+    index: SpireLiveIndexRelation,
+    requested_epoch: u64,
+    query: Vec<f32>,
+    served_epochs: Vec<u64>,
+    pids: Vec<u64>,
+    object_versions: Vec<u64>,
+    row_indices: Vec<u32>,
+    assignment_flags: Vec<u16>,
+    vec_ids: Vec<Vec<u8>>,
+    row_locators: Vec<Vec<u8>>,
+    scores: Vec<f32>,
+) -> Vec<SpireRemoteSearchLocalHeapCandidateRow> {
+    let result = (|| -> Result<Vec<SpireRemoteSearchLocalHeapCandidateRow>, String> {
+        let row_count = served_epochs.len();
+        for (label, len) in [
+            ("pids", pids.len()),
+            ("object_versions", object_versions.len()),
+            ("row_indices", row_indices.len()),
+            ("assignment_flags", assignment_flags.len()),
+            ("vec_ids", vec_ids.len()),
+            ("row_locators", row_locators.len()),
+            ("scores", scores.len()),
+        ] {
+            if len != row_count {
+                return Err(format!(
+                    "ec_spire explicit remote heap candidates {label} length {len} does not match served_epochs length {row_count}"
+                ));
+            }
+        }
+
+        let scan_query = scan::SpireScanQuery::new(query)?;
+        let candidates = served_epochs
+            .into_iter()
+            .zip(pids)
+            .zip(object_versions)
+            .zip(row_indices)
+            .zip(assignment_flags)
+            .zip(vec_ids)
+            .zip(row_locators)
+            .zip(scores)
+            .map(
+                |(((((((served_epoch, pid), object_version), row_index), assignment_flags), vec_id), row_locator), score)| {
+                    SpireRemoteSearchCandidateRow {
+                        served_epoch,
+                        node_id: meta::SPIRE_LOCAL_NODE_ID,
+                        pid,
+                        object_version,
+                        row_index,
+                        assignment_flags,
+                        vec_id,
+                        row_locator,
+                        score,
+                    }
+                },
+            )
+            .collect::<Vec<_>>();
+
+        remote_search_heap_candidate_rows_from_compact_candidates(
+            index,
+            requested_epoch,
+            &scan_query,
+            candidates,
+            SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION,
+            "explicit local heap candidates",
         )
     })();
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
@@ -1937,6 +2195,59 @@ pub(crate) fn index_scan_leaf_target_block_rank_snapshot(
             route_rank: row.route_rank,
             route_score: row.route_score,
             assignment_flags: row.assignment_flags,
+        })
+        .collect();
+        Ok(rows)
+    })();
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+pub(crate) fn index_scan_target_candidate_rank_snapshot(
+    index: SpireLiveIndexRelation,
+    query_values: Vec<f32>,
+    target_local_sequences: Vec<u64>,
+) -> Vec<SpireIndexScanTargetCandidateRankSnapshotRow> {
+    let result = (|| -> Result<Vec<SpireIndexScanTargetCandidateRankSnapshotRow>, String> {
+        let query = scan::SpireScanQuery::new(query_values)?;
+        let Some(anchor) = index.active_epoch_anchor(index.root_control())? else {
+            return Ok(Vec::new());
+        };
+
+        let snapshot = anchor.snapshot()?;
+        let object_store = index.object_store_set(
+            &anchor.placement_directory,
+            pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+        )?;
+        let rows = scan::collect_scan_target_candidate_rank_snapshot(
+            &snapshot,
+            &object_store,
+            &query,
+            index.relation_options(),
+            &target_local_sequences,
+        )?
+        .into_iter()
+        .map(|row| SpireIndexScanTargetCandidateRankSnapshotRow {
+            active_epoch: row.active_epoch,
+            effective_nprobe: row.effective_nprobe,
+            effective_nprobe_source: row.effective_nprobe_source,
+            effective_rerank_width: row.effective_rerank_width,
+            effective_rerank_width_source: row.effective_rerank_width_source,
+            target_ordinal: row.target_ordinal,
+            target_local_sequence: row.target_local_sequence,
+            status: row.status,
+            approximate_candidate_count: row.approximate_candidate_count,
+            rerank_prefix_count: row.rerank_prefix_count,
+            approximate_rank: row.approximate_rank,
+            selected_by_rerank_prefix: row.selected_by_rerank_prefix,
+            pid: row.pid,
+            node_id: row.node_id,
+            local_store_id: row.local_store_id,
+            object_version: row.object_version,
+            row_index: row.row_index,
+            assignment_flags: row.assignment_flags,
+            approximate_score: row.approximate_score,
+            heap_block: row.heap_block,
+            heap_offset: row.heap_offset,
         })
         .collect();
         Ok(rows)

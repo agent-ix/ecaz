@@ -1,0 +1,15 @@
+Script started on 2026-06-27 14:06:00-07:00 [<not executed on terminal>]
+    Blocking waiting for file lock on package cache
+   Compiling ecaz v0.1.1 (/tmp/ecaz-task123)
+   Compiling ecaz-cli v0.1.0 (/tmp/ecaz-task123/crates/ecaz-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 35.77s
+     Running unittests src/main.rs (target/debug/deps/ecaz-1ef10f61913fa15f)
+
+running 2 tests
+test commands::bench::spire_pipeline::tests::spire_pipeline_renders_production_read_timeline ... ok
+test commands::bench::spire_pipeline::tests::spire_pipeline_renders_production_read_profile ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 413 filtered out; finished in 0.00s
+
+
+Script done on 2026-06-27 14:06:35-07:00 [COMMAND_EXIT_CODE="0"]

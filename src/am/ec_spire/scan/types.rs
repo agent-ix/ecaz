@@ -310,6 +310,46 @@ pub(super) struct SpireScanPlacementDiagnostics {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub(crate) struct SpireSelectedLeafScanProfile {
+    pub(crate) served_epoch: u64,
+    pub(crate) node_id: u32,
+    pub(crate) selected_pid_count: u64,
+    pub(crate) scanned_pid_count: u64,
+    pub(crate) leaf_candidate_row_count: u64,
+    pub(crate) deduped_candidate_row_count: u64,
+    pub(crate) truncated_candidate_row_count: u64,
+    pub(crate) candidate_winner_count: u64,
+    pub(crate) leaf_block_available_count: u64,
+    pub(crate) leaf_block_selected_count: u64,
+    pub(crate) leaf_block_skipped_count: u64,
+    pub(crate) sound_upper_bound_available_count: u64,
+    pub(crate) sound_upper_bound_missing_count: u64,
+    pub(crate) leaf_summary_score_nanos: u64,
+    pub(crate) leaf_row_score_nanos: u64,
+    pub(crate) candidate_score_nanos: u64,
+    pub(crate) local_kth_score: Option<f32>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct SpireSelectedLeafThresholdProfile {
+    pub(crate) served_epoch: u64,
+    pub(crate) node_id: u32,
+    pub(crate) selected_pid_count: u64,
+    pub(crate) evaluated_pid_count: u64,
+    pub(crate) threshold_score: f32,
+    pub(crate) threshold_ip: f32,
+    pub(crate) sound_upper_bound_available_count: u64,
+    pub(crate) sound_upper_bound_missing_count: u64,
+    pub(crate) threshold_block_available_count: u64,
+    pub(crate) threshold_block_selected_count: u64,
+    pub(crate) threshold_block_skipped_count: u64,
+    pub(crate) threshold_row_available_count: u64,
+    pub(crate) threshold_row_selected_count: u64,
+    pub(crate) threshold_row_skipped_count: u64,
+    pub(crate) leaf_summary_score_nanos: u64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub(super) struct SpireLeafBlockRankSnapshotRow {
     pub(super) active_epoch: u64,
     pub(super) effective_nprobe: u32,
@@ -338,6 +378,31 @@ pub(super) struct SpireLeafBlockRankSnapshotRow {
     pub(super) route_rank: Option<u64>,
     pub(super) route_score: Option<f32>,
     pub(super) assignment_flags: Option<u16>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct SpireTargetCandidateRankSnapshotRow {
+    pub(super) active_epoch: u64,
+    pub(super) effective_nprobe: u32,
+    pub(super) effective_nprobe_source: &'static str,
+    pub(super) effective_rerank_width: u64,
+    pub(super) effective_rerank_width_source: &'static str,
+    pub(super) target_ordinal: u64,
+    pub(super) target_local_sequence: u64,
+    pub(super) status: &'static str,
+    pub(super) approximate_candidate_count: u64,
+    pub(super) rerank_prefix_count: u64,
+    pub(super) approximate_rank: Option<u64>,
+    pub(super) selected_by_rerank_prefix: Option<bool>,
+    pub(super) pid: Option<u64>,
+    pub(super) node_id: Option<u32>,
+    pub(super) local_store_id: Option<u32>,
+    pub(super) object_version: Option<u64>,
+    pub(super) row_index: Option<u32>,
+    pub(super) assignment_flags: Option<u16>,
+    pub(super) approximate_score: Option<f32>,
+    pub(super) heap_block: Option<u32>,
+    pub(super) heap_offset: Option<u16>,
 }
 
 trait SpireRoutedScanObserver {

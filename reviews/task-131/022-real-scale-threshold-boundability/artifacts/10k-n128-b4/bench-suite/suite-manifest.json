@@ -1,0 +1,111 @@
+{
+  "suite": "local-multinode-production-read",
+  "schema_version": 1,
+  "config": "reviews/task-131/022-real-scale-threshold-boundability/artifacts/10k-n128-b4/bench-suite/local-real-production-read-suite.json",
+  "config_sha256": "6d7a9272a2827e4f95c1908158f362cd88ba2275c1159387fc530b8fe5292db2",
+  "dry_run": false,
+  "generated_at_unix_ms": 1782928202422,
+  "connection": {
+    "database": "postgres",
+    "host": "/home/peter/dev/ecaz/target/spire-local-multinode-sockets-task131-p3-bound-q20-10k-n128-b4",
+    "port": 40710,
+    "user": "ecaz_coord",
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "storage-local-coordinator",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/home/peter/dev/ecaz/target/spire-local-multinode-sockets-task131-p3-bound-q20-10k-n128-b4",
+        "--port",
+        "40710",
+        "--user",
+        "ecaz_coord",
+        "--log-file",
+        "reviews/task-131/022-real-scale-threshold-boundability/artifacts/10k-n128-b4/bench-suite/storage.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "ec_real_10k"
+      ],
+      "selected": true,
+      "tags": [
+        "local",
+        "multinode",
+        "storage"
+      ],
+      "expected_artifacts": [
+        "reviews/task-131/022-real-scale-threshold-boundability/artifacts/10k-n128-b4/bench-suite/storage.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1782928202423,
+      "finished_at_unix_ms": 1782928202467,
+      "duration_ms": 44,
+      "exit_code": 0
+    },
+    {
+      "name": "production-read-k10-baseline-default",
+      "kind": "spire-pipeline",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/home/peter/dev/ecaz/target/spire-local-multinode-sockets-task131-p3-bound-q20-10k-n128-b4",
+        "--port",
+        "40710",
+        "--user",
+        "ecaz_coord",
+        "bench",
+        "spire-pipeline",
+        "--prefix",
+        "ec_real_10k",
+        "--index",
+        "t131_p3_bound_q20_10k_n128_b4_coord_idx",
+        "--queries-limit",
+        "20",
+        "--sweep",
+        "96",
+        "--include-remote",
+        "--require-remote-placements",
+        "--top-k",
+        "10",
+        "--include-cost-snapshot",
+        "--include-query-metrics",
+        "--include-recall",
+        "--truth-corpus-file",
+        "data/task106_intel_dbpedia_staged/ec_real_10k_corpus.tsv",
+        "--include-production-read-profile",
+        "--production-read-only",
+        "--production-read-timeline-no-payload",
+        "--query-metric-k",
+        "10",
+        "--query-metric-projection-columns",
+        "id",
+        "--session-guc",
+        "ec_spire.remote_search_global_pre_heap_merge=off",
+        "--log-output",
+        "reviews/task-131/022-real-scale-threshold-boundability/artifacts/10k-n128-b4/bench-suite/production-read-k10-baseline-default.log"
+      ],
+      "selected": true,
+      "tags": [
+        "phase5",
+        "local",
+        "multinode",
+        "production-read",
+        "default-cap"
+      ],
+      "expected_artifacts": [
+        "reviews/task-131/022-real-scale-threshold-boundability/artifacts/10k-n128-b4/bench-suite/production-read-k10-baseline-default.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1782928202468,
+      "finished_at_unix_ms": 1782928268465,
+      "duration_ms": 67905,
+      "exit_code": 0
+    }
+  ]
+}

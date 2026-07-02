@@ -1,0 +1,4 @@
+scale	rows	table_bytes_pretty	all_indexes_pretty	total_pretty	per_row_total	spire_index_size	spire_index_per_row
+10k	10000	158.8 MiB	10.0 MiB	168.8 MiB	17695.5 B	9.7 MiB	1017.4 B
+50k	50000	793.8 MiB	43.2 MiB	837.0 MiB	17553.0 B	42.1 MiB	882.9 B
+100k	100000	1.6 GiB	84.7 MiB	1.6 GiB	17534.0 B	82.5 MiB	865.0 B

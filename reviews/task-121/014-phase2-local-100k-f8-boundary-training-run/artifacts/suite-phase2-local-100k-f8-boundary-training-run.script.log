@@ -1,0 +1,542 @@
+Script started on 2026-06-23 15:35:19-07:00 [<not executed on terminal>]
+[suite:task121-phase2-local-100k-f8-boundary-training-run] wrote reviews/task-121/014-phase2-local-100k-f8-boundary-training-run/artifacts/suite-phase2-local-100k-f8-boundary-training-run-manifest.json
+[suite:task121-phase2-local-100k-f8-boundary-training-run] wrote reviews/task-121/014-phase2-local-100k-f8-boundary-training-run/artifacts/suite-phase2-local-100k-f8-boundary-training-run-manifest.json
+[suite:task121-phase2-local-100k-f8-boundary-training-run] precheck-host -> --database tqvector_bench_task121 --host /home/peter/.pgrx --port 28818 dev sql --pg 18 --db tqvector_bench_task121 --socket-dir /home/peter/.pgrx --raw --sql "LOAD 'ecaz'; SELECT now() AS captured_at, version() AS postgres_version, ecaz_build_profile() AS ecaz_build_profile, current_setting('ec_spire.nprobe') AS session_nprobe, current_setting('ec_spire.rerank_width') AS session_rerank_width, current_setting('ec_spire.adaptive_nprobe') AS adaptive_nprobe;" --log-output reviews/task-121/014-phase2-local-100k-f8-boundary-training-run/artifacts/precheck-host.log
+[suite:task121-phase2-local-100k-f8-boundary-training-run] wrote reviews/task-121/014-phase2-local-100k-f8-boundary-training-run/artifacts/suite-phase2-local-100k-f8-boundary-training-run-manifest.json
+LOAD
+          captured_at          |                                            postgres_version                                             | ecaz_build_profile | session_nprobe | session_rerank_width | adaptive_nprobe 
+-------------------------------+---------------------------------------------------------------------------------------------------------+--------------------+----------------+----------------------+-----------------
+ 2026-06-23 15:35:20.483334-07 | PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit | release            | -1             | -1                   | off
+(1 row)
+
+[suite:task121-phase2-local-100k-f8-boundary-training-run] wrote reviews/task-121/014-phase2-local-100k-f8-boundary-training-run/artifacts/suite-phase2-local-100k-f8-boundary-training-run-manifest.json
+[suite:task121-phase2-local-100k-f8-boundary-training-run] load-100k_b0_tr10_f8 -> --database tqvector_bench_task121 --host /home/peter/.pgrx --port 28818 --log-file reviews/task-121/014-phase2-local-100k-f8-boundary-training-run/artifacts/load-100k_b0_tr10_f8.log corpus load --prefix t121_s2_100k_b0_tr10_f8 --profile ec_spire --corpus-file data/staged-current/ec_real_100k_corpus.tsv --queries-file data/staged-current/ec_real_100k_queries.tsv --manifest-file data/staged-current/ec_real_100k_manifest.json --allow-manifest-mismatch --dim 1536 --bits 4 --seed 42 --storage-format rabitq --index-name t121_s2_100k_b0_tr10_f8_idx --reloption nlists=128 --reloption recursive_fanout=8 --reloption top_graph_enabled=1 --reloption top_graph_degree=32 --reloption top_graph_build_list_size=100 --reloption top_graph_search_list_size=96 --reloption boundary_replica_count=0 --reloption training_sample_rows=10000
+[suite:task121-phase2-local-100k-f8-boundary-training-run] wrote reviews/task-121/014-phase2-local-100k-f8-boundary-training-run/artifacts/suite-phase2-local-100k-f8-boundary-training-run-manifest.json
+┌─────────┬───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                                                                                                                                                                                             │
+╞═════════╪═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_spire                                                                                                                                                                                                                                          │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ t121_s2_100k_b0_tr10_f8_corpus (100000 rows)                                                                                                                                                                                                      │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ t121_s2_100k_b0_tr10_f8_queries (1000 rows)                                                                                                                                                                                                       │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ t121_s2_100k_b0_tr10_f8_idx [nlists=128, recursive_fanout=8, top_graph_enabled=1, top_graph_degree=32, top_graph_build_list_size=100, top_graph_search_list_size=96, boundary_replica_count=0, training_sample_rows=10000, storage_format=rabitq] │
+└─────────┴───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+[loader] warning: profile "ec_spire" does not list top_graph_enabled, top_graph_degree, top_graph_build_list_size, top_graph_search_list_size as known reloptions; passing through verbatim. Known reloptions: nlists, recursive_fanout, local_store_count, local_store_tablespaces, boundary_replica_count, nprobe, nprobe_per_level, rerank_width, training_sample_rows, seed, pq_group_size, storage_format, quantizer
+[loader] inspecting data/staged-current/ec_real_100k_corpus.tsv
+[loader] inspecting data/staged-current/ec_real_100k_queries.tsv
+[loader] corpus: 100000 rows, sha256=07275cfd5a7a4b415ddf5eacc086de98294ac978532df46ffae30f9202323a95  queries: 1000 rows, sha256=a7cbec6fc44f6c148234538f61339d00d2f10646febc8f667dcbe75d9cf41782
+[loader] warning: manifest verification failed for data/staged-current/ec_real_100k_manifest.json: prefix="ec_real_100k" (expected "t121_s2_100k_b0_tr10_f8")
+[loader] copied corpus table t121_s2_100k_b0_tr10_f8_corpus in 95.74s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table t121_s2_100k_b0_tr10_f8_corpus in 47.26s
+[loader] copied queries table t121_s2_100k_b0_tr10_f8_queries in 996.98ms
+[loader] building t121_s2_100k_b0_tr10_f8_idx using ec_spire (reloptions=[nlists=128, recursive_fanout=8, top_graph_enabled=1, top_graph_degree=32, top_graph_build_list_size=100, top_graph_search_list_size=96, boundary_replica_count=0, training_sample_rows=10000, storage_format=rabitq]) ...
+[loader] built t121_s2_100k_b0_tr10_f8_idx in 10.15s
+[loader] completed prefix t121_s2_100k_b0_tr10_f8 in 327.37s
+[suite:task121-phase2-local-100k-f8-boundary-training-run] wrote reviews/task-121/014-phase2-local-100k-f8-boundary-training-run/artifacts/suite-phase2-local-100k-f8-boundary-training-run-manifest.json
+[suite:task121-phase2-local-100k-f8-boundary-training-run] storage-100k_b0_tr10_f8 -> --database tqvector_bench_task121 --host /home/peter/.pgrx --port 28818 --log-file reviews/task-121/014-phase2-local-100k-f8-boundary-training-run/artifacts/storage-100k_b0_tr10_f8.log bench storage --prefix t121_s2_100k_b0_tr10_f8
+[suite:task121-phase2-local-100k-f8-boundary-training-run] wrote reviews/task-121/014-phase2-local-100k-f8-boundary-training-run/artifacts/suite-phase2-local-100k-f8-boundary-training-run-manifest.json
+┌───────────────────────────────┬────────────────────────────────┐
+│ field                         ┆ value                          │
+╞═══════════════════════════════╪════════════════════════════════╡
+│ prefix                        ┆ t121_s2_100k_b0_tr10_f8        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus                        ┆ t121_s2_100k_b0_tr10_f8_corpus │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ rows                          ┆ 100000                         │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ heap                          ┆ 7.3 MiB                        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ table (heap + toast + fsm/vm) ┆ 1.6 GiB                        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes                       ┆ 81.9 MiB                       │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ total                         ┆ 1.6 GiB                        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (total)               ┆ 17504.8 B                      │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (heap only)           ┆ 76.6 B                         │
+└───────────────────────────────┴────────────────────────────────┘
+┌─────────────────────────────────────┬───────────────┬───────────┬───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬──────────┬─────────┐
+│ index                               ┆ access method ┆ profile   ┆ reloptions                                                                                                                                                                                                    ┆ size     ┆ per row │
+╞═════════════════════════════════════╪═══════════════╪═══════════╪═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╪══════════╪═════════╡
+│ t121_s2_100k_b0_tr10_f8_idx         ┆ ec_spire      ┆ ec_spire  ┆ {nlists=128,recursive_fanout=8,top_graph_enabled=1,top_graph_degree=32,top_graph_build_list_size=100,top_graph_search_list_size=96,boundary_replica_count=0,training_sample_rows=10000,storage_format=rabitq} ┆ 79.7 MiB ┆ 835.8 B │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ t121_s2_100k_b0_tr10_f8_corpus_pkey ┆ btree         ┆ <unknown> ┆ {}                                                                                                                                                                                                            ┆ 2.2 MiB  ┆ 22.6 B  │
+└─────────────────────────────────────┴───────────────┴───────────┴───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴──────────┴─────────┘
+[suite:task121-phase2-local-100k-f8-boundary-training-run] wrote reviews/task-121/014-phase2-local-100k-f8-boundary-training-run/artifacts/suite-phase2-local-100k-f8-boundary-training-run-manifest.json
+[suite:task121-phase2-local-100k-f8-boundary-training-run] load-100k_b0_tr50_f8 -> --database tqvector_bench_task121 --host /home/peter/.pgrx --port 28818 --log-file reviews/task-121/014-phase2-local-100k-f8-boundary-training-run/artifacts/load-100k_b0_tr50_f8.log corpus load --prefix t121_s2_100k_b0_tr50_f8 --profile ec_spire --corpus-file data/staged-current/ec_real_100k_corpus.tsv --queries-file data/staged-current/ec_real_100k_queries.tsv --manifest-file data/staged-current/ec_real_100k_manifest.json --allow-manifest-mismatch --dim 1536 --bits 4 --seed 42 --storage-format rabitq --index-name t121_s2_100k_b0_tr50_f8_idx --reloption nlists=128 --reloption recursive_fanout=8 --reloption top_graph_enabled=1 --reloption top_graph_degree=32 --reloption top_graph_build_list_size=100 --reloption top_graph_search_list_size=96 --reloption boundary_replica_count=0 --reloption training_sample_rows=50000
+[suite:task121-phase2-local-100k-f8-boundary-training-run] wrote reviews/task-121/014-phase2-local-100k-f8-boundary-training-run/artifacts/suite-phase2-local-100k-f8-boundary-training-run-manifest.json
+┌─────────┬───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                                                                                                                                                                                             │
+╞═════════╪═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_spire                                                                                                                                                                                                                                          │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ t121_s2_100k_b0_tr50_f8_corpus (100000 rows)                                                                                                                                                                                                      │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ t121_s2_100k_b0_tr50_f8_queries (1000 rows)                                                                                                                                                                                                       │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ t121_s2_100k_b0_tr50_f8_idx [nlists=128, recursive_fanout=8, top_graph_enabled=1, top_graph_degree=32, top_graph_build_list_size=100, top_graph_search_list_size=96, boundary_replica_count=0, training_sample_rows=50000, storage_format=rabitq] │
+└─────────┴───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+[loader] warning: profile "ec_spire" does not list top_graph_enabled, top_graph_degree, top_graph_build_list_size, top_graph_search_list_size as known reloptions; passing through verbatim. Known reloptions: nlists, recursive_fanout, local_store_count, local_store_tablespaces, boundary_replica_count, nprobe, nprobe_per_level, rerank_width, training_sample_rows, seed, pq_group_size, storage_format, quantizer
+[loader] inspecting data/staged-current/ec_real_100k_corpus.tsv
+[loader] inspecting data/staged-current/ec_real_100k_queries.tsv
+[loader] corpus: 100000 rows, sha256=07275cfd5a7a4b415ddf5eacc086de98294ac978532df46ffae30f9202323a95  queries: 1000 rows, sha256=a7cbec6fc44f6c148234538f61339d00d2f10646febc8f667dcbe75d9cf41782
+[loader] warning: manifest verification failed for data/staged-current/ec_real_100k_manifest.json: prefix="ec_real_100k" (expected "t121_s2_100k_b0_tr50_f8")
+[loader] copied corpus table t121_s2_100k_b0_tr50_f8_corpus in 95.41s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table t121_s2_100k_b0_tr50_f8_corpus in 38.55s
+[loader] copied queries table t121_s2_100k_b0_tr50_f8_queries in 991.87ms
+[loader] building t121_s2_100k_b0_tr50_f8_idx using ec_spire (reloptions=[nlists=128, recursive_fanout=8, top_graph_enabled=1, top_graph_degree=32, top_graph_build_list_size=100, top_graph_search_list_size=96, boundary_replica_count=0, training_sample_rows=50000, storage_format=rabitq]) ...
+[loader] built t121_s2_100k_b0_tr50_f8_idx in 12.85s
+[loader] completed prefix t121_s2_100k_b0_tr50_f8 in 305.02s
+[suite:task121-phase2-local-100k-f8-boundary-training-run] wrote reviews/task-121/014-phase2-local-100k-f8-boundary-training-run/artifacts/suite-phase2-local-100k-f8-boundary-training-run-manifest.json
+[suite:task121-phase2-local-100k-f8-boundary-training-run] storage-100k_b0_tr50_f8 -> --database tqvector_bench_task121 --host /home/peter/.pgrx --port 28818 --log-file reviews/task-121/014-phase2-local-100k-f8-boundary-training-run/artifacts/storage-100k_b0_tr50_f8.log bench storage --prefix t121_s2_100k_b0_tr50_f8
+[suite:task121-phase2-local-100k-f8-boundary-training-run] wrote reviews/task-121/014-phase2-local-100k-f8-boundary-training-run/artifacts/suite-phase2-local-100k-f8-boundary-training-run-manifest.json
+┌───────────────────────────────┬────────────────────────────────┐
+│ field                         ┆ value                          │
+╞═══════════════════════════════╪════════════════════════════════╡
+│ prefix                        ┆ t121_s2_100k_b0_tr50_f8        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus                        ┆ t121_s2_100k_b0_tr50_f8_corpus │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ rows                          ┆ 100000                         │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ heap                          ┆ 7.3 MiB                        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ table (heap + toast + fsm/vm) ┆ 1.6 GiB                        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes                       ┆ 81.8 MiB                       │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ total                         ┆ 1.6 GiB                        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (total)               ┆ 17504.2 B                      │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (heap only)           ┆ 76.6 B                         │
+└───────────────────────────────┴────────────────────────────────┘
+┌─────────────────────────────────────┬───────────────┬───────────┬───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬──────────┬─────────┐
+│ index                               ┆ access method ┆ profile   ┆ reloptions                                                                                                                                                                                                    ┆ size     ┆ per row │
+╞═════════════════════════════════════╪═══════════════╪═══════════╪═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╪══════════╪═════════╡
+│ t121_s2_100k_b0_tr50_f8_idx         ┆ ec_spire      ┆ ec_spire  ┆ {nlists=128,recursive_fanout=8,top_graph_enabled=1,top_graph_degree=32,top_graph_build_list_size=100,top_graph_search_list_size=96,boundary_replica_count=0,training_sample_rows=50000,storage_format=rabitq} ┆ 79.6 MiB ┆ 835.2 B │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ t121_s2_100k_b0_tr50_f8_corpus_pkey ┆ btree         ┆ <unknown> ┆ {}                                                                                                                                                                                                            ┆ 2.2 MiB  ┆ 22.6 B  │
+└─────────────────────────────────────┴───────────────┴───────────┴───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴──────────┴─────────┘
+[suite:task121-phase2-local-100k-f8-boundary-training-run] wrote reviews/task-121/014-phase2-local-100k-f8-boundary-training-run/artifacts/suite-phase2-local-100k-f8-boundary-training-run-manifest.json
+[suite:task121-phase2-local-100k-f8-boundary-training-run] load-100k_b1_tr10_f8 -> --database tqvector_bench_task121 --host /home/peter/.pgrx --port 28818 --log-file reviews/task-121/014-phase2-local-100k-f8-boundary-training-run/artifacts/load-100k_b1_tr10_f8.log corpus load --prefix t121_s2_100k_b1_tr10_f8 --profile ec_spire --corpus-file data/staged-current/ec_real_100k_corpus.tsv --queries-file data/staged-current/ec_real_100k_queries.tsv --manifest-file data/staged-current/ec_real_100k_manifest.json --allow-manifest-mismatch --dim 1536 --bits 4 --seed 42 --storage-format rabitq --index-name t121_s2_100k_b1_tr10_f8_idx --reloption nlists=128 --reloption recursive_fanout=8 --reloption top_graph_enabled=1 --reloption top_graph_degree=32 --reloption top_graph_build_list_size=100 --reloption top_graph_search_list_size=96 --reloption boundary_replica_count=1 --reloption training_sample_rows=10000
+[suite:task121-phase2-local-100k-f8-boundary-training-run] wrote reviews/task-121/014-phase2-local-100k-f8-boundary-training-run/artifacts/suite-phase2-local-100k-f8-boundary-training-run-manifest.json
+┌─────────┬───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                                                                                                                                                                                             │
+╞═════════╪═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_spire                                                                                                                                                                                                                                          │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ t121_s2_100k_b1_tr10_f8_corpus (100000 rows)                                                                                                                                                                                                      │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ t121_s2_100k_b1_tr10_f8_queries (1000 rows)                                                                                                                                                                                                       │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ t121_s2_100k_b1_tr10_f8_idx [nlists=128, recursive_fanout=8, top_graph_enabled=1, top_graph_degree=32, top_graph_build_list_size=100, top_graph_search_list_size=96, boundary_replica_count=1, training_sample_rows=10000, storage_format=rabitq] │
+└─────────┴───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+[loader] warning: profile "ec_spire" does not list top_graph_enabled, top_graph_degree, top_graph_build_list_size, top_graph_search_list_size as known reloptions; passing through verbatim. Known reloptions: nlists, recursive_fanout, local_store_count, local_store_tablespaces, boundary_replica_count, nprobe, nprobe_per_level, rerank_width, training_sample_rows, seed, pq_group_size, storage_format, quantizer
+[loader] inspecting data/staged-current/ec_real_100k_corpus.tsv
+[loader] inspecting data/staged-current/ec_real_100k_queries.tsv
+[loader] corpus: 100000 rows, sha256=07275cfd5a7a4b415ddf5eacc086de98294ac978532df46ffae30f9202323a95  queries: 1000 rows, sha256=a7cbec6fc44f6c148234538f61339d00d2f10646febc8f667dcbe75d9cf41782
+[loader] warning: manifest verification failed for data/staged-current/ec_real_100k_manifest.json: prefix="ec_real_100k" (expected "t121_s2_100k_b1_tr10_f8")
+[loader] copied corpus table t121_s2_100k_b1_tr10_f8_corpus in 96.49s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table t121_s2_100k_b1_tr10_f8_corpus in 41.02s
+[loader] copied queries table t121_s2_100k_b1_tr10_f8_queries in 1.01s
+[loader] building t121_s2_100k_b1_tr10_f8_idx using ec_spire (reloptions=[nlists=128, recursive_fanout=8, top_graph_enabled=1, top_graph_degree=32, top_graph_build_list_size=100, top_graph_search_list_size=96, boundary_replica_count=1, training_sample_rows=10000, storage_format=rabitq]) ...
+[loader] built t121_s2_100k_b1_tr10_f8_idx in 48.23s
+[loader] completed prefix t121_s2_100k_b1_tr10_f8 in 344.93s
+[suite:task121-phase2-local-100k-f8-boundary-training-run] wrote reviews/task-121/014-phase2-local-100k-f8-boundary-training-run/artifacts/suite-phase2-local-100k-f8-boundary-training-run-manifest.json
+[suite:task121-phase2-local-100k-f8-boundary-training-run] storage-100k_b1_tr10_f8 -> --database tqvector_bench_task121 --host /home/peter/.pgrx --port 28818 --log-file reviews/task-121/014-phase2-local-100k-f8-boundary-training-run/artifacts/storage-100k_b1_tr10_f8.log bench storage --prefix t121_s2_100k_b1_tr10_f8
+[suite:task121-phase2-local-100k-f8-boundary-training-run] wrote reviews/task-121/014-phase2-local-100k-f8-boundary-training-run/artifacts/suite-phase2-local-100k-f8-boundary-training-run-manifest.json
+┌───────────────────────────────┬────────────────────────────────┐
+│ field                         ┆ value                          │
+╞═══════════════════════════════╪════════════════════════════════╡
+│ prefix                        ┆ t121_s2_100k_b1_tr10_f8        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus                        ┆ t121_s2_100k_b1_tr10_f8_corpus │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ rows                          ┆ 100000                         │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ heap                          ┆ 7.3 MiB                        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ table (heap + toast + fsm/vm) ┆ 1.6 GiB                        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes                       ┆ 160.1 MiB                      │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ total                         ┆ 1.7 GiB                        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (total)               ┆ 18324.5 B                      │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (heap only)           ┆ 76.6 B                         │
+└───────────────────────────────┴────────────────────────────────┘
+┌─────────────────────────────────────┬───────────────┬───────────┬───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬───────────┬──────────┐
+│ index                               ┆ access method ┆ profile   ┆ reloptions                                                                                                                                                                                                    ┆ size      ┆ per row  │
+╞═════════════════════════════════════╪═══════════════╪═══════════╪═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╪═══════════╪══════════╡
+│ t121_s2_100k_b1_tr10_f8_idx         ┆ ec_spire      ┆ ec_spire  ┆ {nlists=128,recursive_fanout=8,top_graph_enabled=1,top_graph_degree=32,top_graph_build_list_size=100,top_graph_search_list_size=96,boundary_replica_count=1,training_sample_rows=10000,storage_format=rabitq} ┆ 157.9 MiB ┆ 1655.2 B │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ t121_s2_100k_b1_tr10_f8_corpus_pkey ┆ btree         ┆ <unknown> ┆ {}                                                                                                                                                                                                            ┆ 2.2 MiB   ┆ 22.6 B   │
+└─────────────────────────────────────┴───────────────┴───────────┴───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴───────────┴──────────┘
+[suite:task121-phase2-local-100k-f8-boundary-training-run] wrote reviews/task-121/014-phase2-local-100k-f8-boundary-training-run/artifacts/suite-phase2-local-100k-f8-boundary-training-run-manifest.json
+[suite:task121-phase2-local-100k-f8-boundary-training-run] load-100k_b1_tr50_f8 -> --database tqvector_bench_task121 --host /home/peter/.pgrx --port 28818 --log-file reviews/task-121/014-phase2-local-100k-f8-boundary-training-run/artifacts/load-100k_b1_tr50_f8.log corpus load --prefix t121_s2_100k_b1_tr50_f8 --profile ec_spire --corpus-file data/staged-current/ec_real_100k_corpus.tsv --queries-file data/staged-current/ec_real_100k_queries.tsv --manifest-file data/staged-current/ec_real_100k_manifest.json --allow-manifest-mismatch --dim 1536 --bits 4 --seed 42 --storage-format rabitq --index-name t121_s2_100k_b1_tr50_f8_idx --reloption nlists=128 --reloption recursive_fanout=8 --reloption top_graph_enabled=1 --reloption top_graph_degree=32 --reloption top_graph_build_list_size=100 --reloption top_graph_search_list_size=96 --reloption boundary_replica_count=1 --reloption training_sample_rows=50000
+[suite:task121-phase2-local-100k-f8-boundary-training-run] wrote reviews/task-121/014-phase2-local-100k-f8-boundary-training-run/artifacts/suite-phase2-local-100k-f8-boundary-training-run-manifest.json
+┌─────────┬───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                                                                                                                                                                                             │
+╞═════════╪═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_spire                                                                                                                                                                                                                                          │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ t121_s2_100k_b1_tr50_f8_corpus (100000 rows)                                                                                                                                                                                                      │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ t121_s2_100k_b1_tr50_f8_queries (1000 rows)                                                                                                                                                                                                       │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ t121_s2_100k_b1_tr50_f8_idx [nlists=128, recursive_fanout=8, top_graph_enabled=1, top_graph_degree=32, top_graph_build_list_size=100, top_graph_search_list_size=96, boundary_replica_count=1, training_sample_rows=50000, storage_format=rabitq] │
+└─────────┴───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+[loader] warning: profile "ec_spire" does not list top_graph_enabled, top_graph_degree, top_graph_build_list_size, top_graph_search_list_size as known reloptions; passing through verbatim. Known reloptions: nlists, recursive_fanout, local_store_count, local_store_tablespaces, boundary_replica_count, nprobe, nprobe_per_level, rerank_width, training_sample_rows, seed, pq_group_size, storage_format, quantizer
+[loader] inspecting data/staged-current/ec_real_100k_corpus.tsv
+[loader] inspecting data/staged-current/ec_real_100k_queries.tsv
+[loader] corpus: 100000 rows, sha256=07275cfd5a7a4b415ddf5eacc086de98294ac978532df46ffae30f9202323a95  queries: 1000 rows, sha256=a7cbec6fc44f6c148234538f61339d00d2f10646febc8f667dcbe75d9cf41782
+[loader] warning: manifest verification failed for data/staged-current/ec_real_100k_manifest.json: prefix="ec_real_100k" (expected "t121_s2_100k_b1_tr50_f8")
+[loader] copied corpus table t121_s2_100k_b1_tr50_f8_corpus in 96.77s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table t121_s2_100k_b1_tr50_f8_corpus in 33.35s
+[loader] copied queries table t121_s2_100k_b1_tr50_f8_queries in 981.08ms
+[loader] building t121_s2_100k_b1_tr50_f8_idx using ec_spire (reloptions=[nlists=128, recursive_fanout=8, top_graph_enabled=1, top_graph_degree=32, top_graph_build_list_size=100, top_graph_search_list_size=96, boundary_replica_count=1, training_sample_rows=50000, storage_format=rabitq]) ...
+[loader] built t121_s2_100k_b1_tr50_f8_idx in 48.07s
+[loader] completed prefix t121_s2_100k_b1_tr50_f8 in 335.73s
+[suite:task121-phase2-local-100k-f8-boundary-training-run] wrote reviews/task-121/014-phase2-local-100k-f8-boundary-training-run/artifacts/suite-phase2-local-100k-f8-boundary-training-run-manifest.json
+[suite:task121-phase2-local-100k-f8-boundary-training-run] storage-100k_b1_tr50_f8 -> --database tqvector_bench_task121 --host /home/peter/.pgrx --port 28818 --log-file reviews/task-121/014-phase2-local-100k-f8-boundary-training-run/artifacts/storage-100k_b1_tr50_f8.log bench storage --prefix t121_s2_100k_b1_tr50_f8
+[suite:task121-phase2-local-100k-f8-boundary-training-run] wrote reviews/task-121/014-phase2-local-100k-f8-boundary-training-run/artifacts/suite-phase2-local-100k-f8-boundary-training-run-manifest.json
+┌───────────────────────────────┬────────────────────────────────┐
+│ field                         ┆ value                          │
+╞═══════════════════════════════╪════════════════════════════════╡
+│ prefix                        ┆ t121_s2_100k_b1_tr50_f8        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus                        ┆ t121_s2_100k_b1_tr50_f8_corpus │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ rows                          ┆ 100000                         │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ heap                          ┆ 7.3 MiB                        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ table (heap + toast + fsm/vm) ┆ 1.6 GiB                        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes                       ┆ 160.0 MiB                      │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ total                         ┆ 1.7 GiB                        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (total)               ┆ 18323.9 B                      │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (heap only)           ┆ 76.6 B                         │
+└───────────────────────────────┴────────────────────────────────┘
+┌─────────────────────────────────────┬───────────────┬───────────┬───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬───────────┬──────────┐
+│ index                               ┆ access method ┆ profile   ┆ reloptions                                                                                                                                                                                                    ┆ size      ┆ per row  │
+╞═════════════════════════════════════╪═══════════════╪═══════════╪═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╪═══════════╪══════════╡
+│ t121_s2_100k_b1_tr50_f8_idx         ┆ ec_spire      ┆ ec_spire  ┆ {nlists=128,recursive_fanout=8,top_graph_enabled=1,top_graph_degree=32,top_graph_build_list_size=100,top_graph_search_list_size=96,boundary_replica_count=1,training_sample_rows=50000,storage_format=rabitq} ┆ 157.8 MiB ┆ 1654.5 B │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ t121_s2_100k_b1_tr50_f8_corpus_pkey ┆ btree         ┆ <unknown> ┆ {}                                                                                                                                                                                                            ┆ 2.2 MiB   ┆ 22.6 B   │
+└─────────────────────────────────────┴───────────────┴───────────┴───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴───────────┴──────────┘
+[suite:task121-phase2-local-100k-f8-boundary-training-run] wrote reviews/task-121/014-phase2-local-100k-f8-boundary-training-run/artifacts/suite-phase2-local-100k-f8-boundary-training-run-manifest.json
+[suite:task121-phase2-local-100k-f8-boundary-training-run] truth-cache-100k-q200-k10 -> --database tqvector_bench_task121 --host /home/peter/.pgrx --port 28818 bench recall --prefix t121_s2_100k_b0_tr10_f8 --profile ec_spire --k 10 --sweep 96 --queries-limit 200 --bits 4 --seed 42 --force-index --truth-cache-file reviews/task-121/014-phase2-local-100k-f8-boundary-training-run/artifacts/truth-cache-100k-q200-k10.json --truth-corpus-file data/staged-current/ec_real_100k_corpus.tsv --log-output reviews/task-121/014-phase2-local-100k-f8-boundary-training-run/artifacts/truth-cache-100k-q200-k10.log
+[suite:task121-phase2-local-100k-f8-boundary-training-run] wrote reviews/task-121/014-phase2-local-100k-f8-boundary-training-run/artifacts/suite-phase2-local-100k-f8-boundary-training-run-manifest.json
+┌────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ nprobe ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 96     ┆ 200     ┆ 2000          ┆ 0.9975   ┆ 0.9942          ┆ 0.9989           ┆ 1.0000     ┆ 1.0000     ┆ 1.0000     ┆ 0.8000       ┆ 0.9997 ┆ 3408.41 ms  │
+└────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from t121_s2_100k_b0_tr10_f8_queries ...
+[recall] loading truth corpus from data/staged-current/ec_real_100k_corpus.tsv ...
+[recall] computing ground truth: 200 queries vs 100000 corpus rows (dim=1536) ...
+[recall] ground truth in 28.77s
+[recall] wrote ground truth cache reviews/task-121/014-phase2-local-100k-f8-boundary-training-run/artifacts/truth-cache-100k-q200-k10.json
+[suite:task121-phase2-local-100k-f8-boundary-training-run] wrote reviews/task-121/014-phase2-local-100k-f8-boundary-training-run/artifacts/suite-phase2-local-100k-f8-boundary-training-run-manifest.json
+[suite:task121-phase2-local-100k-f8-boundary-training-run] pipeline-100k_b0_tr10_f8 -> --database tqvector_bench_task121 --host /home/peter/.pgrx --port 28818 bench spire-pipeline --prefix t121_s2_100k_b0_tr10_f8 --queries-limit 200 --sweep "4,8,12,16,24,32,48,64,96" --include-local-store-overlap --include-cost-snapshot --include-query-metrics --include-recall --truth-corpus-file data/staged-current/ec_real_100k_corpus.tsv --truth-cache-file reviews/task-121/014-phase2-local-100k-f8-boundary-training-run/artifacts/truth-cache-100k-q200-k10.json --log-output reviews/task-121/014-phase2-local-100k-f8-boundary-training-run/artifacts/pipeline-100k_b0_tr10_f8.log --funnel-output reviews/task-121/014-phase2-local-100k-f8-boundary-training-run/artifacts/pipeline-100k_b0_tr10_f8-funnel.jsonl --stage-containment-output reviews/task-121/014-phase2-local-100k-f8-boundary-training-run/artifacts/pipeline-100k_b0_tr10_f8-stage-containment.jsonl
+[suite:task121-phase2-local-100k-f8-boundary-training-run] wrote reviews/task-121/014-phase2-local-100k-f8-boundary-training-run/artifacts/suite-phase2-local-100k-f8-boundary-training-run-manifest.json
+SPIRE pipeline benchmark
+prefix: t121_s2_100k_b0_tr10_f8
+index: t121_s2_100k_b0_tr10_f8_idx
+queries: 200
+sweep: [4, 8, 12, 16, 24, 32, 48, 64, 96]
+rerank_width: default
+max_candidate_rows: default
+max_routed_candidate_rows: default
+remote_tuple_transport: default
+adaptive_nprobe: off
+cost_snapshot: true
+remote: false
+remote_selected_pids: []
+remote_requested_epoch: 1
+local_store_overlap: true
+query_metrics: true
+query_metric_k: 10
+query_metric_projection_columns: id
+query_recall: true
+production_read_profile: false
+production_read_only: false
+
+Endpoint tuple transport identity
+┌──────────────────────────────┬───────────────────┐
+│ field                        ┆ value             │
+╞══════════════════════════════╪═══════════════════╡
+│ tuple_transport_capabilities ┆ pg_binary_attr_v1 │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ tuple_transport_default      ┆ pg_binary_attr_v1 │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ tuple_transport_status       ┆ ready             │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ pg_binary_attr_v1_ready      ┆ true              │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ status                       ┆ ready             │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ recommendation               ┆ none              │
+└──────────────────────────────┴───────────────────┘
+
+Cost tuning snapshot
+┌────────┬─────────┬──────────────┬─────────────┬──────────┬──────────┬──────────────┬─────────────┬───────────────────┬────────────┬──────────────────┐
+│ nprobe ┆ storage ┆ rerank_width ┆ routing_dim ┆ leaf_dim ┆ page     ┆ store_fanout ┆ storage_guc ┆ storage_effective ┆ rerank_guc ┆ rerank_effective │
+╞════════╪═════════╪══════════════╪═════════════╪══════════╪══════════╪══════════════╪═════════════╪═══════════════════╪════════════╪══════════════════╡
+│ 4      ┆ rabitq  ┆ 0            ┆ 0.010000    ┆ 0.010000 ┆ 1.000000 ┆ 0.050000     ┆ 1.000000    ┆ 0.450000          ┆ 1.350000   ┆ 1.350000         │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 8      ┆ rabitq  ┆ 0            ┆ 0.010000    ┆ 0.010000 ┆ 1.000000 ┆ 0.050000     ┆ 1.000000    ┆ 0.450000          ┆ 1.350000   ┆ 1.350000         │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 12     ┆ rabitq  ┆ 0            ┆ 0.010000    ┆ 0.010000 ┆ 1.000000 ┆ 0.050000     ┆ 1.000000    ┆ 0.450000          ┆ 1.350000   ┆ 1.350000         │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 16     ┆ rabitq  ┆ 0            ┆ 0.010000    ┆ 0.010000 ┆ 1.000000 ┆ 0.050000     ┆ 1.000000    ┆ 0.450000          ┆ 1.350000   ┆ 1.350000         │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 24     ┆ rabitq  ┆ 0            ┆ 0.010000    ┆ 0.010000 ┆ 1.000000 ┆ 0.050000     ┆ 1.000000    ┆ 0.450000          ┆ 1.350000   ┆ 1.350000         │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 32     ┆ rabitq  ┆ 0            ┆ 0.010000    ┆ 0.010000 ┆ 1.000000 ┆ 0.050000     ┆ 1.000000    ┆ 0.450000          ┆ 1.350000   ┆ 1.350000         │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 48     ┆ rabitq  ┆ 0            ┆ 0.010000    ┆ 0.010000 ┆ 1.000000 ┆ 0.050000     ┆ 1.000000    ┆ 0.450000          ┆ 1.350000   ┆ 1.350000         │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 64     ┆ rabitq  ┆ 0            ┆ 0.010000    ┆ 0.010000 ┆ 1.000000 ┆ 0.050000     ┆ 1.000000    ┆ 0.450000          ┆ 1.350000   ┆ 1.350000         │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 96     ┆ rabitq  ┆ 0            ┆ 0.010000    ┆ 0.010000 ┆ 1.000000 ┆ 0.050000     ┆ 1.000000    ┆ 0.450000          ┆ 1.350000   ┆ 1.350000         │
+└────────┴─────────┴──────────────┴─────────────┴──────────┴──────────┴──────────────┴─────────────┴───────────────────┴────────────┴──────────────────┘
+
+Routing budget counters
+┌────────┬───────┬─────────┬──────────────────┬─────────┬──────────┬────────────┬─────────────────┬────────────────────────┬────────────────────┬─────────────────────┬────────────────────┬───────────────────┬─────────────────┐
+│ nprobe ┆ level ┆ queries ┆ effective_nprobe ┆ source  ┆ adaptive ┆ beam_width ┆ max_leaf_routes ┆ max_routing_expansions ┆ input_frontier_sum ┆ expanded_parent_sum ┆ selected_child_sum ┆ deduped_route_sum ┆ truncation      │
+╞════════╪═══════╪═════════╪══════════════════╪═════════╪══════════╪════════════╪═════════════════╪════════════════════════╪════════════════════╪═════════════════════╪════════════════════╪═══════════════════╪═════════════════╡
+│ 4      ┆ 1     ┆ 200     ┆ 4                ┆ session ┆ disabled ┆ 4          ┆ 4               ┆ 128                    ┆ 800                ┆ 800                 ┆ 3132               ┆ 800               ┆ max_leaf_routes │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 4      ┆ 2     ┆ 200     ┆ 4                ┆ session ┆ disabled ┆ 4          ┆ 4               ┆ 128                    ┆ 200                ┆ 200                 ┆ 800                ┆ 800               ┆ none            │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 8      ┆ 1     ┆ 200     ┆ 8                ┆ session ┆ disabled ┆ 8          ┆ 8               ┆ 128                    ┆ 1600               ┆ 1600                ┆ 10800              ┆ 1600              ┆ max_leaf_routes │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 8      ┆ 2     ┆ 200     ┆ 8                ┆ session ┆ disabled ┆ 8          ┆ 8               ┆ 128                    ┆ 200                ┆ 200                 ┆ 1600               ┆ 1600              ┆ none            │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 12     ┆ 1     ┆ 200     ┆ 12               ┆ session ┆ disabled ┆ 12         ┆ 12              ┆ 128                    ┆ 1600               ┆ 1600                ┆ 15000              ┆ 2400              ┆ max_leaf_routes │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 12     ┆ 2     ┆ 200     ┆ 12               ┆ session ┆ disabled ┆ 12         ┆ 12              ┆ 128                    ┆ 200                ┆ 200                 ┆ 1600               ┆ 1600              ┆ none            │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 16     ┆ 1     ┆ 200     ┆ 16               ┆ session ┆ disabled ┆ 16         ┆ 16              ┆ 128                    ┆ 1600               ┆ 1600                ┆ 18400              ┆ 3200              ┆ max_leaf_routes │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 16     ┆ 2     ┆ 200     ┆ 16               ┆ session ┆ disabled ┆ 16         ┆ 16              ┆ 128                    ┆ 200                ┆ 200                 ┆ 1600               ┆ 1600              ┆ none            │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 24     ┆ 1     ┆ 200     ┆ 24               ┆ session ┆ disabled ┆ 24         ┆ 24              ┆ 128                    ┆ 1600               ┆ 1600                ┆ 23600              ┆ 4800              ┆ max_leaf_routes │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 24     ┆ 2     ┆ 200     ┆ 24               ┆ session ┆ disabled ┆ 24         ┆ 24              ┆ 128                    ┆ 200                ┆ 200                 ┆ 1600               ┆ 1600              ┆ none            │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 32     ┆ 1     ┆ 200     ┆ 32               ┆ session ┆ disabled ┆ 32         ┆ 32              ┆ 128                    ┆ 1600               ┆ 1600                ┆ 25400              ┆ 6400              ┆ max_leaf_routes │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 32     ┆ 2     ┆ 200     ┆ 32               ┆ session ┆ disabled ┆ 32         ┆ 32              ┆ 128                    ┆ 200                ┆ 200                 ┆ 1600               ┆ 1600              ┆ none            │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 48     ┆ 1     ┆ 200     ┆ 48               ┆ session ┆ disabled ┆ 48         ┆ 48              ┆ 128                    ┆ 1600               ┆ 1600                ┆ 25600              ┆ 9600              ┆ max_leaf_routes │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 48     ┆ 2     ┆ 200     ┆ 48               ┆ session ┆ disabled ┆ 48         ┆ 48              ┆ 128                    ┆ 200                ┆ 200                 ┆ 1600               ┆ 1600              ┆ none            │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 64     ┆ 1     ┆ 200     ┆ 64               ┆ session ┆ disabled ┆ 64         ┆ 64              ┆ 128                    ┆ 1600               ┆ 1600                ┆ 25600              ┆ 12800             ┆ max_leaf_routes │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 64     ┆ 2     ┆ 200     ┆ 64               ┆ session ┆ disabled ┆ 64         ┆ 64              ┆ 128                    ┆ 200                ┆ 200                 ┆ 1600               ┆ 1600              ┆ none            │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 96     ┆ 1     ┆ 200     ┆ 96               ┆ session ┆ disabled ┆ 96         ┆ 96              ┆ 128                    ┆ 1600               ┆ 1600                ┆ 25600              ┆ 19200             ┆ max_leaf_routes │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 96     ┆ 2     ┆ 200     ┆ 96               ┆ session ┆ disabled ┆ 96         ┆ 96              ┆ 128                    ┆ 200                ┆ 200                 ┆ 1600               ┆ 1600              ┆ none            │
+└────────┴───────┴─────────┴──────────────────┴─────────┴──────────┴────────────┴─────────────────┴────────────────────────┴────────────────────┴─────────────────────┴────────────────────┴───────────────────┴─────────────────┘
+
+Local pipeline counters
+┌────────┬───────────────┬─────────┬───────────────────────────┬──────────┬───────────┬─────────────┬───────────┬───────────────┬─────────────────┬───────────────────┬────────────────┐
+│ nprobe ┆ step          ┆ queries ┆ status                    ┆ item_sum ┆ ready_sum ┆ blocked_sum ┆ route_sum ┆ candidate_sum ┆ heap_rerank_sum ┆ remote_fanout_sum ┆ next_blocker   │
+╞════════╪═══════════════╪═════════╪═══════════════════════════╪══════════╪═══════════╪═════════════╪═══════════╪═══════════════╪═════════════════╪═══════════════════╪════════════════╡
+│ 4      ┆ routing       ┆ 200     ┆ truncated                 ┆ 400      ┆ 400       ┆ 0           ┆ 800       ┆ 0             ┆ 0               ┆ 0                 ┆ routing_budget │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 4      ┆ placement     ┆ 200     ┆ ready                     ┆ 200      ┆ 200       ┆ 0           ┆ 800       ┆ 0             ┆ 0               ┆ 0                 ┆ none           │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 4      ┆ prefetch      ┆ 200     ┆ ready                     ┆ 800      ┆ 800       ┆ 0           ┆ 800       ┆ 0             ┆ 0               ┆ 0                 ┆ none           │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 4      ┆ candidates    ┆ 200     ┆ ready                     ┆ 623830   ┆ 623830    ┆ 0           ┆ 800       ┆ 623830        ┆ 0               ┆ 0                 ┆ none           │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 4      ┆ heap_rerank   ┆ 200     ┆ ready                     ┆ 623830   ┆ 623830    ┆ 0           ┆ 0         ┆ 623830        ┆ 623830          ┆ 0                 ┆ none           │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 4      ┆ remote_fanout ┆ 200     ┆ not_applicable_local_scan ┆ 0        ┆ 0         ┆ 0           ┆ 0         ┆ 0             ┆ 0               ┆ 0                 ┆ none           │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 8      ┆ routing       ┆ 200     ┆ truncated                 ┆ 400      ┆ 400       ┆ 0           ┆ 1600      ┆ 0             ┆ 0               ┆ 0                 ┆ routing_budget │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 8      ┆ placement     ┆ 200     ┆ ready                     ┆ 200      ┆ 200       ┆ 0           ┆ 1600      ┆ 0             ┆ 0               ┆ 0                 ┆ none           │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 8      ┆ prefetch      ┆ 200     ┆ ready                     ┆ 1600     ┆ 1600      ┆ 0           ┆ 1600      ┆ 0             ┆ 0               ┆ 0                 ┆ none           │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 8      ┆ candidates    ┆ 200     ┆ ready                     ┆ 1232065  ┆ 1232065   ┆ 0           ┆ 1600      ┆ 1232065       ┆ 0               ┆ 0                 ┆ none           │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 8      ┆ heap_rerank   ┆ 200     ┆ ready                     ┆ 1232065  ┆ 1232065   ┆ 0           ┆ 0         ┆ 1232065       ┆ 1232065         ┆ 0                 ┆ none           │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 8      ┆ remote_fanout ┆ 200     ┆ not_applicable_local_scan ┆ 0        ┆ 0         ┆ 0           ┆ 0         ┆ 0             ┆ 0               ┆ 0                 ┆ none           │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 12     ┆ routing       ┆ 200     ┆ truncated                 ┆ 400      ┆ 400       ┆ 0           ┆ 2400      ┆ 0             ┆ 0               ┆ 0                 ┆ routing_budget │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 12     ┆ placement     ┆ 200     ┆ ready                     ┆ 200      ┆ 200       ┆ 0           ┆ 2400      ┆ 0             ┆ 0               ┆ 0                 ┆ none           │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 12     ┆ prefetch      ┆ 200     ┆ ready                     ┆ 2400     ┆ 2400      ┆ 0           ┆ 2400      ┆ 0             ┆ 0               ┆ 0                 ┆ none           │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 12     ┆ candidates    ┆ 200     ┆ ready                     ┆ 1866619  ┆ 1866619   ┆ 0           ┆ 2400      ┆ 1866619       ┆ 0               ┆ 0                 ┆ none           │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 12     ┆ heap_rerank   ┆ 200     ┆ ready                     ┆ 1866619  ┆ 1866619   ┆ 0           ┆ 0         ┆ 1866619       ┆ 1866619         ┆ 0                 ┆ none           │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 12     ┆ remote_fanout ┆ 200     ┆ not_applicable_local_scan ┆ 0        ┆ 0         ┆ 0           ┆ 0         ┆ 0             ┆ 0               ┆ 0                 ┆ none           │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 16     ┆ routing       ┆ 200     ┆ truncated                 ┆ 400      ┆ 400       ┆ 0           ┆ 3200      ┆ 0             ┆ 0               ┆ 0                 ┆ routing_budget │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 16     ┆ placement     ┆ 200     ┆ ready                     ┆ 200      ┆ 200       ┆ 0           ┆ 3200      ┆ 0             ┆ 0               ┆ 0                 ┆ none           │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 16     ┆ prefetch      ┆ 200     ┆ ready                     ┆ 3200     ┆ 3200      ┆ 0           ┆ 3200      ┆ 0             ┆ 0               ┆ 0                 ┆ none           │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 16     ┆ candidates    ┆ 200     ┆ ready                     ┆ 2514557  ┆ 2514557   ┆ 0           ┆ 3200      ┆ 2514557       ┆ 0               ┆ 0                 ┆ none           │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 16     ┆ heap_rerank   ┆ 200     ┆ ready                     ┆ 2514557  ┆ 2514557   ┆ 0           ┆ 0         ┆ 2514557       ┆ 2514557         ┆ 0                 ┆ none           │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 16     ┆ remote_fanout ┆ 200     ┆ not_applicable_local_scan ┆ 0        ┆ 0         ┆ 0           ┆ 0         ┆ 0             ┆ 0               ┆ 0                 ┆ none           │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 24     ┆ routing       ┆ 200     ┆ truncated                 ┆ 400      ┆ 400       ┆ 0           ┆ 4800      ┆ 0             ┆ 0               ┆ 0                 ┆ routing_budget │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 24     ┆ placement     ┆ 200     ┆ ready                     ┆ 200      ┆ 200       ┆ 0           ┆ 4800      ┆ 0             ┆ 0               ┆ 0                 ┆ none           │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 24     ┆ prefetch      ┆ 200     ┆ ready                     ┆ 4800     ┆ 4800      ┆ 0           ┆ 4800      ┆ 0             ┆ 0               ┆ 0                 ┆ none           │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 24     ┆ candidates    ┆ 200     ┆ ready                     ┆ 3816799  ┆ 3816799   ┆ 0           ┆ 4800      ┆ 3816799       ┆ 0               ┆ 0                 ┆ none           │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 24     ┆ heap_rerank   ┆ 200     ┆ ready                     ┆ 3816799  ┆ 3816799   ┆ 0           ┆ 0         ┆ 3816799       ┆ 3816799         ┆ 0                 ┆ none           │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 24     ┆ remote_fanout ┆ 200     ┆ not_applicable_local_scan ┆ 0        ┆ 0         ┆ 0           ┆ 0         ┆ 0             ┆ 0               ┆ 0                 ┆ none           │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 32     ┆ routing       ┆ 200     ┆ truncated                 ┆ 400      ┆ 400       ┆ 0           ┆ 6400      ┆ 0             ┆ 0               ┆ 0                 ┆ routing_budget │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 32     ┆ placement     ┆ 200     ┆ ready                     ┆ 200      ┆ 200       ┆ 0           ┆ 6400      ┆ 0             ┆ 0               ┆ 0                 ┆ none           │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 32     ┆ prefetch      ┆ 200     ┆ ready                     ┆ 6400     ┆ 6400      ┆ 0           ┆ 6400      ┆ 0             ┆ 0               ┆ 0                 ┆ none           │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 32     ┆ candidates    ┆ 200     ┆ ready                     ┆ 5165224  ┆ 5165224   ┆ 0           ┆ 6400      ┆ 5165224       ┆ 0               ┆ 0                 ┆ none           │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 32     ┆ heap_rerank   ┆ 200     ┆ ready                     ┆ 5165224  ┆ 5165224   ┆ 0           ┆ 0         ┆ 5165224       ┆ 5165224         ┆ 0                 ┆ none           │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 32     ┆ remote_fanout ┆ 200     ┆ not_applicable_local_scan ┆ 0        ┆ 0         ┆ 0           ┆ 0         ┆ 0             ┆ 0               ┆ 0                 ┆ none           │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 48     ┆ routing       ┆ 200     ┆ truncated                 ┆ 400      ┆ 400       ┆ 0           ┆ 9600      ┆ 0             ┆ 0               ┆ 0                 ┆ routing_budget │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 48     ┆ placement     ┆ 200     ┆ ready                     ┆ 200      ┆ 200       ┆ 0           ┆ 9600      ┆ 0             ┆ 0               ┆ 0                 ┆ none           │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 48     ┆ prefetch      ┆ 200     ┆ ready                     ┆ 9600     ┆ 9600      ┆ 0           ┆ 9600      ┆ 0             ┆ 0               ┆ 0                 ┆ none           │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 48     ┆ candidates    ┆ 200     ┆ ready                     ┆ 7795405  ┆ 7795405   ┆ 0           ┆ 9600      ┆ 7795405       ┆ 0               ┆ 0                 ┆ none           │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 48     ┆ heap_rerank   ┆ 200     ┆ ready                     ┆ 7795405  ┆ 7795405   ┆ 0           ┆ 0         ┆ 7795405       ┆ 7795405         ┆ 0                 ┆ none           │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 48     ┆ remote_fanout ┆ 200     ┆ not_applicable_local_scan ┆ 0        ┆ 0         ┆ 0           ┆ 0         ┆ 0             ┆ 0               ┆ 0                 ┆ none           │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 64     ┆ routing       ┆ 200     ┆ truncated                 ┆ 400      ┆ 400       ┆ 0           ┆ 12800     ┆ 0             ┆ 0               ┆ 0                 ┆ routing_budget │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 64     ┆ placement     ┆ 200     ┆ ready                     ┆ 200      ┆ 200       ┆ 0           ┆ 12800     ┆ 0             ┆ 0               ┆ 0                 ┆ none           │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 64     ┆ prefetch      ┆ 200     ┆ ready                     ┆ 12800    ┆ 12800     ┆ 0           ┆ 12800     ┆ 0             ┆ 0               ┆ 0                 ┆ none           │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 64     ┆ candidates    ┆ 200     ┆ ready                     ┆ 10420357 ┆ 10420357  ┆ 0           ┆ 12800     ┆ 10420357      ┆ 0               ┆ 0                 ┆ none           │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 64     ┆ heap_rerank   ┆ 200     ┆ ready                     ┆ 10420357 ┆ 10420357  ┆ 0           ┆ 0         ┆ 10420357      ┆ 10420357        ┆ 0                 ┆ none           │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 64     ┆ remote_fanout ┆ 200     ┆ not_applicable_local_scan ┆ 0        ┆ 0         ┆ 0           ┆ 0         ┆ 0             ┆ 0               ┆ 0                 ┆ none           │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 96     ┆ routing       ┆ 200     ┆ truncated                 ┆ 400      ┆ 400       ┆ 0           ┆ 19200     ┆ 0             ┆ 0               ┆ 0                 ┆ routing_budget │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 96     ┆ placement     ┆ 200     ┆ ready                     ┆ 200      ┆ 200       ┆ 0           ┆ 19200     ┆ 0             ┆ 0               ┆ 0                 ┆ none           │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 96     ┆ prefetch      ┆ 200     ┆ ready                     ┆ 19200    ┆ 19200     ┆ 0           ┆ 19200     ┆ 0             ┆ 0               ┆ 0                 ┆ none           │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 96     ┆ candidates    ┆ 200     ┆ ready                     ┆ 15506227 ┆ 15506227  ┆ 0           ┆ 19200     ┆ 15506227      ┆ 0               ┆ 0                 ┆ none           │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 96     ┆ heap_rerank   ┆ 200     ┆ ready                     ┆ 15506227 ┆ 15506227  ┆ 0           ┆ 0         ┆ 15506227      ┆ 15506227        ┆ 0                 ┆ none           │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 96     ┆ remote_fanout ┆ 200     ┆ not_applicable_local_scan ┆ 0        ┆ 0         ┆ 0           ┆ 0         ┆ 0             ┆ 0               ┆ 0                 ┆ none           │
+└────────┴───────────────┴─────────┴───────────────────────────┴──────────┴───────────┴─────────────┴───────────┴───────────────┴─────────────────┴───────────────────┴────────────────┘
+
+Local store overlap counters
+┌────────┬─────────┬────────────────┬─────────┬───────────┬────────────────┬─────────────────┬───────────────┬──────────────────┬────────────────┬──────────────────┐
+│ nprobe ┆ node_id ┆ local_store_id ┆ queries ┆ route_sum ┆ leaf_route_sum ┆ delta_route_sum ┆ candidate_sum ┆ object_bytes_sum ┆ read_batch_sum ┆ delta_decode_sum │
+╞════════╪═════════╪════════════════╪═════════╪═══════════╪════════════════╪═════════════════╪═══════════════╪══════════════════╪════════════════╪══════════════════╡
+│ 4      ┆ 0       ┆ 0              ┆ 200     ┆ 800       ┆ 800            ┆ 0               ┆ 623830        ┆ 508646032        ┆ 200            ┆ 0                │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 8      ┆ 0       ┆ 0              ┆ 200     ┆ 1600      ┆ 1600           ┆ 0               ┆ 1232065       ┆ 1004577112       ┆ 200            ┆ 0                │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 12     ┆ 0       ┆ 0              ┆ 200     ┆ 2400      ┆ 2400           ┆ 0               ┆ 1866619       ┆ 1521962008       ┆ 200            ┆ 0                │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 16     ┆ 0       ┆ 0              ┆ 200     ┆ 3200      ┆ 3200           ┆ 0               ┆ 2514557       ┆ 2050256360       ┆ 200            ┆ 0                │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 24     ┆ 0       ┆ 0              ┆ 200     ┆ 4800      ┆ 4800           ┆ 0               ┆ 3816799       ┆ 3112033720       ┆ 200            ┆ 0                │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 32     ┆ 0       ┆ 0              ┆ 200     ┆ 6400      ┆ 6400           ┆ 0               ┆ 5165224       ┆ 4211460160       ┆ 200            ┆ 0                │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 48     ┆ 0       ┆ 0              ┆ 200     ┆ 9600      ┆ 9600           ┆ 0               ┆ 7795405       ┆ 6355962304       ┆ 200            ┆ 0                │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 64     ┆ 0       ┆ 0              ┆ 200     ┆ 12800     ┆ 12800          ┆ 0               ┆ 10420357      ┆ 8496202984       ┆ 200            ┆ 0                │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 96     ┆ 0       ┆ 0              ┆ 200     ┆ 19200     ┆ 19200          ┆ 0               ┆ 15506227      ┆ 12642962128      ┆ 200            ┆ 0                │
+└────────┴─────────┴────────────────┴─────────┴───────────┴────────────────┴─────────────────┴───────────────┴──────────────────┴────────────────┴──────────────────┘
+
+Coordinator query metrics
+┌────────┬─────────┬─────────────┬─────────────┬─────────────┬─────────────┬─────────────┬──────────┐
+│ nprobe ┆ queries ┆ latency_min ┆ latency_p50 ┆ latency_p95 ┆ latency_p99 ┆ latency_max ┆ recall@k │
+╞════════╪═════════╪═════════════╪═════════════╪═════════════╪═════════════╪═════════════╪══════════╡
+│ 4      ┆ 200     ┆ 76.274 ms   ┆ 125.369 ms  ┆ 163.540 ms  ┆ 183.642 ms  ┆ 203.851 ms  ┆ 0.5500   │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ 8      ┆ 200     ┆ 168.753 ms  ┆ 245.514 ms  ┆ 307.142 ms  ┆ 327.140 ms  ┆ 355.691 ms  ┆ 0.7250   │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ 12     ┆ 200     ┆ 281.826 ms  ┆ 386.604 ms  ┆ 459.467 ms  ┆ 478.631 ms  ┆ 495.936 ms  ┆ 0.8010   │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ 16     ┆ 200     ┆ 370.421 ms  ┆ 518.468 ms  ┆ 608.491 ms  ┆ 622.265 ms  ┆ 642.182 ms  ┆ 0.8525   │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ 24     ┆ 200     ┆ 686.208 ms  ┆ 817.531 ms  ┆ 916.031 ms  ┆ 959.037 ms  ┆ 989.262 ms  ┆ 0.9045   │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ 32     ┆ 200     ┆ 945.009 ms  ┆ 1104.833 ms ┆ 1265.117 ms ┆ 1333.289 ms ┆ 1387.414 ms ┆ 0.9310   │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ 48     ┆ 200     ┆ 1452.709 ms ┆ 1715.345 ms ┆ 1914.705 ms ┆ 2011.102 ms ┆ 2080.319 ms ┆ 0.9645   │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ 64     ┆ 200     ┆ 2110.826 ms ┆ 2308.951 ms ┆ 2485.750 ms ┆ 2606.952 ms ┆ 2881.042 ms ┆ 0.9825   │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ 96     ┆ 200     ┆ 3182.698 ms ┆ 3455.559 ms ┆ 3687.544 ms ┆ 3801.113 ms ┆ 3844.406 ms ┆ 0.9975   │
+└────────┴─────────┴─────────────┴─────────────┴─────────────┴─────────────┴─────────────┴──────────┘
+[recall] loaded ground truth cache reviews/task-121/014-phase2-local-100k-f8-boundary-training-run/artifacts/truth-cache-100k-q200-k10.json
+[suite:task121-phase2-local-100k-f8-boundary-training-run] wrote reviews/task-121/014-phase2-local-100k-f8-boundary-training-run/artifacts/suite-phase2-local-100k-f8-boundary-training-run-manifest.json
+[suite:task121-phase2-local-100k-f8-boundary-training-run] pipeline-100k_b0_tr50_f8 -> --database tqvector_bench_task121 --host /home/peter/.pgrx --port 28818 bench spire-pipeline --prefix t121_s2_100k_b0_tr50_f8 --queries-limit 200 --sweep "4,8,12,16,24,32,48,64,96" --include-local-store-overlap --include-cost-snapshot --include-query-metrics --include-recall --truth-corpus-file data/staged-current/ec_real_100k_corpus.tsv --truth-cache-file reviews/task-121/014-phase2-local-100k-f8-boundary-training-run/artifacts/truth-cache-100k-q200-k10.json --log-output reviews/task-121/014-phase2-local-100k-f8-boundary-training-run/artifacts/pipeline-100k_b0_tr50_f8.log --funnel-output reviews/task-121/014-phase2-local-100k-f8-boundary-training-run/artifacts/pipeline-100k_b0_tr50_f8-funnel.jsonl --stage-containment-output reviews/task-121/014-phase2-local-100k-f8-boundary-training-run/artifacts/pipeline-100k_b0_tr50_f8-stage-containment.jsonl
+[suite:task121-phase2-local-100k-f8-boundary-training-run] wrote reviews/task-121/014-phase2-local-100k-f8-boundary-training-run/artifacts/suite-phase2-local-100k-f8-boundary-training-run-manifest.json
+[recall] loaded ground truth cache reviews/task-121/014-phase2-local-100k-f8-boundary-training-run/artifacts/truth-cache-100k-q200-k10.json
+
+   0: [91mexecuting SPIRE pipeline query-metrics KNN query[0m
+   1: [91mdb error[0m
+   2: [91mFATAL: terminating connection due to administrator command[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/bench/spire_pipeline.rs[0m:[35m1149[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.
+[suite:task121-phase2-local-100k-f8-boundary-training-run] wrote reviews/task-121/014-phase2-local-100k-f8-boundary-training-run/artifacts/suite-phase2-local-100k-f8-boundary-training-run-manifest.json
+
+   0: [91msuite step "pipeline-100k_b0_tr50_f8" failed with exit code 1; rerun with --continue-on-error to keep going[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/bench/suite.rs[0m:[35m951[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.
+
+Script done on 2026-06-23 16:59:32-07:00 [COMMAND_EXIT_CODE="1"]

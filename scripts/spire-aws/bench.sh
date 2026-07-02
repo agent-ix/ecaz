@@ -21,9 +21,9 @@ PREPARED_PREFIX="${SPIRE_AWS_REPRESENTATIVE_PREPARED_PREFIX:-ec_real_100k}"
 
 case "$TIER" in
   correctness)   SUITE=scripts/spire-aws/suite-correctness.json ;;
-  representative-priority) SUITE=scripts/spire-aws/suite-representative-priority.json ;;
-  representative) SUITE=scripts/spire-aws/suite-representative.json ;;
-  representative-pooling) SUITE=scripts/spire-aws/suite-representative-pooling.json ;;
+  representative-priority) SUITE="${SPIRE_AWS_REPRESENTATIVE_PRIORITY_SUITE:-scripts/spire-aws/suite-representative-priority.json}" ;;
+  representative) SUITE="${SPIRE_AWS_REPRESENTATIVE_SUITE:-scripts/spire-aws/suite-representative.json}" ;;
+  representative-pooling) SUITE="${SPIRE_AWS_REPRESENTATIVE_POOLING_SUITE:-scripts/spire-aws/suite-representative-pooling.json}" ;;
   stress)        SUITE=scripts/spire-aws/suite-stress.json ;;
   *) echo "unknown tier: $TIER" >&2; exit 2 ;;
 esac

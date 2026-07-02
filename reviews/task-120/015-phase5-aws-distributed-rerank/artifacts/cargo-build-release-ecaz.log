@@ -1,0 +1,18 @@
+   Compiling addr2line v0.25.1
+   Compiling backtrace v0.3.76
+   Compiling color-eyre v0.6.5
+   Compiling ecaz-cloud v0.1.0 (/home/peter/dev/ecaz/crates/ecaz-cloud)
+   Compiling ecaz-cli v0.1.0 (/home/peter/dev/ecaz/crates/ecaz-cli)
+warning: field `path` is never read
+   --> crates/ecaz-cli/src/commands/corpus/load.rs:170:5
+    |
+169 | struct LoadedDistributedPlacementConfig {
+    |        -------------------------------- field in this struct
+170 |     path: PathBuf,
+    |     ^^^^
+    |
+    = note: `LoadedDistributedPlacementConfig` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `ecaz-cli` (bin "ecaz") generated 1 warning
+    Finished `release` profile [optimized] target(s) in 4m 41s

@@ -1,0 +1,20 @@
+[loader] warning: profile "ec_spire" does not list top_graph_search_list_size as known reloption; passing through verbatim. Known reloptions: nlists, recursive_fanout, local_store_count, local_store_tablespaces, boundary_replica_count, nprobe, nprobe_per_level, rerank_width, training_sample_rows, seed, pq_group_size, storage_format, quantizer
+[loader] inspecting /var/tmp/ecaz-spire-aws-load/representative/node-3/ec_spire_aws_repr_1m_node_3_corpus.tsv
+[loader] corpus: 485266 rows, sha256=0d9723df7485588854e11b0c744f3c3f6210031c2785e1e5e0addfd5a35088ef  queries: skipped (--corpus-only)
+[loader] copied corpus table ec_spire_aws_repr_1m_node_3_corpus in 156.41s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table ec_spire_aws_repr_1m_node_3_corpus in 212.95s
+[loader] building ec_spire_aws_repr_1m_remote_idx using ec_spire (reloptions=[top_graph_search_list_size=96, local_store_count=1, storage_format=rabitq]) ...
+[loader] built ec_spire_aws_repr_1m_remote_idx in 954.86s
+┌─────────┬─────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                                                       │
+╞═════════╪═════════════════════════════════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_spire                                                                                                    │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ ec_spire_aws_repr_1m_node_3_corpus (485266 rows)                                                            │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ skipped (--corpus-only)                                                                                     │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ ec_spire_aws_repr_1m_remote_idx [top_graph_search_list_size=96, local_store_count=1, storage_format=rabitq] │
+└─────────┴─────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+[loader] completed prefix ec_spire_aws_repr_1m_node_3 in 1386.23s

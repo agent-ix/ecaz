@@ -971,6 +971,10 @@ pub(crate) struct SpireRemoteProductionReadProfileRow {
     pub(crate) heap_receive_query_count: u64,
     pub(crate) payload_decode_row_count: u64,
     pub(crate) payload_decode_bytes: u64,
+    pub(crate) global_pre_heap_input_count: u64,
+    pub(crate) global_pre_heap_candidate_count: u64,
+    pub(crate) global_pre_heap_duplicate_vec_id_count: u64,
+    pub(crate) global_pre_heap_pruned_candidate_count: u64,
     pub(crate) merge_input_count: u64,
     pub(crate) merge_duplicate_vec_id_count: u64,
     pub(crate) merge_output_count: u64,
@@ -989,6 +993,9 @@ pub(crate) struct SpireRemoteProductionReadTimelineRow {
     pub(crate) completed_after_ms: u64,
     pub(crate) elapsed_ms: u64,
     pub(crate) candidate_count: u64,
+    pub(crate) payload_decode_elapsed_ms: u64,
+    pub(crate) payload_decode_row_count: u64,
+    pub(crate) payload_decode_bytes: u64,
     pub(crate) status: &'static str,
     pub(crate) failure_category: &'static str,
 }
@@ -1860,6 +1867,31 @@ pub(crate) struct SpireIndexScanLeafBlockRankSnapshotRow {
     pub(crate) route_rank: Option<u64>,
     pub(crate) route_score: Option<f32>,
     pub(crate) assignment_flags: Option<u16>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct SpireIndexScanTargetCandidateRankSnapshotRow {
+    pub(crate) active_epoch: u64,
+    pub(crate) effective_nprobe: u32,
+    pub(crate) effective_nprobe_source: &'static str,
+    pub(crate) effective_rerank_width: u64,
+    pub(crate) effective_rerank_width_source: &'static str,
+    pub(crate) target_ordinal: u64,
+    pub(crate) target_local_sequence: u64,
+    pub(crate) status: &'static str,
+    pub(crate) approximate_candidate_count: u64,
+    pub(crate) rerank_prefix_count: u64,
+    pub(crate) approximate_rank: Option<u64>,
+    pub(crate) selected_by_rerank_prefix: Option<bool>,
+    pub(crate) pid: Option<u64>,
+    pub(crate) node_id: Option<u32>,
+    pub(crate) local_store_id: Option<u32>,
+    pub(crate) object_version: Option<u64>,
+    pub(crate) row_index: Option<u32>,
+    pub(crate) assignment_flags: Option<u16>,
+    pub(crate) approximate_score: Option<f32>,
+    pub(crate) heap_block: Option<u32>,
+    pub(crate) heap_offset: Option<u16>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

@@ -68,38 +68,46 @@ jq -c '.remotes[]' "$PLAN_FILE" | while read -r remote_plan; do
 
   COORD_BASE_ASSIGNMENTS="$LEAF_VERIFY_DIR/node-${NODE_ID}-coordinator-base-assignments.tsv"
   REMOTE_MATERIALIZE_SQL="$LEAF_VERIFY_DIR/node-${NODE_ID}-remote-materialize-rendered.sql"
+  REMOTE_MATERIALIZE_LOG="$LEAF_VERIFY_DIR/node-${NODE_ID}-remote-materialize.log"
+  REMOTE_MATERIALIZE_STDERR="$LEAF_VERIFY_DIR/node-${NODE_ID}-remote-materialize.stderr.log"
 
-  "$ECAZ_BIN" dev sql \
-    --host "$COORD_HOST" --port "$COORD_PORT" --user ecaz_coord --database postgres \
-    --set "coord_index=$COORD_INDEX" \
-    --set "coord_table=$COORD_TABLE" \
-    --set "node_id=$NODE_ID" \
-    --set "remotes_json=$REMOTES_JSON" \
-    --file scripts/spire-aws/export-coordinator-leaf-base-assignments.sql \
-    > "$COORD_BASE_ASSIGNMENTS" \
-    2> "$LEAF_VERIFY_DIR/node-${NODE_ID}-coordinator-base-assignments.stderr.log"
+  if [[ ! -s "$COORD_BASE_ASSIGNMENTS" ]]; then
+    "$ECAZ_BIN" dev sql \
+      --host "$COORD_HOST" --port "$COORD_PORT" --user ecaz_coord --database postgres \
+      --set "coord_index=$COORD_INDEX" \
+      --set "coord_table=$COORD_TABLE" \
+      --set "node_id=$NODE_ID" \
+      --set "remotes_json=$REMOTES_JSON" \
+      --file scripts/spire-aws/export-coordinator-leaf-base-assignments.sql \
+      > "$COORD_BASE_ASSIGNMENTS" \
+      2> "$LEAF_VERIFY_DIR/node-${NODE_ID}-coordinator-base-assignments.stderr.log"
+  fi
 
   assignment_file_sql=${COORD_BASE_ASSIGNMENTS//\'/\'\'}
   sed "s|__ECAZ_ASSIGNMENT_FILE__|$assignment_file_sql|g" \
     scripts/spire-aws/materialize-remote-leaf-base-assignments.sql \
     > "$REMOTE_MATERIALIZE_SQL"
 
-  "$ECAZ_BIN" dev sql \
-    --host "$REMOTE_HOST" --port "$REMOTE_PORT" --user ecaz_coord --database postgres \
-    --set "remote_index=$REMOTE_INDEX" \
-    --set "remote_table=$REMOTE_TABLE" \
-    --file "$REMOTE_MATERIALIZE_SQL" \
-    > "$LEAF_VERIFY_DIR/node-${NODE_ID}-remote-materialize.log" \
-    2> "$LEAF_VERIFY_DIR/node-${NODE_ID}-remote-materialize.stderr.log"
+  if ! grep -q 'materialized' "$REMOTE_MATERIALIZE_LOG" 2>/dev/null; then
+    "$ECAZ_BIN" dev sql \
+      --host "$REMOTE_HOST" --port "$REMOTE_PORT" --user ecaz_coord --database postgres \
+      --set "remote_index=$REMOTE_INDEX" \
+      --set "remote_table=$REMOTE_TABLE" \
+      --file "$REMOTE_MATERIALIZE_SQL" \
+      > "$REMOTE_MATERIALIZE_LOG" \
+      2> "$REMOTE_MATERIALIZE_STDERR"
+  fi
 
   IDENTITY_FILE="$IDENTITY_DIR/node-${NODE_ID}-identity.json"
   IDENTITY_STDERR="$IDENTITY_DIR/node-${NODE_ID}-identity.stderr.log"
-  "$ECAZ_BIN" dev sql \
-    --host "$REMOTE_HOST" --port "$REMOTE_PORT" --user ecaz_coord --database postgres \
-    --env "PGOPTIONS=-c client_min_messages=error" \
-    --sql "$IDENTITY_SQL" \
-    > "$IDENTITY_FILE" \
-    2> "$IDENTITY_STDERR"
+  if [[ ! -s "$IDENTITY_FILE" ]]; then
+    "$ECAZ_BIN" dev sql \
+      --host "$REMOTE_HOST" --port "$REMOTE_PORT" --user ecaz_coord --database postgres \
+      --env "PGOPTIONS=-c client_min_messages=error" \
+      --sql "$IDENTITY_SQL" \
+      > "$IDENTITY_FILE" \
+      2> "$IDENTITY_STDERR"
+  fi
 done
 
 "$ECAZ_BIN" dev sql \

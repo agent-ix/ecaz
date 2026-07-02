@@ -208,6 +208,7 @@ enum SuiteStep {
     Recall(RecallStep),
     CrossAm(CrossAmStep),
     Latency(LatencyStep),
+    SpireLocalMultinode(SpireLocalMultinodeStep),
     SpirePipeline(SpirePipelineStep),
     Storage(StorageStep),
     Explain(ExplainStep),
@@ -397,6 +398,81 @@ struct LatencyStep {
 }
 
 #[derive(Debug, Deserialize)]
+struct SpireLocalMultinodeStep {
+    name: String,
+    #[serde(default)]
+    tags: Vec<String>,
+    #[serde(default)]
+    pgoptions: Option<String>,
+    #[serde(default)]
+    artifact_dir: Option<PathBuf>,
+    #[serde(default)]
+    run_dir: Option<PathBuf>,
+    #[serde(default)]
+    smoke_log: Option<PathBuf>,
+    #[serde(default)]
+    pg: Option<u16>,
+    #[serde(default)]
+    pgbin: Option<PathBuf>,
+    #[serde(default)]
+    coord_port: Option<u16>,
+    #[serde(default)]
+    remote1_port: Option<u16>,
+    #[serde(default)]
+    remote2_port: Option<u16>,
+    #[serde(default)]
+    remote3_port: Option<u16>,
+    #[serde(default)]
+    run_id: Option<String>,
+    #[serde(default)]
+    tier: Option<String>,
+    #[serde(default)]
+    prefix: Option<String>,
+    #[serde(default)]
+    prepared_prefix: Option<String>,
+    #[serde(default)]
+    prepared_dir: Option<PathBuf>,
+    #[serde(default)]
+    storage_format: Option<String>,
+    #[serde(default)]
+    coord_index: Option<String>,
+    #[serde(default)]
+    remote_index: Option<String>,
+    #[serde(default)]
+    reloptions: Vec<String>,
+    #[serde(default)]
+    coord_reloptions: Vec<String>,
+    #[serde(default)]
+    remote_reloptions: Vec<String>,
+    #[serde(default)]
+    load_session_gucs: Vec<String>,
+    #[serde(default)]
+    bench_top_k: Option<u16>,
+    #[serde(default)]
+    bench_queries_limit: Option<usize>,
+    #[serde(default)]
+    bench_sweep: Option<String>,
+    #[serde(default)]
+    bench_rowcap_sweep: Option<String>,
+    #[serde(default)]
+    skip_bench_rowcap: bool,
+    #[serde(default)]
+    bench_truth_corpus_file: Option<PathBuf>,
+    #[serde(default)]
+    bench_query_metric_projection_columns: Vec<String>,
+    #[serde(default)]
+    bench_session_gucs: Vec<String>,
+    #[serde(default)]
+    bench_production_read_variants: Vec<String>,
+    #[serde(default)]
+    skip_bench_suite: bool,
+    #[serde(default)]
+    skip_fault_drills: bool,
+    #[serde(default)]
+    skip_install: bool,
+}
+
+#[derive(Debug, Deserialize)]
 struct SpirePipelineStep {
     name: String,
     #[serde(default)]
@@ -462,6 +538,8 @@ struct SpirePipelineStep {
     #[serde(default)]
     target_block_rank_output: Option<PathBuf>,
     #[serde(default)]
+    target_candidate_rank_output: Option<PathBuf>,
+    #[serde(default)]
     miss_attribution_output: Option<PathBuf>,
     #[serde(default)]
     leaf_block_rank_local_sequence_offset: Option<i64>,
@@ -469,6 +547,8 @@ struct SpirePipelineStep {
     include_production_read_profile: Option<bool>,
     #[serde(default)]
     production_read_only: Option<bool>,
+    #[serde(default)]
+    production_read_timeline_no_payload: Option<bool>,
     #[serde(default)]
     query_metric_k: Option<usize>,
     #[serde(default)]
@@ -481,6 +561,10 @@ struct SpirePipelineStep {
     log_output: Option<PathBuf>,
     #[serde(default)]
     funnel_output: Option<PathBuf>,
+    #[serde(default)]
+    stage_containment_output: Option<PathBuf>,
+    #[serde(default)]
+    result_identity_output: Option<PathBuf>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1119,6 +1203,18 @@ fn apply_default_artifact_logs(config: &mut SuiteConfig) {
             SuiteStep::Latency(step) if step.log_output.is_none() => {
                 step.log_output = Some(log_path(&step.name));
             }
+            SuiteStep::SpireLocalMultinode(step) => {
+                if step.artifact_dir.is_none() {
+                    step.artifact_dir =
+                        Some(artifact_dir.join(artifact_safe_step_name(&step.name)));
+                }
+                if step.smoke_log.is_none() {
+                    step.smoke_log = step
+                        .artifact_dir
+                        .as_ref()
+                        .map(|dir| dir.join("local-multinode.log"));
+                }
+            }
             SuiteStep::SpirePipeline(step) if step.log_output.is_none() => {
                 step.log_output = Some(log_path(&step.name));
             }
@@ -1180,8 +1276,25 @@ fn apply_artifact_dir_templates(config: &mut SuiteConfig) {
             SuiteStep::Latency(step) => {
                 rewrite_artifact_dir_path(&mut step.log_output, &artifact_dir);
             }
+            SuiteStep::SpireLocalMultinode(step) => {
+                rewrite_artifact_dir_path(&mut step.artifact_dir, &artifact_dir);
+                rewrite_artifact_dir_path(&mut step.run_dir, &artifact_dir);
+                rewrite_artifact_dir_path(&mut step.smoke_log, &artifact_dir);
+                rewrite_artifact_dir_path(&mut step.pgbin, &artifact_dir);
+                rewrite_artifact_dir_path(&mut step.prepared_dir, &artifact_dir);
+                rewrite_artifact_dir_path(&mut step.bench_truth_corpus_file, &artifact_dir);
+            }
             SuiteStep::SpirePipeline(step) => {
+                rewrite_artifact_dir_path(&mut step.truth_corpus_file, &artifact_dir);
+                rewrite_artifact_dir_path(&mut step.truth_cache_file, &artifact_dir);
+                rewrite_artifact_dir_path(&mut step.leaf_block_rank_output, &artifact_dir);
+                rewrite_artifact_dir_path(&mut step.target_block_rank_output, &artifact_dir);
+                rewrite_artifact_dir_path(&mut step.target_candidate_rank_output, &artifact_dir);
+                rewrite_artifact_dir_path(&mut step.miss_attribution_output, &artifact_dir);
                 rewrite_artifact_dir_path(&mut step.log_output, &artifact_dir);
+                rewrite_artifact_dir_path(&mut step.funnel_output, &artifact_dir);
+                rewrite_artifact_dir_path(&mut step.stage_containment_output, &artifact_dir);
+                rewrite_artifact_dir_path(&mut step.result_identity_output, &artifact_dir);
             }
             SuiteStep::Storage(step) => {
                 rewrite_artifact_dir_path(&mut step.log_file, &artifact_dir);
@@ -1737,14 +1850,25 @@ fn known_tag_value(tags: &[String], known: &[&str]) -> Option<String> {
 fn parse_table_rows(raw: &str) -> Vec<BTreeMap<String, String>> {
     let mut header: Option<Vec<String>> = None;
     let mut rows = Vec::new();
-    for cells in table_lines(raw) {
-        if cells.iter().any(|cell| cell.chars().all(|ch| ch == '═')) {
+    for line in raw.lines() {
+        let Some(cells) = table_cells(line) else {
+            if is_table_boundary_line(line) {
+                continue;
+            }
+            header = None;
+            continue;
+        };
+        if cells.is_empty() || cells.iter().any(|cell| cell.chars().all(|ch| ch == '═')) {
             continue;
         }
         if header.as_ref().map(|h| h.len()) != Some(cells.len()) {
             header = Some(cells);
             continue;
         }
+        if header.as_deref() == Some(cells.as_slice()) {
+            continue;
+        }
+
         if let Some(header) = &header {
             rows.push(
                 header
@@ -1971,11 +2095,31 @@ fn duration_seconds(value: &str) -> Option<String> {
     Some(format!("{seconds:.6}"))
 }
 
-fn table_lines(raw: &str) -> Vec<Vec<String>> {
-    raw.lines()
-        .filter_map(table_cells)
-        .filter(|cells| !cells.is_empty())
-        .collect()
+fn is_table_boundary_line(line: &str) -> bool {
+    let trimmed = line.trim();
+    !trimmed.is_empty()
+        && trimmed.chars().all(|ch| {
+            matches!(
+                ch,
+                '┌' | '┬'
+                    | '┐'
+                    | '╞'
+                    | '╪'
+                    | '╡'
+                    | '├'
+                    | '┼'
+                    | '┤'
+                    | '└'
+                    | '┴'
+                    | '┘'
+                    | '─'
+                    | '═'
+                    | '╌'
+                    | '+'
+                    | '-'
+                    | ' '
+            )
+        })
 }
 
 fn table_cells(line: &str) -> Option<Vec<String>> {
@@ -2284,6 +2428,7 @@ impl SuiteStep {
             SuiteStep::Recall(step) => &step.name,
             SuiteStep::CrossAm(step) => &step.name,
             SuiteStep::Latency(step) => &step.name,
+            SuiteStep::SpireLocalMultinode(step) => &step.name,
             SuiteStep::SpirePipeline(step) => &step.name,
             SuiteStep::Storage(step) => &step.name,
             SuiteStep::Explain(step) => &step.name,
@@ -2301,6 +2446,7 @@ impl SuiteStep {
             SuiteStep::Recall(_) => "recall",
             SuiteStep::CrossAm(_) => "cross-am",
             SuiteStep::Latency(_) => "latency",
+            SuiteStep::SpireLocalMultinode(_) => "spire-local-multinode",
             SuiteStep::SpirePipeline(_) => "spire-pipeline",
             SuiteStep::Storage(_) => "storage",
             SuiteStep::Explain(_) => "explain",
@@ -2318,6 +2464,7 @@ impl SuiteStep {
             SuiteStep::Recall(step) => &step.tags,
             SuiteStep::CrossAm(step) => &step.tags,
             SuiteStep::Latency(step) => &step.tags,
+            SuiteStep::SpireLocalMultinode(step) => &step.tags,
             SuiteStep::SpirePipeline(step) => &step.tags,
             SuiteStep::Storage(step) => &step.tags,
             SuiteStep::Explain(step) => &step.tags,
@@ -2331,6 +2478,7 @@ impl SuiteStep {
         match self {
             SuiteStep::Load(step) => step.pgoptions.as_deref(),
             SuiteStep::Latency(step) => step.pgoptions.as_deref(),
+            SuiteStep::SpireLocalMultinode(step) => step.pgoptions.as_deref(),
             SuiteStep::SpirePipeline(step) => step.pgoptions.as_deref(),
             _ => None,
         }
@@ -2436,6 +2584,62 @@ impl SuiteStep {
                 if step.sweep.is_empty() {
                     bail!(
                         "latency step {:?} must include at least one sweep value",
+                        step.name
+                    )
+                }
+                Ok(())
+            }
+            SuiteStep::SpireLocalMultinode(step) => {
+                if step.pg.unwrap_or(18) != 18 {
+                    bail!(
+                        "spire-local-multinode step {:?} requires pg=18, got {}",
+                        step.name,
+                        step.pg.unwrap_or(18)
+                    )
+                }
+                if let Some(tier) = step.tier.as_deref() {
+                    if !matches!(tier, "correctness" | "representative") {
+                        bail!(
+                            "spire-local-multinode step {:?} tier {:?} must be correctness or representative",
+                            step.name,
+                            tier
+                        )
+                    }
+                }
+                validate_optional_nonempty(
+                    "spire-local-multinode storage_format",
+                    step.storage_format.as_deref(),
+                )?;
+                validate_optional_nonempty(
+                    "spire-local-multinode coord_index",
+                    step.coord_index.as_deref(),
+                )?;
+                validate_optional_nonempty(
+                    "spire-local-multinode remote_index",
+                    step.remote_index.as_deref(),
+                )?;
+                validate_reloption_list("spire-local-multinode reloptions", &step.reloptions)?;
+                validate_reloption_list(
+                    "spire-local-multinode coord_reloptions",
+                    &step.coord_reloptions,
+                )?;
+                validate_reloption_list(
+                    "spire-local-multinode remote_reloptions",
+                    &step.remote_reloptions,
+                )?;
+                validate_session_guc_list(
+                    "spire-local-multinode load_session_gucs",
+                    &step.load_session_gucs,
+                )?;
+                if step.bench_top_k == Some(0) {
+                    bail!(
+                        "spire-local-multinode step {:?} must set bench_top_k >= 1",
+                        step.name
+                    )
+                }
+                if step.bench_queries_limit == Some(0) {
+                    bail!(
+                        "spire-local-multinode step {:?} must set bench_queries_limit >= 1",
                         step.name
                     )
                 }
@@ -2555,6 +2759,9 @@ impl SuiteStep {
             SuiteStep::Recall(step) => Ok(expand_recall(step, defaults)),
             SuiteStep::CrossAm(step) => Ok(expand_cross_am(step)),
             SuiteStep::Latency(step) => Ok(expand_latency(step, defaults)),
+            SuiteStep::SpireLocalMultinode(step) => {
+                Ok(expand_spire_local_multinode(step, defaults))
+            }
             SuiteStep::SpirePipeline(step) => Ok(expand_spire_pipeline(step, defaults)),
             SuiteStep::Storage(step) => Ok(expand_storage(step)),
             SuiteStep::Explain(step) => Ok(expand_explain(step, defaults, conn)),
@@ -2591,12 +2798,34 @@ impl SuiteStep {
                 .collect(),
             SuiteStep::CrossAm(step) => step.log_output.iter().cloned().collect(),
             SuiteStep::Latency(step) => step.log_output.iter().cloned().collect(),
+            SuiteStep::SpireLocalMultinode(step) => {
+                let mut artifacts: Vec<PathBuf> = step.smoke_log.iter().cloned().collect();
+                if let Some(run_dir) = &step.run_dir {
+                    artifacts.push(run_dir.join("topology.local.json"));
+                } else if let Some(run_id) = &step.run_id {
+                    artifacts.push(PathBuf::from(format!(
+                        "target/spire-local-multinode-{run_id}/topology.local.json"
+                    )));
+                }
+                if let Some(artifact_dir) = &step.artifact_dir {
+                    if !step.skip_bench_suite {
+                        artifacts.extend([
+                            artifact_dir.join("bench-suite/suite-manifest.json"),
+                            artifact_dir.join("bench-suite/results.jsonl"),
+                        ]);
+                    }
+                }
+                artifacts
+            }
             SuiteStep::SpirePipeline(step) => step
                 .log_output
                 .iter()
                 .chain(step.funnel_output.iter())
+                .chain(step.stage_containment_output.iter())
+                .chain(step.result_identity_output.iter())
                 .chain(step.leaf_block_rank_output.iter())
                 .chain(step.target_block_rank_output.iter())
+                .chain(step.target_candidate_rank_output.iter())
                 .chain(step.miss_attribution_output.iter())
                 .cloned()
                 .collect(),
@@ -2634,6 +2863,16 @@ impl SuiteStep {
                 .iter()
                 .filter_map(|input| input.split_once('=').map(|(_, path)| PathBuf::from(path)))
                 .collect(),
+            SuiteStep::SpireLocalMultinode(step) => {
+                let mut paths = Vec::new();
+                if let Some(prepared_dir) = &step.prepared_dir {
+                    paths.push(prepared_dir.clone());
+                }
+                if let Some(path) = &step.bench_truth_corpus_file {
+                    paths.push(path.clone());
+                }
+                paths
+            }
             _ => Vec::new(),
         }
     }
@@ -2664,6 +2903,12 @@ impl SuiteStep {
                 paths
             }
             SuiteStep::Explain(step) => step.sql_file.iter().cloned().collect(),
+            SuiteStep::SpireLocalMultinode(step) => step
+                .artifact_dir
+                .iter()
+                .chain(step.run_dir.iter())
+                .cloned()
+                .collect(),
             SuiteStep::Recall(step) => step
                 .log_output
                 .iter()
@@ -2683,6 +2928,42 @@ fn validate_profile_name(label: &str, profile_name: Option<&str>) -> Result<()> 
                 profile_name,
                 profiles::names().join(", ")
             );
+        }
+    }
+    Ok(())
+}
+
+fn validate_optional_nonempty(label: &str, value: Option<&str>) -> Result<()> {
+    if let Some(value) = value {
+        if value.trim().is_empty() {
+            bail!("{label} must not be empty");
+        }
+    }
+    Ok(())
+}
+
+fn validate_reloption_list(label: &str, reloptions: &[String]) -> Result<()> {
+    for reloption in reloptions {
+        if reloption.trim().is_empty() {
+            bail!("{label} must not include empty reloptions");
+        }
+        if reloption.contains(';') {
+            bail!("{label} item {:?} must not contain ';'", reloption);
+        }
+    }
+    Ok(())
+}
+
+fn validate_session_guc_list(label: &str, gucs: &[String]) -> Result<()> {
+    for guc in gucs {
+        if guc.trim().is_empty() {
+            bail!("{label} must not include empty GUCs");
+        }
+        if guc.contains(';') {
+            bail!("{label} item {:?} must not contain ';'", guc);
+        }
+        if !guc.contains('=') {
+            bail!("{label} item {:?} must use name=value syntax", guc);
         }
     }
     Ok(())
@@ -2996,6 +3277,97 @@ fn expand_latency(step: &LatencyStep, defaults: &SuiteDefaults) -> Vec<String> {
     args
 }
 
+fn expand_spire_local_multinode(
+    step: &SpireLocalMultinodeStep,
+    defaults: &SuiteDefaults,
+) -> Vec<String> {
+    let mut args = vec![
+        "dev".into(),
+        "spire-multicluster".into(),
+        "local-multinode-pg18".into(),
+    ];
+    push_arg(
+        &mut args,
+        "--pg",
+        &step.pg.or(defaults.pg).unwrap_or(18).to_string(),
+    );
+    push_opt_path(&mut args, "--pgbin", step.pgbin.as_deref());
+    push_opt_path(&mut args, "--artifact-dir", step.artifact_dir.as_deref());
+    push_opt_path(&mut args, "--run-dir", step.run_dir.as_deref());
+    push_opt_path(&mut args, "--smoke-log", step.smoke_log.as_deref());
+    push_opt_u16(&mut args, "--coord-port", step.coord_port);
+    push_opt_u16(&mut args, "--remote1-port", step.remote1_port);
+    push_opt_u16(&mut args, "--remote2-port", step.remote2_port);
+    push_opt_u16(&mut args, "--remote3-port", step.remote3_port);
+    push_opt_arg(&mut args, "--run-id", step.run_id.as_deref());
+    push_opt_arg(&mut args, "--tier", step.tier.as_deref());
+    push_opt_arg(&mut args, "--prefix", step.prefix.as_deref());
+    push_opt_arg(
+        &mut args,
+        "--prepared-prefix",
+        step.prepared_prefix.as_deref(),
+    );
+    push_opt_path(&mut args, "--prepared-dir", step.prepared_dir.as_deref());
+    push_opt_arg(
+        &mut args,
+        "--storage-format",
+        step.storage_format.as_deref(),
+    );
+    push_opt_arg(&mut args, "--coord-index", step.coord_index.as_deref());
+    push_opt_arg(&mut args, "--remote-index", step.remote_index.as_deref());
+    for reloption in &step.reloptions {
+        push_arg(&mut args, "--reloption", reloption);
+    }
+    for reloption in &step.coord_reloptions {
+        push_arg(&mut args, "--coord-reloption", reloption);
+    }
+    for reloption in &step.remote_reloptions {
+        push_arg(&mut args, "--remote-reloption", reloption);
+    }
+    for guc in &step.load_session_gucs {
+        push_arg(&mut args, "--load-session-guc", guc);
+    }
+    push_opt_u16(&mut args, "--bench-top-k", step.bench_top_k);
+    push_opt_usize(&mut args, "--bench-queries-limit", step.bench_queries_limit);
+    push_opt_arg(&mut args, "--bench-sweep", step.bench_sweep.as_deref());
+    push_opt_arg(
+        &mut args,
+        "--bench-rowcap-sweep",
+        step.bench_rowcap_sweep.as_deref(),
+    );
+    if step.skip_bench_rowcap {
+        args.push("--skip-bench-rowcap".into());
+    }
+    push_opt_path(
+        &mut args,
+        "--bench-truth-corpus-file",
+        step.bench_truth_corpus_file.as_deref(),
+    );
+    if !step.bench_query_metric_projection_columns.is_empty() {
+        push_arg(
+            &mut args,
+            "--bench-query-metric-projection-columns",
+            &step.bench_query_metric_projection_columns.join(","),
+        );
+    }
+    for guc in &step.bench_session_gucs {
+        push_arg(&mut args, "--bench-session-guc", guc);
+    }
+    for variant in &step.bench_production_read_variants {
+        push_arg(&mut args, "--bench-production-read-variant", variant);
+    }
+    if step.skip_bench_suite {
+        args.push("--skip-bench-suite".into());
+    }
+    if step.skip_fault_drills {
+        args.push("--skip-fault-drills".into());
+    }
+    if step.skip_install {
+        args.push("--skip-install".into());
+    }
+    args
+}
+
 fn expand_spire_pipeline(step: &SpirePipelineStep, defaults: &SuiteDefaults) -> Vec<String> {
     let mut args = vec!["bench".into(), "spire-pipeline".into()];
     push_arg(&mut args, "--prefix", &step.prefix);
@@ -3126,6 +3498,11 @@ fn expand_spire_pipeline(step: &SpirePipelineStep, defaults: &SuiteDefaults) -> 
     );
     push_opt_path(
         &mut args,
+        "--target-candidate-rank-output",
+        step.target_candidate_rank_output.as_deref(),
+    );
+    push_opt_path(
+        &mut args,
         "--miss-attribution-output",
         step.miss_attribution_output.as_deref(),
     );
@@ -3141,6 +3518,9 @@ fn expand_spire_pipeline(step: &SpirePipelineStep, defaults: &SuiteDefaults) -> 
     }
     if step.production_read_only.unwrap_or(false) {
         args.push("--production-read-only".into());
+    }
+    if step.production_read_timeline_no_payload.unwrap_or(false) {
+        args.push("--production-read-timeline-no-payload".into());
     }
     if let Some(k) = step.query_metric_k {
         push_arg(&mut args, "--query-metric-k", &k.to_string());
@@ -3160,6 +3540,16 @@ fn expand_spire_pipeline(step: &SpirePipelineStep, defaults: &SuiteDefaults) -> 
     }
     push_opt_path(&mut args, "--log-output", step.log_output.as_deref());
     push_opt_path(&mut args, "--funnel-output", step.funnel_output.as_deref());
+    push_opt_path(
+        &mut args,
+        "--stage-containment-output",
+        step.stage_containment_output.as_deref(),
+    );
+    push_opt_path(
+        &mut args,
+        "--result-identity-output",
+        step.result_identity_output.as_deref(),
+    );
     args
 }
 
@@ -3534,6 +3924,18 @@ fn push_opt_path(args: &mut Vec<String>, flag: &str, value: Option<&Path>) {
     }
 }
 
+fn push_opt_u16(args: &mut Vec<String>, flag: &str, value: Option<u16>) {
+    if let Some(value) = value {
+        push_arg(args, flag, &value.to_string());
+    }
+}
+
+fn push_opt_usize(args: &mut Vec<String>, flag: &str, value: Option<usize>) {
+    if let Some(value) = value {
+        push_arg(args, flag, &value.to_string());
+    }
+}
+
 fn push_opt_f64(args: &mut Vec<String>, flag: &str, value: Option<f64>) {
     if let Some(value) = value {
         push_arg(args, flag, &value.to_string());
@@ -3872,6 +4274,365 @@ mod tests {
             step.log_file,
             Some(PathBuf::from("artifacts/current/load.log"))
         );
+    }
+
+    #[test]
+    fn spire_local_multinode_step_expands_local_four_instance_lane() {
+        let raw = r#"{
+          "name": "local-multinode",
+          "schema_version": 1,
+          "artifact_dir": "artifacts/task121",
+          "defaults": {"pg": 18},
+          "steps": [{
+            "kind": "spire-local-multinode",
+            "name": "local-gate",
+            "tags": ["task121", "local-multinode"],
+            "pgoptions": "-c ec_spire.leaf_block_rows=64",
+            "run_id": "task121",
+            "coord_port": 39800,
+            "remote1_port": 39801,
+            "remote2_port": 39802,
+            "remote3_port": 39803,
+            "tier": "correctness",
+            "storage_format": "turboquant",
+            "coord_index": "task121_coord_idx",
+            "remote_index": "task121_remote_idx",
+            "reloptions": ["nlists=128", "top_graph_enabled=1"],
+            "coord_reloptions": ["training_sample_rows=10000"],
+            "remote_reloptions": ["boundary_replica_count=1"],
+            "load_session_gucs": ["ec_spire.leaf_block_rows=64"],
+            "bench_top_k": 6,
+            "bench_queries_limit": 1,
+            "bench_sweep": "3",
+            "bench_query_metric_projection_columns": ["id", "source"],
+            "bench_session_gucs": [
+              "ec_spire.max_remote_payload_bytes_per_row=16384",
+              "ec_spire.pre_materialization_prune=off"
+            ],
+            "bench_production_read_variants": [
+              "name=source-prune-on;projection=id,source;guc=ec_spire.pre_materialization_prune=on",
+              "name=id-prune-off;projection=id;guc=ec_spire.pre_materialization_prune=off",
+              "name=global-preheap-on;timeline_payload=none;guc=ec_spire.remote_search_global_pre_heap_merge=on"
+            ],
+            "skip_bench_suite": true,
+            "skip_fault_drills": true,
+            "skip_install": true
+          }]
+        }"#;
+        let mut config: SuiteConfig = serde_json::from_str(raw).expect("suite parses");
+        apply_default_artifact_logs(&mut config);
+        apply_artifact_dir_templates(&mut config);
+        validate_config(&config).expect("suite validates");
+
+        let args = SuiteRunOptions {
+            config: "suite.json".into(),
+            dry_run: true,
+            continue_on_error: false,
+            only: Vec::new(),
+            only_tag: Vec::new(),
+            resume_from: None,
+            results_output: None,
+            artifact_dir: None,
+            manifest_output: None,
+            allow_debug_backend: false,
+        };
+        let manifest = build_manifest(&conn(), &args, raw, &config).expect("manifest builds");
+        let step = &manifest.steps[0];
+
+        assert_eq!(step.kind, "spire-local-multinode");
+        assert_eq!(
+            step.pgoptions.as_deref(),
+            Some("-c ec_spire.leaf_block_rows=64")
+        );
+        assert!(step
+            .command
+            .windows(3)
+            .any(|w| w == ["dev", "spire-multicluster", "local-multinode-pg18"]));
+        assert!(step
+            .command
+            .windows(2)
+            .any(|w| w == ["--coord-port", "39800"]));
+        assert!(step
+            .command
+            .windows(2)
+            .any(|w| w == ["--remote1-port", "39801"]));
+        assert!(step
+            .command
+            .windows(2)
+            .any(|w| w == ["--remote2-port", "39802"]));
+        assert!(step
+            .command
+            .windows(2)
+            .any(|w| w == ["--remote3-port", "39803"]));
+        assert!(step
+            .command
+            .windows(2)
+            .any(|w| w == ["--storage-format", "turboquant"]));
+        assert!(step
+            .command
+            .windows(2)
+            .any(|w| w == ["--coord-index", "task121_coord_idx"]));
+        assert!(step
+            .command
+            .windows(2)
+            .any(|w| w == ["--remote-index", "task121_remote_idx"]));
+        assert!(step
+            .command
+            .windows(2)
+            .any(|w| w == ["--reloption", "nlists=128"]));
+        assert!(step
+            .command
+            .windows(2)
+            .any(|w| w == ["--coord-reloption", "training_sample_rows=10000"]));
+        assert!(step
+            .command
+            .windows(2)
+            .any(|w| w == ["--remote-reloption", "boundary_replica_count=1"]));
+        assert!(step
+            .command
+            .windows(2)
+            .any(|w| w == ["--load-session-guc", "ec_spire.leaf_block_rows=64"]));
+        assert!(step
+            .command
+            .windows(2)
+            .any(|w| w == ["--bench-query-metric-projection-columns", "id,source"]));
+        assert!(step.command.windows(2).any(|w| w
+            == [
+                "--bench-session-guc",
+                "ec_spire.max_remote_payload_bytes_per_row=16384"
+            ]));
+        assert!(step.command.windows(2).any(|w| w
+            == [
+                "--bench-session-guc",
+                "ec_spire.pre_materialization_prune=off"
+            ]));
+        assert!(step.command.windows(2).any(|w| w == [
+            "--bench-production-read-variant",
+            "name=source-prune-on;projection=id,source;guc=ec_spire.pre_materialization_prune=on"
+        ]));
+        assert!(step.command.windows(2).any(|w| w
+            == [
+                "--bench-production-read-variant",
+                "name=id-prune-off;projection=id;guc=ec_spire.pre_materialization_prune=off"
+            ]));
+        assert!(step.command.windows(2).any(|w| w
+            == [
+                "--bench-production-read-variant",
+                "name=global-preheap-on;timeline_payload=none;guc=ec_spire.remote_search_global_pre_heap_merge=on"
+            ]));
+        assert!(step.command.contains(&"--skip-bench-suite".into()));
+        assert!(step.command.contains(&"--skip-fault-drills".into()));
+        assert!(step
+            .expected_artifacts
+            .iter()
+            .any(|path| path.ends_with("local-multinode.log")));
+        assert!(
+            step.expected_artifacts
+                .iter()
+                .any(|path| path
+                    .ends_with("target/spire-local-multinode-task121/topology.local.json"))
+        );
+        assert!(!step
+            .expected_artifacts
+            .iter()
+            .any(|path| path.ends_with("bench-suite/results.jsonl")));
+    }
+
+    #[test]
+    fn spire_local_multinode_step_tracks_bench_artifacts_when_enabled() {
+        let raw = r#"{
+          "name": "local-multinode",
+          "schema_version": 1,
+          "artifact_dir": "artifacts/task121",
+          "defaults": {"pg": 18},
+          "steps": [{
+            "kind": "spire-local-multinode",
+            "name": "local-gate",
+            "run_dir": "target/task121-local-run",
+            "coord_port": 39800,
+            "remote1_port": 39801,
+            "remote2_port": 39802,
+            "remote3_port": 39803,
+            "tier": "correctness",
+            "skip_bench_rowcap": true,
+            "skip_fault_drills": true,
+            "skip_install": true
+          }]
+        }"#;
+        let mut config: SuiteConfig = serde_json::from_str(raw).expect("suite parses");
+        apply_default_artifact_logs(&mut config);
+        apply_artifact_dir_templates(&mut config);
+        validate_config(&config).expect("suite validates");
+
+        let args = SuiteRunOptions {
+            config: "suite.json".into(),
+            dry_run: true,
+            continue_on_error: false,
+            only: Vec::new(),
+            only_tag: Vec::new(),
+            resume_from: None,
+            results_output: None,
+            artifact_dir: None,
+            manifest_output: None,
+            allow_debug_backend: false,
+        };
+        let manifest = build_manifest(&conn(), &args, raw, &config).expect("manifest builds");
+        let step = &manifest.steps[0];
+
+        assert!(step.command.contains(&"--skip-bench-rowcap".into()));
+        assert!(step
+            .expected_artifacts
+            .iter()
+            .any(|path| path.ends_with("target/task121-local-run/topology.local.json")));
+        assert!(step
+            .expected_artifacts
+            .iter()
+            .any(|path| path
+                .ends_with("artifacts/task121/local-gate/bench-suite/suite-manifest.json")));
+        assert!(step
+            .expected_artifacts
+            .iter()
+            .any(|path| path.ends_with("artifacts/task121/local-gate/bench-suite/results.jsonl")));
+    }
+
+    #[test]
+    fn spire_local_multinode_step_rejects_semicolon_reloptions() {
+        let raw = r#"{
+          "name": "local-multinode",
+          "schema_version": 1,
+          "defaults": {"pg": 18},
+          "steps": [{
+            "kind": "spire-local-multinode",
+            "name": "local-gate",
+            "coord_port": 39800,
+            "remote1_port": 39801,
+            "remote2_port": 39802,
+            "remote3_port": 39803,
+            "reloptions": ["nlists=128;top_graph_enabled=1"]
+          }]
+        }"#;
+        let config: SuiteConfig = serde_json::from_str(raw).expect("suite parses");
+        let err = validate_config(&config).expect_err("reloption with semicolon is rejected");
+
+        assert!(err.to_string().contains("must not contain ';'"));
+    }
+
+    #[test]
+    fn artifact_dir_templates_rewrite_spire_pipeline_paths() {
+        let mut config = SuiteConfig {
+            name: "current".into(),
+            schema_version: 1,
+            artifact_dir: Some("artifacts/current".into()),
+            defaults: SuiteDefaults::default(),
+            thresholds: Vec::new(),
+            steps: vec![SuiteStep::SpirePipeline(SpirePipelineStep {
+                name: "profile".into(),
+                tags: Vec::new(),
+                pgoptions: None,
+                prefix: "surface".into(),
+                index: None,
+                queries_limit: None,
+                sweep: vec![8, 16],
+                rerank_width: None,
+                max_candidate_rows: None,
+                max_routed_candidate_rows: None,
+                adaptive_nprobe: None,
+                adaptive_nprobe_score_gap_micros: None,
+                include_remote: None,
+                require_remote_placements: None,
+                include_local_store_overlap: None,
+                remote_selected_pids: Vec::new(),
+                remote_requested_epoch: None,
+                top_k: None,
+                consistency_mode: None,
+                remote_tuple_transport: None,
+                include_cost_snapshot: None,
+                cost_routing_dimension_scale: None,
+                cost_leaf_dimension_scale: None,
+                cost_index_page_scale: None,
+                cost_local_store_page_fanout_scale: None,
+                cost_storage_scoring_multiplier: None,
+                cost_rerank_multiplier: None,
+                include_query_metrics: None,
+                include_recall: None,
+                truth_corpus_file: Some("${artifact_dir}/truth/corpus.tsv".into()),
+                truth_cache_file: Some("${artifact_dir}/truth/cache.json".into()),
+                leaf_block_rank_output: Some(
+                    "${artifact_dir}/profile-leaf-block-rank.jsonl".into(),
+                ),
+                target_block_rank_output: Some(
+                    "${artifact_dir}/profile-target-block-rank.jsonl".into(),
+                ),
+                target_candidate_rank_output: Some(
+                    "${artifact_dir}/profile-target-candidate-rank.jsonl".into(),
+                ),
+                miss_attribution_output: Some("${artifact_dir}/profile-misses.jsonl".into()),
+                leaf_block_rank_local_sequence_offset: None,
+                include_production_read_profile: None,
+                production_read_only: None,
+                production_read_timeline_no_payload: None,
+                query_metric_k: None,
+                query_metric_projection_columns: Vec::new(),
+                session_gucs: Vec::new(),
+                task87_candidate_batch_counters: None,
+                log_output: Some("${artifact_dir}/profile.log".into()),
+                funnel_output: Some("${artifact_dir}/profile-funnel.jsonl".into()),
+                stage_containment_output: Some("${artifact_dir}/profile-stage.jsonl".into()),
+                result_identity_output: Some("${artifact_dir}/profile-identity.jsonl".into()),
+            })],
+        };
+
+        apply_artifact_dir_templates(&mut config);
+
+        let SuiteStep::SpirePipeline(step) = &config.steps[0] else {
+            panic!("expected spire-pipeline step");
+        };
+        assert_eq!(
+            step.truth_corpus_file.as_deref(),
+            Some(Path::new("artifacts/current/truth/corpus.tsv"))
+        );
+        assert_eq!(
+            step.truth_cache_file.as_deref(),
+            Some(Path::new("artifacts/current/truth/cache.json"))
+        );
+        assert_eq!(
+            config.steps[0].expected_artifacts(),
+            vec![
+                PathBuf::from("artifacts/current/profile.log"),
+                PathBuf::from("artifacts/current/profile-funnel.jsonl"),
+                PathBuf::from("artifacts/current/profile-stage.jsonl"),
+                PathBuf::from("artifacts/current/profile-identity.jsonl"),
+                PathBuf::from("artifacts/current/profile-leaf-block-rank.jsonl"),
+                PathBuf::from("artifacts/current/profile-target-block-rank.jsonl"),
+                PathBuf::from("artifacts/current/profile-target-candidate-rank.jsonl"),
+                PathBuf::from("artifacts/current/profile-misses.jsonl"),
+            ]
+        );
+        let conn = ConnectionOptions {
+            database: "postgres".into(),
+            host: None,
+            port: None,
+            user: None,
+            password: None,
+        };
+        let args = config.steps[0]
+            .expand(&config.defaults, &conn)
+            .expect("spire-pipeline expansion should succeed");
+        assert!(args.windows(2).any(|w| w
+            == [
+                "--target-candidate-rank-output",
+                "artifacts/current/profile-target-candidate-rank.jsonl",
+            ]));
+        assert!(args.windows(2).any(|w| w
+            == [
+                "--stage-containment-output",
+                "artifacts/current/profile-stage.jsonl"
+            ]));
+        assert!(args.windows(2).any(|w| w
+            == [
+                "--result-identity-output",
+                "artifacts/current/profile-identity.jsonl"
+            ]));
     }
 
     #[test]
@@ -4746,16 +5507,20 @@ mod tests {
             truth_cache_file: Some("truth-cache.json".into()),
             leaf_block_rank_output: None,
             target_block_rank_output: Some("target-block-rank.jsonl".into()),
+            target_candidate_rank_output: Some("target-candidate-rank.jsonl".into()),
             miss_attribution_output: Some("miss-attribution.jsonl".into()),
             leaf_block_rank_local_sequence_offset: None,
             include_production_read_profile: Some(true),
             production_read_only: Some(true),
+            production_read_timeline_no_payload: Some(true),
             query_metric_k: Some(10),
             query_metric_projection_columns: vec!["title".into()],
             session_gucs: vec!["ec_spire.candidate_batch_scoring=off".into()],
             task87_candidate_batch_counters: Some(true),
             log_output: Some("spire-profile.log".into()),
             funnel_output: None,
+            stage_containment_output: Some("stage-containment.jsonl".into()),
+            result_identity_output: Some("identity.jsonl".into()),
         };
 
         let args = expand_spire_pipeline(&step, &defaults);
@@ -4771,6 +5536,7 @@ mod tests {
         assert!(args.contains(&"--require-remote-placements".into()));
         assert!(args.contains(&"--include-production-read-profile".into()));
         assert!(args.contains(&"--production-read-only".into()));
+        assert!(args.contains(&"--production-read-timeline-no-payload".into()));
         assert!(args
             .windows(2)
             .any(|w| w == ["--remote-selected-pids", "10,11"]));
@@ -4793,9 +5559,20 @@ mod tests {
         assert!(args
             .windows(2)
             .any(|w| w == ["--target-block-rank-output", "target-block-rank.jsonl"]));
+        assert!(args.windows(2).any(|w| w
+            == [
+                "--target-candidate-rank-output",
+                "target-candidate-rank.jsonl"
+            ]));
         assert!(args
             .windows(2)
             .any(|w| w == ["--miss-attribution-output", "miss-attribution.jsonl"]));
+        assert!(args
+            .windows(2)
+            .any(|w| w == ["--stage-containment-output", "stage-containment.jsonl"]));
+        assert!(args
+            .windows(2)
+            .any(|w| w == ["--result-identity-output", "identity.jsonl"]));
         assert!(args
             .windows(2)
             .any(|w| w == ["--log-output", "spire-profile.log"]));
@@ -4843,16 +5620,20 @@ mod tests {
                 truth_cache_file: None,
                 leaf_block_rank_output: None,
                 target_block_rank_output: None,
+                target_candidate_rank_output: None,
                 miss_attribution_output: None,
                 leaf_block_rank_local_sequence_offset: None,
                 include_production_read_profile: Some(true),
                 production_read_only: Some(true),
+                production_read_timeline_no_payload: None,
                 query_metric_k: Some(10),
                 query_metric_projection_columns: Vec::new(),
                 session_gucs: Vec::new(),
                 task87_candidate_batch_counters: None,
                 log_output: None,
                 funnel_output: None,
+                stage_containment_output: None,
+                result_identity_output: None,
             })],
         };
 
@@ -5049,6 +5830,31 @@ mod tests {
             rows[0].get("recall_p50").map(String::as_str),
             Some("1.0000")
         );
+    }
+
+    #[test]
+    fn parse_table_rows_resets_headers_between_same_width_tables() {
+        let rows = parse_table_rows(
+            "First table\n\
+             ┌───┬───┐\n\
+             │ a ┆ b │\n\
+             ╞═══╪═══╡\n\
+             │ 1 ┆ 2 │\n\
+             └───┴───┘\n\
+             \n\
+             Second table\n\
+             ┌───┬───┐\n\
+             │ c ┆ d │\n\
+             ╞═══╪═══╡\n\
+             │ 3 ┆ 4 │\n\
+             └───┴───┘\n",
+        );
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].get("a").map(String::as_str), Some("1"));
+        assert_eq!(rows[0].get("b").map(String::as_str), Some("2"));
+        assert_eq!(rows[1].get("c").map(String::as_str), Some("3"));
+        assert_eq!(rows[1].get("d").map(String::as_str), Some("4"));
+        assert!(!rows[1].contains_key("a"));
     }
 
     #[test]

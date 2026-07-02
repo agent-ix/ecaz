@@ -1,0 +1,9 @@
+run_dir=/home/peter/dev/ecaz/target/spire-local-multinode-task121-native-smoke2
+coord_port=39920
+remote1_port=39921
+remote2_port=39922
+remote3_port=39923
+tier=correctness
+prefix=ec_spire_aws_synth_10k
+SPIRE local multinode fixture passed
+HARNESS PASSED

@@ -1,0 +1,15 @@
+make: Entering directory '/home/peter/dev/ecaz/infra/spire-aws'
+cd /home/peter/dev/ecaz && /home/peter/dev/ecaz/scripts/spire-aws/preflight-operator.sh /home/peter/dev/ecaz/infra/spire-aws/terraform.tfvars
+SPIRE AWS nondefault Graviton lane override accepted: coordinator=r7g.4xlarge remote=r7g.2xlarge
+SPIRE AWS operator preflight passed: region=us-west-2 az=us-west-2a ami=ami-04e0d7d889f694536 coordinator=r7g.4xlarge remote=r7g.2xlarge remote_count=2
+cd /home/peter/dev/ecaz && /home/peter/dev/ecaz/scripts/spire-aws/preflight-state.sh /home/peter/dev/ecaz/infra/spire-aws/terraform.tfstate
+SPIRE AWS state preflight passed: local Terraform state has no managed resources
+cd /home/peter/dev/ecaz && /home/peter/dev/ecaz/scripts/spire-aws/preflight-permissions.sh
+AWS identity: arn:aws:iam::932658697181:user/ecaz-operator
+No S3 buckets matched prefix ecaz-spire-aws-
+Secrets Manager list permission ok for prefix ecaz-spire-aws
+SPIRE AWS permission preflight passed
+cd /home/peter/dev/ecaz && /home/peter/dev/ecaz/scripts/spire-aws/preflight-representative-performance.sh
+make[1]: *** [Makefile:8: pass-correctness-body] Error 42
+SPIRE representative performance preflight passed: priority=/home/peter/dev/ecaz/scripts/spire-aws/suite-representative-priority.json pooling=/home/peter/dev/ecaz/scripts/spire-aws/suite-representative-pooling.json
+make: Leaving directory '/home/peter/dev/ecaz/infra/spire-aws'

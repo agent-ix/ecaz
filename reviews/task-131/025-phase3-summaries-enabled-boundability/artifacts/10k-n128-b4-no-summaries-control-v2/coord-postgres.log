@@ -1,0 +1,20 @@
+2026-07-01 21:49:28.208 PDT [457213] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-07-01 21:49:28.210 PDT [457213] LOG:  listening on Unix socket "/home/peter/dev/ecaz/target/spire-local-multinode-sockets-t131ctl66/.s.PGSQL.40820"
+2026-07-01 21:49:28.217 PDT [457219] LOG:  database system was shut down at 2026-07-01 21:49:24 PDT
+2026-07-01 21:49:28.221 PDT [457213] LOG:  database system is ready to accept connections
+2026-07-01 21:50:28.237 PDT [457668] LOG:  skipping vacuum of "ec_real_10k_corpus" --- lock not available
+2026-07-01 21:50:58.255 PDT [457777] LOG:  skipping vacuum of "ec_real_10k_corpus" --- lock not available
+2026-07-01 21:54:28.134 PDT [457217] LOG:  checkpoint starting: time
+2026-07-01 21:56:42.556 PDT [458725] LOG:  could not send data to client: Broken pipe
+2026-07-01 21:56:42.556 PDT [458725] FATAL:  connection to client lost
+2026-07-01 21:56:42.610 PDT [459259] LOG:  could not receive data from client: Connection reset by peer
+2026-07-01 21:57:49.176 PDT [459281] LOG:  could not send data to client: Broken pipe
+2026-07-01 21:57:49.176 PDT [459281] FATAL:  connection to client lost
+2026-07-01 21:57:49.227 PDT [457213] LOG:  received fast shutdown request
+2026-07-01 21:57:49.230 PDT [457213] LOG:  aborting any active transactions
+2026-07-01 21:57:49.230 PDT [457213] LOG:  background worker "logical replication launcher" (PID 457222) exited with exit code 1
+2026-07-01 21:57:49.320 PDT [457217] LOG:  checkpoint complete: wrote 9970 buffers (60.9%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 11 recycled; write=201.105 s, sync=0.048 s, total=201.187 s; sync files=165, longest=0.002 s, average=0.001 s; distance=180462 kB, estimate=180462 kB; lsn=0/C7B16D8, redo lsn=0/C78FEC0
+2026-07-01 21:57:49.320 PDT [457217] LOG:  shutting down
+2026-07-01 21:57:49.322 PDT [457217] LOG:  checkpoint starting: shutdown immediate
+2026-07-01 21:57:49.339 PDT [457217] LOG:  checkpoint complete: wrote 20 buffers (0.1%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.003 s, sync=0.007 s, total=0.019 s; sync files=13, longest=0.003 s, average=0.001 s; distance=134 kB, estimate=162429 kB; lsn=0/C7B1750, redo lsn=0/C7B1750
+2026-07-01 21:57:49.363 PDT [457213] LOG:  database system is shut down

@@ -166,7 +166,6 @@ unsafe fn score_octets_avx2_impl(
                 // reference's per-lane dim-order sums.
                 *acc_slot =
                     _mm256_add_ps(*acc_slot, select_lut_entries(low_lut, low_indexes, seven));
-                let dim_high = dim_low + 1;
                 if let Some(high_lut) = high_lut {
                     let high_indexes = _mm256_and_si256(_mm256_srli_epi32(packed, 4), low_mask);
                     *acc_slot =

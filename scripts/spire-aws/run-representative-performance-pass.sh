@@ -18,7 +18,7 @@ auto_stop_hours="${SPIRE_AWS_AUTO_STOP_HOURS:-8}"
 
 usage() {
   cat <<'EOF'
-usage: run-representative-performance-pass.sh --artifact-dir reviews/task-30/<packet>/artifacts [--execute] [--strict-residue] [--skip-preflight]
+usage: run-representative-performance-pass.sh --artifact-dir reviews/task-<id>/<packet>/artifacts [--execute] [--strict-residue] [--skip-preflight]
 
 Dry-run by default. This script standardizes the Phase 13e representative AWS
 performance pass without provisioning unless --execute is present.
@@ -94,10 +94,13 @@ done
 [[ -n "$artifact_dir" ]] || die "--artifact-dir is required"
 
 case "$artifact_dir" in
-  reviews/task-30/*/artifacts|"$repo_root"/reviews/task-30/*/artifacts)
+  reviews/task-30/957-spire-aws-verification/artifacts|"$repo_root"/reviews/task-30/957-spire-aws-verification/artifacts)
+    die "--artifact-dir must not use the legacy default packet: $artifact_dir"
+    ;;
+  reviews/task-*/*/artifacts|"$repo_root"/reviews/task-*/*/artifacts)
     ;;
   *)
-    die "--artifact-dir must be packet-local under reviews/task-30/<packet>/artifacts"
+    die "--artifact-dir must be packet-local under reviews/task-<id>/<packet>/artifacts"
     ;;
 esac
 

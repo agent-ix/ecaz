@@ -77,6 +77,11 @@ static EC_SPIRE_MAX_CANDIDATE_ROWS_GUC: GucSetting<i32> =
 static EC_SPIRE_MAX_ROUTED_CANDIDATE_ROWS_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(EC_SPIRE_SESSION_MAX_ROUTED_CANDIDATE_ROWS_DISABLED);
 static EC_SPIRE_CANDIDATE_BATCH_SCORING_GUC: GucSetting<bool> = GucSetting::<bool>::new(true);
+static EC_SPIRE_PRE_MATERIALIZATION_PRUNE_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
+static EC_SPIRE_REMOTE_SEARCH_GLOBAL_PRE_HEAP_MERGE_GUC: GucSetting<bool> =
+    GucSetting::<bool>::new(false);
+static EC_SPIRE_REMOTE_SEARCH_INITIAL_THRESHOLD_EARLY_STOP_GUC: GucSetting<bool> =
+    GucSetting::<bool>::new(false);
 static EC_SPIRE_LEAF_BLOCK_ROWS_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(EC_SPIRE_SESSION_LEAF_BLOCK_ROWS_DISABLED);
 static EC_SPIRE_LEAF_BLOCK_SUMMARY_REPRESENTATIVES_GUC: GucSetting<i32> =
@@ -802,6 +807,30 @@ pub(super) fn register_gucs() {
         GucContext::Userset,
         GucFlags::default(),
     );
+    GucRegistry::define_bool_guc(
+        c"ec_spire.pre_materialization_prune",
+        c"Enable Task 122 ec_spire bounded pre-materialization candidate pruning.",
+        c"Diagnostic Task 122/123 switch; disabled by default pending Task 131. Recall-safe and latency-neutral in the Task 123 packet 019 b2/b4 A/B, but its leaf-side engagement (rows pruned) was never measured, so it ships as opt-in plumbing rather than a promoted default. Enable for A/B measurement of the bounded score/top-k/materialization prune.",
+        &EC_SPIRE_PRE_MATERIALIZATION_PRUNE_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    GucRegistry::define_bool_guc(
+        c"ec_spire.remote_search_global_pre_heap_merge",
+        c"Enable Task 131 SPIRE global merge-before-heap pruning.",
+        c"Diagnostic Task 131 switch; disabled by default. When enabled, production distributed reads globally merge compact remote candidate batches before non-payload remote heap resolution and request heap rows only for globally surviving candidates.",
+        &EC_SPIRE_REMOTE_SEARCH_GLOBAL_PRE_HEAP_MERGE_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    GucRegistry::define_bool_guc(
+        c"ec_spire.remote_search_initial_threshold_early_stop",
+        c"Enable Task 131 SPIRE initial global-threshold remote scan early-stop.",
+        c"Diagnostic Task 131 switch; disabled by default. When enabled, production distributed reads seed remote candidate scans with the coordinator-local kth score when one exists, allowing workers with sound leaf block bounds to skip blocks that cannot beat that threshold.",
+        &EC_SPIRE_REMOTE_SEARCH_INITIAL_THRESHOLD_EARLY_STOP_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
     GucRegistry::define_int_guc(
         c"ec_spire.leaf_block_rows",
         c"Build-time SPIRE leaf summary block row count.",
@@ -1115,6 +1144,36 @@ pub(super) fn candidate_batch_scoring_enabled() -> bool {
 #[cfg(not(test))]
 pub(super) fn candidate_batch_scoring_enabled() -> bool {
     EC_SPIRE_CANDIDATE_BATCH_SCORING_GUC.get()
+}
+
+#[cfg(test)]
+pub(super) fn pre_materialization_prune_enabled() -> bool {
+    true
+}
+
+#[cfg(not(test))]
+pub(super) fn pre_materialization_prune_enabled() -> bool {
+    EC_SPIRE_PRE_MATERIALIZATION_PRUNE_GUC.get()
+}
+
+#[cfg(test)]
+pub(super) fn remote_search_global_pre_heap_merge_enabled() -> bool {
+    true
+}
+
+#[cfg(not(test))]
+pub(super) fn remote_search_global_pre_heap_merge_enabled() -> bool {
+    EC_SPIRE_REMOTE_SEARCH_GLOBAL_PRE_HEAP_MERGE_GUC.get()
+}
+
+#[cfg(test)]
+pub(super) fn remote_search_initial_threshold_early_stop_enabled() -> bool {
+    true
+}
+
+#[cfg(not(test))]
+pub(super) fn remote_search_initial_threshold_early_stop_enabled() -> bool {
+    EC_SPIRE_REMOTE_SEARCH_INITIAL_THRESHOLD_EARLY_STOP_GUC.get()
 }
 
 pub(super) fn current_session_rerank_width() -> i32 {

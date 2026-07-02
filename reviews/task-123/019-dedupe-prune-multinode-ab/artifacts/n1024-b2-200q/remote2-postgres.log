@@ -1,0 +1,81 @@
+2026-06-29 18:01:38.091 PDT [2538802] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-06-29 18:01:38.093 PDT [2538802] LOG:  listening on Unix socket "/tmp/ecaz-task123/target/spire-local-multinode-sockets-task123-p19-mi-n1024-b2-200q/.s.PGSQL.40532"
+2026-06-29 18:01:38.101 PDT [2538808] LOG:  database system was shut down at 2026-06-29 18:01:36 PDT
+2026-06-29 18:01:38.110 PDT [2538802] LOG:  database system is ready to accept connections
+2026-06-29 18:06:38.577 PDT [2538806] LOG:  checkpoint starting: time
+2026-06-29 18:07:17.066 PDT [2538806] LOG:  checkpoint complete: wrote 384 buffers (2.3%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=38.424 s, sync=0.053 s, total=38.489 s; sync files=145, longest=0.003 s, average=0.001 s; distance=3012 kB, estimate=3012 kB; lsn=0/1A45698, redo lsn=0/1A45608
+2026-06-29 20:28:27.955 PDT [2538806] LOG:  checkpoint starting: wal
+2026-06-29 20:29:16.420 PDT [2576780] LOG:  skipping vacuum of "ec_real_100k_node_3_corpus" --- lock not available
+2026-06-29 20:29:21.254 PDT [2538806] LOG:  checkpoint complete: wrote 77 buffers (0.5%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=52.916 s, sync=0.205 s, total=53.347 s; sync files=49, longest=0.050 s, average=0.005 s; distance=534253 kB, estimate=534253 kB; lsn=0/400CA040, redo lsn=0/22400AE8
+2026-06-29 20:29:23.650 PDT [2538806] LOG:  checkpoint starting: wal
+2026-06-29 20:29:42.223 PDT [2538806] LOG:  checkpoint complete: wrote 2 buffers (0.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=18.002 s, sync=0.190 s, total=18.573 s; sync files=3, longest=0.180 s, average=0.064 s; distance=536968 kB, estimate=536968 kB; lsn=0/56DE6A28, redo lsn=0/43062E40
+2026-06-29 20:29:52.973 PDT [2538806] LOG:  checkpoints are occurring too frequently (29 seconds apart)
+2026-06-29 20:29:52.973 PDT [2538806] HINT:  Consider increasing the configuration parameter "max_wal_size".
+2026-06-29 20:29:52.973 PDT [2538806] LOG:  checkpoint starting: wal
+2026-06-29 20:30:10.390 PDT [2538806] LOG:  checkpoint complete: wrote 4 buffers (0.0%), wrote 0 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=16.994 s, sync=0.134 s, total=17.418 s; sync files=3, longest=0.075 s, average=0.045 s; distance=540963 kB, estimate=540963 kB; lsn=0/72FCDCF0, redo lsn=0/640ABC00
+2026-06-29 20:30:16.453 PDT [2576934] LOG:  skipping vacuum of "ec_real_100k_node_3_corpus" --- lock not available
+2026-06-29 20:31:16.494 PDT [2577061] LOG:  skipping vacuum of "ec_real_100k_node_3_corpus" --- lock not available
+2026-06-29 20:32:16.546 PDT [2577153] LOG:  skipping vacuum of "ec_real_100k_node_3_corpus" --- lock not available
+2026-06-29 20:33:16.594 PDT [2577340] LOG:  skipping vacuum of "ec_real_100k_node_3_corpus" --- lock not available
+2026-06-29 20:34:16.640 PDT [2577435] LOG:  skipping vacuum of "ec_real_100k_node_3_corpus" --- lock not available
+2026-06-29 20:35:16.695 PDT [2577708] LOG:  skipping vacuum of "ec_real_100k_node_3_corpus" --- lock not available
+2026-06-29 20:36:16.750 PDT [2578344] LOG:  skipping vacuum of "ec_real_100k_node_3_corpus" --- lock not available
+2026-06-29 20:37:16.801 PDT [2578440] LOG:  skipping vacuum of "ec_real_100k_node_3_corpus" --- lock not available
+2026-06-29 20:38:16.854 PDT [2578548] LOG:  skipping vacuum of "ec_real_100k_node_3_corpus" --- lock not available
+2026-06-29 20:39:16.908 PDT [2578652] LOG:  skipping vacuum of "ec_real_100k_node_3_corpus" --- lock not available
+2026-06-29 20:40:16.960 PDT [2578758] LOG:  skipping vacuum of "ec_real_100k_node_3_corpus" --- lock not available
+2026-06-29 20:41:17.011 PDT [2578860] LOG:  skipping vacuum of "ec_real_100k_node_3_corpus" --- lock not available
+2026-06-29 20:42:17.069 PDT [2578983] LOG:  skipping vacuum of "ec_real_100k_node_3_corpus" --- lock not available
+2026-06-29 20:43:17.110 PDT [2579084] LOG:  skipping vacuum of "ec_real_100k_node_3_corpus" --- lock not available
+2026-06-29 20:44:17.166 PDT [2579179] LOG:  skipping vacuum of "ec_real_100k_node_3_corpus" --- lock not available
+2026-06-29 20:45:17.213 PDT [2579459] LOG:  skipping vacuum of "ec_real_100k_node_3_corpus" --- lock not available
+2026-06-29 20:46:17.264 PDT [2579576] LOG:  skipping vacuum of "ec_real_100k_node_3_corpus" --- lock not available
+2026-06-29 20:47:17.303 PDT [2579675] LOG:  skipping vacuum of "ec_real_100k_node_3_corpus" --- lock not available
+2026-06-29 20:48:17.331 PDT [2579778] LOG:  skipping vacuum of "ec_real_100k_node_3_corpus" --- lock not available
+2026-06-29 20:49:17.357 PDT [2579864] LOG:  skipping vacuum of "ec_real_100k_node_3_corpus" --- lock not available
+2026-06-29 20:50:17.410 PDT [2580003] LOG:  skipping vacuum of "ec_real_100k_node_3_corpus" --- lock not available
+2026-06-29 20:51:17.461 PDT [2580108] LOG:  skipping vacuum of "ec_real_100k_node_3_corpus" --- lock not available
+2026-06-29 20:52:17.519 PDT [2580193] LOG:  skipping vacuum of "ec_real_100k_node_3_corpus" --- lock not available
+2026-06-29 20:53:17.565 PDT [2580408] LOG:  skipping vacuum of "ec_real_100k_node_3_corpus" --- lock not available
+2026-06-29 20:54:17.617 PDT [2580514] LOG:  skipping vacuum of "ec_real_100k_node_3_corpus" --- lock not available
+2026-06-29 20:55:17.667 PDT [2580786] LOG:  skipping vacuum of "ec_real_100k_node_3_corpus" --- lock not available
+2026-06-29 20:56:17.717 PDT [2581416] LOG:  skipping vacuum of "ec_real_100k_node_3_corpus" --- lock not available
+2026-06-29 20:57:17.745 PDT [2581538] LOG:  skipping vacuum of "ec_real_100k_node_3_corpus" --- lock not available
+2026-06-29 20:58:17.793 PDT [2581643] LOG:  skipping vacuum of "ec_real_100k_node_3_corpus" --- lock not available
+2026-06-29 20:59:17.845 PDT [2581748] LOG:  skipping vacuum of "ec_real_100k_node_3_corpus" --- lock not available
+2026-06-29 21:00:17.898 PDT [2581857] LOG:  skipping vacuum of "ec_real_100k_node_3_corpus" --- lock not available
+2026-06-29 21:01:17.951 PDT [2581986] LOG:  skipping vacuum of "ec_real_100k_node_3_corpus" --- lock not available
+2026-06-29 21:02:18.006 PDT [2582094] LOG:  skipping vacuum of "ec_real_100k_node_3_corpus" --- lock not available
+2026-06-29 21:03:18.059 PDT [2582191] LOG:  skipping vacuum of "ec_real_100k_node_3_corpus" --- lock not available
+2026-06-29 21:04:18.103 PDT [2582279] LOG:  skipping vacuum of "ec_real_100k_node_3_corpus" --- lock not available
+2026-06-29 21:05:18.154 PDT [2582555] LOG:  skipping vacuum of "ec_real_100k_node_3_corpus" --- lock not available
+2026-06-29 21:06:18.202 PDT [2582676] LOG:  skipping vacuum of "ec_real_100k_node_3_corpus" --- lock not available
+2026-06-29 21:07:18.236 PDT [2582779] LOG:  skipping vacuum of "ec_real_100k_node_3_corpus" --- lock not available
+2026-06-29 21:08:18.287 PDT [2582879] LOG:  skipping vacuum of "ec_real_100k_node_3_corpus" --- lock not available
+2026-06-29 21:09:18.312 PDT [2583005] LOG:  skipping vacuum of "ec_real_100k_node_3_corpus" --- lock not available
+2026-06-29 21:10:18.364 PDT [2583090] LOG:  skipping vacuum of "ec_real_100k_node_3_corpus" --- lock not available
+2026-06-29 21:11:18.414 PDT [2583209] LOG:  skipping vacuum of "ec_real_100k_node_3_corpus" --- lock not available
+2026-06-29 21:12:18.466 PDT [2583314] LOG:  skipping vacuum of "ec_real_100k_node_3_corpus" --- lock not available
+2026-06-29 21:13:18.514 PDT [2583494] LOG:  skipping vacuum of "ec_real_100k_node_3_corpus" --- lock not available
+2026-06-29 21:14:18.567 PDT [2583611] LOG:  skipping vacuum of "ec_real_100k_node_3_corpus" --- lock not available
+2026-06-29 21:15:18.615 PDT [2583884] LOG:  skipping vacuum of "ec_real_100k_node_3_corpus" --- lock not available
+2026-06-29 21:16:18.660 PDT [2584526] LOG:  skipping vacuum of "ec_real_100k_node_3_corpus" --- lock not available
+2026-06-29 21:17:18.708 PDT [2584638] LOG:  skipping vacuum of "ec_real_100k_node_3_corpus" --- lock not available
+2026-06-29 21:18:18.743 PDT [2584735] LOG:  skipping vacuum of "ec_real_100k_node_3_corpus" --- lock not available
+2026-06-29 21:19:18.794 PDT [2584859] LOG:  skipping vacuum of "ec_real_100k_node_3_corpus" --- lock not available
+2026-06-29 21:20:18.850 PDT [2584956] LOG:  skipping vacuum of "ec_real_100k_node_3_corpus" --- lock not available
+2026-06-29 21:21:18.877 PDT [2585061] LOG:  skipping vacuum of "ec_real_100k_node_3_corpus" --- lock not available
+2026-06-29 21:22:18.926 PDT [2585182] LOG:  skipping vacuum of "ec_real_100k_node_3_corpus" --- lock not available
+2026-06-29 21:23:18.975 PDT [2585281] LOG:  skipping vacuum of "ec_real_100k_node_3_corpus" --- lock not available
+2026-06-29 21:24:19.026 PDT [2585393] LOG:  skipping vacuum of "ec_real_100k_node_3_corpus" --- lock not available
+2026-06-29 21:25:19.077 PDT [2585654] LOG:  skipping vacuum of "ec_real_100k_node_3_corpus" --- lock not available
+2026-06-29 21:26:19.124 PDT [2585778] LOG:  skipping vacuum of "ec_real_100k_node_3_corpus" --- lock not available
+2026-06-29 21:29:52.314 PDT [2538806] LOG:  checkpoint starting: time
+2026-06-29 21:29:54.287 PDT [2538806] LOG:  checkpoint complete: wrote 19 buffers (0.1%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 26 recycled; write=1.907 s, sync=0.010 s, total=1.973 s; sync files=20, longest=0.004 s, average=0.001 s; distance=433220 kB, estimate=530189 kB; lsn=0/7E7BCE60, redo lsn=0/7E7BCE08
+2026-06-29 22:28:23.001 PDT [2538802] LOG:  received fast shutdown request
+2026-06-29 22:28:23.003 PDT [2538802] LOG:  aborting any active transactions
+2026-06-29 22:28:23.004 PDT [2538802] LOG:  background worker "logical replication launcher" (PID 2538811) exited with exit code 1
+2026-06-29 22:28:23.009 PDT [2538806] LOG:  shutting down
+2026-06-29 22:28:23.011 PDT [2538806] LOG:  checkpoint starting: shutdown immediate
+2026-06-29 22:28:23.019 PDT [2538806] LOG:  checkpoint complete: wrote 0 buffers (0.0%), wrote 0 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.001 s, sync=0.001 s, total=0.011 s; sync files=0, longest=0.000 s, average=0.000 s; distance=0 kB, estimate=477170 kB; lsn=0/7E7BCF10, redo lsn=0/7E7BCF10
+2026-06-29 22:28:23.041 PDT [2538802] LOG:  database system is shut down

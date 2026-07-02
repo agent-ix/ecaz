@@ -1,0 +1,2 @@
+CREATE TABLE
+psql:reviews/task-123/019-dedupe-prune-multinode-ab/artifacts/n1024-b2-200q/remote-leaf-materialization/node-2-remote-materialize-rendered.sql:31: error: reviews/task-123/019-dedupe-prune-multinode-ab/artifacts/n1024-b2-200q/distributed-correctness/node-2/coordinator-base-assignments.tsv: No such file or directory

@@ -1,0 +1,1173 @@
+{
+  "suite": "task121-stage1-routing-screen-100k",
+  "schema_version": 1,
+  "config": "reviews/task-121/001-stage1-routing-screen/artifacts/suite-stage1-routing-screen-100k.json",
+  "config_sha256": "55563004b9a4650cdbeb8d68956e9433cb82360eaaaa3739f469f06f85a936cd",
+  "dry_run": false,
+  "generated_at_unix_ms": 1782197201510,
+  "connection": {
+    "database": "tqvector_bench_task121",
+    "host": "/home/peter/.pgrx",
+    "port": 28818,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "precheck-host",
+      "kind": "raw",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "setup",
+        "precheck",
+        "task121",
+        "stage1",
+        "routing-screen",
+        "intel-local"
+      ],
+      "expected_artifacts": [
+        "reviews/task-121/001-stage1-routing-screen/artifacts/precheck-host.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-baseline",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "task121",
+        "stage1",
+        "100k",
+        "lever=baseline"
+      ],
+      "expected_artifacts": [
+        "reviews/task-121/001-stage1-routing-screen/artifacts/load-baseline.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-baseline",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "task121",
+        "stage1",
+        "100k",
+        "lever=baseline"
+      ],
+      "expected_artifacts": [
+        "reviews/task-121/001-stage1-routing-screen/artifacts/storage-baseline.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "truth-cache-100k-q200-k10",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "recall",
+        "truth-cache",
+        "task121",
+        "stage1",
+        "100k",
+        "lever=baseline"
+      ],
+      "expected_artifacts": [
+        "reviews/task-121/001-stage1-routing-screen/artifacts/truth-cache-100k-q200-k10.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "truth-cache-100k-q20-k10",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "recall",
+        "truth-cache",
+        "task121",
+        "stage1",
+        "100k",
+        "q20",
+        "lever=baseline"
+      ],
+      "expected_artifacts": [
+        "reviews/task-121/001-stage1-routing-screen/artifacts/truth-cache-100k-q20-k10.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-baseline-q20-n96",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task121",
+        "stage1",
+        "100k",
+        "q20",
+        "nprobe=96",
+        "lever=baseline"
+      ],
+      "expected_artifacts": [
+        "reviews/task-121/001-stage1-routing-screen/artifacts/pipeline-baseline-q20-n96.log",
+        "reviews/task-121/001-stage1-routing-screen/artifacts/pipeline-baseline-q20-n96-funnel.jsonl",
+        "reviews/task-121/001-stage1-routing-screen/artifacts/pipeline-baseline-q20-n96-stage-containment.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-baseline",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task121",
+        "stage1",
+        "100k",
+        "lever=baseline"
+      ],
+      "expected_artifacts": [
+        "reviews/task-121/001-stage1-routing-screen/artifacts/pipeline-baseline.log",
+        "reviews/task-121/001-stage1-routing-screen/artifacts/pipeline-baseline-funnel.jsonl",
+        "reviews/task-121/001-stage1-routing-screen/artifacts/pipeline-baseline-stage-containment.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-tgsl200",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "task121",
+        "stage1",
+        "100k",
+        "lever=top_graph_search_list_size",
+        "value=200"
+      ],
+      "expected_artifacts": [
+        "reviews/task-121/001-stage1-routing-screen/artifacts/load-tgsl200.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-tgsl200",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "task121",
+        "stage1",
+        "100k",
+        "lever=top_graph_search_list_size",
+        "value=200"
+      ],
+      "expected_artifacts": [
+        "reviews/task-121/001-stage1-routing-screen/artifacts/storage-tgsl200.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-tgsl200",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task121",
+        "stage1",
+        "100k",
+        "lever=top_graph_search_list_size",
+        "value=200"
+      ],
+      "expected_artifacts": [
+        "reviews/task-121/001-stage1-routing-screen/artifacts/pipeline-tgsl200.log",
+        "reviews/task-121/001-stage1-routing-screen/artifacts/pipeline-tgsl200-funnel.jsonl",
+        "reviews/task-121/001-stage1-routing-screen/artifacts/pipeline-tgsl200-stage-containment.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-tgsl200-hi",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task121",
+        "stage1",
+        "100k",
+        "lever=top_graph_search_list_size",
+        "value=200",
+        "nprobe-hi"
+      ],
+      "expected_artifacts": [
+        "reviews/task-121/001-stage1-routing-screen/artifacts/pipeline-tgsl200-hi.log",
+        "reviews/task-121/001-stage1-routing-screen/artifacts/pipeline-tgsl200-hi-funnel.jsonl",
+        "reviews/task-121/001-stage1-routing-screen/artifacts/pipeline-tgsl200-hi-stage-containment.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-tgsl400",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "task121",
+        "stage1",
+        "100k",
+        "lever=top_graph_search_list_size",
+        "value=400"
+      ],
+      "expected_artifacts": [
+        "reviews/task-121/001-stage1-routing-screen/artifacts/load-tgsl400.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-tgsl400",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "task121",
+        "stage1",
+        "100k",
+        "lever=top_graph_search_list_size",
+        "value=400"
+      ],
+      "expected_artifacts": [
+        "reviews/task-121/001-stage1-routing-screen/artifacts/storage-tgsl400.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-tgsl400",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task121",
+        "stage1",
+        "100k",
+        "lever=top_graph_search_list_size",
+        "value=400",
+        "nprobe-hi"
+      ],
+      "expected_artifacts": [
+        "reviews/task-121/001-stage1-routing-screen/artifacts/pipeline-tgsl400.log",
+        "reviews/task-121/001-stage1-routing-screen/artifacts/pipeline-tgsl400-funnel.jsonl",
+        "reviews/task-121/001-stage1-routing-screen/artifacts/pipeline-tgsl400-stage-containment.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-tgsl800",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "task121",
+        "stage1",
+        "100k",
+        "lever=top_graph_search_list_size",
+        "value=800"
+      ],
+      "expected_artifacts": [
+        "reviews/task-121/001-stage1-routing-screen/artifacts/load-tgsl800.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-tgsl800",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "task121",
+        "stage1",
+        "100k",
+        "lever=top_graph_search_list_size",
+        "value=800"
+      ],
+      "expected_artifacts": [
+        "reviews/task-121/001-stage1-routing-screen/artifacts/storage-tgsl800.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-tgsl800",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task121",
+        "stage1",
+        "100k",
+        "lever=top_graph_search_list_size",
+        "value=800",
+        "nprobe-hi"
+      ],
+      "expected_artifacts": [
+        "reviews/task-121/001-stage1-routing-screen/artifacts/pipeline-tgsl800.log",
+        "reviews/task-121/001-stage1-routing-screen/artifacts/pipeline-tgsl800-funnel.jsonl",
+        "reviews/task-121/001-stage1-routing-screen/artifacts/pipeline-tgsl800-stage-containment.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-bound1",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "task121",
+        "stage1",
+        "100k",
+        "lever=boundary_replica_count",
+        "value=1"
+      ],
+      "expected_artifacts": [
+        "reviews/task-121/001-stage1-routing-screen/artifacts/load-bound1.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-bound1",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "task121",
+        "stage1",
+        "100k",
+        "lever=boundary_replica_count",
+        "value=1"
+      ],
+      "expected_artifacts": [
+        "reviews/task-121/001-stage1-routing-screen/artifacts/storage-bound1.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-bound1",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task121",
+        "stage1",
+        "100k",
+        "lever=boundary_replica_count",
+        "value=1"
+      ],
+      "expected_artifacts": [
+        "reviews/task-121/001-stage1-routing-screen/artifacts/pipeline-bound1.log",
+        "reviews/task-121/001-stage1-routing-screen/artifacts/pipeline-bound1-funnel.jsonl",
+        "reviews/task-121/001-stage1-routing-screen/artifacts/pipeline-bound1-stage-containment.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-bound2",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "task121",
+        "stage1",
+        "100k",
+        "lever=boundary_replica_count",
+        "value=2"
+      ],
+      "expected_artifacts": [
+        "reviews/task-121/001-stage1-routing-screen/artifacts/load-bound2.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-bound2",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "task121",
+        "stage1",
+        "100k",
+        "lever=boundary_replica_count",
+        "value=2"
+      ],
+      "expected_artifacts": [
+        "reviews/task-121/001-stage1-routing-screen/artifacts/storage-bound2.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-bound2",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task121",
+        "stage1",
+        "100k",
+        "lever=boundary_replica_count",
+        "value=2"
+      ],
+      "expected_artifacts": [
+        "reviews/task-121/001-stage1-routing-screen/artifacts/pipeline-bound2.log",
+        "reviews/task-121/001-stage1-routing-screen/artifacts/pipeline-bound2-funnel.jsonl",
+        "reviews/task-121/001-stage1-routing-screen/artifacts/pipeline-bound2-stage-containment.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-bound4",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "task121",
+        "stage1",
+        "100k",
+        "lever=boundary_replica_count",
+        "value=4"
+      ],
+      "expected_artifacts": [
+        "reviews/task-121/001-stage1-routing-screen/artifacts/load-bound4.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-bound4",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "task121",
+        "stage1",
+        "100k",
+        "lever=boundary_replica_count",
+        "value=4"
+      ],
+      "expected_artifacts": [
+        "reviews/task-121/001-stage1-routing-screen/artifacts/storage-bound4.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-bound4",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task121",
+        "stage1",
+        "100k",
+        "lever=boundary_replica_count",
+        "value=4"
+      ],
+      "expected_artifacts": [
+        "reviews/task-121/001-stage1-routing-screen/artifacts/pipeline-bound4.log",
+        "reviews/task-121/001-stage1-routing-screen/artifacts/pipeline-bound4-funnel.jsonl",
+        "reviews/task-121/001-stage1-routing-screen/artifacts/pipeline-bound4-stage-containment.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-nlist316",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "task121",
+        "stage1",
+        "100k",
+        "lever=nlists",
+        "value=316"
+      ],
+      "expected_artifacts": [
+        "reviews/task-121/001-stage1-routing-screen/artifacts/load-nlist316.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-nlist316",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "task121",
+        "stage1",
+        "100k",
+        "lever=nlists",
+        "value=316"
+      ],
+      "expected_artifacts": [
+        "reviews/task-121/001-stage1-routing-screen/artifacts/storage-nlist316.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-nlist316",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task121",
+        "stage1",
+        "100k",
+        "lever=nlists",
+        "value=316"
+      ],
+      "expected_artifacts": [
+        "reviews/task-121/001-stage1-routing-screen/artifacts/pipeline-nlist316.log",
+        "reviews/task-121/001-stage1-routing-screen/artifacts/pipeline-nlist316-funnel.jsonl",
+        "reviews/task-121/001-stage1-routing-screen/artifacts/pipeline-nlist316-stage-containment.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-nlist512",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "task121",
+        "stage1",
+        "100k",
+        "lever=nlists",
+        "value=512"
+      ],
+      "expected_artifacts": [
+        "reviews/task-121/001-stage1-routing-screen/artifacts/load-nlist512.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-nlist512",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "task121",
+        "stage1",
+        "100k",
+        "lever=nlists",
+        "value=512"
+      ],
+      "expected_artifacts": [
+        "reviews/task-121/001-stage1-routing-screen/artifacts/storage-nlist512.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-nlist512",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task121",
+        "stage1",
+        "100k",
+        "lever=nlists",
+        "value=512"
+      ],
+      "expected_artifacts": [
+        "reviews/task-121/001-stage1-routing-screen/artifacts/pipeline-nlist512.log",
+        "reviews/task-121/001-stage1-routing-screen/artifacts/pipeline-nlist512-funnel.jsonl",
+        "reviews/task-121/001-stage1-routing-screen/artifacts/pipeline-nlist512-stage-containment.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-nlist1024",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "task121",
+        "stage1",
+        "100k",
+        "lever=nlists",
+        "value=1024"
+      ],
+      "expected_artifacts": [
+        "reviews/task-121/001-stage1-routing-screen/artifacts/load-nlist1024.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-nlist1024",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "task121",
+        "stage1",
+        "100k",
+        "lever=nlists",
+        "value=1024"
+      ],
+      "expected_artifacts": [
+        "reviews/task-121/001-stage1-routing-screen/artifacts/storage-nlist1024.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-nlist1024",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task121",
+        "stage1",
+        "100k",
+        "lever=nlists",
+        "value=1024"
+      ],
+      "expected_artifacts": [
+        "reviews/task-121/001-stage1-routing-screen/artifacts/pipeline-nlist1024.log",
+        "reviews/task-121/001-stage1-routing-screen/artifacts/pipeline-nlist1024-funnel.jsonl",
+        "reviews/task-121/001-stage1-routing-screen/artifacts/pipeline-nlist1024-stage-containment.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-fanout0",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "task121",
+        "stage1",
+        "100k",
+        "lever=recursive_fanout",
+        "value=0"
+      ],
+      "expected_artifacts": [
+        "reviews/task-121/001-stage1-routing-screen/artifacts/load-fanout0.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-fanout0",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "task121",
+        "stage1",
+        "100k",
+        "lever=recursive_fanout",
+        "value=0"
+      ],
+      "expected_artifacts": [
+        "reviews/task-121/001-stage1-routing-screen/artifacts/storage-fanout0.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-fanout0",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task121",
+        "stage1",
+        "100k",
+        "lever=recursive_fanout",
+        "value=0"
+      ],
+      "expected_artifacts": [
+        "reviews/task-121/001-stage1-routing-screen/artifacts/pipeline-fanout0.log",
+        "reviews/task-121/001-stage1-routing-screen/artifacts/pipeline-fanout0-funnel.jsonl",
+        "reviews/task-121/001-stage1-routing-screen/artifacts/pipeline-fanout0-stage-containment.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-fanout16",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "task121",
+        "stage1",
+        "100k",
+        "lever=recursive_fanout",
+        "value=16"
+      ],
+      "expected_artifacts": [
+        "reviews/task-121/001-stage1-routing-screen/artifacts/load-fanout16.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-fanout16",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "task121",
+        "stage1",
+        "100k",
+        "lever=recursive_fanout",
+        "value=16"
+      ],
+      "expected_artifacts": [
+        "reviews/task-121/001-stage1-routing-screen/artifacts/storage-fanout16.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-fanout16",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task121",
+        "stage1",
+        "100k",
+        "lever=recursive_fanout",
+        "value=16"
+      ],
+      "expected_artifacts": [
+        "reviews/task-121/001-stage1-routing-screen/artifacts/pipeline-fanout16.log",
+        "reviews/task-121/001-stage1-routing-screen/artifacts/pipeline-fanout16-funnel.jsonl",
+        "reviews/task-121/001-stage1-routing-screen/artifacts/pipeline-fanout16-stage-containment.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-fanout32",
+      "kind": "load",
+      "command": [
+        "--database",
+        "tqvector_bench_task121",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-121/001-stage1-routing-screen/artifacts/load-fanout32.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "t121_s1_100k_fanout32",
+        "--profile",
+        "ec_spire",
+        "--corpus-file",
+        "data/staged-current/ec_real_100k_corpus.tsv",
+        "--queries-file",
+        "data/staged-current/ec_real_100k_queries.tsv",
+        "--manifest-file",
+        "data/staged-current/ec_real_100k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--dim",
+        "1536",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--storage-format",
+        "rabitq",
+        "--index-name",
+        "t121_s1_100k_fanout32_idx",
+        "--reloption",
+        "nlists=128",
+        "--reloption",
+        "recursive_fanout=32",
+        "--reloption",
+        "top_graph_enabled=1",
+        "--reloption",
+        "top_graph_degree=32",
+        "--reloption",
+        "top_graph_build_list_size=100",
+        "--reloption",
+        "top_graph_search_list_size=96",
+        "--reloption",
+        "boundary_replica_count=0",
+        "--reloption",
+        "training_sample_rows=10000"
+      ],
+      "selected": true,
+      "tags": [
+        "load",
+        "task121",
+        "stage1",
+        "100k",
+        "lever=recursive_fanout",
+        "value=32"
+      ],
+      "expected_artifacts": [
+        "reviews/task-121/001-stage1-routing-screen/artifacts/load-fanout32.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1782197201512,
+      "finished_at_unix_ms": 1782197479179,
+      "duration_ms": 291585,
+      "exit_code": 0
+    },
+    {
+      "name": "storage-fanout32",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "task121",
+        "stage1",
+        "100k",
+        "lever=recursive_fanout",
+        "value=32"
+      ],
+      "expected_artifacts": [
+        "reviews/task-121/001-stage1-routing-screen/artifacts/storage-fanout32.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-fanout32",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task121",
+        "stage1",
+        "100k",
+        "lever=recursive_fanout",
+        "value=32"
+      ],
+      "expected_artifacts": [
+        "reviews/task-121/001-stage1-routing-screen/artifacts/pipeline-fanout32.log",
+        "reviews/task-121/001-stage1-routing-screen/artifacts/pipeline-fanout32-funnel.jsonl",
+        "reviews/task-121/001-stage1-routing-screen/artifacts/pipeline-fanout32-stage-containment.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-degree48",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "task121",
+        "stage1",
+        "100k",
+        "lever=top_graph_degree",
+        "value=48"
+      ],
+      "expected_artifacts": [
+        "reviews/task-121/001-stage1-routing-screen/artifacts/load-degree48.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-degree48",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "task121",
+        "stage1",
+        "100k",
+        "lever=top_graph_degree",
+        "value=48"
+      ],
+      "expected_artifacts": [
+        "reviews/task-121/001-stage1-routing-screen/artifacts/storage-degree48.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-degree48",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task121",
+        "stage1",
+        "100k",
+        "lever=top_graph_degree",
+        "value=48"
+      ],
+      "expected_artifacts": [
+        "reviews/task-121/001-stage1-routing-screen/artifacts/pipeline-degree48.log",
+        "reviews/task-121/001-stage1-routing-screen/artifacts/pipeline-degree48-funnel.jsonl",
+        "reviews/task-121/001-stage1-routing-screen/artifacts/pipeline-degree48-stage-containment.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-degree64",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "task121",
+        "stage1",
+        "100k",
+        "lever=top_graph_degree",
+        "value=64"
+      ],
+      "expected_artifacts": [
+        "reviews/task-121/001-stage1-routing-screen/artifacts/load-degree64.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-degree64",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "task121",
+        "stage1",
+        "100k",
+        "lever=top_graph_degree",
+        "value=64"
+      ],
+      "expected_artifacts": [
+        "reviews/task-121/001-stage1-routing-screen/artifacts/storage-degree64.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-degree64",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task121",
+        "stage1",
+        "100k",
+        "lever=top_graph_degree",
+        "value=64"
+      ],
+      "expected_artifacts": [
+        "reviews/task-121/001-stage1-routing-screen/artifacts/pipeline-degree64.log",
+        "reviews/task-121/001-stage1-routing-screen/artifacts/pipeline-degree64-funnel.jsonl",
+        "reviews/task-121/001-stage1-routing-screen/artifacts/pipeline-degree64-stage-containment.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-train50k",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "task121",
+        "stage1",
+        "100k",
+        "lever=training_sample_rows",
+        "value=50000"
+      ],
+      "expected_artifacts": [
+        "reviews/task-121/001-stage1-routing-screen/artifacts/load-train50k.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-train50k",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "task121",
+        "stage1",
+        "100k",
+        "lever=training_sample_rows",
+        "value=50000"
+      ],
+      "expected_artifacts": [
+        "reviews/task-121/001-stage1-routing-screen/artifacts/storage-train50k.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-train50k",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task121",
+        "stage1",
+        "100k",
+        "lever=training_sample_rows",
+        "value=50000"
+      ],
+      "expected_artifacts": [
+        "reviews/task-121/001-stage1-routing-screen/artifacts/pipeline-train50k.log",
+        "reviews/task-121/001-stage1-routing-screen/artifacts/pipeline-train50k-funnel.jsonl",
+        "reviews/task-121/001-stage1-routing-screen/artifacts/pipeline-train50k-stage-containment.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-train100k",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "task121",
+        "stage1",
+        "100k",
+        "lever=training_sample_rows",
+        "value=100000"
+      ],
+      "expected_artifacts": [
+        "reviews/task-121/001-stage1-routing-screen/artifacts/load-train100k.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-train100k",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "task121",
+        "stage1",
+        "100k",
+        "lever=training_sample_rows",
+        "value=100000"
+      ],
+      "expected_artifacts": [
+        "reviews/task-121/001-stage1-routing-screen/artifacts/storage-train100k.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-train100k",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task121",
+        "stage1",
+        "100k",
+        "lever=training_sample_rows",
+        "value=100000"
+      ],
+      "expected_artifacts": [
+        "reviews/task-121/001-stage1-routing-screen/artifacts/pipeline-train100k.log",
+        "reviews/task-121/001-stage1-routing-screen/artifacts/pipeline-train100k-funnel.jsonl",
+        "reviews/task-121/001-stage1-routing-screen/artifacts/pipeline-train100k-stage-containment.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-fmt-turboquant",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "task121",
+        "stage1",
+        "100k",
+        "lever=storage_format",
+        "value=turboquant"
+      ],
+      "expected_artifacts": [
+        "reviews/task-121/001-stage1-routing-screen/artifacts/load-fmt-turboquant.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-fmt-turboquant",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "task121",
+        "stage1",
+        "100k",
+        "lever=storage_format",
+        "value=turboquant"
+      ],
+      "expected_artifacts": [
+        "reviews/task-121/001-stage1-routing-screen/artifacts/storage-fmt-turboquant.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-fmt-turboquant",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task121",
+        "stage1",
+        "100k",
+        "lever=storage_format",
+        "value=turboquant"
+      ],
+      "expected_artifacts": [
+        "reviews/task-121/001-stage1-routing-screen/artifacts/pipeline-fmt-turboquant.log",
+        "reviews/task-121/001-stage1-routing-screen/artifacts/pipeline-fmt-turboquant-funnel.jsonl",
+        "reviews/task-121/001-stage1-routing-screen/artifacts/pipeline-fmt-turboquant-stage-containment.jsonl"
+      ],
+      "status": "skipped"
+    }
+  ]
+}

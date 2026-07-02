@@ -1,0 +1,85 @@
+{
+  "name": "phase5-local-multinode-production-read",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-120/017-phase5-local-multinode-gate/artifacts/real50k/bench-suite",
+  "defaults": {
+    "queries_limit": 200,
+    "pg": 18
+  },
+  "steps": [
+    {
+      "kind": "storage",
+      "name": "storage-local-coordinator",
+      "tags": [
+        "phase5",
+        "local",
+        "multinode",
+        "storage"
+      ],
+      "prefix": "t120p5r50k",
+      "log_file": "reviews/task-120/017-phase5-local-multinode-gate/artifacts/real50k/bench-suite/storage.log"
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "production-read-k10-default",
+      "tags": [
+        "phase5",
+        "local",
+        "multinode",
+        "production-read",
+        "default-cap"
+      ],
+      "prefix": "t120p5r50k",
+      "queries_limit": 200,
+      "sweep": [
+        64,
+        96
+      ],
+      "top_k": 10,
+      "include_remote": true,
+      "require_remote_placements": true,
+      "include_cost_snapshot": true,
+      "include_query_metrics": true,
+      "include_recall": true,
+      "include_production_read_profile": true,
+      "production_read_only": true,
+      "query_metric_k": 10,
+      "query_metric_projection_columns": [
+        "id"
+      ],
+      "log_output": "reviews/task-120/017-phase5-local-multinode-gate/artifacts/real50k/bench-suite/production-read-k10-default.log",
+      "truth_corpus_file": "data/task111a_real50k/ec_real_50k_corpus.tsv"
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "production-read-k10-rowcap25k",
+      "tags": [
+        "phase5",
+        "local",
+        "multinode",
+        "production-read",
+        "rowcap25k"
+      ],
+      "prefix": "t120p5r50k",
+      "queries_limit": 200,
+      "sweep": [
+        96
+      ],
+      "top_k": 10,
+      "max_routed_candidate_rows": 25000,
+      "include_remote": true,
+      "require_remote_placements": true,
+      "include_cost_snapshot": true,
+      "include_query_metrics": true,
+      "include_recall": true,
+      "include_production_read_profile": true,
+      "production_read_only": true,
+      "query_metric_k": 10,
+      "query_metric_projection_columns": [
+        "id"
+      ],
+      "log_output": "reviews/task-120/017-phase5-local-multinode-gate/artifacts/real50k/bench-suite/production-read-k10-rowcap25k.log",
+      "truth_corpus_file": "data/task111a_real50k/ec_real_50k_corpus.tsv"
+    }
+  ]
+}

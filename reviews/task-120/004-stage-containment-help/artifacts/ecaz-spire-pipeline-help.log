@@ -1,0 +1,186 @@
+Script started on 2026-06-21 08:01:53-07:00 [<not executed on terminal>]
+SPIRE routing, local pipeline, and optional remote fanout counters
+
+Usage: ecaz bench spire-pipeline [OPTIONS] --prefix <PREFIX>
+
+Options:
+      --prefix <PREFIX>
+          Prefix identifying the SPIRE corpus
+
+      --index <INDEX>
+          SPIRE index name. Defaults to the only ec_spire index on `<prefix>_corpus`
+
+      --queries-limit <QUERIES_LIMIT>
+          Number of queries to sample from `<prefix>_queries`
+          
+          [default: 1]
+
+      --sweep <SWEEP>
+          Sweep values for `ec_spire.nprobe`. Accepts `--sweep 8,16,32` or repeated `--sweep 8 --sweep 16`
+
+      --rerank-width <RERANK_WIDTH>
+          Session override for heap-f32 rerank frontier width. Use -1 for the index reloption, 0 for the full retained frontier
+
+      --max-candidate-rows <MAX_CANDIDATE_ROWS>
+          Session override for hard candidate-row budget. Use -1 for the index reloption and 0 for the automatic ceiling
+
+      --database <DATABASE>
+          PostgreSQL database name. Defaults to $PGDATABASE or 'tqvector_bench'
+          
+          [env: PGDATABASE=]
+          [default: tqvector_bench]
+
+      --max-routed-candidate-rows <MAX_ROUTED_CANDIDATE_ROWS>
+          Session cap for routed leaf assignment rows. Use 0 to disable
+
+      --adaptive-nprobe
+          Enable deterministic adaptive nprobe while collecting counters
+
+      --host <HOST>
+          PostgreSQL host name or Unix socket directory
+          
+          [env: PGHOST=]
+
+      --adaptive-nprobe-score-gap-micros <ADAPTIVE_NPROBE_SCORE_GAP_MICROS>
+          Score-gap threshold for adaptive nprobe decisions
+
+      --port <PORT>
+          PostgreSQL port
+          
+          [env: PGPORT=]
+
+      --include-remote
+          Also call `ec_spire_remote_pipeline_steps`. When no selected PIDs are provided this records the empty-fanout remote diagnostic shape
+
+      --user <USER>
+          PostgreSQL user name
+          
+          [env: PGUSER=]
+
+      --password <PASSWORD>
+          PostgreSQL password. Prefer `.pgpass` for non-local use
+          
+          [env: PGPASSWORD]
+
+      --require-remote-placements
+          Fail before reporting when the SPIRE placement directory has no remote placements. This is the AWS distributed smoke gate; it prevents local-only fixtures from being mistaken for distributed reads
+
+      --include-local-store-overlap
+          Also aggregate local-store read-overlap counters for sampled queries
+
+      --log-file <LOG_FILE>
+          Mirror CLI stdout/stderr into a file for packet-local artifact capture. Progress bars are suppressed so the file stays stable and diffable
+
+      --remote-selected-pids <REMOTE_SELECTED_PIDS>
+          Remote partition/object PIDs to pass to `ec_spire_remote_pipeline_steps`
+
+      --remote-requested-epoch <REMOTE_REQUESTED_EPOCH>
+          Epoch to pass to `ec_spire_remote_pipeline_steps`. Defaults to the active epoch observed from the local pipeline snapshot
+
+      --top-k <TOP_K>
+          top_k to pass to `ec_spire_remote_pipeline_steps`
+          
+          [default: 10]
+
+      --consistency-mode <CONSISTENCY_MODE>
+          Consistency mode to pass to `ec_spire_remote_pipeline_steps`
+          
+          [default: epoch]
+
+      --remote-tuple-transport <REMOTE_TUPLE_TRANSPORT>
+          Session tuple-payload transport policy for remote CustomScan payloads
+          
+          [possible values: auto, json_tuple_payload_v1, pg_binary_attr_v1]
+
+      --include-cost-snapshot
+          Also print the SPIRE cost-model tuning snapshot for each sweep value
+
+      --cost-routing-dimension-scale <COST_ROUTING_DIMENSION_SCALE>
+          Session override for ec_spire.cost_routing_dimension_scale
+
+      --cost-leaf-dimension-scale <COST_LEAF_DIMENSION_SCALE>
+          Session override for ec_spire.cost_leaf_dimension_scale
+
+      --cost-index-page-scale <COST_INDEX_PAGE_SCALE>
+          Session override for ec_spire.cost_index_page_scale
+
+      --cost-local-store-page-fanout-scale <COST_LOCAL_STORE_PAGE_FANOUT_SCALE>
+          Session override for ec_spire.cost_local_store_page_fanout_scale
+
+      --cost-storage-scoring-multiplier <COST_STORAGE_SCORING_MULTIPLIER>
+          Session override for ec_spire.cost_storage_scoring_multiplier
+
+      --cost-rerank-multiplier <COST_RERANK_MULTIPLIER>
+          Session override for ec_spire.cost_rerank_multiplier
+
+      --include-query-metrics
+          Run coordinator KNN queries and report single-connection latency stats
+
+      --include-recall
+          Also compute exact local truth and report recall@k for coordinator KNN queries
+
+      --truth-corpus-file <TRUTH_CORPUS_FILE>
+          Optional local `<id>\t<json_array>` corpus TSV to use for exact truth.
+          
+          This avoids streaming the full corpus table through a remote SQL tunnel when the same staged corpus file is already available to the operator.
+
+      --truth-cache-file <TRUTH_CACHE_FILE>
+          Optional exact top-k ground-truth cache file produced by `bench recall`.
+          
+          When present, the cache is validated against the sampled query set and k, then reused instead of fetching/scoring the full corpus.
+
+      --leaf-block-rank-output <LEAF_BLOCK_RANK_OUTPUT>
+          Write per-exact-neighbor SPIRE leaf-block rank rows as JSONL.
+          
+          Requires `--include-recall`. For local corpora without SPIRE source_identity, use the default local sequence mapping `id + 1`.
+
+      --target-block-rank-output <TARGET_BLOCK_RANK_OUTPUT>
+          Write per-exact-neighbor target-containing leaf-block rank rows as JSONL.
+          
+          Unlike `--leaf-block-rank-output`, this locates each truth row in routed leaves first and emits only the containing block rank.
+
+      --miss-attribution-output <MISS_ATTRIBUTION_OUTPUT>
+          Write per-exact-neighbor recall miss attribution rows as JSONL.
+          
+          Requires `--include-recall` and query metrics. The output joins exact truth ids, returned ids, and SPIRE leaf-block rank diagnostics.
+
+      --leaf-block-rank-local-sequence-offset <LEAF_BLOCK_RANK_LOCAL_SEQUENCE_OFFSET>
+          Offset added to exact-truth ids to form SPIRE local vec_id sequences
+          
+          [default: 1]
+
+      --include-production-read-profile
+          Also call ec_spire_remote_search_production_read_profile for each sampled query and report production read-path transport counters
+
+      --production-read-only
+          Skip SQL-visible local/remote pipeline diagnostics and measure only the production KNN/read-profile path. Use this when remote placements make local heap diagnostics intentionally fail closed
+
+      --query-metric-k <QUERY_METRIC_K>
+          k for optional query latency and recall metrics
+          
+          [default: 10]
+
+      --query-metric-projection-columns <QUERY_METRIC_PROJECTION_COLUMNS>
+          Extra corpus columns to project while measuring coordinator KNN query latency. `id` is always selected first for recall accounting
+
+      --session-guc <SESSION_GUCS>
+          Extra session GUCs to set while collecting SPIRE pipeline counters, as name=value
+
+      --task87-candidate-batch-counters
+          Reset and snapshot Task 87 CandidateBatch scoring counters for each sweep value
+
+      --log-output <LOG_OUTPUT>
+          Write the pipeline report to this path in addition to stdout
+
+      --funnel-output <FUNNEL_OUTPUT>
+          Write per-query candidate funnel rows as JSONL
+
+      --stage-containment-output <STAGE_CONTAINMENT_OUTPUT>
+          Write per-query, per-stage exact-truth containment rows as JSONL.
+          
+          Requires `--include-recall` and query metrics. Candidate/rerank containment uses the target candidate-rank SQL snapshot.
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+Script done on 2026-06-21 08:01:53-07:00 [COMMAND_EXIT_CODE="0"]

@@ -8,9 +8,9 @@ struct SpirePendingRecursiveRoutingNode {
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
-struct SpireRecursiveLeafMaterializationRows {
-    rows: Vec<SpireLeafAssignmentRow>,
-    source_vectors: Vec<Vec<f32>>,
+pub(super) struct SpireLeafBlockMaterializationRows {
+    pub(super) rows: Vec<SpireLeafAssignmentRow>,
+    pub(super) source_vectors: Vec<Vec<f32>>,
 }
 
 pub(super) fn build_recursive_routing_hierarchy_draft(
@@ -312,11 +312,11 @@ fn build_recursive_leaf_rows_by_pid(
     route_map: &SpireSingleLevelRouteMap,
     boundary_replica_count: u32,
     local_vec_id_cursor: &mut SpireLocalVecIdAllocator,
-) -> Result<HashMap<u64, SpireRecursiveLeafMaterializationRows>, String> {
+) -> Result<HashMap<u64, SpireLeafBlockMaterializationRows>, String> {
     let mut rows_by_leaf_pid = route_map
         .entries
         .iter()
-        .map(|entry| (entry.pid, SpireRecursiveLeafMaterializationRows::default()))
+        .map(|entry| (entry.pid, SpireLeafBlockMaterializationRows::default()))
         .collect::<HashMap<_, _>>();
     if boundary_replica_count == 0 {
         let mut source_vectors_by_placement = Vec::with_capacity(source_vectors.len());
@@ -427,7 +427,7 @@ fn build_recursive_leaf_rows_by_pid(
     Ok(rows_by_leaf_pid)
 }
 
-fn current_leaf_summary_block_rows() -> Result<Option<u32>, String> {
+pub(super) fn current_leaf_summary_block_rows() -> Result<Option<u32>, String> {
     let block_rows = options::current_session_leaf_block_rows();
     if block_rows <= 0 {
         return Ok(None);
@@ -437,7 +437,7 @@ fn current_leaf_summary_block_rows() -> Result<Option<u32>, String> {
         .map_err(|_| "ec_spire.leaf_block_rows exceeds u32".to_owned())
 }
 
-fn current_leaf_summary_representative_count() -> Result<usize, String> {
+pub(super) fn current_leaf_summary_representative_count() -> Result<usize, String> {
     let representatives = options::current_session_leaf_block_summary_representatives();
     if !(1..=8).contains(&representatives) {
         return Err(
@@ -457,12 +457,12 @@ struct SpireLeafBlockLayoutRow {
     source_vector: Vec<f32>,
 }
 
-fn layout_leaf_rows_for_block_summaries(
-    materialization_rows: SpireRecursiveLeafMaterializationRows,
+pub(super) fn layout_leaf_rows_for_block_summaries(
+    materialization_rows: SpireLeafBlockMaterializationRows,
     block_rows: u32,
     seed: u64,
     leaf_pid: u64,
-) -> Result<SpireRecursiveLeafMaterializationRows, String> {
+) -> Result<SpireLeafBlockMaterializationRows, String> {
     if block_rows == 0 {
         return Err("ec_spire leaf block layout block_rows 0 is invalid".to_owned());
     }
@@ -532,12 +532,9 @@ fn layout_leaf_rows_for_block_summaries(
         .zip(centroid_indexes)
         .enumerate()
         .map(|(original_index, ((row, source_vector), centroid_index))| {
-            let centroid = model
-                .centroids
-                .get(centroid_index)
-                .ok_or_else(|| {
-                    "ec_spire leaf block layout centroid assignment out of range".to_owned()
-                })?;
+            let centroid = model.centroids.get(centroid_index).ok_or_else(|| {
+                "ec_spire leaf block layout centroid assignment out of range".to_owned()
+            })?;
             let centroid_ip = leaf_block_layout_inner_product(&source_vector, centroid)?;
             Ok(SpireLeafBlockLayoutRow {
                 original_index,
@@ -567,7 +564,7 @@ fn layout_leaf_rows_for_block_summaries(
         rows.push(layout_row.row);
         source_vectors.push(layout_row.source_vector);
     }
-    Ok(SpireRecursiveLeafMaterializationRows {
+    Ok(SpireLeafBlockMaterializationRows {
         rows,
         source_vectors,
     })
@@ -581,7 +578,11 @@ fn leaf_block_layout_inner_product(left: &[f32], right: &[f32]) -> Result<f32, S
             right.len()
         ));
     }
-    Ok(left.iter().zip(right.iter()).map(|(left, right)| left * right).sum())
+    Ok(left
+        .iter()
+        .zip(right.iter())
+        .map(|(left, right)| left * right)
+        .sum())
 }
 
 fn leaf_block_mean(block_vectors: &[Vec<f32>], dimensions: usize) -> Vec<f32> {
@@ -608,10 +609,7 @@ fn leaf_block_l2_squared(left: &[f32], right: &[f32]) -> f32 {
         .sum()
 }
 
-fn leaf_block_farthest_vector<'a>(
-    block_vectors: &'a [Vec<f32>],
-    center: &[f32],
-) -> &'a [f32] {
+fn leaf_block_farthest_vector<'a>(block_vectors: &'a [Vec<f32>], center: &[f32]) -> &'a [f32] {
     block_vectors
         .iter()
         .max_by(|left, right| {
@@ -739,7 +737,10 @@ fn rabitq_leaf_block_k_representatives(
     accumulators
 }
 
-fn rabitq_leaf_block_covering_radius(block_vectors: &[Vec<f32>], representatives: &[Vec<f32>]) -> f32 {
+fn rabitq_leaf_block_covering_radius(
+    block_vectors: &[Vec<f32>],
+    representatives: &[Vec<f32>],
+) -> f32 {
     let mut radius = 0.0_f32;
     for source_vector in block_vectors {
         let nearest_l2 = representatives
@@ -752,7 +753,7 @@ fn rabitq_leaf_block_covering_radius(block_vectors: &[Vec<f32>], representatives
     radius
 }
 
-fn build_leaf_block_summaries(
+pub(super) fn build_leaf_block_summaries(
     rows: &[SpireLeafAssignmentRow],
     source_vectors: &[Vec<f32>],
     block_rows: u32,

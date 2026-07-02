@@ -2,7 +2,8 @@
 mod tests {
     use super::{
         blend_leaf_block_summary_sample_score, collect_delta_delete_vec_ids_for_loaded_routes,
-        collect_quantized_routed_probe_candidates, collect_ranked_routed_probe_candidates,
+        collect_quantized_routed_probe_candidates, collect_quantized_selected_leaf_scan_profile,
+        collect_quantized_selected_leaf_threshold_profile, collect_ranked_routed_probe_candidates,
         collect_reranked_quantized_routed_probe_candidates, collect_scan_routing_diagnostics,
         collect_scan_plan_selected_leaf_pids,
         collect_single_level_scan_plan_placement_diagnostics,
@@ -27,9 +28,9 @@ mod tests {
         score_v2_column_candidate_ip_with_quant_codec, score_v2_column_payloads_ip_with_quant_codec,
         score_global_leaf_block_ranges_with_route_prior_weight,
         select_global_leaf_block_row_ranges, select_leaf_block_row_ranges,
-        select_sampled_global_leaf_block_row_ranges, sort_scored_leaf_block_ranges,
-        try_score_v2_column_candidate_ip_with_rabitq_cutoff, SpireDeltaObjectRoute,
-        SpireLeafBlockRowRange, SpireLeafObjectReadRoute, SpireLeafScanRow,
+        select_sampled_global_leaf_block_row_ranges, select_threshold_leaf_block_row_ranges,
+        sort_scored_leaf_block_ranges, try_score_v2_column_candidate_ip_with_rabitq_cutoff,
+        SpireDeltaObjectRoute, SpireLeafBlockRowRange, SpireLeafObjectReadRoute, SpireLeafScanRow,
         SpireLoadedQuantizedLeafRoute, SpireNoopRoutedScanObserver, SpireRecursiveLeafRoute,
         SpireRoutedLeafScanRows, SpireScanCandidateCursor, SpireScanOpaque, SpireScanOutput,
         SpireScanOutputCursor,

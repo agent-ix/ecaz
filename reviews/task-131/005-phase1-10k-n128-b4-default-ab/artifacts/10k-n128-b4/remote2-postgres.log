@@ -1,0 +1,18 @@
+2026-06-30 22:37:45.711 PDT [133633] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-06-30 22:37:45.713 PDT [133633] LOG:  listening on Unix socket "/home/peter/dev/ecaz/target/spire-local-multinode-sockets-task131-p4-mi-10k-n128-b4/.s.PGSQL.40512"
+2026-06-30 22:37:45.719 PDT [133639] LOG:  database system was shut down at 2026-06-30 22:37:44 PDT
+2026-06-30 22:37:45.722 PDT [133633] LOG:  database system is ready to accept connections
+2026-06-30 22:42:15.831 PDT [134159] LOG:  skipping vacuum of "ec_real_10k_node_3_corpus" --- lock not available
+2026-06-30 22:42:45.828 PDT [133637] LOG:  checkpoint starting: time
+2026-06-30 22:47:15.151 PDT [133637] LOG:  checkpoint complete: wrote 7654 buffers (46.7%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 9 recycled; write=269.206 s, sync=0.083 s, total=269.324 s; sync files=158, longest=0.002 s, average=0.001 s; distance=151900 kB, estimate=151900 kB; lsn=0/BB15E80, redo lsn=0/ABAB5C0
+2026-06-30 22:47:45.490 PDT [133637] LOG:  checkpoint starting: time
+2026-06-30 22:50:56.167 PDT [133637] LOG:  checkpoint complete: wrote 1945 buffers (11.9%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 1 recycled; write=190.650 s, sync=0.014 s, total=190.677 s; sync files=43, longest=0.002 s, average=0.001 s; distance=15792 kB, estimate=138289 kB; lsn=0/BB21870, redo lsn=0/BB17858
+2026-06-30 22:52:45.548 PDT [133637] LOG:  checkpoint starting: time
+2026-06-30 22:52:45.566 PDT [133637] LOG:  checkpoint complete: wrote 0 buffers (0.0%), wrote 2 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.004 s, sync=0.001 s, total=0.018 s; sync files=1, longest=0.001 s, average=0.001 s; distance=66 kB, estimate=124466 kB; lsn=0/BB280D0, redo lsn=0/BB28078
+2026-06-30 22:55:07.780 PDT [133633] LOG:  received fast shutdown request
+2026-06-30 22:55:07.786 PDT [133633] LOG:  aborting any active transactions
+2026-06-30 22:55:07.786 PDT [133633] LOG:  background worker "logical replication launcher" (PID 133642) exited with exit code 1
+2026-06-30 22:55:07.791 PDT [133637] LOG:  shutting down
+2026-06-30 22:55:07.793 PDT [133637] LOG:  checkpoint starting: shutdown immediate
+2026-06-30 22:55:07.806 PDT [133637] LOG:  checkpoint complete: wrote 0 buffers (0.0%), wrote 2 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.004 s, sync=0.001 s, total=0.015 s; sync files=1, longest=0.001 s, average=0.001 s; distance=34 kB, estimate=112023 kB; lsn=0/BB30B98, redo lsn=0/BB30B98
+2026-06-30 22:55:07.828 PDT [133633] LOG:  database system is shut down
