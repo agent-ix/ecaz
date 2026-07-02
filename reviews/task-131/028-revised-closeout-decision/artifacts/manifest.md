@@ -2,7 +2,8 @@
 
 - packet: `reviews/task-131/028-revised-closeout-decision/`
 - task: `131`
-- head SHA when prepared: `56171fb433a6959ead9c903ad5ca61c57888683c`
+- packet commit SHA: `37f415d41494bea002a51db6d5419fda3097e20c`
+- current status-sync SHA: `80428ca2812d29d657e2bf4c154235a07baac484`
 - prepared at: `2026-07-02`
 - packet type: revised Phase 5 closeout decision
 - code changes in this packet: none
