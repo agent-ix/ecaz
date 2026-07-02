@@ -3403,18 +3403,23 @@ where
     Ok(())
 }
 
+/// Walks the probe plan's posting pages and parses each entry. Returns the
+/// total wall time spent inside the per-page decode callbacks (line-pointer
+/// walk + entry parse + the caller's visitor body), excluding read-stream
+/// buffer acquisition, so scan-side stage counters can split page access from
+/// entry decode (Task 135).
 #[cfg(any(feature = "pg17", feature = "pg18"))]
 pub(super) fn visit_ivf_posting_entries_for_block_sequence<F>(
     index_relation: RelationHandle,
     block_numbers: &[pg_sys::BlockNumber],
     payload_len: usize,
     mut visitor: F,
-) -> Result<(), String>
+) -> Result<std::time::Duration, String>
 where
     F: for<'a> FnMut(ItemPointer, IvfPostingEntryRef<'a>) -> Result<(), String>,
 {
     if block_numbers.is_empty() {
-        return Ok(());
+        return Ok(std::time::Duration::ZERO);
     }
 
     #[cfg(feature = "pg18")]
@@ -3424,22 +3429,22 @@ where
             block_numbers,
             payload_len,
             &mut visitor,
-        )?;
+        )
     }
 
     #[cfg(not(feature = "pg18"))]
     {
+        let mut decode_elapsed = std::time::Duration::ZERO;
         for block_number in block_numbers {
-            visit_all_ivf_posting_entries_for_block(
+            decode_elapsed += visit_all_ivf_posting_entries_for_block(
                 index_relation.as_ptr(),
                 *block_number,
                 payload_len,
                 &mut visitor,
             )?;
         }
+        Ok(decode_elapsed)
     }
-
-    Ok(())
 }
 
 #[cfg(feature = "pg18")]
@@ -3491,18 +3496,24 @@ fn visit_ivf_posting_entry_block_sequence_with_read_stream<F>(
     block_numbers: &[pg_sys::BlockNumber],
     payload_len: usize,
     visitor: &mut F,
-) -> Result<(), String>
+) -> Result<std::time::Duration, String>
 where
     F: for<'a> FnMut(ItemPointer, IvfPostingEntryRef<'a>) -> Result<(), String>,
 {
+    let mut decode_elapsed = std::time::Duration::ZERO;
     crate::am::stream::visit_relation_block_sequence_read_stream(
         index_relation,
         block_numbers,
         "ec_ivf posting entry block sequence",
         |buffer, block_number| {
-            visit_all_ivf_posting_entries_from_buffer(buffer, block_number, payload_len, visitor)
+            let decode_started = std::time::Instant::now();
+            let result =
+                visit_all_ivf_posting_entries_from_buffer(buffer, block_number, payload_len, visitor);
+            decode_elapsed += decode_started.elapsed();
+            result
         },
-    )
+    )?;
+    Ok(decode_elapsed)
 }
 
 #[cfg(all(any(feature = "pg17", feature = "pg18"), not(feature = "pg18")))]
@@ -3554,7 +3565,7 @@ fn visit_all_ivf_posting_entries_for_block<F>(
     block_number: pg_sys::BlockNumber,
     payload_len: usize,
     visitor: &mut F,
-) -> Result<(), String>
+) -> Result<std::time::Duration, String>
 where
     F: for<'a> FnMut(ItemPointer, IvfPostingEntryRef<'a>) -> Result<(), String>,
 {
@@ -3564,7 +3575,9 @@ where
     ));
     let buffer = read_posting_block(index, block_number, "posting-list")?;
 
-    visit_all_ivf_posting_entries_from_buffer(&buffer, block_number, payload_len, visitor)
+    let decode_started = std::time::Instant::now();
+    visit_all_ivf_posting_entries_from_buffer(&buffer, block_number, payload_len, visitor)?;
+    Ok(decode_started.elapsed())
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]

@@ -107,6 +107,13 @@ pub(crate) struct IvfExplainCounters {
     /// inside the visitor; subtract `stats_scratch_flush_elapsed_us` for the
     /// pure page-I/O + decode share.
     pub stats_posting_visit_elapsed_us: u32,
+    /// Task 135: wall time inside the per-page decode callbacks (line-pointer
+    /// walk + entry parse + visitor body, INCLUDING scratch pushes and any
+    /// in-callback scratch flushes), EXCLUDING read-stream buffer acquisition
+    /// and locking. `posting_visit − posting_page_decode` isolates the
+    /// page/buffer access share (minus the post-loop drain flushes, which run
+    /// inside `posting_visit` but outside the page callbacks).
+    pub stats_posting_page_decode_elapsed_us: u32,
     /// Task 133: wall time inside scratch SoA / dense-coalesced flush bodies
     /// (batch score + candidate record + scratch bookkeeping).
     pub stats_scratch_flush_elapsed_us: u32,
@@ -213,6 +220,7 @@ impl Default for IvfExplainCounters {
             stats_approximate_scan_elapsed_us: 0,
             stats_probe_plan_elapsed_us: 0,
             stats_posting_visit_elapsed_us: 0,
+            stats_posting_page_decode_elapsed_us: 0,
             stats_scratch_flush_elapsed_us: 0,
             stats_scorer_batch_elapsed_us: 0,
             stats_candidate_record_elapsed_us: 0,
@@ -506,6 +514,12 @@ impl IvfExplainCounters {
             .saturating_add(elapsed_us);
     }
 
+    pub(crate) fn record_posting_page_decode_elapsed_us(&mut self, elapsed_us: u32) {
+        self.stats_posting_page_decode_elapsed_us = self
+            .stats_posting_page_decode_elapsed_us
+            .saturating_add(elapsed_us);
+    }
+
     pub(crate) fn record_scratch_flush_elapsed_us(&mut self, elapsed_us: u32) {
         self.stats_scratch_flush_elapsed_us = self
             .stats_scratch_flush_elapsed_us
@@ -633,7 +647,7 @@ impl IvfExplainCounters {
         *self = Self::default();
     }
 
-    pub(crate) fn explain_properties(self) -> [ExplainProperty; 50] {
+    pub(crate) fn explain_properties(self) -> [ExplainProperty; 51] {
         [
             ExplainProperty {
                 property_name: "Rerank Placement",
@@ -742,6 +756,10 @@ impl IvfExplainCounters {
             ExplainProperty {
                 property_name: "Posting Visit Elapsed Us",
                 value: ExplainPropertyValue::Integer(self.stats_posting_visit_elapsed_us),
+            },
+            ExplainProperty {
+                property_name: "Posting Page Decode Elapsed Us",
+                value: ExplainPropertyValue::Integer(self.stats_posting_page_decode_elapsed_us),
             },
             ExplainProperty {
                 property_name: "Scratch Flush Elapsed Us",
@@ -1251,6 +1269,7 @@ mod tests {
         counters.record_approximate_scan_elapsed_us(37);
         counters.record_probe_plan_elapsed_us(103);
         counters.record_posting_visit_elapsed_us(107);
+        counters.record_posting_page_decode_elapsed_us(139);
         counters.record_scratch_flush_elapsed_us(109);
         counters.record_scorer_batch_elapsed_us(113);
         counters.record_candidate_record_elapsed_us(127);
@@ -1297,6 +1316,7 @@ mod tests {
                 stats_approximate_scan_elapsed_us: 37,
                 stats_probe_plan_elapsed_us: 103,
                 stats_posting_visit_elapsed_us: 107,
+                stats_posting_page_decode_elapsed_us: 139,
                 stats_scratch_flush_elapsed_us: 109,
                 stats_scorer_batch_elapsed_us: 113,
                 stats_candidate_record_elapsed_us: 127,
@@ -1354,6 +1374,7 @@ mod tests {
             stats_approximate_scan_elapsed_us: 113,
             stats_probe_plan_elapsed_us: 401,
             stats_posting_visit_elapsed_us: 403,
+            stats_posting_page_decode_elapsed_us: 431,
             stats_scratch_flush_elapsed_us: 407,
             stats_scorer_batch_elapsed_us: 409,
             stats_candidate_record_elapsed_us: 419,
@@ -1486,6 +1507,10 @@ mod tests {
                 ExplainProperty {
                     property_name: "Posting Visit Elapsed Us",
                     value: ExplainPropertyValue::Integer(403),
+                },
+                ExplainProperty {
+                    property_name: "Posting Page Decode Elapsed Us",
+                    value: ExplainPropertyValue::Integer(431),
                 },
                 ExplainProperty {
                     property_name: "Scratch Flush Elapsed Us",

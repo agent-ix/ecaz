@@ -6,6 +6,9 @@
 //! scoring counters). Stage semantics match the per-scan fields documented on
 //! `IvfExplainCounters`; derived shares:
 //! posting page I/O + decode = posting_visit − scratch_flush;
+//! page/buffer access (Task 135) = posting_visit − posting_page_decode −
+//! post-loop drain flushes; entry parse + scratch push =
+//! posting_page_decode − in-callback flushes;
 //! SoA copy/bookkeeping = scratch_flush − scorer_batch − candidate_record;
 //! unattributed = approximate_scan − probe_plan − posting_visit − topk_collect.
 
@@ -16,6 +19,7 @@ pub(crate) enum IvfQueryStage {
     ApproximateScan,
     ProbePlan,
     PostingVisit,
+    PostingPageDecode,
     ScratchFlush,
     ScorerBatch,
     CandidateRecord,
@@ -26,10 +30,11 @@ pub(crate) enum IvfQueryStage {
 }
 
 impl IvfQueryStage {
-    pub(crate) const ALL: [Self; 10] = [
+    pub(crate) const ALL: [Self; 11] = [
         Self::ApproximateScan,
         Self::ProbePlan,
         Self::PostingVisit,
+        Self::PostingPageDecode,
         Self::ScratchFlush,
         Self::ScorerBatch,
         Self::CandidateRecord,
@@ -44,6 +49,7 @@ impl IvfQueryStage {
             Self::ApproximateScan => "approximate_scan",
             Self::ProbePlan => "probe_plan",
             Self::PostingVisit => "posting_visit",
+            Self::PostingPageDecode => "posting_page_decode",
             Self::ScratchFlush => "scratch_flush",
             Self::ScorerBatch => "scorer_batch",
             Self::CandidateRecord => "candidate_record",
@@ -59,13 +65,14 @@ impl IvfQueryStage {
             Self::ApproximateScan => 0,
             Self::ProbePlan => 1,
             Self::PostingVisit => 2,
-            Self::ScratchFlush => 3,
-            Self::ScorerBatch => 4,
-            Self::CandidateRecord => 5,
-            Self::TopkCollect => 6,
-            Self::ExactRerank => 7,
-            Self::RerankPayloadDecode => 8,
-            Self::RerankPayloadScore => 9,
+            Self::PostingPageDecode => 3,
+            Self::ScratchFlush => 4,
+            Self::ScorerBatch => 5,
+            Self::CandidateRecord => 6,
+            Self::TopkCollect => 7,
+            Self::ExactRerank => 8,
+            Self::RerankPayloadDecode => 9,
+            Self::RerankPayloadScore => 10,
         }
     }
 }

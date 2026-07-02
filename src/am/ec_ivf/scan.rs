@@ -844,6 +844,7 @@ fn record_stage_elapsed(
         Stage::ApproximateScan => counters.record_approximate_scan_elapsed_us(elapsed_us),
         Stage::ProbePlan => counters.record_probe_plan_elapsed_us(elapsed_us),
         Stage::PostingVisit => counters.record_posting_visit_elapsed_us(elapsed_us),
+        Stage::PostingPageDecode => counters.record_posting_page_decode_elapsed_us(elapsed_us),
         Stage::ScratchFlush => counters.record_scratch_flush_elapsed_us(elapsed_us),
         Stage::ScorerBatch => counters.record_scorer_batch_elapsed_us(elapsed_us),
         Stage::CandidateRecord => counters.record_candidate_record_elapsed_us(elapsed_us),
@@ -1582,7 +1583,7 @@ unsafe fn materialize_probe_candidates(
         // duration of the call. `dense_scratch` has the same scan-opaque
         // ownership and is only borrowed while dense blocks are coalesced.
         unsafe {
-            super::page::visit_ivf_posting_entries_for_block_sequence(
+            let page_decode_elapsed = super::page::visit_ivf_posting_entries_for_block_sequence(
                 index_relation_handle,
                 &probe_plan.block_sequence,
                 payload_len,
@@ -1701,6 +1702,11 @@ unsafe fn materialize_probe_candidates(
                 best_by_heap_tid,
                 &mut running_top,
             )?;
+            record_stage_elapsed(
+                opaque,
+                super::stage_counters::IvfQueryStage::PostingPageDecode,
+                page_decode_elapsed,
+            );
         }
         record_stage_elapsed(
             opaque,
@@ -1709,7 +1715,7 @@ unsafe fn materialize_probe_candidates(
         );
     } else {
         let posting_visit_started = Instant::now();
-        super::page::visit_ivf_posting_entries_for_block_sequence(
+        let page_decode_elapsed = super::page::visit_ivf_posting_entries_for_block_sequence(
             index_relation_handle,
             &probe_plan.block_sequence,
             payload_len,
@@ -1778,6 +1784,11 @@ unsafe fn materialize_probe_candidates(
                 Ok(())
             },
         )?;
+        record_stage_elapsed(
+            opaque,
+            super::stage_counters::IvfQueryStage::PostingPageDecode,
+            page_decode_elapsed,
+        );
         record_stage_elapsed(
             opaque,
             super::stage_counters::IvfQueryStage::PostingVisit,
