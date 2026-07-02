@@ -26,7 +26,7 @@
 | `reviews/task-131/025-phase3-summaries-enabled-boundability/` | Summaries-enabled boundability and metadata cost | 10k bounds available; threshold rows skipped `5.37%`; remote storage and materialization cost recorded. |
 | `reviews/task-131/026-phase3-initial-threshold-early-stop/` | Phase 3 increment A implementation | Default-off gated initial-threshold endpoint accepted as faithful implementation slice. |
 | `reviews/task-131/027-phase3-increment-a-ab/` | Phase 3 increment A A/B | 10k/50k off/on identity matched; current recall matched; actual scan skips zero; latency flat/regressed; 50k diagnostic ceiling `0.010%` rows. |
-| `plan/tasks/132-spire-distributed-result-deduplication.md` | Separate duplicate-ID follow-up | Filed from packet 027 identity artifacts; not fixed in Task 131. |
+| `plan/tasks/137-spire-distributed-result-deduplication.md` | Separate duplicate-ID follow-up | Filed from packet 027 identity artifacts; not fixed in Task 131. |
 
 ## Review Feedback Addressed
 
@@ -42,12 +42,12 @@
 - Packet 024 feedback condition 5: disk was cleaned after packet 027; final
   check reported `124G` free.
 - Packet 024 feedback condition 6: this packet does not flip task status.
-- Packet 027 duplicate-ID feedback: filed as Task 132 and stated as a recall
+- Packet 027 duplicate-ID feedback: filed as Task 137 and stated as a recall
   caveat in packet 027 and this closeout.
 
 ## Artifact Notes
 
 This packet intentionally adds no new benchmark artifacts. It cites immutable
-packet-local artifacts from prior Task 131 packets and the newly filed Task 132
+packet-local artifacts from prior Task 131 packets and the newly filed Task 137
 definition. The detailed packet 027 A/B artifacts live under
 `reviews/task-131/027-phase3-increment-a-ab/artifacts/`.

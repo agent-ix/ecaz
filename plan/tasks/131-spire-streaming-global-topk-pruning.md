@@ -1,11 +1,11 @@
 # Task 131: SPIRE Streaming Global Top-K Pruning
 
-Status: **in progress — revised closeout requested** (2026-07-02; see
-`reviews/task-131/028-revised-closeout-decision/`): packet 024 was not accepted
-as a final closeout, so packet 028 adds the requested summaries-enabled Phase 3
-A/B evidence, states/scopes the remaining gaps, and files the duplicate-result
-defect as Task 132. Do not flip this task closed until an outside reviewer
-accepts the revised closeout.
+Status: **closed — shelved after accepted revised closeout** (2026-07-02; see
+`reviews/task-131/028-revised-closeout-decision/feedback/2026-07-02-01-reviewer.md`):
+packet 028 was accepted as the final closeout. The task shelves streaming
+global-threshold pruning for the current SPIRE distributed surface, keeps
+candidate-to-heap streaming as infrastructure, and files the duplicate-result
+defect as Task 137.
 Owner: coder (to be assigned). One coder, one branch.
 Priority: P0 research follow-up if SPIRE distributed optimization continues.
 

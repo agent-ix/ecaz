@@ -23,7 +23,7 @@ Results:
 - Caveat: byte-identical means the threshold gate did not change returned IDs.
   It does not mean each returned top-10 is k-distinct. The identity artifacts
   show duplicate corpus IDs in both arms; see
-  `plan/tasks/132-spire-distributed-result-deduplication.md`.
+  `plan/tasks/137-spire-distributed-result-deduplication.md`.
 
 ## Latency and Recall
 

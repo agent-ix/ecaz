@@ -66,4 +66,4 @@ TSV files are intentionally not committed.
 - Production profile totals: 10k off `total_p50=570.000 ms`, `total_p95=655.000 ms`; 10k on `total_p50=576.000 ms`, `total_p95=653.000 ms`; 50k off `total_p50=2605.000 ms`, `total_p95=3090.000 ms`; 50k on `total_p50=2620.000 ms`, `total_p95=3214.000 ms`.
 - Actual scan avoidance: every scan profile row at both scales and both variants reports `leaf_block_skipped_sum=0`.
 - Diagnostic threshold profile: potential skipped rows/blocks are nonzero but identical on/off, so they are not production scan avoidance.
-- Duplicate-ID defect filed as `plan/tasks/132-spire-distributed-result-deduplication.md`: 10k threshold-off has 183/200 duplicate-containing top-10 results; 50k threshold-off has 1000/1000.
+- Duplicate-ID defect filed as `plan/tasks/137-spire-distributed-result-deduplication.md`: 10k threshold-off has 183/200 duplicate-containing top-10 results; 50k threshold-off has 1000/1000.

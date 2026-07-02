@@ -1,7 +1,10 @@
-# Task 132: SPIRE Distributed Result Deduplication
+# Task 137: SPIRE Distributed Result Deduplication
 
 Status: proposed (2026-07-02; filed from Task 131 packet 027 identity
 artifacts and reviewer feedback).
+Numbering note: originally filed as task 132 on 2026-07-02; renumbered to 137
+the same day because the TQ optimization lane had already claimed 132-136
+(`132-tq-scorer-lut-dimension-tiling` and successors, filed 2026-07-01).
 Owner: coder (to be assigned). One coder, one branch.
 Priority: P0 correctness/result-quality follow-up for SPIRE distributed reads.
 

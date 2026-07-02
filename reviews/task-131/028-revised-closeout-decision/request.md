@@ -19,7 +19,7 @@ its own correctness task.
 | Candidate-to-heap streaming | Keep / iterate as infrastructure | Packet 015 removed the candidate-phase barrier in the default path. Packet 021 proved overlap under skew. Packet 027's gate-off arms give normal-fixture scale numbers on the streaming path: 10k `n128/b4` recall `0.9985`, p50/p95/p99 `609.243/686.941/894.404 ms`; 50k `n128/b4` recall `1.0000`, p50/p95/p99 `2645.864/3287.777/3816.541 ms`. |
 | Streaming global threshold feedback | Shelve / do not continue | Packet 025 proved summaries can make sound bounds available at 10k, but packet 027's full-query 10k/50k A/B rejects the initial-threshold early-stop path: returned IDs are byte-identical between arms, actual scan `leaf_block_skipped_sum=0` on every remote node, and latency is flat/regressed. The diagnostic ceiling also collapses at 50k: 18,931 skipped rows out of 189,322,205 available (`0.010%`). |
 | New bound metadata | Do not promote from Task 131 | Leaf-block summaries add measurable remote storage and materialization cost, and the only measured threshold use has no practical scan-time payoff. If summaries are pursued later, they need a separate metadata/version/maintenance task with insert/delete/vacuum/split/stale-summary invariants. |
-| Duplicate distributed result IDs | File separately / do not fix here | Packet 027 identity artifacts show duplicate corpus IDs inside top-10 results in both A/B arms. This does not alter Task 131's inter-arm no-op conclusion, but it qualifies recall language and is filed as `plan/tasks/132-spire-distributed-result-deduplication.md`. |
+| Duplicate distributed result IDs | File separately / do not fix here | Packet 027 identity artifacts show duplicate corpus IDs inside top-10 results in both A/B arms. This does not alter Task 131's inter-arm no-op conclusion, but it qualifies recall language and is filed as `plan/tasks/137-spire-distributed-result-deduplication.md`. |
 
 ## Stop-Condition Readout
 
@@ -141,7 +141,7 @@ Packet 027's identity harness found a separate distributed result-quality defect
 
 The defect is shared by both A/B arms, so it does not change Task 131's
 threshold-gate no-op conclusion. It does mean all recall language in this
-closeout is "current duplicate-tolerant recall metric" until Task 132 fixes the
+closeout is "current duplicate-tolerant recall metric" until Task 137 fixes the
 distributed result dedupe and metric behavior.
 
 ## Review Ask

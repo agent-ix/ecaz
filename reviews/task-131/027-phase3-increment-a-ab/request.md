@@ -27,7 +27,7 @@ and current recall metrics are matched. However, the returned ID artifacts also
 expose a pre-existing distributed result-quality defect: many top-10 results
 contain duplicate corpus IDs. Therefore the recall statement here means
 matched-under-current duplicate-tolerant metrics, not k-distinct result quality.
-That defect is filed separately as `plan/tasks/132-spire-distributed-result-deduplication.md`.
+That defect is filed separately as `plan/tasks/137-spire-distributed-result-deduplication.md`.
 
 The performance/work-avoidance criteria failed:
 
