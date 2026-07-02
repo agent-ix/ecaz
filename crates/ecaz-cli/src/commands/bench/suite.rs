@@ -401,6 +401,8 @@ struct SpireLocalMultinodeStep {
     #[serde(default)]
     tags: Vec<String>,
     #[serde(default)]
+    pgoptions: Option<String>,
+    #[serde(default)]
     artifact_dir: Option<PathBuf>,
     #[serde(default)]
     run_dir: Option<PathBuf>,
@@ -441,6 +443,8 @@ struct SpireLocalMultinodeStep {
     #[serde(default)]
     remote_reloptions: Vec<String>,
     #[serde(default)]
+    load_session_gucs: Vec<String>,
+    #[serde(default)]
     bench_top_k: Option<u16>,
     #[serde(default)]
     bench_queries_limit: Option<usize>,
@@ -448,6 +452,8 @@ struct SpireLocalMultinodeStep {
     bench_sweep: Option<String>,
     #[serde(default)]
     bench_rowcap_sweep: Option<String>,
+    #[serde(default)]
+    skip_bench_rowcap: bool,
     #[serde(default)]
     bench_truth_corpus_file: Option<PathBuf>,
     #[serde(default)]
@@ -540,6 +546,8 @@ struct SpirePipelineStep {
     #[serde(default)]
     production_read_only: Option<bool>,
     #[serde(default)]
+    production_read_timeline_no_payload: Option<bool>,
+    #[serde(default)]
     query_metric_k: Option<usize>,
     #[serde(default)]
     query_metric_projection_columns: Vec<String>,
@@ -553,6 +561,8 @@ struct SpirePipelineStep {
     funnel_output: Option<PathBuf>,
     #[serde(default)]
     stage_containment_output: Option<PathBuf>,
+    #[serde(default)]
+    result_identity_output: Option<PathBuf>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1267,6 +1277,7 @@ fn apply_artifact_dir_templates(config: &mut SuiteConfig) {
                 rewrite_artifact_dir_path(&mut step.log_output, &artifact_dir);
                 rewrite_artifact_dir_path(&mut step.funnel_output, &artifact_dir);
                 rewrite_artifact_dir_path(&mut step.stage_containment_output, &artifact_dir);
+                rewrite_artifact_dir_path(&mut step.result_identity_output, &artifact_dir);
             }
             SuiteStep::Storage(step) => {
                 rewrite_artifact_dir_path(&mut step.log_file, &artifact_dir);
@@ -1821,14 +1832,25 @@ fn known_tag_value(tags: &[String], known: &[&str]) -> Option<String> {
 fn parse_table_rows(raw: &str) -> Vec<BTreeMap<String, String>> {
     let mut header: Option<Vec<String>> = None;
     let mut rows = Vec::new();
-    for cells in table_lines(raw) {
-        if cells.iter().any(|cell| cell.chars().all(|ch| ch == '═')) {
+    for line in raw.lines() {
+        let Some(cells) = table_cells(line) else {
+            if is_table_boundary_line(line) {
+                continue;
+            }
+            header = None;
+            continue;
+        };
+        if cells.is_empty() || cells.iter().any(|cell| cell.chars().all(|ch| ch == '═')) {
             continue;
         }
         if header.as_ref().map(|h| h.len()) != Some(cells.len()) {
             header = Some(cells);
             continue;
         }
+        if header.as_deref() == Some(cells.as_slice()) {
+            continue;
+        }
+
         if let Some(header) = &header {
             rows.push(
                 header
@@ -2055,11 +2077,31 @@ fn duration_seconds(value: &str) -> Option<String> {
     Some(format!("{seconds:.6}"))
 }
 
-fn table_lines(raw: &str) -> Vec<Vec<String>> {
-    raw.lines()
-        .filter_map(table_cells)
-        .filter(|cells| !cells.is_empty())
-        .collect()
+fn is_table_boundary_line(line: &str) -> bool {
+    let trimmed = line.trim();
+    !trimmed.is_empty()
+        && trimmed.chars().all(|ch| {
+            matches!(
+                ch,
+                '┌' | '┬'
+                    | '┐'
+                    | '╞'
+                    | '╪'
+                    | '╡'
+                    | '├'
+                    | '┼'
+                    | '┤'
+                    | '└'
+                    | '┴'
+                    | '┘'
+                    | '─'
+                    | '═'
+                    | '╌'
+                    | '+'
+                    | '-'
+                    | ' '
+            )
+        })
 }
 
 fn table_cells(line: &str) -> Option<Vec<String>> {
@@ -2418,6 +2460,7 @@ impl SuiteStep {
         match self {
             SuiteStep::Load(step) => step.pgoptions.as_deref(),
             SuiteStep::Latency(step) => step.pgoptions.as_deref(),
+            SuiteStep::SpireLocalMultinode(step) => step.pgoptions.as_deref(),
             SuiteStep::SpirePipeline(step) => step.pgoptions.as_deref(),
             _ => None,
         }
@@ -2565,6 +2608,10 @@ impl SuiteStep {
                 validate_reloption_list(
                     "spire-local-multinode remote_reloptions",
                     &step.remote_reloptions,
+                )?;
+                validate_session_guc_list(
+                    "spire-local-multinode load_session_gucs",
+                    &step.load_session_gucs,
                 )?;
                 if step.bench_top_k == Some(0) {
                     bail!(
@@ -2757,6 +2804,7 @@ impl SuiteStep {
                 .iter()
                 .chain(step.funnel_output.iter())
                 .chain(step.stage_containment_output.iter())
+                .chain(step.result_identity_output.iter())
                 .chain(step.leaf_block_rank_output.iter())
                 .chain(step.target_block_rank_output.iter())
                 .chain(step.target_candidate_rank_output.iter())
@@ -2883,6 +2931,21 @@ fn validate_reloption_list(label: &str, reloptions: &[String]) -> Result<()> {
         }
         if reloption.contains(';') {
             bail!("{label} item {:?} must not contain ';'", reloption);
+        }
+    }
+    Ok(())
+}
+
+fn validate_session_guc_list(label: &str, gucs: &[String]) -> Result<()> {
+    for guc in gucs {
+        if guc.trim().is_empty() {
+            bail!("{label} must not include empty GUCs");
+        }
+        if guc.contains(';') {
+            bail!("{label} item {:?} must not contain ';'", guc);
+        }
+        if !guc.contains('=') {
+            bail!("{label} item {:?} must use name=value syntax", guc);
         }
     }
     Ok(())
@@ -3240,6 +3303,9 @@ fn expand_spire_local_multinode(
     for reloption in &step.remote_reloptions {
         push_arg(&mut args, "--remote-reloption", reloption);
     }
+    for guc in &step.load_session_gucs {
+        push_arg(&mut args, "--load-session-guc", guc);
+    }
     push_opt_u16(&mut args, "--bench-top-k", step.bench_top_k);
     push_opt_usize(&mut args, "--bench-queries-limit", step.bench_queries_limit);
     push_opt_arg(&mut args, "--bench-sweep", step.bench_sweep.as_deref());
@@ -3248,6 +3314,9 @@ fn expand_spire_local_multinode(
         "--bench-rowcap-sweep",
         step.bench_rowcap_sweep.as_deref(),
     );
+    if step.skip_bench_rowcap {
+        args.push("--skip-bench-rowcap".into());
+    }
     push_opt_path(
         &mut args,
         "--bench-truth-corpus-file",
@@ -3429,6 +3498,9 @@ fn expand_spire_pipeline(step: &SpirePipelineStep, defaults: &SuiteDefaults) -> 
     if step.production_read_only.unwrap_or(false) {
         args.push("--production-read-only".into());
     }
+    if step.production_read_timeline_no_payload.unwrap_or(false) {
+        args.push("--production-read-timeline-no-payload".into());
+    }
     if let Some(k) = step.query_metric_k {
         push_arg(&mut args, "--query-metric-k", &k.to_string());
     }
@@ -3451,6 +3523,11 @@ fn expand_spire_pipeline(step: &SpirePipelineStep, defaults: &SuiteDefaults) -> 
         &mut args,
         "--stage-containment-output",
         step.stage_containment_output.as_deref(),
+    );
+    push_opt_path(
+        &mut args,
+        "--result-identity-output",
+        step.result_identity_output.as_deref(),
     );
     args
 }
@@ -4177,6 +4254,7 @@ mod tests {
             "kind": "spire-local-multinode",
             "name": "local-gate",
             "tags": ["task121", "local-multinode"],
+            "pgoptions": "-c ec_spire.leaf_block_rows=64",
             "run_id": "task121",
             "coord_port": 39800,
             "remote1_port": 39801,
@@ -4189,6 +4267,7 @@ mod tests {
             "reloptions": ["nlists=128", "top_graph_enabled=1"],
             "coord_reloptions": ["training_sample_rows=10000"],
             "remote_reloptions": ["boundary_replica_count=1"],
+            "load_session_gucs": ["ec_spire.leaf_block_rows=64"],
             "bench_top_k": 6,
             "bench_queries_limit": 1,
             "bench_sweep": "3",
@@ -4199,7 +4278,8 @@ mod tests {
             ],
             "bench_production_read_variants": [
               "name=source-prune-on;projection=id,source;guc=ec_spire.pre_materialization_prune=on",
-              "name=id-prune-off;projection=id;guc=ec_spire.pre_materialization_prune=off"
+              "name=id-prune-off;projection=id;guc=ec_spire.pre_materialization_prune=off",
+              "name=global-preheap-on;timeline_payload=none;guc=ec_spire.remote_search_global_pre_heap_merge=on"
             ],
             "skip_bench_suite": true,
             "skip_fault_drills": true,
@@ -4227,6 +4307,10 @@ mod tests {
         let step = &manifest.steps[0];
 
         assert_eq!(step.kind, "spire-local-multinode");
+        assert_eq!(
+            step.pgoptions.as_deref(),
+            Some("-c ec_spire.leaf_block_rows=64")
+        );
         assert!(step
             .command
             .windows(3)
@@ -4274,6 +4358,10 @@ mod tests {
         assert!(step
             .command
             .windows(2)
+            .any(|w| w == ["--load-session-guc", "ec_spire.leaf_block_rows=64"]));
+        assert!(step
+            .command
+            .windows(2)
             .any(|w| w == ["--bench-query-metric-projection-columns", "id,source"]));
         assert!(step.command.windows(2).any(|w| w
             == [
@@ -4293,6 +4381,11 @@ mod tests {
             == [
                 "--bench-production-read-variant",
                 "name=id-prune-off;projection=id;guc=ec_spire.pre_materialization_prune=off"
+            ]));
+        assert!(step.command.windows(2).any(|w| w
+            == [
+                "--bench-production-read-variant",
+                "name=global-preheap-on;timeline_payload=none;guc=ec_spire.remote_search_global_pre_heap_merge=on"
             ]));
         assert!(step.command.contains(&"--skip-bench-suite".into()));
         assert!(step.command.contains(&"--skip-fault-drills".into()));
@@ -4328,6 +4421,7 @@ mod tests {
             "remote2_port": 39802,
             "remote3_port": 39803,
             "tier": "correctness",
+            "skip_bench_rowcap": true,
             "skip_fault_drills": true,
             "skip_install": true
           }]
@@ -4352,6 +4446,7 @@ mod tests {
         let manifest = build_manifest(&conn(), &args, raw, &config).expect("manifest builds");
         let step = &manifest.steps[0];
 
+        assert!(step.command.contains(&"--skip-bench-rowcap".into()));
         assert!(step
             .expected_artifacts
             .iter()
@@ -4442,6 +4537,7 @@ mod tests {
                 leaf_block_rank_local_sequence_offset: None,
                 include_production_read_profile: None,
                 production_read_only: None,
+                production_read_timeline_no_payload: None,
                 query_metric_k: None,
                 query_metric_projection_columns: Vec::new(),
                 session_gucs: Vec::new(),
@@ -4449,6 +4545,7 @@ mod tests {
                 log_output: Some("${artifact_dir}/profile.log".into()),
                 funnel_output: Some("${artifact_dir}/profile-funnel.jsonl".into()),
                 stage_containment_output: Some("${artifact_dir}/profile-stage.jsonl".into()),
+                result_identity_output: Some("${artifact_dir}/profile-identity.jsonl".into()),
             })],
         };
 
@@ -4471,6 +4568,7 @@ mod tests {
                 PathBuf::from("artifacts/current/profile.log"),
                 PathBuf::from("artifacts/current/profile-funnel.jsonl"),
                 PathBuf::from("artifacts/current/profile-stage.jsonl"),
+                PathBuf::from("artifacts/current/profile-identity.jsonl"),
                 PathBuf::from("artifacts/current/profile-leaf-block-rank.jsonl"),
                 PathBuf::from("artifacts/current/profile-target-block-rank.jsonl"),
                 PathBuf::from("artifacts/current/profile-target-candidate-rank.jsonl"),
@@ -4496,6 +4594,11 @@ mod tests {
             == [
                 "--stage-containment-output",
                 "artifacts/current/profile-stage.jsonl"
+            ]));
+        assert!(args.windows(2).any(|w| w
+            == [
+                "--result-identity-output",
+                "artifacts/current/profile-identity.jsonl"
             ]));
     }
 
@@ -5376,6 +5479,7 @@ mod tests {
             leaf_block_rank_local_sequence_offset: None,
             include_production_read_profile: Some(true),
             production_read_only: Some(true),
+            production_read_timeline_no_payload: Some(true),
             query_metric_k: Some(10),
             query_metric_projection_columns: vec!["title".into()],
             session_gucs: vec!["ec_spire.candidate_batch_scoring=off".into()],
@@ -5383,6 +5487,7 @@ mod tests {
             log_output: Some("spire-profile.log".into()),
             funnel_output: None,
             stage_containment_output: Some("stage-containment.jsonl".into()),
+            result_identity_output: Some("identity.jsonl".into()),
         };
 
         let args = expand_spire_pipeline(&step, &defaults);
@@ -5398,6 +5503,7 @@ mod tests {
         assert!(args.contains(&"--require-remote-placements".into()));
         assert!(args.contains(&"--include-production-read-profile".into()));
         assert!(args.contains(&"--production-read-only".into()));
+        assert!(args.contains(&"--production-read-timeline-no-payload".into()));
         assert!(args
             .windows(2)
             .any(|w| w == ["--remote-selected-pids", "10,11"]));
@@ -5431,6 +5537,9 @@ mod tests {
         assert!(args
             .windows(2)
             .any(|w| w == ["--stage-containment-output", "stage-containment.jsonl"]));
+        assert!(args
+            .windows(2)
+            .any(|w| w == ["--result-identity-output", "identity.jsonl"]));
         assert!(args
             .windows(2)
             .any(|w| w == ["--log-output", "spire-profile.log"]));
@@ -5483,6 +5592,7 @@ mod tests {
                 leaf_block_rank_local_sequence_offset: None,
                 include_production_read_profile: Some(true),
                 production_read_only: Some(true),
+                production_read_timeline_no_payload: None,
                 query_metric_k: Some(10),
                 query_metric_projection_columns: Vec::new(),
                 session_gucs: Vec::new(),
@@ -5490,6 +5600,7 @@ mod tests {
                 log_output: None,
                 funnel_output: None,
                 stage_containment_output: None,
+                result_identity_output: None,
             })],
         };
 
@@ -5686,6 +5797,31 @@ mod tests {
             rows[0].get("recall_p50").map(String::as_str),
             Some("1.0000")
         );
+    }
+
+    #[test]
+    fn parse_table_rows_resets_headers_between_same_width_tables() {
+        let rows = parse_table_rows(
+            "First table\n\
+             ┌───┬───┐\n\
+             │ a ┆ b │\n\
+             ╞═══╪═══╡\n\
+             │ 1 ┆ 2 │\n\
+             └───┴───┘\n\
+             \n\
+             Second table\n\
+             ┌───┬───┐\n\
+             │ c ┆ d │\n\
+             ╞═══╪═══╡\n\
+             │ 3 ┆ 4 │\n\
+             └───┴───┘\n",
+        );
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].get("a").map(String::as_str), Some("1"));
+        assert_eq!(rows[0].get("b").map(String::as_str), Some("2"));
+        assert_eq!(rows[1].get("c").map(String::as_str), Some("3"));
+        assert_eq!(rows[1].get("d").map(String::as_str), Some("4"));
+        assert!(!rows[1].contains_key("a"));
     }
 
     #[test]

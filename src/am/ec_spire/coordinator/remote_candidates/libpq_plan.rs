@@ -1,7 +1,15 @@
 const SPIRE_REMOTE_SEARCH_LIBPQ_SQL_TEMPLATE: &str =
     "SELECT * FROM ec_spire_remote_search($1::oid, $2::bigint, $3::real[], $4::bigint[], $5::integer, $6::text)";
+const SPIRE_REMOTE_SEARCH_LIBPQ_INITIAL_THRESHOLD_SQL_TEMPLATE: &str =
+    "SELECT * FROM ec_spire_remote_search_with_initial_threshold($1::oid, $2::bigint, $3::real[], $4::bigint[], $5::integer, $6::text, $7::real)";
+const SPIRE_REMOTE_SEARCH_LIBPQ_SCAN_PROFILE_SQL_TEMPLATE: &str =
+    "SELECT * FROM ec_spire_remote_search_coordinator_local_scan_profile($1::oid, $2::bigint, $3::real[], $4::bigint[], $5::integer, $6::text)";
+const SPIRE_REMOTE_SEARCH_LIBPQ_THRESHOLD_PROFILE_SQL_TEMPLATE: &str =
+    "SELECT * FROM ec_spire_remote_search_coordinator_local_threshold_profile($1::oid, $2::bigint, $3::real[], $4::bigint[], $5::real, $6::text)";
 const SPIRE_REMOTE_SEARCH_LIBPQ_HEAP_SQL_TEMPLATE: &str =
     "SELECT * FROM ec_spire_remote_search_local_heap_candidates($1::oid, $2::bigint, $3::real[], $4::bigint[], $5::integer, $6::text)";
+const SPIRE_REMOTE_SEARCH_LIBPQ_EXPLICIT_HEAP_SQL_TEMPLATE: &str =
+    "SELECT * FROM ec_spire_remote_search_explicit_local_heap_candidates($1::oid, $2::bigint, $3::real[], $4::bigint[], $5::bigint[], $6::bigint[], $7::bigint[], $8::smallint[], $9::text[], $10::text[], $11::real[])";
 const SPIRE_REMOTE_SEARCH_LIBPQ_TYPED_TUPLE_PAYLOAD_SQL_TEMPLATE: &str =
     "SELECT requested_epoch, served_epoch, node_id, pid, object_version, row_index, \
             assignment_flags, vec_id, row_locator, heap_block, heap_offset, score, \

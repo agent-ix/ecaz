@@ -160,6 +160,12 @@ pub struct SpirePipelineArgs {
     /// local heap diagnostics intentionally fail closed.
     #[arg(long)]
     pub production_read_only: bool,
+    /// Call the production-read timeline function with no tuple payload columns.
+    ///
+    /// This preserves coordinator query metrics while measuring the compact
+    /// remote-heap path used by Task 131 global pre-heap pruning.
+    #[arg(long)]
+    pub production_read_timeline_no_payload: bool,
     /// k for optional query latency and recall metrics.
     #[arg(long, default_value_t = 10)]
     pub query_metric_k: usize,
@@ -185,6 +191,9 @@ pub struct SpirePipelineArgs {
     /// containment uses the target candidate-rank SQL snapshot.
     #[arg(long)]
     pub stage_containment_output: Option<PathBuf>,
+    /// Write per-query returned id lists as JSONL for A/B result identity checks.
+    #[arg(long)]
+    pub result_identity_output: Option<PathBuf>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
@@ -242,7 +251,8 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
     };
     super::validate_adaptive_nprobe_options(&EC_SPIRE, adaptive_nprobe_options)?;
     let session_gucs = super::parse_session_gucs(&args.session_gucs)?;
-    let query_metrics_enabled = args.include_query_metrics || args.include_recall;
+    let query_metrics_enabled =
+        args.include_query_metrics || args.include_recall || args.result_identity_output.is_some();
 
     let client = psql::connect(conn).await?;
     if !psql::relation_exists(&client, &corpus_table, 'r').await? {
@@ -337,8 +347,13 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
     let mut degraded_skip = BTreeMap::<DegradedSkipKey, DegradedSkipAggregate>::new();
     let mut query_metrics = BTreeMap::<i32, QueryMetricAggregate>::new();
     let mut production_read_profile = BTreeMap::<i32, ProductionReadProfileAggregate>::new();
+    let mut production_scan_profile =
+        BTreeMap::<ProductionScanProfileKey, ProductionScanProfileAggregate>::new();
+    let mut production_threshold_profile =
+        BTreeMap::<ProductionThresholdProfileKey, ProductionThresholdProfileAggregate>::new();
     let mut production_read_timeline =
         BTreeMap::<ProductionReadTimelineKey, ProductionReadTimelineAggregate>::new();
+    let mut production_read_overlap = BTreeMap::<i32, ProductionReadOverlapAggregate>::new();
     let mut cost_tuning = BTreeMap::<i32, CostTuningRow>::new();
     let mut funnel_rows = Vec::<FunnelRecord>::new();
     let mut stage_containment_rows = Vec::<StageContainmentRecord>::new();
@@ -346,6 +361,7 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
     let mut target_block_rank_rows = Vec::<LeafBlockRankRecord>::new();
     let mut target_candidate_rank_rows = Vec::<TargetCandidateRankRecord>::new();
     let mut miss_attribution_rows = Vec::<MissAttributionRecord>::new();
+    let mut result_identity_rows = Vec::<ResultIdentityRecord>::new();
     let mut remote_epoch = args.remote_requested_epoch;
     let mut task87_counter_lines = Vec::new();
 
@@ -528,6 +544,15 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
                     execute_query_metric(&client, stmt, &query.source, args.query_metric_k).await?;
                 returned_to_k_count = Some(measured.predicted_ids.len());
                 predicted_ids_for_query = Some(measured.predicted_ids.clone());
+                if args.result_identity_output.is_some() {
+                    result_identity_rows.push(ResultIdentityRecord::from_query(
+                        *nprobe,
+                        query_index + 1,
+                        query.id,
+                        args.query_metric_k,
+                        &measured.predicted_ids,
+                    )?);
+                }
                 query_metrics
                     .entry(*nprobe)
                     .or_default()
@@ -823,8 +848,37 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
                     .entry(*nprobe)
                     .or_default()
                     .record(row);
-                let payload_columns =
-                    production_read_payload_columns(&args.query_metric_projection_columns);
+                let rows = query_production_scan_profile_rows(
+                    &client,
+                    &index,
+                    &query.source,
+                    args.query_metric_k,
+                )
+                .await?;
+                for row in rows {
+                    production_scan_profile
+                        .entry(ProductionScanProfileKey::from_row(*nprobe, &row))
+                        .or_default()
+                        .record(row);
+                }
+                let rows = query_production_threshold_profile_rows(
+                    &client,
+                    &index,
+                    &query.source,
+                    args.query_metric_k,
+                )
+                .await?;
+                for row in rows {
+                    production_threshold_profile
+                        .entry(ProductionThresholdProfileKey::from_row(*nprobe, &row))
+                        .or_default()
+                        .record(row);
+                }
+                let payload_columns = if args.production_read_timeline_no_payload {
+                    Vec::new()
+                } else {
+                    production_read_payload_columns(&args.query_metric_projection_columns)
+                };
                 let rows = query_production_read_timeline_rows(
                     &client,
                     &index,
@@ -833,6 +887,10 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
                     &payload_columns,
                 )
                 .await?;
+                production_read_overlap
+                    .entry(*nprobe)
+                    .or_default()
+                    .record(&rows);
                 for row in rows {
                     production_read_timeline
                         .entry(ProductionReadTimelineKey::from_row(*nprobe, &row))
@@ -859,6 +917,7 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
                 &target_block_rank_rows,
                 &target_candidate_rank_rows,
                 &miss_attribution_rows,
+                &result_identity_rows,
             )
             .await?;
             bar.inc(1);
@@ -901,6 +960,8 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
         query_metric_projection_columns: &args.query_metric_projection_columns,
         production_read_profile_enabled: args.include_production_read_profile,
         production_read_only: args.production_read_only,
+        production_read_timeline_no_payload: args.production_read_timeline_no_payload,
+        result_identity_output_enabled: args.result_identity_output.is_some(),
         local_store_overlap_enabled: args.include_local_store_overlap,
         routing: &routing,
         local: &local,
@@ -909,6 +970,9 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
         degraded_skip: &degraded_skip,
         query_metrics: &query_metrics,
         production_read_profile: &production_read_profile,
+        production_scan_profile: &production_scan_profile,
+        production_threshold_profile: &production_threshold_profile,
+        production_read_overlap: &production_read_overlap,
         production_read_timeline: &production_read_timeline,
     });
     if !task87_counter_lines.is_empty() {
@@ -934,6 +998,7 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
         &target_block_rank_rows,
         &target_candidate_rank_rows,
         &miss_attribution_rows,
+        &result_identity_rows,
     )
     .await?;
     Ok(())
@@ -970,9 +1035,10 @@ fn validate_args(args: &SpirePipelineArgs) -> Result<()> {
         && !args.include_query_metrics
         && !args.include_recall
         && !args.include_production_read_profile
+        && args.result_identity_output.is_none()
     {
         return Err(eyre!(
-            "--production-read-only requires --include-query-metrics, --include-recall, or --include-production-read-profile"
+            "--production-read-only requires --include-query-metrics, --include-recall, --include-production-read-profile, or --result-identity-output"
         ));
     }
     if args.production_read_only && args.funnel_output.is_some() {
@@ -1663,6 +1729,43 @@ async fn query_production_read_timeline_rows(
         .collect())
 }
 
+async fn query_production_scan_profile_rows(
+    client: &Client,
+    index: &str,
+    query: &[f32],
+    top_k: usize,
+) -> Result<Vec<ProductionScanProfileRow>> {
+    let top_k = i32::try_from(top_k).map_err(|_| eyre!("query metric k exceeds i32"))?;
+    let rows = client
+        .query(production_scan_profile_sql(), &[&index, &query, &top_k])
+        .await
+        .wrap_err("querying ec_spire_remote_search_production_scan_profile")?;
+    Ok(rows
+        .into_iter()
+        .map(ProductionScanProfileRow::from)
+        .collect())
+}
+
+async fn query_production_threshold_profile_rows(
+    client: &Client,
+    index: &str,
+    query: &[f32],
+    top_k: usize,
+) -> Result<Vec<ProductionThresholdProfileRow>> {
+    let top_k = i32::try_from(top_k).map_err(|_| eyre!("query metric k exceeds i32"))?;
+    let rows = client
+        .query(
+            production_threshold_profile_sql(),
+            &[&index, &query, &top_k],
+        )
+        .await
+        .wrap_err("querying ec_spire_remote_search_production_candidate_threshold_profile")?;
+    Ok(rows
+        .into_iter()
+        .map(ProductionThresholdProfileRow::from)
+        .collect())
+}
+
 async fn query_remote_placement_gate(client: &Client, index: &str) -> Result<RemotePlacementGate> {
     let row = client
         .query_one(remote_placement_gate_sql(), &[&index])
@@ -1822,6 +1925,31 @@ fn production_read_timeline_sql() -> &'static str {
             payload_decode_row_count, payload_decode_bytes, status, failure_category
        FROM ec_spire_remote_search_production_read_timeline(
             $1::text::regclass::oid, $2::real[], $3::integer, $4::text[])"
+}
+
+fn production_scan_profile_sql() -> &'static str {
+    "SELECT served_epoch, node_id, selected_pid_count, scanned_pid_count,
+            leaf_candidate_row_count, deduped_candidate_row_count,
+            truncated_candidate_row_count, candidate_winner_count,
+            leaf_block_available_count, leaf_block_selected_count,
+            leaf_block_skipped_count, sound_upper_bound_available_count,
+            sound_upper_bound_missing_count, leaf_summary_score_nanos,
+            leaf_row_score_nanos, candidate_score_nanos, local_kth_score
+       FROM ec_spire_remote_search_production_scan_profile(
+            $1::text::regclass::oid, $2::real[], $3::integer)
+       ORDER BY node_id"
+}
+
+fn production_threshold_profile_sql() -> &'static str {
+    "SELECT served_epoch, node_id, selected_pid_count, evaluated_pid_count,
+            threshold_score, threshold_ip, sound_upper_bound_available_count,
+            sound_upper_bound_missing_count, threshold_block_available_count,
+            threshold_block_selected_count, threshold_block_skipped_count,
+            threshold_row_available_count, threshold_row_selected_count,
+            threshold_row_skipped_count, leaf_summary_score_nanos
+       FROM ec_spire_remote_search_production_candidate_threshold_profile(
+            $1::text::regclass::oid, $2::real[], $3::integer)
+       ORDER BY node_id"
 }
 
 fn endpoint_identity_sql() -> &'static str {
@@ -3235,6 +3363,44 @@ impl StageContainmentRecord {
     }
 }
 
+#[derive(Debug, Serialize)]
+struct ResultIdentityRecord {
+    kind: &'static str,
+    nprobe: i32,
+    query_ordinal: usize,
+    query_id: i64,
+    k: usize,
+    returned_count: usize,
+    returned_ids: Vec<i64>,
+}
+
+impl ResultIdentityRecord {
+    fn from_query(
+        nprobe: i32,
+        query_ordinal: usize,
+        query_id: i64,
+        k: usize,
+        returned_ids: &[i64],
+    ) -> Result<Self> {
+        if returned_ids.len() > k {
+            return Err(eyre!(
+                "result identity returned id count {} exceeds k {}",
+                returned_ids.len(),
+                k
+            ));
+        }
+        Ok(Self {
+            kind: "spire_result_identity",
+            nprobe,
+            query_ordinal,
+            query_id,
+            k,
+            returned_count: returned_ids.len(),
+            returned_ids: returned_ids.to_vec(),
+        })
+    }
+}
+
 fn local_step<'a>(rows: &'a [LocalPipelineRow], step_name: &str) -> Option<&'a LocalPipelineRow> {
     rows.iter().find(|row| row.step_name == step_name)
 }
@@ -3361,6 +3527,7 @@ async fn flush_pipeline_jsonl_outputs(
     target_block_rank_rows: &[LeafBlockRankRecord],
     target_candidate_rank_rows: &[TargetCandidateRankRecord],
     miss_attribution_rows: &[MissAttributionRecord],
+    result_identity_rows: &[ResultIdentityRecord],
 ) -> Result<()> {
     if let Some(path) = args.funnel_output.as_ref() {
         write_funnel_jsonl(path, funnel_rows).await?;
@@ -3379,6 +3546,9 @@ async fn flush_pipeline_jsonl_outputs(
     }
     if let Some(path) = args.miss_attribution_output.as_ref() {
         write_miss_attribution_jsonl(path, miss_attribution_rows).await?;
+    }
+    if let Some(path) = args.result_identity_output.as_ref() {
+        write_result_identity_jsonl(path, result_identity_rows).await?;
     }
     Ok(())
 }
@@ -3484,6 +3654,22 @@ async fn write_miss_attribution_jsonl(
         .wrap_err_with(|| format!("writing {}", path.display()))
 }
 
+async fn write_result_identity_jsonl(path: &PathBuf, rows: &[ResultIdentityRecord]) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .wrap_err_with(|| format!("creating {}", parent.display()))?;
+    }
+    let mut output = String::new();
+    for row in rows {
+        output.push_str(&serde_json::to_string(row).wrap_err("serializing result identity row")?);
+        output.push('\n');
+    }
+    tokio::fs::write(path, output)
+        .await
+        .wrap_err_with(|| format!("writing {}", path.display()))
+}
+
 #[derive(Debug)]
 struct RemotePipelineRow {
     step_ordinal: i64,
@@ -3570,6 +3756,8 @@ impl ProductionReadProfileRow {
 struct ProductionReadTimelineRow {
     node_id: i32,
     phase: String,
+    started_after_ms: i64,
+    completed_after_ms: i64,
     elapsed: Duration,
     candidate_count: i64,
     payload_decode_elapsed: Duration,
@@ -3584,6 +3772,8 @@ impl From<Row> for ProductionReadTimelineRow {
         Self {
             node_id: row.get(1),
             phase: row.get(2),
+            started_after_ms: row.get(3),
+            completed_after_ms: row.get(4),
             elapsed: Duration::from_millis(row.get::<_, i64>(5).max(0) as u64),
             candidate_count: row.get(6),
             payload_decode_elapsed: Duration::from_millis(row.get::<_, i64>(7).max(0) as u64),
@@ -3591,6 +3781,92 @@ impl From<Row> for ProductionReadTimelineRow {
             payload_decode_bytes: row.get(9),
             status: row.get(10),
             failure_category: row.get(11),
+        }
+    }
+}
+
+#[derive(Debug)]
+struct ProductionScanProfileRow {
+    served_epoch: i64,
+    node_id: i64,
+    selected_pid_count: i64,
+    scanned_pid_count: i64,
+    leaf_candidate_row_count: i64,
+    deduped_candidate_row_count: i64,
+    truncated_candidate_row_count: i64,
+    candidate_winner_count: i64,
+    leaf_block_available_count: i64,
+    leaf_block_selected_count: i64,
+    leaf_block_skipped_count: i64,
+    sound_upper_bound_available_count: i64,
+    sound_upper_bound_missing_count: i64,
+    leaf_summary_score_nanos: i64,
+    leaf_row_score_nanos: i64,
+    candidate_score_nanos: i64,
+    local_kth_score: Option<f32>,
+}
+
+impl From<Row> for ProductionScanProfileRow {
+    fn from(row: Row) -> Self {
+        Self {
+            served_epoch: row.get(0),
+            node_id: row.get(1),
+            selected_pid_count: row.get(2),
+            scanned_pid_count: row.get(3),
+            leaf_candidate_row_count: row.get(4),
+            deduped_candidate_row_count: row.get(5),
+            truncated_candidate_row_count: row.get(6),
+            candidate_winner_count: row.get(7),
+            leaf_block_available_count: row.get(8),
+            leaf_block_selected_count: row.get(9),
+            leaf_block_skipped_count: row.get(10),
+            sound_upper_bound_available_count: row.get(11),
+            sound_upper_bound_missing_count: row.get(12),
+            leaf_summary_score_nanos: row.get(13),
+            leaf_row_score_nanos: row.get(14),
+            candidate_score_nanos: row.get(15),
+            local_kth_score: row.get(16),
+        }
+    }
+}
+
+#[derive(Debug)]
+struct ProductionThresholdProfileRow {
+    served_epoch: i64,
+    node_id: i64,
+    selected_pid_count: i64,
+    evaluated_pid_count: i64,
+    threshold_score: f32,
+    threshold_ip: f32,
+    sound_upper_bound_available_count: i64,
+    sound_upper_bound_missing_count: i64,
+    threshold_block_available_count: i64,
+    threshold_block_selected_count: i64,
+    threshold_block_skipped_count: i64,
+    threshold_row_available_count: i64,
+    threshold_row_selected_count: i64,
+    threshold_row_skipped_count: i64,
+    leaf_summary_score_nanos: i64,
+}
+
+impl From<Row> for ProductionThresholdProfileRow {
+    fn from(row: Row) -> Self {
+        Self {
+            served_epoch: row.get(0),
+            node_id: row.get(1),
+            selected_pid_count: row.get(2),
+            evaluated_pid_count: row.get(3),
+            threshold_score: row.get(4),
+            threshold_ip: row.get(5),
+            sound_upper_bound_available_count: row.get(6),
+            sound_upper_bound_missing_count: row.get(7),
+            threshold_block_available_count: row.get(8),
+            threshold_block_selected_count: row.get(9),
+            threshold_block_skipped_count: row.get(10),
+            threshold_row_available_count: row.get(11),
+            threshold_row_selected_count: row.get(12),
+            threshold_row_skipped_count: row.get(13),
+            leaf_summary_score_nanos: row.get(14),
         }
     }
 }
@@ -3893,6 +4169,10 @@ struct ProductionReadProfileAggregate {
     endpoint_identity_query_count_sum: i64,
     payload_decode_row_count_sum: i64,
     payload_decode_bytes_sum: i64,
+    global_pre_heap_input_count_sum: i64,
+    global_pre_heap_candidate_count_sum: i64,
+    global_pre_heap_duplicate_vec_id_count_sum: i64,
+    global_pre_heap_pruned_candidate_count_sum: i64,
     merge_input_count_sum: i64,
     merge_duplicate_vec_id_count_sum: i64,
     merge_output_count_sum: i64,
@@ -3934,6 +4214,13 @@ impl ProductionReadProfileAggregate {
         self.endpoint_identity_query_count_sum += row.i64_metric("endpoint_identity_query_count");
         self.payload_decode_row_count_sum += row.i64_metric("payload_decode_row_count");
         self.payload_decode_bytes_sum += row.i64_metric("payload_decode_bytes");
+        self.global_pre_heap_input_count_sum += row.i64_metric("global_pre_heap_input_count");
+        self.global_pre_heap_candidate_count_sum +=
+            row.i64_metric("global_pre_heap_candidate_count");
+        self.global_pre_heap_duplicate_vec_id_count_sum +=
+            row.i64_metric("global_pre_heap_duplicate_vec_id_count");
+        self.global_pre_heap_pruned_candidate_count_sum +=
+            row.i64_metric("global_pre_heap_pruned_candidate_count");
         self.merge_input_count_sum += row.i64_metric("merge_input_count");
         self.merge_duplicate_vec_id_count_sum += row.i64_metric("merge_duplicate_vec_id_count");
         self.merge_output_count_sum += row.i64_metric("merge_output_count");
@@ -3958,6 +4245,138 @@ impl ProductionReadProfileAggregate {
         self.total_elapsed
             .push(row.duration_metric("total_elapsed_ms"));
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct ProductionScanProfileKey {
+    nprobe: i32,
+    node_id: i64,
+}
+
+impl ProductionScanProfileKey {
+    fn from_row(nprobe: i32, row: &ProductionScanProfileRow) -> Self {
+        Self {
+            nprobe,
+            node_id: row.node_id,
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+struct ProductionScanProfileAggregate {
+    profiles: usize,
+    served_epoch: MixedValue,
+    selected_pid_count_sum: i64,
+    scanned_pid_count_sum: i64,
+    leaf_candidate_row_count_sum: i64,
+    deduped_candidate_row_count_sum: i64,
+    truncated_candidate_row_count_sum: i64,
+    candidate_winner_count_sum: i64,
+    leaf_block_available_count_sum: i64,
+    leaf_block_selected_count_sum: i64,
+    leaf_block_skipped_count_sum: i64,
+    sound_upper_bound_available_count_sum: i64,
+    sound_upper_bound_missing_count_sum: i64,
+    leaf_summary_score_nanos_sum: i64,
+    leaf_row_score_nanos_sum: i64,
+    candidate_score_nanos_sum: i64,
+    local_kth_scores: Vec<f32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct ProductionThresholdProfileKey {
+    nprobe: i32,
+    node_id: i64,
+}
+
+impl ProductionThresholdProfileKey {
+    fn from_row(nprobe: i32, row: &ProductionThresholdProfileRow) -> Self {
+        Self {
+            nprobe,
+            node_id: row.node_id,
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+struct ProductionThresholdProfileAggregate {
+    profiles: usize,
+    served_epoch: MixedValue,
+    selected_pid_count_sum: i64,
+    evaluated_pid_count_sum: i64,
+    threshold_scores: Vec<f32>,
+    threshold_ips: Vec<f32>,
+    sound_upper_bound_available_count_sum: i64,
+    sound_upper_bound_missing_count_sum: i64,
+    threshold_block_available_count_sum: i64,
+    threshold_block_selected_count_sum: i64,
+    threshold_block_skipped_count_sum: i64,
+    threshold_row_available_count_sum: i64,
+    threshold_row_selected_count_sum: i64,
+    threshold_row_skipped_count_sum: i64,
+    leaf_summary_score_nanos_sum: i64,
+}
+
+impl ProductionThresholdProfileAggregate {
+    fn record(&mut self, row: ProductionThresholdProfileRow) {
+        self.profiles += 1;
+        self.served_epoch.record(row.served_epoch.to_string());
+        self.selected_pid_count_sum += row.selected_pid_count;
+        self.evaluated_pid_count_sum += row.evaluated_pid_count;
+        self.threshold_scores.push(row.threshold_score);
+        self.threshold_ips.push(row.threshold_ip);
+        self.sound_upper_bound_available_count_sum += row.sound_upper_bound_available_count;
+        self.sound_upper_bound_missing_count_sum += row.sound_upper_bound_missing_count;
+        self.threshold_block_available_count_sum += row.threshold_block_available_count;
+        self.threshold_block_selected_count_sum += row.threshold_block_selected_count;
+        self.threshold_block_skipped_count_sum += row.threshold_block_skipped_count;
+        self.threshold_row_available_count_sum += row.threshold_row_available_count;
+        self.threshold_row_selected_count_sum += row.threshold_row_selected_count;
+        self.threshold_row_skipped_count_sum += row.threshold_row_skipped_count;
+        self.leaf_summary_score_nanos_sum += row.leaf_summary_score_nanos;
+    }
+
+    fn threshold_score_min_max(&self) -> (Option<f32>, Option<f32>) {
+        min_max_f32(&self.threshold_scores)
+    }
+
+    fn threshold_ip_min_max(&self) -> (Option<f32>, Option<f32>) {
+        min_max_f32(&self.threshold_ips)
+    }
+}
+
+impl ProductionScanProfileAggregate {
+    fn record(&mut self, row: ProductionScanProfileRow) {
+        self.profiles += 1;
+        self.served_epoch.record(row.served_epoch.to_string());
+        self.selected_pid_count_sum += row.selected_pid_count;
+        self.scanned_pid_count_sum += row.scanned_pid_count;
+        self.leaf_candidate_row_count_sum += row.leaf_candidate_row_count;
+        self.deduped_candidate_row_count_sum += row.deduped_candidate_row_count;
+        self.truncated_candidate_row_count_sum += row.truncated_candidate_row_count;
+        self.candidate_winner_count_sum += row.candidate_winner_count;
+        self.leaf_block_available_count_sum += row.leaf_block_available_count;
+        self.leaf_block_selected_count_sum += row.leaf_block_selected_count;
+        self.leaf_block_skipped_count_sum += row.leaf_block_skipped_count;
+        self.sound_upper_bound_available_count_sum += row.sound_upper_bound_available_count;
+        self.sound_upper_bound_missing_count_sum += row.sound_upper_bound_missing_count;
+        self.leaf_summary_score_nanos_sum += row.leaf_summary_score_nanos;
+        self.leaf_row_score_nanos_sum += row.leaf_row_score_nanos;
+        self.candidate_score_nanos_sum += row.candidate_score_nanos;
+        if let Some(local_kth_score) = row.local_kth_score {
+            self.local_kth_scores.push(local_kth_score);
+        }
+    }
+
+    fn local_kth_min_max(&self) -> (Option<f32>, Option<f32>) {
+        min_max_f32(&self.local_kth_scores)
+    }
+}
+
+fn min_max_f32(values: &[f32]) -> (Option<f32>, Option<f32>) {
+    let min = values.iter().copied().min_by(|lhs, rhs| lhs.total_cmp(rhs));
+    let max = values.iter().copied().max_by(|lhs, rhs| lhs.total_cmp(rhs));
+    (min, max)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -3999,6 +4418,60 @@ impl ProductionReadTimelineAggregate {
         self.payload_decode_elapsed.push(row.payload_decode_elapsed);
         self.payload_decode_row_count_sum += row.payload_decode_row_count;
         self.payload_decode_bytes_sum += row.payload_decode_bytes;
+    }
+}
+
+#[derive(Debug, Default)]
+struct ProductionReadOverlapAggregate {
+    queries: usize,
+    complete_timeline_queries: usize,
+    candidate_phase_rows_sum: i64,
+    heap_phase_rows_sum: i64,
+    heap_started_before_all_candidates_done_count: usize,
+    fast_heap_completed_before_slowest_heap_count: usize,
+    heap_start_minus_candidate_done_ms: Vec<i64>,
+    fast_heap_lead_ms: Vec<i64>,
+}
+
+impl ProductionReadOverlapAggregate {
+    fn record(&mut self, rows: &[ProductionReadTimelineRow]) {
+        self.queries += 1;
+        let candidate_rows = rows
+            .iter()
+            .filter(|row| row.phase == "candidate_receive")
+            .collect::<Vec<_>>();
+        let heap_rows = rows
+            .iter()
+            .filter(|row| row.phase == "heap_receive")
+            .collect::<Vec<_>>();
+        self.candidate_phase_rows_sum += i64::try_from(candidate_rows.len()).unwrap_or(i64::MAX);
+        self.heap_phase_rows_sum += i64::try_from(heap_rows.len()).unwrap_or(i64::MAX);
+
+        let candidate_done_max = candidate_rows
+            .iter()
+            .map(|row| row.completed_after_ms)
+            .max();
+        let heap_start_min = heap_rows.iter().map(|row| row.started_after_ms).min();
+        let heap_done_min = heap_rows.iter().map(|row| row.completed_after_ms).min();
+        let heap_done_max = heap_rows.iter().map(|row| row.completed_after_ms).max();
+
+        if let (Some(candidate_done_max), Some(heap_start_min)) =
+            (candidate_done_max, heap_start_min)
+        {
+            self.complete_timeline_queries += 1;
+            let delta = heap_start_min - candidate_done_max;
+            if delta < 0 {
+                self.heap_started_before_all_candidates_done_count += 1;
+            }
+            self.heap_start_minus_candidate_done_ms.push(delta);
+        }
+        if let (Some(heap_done_min), Some(heap_done_max)) = (heap_done_min, heap_done_max) {
+            let lead = heap_done_max - heap_done_min;
+            if lead > 0 {
+                self.fast_heap_completed_before_slowest_heap_count += 1;
+            }
+            self.fast_heap_lead_ms.push(lead);
+        }
     }
 }
 
@@ -4045,6 +4518,37 @@ fn percentile_duration(sorted: &[Duration], percentile: f64) -> Duration {
 
 fn format_duration_ms(duration: Duration) -> String {
     format!("{:.3} ms", duration.as_secs_f64() * 1000.0)
+}
+
+#[derive(Debug, Clone, Copy)]
+struct SignedMillisStats {
+    count: usize,
+    min: i64,
+    p50: i64,
+    max: i64,
+}
+
+fn summarize_signed_millis(values: &[i64]) -> SignedMillisStats {
+    if values.is_empty() {
+        return SignedMillisStats {
+            count: 0,
+            min: 0,
+            p50: 0,
+            max: 0,
+        };
+    }
+    let mut sorted = values.to_vec();
+    sorted.sort_unstable();
+    SignedMillisStats {
+        count: sorted.len(),
+        min: sorted[0],
+        p50: sorted[((sorted.len() - 1) as f64 * 0.50).round() as usize],
+        max: sorted[sorted.len() - 1],
+    }
+}
+
+fn format_signed_ms(value: i64) -> String {
+    format!("{value} ms")
 }
 
 #[derive(Debug, Default)]
@@ -4095,6 +4599,8 @@ struct ReportInput<'a> {
     query_metric_projection_columns: &'a [String],
     production_read_profile_enabled: bool,
     production_read_only: bool,
+    production_read_timeline_no_payload: bool,
+    result_identity_output_enabled: bool,
     local_store_overlap_enabled: bool,
     routing: &'a BTreeMap<RoutingKey, RoutingAggregate>,
     local: &'a BTreeMap<StepKey, LocalStepAggregate>,
@@ -4103,6 +4609,10 @@ struct ReportInput<'a> {
     degraded_skip: &'a BTreeMap<DegradedSkipKey, DegradedSkipAggregate>,
     query_metrics: &'a BTreeMap<i32, QueryMetricAggregate>,
     production_read_profile: &'a BTreeMap<i32, ProductionReadProfileAggregate>,
+    production_scan_profile: &'a BTreeMap<ProductionScanProfileKey, ProductionScanProfileAggregate>,
+    production_threshold_profile:
+        &'a BTreeMap<ProductionThresholdProfileKey, ProductionThresholdProfileAggregate>,
+    production_read_overlap: &'a BTreeMap<i32, ProductionReadOverlapAggregate>,
     production_read_timeline:
         &'a BTreeMap<ProductionReadTimelineKey, ProductionReadTimelineAggregate>,
 }
@@ -4132,6 +4642,15 @@ fn render_report(input: ReportInput<'_>) -> String {
         sections.push(render_production_read_profile_table(
             input.production_read_profile,
         ));
+        sections.push(render_production_scan_profile_table(
+            input.production_scan_profile,
+        ));
+        sections.push(render_production_threshold_profile_table(
+            input.production_threshold_profile,
+        ));
+        sections.push(render_production_read_overlap_table(
+            input.production_read_overlap,
+        ));
         sections.push(render_production_read_timeline_table(
             input.production_read_timeline,
         ));
@@ -4149,7 +4668,7 @@ fn render_header(input: &ReportInput<'_>) -> String {
         "off".to_owned()
     };
     format!(
-        "SPIRE pipeline benchmark\nprefix: {prefix}\nindex: {index}\nqueries: {queries}\nsweep: {sweep:?}\nrerank_width: {rerank_width}\nmax_candidate_rows: {max_candidate_rows}\nmax_routed_candidate_rows: {max_routed_candidate_rows}\nremote_tuple_transport: {remote_tuple_transport}\nadaptive_nprobe: {adaptive}\ncost_snapshot: {cost_snapshot}\nremote: {remote}\nremote_selected_pids: {remote_selected_pids:?}\nremote_requested_epoch: {remote_epoch}\nlocal_store_overlap: {local_store_overlap}\nquery_metrics: {query_metrics}\nquery_metric_k: {query_metric_k}\nquery_metric_projection_columns: {query_metric_projection_columns}\nquery_recall: {query_recall}\nproduction_read_profile: {production_read_profile}\nproduction_read_only: {production_read_only}",
+        "SPIRE pipeline benchmark\nprefix: {prefix}\nindex: {index}\nqueries: {queries}\nsweep: {sweep:?}\nrerank_width: {rerank_width}\nmax_candidate_rows: {max_candidate_rows}\nmax_routed_candidate_rows: {max_routed_candidate_rows}\nremote_tuple_transport: {remote_tuple_transport}\nadaptive_nprobe: {adaptive}\ncost_snapshot: {cost_snapshot}\nremote: {remote}\nremote_selected_pids: {remote_selected_pids:?}\nremote_requested_epoch: {remote_epoch}\nlocal_store_overlap: {local_store_overlap}\nquery_metrics: {query_metrics}\nquery_metric_k: {query_metric_k}\nquery_metric_projection_columns: {query_metric_projection_columns}\nquery_recall: {query_recall}\nproduction_read_profile: {production_read_profile}\nproduction_read_only: {production_read_only}\nproduction_read_timeline_no_payload: {production_read_timeline_no_payload}\nresult_identity_output: {result_identity_output}",
         prefix = input.prefix,
         index = input.index,
         queries = input.queries,
@@ -4173,6 +4692,8 @@ fn render_header(input: &ReportInput<'_>) -> String {
         query_recall = input.include_recall,
         production_read_profile = input.production_read_profile_enabled,
         production_read_only = input.production_read_only,
+        production_read_timeline_no_payload = input.production_read_timeline_no_payload,
+        result_identity_output = input.result_identity_output_enabled,
     )
 }
 
@@ -4481,23 +5002,34 @@ fn render_production_read_profile_table(
         "socket_open_sum",
         "connect_p50",
         "connect_p95",
+        "connect_p99",
         "endpoint_identity_p50",
         "endpoint_identity_p95",
+        "endpoint_identity_p99",
         "candidate_p50",
         "candidate_p95",
+        "candidate_p99",
         "heap_p50",
         "heap_p95",
+        "heap_p99",
         "payload_decode_p50",
         "payload_decode_p95",
+        "payload_decode_p99",
         "merge_p50",
         "merge_p95",
+        "merge_p99",
         "total_p50",
         "total_p95",
+        "total_p99",
         "candidate_query_sum",
         "heap_query_sum",
         "endpoint_identity_query_sum",
         "payload_rows_sum",
         "payload_bytes_sum",
+        "global_pre_heap_input_sum",
+        "global_pre_heap_candidate_sum",
+        "global_pre_heap_duplicate_vec_id_sum",
+        "global_pre_heap_pruned_sum",
         "merge_input_sum",
         "merge_duplicate_vec_id_sum",
         "merge_output_sum",
@@ -4533,23 +5065,34 @@ fn render_production_read_profile_table(
             Cell::new(aggregate.socket_open_count_sum),
             Cell::new(format_duration_ms(connect.p50)),
             Cell::new(format_duration_ms(connect.p95)),
+            Cell::new(format_duration_ms(connect.p99)),
             Cell::new(format_duration_ms(endpoint_identity.p50)),
             Cell::new(format_duration_ms(endpoint_identity.p95)),
+            Cell::new(format_duration_ms(endpoint_identity.p99)),
             Cell::new(format_duration_ms(candidate.p50)),
             Cell::new(format_duration_ms(candidate.p95)),
+            Cell::new(format_duration_ms(candidate.p99)),
             Cell::new(format_duration_ms(heap.p50)),
             Cell::new(format_duration_ms(heap.p95)),
+            Cell::new(format_duration_ms(heap.p99)),
             Cell::new(format_duration_ms(payload_decode.p50)),
             Cell::new(format_duration_ms(payload_decode.p95)),
+            Cell::new(format_duration_ms(payload_decode.p99)),
             Cell::new(format_duration_ms(merge.p50)),
             Cell::new(format_duration_ms(merge.p95)),
+            Cell::new(format_duration_ms(merge.p99)),
             Cell::new(format_duration_ms(total.p50)),
             Cell::new(format_duration_ms(total.p95)),
+            Cell::new(format_duration_ms(total.p99)),
             Cell::new(aggregate.candidate_receive_query_count_sum),
             Cell::new(aggregate.heap_receive_query_count_sum),
             Cell::new(aggregate.endpoint_identity_query_count_sum),
             Cell::new(aggregate.payload_decode_row_count_sum),
             Cell::new(aggregate.payload_decode_bytes_sum),
+            Cell::new(aggregate.global_pre_heap_input_count_sum),
+            Cell::new(aggregate.global_pre_heap_candidate_count_sum),
+            Cell::new(aggregate.global_pre_heap_duplicate_vec_id_count_sum),
+            Cell::new(aggregate.global_pre_heap_pruned_candidate_count_sum),
             Cell::new(aggregate.merge_input_count_sum),
             Cell::new(aggregate.merge_duplicate_vec_id_count_sum),
             Cell::new(aggregate.merge_output_count_sum),
@@ -4578,8 +5121,10 @@ fn render_production_read_timeline_table(
         "candidate_sum",
         "elapsed_p50",
         "elapsed_p95",
+        "elapsed_p99",
         "payload_decode_p50",
         "payload_decode_p95",
+        "payload_decode_p99",
         "payload_rows_sum",
         "payload_bytes_sum",
     ]);
@@ -4596,13 +5141,180 @@ fn render_production_read_timeline_table(
             Cell::new(aggregate.candidate_count_sum),
             Cell::new(format_duration_ms(elapsed.p50)),
             Cell::new(format_duration_ms(elapsed.p95)),
+            Cell::new(format_duration_ms(elapsed.p99)),
             Cell::new(format_duration_ms(payload_decode.p50)),
             Cell::new(format_duration_ms(payload_decode.p95)),
+            Cell::new(format_duration_ms(payload_decode.p99)),
             Cell::new(aggregate.payload_decode_row_count_sum),
             Cell::new(aggregate.payload_decode_bytes_sum),
         ]);
     }
     format!("Production read per-node timeline\n{table}")
+}
+
+fn render_production_read_overlap_table(
+    rows: &BTreeMap<i32, ProductionReadOverlapAggregate>,
+) -> String {
+    let mut table = Table::new();
+    table.load_preset(UTF8_FULL);
+    table.set_header(vec![
+        "nprobe",
+        "queries",
+        "complete_timeline_queries",
+        "candidate_rows_sum",
+        "heap_rows_sum",
+        "heap_started_before_all_candidates_done",
+        "fast_heap_before_slowest_heap",
+        "heap_start_minus_candidate_done_count",
+        "heap_start_minus_candidate_done_min",
+        "heap_start_minus_candidate_done_p50",
+        "heap_start_minus_candidate_done_max",
+        "fast_heap_lead_count",
+        "fast_heap_lead_min",
+        "fast_heap_lead_p50",
+        "fast_heap_lead_max",
+    ]);
+    for (nprobe, aggregate) in rows {
+        let barrier = summarize_signed_millis(&aggregate.heap_start_minus_candidate_done_ms);
+        let lead = summarize_signed_millis(&aggregate.fast_heap_lead_ms);
+        table.add_row(vec![
+            Cell::new(nprobe),
+            Cell::new(aggregate.queries),
+            Cell::new(aggregate.complete_timeline_queries),
+            Cell::new(aggregate.candidate_phase_rows_sum),
+            Cell::new(aggregate.heap_phase_rows_sum),
+            Cell::new(aggregate.heap_started_before_all_candidates_done_count),
+            Cell::new(aggregate.fast_heap_completed_before_slowest_heap_count),
+            Cell::new(barrier.count),
+            Cell::new(format_signed_ms(barrier.min)),
+            Cell::new(format_signed_ms(barrier.p50)),
+            Cell::new(format_signed_ms(barrier.max)),
+            Cell::new(lead.count),
+            Cell::new(format_signed_ms(lead.min)),
+            Cell::new(format_signed_ms(lead.p50)),
+            Cell::new(format_signed_ms(lead.max)),
+        ]);
+    }
+    format!("Production read phase overlap\n{table}")
+}
+
+fn render_production_scan_profile_table(
+    rows: &BTreeMap<ProductionScanProfileKey, ProductionScanProfileAggregate>,
+) -> String {
+    let mut table = Table::new();
+    table.load_preset(UTF8_FULL);
+    table.set_header(vec![
+        "nprobe",
+        "node_id",
+        "profiles",
+        "served_epoch",
+        "selected_pid_sum",
+        "scanned_pid_sum",
+        "leaf_candidate_sum",
+        "deduped_candidate_sum",
+        "truncated_candidate_sum",
+        "winner_sum",
+        "leaf_block_available_sum",
+        "leaf_block_selected_sum",
+        "leaf_block_skipped_sum",
+        "sound_bound_available_sum",
+        "sound_bound_missing_sum",
+        "leaf_summary_score_nanos_sum",
+        "leaf_row_score_nanos_sum",
+        "candidate_score_nanos_sum",
+        "local_kth_count",
+        "local_kth_min",
+        "local_kth_max",
+    ]);
+    for (key, aggregate) in rows {
+        let (local_kth_min, local_kth_max) = aggregate.local_kth_min_max();
+        table.add_row(vec![
+            Cell::new(key.nprobe),
+            Cell::new(key.node_id),
+            Cell::new(aggregate.profiles),
+            Cell::new(aggregate.served_epoch.label()),
+            Cell::new(aggregate.selected_pid_count_sum),
+            Cell::new(aggregate.scanned_pid_count_sum),
+            Cell::new(aggregate.leaf_candidate_row_count_sum),
+            Cell::new(aggregate.deduped_candidate_row_count_sum),
+            Cell::new(aggregate.truncated_candidate_row_count_sum),
+            Cell::new(aggregate.candidate_winner_count_sum),
+            Cell::new(aggregate.leaf_block_available_count_sum),
+            Cell::new(aggregate.leaf_block_selected_count_sum),
+            Cell::new(aggregate.leaf_block_skipped_count_sum),
+            Cell::new(aggregate.sound_upper_bound_available_count_sum),
+            Cell::new(aggregate.sound_upper_bound_missing_count_sum),
+            Cell::new(aggregate.leaf_summary_score_nanos_sum),
+            Cell::new(aggregate.leaf_row_score_nanos_sum),
+            Cell::new(aggregate.candidate_score_nanos_sum),
+            Cell::new(aggregate.local_kth_scores.len()),
+            Cell::new(format_optional_score(local_kth_min)),
+            Cell::new(format_optional_score(local_kth_max)),
+        ]);
+    }
+    format!("Production selected-leaf scan profile\n{table}")
+}
+
+fn render_production_threshold_profile_table(
+    rows: &BTreeMap<ProductionThresholdProfileKey, ProductionThresholdProfileAggregate>,
+) -> String {
+    let mut table = Table::new();
+    table.load_preset(UTF8_FULL);
+    table.set_header(vec![
+        "nprobe",
+        "node_id",
+        "profiles",
+        "served_epoch",
+        "selected_pid_sum",
+        "evaluated_pid_sum",
+        "threshold_score_count",
+        "threshold_score_min",
+        "threshold_score_max",
+        "threshold_ip_min",
+        "threshold_ip_max",
+        "sound_bound_available_sum",
+        "sound_bound_missing_sum",
+        "threshold_block_available_sum",
+        "threshold_block_selected_sum",
+        "threshold_block_skipped_sum",
+        "threshold_row_available_sum",
+        "threshold_row_selected_sum",
+        "threshold_row_skipped_sum",
+        "leaf_summary_score_nanos_sum",
+    ]);
+    for (key, aggregate) in rows {
+        let (threshold_score_min, threshold_score_max) = aggregate.threshold_score_min_max();
+        let (threshold_ip_min, threshold_ip_max) = aggregate.threshold_ip_min_max();
+        table.add_row(vec![
+            Cell::new(key.nprobe),
+            Cell::new(key.node_id),
+            Cell::new(aggregate.profiles),
+            Cell::new(aggregate.served_epoch.label()),
+            Cell::new(aggregate.selected_pid_count_sum),
+            Cell::new(aggregate.evaluated_pid_count_sum),
+            Cell::new(aggregate.threshold_scores.len()),
+            Cell::new(format_optional_score(threshold_score_min)),
+            Cell::new(format_optional_score(threshold_score_max)),
+            Cell::new(format_optional_score(threshold_ip_min)),
+            Cell::new(format_optional_score(threshold_ip_max)),
+            Cell::new(aggregate.sound_upper_bound_available_count_sum),
+            Cell::new(aggregate.sound_upper_bound_missing_count_sum),
+            Cell::new(aggregate.threshold_block_available_count_sum),
+            Cell::new(aggregate.threshold_block_selected_count_sum),
+            Cell::new(aggregate.threshold_block_skipped_count_sum),
+            Cell::new(aggregate.threshold_row_available_count_sum),
+            Cell::new(aggregate.threshold_row_selected_count_sum),
+            Cell::new(aggregate.threshold_row_skipped_count_sum),
+            Cell::new(aggregate.leaf_summary_score_nanos_sum),
+        ]);
+    }
+    format!("Production candidate-derived threshold profile\n{table}")
+}
+
+fn format_optional_score(value: Option<f32>) -> String {
+    value
+        .map(|value| format!("{value:.6}"))
+        .unwrap_or_else(|| "none".to_owned())
 }
 
 fn option_label<T: std::fmt::Display>(value: Option<T>) -> String {
@@ -4643,6 +5355,7 @@ mod tests {
             leaf_block_rank_local_sequence_offset: 0,
             include_production_read_profile: false,
             production_read_only: false,
+            production_read_timeline_no_payload: false,
             query_metric_k: 10,
             query_metric_projection_columns: vec![],
             session_gucs: vec![],
@@ -4659,6 +5372,7 @@ mod tests {
             log_output: None,
             funnel_output: None,
             stage_containment_output: None,
+            result_identity_output: None,
         }
     }
 
@@ -4804,6 +5518,11 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("--stage-containment-output requires --include-query-metrics"));
+
+        let mut args = default_args();
+        args.production_read_only = true;
+        args.result_identity_output = Some("identity.jsonl".into());
+        assert!(validate_args(&args).is_ok());
     }
 
     #[test]
@@ -5169,6 +5888,13 @@ mod tests {
             .contains("ec_spire_remote_search_production_read_timeline"));
         assert!(production_read_timeline_sql().contains("payload_decode_bytes"));
         assert!(production_read_timeline_sql().contains("$4::text[]"));
+        assert!(production_scan_profile_sql()
+            .contains("ec_spire_remote_search_production_scan_profile"));
+        assert!(production_scan_profile_sql().contains("local_kth_score"));
+        assert!(production_scan_profile_sql().contains("sound_upper_bound_available_count"));
+        assert!(production_threshold_profile_sql()
+            .contains("ec_spire_remote_search_production_candidate_threshold_profile"));
+        assert!(production_threshold_profile_sql().contains("threshold_row_skipped_count"));
         assert!(endpoint_identity_sql().contains("ec_spire_remote_search_endpoint_identity"));
         assert!(endpoint_identity_sql().contains("tuple_transport_capabilities"));
         assert!(remote_placement_gate_sql().contains("ec_spire_remote_node_snapshot"));
@@ -5259,6 +5985,8 @@ mod tests {
             query_metric_projection_columns: &["title".to_owned(), "body".to_owned()],
             production_read_profile_enabled: true,
             production_read_only: true,
+            production_read_timeline_no_payload: true,
+            result_identity_output_enabled: true,
             local_store_overlap_enabled: true,
             routing: &routing,
             local: &local,
@@ -5267,6 +5995,9 @@ mod tests {
             degraded_skip: &BTreeMap::new(),
             query_metrics: &BTreeMap::new(),
             production_read_profile: &BTreeMap::new(),
+            production_scan_profile: &BTreeMap::new(),
+            production_threshold_profile: &BTreeMap::new(),
+            production_read_overlap: &BTreeMap::new(),
             production_read_timeline: &BTreeMap::new(),
         });
         assert!(header.contains("remote_tuple_transport: pg_binary_attr_v1"));
@@ -5278,6 +6009,8 @@ mod tests {
         assert!(header.contains("query_recall: false"));
         assert!(header.contains("production_read_profile: true"));
         assert!(header.contains("production_read_only: true"));
+        assert!(header.contains("production_read_timeline_no_payload: true"));
+        assert!(header.contains("result_identity_output: true"));
     }
 
     #[test]
@@ -5419,6 +6152,10 @@ mod tests {
                 ("endpoint_identity_query_count".into(), "2".into()),
                 ("payload_decode_row_count".into(), "6".into()),
                 ("payload_decode_bytes".into(), "256".into()),
+                ("global_pre_heap_input_count".into(), "6".into()),
+                ("global_pre_heap_candidate_count".into(), "5".into()),
+                ("global_pre_heap_duplicate_vec_id_count".into(), "1".into()),
+                ("global_pre_heap_pruned_candidate_count".into(), "1".into()),
                 ("merge_input_count".into(), "6".into()),
                 ("merge_duplicate_vec_id_count".into(), "1".into()),
                 ("merge_output_count".into(), "5".into()),
@@ -5434,12 +6171,16 @@ mod tests {
 
         let rendered = render_production_read_profile_table(&rows);
         assert!(rendered.contains("Production read profile"));
+        assert!(rendered.contains("connect_p99"));
         assert!(rendered.contains("connect_p95"));
+        assert!(rendered.contains("heap_p99"));
         assert!(rendered.contains("endpoint_identity_query_sum"));
         assert!(rendered.contains("remote_heap_candidates"));
         assert!(rendered.contains("payload_bytes_sum"));
         assert!(rendered.contains("payload_decode_p95"));
+        assert!(rendered.contains("payload_decode_p99"));
         assert!(rendered.contains("compact_candidate_sum"));
+        assert!(rendered.contains("global_pre_heap_pruned_sum"));
         assert!(rendered.contains("merge_duplicate_vec_id_sum"));
         assert!(rendered.contains("256"));
     }
@@ -5450,6 +6191,8 @@ mod tests {
         aggregate.record(ProductionReadTimelineRow {
             node_id: 2,
             phase: "heap_receive".to_owned(),
+            started_after_ms: 13,
+            completed_after_ms: 24,
             elapsed: Duration::from_millis(11),
             candidate_count: 10,
             payload_decode_elapsed: Duration::from_millis(3),
@@ -5471,9 +6214,192 @@ mod tests {
         let rendered = render_production_read_timeline_table(&rows);
         assert!(rendered.contains("Production read per-node timeline"));
         assert!(rendered.contains("payload_decode_p95"));
+        assert!(rendered.contains("payload_decode_p99"));
+        assert!(rendered.contains("elapsed_p99"));
         assert!(rendered.contains("payload_rows_sum"));
         assert!(rendered.contains("payload_bytes_sum"));
         assert!(rendered.contains("80"));
+    }
+
+    #[test]
+    fn spire_pipeline_renders_production_read_overlap() {
+        let mut aggregate = ProductionReadOverlapAggregate::default();
+        aggregate.record(&[
+            ProductionReadTimelineRow {
+                node_id: 2,
+                phase: "candidate_receive".to_owned(),
+                started_after_ms: 0,
+                completed_after_ms: 50,
+                elapsed: Duration::from_millis(50),
+                candidate_count: 10,
+                payload_decode_elapsed: Duration::ZERO,
+                payload_decode_row_count: 0,
+                payload_decode_bytes: 0,
+                status: "ready".to_owned(),
+                failure_category: "none".to_owned(),
+            },
+            ProductionReadTimelineRow {
+                node_id: 3,
+                phase: "candidate_receive".to_owned(),
+                started_after_ms: 0,
+                completed_after_ms: 100,
+                elapsed: Duration::from_millis(100),
+                candidate_count: 10,
+                payload_decode_elapsed: Duration::ZERO,
+                payload_decode_row_count: 0,
+                payload_decode_bytes: 0,
+                status: "ready".to_owned(),
+                failure_category: "none".to_owned(),
+            },
+            ProductionReadTimelineRow {
+                node_id: 2,
+                phase: "heap_receive".to_owned(),
+                started_after_ms: 55,
+                completed_after_ms: 70,
+                elapsed: Duration::from_millis(15),
+                candidate_count: 10,
+                payload_decode_elapsed: Duration::ZERO,
+                payload_decode_row_count: 10,
+                payload_decode_bytes: 80,
+                status: "ready".to_owned(),
+                failure_category: "none".to_owned(),
+            },
+            ProductionReadTimelineRow {
+                node_id: 3,
+                phase: "heap_receive".to_owned(),
+                started_after_ms: 100,
+                completed_after_ms: 140,
+                elapsed: Duration::from_millis(40),
+                candidate_count: 10,
+                payload_decode_elapsed: Duration::ZERO,
+                payload_decode_row_count: 10,
+                payload_decode_bytes: 80,
+                status: "ready".to_owned(),
+                failure_category: "none".to_owned(),
+            },
+        ]);
+        let mut rows = BTreeMap::new();
+        rows.insert(8, aggregate);
+
+        let rendered = render_production_read_overlap_table(&rows);
+        assert!(rendered.contains("Production read phase overlap"));
+        assert!(rendered.contains("heap_started_before_all_candidates_done"));
+        assert!(rendered.contains("-45 ms"));
+        assert!(rendered.contains("70 ms"));
+    }
+
+    #[test]
+    fn spire_pipeline_renders_production_scan_profile() {
+        let mut aggregate = ProductionScanProfileAggregate::default();
+        aggregate.record(ProductionScanProfileRow {
+            served_epoch: 7,
+            node_id: 2,
+            selected_pid_count: 3,
+            scanned_pid_count: 2,
+            leaf_candidate_row_count: 20,
+            deduped_candidate_row_count: 18,
+            truncated_candidate_row_count: 10,
+            candidate_winner_count: 9,
+            leaf_block_available_count: 5,
+            leaf_block_selected_count: 4,
+            leaf_block_skipped_count: 1,
+            sound_upper_bound_available_count: 4,
+            sound_upper_bound_missing_count: 1,
+            leaf_summary_score_nanos: 100,
+            leaf_row_score_nanos: 200,
+            candidate_score_nanos: 300,
+            local_kth_score: Some(0.25),
+        });
+        aggregate.record(ProductionScanProfileRow {
+            served_epoch: 7,
+            node_id: 2,
+            selected_pid_count: 2,
+            scanned_pid_count: 2,
+            leaf_candidate_row_count: 12,
+            deduped_candidate_row_count: 11,
+            truncated_candidate_row_count: 8,
+            candidate_winner_count: 8,
+            leaf_block_available_count: 3,
+            leaf_block_selected_count: 3,
+            leaf_block_skipped_count: 0,
+            sound_upper_bound_available_count: 3,
+            sound_upper_bound_missing_count: 0,
+            leaf_summary_score_nanos: 80,
+            leaf_row_score_nanos: 120,
+            candidate_score_nanos: 180,
+            local_kth_score: Some(0.75),
+        });
+        let mut rows = BTreeMap::new();
+        rows.insert(
+            ProductionScanProfileKey {
+                nprobe: 8,
+                node_id: 2,
+            },
+            aggregate,
+        );
+
+        let rendered = render_production_scan_profile_table(&rows);
+        assert!(rendered.contains("Production selected-leaf scan profile"));
+        assert!(rendered.contains("scanned_pid_sum"));
+        assert!(rendered.contains("sound_bound_available_sum"));
+        assert!(rendered.contains("local_kth_count"));
+        assert!(rendered.contains("0.250000"));
+        assert!(rendered.contains("0.750000"));
+    }
+
+    #[test]
+    fn spire_pipeline_renders_production_threshold_profile() {
+        let mut aggregate = ProductionThresholdProfileAggregate::default();
+        aggregate.record(ProductionThresholdProfileRow {
+            served_epoch: 7,
+            node_id: 2,
+            selected_pid_count: 3,
+            evaluated_pid_count: 3,
+            threshold_score: -0.25,
+            threshold_ip: 0.25,
+            sound_upper_bound_available_count: 2,
+            sound_upper_bound_missing_count: 1,
+            threshold_block_available_count: 10,
+            threshold_block_selected_count: 7,
+            threshold_block_skipped_count: 3,
+            threshold_row_available_count: 100,
+            threshold_row_selected_count: 70,
+            threshold_row_skipped_count: 30,
+            leaf_summary_score_nanos: 120,
+        });
+        aggregate.record(ProductionThresholdProfileRow {
+            served_epoch: 7,
+            node_id: 2,
+            selected_pid_count: 2,
+            evaluated_pid_count: 2,
+            threshold_score: -0.75,
+            threshold_ip: 0.75,
+            sound_upper_bound_available_count: 2,
+            sound_upper_bound_missing_count: 0,
+            threshold_block_available_count: 8,
+            threshold_block_selected_count: 2,
+            threshold_block_skipped_count: 6,
+            threshold_row_available_count: 80,
+            threshold_row_selected_count: 20,
+            threshold_row_skipped_count: 60,
+            leaf_summary_score_nanos: 180,
+        });
+        let mut rows = BTreeMap::new();
+        rows.insert(
+            ProductionThresholdProfileKey {
+                nprobe: 8,
+                node_id: 2,
+            },
+            aggregate,
+        );
+
+        let rendered = render_production_threshold_profile_table(&rows);
+        assert!(rendered.contains("Production candidate-derived threshold profile"));
+        assert!(rendered.contains("threshold_score_min"));
+        assert!(rendered.contains("threshold_row_skipped_sum"));
+        assert!(rendered.contains("-0.750000"));
+        assert!(rendered.contains("-0.250000"));
+        assert!(rendered.contains("90"));
     }
 
     #[test]

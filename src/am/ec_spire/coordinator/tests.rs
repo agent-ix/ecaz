@@ -51,7 +51,9 @@ mod tests {
     }
 
     fn remote_local_vec_id(local_vec_seq: u64) -> Vec<u8> {
-        storage::SpireVecId::local(local_vec_seq).as_bytes().to_vec()
+        storage::SpireVecId::local(local_vec_seq)
+            .as_bytes()
+            .to_vec()
     }
 
     fn remote_global_vec_id(payload: &[u8]) -> Vec<u8> {
@@ -59,6 +61,28 @@ mod tests {
             .expect("global vec_id payload should be valid")
             .as_bytes()
             .to_vec()
+    }
+
+    fn rabitq_primary_row(
+        vec_seq: u64,
+        block_number: u32,
+        offset_number: u16,
+        source_vector: &[f32],
+    ) -> storage::SpireLeafAssignmentRow {
+        let assignment = quantizer::encode_assignment_input(
+            quantizer::SpireAssignmentPayloadFormat::RaBitQ,
+            tid(block_number, offset_number),
+            source_vector,
+        )
+        .expect("rabitq row should encode");
+        storage::SpireLeafAssignmentRow {
+            flags: storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+            vec_id: storage::SpireVecId::local(vec_seq),
+            heap_tid: assignment.heap_tid,
+            payload_format: assignment.payload_format,
+            gamma: assignment.gamma,
+            encoded_payload: assignment.encoded_payload,
+        }
     }
 
     fn remote_candidate(
@@ -109,6 +133,86 @@ mod tests {
             tuple_payload_missing: false,
             status: SPIRE_REMOTE_STATUS_READY,
         }
+    }
+
+    #[test]
+    fn remote_leaf_materialization_summaries_disabled_keeps_v2_shape() {
+        let source_vectors = vec![vec![1.0, 0.0], vec![0.0, 1.0]];
+        let rows = source_vectors
+            .iter()
+            .enumerate()
+            .map(|(index, source_vector)| {
+                rabitq_primary_row(
+                    u64::try_from(index + 1).unwrap(),
+                    10,
+                    u16::try_from(index + 1).unwrap(),
+                    source_vector,
+                )
+            })
+            .collect::<Vec<_>>();
+        let mut materialization_rows = build::SpireLeafBlockMaterializationRows {
+            rows: rows.clone(),
+            source_vectors,
+        };
+
+        let summaries =
+            remote_leaf_materialization_block_summaries(17, 1, None, 2, &mut materialization_rows)
+                .expect("disabled summaries should not fail");
+
+        assert!(summaries.is_empty());
+        assert_eq!(materialization_rows.rows, rows);
+    }
+
+    #[test]
+    fn remote_leaf_materialization_summaries_enabled_writes_expected_blocks() {
+        let source_vectors = vec![
+            vec![1.0, 0.0],
+            vec![0.9, 0.1],
+            vec![-1.0, 0.0],
+            vec![-0.9, -0.1],
+        ];
+        let rows = source_vectors
+            .iter()
+            .enumerate()
+            .map(|(index, source_vector)| {
+                rabitq_primary_row(
+                    u64::try_from(index + 1).unwrap(),
+                    10,
+                    u16::try_from(index + 1).unwrap(),
+                    source_vector,
+                )
+            })
+            .collect::<Vec<_>>();
+        let mut materialization_rows = build::SpireLeafBlockMaterializationRows {
+            rows,
+            source_vectors,
+        };
+
+        let summaries = remote_leaf_materialization_block_summaries(
+            17,
+            1,
+            Some(2),
+            2,
+            &mut materialization_rows,
+        )
+        .expect("enabled summaries should build");
+
+        assert_eq!(summaries.len(), 2);
+        assert_eq!(summaries[0].row_base, 0);
+        assert_eq!(summaries[0].row_count, 2);
+        assert_eq!(summaries[1].row_base, 2);
+        assert_eq!(summaries[1].row_count, 2);
+        assert_eq!(
+            summaries
+                .iter()
+                .map(|summary| summary.payload_format)
+                .collect::<Vec<_>>(),
+            vec![
+                quantizer::SpireAssignmentPayloadFormat::RaBitQ.tag(),
+                quantizer::SpireAssignmentPayloadFormat::RaBitQ.tag()
+            ]
+        );
+        assert_eq!(materialization_rows.rows.len(), 4);
     }
 
     #[test]
@@ -330,7 +434,10 @@ mod tests {
         assert_eq!(summary.conninfo_secret_lookup_count, 0);
         assert_eq!(summary.socket_open_count, 0);
         assert_eq!(summary.endpoint_identity_query_count, 0);
-        assert_eq!(summary.next_executor_step, SPIRE_REMOTE_EXECUTOR_STEP_BUDGET);
+        assert_eq!(
+            summary.next_executor_step,
+            SPIRE_REMOTE_EXECUTOR_STEP_BUDGET
+        );
         assert_eq!(summary.status, SPIRE_REMOTE_STATUS_EXECUTOR_OVERLOAD);
     }
 
@@ -346,9 +453,16 @@ mod tests {
             1.0,
             storage::SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA,
         );
-        let primary = remote_candidate(1, 10, 0, &same, 1.0, storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY);
-        let better_score =
-            remote_candidate(3, 30, 0, &other, 0.5, storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY);
+        let primary =
+            remote_candidate(1, 10, 0, &same, 1.0, storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY);
+        let better_score = remote_candidate(
+            3,
+            30,
+            0,
+            &other,
+            0.5,
+            storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+        );
 
         let merged = merge_remote_search_candidates(
             vec![boundary, primary.clone(), better_score.clone()],
@@ -405,12 +519,18 @@ mod tests {
         .expect_err("nan scores should fail");
         assert!(nan_error.contains("non-finite score"));
 
-        let empty_vec_id_error =
-            merge_remote_search_candidates(
-                vec![remote_candidate(1, 10, 0, b"", 1.0, storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY)],
-                None,
-            )
-            .expect_err("empty vec_id should fail");
+        let empty_vec_id_error = merge_remote_search_candidates(
+            vec![remote_candidate(
+                1,
+                10,
+                0,
+                b"",
+                1.0,
+                storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+            )],
+            None,
+        )
+        .expect_err("empty vec_id should fail");
         assert!(empty_vec_id_error.contains("invalid vec_id"));
     }
 
@@ -462,9 +582,8 @@ mod tests {
             storage::SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA,
         );
 
-        let merged =
-            merge_remote_search_candidates(vec![remote_replica, local_best.clone()], None)
-                .expect("global vec_ids should dedupe across nodes");
+        let merged = merge_remote_search_candidates(vec![remote_replica, local_best.clone()], None)
+            .expect("global vec_ids should dedupe across nodes");
 
         assert_eq!(merged.duplicate_vec_id_count, 1);
         assert_eq!(merged.candidates, vec![local_best]);
@@ -487,22 +606,9 @@ mod tests {
     #[test]
     fn remote_heap_candidate_result_merge_scopes_local_vec_ids_by_node() {
         let local = remote_local_vec_id(7);
-        let node_two = remote_heap_candidate(
-            2,
-            10,
-            0,
-            &local,
-            0.4,
-            SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION,
-        );
-        let node_three = remote_heap_candidate(
-            3,
-            20,
-            0,
-            &local,
-            0.3,
-            SPIRE_REMOTE_HEAP_RESOLUTION,
-        );
+        let node_two =
+            remote_heap_candidate(2, 10, 0, &local, 0.4, SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION);
+        let node_three = remote_heap_candidate(3, 20, 0, &local, 0.3, SPIRE_REMOTE_HEAP_RESOLUTION);
 
         let merged = merge_remote_search_heap_candidates_for_result(
             vec![node_two.clone(), node_three.clone()],
@@ -516,14 +622,8 @@ mod tests {
     #[test]
     fn remote_heap_candidate_result_merge_dedupes_global_vec_ids_across_nodes() {
         let global = remote_global_vec_id(b"global-heap");
-        let local_best = remote_heap_candidate(
-            2,
-            10,
-            0,
-            &global,
-            0.2,
-            SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION,
-        );
+        let local_best =
+            remote_heap_candidate(2, 10, 0, &global, 0.2, SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION);
         let remote_replica =
             remote_heap_candidate(3, 20, 0, &global, 0.4, SPIRE_REMOTE_HEAP_RESOLUTION);
 
@@ -539,22 +639,9 @@ mod tests {
     #[test]
     fn remote_heap_candidate_result_merge_reports_duplicates_before_top_k() {
         let duplicate = remote_global_vec_id(b"global-heap-stats");
-        let best = remote_heap_candidate(
-            2,
-            10,
-            0,
-            &duplicate,
-            0.1,
-            SPIRE_REMOTE_HEAP_RESOLUTION,
-        );
-        let duplicate_worse = remote_heap_candidate(
-            3,
-            20,
-            0,
-            &duplicate,
-            0.9,
-            SPIRE_REMOTE_HEAP_RESOLUTION,
-        );
+        let best = remote_heap_candidate(2, 10, 0, &duplicate, 0.1, SPIRE_REMOTE_HEAP_RESOLUTION);
+        let duplicate_worse =
+            remote_heap_candidate(3, 20, 0, &duplicate, 0.9, SPIRE_REMOTE_HEAP_RESOLUTION);
         let second = remote_heap_candidate(
             4,
             30,
@@ -598,7 +685,8 @@ mod tests {
         let remote =
             remote_heap_candidate(3, 20, 1, &remote_vec, 0.2, SPIRE_REMOTE_HEAP_RESOLUTION);
 
-        let outputs = production_scan_outputs_from_heap_candidates(&[local.clone(), remote.clone()]);
+        let outputs =
+            production_scan_outputs_from_heap_candidates(&[local.clone(), remote.clone()]);
 
         assert_eq!(outputs.len(), 2);
         assert_eq!(outputs[0].requested_epoch, local.requested_epoch);
@@ -606,7 +694,10 @@ mod tests {
         assert_eq!(outputs[0].heap_block, local.heap_block);
         assert_eq!(outputs[0].heap_offset, local.heap_offset);
         assert_eq!(outputs[0].score, local.score);
-        assert_eq!(outputs[0].heap_lookup_owner, SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION);
+        assert_eq!(
+            outputs[0].heap_lookup_owner,
+            SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION
+        );
         assert_eq!(outputs[0].vec_id, local_vec);
         assert_eq!(outputs[0].row_locator, local.row_locator);
 
@@ -760,7 +851,8 @@ mod tests {
             0.9,
             SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION,
         );
-        let remote_best = remote_heap_candidate(3, 20, 0, &global, 0.1, SPIRE_REMOTE_HEAP_RESOLUTION);
+        let remote_best =
+            remote_heap_candidate(3, 20, 0, &global, 0.1, SPIRE_REMOTE_HEAP_RESOLUTION);
 
         let merged = merge_remote_search_heap_candidates_for_result(
             vec![local_worse, remote_best.clone()],
@@ -800,8 +892,7 @@ mod tests {
             0.2,
             SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION,
         );
-        let remote =
-            remote_heap_candidate(3, 20, 0, &local_vec, 0.1, SPIRE_REMOTE_HEAP_RESOLUTION);
+        let remote = remote_heap_candidate(3, 20, 0, &local_vec, 0.1, SPIRE_REMOTE_HEAP_RESOLUTION);
 
         let merged =
             merge_remote_search_heap_candidates_for_result(vec![local.clone(), remote.clone()], 10)
@@ -971,14 +1062,8 @@ mod tests {
             storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY,
         );
         let dup = remote_global_vec_id(b"dup");
-        let duplicate_best = remote_candidate(
-            3,
-            20,
-            0,
-            &dup,
-            0.3,
-            storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY,
-        );
+        let duplicate_best =
+            remote_candidate(3, 20, 0, &dup, 0.3, storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY);
         let duplicate_worse = remote_candidate(
             3,
             21,
@@ -1169,12 +1254,12 @@ mod tests {
                 other => panic!("unexpected placement state in contract: {other}"),
             };
 
-            let search_action = match fanout_should_skip_placement(consistency_mode, placement_state)
-            {
-                Ok(false) => "dispatch",
-                Ok(true) => "skip_and_report",
-                Err(_) => "fail_closed",
-            };
+            let search_action =
+                match fanout_should_skip_placement(consistency_mode, placement_state) {
+                    Ok(false) => "dispatch",
+                    Ok(true) => "skip_and_report",
+                    Err(_) => "fail_closed",
+                };
 
             assert_eq!(
                 row.search_action, search_action,

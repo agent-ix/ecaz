@@ -10,6 +10,8 @@
 \set consistency_mode strict
 \endif
 
+__ECAZ_LOAD_SESSION_GUC_SQL__
+
 CREATE TEMP TABLE ec_spire_leaf_base_assignment_import (
   active_epoch bigint NOT NULL,
   leaf_pid bigint NOT NULL,

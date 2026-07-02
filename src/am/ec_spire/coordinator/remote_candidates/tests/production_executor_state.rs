@@ -117,6 +117,74 @@ mod production_executor_state_tests {
         }
     }
 
+    #[test]
+    fn global_compact_candidate_threshold_score_requires_full_top_k_frontier() {
+        let mut best = candidate_for_state_test(2, 20, 0);
+        best.score = 0.1;
+        let mut kth = candidate_for_state_test(3, 30, 0);
+        kth.score = 0.3;
+        let mut below_k = candidate_for_state_test(4, 40, 0);
+        below_k.score = 0.7;
+
+        assert_eq!(
+            global_compact_candidate_threshold_score(&[best.clone(), kth.clone(), below_k], 2),
+            Some(kth.score)
+        );
+        assert_eq!(
+            global_compact_candidate_threshold_score(&[best], 2),
+            None
+        );
+        assert_eq!(
+            global_compact_candidate_threshold_score(&[kth], 0),
+            None
+        );
+    }
+
+    #[test]
+    fn initial_remote_scan_threshold_uses_local_merged_kth() {
+        let rows = vec![
+            ready_local_heap_row(1, 0.9),
+            ready_local_heap_row(2, 0.7),
+            ready_local_heap_row(3, 0.1),
+        ];
+
+        assert_eq!(
+            initial_remote_scan_threshold_from_local_heap_rows(&rows, 2).unwrap(),
+            Some(0.7)
+        );
+        assert_eq!(
+            initial_remote_scan_threshold_from_local_heap_rows(&rows[..1], 2).unwrap(),
+            None
+        );
+        assert_eq!(
+            initial_remote_scan_threshold_from_local_heap_rows(&rows, 0).unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn explicit_heap_candidate_parameters_encode_binary_fields_as_hex() {
+        let candidates = vec![candidate_for_state_test(2, 10, 3)];
+
+        let parameters =
+            explicit_heap_candidate_parameters(&candidates).expect("parameters should encode");
+
+        assert_eq!(parameters.served_epochs, vec![7]);
+        assert_eq!(parameters.pids, vec![10]);
+        assert_eq!(parameters.object_versions, vec![1]);
+        assert_eq!(parameters.row_indices, vec![3]);
+        assert_eq!(
+            parameters.assignment_flags,
+            vec![i16::try_from(storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY).unwrap()]
+        );
+        assert_eq!(parameters.vec_id_hex_values, vec![hex::encode(&candidates[0].vec_id)]);
+        assert_eq!(
+            parameters.row_locator_hex_values,
+            vec![hex::encode(&candidates[0].row_locator)]
+        );
+        assert_eq!(parameters.scores, vec![3.0]);
+    }
+
     fn failed_candidate_receive_result(
         node_id: u32,
         failure_category: &'static str,
@@ -193,6 +261,28 @@ mod production_executor_state_tests {
         }
     }
 
+    fn ready_local_heap_row(vec_id: u64, score: f32) -> SpireRemoteSearchLocalHeapCandidateRow {
+        SpireRemoteSearchLocalHeapCandidateRow {
+            requested_epoch: 7,
+            served_epoch: 7,
+            node_id: 1,
+            pid: 11,
+            object_version: 1,
+            row_index: u32::try_from(vec_id).unwrap_or(0),
+            assignment_flags: storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+            vec_id: storage::SpireVecId::local(vec_id).as_bytes().to_vec(),
+            row_locator: vec![1, u8::try_from(vec_id).unwrap_or(0)],
+            heap_block: 10,
+            heap_offset: u16::try_from(vec_id).unwrap_or(1),
+            score,
+            heap_lookup_owner: SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION,
+            tuple_payload_json: None,
+            typed_tuple_payload: None,
+            tuple_payload_missing: false,
+            status: SPIRE_REMOTE_STATUS_READY,
+        }
+    }
+
     fn failed_heap_receive_result(
         node_id: u32,
         failure_category: &'static str,
@@ -264,6 +354,10 @@ mod production_executor_state_tests {
             heap_receive_query_count: 1,
             payload_decode_row_count: 2,
             payload_decode_bytes: 128,
+            global_pre_heap_input_count: 4,
+            global_pre_heap_candidate_count: 2,
+            global_pre_heap_duplicate_vec_id_count: 1,
+            global_pre_heap_pruned_candidate_count: 2,
             merge_input_count: 5,
             merge_duplicate_vec_id_count: 2,
             merge_output_count: 3,
@@ -279,6 +373,8 @@ mod production_executor_state_tests {
         assert_eq!(row.requested_epoch, 7);
         assert_eq!(row.socket_open_count, 1);
         assert_eq!(row.tls_require_count, 1);
+        assert_eq!(row.global_pre_heap_candidate_count, 2);
+        assert_eq!(row.global_pre_heap_pruned_candidate_count, 2);
         assert_eq!(row.merge_duplicate_vec_id_count, 2);
         assert_eq!(row.strict_fail_count, 1);
         assert_eq!(row.remote_timeout_count, 1);
@@ -718,6 +814,7 @@ mod production_executor_state_tests {
                     selected_pids: oversized_pids.clone(),
                     top_k: 1,
                     consistency_mode: "strict".to_owned(),
+                initial_threshold_score: None,
                 },
             ])
             .expect("candidate receive cap check should not need a live connection");
@@ -1356,8 +1453,15 @@ mod production_executor_state_tests {
         executor
             .apply_transport_probe_rows(&transport_rows)
             .expect("transport rows should apply");
+        let threshold = Some(-0.25);
         let requests = executor
-            .compact_candidate_receive_requests(&[1.0, 0.0], 4, "strict")
+            .compact_candidate_receive_requests_with_metrics(
+                &[1.0, 0.0],
+                4,
+                "strict",
+                threshold,
+                None,
+            )
             .expect("request build should succeed");
 
         std::env::remove_var(&secret_42);
@@ -1380,6 +1484,10 @@ mod production_executor_state_tests {
         assert_eq!(node_42.query, vec![1.0, 0.0]);
         assert_eq!(node_42.top_k, 4);
         assert_eq!(node_42.consistency_mode, "strict");
+        assert_eq!(node_42.initial_threshold_score, threshold);
+        assert!(requests
+            .iter()
+            .all(|request| request.initial_threshold_score == threshold));
     }
 
     #[test]

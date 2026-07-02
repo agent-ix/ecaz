@@ -7,7 +7,7 @@ use std::fs;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use tokio::process::Command;
 
 use super::support::{
@@ -462,6 +462,10 @@ pub struct LocalMultinodePg18Args {
     #[arg(long = "remote-reloption")]
     remote_reloptions: Vec<String>,
 
+    /// Session GUC applied to coordinator and remote corpus-load sessions before CREATE INDEX.
+    #[arg(long = "load-session-guc")]
+    load_session_gucs: Vec<String>,
+
     /// Top-k for the packet-local bench suite.
     #[arg(long)]
     bench_top_k: Option<u16>,
@@ -477,6 +481,10 @@ pub struct LocalMultinodePg18Args {
     /// Comma-separated nprobe sweep for the rowcap step.
     #[arg(long)]
     bench_rowcap_sweep: Option<String>,
+
+    /// Skip rowcap production-read bench steps.
+    #[arg(long)]
+    skip_bench_rowcap: bool,
 
     /// Local corpus TSV for exact truth in bench spire-pipeline.
     #[arg(long)]
@@ -1241,6 +1249,7 @@ async fn run_native_local_multinode_pg18(
             &args.reloptions,
             &args.coord_reloptions,
             &args.remote_reloptions,
+            &args.load_session_gucs,
             args.prepared_prefix.as_deref(),
             args.prepared_dir.as_deref(),
         )
@@ -1271,6 +1280,7 @@ async fn run_native_local_multinode_pg18(
                 args.bench_queries_limit.unwrap_or(200),
                 args.bench_sweep.as_deref().unwrap_or("64,96"),
                 args.bench_rowcap_sweep.as_deref().unwrap_or("96"),
+                args.skip_bench_rowcap,
                 args.bench_truth_corpus_file
                     .as_deref()
                     .or(fixture.truth_corpus_file.as_deref()),
@@ -1476,6 +1486,7 @@ async fn prepare_local_multinode_fixture(
     shared_reloptions: &[String],
     coord_reloptions: &[String],
     remote_reloptions: &[String],
+    load_session_gucs: &[String],
     prepared_prefix: Option<&str>,
     prepared_dir: Option<&Path>,
 ) -> Result<LocalMultinodeFixture> {
@@ -1529,6 +1540,7 @@ async fn prepare_local_multinode_fixture(
         storage_format,
         coord_index,
         &coord_reloptions,
+        load_session_gucs,
         false,
     )
     .await?;
@@ -1546,6 +1558,7 @@ async fn prepare_local_multinode_fixture(
         &corpus_file,
         storage_format,
         &remote_reloptions,
+        load_session_gucs,
     )
     .await?;
     load_local_remote_shards(repo_root, ecaz_bin, socket_dir, log_dir, &plan_file).await?;
@@ -1603,6 +1616,7 @@ async fn run_ecaz_corpus_load(
     storage_format: &str,
     index_name: &str,
     reloptions: &[String],
+    session_gucs: &[String],
     corpus_only: bool,
 ) -> Result<()> {
     let mut command = Command::new(ecaz_bin);
@@ -1648,6 +1662,9 @@ async fn run_ecaz_corpus_load(
     for reloption in reloptions {
         command.arg("--reloption").arg(reloption);
     }
+    for guc in session_gucs {
+        command.arg("--session-guc").arg(guc);
+    }
     command
         .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())
@@ -1671,6 +1688,7 @@ async fn write_leaf_owned_local_plan(
     corpus_file: &Path,
     storage_format: &str,
     remote_reloptions: &[String],
+    load_session_gucs: &[String],
 ) -> Result<PathBuf> {
     let topology_raw = fs::read_to_string(topology_path)
         .wrap_err_with(|| format!("reading {}", topology_path.display()))?;
@@ -1735,7 +1753,7 @@ async fn write_leaf_owned_local_plan(
             "remote_prefix": remote_prefix,
             "shard_ids": [node_id - 2],
             "corpus_file": remote_corpus,
-            "remote_load_args": remote_load_args(&remote_prefix, &remote_corpus, remote_index, storage_format, remote_reloptions),
+            "remote_load_args": remote_load_args(&remote_prefix, &remote_corpus, remote_index, storage_format, remote_reloptions, load_session_gucs),
             "remote_identity_query_sql": remote_identity_query_sql(remote_index),
             "coordinator_register_descriptor_sql_template": "",
             "row_count": row_count,
@@ -1751,6 +1769,7 @@ async fn write_leaf_owned_local_plan(
         "seed": 42,
         "storage_format": storage_format,
         "reloptions": remote_reloptions,
+        "load_session_gucs": load_session_gucs,
         "coordinator_index_name": coord_index,
         "source_identity_column": "leaf_base_assignment",
         "shard_policy": "coordinator_leaf_assignment_round_robin",
@@ -1872,6 +1891,7 @@ fn remote_load_args(
     remote_index: &str,
     storage_format: &str,
     reloptions: &[String],
+    session_gucs: &[String],
 ) -> Vec<String> {
     let mut args = vec![
         "ecaz".to_owned(),
@@ -1898,6 +1918,10 @@ fn remote_load_args(
     for reloption in reloptions {
         args.push("--reloption".to_owned());
         args.push(reloption.to_owned());
+    }
+    for guc in session_gucs {
+        args.push("--session-guc".to_owned());
+        args.push(guc.to_owned());
     }
     args
 }
@@ -1939,6 +1963,15 @@ async fn load_local_remote_shards(
                     .collect::<Vec<_>>()
             })
             .unwrap_or_default();
+        let session_gucs = plan["load_session_gucs"]
+            .as_array()
+            .map(|values| {
+                values
+                    .iter()
+                    .filter_map(|value| value.as_str().map(ToOwned::to_owned))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
         run_ecaz_corpus_load(
             repo_root,
             ecaz_bin,
@@ -1953,6 +1986,7 @@ async fn load_local_remote_shards(
             storage_format,
             remote_index,
             &reloptions,
+            &session_gucs,
             true,
         )
         .await?;
@@ -1986,6 +2020,17 @@ async fn register_local_remote_shards(
         repo_root.join("scripts/spire-aws/materialize-remote-leaf-base-assignments.sql"),
     )
     .wrap_err("reading remote leaf materialization template")?;
+    let materialization_session_gucs = plan["load_session_gucs"]
+        .as_array()
+        .map(|values| {
+            values
+                .iter()
+                .filter_map(|value| value.as_str().map(ToOwned::to_owned))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let materialization_session_guc_sql =
+        render_materialization_session_guc_sql(&materialization_session_gucs)?;
     for remote in remotes {
         let node_id = remote["node_id"].as_u64().ok_or_else(|| eyre!("node_id"))? as u32;
         let port = remote["operator_port"]
@@ -2008,15 +2053,19 @@ async fn register_local_remote_shards(
             fs::create_dir_all(parent)
                 .wrap_err_with(|| format!("creating {}", parent.display()))?;
         }
-        fs::write(
-            &rendered,
-            materialize_template.replace(
+        let rendered_sql = materialize_template
+            .replace(
+                "__ECAZ_LOAD_SESSION_GUC_SQL__",
+                &materialization_session_guc_sql,
+            )
+            .replace(
                 "__ECAZ_ASSIGNMENT_FILE__",
                 &assignments.display().to_string().replace('\'', "''"),
-            ),
-        )
-        .wrap_err_with(|| format!("writing {}", rendered.display()))?;
-        run_ecaz_dev_sql_logged(
+            );
+        fs::write(&rendered, rendered_sql)
+            .wrap_err_with(|| format!("writing {}", rendered.display()))?;
+        let materialize_started = Instant::now();
+        let materialize_result = run_ecaz_dev_sql_logged(
             repo_root,
             ecaz_bin,
             socket_dir,
@@ -2030,7 +2079,31 @@ async fn register_local_remote_shards(
                 "remote-leaf-materialization/node-{node_id}-remote-materialize.log"
             )),
         )
-        .await?;
+        .await;
+        let materialize_elapsed = materialize_started.elapsed();
+        let timing = log_dir.join(format!(
+            "remote-leaf-materialization/node-{node_id}-remote-materialize-timing.log"
+        ));
+        fs::write(
+            &timing,
+            format!(
+                "node_id={node_id}\nstatus={}\nelapsed_ms={}\nrendered_sql={}\nlog={}\n",
+                if materialize_result.is_ok() {
+                    "ok"
+                } else {
+                    "error"
+                },
+                materialize_elapsed.as_millis(),
+                rendered.display(),
+                log_dir
+                    .join(format!(
+                        "remote-leaf-materialization/node-{node_id}-remote-materialize.log"
+                    ))
+                    .display()
+            ),
+        )
+        .wrap_err_with(|| format!("writing {}", timing.display()))?;
+        materialize_result?;
         let identity_sql = remote["remote_identity_query_sql"]
             .as_str()
             .ok_or_else(|| eyre!("remote_identity_query_sql"))?;
@@ -2084,6 +2157,37 @@ async fn register_local_remote_shards(
         log_dir.join("register-remotes.log"),
     )
     .await
+}
+
+fn render_materialization_session_guc_sql(session_gucs: &[String]) -> Result<String> {
+    if session_gucs.is_empty() {
+        return Ok("-- no load session GUCs requested\n".to_owned());
+    }
+    let mut sql = String::new();
+    for guc in session_gucs {
+        let (name, value) = guc
+            .split_once('=')
+            .ok_or_else(|| eyre!("load session GUC must use name=value syntax, got {guc:?}"))?;
+        if name.is_empty()
+            || !name
+                .chars()
+                .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '.')
+            || !name
+                .chars()
+                .next()
+                .is_some_and(|ch| ch.is_ascii_alphabetic())
+        {
+            bail!("invalid load session GUC name {name:?}");
+        }
+        if value.is_empty() {
+            bail!("load session GUC value must not be empty for {name:?}");
+        }
+        if value.contains(';') {
+            bail!("load session GUC value for {name:?} must not contain ';'");
+        }
+        sql.push_str(&format!("SET {name} = {value};\n"));
+    }
+    Ok(sql)
 }
 
 fn read_plan_json(path: &Path) -> Result<serde_json::Value> {
@@ -2299,6 +2403,7 @@ async fn run_local_multinode_bench_suite(
     bench_queries_limit: usize,
     bench_sweep: &str,
     bench_rowcap_sweep: &str,
+    skip_bench_rowcap: bool,
     truth_corpus_file: Option<&Path>,
     query_metric_projection_columns: &[String],
     session_gucs: &[String],
@@ -2318,6 +2423,7 @@ async fn run_local_multinode_bench_suite(
             name: None,
             projection_columns: None,
             session_gucs: Vec::new(),
+            timeline_no_payload: false,
         }]
     } else {
         production_read_variants
@@ -2354,29 +2460,41 @@ async fn run_local_multinode_bench_suite(
             &projection_columns,
             &variant_session_gucs,
             &suite_artifact_dir.join(format!("production-read-k10{name_suffix}-default.log")),
+            &suite_artifact_dir.join(format!(
+                "production-read-k10{name_suffix}-default-identity.jsonl"
+            )),
             format!("production-read-k10{name_suffix}-default"),
             "default-cap",
             None,
-        );
-        let mut rowcap_step = production_read_step_json(
-            prefix,
-            coord_index,
-            bench_queries_limit,
-            &rowcap_sweep,
-            bench_top_k,
-            &projection_columns,
-            &variant_session_gucs,
-            &suite_artifact_dir.join(format!("production-read-k10{name_suffix}-rowcap25k.log")),
-            format!("production-read-k10{name_suffix}-rowcap25k"),
-            "rowcap25k",
-            Some(25000),
+            variant.timeline_no_payload,
         );
         if let Some(truth_corpus_file) = truth_corpus_file {
             default_step["truth_corpus_file"] = json!(truth_corpus_file);
-            rowcap_step["truth_corpus_file"] = json!(truth_corpus_file);
         }
         steps.push(default_step);
-        steps.push(rowcap_step);
+        if !skip_bench_rowcap {
+            let mut rowcap_step = production_read_step_json(
+                prefix,
+                coord_index,
+                bench_queries_limit,
+                &rowcap_sweep,
+                bench_top_k,
+                &projection_columns,
+                &variant_session_gucs,
+                &suite_artifact_dir.join(format!("production-read-k10{name_suffix}-rowcap25k.log")),
+                &suite_artifact_dir.join(format!(
+                    "production-read-k10{name_suffix}-rowcap25k-identity.jsonl"
+                )),
+                format!("production-read-k10{name_suffix}-rowcap25k"),
+                "rowcap25k",
+                Some(25000),
+                variant.timeline_no_payload,
+            );
+            if let Some(truth_corpus_file) = truth_corpus_file {
+                rowcap_step["truth_corpus_file"] = json!(truth_corpus_file);
+            }
+            steps.push(rowcap_step);
+        }
     }
 
     let suite = json!({
@@ -2433,9 +2551,11 @@ fn production_read_step_json(
     projection_columns: &[String],
     session_gucs: &[String],
     log_output: &Path,
+    result_identity_output: &Path,
     name: String,
     cap_tag: &str,
     max_routed_candidate_rows: Option<usize>,
+    production_read_timeline_no_payload: bool,
 ) -> Value {
     let mut step = json!({
         "kind": "spire-pipeline",
@@ -2456,10 +2576,14 @@ fn production_read_step_json(
         "query_metric_k": top_k,
         "query_metric_projection_columns": projection_columns,
         "session_gucs": session_gucs,
-        "log_output": log_output
+        "log_output": log_output,
+        "result_identity_output": result_identity_output
     });
     if let Some(max_routed_candidate_rows) = max_routed_candidate_rows {
         step["max_routed_candidate_rows"] = json!(max_routed_candidate_rows);
+    }
+    if production_read_timeline_no_payload {
+        step["production_read_timeline_no_payload"] = json!(true);
     }
     step
 }
@@ -2469,12 +2593,14 @@ struct BenchProductionReadVariant {
     name: Option<String>,
     projection_columns: Option<Vec<String>>,
     session_gucs: Vec<String>,
+    timeline_no_payload: bool,
 }
 
 fn parse_bench_production_read_variant(raw: &str) -> Result<BenchProductionReadVariant> {
     let mut name = None;
     let mut projection_columns = None;
     let mut session_gucs = Vec::new();
+    let mut timeline_no_payload = false;
     for part in raw.split(';').filter(|part| !part.trim().is_empty()) {
         let (key, value) = part.split_once('=').ok_or_else(|| {
             eyre!("bench production-read variant part {part:?} must be key=value")
@@ -2504,6 +2630,13 @@ fn parse_bench_production_read_variant(raw: &str) -> Result<BenchProductionReadV
                 }
                 session_gucs.push(value.to_owned());
             }
+            "timeline_payload" => match value {
+                "projection" => timeline_no_payload = false,
+                "none" => timeline_no_payload = true,
+                other => bail!(
+                    "bench production-read variant timeline_payload {other:?} must be projection or none"
+                ),
+            },
             other => bail!("unsupported bench production-read variant key {other:?}"),
         }
     }
@@ -2514,6 +2647,7 @@ fn parse_bench_production_read_variant(raw: &str) -> Result<BenchProductionReadV
         name,
         projection_columns,
         session_gucs,
+        timeline_no_payload,
     })
 }
 
@@ -2556,8 +2690,50 @@ mod tests {
                 name: Some("source-prune-on".into()),
                 projection_columns: Some(vec!["id".into(), "source".into()]),
                 session_gucs: vec!["ec_spire.pre_materialization_prune=on".into()],
+                timeline_no_payload: false,
             }
         );
+
+        let no_payload = parse_bench_production_read_variant(
+            "name=global-preheap-on;timeline_payload=none;guc=ec_spire.remote_search_global_pre_heap_merge=on",
+        )
+        .expect("variant parses");
+
+        assert_eq!(
+            no_payload,
+            BenchProductionReadVariant {
+                name: Some("global-preheap-on".into()),
+                projection_columns: None,
+                session_gucs: vec!["ec_spire.remote_search_global_pre_heap_merge=on".into()],
+                timeline_no_payload: true,
+            }
+        );
+    }
+
+    #[test]
+    fn production_read_step_json_includes_identity_output() {
+        let step = production_read_step_json(
+            "bench_prefix",
+            "bench_prefix_idx",
+            10,
+            &[8, 16],
+            10,
+            &["source".to_owned()],
+            &["ec_spire.remote_search_initial_threshold_early_stop=on".to_owned()],
+            Path::new("production-read.log"),
+            Path::new("production-read-identity.jsonl"),
+            "production-read".to_owned(),
+            "default-cap",
+            None,
+            true,
+        );
+
+        assert_eq!(
+            step["result_identity_output"],
+            "production-read-identity.jsonl"
+        );
+        assert_eq!(step["production_read_only"], true);
+        assert_eq!(step["production_read_timeline_no_payload"], true);
     }
 }
 

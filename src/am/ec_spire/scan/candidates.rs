@@ -90,8 +90,35 @@ pub(super) fn collect_quantized_selected_leaf_candidates(
     dedupe_mode: SpireCandidateDedupeMode,
     limit: Option<usize>,
 ) -> Result<Vec<SpireScoredScanCandidate>, String> {
+    collect_quantized_selected_leaf_candidates_with_initial_threshold(
+        snapshot,
+        object_store,
+        query_vector,
+        selected_leaf_pids,
+        payload_format,
+        dedupe_mode,
+        limit,
+        None,
+    )
+}
+
+pub(super) fn collect_quantized_selected_leaf_candidates_with_initial_threshold(
+    snapshot: &SpirePublishedEpochSnapshot<'_>,
+    object_store: &impl SpireObjectReader,
+    query_vector: &[f32],
+    selected_leaf_pids: &[u64],
+    payload_format: SpireAssignmentPayloadFormat,
+    dedupe_mode: SpireCandidateDedupeMode,
+    limit: Option<usize>,
+    initial_threshold_score: Option<f32>,
+) -> Result<Vec<SpireScoredScanCandidate>, String> {
     if selected_leaf_pids.is_empty() || limit == Some(0) {
         return Ok(Vec::new());
+    }
+    if let Some(threshold_score) = initial_threshold_score {
+        if !threshold_score.is_finite() {
+            return Err("ec_spire selected-leaf initial threshold score must be finite".to_owned());
+        }
     }
 
     // The storage-node endpoint scores leaves selected by the coordinator; it
@@ -109,8 +136,262 @@ pub(super) fn collect_quantized_selected_leaf_candidates(
         &scorer,
         dedupe_mode,
         limit,
+        initial_threshold_score,
         &mut observer,
     )
+}
+
+pub(super) fn collect_quantized_selected_leaf_scan_profile(
+    snapshot: &SpirePublishedEpochSnapshot<'_>,
+    object_store: &impl SpireObjectReader,
+    query_vector: &[f32],
+    selected_leaf_pids: &[u64],
+    payload_format: SpireAssignmentPayloadFormat,
+    dedupe_mode: SpireCandidateDedupeMode,
+    limit: Option<usize>,
+) -> Result<SpireSelectedLeafScanProfile, String> {
+    let served_epoch = snapshot.epoch_manifest.epoch;
+    let selected_pid_count = u64::try_from(selected_leaf_pids.len())
+        .map_err(|_| "ec_spire selected-leaf scan profile selected PID count exceeds u64")?;
+    if selected_leaf_pids.is_empty() || limit == Some(0) {
+        return Ok(SpireSelectedLeafScanProfile {
+            served_epoch,
+            node_id: super::meta::SPIRE_LOCAL_NODE_ID,
+            selected_pid_count,
+            scanned_pid_count: 0,
+            leaf_candidate_row_count: 0,
+            deduped_candidate_row_count: 0,
+            truncated_candidate_row_count: 0,
+            candidate_winner_count: 0,
+            leaf_block_available_count: 0,
+            leaf_block_selected_count: 0,
+            leaf_block_skipped_count: 0,
+            sound_upper_bound_available_count: 0,
+            sound_upper_bound_missing_count: 0,
+            leaf_summary_score_nanos: 0,
+            leaf_row_score_nanos: 0,
+            candidate_score_nanos: 0,
+            local_kth_score: None,
+        });
+    }
+
+    let snapshot = SpireValidatedEpochSnapshot::from_snapshot(*snapshot)?;
+    let scorer =
+        SpirePreparedAssignmentScorer::prepare(payload_format, query_vector.len(), query_vector)?;
+    let leaf_routes =
+        selected_leaf_routes_from_snapshot(&snapshot, object_store, selected_leaf_pids)?;
+    let mut observer = SpireScanPlacementDiagnosticsObserver::new();
+    let candidates = collect_validated_quantized_leaf_route_candidates(
+        &snapshot,
+        object_store,
+        leaf_routes,
+        &scorer,
+        dedupe_mode,
+        limit,
+        None,
+        &mut observer,
+    )?;
+    let (stores, _leaves) = observer.into_diagnostics();
+    let local_kth_score = limit
+        .and_then(|k| k.checked_sub(1))
+        .and_then(|idx| candidates.get(idx))
+        .map(|candidate| candidate.score);
+
+    let mut scanned_pid_count = 0_u64;
+    let mut leaf_candidate_row_count = 0_u64;
+    let mut deduped_candidate_row_count = 0_u64;
+    let mut truncated_candidate_row_count = 0_u64;
+    let mut candidate_winner_count = 0_u64;
+    let mut leaf_block_available_count = 0_u64;
+    let mut leaf_block_selected_count = 0_u64;
+    let mut leaf_block_skipped_count = 0_u64;
+    let mut leaf_summary_score_nanos = 0_u64;
+    let mut leaf_row_score_nanos = 0_u64;
+    let mut candidate_score_nanos = 0_u64;
+
+    for store in stores {
+        scanned_pid_count = scanned_pid_count.saturating_add(
+            u64::try_from(store.scanned_pid_count)
+                .map_err(|_| "ec_spire selected-leaf scan profile scanned PID count exceeds u64")?,
+        );
+        leaf_candidate_row_count = leaf_candidate_row_count.saturating_add(
+            u64::try_from(store.leaf_candidate_row_count).map_err(|_| {
+                "ec_spire selected-leaf scan profile leaf candidate count exceeds u64"
+            })?,
+        );
+        deduped_candidate_row_count = deduped_candidate_row_count.saturating_add(
+            u64::try_from(store.deduped_candidate_row_count).map_err(|_| {
+                "ec_spire selected-leaf scan profile deduped candidate count exceeds u64"
+            })?,
+        );
+        truncated_candidate_row_count = truncated_candidate_row_count.saturating_add(
+            u64::try_from(store.truncated_candidate_row_count).map_err(|_| {
+                "ec_spire selected-leaf scan profile truncated candidate count exceeds u64"
+            })?,
+        );
+        candidate_winner_count = candidate_winner_count.saturating_add(
+            u64::try_from(store.candidate_winner_count).map_err(|_| {
+                "ec_spire selected-leaf scan profile candidate winner count exceeds u64"
+            })?,
+        );
+        leaf_block_available_count = leaf_block_available_count.saturating_add(
+            u64::try_from(store.leaf_block_available_count).map_err(|_| {
+                "ec_spire selected-leaf scan profile available block count exceeds u64"
+            })?,
+        );
+        leaf_block_selected_count = leaf_block_selected_count.saturating_add(
+            u64::try_from(store.leaf_block_selected_count).map_err(|_| {
+                "ec_spire selected-leaf scan profile selected block count exceeds u64"
+            })?,
+        );
+        leaf_block_skipped_count = leaf_block_skipped_count.saturating_add(
+            u64::try_from(store.leaf_block_skipped_count).map_err(|_| {
+                "ec_spire selected-leaf scan profile skipped block count exceeds u64"
+            })?,
+        );
+        leaf_summary_score_nanos =
+            leaf_summary_score_nanos.saturating_add(store.leaf_summary_score_nanos);
+        leaf_row_score_nanos = leaf_row_score_nanos.saturating_add(store.leaf_row_score_nanos);
+        candidate_score_nanos = candidate_score_nanos.saturating_add(store.candidate_score_nanos);
+    }
+
+    Ok(SpireSelectedLeafScanProfile {
+        served_epoch,
+        node_id: super::meta::SPIRE_LOCAL_NODE_ID,
+        selected_pid_count,
+        scanned_pid_count,
+        leaf_candidate_row_count,
+        deduped_candidate_row_count,
+        truncated_candidate_row_count,
+        candidate_winner_count,
+        leaf_block_available_count,
+        leaf_block_selected_count,
+        leaf_block_skipped_count,
+        sound_upper_bound_available_count: leaf_block_available_count,
+        sound_upper_bound_missing_count: scanned_pid_count.saturating_sub(leaf_block_available_count),
+        leaf_summary_score_nanos,
+        leaf_row_score_nanos,
+        candidate_score_nanos,
+        local_kth_score,
+    })
+}
+
+pub(super) fn collect_quantized_selected_leaf_threshold_profile(
+    snapshot: &SpirePublishedEpochSnapshot<'_>,
+    object_store: &impl SpireObjectReader,
+    query_vector: &[f32],
+    selected_leaf_pids: &[u64],
+    payload_format: SpireAssignmentPayloadFormat,
+    threshold_score: f32,
+) -> Result<SpireSelectedLeafThresholdProfile, String> {
+    let served_epoch = snapshot.epoch_manifest.epoch;
+    let selected_pid_count = u64::try_from(selected_leaf_pids.len())
+        .map_err(|_| "ec_spire selected-leaf threshold profile selected PID count exceeds u64")?;
+    if !threshold_score.is_finite() {
+        return Err("ec_spire selected-leaf threshold profile threshold_score must be finite".to_owned());
+    }
+    if selected_leaf_pids.is_empty() {
+        return Ok(SpireSelectedLeafThresholdProfile {
+            served_epoch,
+            node_id: super::meta::SPIRE_LOCAL_NODE_ID,
+            selected_pid_count,
+            evaluated_pid_count: 0,
+            threshold_score,
+            threshold_ip: -threshold_score,
+            sound_upper_bound_available_count: 0,
+            sound_upper_bound_missing_count: 0,
+            threshold_block_available_count: 0,
+            threshold_block_selected_count: 0,
+            threshold_block_skipped_count: 0,
+            threshold_row_available_count: 0,
+            threshold_row_selected_count: 0,
+            threshold_row_skipped_count: 0,
+            leaf_summary_score_nanos: 0,
+        });
+    }
+
+    let snapshot = SpireValidatedEpochSnapshot::from_snapshot(*snapshot)?;
+    let scorer =
+        SpirePreparedAssignmentScorer::prepare(payload_format, query_vector.len(), query_vector)?;
+    let threshold_ip = -threshold_score;
+    if !threshold_ip.is_finite() {
+        return Err("ec_spire selected-leaf threshold profile threshold_ip must be finite".to_owned());
+    }
+    let leaf_routes =
+        selected_leaf_routes_from_snapshot(&snapshot, object_store, selected_leaf_pids)?;
+    let score_context = SpireLeafBlockSummaryScoreContext::new(&scorer, 1.0)?;
+
+    let mut evaluated_pid_count = 0_u64;
+    let mut sound_upper_bound_available_count = 0_u64;
+    let mut sound_upper_bound_missing_count = 0_u64;
+    let mut threshold_block_available_count = 0_u64;
+    let mut threshold_block_selected_count = 0_u64;
+    let mut threshold_block_skipped_count = 0_u64;
+    let mut threshold_row_available_count = 0_u64;
+    let mut threshold_row_selected_count = 0_u64;
+    let mut threshold_row_skipped_count = 0_u64;
+    let mut leaf_summary_score_nanos = 0_u64;
+
+    for route in leaf_routes {
+        let lookup = snapshot.require_lookup(route.leaf_pid, "selected-leaf threshold profile")?;
+        if should_skip_placement(
+            snapshot.epoch_manifest().consistency_mode,
+            lookup.placement.state,
+        )? {
+            continue;
+        }
+        evaluated_pid_count = evaluated_pid_count.saturating_add(1);
+        let Ok(leaf_object) = object_store.read_leaf_object_v2(lookup.placement) else {
+            sound_upper_bound_missing_count = sound_upper_bound_missing_count.saturating_add(1);
+            continue;
+        };
+        if leaf_object.summaries.is_empty() || scorer.payload_format() != SpireAssignmentPayloadFormat::RaBitQ {
+            sound_upper_bound_missing_count = sound_upper_bound_missing_count.saturating_add(1);
+            continue;
+        }
+
+        sound_upper_bound_available_count = sound_upper_bound_available_count.saturating_add(1);
+        threshold_block_available_count = threshold_block_available_count.saturating_add(
+            u64::try_from(leaf_object.summaries.len()).map_err(|_| {
+                "ec_spire selected-leaf threshold profile summary count exceeds u64"
+                    .to_owned()
+            })?,
+        );
+        let score_started = Instant::now();
+        for summary in &leaf_object.summaries {
+            let upper_bound_ip =
+                score_leaf_block_summary_ip_with_context(summary, &scorer, score_context)?;
+            let row_count = u64::from(summary.row_count);
+            threshold_row_available_count = threshold_row_available_count.saturating_add(row_count);
+            if upper_bound_ip < threshold_ip {
+                threshold_block_skipped_count = threshold_block_skipped_count.saturating_add(1);
+                threshold_row_skipped_count = threshold_row_skipped_count.saturating_add(row_count);
+            } else {
+                threshold_block_selected_count = threshold_block_selected_count.saturating_add(1);
+                threshold_row_selected_count = threshold_row_selected_count.saturating_add(row_count);
+            }
+        }
+        leaf_summary_score_nanos =
+            leaf_summary_score_nanos.saturating_add(elapsed_nanos_since(score_started));
+    }
+
+    Ok(SpireSelectedLeafThresholdProfile {
+        served_epoch,
+        node_id: super::meta::SPIRE_LOCAL_NODE_ID,
+        selected_pid_count,
+        evaluated_pid_count,
+        threshold_score,
+        threshold_ip,
+        sound_upper_bound_available_count,
+        sound_upper_bound_missing_count,
+        threshold_block_available_count,
+        threshold_block_selected_count,
+        threshold_block_skipped_count,
+        threshold_row_available_count,
+        threshold_row_selected_count,
+        threshold_row_skipped_count,
+        leaf_summary_score_nanos,
+    })
 }
 
 fn selected_leaf_routes_from_snapshot(
@@ -226,6 +507,7 @@ where
         &scorer,
         scan_plan.dedupe_mode,
         scan_plan.candidate_limit,
+        None,
         &mut observer,
     )?;
     rerank_scored_candidates_by_ip_with_prefetch(
@@ -441,6 +723,7 @@ fn collect_validated_top_graph_scan_placement_diagnostics(
         &scorer,
         scan_plan.dedupe_mode,
         scan_plan.candidate_limit,
+        None,
         &mut observer,
     )?;
     let (stores, leaves) = observer.into_diagnostics();
@@ -611,6 +894,7 @@ fn collect_validated_top_graph_scan_plan_approx_candidates(
         &scorer,
         scan_plan.dedupe_mode,
         scan_plan.candidate_limit,
+        None,
         &mut observer,
     )
 }
@@ -1911,6 +2195,60 @@ where
         scored_ranges,
         max_blocks,
     )))
+}
+
+fn select_threshold_leaf_block_row_ranges(
+    summaries: &[SpireLeafBlockSummary],
+    threshold_score: f32,
+    scorer: &SpirePreparedAssignmentScorer,
+    epoch: u64,
+    placement: &SpirePlacementEntry,
+    observer: &mut impl SpireRoutedScanObserver,
+) -> Result<Option<Vec<SpireLeafBlockRowRange>>, String> {
+    if summaries.is_empty() {
+        return Ok(None);
+    }
+    if scorer.payload_format() != SpireAssignmentPayloadFormat::RaBitQ {
+        observer.leaf_block_selection(epoch, placement, summaries.len(), summaries.len());
+        return Ok(None);
+    }
+    if !threshold_score.is_finite() {
+        return Err("ec_spire selected-leaf threshold pruning score must be finite".to_owned());
+    }
+    let threshold_ip = -threshold_score;
+    if !threshold_ip.is_finite() {
+        return Err("ec_spire selected-leaf threshold pruning ip must be finite".to_owned());
+    }
+
+    let score_context = SpireLeafBlockSummaryScoreContext::new(scorer, 1.0)?;
+    let score_started = observer.wants_candidate_timing().then(Instant::now);
+    let mut ranges = Vec::new();
+    for summary in summaries {
+        let upper_bound_ip =
+            score_leaf_block_summary_ip_with_context(summary, scorer, score_context)?;
+        if upper_bound_ip >= threshold_ip {
+            let row_end = summary
+                .row_base
+                .checked_add(summary.row_count)
+                .ok_or_else(|| "ec_spire leaf V3 summary threshold row range overflow".to_owned())?;
+            ranges.push(SpireLeafBlockRowRange {
+                row_base: summary.row_base,
+                row_end,
+                row_segment_locator: summary.row_segment_locator,
+            });
+        }
+    }
+    if let Some(started) = score_started {
+        observer.leaf_summary_score_time(epoch, placement, elapsed_nanos_since(started));
+    }
+
+    if ranges.len() == summaries.len() {
+        observer.leaf_block_selection(epoch, placement, summaries.len(), summaries.len());
+        return Ok(None);
+    }
+    ranges.sort_by_key(|range| range.row_base);
+    observer.leaf_block_selection(epoch, placement, summaries.len(), ranges.len());
+    Ok(Some(ranges))
 }
 
 fn select_sampled_global_leaf_block_row_ranges(

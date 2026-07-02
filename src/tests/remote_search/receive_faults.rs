@@ -56,6 +56,7 @@
                 selected_pids: vec![selected_pid],
                 top_k: 1,
                 consistency_mode: "strict".to_owned(),
+                initial_threshold_score: None,
             },
         ]);
         let receive = rows.first().expect("receive row should exist");
@@ -133,6 +134,7 @@
                 selected_pids: vec![u64::try_from(selected_pid).expect("pid should fit u64")],
                 top_k: 0,
                 consistency_mode: "strict".to_owned(),
+                initial_threshold_score: None,
             },
         ]);
         let receive = rows.first().expect("top-k-zero row should exist");
@@ -218,6 +220,7 @@
                 selected_pids: vec![u64::try_from(selected_pid).expect("pid should fit u64")],
                 top_k: 1,
                 consistency_mode: consistency_mode.to_owned(),
+                    initial_threshold_score: None,
             }
         };
 
@@ -353,6 +356,7 @@
                     selected_pids: vec![u64::try_from(selected_pid).expect("pid should fit u64")],
                     top_k: 1,
                     consistency_mode: consistency_mode.to_owned(),
+                    initial_threshold_score: None,
                 }
             };
             let requests = vec![
@@ -481,6 +485,7 @@
                 selected_pids: vec![u64::try_from(selected_pid).expect("pid should fit u64")],
                 top_k: 1,
                 consistency_mode: consistency_mode.to_owned(),
+                    initial_threshold_score: None,
             }
         };
 
@@ -614,6 +619,7 @@
                     selected_pids: vec![u64::try_from(selected_pid).expect("pid should fit u64")],
                     top_k: 1,
                     consistency_mode: consistency_mode.to_owned(),
+                    initial_threshold_score: None,
                 }
             };
             let requests = vec![
@@ -766,6 +772,7 @@
                     selected_pids: selected_pids.clone(),
                     top_k: 1,
                     consistency_mode: consistency_mode.to_owned(),
+                    initial_threshold_score: None,
                 }
             };
             let requests = vec![
@@ -922,6 +929,7 @@
                 selected_pids: vec![u64::try_from(selected_pid).expect("pid should fit u64")],
                 top_k: 1,
                 consistency_mode: "strict".to_owned(),
+                initial_threshold_score: None,
             },
         ]);
         let failed = rows.first().expect("timeout row should exist");
@@ -1011,6 +1019,7 @@
                 selected_pids: vec![u64::try_from(selected_pid).expect("pid should fit u64")],
                 top_k: 1,
                 consistency_mode: "strict".to_owned(),
+                initial_threshold_score: None,
             },
         ]);
         let failed = rows.first().expect("cancel row should exist");
@@ -1110,6 +1119,7 @@
                 selected_pids: vec![u64::try_from(selected_pid).expect("pid should fit u64")],
                 top_k: 1,
                 consistency_mode: "strict".to_owned(),
+                initial_threshold_score: None,
             }],
             25,
         );
@@ -1160,6 +1170,7 @@
                 selected_pids: vec![1],
                 top_k: 1,
                 consistency_mode: "strict".to_owned(),
+                initial_threshold_score: None,
             },
         ]);
         let failed = rows.first().expect("governance overload row should exist");
@@ -1244,6 +1255,7 @@
                 selected_pids: vec![u64::try_from(selected_pid).expect("pid should fit u64")],
                 top_k: 1,
                 consistency_mode: "strict".to_owned(),
+                initial_threshold_score: None,
             },
         ]);
         let failed = rows.first().expect("identity mismatch row should exist");
@@ -1336,6 +1348,7 @@
                 selected_pids: vec![u64::try_from(selected_pid).expect("pid should fit u64")],
                 top_k: 1,
                 consistency_mode: "strict".to_owned(),
+                initial_threshold_score: None,
             },
         ]);
         let failed = rows.first().expect("stale epoch row should exist");
@@ -1425,6 +1438,7 @@
                 selected_pids: vec![u64::try_from(selected_pid).expect("pid should fit u64")],
                 top_k: 1,
                 consistency_mode: "strict".to_owned(),
+                initial_threshold_score: None,
             },
         ]);
         let failed = rows.first().expect("termination row should exist");
@@ -1556,6 +1570,7 @@
                 selected_pids,
                 top_k: 1,
                 consistency_mode: consistency_mode.to_owned(),
+                    initial_threshold_score: None,
             }
         };
         let rows = am::spire_remote_search_production_candidate_receive_for_test(vec![

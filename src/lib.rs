@@ -13726,6 +13726,26 @@ fn ec_spire_remote_search_production_read_profile(
         row.payload_decode_row_count
     );
     metric!(rows, "payload_decode_bytes", row.payload_decode_bytes);
+    metric!(
+        rows,
+        "global_pre_heap_input_count",
+        row.global_pre_heap_input_count
+    );
+    metric!(
+        rows,
+        "global_pre_heap_candidate_count",
+        row.global_pre_heap_candidate_count
+    );
+    metric!(
+        rows,
+        "global_pre_heap_duplicate_vec_id_count",
+        row.global_pre_heap_duplicate_vec_id_count
+    );
+    metric!(
+        rows,
+        "global_pre_heap_pruned_candidate_count",
+        row.global_pre_heap_pruned_candidate_count
+    );
     metric!(rows, "merge_input_count", row.merge_input_count);
     metric!(
         rows,
@@ -13742,6 +13762,240 @@ fn ec_spire_remote_search_production_read_profile(
         row.degraded_skipped_dispatch_count
     );
     TableIterator::new(rows)
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_remote_search_production_scan_profile(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+    top_k: i32,
+) -> TableIterator<
+    'static,
+    (
+        name!(served_epoch, i64),
+        name!(node_id, i64),
+        name!(selected_pid_count, i64),
+        name!(scanned_pid_count, i64),
+        name!(leaf_candidate_row_count, i64),
+        name!(deduped_candidate_row_count, i64),
+        name!(truncated_candidate_row_count, i64),
+        name!(candidate_winner_count, i64),
+        name!(leaf_block_available_count, i64),
+        name!(leaf_block_selected_count, i64),
+        name!(leaf_block_skipped_count, i64),
+        name!(sound_upper_bound_available_count, i64),
+        name!(sound_upper_bound_missing_count, i64),
+        name!(leaf_summary_score_nanos, i64),
+        name!(leaf_row_score_nanos, i64),
+        name!(candidate_score_nanos, i64),
+        name!(local_kth_score, Option<f32>),
+    ),
+> {
+    if top_k < 0 {
+        pgrx::error!("ec_spire_remote_search_production_scan_profile top_k must be non-negative");
+    }
+    let top_k = usize::try_from(top_k).expect("non-negative top_k should fit usize");
+    let index_relation = open_valid_ec_spire_index_guard(
+        index_oid,
+        "ec_spire_remote_search_production_scan_profile",
+    );
+    let rows = with_spire_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_production_scan_profile_rows,
+        query,
+        top_k,
+    );
+    drop(index_relation);
+
+    TableIterator::new(rows.into_iter().map(|row| {
+        (
+            i64::try_from(row.served_epoch).expect("served epoch should fit in i64"),
+            i64::from(row.node_id),
+            i64::try_from(row.selected_pid_count).expect("selected PID count should fit in i64"),
+            i64::try_from(row.scanned_pid_count).expect("scanned PID count should fit in i64"),
+            i64::try_from(row.leaf_candidate_row_count)
+                .expect("leaf candidate row count should fit in i64"),
+            i64::try_from(row.deduped_candidate_row_count)
+                .expect("deduped candidate row count should fit in i64"),
+            i64::try_from(row.truncated_candidate_row_count)
+                .expect("truncated candidate row count should fit in i64"),
+            i64::try_from(row.candidate_winner_count)
+                .expect("candidate winner count should fit in i64"),
+            i64::try_from(row.leaf_block_available_count)
+                .expect("leaf block available count should fit in i64"),
+            i64::try_from(row.leaf_block_selected_count)
+                .expect("leaf block selected count should fit in i64"),
+            i64::try_from(row.leaf_block_skipped_count)
+                .expect("leaf block skipped count should fit in i64"),
+            i64::try_from(row.sound_upper_bound_available_count)
+                .expect("sound upper bound available count should fit in i64"),
+            i64::try_from(row.sound_upper_bound_missing_count)
+                .expect("sound upper bound missing count should fit in i64"),
+            i64::try_from(row.leaf_summary_score_nanos)
+                .expect("leaf summary score nanos should fit in i64"),
+            i64::try_from(row.leaf_row_score_nanos)
+                .expect("leaf row score nanos should fit in i64"),
+            i64::try_from(row.candidate_score_nanos)
+                .expect("candidate score nanos should fit in i64"),
+            row.local_kth_score,
+        )
+    }))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_remote_search_production_threshold_profile(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+    top_k: i32,
+    threshold_score: f32,
+) -> TableIterator<
+    'static,
+    (
+        name!(served_epoch, i64),
+        name!(node_id, i64),
+        name!(selected_pid_count, i64),
+        name!(evaluated_pid_count, i64),
+        name!(threshold_score, f32),
+        name!(threshold_ip, f32),
+        name!(sound_upper_bound_available_count, i64),
+        name!(sound_upper_bound_missing_count, i64),
+        name!(threshold_block_available_count, i64),
+        name!(threshold_block_selected_count, i64),
+        name!(threshold_block_skipped_count, i64),
+        name!(threshold_row_available_count, i64),
+        name!(threshold_row_selected_count, i64),
+        name!(threshold_row_skipped_count, i64),
+        name!(leaf_summary_score_nanos, i64),
+    ),
+> {
+    if top_k < 0 {
+        pgrx::error!(
+            "ec_spire_remote_search_production_threshold_profile top_k must be non-negative"
+        );
+    }
+    if !threshold_score.is_finite() {
+        pgrx::error!(
+            "ec_spire_remote_search_production_threshold_profile threshold_score must be finite"
+        );
+    }
+    let top_k = usize::try_from(top_k).expect("non-negative top_k should fit usize");
+    let index_relation = open_valid_ec_spire_index_guard(
+        index_oid,
+        "ec_spire_remote_search_production_threshold_profile",
+    );
+    let rows = with_spire_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_production_threshold_profile_rows,
+        query,
+        top_k,
+        threshold_score,
+    );
+    drop(index_relation);
+
+    TableIterator::new(rows.into_iter().map(|row| {
+        (
+            i64::try_from(row.served_epoch).expect("served epoch should fit in i64"),
+            i64::from(row.node_id),
+            i64::try_from(row.selected_pid_count).expect("selected PID count should fit in i64"),
+            i64::try_from(row.evaluated_pid_count).expect("evaluated PID count should fit in i64"),
+            row.threshold_score,
+            row.threshold_ip,
+            i64::try_from(row.sound_upper_bound_available_count)
+                .expect("sound upper bound available count should fit in i64"),
+            i64::try_from(row.sound_upper_bound_missing_count)
+                .expect("sound upper bound missing count should fit in i64"),
+            i64::try_from(row.threshold_block_available_count)
+                .expect("threshold block available count should fit in i64"),
+            i64::try_from(row.threshold_block_selected_count)
+                .expect("threshold block selected count should fit in i64"),
+            i64::try_from(row.threshold_block_skipped_count)
+                .expect("threshold block skipped count should fit in i64"),
+            i64::try_from(row.threshold_row_available_count)
+                .expect("threshold row available count should fit in i64"),
+            i64::try_from(row.threshold_row_selected_count)
+                .expect("threshold row selected count should fit in i64"),
+            i64::try_from(row.threshold_row_skipped_count)
+                .expect("threshold row skipped count should fit in i64"),
+            i64::try_from(row.leaf_summary_score_nanos)
+                .expect("leaf summary score nanos should fit in i64"),
+        )
+    }))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_remote_search_production_candidate_threshold_profile(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+    top_k: i32,
+) -> TableIterator<
+    'static,
+    (
+        name!(served_epoch, i64),
+        name!(node_id, i64),
+        name!(selected_pid_count, i64),
+        name!(evaluated_pid_count, i64),
+        name!(threshold_score, f32),
+        name!(threshold_ip, f32),
+        name!(sound_upper_bound_available_count, i64),
+        name!(sound_upper_bound_missing_count, i64),
+        name!(threshold_block_available_count, i64),
+        name!(threshold_block_selected_count, i64),
+        name!(threshold_block_skipped_count, i64),
+        name!(threshold_row_available_count, i64),
+        name!(threshold_row_selected_count, i64),
+        name!(threshold_row_skipped_count, i64),
+        name!(leaf_summary_score_nanos, i64),
+    ),
+> {
+    if top_k < 0 {
+        pgrx::error!(
+            "ec_spire_remote_search_production_candidate_threshold_profile top_k must be non-negative"
+        );
+    }
+    let top_k = usize::try_from(top_k).expect("non-negative top_k should fit usize");
+    let index_relation = open_valid_ec_spire_index_guard(
+        index_oid,
+        "ec_spire_remote_search_production_candidate_threshold_profile",
+    );
+    let rows = with_spire_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_production_candidate_threshold_profile_rows,
+        query,
+        top_k,
+    );
+    drop(index_relation);
+
+    TableIterator::new(rows.into_iter().map(|row| {
+        (
+            i64::try_from(row.served_epoch).expect("served epoch should fit in i64"),
+            i64::from(row.node_id),
+            i64::try_from(row.selected_pid_count).expect("selected PID count should fit in i64"),
+            i64::try_from(row.evaluated_pid_count).expect("evaluated PID count should fit in i64"),
+            row.threshold_score,
+            row.threshold_ip,
+            i64::try_from(row.sound_upper_bound_available_count)
+                .expect("sound upper bound available count should fit in i64"),
+            i64::try_from(row.sound_upper_bound_missing_count)
+                .expect("sound upper bound missing count should fit in i64"),
+            i64::try_from(row.threshold_block_available_count)
+                .expect("threshold block available count should fit in i64"),
+            i64::try_from(row.threshold_block_selected_count)
+                .expect("threshold block selected count should fit in i64"),
+            i64::try_from(row.threshold_block_skipped_count)
+                .expect("threshold block skipped count should fit in i64"),
+            i64::try_from(row.threshold_row_available_count)
+                .expect("threshold row available count should fit in i64"),
+            i64::try_from(row.threshold_row_selected_count)
+                .expect("threshold row selected count should fit in i64"),
+            i64::try_from(row.threshold_row_skipped_count)
+                .expect("threshold row skipped count should fit in i64"),
+            i64::try_from(row.leaf_summary_score_nanos)
+                .expect("leaf summary score nanos should fit in i64"),
+        )
+    }))
 }
 
 #[pg_extern(stable, strict)]
@@ -15417,6 +15671,157 @@ fn ec_spire_remote_search_local_heap_candidates(
     }))
 }
 
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
+fn ec_spire_remote_search_explicit_local_heap_candidates(
+    index_oid: pg_sys::Oid,
+    requested_epoch: i64,
+    query: Vec<f32>,
+    served_epochs: Vec<i64>,
+    pids: Vec<i64>,
+    object_versions: Vec<i64>,
+    row_indices: Vec<i64>,
+    assignment_flags: Vec<i16>,
+    vec_id_hex_values: Vec<String>,
+    row_locator_hex_values: Vec<String>,
+    scores: Vec<f32>,
+) -> TableIterator<
+    'static,
+    (
+        name!(requested_epoch, i64),
+        name!(served_epoch, i64),
+        name!(node_id, i64),
+        name!(pid, i64),
+        name!(object_version, i64),
+        name!(row_index, i64),
+        name!(assignment_flags, i16),
+        name!(vec_id, Vec<u8>),
+        name!(row_locator, Vec<u8>),
+        name!(heap_block, i64),
+        name!(heap_offset, i32),
+        name!(score, f32),
+        name!(heap_lookup_owner, &'static str),
+        name!(status, &'static str),
+    ),
+> {
+    if requested_epoch <= 0 {
+        pgrx::error!(
+            "ec_spire_remote_search_explicit_local_heap_candidates requested_epoch must be greater than 0"
+        );
+    }
+    let served_epochs = served_epochs
+        .into_iter()
+        .map(|value| {
+            u64::try_from(value).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_remote_search_explicit_local_heap_candidates served_epoch {value} is negative"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let pids = pids
+        .into_iter()
+        .map(|value| {
+            u64::try_from(value).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_remote_search_explicit_local_heap_candidates pid {value} is negative"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let object_versions = object_versions
+        .into_iter()
+        .map(|value| {
+            u64::try_from(value).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_remote_search_explicit_local_heap_candidates object_version {value} is negative"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let row_indices = row_indices
+        .into_iter()
+        .map(|value| {
+            u32::try_from(value).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_remote_search_explicit_local_heap_candidates row_index {value} is invalid"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let assignment_flags = assignment_flags
+        .into_iter()
+        .map(|value| {
+            u16::try_from(value).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_remote_search_explicit_local_heap_candidates assignment_flags {value} is negative"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let vec_ids = vec_id_hex_values
+        .into_iter()
+        .map(|value| {
+            hex::decode(&value).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_remote_search_explicit_local_heap_candidates vec_id hex is invalid"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let row_locators = row_locator_hex_values
+        .into_iter()
+        .map(|value| {
+            hex::decode(&value).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_remote_search_explicit_local_heap_candidates row_locator hex is invalid"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let requested_epoch =
+        u64::try_from(requested_epoch).expect("positive requested_epoch should fit u64");
+
+    let index_relation = open_valid_ec_spire_index_guard(
+        index_oid,
+        "ec_spire_remote_search_explicit_local_heap_candidates",
+    );
+    let rows = with_spire_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_explicit_local_heap_candidate_rows,
+        requested_epoch,
+        query,
+        served_epochs,
+        pids,
+        object_versions,
+        row_indices,
+        assignment_flags,
+        vec_ids,
+        row_locators,
+        scores,
+    );
+    drop(index_relation);
+
+    TableIterator::new(rows.into_iter().map(|row| {
+        (
+            i64::try_from(row.requested_epoch).expect("requested epoch should fit in i64"),
+            i64::try_from(row.served_epoch).expect("served epoch should fit in i64"),
+            i64::from(row.node_id),
+            i64::try_from(row.pid).expect("pid should fit in i64"),
+            i64::try_from(row.object_version).expect("object version should fit in i64"),
+            i64::from(row.row_index),
+            i16::try_from(row.assignment_flags).expect("assignment flags should fit in i16"),
+            row.vec_id,
+            row.row_locator,
+            i64::from(row.heap_block),
+            i32::from(row.heap_offset),
+            row.score,
+            row.heap_lookup_owner,
+            row.status,
+        )
+    }))
+}
+
 fn ec_spire_validate_tuple_payload_columns(
     heap_relation_oid: pg_sys::Oid,
     requested_columns: &[String],
@@ -16961,6 +17366,202 @@ fn ec_spire_remote_search_coordinator_local(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_remote_search_coordinator_local_scan_profile(
+    index_oid: pg_sys::Oid,
+    requested_epoch: i64,
+    query: Vec<f32>,
+    selected_pids: Vec<i64>,
+    top_k: i32,
+    consistency_mode: String,
+) -> TableIterator<
+    'static,
+    (
+        name!(served_epoch, i64),
+        name!(node_id, i64),
+        name!(selected_pid_count, i64),
+        name!(scanned_pid_count, i64),
+        name!(leaf_candidate_row_count, i64),
+        name!(deduped_candidate_row_count, i64),
+        name!(truncated_candidate_row_count, i64),
+        name!(candidate_winner_count, i64),
+        name!(leaf_block_available_count, i64),
+        name!(leaf_block_selected_count, i64),
+        name!(leaf_block_skipped_count, i64),
+        name!(sound_upper_bound_available_count, i64),
+        name!(sound_upper_bound_missing_count, i64),
+        name!(leaf_summary_score_nanos, i64),
+        name!(leaf_row_score_nanos, i64),
+        name!(candidate_score_nanos, i64),
+        name!(local_kth_score, Option<f32>),
+    ),
+> {
+    if requested_epoch <= 0 {
+        pgrx::error!(
+            "ec_spire_remote_search_coordinator_local_scan_profile requested_epoch must be greater than 0"
+        );
+    }
+    if top_k < 0 {
+        pgrx::error!(
+            "ec_spire_remote_search_coordinator_local_scan_profile top_k must be non-negative"
+        );
+    }
+    let selected_pids = selected_pids
+        .into_iter()
+        .map(|pid| {
+            u64::try_from(pid).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_remote_search_coordinator_local_scan_profile selected PID {pid} is negative"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let top_k = usize::try_from(top_k).expect("non-negative top_k should fit usize");
+    let requested_epoch =
+        u64::try_from(requested_epoch).expect("positive requested_epoch should fit u64");
+
+    let index_relation = open_valid_ec_spire_index_guard(
+        index_oid,
+        "ec_spire_remote_search_coordinator_local_scan_profile",
+    );
+    let row = with_spire_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_coordinator_local_scan_profile,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        &consistency_mode,
+    );
+    drop(index_relation);
+
+    TableIterator::once((
+        i64::try_from(row.served_epoch).expect("served epoch should fit in i64"),
+        i64::from(row.node_id),
+        i64::try_from(row.selected_pid_count).expect("selected PID count should fit in i64"),
+        i64::try_from(row.scanned_pid_count).expect("scanned PID count should fit in i64"),
+        i64::try_from(row.leaf_candidate_row_count)
+            .expect("leaf candidate row count should fit in i64"),
+        i64::try_from(row.deduped_candidate_row_count)
+            .expect("deduped candidate row count should fit in i64"),
+        i64::try_from(row.truncated_candidate_row_count)
+            .expect("truncated candidate row count should fit in i64"),
+        i64::try_from(row.candidate_winner_count)
+            .expect("candidate winner count should fit in i64"),
+        i64::try_from(row.leaf_block_available_count)
+            .expect("leaf block available count should fit in i64"),
+        i64::try_from(row.leaf_block_selected_count)
+            .expect("leaf block selected count should fit in i64"),
+        i64::try_from(row.leaf_block_skipped_count)
+            .expect("leaf block skipped count should fit in i64"),
+        i64::try_from(row.sound_upper_bound_available_count)
+            .expect("sound upper bound available count should fit in i64"),
+        i64::try_from(row.sound_upper_bound_missing_count)
+            .expect("sound upper bound missing count should fit in i64"),
+        i64::try_from(row.leaf_summary_score_nanos)
+            .expect("leaf summary score nanos should fit in i64"),
+        i64::try_from(row.leaf_row_score_nanos).expect("leaf row score nanos should fit in i64"),
+        i64::try_from(row.candidate_score_nanos).expect("candidate score nanos should fit in i64"),
+        row.local_kth_score,
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_remote_search_coordinator_local_threshold_profile(
+    index_oid: pg_sys::Oid,
+    requested_epoch: i64,
+    query: Vec<f32>,
+    selected_pids: Vec<i64>,
+    threshold_score: f32,
+    consistency_mode: String,
+) -> TableIterator<
+    'static,
+    (
+        name!(served_epoch, i64),
+        name!(node_id, i64),
+        name!(selected_pid_count, i64),
+        name!(evaluated_pid_count, i64),
+        name!(threshold_score, f32),
+        name!(threshold_ip, f32),
+        name!(sound_upper_bound_available_count, i64),
+        name!(sound_upper_bound_missing_count, i64),
+        name!(threshold_block_available_count, i64),
+        name!(threshold_block_selected_count, i64),
+        name!(threshold_block_skipped_count, i64),
+        name!(threshold_row_available_count, i64),
+        name!(threshold_row_selected_count, i64),
+        name!(threshold_row_skipped_count, i64),
+        name!(leaf_summary_score_nanos, i64),
+    ),
+> {
+    if requested_epoch <= 0 {
+        pgrx::error!(
+            "ec_spire_remote_search_coordinator_local_threshold_profile requested_epoch must be greater than 0"
+        );
+    }
+    if !threshold_score.is_finite() {
+        pgrx::error!(
+            "ec_spire_remote_search_coordinator_local_threshold_profile threshold_score must be finite"
+        );
+    }
+    let selected_pids = selected_pids
+        .into_iter()
+        .map(|pid| {
+            u64::try_from(pid).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_remote_search_coordinator_local_threshold_profile selected PID {pid} is negative"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let requested_epoch =
+        u64::try_from(requested_epoch).expect("positive requested_epoch should fit u64");
+
+    let index_relation = open_valid_ec_spire_index_guard(
+        index_oid,
+        "ec_spire_remote_search_coordinator_local_threshold_profile",
+    );
+    let row = with_spire_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_coordinator_local_threshold_profile,
+        requested_epoch,
+        query,
+        selected_pids,
+        threshold_score,
+        &consistency_mode,
+    );
+    drop(index_relation);
+
+    TableIterator::once((
+        i64::try_from(row.served_epoch).expect("served epoch should fit in i64"),
+        i64::from(row.node_id),
+        i64::try_from(row.selected_pid_count).expect("selected PID count should fit in i64"),
+        i64::try_from(row.evaluated_pid_count).expect("evaluated PID count should fit in i64"),
+        row.threshold_score,
+        row.threshold_ip,
+        i64::try_from(row.sound_upper_bound_available_count)
+            .expect("sound upper bound available count should fit in i64"),
+        i64::try_from(row.sound_upper_bound_missing_count)
+            .expect("sound upper bound missing count should fit in i64"),
+        i64::try_from(row.threshold_block_available_count)
+            .expect("threshold block available count should fit in i64"),
+        i64::try_from(row.threshold_block_selected_count)
+            .expect("threshold block selected count should fit in i64"),
+        i64::try_from(row.threshold_block_skipped_count)
+            .expect("threshold block skipped count should fit in i64"),
+        i64::try_from(row.threshold_row_available_count)
+            .expect("threshold row available count should fit in i64"),
+        i64::try_from(row.threshold_row_selected_count)
+            .expect("threshold row selected count should fit in i64"),
+        i64::try_from(row.threshold_row_skipped_count)
+            .expect("threshold row skipped count should fit in i64"),
+        i64::try_from(row.leaf_summary_score_nanos)
+            .expect("leaf summary score nanos should fit in i64"),
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_remote_search_coordinator_local_summary(
     index_oid: pg_sys::Oid,
     requested_epoch: i64,
@@ -17094,6 +17695,110 @@ fn ec_spire_remote_search(
         selected_pids,
         top_k,
         &consistency_mode,
+    );
+    let endpoint_identity = with_spire_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_endpoint_identity_row
+    );
+    drop(index_relation);
+
+    TableIterator::new(rows.into_iter().map(move |row| {
+        (
+            i64::try_from(row.served_epoch).expect("served epoch should fit in i64"),
+            i64::from(row.node_id),
+            i64::try_from(row.pid).expect("pid should fit in i64"),
+            i64::try_from(row.object_version).expect("object version should fit in i64"),
+            i64::from(row.row_index),
+            i16::try_from(row.assignment_flags).expect("assignment flags should fit in i16"),
+            row.vec_id,
+            row.row_locator,
+            row.score,
+            endpoint_identity.protocol_version,
+            endpoint_identity.extension_version,
+            endpoint_identity.opclass_identity.clone(),
+            endpoint_identity.storage_format,
+            endpoint_identity.assignment_payload_format,
+            endpoint_identity.quantizer_profile,
+            endpoint_identity.scoring_profile,
+            endpoint_identity.profile_fingerprint.clone(),
+            endpoint_identity.status,
+        )
+    }))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_remote_search_with_initial_threshold(
+    index_oid: pg_sys::Oid,
+    requested_epoch: i64,
+    query: Vec<f32>,
+    selected_pids: Vec<i64>,
+    top_k: i32,
+    consistency_mode: String,
+    initial_threshold_score: f32,
+) -> TableIterator<
+    'static,
+    (
+        name!(served_epoch, i64),
+        name!(node_id, i64),
+        name!(pid, i64),
+        name!(object_version, i64),
+        name!(row_index, i64),
+        name!(assignment_flags, i16),
+        name!(vec_id, Vec<u8>),
+        name!(row_locator, Vec<u8>),
+        name!(score, f32),
+        name!(protocol_version, &'static str),
+        name!(extension_version, &'static str),
+        name!(opclass_identity, String),
+        name!(storage_format, &'static str),
+        name!(assignment_payload_format, &'static str),
+        name!(quantizer_profile, &'static str),
+        name!(scoring_profile, &'static str),
+        name!(profile_fingerprint, String),
+        name!(endpoint_status, &'static str),
+    ),
+> {
+    if requested_epoch <= 0 {
+        pgrx::error!(
+            "ec_spire_remote_search_with_initial_threshold requested_epoch must be greater than 0"
+        );
+    }
+    if top_k < 0 {
+        pgrx::error!("ec_spire_remote_search_with_initial_threshold top_k must be non-negative");
+    }
+    if !initial_threshold_score.is_finite() {
+        pgrx::error!(
+            "ec_spire_remote_search_with_initial_threshold initial_threshold_score must be finite"
+        );
+    }
+    let selected_pids = selected_pids
+        .into_iter()
+        .map(|pid| {
+            u64::try_from(pid).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_remote_search_with_initial_threshold selected PID {pid} is negative"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let top_k = usize::try_from(top_k).expect("non-negative top_k should fit usize");
+    let requested_epoch =
+        u64::try_from(requested_epoch).expect("positive requested_epoch should fit u64");
+
+    let index_relation = open_valid_ec_spire_index_guard(
+        index_oid,
+        "ec_spire_remote_search_with_initial_threshold",
+    );
+    let rows = with_spire_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_candidates_with_initial_threshold,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        &consistency_mode,
+        initial_threshold_score,
     );
     let endpoint_identity = with_spire_live_index_relation!(
         index_relation,

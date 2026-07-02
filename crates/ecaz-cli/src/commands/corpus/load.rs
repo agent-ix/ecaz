@@ -97,6 +97,12 @@ pub struct LoadArgs {
     #[arg(long = "table-reloption", value_parser = crate::reloptions::parse_cli)]
     pub table_reloptions: Vec<(String, String)>,
 
+    /// Session GUCs to apply on the loader connection before CREATE INDEX.
+    ///
+    /// This is for build-time AM switches such as ec_spire.leaf_block_rows.
+    #[arg(long = "session-guc", value_parser = parse_session_guc)]
+    pub session_gucs: Vec<(String, String)>,
+
     /// Optional manifest file path (auto-discovered when corpus/queries files
     /// follow the `<basename>_{corpus,queries}.tsv` convention).
     #[arg(long)]
@@ -378,6 +384,11 @@ pub async fn run(conn: &ConnectionOptions, args: LoadArgs) -> Result<()> {
             return Ok(());
         }
         let mut client = psql::connect(conn).await?;
+        client
+            .batch_execute("CREATE EXTENSION IF NOT EXISTS ecaz")
+            .await
+            .wrap_err("ensuring ecaz extension")?;
+        apply_loader_session_gucs(&client, &args.session_gucs).await?;
         let corpus_table = format!("{}_corpus", args.prefix);
         let queries_table = format!("{}_queries", args.prefix);
         let corpus_loaded = ensure_chunked_corpus_table(
@@ -509,6 +520,7 @@ pub async fn run(conn: &ConnectionOptions, args: LoadArgs) -> Result<()> {
         .batch_execute("CREATE EXTENSION IF NOT EXISTS ecaz")
         .await
         .wrap_err("ensuring ecaz extension")?;
+    apply_loader_session_gucs(&client, &args.session_gucs).await?;
 
     let corpus_loaded = ensure_corpus_table(
         &mut client,
@@ -560,6 +572,64 @@ pub async fn run(conn: &ConnectionOptions, args: LoadArgs) -> Result<()> {
         total_started.elapsed()
     );
     Ok(())
+}
+
+fn parse_session_guc(raw: &str) -> Result<(String, String)> {
+    let (name, value) = raw
+        .split_once('=')
+        .ok_or_else(|| eyre!("--session-guc must use name=value syntax, got {raw:?}"))?;
+    if name.is_empty()
+        || !name
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '.')
+        || !name
+            .chars()
+            .next()
+            .is_some_and(|ch| ch.is_ascii_alphabetic())
+    {
+        return Err(eyre!("invalid --session-guc name {name:?}"));
+    }
+    if value.is_empty() {
+        return Err(eyre!("--session-guc value must not be empty for {name:?}"));
+    }
+    if value.contains(';') {
+        return Err(eyre!(
+            "--session-guc value for {name:?} must not contain ';'"
+        ));
+    }
+    Ok((name.to_owned(), value.to_owned()))
+}
+
+async fn apply_loader_session_gucs(
+    client: &Client,
+    session_gucs: &[(String, String)],
+) -> Result<()> {
+    if !session_gucs.is_empty() {
+        client
+            .batch_execute("LOAD 'ecaz'")
+            .await
+            .wrap_err("loading ecaz before applying loader session GUCs")?;
+    }
+    for (name, value) in session_gucs {
+        client
+            .batch_execute(&format!("SET {name} = {value}"))
+            .await
+            .wrap_err_with(|| format!("SET {name} = {value}"))?;
+        crate::ecaz_println!(
+            "[loader] session_guc {}={}",
+            name,
+            current_setting(client, name).await?
+        );
+    }
+    Ok(())
+}
+
+async fn current_setting(client: &Client, name: &str) -> Result<String> {
+    let row = client
+        .query_one("SELECT current_setting($1)", &[&name])
+        .await
+        .wrap_err_with(|| format!("reading current_setting({name})"))?;
+    Ok(row.get(0))
 }
 
 fn load_chunked_manifest_if_requested(

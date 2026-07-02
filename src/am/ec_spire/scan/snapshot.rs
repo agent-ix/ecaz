@@ -325,6 +325,7 @@ fn collect_validated_recursive_quantized_routed_probe_candidates(
         &scorer,
         dedupe_mode,
         limit,
+        None,
         observer,
     )
 }
@@ -373,6 +374,7 @@ fn collect_validated_quantized_routed_probe_candidates(
         &scorer,
         dedupe_mode,
         limit,
+        None,
         observer,
     )
 }
@@ -384,6 +386,7 @@ fn collect_validated_quantized_leaf_route_candidates(
     scorer: &SpirePreparedAssignmentScorer,
     dedupe_mode: SpireCandidateDedupeMode,
     limit: Option<usize>,
+    initial_threshold_score: Option<f32>,
     observer: &mut impl SpireRoutedScanObserver,
 ) -> Result<Vec<SpireScoredScanCandidate>, String> {
     if limit == Some(0) {
@@ -423,6 +426,21 @@ fn collect_validated_quantized_leaf_route_candidates(
             observer,
         );
     }
+    if let Some(threshold_score) = initial_threshold_score {
+        if scorer.payload_format() == SpireAssignmentPayloadFormat::RaBitQ {
+            return collect_validated_quantized_leaf_route_candidates_with_threshold_pruning(
+                snapshot,
+                object_store,
+                route_groups,
+                delta_routes_by_parent,
+                scorer,
+                dedupe_mode,
+                limit,
+                threshold_score,
+                observer,
+            );
+        }
+    }
 
     for route_group in route_groups {
         for route in route_group.leaf_routes {
@@ -457,6 +475,98 @@ fn collect_validated_quantized_leaf_route_candidates(
                 observer,
             )?;
         }
+    }
+
+    let ranked = accumulator.into_ranked();
+    observe_candidate_winners(snapshot, observer, &ranked)?;
+    Ok(ranked)
+}
+
+fn collect_validated_quantized_leaf_route_candidates_with_threshold_pruning(
+    snapshot: &SpireValidatedEpochSnapshot<'_>,
+    object_store: &impl SpireObjectReader,
+    route_groups: Vec<SpireStoreObjectReadGroup>,
+    delta_routes_by_parent: HashMap<u64, Vec<SpireDeltaObjectRoute>>,
+    scorer: &SpirePreparedAssignmentScorer,
+    dedupe_mode: SpireCandidateDedupeMode,
+    limit: Option<usize>,
+    threshold_score: f32,
+    observer: &mut impl SpireRoutedScanObserver,
+) -> Result<Vec<SpireScoredScanCandidate>, String> {
+    let mut accumulator = SpireScoredCandidateAccumulator::new(dedupe_mode, limit);
+    let mut loaded_leaf_routes = Vec::new();
+
+    for route_group in route_groups {
+        for route in route_group.leaf_routes {
+            let leaf_pid = route.leaf_pid;
+            let leaf_delta_routes = delta_routes_by_parent
+                .get(&leaf_pid)
+                .map(Vec::as_slice)
+                .unwrap_or(&[]);
+            let loaded_delta_routes =
+                load_delta_rows_for_routes(snapshot, object_store, leaf_delta_routes, observer)?;
+            let deleted_vec_ids =
+                collect_delta_delete_vec_ids_for_loaded_routes(&loaded_delta_routes);
+            let Some(leaf_summaries) =
+                read_quantized_v2_leaf_summaries_for_route(snapshot, object_store, route, observer)?
+            else {
+                append_quantized_delta_candidates_for_loaded_routes(
+                    snapshot,
+                    &loaded_delta_routes,
+                    scorer,
+                    &deleted_vec_ids,
+                    &mut accumulator,
+                    observer,
+                )?;
+                continue;
+            };
+            loaded_leaf_routes.push(SpireLoadedQuantizedLeafSummaryRoute {
+                route,
+                leaf_summaries,
+                selected_row_ranges: None,
+                loaded_delta_routes,
+                deleted_vec_ids,
+            });
+        }
+    }
+
+    for loaded_route in &mut loaded_leaf_routes {
+        loaded_route.selected_row_ranges = select_threshold_leaf_block_row_ranges(
+            loaded_route.leaf_summaries.summaries.as_slice(),
+            threshold_score,
+            scorer,
+            snapshot.epoch_manifest().epoch,
+            &loaded_route.route.placement,
+            observer,
+        )?;
+    }
+
+    for loaded_route in loaded_leaf_routes {
+        let should_read_leaf_segments = match loaded_route.selected_row_ranges.as_ref() {
+            Some(ranges) => !ranges.is_empty(),
+            None => true,
+        };
+        if should_read_leaf_segments {
+            append_quantized_v2_leaf_summary_route_candidates(
+                snapshot,
+                object_store,
+                &loaded_route.leaf_summaries,
+                loaded_route.route,
+                scorer,
+                &loaded_route.deleted_vec_ids,
+                &mut accumulator,
+                loaded_route.selected_row_ranges.as_deref(),
+                observer,
+            )?;
+        }
+        append_quantized_delta_candidates_for_loaded_routes(
+            snapshot,
+            &loaded_route.loaded_delta_routes,
+            scorer,
+            &loaded_route.deleted_vec_ids,
+            &mut accumulator,
+            observer,
+        )?;
     }
 
     let ranked = accumulator.into_ranked();
