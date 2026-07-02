@@ -1453,8 +1453,15 @@ mod production_executor_state_tests {
         executor
             .apply_transport_probe_rows(&transport_rows)
             .expect("transport rows should apply");
+        let threshold = Some(-0.25);
         let requests = executor
-            .compact_candidate_receive_requests(&[1.0, 0.0], 4, "strict")
+            .compact_candidate_receive_requests_with_metrics(
+                &[1.0, 0.0],
+                4,
+                "strict",
+                threshold,
+                None,
+            )
             .expect("request build should succeed");
 
         std::env::remove_var(&secret_42);
@@ -1477,6 +1484,10 @@ mod production_executor_state_tests {
         assert_eq!(node_42.query, vec![1.0, 0.0]);
         assert_eq!(node_42.top_k, 4);
         assert_eq!(node_42.consistency_mode, "strict");
+        assert_eq!(node_42.initial_threshold_score, threshold);
+        assert!(requests
+            .iter()
+            .all(|request| request.initial_threshold_score == threshold));
     }
 
     #[test]
