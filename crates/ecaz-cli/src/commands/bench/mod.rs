@@ -18,6 +18,7 @@ pub mod latency;
 mod overhead;
 mod rabitq_kernel;
 pub mod recall;
+mod rescore_identity;
 mod sidecar_rerank;
 mod spire_pipeline;
 mod storage;
@@ -569,6 +570,8 @@ pub enum BenchCommand {
     RabitqKernel(RabitqKernelArgs),
     /// SPIRE routing, local pipeline, and optional remote fanout counters.
     SpirePipeline(SpirePipelineArgs),
+    /// Re-score historical result-identity JSONL with distinct-neighbor recall.
+    RescoreIdentity(rescore_identity::RescoreIdentityArgs),
     /// Expand a configured benchmark suite into packet-style ecaz commands.
     Suite(SuiteArgs),
 }
@@ -587,6 +590,7 @@ impl BenchCommand {
             BenchCommand::SidecarRerank(a) => sidecar_rerank::run(conn, a).await,
             BenchCommand::RabitqKernel(a) => rabitq_kernel::run(a).await,
             BenchCommand::SpirePipeline(a) => spire_pipeline::run(conn, a).await,
+            BenchCommand::RescoreIdentity(a) => rescore_identity::run(a).await,
             BenchCommand::Suite(a) => suite::run(conn, a).await,
         }
     }

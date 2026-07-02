@@ -247,6 +247,9 @@ pub async fn run(conn: &ConnectionOptions, args: RecallArgs) -> Result<()> {
         "recall_p50",
         "recall_p90",
         "recall_worst",
+        "distinct_recall@k",
+        "distinct_returned_min",
+        "distinct_returned_mean",
         "ndcg@k",
         "mean q-time",
     ]);
@@ -326,6 +329,9 @@ pub async fn run(conn: &ConnectionOptions, args: RecallArgs) -> Result<()> {
         bar.finish_and_clear();
 
         let recall = recall_summary_at_k(&truth.ids, &pred, args.k);
+        let distinct_recall = distinct_recall_summary_at_k(&truth.ids, &pred, args.k);
+        let (distinct_returned_min, distinct_returned_mean) =
+            distinct_returned_summary(&pred, args.k);
         let ndcg = if let Some((corpus_ids, corpus)) = &corpus_for_ndcg {
             ndcg_at_k_from_sources(&truth.scores, &pred, corpus_ids, corpus, &queries, args.k)
         } else {
@@ -346,6 +352,9 @@ pub async fn run(conn: &ConnectionOptions, args: RecallArgs) -> Result<()> {
             Cell::new(format!("{:.4}", recall.p50)),
             Cell::new(format!("{:.4}", recall.p90)),
             Cell::new(format!("{:.4}", recall.worst)),
+            Cell::new(format!("{:.4}", distinct_recall.recall)),
+            Cell::new(distinct_returned_min),
+            Cell::new(format!("{distinct_returned_mean:.2}")),
             Cell::new(format!("{:.4}", ndcg)),
             Cell::new(format!("{:.2} ms", mean_ms)),
         ]);
@@ -981,6 +990,90 @@ pub fn recall_summary_at_k(truth: &[Vec<i64>], pred: &[Vec<i64>], k: usize) -> R
     }
 }
 
+/// Distinct-neighbor recall@k (Task 138): `|distinct(pred top-k) ∩ truth top-k| / k`.
+/// Duplicate returned ids count once, so a result that fills k slots with
+/// repeated copies of the same correct row cannot flatter recall. The current
+/// duplicate-tolerant `recall_summary_at_k` stays emitted alongside this for
+/// comparability with historical artifacts.
+pub fn distinct_recall_summary_at_k(
+    truth: &[Vec<i64>],
+    pred: &[Vec<i64>],
+    k: usize,
+) -> RecallSummary {
+    if truth.is_empty() || k == 0 {
+        return RecallSummary {
+            recall: 0.0,
+            ci95_low: 0.0,
+            ci95_high: 0.0,
+            p10: 0.0,
+            p50: 0.0,
+            p90: 0.0,
+            worst: 0.0,
+            queries: truth.len(),
+            hits: 0,
+            trials: 0,
+        };
+    }
+    let mut hits = 0usize;
+    let mut per_query = Vec::with_capacity(truth.len());
+    for (idx, t) in truth.iter().enumerate() {
+        let t_set: std::collections::HashSet<i64> = t.iter().take(k).copied().collect();
+        let mut query_hits = 0usize;
+        if let Some(p) = pred.get(idx) {
+            let distinct: std::collections::HashSet<i64> = p.iter().take(k).copied().collect();
+            for pid in &distinct {
+                if t_set.contains(pid) {
+                    query_hits += 1;
+                    hits += 1;
+                }
+            }
+        }
+        per_query.push(query_hits as f64 / k as f64);
+    }
+    let trials = truth.len() * k;
+    let (ci95_low, ci95_high) = wilson_interval(hits, trials);
+    RecallSummary {
+        recall: hits as f64 / trials as f64,
+        ci95_low,
+        ci95_high,
+        p10: percentile(&per_query, 0.10),
+        p50: percentile(&per_query, 0.50),
+        p90: percentile(&per_query, 0.90),
+        worst: per_query
+            .iter()
+            .copied()
+            .min_by(|left, right| left.total_cmp(right))
+            .unwrap_or(0.0),
+        queries: truth.len(),
+        hits,
+        trials,
+    }
+}
+
+/// Number of distinct ids in one predicted top-k row.
+pub fn distinct_returned_count(pred_row: &[i64], k: usize) -> usize {
+    pred_row
+        .iter()
+        .take(k)
+        .copied()
+        .collect::<std::collections::HashSet<i64>>()
+        .len()
+}
+
+/// Summary of distinct returned-id counts across predicted rows: (min, mean).
+pub fn distinct_returned_summary(pred: &[Vec<i64>], k: usize) -> (usize, f64) {
+    if pred.is_empty() {
+        return (0, 0.0);
+    }
+    let counts: Vec<usize> = pred
+        .iter()
+        .map(|row| distinct_returned_count(row, k))
+        .collect();
+    let min = counts.iter().copied().min().unwrap_or(0);
+    let mean = counts.iter().sum::<usize>() as f64 / counts.len() as f64;
+    (min, mean)
+}
+
 fn wilson_interval(successes: usize, trials: usize) -> (f64, f64) {
     if trials == 0 {
         return (0.0, 0.0);
@@ -1312,6 +1405,50 @@ mod tests {
         assert!((summary.recall - 0.5).abs() < 1e-9);
         assert!((summary.p50 - 0.5).abs() < 1e-9, "{summary:?}");
         assert!((summary.worst - 0.0).abs() < 1e-9, "{summary:?}");
+    }
+
+    // --- distinct_recall (Task 138) ---
+
+    #[test]
+    fn distinct_recall_counts_duplicate_hits_once() {
+        // Same correct id filling all k slots: current metric reports 1.0,
+        // distinct metric reports 1/k.
+        let truth = vec![vec![1, 2, 3]];
+        let pred = vec![vec![1, 1, 1]];
+        assert!((recall_at_k(&truth, &pred, 3) - 1.0).abs() < 1e-9);
+        let distinct = distinct_recall_summary_at_k(&truth, &pred, 3);
+        assert!((distinct.recall - (1.0 / 3.0)).abs() < 1e-9);
+        assert_eq!(distinct.hits, 1);
+        assert_eq!(distinct.trials, 3);
+    }
+
+    #[test]
+    fn distinct_recall_matches_current_metric_without_duplicates() {
+        let truth = vec![vec![1, 2], vec![3, 4]];
+        let pred = vec![vec![1, 99], vec![3, 4]];
+        let current = recall_summary_at_k(&truth, &pred, 2);
+        let distinct = distinct_recall_summary_at_k(&truth, &pred, 2);
+        assert!((current.recall - distinct.recall).abs() < 1e-9);
+        assert_eq!(current.hits, distinct.hits);
+    }
+
+    #[test]
+    fn distinct_recall_missing_prediction_rows_count_zero() {
+        let truth = vec![vec![1, 2], vec![3, 4]];
+        let pred = vec![vec![1, 1]];
+        let distinct = distinct_recall_summary_at_k(&truth, &pred, 2);
+        assert_eq!(distinct.hits, 1);
+        assert_eq!(distinct.trials, 4);
+        assert!((distinct.recall - 0.25).abs() < 1e-9);
+    }
+
+    #[test]
+    fn distinct_returned_summary_reports_min_and_mean() {
+        let pred = vec![vec![1, 1, 1], vec![1, 2, 3], vec![4, 4, 5]];
+        let (min, mean) = distinct_returned_summary(&pred, 3);
+        assert_eq!(min, 1);
+        assert!((mean - 2.0).abs() < 1e-9);
+        assert_eq!(distinct_returned_count(&[7, 7, 8, 9], 2), 1);
     }
 
     // --- ndcg_at_k ---

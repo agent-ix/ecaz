@@ -3371,6 +3371,7 @@ struct ResultIdentityRecord {
     query_id: i64,
     k: usize,
     returned_count: usize,
+    distinct_returned_count: usize,
     returned_ids: Vec<i64>,
 }
 
@@ -3396,6 +3397,7 @@ impl ResultIdentityRecord {
             query_id,
             k,
             returned_count: returned_ids.len(),
+            distinct_returned_count: super::recall::distinct_returned_count(returned_ids, k),
             returned_ids: returned_ids.to_vec(),
         })
     }
@@ -4127,6 +4129,7 @@ struct QueryMetricAggregate {
     durations: Vec<Duration>,
     predicted_ids: Vec<Vec<i64>>,
     recall_at_k: Option<f64>,
+    distinct_recall_at_k: Option<f64>,
 }
 
 impl QueryMetricAggregate {
@@ -4141,6 +4144,13 @@ impl QueryMetricAggregate {
             &self.predicted_ids,
             k,
         ));
+        self.distinct_recall_at_k = Some(
+            super::recall::distinct_recall_summary_at_k(truth_ids, &self.predicted_ids, k).recall,
+        );
+    }
+
+    fn distinct_returned_stats(&self, k: usize) -> (usize, f64) {
+        super::recall::distinct_returned_summary(&self.predicted_ids, k)
     }
 
     fn latency_stats(&self) -> DurationStats {
@@ -4636,6 +4646,7 @@ fn render_report(input: ReportInput<'_>) -> String {
         sections.push(render_query_metrics_table(
             input.query_metrics,
             input.include_recall,
+            input.query_metric_k,
         ));
     }
     if input.production_read_profile_enabled {
@@ -4939,6 +4950,7 @@ fn render_local_store_overlap_table(
 fn render_query_metrics_table(
     rows: &BTreeMap<i32, QueryMetricAggregate>,
     include_recall: bool,
+    query_metric_k: usize,
 ) -> String {
     let mut table = Table::new();
     table.load_preset(UTF8_FULL);
@@ -4950,13 +4962,18 @@ fn render_query_metrics_table(
         "latency_p95",
         "latency_p99",
         "latency_max",
+        "distinct_returned_min",
+        "distinct_returned_mean",
     ];
     if include_recall {
         header.push("recall@k");
+        header.push("distinct_recall@k");
     }
     table.set_header(header);
     for (nprobe, aggregate) in rows {
         let stats = aggregate.latency_stats();
+        let (distinct_returned_min, distinct_returned_mean) =
+            aggregate.distinct_returned_stats(query_metric_k);
         let mut row = vec![
             Cell::new(nprobe),
             Cell::new(stats.count),
@@ -4965,11 +4982,19 @@ fn render_query_metrics_table(
             Cell::new(format_duration_ms(stats.p95)),
             Cell::new(format_duration_ms(stats.p99)),
             Cell::new(format_duration_ms(stats.max)),
+            Cell::new(distinct_returned_min),
+            Cell::new(format!("{distinct_returned_mean:.2}")),
         ];
         if include_recall {
             row.push(Cell::new(
                 aggregate
                     .recall_at_k
+                    .map(|value| format!("{value:.4}"))
+                    .unwrap_or_else(|| "not_computed".to_owned()),
+            ));
+            row.push(Cell::new(
+                aggregate
+                    .distinct_recall_at_k
                     .map(|value| format!("{value:.4}"))
                     .unwrap_or_else(|| "not_computed".to_owned()),
             ));
@@ -6115,11 +6140,27 @@ mod tests {
         let mut rows = BTreeMap::new();
         rows.insert(8, aggregate);
 
-        let rendered = render_query_metrics_table(&rows, true);
+        let rendered = render_query_metrics_table(&rows, true, 2);
         assert!(rendered.contains("Coordinator query metrics"));
         assert!(rendered.contains("latency_p50"));
         assert!(rendered.contains("recall@k"));
+        assert!(rendered.contains("distinct_recall@k"));
+        assert!(rendered.contains("distinct_returned_min"));
         assert!(rendered.contains("0.7500"));
+    }
+
+    #[test]
+    fn spire_pipeline_query_metrics_distinct_recall_counts_duplicates_once() {
+        let mut aggregate = QueryMetricAggregate::default();
+        // Both slots filled with the same correct id: duplicate-tolerant
+        // recall counts 2 hits, distinct recall counts 1.
+        aggregate.record(Duration::from_millis(1), vec![10, 10]);
+        aggregate.record_recall(&[vec![10, 20]], 2);
+        assert_eq!(aggregate.recall_at_k, Some(1.0));
+        assert_eq!(aggregate.distinct_recall_at_k, Some(0.5));
+        let (min, mean) = aggregate.distinct_returned_stats(2);
+        assert_eq!(min, 1);
+        assert!((mean - 1.0).abs() < 1e-9);
     }
 
     #[test]
