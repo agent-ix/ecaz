@@ -3,9 +3,8 @@ use super::page;
 use crate::am::common::candidate_batch::{
     record_ivf_rabitq_arithmetic_batch_flush_width, score_grouped_pq_batch_for,
     score_rabitq_bits1_batch_for, score_rabitq_bitsn_batch_for,
-    score_turboquant_no_qjl_4bit_batch_for, score_turboquant_no_qjl_4bit_batch_with_min_bound_for,
-    score_turboquant_qjl_batch_for, CandidateBatch, CandidateBatchScoringSurface, CandidateMeta,
-    CandidatePayload,
+    score_turboquant_no_qjl_4bit_batch_for, score_turboquant_qjl_batch_for, CandidateBatch,
+    CandidateBatchScoringSurface, CandidateMeta, CandidatePayload,
 };
 use crate::am::common::quant_codec::{
     EncodedQuantPayload, QuantCodec, QuantCodecKind, QuantSearchCodecTag,
@@ -651,70 +650,6 @@ impl IvfQuantizer {
             out_scores,
             false,
         )
-    }
-
-    pub(super) fn score_turboquant_no_qjl_4bit_batch_from_payloads_with_min_bound(
-        self,
-        prepared_query: &IvfPreparedQuery,
-        payloads: &[u8],
-        payload_len: usize,
-        min_ip_to_keep: f32,
-        out_scores: &mut Vec<f32>,
-        out_kept: &mut Vec<bool>,
-    ) -> Result<bool, String> {
-        let IvfPreparedQuery::TurboQuantNoQjl4BitLut(prepared_query) = prepared_query else {
-            return Ok(false);
-        };
-        if self.profile != IvfQuantizerProfile::TurboQuant {
-            return Ok(false);
-        }
-        crate::am::common::isa_cap::sync_session_isa_cap();
-        if crate::quant::isa::current_isa() != crate::quant::isa::Isa::Neon {
-            return Ok(false);
-        }
-        if payload_len == 0 {
-            return Err(
-                "ec_ivf bounded TurboQuant batch payload length must be nonzero".to_owned(),
-            );
-        }
-        if payloads.len() % payload_len != 0 {
-            return Err(format!(
-                "ec_ivf bounded TurboQuant batch payload bytes {} are not divisible by payload length {payload_len}",
-                payloads.len()
-            ));
-        }
-
-        let candidate_count = payloads.len() / payload_len;
-        out_scores.clear();
-        out_scores.resize(candidate_count, 0.0);
-        out_kept.clear();
-        out_kept.resize(candidate_count, false);
-
-        let quantizer = ProdQuantizer::cached(
-            self.dimensions,
-            crate::DEFAULT_QUANT_BITS,
-            crate::DEFAULT_QUANT_SEED,
-        );
-        let mut batch = CandidateBatch::with_capacity(candidate_count);
-        for (index, payload) in payloads.chunks_exact(payload_len).enumerate() {
-            batch.push(
-                index,
-                CandidatePayload {
-                    code: payload,
-                    meta: CandidateMeta::None,
-                },
-            )?;
-        }
-        score_turboquant_no_qjl_4bit_batch_with_min_bound_for(
-            CandidateBatchScoringSurface::Ivf,
-            quantizer.as_ref(),
-            prepared_query,
-            &batch,
-            min_ip_to_keep,
-            out_scores,
-            out_kept,
-        )?;
-        Ok(true)
     }
 
     pub(super) fn score_turboquant_batch_from_payloads_negated_into(

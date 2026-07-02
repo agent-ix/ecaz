@@ -341,29 +341,6 @@ pub(crate) fn score_turboquant_no_qjl_4bit_batch_for<Id>(
     result.map(|_| ())
 }
 
-pub(crate) fn score_turboquant_no_qjl_4bit_batch_with_min_bound_for<Id>(
-    surface: CandidateBatchScoringSurface,
-    quantizer: &ProdQuantizer,
-    prepared: &PreparedLutNoQjl4BitQuery,
-    batch: &CandidateBatch<'_, Id>,
-    min_ip_to_keep: f32,
-    out_scores: &mut [f32],
-    out_kept: &mut [bool],
-) -> Result<(), String> {
-    let result = score_turboquant_no_qjl_4bit_batch_with_min_bound_inner(
-        quantizer,
-        prepared,
-        batch,
-        min_ip_to_keep,
-        out_scores,
-        out_kept,
-    );
-    if let Ok(timing) = &result {
-        record_batch_scoring_timing(surface, QuantCodecKind::TurboQuant, batch.len(), timing);
-    }
-    result.map(|_| ())
-}
-
 pub(crate) fn score_turboquant_qjl_batch_for<Id>(
     surface: CandidateBatchScoringSurface,
     quantizer: &ProdQuantizer,
@@ -605,59 +582,6 @@ fn score_turboquant_no_qjl_4bit_batch_inner<Id>(
         out_scores,
         false,
     ))
-}
-
-fn score_turboquant_no_qjl_4bit_batch_with_min_bound_inner<Id>(
-    quantizer: &ProdQuantizer,
-    prepared: &PreparedLutNoQjl4BitQuery,
-    batch: &CandidateBatch<'_, Id>,
-    min_ip_to_keep: f32,
-    out_scores: &mut [f32],
-    out_kept: &mut [bool],
-) -> Result<BatchScoringTiming, String> {
-    if batch.len() != out_scores.len() || batch.len() != out_kept.len() {
-        return Err(format!(
-            "bounded lut32 output count mismatch: {} scores and {} keep flags for {} candidates",
-            out_scores.len(),
-            out_kept.len(),
-            batch.len()
-        ));
-    }
-    crate::quant::lut32::validate_lut_shape(&prepared.lut, quantizer.original_dim)?;
-    if prepared.suffix_max.len() != quantizer.original_dim + 1 {
-        return Err(format!(
-            "bounded lut32 suffix length mismatch: got {}, expected {}",
-            prepared.suffix_max.len(),
-            quantizer.original_dim + 1
-        ));
-    }
-    let mut mse_codes = Vec::with_capacity(batch.len());
-    for (index, payload) in batch.payloads().iter().enumerate() {
-        validate_turboquant_no_qjl_4bit_meta(payload.meta)?;
-        let mse_code =
-            checked_mse_code_bytes_no_qjl_4bit("bounded_lut32", index, quantizer, payload.code)?;
-        crate::quant::lut32::validate_mse_code_shape(index, quantizer.original_dim, mse_code)?;
-        mse_codes.push(mse_code);
-    }
-
-    crate::am::common::isa_cap::sync_session_isa_cap();
-    let started = Instant::now();
-    let isa = crate::quant::lut32::score_lut_no_qjl_4bit_batch_with_min_bound(
-        &prepared.lut,
-        prepared.lut_scale,
-        &prepared.suffix_max,
-        quantizer.original_dim,
-        &mse_codes,
-        min_ip_to_keep,
-        out_scores,
-        out_kept,
-    );
-    let elapsed = u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX);
-    let mut timing = BatchScoringTiming::default();
-    timing.record_run(isa, batch.len(), elapsed, false);
-    timing.kept_candidates = out_kept.iter().filter(|kept| **kept).count();
-    timing.pruned_candidates = out_kept.len() - timing.kept_candidates;
-    Ok(timing)
 }
 
 fn score_turboquant_no_qjl_4bit_payloads_lut32(
@@ -1160,85 +1084,6 @@ mod tests {
             let scalar = quantizer.score_ip_from_parts_lut_no_qjl_4bit(&prepared, payload);
             assert_eq!(score.to_bits(), scalar.to_bits());
         }
-    }
-
-    #[test]
-    fn turboquant_lut_bounded_batch_keeps_and_prunes() {
-        let _guard = super::CANDIDATE_BATCH_COUNTER_TEST_LOCK.lock().unwrap();
-        super::reset_candidate_batch_scoring_counters();
-        let quantizer = crate::quant::prod::ProdQuantizer::new(1536, 4, 42);
-        let query = random_unit_vector(1536, 127);
-        let prepared = quantizer.prepare_ip_query_lut_no_qjl_4bit(&query);
-        let encoded: Vec<_> = (0..70)
-            .map(|seed| {
-                quantizer
-                    .encode(&random_unit_vector(1536, 7000 + seed))
-                    .mse_packed
-            })
-            .collect();
-        let mut batch = CandidateBatch::with_capacity(encoded.len());
-        for (index, payload) in encoded.iter().enumerate() {
-            batch
-                .push(index, CandidatePayload::new(payload, CandidateMeta::None))
-                .unwrap();
-        }
-        let scalar_scores: Vec<_> = encoded
-            .iter()
-            .map(|payload| quantizer.score_ip_from_parts_lut_no_qjl_4bit(&prepared, payload))
-            .collect();
-        let lowest_score = scalar_scores
-            .iter()
-            .copied()
-            .fold(f32::INFINITY, |acc, score| acc.min(score));
-        let highest_score = scalar_scores
-            .iter()
-            .copied()
-            .fold(f32::NEG_INFINITY, |acc, score| acc.max(score));
-
-        let mut scores = vec![0.0; batch.len()];
-        let mut kept = vec![false; batch.len()];
-        super::score_turboquant_no_qjl_4bit_batch_with_min_bound_for(
-            CandidateBatchScoringSurface::Unknown,
-            &quantizer,
-            &prepared,
-            &batch,
-            lowest_score - 1.0,
-            &mut scores,
-            &mut kept,
-        )
-        .unwrap();
-        assert!(kept.iter().all(|kept| *kept));
-        let snapshots = super::candidate_batch_scoring_snapshots();
-        let unknown = snapshots
-            .iter()
-            .find(|snapshot| snapshot.surface == "unknown")
-            .unwrap();
-        assert_eq!(unknown.lut32_kept_candidates, batch.len() as u64);
-        assert_eq!(unknown.lut32_pruned_candidates, 0);
-        for (score, scalar) in scores.iter().zip(scalar_scores.iter()) {
-            assert_eq!(score.to_bits(), scalar.to_bits());
-        }
-
-        super::reset_candidate_batch_scoring_counters();
-        super::score_turboquant_no_qjl_4bit_batch_with_min_bound_for(
-            CandidateBatchScoringSurface::Unknown,
-            &quantizer,
-            &prepared,
-            &batch,
-            highest_score + 1.0,
-            &mut scores,
-            &mut kept,
-        )
-        .unwrap();
-        assert!(kept.iter().all(|kept| !*kept));
-        let snapshots = super::candidate_batch_scoring_snapshots();
-        let unknown = snapshots
-            .iter()
-            .find(|snapshot| snapshot.surface == "unknown")
-            .unwrap();
-        assert_eq!(unknown.lut32_kept_candidates, 0);
-        assert_eq!(unknown.lut32_pruned_candidates, batch.len() as u64);
-        super::reset_candidate_batch_scoring_counters();
     }
 
     #[test]
