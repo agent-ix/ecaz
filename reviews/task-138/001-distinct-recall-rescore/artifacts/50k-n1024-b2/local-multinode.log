@@ -1,0 +1,7 @@
+run_dir=/home/peter/dev/ecaz/target/spire-local-multinode-t138r50k
+coord_port=40950
+remote1_port=40951
+remote2_port=40952
+remote3_port=40953
+tier=representative
+prefix=ec_real_50k

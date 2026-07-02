@@ -1,0 +1,4 @@
+2026-07-02 11:29:39.408 PDT [789241] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-07-02 11:29:39.410 PDT [789241] LOG:  listening on Unix socket "/home/peter/dev/ecaz/target/spire-local-multinode-sockets-t138r50k/.s.PGSQL.40952"
+2026-07-02 11:29:39.417 PDT [789247] LOG:  database system was shut down at 2026-07-02 11:29:37 PDT
+2026-07-02 11:29:39.421 PDT [789241] LOG:  database system is ready to accept connections
