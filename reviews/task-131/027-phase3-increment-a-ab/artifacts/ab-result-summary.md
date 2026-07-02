@@ -20,6 +20,10 @@ Results:
 
 - 10k identity files: 200 rows each, byte-identical.
 - 50k identity files: 1000 rows each, byte-identical.
+- Caveat: byte-identical means the threshold gate did not change returned IDs.
+  It does not mean each returned top-10 is k-distinct. The identity artifacts
+  show duplicate corpus IDs in both arms; see
+  `plan/tasks/132-spire-distributed-result-deduplication.md`.
 
 ## Latency and Recall
 
@@ -29,6 +33,23 @@ Results:
 | 10k | threshold-on | 200 | 0.9985 | 613.294 ms | 728.343 ms | 576.000 ms | 653.000 ms |
 | 50k | threshold-off | 1000 | 1.0000 | 2645.864 ms | 3287.777 ms | 2605.000 ms | 3090.000 ms |
 | 50k | threshold-on | 1000 | 1.0000 | 2659.226 ms | 3191.039 ms | 2620.000 ms | 3214.000 ms |
+
+Recall values above are matched under the current duplicate-tolerant metric.
+They should not be read as proof that each query returned 10 distinct corpus
+rows.
+
+## Duplicate-ID Caveat
+
+The identity files surfaced a distributed result-quality defect that is shared
+by `threshold-off` and `threshold-on`:
+
+- 10k threshold-off: 183/200 queries contain duplicate IDs in top-10; worst
+  case has 4 distinct IDs.
+- 50k threshold-off: 1000/1000 queries contain duplicate IDs in top-10; worst
+  case has 4 distinct IDs.
+
+This does not change the A/B conclusion because the duplicate behavior is
+identical between arms, but it qualifies all recall language in this packet.
 
 ## Actual Scan Work Avoided
 

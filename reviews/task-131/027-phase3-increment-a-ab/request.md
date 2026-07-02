@@ -21,8 +21,13 @@ Null/shelve criteria: any identity mismatch, recall drop, zero scan work avoided
 
 Result: shelve/reject this initial-threshold early-stop path.
 
-The correctness criteria passed: returned ID files are byte-identical for
-`threshold-off` vs `threshold-on` at both scales, and recall is matched.
+The inter-arm correctness criteria passed for the threshold gate: returned ID
+files are byte-identical for `threshold-off` vs `threshold-on` at both scales,
+and current recall metrics are matched. However, the returned ID artifacts also
+expose a pre-existing distributed result-quality defect: many top-10 results
+contain duplicate corpus IDs. Therefore the recall statement here means
+matched-under-current duplicate-tolerant metrics, not k-distinct result quality.
+That defect is filed separately as `plan/tasks/132-spire-distributed-result-deduplication.md`.
 
 The performance/work-avoidance criteria failed:
 
@@ -36,6 +41,11 @@ The performance/work-avoidance criteria failed:
   both variants (`leaf_block_skipped_sum=0` on every remote node). The
   threshold-profile diagnostic rows are nonzero but identical on/off, so they
   are not production scan work avoided.
+- Duplicate returned IDs are present in both arms: 10k threshold-off has
+  183/200 queries with duplicate IDs in top-10, and 50k threshold-off has
+  1000/1000. Because off/on identity files are byte-identical, this does not
+  affect the A/B no-op conclusion, but it does qualify recall/result-quality
+  language for this and older distributed packets.
 
 ## Artifacts
 

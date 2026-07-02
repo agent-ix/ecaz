@@ -61,8 +61,9 @@ TSV files are intentionally not committed.
 ## Key Results
 
 - Identity: `cmp -s` passed for off/on identity JSONL at both 10k and 50k.
-- 10k recall/latency: off `recall@k=0.9985`, `latency_p50=609.243 ms`, `latency_p95=686.941 ms`; on `recall@k=0.9985`, `latency_p50=613.294 ms`, `latency_p95=728.343 ms`.
-- 50k recall/latency: off `recall@k=1.0000`, `latency_p50=2645.864 ms`, `latency_p95=3287.777 ms`; on `recall@k=1.0000`, `latency_p50=2659.226 ms`, `latency_p95=3191.039 ms`.
+- 10k recall/latency: off `recall@k=0.9985`, `latency_p50=609.243 ms`, `latency_p95=686.941 ms`; on `recall@k=0.9985`, `latency_p50=613.294 ms`, `latency_p95=728.343 ms`. Recall is matched under current duplicate-tolerant metrics; returned top-10 IDs are not guaranteed distinct.
+- 50k recall/latency: off `recall@k=1.0000`, `latency_p50=2645.864 ms`, `latency_p95=3287.777 ms`; on `recall@k=1.0000`, `latency_p50=2659.226 ms`, `latency_p95=3191.039 ms`. Recall is matched under current duplicate-tolerant metrics; returned top-10 IDs are not guaranteed distinct.
 - Production profile totals: 10k off `total_p50=570.000 ms`, `total_p95=655.000 ms`; 10k on `total_p50=576.000 ms`, `total_p95=653.000 ms`; 50k off `total_p50=2605.000 ms`, `total_p95=3090.000 ms`; 50k on `total_p50=2620.000 ms`, `total_p95=3214.000 ms`.
 - Actual scan avoidance: every scan profile row at both scales and both variants reports `leaf_block_skipped_sum=0`.
 - Diagnostic threshold profile: potential skipped rows/blocks are nonzero but identical on/off, so they are not production scan avoidance.
+- Duplicate-ID defect filed as `plan/tasks/132-spire-distributed-result-deduplication.md`: 10k threshold-off has 183/200 duplicate-containing top-10 results; 50k threshold-off has 1000/1000.
