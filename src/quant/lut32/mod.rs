@@ -591,6 +591,58 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "Task 132 batch-tiled width microprofile; run explicitly with ECAZ_TQ_PROFILE_LOG"]
+    fn task132_profile_lut32_batch_tiled_widths() {
+        let dim = 1536;
+        let widths: &[usize] = &[8, 16, 24, 32, 39, 48, 64, 128, 256, 512, 1024];
+        // Fixed candidate budget per width so each row costs roughly the same
+        // wall time; ECAZ_TQ_PROFILE_ITERS scales the budget (default 200k
+        // candidates per width).
+        let candidate_budget = profile_iterations();
+        let (lut, lut_scale) = lut(dim);
+        let max_width = *widths.iter().max().expect("widths non-empty");
+        let codes: Vec<Vec<u8>> = (0..max_width).map(|seed| code(dim, seed as u8)).collect();
+        let code_refs: Vec<&[u8]> = codes.iter().map(Vec::as_slice).collect();
+        let mut scores = vec![0.0_f32; max_width];
+        let mut lines = vec![format!(
+            "task132 batch_tiled width profile dim={dim} candidate_budget={candidate_budget} isa={:?}",
+            crate::quant::isa::current_isa()
+        )];
+        for &width in widths {
+            let iterations = (candidate_budget / width).max(1);
+            for _ in 0..iterations.min(64) {
+                score_lut_no_qjl_4bit_batch_tiled(
+                    black_box(&lut),
+                    lut_scale,
+                    dim,
+                    &code_refs[..width],
+                    &mut scores[..width],
+                );
+                black_box(scores[0]);
+            }
+            let started = Instant::now();
+            for _ in 0..iterations {
+                score_lut_no_qjl_4bit_batch_tiled(
+                    black_box(&lut),
+                    lut_scale,
+                    dim,
+                    &code_refs[..width],
+                    &mut scores[..width],
+                );
+                black_box(scores[0]);
+            }
+            let elapsed = started.elapsed();
+            let ns_per_candidate = elapsed.as_secs_f64() * 1e9 / (iterations * width) as f64;
+            lines.push(format!(
+                "width={width} iterations={iterations} ns_per_candidate={ns_per_candidate:.3}"
+            ));
+        }
+        let contents = lines.join("\n");
+        println!("{contents}");
+        write_profile_log(&contents);
+    }
+
+    #[test]
     #[ignore = "Task 124 scorer microprofile; run explicitly with ECAZ_TQ_PROFILE_LOG"]
     fn task124_profile_lut32_block32_and_query_prep() {
         let dim = 1536;
