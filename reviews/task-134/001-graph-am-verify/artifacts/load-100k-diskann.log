@@ -1,0 +1,23 @@
+[loader] inspecting data/staged-current/ec_real_100k_corpus.tsv
+[loader] inspecting data/staged-current/ec_real_100k_queries.tsv
+[loader] corpus: 100000 rows, sha256=07275cfd5a7a4b415ddf5eacc086de98294ac978532df46ffae30f9202323a95  queries: 1000 rows, sha256=a7cbec6fc44f6c148234538f61339d00d2f10646febc8f667dcbe75d9cf41782
+[loader] warning: manifest verification failed for data/staged-current/ec_real_100k_manifest.json: prefix="ec_real_100k" (expected "task134_diskann_real100k")
+[loader] copied corpus table task134_diskann_real100k_corpus in 17.53s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table task134_diskann_real100k_corpus in 20.07s
+[loader] copied queries table task134_diskann_real100k_queries in 194.10ms
+[loader] building task134_diskann_real100k_idx using ec_diskann (reloptions=[<none>]) ...
+[loader] built task134_diskann_real100k_idx in 246.02s
+[loader] ec_diskann_ambuild_timing index=task134_diskann_real100k_idx phase=complete heap_tuples=100000 scanned_tuples=100000 unique_tuples=100000 data_pages=5883 heap_scan_ms=310 source_ref_ms=0 training_ms=59 sidecar_setup_ms=0 payload_derivation_ms=124 build_persist_ms=245014 core_medoid_ms=97 core_graph_ms=244846 core_persist_ms=69 parallel_requested_workers=0 parallel_effective_workers=0 parallel_batch_size=704 parallel_flush_rate=0 parallel_rayon_scaffold=0 parallel_epochs=0 parallel_proposal_ms=0 parallel_reducer_ms=0 parallel_same_epoch_candidate_reads=0 parallel_total_candidate_reads=0 overflow_ms=0 codebook_ms=0 write_pages_ms=484 metadata_ms=0 flush_total_ms=245684 total_ms=246007
+┌─────────┬───────────────────────────────────────────────┐
+│ field   ┆ value                                         │
+╞═════════╪═══════════════════════════════════════════════╡
+│ profile ┆ ec_diskann                                    │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ task134_diskann_real100k_corpus (100000 rows) │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ task134_diskann_real100k_queries (1000 rows)  │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ task134_diskann_real100k_idx [<default>]      │
+└─────────┴───────────────────────────────────────────────┘
+[loader] completed prefix task134_diskann_real100k in 290.04s

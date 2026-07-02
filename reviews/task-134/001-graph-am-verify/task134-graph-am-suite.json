@@ -1,0 +1,643 @@
+{
+ "name": "task134-graph-am-verify",
+ "schema_version": 1,
+ "artifact_dir": "reviews/task-134/001-graph-am-verify/artifacts",
+ "defaults": {
+  "pg": 18,
+  "socket_dir": "/Users/peter/.pgrx",
+  "bits": 4,
+  "seed": 42,
+  "queries_limit": 64,
+  "iterations": 64,
+  "force_index": true,
+  "sample_backend_memory": true,
+  "memory_sample_interval_ms": 25
+ },
+ "thresholds": [],
+ "steps": [
+  {
+   "kind": "raw",
+   "name": "precheck-host",
+   "tags": [
+    "setup",
+    "precheck",
+    "task134"
+   ],
+   "args": [
+    "dev",
+    "sql",
+    "--pg",
+    "18",
+    "--db",
+    "postgres",
+    "--socket-dir",
+    "/Users/peter/.pgrx",
+    "--raw",
+    "--sql",
+    "SELECT now() AS captured_at, version() AS postgres_version, current_setting('shared_buffers') AS shared_buffers;",
+    "--log-output",
+    "${artifact_dir}/precheck-host.log"
+   ],
+   "expected_artifacts": [
+    "${artifact_dir}/precheck-host.log"
+   ]
+  },
+  {
+   "kind": "load",
+   "name": "load-10k-hnsw",
+   "tags": [
+    "load",
+    "task134",
+    "10k",
+    "hnsw"
+   ],
+   "prefix": "task134_hnsw_real10k",
+   "profile": "ec_hnsw",
+   "corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+   "queries_file": "data/staged-current/ec_real_10k_queries.tsv",
+   "manifest_file": "data/staged-current/ec_real_10k_manifest.json",
+   "allow_manifest_mismatch": true,
+   "log_file": "${artifact_dir}/load-10k-hnsw.log",
+   "m": [
+    16
+   ],
+   "ef_construction": 128
+  },
+  {
+   "kind": "recall",
+   "name": "recall-10k-hnsw",
+   "tags": [
+    "recall",
+    "task134",
+    "10k",
+    "hnsw"
+   ],
+   "prefix": "task134_hnsw_real10k",
+   "profile": "ec_hnsw",
+   "k": 10,
+   "sweep": [
+    40,
+    64,
+    100,
+    128,
+    160,
+    200
+   ],
+   "queries_limit": 64,
+   "truth_cache_dir": "${artifact_dir}/truth-cache",
+   "log_output": "${artifact_dir}/recall-10k-hnsw.log"
+  },
+  {
+   "kind": "latency",
+   "name": "latency-10k-hnsw",
+   "tags": [
+    "latency",
+    "task134",
+    "10k",
+    "hnsw"
+   ],
+   "prefix": "task134_hnsw_real10k",
+   "profile": "ec_hnsw",
+   "k": 10,
+   "sweep": [
+    40,
+    64,
+    100,
+    128,
+    160,
+    200
+   ],
+   "iterations": 64,
+   "concurrency": 1,
+   "cache_state": "task134_hnsw_10k_warm",
+   "task87_candidate_batch_counters": true,
+   "log_output": "${artifact_dir}/latency-10k-hnsw.log"
+  },
+  {
+   "kind": "storage",
+   "name": "storage-10k-hnsw",
+   "tags": [
+    "storage",
+    "task134",
+    "10k",
+    "hnsw"
+   ],
+   "prefix": "task134_hnsw_real10k",
+   "log_output": "${artifact_dir}/storage-10k-hnsw.log"
+  },
+  {
+   "kind": "load",
+   "name": "load-10k-diskann",
+   "tags": [
+    "load",
+    "task134",
+    "10k",
+    "diskann"
+   ],
+   "prefix": "task134_diskann_real10k",
+   "profile": "ec_diskann",
+   "corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+   "queries_file": "data/staged-current/ec_real_10k_queries.tsv",
+   "manifest_file": "data/staged-current/ec_real_10k_manifest.json",
+   "allow_manifest_mismatch": true,
+   "log_file": "${artifact_dir}/load-10k-diskann.log"
+  },
+  {
+   "kind": "recall",
+   "name": "recall-10k-diskann",
+   "tags": [
+    "recall",
+    "task134",
+    "10k",
+    "diskann"
+   ],
+   "prefix": "task134_diskann_real10k",
+   "profile": "ec_diskann",
+   "k": 10,
+   "sweep": [
+    64,
+    128,
+    200,
+    400,
+    800
+   ],
+   "queries_limit": 64,
+   "truth_cache_dir": "${artifact_dir}/truth-cache",
+   "log_output": "${artifact_dir}/recall-10k-diskann.log"
+  },
+  {
+   "kind": "latency",
+   "name": "latency-10k-diskann",
+   "tags": [
+    "latency",
+    "task134",
+    "10k",
+    "diskann"
+   ],
+   "prefix": "task134_diskann_real10k",
+   "profile": "ec_diskann",
+   "k": 10,
+   "sweep": [
+    64,
+    128,
+    200,
+    400,
+    800
+   ],
+   "iterations": 64,
+   "concurrency": 1,
+   "cache_state": "task134_diskann_10k_warm",
+   "task87_candidate_batch_counters": true,
+   "log_output": "${artifact_dir}/latency-10k-diskann.log"
+  },
+  {
+   "kind": "storage",
+   "name": "storage-10k-diskann",
+   "tags": [
+    "storage",
+    "task134",
+    "10k",
+    "diskann"
+   ],
+   "prefix": "task134_diskann_real10k",
+   "log_output": "${artifact_dir}/storage-10k-diskann.log"
+  },
+  {
+   "kind": "load",
+   "name": "load-10k-spire",
+   "tags": [
+    "load",
+    "task134",
+    "10k",
+    "spire"
+   ],
+   "prefix": "task134_spire_real10k",
+   "profile": "ec_spire",
+   "corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+   "queries_file": "data/staged-current/ec_real_10k_queries.tsv",
+   "manifest_file": "data/staged-current/ec_real_10k_manifest.json",
+   "allow_manifest_mismatch": true,
+   "log_file": "${artifact_dir}/load-10k-spire.log"
+  },
+  {
+   "kind": "recall",
+   "name": "recall-10k-spire",
+   "tags": [
+    "recall",
+    "task134",
+    "10k",
+    "spire"
+   ],
+   "prefix": "task134_spire_real10k",
+   "profile": "ec_spire",
+   "k": 10,
+   "sweep": [
+    8,
+    16,
+    24,
+    32
+   ],
+   "queries_limit": 64,
+   "truth_cache_dir": "${artifact_dir}/truth-cache",
+   "log_output": "${artifact_dir}/recall-10k-spire.log"
+  },
+  {
+   "kind": "load",
+   "name": "load-50k-hnsw",
+   "tags": [
+    "load",
+    "task134",
+    "50k",
+    "hnsw"
+   ],
+   "prefix": "task134_hnsw_real50k",
+   "profile": "ec_hnsw",
+   "corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+   "queries_file": "data/staged-current/ec_real_50k_queries.tsv",
+   "manifest_file": "data/staged-current/ec_real_50k_manifest.json",
+   "allow_manifest_mismatch": true,
+   "log_file": "${artifact_dir}/load-50k-hnsw.log",
+   "m": [
+    16
+   ],
+   "ef_construction": 128
+  },
+  {
+   "kind": "recall",
+   "name": "recall-50k-hnsw",
+   "tags": [
+    "recall",
+    "task134",
+    "50k",
+    "hnsw"
+   ],
+   "prefix": "task134_hnsw_real50k",
+   "profile": "ec_hnsw",
+   "k": 10,
+   "sweep": [
+    40,
+    64,
+    100,
+    128,
+    160,
+    200
+   ],
+   "queries_limit": 48,
+   "truth_cache_dir": "${artifact_dir}/truth-cache",
+   "log_output": "${artifact_dir}/recall-50k-hnsw.log"
+  },
+  {
+   "kind": "latency",
+   "name": "latency-50k-hnsw",
+   "tags": [
+    "latency",
+    "task134",
+    "50k",
+    "hnsw"
+   ],
+   "prefix": "task134_hnsw_real50k",
+   "profile": "ec_hnsw",
+   "k": 10,
+   "sweep": [
+    40,
+    64,
+    100,
+    128,
+    160,
+    200
+   ],
+   "iterations": 48,
+   "concurrency": 1,
+   "cache_state": "task134_hnsw_50k_warm",
+   "task87_candidate_batch_counters": true,
+   "log_output": "${artifact_dir}/latency-50k-hnsw.log"
+  },
+  {
+   "kind": "storage",
+   "name": "storage-50k-hnsw",
+   "tags": [
+    "storage",
+    "task134",
+    "50k",
+    "hnsw"
+   ],
+   "prefix": "task134_hnsw_real50k",
+   "log_output": "${artifact_dir}/storage-50k-hnsw.log"
+  },
+  {
+   "kind": "load",
+   "name": "load-50k-diskann",
+   "tags": [
+    "load",
+    "task134",
+    "50k",
+    "diskann"
+   ],
+   "prefix": "task134_diskann_real50k",
+   "profile": "ec_diskann",
+   "corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+   "queries_file": "data/staged-current/ec_real_50k_queries.tsv",
+   "manifest_file": "data/staged-current/ec_real_50k_manifest.json",
+   "allow_manifest_mismatch": true,
+   "log_file": "${artifact_dir}/load-50k-diskann.log"
+  },
+  {
+   "kind": "recall",
+   "name": "recall-50k-diskann",
+   "tags": [
+    "recall",
+    "task134",
+    "50k",
+    "diskann"
+   ],
+   "prefix": "task134_diskann_real50k",
+   "profile": "ec_diskann",
+   "k": 10,
+   "sweep": [
+    64,
+    128,
+    200,
+    400,
+    800
+   ],
+   "queries_limit": 48,
+   "truth_cache_dir": "${artifact_dir}/truth-cache",
+   "log_output": "${artifact_dir}/recall-50k-diskann.log"
+  },
+  {
+   "kind": "latency",
+   "name": "latency-50k-diskann",
+   "tags": [
+    "latency",
+    "task134",
+    "50k",
+    "diskann"
+   ],
+   "prefix": "task134_diskann_real50k",
+   "profile": "ec_diskann",
+   "k": 10,
+   "sweep": [
+    64,
+    128,
+    200,
+    400,
+    800
+   ],
+   "iterations": 48,
+   "concurrency": 1,
+   "cache_state": "task134_diskann_50k_warm",
+   "task87_candidate_batch_counters": true,
+   "log_output": "${artifact_dir}/latency-50k-diskann.log"
+  },
+  {
+   "kind": "storage",
+   "name": "storage-50k-diskann",
+   "tags": [
+    "storage",
+    "task134",
+    "50k",
+    "diskann"
+   ],
+   "prefix": "task134_diskann_real50k",
+   "log_output": "${artifact_dir}/storage-50k-diskann.log"
+  },
+  {
+   "kind": "load",
+   "name": "load-50k-spire",
+   "tags": [
+    "load",
+    "task134",
+    "50k",
+    "spire"
+   ],
+   "prefix": "task134_spire_real50k",
+   "profile": "ec_spire",
+   "corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+   "queries_file": "data/staged-current/ec_real_50k_queries.tsv",
+   "manifest_file": "data/staged-current/ec_real_50k_manifest.json",
+   "allow_manifest_mismatch": true,
+   "log_file": "${artifact_dir}/load-50k-spire.log"
+  },
+  {
+   "kind": "recall",
+   "name": "recall-50k-spire",
+   "tags": [
+    "recall",
+    "task134",
+    "50k",
+    "spire"
+   ],
+   "prefix": "task134_spire_real50k",
+   "profile": "ec_spire",
+   "k": 10,
+   "sweep": [
+    8,
+    16,
+    24,
+    32
+   ],
+   "queries_limit": 48,
+   "truth_cache_dir": "${artifact_dir}/truth-cache",
+   "log_output": "${artifact_dir}/recall-50k-spire.log"
+  },
+  {
+   "kind": "load",
+   "name": "load-100k-hnsw",
+   "tags": [
+    "load",
+    "task134",
+    "100k",
+    "hnsw"
+   ],
+   "prefix": "task134_hnsw_real100k",
+   "profile": "ec_hnsw",
+   "corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+   "queries_file": "data/staged-current/ec_real_100k_queries.tsv",
+   "manifest_file": "data/staged-current/ec_real_100k_manifest.json",
+   "allow_manifest_mismatch": true,
+   "log_file": "${artifact_dir}/load-100k-hnsw.log",
+   "m": [
+    16
+   ],
+   "ef_construction": 128
+  },
+  {
+   "kind": "recall",
+   "name": "recall-100k-hnsw",
+   "tags": [
+    "recall",
+    "task134",
+    "100k",
+    "hnsw"
+   ],
+   "prefix": "task134_hnsw_real100k",
+   "profile": "ec_hnsw",
+   "k": 10,
+   "sweep": [
+    40,
+    64,
+    100,
+    128,
+    160,
+    200
+   ],
+   "queries_limit": 32,
+   "truth_cache_dir": "${artifact_dir}/truth-cache",
+   "log_output": "${artifact_dir}/recall-100k-hnsw.log"
+  },
+  {
+   "kind": "latency",
+   "name": "latency-100k-hnsw",
+   "tags": [
+    "latency",
+    "task134",
+    "100k",
+    "hnsw"
+   ],
+   "prefix": "task134_hnsw_real100k",
+   "profile": "ec_hnsw",
+   "k": 10,
+   "sweep": [
+    40,
+    64,
+    100,
+    128,
+    160,
+    200
+   ],
+   "iterations": 32,
+   "concurrency": 1,
+   "cache_state": "task134_hnsw_100k_warm",
+   "task87_candidate_batch_counters": true,
+   "log_output": "${artifact_dir}/latency-100k-hnsw.log"
+  },
+  {
+   "kind": "storage",
+   "name": "storage-100k-hnsw",
+   "tags": [
+    "storage",
+    "task134",
+    "100k",
+    "hnsw"
+   ],
+   "prefix": "task134_hnsw_real100k",
+   "log_output": "${artifact_dir}/storage-100k-hnsw.log"
+  },
+  {
+   "kind": "load",
+   "name": "load-100k-diskann",
+   "tags": [
+    "load",
+    "task134",
+    "100k",
+    "diskann"
+   ],
+   "prefix": "task134_diskann_real100k",
+   "profile": "ec_diskann",
+   "corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+   "queries_file": "data/staged-current/ec_real_100k_queries.tsv",
+   "manifest_file": "data/staged-current/ec_real_100k_manifest.json",
+   "allow_manifest_mismatch": true,
+   "log_file": "${artifact_dir}/load-100k-diskann.log"
+  },
+  {
+   "kind": "recall",
+   "name": "recall-100k-diskann",
+   "tags": [
+    "recall",
+    "task134",
+    "100k",
+    "diskann"
+   ],
+   "prefix": "task134_diskann_real100k",
+   "profile": "ec_diskann",
+   "k": 10,
+   "sweep": [
+    64,
+    128,
+    200,
+    400,
+    800
+   ],
+   "queries_limit": 32,
+   "truth_cache_dir": "${artifact_dir}/truth-cache",
+   "log_output": "${artifact_dir}/recall-100k-diskann.log"
+  },
+  {
+   "kind": "latency",
+   "name": "latency-100k-diskann",
+   "tags": [
+    "latency",
+    "task134",
+    "100k",
+    "diskann"
+   ],
+   "prefix": "task134_diskann_real100k",
+   "profile": "ec_diskann",
+   "k": 10,
+   "sweep": [
+    64,
+    128,
+    200,
+    400,
+    800
+   ],
+   "iterations": 32,
+   "concurrency": 1,
+   "cache_state": "task134_diskann_100k_warm",
+   "task87_candidate_batch_counters": true,
+   "log_output": "${artifact_dir}/latency-100k-diskann.log"
+  },
+  {
+   "kind": "storage",
+   "name": "storage-100k-diskann",
+   "tags": [
+    "storage",
+    "task134",
+    "100k",
+    "diskann"
+   ],
+   "prefix": "task134_diskann_real100k",
+   "log_output": "${artifact_dir}/storage-100k-diskann.log"
+  },
+  {
+   "kind": "load",
+   "name": "load-100k-spire",
+   "tags": [
+    "load",
+    "task134",
+    "100k",
+    "spire"
+   ],
+   "prefix": "task134_spire_real100k",
+   "profile": "ec_spire",
+   "corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+   "queries_file": "data/staged-current/ec_real_100k_queries.tsv",
+   "manifest_file": "data/staged-current/ec_real_100k_manifest.json",
+   "allow_manifest_mismatch": true,
+   "log_file": "${artifact_dir}/load-100k-spire.log"
+  },
+  {
+   "kind": "recall",
+   "name": "recall-100k-spire",
+   "tags": [
+    "recall",
+    "task134",
+    "100k",
+    "spire"
+   ],
+   "prefix": "task134_spire_real100k",
+   "profile": "ec_spire",
+   "k": 10,
+   "sweep": [
+    8,
+    16,
+    24,
+    32
+   ],
+   "queries_limit": 32,
+   "truth_cache_dir": "${artifact_dir}/truth-cache",
+   "log_output": "${artifact_dir}/recall-100k-spire.log"
+  }
+ ]
+}

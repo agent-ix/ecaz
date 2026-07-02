@@ -1,0 +1,22 @@
+[loader] inspecting data/staged-current/ec_real_100k_corpus.tsv
+[loader] inspecting data/staged-current/ec_real_100k_queries.tsv
+[loader] corpus: 100000 rows, sha256=07275cfd5a7a4b415ddf5eacc086de98294ac978532df46ffae30f9202323a95  queries: 1000 rows, sha256=a7cbec6fc44f6c148234538f61339d00d2f10646febc8f667dcbe75d9cf41782
+[loader] warning: manifest verification failed for data/staged-current/ec_real_100k_manifest.json: prefix="ec_real_100k" (expected "task134_spire_real100k")
+[loader] copied corpus table task134_spire_real100k_corpus in 16.07s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table task134_spire_real100k_corpus in 20.66s
+[loader] copied queries table task134_spire_real100k_queries in 188.63ms
+[loader] building task134_spire_real100k_idx using ec_spire (reloptions=[<none>]) ...
+[loader] built task134_spire_real100k_idx in 52.54s
+┌─────────┬─────────────────────────────────────────────┐
+│ field   ┆ value                                       │
+╞═════════╪═════════════════════════════════════════════╡
+│ profile ┆ ec_spire                                    │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ task134_spire_real100k_corpus (100000 rows) │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ task134_spire_real100k_queries (1000 rows)  │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ task134_spire_real100k_idx [<default>]      │
+└─────────┴─────────────────────────────────────────────┘
+[loader] completed prefix task134_spire_real100k in 95.64s

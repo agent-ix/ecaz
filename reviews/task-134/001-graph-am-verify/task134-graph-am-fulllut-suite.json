@@ -1,0 +1,187 @@
+{
+ "name": "task134-hnsw-fulllut",
+ "schema_version": 1,
+ "artifact_dir": "reviews/task-134/001-graph-am-verify/artifacts",
+ "defaults": {
+  "pg": 18,
+  "socket_dir": "/Users/peter/.pgrx",
+  "bits": 4,
+  "seed": 42,
+  "queries_limit": 64,
+  "iterations": 64,
+  "force_index": true,
+  "sample_backend_memory": true,
+  "memory_sample_interval_ms": 25
+ },
+ "thresholds": [],
+ "steps": [
+  {
+   "kind": "recall",
+   "name": "recall-10k-hnsw-fulllut",
+   "tags": [
+    "recall",
+    "task134",
+    "fulllut",
+    "10k"
+   ],
+   "prefix": "task134_hnsw_real10k",
+   "profile": "ec_hnsw",
+   "k": 10,
+   "sweep": [
+    40,
+    64,
+    100,
+    128,
+    160,
+    200
+   ],
+   "queries_limit": 64,
+   "session_gucs": [
+    "ec_hnsw.turboquant_exact_score_mode=full_lut"
+   ],
+   "truth_cache_dir": "${artifact_dir}/truth-cache",
+   "log_output": "${artifact_dir}/recall-10k-hnsw-fulllut.log"
+  },
+  {
+   "kind": "latency",
+   "name": "latency-10k-hnsw-fulllut",
+   "tags": [
+    "latency",
+    "task134",
+    "fulllut",
+    "10k"
+   ],
+   "prefix": "task134_hnsw_real10k",
+   "profile": "ec_hnsw",
+   "k": 10,
+   "sweep": [
+    40,
+    64,
+    100,
+    128,
+    160,
+    200
+   ],
+   "iterations": 64,
+   "concurrency": 1,
+   "cache_state": "task134_hnsw_10k_fulllut_warm",
+   "session_gucs": [
+    "ec_hnsw.turboquant_exact_score_mode=full_lut"
+   ],
+   "task87_candidate_batch_counters": true,
+   "log_output": "${artifact_dir}/latency-10k-hnsw-fulllut.log"
+  },
+  {
+   "kind": "recall",
+   "name": "recall-50k-hnsw-fulllut",
+   "tags": [
+    "recall",
+    "task134",
+    "fulllut",
+    "50k"
+   ],
+   "prefix": "task134_hnsw_real50k",
+   "profile": "ec_hnsw",
+   "k": 10,
+   "sweep": [
+    40,
+    64,
+    100,
+    128,
+    160,
+    200
+   ],
+   "queries_limit": 48,
+   "session_gucs": [
+    "ec_hnsw.turboquant_exact_score_mode=full_lut"
+   ],
+   "truth_cache_dir": "${artifact_dir}/truth-cache",
+   "log_output": "${artifact_dir}/recall-50k-hnsw-fulllut.log"
+  },
+  {
+   "kind": "latency",
+   "name": "latency-50k-hnsw-fulllut",
+   "tags": [
+    "latency",
+    "task134",
+    "fulllut",
+    "50k"
+   ],
+   "prefix": "task134_hnsw_real50k",
+   "profile": "ec_hnsw",
+   "k": 10,
+   "sweep": [
+    40,
+    64,
+    100,
+    128,
+    160,
+    200
+   ],
+   "iterations": 48,
+   "concurrency": 1,
+   "cache_state": "task134_hnsw_50k_fulllut_warm",
+   "session_gucs": [
+    "ec_hnsw.turboquant_exact_score_mode=full_lut"
+   ],
+   "task87_candidate_batch_counters": true,
+   "log_output": "${artifact_dir}/latency-50k-hnsw-fulllut.log"
+  },
+  {
+   "kind": "recall",
+   "name": "recall-100k-hnsw-fulllut",
+   "tags": [
+    "recall",
+    "task134",
+    "fulllut",
+    "100k"
+   ],
+   "prefix": "task134_hnsw_real100k",
+   "profile": "ec_hnsw",
+   "k": 10,
+   "sweep": [
+    40,
+    64,
+    100,
+    128,
+    160,
+    200
+   ],
+   "queries_limit": 32,
+   "session_gucs": [
+    "ec_hnsw.turboquant_exact_score_mode=full_lut"
+   ],
+   "truth_cache_dir": "${artifact_dir}/truth-cache",
+   "log_output": "${artifact_dir}/recall-100k-hnsw-fulllut.log"
+  },
+  {
+   "kind": "latency",
+   "name": "latency-100k-hnsw-fulllut",
+   "tags": [
+    "latency",
+    "task134",
+    "fulllut",
+    "100k"
+   ],
+   "prefix": "task134_hnsw_real100k",
+   "profile": "ec_hnsw",
+   "k": 10,
+   "sweep": [
+    40,
+    64,
+    100,
+    128,
+    160,
+    200
+   ],
+   "iterations": 32,
+   "concurrency": 1,
+   "cache_state": "task134_hnsw_100k_fulllut_warm",
+   "session_gucs": [
+    "ec_hnsw.turboquant_exact_score_mode=full_lut"
+   ],
+   "task87_candidate_batch_counters": true,
+   "log_output": "${artifact_dir}/latency-100k-hnsw-fulllut.log"
+  }
+ ]
+}
