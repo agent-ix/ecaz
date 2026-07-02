@@ -1,0 +1,12 @@
+task132 batch_tiled width profile dim=1536 candidate_budget=400000 isa=Neon
+width=8 iterations=50000 ns_per_candidate=243.088
+width=16 iterations=25000 ns_per_candidate=143.197
+width=24 iterations=16666 ns_per_candidate=128.088
+width=32 iterations=12500 ns_per_candidate=121.706
+width=39 iterations=10256 ns_per_candidate=122.151
+width=48 iterations=8333 ns_per_candidate=117.971
+width=64 iterations=6250 ns_per_candidate=117.187
+width=128 iterations=3125 ns_per_candidate=119.511
+width=256 iterations=1562 ns_per_candidate=120.375
+width=512 iterations=781 ns_per_candidate=121.095
+width=1024 iterations=390 ns_per_candidate=120.996

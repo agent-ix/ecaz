@@ -1,0 +1,7 @@
+warning: ecaz@0.1.1:   882 | pgstat_hash_hash_key(const void *d, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                        ^
+warning: ecaz@0.1.1: 6 warnings generated.
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 32.28s
+[32m[1m     Writing[0m[39m SQL entities to /opt/homebrew/share/postgresql@18/extension/ecaz--0.1.1.sql
+[32m[1m    Finished[0m[39m installing ecaz
+exit=0

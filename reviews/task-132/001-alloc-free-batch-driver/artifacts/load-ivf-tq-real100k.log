@@ -1,0 +1,23 @@
+[loader] inspecting data/staged-current/ec_real_100k_corpus.tsv
+[loader] inspecting data/staged-current/ec_real_100k_queries.tsv
+[loader] corpus: 100000 rows, sha256=07275cfd5a7a4b415ddf5eacc086de98294ac978532df46ffae30f9202323a95  queries: 1000 rows, sha256=a7cbec6fc44f6c148234538f61339d00d2f10646febc8f667dcbe75d9cf41782
+[loader] warning: manifest verification failed for data/staged-current/ec_real_100k_manifest.json: prefix="ec_real_100k" (expected "task133_tq_ivf_real100k")
+[loader] copied corpus table task133_tq_ivf_real100k_corpus in 14.24s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table task133_tq_ivf_real100k_corpus in 6.94s
+[loader] copied queries table task133_tq_ivf_real100k_queries in 154.11ms
+[loader] building task133_tq_ivf_real100k_turboquant_idx using ec_ivf (reloptions=[storage_format=turboquant]) ...
+[loader] built task133_tq_ivf_real100k_turboquant_idx in 6.72s
+[loader] ec_ivf build timing: requested_workers=0 workers_launched=0 heap_tuples=100000 index_tuples=100000 heap_ingest_us=1229051 train_model_us=1618464 stage_build_plan_us=3592341 stage_pq_train_us=0 stage_centroids_us=1102 stage_assign_us=3529156 stage_postings_us=61782 stage_directory_us=47 flush_build_plan_us=246039 parallel_begin_us=0 parallel_drain_us=0 parallel_sort_push_us=0 parallel_worker_tuple_buffer_capacity=0 parallel_worker_tuple_buffer_struct_bytes=0
+┌─────────┬────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                              │
+╞═════════╪════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_ivf                                                             │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ task133_tq_ivf_real100k_corpus (100000 rows)                       │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ task133_tq_ivf_real100k_queries (1000 rows)                        │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ task133_tq_ivf_real100k_turboquant_idx [storage_format=turboquant] │
+└─────────┴────────────────────────────────────────────────────────────────────┘
+[loader] completed prefix task133_tq_ivf_real100k in 34.17s
