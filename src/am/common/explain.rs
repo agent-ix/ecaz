@@ -99,6 +99,26 @@ pub(crate) struct IvfExplainCounters {
     pub stats_rerank_rows: u32,
     pub stats_heap_blocks_fetched: u32,
     pub stats_approximate_scan_elapsed_us: u32,
+    /// Task 133: probe-plan construction (list selection layout, candidate
+    /// bound, dedup-map sizing) before the posting walk starts.
+    pub stats_probe_plan_elapsed_us: u32,
+    /// Task 133: wall time inside the posting page visitor calls (page walk,
+    /// entry parse, scratch pushes) INCLUDING the scratch flushes that run
+    /// inside the visitor; subtract `stats_scratch_flush_elapsed_us` for the
+    /// pure page-I/O + decode share.
+    pub stats_posting_visit_elapsed_us: u32,
+    /// Task 133: wall time inside scratch SoA / dense-coalesced flush bodies
+    /// (batch score + candidate record + scratch bookkeeping).
+    pub stats_scratch_flush_elapsed_us: u32,
+    /// Task 133: wall time in the batch quantizer scorer calls within
+    /// flushes (the TurboQuant/PQ/bits1 kernel plus its dispatch).
+    pub stats_scorer_batch_elapsed_us: u32,
+    /// Task 133: wall time in the candidate record loops within flushes
+    /// (dedup map upsert + bounded top-k heap push).
+    pub stats_candidate_record_elapsed_us: u32,
+    /// Task 133: wall time collecting + sorting the final ranked candidate
+    /// list from the dedup map after the posting walk.
+    pub stats_topk_collect_elapsed_us: u32,
     pub stats_exact_rerank_elapsed_us: u32,
     /// Task 111h: time spent fetching and decoding rerank payloads before
     /// exact scoring. For source placement this includes heap-row fetch and
@@ -191,6 +211,12 @@ impl Default for IvfExplainCounters {
             stats_rerank_rows: 0,
             stats_heap_blocks_fetched: 0,
             stats_approximate_scan_elapsed_us: 0,
+            stats_probe_plan_elapsed_us: 0,
+            stats_posting_visit_elapsed_us: 0,
+            stats_scratch_flush_elapsed_us: 0,
+            stats_scorer_batch_elapsed_us: 0,
+            stats_candidate_record_elapsed_us: 0,
+            stats_topk_collect_elapsed_us: 0,
             stats_exact_rerank_elapsed_us: 0,
             stats_rerank_payload_decode_elapsed_us: 0,
             stats_rerank_payload_score_elapsed_us: 0,
@@ -469,6 +495,41 @@ impl IvfExplainCounters {
             .saturating_add(elapsed_us);
     }
 
+    pub(crate) fn record_probe_plan_elapsed_us(&mut self, elapsed_us: u32) {
+        self.stats_probe_plan_elapsed_us =
+            self.stats_probe_plan_elapsed_us.saturating_add(elapsed_us);
+    }
+
+    pub(crate) fn record_posting_visit_elapsed_us(&mut self, elapsed_us: u32) {
+        self.stats_posting_visit_elapsed_us = self
+            .stats_posting_visit_elapsed_us
+            .saturating_add(elapsed_us);
+    }
+
+    pub(crate) fn record_scratch_flush_elapsed_us(&mut self, elapsed_us: u32) {
+        self.stats_scratch_flush_elapsed_us = self
+            .stats_scratch_flush_elapsed_us
+            .saturating_add(elapsed_us);
+    }
+
+    pub(crate) fn record_scorer_batch_elapsed_us(&mut self, elapsed_us: u32) {
+        self.stats_scorer_batch_elapsed_us = self
+            .stats_scorer_batch_elapsed_us
+            .saturating_add(elapsed_us);
+    }
+
+    pub(crate) fn record_candidate_record_elapsed_us(&mut self, elapsed_us: u32) {
+        self.stats_candidate_record_elapsed_us = self
+            .stats_candidate_record_elapsed_us
+            .saturating_add(elapsed_us);
+    }
+
+    pub(crate) fn record_topk_collect_elapsed_us(&mut self, elapsed_us: u32) {
+        self.stats_topk_collect_elapsed_us = self
+            .stats_topk_collect_elapsed_us
+            .saturating_add(elapsed_us);
+    }
+
     pub(crate) fn record_exact_rerank_elapsed_us(&mut self, elapsed_us: u32) {
         self.stats_exact_rerank_elapsed_us = self
             .stats_exact_rerank_elapsed_us
@@ -572,7 +633,7 @@ impl IvfExplainCounters {
         *self = Self::default();
     }
 
-    pub(crate) fn explain_properties(self) -> [ExplainProperty; 44] {
+    pub(crate) fn explain_properties(self) -> [ExplainProperty; 50] {
         [
             ExplainProperty {
                 property_name: "Rerank Placement",
@@ -673,6 +734,30 @@ impl IvfExplainCounters {
             ExplainProperty {
                 property_name: "Approximate Scan Elapsed Us",
                 value: ExplainPropertyValue::Integer(self.stats_approximate_scan_elapsed_us),
+            },
+            ExplainProperty {
+                property_name: "Probe Plan Elapsed Us",
+                value: ExplainPropertyValue::Integer(self.stats_probe_plan_elapsed_us),
+            },
+            ExplainProperty {
+                property_name: "Posting Visit Elapsed Us",
+                value: ExplainPropertyValue::Integer(self.stats_posting_visit_elapsed_us),
+            },
+            ExplainProperty {
+                property_name: "Scratch Flush Elapsed Us",
+                value: ExplainPropertyValue::Integer(self.stats_scratch_flush_elapsed_us),
+            },
+            ExplainProperty {
+                property_name: "Scorer Batch Elapsed Us",
+                value: ExplainPropertyValue::Integer(self.stats_scorer_batch_elapsed_us),
+            },
+            ExplainProperty {
+                property_name: "Candidate Record Elapsed Us",
+                value: ExplainPropertyValue::Integer(self.stats_candidate_record_elapsed_us),
+            },
+            ExplainProperty {
+                property_name: "Topk Collect Elapsed Us",
+                value: ExplainPropertyValue::Integer(self.stats_topk_collect_elapsed_us),
             },
             ExplainProperty {
                 property_name: "Exact Rerank Elapsed Us",
@@ -1164,6 +1249,12 @@ mod tests {
         counters.record_rerank_row();
         counters.record_heap_blocks_fetched(31);
         counters.record_approximate_scan_elapsed_us(37);
+        counters.record_probe_plan_elapsed_us(103);
+        counters.record_posting_visit_elapsed_us(107);
+        counters.record_scratch_flush_elapsed_us(109);
+        counters.record_scorer_batch_elapsed_us(113);
+        counters.record_candidate_record_elapsed_us(127);
+        counters.record_topk_collect_elapsed_us(131);
         counters.record_exact_rerank_elapsed_us(41);
         counters.record_rerank_payload_decode_elapsed_us(43);
         counters.record_rerank_payload_score_elapsed_us(47);
@@ -1204,6 +1295,12 @@ mod tests {
                 stats_rerank_rows: 1,
                 stats_heap_blocks_fetched: 31,
                 stats_approximate_scan_elapsed_us: 37,
+                stats_probe_plan_elapsed_us: 103,
+                stats_posting_visit_elapsed_us: 107,
+                stats_scratch_flush_elapsed_us: 109,
+                stats_scorer_batch_elapsed_us: 113,
+                stats_candidate_record_elapsed_us: 127,
+                stats_topk_collect_elapsed_us: 131,
                 stats_exact_rerank_elapsed_us: 41,
                 stats_rerank_payload_decode_elapsed_us: 43,
                 stats_rerank_payload_score_elapsed_us: 47,
@@ -1255,6 +1352,12 @@ mod tests {
             stats_rerank_rows: 107,
             stats_heap_blocks_fetched: 109,
             stats_approximate_scan_elapsed_us: 113,
+            stats_probe_plan_elapsed_us: 401,
+            stats_posting_visit_elapsed_us: 403,
+            stats_scratch_flush_elapsed_us: 407,
+            stats_scorer_batch_elapsed_us: 409,
+            stats_candidate_record_elapsed_us: 419,
+            stats_topk_collect_elapsed_us: 421,
             stats_exact_rerank_elapsed_us: 127,
             stats_rerank_payload_decode_elapsed_us: 131,
             stats_rerank_payload_score_elapsed_us: 133,
@@ -1375,6 +1478,30 @@ mod tests {
                 ExplainProperty {
                     property_name: "Approximate Scan Elapsed Us",
                     value: ExplainPropertyValue::Integer(113),
+                },
+                ExplainProperty {
+                    property_name: "Probe Plan Elapsed Us",
+                    value: ExplainPropertyValue::Integer(401),
+                },
+                ExplainProperty {
+                    property_name: "Posting Visit Elapsed Us",
+                    value: ExplainPropertyValue::Integer(403),
+                },
+                ExplainProperty {
+                    property_name: "Scratch Flush Elapsed Us",
+                    value: ExplainPropertyValue::Integer(407),
+                },
+                ExplainProperty {
+                    property_name: "Scorer Batch Elapsed Us",
+                    value: ExplainPropertyValue::Integer(409),
+                },
+                ExplainProperty {
+                    property_name: "Candidate Record Elapsed Us",
+                    value: ExplainPropertyValue::Integer(419),
+                },
+                ExplainProperty {
+                    property_name: "Topk Collect Elapsed Us",
+                    value: ExplainPropertyValue::Integer(421),
                 },
                 ExplainProperty {
                     property_name: "Exact Rerank Elapsed Us",

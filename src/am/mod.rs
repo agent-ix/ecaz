@@ -3,7 +3,7 @@
 pub(crate) mod common;
 mod ec_diskann;
 mod ec_hnsw;
-mod ec_ivf;
+pub(crate) mod ec_ivf;
 mod ec_spire;
 
 #[allow(unused_imports)]

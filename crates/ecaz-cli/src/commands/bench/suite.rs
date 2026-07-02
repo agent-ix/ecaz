@@ -389,6 +389,8 @@ struct LatencyStep {
     #[serde(default)]
     task87_candidate_batch_counters: Option<bool>,
     #[serde(default)]
+    ivf_stage_counters: Option<bool>,
+    #[serde(default)]
     memory_sample_interval_ms: Option<u64>,
     #[serde(default)]
     log_output: Option<PathBuf>,
@@ -2977,6 +2979,9 @@ fn expand_latency(step: &LatencyStep, defaults: &SuiteDefaults) -> Vec<String> {
     }
     if step.task87_candidate_batch_counters.unwrap_or(false) {
         args.push("--task87-candidate-batch-counters".into());
+    }
+    if step.ivf_stage_counters.unwrap_or(false) {
+        args.push("--ivf-stage-counters".into());
     }
     push_arg(
         &mut args,

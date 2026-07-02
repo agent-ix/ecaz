@@ -1317,6 +1317,37 @@ fn ec_block_kernel_scoring_snapshot() -> TableIterator<
     TableIterator::new(rows)
 }
 
+/// Task 133: process-global IVF query stage-latency attribution rows.
+#[pg_extern(stable)]
+fn ec_ivf_stage_scoring_snapshot() -> TableIterator<
+    'static,
+    (
+        name!(stage, String),
+        name!(scans, i64),
+        name!(samples, i64),
+        name!(elapsed_us, i64),
+        name!(elapsed_ms, f64),
+    ),
+> {
+    let (scans, rows) = am::ec_ivf::stage_counters::snapshot();
+    let scans = i64::try_from(scans).unwrap_or(i64::MAX);
+    let rows = rows.into_iter().map(move |row| {
+        (
+            row.stage.label().to_owned(),
+            scans,
+            i64::try_from(row.samples).unwrap_or(i64::MAX),
+            i64::try_from(row.elapsed_us).unwrap_or(i64::MAX),
+            row.elapsed_us as f64 / 1_000.0,
+        )
+    });
+    TableIterator::new(rows)
+}
+
+#[pg_extern(volatile)]
+fn ec_ivf_stage_scoring_reset() {
+    am::ec_ivf::stage_counters::reset();
+}
+
 #[pg_extern(volatile)]
 fn ec_task87_candidate_batch_scoring_reset() {
     ec_block_kernel_scoring_reset();

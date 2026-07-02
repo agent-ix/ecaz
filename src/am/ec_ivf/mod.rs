@@ -12,6 +12,7 @@ mod quantizer;
 mod rerank;
 mod routine;
 mod scan;
+pub(crate) mod stage_counters;
 mod training;
 mod vacuum;
 

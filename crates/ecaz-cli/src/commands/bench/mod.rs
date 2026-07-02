@@ -519,6 +519,91 @@ pub(crate) fn format_task87_candidate_batch_counter_lines(
     lines.join("\n")
 }
 
+/// Task 133: one IVF query-stage latency attribution row
+/// (`ec_ivf_stage_scoring_snapshot()`).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct IvfStageCounterSnapshot {
+    pub(crate) stage: String,
+    pub(crate) scans: i64,
+    pub(crate) samples: i64,
+    pub(crate) elapsed_us: i64,
+}
+
+impl IvfStageCounterSnapshot {
+    fn merge(&mut self, other: &Self) {
+        self.scans += other.scans;
+        self.samples += other.samples;
+        self.elapsed_us += other.elapsed_us;
+    }
+}
+
+pub(crate) async fn reset_ivf_stage_counters(client: &Client) -> Result<()> {
+    client
+        .batch_execute("SELECT ec_ivf_stage_scoring_reset()")
+        .await
+        .wrap_err(
+            "resetting IVF stage counters (extension predating ec_ivf_stage_scoring_reset()? \
+             reinstall the extension)",
+        )
+}
+
+pub(crate) async fn snapshot_ivf_stage_counters(
+    client: &Client,
+) -> Result<Vec<IvfStageCounterSnapshot>> {
+    let rows = client
+        .query(
+            "SELECT stage, scans, samples, elapsed_us \
+             FROM ec_ivf_stage_scoring_snapshot() \
+             ORDER BY stage",
+            &[],
+        )
+        .await
+        .wrap_err("snapshotting IVF stage counters")?;
+    Ok(rows
+        .into_iter()
+        .map(|row| IvfStageCounterSnapshot {
+            stage: row.get(0),
+            scans: row.get(1),
+            samples: row.get(2),
+            elapsed_us: row.get(3),
+        })
+        .collect())
+}
+
+pub(crate) fn merge_ivf_stage_counters(
+    snapshots: Vec<Vec<IvfStageCounterSnapshot>>,
+) -> Vec<IvfStageCounterSnapshot> {
+    let mut merged = std::collections::BTreeMap::<String, IvfStageCounterSnapshot>::new();
+    for snapshot_set in snapshots {
+        for snapshot in snapshot_set {
+            merged
+                .entry(snapshot.stage.clone())
+                .and_modify(|existing| existing.merge(&snapshot))
+                .or_insert(snapshot);
+        }
+    }
+    merged.into_values().collect()
+}
+
+pub(crate) fn format_ivf_stage_counter_lines(
+    command: &str,
+    label: &str,
+    snapshots: &[IvfStageCounterSnapshot],
+) -> String {
+    let mut lines = Vec::new();
+    for snapshot in snapshots {
+        lines.push(format!(
+            "[ivf-stage-counters] command={command} label={label} stage={} scans={} samples={} elapsed_us={} elapsed_ms={:.3}",
+            snapshot.stage,
+            snapshot.scans,
+            snapshot.samples,
+            snapshot.elapsed_us,
+            snapshot.elapsed_us as f64 / 1_000.0,
+        ));
+    }
+    lines.join("\n")
+}
+
 fn validate_guc_name(name: &str) -> Result<()> {
     let mut parts = name.split('.');
     let Some(first) = parts.next() else {

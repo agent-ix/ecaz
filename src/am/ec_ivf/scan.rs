@@ -837,6 +837,31 @@ fn elapsed_us_u32(duration: Duration) -> u32 {
     u32::try_from(duration.as_micros()).unwrap_or(u32::MAX)
 }
 
+/// Task 133: record one stage-latency sample into both the per-scan explain
+/// counters and the process-global stage accumulators.
+fn record_stage_elapsed(
+    opaque: &mut EcIvfScanOpaque,
+    stage: super::stage_counters::IvfQueryStage,
+    elapsed: Duration,
+) {
+    use super::stage_counters::IvfQueryStage as Stage;
+    let elapsed_us = elapsed_us_u32(elapsed);
+    let counters = &mut opaque.explain_counters;
+    match stage {
+        Stage::ApproximateScan => counters.record_approximate_scan_elapsed_us(elapsed_us),
+        Stage::ProbePlan => counters.record_probe_plan_elapsed_us(elapsed_us),
+        Stage::PostingVisit => counters.record_posting_visit_elapsed_us(elapsed_us),
+        Stage::ScratchFlush => counters.record_scratch_flush_elapsed_us(elapsed_us),
+        Stage::ScorerBatch => counters.record_scorer_batch_elapsed_us(elapsed_us),
+        Stage::CandidateRecord => counters.record_candidate_record_elapsed_us(elapsed_us),
+        Stage::TopkCollect => counters.record_topk_collect_elapsed_us(elapsed_us),
+        Stage::ExactRerank => counters.record_exact_rerank_elapsed_us(elapsed_us),
+        Stage::RerankPayloadDecode => counters.record_rerank_payload_decode_elapsed_us(elapsed_us),
+        Stage::RerankPayloadScore => counters.record_rerank_payload_score_elapsed_us(elapsed_us),
+    }
+    super::stage_counters::record_stage_elapsed_us(stage, elapsed_us);
+}
+
 fn flush_scan_stats(opaque: &mut EcIvfScanOpaque) {
     if !opaque.rescan_called || opaque.stats_delta.is_zero() {
         return;
@@ -1518,6 +1543,7 @@ unsafe fn materialize_probe_candidates(
     };
     let payload_len = quantizer.payload_len();
     let use_dense_posting_typed_views = super::options::current_session_dense_posting_typed_views();
+    let probe_plan_started = Instant::now();
     // SAFETY: `index_relation` and metadata describe the live IVF index; the
     // selected list ids come from validated centroid scores.
     let probe_plan =
@@ -1539,6 +1565,12 @@ unsafe fn materialize_probe_candidates(
         .map(CandidateTopK::new);
     let mut remaining_live_tids_by_list = probe_plan.remaining_live_tids_by_list.clone();
     let posting_pages = probe_plan.posting_page_count()?;
+    record_stage_elapsed(
+        opaque,
+        super::stage_counters::IvfQueryStage::ProbePlan,
+        probe_plan_started.elapsed(),
+    );
+    super::stage_counters::record_scan();
     let approximate_started = Instant::now();
     opaque
         .explain_counters
@@ -1550,6 +1582,7 @@ unsafe fn materialize_probe_candidates(
         let scratch = posting_scratch_soa(opaque, payload_len);
         let dense_scratch = dense_posting_coalescing_scratch(opaque, payload_len);
         let mut dense_scratch_list_id: Option<u32> = None;
+        let posting_visit_started = Instant::now();
         // SAFETY: `scratch` is a scan-opaque-owned `*mut IvfPostingScratchSoa`
         // allocated by `posting_scratch_soa`; the visitor and the post-loop
         // drain are the only borrowers of this scratch buffer for the
@@ -1676,7 +1709,13 @@ unsafe fn materialize_probe_candidates(
                 &mut running_top,
             )?;
         }
+        record_stage_elapsed(
+            opaque,
+            super::stage_counters::IvfQueryStage::PostingVisit,
+            posting_visit_started.elapsed(),
+        );
     } else {
+        let posting_visit_started = Instant::now();
         super::page::visit_ivf_posting_entries_for_block_sequence(
             index_relation_handle,
             &probe_plan.block_sequence,
@@ -1746,18 +1785,31 @@ unsafe fn materialize_probe_candidates(
                 Ok(())
             },
         )?;
+        record_stage_elapsed(
+            opaque,
+            super::stage_counters::IvfQueryStage::PostingVisit,
+            posting_visit_started.elapsed(),
+        );
     }
 
     // SAFETY: `best_by_heap_tid` points to the scan-owned dedup map populated
     // during the posting visitor above.
     let best_by_heap_tid = unsafe { &mut *best_by_heap_tid };
+    let topk_collect_started = Instant::now();
     let mut candidates = collect_ranked_probe_candidates(
         best_by_heap_tid.values().copied(),
         pre_rerank_candidate_limit(index_options),
     );
-    opaque
-        .explain_counters
-        .record_approximate_scan_elapsed_us(elapsed_us_u32(approximate_started.elapsed()));
+    record_stage_elapsed(
+        opaque,
+        super::stage_counters::IvfQueryStage::TopkCollect,
+        topk_collect_started.elapsed(),
+    );
+    record_stage_elapsed(
+        opaque,
+        super::stage_counters::IvfQueryStage::ApproximateScan,
+        approximate_started.elapsed(),
+    );
     let should_record_exact_rerank = matches!(
         index_options.rerank.v1_effective(),
         super::options::RerankMode::HeapF32
@@ -1776,9 +1828,11 @@ unsafe fn materialize_probe_candidates(
         )
     };
     if let Some(rerank_started) = rerank_started {
-        opaque
-            .explain_counters
-            .record_exact_rerank_elapsed_us(elapsed_us_u32(rerank_started.elapsed()));
+        record_stage_elapsed(
+            opaque,
+            super::stage_counters::IvfQueryStage::ExactRerank,
+            rerank_started.elapsed(),
+        );
     }
     Ok(candidates)
 }
@@ -1834,6 +1888,34 @@ fn process_scratch_soa_postings(
     if scratch.is_empty() {
         return Ok(());
     }
+    let flush_started = Instant::now();
+    let result = process_scratch_soa_postings_inner(
+        scratch,
+        flush_kind,
+        quantizer,
+        prepared_query,
+        opaque,
+        best_by_heap_tid,
+        running_top,
+    );
+    record_stage_elapsed(
+        opaque,
+        super::stage_counters::IvfQueryStage::ScratchFlush,
+        flush_started.elapsed(),
+    );
+    result
+}
+
+#[allow(clippy::too_many_arguments)]
+fn process_scratch_soa_postings_inner(
+    scratch: &mut IvfPostingScratchSoa,
+    flush_kind: ScratchSoaFlushKind,
+    quantizer: IvfQuantizer,
+    prepared_query: &IvfPreparedQuery,
+    opaque: &mut EcIvfScanOpaque,
+    best_by_heap_tid: *mut HashMap<ItemPointer, EcIvfScoredCandidate>,
+    running_top: &mut Option<CandidateTopK>,
+) -> Result<(), String> {
     let payload_bytes = scratch.payloads.len();
     let heap_tid_bytes = scratch.heap_tids.len().saturating_mul(ITEM_POINTER_BYTES);
     match flush_kind {
@@ -1846,14 +1928,21 @@ fn process_scratch_soa_postings(
     }
 
     if let Some(min_ip_to_keep) = posting_prune_cutoff(running_top) {
-        if quantizer.score_turboquant_no_qjl_4bit_batch_from_payloads_with_min_bound(
+        let scorer_started = Instant::now();
+        let scored = quantizer.score_turboquant_no_qjl_4bit_batch_from_payloads_with_min_bound(
             prepared_query,
             &scratch.payloads,
             scratch.payload_len,
             min_ip_to_keep,
             &mut scratch.scores,
             &mut scratch.kept,
-        )? {
+        )?;
+        if scored {
+            record_stage_elapsed(
+                opaque,
+                super::stage_counters::IvfQueryStage::ScorerBatch,
+                scorer_started.elapsed(),
+            );
             if scratch.scores.len() != scratch.len() || scratch.kept.len() != scratch.len() {
                 return Err(format!(
                     "ec_ivf bounded scratch SoA batch scorer produced {} scores and {} keep flags for {} postings",
@@ -1862,6 +1951,7 @@ fn process_scratch_soa_postings(
                     scratch.len()
                 ));
             }
+            let record_started = Instant::now();
             for index in 0..scratch.len() {
                 if !scratch.kept[index] {
                     opaque.explain_counters.record_posting_pruned_by_bound();
@@ -1876,11 +1966,17 @@ fn process_scratch_soa_postings(
                     -(scratch.scores[index] + scratch.centroid_ip(index)),
                 );
             }
+            record_stage_elapsed(
+                opaque,
+                super::stage_counters::IvfQueryStage::CandidateRecord,
+                record_started.elapsed(),
+            );
             scratch.clear();
             return Ok(());
         }
     }
 
+    let scorer_started = Instant::now();
     if quantizer.score_turboquant_batch_from_payloads(
         prepared_query,
         &scratch.payloads,
@@ -1888,6 +1984,11 @@ fn process_scratch_soa_postings(
         &scratch.gammas,
         &mut scratch.scores,
     )? {
+        record_stage_elapsed(
+            opaque,
+            super::stage_counters::IvfQueryStage::ScorerBatch,
+            scorer_started.elapsed(),
+        );
         if scratch.scores.len() != scratch.len() {
             return Err(format!(
                 "ec_ivf scratch SoA batch scorer produced {} scores for {} postings",
@@ -1895,6 +1996,7 @@ fn process_scratch_soa_postings(
                 scratch.len()
             ));
         }
+        let record_started = Instant::now();
         for index in 0..scratch.len() {
             record_scored_posting_candidates(
                 opaque,
@@ -1905,16 +2007,27 @@ fn process_scratch_soa_postings(
                 -(scratch.scores[index] + scratch.centroid_ip(index)),
             );
         }
+        record_stage_elapsed(
+            opaque,
+            super::stage_counters::IvfQueryStage::CandidateRecord,
+            record_started.elapsed(),
+        );
         scratch.clear();
         return Ok(());
     }
 
+    let scorer_started = Instant::now();
     if quantizer.score_ip_bits1_batch_from_payloads(
         prepared_query,
         &scratch.payloads,
         scratch.payload_len,
         &mut scratch.scores,
     )? {
+        record_stage_elapsed(
+            opaque,
+            super::stage_counters::IvfQueryStage::ScorerBatch,
+            scorer_started.elapsed(),
+        );
         if scratch.scores.len() != scratch.len() {
             return Err(format!(
                 "ec_ivf scratch SoA batch scorer produced {} scores for {} postings",
@@ -1922,6 +2035,7 @@ fn process_scratch_soa_postings(
                 scratch.len()
             ));
         }
+        let record_started = Instant::now();
         for index in 0..scratch.len() {
             record_scored_posting_candidates(
                 opaque,
@@ -1933,16 +2047,27 @@ fn process_scratch_soa_postings(
                 -(scratch.scores[index] + scratch.centroid_ip(index)),
             );
         }
+        record_stage_elapsed(
+            opaque,
+            super::stage_counters::IvfQueryStage::CandidateRecord,
+            record_started.elapsed(),
+        );
         scratch.clear();
         return Ok(());
     }
 
+    let scorer_started = Instant::now();
     if quantizer.score_grouped_pq_batch_from_payloads(
         prepared_query,
         &scratch.payloads,
         scratch.payload_len,
         &mut scratch.scores,
     )? {
+        record_stage_elapsed(
+            opaque,
+            super::stage_counters::IvfQueryStage::ScorerBatch,
+            scorer_started.elapsed(),
+        );
         if scratch.scores.len() != scratch.len() {
             return Err(format!(
                 "ec_ivf scratch SoA batch scorer produced {} scores for {} postings",
@@ -1950,6 +2075,7 @@ fn process_scratch_soa_postings(
                 scratch.len()
             ));
         }
+        let record_started = Instant::now();
         for index in 0..scratch.len() {
             record_scored_posting_candidates(
                 opaque,
@@ -1960,6 +2086,11 @@ fn process_scratch_soa_postings(
                 -(scratch.scores[index] + scratch.centroid_ip(index)),
             );
         }
+        record_stage_elapsed(
+            opaque,
+            super::stage_counters::IvfQueryStage::CandidateRecord,
+            record_started.elapsed(),
+        );
         scratch.clear();
         return Ok(());
     }
@@ -2703,12 +2834,16 @@ unsafe fn rerank_probe_candidates_source_side(
     opaque
         .explain_counters
         .record_rerank_source_bytes_read(source_bytes_read);
-    opaque
-        .explain_counters
-        .record_rerank_payload_decode_elapsed_us(elapsed_us_u32(payload_decode_elapsed));
-    opaque
-        .explain_counters
-        .record_rerank_payload_score_elapsed_us(elapsed_us_u32(payload_score_elapsed));
+    record_stage_elapsed(
+        opaque,
+        super::stage_counters::IvfQueryStage::RerankPayloadDecode,
+        payload_decode_elapsed,
+    );
+    record_stage_elapsed(
+        opaque,
+        super::stage_counters::IvfQueryStage::RerankPayloadScore,
+        payload_score_elapsed,
+    );
 
     for _ in 0..rerank_rows {
         opaque.explain_counters.record_rerank_row();
@@ -2903,12 +3038,16 @@ unsafe fn rerank_probe_candidates_index_side(
     opaque
         .explain_counters
         .record_rerank_payload_bytes_scored(payload_bytes_scored);
-    opaque
-        .explain_counters
-        .record_rerank_payload_decode_elapsed_us(elapsed_us_u32(payload_decode_elapsed));
-    opaque
-        .explain_counters
-        .record_rerank_payload_score_elapsed_us(elapsed_us_u32(payload_score_elapsed));
+    record_stage_elapsed(
+        opaque,
+        super::stage_counters::IvfQueryStage::RerankPayloadDecode,
+        payload_decode_elapsed,
+    );
+    record_stage_elapsed(
+        opaque,
+        super::stage_counters::IvfQueryStage::RerankPayloadScore,
+        payload_score_elapsed,
+    );
     for _ in 0..rerank_rows {
         opaque.explain_counters.record_rerank_row();
     }
