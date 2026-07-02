@@ -5,7 +5,8 @@ use crate::quant::isa::Isa;
 use std::arch::is_x86_feature_detected;
 
 pub(super) fn score_block32_avx2(
-    lut: &[f32],
+    lut: &[i16],
+    lut_scale: f32,
     original_dim: usize,
     codes: &[&[u8]; BLOCK_WIDTH],
     out_scores: &mut [f32],
@@ -15,18 +16,21 @@ pub(super) fn score_block32_avx2(
         if is_x86_feature_detected!("avx2") {
             // SAFETY: runtime feature detection above guarantees AVX2 support,
             // and callers validate LUT/code/output shapes before dispatch.
-            return unsafe { score_octets_avx2_impl(lut, original_dim, codes, out_scores) };
+            return unsafe {
+                score_octets_avx2_impl(lut, lut_scale, original_dim, codes, out_scores)
+            };
         }
     }
 
-    scalar::score_block32_scalar(lut, original_dim, codes, out_scores)
+    scalar::score_block32_scalar(lut, lut_scale, original_dim, codes, out_scores)
 }
 
 /// Octet-granular entry for sub-block tails: `codes.len()` must be a
 /// nonzero multiple of 8 and at most `BLOCK_WIDTH`. Returns `None` when
 /// AVX2 is unavailable so the caller can fall back.
 pub(super) fn score_octets_avx2(
-    lut: &[f32],
+    lut: &[i16],
+    lut_scale: f32,
     original_dim: usize,
     codes: &[&[u8]],
     out_scores: &mut [f32],
@@ -37,17 +41,20 @@ pub(super) fn score_octets_avx2(
         if is_x86_feature_detected!("avx2") {
             // SAFETY: runtime feature detection above guarantees AVX2 support,
             // and callers validate LUT/code/output shapes before dispatch.
-            return Some(unsafe { score_octets_avx2_impl(lut, original_dim, codes, out_scores) });
+            return Some(unsafe {
+                score_octets_avx2_impl(lut, lut_scale, original_dim, codes, out_scores)
+            });
         }
     }
 
-    let _ = (lut, original_dim, codes, out_scores);
+    let _ = (lut, lut_scale, original_dim, codes, out_scores);
     None
 }
 
 #[cfg(test)]
 pub(super) fn score_block32_avx2_for_test(
-    lut: &[f32],
+    lut: &[i16],
+    lut_scale: f32,
     original_dim: usize,
     codes: &[&[u8]; BLOCK_WIDTH],
     out_scores: &mut [f32],
@@ -57,11 +64,13 @@ pub(super) fn score_block32_avx2_for_test(
         if is_x86_feature_detected!("avx2") {
             // SAFETY: runtime feature detection above guarantees AVX2 support;
             // test fixtures use the same validated shapes as the public block path.
-            return Some(unsafe { score_octets_avx2_impl(lut, original_dim, codes, out_scores) });
+            return Some(unsafe {
+                score_octets_avx2_impl(lut, lut_scale, original_dim, codes, out_scores)
+            });
         }
     }
 
-    let _ = (lut, original_dim, codes, out_scores);
+    let _ = (lut, lut_scale, original_dim, codes, out_scores);
     None
 }
 
@@ -91,7 +100,8 @@ const CHUNK_BYTES: usize = 16;
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
 unsafe fn score_octets_avx2_impl(
-    lut: &[f32],
+    lut: &[i16],
+    lut_scale: f32,
     original_dim: usize,
     codes: &[&[u8]],
     out_scores: &mut [f32],
@@ -105,8 +115,8 @@ unsafe fn score_octets_avx2_impl(
     // with a permute over its two 8-float halves plus a blend on the index
     // high bit. Per-lane accumulation stays in dim order, so scores remain
     // bit-exact against the scalar block reference. Lane count is octet
-    // granular (8..=32 in steps of 8) so sub-block tails only pay for the
-    // octets they occupy.
+    // granular (8..=BLOCK_WIDTH in steps of 8) so sub-block tails only pay
+    // for the octets they occupy.
     let octet_count = codes.len() / 8;
     debug_assert!(octet_count >= 1 && octet_count <= OCTET_COUNT);
     debug_assert_eq!(codes.len(), octet_count * 8);
@@ -119,7 +129,8 @@ unsafe fn score_octets_avx2_impl(
     let mut byte_base = 0usize;
     while byte_base < total_bytes {
         let chunk_len = CHUNK_BYTES.min(total_bytes - byte_base);
-        for (octet, acc_slot) in acc.iter_mut().enumerate().take(octet_count) {
+        let mut cols_by_octet = [[_mm_setzero_si128(); 8]; OCTET_COUNT];
+        for (octet, cols_slot) in cols_by_octet.iter_mut().enumerate().take(octet_count) {
             let lane_base = octet * 8;
             let mut rows = [_mm_setzero_si128(); 8];
             if chunk_len == CHUNK_BYTES {
@@ -133,32 +144,33 @@ unsafe fn score_octets_avx2_impl(
                     *row = _mm_loadu_si128(padded.as_ptr().cast::<__m128i>());
                 }
             }
-            let cols = transpose_8x16(rows);
+            *cols_slot = transpose_8x16(rows);
+        }
 
-            for b in 0..chunk_len {
-                let pair = cols[b / 2];
+        for b in 0..chunk_len {
+            let dim_low = (byte_base + b) * 2;
+            let low_lut = load_dim_table(lut, lut_scale, dim_low);
+            let high_lut =
+                (dim_low + 1 < original_dim).then(|| load_dim_table(lut, lut_scale, dim_low + 1));
+            for (octet, acc_slot) in acc.iter_mut().enumerate().take(octet_count) {
+                let pair = cols_by_octet[octet][b / 2];
                 let col = if b & 1 == 0 {
                     pair
                 } else {
                     _mm_srli_si128(pair, 8)
                 };
                 let packed = _mm256_cvtepu8_epi32(col);
-                let dim_low = (byte_base + b) * 2;
                 let low_indexes = _mm256_and_si256(packed, low_mask);
                 // Accumulate one dim at a time: float addition is not
                 // associative, and bit-exactness requires the scalar
                 // reference's per-lane dim-order sums.
-                *acc_slot = _mm256_add_ps(
-                    *acc_slot,
-                    select_lut_entries(lut, dim_low, low_indexes, seven),
-                );
+                *acc_slot =
+                    _mm256_add_ps(*acc_slot, select_lut_entries(low_lut, low_indexes, seven));
                 let dim_high = dim_low + 1;
-                if dim_high < original_dim {
+                if let Some(high_lut) = high_lut {
                     let high_indexes = _mm256_and_si256(_mm256_srli_epi32(packed, 4), low_mask);
-                    *acc_slot = _mm256_add_ps(
-                        *acc_slot,
-                        select_lut_entries(lut, dim_high, high_indexes, seven),
-                    );
+                    *acc_slot =
+                        _mm256_add_ps(*acc_slot, select_lut_entries(high_lut, high_indexes, seven));
                 }
             }
         }
@@ -176,19 +188,23 @@ unsafe fn score_octets_avx2_impl(
 /// (each 0..=15) from the dim's register-resident 16-entry f32 LUT.
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[inline(always)]
-unsafe fn select_lut_entries(
-    lut: &[f32],
-    dim_index: usize,
-    indexes: __m256i,
-    seven: __m256i,
-) -> __m256 {
-    let lut_ptr = lut.as_ptr().add(dim_index * 16);
-    let low_lut = _mm256_loadu_ps(lut_ptr);
-    let high_lut = _mm256_loadu_ps(lut_ptr.add(8));
+unsafe fn select_lut_entries(table: (__m256, __m256), indexes: __m256i, seven: __m256i) -> __m256 {
+    let (low_lut, high_lut) = table;
     let low_values = _mm256_permutevar8x32_ps(low_lut, indexes);
     let high_values = _mm256_permutevar8x32_ps(high_lut, indexes);
     let high_select = _mm256_castsi256_ps(_mm256_cmpgt_epi32(indexes, seven));
     _mm256_blendv_ps(low_values, high_values, high_select)
+}
+
+/// Loads one compact dim table and expands it to two AVX f32 vectors.
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[inline(always)]
+unsafe fn load_dim_table(lut: &[i16], lut_scale: f32, dim_index: usize) -> (__m256, __m256) {
+    let table = super::load_dim_table_f32(lut, lut_scale, dim_index);
+    (
+        _mm256_loadu_ps(table.as_ptr()),
+        _mm256_loadu_ps(table.as_ptr().add(8)),
+    )
 }
 
 /// Transposes eight 16-byte candidate rows into byte columns. Output

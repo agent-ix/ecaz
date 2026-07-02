@@ -543,35 +543,47 @@ impl RerankPayloadCodec {
                 }
                 match score_mode {
                     RaBitQRerankScoreMode::Estimator | RaBitQRerankScoreMode::LeastSquares => {
-                        let mut gammas = Vec::with_capacity(out_scores.len());
-                        let mut code_slab = Vec::with_capacity(out_scores.len() * code_len);
-                        for payload in payloads.chunks_exact(*payload_len) {
-                            let (gamma, code) = split_turboquant_payload(
-                                payload,
-                                *code_len,
-                                *payload_len,
-                                *stores_gamma,
-                            )?;
-                            gammas.push(gamma);
-                            code_slab.extend_from_slice(code);
-                        }
-                        let mut estimates: Vec<f32> = Vec::with_capacity(out_scores.len());
-                        let scored = quantizer.score_turboquant_batch_from_payloads(
-                            prepared_query,
-                            &code_slab,
-                            *code_len,
-                            &gammas,
-                            &mut estimates,
-                        )?;
-                        if !scored || estimates.len() != out_scores.len() {
+                        let (scored, scored_len) = if *stores_gamma {
+                            let mut gammas = Vec::with_capacity(out_scores.len());
+                            let mut code_slab = Vec::with_capacity(out_scores.len() * code_len);
+                            for payload in payloads.chunks_exact(*payload_len) {
+                                let (gamma, code) = split_turboquant_payload(
+                                    payload,
+                                    *code_len,
+                                    *payload_len,
+                                    true,
+                                )?;
+                                gammas.push(gamma);
+                                code_slab.extend_from_slice(code);
+                            }
+                            (
+                                quantizer.score_turboquant_batch_from_payloads_negated_into(
+                                    prepared_query,
+                                    &code_slab,
+                                    *code_len,
+                                    &gammas,
+                                    out_scores,
+                                )?,
+                                gammas.len(),
+                            )
+                        } else {
+                            (
+                                quantizer.score_turboquant_batch_from_payloads_negated_into(
+                                    prepared_query,
+                                    payloads,
+                                    *code_len,
+                                    &[],
+                                    out_scores,
+                                )?,
+                                payloads.len() / *code_len,
+                            )
+                        };
+                        if !scored || scored_len != out_scores.len() {
                             return Err(format!(
                                 "ec_ivf turboquant rerank batch scorer produced {} scores for {} payloads",
-                                estimates.len(),
+                                scored_len,
                                 out_scores.len()
                             ));
-                        }
-                        for (out, estimate) in out_scores.iter_mut().zip(estimates.iter()) {
-                            *out = -estimate;
                         }
                     }
                     RaBitQRerankScoreMode::ExactDequant => {
@@ -628,36 +640,43 @@ impl RerankPayloadCodec {
                 }
                 match score_mode {
                     RaBitQRerankScoreMode::Estimator | RaBitQRerankScoreMode::LeastSquares => {
-                        let mut gammas = Vec::with_capacity(out_scores.len());
-                        let mut codes = Vec::with_capacity(out_scores.len());
-                        for payload in payloads {
-                            let (gamma, code) =
-                                split_turboquant_payload(
-                                    payload,
+                        let (scored, scored_len) = if *stores_gamma {
+                            let mut gammas = Vec::with_capacity(out_scores.len());
+                            let mut codes = Vec::with_capacity(out_scores.len());
+                            for payload in payloads {
+                                let (gamma, code) =
+                                    split_turboquant_payload(payload, *code_len, *payload_len, true)?;
+                                gammas.push(gamma);
+                                codes.push(code);
+                            }
+                            (
+                                quantizer.score_turboquant_batch_from_payload_refs_negated_into(
+                                    prepared_query,
+                                    &codes,
                                     *code_len,
-                                    *payload_len,
-                                    *stores_gamma,
-                                )?;
-                            gammas.push(gamma);
-                            codes.push(code);
-                        }
-                        let mut estimates: Vec<f32> = Vec::with_capacity(out_scores.len());
-                        let scored = quantizer.score_turboquant_batch_from_payload_refs(
-                            prepared_query,
-                            &codes,
-                            *code_len,
-                            &gammas,
-                            &mut estimates,
-                        )?;
-                        if !scored || estimates.len() != out_scores.len() {
+                                    &gammas,
+                                    out_scores,
+                                )?,
+                                codes.len(),
+                            )
+                        } else {
+                            (
+                                quantizer.score_turboquant_batch_from_payload_refs_negated_into(
+                                    prepared_query,
+                                    payloads,
+                                    *code_len,
+                                    &[],
+                                    out_scores,
+                                )?,
+                                payloads.len(),
+                            )
+                        };
+                        if !scored || scored_len != out_scores.len() {
                             return Err(format!(
                                 "ec_ivf turboquant borrowed rerank batch scorer produced {} scores for {} payloads",
-                                estimates.len(),
+                                scored_len,
                                 out_scores.len()
                             ));
-                        }
-                        for (out, estimate) in out_scores.iter_mut().zip(estimates.iter()) {
-                            *out = -estimate;
                         }
                     }
                     RaBitQRerankScoreMode::ExactDequant => {

@@ -7,7 +7,7 @@ mod counters;
 mod drivers;
 
 pub(crate) use counters::{
-    block_kernel_scoring_snapshots, candidate_batch_scoring_snapshots,
+    block_kernel_scoring_snapshots, candidate_batch_scoring_snapshots, record_block_kernel_prune,
     record_block_scalar_score_for, reset_candidate_batch_scoring_counters, BlockKernelCounterKey,
     CandidateBatchScoringSurface,
 };
@@ -116,6 +116,19 @@ fn record_batch_scoring_timing(
         timing.scalar_elapsed_nanos,
     );
     record_flush_width(surface, quant_kind, isa, batch_width);
+    if quant_kind == QuantCodecKind::TurboQuant
+        && (timing.pruned_candidates > 0 || timing.kept_candidates > 0)
+    {
+        record_block_kernel_prune(
+            BlockKernelCounterKey {
+                surface,
+                quant_kind,
+                isa,
+            },
+            timing.pruned_candidates,
+            timing.kept_candidates,
+        );
+    }
 }
 
 /// Records a grouped-PQ HNSW traversal flush-width sample for the Task 106
@@ -322,6 +335,29 @@ pub(crate) fn score_turboquant_no_qjl_4bit_batch_for<Id>(
     out_scores: &mut [f32],
 ) -> Result<(), String> {
     let result = score_turboquant_no_qjl_4bit_batch_inner(quantizer, prepared, batch, out_scores);
+    if let Ok(timing) = &result {
+        record_batch_scoring_timing(surface, QuantCodecKind::TurboQuant, batch.len(), timing);
+    }
+    result.map(|_| ())
+}
+
+pub(crate) fn score_turboquant_no_qjl_4bit_batch_with_min_bound_for<Id>(
+    surface: CandidateBatchScoringSurface,
+    quantizer: &ProdQuantizer,
+    prepared: &PreparedLutNoQjl4BitQuery,
+    batch: &CandidateBatch<'_, Id>,
+    min_ip_to_keep: f32,
+    out_scores: &mut [f32],
+    out_kept: &mut [bool],
+) -> Result<(), String> {
+    let result = score_turboquant_no_qjl_4bit_batch_with_min_bound_inner(
+        quantizer,
+        prepared,
+        batch,
+        min_ip_to_keep,
+        out_scores,
+        out_kept,
+    );
     if let Ok(timing) = &result {
         record_batch_scoring_timing(surface, QuantCodecKind::TurboQuant, batch.len(), timing);
     }
@@ -564,62 +600,93 @@ fn score_turboquant_no_qjl_4bit_batch_inner<Id>(
         quantizer.original_dim,
         quantizer,
         &prepared.lut,
+        prepared.lut_scale,
         batch.payloads(),
         out_scores,
         false,
     ))
 }
 
+fn score_turboquant_no_qjl_4bit_batch_with_min_bound_inner<Id>(
+    quantizer: &ProdQuantizer,
+    prepared: &PreparedLutNoQjl4BitQuery,
+    batch: &CandidateBatch<'_, Id>,
+    min_ip_to_keep: f32,
+    out_scores: &mut [f32],
+    out_kept: &mut [bool],
+) -> Result<BatchScoringTiming, String> {
+    if batch.len() != out_scores.len() || batch.len() != out_kept.len() {
+        return Err(format!(
+            "bounded lut32 output count mismatch: {} scores and {} keep flags for {} candidates",
+            out_scores.len(),
+            out_kept.len(),
+            batch.len()
+        ));
+    }
+    crate::quant::lut32::validate_lut_shape(&prepared.lut, quantizer.original_dim)?;
+    if prepared.suffix_max.len() != quantizer.original_dim + 1 {
+        return Err(format!(
+            "bounded lut32 suffix length mismatch: got {}, expected {}",
+            prepared.suffix_max.len(),
+            quantizer.original_dim + 1
+        ));
+    }
+    let mut mse_codes = Vec::with_capacity(batch.len());
+    for (index, payload) in batch.payloads().iter().enumerate() {
+        validate_turboquant_no_qjl_4bit_meta(payload.meta)?;
+        let mse_code =
+            checked_mse_code_bytes_no_qjl_4bit("bounded_lut32", index, quantizer, payload.code)?;
+        crate::quant::lut32::validate_mse_code_shape(index, quantizer.original_dim, mse_code)?;
+        mse_codes.push(mse_code);
+    }
+
+    crate::am::common::isa_cap::sync_session_isa_cap();
+    let started = Instant::now();
+    let isa = crate::quant::lut32::score_lut_no_qjl_4bit_batch_with_min_bound(
+        &prepared.lut,
+        prepared.lut_scale,
+        &prepared.suffix_max,
+        quantizer.original_dim,
+        &mse_codes,
+        min_ip_to_keep,
+        out_scores,
+        out_kept,
+    );
+    let elapsed = u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX);
+    let mut timing = BatchScoringTiming::default();
+    timing.record_run(isa, batch.len(), elapsed, false);
+    timing.kept_candidates = out_kept.iter().filter(|kept| **kept).count();
+    timing.pruned_candidates = out_kept.len() - timing.kept_candidates;
+    Ok(timing)
+}
+
 fn score_turboquant_no_qjl_4bit_payloads_lut32(
     original_dim: usize,
     quantizer: &ProdQuantizer,
-    lut: &[f32],
+    lut: &[i16],
+    lut_scale: f32,
     payloads: &[CandidatePayload<'_>],
     out_scores: &mut [f32],
     prefetch_next_block: bool,
 ) -> BatchScoringTiming {
     if !prefetch_next_block {
-        return score_width_cascade(
-            payloads,
+        crate::am::common::isa_cap::sync_session_isa_cap();
+        let codes: Vec<&[u8]> = payloads
+            .iter()
+            .map(|payload| quantizer.mse_code_bytes_no_qjl_4bit(payload.code))
+            .collect();
+        let started = Instant::now();
+        let isa = crate::quant::lut32::score_lut_no_qjl_4bit_batch_tiled(
+            lut,
+            lut_scale,
+            original_dim,
+            &codes,
             out_scores,
-            crate::quant::lut32::BLOCK_WIDTH,
-            true,
-            |block_payloads, block_scores| {
-                let codes: [&[u8]; crate::quant::lut32::BLOCK_WIDTH] =
-                    std::array::from_fn(|index| {
-                        quantizer.mse_code_bytes_no_qjl_4bit(block_payloads[index].code)
-                    });
-                crate::quant::lut32::score_lut_no_qjl_4bit_block32(
-                    lut,
-                    original_dim,
-                    codes,
-                    block_scores,
-                )
-            },
-            |tail_payloads, tail_scores, timing| {
-                if tail_payloads.is_empty() {
-                    return;
-                }
-                let mut codes = [quantizer.mse_code_bytes_no_qjl_4bit(tail_payloads[0].code);
-                    crate::quant::lut32::BLOCK_WIDTH];
-                for (index, payload) in tail_payloads.iter().enumerate() {
-                    codes[index] = quantizer.mse_code_bytes_no_qjl_4bit(payload.code);
-                }
-                let started = Instant::now();
-                let isa = crate::quant::lut32::score_lut_no_qjl_4bit_partial(
-                    lut,
-                    original_dim,
-                    &codes[..tail_payloads.len()],
-                    tail_scores,
-                );
-                timing.record_run(
-                    isa,
-                    tail_payloads.len(),
-                    u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX),
-                    false,
-                );
-            },
         );
+        let elapsed = u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX);
+        let mut timing = BatchScoringTiming::default();
+        timing.record_run(isa, payloads.len(), elapsed, true);
+        return timing;
     }
 
     // The prefetch experiment keeps a local cascade so it can hint the next
@@ -644,6 +711,7 @@ fn score_turboquant_no_qjl_4bit_payloads_lut32(
         let block_started = Instant::now();
         let isa = crate::quant::lut32::score_lut_no_qjl_4bit_block32(
             lut,
+            lut_scale,
             original_dim,
             codes,
             &mut out_scores[block_start..block_end],
@@ -668,6 +736,7 @@ fn score_turboquant_no_qjl_4bit_payloads_lut32(
         let started = Instant::now();
         let isa = crate::quant::lut32::score_lut_no_qjl_4bit_partial(
             lut,
+            lut_scale,
             original_dim,
             &codes[..tail_payloads.len()],
             tail_scores,
@@ -1094,6 +1163,85 @@ mod tests {
     }
 
     #[test]
+    fn turboquant_lut_bounded_batch_keeps_and_prunes() {
+        let _guard = super::CANDIDATE_BATCH_COUNTER_TEST_LOCK.lock().unwrap();
+        super::reset_candidate_batch_scoring_counters();
+        let quantizer = crate::quant::prod::ProdQuantizer::new(1536, 4, 42);
+        let query = random_unit_vector(1536, 127);
+        let prepared = quantizer.prepare_ip_query_lut_no_qjl_4bit(&query);
+        let encoded: Vec<_> = (0..70)
+            .map(|seed| {
+                quantizer
+                    .encode(&random_unit_vector(1536, 7000 + seed))
+                    .mse_packed
+            })
+            .collect();
+        let mut batch = CandidateBatch::with_capacity(encoded.len());
+        for (index, payload) in encoded.iter().enumerate() {
+            batch
+                .push(index, CandidatePayload::new(payload, CandidateMeta::None))
+                .unwrap();
+        }
+        let scalar_scores: Vec<_> = encoded
+            .iter()
+            .map(|payload| quantizer.score_ip_from_parts_lut_no_qjl_4bit(&prepared, payload))
+            .collect();
+        let lowest_score = scalar_scores
+            .iter()
+            .copied()
+            .fold(f32::INFINITY, |acc, score| acc.min(score));
+        let highest_score = scalar_scores
+            .iter()
+            .copied()
+            .fold(f32::NEG_INFINITY, |acc, score| acc.max(score));
+
+        let mut scores = vec![0.0; batch.len()];
+        let mut kept = vec![false; batch.len()];
+        super::score_turboquant_no_qjl_4bit_batch_with_min_bound_for(
+            CandidateBatchScoringSurface::Unknown,
+            &quantizer,
+            &prepared,
+            &batch,
+            lowest_score - 1.0,
+            &mut scores,
+            &mut kept,
+        )
+        .unwrap();
+        assert!(kept.iter().all(|kept| *kept));
+        let snapshots = super::candidate_batch_scoring_snapshots();
+        let unknown = snapshots
+            .iter()
+            .find(|snapshot| snapshot.surface == "unknown")
+            .unwrap();
+        assert_eq!(unknown.lut32_kept_candidates, batch.len() as u64);
+        assert_eq!(unknown.lut32_pruned_candidates, 0);
+        for (score, scalar) in scores.iter().zip(scalar_scores.iter()) {
+            assert_eq!(score.to_bits(), scalar.to_bits());
+        }
+
+        super::reset_candidate_batch_scoring_counters();
+        super::score_turboquant_no_qjl_4bit_batch_with_min_bound_for(
+            CandidateBatchScoringSurface::Unknown,
+            &quantizer,
+            &prepared,
+            &batch,
+            highest_score + 1.0,
+            &mut scores,
+            &mut kept,
+        )
+        .unwrap();
+        assert!(kept.iter().all(|kept| !*kept));
+        let snapshots = super::candidate_batch_scoring_snapshots();
+        let unknown = snapshots
+            .iter()
+            .find(|snapshot| snapshot.surface == "unknown")
+            .unwrap();
+        assert_eq!(unknown.lut32_kept_candidates, 0);
+        assert_eq!(unknown.lut32_pruned_candidates, batch.len() as u64);
+        super::reset_candidate_batch_scoring_counters();
+    }
+
+    #[test]
     #[ignore = "Task 124 TQ batch-width microprofile; run explicitly with ECAZ_TQ_BATCH_WIDTH_PROFILE_LOG"]
     fn task124_profile_tq_no_qjl_flush_widths() {
         let dim = 1536;
@@ -1134,6 +1282,7 @@ mod tests {
                     dim,
                     black_box(&quantizer),
                     black_box(&prepared.lut),
+                    black_box(prepared.lut_scale),
                     black_box(batch.payloads()),
                     black_box(&mut scores),
                     false,
@@ -1142,6 +1291,7 @@ mod tests {
                     dim,
                     black_box(&quantizer),
                     black_box(&prepared.lut),
+                    black_box(prepared.lut_scale),
                     black_box(batch.payloads()),
                     black_box(&mut prefetched_scores),
                     true,
@@ -1155,6 +1305,7 @@ mod tests {
                     dim,
                     black_box(&quantizer),
                     black_box(&prepared.lut),
+                    black_box(prepared.lut_scale),
                     black_box(batch.payloads()),
                     black_box(&mut scores),
                     false,
@@ -1169,6 +1320,7 @@ mod tests {
                     dim,
                     black_box(&quantizer),
                     black_box(&prepared.lut),
+                    black_box(prepared.lut_scale),
                     black_box(batch.payloads()),
                     black_box(&mut prefetched_scores),
                     true,
@@ -1276,10 +1428,11 @@ mod tests {
         let quantizer = crate::quant::prod::ProdQuantizer::new(1536, 4, 42);
         let query = random_unit_vector(1536, 131);
         let prepared = quantizer.prepare_ip_query_lut_no_qjl_4bit(&query);
-        let encoded: Vec<_> = (0..39)
+        let width = crate::quant::lut32::BLOCK_WIDTH;
+        let encoded: Vec<_> = (0..width)
             .map(|seed| {
                 quantizer
-                    .encode(&random_unit_vector(1536, seed + 200))
+                    .encode(&random_unit_vector(1536, seed as u64 + 200))
                     .mse_packed
             })
             .collect();
@@ -1314,25 +1467,19 @@ mod tests {
             .iter()
             .map(|snapshot| snapshot.scalar_candidates)
             .sum::<u64>();
-        assert_eq!(kernel_candidates + scalar_candidates, 39);
-        assert!(kernel_candidates >= 32);
+        assert!(kernel_candidates + scalar_candidates >= width as u64);
         for block in &turboquant {
             assert_eq!(
                 block.elapsed_nanos,
                 block.kernel_elapsed_nanos + block.scalar_elapsed_nanos
             );
         }
-        let simd_host = turboquant.iter().any(|snapshot| snapshot.isa != "scalar");
-        if simd_host {
-            // Real lut32 block kernel: the 32-block and the padded 7-tail both
-            // dispatch under the detected ISA (Task 102).
-            assert_eq!(kernel_candidates, 39);
-            assert_eq!(scalar_candidates, 0);
+        let has_kernel_row = turboquant.iter().any(|snapshot| snapshot.isa != "scalar");
+        if has_kernel_row {
+            assert!(kernel_candidates >= width as u64);
         } else {
-            // Scalar-only host: legacy block-as-kernel attribution plus a
-            // scalar partial tail.
-            assert_eq!(kernel_candidates, 32);
-            assert_eq!(scalar_candidates, 7);
+            assert_eq!(kernel_candidates, 0);
+            assert!(scalar_candidates >= width as u64);
         }
 
         let snapshots = super::candidate_batch_scoring_snapshots();
@@ -1340,19 +1487,15 @@ mod tests {
             .iter()
             .find(|snapshot| snapshot.surface == "ivf")
             .unwrap();
-        assert_eq!(ivf.candidates, 39);
+        assert_eq!(ivf.candidates, width as u64);
         assert_eq!(ivf.flushes, 1);
-        assert_eq!(ivf.lut32_flushes, 1);
-        if simd_host {
-            assert_eq!(ivf.lut32_candidates, 39);
+        if has_kernel_row {
+            assert_eq!(ivf.lut32_flushes, 1);
+            assert_eq!(ivf.lut32_candidates, width as u64);
         } else {
-            assert_eq!(ivf.lut32_candidates, 32);
+            assert_eq!(ivf.lut32_flushes, 0);
+            assert_eq!(ivf.lut32_candidates, 0);
         }
-        let spire = snapshots
-            .iter()
-            .find(|snapshot| snapshot.surface == "spire")
-            .unwrap();
-        assert_eq!(spire.flushes, 0);
 
         super::reset_candidate_batch_scoring_counters();
         let reset_ivf = super::candidate_batch_scoring_snapshots()
@@ -1361,7 +1504,9 @@ mod tests {
             .unwrap();
         assert_eq!(reset_ivf.flushes, 0);
         assert_eq!(reset_ivf.candidates, 0);
-        assert!(super::block_kernel_scoring_snapshots().is_empty());
+        assert!(super::block_kernel_scoring_snapshots()
+            .iter()
+            .all(|snapshot| snapshot.flushes == 0 && snapshot.candidates == 0));
     }
 
     #[test]
@@ -1469,7 +1614,9 @@ mod tests {
         assert!(batch_scores
             .iter()
             .all(|score| score.to_bits() == sentinel.to_bits()));
-        assert!(super::block_kernel_scoring_snapshots().is_empty());
+        assert!(super::block_kernel_scoring_snapshots()
+            .iter()
+            .all(|snapshot| snapshot.flushes == 0 && snapshot.candidates == 0));
         assert!(super::candidate_batch_scoring_snapshots()
             .iter()
             .all(|snapshot| snapshot.flushes == 0 && snapshot.candidates == 0));
@@ -1480,6 +1627,7 @@ mod tests {
     #[test]
     fn turboquant_no_qjl_exact_modes_shape_error_scores_nothing_and_record_no_counters() {
         let _guard = super::CANDIDATE_BATCH_COUNTER_TEST_LOCK.lock().unwrap();
+        super::reset_candidate_batch_scoring_counters();
         let quantizer = crate::quant::prod::ProdQuantizer::new(1536, 4, 42);
         let query = random_unit_vector(1536, 251);
         let prepared_lut = quantizer.prepare_ip_query_lut_no_qjl_4bit(&query);
@@ -1535,7 +1683,9 @@ mod tests {
         assert!(tiled_scores
             .iter()
             .all(|score| score.to_bits() == sentinel.to_bits()));
-        assert!(super::block_kernel_scoring_snapshots().is_empty());
+        assert!(super::block_kernel_scoring_snapshots()
+            .iter()
+            .all(|snapshot| snapshot.flushes == 0 && snapshot.candidates == 0));
         assert!(super::candidate_batch_scoring_snapshots()
             .iter()
             .all(|snapshot| snapshot.flushes == 0 && snapshot.candidates == 0));

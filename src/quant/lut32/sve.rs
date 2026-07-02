@@ -60,7 +60,8 @@ extern "C" {
 }
 
 pub(super) fn score_block32_sve(
-    lut: &[f32],
+    lut: &[i16],
+    lut_scale: f32,
     original_dim: usize,
     codes: &[&[u8]; BLOCK_WIDTH],
     out_scores: &mut [f32],
@@ -71,24 +72,25 @@ pub(super) fn score_block32_sve(
             // SAFETY: runtime feature detection above guarantees SVE2/SVE
             // support, and callers validate LUT/code/output shapes before dispatch.
             return unsafe {
-                score_block32_sve_impl(lut, original_dim, codes, out_scores, Isa::Sve2)
+                score_block32_sve_impl(lut, lut_scale, original_dim, codes, out_scores, Isa::Sve2)
             };
         }
         if is_aarch64_feature_detected!("sve") {
             // SAFETY: runtime feature detection above guarantees SVE support,
             // and callers validate LUT/code/output shapes before dispatch.
             return unsafe {
-                score_block32_sve_impl(lut, original_dim, codes, out_scores, Isa::Sve)
+                score_block32_sve_impl(lut, lut_scale, original_dim, codes, out_scores, Isa::Sve)
             };
         }
     }
 
-    scalar::score_block32_scalar(lut, original_dim, codes, out_scores)
+    scalar::score_block32_scalar(lut, lut_scale, original_dim, codes, out_scores)
 }
 
 #[cfg(test)]
 pub(super) fn score_block32_sve_for_test(
-    lut: &[f32],
+    lut: &[i16],
+    lut_scale: f32,
     original_dim: usize,
     codes: &[&[u8]; BLOCK_WIDTH],
     out_scores: &mut [f32],
@@ -99,19 +101,19 @@ pub(super) fn score_block32_sve_for_test(
             // SAFETY: runtime feature detection above guarantees SVE2/SVE support;
             // test fixtures use the same validated shapes as the public block path.
             return Some(unsafe {
-                score_block32_sve_impl(lut, original_dim, codes, out_scores, Isa::Sve2)
+                score_block32_sve_impl(lut, lut_scale, original_dim, codes, out_scores, Isa::Sve2)
             });
         }
         if is_aarch64_feature_detected!("sve") {
             // SAFETY: runtime feature detection above guarantees SVE support;
             // test fixtures use the same validated shapes as the public block path.
             return Some(unsafe {
-                score_block32_sve_impl(lut, original_dim, codes, out_scores, Isa::Sve)
+                score_block32_sve_impl(lut, lut_scale, original_dim, codes, out_scores, Isa::Sve)
             });
         }
     }
 
-    let _ = (lut, original_dim, codes, out_scores);
+    let _ = (lut, lut_scale, original_dim, codes, out_scores);
     None
 }
 
@@ -120,7 +122,8 @@ pub(super) fn score_block32_sve_for_test(
 /// loop in the gather helper predicates the tail natively. Returns `None`
 /// when SVE is unavailable so the caller can fall back.
 pub(super) fn score_partial_sve(
-    lut: &[f32],
+    lut: &[i16],
+    lut_scale: f32,
     original_dim: usize,
     codes: &[&[u8]],
     out_scores: &mut [f32],
@@ -132,17 +135,19 @@ pub(super) fn score_partial_sve(
             // SAFETY: runtime feature detection above guarantees SVE2/SVE
             // support, and callers validate LUT/code/output shapes before dispatch.
             return Some(unsafe {
-                score_sve_impl(lut, original_dim, codes, out_scores, Isa::Sve2)
+                score_sve_impl(lut, lut_scale, original_dim, codes, out_scores, Isa::Sve2)
             });
         }
         if is_aarch64_feature_detected!("sve") {
             // SAFETY: runtime feature detection above guarantees SVE support,
             // and callers validate LUT/code/output shapes before dispatch.
-            return Some(unsafe { score_sve_impl(lut, original_dim, codes, out_scores, Isa::Sve) });
+            return Some(unsafe {
+                score_sve_impl(lut, lut_scale, original_dim, codes, out_scores, Isa::Sve)
+            });
         }
     }
 
-    let _ = (lut, original_dim, codes, out_scores);
+    let _ = (lut, lut_scale, original_dim, codes, out_scores);
     None
 }
 
@@ -165,18 +170,20 @@ fn runtime_vector_lanes() -> Option<usize> {
 
 #[cfg(all(target_arch = "aarch64", not(target_vendor = "apple")))]
 unsafe fn score_block32_sve_impl(
-    lut: &[f32],
+    lut: &[i16],
+    lut_scale: f32,
     original_dim: usize,
     codes: &[&[u8]; BLOCK_WIDTH],
     out_scores: &mut [f32],
     isa: Isa,
 ) -> Isa {
-    score_sve_impl(lut, original_dim, codes, out_scores, isa)
+    score_sve_impl(lut, lut_scale, original_dim, codes, out_scores, isa)
 }
 
 #[cfg(all(target_arch = "aarch64", not(target_vendor = "apple")))]
 unsafe fn score_sve_impl(
-    lut: &[f32],
+    lut: &[i16],
+    lut_scale: f32,
     original_dim: usize,
     codes: &[&[u8]],
     out_scores: &mut [f32],
@@ -193,9 +200,10 @@ unsafe fn score_sve_impl(
         for (lane, index) in indexes.iter_mut().enumerate().take(lane_count) {
             *index = nibble_index(codes[lane], byte_index, dim_index);
         }
+        let table = super::load_dim_table_f32(lut, lut_scale, dim_index);
         ecaz_lut32_sve_gather_accumulate_f32(
             out_scores.as_mut_ptr(),
-            lut.as_ptr().add(dim_index * 16),
+            table.as_ptr(),
             indexes.as_ptr(),
             lane_count,
         );

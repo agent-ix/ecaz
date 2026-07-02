@@ -8,6 +8,8 @@ pub(super) struct BatchScoringTiming {
     pub(super) kernel_elapsed_nanos: u64,
     pub(super) scalar_candidates: usize,
     pub(super) scalar_elapsed_nanos: u64,
+    pub(super) pruned_candidates: usize,
+    pub(super) kept_candidates: usize,
 }
 
 impl BatchScoringTiming {

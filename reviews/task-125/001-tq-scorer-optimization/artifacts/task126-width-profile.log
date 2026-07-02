@@ -1,0 +1,17 @@
+task124_tq_batch_width_profile backend=neon dim=1536 total_candidates=20000
+width=1 iterations=20000 candidates=20000 total=3.023647917s ns_per_candidate=151182.4 prefetch_total=101.705208ms prefetch_ns_per_candidate=5085.3
+width=7 iterations=2857 candidates=19999 total=433.682125ms ns_per_candidate=21685.2 prefetch_total=422.463875ms prefetch_ns_per_candidate=21124.2
+width=8 iterations=2500 candidates=20000 total=456.60825ms ns_per_candidate=22830.4 prefetch_total=362.430125ms prefetch_ns_per_candidate=18121.5
+width=15 iterations=1333 candidates=19995 total=311.304834ms ns_per_candidate=15569.1 prefetch_total=299.768333ms prefetch_ns_per_candidate=14992.2
+width=16 iterations=1250 candidates=20000 total=292.063416ms ns_per_candidate=14603.2 prefetch_total=281.886208ms prefetch_ns_per_candidate=14094.3
+width=25 iterations=800 candidates=20000 total=323.9475ms ns_per_candidate=16197.4 prefetch_total=307.956ms prefetch_ns_per_candidate=15397.8
+width=31 iterations=645 candidates=19995 total=260.588584ms ns_per_candidate=13032.7 prefetch_total=249.288125ms prefetch_ns_per_candidate=12467.5
+width=32 iterations=625 candidates=20000 total=253.244875ms ns_per_candidate=12662.2 prefetch_total=240.69925ms prefetch_ns_per_candidate=12035.0
+width=33 iterations=606 candidates=19998 total=297.123584ms ns_per_candidate=14857.7 prefetch_total=281.13375ms prefetch_ns_per_candidate=14058.1
+width=50 iterations=400 candidates=20000 total=262.307542ms ns_per_candidate=13115.4 prefetch_total=249.0385ms prefetch_ns_per_candidate=12451.9
+width=64 iterations=312 candidates=19968 total=231.191916ms ns_per_candidate=11578.1 prefetch_total=218.8385ms prefetch_ns_per_candidate=10959.5
+width=75 iterations=266 candidates=19950 total=244.381959ms ns_per_candidate=12249.7 prefetch_total=248.900625ms prefetch_ns_per_candidate=12476.2
+width=96 iterations=208 candidates=19968 total=223.353542ms ns_per_candidate=11185.6 prefetch_total=228.636166ms prefetch_ns_per_candidate=11450.1
+width=100 iterations=200 candidates=20000 total=231.485166ms ns_per_candidate=11574.3 prefetch_total=233.817375ms prefetch_ns_per_candidate=11690.9
+width=128 iterations=156 candidates=19968 total=221.327667ms ns_per_candidate=11084.1 prefetch_total=219.269208ms prefetch_ns_per_candidate=10981.0
+width=256 iterations=78 candidates=19968 total=217.148542ms ns_per_candidate=10874.8 prefetch_total=219.49775ms prefetch_ns_per_candidate=10992.5
