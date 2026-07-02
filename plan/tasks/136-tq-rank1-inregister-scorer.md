@@ -1,7 +1,17 @@
 # Task 136: TQ rank-1 in-register scorer for IVF (int8_approx wiring)
 
-Status: **proposed** (2026-07-02). Owner: unassigned. Priority: P2
+Status: **measured — awaiting review** (2026-07-02). Owner: Codex. Priority: P2
 Follow-up to Tasks 125/132/133; highest-ceiling scorer idea on the table.
+
+Evidence: `reviews/task-136/001-int8-approx-ivf-scorer/` (code `9514c7518`,
+branch `task-136-rank1-scorer`): mean latency 0.92→0.79 / 1.89→1.62 /
+2.79→2.33 ms at 10k/50k/100k (−14.1/−14.3/−16.5%), recall@10 0.9734→0.9719 /
+0.9521→0.9521 / 0.8969→0.8938 (all within ci95 noise; i16 fallback not
+needed), scorer_batch −33/−32/−35%. Ships as opt-in
+`ec_ivf.turboquant_scorer=int8_approx` (default still `lut`).
+Follow-ups: Task 137 (SDOT kernel upgrade), Task 139 (1m matrix + the
+default-flip decision), Graviton/AWS lane evidence standing open for the
+task-125 family.
 
 ## Why
 
