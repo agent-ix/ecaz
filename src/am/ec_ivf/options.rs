@@ -1,7 +1,7 @@
 use std::mem::{offset_of, size_of};
 use std::ptr::{self, NonNull};
 
-use pgrx::{pg_sys, GucContext, GucFlags, GucRegistry, GucSetting};
+use pgrx::{pg_sys, GucContext, GucFlags, GucRegistry, GucSetting, PostgresGucEnum};
 
 use crate::am::common::callback::pg_am_callback;
 
@@ -61,6 +61,26 @@ static EC_IVF_LAZY_HEAP_RERANK_GUC: GucSetting<bool> = GucSetting::<bool>::new(t
 // the unpruned scan for a deterministic A/B; the pruned and unpruned scans must
 // return byte-identical results (only the work counts differ).
 static EC_IVF_POSTING_BOUND_PRUNE_GUC: GucSetting<bool> = GucSetting::<bool>::new(true);
+// Task 136: session selector for the TurboQuant no-QJL 4-bit approximate
+// scorer. `lut` is the shipped i16-LUT block kernel (Task 125); `int8_approx`
+// routes the same prepared query through the factored rank-1 in-register
+// kernel (`quant::int8_approx32`, Task 98) that keeps the 16-entry codebook in
+// one register and streams an i8-quantized rotated query. Query-side only —
+// on-disk codes are decoded identically. Default stays `lut` pending the
+// Task 136 10k/50k/100k recall+latency A/B.
+static EC_IVF_TURBOQUANT_SCORER_GUC: GucSetting<TurboQuantScorerGuc> =
+    GucSetting::<TurboQuantScorerGuc>::new(TurboQuantScorerGuc::Lut);
+
+/// Session selector for the ec_ivf TurboQuant no-QJL 4-bit approximate-scan
+/// scorer (Task 136). Mirrors the `ec_hnsw.turboquant_exact_score_mode`
+/// enum-GUC pattern so the A/B is on/off in one binary.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PostgresGucEnum)]
+pub(super) enum TurboQuantScorerGuc {
+    #[name = c"lut"]
+    Lut,
+    #[name = c"int8_approx"]
+    Int8Approx,
+}
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
@@ -549,6 +569,14 @@ pub(super) fn register_gucs() {
         GucContext::Userset,
         GucFlags::default(),
     );
+    GucRegistry::define_enum_guc(
+        c"ec_ivf.turboquant_scorer",
+        c"Session selector for the ec_ivf TurboQuant no-QJL 4-bit approximate scorer.",
+        c"Task 136 A/B switch. Values: lut (default, i16-LUT block kernel), int8_approx (factored rank-1 in-register kernel with an i8-quantized rotated query). Query-side only; on-disk codes are unchanged.",
+        &EC_IVF_TURBOQUANT_SCORER_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
 }
 
 pub(super) fn current_session_nprobe() -> i32 {
@@ -620,6 +648,14 @@ pub(super) fn current_session_dense_posting_typed_views() -> bool {
         true
     } else {
         EC_IVF_DENSE_POSTING_TYPED_VIEWS_GUC.get()
+    }
+}
+
+pub(super) fn current_session_turboquant_scorer() -> TurboQuantScorerGuc {
+    if cfg!(test) {
+        TurboQuantScorerGuc::Lut
+    } else {
+        EC_IVF_TURBOQUANT_SCORER_GUC.get()
     }
 }
 
