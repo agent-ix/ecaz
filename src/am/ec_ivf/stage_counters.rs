@@ -72,8 +72,7 @@ impl IvfQueryStage {
 
 const STAGE_COUNT: usize = IvfQueryStage::ALL.len();
 
-static STAGE_ELAPSED_US: [AtomicU64; STAGE_COUNT] =
-    [const { AtomicU64::new(0) }; STAGE_COUNT];
+static STAGE_ELAPSED_US: [AtomicU64; STAGE_COUNT] = [const { AtomicU64::new(0) }; STAGE_COUNT];
 static STAGE_SAMPLES: [AtomicU64; STAGE_COUNT] = [const { AtomicU64::new(0) }; STAGE_COUNT];
 static SCANS: AtomicU64 = AtomicU64::new(0);
 
@@ -143,6 +142,8 @@ mod tests {
         reset();
         let (scans, rows) = snapshot();
         assert_eq!(scans, 0);
-        assert!(rows.iter().all(|row| row.samples == 0 && row.elapsed_us == 0));
+        assert!(rows
+            .iter()
+            .all(|row| row.samples == 0 && row.elapsed_us == 0));
     }
 }

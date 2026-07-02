@@ -153,30 +153,46 @@ pub(crate) fn score_lut_no_qjl_4bit_batch_tiled(
         return crate::quant::isa::Isa::Scalar;
     }
 
+    // Allocation-free NEON driver: full BLOCK_WIDTH slices through the
+    // stack-scratch octet kernel, then the entire sub-block remainder in ONE
+    // octet-granular partial call (splitting the remainder into separate
+    // kernel calls would re-stream the LUT once per call). Capping each
+    // invocation at BLOCK_WIDTH keeps every scratch buffer on the stack
+    // regardless of batch size (the previous whole-batch tiled kernel
+    // heap-allocated its accumulators per call and its transpose columns per
+    // 16-byte chunk).
     let host_isa = crate::quant::isa::current_isa();
     if host_isa == crate::quant::isa::Isa::Neon {
-        if codes.len() % 8 == 0 {
-            if let Some(isa) =
-                neon::score_batch_tiled_neon(lut, lut_scale, original_dim, codes, out_scores)
-            {
-                return isa;
-            }
-        } else {
-            let padded_len = codes.len().next_multiple_of(8);
-            let mut padded_codes = Vec::with_capacity(padded_len);
-            padded_codes.extend_from_slice(codes);
-            padded_codes.resize(padded_len, codes[0]);
-            let mut padded_scores = vec![0.0_f32; padded_len];
-            if let Some(isa) = neon::score_batch_tiled_neon(
+        let full_blocks_len = codes.len() - codes.len() % BLOCK_WIDTH;
+        let mut start = 0usize;
+        let mut neon_available = true;
+        while start < full_blocks_len {
+            let end = start + BLOCK_WIDTH;
+            if neon::score_octets_neon(
                 lut,
                 lut_scale,
                 original_dim,
-                &padded_codes,
-                &mut padded_scores,
-            ) {
-                out_scores.copy_from_slice(&padded_scores[..codes.len()]);
-                return isa;
+                &codes[start..end],
+                &mut out_scores[start..end],
+            )
+            .is_none()
+            {
+                neon_available = false;
+                break;
             }
+            start = end;
+        }
+        if neon_available {
+            if full_blocks_len < codes.len() {
+                score_lut_no_qjl_4bit_partial(
+                    lut,
+                    lut_scale,
+                    original_dim,
+                    &codes[full_blocks_len..],
+                    &mut out_scores[full_blocks_len..],
+                );
+            }
+            return crate::quant::isa::Isa::Neon;
         }
     }
 
