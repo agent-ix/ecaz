@@ -462,6 +462,10 @@ pub struct LocalMultinodePg18Args {
     #[arg(long = "remote-reloption")]
     remote_reloptions: Vec<String>,
 
+    /// Session GUC applied to coordinator and remote corpus-load sessions before CREATE INDEX.
+    #[arg(long = "load-session-guc")]
+    load_session_gucs: Vec<String>,
+
     /// Top-k for the packet-local bench suite.
     #[arg(long)]
     bench_top_k: Option<u16>,
@@ -1245,6 +1249,7 @@ async fn run_native_local_multinode_pg18(
             &args.reloptions,
             &args.coord_reloptions,
             &args.remote_reloptions,
+            &args.load_session_gucs,
             args.prepared_prefix.as_deref(),
             args.prepared_dir.as_deref(),
         )
@@ -1481,6 +1486,7 @@ async fn prepare_local_multinode_fixture(
     shared_reloptions: &[String],
     coord_reloptions: &[String],
     remote_reloptions: &[String],
+    load_session_gucs: &[String],
     prepared_prefix: Option<&str>,
     prepared_dir: Option<&Path>,
 ) -> Result<LocalMultinodeFixture> {
@@ -1534,6 +1540,7 @@ async fn prepare_local_multinode_fixture(
         storage_format,
         coord_index,
         &coord_reloptions,
+        load_session_gucs,
         false,
     )
     .await?;
@@ -1551,6 +1558,7 @@ async fn prepare_local_multinode_fixture(
         &corpus_file,
         storage_format,
         &remote_reloptions,
+        load_session_gucs,
     )
     .await?;
     load_local_remote_shards(repo_root, ecaz_bin, socket_dir, log_dir, &plan_file).await?;
@@ -1608,6 +1616,7 @@ async fn run_ecaz_corpus_load(
     storage_format: &str,
     index_name: &str,
     reloptions: &[String],
+    session_gucs: &[String],
     corpus_only: bool,
 ) -> Result<()> {
     let mut command = Command::new(ecaz_bin);
@@ -1653,6 +1662,9 @@ async fn run_ecaz_corpus_load(
     for reloption in reloptions {
         command.arg("--reloption").arg(reloption);
     }
+    for guc in session_gucs {
+        command.arg("--session-guc").arg(guc);
+    }
     command
         .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())
@@ -1676,6 +1688,7 @@ async fn write_leaf_owned_local_plan(
     corpus_file: &Path,
     storage_format: &str,
     remote_reloptions: &[String],
+    load_session_gucs: &[String],
 ) -> Result<PathBuf> {
     let topology_raw = fs::read_to_string(topology_path)
         .wrap_err_with(|| format!("reading {}", topology_path.display()))?;
@@ -1740,7 +1753,7 @@ async fn write_leaf_owned_local_plan(
             "remote_prefix": remote_prefix,
             "shard_ids": [node_id - 2],
             "corpus_file": remote_corpus,
-            "remote_load_args": remote_load_args(&remote_prefix, &remote_corpus, remote_index, storage_format, remote_reloptions),
+            "remote_load_args": remote_load_args(&remote_prefix, &remote_corpus, remote_index, storage_format, remote_reloptions, load_session_gucs),
             "remote_identity_query_sql": remote_identity_query_sql(remote_index),
             "coordinator_register_descriptor_sql_template": "",
             "row_count": row_count,
@@ -1756,6 +1769,7 @@ async fn write_leaf_owned_local_plan(
         "seed": 42,
         "storage_format": storage_format,
         "reloptions": remote_reloptions,
+        "load_session_gucs": load_session_gucs,
         "coordinator_index_name": coord_index,
         "source_identity_column": "leaf_base_assignment",
         "shard_policy": "coordinator_leaf_assignment_round_robin",
@@ -1877,6 +1891,7 @@ fn remote_load_args(
     remote_index: &str,
     storage_format: &str,
     reloptions: &[String],
+    session_gucs: &[String],
 ) -> Vec<String> {
     let mut args = vec![
         "ecaz".to_owned(),
@@ -1903,6 +1918,10 @@ fn remote_load_args(
     for reloption in reloptions {
         args.push("--reloption".to_owned());
         args.push(reloption.to_owned());
+    }
+    for guc in session_gucs {
+        args.push("--session-guc".to_owned());
+        args.push(guc.to_owned());
     }
     args
 }
@@ -1944,6 +1963,15 @@ async fn load_local_remote_shards(
                     .collect::<Vec<_>>()
             })
             .unwrap_or_default();
+        let session_gucs = plan["load_session_gucs"]
+            .as_array()
+            .map(|values| {
+                values
+                    .iter()
+                    .filter_map(|value| value.as_str().map(ToOwned::to_owned))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
         run_ecaz_corpus_load(
             repo_root,
             ecaz_bin,
@@ -1958,6 +1986,7 @@ async fn load_local_remote_shards(
             storage_format,
             remote_index,
             &reloptions,
+            &session_gucs,
             true,
         )
         .await?;

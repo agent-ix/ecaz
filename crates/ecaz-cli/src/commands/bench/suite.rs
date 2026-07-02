@@ -443,6 +443,8 @@ struct SpireLocalMultinodeStep {
     #[serde(default)]
     remote_reloptions: Vec<String>,
     #[serde(default)]
+    load_session_gucs: Vec<String>,
+    #[serde(default)]
     bench_top_k: Option<u16>,
     #[serde(default)]
     bench_queries_limit: Option<usize>,
@@ -2604,6 +2606,10 @@ impl SuiteStep {
                     "spire-local-multinode remote_reloptions",
                     &step.remote_reloptions,
                 )?;
+                validate_session_guc_list(
+                    "spire-local-multinode load_session_gucs",
+                    &step.load_session_gucs,
+                )?;
                 if step.bench_top_k == Some(0) {
                     bail!(
                         "spire-local-multinode step {:?} must set bench_top_k >= 1",
@@ -2921,6 +2927,21 @@ fn validate_reloption_list(label: &str, reloptions: &[String]) -> Result<()> {
         }
         if reloption.contains(';') {
             bail!("{label} item {:?} must not contain ';'", reloption);
+        }
+    }
+    Ok(())
+}
+
+fn validate_session_guc_list(label: &str, gucs: &[String]) -> Result<()> {
+    for guc in gucs {
+        if guc.trim().is_empty() {
+            bail!("{label} must not include empty GUCs");
+        }
+        if guc.contains(';') {
+            bail!("{label} item {:?} must not contain ';'", guc);
+        }
+        if !guc.contains('=') {
+            bail!("{label} item {:?} must use name=value syntax", guc);
         }
     }
     Ok(())
@@ -3277,6 +3298,9 @@ fn expand_spire_local_multinode(
     }
     for reloption in &step.remote_reloptions {
         push_arg(&mut args, "--remote-reloption", reloption);
+    }
+    for guc in &step.load_session_gucs {
+        push_arg(&mut args, "--load-session-guc", guc);
     }
     push_opt_u16(&mut args, "--bench-top-k", step.bench_top_k);
     push_opt_usize(&mut args, "--bench-queries-limit", step.bench_queries_limit);
@@ -4234,6 +4258,7 @@ mod tests {
             "reloptions": ["nlists=128", "top_graph_enabled=1"],
             "coord_reloptions": ["training_sample_rows=10000"],
             "remote_reloptions": ["boundary_replica_count=1"],
+            "load_session_gucs": ["ec_spire.leaf_block_rows=64"],
             "bench_top_k": 6,
             "bench_queries_limit": 1,
             "bench_sweep": "3",
@@ -4321,6 +4346,10 @@ mod tests {
             .command
             .windows(2)
             .any(|w| w == ["--remote-reloption", "boundary_replica_count=1"]));
+        assert!(step
+            .command
+            .windows(2)
+            .any(|w| w == ["--load-session-guc", "ec_spire.leaf_block_rows=64"]));
         assert!(step
             .command
             .windows(2)
