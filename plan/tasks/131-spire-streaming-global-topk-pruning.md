@@ -1,11 +1,11 @@
 # Task 131: SPIRE Streaming Global Top-K Pruning
 
-Status: **closed — no-promote / iterate scoped pieces** (2026-07-01; closeout
-`reviews/task-131/024-phase5-closeout-decision/`): global merge-before-heap is
-shelved as a product path; candidate-to-heap streaming remains useful
-structural production behavior; streaming global threshold feedback is shelved
-on the current no-summary production-read surface; bound metadata is deferred to
-a separate metadata-gated experiment.
+Status: **in progress — closeout rejected** (2026-07-01; see
+`reviews/task-131/024-phase5-closeout-decision/feedback/2026-07-01-03-reviewer.md`):
+packet 024 was not accepted as a final closeout. Before this task can close,
+Phase 3 must be tested with leaf-block summaries enabled at build time and the
+remaining evidence gaps must be addressed or explicitly scoped out in an
+accepted closeout.
 Owner: coder (to be assigned). One coder, one branch.
 Priority: P0 research follow-up if SPIRE distributed optimization continues.
 
