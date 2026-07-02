@@ -1,0 +1,528 @@
+{
+ "name": "task135-dense-layout-ab",
+ "schema_version": 1,
+ "artifact_dir": "reviews/task-135/002-dense-layout-ab/artifacts",
+ "defaults": {
+  "pg": 18,
+  "socket_dir": "/Users/peter/.pgrx",
+  "profile": "ec_ivf",
+  "bits": 4,
+  "seed": 42,
+  "queries_limit": 64,
+  "iterations": 64,
+  "force_index": true,
+  "sample_backend_memory": true,
+  "memory_sample_interval_ms": 25
+ },
+ "thresholds": [],
+ "steps": [
+  {
+   "kind": "raw",
+   "name": "precheck-build-sha",
+   "tags": [
+    "setup",
+    "precheck",
+    "task135ab"
+   ],
+   "args": [
+    "dev",
+    "sql",
+    "--pg",
+    "18",
+    "--db",
+    "tqvector_bench",
+    "--socket-dir",
+    "/Users/peter/.pgrx",
+    "--raw",
+    "--sql",
+    "SELECT now() AS captured_at, ecaz_build_git_sha(), current_setting('shared_buffers') AS shared_buffers;",
+    "--log-output",
+    "${artifact_dir}/precheck-build-sha.log"
+   ],
+   "expected_artifacts": [
+    "${artifact_dir}/precheck-build-sha.log"
+   ]
+  },
+  {
+   "kind": "load",
+   "name": "load-row-real10k",
+   "tags": [
+    "load",
+    "task135ab",
+    "ivf",
+    "turboquant",
+    "real10k",
+    "layout-row"
+   ],
+   "prefix": "task135ab_row_real10k",
+   "profile": "ec_ivf",
+   "storage_format": "turboquant",
+   "corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+   "queries_file": "data/staged-current/ec_real_10k_queries.tsv",
+   "manifest_file": "data/staged-current/ec_real_10k_manifest.json",
+   "allow_manifest_mismatch": true,
+   "log_file": "${artifact_dir}/load-row-real10k.log"
+  },
+  {
+   "kind": "recall",
+   "name": "recall-row-real10k",
+   "tags": [
+    "recall",
+    "task135ab",
+    "ivf",
+    "turboquant",
+    "real10k",
+    "layout-row"
+   ],
+   "prefix": "task135ab_row_real10k",
+   "profile": "ec_ivf",
+   "k": 10,
+   "sweep": [
+    32
+   ],
+   "truth_cache_dir": "${artifact_dir}/truth-cache",
+   "log_output": "${artifact_dir}/recall-row-real10k.log"
+  },
+  {
+   "kind": "latency",
+   "name": "latency-row-real10k",
+   "tags": [
+    "latency",
+    "task135ab",
+    "ivf",
+    "turboquant",
+    "real10k",
+    "layout-row"
+   ],
+   "prefix": "task135ab_row_real10k",
+   "profile": "ec_ivf",
+   "k": 10,
+   "sweep": [
+    32
+   ],
+   "iterations": 64,
+   "concurrency": 1,
+   "cache_state": "task135ab_row_real10k_warm",
+   "task87_candidate_batch_counters": true,
+   "ivf_stage_counters": true,
+   "log_output": "${artifact_dir}/latency-row-real10k.log"
+  },
+  {
+   "kind": "storage",
+   "name": "storage-row-real10k",
+   "tags": [
+    "storage",
+    "task135ab",
+    "ivf",
+    "turboquant",
+    "real10k",
+    "layout-row"
+   ],
+   "prefix": "task135ab_row_real10k",
+   "log_file": "${artifact_dir}/storage-row-real10k.log"
+  },
+  {
+   "kind": "load",
+   "name": "load-dense-real10k",
+   "tags": [
+    "load",
+    "task135ab",
+    "ivf",
+    "turboquant",
+    "real10k",
+    "layout-dense"
+   ],
+   "prefix": "task135ab_dense_real10k",
+   "profile": "ec_ivf",
+   "storage_format": "turboquant",
+   "corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+   "queries_file": "data/staged-current/ec_real_10k_queries.tsv",
+   "manifest_file": "data/staged-current/ec_real_10k_manifest.json",
+   "allow_manifest_mismatch": true,
+   "log_file": "${artifact_dir}/load-dense-real10k.log",
+   "reloptions": [
+    "dense_posting_blocks=1"
+   ]
+  },
+  {
+   "kind": "recall",
+   "name": "recall-dense-real10k",
+   "tags": [
+    "recall",
+    "task135ab",
+    "ivf",
+    "turboquant",
+    "real10k",
+    "layout-dense"
+   ],
+   "prefix": "task135ab_dense_real10k",
+   "profile": "ec_ivf",
+   "k": 10,
+   "sweep": [
+    32
+   ],
+   "truth_cache_dir": "${artifact_dir}/truth-cache",
+   "log_output": "${artifact_dir}/recall-dense-real10k.log"
+  },
+  {
+   "kind": "latency",
+   "name": "latency-dense-real10k",
+   "tags": [
+    "latency",
+    "task135ab",
+    "ivf",
+    "turboquant",
+    "real10k",
+    "layout-dense"
+   ],
+   "prefix": "task135ab_dense_real10k",
+   "profile": "ec_ivf",
+   "k": 10,
+   "sweep": [
+    32
+   ],
+   "iterations": 64,
+   "concurrency": 1,
+   "cache_state": "task135ab_dense_real10k_warm",
+   "task87_candidate_batch_counters": true,
+   "ivf_stage_counters": true,
+   "log_output": "${artifact_dir}/latency-dense-real10k.log"
+  },
+  {
+   "kind": "storage",
+   "name": "storage-dense-real10k",
+   "tags": [
+    "storage",
+    "task135ab",
+    "ivf",
+    "turboquant",
+    "real10k",
+    "layout-dense"
+   ],
+   "prefix": "task135ab_dense_real10k",
+   "log_file": "${artifact_dir}/storage-dense-real10k.log"
+  },
+  {
+   "kind": "load",
+   "name": "load-row-real50k",
+   "tags": [
+    "load",
+    "task135ab",
+    "ivf",
+    "turboquant",
+    "real50k",
+    "layout-row"
+   ],
+   "prefix": "task135ab_row_real50k",
+   "profile": "ec_ivf",
+   "storage_format": "turboquant",
+   "corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+   "queries_file": "data/staged-current/ec_real_50k_queries.tsv",
+   "manifest_file": "data/staged-current/ec_real_50k_manifest.json",
+   "allow_manifest_mismatch": true,
+   "log_file": "${artifact_dir}/load-row-real50k.log"
+  },
+  {
+   "kind": "recall",
+   "name": "recall-row-real50k",
+   "tags": [
+    "recall",
+    "task135ab",
+    "ivf",
+    "turboquant",
+    "real50k",
+    "layout-row"
+   ],
+   "prefix": "task135ab_row_real50k",
+   "profile": "ec_ivf",
+   "k": 10,
+   "sweep": [
+    32
+   ],
+   "truth_cache_dir": "${artifact_dir}/truth-cache",
+   "log_output": "${artifact_dir}/recall-row-real50k.log",
+   "queries_limit": 48
+  },
+  {
+   "kind": "latency",
+   "name": "latency-row-real50k",
+   "tags": [
+    "latency",
+    "task135ab",
+    "ivf",
+    "turboquant",
+    "real50k",
+    "layout-row"
+   ],
+   "prefix": "task135ab_row_real50k",
+   "profile": "ec_ivf",
+   "k": 10,
+   "sweep": [
+    32
+   ],
+   "iterations": 48,
+   "concurrency": 1,
+   "cache_state": "task135ab_row_real50k_warm",
+   "task87_candidate_batch_counters": true,
+   "ivf_stage_counters": true,
+   "log_output": "${artifact_dir}/latency-row-real50k.log"
+  },
+  {
+   "kind": "storage",
+   "name": "storage-row-real50k",
+   "tags": [
+    "storage",
+    "task135ab",
+    "ivf",
+    "turboquant",
+    "real50k",
+    "layout-row"
+   ],
+   "prefix": "task135ab_row_real50k",
+   "log_file": "${artifact_dir}/storage-row-real50k.log"
+  },
+  {
+   "kind": "load",
+   "name": "load-dense-real50k",
+   "tags": [
+    "load",
+    "task135ab",
+    "ivf",
+    "turboquant",
+    "real50k",
+    "layout-dense"
+   ],
+   "prefix": "task135ab_dense_real50k",
+   "profile": "ec_ivf",
+   "storage_format": "turboquant",
+   "corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+   "queries_file": "data/staged-current/ec_real_50k_queries.tsv",
+   "manifest_file": "data/staged-current/ec_real_50k_manifest.json",
+   "allow_manifest_mismatch": true,
+   "log_file": "${artifact_dir}/load-dense-real50k.log",
+   "reloptions": [
+    "dense_posting_blocks=1"
+   ]
+  },
+  {
+   "kind": "recall",
+   "name": "recall-dense-real50k",
+   "tags": [
+    "recall",
+    "task135ab",
+    "ivf",
+    "turboquant",
+    "real50k",
+    "layout-dense"
+   ],
+   "prefix": "task135ab_dense_real50k",
+   "profile": "ec_ivf",
+   "k": 10,
+   "sweep": [
+    32
+   ],
+   "truth_cache_dir": "${artifact_dir}/truth-cache",
+   "log_output": "${artifact_dir}/recall-dense-real50k.log",
+   "queries_limit": 48
+  },
+  {
+   "kind": "latency",
+   "name": "latency-dense-real50k",
+   "tags": [
+    "latency",
+    "task135ab",
+    "ivf",
+    "turboquant",
+    "real50k",
+    "layout-dense"
+   ],
+   "prefix": "task135ab_dense_real50k",
+   "profile": "ec_ivf",
+   "k": 10,
+   "sweep": [
+    32
+   ],
+   "iterations": 48,
+   "concurrency": 1,
+   "cache_state": "task135ab_dense_real50k_warm",
+   "task87_candidate_batch_counters": true,
+   "ivf_stage_counters": true,
+   "log_output": "${artifact_dir}/latency-dense-real50k.log"
+  },
+  {
+   "kind": "storage",
+   "name": "storage-dense-real50k",
+   "tags": [
+    "storage",
+    "task135ab",
+    "ivf",
+    "turboquant",
+    "real50k",
+    "layout-dense"
+   ],
+   "prefix": "task135ab_dense_real50k",
+   "log_file": "${artifact_dir}/storage-dense-real50k.log"
+  },
+  {
+   "kind": "load",
+   "name": "load-row-real100k",
+   "tags": [
+    "load",
+    "task135ab",
+    "ivf",
+    "turboquant",
+    "real100k",
+    "layout-row"
+   ],
+   "prefix": "task135ab_row_real100k",
+   "profile": "ec_ivf",
+   "storage_format": "turboquant",
+   "corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+   "queries_file": "data/staged-current/ec_real_100k_queries.tsv",
+   "manifest_file": "data/staged-current/ec_real_100k_manifest.json",
+   "allow_manifest_mismatch": true,
+   "log_file": "${artifact_dir}/load-row-real100k.log"
+  },
+  {
+   "kind": "recall",
+   "name": "recall-row-real100k",
+   "tags": [
+    "recall",
+    "task135ab",
+    "ivf",
+    "turboquant",
+    "real100k",
+    "layout-row"
+   ],
+   "prefix": "task135ab_row_real100k",
+   "profile": "ec_ivf",
+   "k": 10,
+   "sweep": [
+    32
+   ],
+   "truth_cache_dir": "${artifact_dir}/truth-cache",
+   "log_output": "${artifact_dir}/recall-row-real100k.log",
+   "queries_limit": 32
+  },
+  {
+   "kind": "latency",
+   "name": "latency-row-real100k",
+   "tags": [
+    "latency",
+    "task135ab",
+    "ivf",
+    "turboquant",
+    "real100k",
+    "layout-row"
+   ],
+   "prefix": "task135ab_row_real100k",
+   "profile": "ec_ivf",
+   "k": 10,
+   "sweep": [
+    32
+   ],
+   "iterations": 32,
+   "concurrency": 1,
+   "cache_state": "task135ab_row_real100k_warm",
+   "task87_candidate_batch_counters": true,
+   "ivf_stage_counters": true,
+   "log_output": "${artifact_dir}/latency-row-real100k.log"
+  },
+  {
+   "kind": "storage",
+   "name": "storage-row-real100k",
+   "tags": [
+    "storage",
+    "task135ab",
+    "ivf",
+    "turboquant",
+    "real100k",
+    "layout-row"
+   ],
+   "prefix": "task135ab_row_real100k",
+   "log_file": "${artifact_dir}/storage-row-real100k.log"
+  },
+  {
+   "kind": "load",
+   "name": "load-dense-real100k",
+   "tags": [
+    "load",
+    "task135ab",
+    "ivf",
+    "turboquant",
+    "real100k",
+    "layout-dense"
+   ],
+   "prefix": "task135ab_dense_real100k",
+   "profile": "ec_ivf",
+   "storage_format": "turboquant",
+   "corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+   "queries_file": "data/staged-current/ec_real_100k_queries.tsv",
+   "manifest_file": "data/staged-current/ec_real_100k_manifest.json",
+   "allow_manifest_mismatch": true,
+   "log_file": "${artifact_dir}/load-dense-real100k.log",
+   "reloptions": [
+    "dense_posting_blocks=1"
+   ]
+  },
+  {
+   "kind": "recall",
+   "name": "recall-dense-real100k",
+   "tags": [
+    "recall",
+    "task135ab",
+    "ivf",
+    "turboquant",
+    "real100k",
+    "layout-dense"
+   ],
+   "prefix": "task135ab_dense_real100k",
+   "profile": "ec_ivf",
+   "k": 10,
+   "sweep": [
+    32
+   ],
+   "truth_cache_dir": "${artifact_dir}/truth-cache",
+   "log_output": "${artifact_dir}/recall-dense-real100k.log",
+   "queries_limit": 32
+  },
+  {
+   "kind": "latency",
+   "name": "latency-dense-real100k",
+   "tags": [
+    "latency",
+    "task135ab",
+    "ivf",
+    "turboquant",
+    "real100k",
+    "layout-dense"
+   ],
+   "prefix": "task135ab_dense_real100k",
+   "profile": "ec_ivf",
+   "k": 10,
+   "sweep": [
+    32
+   ],
+   "iterations": 32,
+   "concurrency": 1,
+   "cache_state": "task135ab_dense_real100k_warm",
+   "task87_candidate_batch_counters": true,
+   "ivf_stage_counters": true,
+   "log_output": "${artifact_dir}/latency-dense-real100k.log"
+  },
+  {
+   "kind": "storage",
+   "name": "storage-dense-real100k",
+   "tags": [
+    "storage",
+    "task135ab",
+    "ivf",
+    "turboquant",
+    "real100k",
+    "layout-dense"
+   ],
+   "prefix": "task135ab_dense_real100k",
+   "log_file": "${artifact_dir}/storage-dense-real100k.log"
+  }
+ ]
+}

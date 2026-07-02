@@ -1,0 +1,573 @@
+[suite:task135-dense-layout-ab] wrote reviews/task-135/002-dense-layout-ab/artifacts/suite-manifest.json
+[suite:task135-dense-layout-ab] wrote reviews/task-135/002-dense-layout-ab/artifacts/suite-manifest.json
+[suite:task135-dense-layout-ab] precheck-build-sha -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 dev sql --pg 18 --db tqvector_bench --socket-dir /Users/peter/.pgrx --raw --sql "SELECT now() AS captured_at, ecaz_build_git_sha(), current_setting('shared_buffers') AS shared_buffers;" --log-output reviews/task-135/002-dense-layout-ab/artifacts/precheck-build-sha.log
+[suite:task135-dense-layout-ab] wrote reviews/task-135/002-dense-layout-ab/artifacts/suite-manifest.json
+         captured_at          |            ecaz_build_git_sha            | shared_buffers 
+------------------------------+------------------------------------------+----------------
+ 2026-07-02 09:02:18.62803-07 | 8f7bce3cc7bed148b97939d519665dcf922f1878 | 128MB
+(1 row)
+
+[suite:task135-dense-layout-ab] wrote reviews/task-135/002-dense-layout-ab/artifacts/suite-manifest.json
+[suite:task135-dense-layout-ab] load-row-real10k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 --log-file reviews/task-135/002-dense-layout-ab/artifacts/load-row-real10k.log corpus load --prefix task135ab_row_real10k --profile ec_ivf --corpus-file data/staged-current/ec_real_10k_corpus.tsv --queries-file data/staged-current/ec_real_10k_queries.tsv --manifest-file data/staged-current/ec_real_10k_manifest.json --allow-manifest-mismatch --bits 4 --seed 42 --storage-format turboquant
+[suite:task135-dense-layout-ab] wrote reviews/task-135/002-dense-layout-ab/artifacts/suite-manifest.json
+┌─────────┬──────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                            │
+╞═════════╪══════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_ivf                                                           │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ task135ab_row_real10k_corpus (10000 rows)                        │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ task135ab_row_real10k_queries (200 rows)                         │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ task135ab_row_real10k_turboquant_idx [storage_format=turboquant] │
+└─────────┴──────────────────────────────────────────────────────────────────┘
+[loader] inspecting data/staged-current/ec_real_10k_corpus.tsv
+[loader] inspecting data/staged-current/ec_real_10k_queries.tsv
+[loader] corpus: 10000 rows, sha256=c67c5810b66d982d705974e48d4775479adfbd92a988f694091266e049a35e75  queries: 200 rows, sha256=a2c191bb742017d849e73f6e6866e8e0f0bac1579ba212f7fc76b8eb09904ae8
+[loader] warning: manifest verification failed for data/staged-current/ec_real_10k_manifest.json: prefix="ec_real_10k" (expected "task135ab_row_real10k")
+[loader] copied corpus table task135ab_row_real10k_corpus in 1.42s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table task135ab_row_real10k_corpus in 1.94s
+[loader] copied queries table task135ab_row_real10k_queries in 41.13ms
+[loader] building task135ab_row_real10k_turboquant_idx using ec_ivf (reloptions=[storage_format=turboquant]) ...
+[loader] built task135ab_row_real10k_turboquant_idx in 638.40ms
+[loader] ec_ivf build timing: requested_workers=0 workers_launched=0 heap_tuples=10000 index_tuples=10000 heap_ingest_us=123180 train_model_us=388862 stage_build_plan_us=47639 stage_pq_train_us=0 stage_centroids_us=185 stage_assign_us=44938 stage_postings_us=2474 stage_directory_us=3 flush_build_plan_us=75428 parallel_begin_us=0 parallel_drain_us=0 parallel_sort_push_us=0 parallel_worker_tuple_buffer_capacity=0 parallel_worker_tuple_buffer_struct_bytes=0
+[loader] completed prefix task135ab_row_real10k in 4.67s
+[suite:task135-dense-layout-ab] wrote reviews/task-135/002-dense-layout-ab/artifacts/suite-manifest.json
+[suite:task135-dense-layout-ab] recall-row-real10k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench recall --prefix task135ab_row_real10k --profile ec_ivf --k 10 --sweep 32 --queries-limit 64 --bits 4 --seed 42 --force-index --truth-cache-dir reviews/task-135/002-dense-layout-ab/artifacts/truth-cache --log-output reviews/task-135/002-dense-layout-ab/artifacts/recall-row-real10k.log
+[suite:task135-dense-layout-ab] wrote reviews/task-135/002-dense-layout-ab/artifacts/suite-manifest.json
+┌────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ nprobe ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 32     ┆ 64      ┆ 640           ┆ 0.9734   ┆ 0.9579          ┆ 0.9834           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.8000       ┆ 0.9998 ┆ 1.19 ms     │
+└────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from task135ab_row_real10k_queries ...
+[recall] fetching corpus from task135ab_row_real10k_corpus ...
+[recall] computing ground truth: 64 queries vs 10000 corpus rows (dim=1536) ...
+[recall] ground truth in 19.31ms
+[recall] wrote ground truth cache reviews/task-135/002-dense-layout-ab/artifacts/truth-cache/truth-v1-rows10000-queries64-dim1536-k10-97f391fdef18b4eb.json
+[suite:task135-dense-layout-ab] wrote reviews/task-135/002-dense-layout-ab/artifacts/suite-manifest.json
+[suite:task135-dense-layout-ab] latency-row-real10k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench latency --prefix task135ab_row_real10k --profile ec_ivf --k 10 --concurrency 1 --iterations 64 --sweep 32 --bits 4 --seed 42 --force-index --sample-backend-memory --cache-state task135ab_row_real10k_warm --task87-candidate-batch-counters --ivf-stage-counters --memory-sample-interval-ms 25 --log-output reviews/task-135/002-dense-layout-ab/artifacts/latency-row-real10k.log
+[suite:task135-dense-layout-ab] wrote reviews/task-135/002-dense-layout-ab/artifacts/suite-manifest.json
+┌────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬────────────────────────────┬─────────────┬─────────────┬────────────────┐
+│ nprobe ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state                ┆ rss_peak_kb ┆ hwm_peak_kb ┆ memory_samples │
+╞════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪════════════════════════════╪═════════════╪═════════════╪════════════════╡
+│ 32     ┆ 64    ┆ 0.98 ms ┆ 0.26 ms ┆ 0.82 ms ┆ 0.93 ms ┆ 1.17 ms ┆ 1.92 ms ┆ 2.92 ms ┆ task135ab_row_real10k_warm ┆ 0           ┆ 0           ┆ 0              │
+└────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴────────────────────────────┴─────────────┴─────────────┴────────────────┘
+[block-kernel-counters] command=latency label=nprobe=32 surface=ivf quant=turboquant isa=neon flushes=840 candidates=205959 elapsed_nanos=24214929 elapsed_ms=24.214929 kernel_flushes=840 kernel_candidates=205959 kernel_elapsed_nanos=24214929 kernel_elapsed_ms=24.214929 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=0 width_8_15=1 width_16_31=6 width_ge32=833 pruned_candidates=0 kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=ivf flushes=840 candidates=205959 elapsed_nanos=24214929 elapsed_ms=24.214929 lut32_flushes=840 lut32_candidates=205959 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[ivf-stage-counters] command=latency label=nprobe=32 stage=approximate_scan scans=64 samples=64 elapsed_us=44331 elapsed_ms=44.331
+[ivf-stage-counters] command=latency label=nprobe=32 stage=candidate_record scans=64 samples=840 elapsed_us=1673 elapsed_ms=1.673
+[ivf-stage-counters] command=latency label=nprobe=32 stage=exact_rerank scans=64 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=posting_page_decode scans=64 samples=64 elapsed_us=36392 elapsed_ms=36.392
+[ivf-stage-counters] command=latency label=nprobe=32 stage=posting_visit scans=64 samples=64 elapsed_us=40333 elapsed_ms=40.333
+[ivf-stage-counters] command=latency label=nprobe=32 stage=probe_plan scans=64 samples=64 elapsed_us=2664 elapsed_ms=2.664
+[ivf-stage-counters] command=latency label=nprobe=32 stage=rerank_payload_decode scans=64 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=rerank_payload_score scans=64 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=scorer_batch scans=64 samples=840 elapsed_us=24460 elapsed_ms=24.460
+[ivf-stage-counters] command=latency label=nprobe=32 stage=scratch_flush scans=64 samples=840 elapsed_us=26546 elapsed_ms=26.546
+[ivf-stage-counters] command=latency label=nprobe=32 stage=topk_collect scans=64 samples=64 elapsed_us=3906 elapsed_ms=3.906
+[suite:task135-dense-layout-ab] wrote reviews/task-135/002-dense-layout-ab/artifacts/suite-manifest.json
+[suite:task135-dense-layout-ab] storage-row-real10k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 --log-file reviews/task-135/002-dense-layout-ab/artifacts/storage-row-real10k.log bench storage --prefix task135ab_row_real10k
+[suite:task135-dense-layout-ab] wrote reviews/task-135/002-dense-layout-ab/artifacts/suite-manifest.json
+┌───────────────────────────────┬──────────────────────────────┐
+│ field                         ┆ value                        │
+╞═══════════════════════════════╪══════════════════════════════╡
+│ prefix                        ┆ task135ab_row_real10k        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus                        ┆ task135ab_row_real10k_corpus │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ rows                          ┆ 10000                        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ heap                          ┆ 752.0 KiB                    │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ table (heap + toast + fsm/vm) ┆ 158.8 MiB                    │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes                       ┆ 10.0 MiB                     │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ total                         ┆ 168.8 MiB                    │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (total)               ┆ 17703.7 B                    │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (heap only)           ┆ 77.0 B                       │
+└───────────────────────────────┴──────────────────────────────┘
+┌──────────────────────────────────────┬───────────────┬───────────┬─────────────────────────────┬───────────┬──────────┐
+│ index                                ┆ access method ┆ profile   ┆ reloptions                  ┆ size      ┆ per row  │
+╞══════════════════════════════════════╪═══════════════╪═══════════╪═════════════════════════════╪═══════════╪══════════╡
+│ task135ab_row_real10k_turboquant_idx ┆ ec_ivf        ┆ ec_ivf    ┆ {storage_format=turboquant} ┆ 9.8 MiB   ┆ 1028.1 B │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ task135ab_row_real10k_corpus_pkey    ┆ btree         ┆ <unknown> ┆ {}                          ┆ 240.0 KiB ┆ 24.6 B   │
+└──────────────────────────────────────┴───────────────┴───────────┴─────────────────────────────┴───────────┴──────────┘
+[suite:task135-dense-layout-ab] wrote reviews/task-135/002-dense-layout-ab/artifacts/suite-manifest.json
+[suite:task135-dense-layout-ab] load-dense-real10k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 --log-file reviews/task-135/002-dense-layout-ab/artifacts/load-dense-real10k.log corpus load --prefix task135ab_dense_real10k --profile ec_ivf --corpus-file data/staged-current/ec_real_10k_corpus.tsv --queries-file data/staged-current/ec_real_10k_queries.tsv --manifest-file data/staged-current/ec_real_10k_manifest.json --allow-manifest-mismatch --bits 4 --seed 42 --storage-format turboquant --reloption dense_posting_blocks=1
+[suite:task135-dense-layout-ab] wrote reviews/task-135/002-dense-layout-ab/artifacts/suite-manifest.json
+┌─────────┬────────────────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                                      │
+╞═════════╪════════════════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_ivf                                                                                     │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ task135ab_dense_real10k_corpus (10000 rows)                                                │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ task135ab_dense_real10k_queries (200 rows)                                                 │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ task135ab_dense_real10k_turboquant_idx [dense_posting_blocks=1, storage_format=turboquant] │
+└─────────┴────────────────────────────────────────────────────────────────────────────────────────────┘
+[loader] warning: profile "ec_ivf" does not list dense_posting_blocks as known reloption; passing through verbatim. Known reloptions: nlists, nprobe, rerank_width, training_sample_rows, seed, pq_group_size, storage_format, quantizer, rerank, coarse_format, coarse_bits, rerank_placement, rerank_format, rerank_group_width, stage2_final_rerank_width
+[loader] inspecting data/staged-current/ec_real_10k_corpus.tsv
+[loader] inspecting data/staged-current/ec_real_10k_queries.tsv
+[loader] corpus: 10000 rows, sha256=c67c5810b66d982d705974e48d4775479adfbd92a988f694091266e049a35e75  queries: 200 rows, sha256=a2c191bb742017d849e73f6e6866e8e0f0bac1579ba212f7fc76b8eb09904ae8
+[loader] warning: manifest verification failed for data/staged-current/ec_real_10k_manifest.json: prefix="ec_real_10k" (expected "task135ab_dense_real10k")
+[loader] copied corpus table task135ab_dense_real10k_corpus in 1.38s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table task135ab_dense_real10k_corpus in 2.15s
+[loader] copied queries table task135ab_dense_real10k_queries in 44.18ms
+[loader] building task135ab_dense_real10k_turboquant_idx using ec_ivf (reloptions=[dense_posting_blocks=1, storage_format=turboquant]) ...
+[loader] built task135ab_dense_real10k_turboquant_idx in 636.30ms
+[loader] ec_ivf build timing: requested_workers=0 workers_launched=0 heap_tuples=10000 index_tuples=10000 heap_ingest_us=123737 train_model_us=390360 stage_build_plan_us=47284 stage_pq_train_us=0 stage_centroids_us=176 stage_assign_us=44988 stage_postings_us=2099 stage_directory_us=4 flush_build_plan_us=69962 parallel_begin_us=0 parallel_drain_us=0 parallel_sort_push_us=0 parallel_worker_tuple_buffer_capacity=0 parallel_worker_tuple_buffer_struct_bytes=0
+[loader] completed prefix task135ab_dense_real10k in 4.85s
+[suite:task135-dense-layout-ab] wrote reviews/task-135/002-dense-layout-ab/artifacts/suite-manifest.json
+[suite:task135-dense-layout-ab] recall-dense-real10k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench recall --prefix task135ab_dense_real10k --profile ec_ivf --k 10 --sweep 32 --queries-limit 64 --bits 4 --seed 42 --force-index --truth-cache-dir reviews/task-135/002-dense-layout-ab/artifacts/truth-cache --log-output reviews/task-135/002-dense-layout-ab/artifacts/recall-dense-real10k.log
+[suite:task135-dense-layout-ab] wrote reviews/task-135/002-dense-layout-ab/artifacts/suite-manifest.json
+┌────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ nprobe ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 32     ┆ 64      ┆ 640           ┆ 0.9734   ┆ 0.9579          ┆ 0.9834           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.8000       ┆ 0.9998 ┆ 1.04 ms     │
+└────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from task135ab_dense_real10k_queries ...
+[recall] fetching corpus from task135ab_dense_real10k_corpus ...
+[recall] loaded ground truth cache reviews/task-135/002-dense-layout-ab/artifacts/truth-cache/truth-v1-rows10000-queries64-dim1536-k10-97f391fdef18b4eb.json
+[suite:task135-dense-layout-ab] wrote reviews/task-135/002-dense-layout-ab/artifacts/suite-manifest.json
+[suite:task135-dense-layout-ab] latency-dense-real10k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench latency --prefix task135ab_dense_real10k --profile ec_ivf --k 10 --concurrency 1 --iterations 64 --sweep 32 --bits 4 --seed 42 --force-index --sample-backend-memory --cache-state task135ab_dense_real10k_warm --task87-candidate-batch-counters --ivf-stage-counters --memory-sample-interval-ms 25 --log-output reviews/task-135/002-dense-layout-ab/artifacts/latency-dense-real10k.log
+[suite:task135-dense-layout-ab] wrote reviews/task-135/002-dense-layout-ab/artifacts/suite-manifest.json
+┌────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬──────────────────────────────┬─────────────┬─────────────┬────────────────┐
+│ nprobe ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state                  ┆ rss_peak_kb ┆ hwm_peak_kb ┆ memory_samples │
+╞════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪══════════════════════════════╪═════════════╪═════════════╪════════════════╡
+│ 32     ┆ 64    ┆ 0.90 ms ┆ 0.24 ms ┆ 0.76 ms ┆ 0.87 ms ┆ 1.02 ms ┆ 1.70 ms ┆ 2.74 ms ┆ task135ab_dense_real10k_warm ┆ 0           ┆ 0           ┆ 0              │
+└────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴──────────────────────────────┴─────────────┴─────────────┴────────────────┘
+[block-kernel-counters] command=latency label=nprobe=32 surface=ivf quant=turboquant isa=neon flushes=2050 candidates=205959 elapsed_nanos=24661666 elapsed_ms=24.661666 kernel_flushes=2050 kernel_candidates=205959 kernel_elapsed_nanos=24661666 kernel_elapsed_ms=24.661666 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=0 width_8_15=0 width_16_31=141 width_ge32=1909 pruned_candidates=0 kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=ivf flushes=2050 candidates=205959 elapsed_nanos=24661666 elapsed_ms=24.661666 lut32_flushes=2050 lut32_candidates=205959 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[ivf-stage-counters] command=latency label=nprobe=32 stage=approximate_scan scans=64 samples=64 elapsed_us=40825 elapsed_ms=40.825
+[ivf-stage-counters] command=latency label=nprobe=32 stage=candidate_record scans=64 samples=2050 elapsed_us=890 elapsed_ms=0.890
+[ivf-stage-counters] command=latency label=nprobe=32 stage=exact_rerank scans=64 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=posting_page_decode scans=64 samples=64 elapsed_us=33666 elapsed_ms=33.666
+[ivf-stage-counters] command=latency label=nprobe=32 stage=posting_visit scans=64 samples=64 elapsed_us=36962 elapsed_ms=36.962
+[ivf-stage-counters] command=latency label=nprobe=32 stage=probe_plan scans=64 samples=64 elapsed_us=2538 elapsed_ms=2.538
+[ivf-stage-counters] command=latency label=nprobe=32 stage=rerank_payload_decode scans=64 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=rerank_payload_score scans=64 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=scorer_batch scans=64 samples=2050 elapsed_us=24579 elapsed_ms=24.579
+[ivf-stage-counters] command=latency label=nprobe=32 stage=scratch_flush scans=64 samples=2050 elapsed_us=26841 elapsed_ms=26.841
+[ivf-stage-counters] command=latency label=nprobe=32 stage=topk_collect scans=64 samples=64 elapsed_us=3768 elapsed_ms=3.768
+[suite:task135-dense-layout-ab] wrote reviews/task-135/002-dense-layout-ab/artifacts/suite-manifest.json
+[suite:task135-dense-layout-ab] storage-dense-real10k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 --log-file reviews/task-135/002-dense-layout-ab/artifacts/storage-dense-real10k.log bench storage --prefix task135ab_dense_real10k
+[suite:task135-dense-layout-ab] wrote reviews/task-135/002-dense-layout-ab/artifacts/suite-manifest.json
+┌───────────────────────────────┬────────────────────────────────┐
+│ field                         ┆ value                          │
+╞═══════════════════════════════╪════════════════════════════════╡
+│ prefix                        ┆ task135ab_dense_real10k        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus                        ┆ task135ab_dense_real10k_corpus │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ rows                          ┆ 10000                          │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ heap                          ┆ 752.0 KiB                      │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ table (heap + toast + fsm/vm) ┆ 158.8 MiB                      │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes                       ┆ 9.2 MiB                        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ total                         ┆ 168.0 MiB                      │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (total)               ┆ 17615.3 B                      │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (heap only)           ┆ 77.0 B                         │
+└───────────────────────────────┴────────────────────────────────┘
+┌────────────────────────────────────────┬───────────────┬───────────┬────────────────────────────────────────────────────┬───────────┬─────────┐
+│ index                                  ┆ access method ┆ profile   ┆ reloptions                                         ┆ size      ┆ per row │
+╞════════════════════════════════════════╪═══════════════╪═══════════╪════════════════════════════════════════════════════╪═══════════╪═════════╡
+│ task135ab_dense_real10k_turboquant_idx ┆ ec_ivf        ┆ ec_ivf    ┆ {dense_posting_blocks=1,storage_format=turboquant} ┆ 9.0 MiB   ┆ 939.6 B │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ task135ab_dense_real10k_corpus_pkey    ┆ btree         ┆ <unknown> ┆ {}                                                 ┆ 240.0 KiB ┆ 24.6 B  │
+└────────────────────────────────────────┴───────────────┴───────────┴────────────────────────────────────────────────────┴───────────┴─────────┘
+[suite:task135-dense-layout-ab] wrote reviews/task-135/002-dense-layout-ab/artifacts/suite-manifest.json
+[suite:task135-dense-layout-ab] load-row-real50k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 --log-file reviews/task-135/002-dense-layout-ab/artifacts/load-row-real50k.log corpus load --prefix task135ab_row_real50k --profile ec_ivf --corpus-file data/staged-current/ec_real_50k_corpus.tsv --queries-file data/staged-current/ec_real_50k_queries.tsv --manifest-file data/staged-current/ec_real_50k_manifest.json --allow-manifest-mismatch --bits 4 --seed 42 --storage-format turboquant
+[suite:task135-dense-layout-ab] wrote reviews/task-135/002-dense-layout-ab/artifacts/suite-manifest.json
+┌─────────┬──────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                            │
+╞═════════╪══════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_ivf                                                           │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ task135ab_row_real50k_corpus (50000 rows)                        │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ task135ab_row_real50k_queries (1000 rows)                        │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ task135ab_row_real50k_turboquant_idx [storage_format=turboquant] │
+└─────────┴──────────────────────────────────────────────────────────────────┘
+[loader] inspecting data/staged-current/ec_real_50k_corpus.tsv
+[loader] inspecting data/staged-current/ec_real_50k_queries.tsv
+[loader] corpus: 50000 rows, sha256=56023baaa7bc42f758272e8617603d538808e6290a8a70a3a84e057571240133  queries: 1000 rows, sha256=95ac7992578aa80bb193657f10fbcbf1ea3867e559739244bf5a467f7a5a9fa3
+[loader] warning: manifest verification failed for data/staged-current/ec_real_50k_manifest.json: prefix="ec_real_50k" (expected "task135ab_row_real50k")
+[loader] copied corpus table task135ab_row_real50k_corpus in 6.95s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table task135ab_row_real50k_corpus in 4.25s
+[loader] copied queries table task135ab_row_real50k_queries in 151.83ms
+[loader] building task135ab_row_real50k_turboquant_idx using ec_ivf (reloptions=[storage_format=turboquant]) ...
+[loader] built task135ab_row_real50k_turboquant_idx in 2.18s
+[loader] ec_ivf build timing: requested_workers=0 workers_launched=0 heap_tuples=50000 index_tuples=50000 heap_ingest_us=636372 train_model_us=839111 stage_build_plan_us=514291 stage_pq_train_us=0 stage_centroids_us=336 stage_assign_us=500224 stage_postings_us=13664 stage_directory_us=9 flush_build_plan_us=180516 parallel_begin_us=0 parallel_drain_us=0 parallel_sort_push_us=0 parallel_worker_tuple_buffer_capacity=0 parallel_worker_tuple_buffer_struct_bytes=0
+[loader] completed prefix task135ab_row_real50k in 16.61s
+[suite:task135-dense-layout-ab] wrote reviews/task-135/002-dense-layout-ab/artifacts/suite-manifest.json
+[suite:task135-dense-layout-ab] recall-row-real50k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench recall --prefix task135ab_row_real50k --profile ec_ivf --k 10 --sweep 32 --queries-limit 48 --bits 4 --seed 42 --force-index --truth-cache-dir reviews/task-135/002-dense-layout-ab/artifacts/truth-cache --log-output reviews/task-135/002-dense-layout-ab/artifacts/recall-row-real50k.log
+[suite:task135-dense-layout-ab] wrote reviews/task-135/002-dense-layout-ab/artifacts/suite-manifest.json
+┌────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ nprobe ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 32     ┆ 48      ┆ 480           ┆ 0.9521   ┆ 0.9291          ┆ 0.9679           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.8000       ┆ 0.9995 ┆ 2.73 ms     │
+└────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from task135ab_row_real50k_queries ...
+[recall] fetching corpus from task135ab_row_real50k_corpus ...
+[recall] computing ground truth: 48 queries vs 50000 corpus rows (dim=1536) ...
+[recall] ground truth in 76.04ms
+[recall] wrote ground truth cache reviews/task-135/002-dense-layout-ab/artifacts/truth-cache/truth-v1-rows50000-queries48-dim1536-k10-a93e9d1a3c4f8202.json
+[suite:task135-dense-layout-ab] wrote reviews/task-135/002-dense-layout-ab/artifacts/suite-manifest.json
+[suite:task135-dense-layout-ab] latency-row-real50k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench latency --prefix task135ab_row_real50k --profile ec_ivf --k 10 --concurrency 1 --iterations 48 --sweep 32 --bits 4 --seed 42 --force-index --sample-backend-memory --cache-state task135ab_row_real50k_warm --task87-candidate-batch-counters --ivf-stage-counters --memory-sample-interval-ms 25 --log-output reviews/task-135/002-dense-layout-ab/artifacts/latency-row-real50k.log
+[suite:task135-dense-layout-ab] wrote reviews/task-135/002-dense-layout-ab/artifacts/suite-manifest.json
+┌────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬────────────────────────────┬─────────────┬─────────────┬────────────────┐
+│ nprobe ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state                ┆ rss_peak_kb ┆ hwm_peak_kb ┆ memory_samples │
+╞════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪════════════════════════════╪═════════════╪═════════════╪════════════════╡
+│ 32     ┆ 48    ┆ 1.81 ms ┆ 0.31 ms ┆ 1.52 ms ┆ 1.75 ms ┆ 2.01 ms ┆ 2.98 ms ┆ 3.75 ms ┆ task135ab_row_real50k_warm ┆ 0           ┆ 0           ┆ 0              │
+└────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴────────────────────────────┴─────────────┴─────────────┴────────────────┘
+[block-kernel-counters] command=latency label=nprobe=32 surface=ivf quant=turboquant isa=neon flushes=1352 candidates=340407 elapsed_nanos=39245150 elapsed_ms=39.245150 kernel_flushes=1352 kernel_candidates=340407 kernel_elapsed_nanos=39245150 kernel_elapsed_ms=39.245150 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=0 width_8_15=3 width_16_31=3 width_ge32=1346 pruned_candidates=0 kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=ivf flushes=1352 candidates=340407 elapsed_nanos=39245150 elapsed_ms=39.245150 lut32_flushes=1352 lut32_candidates=340407 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[ivf-stage-counters] command=latency label=nprobe=32 stage=approximate_scan scans=48 samples=48 elapsed_us=69988 elapsed_ms=69.988
+[ivf-stage-counters] command=latency label=nprobe=32 stage=candidate_record scans=48 samples=1352 elapsed_us=2852 elapsed_ms=2.852
+[ivf-stage-counters] command=latency label=nprobe=32 stage=exact_rerank scans=48 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=posting_page_decode scans=48 samples=48 elapsed_us=57891 elapsed_ms=57.891
+[ivf-stage-counters] command=latency label=nprobe=32 stage=posting_visit scans=48 samples=48 elapsed_us=63069 elapsed_ms=63.069
+[ivf-stage-counters] command=latency label=nprobe=32 stage=probe_plan scans=48 samples=48 elapsed_us=4236 elapsed_ms=4.236
+[ivf-stage-counters] command=latency label=nprobe=32 stage=rerank_payload_decode scans=48 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=rerank_payload_score scans=48 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=scorer_batch scans=48 samples=1352 elapsed_us=39476 elapsed_ms=39.476
+[ivf-stage-counters] command=latency label=nprobe=32 stage=scratch_flush scans=48 samples=1352 elapsed_us=43248 elapsed_ms=43.248
+[ivf-stage-counters] command=latency label=nprobe=32 stage=topk_collect scans=48 samples=48 elapsed_us=6813 elapsed_ms=6.813
+[suite:task135-dense-layout-ab] wrote reviews/task-135/002-dense-layout-ab/artifacts/suite-manifest.json
+[suite:task135-dense-layout-ab] storage-row-real50k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 --log-file reviews/task-135/002-dense-layout-ab/artifacts/storage-row-real50k.log bench storage --prefix task135ab_row_real50k
+[suite:task135-dense-layout-ab] wrote reviews/task-135/002-dense-layout-ab/artifacts/suite-manifest.json
+┌───────────────────────────────┬──────────────────────────────┐
+│ field                         ┆ value                        │
+╞═══════════════════════════════╪══════════════════════════════╡
+│ prefix                        ┆ task135ab_row_real50k        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus                        ┆ task135ab_row_real50k_corpus │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ rows                          ┆ 50000                        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ heap                          ┆ 3.7 MiB                      │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ table (heap + toast + fsm/vm) ┆ 793.8 MiB                    │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes                       ┆ 47.1 MiB                     │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ total                         ┆ 840.9 MiB                    │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (total)               ┆ 17634.1 B                    │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (heap only)           ┆ 76.7 B                       │
+└───────────────────────────────┴──────────────────────────────┘
+┌──────────────────────────────────────┬───────────────┬───────────┬─────────────────────────────┬──────────┬─────────┐
+│ index                                ┆ access method ┆ profile   ┆ reloptions                  ┆ size     ┆ per row │
+╞══════════════════════════════════════╪═══════════════╪═══════════╪═════════════════════════════╪══════════╪═════════╡
+│ task135ab_row_real50k_turboquant_idx ┆ ec_ivf        ┆ ec_ivf    ┆ {storage_format=turboquant} ┆ 46.0 MiB ┆ 964.7 B │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ task135ab_row_real50k_corpus_pkey    ┆ btree         ┆ <unknown> ┆ {}                          ┆ 1.1 MiB  ┆ 22.8 B  │
+└──────────────────────────────────────┴───────────────┴───────────┴─────────────────────────────┴──────────┴─────────┘
+[suite:task135-dense-layout-ab] wrote reviews/task-135/002-dense-layout-ab/artifacts/suite-manifest.json
+[suite:task135-dense-layout-ab] load-dense-real50k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 --log-file reviews/task-135/002-dense-layout-ab/artifacts/load-dense-real50k.log corpus load --prefix task135ab_dense_real50k --profile ec_ivf --corpus-file data/staged-current/ec_real_50k_corpus.tsv --queries-file data/staged-current/ec_real_50k_queries.tsv --manifest-file data/staged-current/ec_real_50k_manifest.json --allow-manifest-mismatch --bits 4 --seed 42 --storage-format turboquant --reloption dense_posting_blocks=1
+[suite:task135-dense-layout-ab] wrote reviews/task-135/002-dense-layout-ab/artifacts/suite-manifest.json
+┌─────────┬────────────────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                                      │
+╞═════════╪════════════════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_ivf                                                                                     │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ task135ab_dense_real50k_corpus (50000 rows)                                                │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ task135ab_dense_real50k_queries (1000 rows)                                                │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ task135ab_dense_real50k_turboquant_idx [dense_posting_blocks=1, storage_format=turboquant] │
+└─────────┴────────────────────────────────────────────────────────────────────────────────────────────┘
+[loader] warning: profile "ec_ivf" does not list dense_posting_blocks as known reloption; passing through verbatim. Known reloptions: nlists, nprobe, rerank_width, training_sample_rows, seed, pq_group_size, storage_format, quantizer, rerank, coarse_format, coarse_bits, rerank_placement, rerank_format, rerank_group_width, stage2_final_rerank_width
+[loader] inspecting data/staged-current/ec_real_50k_corpus.tsv
+[loader] inspecting data/staged-current/ec_real_50k_queries.tsv
+[loader] corpus: 50000 rows, sha256=56023baaa7bc42f758272e8617603d538808e6290a8a70a3a84e057571240133  queries: 1000 rows, sha256=95ac7992578aa80bb193657f10fbcbf1ea3867e559739244bf5a467f7a5a9fa3
+[loader] warning: manifest verification failed for data/staged-current/ec_real_50k_manifest.json: prefix="ec_real_50k" (expected "task135ab_dense_real50k")
+[loader] copied corpus table task135ab_dense_real50k_corpus in 6.92s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table task135ab_dense_real50k_corpus in 4.11s
+[loader] copied queries table task135ab_dense_real50k_queries in 164.44ms
+[loader] building task135ab_dense_real50k_turboquant_idx using ec_ivf (reloptions=[dense_posting_blocks=1, storage_format=turboquant]) ...
+[loader] built task135ab_dense_real50k_turboquant_idx in 2.09s
+[loader] ec_ivf build timing: requested_workers=0 workers_launched=0 heap_tuples=50000 index_tuples=50000 heap_ingest_us=613763 train_model_us=836972 stage_build_plan_us=515528 stage_pq_train_us=0 stage_centroids_us=338 stage_assign_us=502287 stage_postings_us=12836 stage_directory_us=9 flush_build_plan_us=117182 parallel_begin_us=0 parallel_drain_us=0 parallel_sort_push_us=0 parallel_worker_tuple_buffer_capacity=0 parallel_worker_tuple_buffer_struct_bytes=0
+[loader] completed prefix task135ab_dense_real50k in 16.33s
+[suite:task135-dense-layout-ab] wrote reviews/task-135/002-dense-layout-ab/artifacts/suite-manifest.json
+[suite:task135-dense-layout-ab] recall-dense-real50k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench recall --prefix task135ab_dense_real50k --profile ec_ivf --k 10 --sweep 32 --queries-limit 48 --bits 4 --seed 42 --force-index --truth-cache-dir reviews/task-135/002-dense-layout-ab/artifacts/truth-cache --log-output reviews/task-135/002-dense-layout-ab/artifacts/recall-dense-real50k.log
+[suite:task135-dense-layout-ab] wrote reviews/task-135/002-dense-layout-ab/artifacts/suite-manifest.json
+┌────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ nprobe ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 32     ┆ 48      ┆ 480           ┆ 0.9521   ┆ 0.9291          ┆ 0.9679           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.8000       ┆ 0.9995 ┆ 2.55 ms     │
+└────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from task135ab_dense_real50k_queries ...
+[recall] fetching corpus from task135ab_dense_real50k_corpus ...
+[recall] loaded ground truth cache reviews/task-135/002-dense-layout-ab/artifacts/truth-cache/truth-v1-rows50000-queries48-dim1536-k10-a93e9d1a3c4f8202.json
+[suite:task135-dense-layout-ab] wrote reviews/task-135/002-dense-layout-ab/artifacts/suite-manifest.json
+[suite:task135-dense-layout-ab] latency-dense-real50k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench latency --prefix task135ab_dense_real50k --profile ec_ivf --k 10 --concurrency 1 --iterations 48 --sweep 32 --bits 4 --seed 42 --force-index --sample-backend-memory --cache-state task135ab_dense_real50k_warm --task87-candidate-batch-counters --ivf-stage-counters --memory-sample-interval-ms 25 --log-output reviews/task-135/002-dense-layout-ab/artifacts/latency-dense-real50k.log
+[suite:task135-dense-layout-ab] wrote reviews/task-135/002-dense-layout-ab/artifacts/suite-manifest.json
+┌────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬──────────────────────────────┬─────────────┬─────────────┬────────────────┐
+│ nprobe ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state                  ┆ rss_peak_kb ┆ hwm_peak_kb ┆ memory_samples │
+╞════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪══════════════════════════════╪═════════════╪═════════════╪════════════════╡
+│ 32     ┆ 48    ┆ 1.73 ms ┆ 0.31 ms ┆ 1.46 ms ┆ 1.70 ms ┆ 1.89 ms ┆ 2.89 ms ┆ 3.72 ms ┆ task135ab_dense_real50k_warm ┆ 0           ┆ 0           ┆ 0              │
+└────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴──────────────────────────────┴─────────────┴─────────────┴────────────────┘
+[block-kernel-counters] command=latency label=nprobe=32 surface=ivf quant=turboquant isa=neon flushes=2088 candidates=340407 elapsed_nanos=41221590 elapsed_ms=41.221590 kernel_flushes=2088 kernel_candidates=340407 kernel_elapsed_nanos=41221590 kernel_elapsed_ms=41.221590 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=23 width_8_15=12 width_16_31=39 width_ge32=2014 pruned_candidates=0 kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=ivf flushes=2088 candidates=340407 elapsed_nanos=41221590 elapsed_ms=41.221590 lut32_flushes=2088 lut32_candidates=340407 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[ivf-stage-counters] command=latency label=nprobe=32 stage=approximate_scan scans=48 samples=48 elapsed_us=66294 elapsed_ms=66.294
+[ivf-stage-counters] command=latency label=nprobe=32 stage=candidate_record scans=48 samples=2088 elapsed_us=2486 elapsed_ms=2.486
+[ivf-stage-counters] command=latency label=nprobe=32 stage=exact_rerank scans=48 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=posting_page_decode scans=48 samples=48 elapsed_us=54451 elapsed_ms=54.451
+[ivf-stage-counters] command=latency label=nprobe=32 stage=posting_visit scans=48 samples=48 elapsed_us=59215 elapsed_ms=59.215
+[ivf-stage-counters] command=latency label=nprobe=32 stage=probe_plan scans=48 samples=48 elapsed_us=4209 elapsed_ms=4.209
+[ivf-stage-counters] command=latency label=nprobe=32 stage=rerank_payload_decode scans=48 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=rerank_payload_score scans=48 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=scorer_batch scans=48 samples=2088 elapsed_us=41645 elapsed_ms=41.645
+[ivf-stage-counters] command=latency label=nprobe=32 stage=scratch_flush scans=48 samples=2088 elapsed_us=45165 elapsed_ms=45.165
+[ivf-stage-counters] command=latency label=nprobe=32 stage=topk_collect scans=48 samples=48 elapsed_us=6983 elapsed_ms=6.983
+[suite:task135-dense-layout-ab] wrote reviews/task-135/002-dense-layout-ab/artifacts/suite-manifest.json
+[suite:task135-dense-layout-ab] storage-dense-real50k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 --log-file reviews/task-135/002-dense-layout-ab/artifacts/storage-dense-real50k.log bench storage --prefix task135ab_dense_real50k
+[suite:task135-dense-layout-ab] wrote reviews/task-135/002-dense-layout-ab/artifacts/suite-manifest.json
+┌───────────────────────────────┬────────────────────────────────┐
+│ field                         ┆ value                          │
+╞═══════════════════════════════╪════════════════════════════════╡
+│ prefix                        ┆ task135ab_dense_real50k        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus                        ┆ task135ab_dense_real50k_corpus │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ rows                          ┆ 50000                          │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ heap                          ┆ 3.7 MiB                        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ table (heap + toast + fsm/vm) ┆ 793.8 MiB                      │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes                       ┆ 42.7 MiB                       │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ total                         ┆ 836.4 MiB                      │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (total)               ┆ 17541.4 B                      │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (heap only)           ┆ 76.7 B                         │
+└───────────────────────────────┴────────────────────────────────┘
+┌────────────────────────────────────────┬───────────────┬───────────┬────────────────────────────────────────────────────┬──────────┬─────────┐
+│ index                                  ┆ access method ┆ profile   ┆ reloptions                                         ┆ size     ┆ per row │
+╞════════════════════════════════════════╪═══════════════╪═══════════╪════════════════════════════════════════════════════╪══════════╪═════════╡
+│ task135ab_dense_real50k_turboquant_idx ┆ ec_ivf        ┆ ec_ivf    ┆ {dense_posting_blocks=1,storage_format=turboquant} ┆ 41.6 MiB ┆ 872.0 B │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ task135ab_dense_real50k_corpus_pkey    ┆ btree         ┆ <unknown> ┆ {}                                                 ┆ 1.1 MiB  ┆ 22.8 B  │
+└────────────────────────────────────────┴───────────────┴───────────┴────────────────────────────────────────────────────┴──────────┴─────────┘
+[suite:task135-dense-layout-ab] wrote reviews/task-135/002-dense-layout-ab/artifacts/suite-manifest.json
+[suite:task135-dense-layout-ab] load-row-real100k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 --log-file reviews/task-135/002-dense-layout-ab/artifacts/load-row-real100k.log corpus load --prefix task135ab_row_real100k --profile ec_ivf --corpus-file data/staged-current/ec_real_100k_corpus.tsv --queries-file data/staged-current/ec_real_100k_queries.tsv --manifest-file data/staged-current/ec_real_100k_manifest.json --allow-manifest-mismatch --bits 4 --seed 42 --storage-format turboquant
+[suite:task135-dense-layout-ab] wrote reviews/task-135/002-dense-layout-ab/artifacts/suite-manifest.json
+┌─────────┬───────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                             │
+╞═════════╪═══════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_ivf                                                            │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ task135ab_row_real100k_corpus (100000 rows)                       │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ task135ab_row_real100k_queries (1000 rows)                        │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ task135ab_row_real100k_turboquant_idx [storage_format=turboquant] │
+└─────────┴───────────────────────────────────────────────────────────────────┘
+[loader] inspecting data/staged-current/ec_real_100k_corpus.tsv
+[loader] inspecting data/staged-current/ec_real_100k_queries.tsv
+[loader] corpus: 100000 rows, sha256=07275cfd5a7a4b415ddf5eacc086de98294ac978532df46ffae30f9202323a95  queries: 1000 rows, sha256=a7cbec6fc44f6c148234538f61339d00d2f10646febc8f667dcbe75d9cf41782
+[loader] warning: manifest verification failed for data/staged-current/ec_real_100k_manifest.json: prefix="ec_real_100k" (expected "task135ab_row_real100k")
+[loader] copied corpus table task135ab_row_real100k_corpus in 13.89s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table task135ab_row_real100k_corpus in 8.22s
+[loader] copied queries table task135ab_row_real100k_queries in 155.15ms
+[loader] building task135ab_row_real100k_turboquant_idx using ec_ivf (reloptions=[storage_format=turboquant]) ...
+[loader] built task135ab_row_real100k_turboquant_idx in 4.27s
+[loader] ec_ivf build timing: requested_workers=0 workers_launched=0 heap_tuples=100000 index_tuples=100000 heap_ingest_us=1247161 train_model_us=1201464 stage_build_plan_us=1498678 stage_pq_train_us=0 stage_centroids_us=474 stage_assign_us=1472180 stage_postings_us=25901 stage_directory_us=15 flush_build_plan_us=295923 parallel_begin_us=0 parallel_drain_us=0 parallel_sort_push_us=0 parallel_worker_tuple_buffer_capacity=0 parallel_worker_tuple_buffer_struct_bytes=0
+[loader] completed prefix task135ab_row_real100k in 32.59s
+[suite:task135-dense-layout-ab] wrote reviews/task-135/002-dense-layout-ab/artifacts/suite-manifest.json
+[suite:task135-dense-layout-ab] recall-row-real100k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench recall --prefix task135ab_row_real100k --profile ec_ivf --k 10 --sweep 32 --queries-limit 32 --bits 4 --seed 42 --force-index --truth-cache-dir reviews/task-135/002-dense-layout-ab/artifacts/truth-cache --log-output reviews/task-135/002-dense-layout-ab/artifacts/recall-row-real100k.log
+[suite:task135-dense-layout-ab] wrote reviews/task-135/002-dense-layout-ab/artifacts/suite-manifest.json
+┌────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ nprobe ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 32     ┆ 32      ┆ 320           ┆ 0.8969   ┆ 0.8587          ┆ 0.9256           ┆ 0.8000     ┆ 0.9000     ┆ 1.0000     ┆ 0.7000       ┆ 0.9957 ┆ 3.98 ms     │
+└────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from task135ab_row_real100k_queries ...
+[recall] fetching corpus from task135ab_row_real100k_corpus ...
+[recall] computing ground truth: 32 queries vs 100000 corpus rows (dim=1536) ...
+[recall] ground truth in 117.77ms
+[recall] wrote ground truth cache reviews/task-135/002-dense-layout-ab/artifacts/truth-cache/truth-v1-rows100000-queries32-dim1536-k10-22dfd78bf8c49028.json
+[suite:task135-dense-layout-ab] wrote reviews/task-135/002-dense-layout-ab/artifacts/suite-manifest.json
+[suite:task135-dense-layout-ab] latency-row-real100k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench latency --prefix task135ab_row_real100k --profile ec_ivf --k 10 --concurrency 1 --iterations 32 --sweep 32 --bits 4 --seed 42 --force-index --sample-backend-memory --cache-state task135ab_row_real100k_warm --task87-candidate-batch-counters --ivf-stage-counters --memory-sample-interval-ms 25 --log-output reviews/task-135/002-dense-layout-ab/artifacts/latency-row-real100k.log
+[suite:task135-dense-layout-ab] wrote reviews/task-135/002-dense-layout-ab/artifacts/suite-manifest.json
+┌────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────────────────────────┬─────────────┬─────────────┬────────────────┐
+│ nprobe ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state                 ┆ rss_peak_kb ┆ hwm_peak_kb ┆ memory_samples │
+╞════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════════════════════════╪═════════════╪═════════════╪════════════════╡
+│ 32     ┆ 32    ┆ 2.82 ms ┆ 0.51 ms ┆ 2.27 ms ┆ 2.72 ms ┆ 3.44 ms ┆ 4.65 ms ┆ 5.14 ms ┆ task135ab_row_real100k_warm ┆ 0           ┆ 0           ┆ 0              │
+└────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────────────────────────┴─────────────┴─────────────┴────────────────┘
+[block-kernel-counters] command=latency label=nprobe=32 surface=ivf quant=turboquant isa=neon flushes=1311 candidates=331757 elapsed_nanos=39683169 elapsed_ms=39.683169 kernel_flushes=1311 kernel_candidates=331757 kernel_elapsed_nanos=39683169 kernel_elapsed_ms=39.683169 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=2 width_8_15=0 width_16_31=2 width_ge32=1307 pruned_candidates=0 kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=ivf flushes=1311 candidates=331757 elapsed_nanos=39683169 elapsed_ms=39.683169 lut32_flushes=1311 lut32_candidates=331757 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[ivf-stage-counters] command=latency label=nprobe=32 stage=approximate_scan scans=32 samples=32 elapsed_us=75891 elapsed_ms=75.891
+[ivf-stage-counters] command=latency label=nprobe=32 stage=candidate_record scans=32 samples=1311 elapsed_us=2661 elapsed_ms=2.661
+[ivf-stage-counters] command=latency label=nprobe=32 stage=exact_rerank scans=32 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=posting_page_decode scans=32 samples=32 elapsed_us=63579 elapsed_ms=63.579
+[ivf-stage-counters] command=latency label=nprobe=32 stage=posting_visit scans=32 samples=32 elapsed_us=68701 elapsed_ms=68.701
+[ivf-stage-counters] command=latency label=nprobe=32 stage=probe_plan scans=32 samples=32 elapsed_us=4184 elapsed_ms=4.184
+[ivf-stage-counters] command=latency label=nprobe=32 stage=rerank_payload_decode scans=32 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=rerank_payload_score scans=32 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=scorer_batch scans=32 samples=1311 elapsed_us=39941 elapsed_ms=39.941
+[ivf-stage-counters] command=latency label=nprobe=32 stage=scratch_flush scans=32 samples=1311 elapsed_us=43596 elapsed_ms=43.596
+[ivf-stage-counters] command=latency label=nprobe=32 stage=topk_collect scans=32 samples=32 elapsed_us=7092 elapsed_ms=7.092
+[suite:task135-dense-layout-ab] wrote reviews/task-135/002-dense-layout-ab/artifacts/suite-manifest.json
+[suite:task135-dense-layout-ab] storage-row-real100k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 --log-file reviews/task-135/002-dense-layout-ab/artifacts/storage-row-real100k.log bench storage --prefix task135ab_row_real100k
+[suite:task135-dense-layout-ab] wrote reviews/task-135/002-dense-layout-ab/artifacts/suite-manifest.json
+┌───────────────────────────────┬───────────────────────────────┐
+│ field                         ┆ value                         │
+╞═══════════════════════════════╪═══════════════════════════════╡
+│ prefix                        ┆ task135ab_row_real100k        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus                        ┆ task135ab_row_real100k_corpus │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ rows                          ┆ 100000                        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ heap                          ┆ 7.3 MiB                       │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ table (heap + toast + fsm/vm) ┆ 1.6 GiB                       │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes                       ┆ 92.6 MiB                      │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ total                         ┆ 1.6 GiB                       │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (total)               ┆ 17616.8 B                     │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (heap only)           ┆ 76.6 B                        │
+└───────────────────────────────┴───────────────────────────────┘
+┌───────────────────────────────────────┬───────────────┬───────────┬─────────────────────────────┬──────────┬─────────┐
+│ index                                 ┆ access method ┆ profile   ┆ reloptions                  ┆ size     ┆ per row │
+╞═══════════════════════════════════════╪═══════════════╪═══════════╪═════════════════════════════╪══════════╪═════════╡
+│ task135ab_row_real100k_turboquant_idx ┆ ec_ivf        ┆ ec_ivf    ┆ {storage_format=turboquant} ┆ 90.4 MiB ┆ 948.2 B │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ task135ab_row_real100k_corpus_pkey    ┆ btree         ┆ <unknown> ┆ {}                          ┆ 2.2 MiB  ┆ 22.6 B  │
+└───────────────────────────────────────┴───────────────┴───────────┴─────────────────────────────┴──────────┴─────────┘
+[suite:task135-dense-layout-ab] wrote reviews/task-135/002-dense-layout-ab/artifacts/suite-manifest.json
+[suite:task135-dense-layout-ab] load-dense-real100k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 --log-file reviews/task-135/002-dense-layout-ab/artifacts/load-dense-real100k.log corpus load --prefix task135ab_dense_real100k --profile ec_ivf --corpus-file data/staged-current/ec_real_100k_corpus.tsv --queries-file data/staged-current/ec_real_100k_queries.tsv --manifest-file data/staged-current/ec_real_100k_manifest.json --allow-manifest-mismatch --bits 4 --seed 42 --storage-format turboquant --reloption dense_posting_blocks=1
+[suite:task135-dense-layout-ab] wrote reviews/task-135/002-dense-layout-ab/artifacts/suite-manifest.json
+┌─────────┬─────────────────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                                       │
+╞═════════╪═════════════════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_ivf                                                                                      │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ task135ab_dense_real100k_corpus (100000 rows)                                               │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ task135ab_dense_real100k_queries (1000 rows)                                                │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ task135ab_dense_real100k_turboquant_idx [dense_posting_blocks=1, storage_format=turboquant] │
+└─────────┴─────────────────────────────────────────────────────────────────────────────────────────────┘
+[loader] warning: profile "ec_ivf" does not list dense_posting_blocks as known reloption; passing through verbatim. Known reloptions: nlists, nprobe, rerank_width, training_sample_rows, seed, pq_group_size, storage_format, quantizer, rerank, coarse_format, coarse_bits, rerank_placement, rerank_format, rerank_group_width, stage2_final_rerank_width
+[loader] inspecting data/staged-current/ec_real_100k_corpus.tsv
+[loader] inspecting data/staged-current/ec_real_100k_queries.tsv
+[loader] corpus: 100000 rows, sha256=07275cfd5a7a4b415ddf5eacc086de98294ac978532df46ffae30f9202323a95  queries: 1000 rows, sha256=a7cbec6fc44f6c148234538f61339d00d2f10646febc8f667dcbe75d9cf41782
+[loader] warning: manifest verification failed for data/staged-current/ec_real_100k_manifest.json: prefix="ec_real_100k" (expected "task135ab_dense_real100k")
+[loader] copied corpus table task135ab_dense_real100k_corpus in 13.94s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table task135ab_dense_real100k_corpus in 7.70s
+[loader] copied queries table task135ab_dense_real100k_queries in 154.33ms
+[loader] building task135ab_dense_real100k_turboquant_idx using ec_ivf (reloptions=[dense_posting_blocks=1, storage_format=turboquant]) ...
+[loader] built task135ab_dense_real100k_turboquant_idx in 4.15s
+[loader] ec_ivf build timing: requested_workers=0 workers_launched=0 heap_tuples=100000 index_tuples=100000 heap_ingest_us=1246618 train_model_us=1200446 stage_build_plan_us=1479142 stage_pq_train_us=0 stage_centroids_us=510 stage_assign_us=1455760 stage_postings_us=22760 stage_directory_us=13 flush_build_plan_us=210691 parallel_begin_us=0 parallel_drain_us=0 parallel_sort_push_us=0 parallel_worker_tuple_buffer_capacity=0 parallel_worker_tuple_buffer_struct_bytes=0
+[loader] completed prefix task135ab_dense_real100k in 32.21s
+[suite:task135-dense-layout-ab] wrote reviews/task-135/002-dense-layout-ab/artifacts/suite-manifest.json
+[suite:task135-dense-layout-ab] recall-dense-real100k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench recall --prefix task135ab_dense_real100k --profile ec_ivf --k 10 --sweep 32 --queries-limit 32 --bits 4 --seed 42 --force-index --truth-cache-dir reviews/task-135/002-dense-layout-ab/artifacts/truth-cache --log-output reviews/task-135/002-dense-layout-ab/artifacts/recall-dense-real100k.log
+[suite:task135-dense-layout-ab] wrote reviews/task-135/002-dense-layout-ab/artifacts/suite-manifest.json
+┌────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ nprobe ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 32     ┆ 32      ┆ 320           ┆ 0.8969   ┆ 0.8587          ┆ 0.9256           ┆ 0.8000     ┆ 0.9000     ┆ 1.0000     ┆ 0.7000       ┆ 0.9957 ┆ 3.36 ms     │
+└────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from task135ab_dense_real100k_queries ...
+[recall] fetching corpus from task135ab_dense_real100k_corpus ...
+[recall] loaded ground truth cache reviews/task-135/002-dense-layout-ab/artifacts/truth-cache/truth-v1-rows100000-queries32-dim1536-k10-22dfd78bf8c49028.json
+[suite:task135-dense-layout-ab] wrote reviews/task-135/002-dense-layout-ab/artifacts/suite-manifest.json
+[suite:task135-dense-layout-ab] latency-dense-real100k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench latency --prefix task135ab_dense_real100k --profile ec_ivf --k 10 --concurrency 1 --iterations 32 --sweep 32 --bits 4 --seed 42 --force-index --sample-backend-memory --cache-state task135ab_dense_real100k_warm --task87-candidate-batch-counters --ivf-stage-counters --memory-sample-interval-ms 25 --log-output reviews/task-135/002-dense-layout-ab/artifacts/latency-dense-real100k.log
+[suite:task135-dense-layout-ab] wrote reviews/task-135/002-dense-layout-ab/artifacts/suite-manifest.json
+┌────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬───────────────────────────────┬─────────────┬─────────────┬────────────────┐
+│ nprobe ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state                   ┆ rss_peak_kb ┆ hwm_peak_kb ┆ memory_samples │
+╞════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═══════════════════════════════╪═════════════╪═════════════╪════════════════╡
+│ 32     ┆ 32    ┆ 2.74 ms ┆ 0.51 ms ┆ 2.17 ms ┆ 2.66 ms ┆ 3.30 ms ┆ 4.63 ms ┆ 5.17 ms ┆ task135ab_dense_real100k_warm ┆ 0           ┆ 0           ┆ 0              │
+└────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴───────────────────────────────┴─────────────┴─────────────┴────────────────┘
+[block-kernel-counters] command=latency label=nprobe=32 surface=ivf quant=turboquant isa=neon flushes=1781 candidates=331757 elapsed_nanos=42155157 elapsed_ms=42.155157 kernel_flushes=1781 kernel_candidates=331757 kernel_elapsed_nanos=42155157 kernel_elapsed_ms=42.155157 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=22 width_8_15=38 width_16_31=33 width_ge32=1688 pruned_candidates=0 kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=ivf flushes=1781 candidates=331757 elapsed_nanos=42155157 elapsed_ms=42.155157 lut32_flushes=1781 lut32_candidates=331757 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[ivf-stage-counters] command=latency label=nprobe=32 stage=approximate_scan scans=32 samples=32 elapsed_us=72471 elapsed_ms=72.471
+[ivf-stage-counters] command=latency label=nprobe=32 stage=candidate_record scans=32 samples=1781 elapsed_us=2476 elapsed_ms=2.476
+[ivf-stage-counters] command=latency label=nprobe=32 stage=exact_rerank scans=32 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=posting_page_decode scans=32 samples=32 elapsed_us=59817 elapsed_ms=59.817
+[ivf-stage-counters] command=latency label=nprobe=32 stage=posting_visit scans=32 samples=32 elapsed_us=65032 elapsed_ms=65.032
+[ivf-stage-counters] command=latency label=nprobe=32 stage=probe_plan scans=32 samples=32 elapsed_us=4402 elapsed_ms=4.402
+[ivf-stage-counters] command=latency label=nprobe=32 stage=rerank_payload_decode scans=32 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=rerank_payload_score scans=32 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=scorer_batch scans=32 samples=1781 elapsed_us=42827 elapsed_ms=42.827
+[ivf-stage-counters] command=latency label=nprobe=32 stage=scratch_flush scans=32 samples=1781 elapsed_us=45933 elapsed_ms=45.933
+[ivf-stage-counters] command=latency label=nprobe=32 stage=topk_collect scans=32 samples=32 elapsed_us=7340 elapsed_ms=7.340
+[suite:task135-dense-layout-ab] wrote reviews/task-135/002-dense-layout-ab/artifacts/suite-manifest.json
+[suite:task135-dense-layout-ab] storage-dense-real100k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 --log-file reviews/task-135/002-dense-layout-ab/artifacts/storage-dense-real100k.log bench storage --prefix task135ab_dense_real100k
+[suite:task135-dense-layout-ab] wrote reviews/task-135/002-dense-layout-ab/artifacts/suite-manifest.json
+┌───────────────────────────────┬─────────────────────────────────┐
+│ field                         ┆ value                           │
+╞═══════════════════════════════╪═════════════════════════════════╡
+│ prefix                        ┆ task135ab_dense_real100k        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus                        ┆ task135ab_dense_real100k_corpus │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ rows                          ┆ 100000                          │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ heap                          ┆ 7.3 MiB                         │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ table (heap + toast + fsm/vm) ┆ 1.6 GiB                         │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes                       ┆ 83.8 MiB                        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ total                         ┆ 1.6 GiB                         │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (total)               ┆ 17525.1 B                       │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (heap only)           ┆ 76.6 B                          │
+└───────────────────────────────┴─────────────────────────────────┘
+┌─────────────────────────────────────────┬───────────────┬───────────┬────────────────────────────────────────────────────┬──────────┬─────────┐
+│ index                                   ┆ access method ┆ profile   ┆ reloptions                                         ┆ size     ┆ per row │
+╞═════════════════════════════════════════╪═══════════════╪═══════════╪════════════════════════════════════════════════════╪══════════╪═════════╡
+│ task135ab_dense_real100k_turboquant_idx ┆ ec_ivf        ┆ ec_ivf    ┆ {dense_posting_blocks=1,storage_format=turboquant} ┆ 81.7 MiB ┆ 856.5 B │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ task135ab_dense_real100k_corpus_pkey    ┆ btree         ┆ <unknown> ┆ {}                                                 ┆ 2.2 MiB  ┆ 22.6 B  │
+└─────────────────────────────────────────┴───────────────┴───────────┴────────────────────────────────────────────────────┴──────────┴─────────┘
+[suite:task135-dense-layout-ab] wrote reviews/task-135/002-dense-layout-ab/artifacts/suite-manifest.json
+[suite:task135-dense-layout-ab] wrote reviews/task-135/002-dense-layout-ab/artifacts/results.jsonl
+[suite:task135-dense-layout-ab] wrote reviews/task-135/002-dense-layout-ab/artifacts/suite-manifest.json
