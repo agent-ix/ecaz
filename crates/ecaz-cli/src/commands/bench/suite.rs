@@ -561,6 +561,8 @@ struct SpirePipelineStep {
     funnel_output: Option<PathBuf>,
     #[serde(default)]
     stage_containment_output: Option<PathBuf>,
+    #[serde(default)]
+    result_identity_output: Option<PathBuf>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1275,6 +1277,7 @@ fn apply_artifact_dir_templates(config: &mut SuiteConfig) {
                 rewrite_artifact_dir_path(&mut step.log_output, &artifact_dir);
                 rewrite_artifact_dir_path(&mut step.funnel_output, &artifact_dir);
                 rewrite_artifact_dir_path(&mut step.stage_containment_output, &artifact_dir);
+                rewrite_artifact_dir_path(&mut step.result_identity_output, &artifact_dir);
             }
             SuiteStep::Storage(step) => {
                 rewrite_artifact_dir_path(&mut step.log_file, &artifact_dir);
@@ -2801,6 +2804,7 @@ impl SuiteStep {
                 .iter()
                 .chain(step.funnel_output.iter())
                 .chain(step.stage_containment_output.iter())
+                .chain(step.result_identity_output.iter())
                 .chain(step.leaf_block_rank_output.iter())
                 .chain(step.target_block_rank_output.iter())
                 .chain(step.target_candidate_rank_output.iter())
@@ -3519,6 +3523,11 @@ fn expand_spire_pipeline(step: &SpirePipelineStep, defaults: &SuiteDefaults) -> 
         &mut args,
         "--stage-containment-output",
         step.stage_containment_output.as_deref(),
+    );
+    push_opt_path(
+        &mut args,
+        "--result-identity-output",
+        step.result_identity_output.as_deref(),
     );
     args
 }
@@ -4536,6 +4545,7 @@ mod tests {
                 log_output: Some("${artifact_dir}/profile.log".into()),
                 funnel_output: Some("${artifact_dir}/profile-funnel.jsonl".into()),
                 stage_containment_output: Some("${artifact_dir}/profile-stage.jsonl".into()),
+                result_identity_output: Some("${artifact_dir}/profile-identity.jsonl".into()),
             })],
         };
 
@@ -4558,6 +4568,7 @@ mod tests {
                 PathBuf::from("artifacts/current/profile.log"),
                 PathBuf::from("artifacts/current/profile-funnel.jsonl"),
                 PathBuf::from("artifacts/current/profile-stage.jsonl"),
+                PathBuf::from("artifacts/current/profile-identity.jsonl"),
                 PathBuf::from("artifacts/current/profile-leaf-block-rank.jsonl"),
                 PathBuf::from("artifacts/current/profile-target-block-rank.jsonl"),
                 PathBuf::from("artifacts/current/profile-target-candidate-rank.jsonl"),
@@ -4583,6 +4594,11 @@ mod tests {
             == [
                 "--stage-containment-output",
                 "artifacts/current/profile-stage.jsonl"
+            ]));
+        assert!(args.windows(2).any(|w| w
+            == [
+                "--result-identity-output",
+                "artifacts/current/profile-identity.jsonl"
             ]));
     }
 
@@ -5471,6 +5487,7 @@ mod tests {
             log_output: Some("spire-profile.log".into()),
             funnel_output: None,
             stage_containment_output: Some("stage-containment.jsonl".into()),
+            result_identity_output: Some("identity.jsonl".into()),
         };
 
         let args = expand_spire_pipeline(&step, &defaults);
@@ -5520,6 +5537,9 @@ mod tests {
         assert!(args
             .windows(2)
             .any(|w| w == ["--stage-containment-output", "stage-containment.jsonl"]));
+        assert!(args
+            .windows(2)
+            .any(|w| w == ["--result-identity-output", "identity.jsonl"]));
         assert!(args
             .windows(2)
             .any(|w| w == ["--log-output", "spire-profile.log"]));
@@ -5580,6 +5600,7 @@ mod tests {
                 log_output: None,
                 funnel_output: None,
                 stage_containment_output: None,
+                result_identity_output: None,
             })],
         };
 

@@ -2460,6 +2460,9 @@ async fn run_local_multinode_bench_suite(
             &projection_columns,
             &variant_session_gucs,
             &suite_artifact_dir.join(format!("production-read-k10{name_suffix}-default.log")),
+            &suite_artifact_dir.join(format!(
+                "production-read-k10{name_suffix}-default-identity.jsonl"
+            )),
             format!("production-read-k10{name_suffix}-default"),
             "default-cap",
             None,
@@ -2479,6 +2482,9 @@ async fn run_local_multinode_bench_suite(
                 &projection_columns,
                 &variant_session_gucs,
                 &suite_artifact_dir.join(format!("production-read-k10{name_suffix}-rowcap25k.log")),
+                &suite_artifact_dir.join(format!(
+                    "production-read-k10{name_suffix}-rowcap25k-identity.jsonl"
+                )),
                 format!("production-read-k10{name_suffix}-rowcap25k"),
                 "rowcap25k",
                 Some(25000),
@@ -2545,6 +2551,7 @@ fn production_read_step_json(
     projection_columns: &[String],
     session_gucs: &[String],
     log_output: &Path,
+    result_identity_output: &Path,
     name: String,
     cap_tag: &str,
     max_routed_candidate_rows: Option<usize>,
@@ -2569,7 +2576,8 @@ fn production_read_step_json(
         "query_metric_k": top_k,
         "query_metric_projection_columns": projection_columns,
         "session_gucs": session_gucs,
-        "log_output": log_output
+        "log_output": log_output,
+        "result_identity_output": result_identity_output
     });
     if let Some(max_routed_candidate_rows) = max_routed_candidate_rows {
         step["max_routed_candidate_rows"] = json!(max_routed_candidate_rows);
@@ -2700,6 +2708,32 @@ mod tests {
                 timeline_no_payload: true,
             }
         );
+    }
+
+    #[test]
+    fn production_read_step_json_includes_identity_output() {
+        let step = production_read_step_json(
+            "bench_prefix",
+            "bench_prefix_idx",
+            10,
+            &[8, 16],
+            10,
+            &["source".to_owned()],
+            &["ec_spire.remote_search_initial_threshold_early_stop=on".to_owned()],
+            Path::new("production-read.log"),
+            Path::new("production-read-identity.jsonl"),
+            "production-read".to_owned(),
+            "default-cap",
+            None,
+            true,
+        );
+
+        assert_eq!(
+            step["result_identity_output"],
+            "production-read-identity.jsonl"
+        );
+        assert_eq!(step["production_read_only"], true);
+        assert_eq!(step["production_read_timeline_no_payload"], true);
     }
 }
 

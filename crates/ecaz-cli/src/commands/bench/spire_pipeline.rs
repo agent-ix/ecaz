@@ -191,6 +191,9 @@ pub struct SpirePipelineArgs {
     /// containment uses the target candidate-rank SQL snapshot.
     #[arg(long)]
     pub stage_containment_output: Option<PathBuf>,
+    /// Write per-query returned id lists as JSONL for A/B result identity checks.
+    #[arg(long)]
+    pub result_identity_output: Option<PathBuf>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
@@ -248,7 +251,8 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
     };
     super::validate_adaptive_nprobe_options(&EC_SPIRE, adaptive_nprobe_options)?;
     let session_gucs = super::parse_session_gucs(&args.session_gucs)?;
-    let query_metrics_enabled = args.include_query_metrics || args.include_recall;
+    let query_metrics_enabled =
+        args.include_query_metrics || args.include_recall || args.result_identity_output.is_some();
 
     let client = psql::connect(conn).await?;
     if !psql::relation_exists(&client, &corpus_table, 'r').await? {
@@ -357,6 +361,7 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
     let mut target_block_rank_rows = Vec::<LeafBlockRankRecord>::new();
     let mut target_candidate_rank_rows = Vec::<TargetCandidateRankRecord>::new();
     let mut miss_attribution_rows = Vec::<MissAttributionRecord>::new();
+    let mut result_identity_rows = Vec::<ResultIdentityRecord>::new();
     let mut remote_epoch = args.remote_requested_epoch;
     let mut task87_counter_lines = Vec::new();
 
@@ -539,6 +544,15 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
                     execute_query_metric(&client, stmt, &query.source, args.query_metric_k).await?;
                 returned_to_k_count = Some(measured.predicted_ids.len());
                 predicted_ids_for_query = Some(measured.predicted_ids.clone());
+                if args.result_identity_output.is_some() {
+                    result_identity_rows.push(ResultIdentityRecord::from_query(
+                        *nprobe,
+                        query_index + 1,
+                        query.id,
+                        args.query_metric_k,
+                        &measured.predicted_ids,
+                    )?);
+                }
                 query_metrics
                     .entry(*nprobe)
                     .or_default()
@@ -903,6 +917,7 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
                 &target_block_rank_rows,
                 &target_candidate_rank_rows,
                 &miss_attribution_rows,
+                &result_identity_rows,
             )
             .await?;
             bar.inc(1);
@@ -946,6 +961,7 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
         production_read_profile_enabled: args.include_production_read_profile,
         production_read_only: args.production_read_only,
         production_read_timeline_no_payload: args.production_read_timeline_no_payload,
+        result_identity_output_enabled: args.result_identity_output.is_some(),
         local_store_overlap_enabled: args.include_local_store_overlap,
         routing: &routing,
         local: &local,
@@ -982,6 +998,7 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
         &target_block_rank_rows,
         &target_candidate_rank_rows,
         &miss_attribution_rows,
+        &result_identity_rows,
     )
     .await?;
     Ok(())
@@ -1018,9 +1035,10 @@ fn validate_args(args: &SpirePipelineArgs) -> Result<()> {
         && !args.include_query_metrics
         && !args.include_recall
         && !args.include_production_read_profile
+        && args.result_identity_output.is_none()
     {
         return Err(eyre!(
-            "--production-read-only requires --include-query-metrics, --include-recall, or --include-production-read-profile"
+            "--production-read-only requires --include-query-metrics, --include-recall, --include-production-read-profile, or --result-identity-output"
         ));
     }
     if args.production_read_only && args.funnel_output.is_some() {
@@ -3345,6 +3363,44 @@ impl StageContainmentRecord {
     }
 }
 
+#[derive(Debug, Serialize)]
+struct ResultIdentityRecord {
+    kind: &'static str,
+    nprobe: i32,
+    query_ordinal: usize,
+    query_id: i64,
+    k: usize,
+    returned_count: usize,
+    returned_ids: Vec<i64>,
+}
+
+impl ResultIdentityRecord {
+    fn from_query(
+        nprobe: i32,
+        query_ordinal: usize,
+        query_id: i64,
+        k: usize,
+        returned_ids: &[i64],
+    ) -> Result<Self> {
+        if returned_ids.len() > k {
+            return Err(eyre!(
+                "result identity returned id count {} exceeds k {}",
+                returned_ids.len(),
+                k
+            ));
+        }
+        Ok(Self {
+            kind: "spire_result_identity",
+            nprobe,
+            query_ordinal,
+            query_id,
+            k,
+            returned_count: returned_ids.len(),
+            returned_ids: returned_ids.to_vec(),
+        })
+    }
+}
+
 fn local_step<'a>(rows: &'a [LocalPipelineRow], step_name: &str) -> Option<&'a LocalPipelineRow> {
     rows.iter().find(|row| row.step_name == step_name)
 }
@@ -3471,6 +3527,7 @@ async fn flush_pipeline_jsonl_outputs(
     target_block_rank_rows: &[LeafBlockRankRecord],
     target_candidate_rank_rows: &[TargetCandidateRankRecord],
     miss_attribution_rows: &[MissAttributionRecord],
+    result_identity_rows: &[ResultIdentityRecord],
 ) -> Result<()> {
     if let Some(path) = args.funnel_output.as_ref() {
         write_funnel_jsonl(path, funnel_rows).await?;
@@ -3489,6 +3546,9 @@ async fn flush_pipeline_jsonl_outputs(
     }
     if let Some(path) = args.miss_attribution_output.as_ref() {
         write_miss_attribution_jsonl(path, miss_attribution_rows).await?;
+    }
+    if let Some(path) = args.result_identity_output.as_ref() {
+        write_result_identity_jsonl(path, result_identity_rows).await?;
     }
     Ok(())
 }
@@ -3587,6 +3647,22 @@ async fn write_miss_attribution_jsonl(
     let mut output = String::new();
     for row in rows {
         output.push_str(&serde_json::to_string(row).wrap_err("serializing miss attribution row")?);
+        output.push('\n');
+    }
+    tokio::fs::write(path, output)
+        .await
+        .wrap_err_with(|| format!("writing {}", path.display()))
+}
+
+async fn write_result_identity_jsonl(path: &PathBuf, rows: &[ResultIdentityRecord]) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .wrap_err_with(|| format!("creating {}", parent.display()))?;
+    }
+    let mut output = String::new();
+    for row in rows {
+        output.push_str(&serde_json::to_string(row).wrap_err("serializing result identity row")?);
         output.push('\n');
     }
     tokio::fs::write(path, output)
@@ -4524,6 +4600,7 @@ struct ReportInput<'a> {
     production_read_profile_enabled: bool,
     production_read_only: bool,
     production_read_timeline_no_payload: bool,
+    result_identity_output_enabled: bool,
     local_store_overlap_enabled: bool,
     routing: &'a BTreeMap<RoutingKey, RoutingAggregate>,
     local: &'a BTreeMap<StepKey, LocalStepAggregate>,
@@ -4591,7 +4668,7 @@ fn render_header(input: &ReportInput<'_>) -> String {
         "off".to_owned()
     };
     format!(
-        "SPIRE pipeline benchmark\nprefix: {prefix}\nindex: {index}\nqueries: {queries}\nsweep: {sweep:?}\nrerank_width: {rerank_width}\nmax_candidate_rows: {max_candidate_rows}\nmax_routed_candidate_rows: {max_routed_candidate_rows}\nremote_tuple_transport: {remote_tuple_transport}\nadaptive_nprobe: {adaptive}\ncost_snapshot: {cost_snapshot}\nremote: {remote}\nremote_selected_pids: {remote_selected_pids:?}\nremote_requested_epoch: {remote_epoch}\nlocal_store_overlap: {local_store_overlap}\nquery_metrics: {query_metrics}\nquery_metric_k: {query_metric_k}\nquery_metric_projection_columns: {query_metric_projection_columns}\nquery_recall: {query_recall}\nproduction_read_profile: {production_read_profile}\nproduction_read_only: {production_read_only}\nproduction_read_timeline_no_payload: {production_read_timeline_no_payload}",
+        "SPIRE pipeline benchmark\nprefix: {prefix}\nindex: {index}\nqueries: {queries}\nsweep: {sweep:?}\nrerank_width: {rerank_width}\nmax_candidate_rows: {max_candidate_rows}\nmax_routed_candidate_rows: {max_routed_candidate_rows}\nremote_tuple_transport: {remote_tuple_transport}\nadaptive_nprobe: {adaptive}\ncost_snapshot: {cost_snapshot}\nremote: {remote}\nremote_selected_pids: {remote_selected_pids:?}\nremote_requested_epoch: {remote_epoch}\nlocal_store_overlap: {local_store_overlap}\nquery_metrics: {query_metrics}\nquery_metric_k: {query_metric_k}\nquery_metric_projection_columns: {query_metric_projection_columns}\nquery_recall: {query_recall}\nproduction_read_profile: {production_read_profile}\nproduction_read_only: {production_read_only}\nproduction_read_timeline_no_payload: {production_read_timeline_no_payload}\nresult_identity_output: {result_identity_output}",
         prefix = input.prefix,
         index = input.index,
         queries = input.queries,
@@ -4616,6 +4693,7 @@ fn render_header(input: &ReportInput<'_>) -> String {
         production_read_profile = input.production_read_profile_enabled,
         production_read_only = input.production_read_only,
         production_read_timeline_no_payload = input.production_read_timeline_no_payload,
+        result_identity_output = input.result_identity_output_enabled,
     )
 }
 
@@ -5294,6 +5372,7 @@ mod tests {
             log_output: None,
             funnel_output: None,
             stage_containment_output: None,
+            result_identity_output: None,
         }
     }
 
@@ -5439,6 +5518,11 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("--stage-containment-output requires --include-query-metrics"));
+
+        let mut args = default_args();
+        args.production_read_only = true;
+        args.result_identity_output = Some("identity.jsonl".into());
+        assert!(validate_args(&args).is_ok());
     }
 
     #[test]
@@ -5902,6 +5986,7 @@ mod tests {
             production_read_profile_enabled: true,
             production_read_only: true,
             production_read_timeline_no_payload: true,
+            result_identity_output_enabled: true,
             local_store_overlap_enabled: true,
             routing: &routing,
             local: &local,
@@ -5925,6 +6010,7 @@ mod tests {
         assert!(header.contains("production_read_profile: true"));
         assert!(header.contains("production_read_only: true"));
         assert!(header.contains("production_read_timeline_no_payload: true"));
+        assert!(header.contains("result_identity_output: true"));
     }
 
     #[test]
