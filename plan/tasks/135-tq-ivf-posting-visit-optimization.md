@@ -1,7 +1,18 @@
 # Task 135: IVF posting-visit optimization (page walk + entry parse)
 
-Status: **proposed** (2026-07-02). Owner: unassigned. Priority: P2
+Status: **measured — awaiting review** (2026-07-02). Owner: Codex. Priority: P2
 Follow-up to Task 133 (stage attribution).
+
+Evidence: `reviews/task-135/001-posting-visit-profile/` (posting_page_decode
+sub-stage timer + profile: page access vs parse+push split) and
+`reviews/task-135/002-dense-layout-ab/` (row vs `dense_posting_blocks=1` A/B:
+posting_visit − scratch_flush **−26.6/−29.1/−23.9%** at 10k/50k/100k, recall
+byte-identical, storage −8 to −10%, e2e mean −8.2/−4.4/−2.8%). Exit criterion
+met via the dense-layout lever; prefetch/batched-parse/devirtualization
+recorded as source-grounded non-levers (both row sub-stages near per-unit
+floors). Follow-up lever noted: dense-coalesced drain policy (flush count
++36% at 100k costs scorer_batch +7.2%). Default promotion of
+`dense_posting_blocks` remains Task 111a-family scope.
 
 ## Why
 
