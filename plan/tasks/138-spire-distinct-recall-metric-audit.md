@@ -1,6 +1,8 @@
 # Task 138: SPIRE Distinct-Recall Metric And Historical Evidence Audit
 
-Status: proposed (2026-07-02; filed from the Task 131 closeout research
+Status: review requested (2026-07-02; metric + full audit evidence in
+`reviews/task-138/001-distinct-recall-rescore/`; originally filed from the
+Task 131 closeout research
 synthesis and the packet 027 duplicate-ID finding).
 Owner: coder (to be assigned). One coder, one branch.
 Priority: P0 evidence-integrity follow-up; gates Task 139 interpretation.
