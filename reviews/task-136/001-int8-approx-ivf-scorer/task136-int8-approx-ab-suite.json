@@ -1,0 +1,448 @@
+{
+ "name": "task136-int8-approx-ivf-scorer-ab",
+ "schema_version": 1,
+ "artifact_dir": "reviews/task-136/001-int8-approx-ivf-scorer/artifacts",
+ "defaults": {
+  "pg": 18,
+  "socket_dir": "/Users/peter/.pgrx",
+  "profile": "ec_ivf",
+  "bits": 4,
+  "seed": 42,
+  "queries_limit": 64,
+  "iterations": 64,
+  "force_index": true,
+  "sample_backend_memory": true,
+  "memory_sample_interval_ms": 25
+ },
+ "thresholds": [],
+ "steps": [
+  {
+   "kind": "raw",
+   "name": "precheck-host",
+   "tags": [
+    "setup",
+    "precheck",
+    "task136",
+    "m5-local"
+   ],
+   "args": [
+    "dev",
+    "sql",
+    "--pg",
+    "18",
+    "--db",
+    "postgres",
+    "--socket-dir",
+    "/Users/peter/.pgrx",
+    "--raw",
+    "--sql",
+    "SELECT now() AS captured_at, version() AS postgres_version, current_setting('shared_buffers') AS shared_buffers, current_setting('work_mem') AS work_mem, current_setting('maintenance_work_mem') AS maintenance_work_mem, current_setting('effective_cache_size') AS effective_cache_size;",
+    "--log-output",
+    "${artifact_dir}/precheck-host.log"
+   ],
+   "expected_artifacts": [
+    "${artifact_dir}/precheck-host.log"
+   ]
+  },
+  {
+   "kind": "load",
+   "name": "load-ivf-tq-real10k",
+   "tags": [
+    "task136",
+    "ivf",
+    "turboquant",
+    "load",
+    "real10k"
+   ],
+   "prefix": "task136_tq_ivf_real10k",
+   "profile": "ec_ivf",
+   "storage_format": "turboquant",
+   "corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+   "queries_file": "data/staged-current/ec_real_10k_queries.tsv",
+   "manifest_file": "data/staged-current/ec_real_10k_manifest.json",
+   "allow_manifest_mismatch": true,
+   "log_file": "${artifact_dir}/load-ivf-tq-real10k.log"
+  },
+  {
+   "kind": "recall",
+   "name": "recall-ivf-tq-real10k-lut",
+   "tags": [
+    "task136",
+    "ivf",
+    "turboquant",
+    "recall",
+    "real10k",
+    "scorer-lut"
+   ],
+   "prefix": "task136_tq_ivf_real10k",
+   "profile": "ec_ivf",
+   "k": 10,
+   "sweep": [
+    32
+   ],
+   "session_gucs": [
+    "ec_ivf.turboquant_scorer=lut"
+   ],
+   "truth_cache_dir": "${artifact_dir}/truth-cache",
+   "log_output": "${artifact_dir}/recall-ivf-tq-real10k-lut.log"
+  },
+  {
+   "kind": "latency",
+   "name": "latency-ivf-tq-real10k-lut",
+   "tags": [
+    "task136",
+    "ivf",
+    "turboquant",
+    "latency",
+    "real10k",
+    "scorer-lut"
+   ],
+   "prefix": "task136_tq_ivf_real10k",
+   "profile": "ec_ivf",
+   "k": 10,
+   "sweep": [
+    32
+   ],
+   "iterations": 64,
+   "concurrency": 1,
+   "cache_state": "task136_tq_ivf_real10k_warm",
+   "session_gucs": [
+    "ec_ivf.turboquant_scorer=lut"
+   ],
+   "task87_candidate_batch_counters": true,
+   "ivf_stage_counters": true,
+   "log_output": "${artifact_dir}/latency-ivf-tq-real10k-lut.log"
+  },
+  {
+   "kind": "recall",
+   "name": "recall-ivf-tq-real10k-int8-approx",
+   "tags": [
+    "task136",
+    "ivf",
+    "turboquant",
+    "recall",
+    "real10k",
+    "scorer-int8-approx"
+   ],
+   "prefix": "task136_tq_ivf_real10k",
+   "profile": "ec_ivf",
+   "k": 10,
+   "sweep": [
+    32
+   ],
+   "session_gucs": [
+    "ec_ivf.turboquant_scorer=int8_approx"
+   ],
+   "truth_cache_dir": "${artifact_dir}/truth-cache",
+   "log_output": "${artifact_dir}/recall-ivf-tq-real10k-int8-approx.log"
+  },
+  {
+   "kind": "latency",
+   "name": "latency-ivf-tq-real10k-int8-approx",
+   "tags": [
+    "task136",
+    "ivf",
+    "turboquant",
+    "latency",
+    "real10k",
+    "scorer-int8-approx"
+   ],
+   "prefix": "task136_tq_ivf_real10k",
+   "profile": "ec_ivf",
+   "k": 10,
+   "sweep": [
+    32
+   ],
+   "iterations": 64,
+   "concurrency": 1,
+   "cache_state": "task136_tq_ivf_real10k_warm",
+   "session_gucs": [
+    "ec_ivf.turboquant_scorer=int8_approx"
+   ],
+   "task87_candidate_batch_counters": true,
+   "ivf_stage_counters": true,
+   "log_output": "${artifact_dir}/latency-ivf-tq-real10k-int8-approx.log"
+  },
+  {
+   "kind": "storage",
+   "name": "storage-ivf-tq-real10k",
+   "tags": [
+    "task136",
+    "ivf",
+    "turboquant",
+    "storage",
+    "real10k"
+   ],
+   "prefix": "task136_tq_ivf_real10k",
+   "log_file": "${artifact_dir}/storage-ivf-tq-real10k.log"
+  },
+  {
+   "kind": "load",
+   "name": "load-ivf-tq-real50k",
+   "tags": [
+    "task136",
+    "ivf",
+    "turboquant",
+    "load",
+    "real50k"
+   ],
+   "prefix": "task136_tq_ivf_real50k",
+   "profile": "ec_ivf",
+   "storage_format": "turboquant",
+   "corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+   "queries_file": "data/staged-current/ec_real_50k_queries.tsv",
+   "manifest_file": "data/staged-current/ec_real_50k_manifest.json",
+   "allow_manifest_mismatch": true,
+   "log_file": "${artifact_dir}/load-ivf-tq-real50k.log"
+  },
+  {
+   "kind": "recall",
+   "name": "recall-ivf-tq-real50k-lut",
+   "tags": [
+    "task136",
+    "ivf",
+    "turboquant",
+    "recall",
+    "real50k",
+    "scorer-lut"
+   ],
+   "prefix": "task136_tq_ivf_real50k",
+   "profile": "ec_ivf",
+   "k": 10,
+   "sweep": [
+    32
+   ],
+   "session_gucs": [
+    "ec_ivf.turboquant_scorer=lut"
+   ],
+   "truth_cache_dir": "${artifact_dir}/truth-cache",
+   "log_output": "${artifact_dir}/recall-ivf-tq-real50k-lut.log",
+   "queries_limit": 48
+  },
+  {
+   "kind": "latency",
+   "name": "latency-ivf-tq-real50k-lut",
+   "tags": [
+    "task136",
+    "ivf",
+    "turboquant",
+    "latency",
+    "real50k",
+    "scorer-lut"
+   ],
+   "prefix": "task136_tq_ivf_real50k",
+   "profile": "ec_ivf",
+   "k": 10,
+   "sweep": [
+    32
+   ],
+   "iterations": 48,
+   "concurrency": 1,
+   "cache_state": "task136_tq_ivf_real50k_warm",
+   "session_gucs": [
+    "ec_ivf.turboquant_scorer=lut"
+   ],
+   "task87_candidate_batch_counters": true,
+   "ivf_stage_counters": true,
+   "log_output": "${artifact_dir}/latency-ivf-tq-real50k-lut.log"
+  },
+  {
+   "kind": "recall",
+   "name": "recall-ivf-tq-real50k-int8-approx",
+   "tags": [
+    "task136",
+    "ivf",
+    "turboquant",
+    "recall",
+    "real50k",
+    "scorer-int8-approx"
+   ],
+   "prefix": "task136_tq_ivf_real50k",
+   "profile": "ec_ivf",
+   "k": 10,
+   "sweep": [
+    32
+   ],
+   "session_gucs": [
+    "ec_ivf.turboquant_scorer=int8_approx"
+   ],
+   "truth_cache_dir": "${artifact_dir}/truth-cache",
+   "log_output": "${artifact_dir}/recall-ivf-tq-real50k-int8-approx.log",
+   "queries_limit": 48
+  },
+  {
+   "kind": "latency",
+   "name": "latency-ivf-tq-real50k-int8-approx",
+   "tags": [
+    "task136",
+    "ivf",
+    "turboquant",
+    "latency",
+    "real50k",
+    "scorer-int8-approx"
+   ],
+   "prefix": "task136_tq_ivf_real50k",
+   "profile": "ec_ivf",
+   "k": 10,
+   "sweep": [
+    32
+   ],
+   "iterations": 48,
+   "concurrency": 1,
+   "cache_state": "task136_tq_ivf_real50k_warm",
+   "session_gucs": [
+    "ec_ivf.turboquant_scorer=int8_approx"
+   ],
+   "task87_candidate_batch_counters": true,
+   "ivf_stage_counters": true,
+   "log_output": "${artifact_dir}/latency-ivf-tq-real50k-int8-approx.log"
+  },
+  {
+   "kind": "storage",
+   "name": "storage-ivf-tq-real50k",
+   "tags": [
+    "task136",
+    "ivf",
+    "turboquant",
+    "storage",
+    "real50k"
+   ],
+   "prefix": "task136_tq_ivf_real50k",
+   "log_file": "${artifact_dir}/storage-ivf-tq-real50k.log"
+  },
+  {
+   "kind": "load",
+   "name": "load-ivf-tq-real100k",
+   "tags": [
+    "task136",
+    "ivf",
+    "turboquant",
+    "load",
+    "real100k"
+   ],
+   "prefix": "task136_tq_ivf_real100k",
+   "profile": "ec_ivf",
+   "storage_format": "turboquant",
+   "corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+   "queries_file": "data/staged-current/ec_real_100k_queries.tsv",
+   "manifest_file": "data/staged-current/ec_real_100k_manifest.json",
+   "allow_manifest_mismatch": true,
+   "log_file": "${artifact_dir}/load-ivf-tq-real100k.log"
+  },
+  {
+   "kind": "recall",
+   "name": "recall-ivf-tq-real100k-lut",
+   "tags": [
+    "task136",
+    "ivf",
+    "turboquant",
+    "recall",
+    "real100k",
+    "scorer-lut"
+   ],
+   "prefix": "task136_tq_ivf_real100k",
+   "profile": "ec_ivf",
+   "k": 10,
+   "sweep": [
+    32
+   ],
+   "session_gucs": [
+    "ec_ivf.turboquant_scorer=lut"
+   ],
+   "truth_cache_dir": "${artifact_dir}/truth-cache",
+   "log_output": "${artifact_dir}/recall-ivf-tq-real100k-lut.log",
+   "queries_limit": 32
+  },
+  {
+   "kind": "latency",
+   "name": "latency-ivf-tq-real100k-lut",
+   "tags": [
+    "task136",
+    "ivf",
+    "turboquant",
+    "latency",
+    "real100k",
+    "scorer-lut"
+   ],
+   "prefix": "task136_tq_ivf_real100k",
+   "profile": "ec_ivf",
+   "k": 10,
+   "sweep": [
+    32
+   ],
+   "iterations": 32,
+   "concurrency": 1,
+   "cache_state": "task136_tq_ivf_real100k_warm",
+   "session_gucs": [
+    "ec_ivf.turboquant_scorer=lut"
+   ],
+   "task87_candidate_batch_counters": true,
+   "ivf_stage_counters": true,
+   "log_output": "${artifact_dir}/latency-ivf-tq-real100k-lut.log"
+  },
+  {
+   "kind": "recall",
+   "name": "recall-ivf-tq-real100k-int8-approx",
+   "tags": [
+    "task136",
+    "ivf",
+    "turboquant",
+    "recall",
+    "real100k",
+    "scorer-int8-approx"
+   ],
+   "prefix": "task136_tq_ivf_real100k",
+   "profile": "ec_ivf",
+   "k": 10,
+   "sweep": [
+    32
+   ],
+   "session_gucs": [
+    "ec_ivf.turboquant_scorer=int8_approx"
+   ],
+   "truth_cache_dir": "${artifact_dir}/truth-cache",
+   "log_output": "${artifact_dir}/recall-ivf-tq-real100k-int8-approx.log",
+   "queries_limit": 32
+  },
+  {
+   "kind": "latency",
+   "name": "latency-ivf-tq-real100k-int8-approx",
+   "tags": [
+    "task136",
+    "ivf",
+    "turboquant",
+    "latency",
+    "real100k",
+    "scorer-int8-approx"
+   ],
+   "prefix": "task136_tq_ivf_real100k",
+   "profile": "ec_ivf",
+   "k": 10,
+   "sweep": [
+    32
+   ],
+   "iterations": 32,
+   "concurrency": 1,
+   "cache_state": "task136_tq_ivf_real100k_warm",
+   "session_gucs": [
+    "ec_ivf.turboquant_scorer=int8_approx"
+   ],
+   "task87_candidate_batch_counters": true,
+   "ivf_stage_counters": true,
+   "log_output": "${artifact_dir}/latency-ivf-tq-real100k-int8-approx.log"
+  },
+  {
+   "kind": "storage",
+   "name": "storage-ivf-tq-real100k",
+   "tags": [
+    "task136",
+    "ivf",
+    "turboquant",
+    "storage",
+    "real100k"
+   ],
+   "prefix": "task136_tq_ivf_real100k",
+   "log_file": "${artifact_dir}/storage-ivf-tq-real100k.log"
+  }
+ ]
+}

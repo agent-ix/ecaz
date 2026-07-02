@@ -1,0 +1,393 @@
+[suite:task136-int8-approx-ivf-scorer-ab] wrote reviews/task-136/001-int8-approx-ivf-scorer/artifacts/suite-manifest.json
+[suite:task136-int8-approx-ivf-scorer-ab] wrote reviews/task-136/001-int8-approx-ivf-scorer/artifacts/suite-manifest.json
+[suite:task136-int8-approx-ivf-scorer-ab] precheck-host -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 dev sql --pg 18 --db postgres --socket-dir /Users/peter/.pgrx --raw --sql "SELECT now() AS captured_at, version() AS postgres_version, current_setting('shared_buffers') AS shared_buffers, current_setting('work_mem') AS work_mem, current_setting('maintenance_work_mem') AS maintenance_work_mem, current_setting('effective_cache_size') AS effective_cache_size;" --log-output reviews/task-136/001-int8-approx-ivf-scorer/artifacts/precheck-host.log
+[suite:task136-int8-approx-ivf-scorer-ab] wrote reviews/task-136/001-int8-approx-ivf-scorer/artifacts/suite-manifest.json
+          captured_at          |                                                      postgres_version                                                       | shared_buffers | work_mem | maintenance_work_mem | effective_cache_size 
+-------------------------------+-----------------------------------------------------------------------------------------------------------------------------+----------------+----------+----------------------+----------------------
+ 2026-07-02 08:02:04.190234-07 | PostgreSQL 18.3 (Homebrew) on aarch64-apple-darwin25.2.0, compiled by Apple clang version 17.0.0 (clang-1700.6.3.2), 64-bit | 128MB          | 4MB      | 64MB                 | 4GB
+(1 row)
+
+[suite:task136-int8-approx-ivf-scorer-ab] wrote reviews/task-136/001-int8-approx-ivf-scorer/artifacts/suite-manifest.json
+[suite:task136-int8-approx-ivf-scorer-ab] load-ivf-tq-real10k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 --log-file reviews/task-136/001-int8-approx-ivf-scorer/artifacts/load-ivf-tq-real10k.log corpus load --prefix task136_tq_ivf_real10k --profile ec_ivf --corpus-file data/staged-current/ec_real_10k_corpus.tsv --queries-file data/staged-current/ec_real_10k_queries.tsv --manifest-file data/staged-current/ec_real_10k_manifest.json --allow-manifest-mismatch --bits 4 --seed 42 --storage-format turboquant
+[suite:task136-int8-approx-ivf-scorer-ab] wrote reviews/task-136/001-int8-approx-ivf-scorer/artifacts/suite-manifest.json
+┌─────────┬───────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                             │
+╞═════════╪═══════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_ivf                                                            │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ task136_tq_ivf_real10k_corpus (10000 rows)                        │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ task136_tq_ivf_real10k_queries (200 rows)                         │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ task136_tq_ivf_real10k_turboquant_idx [storage_format=turboquant] │
+└─────────┴───────────────────────────────────────────────────────────────────┘
+[loader] inspecting data/staged-current/ec_real_10k_corpus.tsv
+[loader] inspecting data/staged-current/ec_real_10k_queries.tsv
+[loader] corpus: 10000 rows, sha256=c67c5810b66d982d705974e48d4775479adfbd92a988f694091266e049a35e75  queries: 200 rows, sha256=a2c191bb742017d849e73f6e6866e8e0f0bac1579ba212f7fc76b8eb09904ae8
+[loader] warning: manifest verification failed for data/staged-current/ec_real_10k_manifest.json: prefix="ec_real_10k" (expected "task136_tq_ivf_real10k")
+[loader] copied corpus table task136_tq_ivf_real10k_corpus in 1.37s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table task136_tq_ivf_real10k_corpus in 1.99s
+[loader] copied queries table task136_tq_ivf_real10k_queries in 40.66ms
+[loader] building task136_tq_ivf_real10k_turboquant_idx using ec_ivf (reloptions=[storage_format=turboquant]) ...
+[loader] built task136_tq_ivf_real10k_turboquant_idx in 622.76ms
+[loader] ec_ivf build timing: requested_workers=0 workers_launched=0 heap_tuples=10000 index_tuples=10000 heap_ingest_us=124521 train_model_us=391245 stage_build_plan_us=47707 stage_pq_train_us=0 stage_centroids_us=154 stage_assign_us=45057 stage_postings_us=2452 stage_directory_us=6 flush_build_plan_us=55467 parallel_begin_us=0 parallel_drain_us=0 parallel_sort_push_us=0 parallel_worker_tuple_buffer_capacity=0 parallel_worker_tuple_buffer_struct_bytes=0
+[loader] completed prefix task136_tq_ivf_real10k in 4.67s
+[suite:task136-int8-approx-ivf-scorer-ab] wrote reviews/task-136/001-int8-approx-ivf-scorer/artifacts/suite-manifest.json
+[suite:task136-int8-approx-ivf-scorer-ab] recall-ivf-tq-real10k-lut -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench recall --prefix task136_tq_ivf_real10k --profile ec_ivf --k 10 --sweep 32 --queries-limit 64 --bits 4 --seed 42 --force-index --session-guc ec_ivf.turboquant_scorer=lut --truth-cache-dir reviews/task-136/001-int8-approx-ivf-scorer/artifacts/truth-cache --log-output reviews/task-136/001-int8-approx-ivf-scorer/artifacts/recall-ivf-tq-real10k-lut.log
+[suite:task136-int8-approx-ivf-scorer-ab] wrote reviews/task-136/001-int8-approx-ivf-scorer/artifacts/suite-manifest.json
+┌────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ nprobe ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 32     ┆ 64      ┆ 640           ┆ 0.9734   ┆ 0.9579          ┆ 0.9834           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.8000       ┆ 0.9998 ┆ 1.16 ms     │
+└────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from task136_tq_ivf_real10k_queries ...
+[recall] fetching corpus from task136_tq_ivf_real10k_corpus ...
+[recall] computing ground truth: 64 queries vs 10000 corpus rows (dim=1536) ...
+[recall] ground truth in 19.36ms
+[recall] wrote ground truth cache reviews/task-136/001-int8-approx-ivf-scorer/artifacts/truth-cache/truth-v1-rows10000-queries64-dim1536-k10-97f391fdef18b4eb.json
+[suite:task136-int8-approx-ivf-scorer-ab] wrote reviews/task-136/001-int8-approx-ivf-scorer/artifacts/suite-manifest.json
+[suite:task136-int8-approx-ivf-scorer-ab] latency-ivf-tq-real10k-lut -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench latency --prefix task136_tq_ivf_real10k --profile ec_ivf --k 10 --concurrency 1 --iterations 64 --sweep 32 --bits 4 --seed 42 --force-index --sample-backend-memory --cache-state task136_tq_ivf_real10k_warm --session-guc ec_ivf.turboquant_scorer=lut --task87-candidate-batch-counters --ivf-stage-counters --memory-sample-interval-ms 25 --log-output reviews/task-136/001-int8-approx-ivf-scorer/artifacts/latency-ivf-tq-real10k-lut.log
+[suite:task136-int8-approx-ivf-scorer-ab] wrote reviews/task-136/001-int8-approx-ivf-scorer/artifacts/suite-manifest.json
+┌────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────────────────────────┬─────────────┬─────────────┬────────────────┐
+│ nprobe ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state                 ┆ rss_peak_kb ┆ hwm_peak_kb ┆ memory_samples │
+╞════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════════════════════════╪═════════════╪═════════════╪════════════════╡
+│ 32     ┆ 64    ┆ 0.92 ms ┆ 0.25 ms ┆ 0.76 ms ┆ 0.86 ms ┆ 1.08 ms ┆ 1.74 ms ┆ 2.77 ms ┆ task136_tq_ivf_real10k_warm ┆ 0           ┆ 0           ┆ 0              │
+└────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────────────────────────┴─────────────┴─────────────┴────────────────┘
+[block-kernel-counters] command=latency label=nprobe=32 surface=ivf quant=turboquant isa=neon flushes=840 candidates=205959 elapsed_nanos=24245954 elapsed_ms=24.245954 kernel_flushes=840 kernel_candidates=205959 kernel_elapsed_nanos=24245954 kernel_elapsed_ms=24.245954 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=0 width_8_15=1 width_16_31=6 width_ge32=833 pruned_candidates=0 kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=ivf flushes=840 candidates=205959 elapsed_nanos=24245954 elapsed_ms=24.245954 lut32_flushes=840 lut32_candidates=205959 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[ivf-stage-counters] command=latency label=nprobe=32 stage=approximate_scan scans=64 samples=64 elapsed_us=42494 elapsed_ms=42.494
+[ivf-stage-counters] command=latency label=nprobe=32 stage=candidate_record scans=64 samples=840 elapsed_us=1620 elapsed_ms=1.620
+[ivf-stage-counters] command=latency label=nprobe=32 stage=exact_rerank scans=64 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=posting_visit scans=64 samples=64 elapsed_us=38564 elapsed_ms=38.564
+[ivf-stage-counters] command=latency label=nprobe=32 stage=probe_plan scans=64 samples=64 elapsed_us=2624 elapsed_ms=2.624
+[ivf-stage-counters] command=latency label=nprobe=32 stage=rerank_payload_decode scans=64 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=rerank_payload_score scans=64 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=scorer_batch scans=64 samples=840 elapsed_us=24447 elapsed_ms=24.447
+[ivf-stage-counters] command=latency label=nprobe=32 stage=scratch_flush scans=64 samples=840 elapsed_us=26483 elapsed_ms=26.483
+[ivf-stage-counters] command=latency label=nprobe=32 stage=topk_collect scans=64 samples=64 elapsed_us=3843 elapsed_ms=3.843
+[suite:task136-int8-approx-ivf-scorer-ab] wrote reviews/task-136/001-int8-approx-ivf-scorer/artifacts/suite-manifest.json
+[suite:task136-int8-approx-ivf-scorer-ab] recall-ivf-tq-real10k-int8-approx -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench recall --prefix task136_tq_ivf_real10k --profile ec_ivf --k 10 --sweep 32 --queries-limit 64 --bits 4 --seed 42 --force-index --session-guc ec_ivf.turboquant_scorer=int8_approx --truth-cache-dir reviews/task-136/001-int8-approx-ivf-scorer/artifacts/truth-cache --log-output reviews/task-136/001-int8-approx-ivf-scorer/artifacts/recall-ivf-tq-real10k-int8-approx.log
+[suite:task136-int8-approx-ivf-scorer-ab] wrote reviews/task-136/001-int8-approx-ivf-scorer/artifacts/suite-manifest.json
+┌────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ nprobe ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 32     ┆ 64      ┆ 640           ┆ 0.9719   ┆ 0.9560          ┆ 0.9821           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.8000       ┆ 0.9998 ┆ 0.84 ms     │
+└────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from task136_tq_ivf_real10k_queries ...
+[recall] fetching corpus from task136_tq_ivf_real10k_corpus ...
+[recall] loaded ground truth cache reviews/task-136/001-int8-approx-ivf-scorer/artifacts/truth-cache/truth-v1-rows10000-queries64-dim1536-k10-97f391fdef18b4eb.json
+[suite:task136-int8-approx-ivf-scorer-ab] wrote reviews/task-136/001-int8-approx-ivf-scorer/artifacts/suite-manifest.json
+[suite:task136-int8-approx-ivf-scorer-ab] latency-ivf-tq-real10k-int8-approx -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench latency --prefix task136_tq_ivf_real10k --profile ec_ivf --k 10 --concurrency 1 --iterations 64 --sweep 32 --bits 4 --seed 42 --force-index --sample-backend-memory --cache-state task136_tq_ivf_real10k_warm --session-guc ec_ivf.turboquant_scorer=int8_approx --task87-candidate-batch-counters --ivf-stage-counters --memory-sample-interval-ms 25 --log-output reviews/task-136/001-int8-approx-ivf-scorer/artifacts/latency-ivf-tq-real10k-int8-approx.log
+[suite:task136-int8-approx-ivf-scorer-ab] wrote reviews/task-136/001-int8-approx-ivf-scorer/artifacts/suite-manifest.json
+┌────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────────────────────────┬─────────────┬─────────────┬────────────────┐
+│ nprobe ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state                 ┆ rss_peak_kb ┆ hwm_peak_kb ┆ memory_samples │
+╞════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════════════════════════╪═════════════╪═════════════╪════════════════╡
+│ 32     ┆ 64    ┆ 0.79 ms ┆ 0.30 ms ┆ 0.64 ms ┆ 0.73 ms ┆ 0.98 ms ┆ 1.87 ms ┆ 3.03 ms ┆ task136_tq_ivf_real10k_warm ┆ 0           ┆ 0           ┆ 0              │
+└────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────────────────────────┴─────────────┴─────────────┴────────────────┘
+[block-kernel-counters] command=latency label=nprobe=32 surface=ivf quant=turboquant_int8 isa=neon flushes=840 candidates=205959 elapsed_nanos=16058417 elapsed_ms=16.058417 kernel_flushes=840 kernel_candidates=205959 kernel_elapsed_nanos=16058417 kernel_elapsed_ms=16.058417 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=0 width_8_15=1 width_16_31=6 width_ge32=833 pruned_candidates=0 kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=ivf flushes=840 candidates=205959 elapsed_nanos=16058417 elapsed_ms=16.058417 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[ivf-stage-counters] command=latency label=nprobe=32 stage=approximate_scan scans=64 samples=64 elapsed_us=34882 elapsed_ms=34.882
+[ivf-stage-counters] command=latency label=nprobe=32 stage=candidate_record scans=64 samples=840 elapsed_us=1615 elapsed_ms=1.615
+[ivf-stage-counters] command=latency label=nprobe=32 stage=exact_rerank scans=64 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=posting_visit scans=64 samples=64 elapsed_us=30879 elapsed_ms=30.879
+[ivf-stage-counters] command=latency label=nprobe=32 stage=probe_plan scans=64 samples=64 elapsed_us=2674 elapsed_ms=2.674
+[ivf-stage-counters] command=latency label=nprobe=32 stage=rerank_payload_decode scans=64 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=rerank_payload_score scans=64 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=scorer_batch scans=64 samples=840 elapsed_us=16339 elapsed_ms=16.339
+[ivf-stage-counters] command=latency label=nprobe=32 stage=scratch_flush scans=64 samples=840 elapsed_us=18376 elapsed_ms=18.376
+[ivf-stage-counters] command=latency label=nprobe=32 stage=topk_collect scans=64 samples=64 elapsed_us=3905 elapsed_ms=3.905
+[suite:task136-int8-approx-ivf-scorer-ab] wrote reviews/task-136/001-int8-approx-ivf-scorer/artifacts/suite-manifest.json
+[suite:task136-int8-approx-ivf-scorer-ab] storage-ivf-tq-real10k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 --log-file reviews/task-136/001-int8-approx-ivf-scorer/artifacts/storage-ivf-tq-real10k.log bench storage --prefix task136_tq_ivf_real10k
+[suite:task136-int8-approx-ivf-scorer-ab] wrote reviews/task-136/001-int8-approx-ivf-scorer/artifacts/suite-manifest.json
+┌───────────────────────────────┬───────────────────────────────┐
+│ field                         ┆ value                         │
+╞═══════════════════════════════╪═══════════════════════════════╡
+│ prefix                        ┆ task136_tq_ivf_real10k        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus                        ┆ task136_tq_ivf_real10k_corpus │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ rows                          ┆ 10000                         │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ heap                          ┆ 752.0 KiB                     │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ table (heap + toast + fsm/vm) ┆ 158.8 MiB                     │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes                       ┆ 10.0 MiB                      │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ total                         ┆ 168.8 MiB                     │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (total)               ┆ 17703.7 B                     │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (heap only)           ┆ 77.0 B                        │
+└───────────────────────────────┴───────────────────────────────┘
+┌───────────────────────────────────────┬───────────────┬───────────┬─────────────────────────────┬───────────┬──────────┐
+│ index                                 ┆ access method ┆ profile   ┆ reloptions                  ┆ size      ┆ per row  │
+╞═══════════════════════════════════════╪═══════════════╪═══════════╪═════════════════════════════╪═══════════╪══════════╡
+│ task136_tq_ivf_real10k_turboquant_idx ┆ ec_ivf        ┆ ec_ivf    ┆ {storage_format=turboquant} ┆ 9.8 MiB   ┆ 1028.1 B │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ task136_tq_ivf_real10k_corpus_pkey    ┆ btree         ┆ <unknown> ┆ {}                          ┆ 240.0 KiB ┆ 24.6 B   │
+└───────────────────────────────────────┴───────────────┴───────────┴─────────────────────────────┴───────────┴──────────┘
+[suite:task136-int8-approx-ivf-scorer-ab] wrote reviews/task-136/001-int8-approx-ivf-scorer/artifacts/suite-manifest.json
+[suite:task136-int8-approx-ivf-scorer-ab] load-ivf-tq-real50k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 --log-file reviews/task-136/001-int8-approx-ivf-scorer/artifacts/load-ivf-tq-real50k.log corpus load --prefix task136_tq_ivf_real50k --profile ec_ivf --corpus-file data/staged-current/ec_real_50k_corpus.tsv --queries-file data/staged-current/ec_real_50k_queries.tsv --manifest-file data/staged-current/ec_real_50k_manifest.json --allow-manifest-mismatch --bits 4 --seed 42 --storage-format turboquant
+[suite:task136-int8-approx-ivf-scorer-ab] wrote reviews/task-136/001-int8-approx-ivf-scorer/artifacts/suite-manifest.json
+┌─────────┬───────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                             │
+╞═════════╪═══════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_ivf                                                            │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ task136_tq_ivf_real50k_corpus (50000 rows)                        │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ task136_tq_ivf_real50k_queries (1000 rows)                        │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ task136_tq_ivf_real50k_turboquant_idx [storage_format=turboquant] │
+└─────────┴───────────────────────────────────────────────────────────────────┘
+[loader] inspecting data/staged-current/ec_real_50k_corpus.tsv
+[loader] inspecting data/staged-current/ec_real_50k_queries.tsv
+[loader] corpus: 50000 rows, sha256=56023baaa7bc42f758272e8617603d538808e6290a8a70a3a84e057571240133  queries: 1000 rows, sha256=95ac7992578aa80bb193657f10fbcbf1ea3867e559739244bf5a467f7a5a9fa3
+[loader] warning: manifest verification failed for data/staged-current/ec_real_50k_manifest.json: prefix="ec_real_50k" (expected "task136_tq_ivf_real50k")
+[loader] copied corpus table task136_tq_ivf_real50k_corpus in 6.79s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table task136_tq_ivf_real50k_corpus in 10.49s
+[loader] copied queries table task136_tq_ivf_real50k_queries in 188.86ms
+[loader] building task136_tq_ivf_real50k_turboquant_idx using ec_ivf (reloptions=[storage_format=turboquant]) ...
+[loader] built task136_tq_ivf_real50k_turboquant_idx in 2.53s
+[loader] ec_ivf build timing: requested_workers=0 workers_launched=0 heap_tuples=50000 index_tuples=50000 heap_ingest_us=626166 train_model_us=833023 stage_build_plan_us=515346 stage_pq_train_us=0 stage_centroids_us=320 stage_assign_us=501154 stage_postings_us=13801 stage_directory_us=12 flush_build_plan_us=541467 parallel_begin_us=0 parallel_drain_us=0 parallel_sort_push_us=0 parallel_worker_tuple_buffer_capacity=0 parallel_worker_tuple_buffer_struct_bytes=0
+[loader] completed prefix task136_tq_ivf_real50k in 23.03s
+[suite:task136-int8-approx-ivf-scorer-ab] wrote reviews/task-136/001-int8-approx-ivf-scorer/artifacts/suite-manifest.json
+[suite:task136-int8-approx-ivf-scorer-ab] recall-ivf-tq-real50k-lut -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench recall --prefix task136_tq_ivf_real50k --profile ec_ivf --k 10 --sweep 32 --queries-limit 48 --bits 4 --seed 42 --force-index --session-guc ec_ivf.turboquant_scorer=lut --truth-cache-dir reviews/task-136/001-int8-approx-ivf-scorer/artifacts/truth-cache --log-output reviews/task-136/001-int8-approx-ivf-scorer/artifacts/recall-ivf-tq-real50k-lut.log
+[suite:task136-int8-approx-ivf-scorer-ab] wrote reviews/task-136/001-int8-approx-ivf-scorer/artifacts/suite-manifest.json
+┌────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ nprobe ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 32     ┆ 48      ┆ 480           ┆ 0.9521   ┆ 0.9291          ┆ 0.9679           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.8000       ┆ 0.9995 ┆ 2.66 ms     │
+└────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from task136_tq_ivf_real50k_queries ...
+[recall] fetching corpus from task136_tq_ivf_real50k_corpus ...
+[recall] computing ground truth: 48 queries vs 50000 corpus rows (dim=1536) ...
+[recall] ground truth in 75.74ms
+[recall] wrote ground truth cache reviews/task-136/001-int8-approx-ivf-scorer/artifacts/truth-cache/truth-v1-rows50000-queries48-dim1536-k10-a93e9d1a3c4f8202.json
+[suite:task136-int8-approx-ivf-scorer-ab] wrote reviews/task-136/001-int8-approx-ivf-scorer/artifacts/suite-manifest.json
+[suite:task136-int8-approx-ivf-scorer-ab] latency-ivf-tq-real50k-lut -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench latency --prefix task136_tq_ivf_real50k --profile ec_ivf --k 10 --concurrency 1 --iterations 48 --sweep 32 --bits 4 --seed 42 --force-index --sample-backend-memory --cache-state task136_tq_ivf_real50k_warm --session-guc ec_ivf.turboquant_scorer=lut --task87-candidate-batch-counters --ivf-stage-counters --memory-sample-interval-ms 25 --log-output reviews/task-136/001-int8-approx-ivf-scorer/artifacts/latency-ivf-tq-real50k-lut.log
+[suite:task136-int8-approx-ivf-scorer-ab] wrote reviews/task-136/001-int8-approx-ivf-scorer/artifacts/suite-manifest.json
+┌────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────────────────────────┬─────────────┬─────────────┬────────────────┐
+│ nprobe ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state                 ┆ rss_peak_kb ┆ hwm_peak_kb ┆ memory_samples │
+╞════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════════════════════════╪═════════════╪═════════════╪════════════════╡
+│ 32     ┆ 48    ┆ 1.89 ms ┆ 0.36 ms ┆ 1.52 ms ┆ 1.81 ms ┆ 2.10 ms ┆ 3.29 ms ┆ 4.13 ms ┆ task136_tq_ivf_real50k_warm ┆ 0           ┆ 0           ┆ 0              │
+└────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────────────────────────┴─────────────┴─────────────┴────────────────┘
+[block-kernel-counters] command=latency label=nprobe=32 surface=ivf quant=turboquant isa=neon flushes=1352 candidates=340407 elapsed_nanos=39230255 elapsed_ms=39.230255 kernel_flushes=1352 kernel_candidates=340407 kernel_elapsed_nanos=39230255 kernel_elapsed_ms=39.230255 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=0 width_8_15=3 width_16_31=3 width_ge32=1346 pruned_candidates=0 kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=ivf flushes=1352 candidates=340407 elapsed_nanos=39230255 elapsed_ms=39.230255 lut32_flushes=1352 lut32_candidates=340407 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[ivf-stage-counters] command=latency label=nprobe=32 stage=approximate_scan scans=48 samples=48 elapsed_us=73362 elapsed_ms=73.362
+[ivf-stage-counters] command=latency label=nprobe=32 stage=candidate_record scans=48 samples=1352 elapsed_us=2784 elapsed_ms=2.784
+[ivf-stage-counters] command=latency label=nprobe=32 stage=exact_rerank scans=48 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=posting_visit scans=48 samples=48 elapsed_us=66500 elapsed_ms=66.500
+[ivf-stage-counters] command=latency label=nprobe=32 stage=probe_plan scans=48 samples=48 elapsed_us=4201 elapsed_ms=4.201
+[ivf-stage-counters] command=latency label=nprobe=32 stage=rerank_payload_decode scans=48 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=rerank_payload_score scans=48 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=scorer_batch scans=48 samples=1352 elapsed_us=39384 elapsed_ms=39.384
+[ivf-stage-counters] command=latency label=nprobe=32 stage=scratch_flush scans=48 samples=1352 elapsed_us=43151 elapsed_ms=43.151
+[ivf-stage-counters] command=latency label=nprobe=32 stage=topk_collect scans=48 samples=48 elapsed_us=6743 elapsed_ms=6.743
+[suite:task136-int8-approx-ivf-scorer-ab] wrote reviews/task-136/001-int8-approx-ivf-scorer/artifacts/suite-manifest.json
+[suite:task136-int8-approx-ivf-scorer-ab] recall-ivf-tq-real50k-int8-approx -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench recall --prefix task136_tq_ivf_real50k --profile ec_ivf --k 10 --sweep 32 --queries-limit 48 --bits 4 --seed 42 --force-index --session-guc ec_ivf.turboquant_scorer=int8_approx --truth-cache-dir reviews/task-136/001-int8-approx-ivf-scorer/artifacts/truth-cache --log-output reviews/task-136/001-int8-approx-ivf-scorer/artifacts/recall-ivf-tq-real50k-int8-approx.log
+[suite:task136-int8-approx-ivf-scorer-ab] wrote reviews/task-136/001-int8-approx-ivf-scorer/artifacts/suite-manifest.json
+┌────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ nprobe ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 32     ┆ 48      ┆ 480           ┆ 0.9521   ┆ 0.9291          ┆ 0.9679           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.8000       ┆ 0.9995 ┆ 2.01 ms     │
+└────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from task136_tq_ivf_real50k_queries ...
+[recall] fetching corpus from task136_tq_ivf_real50k_corpus ...
+[recall] loaded ground truth cache reviews/task-136/001-int8-approx-ivf-scorer/artifacts/truth-cache/truth-v1-rows50000-queries48-dim1536-k10-a93e9d1a3c4f8202.json
+[suite:task136-int8-approx-ivf-scorer-ab] wrote reviews/task-136/001-int8-approx-ivf-scorer/artifacts/suite-manifest.json
+[suite:task136-int8-approx-ivf-scorer-ab] latency-ivf-tq-real50k-int8-approx -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench latency --prefix task136_tq_ivf_real50k --profile ec_ivf --k 10 --concurrency 1 --iterations 48 --sweep 32 --bits 4 --seed 42 --force-index --sample-backend-memory --cache-state task136_tq_ivf_real50k_warm --session-guc ec_ivf.turboquant_scorer=int8_approx --task87-candidate-batch-counters --ivf-stage-counters --memory-sample-interval-ms 25 --log-output reviews/task-136/001-int8-approx-ivf-scorer/artifacts/latency-ivf-tq-real50k-int8-approx.log
+[suite:task136-int8-approx-ivf-scorer-ab] wrote reviews/task-136/001-int8-approx-ivf-scorer/artifacts/suite-manifest.json
+┌────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────────────────────────┬─────────────┬─────────────┬────────────────┐
+│ nprobe ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state                 ┆ rss_peak_kb ┆ hwm_peak_kb ┆ memory_samples │
+╞════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════════════════════════╪═════════════╪═════════════╪════════════════╡
+│ 32     ┆ 48    ┆ 1.62 ms ┆ 0.38 ms ┆ 1.30 ms ┆ 1.56 ms ┆ 1.86 ms ┆ 3.12 ms ┆ 4.04 ms ┆ task136_tq_ivf_real50k_warm ┆ 0           ┆ 0           ┆ 0              │
+└────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────────────────────────┴─────────────┴─────────────┴────────────────┘
+[block-kernel-counters] command=latency label=nprobe=32 surface=ivf quant=turboquant_int8 isa=neon flushes=1352 candidates=340407 elapsed_nanos=26154931 elapsed_ms=26.154931 kernel_flushes=1352 kernel_candidates=340407 kernel_elapsed_nanos=26154931 kernel_elapsed_ms=26.154931 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=0 width_8_15=3 width_16_31=3 width_ge32=1346 pruned_candidates=0 kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=ivf flushes=1352 candidates=340407 elapsed_nanos=26154931 elapsed_ms=26.154931 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[ivf-stage-counters] command=latency label=nprobe=32 stage=approximate_scan scans=48 samples=48 elapsed_us=61057 elapsed_ms=61.057
+[ivf-stage-counters] command=latency label=nprobe=32 stage=candidate_record scans=48 samples=1352 elapsed_us=2807 elapsed_ms=2.807
+[ivf-stage-counters] command=latency label=nprobe=32 stage=exact_rerank scans=48 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=posting_visit scans=48 samples=48 elapsed_us=54039 elapsed_ms=54.039
+[ivf-stage-counters] command=latency label=nprobe=32 stage=probe_plan scans=48 samples=48 elapsed_us=4335 elapsed_ms=4.335
+[ivf-stage-counters] command=latency label=nprobe=32 stage=rerank_payload_decode scans=48 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=rerank_payload_score scans=48 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=scorer_batch scans=48 samples=1352 elapsed_us=26700 elapsed_ms=26.700
+[ivf-stage-counters] command=latency label=nprobe=32 stage=scratch_flush scans=48 samples=1352 elapsed_us=30071 elapsed_ms=30.071
+[ivf-stage-counters] command=latency label=nprobe=32 stage=topk_collect scans=48 samples=48 elapsed_us=6901 elapsed_ms=6.901
+[suite:task136-int8-approx-ivf-scorer-ab] wrote reviews/task-136/001-int8-approx-ivf-scorer/artifacts/suite-manifest.json
+[suite:task136-int8-approx-ivf-scorer-ab] storage-ivf-tq-real50k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 --log-file reviews/task-136/001-int8-approx-ivf-scorer/artifacts/storage-ivf-tq-real50k.log bench storage --prefix task136_tq_ivf_real50k
+[suite:task136-int8-approx-ivf-scorer-ab] wrote reviews/task-136/001-int8-approx-ivf-scorer/artifacts/suite-manifest.json
+┌───────────────────────────────┬───────────────────────────────┐
+│ field                         ┆ value                         │
+╞═══════════════════════════════╪═══════════════════════════════╡
+│ prefix                        ┆ task136_tq_ivf_real50k        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus                        ┆ task136_tq_ivf_real50k_corpus │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ rows                          ┆ 50000                         │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ heap                          ┆ 3.7 MiB                       │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ table (heap + toast + fsm/vm) ┆ 793.8 MiB                     │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes                       ┆ 47.1 MiB                      │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ total                         ┆ 840.9 MiB                     │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (total)               ┆ 17634.1 B                     │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (heap only)           ┆ 76.7 B                        │
+└───────────────────────────────┴───────────────────────────────┘
+┌───────────────────────────────────────┬───────────────┬───────────┬─────────────────────────────┬──────────┬─────────┐
+│ index                                 ┆ access method ┆ profile   ┆ reloptions                  ┆ size     ┆ per row │
+╞═══════════════════════════════════════╪═══════════════╪═══════════╪═════════════════════════════╪══════════╪═════════╡
+│ task136_tq_ivf_real50k_turboquant_idx ┆ ec_ivf        ┆ ec_ivf    ┆ {storage_format=turboquant} ┆ 46.0 MiB ┆ 964.7 B │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ task136_tq_ivf_real50k_corpus_pkey    ┆ btree         ┆ <unknown> ┆ {}                          ┆ 1.1 MiB  ┆ 22.8 B  │
+└───────────────────────────────────────┴───────────────┴───────────┴─────────────────────────────┴──────────┴─────────┘
+[suite:task136-int8-approx-ivf-scorer-ab] wrote reviews/task-136/001-int8-approx-ivf-scorer/artifacts/suite-manifest.json
+[suite:task136-int8-approx-ivf-scorer-ab] load-ivf-tq-real100k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 --log-file reviews/task-136/001-int8-approx-ivf-scorer/artifacts/load-ivf-tq-real100k.log corpus load --prefix task136_tq_ivf_real100k --profile ec_ivf --corpus-file data/staged-current/ec_real_100k_corpus.tsv --queries-file data/staged-current/ec_real_100k_queries.tsv --manifest-file data/staged-current/ec_real_100k_manifest.json --allow-manifest-mismatch --bits 4 --seed 42 --storage-format turboquant
+[suite:task136-int8-approx-ivf-scorer-ab] wrote reviews/task-136/001-int8-approx-ivf-scorer/artifacts/suite-manifest.json
+┌─────────┬────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                              │
+╞═════════╪════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_ivf                                                             │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ task136_tq_ivf_real100k_corpus (100000 rows)                       │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ task136_tq_ivf_real100k_queries (1000 rows)                        │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ task136_tq_ivf_real100k_turboquant_idx [storage_format=turboquant] │
+└─────────┴────────────────────────────────────────────────────────────────────┘
+[loader] inspecting data/staged-current/ec_real_100k_corpus.tsv
+[loader] inspecting data/staged-current/ec_real_100k_queries.tsv
+[loader] corpus: 100000 rows, sha256=07275cfd5a7a4b415ddf5eacc086de98294ac978532df46ffae30f9202323a95  queries: 1000 rows, sha256=a7cbec6fc44f6c148234538f61339d00d2f10646febc8f667dcbe75d9cf41782
+[loader] warning: manifest verification failed for data/staged-current/ec_real_100k_manifest.json: prefix="ec_real_100k" (expected "task136_tq_ivf_real100k")
+[loader] copied corpus table task136_tq_ivf_real100k_corpus in 13.77s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table task136_tq_ivf_real100k_corpus in 6.55s
+[loader] copied queries table task136_tq_ivf_real100k_queries in 151.73ms
+[loader] building task136_tq_ivf_real100k_turboquant_idx using ec_ivf (reloptions=[storage_format=turboquant]) ...
+[loader] built task136_tq_ivf_real100k_turboquant_idx in 3.98s
+[loader] ec_ivf build timing: requested_workers=0 workers_launched=0 heap_tuples=100000 index_tuples=100000 heap_ingest_us=1202932 train_model_us=1177104 stage_build_plan_us=1445164 stage_pq_train_us=0 stage_centroids_us=464 stage_assign_us=1419623 stage_postings_us=24952 stage_directory_us=19 flush_build_plan_us=136997 parallel_begin_us=0 parallel_drain_us=0 parallel_sort_push_us=0 parallel_worker_tuple_buffer_capacity=0 parallel_worker_tuple_buffer_struct_bytes=0
+[loader] completed prefix task136_tq_ivf_real100k in 30.61s
+[suite:task136-int8-approx-ivf-scorer-ab] wrote reviews/task-136/001-int8-approx-ivf-scorer/artifacts/suite-manifest.json
+[suite:task136-int8-approx-ivf-scorer-ab] recall-ivf-tq-real100k-lut -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench recall --prefix task136_tq_ivf_real100k --profile ec_ivf --k 10 --sweep 32 --queries-limit 32 --bits 4 --seed 42 --force-index --session-guc ec_ivf.turboquant_scorer=lut --truth-cache-dir reviews/task-136/001-int8-approx-ivf-scorer/artifacts/truth-cache --log-output reviews/task-136/001-int8-approx-ivf-scorer/artifacts/recall-ivf-tq-real100k-lut.log
+[suite:task136-int8-approx-ivf-scorer-ab] wrote reviews/task-136/001-int8-approx-ivf-scorer/artifacts/suite-manifest.json
+┌────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ nprobe ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 32     ┆ 32      ┆ 320           ┆ 0.8969   ┆ 0.8587          ┆ 0.9256           ┆ 0.8000     ┆ 0.9000     ┆ 1.0000     ┆ 0.7000       ┆ 0.9957 ┆ 4.07 ms     │
+└────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from task136_tq_ivf_real100k_queries ...
+[recall] fetching corpus from task136_tq_ivf_real100k_corpus ...
+[recall] computing ground truth: 32 queries vs 100000 corpus rows (dim=1536) ...
+[recall] ground truth in 114.13ms
+[recall] wrote ground truth cache reviews/task-136/001-int8-approx-ivf-scorer/artifacts/truth-cache/truth-v1-rows100000-queries32-dim1536-k10-22dfd78bf8c49028.json
+[suite:task136-int8-approx-ivf-scorer-ab] wrote reviews/task-136/001-int8-approx-ivf-scorer/artifacts/suite-manifest.json
+[suite:task136-int8-approx-ivf-scorer-ab] latency-ivf-tq-real100k-lut -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench latency --prefix task136_tq_ivf_real100k --profile ec_ivf --k 10 --concurrency 1 --iterations 32 --sweep 32 --bits 4 --seed 42 --force-index --sample-backend-memory --cache-state task136_tq_ivf_real100k_warm --session-guc ec_ivf.turboquant_scorer=lut --task87-candidate-batch-counters --ivf-stage-counters --memory-sample-interval-ms 25 --log-output reviews/task-136/001-int8-approx-ivf-scorer/artifacts/latency-ivf-tq-real100k-lut.log
+[suite:task136-int8-approx-ivf-scorer-ab] wrote reviews/task-136/001-int8-approx-ivf-scorer/artifacts/suite-manifest.json
+┌────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬──────────────────────────────┬─────────────┬─────────────┬────────────────┐
+│ nprobe ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state                  ┆ rss_peak_kb ┆ hwm_peak_kb ┆ memory_samples │
+╞════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪══════════════════════════════╪═════════════╪═════════════╪════════════════╡
+│ 32     ┆ 32    ┆ 2.79 ms ┆ 0.48 ms ┆ 2.21 ms ┆ 2.70 ms ┆ 3.40 ms ┆ 4.49 ms ┆ 4.96 ms ┆ task136_tq_ivf_real100k_warm ┆ 0           ┆ 0           ┆ 0              │
+└────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴──────────────────────────────┴─────────────┴─────────────┴────────────────┘
+[block-kernel-counters] command=latency label=nprobe=32 surface=ivf quant=turboquant isa=neon flushes=1311 candidates=331757 elapsed_nanos=38438555 elapsed_ms=38.438555 kernel_flushes=1311 kernel_candidates=331757 kernel_elapsed_nanos=38438555 kernel_elapsed_ms=38.438555 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=2 width_8_15=0 width_16_31=2 width_ge32=1307 pruned_candidates=0 kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=ivf flushes=1311 candidates=331757 elapsed_nanos=38438555 elapsed_ms=38.438555 lut32_flushes=1311 lut32_candidates=331757 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[ivf-stage-counters] command=latency label=nprobe=32 stage=approximate_scan scans=32 samples=32 elapsed_us=74705 elapsed_ms=74.705
+[ivf-stage-counters] command=latency label=nprobe=32 stage=candidate_record scans=32 samples=1311 elapsed_us=2627 elapsed_ms=2.627
+[ivf-stage-counters] command=latency label=nprobe=32 stage=exact_rerank scans=32 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=posting_visit scans=32 samples=32 elapsed_us=67838 elapsed_ms=67.838
+[ivf-stage-counters] command=latency label=nprobe=32 stage=probe_plan scans=32 samples=32 elapsed_us=4132 elapsed_ms=4.132
+[ivf-stage-counters] command=latency label=nprobe=32 stage=rerank_payload_decode scans=32 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=rerank_payload_score scans=32 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=scorer_batch scans=32 samples=1311 elapsed_us=38601 elapsed_ms=38.601
+[ivf-stage-counters] command=latency label=nprobe=32 stage=scratch_flush scans=32 samples=1311 elapsed_us=42259 elapsed_ms=42.259
+[ivf-stage-counters] command=latency label=nprobe=32 stage=topk_collect scans=32 samples=32 elapsed_us=6775 elapsed_ms=6.775
+[suite:task136-int8-approx-ivf-scorer-ab] wrote reviews/task-136/001-int8-approx-ivf-scorer/artifacts/suite-manifest.json
+[suite:task136-int8-approx-ivf-scorer-ab] recall-ivf-tq-real100k-int8-approx -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench recall --prefix task136_tq_ivf_real100k --profile ec_ivf --k 10 --sweep 32 --queries-limit 32 --bits 4 --seed 42 --force-index --session-guc ec_ivf.turboquant_scorer=int8_approx --truth-cache-dir reviews/task-136/001-int8-approx-ivf-scorer/artifacts/truth-cache --log-output reviews/task-136/001-int8-approx-ivf-scorer/artifacts/recall-ivf-tq-real100k-int8-approx.log
+[suite:task136-int8-approx-ivf-scorer-ab] wrote reviews/task-136/001-int8-approx-ivf-scorer/artifacts/suite-manifest.json
+┌────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ nprobe ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 32     ┆ 32      ┆ 320           ┆ 0.8938   ┆ 0.8552          ┆ 0.9230           ┆ 0.8000     ┆ 0.9000     ┆ 1.0000     ┆ 0.7000       ┆ 0.9957 ┆ 3.49 ms     │
+└────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from task136_tq_ivf_real100k_queries ...
+[recall] fetching corpus from task136_tq_ivf_real100k_corpus ...
+[recall] loaded ground truth cache reviews/task-136/001-int8-approx-ivf-scorer/artifacts/truth-cache/truth-v1-rows100000-queries32-dim1536-k10-22dfd78bf8c49028.json
+[suite:task136-int8-approx-ivf-scorer-ab] wrote reviews/task-136/001-int8-approx-ivf-scorer/artifacts/suite-manifest.json
+[suite:task136-int8-approx-ivf-scorer-ab] latency-ivf-tq-real100k-int8-approx -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench latency --prefix task136_tq_ivf_real100k --profile ec_ivf --k 10 --concurrency 1 --iterations 32 --sweep 32 --bits 4 --seed 42 --force-index --sample-backend-memory --cache-state task136_tq_ivf_real100k_warm --session-guc ec_ivf.turboquant_scorer=int8_approx --task87-candidate-batch-counters --ivf-stage-counters --memory-sample-interval-ms 25 --log-output reviews/task-136/001-int8-approx-ivf-scorer/artifacts/latency-ivf-tq-real100k-int8-approx.log
+[suite:task136-int8-approx-ivf-scorer-ab] wrote reviews/task-136/001-int8-approx-ivf-scorer/artifacts/suite-manifest.json
+┌────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬──────────────────────────────┬─────────────┬─────────────┬────────────────┐
+│ nprobe ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state                  ┆ rss_peak_kb ┆ hwm_peak_kb ┆ memory_samples │
+╞════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪══════════════════════════════╪═════════════╪═════════════╪════════════════╡
+│ 32     ┆ 32    ┆ 2.33 ms ┆ 0.51 ms ┆ 1.80 ms ┆ 2.22 ms ┆ 3.04 ms ┆ 4.21 ms ┆ 4.68 ms ┆ task136_tq_ivf_real100k_warm ┆ 0           ┆ 0           ┆ 0              │
+└────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴──────────────────────────────┴─────────────┴─────────────┴────────────────┘
+[block-kernel-counters] command=latency label=nprobe=32 surface=ivf quant=turboquant_int8 isa=neon flushes=1311 candidates=331757 elapsed_nanos=24951564 elapsed_ms=24.951564 kernel_flushes=1311 kernel_candidates=331757 kernel_elapsed_nanos=24951564 kernel_elapsed_ms=24.951564 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=2 width_8_15=0 width_16_31=2 width_ge32=1307 pruned_candidates=0 kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=ivf flushes=1311 candidates=331757 elapsed_nanos=24951564 elapsed_ms=24.951564 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[ivf-stage-counters] command=latency label=nprobe=32 stage=approximate_scan scans=32 samples=32 elapsed_us=60369 elapsed_ms=60.369
+[ivf-stage-counters] command=latency label=nprobe=32 stage=candidate_record scans=32 samples=1311 elapsed_us=2625 elapsed_ms=2.625
+[ivf-stage-counters] command=latency label=nprobe=32 stage=exact_rerank scans=32 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=posting_visit scans=32 samples=32 elapsed_us=53532 elapsed_ms=53.532
+[ivf-stage-counters] command=latency label=nprobe=32 stage=probe_plan scans=32 samples=32 elapsed_us=4075 elapsed_ms=4.075
+[ivf-stage-counters] command=latency label=nprobe=32 stage=rerank_payload_decode scans=32 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=rerank_payload_score scans=32 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=scorer_batch scans=32 samples=1311 elapsed_us=25184 elapsed_ms=25.184
+[ivf-stage-counters] command=latency label=nprobe=32 stage=scratch_flush scans=32 samples=1311 elapsed_us=28799 elapsed_ms=28.799
+[ivf-stage-counters] command=latency label=nprobe=32 stage=topk_collect scans=32 samples=32 elapsed_us=6745 elapsed_ms=6.745
+[suite:task136-int8-approx-ivf-scorer-ab] wrote reviews/task-136/001-int8-approx-ivf-scorer/artifacts/suite-manifest.json
+[suite:task136-int8-approx-ivf-scorer-ab] storage-ivf-tq-real100k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 --log-file reviews/task-136/001-int8-approx-ivf-scorer/artifacts/storage-ivf-tq-real100k.log bench storage --prefix task136_tq_ivf_real100k
+[suite:task136-int8-approx-ivf-scorer-ab] wrote reviews/task-136/001-int8-approx-ivf-scorer/artifacts/suite-manifest.json
+┌───────────────────────────────┬────────────────────────────────┐
+│ field                         ┆ value                          │
+╞═══════════════════════════════╪════════════════════════════════╡
+│ prefix                        ┆ task136_tq_ivf_real100k        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus                        ┆ task136_tq_ivf_real100k_corpus │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ rows                          ┆ 100000                         │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ heap                          ┆ 7.3 MiB                        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ table (heap + toast + fsm/vm) ┆ 1.6 GiB                        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes                       ┆ 92.6 MiB                       │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ total                         ┆ 1.6 GiB                        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (total)               ┆ 17616.8 B                      │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (heap only)           ┆ 76.6 B                         │
+└───────────────────────────────┴────────────────────────────────┘
+┌────────────────────────────────────────┬───────────────┬───────────┬─────────────────────────────┬──────────┬─────────┐
+│ index                                  ┆ access method ┆ profile   ┆ reloptions                  ┆ size     ┆ per row │
+╞════════════════════════════════════════╪═══════════════╪═══════════╪═════════════════════════════╪══════════╪═════════╡
+│ task136_tq_ivf_real100k_turboquant_idx ┆ ec_ivf        ┆ ec_ivf    ┆ {storage_format=turboquant} ┆ 90.4 MiB ┆ 948.2 B │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ task136_tq_ivf_real100k_corpus_pkey    ┆ btree         ┆ <unknown> ┆ {}                          ┆ 2.2 MiB  ┆ 22.6 B  │
+└────────────────────────────────────────┴───────────────┴───────────┴─────────────────────────────┴──────────┴─────────┘
+[suite:task136-int8-approx-ivf-scorer-ab] wrote reviews/task-136/001-int8-approx-ivf-scorer/artifacts/suite-manifest.json
+[suite:task136-int8-approx-ivf-scorer-ab] wrote reviews/task-136/001-int8-approx-ivf-scorer/artifacts/results.jsonl
+[suite:task136-int8-approx-ivf-scorer-ab] wrote reviews/task-136/001-int8-approx-ivf-scorer/artifacts/suite-manifest.json
