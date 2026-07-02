@@ -193,22 +193,13 @@ pub(crate) fn materialize_static_remote_leaf_assignments_with_mode(
                             .collect::<Vec<_>>(),
                     }
                 };
-                let summaries = if let Some(block_rows) = summary_block_rows {
-                    materialization_rows = build::layout_leaf_rows_for_block_summaries(
-                        materialization_rows,
-                        block_rows,
-                        target_epoch,
-                        leaf_pid,
-                    )?;
-                    build::build_leaf_block_summaries(
-                        &materialization_rows.rows,
-                        &materialization_rows.source_vectors,
-                        block_rows,
-                        summary_representative_count,
-                    )?
-                } else {
-                    Vec::new()
-                };
+                let summaries = remote_leaf_materialization_block_summaries(
+                    leaf_pid,
+                    target_epoch,
+                    summary_block_rows,
+                    summary_representative_count,
+                    &mut materialization_rows,
+                )?;
                 let assignments = materialization_rows.rows;
                 assignment_count = assignment_count
                     .checked_add(u64::try_from(assignments.len()).map_err(|_| {
@@ -301,6 +292,27 @@ pub(crate) fn materialize_static_remote_leaf_assignments_with_mode(
         })()
     };
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+fn remote_leaf_materialization_block_summaries(
+    leaf_pid: u64,
+    target_epoch: u64,
+    summary_block_rows: Option<u32>,
+    summary_representative_count: usize,
+    materialization_rows: &mut build::SpireLeafBlockMaterializationRows,
+) -> Result<Vec<storage::SpireLeafBlockSummary>, String> {
+    let Some(block_rows) = summary_block_rows else {
+        return Ok(Vec::new());
+    };
+    let rows = std::mem::take(materialization_rows);
+    *materialization_rows =
+        build::layout_leaf_rows_for_block_summaries(rows, block_rows, target_epoch, leaf_pid)?;
+    build::build_leaf_block_summaries(
+        &materialization_rows.rows,
+        &materialization_rows.source_vectors,
+        block_rows,
+        summary_representative_count,
+    )
 }
 
 fn parse_static_remote_leaf_materialization_consistency_mode(

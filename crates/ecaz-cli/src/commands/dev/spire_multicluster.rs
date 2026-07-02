@@ -7,7 +7,7 @@ use std::fs;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use tokio::process::Command;
 
 use super::support::{
@@ -2064,7 +2064,8 @@ async fn register_local_remote_shards(
             );
         fs::write(&rendered, rendered_sql)
             .wrap_err_with(|| format!("writing {}", rendered.display()))?;
-        run_ecaz_dev_sql_logged(
+        let materialize_started = Instant::now();
+        let materialize_result = run_ecaz_dev_sql_logged(
             repo_root,
             ecaz_bin,
             socket_dir,
@@ -2078,7 +2079,31 @@ async fn register_local_remote_shards(
                 "remote-leaf-materialization/node-{node_id}-remote-materialize.log"
             )),
         )
-        .await?;
+        .await;
+        let materialize_elapsed = materialize_started.elapsed();
+        let timing = log_dir.join(format!(
+            "remote-leaf-materialization/node-{node_id}-remote-materialize-timing.log"
+        ));
+        fs::write(
+            &timing,
+            format!(
+                "node_id={node_id}\nstatus={}\nelapsed_ms={}\nrendered_sql={}\nlog={}\n",
+                if materialize_result.is_ok() {
+                    "ok"
+                } else {
+                    "error"
+                },
+                materialize_elapsed.as_millis(),
+                rendered.display(),
+                log_dir
+                    .join(format!(
+                        "remote-leaf-materialization/node-{node_id}-remote-materialize.log"
+                    ))
+                    .display()
+            ),
+        )
+        .wrap_err_with(|| format!("writing {}", timing.display()))?;
+        materialize_result?;
         let identity_sql = remote["remote_identity_query_sql"]
             .as_str()
             .ok_or_else(|| eyre!("remote_identity_query_sql"))?;
