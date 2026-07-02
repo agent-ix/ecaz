@@ -1,5 +1,0 @@
-node_id=3
-status=ok
-elapsed_ms=1714
-rendered_sql=reviews/task-138/001-distinct-recall-rescore/artifacts/10k-n1024-b2/remote-leaf-materialization/node-3-remote-materialize-rendered.sql
-log=reviews/task-138/001-distinct-recall-rescore/artifacts/10k-n1024-b2/remote-leaf-materialization/node-3-remote-materialize.log

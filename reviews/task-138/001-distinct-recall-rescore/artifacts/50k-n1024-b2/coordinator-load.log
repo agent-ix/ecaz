@@ -1,3 +1,0 @@
-[loader] warning: profile "ec_spire" does not list top_graph_enabled, top_graph_degree, top_graph_build_list_size, top_graph_search_list_size as known reloptions; passing through verbatim. Known reloptions: nlists, recursive_fanout, local_store_count, local_store_tablespaces, boundary_replica_count, nprobe, nprobe_per_level, rerank_width, training_sample_rows, seed, pq_group_size, storage_format, quantizer
-[loader] inspecting data/task111a_real50k/ec_real_50k_corpus.tsv
-[loader] inspecting data/task111a_real50k/ec_real_50k_queries.tsv
