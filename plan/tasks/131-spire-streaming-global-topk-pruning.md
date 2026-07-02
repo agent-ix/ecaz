@@ -1,11 +1,11 @@
 # Task 131: SPIRE Streaming Global Top-K Pruning
 
-Status: **in progress — closeout rejected** (2026-07-01; see
-`reviews/task-131/024-phase5-closeout-decision/feedback/2026-07-01-03-reviewer.md`):
-packet 024 was not accepted as a final closeout. Before this task can close,
-Phase 3 must be tested with leaf-block summaries enabled at build time and the
-remaining evidence gaps must be addressed or explicitly scoped out in an
-accepted closeout.
+Status: **in progress — revised closeout requested** (2026-07-02; see
+`reviews/task-131/028-revised-closeout-decision/`): packet 024 was not accepted
+as a final closeout, so packet 028 adds the requested summaries-enabled Phase 3
+A/B evidence, states/scopes the remaining gaps, and files the duplicate-result
+defect as Task 132. Do not flip this task closed until an outside reviewer
+accepts the revised closeout.
 Owner: coder (to be assigned). One coder, one branch.
 Priority: P0 research follow-up if SPIRE distributed optimization continues.
 
