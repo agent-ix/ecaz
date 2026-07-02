@@ -207,19 +207,37 @@ pub async fn index_exists_with_reloptions(
     Ok(row.get::<_, bool>(0))
 }
 
+/// True when the reloption list opts an ec_spire index into the ADR-063
+/// source-identity provider (`source_identity = 'include'`).
+pub fn spire_source_identity_include(reloptions: &[(String, String)]) -> bool {
+    reloptions
+        .iter()
+        .any(|(key, value)| key == "source_identity" && value == "include")
+}
+
 /// Build a `CREATE INDEX <name> ON <table> USING <am> (embedding <opclass>) WITH (...)`
 /// statement for the given profile and reloption list. The profile controls
 /// the access method and operator class; `reloptions` is passed through
 /// verbatim (already parsed into key/value pairs).
+///
+/// When the reloptions carry `source_identity = 'include'` (ec_spire ADR-063
+/// global writer identity), the statement also includes the corpus table's
+/// `source_identity` column so replicas of one logical row share a global
+/// vec_id across nodes.
 pub fn build_create_index_sql(
     corpus_table: &str,
     index_name: &str,
     profile: &crate::profiles::IndexProfile,
     reloptions: &[(String, String)],
 ) -> String {
+    let include_clause = if spire_source_identity_include(reloptions) {
+        " INCLUDE (source_identity)"
+    } else {
+        ""
+    };
     let with_clause = crate::reloptions::format_with_clause(reloptions);
     format!(
-        "CREATE INDEX {index_name} ON {corpus_table}\n        USING {am} (embedding {opclass}){with_clause}",
+        "CREATE INDEX {index_name} ON {corpus_table}\n        USING {am} (embedding {opclass}){include_clause}{with_clause}",
         am = profile.access_method,
         opclass = profile.operator_class,
     )
@@ -352,6 +370,36 @@ mod tests {
         assert!(sql.contains("nprobe = 16"));
         assert!(sql.contains("local_store_count = 1"));
         assert!(sql.contains("storage_format = 'turboquant'"));
+    }
+
+    #[test]
+    fn spire_index_sql_source_identity_include_adds_include_column() {
+        let opts = vec![
+            ("nlists".into(), "128".into()),
+            ("source_identity".into(), "include".into()),
+        ];
+        let sql = build_create_index_sql(
+            "dbpedia_10k_corpus",
+            "dbpedia_10k_spire_idx",
+            &EC_SPIRE,
+            &opts,
+        );
+        assert!(
+            sql.contains(
+                "USING ec_spire (embedding ecvector_spire_ip_ops) INCLUDE (source_identity)"
+            ),
+            "missing INCLUDE clause: {sql}"
+        );
+        assert!(sql.contains("source_identity = 'include'"), "{sql}");
+        assert!(spire_source_identity_include(&opts));
+    }
+
+    #[test]
+    fn spire_index_sql_without_source_identity_has_no_include_clause() {
+        let opts = vec![("nlists".into(), "128".into())];
+        let sql = build_create_index_sql("t", "idx", &EC_SPIRE, &opts);
+        assert!(!sql.contains("INCLUDE"), "{sql}");
+        assert!(!spire_source_identity_include(&opts));
     }
 
     #[test]

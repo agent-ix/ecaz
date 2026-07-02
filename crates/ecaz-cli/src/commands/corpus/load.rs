@@ -317,6 +317,13 @@ pub async fn run(conn: &ConnectionOptions, args: LoadArgs) -> Result<()> {
         ));
     }
 
+    let spire_source_identity = psql::spire_source_identity_include(&args.reloptions);
+    if spire_source_identity && profile.access_method != "ec_spire" {
+        return Err(eyre!(
+            "--reloption source_identity=include is only supported with --profile ec_spire"
+        ));
+    }
+
     let distributed_placement_config = load_distributed_placement_config_if_requested(
         args.distributed_placement_config.as_deref(),
         profile,
@@ -356,6 +363,12 @@ pub async fn run(conn: &ConnectionOptions, args: LoadArgs) -> Result<()> {
     }
 
     if let Some(chunked_manifest) = chunked_manifest {
+        if spire_source_identity {
+            return Err(eyre!(
+                "chunked manifest loads do not support source_identity=include yet; \
+                 load via --corpus-file so the source_identity column is created"
+            ));
+        }
         if let Some(config) = &distributed_placement_config {
             let output_dir = args
                 .distributed_placement_output_dir
@@ -532,6 +545,7 @@ pub async fn run(conn: &ConnectionOptions, args: LoadArgs) -> Result<()> {
         profile,
         corpus_stats.rows,
         &args.table_reloptions,
+        spire_source_identity,
     )
     .await?;
     let queries_loaded =
@@ -1780,6 +1794,14 @@ async fn load_one_chunk(
     Ok(())
 }
 
+/// Stored generated column DDL for the ADR-063 v1 source-identity provider.
+///
+/// The 16-byte identity is `sha256(int8send(id))[..16]`, matching the loader's
+/// `spire_static_source_identity_from_i64` derivation, so every node loading
+/// the same corpus row derives the same global identity payload.
+const SPIRE_SOURCE_IDENTITY_COLUMN_DDL: &str = "source_identity bytea GENERATED ALWAYS AS \
+     (substring(sha256(int8send(id)) from 1 for 16)) STORED NOT NULL";
+
 async fn ensure_corpus_table(
     client: &mut Client,
     table: &str,
@@ -1790,6 +1812,7 @@ async fn ensure_corpus_table(
     profile: &IndexProfile,
     expected_rows: usize,
     table_reloptions: &[(String, String)],
+    spire_source_identity: bool,
 ) -> Result<usize> {
     if psql::relation_exists(client, table, 'r').await? {
         apply_table_reloptions(client, table, table_reloptions).await?;
@@ -1804,12 +1827,17 @@ async fn ensure_corpus_table(
             .await?;
     }
     let with_clause = reloptions::format_with_clause(table_reloptions);
+    let source_identity_column = if spire_source_identity {
+        format!(",\n                {SPIRE_SOURCE_IDENTITY_COLUMN_DDL}")
+    } else {
+        String::new()
+    };
     client
         .batch_execute(&format!(
             "CREATE TABLE {table} (
                 id        bigint PRIMARY KEY,
                 source    real[] NOT NULL,
-                embedding {embedding} NOT NULL
+                embedding {embedding} NOT NULL{source_identity_column}
             ){with_clause}",
             embedding = profile.embedding_type
         ))
