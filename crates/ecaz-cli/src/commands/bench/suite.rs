@@ -401,6 +401,8 @@ struct SpireLocalMultinodeStep {
     #[serde(default)]
     tags: Vec<String>,
     #[serde(default)]
+    pgoptions: Option<String>,
+    #[serde(default)]
     artifact_dir: Option<PathBuf>,
     #[serde(default)]
     run_dir: Option<PathBuf>,
@@ -2453,6 +2455,7 @@ impl SuiteStep {
         match self {
             SuiteStep::Load(step) => step.pgoptions.as_deref(),
             SuiteStep::Latency(step) => step.pgoptions.as_deref(),
+            SuiteStep::SpireLocalMultinode(step) => step.pgoptions.as_deref(),
             SuiteStep::SpirePipeline(step) => step.pgoptions.as_deref(),
             _ => None,
         }
@@ -4218,6 +4221,7 @@ mod tests {
             "kind": "spire-local-multinode",
             "name": "local-gate",
             "tags": ["task121", "local-multinode"],
+            "pgoptions": "-c ec_spire.leaf_block_rows=64",
             "run_id": "task121",
             "coord_port": 39800,
             "remote1_port": 39801,
@@ -4269,6 +4273,10 @@ mod tests {
         let step = &manifest.steps[0];
 
         assert_eq!(step.kind, "spire-local-multinode");
+        assert_eq!(
+            step.pgoptions.as_deref(),
+            Some("-c ec_spire.leaf_block_rows=64")
+        );
         assert!(step
             .command
             .windows(3)
