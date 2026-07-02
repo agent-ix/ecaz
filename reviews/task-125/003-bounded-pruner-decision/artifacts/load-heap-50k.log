@@ -1,0 +1,23 @@
+[loader] inspecting data/staged-current/ec_real_50k_corpus.tsv
+[loader] inspecting data/staged-current/ec_real_50k_queries.tsv
+[loader] corpus: 50000 rows, sha256=56023baaa7bc42f758272e8617603d538808e6290a8a70a3a84e057571240133  queries: 1000 rows, sha256=95ac7992578aa80bb193657f10fbcbf1ea3867e559739244bf5a467f7a5a9fa3
+[loader] warning: manifest verification failed for data/staged-current/ec_real_50k_manifest.json: prefix="ec_real_50k" (expected "task127ab_tq_ivf_real50k_heap")
+[loader] copied corpus table task127ab_tq_ivf_real50k_heap_corpus in 6.75s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table task127ab_tq_ivf_real50k_heap_corpus in 10.23s
+[loader] copied queries table task127ab_tq_ivf_real50k_heap_queries in 187.11ms
+[loader] building task127ab_tq_ivf_real50k_heap_turboquant_idx using ec_ivf (reloptions=[rerank=heap_f32, rerank_width=100, storage_format=turboquant]) ...
+[loader] built task127ab_tq_ivf_real50k_heap_turboquant_idx in 3.24s
+[loader] ec_ivf build timing: requested_workers=0 workers_launched=0 heap_tuples=50000 index_tuples=50000 heap_ingest_us=620461 train_model_us=831989 stage_build_plan_us=513082 stage_pq_train_us=0 stage_centroids_us=308 stage_assign_us=499139 stage_postings_us=13565 stage_directory_us=12 flush_build_plan_us=1256087 parallel_begin_us=0 parallel_drain_us=0 parallel_sort_push_us=0 parallel_worker_tuple_buffer_capacity=0 parallel_worker_tuple_buffer_struct_bytes=0
+┌─────────┬─────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                                                       │
+╞═════════╪═════════════════════════════════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_ivf                                                                                                      │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ task127ab_tq_ivf_real50k_heap_corpus (50000 rows)                                                           │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ task127ab_tq_ivf_real50k_heap_queries (1000 rows)                                                           │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ task127ab_tq_ivf_real50k_heap_turboquant_idx [rerank=heap_f32, rerank_width=100, storage_format=turboquant] │
+└─────────┴─────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+[loader] completed prefix task127ab_tq_ivf_real50k_heap in 23.45s

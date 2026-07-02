@@ -1,0 +1,386 @@
+{
+ "name": "task127-bounded-pruner-ab",
+ "schema_version": 1,
+ "artifact_dir": "reviews/task-125/003-bounded-pruner-decision/artifacts",
+ "defaults": {
+  "pg": 18,
+  "socket_dir": "/Users/peter/.pgrx",
+  "profile": "ec_ivf",
+  "bits": 4,
+  "seed": 42,
+  "queries_limit": 64,
+  "iterations": 64,
+  "force_index": true,
+  "sample_backend_memory": true,
+  "memory_sample_interval_ms": 25
+ },
+ "thresholds": [],
+ "steps": [
+  {
+   "kind": "raw",
+   "name": "precheck-host",
+   "tags": [
+    "setup",
+    "precheck",
+    "task127ab"
+   ],
+   "args": [
+    "dev",
+    "sql",
+    "--pg",
+    "18",
+    "--db",
+    "postgres",
+    "--socket-dir",
+    "/Users/peter/.pgrx",
+    "--raw",
+    "--sql",
+    "SELECT now() AS captured_at, version() AS postgres_version, current_setting('shared_buffers') AS shared_buffers;",
+    "--log-output",
+    "${artifact_dir}/precheck-host.log"
+   ],
+   "expected_artifacts": [
+    "${artifact_dir}/precheck-host.log"
+   ]
+  },
+  {
+   "kind": "load",
+   "name": "load-heap-10k",
+   "tags": [
+    "load",
+    "task127ab",
+    "10k"
+   ],
+   "prefix": "task127ab_tq_ivf_real10k_heap",
+   "profile": "ec_ivf",
+   "storage_format": "turboquant",
+   "corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+   "queries_file": "data/staged-current/ec_real_10k_queries.tsv",
+   "manifest_file": "data/staged-current/ec_real_10k_manifest.json",
+   "allow_manifest_mismatch": true,
+   "reloptions": [
+    "rerank=heap_f32",
+    "rerank_width=100"
+   ],
+   "log_file": "${artifact_dir}/load-heap-10k.log"
+  },
+  {
+   "kind": "recall",
+   "name": "recall-heap-10k-prune-on",
+   "tags": [
+    "recall",
+    "task127ab",
+    "10k",
+    "prune-on"
+   ],
+   "prefix": "task127ab_tq_ivf_real10k_heap",
+   "profile": "ec_ivf",
+   "k": 10,
+   "sweep": [
+    32
+   ],
+   "session_gucs": [
+    "ec_ivf.posting_bound_prune=on"
+   ],
+   "truth_cache_dir": "${artifact_dir}/truth-cache",
+   "log_output": "${artifact_dir}/recall-heap-10k-prune-on.log"
+  },
+  {
+   "kind": "latency",
+   "name": "latency-heap-10k-prune-on",
+   "tags": [
+    "latency",
+    "task127ab",
+    "10k",
+    "prune-on"
+   ],
+   "prefix": "task127ab_tq_ivf_real10k_heap",
+   "profile": "ec_ivf",
+   "k": 10,
+   "sweep": [
+    32
+   ],
+   "iterations": 64,
+   "concurrency": 1,
+   "cache_state": "task127ab_10k_prune_on_warm",
+   "session_gucs": [
+    "ec_ivf.posting_bound_prune=on"
+   ],
+   "task87_candidate_batch_counters": true,
+   "ivf_stage_counters": true,
+   "log_output": "${artifact_dir}/latency-heap-10k-prune-on.log"
+  },
+  {
+   "kind": "recall",
+   "name": "recall-heap-10k-prune-off",
+   "tags": [
+    "recall",
+    "task127ab",
+    "10k",
+    "prune-off"
+   ],
+   "prefix": "task127ab_tq_ivf_real10k_heap",
+   "profile": "ec_ivf",
+   "k": 10,
+   "sweep": [
+    32
+   ],
+   "session_gucs": [
+    "ec_ivf.posting_bound_prune=off"
+   ],
+   "truth_cache_dir": "${artifact_dir}/truth-cache",
+   "log_output": "${artifact_dir}/recall-heap-10k-prune-off.log"
+  },
+  {
+   "kind": "latency",
+   "name": "latency-heap-10k-prune-off",
+   "tags": [
+    "latency",
+    "task127ab",
+    "10k",
+    "prune-off"
+   ],
+   "prefix": "task127ab_tq_ivf_real10k_heap",
+   "profile": "ec_ivf",
+   "k": 10,
+   "sweep": [
+    32
+   ],
+   "iterations": 64,
+   "concurrency": 1,
+   "cache_state": "task127ab_10k_prune_off_warm",
+   "session_gucs": [
+    "ec_ivf.posting_bound_prune=off"
+   ],
+   "task87_candidate_batch_counters": true,
+   "ivf_stage_counters": true,
+   "log_output": "${artifact_dir}/latency-heap-10k-prune-off.log"
+  },
+  {
+   "kind": "load",
+   "name": "load-heap-50k",
+   "tags": [
+    "load",
+    "task127ab",
+    "50k"
+   ],
+   "prefix": "task127ab_tq_ivf_real50k_heap",
+   "profile": "ec_ivf",
+   "storage_format": "turboquant",
+   "corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+   "queries_file": "data/staged-current/ec_real_50k_queries.tsv",
+   "manifest_file": "data/staged-current/ec_real_50k_manifest.json",
+   "allow_manifest_mismatch": true,
+   "reloptions": [
+    "rerank=heap_f32",
+    "rerank_width=100"
+   ],
+   "log_file": "${artifact_dir}/load-heap-50k.log"
+  },
+  {
+   "kind": "recall",
+   "name": "recall-heap-50k-prune-on",
+   "tags": [
+    "recall",
+    "task127ab",
+    "50k",
+    "prune-on"
+   ],
+   "prefix": "task127ab_tq_ivf_real50k_heap",
+   "profile": "ec_ivf",
+   "k": 10,
+   "sweep": [
+    32
+   ],
+   "session_gucs": [
+    "ec_ivf.posting_bound_prune=on"
+   ],
+   "truth_cache_dir": "${artifact_dir}/truth-cache",
+   "log_output": "${artifact_dir}/recall-heap-50k-prune-on.log"
+  },
+  {
+   "kind": "latency",
+   "name": "latency-heap-50k-prune-on",
+   "tags": [
+    "latency",
+    "task127ab",
+    "50k",
+    "prune-on"
+   ],
+   "prefix": "task127ab_tq_ivf_real50k_heap",
+   "profile": "ec_ivf",
+   "k": 10,
+   "sweep": [
+    32
+   ],
+   "iterations": 48,
+   "concurrency": 1,
+   "cache_state": "task127ab_50k_prune_on_warm",
+   "session_gucs": [
+    "ec_ivf.posting_bound_prune=on"
+   ],
+   "task87_candidate_batch_counters": true,
+   "ivf_stage_counters": true,
+   "log_output": "${artifact_dir}/latency-heap-50k-prune-on.log"
+  },
+  {
+   "kind": "recall",
+   "name": "recall-heap-50k-prune-off",
+   "tags": [
+    "recall",
+    "task127ab",
+    "50k",
+    "prune-off"
+   ],
+   "prefix": "task127ab_tq_ivf_real50k_heap",
+   "profile": "ec_ivf",
+   "k": 10,
+   "sweep": [
+    32
+   ],
+   "session_gucs": [
+    "ec_ivf.posting_bound_prune=off"
+   ],
+   "truth_cache_dir": "${artifact_dir}/truth-cache",
+   "log_output": "${artifact_dir}/recall-heap-50k-prune-off.log"
+  },
+  {
+   "kind": "latency",
+   "name": "latency-heap-50k-prune-off",
+   "tags": [
+    "latency",
+    "task127ab",
+    "50k",
+    "prune-off"
+   ],
+   "prefix": "task127ab_tq_ivf_real50k_heap",
+   "profile": "ec_ivf",
+   "k": 10,
+   "sweep": [
+    32
+   ],
+   "iterations": 48,
+   "concurrency": 1,
+   "cache_state": "task127ab_50k_prune_off_warm",
+   "session_gucs": [
+    "ec_ivf.posting_bound_prune=off"
+   ],
+   "task87_candidate_batch_counters": true,
+   "ivf_stage_counters": true,
+   "log_output": "${artifact_dir}/latency-heap-50k-prune-off.log"
+  },
+  {
+   "kind": "load",
+   "name": "load-heap-100k",
+   "tags": [
+    "load",
+    "task127ab",
+    "100k"
+   ],
+   "prefix": "task127ab_tq_ivf_real100k_heap",
+   "profile": "ec_ivf",
+   "storage_format": "turboquant",
+   "corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+   "queries_file": "data/staged-current/ec_real_100k_queries.tsv",
+   "manifest_file": "data/staged-current/ec_real_100k_manifest.json",
+   "allow_manifest_mismatch": true,
+   "reloptions": [
+    "rerank=heap_f32",
+    "rerank_width=100"
+   ],
+   "log_file": "${artifact_dir}/load-heap-100k.log"
+  },
+  {
+   "kind": "recall",
+   "name": "recall-heap-100k-prune-on",
+   "tags": [
+    "recall",
+    "task127ab",
+    "100k",
+    "prune-on"
+   ],
+   "prefix": "task127ab_tq_ivf_real100k_heap",
+   "profile": "ec_ivf",
+   "k": 10,
+   "sweep": [
+    32
+   ],
+   "session_gucs": [
+    "ec_ivf.posting_bound_prune=on"
+   ],
+   "truth_cache_dir": "${artifact_dir}/truth-cache",
+   "log_output": "${artifact_dir}/recall-heap-100k-prune-on.log"
+  },
+  {
+   "kind": "latency",
+   "name": "latency-heap-100k-prune-on",
+   "tags": [
+    "latency",
+    "task127ab",
+    "100k",
+    "prune-on"
+   ],
+   "prefix": "task127ab_tq_ivf_real100k_heap",
+   "profile": "ec_ivf",
+   "k": 10,
+   "sweep": [
+    32
+   ],
+   "iterations": 32,
+   "concurrency": 1,
+   "cache_state": "task127ab_100k_prune_on_warm",
+   "session_gucs": [
+    "ec_ivf.posting_bound_prune=on"
+   ],
+   "task87_candidate_batch_counters": true,
+   "ivf_stage_counters": true,
+   "log_output": "${artifact_dir}/latency-heap-100k-prune-on.log"
+  },
+  {
+   "kind": "recall",
+   "name": "recall-heap-100k-prune-off",
+   "tags": [
+    "recall",
+    "task127ab",
+    "100k",
+    "prune-off"
+   ],
+   "prefix": "task127ab_tq_ivf_real100k_heap",
+   "profile": "ec_ivf",
+   "k": 10,
+   "sweep": [
+    32
+   ],
+   "session_gucs": [
+    "ec_ivf.posting_bound_prune=off"
+   ],
+   "truth_cache_dir": "${artifact_dir}/truth-cache",
+   "log_output": "${artifact_dir}/recall-heap-100k-prune-off.log"
+  },
+  {
+   "kind": "latency",
+   "name": "latency-heap-100k-prune-off",
+   "tags": [
+    "latency",
+    "task127ab",
+    "100k",
+    "prune-off"
+   ],
+   "prefix": "task127ab_tq_ivf_real100k_heap",
+   "profile": "ec_ivf",
+   "k": 10,
+   "sweep": [
+    32
+   ],
+   "iterations": 32,
+   "concurrency": 1,
+   "cache_state": "task127ab_100k_prune_off_warm",
+   "session_gucs": [
+    "ec_ivf.posting_bound_prune=off"
+   ],
+   "task87_candidate_batch_counters": true,
+   "ivf_stage_counters": true,
+   "log_output": "${artifact_dir}/latency-heap-100k-prune-off.log"
+  }
+ ]
+}
