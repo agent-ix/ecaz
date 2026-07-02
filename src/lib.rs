@@ -1255,6 +1255,11 @@ fn ecaz_build_profile() -> &'static str {
 }
 
 #[pg_extern(stable)]
+fn ecaz_build_git_sha() -> &'static str {
+    env!("ECAZ_GIT_SHA")
+}
+
+#[pg_extern(stable)]
 #[allow(clippy::type_complexity)]
 fn ec_block_kernel_scoring_snapshot() -> TableIterator<
     'static,

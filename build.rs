@@ -1,7 +1,36 @@
+fn emit_git_sha_env() {
+    // Provenance stamp (NFR-007): suite manifests must record which commit
+    // produced the installed extension. "unknown" keeps builds working
+    // outside a git checkout (e.g. crate tarballs).
+    let sha = std::process::Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .ok()
+        .filter(|out| out.status.success())
+        .map(|out| String::from_utf8_lossy(&out.stdout).trim().to_string())
+        .filter(|sha| !sha.is_empty());
+    let dirty = std::process::Command::new("git")
+        .args(["status", "--porcelain", "--untracked-files=no"])
+        .output()
+        .ok()
+        .filter(|out| out.status.success())
+        .map(|out| !out.stdout.is_empty())
+        .unwrap_or(false);
+    let stamp = match sha {
+        Some(sha) if dirty => format!("{sha}-dirty"),
+        Some(sha) => sha,
+        None => "unknown".to_string(),
+    };
+    println!("cargo:rustc-env=ECAZ_GIT_SHA={stamp}");
+    println!("cargo:rerun-if-changed=.git/HEAD");
+    println!("cargo:rerun-if-changed=.git/index");
+}
+
 fn main() {
     println!("cargo:rustc-check-cfg=cfg(kani)");
     println!("cargo:rustc-check-cfg=cfg(miri)");
     println!("cargo:rerun-if-changed=build.rs");
+    emit_git_sha_env();
     println!("cargo:rerun-if-changed=csrc/standalone_pg_backend_stubs.c");
     println!("cargo:rerun-if-changed=csrc/pg18_pgstat_shim.c");
     println!("cargo:rerun-if-env-changed=PGRX_PG_CONFIG_PATH");

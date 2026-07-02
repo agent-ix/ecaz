@@ -616,6 +616,8 @@ struct SuiteManifest {
     config_sha256: String,
     dry_run: bool,
     generated_at_unix_ms: u128,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    runner_git_commit: Option<String>,
     connection: ManifestConnection,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     backend: Option<BackendPreflight>,
@@ -636,6 +638,8 @@ struct ManifestConnection {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct BackendPreflight {
     build_profile: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    git_commit: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     sha256: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -989,6 +993,17 @@ async fn report_manifest(path: &Path, results_output: Option<&Path>) -> Result<(
     crate::ecaz_println!("- config: `{}`", manifest.config);
     crate::ecaz_println!("- config_sha256: `{}`", manifest.config_sha256);
     crate::ecaz_println!("- dry_run: `{}`", manifest.dry_run);
+    if let Some(runner_git_commit) = &manifest.runner_git_commit {
+        crate::ecaz_println!("- runner_git_commit: `{runner_git_commit}`");
+    }
+    if let Some(backend) = &manifest.backend {
+        crate::ecaz_println!(
+            "- backend: profile `{}`, git `{}`, sha256 `{}`",
+            backend.build_profile,
+            backend.git_commit.as_deref().unwrap_or("unknown"),
+            backend.sha256.as_deref().unwrap_or("unknown")
+        );
+    }
     crate::ecaz_println!(
         "- steps: completed {}, failed {}, skipped {}, dry-run {}, missing artifacts {}, stale {}",
         summary.completed,
@@ -1224,6 +1239,7 @@ fn build_manifest(
         config_sha256: sha256_hex(raw.as_bytes()),
         dry_run: args.dry_run,
         generated_at_unix_ms: now_ms(),
+        runner_git_commit: Some(env!("ECAZ_GIT_SHA").to_string()),
         connection: ManifestConnection {
             database: conn.database.clone(),
             host: conn.host.clone(),
@@ -3540,6 +3556,7 @@ fn manifest_has_release_guarded_steps(manifest: &SuiteManifest) -> bool {
 async fn preflight_backend(conn: &ConnectionOptions) -> Result<BackendPreflight> {
     let client = crate::psql::connect(conn).await?;
     let build_profile = query_backend_build_profile(&client).await?;
+    let git_commit = query_backend_git_sha(&client).await;
     let backend_path = derive_local_pgrx_backend_path(&client).await?;
     let sha256 = match &backend_path {
         Some(path) => Some(sha256_file_hex(path).await?),
@@ -3547,9 +3564,20 @@ async fn preflight_backend(conn: &ConnectionOptions) -> Result<BackendPreflight>
     };
     Ok(BackendPreflight {
         build_profile,
+        git_commit,
         sha256,
         path: backend_path.map(|path| path.display().to_string()),
     })
+}
+
+/// Tolerates extensions predating `ecaz_build_git_sha()`; provenance is then
+/// recorded as absent rather than failing the preflight.
+async fn query_backend_git_sha(client: &tokio_postgres::Client) -> Option<String> {
+    client
+        .query_one("SELECT ecaz_build_git_sha()", &[])
+        .await
+        .ok()
+        .map(|row| row.get::<_, String>(0))
 }
 
 async fn query_backend_build_profile(client: &tokio_postgres::Client) -> Result<String> {
