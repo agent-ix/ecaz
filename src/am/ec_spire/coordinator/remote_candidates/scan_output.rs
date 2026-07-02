@@ -304,6 +304,28 @@ fn production_scan_outputs_from_heap_candidates(
         .collect()
 }
 
+fn initial_remote_scan_threshold_from_local_heap_rows(
+    local_heap_rows: &[SpireRemoteSearchLocalHeapCandidateRow],
+    top_k: usize,
+) -> Result<Option<f32>, String> {
+    if !options::remote_search_initial_threshold_early_stop_enabled() || top_k == 0 {
+        return Ok(None);
+    }
+    let ready_rows = local_heap_rows
+        .iter()
+        .filter(|row| row.status == SPIRE_REMOTE_STATUS_READY)
+        .cloned()
+        .collect::<Vec<_>>();
+    if ready_rows.len() < top_k {
+        return Ok(None);
+    }
+    let merged = merge_remote_search_heap_candidates_for_result(ready_rows, top_k)?;
+    if merged.len() < top_k {
+        return Ok(None);
+    }
+    Ok(merged.get(top_k - 1).map(|row| row.score))
+}
+
 fn production_scan_output_is_local_heap_tid(output: &SpireRemoteProductionScanOutputRow) -> bool {
     matches!(output.heap_lookup_owner, SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION)
 }
@@ -657,6 +679,8 @@ fn remote_search_production_scan_heap_resolution_result_stream_impl(
             .count(),
     )
     .map_err(|_| "ec_spire production scan heap local candidate count exceeds u64")?;
+    let initial_threshold_score =
+        initial_remote_scan_threshold_from_local_heap_rows(&local_heap_rows, top_k)?;
 
     let fingerprint_start = std::time::Instant::now();
     let dispatch_rows = remote_search_libpq_dispatch_plan_rows(
@@ -685,6 +709,7 @@ fn remote_search_production_scan_heap_resolution_result_stream_impl(
         top_k,
         consistency_mode,
         tuple_payload_columns,
+        initial_threshold_score,
         &mut metrics,
     )?;
     let timeline = production_read_timeline_rows(root_control.active_epoch, &fanout_result);

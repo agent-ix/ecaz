@@ -90,8 +90,35 @@ pub(super) fn collect_quantized_selected_leaf_candidates(
     dedupe_mode: SpireCandidateDedupeMode,
     limit: Option<usize>,
 ) -> Result<Vec<SpireScoredScanCandidate>, String> {
+    collect_quantized_selected_leaf_candidates_with_initial_threshold(
+        snapshot,
+        object_store,
+        query_vector,
+        selected_leaf_pids,
+        payload_format,
+        dedupe_mode,
+        limit,
+        None,
+    )
+}
+
+pub(super) fn collect_quantized_selected_leaf_candidates_with_initial_threshold(
+    snapshot: &SpirePublishedEpochSnapshot<'_>,
+    object_store: &impl SpireObjectReader,
+    query_vector: &[f32],
+    selected_leaf_pids: &[u64],
+    payload_format: SpireAssignmentPayloadFormat,
+    dedupe_mode: SpireCandidateDedupeMode,
+    limit: Option<usize>,
+    initial_threshold_score: Option<f32>,
+) -> Result<Vec<SpireScoredScanCandidate>, String> {
     if selected_leaf_pids.is_empty() || limit == Some(0) {
         return Ok(Vec::new());
+    }
+    if let Some(threshold_score) = initial_threshold_score {
+        if !threshold_score.is_finite() {
+            return Err("ec_spire selected-leaf initial threshold score must be finite".to_owned());
+        }
     }
 
     // The storage-node endpoint scores leaves selected by the coordinator; it
@@ -109,6 +136,7 @@ pub(super) fn collect_quantized_selected_leaf_candidates(
         &scorer,
         dedupe_mode,
         limit,
+        initial_threshold_score,
         &mut observer,
     )
 }
@@ -160,6 +188,7 @@ pub(super) fn collect_quantized_selected_leaf_scan_profile(
         &scorer,
         dedupe_mode,
         limit,
+        None,
         &mut observer,
     )?;
     let (stores, _leaves) = observer.into_diagnostics();
@@ -478,6 +507,7 @@ where
         &scorer,
         scan_plan.dedupe_mode,
         scan_plan.candidate_limit,
+        None,
         &mut observer,
     )?;
     rerank_scored_candidates_by_ip_with_prefetch(
@@ -693,6 +723,7 @@ fn collect_validated_top_graph_scan_placement_diagnostics(
         &scorer,
         scan_plan.dedupe_mode,
         scan_plan.candidate_limit,
+        None,
         &mut observer,
     )?;
     let (stores, leaves) = observer.into_diagnostics();
@@ -863,6 +894,7 @@ fn collect_validated_top_graph_scan_plan_approx_candidates(
         &scorer,
         scan_plan.dedupe_mode,
         scan_plan.candidate_limit,
+        None,
         &mut observer,
     )
 }
@@ -2163,6 +2195,60 @@ where
         scored_ranges,
         max_blocks,
     )))
+}
+
+fn select_threshold_leaf_block_row_ranges(
+    summaries: &[SpireLeafBlockSummary],
+    threshold_score: f32,
+    scorer: &SpirePreparedAssignmentScorer,
+    epoch: u64,
+    placement: &SpirePlacementEntry,
+    observer: &mut impl SpireRoutedScanObserver,
+) -> Result<Option<Vec<SpireLeafBlockRowRange>>, String> {
+    if summaries.is_empty() {
+        return Ok(None);
+    }
+    if scorer.payload_format() != SpireAssignmentPayloadFormat::RaBitQ {
+        observer.leaf_block_selection(epoch, placement, summaries.len(), summaries.len());
+        return Ok(None);
+    }
+    if !threshold_score.is_finite() {
+        return Err("ec_spire selected-leaf threshold pruning score must be finite".to_owned());
+    }
+    let threshold_ip = -threshold_score;
+    if !threshold_ip.is_finite() {
+        return Err("ec_spire selected-leaf threshold pruning ip must be finite".to_owned());
+    }
+
+    let score_context = SpireLeafBlockSummaryScoreContext::new(scorer, 1.0)?;
+    let score_started = observer.wants_candidate_timing().then(Instant::now);
+    let mut ranges = Vec::new();
+    for summary in summaries {
+        let upper_bound_ip =
+            score_leaf_block_summary_ip_with_context(summary, scorer, score_context)?;
+        if upper_bound_ip >= threshold_ip {
+            let row_end = summary
+                .row_base
+                .checked_add(summary.row_count)
+                .ok_or_else(|| "ec_spire leaf V3 summary threshold row range overflow".to_owned())?;
+            ranges.push(SpireLeafBlockRowRange {
+                row_base: summary.row_base,
+                row_end,
+                row_segment_locator: summary.row_segment_locator,
+            });
+        }
+    }
+    if let Some(started) = score_started {
+        observer.leaf_summary_score_time(epoch, placement, elapsed_nanos_since(started));
+    }
+
+    if ranges.len() == summaries.len() {
+        observer.leaf_block_selection(epoch, placement, summaries.len(), summaries.len());
+        return Ok(None);
+    }
+    ranges.sort_by_key(|range| range.row_base);
+    observer.leaf_block_selection(epoch, placement, summaries.len(), ranges.len());
+    Ok(Some(ranges))
 }
 
 fn select_sampled_global_leaf_block_row_ranges(

@@ -17720,6 +17720,110 @@ fn ec_spire_remote_search(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_remote_search_with_initial_threshold(
+    index_oid: pg_sys::Oid,
+    requested_epoch: i64,
+    query: Vec<f32>,
+    selected_pids: Vec<i64>,
+    top_k: i32,
+    consistency_mode: String,
+    initial_threshold_score: f32,
+) -> TableIterator<
+    'static,
+    (
+        name!(served_epoch, i64),
+        name!(node_id, i64),
+        name!(pid, i64),
+        name!(object_version, i64),
+        name!(row_index, i64),
+        name!(assignment_flags, i16),
+        name!(vec_id, Vec<u8>),
+        name!(row_locator, Vec<u8>),
+        name!(score, f32),
+        name!(protocol_version, &'static str),
+        name!(extension_version, &'static str),
+        name!(opclass_identity, String),
+        name!(storage_format, &'static str),
+        name!(assignment_payload_format, &'static str),
+        name!(quantizer_profile, &'static str),
+        name!(scoring_profile, &'static str),
+        name!(profile_fingerprint, String),
+        name!(endpoint_status, &'static str),
+    ),
+> {
+    if requested_epoch <= 0 {
+        pgrx::error!(
+            "ec_spire_remote_search_with_initial_threshold requested_epoch must be greater than 0"
+        );
+    }
+    if top_k < 0 {
+        pgrx::error!("ec_spire_remote_search_with_initial_threshold top_k must be non-negative");
+    }
+    if !initial_threshold_score.is_finite() {
+        pgrx::error!(
+            "ec_spire_remote_search_with_initial_threshold initial_threshold_score must be finite"
+        );
+    }
+    let selected_pids = selected_pids
+        .into_iter()
+        .map(|pid| {
+            u64::try_from(pid).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_remote_search_with_initial_threshold selected PID {pid} is negative"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let top_k = usize::try_from(top_k).expect("non-negative top_k should fit usize");
+    let requested_epoch =
+        u64::try_from(requested_epoch).expect("positive requested_epoch should fit u64");
+
+    let index_relation = open_valid_ec_spire_index_guard(
+        index_oid,
+        "ec_spire_remote_search_with_initial_threshold",
+    );
+    let rows = with_spire_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_candidates_with_initial_threshold,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        &consistency_mode,
+        initial_threshold_score,
+    );
+    let endpoint_identity = with_spire_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_endpoint_identity_row
+    );
+    drop(index_relation);
+
+    TableIterator::new(rows.into_iter().map(move |row| {
+        (
+            i64::try_from(row.served_epoch).expect("served epoch should fit in i64"),
+            i64::from(row.node_id),
+            i64::try_from(row.pid).expect("pid should fit in i64"),
+            i64::try_from(row.object_version).expect("object version should fit in i64"),
+            i64::from(row.row_index),
+            i16::try_from(row.assignment_flags).expect("assignment flags should fit in i16"),
+            row.vec_id,
+            row.row_locator,
+            row.score,
+            endpoint_identity.protocol_version,
+            endpoint_identity.extension_version,
+            endpoint_identity.opclass_identity.clone(),
+            endpoint_identity.storage_format,
+            endpoint_identity.assignment_payload_format,
+            endpoint_identity.quantizer_profile,
+            endpoint_identity.scoring_profile,
+            endpoint_identity.profile_fingerprint.clone(),
+            endpoint_identity.status,
+        )
+    }))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_index_object_snapshot(
     index_oid: pg_sys::Oid,
 ) -> TableIterator<

@@ -80,6 +80,8 @@ static EC_SPIRE_CANDIDATE_BATCH_SCORING_GUC: GucSetting<bool> = GucSetting::<boo
 static EC_SPIRE_PRE_MATERIALIZATION_PRUNE_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
 static EC_SPIRE_REMOTE_SEARCH_GLOBAL_PRE_HEAP_MERGE_GUC: GucSetting<bool> =
     GucSetting::<bool>::new(false);
+static EC_SPIRE_REMOTE_SEARCH_INITIAL_THRESHOLD_EARLY_STOP_GUC: GucSetting<bool> =
+    GucSetting::<bool>::new(false);
 static EC_SPIRE_LEAF_BLOCK_ROWS_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(EC_SPIRE_SESSION_LEAF_BLOCK_ROWS_DISABLED);
 static EC_SPIRE_LEAF_BLOCK_SUMMARY_REPRESENTATIVES_GUC: GucSetting<i32> =
@@ -821,6 +823,14 @@ pub(super) fn register_gucs() {
         GucContext::Userset,
         GucFlags::default(),
     );
+    GucRegistry::define_bool_guc(
+        c"ec_spire.remote_search_initial_threshold_early_stop",
+        c"Enable Task 131 SPIRE initial global-threshold remote scan early-stop.",
+        c"Diagnostic Task 131 switch; disabled by default. When enabled, production distributed reads seed remote candidate scans with the coordinator-local kth score when one exists, allowing workers with sound leaf block bounds to skip blocks that cannot beat that threshold.",
+        &EC_SPIRE_REMOTE_SEARCH_INITIAL_THRESHOLD_EARLY_STOP_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
     GucRegistry::define_int_guc(
         c"ec_spire.leaf_block_rows",
         c"Build-time SPIRE leaf summary block row count.",
@@ -1154,6 +1164,16 @@ pub(super) fn remote_search_global_pre_heap_merge_enabled() -> bool {
 #[cfg(not(test))]
 pub(super) fn remote_search_global_pre_heap_merge_enabled() -> bool {
     EC_SPIRE_REMOTE_SEARCH_GLOBAL_PRE_HEAP_MERGE_GUC.get()
+}
+
+#[cfg(test)]
+pub(super) fn remote_search_initial_threshold_early_stop_enabled() -> bool {
+    true
+}
+
+#[cfg(not(test))]
+pub(super) fn remote_search_initial_threshold_early_stop_enabled() -> bool {
+    EC_SPIRE_REMOTE_SEARCH_INITIAL_THRESHOLD_EARLY_STOP_GUC.get()
 }
 
 pub(super) fn current_session_rerank_width() -> i32 {

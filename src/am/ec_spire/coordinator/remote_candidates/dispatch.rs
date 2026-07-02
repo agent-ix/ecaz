@@ -258,6 +258,7 @@ pub(crate) struct SpireRemoteProductionCandidateReceiveRequest {
     pub(crate) selected_pids: Vec<u64>,
     pub(crate) top_k: usize,
     pub(crate) consistency_mode: String,
+    pub(crate) initial_threshold_score: Option<f32>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1338,21 +1339,42 @@ impl SpireRemoteProductionTransportAdapter {
 
                 let candidate_start = std::time::Instant::now();
                 add_profile_count(&mut query_metrics.candidate_receive_query_count, 1);
-                let result_rows = connection
-                    .client
-                    .query(
-                        SPIRE_REMOTE_SEARCH_LIBPQ_SQL_TEMPLATE,
-                        &[
-                            &remote_index_oid,
-                            &requested_epoch,
-                            &request.query,
-                            &selected_pids,
-                            &top_k,
-                            &request.consistency_mode,
-                        ],
-                    )
-                    .await
-                    .map_err(|error| production_remote_query_failure_category(&error))?;
+                let result_rows = if let Some(initial_threshold_score) =
+                    request.initial_threshold_score
+                {
+                    connection
+                        .client
+                        .query(
+                            SPIRE_REMOTE_SEARCH_LIBPQ_INITIAL_THRESHOLD_SQL_TEMPLATE,
+                            &[
+                                &remote_index_oid,
+                                &requested_epoch,
+                                &request.query,
+                                &selected_pids,
+                                &top_k,
+                                &request.consistency_mode,
+                                &initial_threshold_score,
+                            ],
+                        )
+                        .await
+                        .map_err(|error| production_remote_query_failure_category(&error))?
+                } else {
+                    connection
+                        .client
+                        .query(
+                            SPIRE_REMOTE_SEARCH_LIBPQ_SQL_TEMPLATE,
+                            &[
+                                &remote_index_oid,
+                                &requested_epoch,
+                                &request.query,
+                                &selected_pids,
+                                &top_k,
+                                &request.consistency_mode,
+                            ],
+                        )
+                        .await
+                        .map_err(|error| production_remote_query_failure_category(&error))?
+                };
                 add_profile_elapsed(
                     &mut query_metrics.candidate_receive_elapsed_ms,
                     candidate_start,

@@ -141,6 +141,28 @@ mod production_executor_state_tests {
     }
 
     #[test]
+    fn initial_remote_scan_threshold_uses_local_merged_kth() {
+        let rows = vec![
+            ready_local_heap_row(1, 0.9),
+            ready_local_heap_row(2, 0.7),
+            ready_local_heap_row(3, 0.1),
+        ];
+
+        assert_eq!(
+            initial_remote_scan_threshold_from_local_heap_rows(&rows, 2).unwrap(),
+            Some(0.7)
+        );
+        assert_eq!(
+            initial_remote_scan_threshold_from_local_heap_rows(&rows[..1], 2).unwrap(),
+            None
+        );
+        assert_eq!(
+            initial_remote_scan_threshold_from_local_heap_rows(&rows, 0).unwrap(),
+            None
+        );
+    }
+
+    #[test]
     fn explicit_heap_candidate_parameters_encode_binary_fields_as_hex() {
         let candidates = vec![candidate_for_state_test(2, 10, 3)];
 
@@ -236,6 +258,28 @@ mod production_executor_state_tests {
                 tuple_payload_missing: false,
                 status: SPIRE_REMOTE_STATUS_READY,
             }],
+        }
+    }
+
+    fn ready_local_heap_row(vec_id: u64, score: f32) -> SpireRemoteSearchLocalHeapCandidateRow {
+        SpireRemoteSearchLocalHeapCandidateRow {
+            requested_epoch: 7,
+            served_epoch: 7,
+            node_id: 1,
+            pid: 11,
+            object_version: 1,
+            row_index: u32::try_from(vec_id).unwrap_or(0),
+            assignment_flags: storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+            vec_id: storage::SpireVecId::local(vec_id).as_bytes().to_vec(),
+            row_locator: vec![1, u8::try_from(vec_id).unwrap_or(0)],
+            heap_block: 10,
+            heap_offset: u16::try_from(vec_id).unwrap_or(1),
+            score,
+            heap_lookup_owner: SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION,
+            tuple_payload_json: None,
+            typed_tuple_payload: None,
+            tuple_payload_missing: false,
+            status: SPIRE_REMOTE_STATUS_READY,
         }
     }
 
@@ -770,6 +814,7 @@ mod production_executor_state_tests {
                     selected_pids: oversized_pids.clone(),
                     top_k: 1,
                     consistency_mode: "strict".to_owned(),
+                initial_threshold_score: None,
                 },
             ])
             .expect("candidate receive cap check should not need a live connection");

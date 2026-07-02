@@ -898,7 +898,7 @@ impl SpireRemoteFanoutExecutor {
         top_k: usize,
         consistency_mode: &str,
     ) -> Result<Vec<SpireRemoteProductionCandidateReceiveRequest>, String> {
-        self.compact_candidate_receive_requests_with_metrics(query, top_k, consistency_mode, None)
+        self.compact_candidate_receive_requests_with_metrics(query, top_k, consistency_mode, None, None)
     }
 
     fn compact_candidate_receive_requests_with_metrics(
@@ -906,6 +906,7 @@ impl SpireRemoteFanoutExecutor {
         query: &[f32],
         top_k: usize,
         consistency_mode: &str,
+        initial_threshold_score: Option<f32>,
         mut metrics: Option<&mut SpireRemoteProductionReadMetrics>,
     ) -> Result<Vec<SpireRemoteProductionCandidateReceiveRequest>, String> {
         let degraded =
@@ -944,6 +945,7 @@ impl SpireRemoteFanoutExecutor {
                         selected_pids: dispatch.selected_pids.clone(),
                         top_k,
                         consistency_mode: consistency_mode.to_owned(),
+                        initial_threshold_score,
                     });
                 }
                 Err(_) if degraded => dispatch.apply_degraded_skip(SPIRE_REMOTE_STATUS_REQUIRES_SECRET),
@@ -975,12 +977,14 @@ impl SpireRemoteFanoutExecutor {
         top_k: usize,
         consistency_mode: &str,
         tuple_payload_columns: Option<&[String]>,
+        initial_threshold_score: Option<f32>,
         metrics: &mut SpireRemoteProductionReadMetrics,
     ) -> Result<SpireRemoteProductionCandidateAndHeapResult, String> {
         let requests = self.compact_candidate_receive_requests_with_metrics(
             query,
             top_k,
             consistency_mode,
+            initial_threshold_score,
             Some(metrics),
         )?;
         if requests.is_empty() {

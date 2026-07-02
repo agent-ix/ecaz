@@ -330,6 +330,28 @@ pub(crate) fn remote_search_candidates(
         selected_pids,
         top_k,
         consistency_mode,
+        None,
+    );
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+pub(crate) fn remote_search_candidates_with_initial_threshold(
+    index: SpireLiveIndexRelation,
+    requested_epoch: u64,
+    query: Vec<f32>,
+    selected_pids: Vec<u64>,
+    top_k: usize,
+    consistency_mode: &str,
+    initial_threshold_score: f32,
+) -> Vec<SpireRemoteSearchCandidateRow> {
+    let result = remote_search_candidates_result(
+        index,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        consistency_mode,
+        Some(initial_threshold_score),
     );
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
@@ -341,9 +363,15 @@ fn remote_search_candidates_result(
     selected_pids: Vec<u64>,
     top_k: usize,
     consistency_mode: &str,
+    initial_threshold_score: Option<f32>,
 ) -> Result<Vec<SpireRemoteSearchCandidateRow>, String> {
     if requested_epoch == 0 {
         return Err("ec_spire remote search requested_epoch must be greater than 0".to_owned());
+    }
+    if let Some(threshold_score) = initial_threshold_score {
+        if !threshold_score.is_finite() {
+            return Err("ec_spire remote search initial_threshold_score must be finite".to_owned());
+        }
     }
     if top_k == 0 {
         // Valid empty candidate request, useful for endpoint contract probes.
@@ -375,7 +403,7 @@ fn remote_search_candidates_result(
         pg_sys::AccessShareLock as pg_sys::LOCKMODE,
     )?;
     let relation_options = index.relation_options();
-    let candidates = scan::collect_quantized_selected_leaf_candidates(
+    let candidates = scan::collect_quantized_selected_leaf_candidates_with_initial_threshold(
         &snapshot,
         &object_store,
         query.values(),
@@ -387,6 +415,7 @@ fn remote_search_candidates_result(
             options::SpireCandidateDedupeMode::NoReplicaDedupeDisabled
         },
         Some(top_k),
+        initial_threshold_score,
     )?;
 
     Ok(candidates
