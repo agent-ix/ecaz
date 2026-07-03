@@ -1,7 +1,9 @@
 # Task 145: IVF top-k collect share at 1m (dedup map + ranked collect)
 
-Status: **proposed** (2026-07-03). Owner: unassigned. Priority: P3
+Status: **in progress** (2026-07-03). Owner: Codex (branch
+`task-145-topk-collect`). Priority: P3
 Discovered by the Task 143 promotion-matrix stage budget.
+Packet: `reviews/task-145/001-dedup-pool-collect/`.
 
 ## Why
 

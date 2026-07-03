@@ -1,0 +1,12 @@
+     Running unittests src/lib.rs (target/release/deps/ecaz-0facebbfe7b75207)
+
+running 1 test
+map walk only (values -> black_box): 69167 ns/iter (1.5 ns/candidate)
+map walk + top-k(50) + sort  [pre-change topk_collect]: 114696 ns/iter (2.5 ns/candidate)
+pool walk only (slice -> black_box): 7683 ns/iter (0.2 ns/candidate)
+pool walk + top-k(50) + sort [post-change topk_collect]: 75169 ns/iter (1.7 ns/candidate)
+attribution: map-walk share of pre-change collect = 60.3%; pool-walk share of post-change collect = 10.2%; pool collect vs map collect = 65.5%
+test am::ec_ivf::scan::tests::candidate_dedup_profile_map_walk_vs_pool_walk ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2256 filtered out; finished in 0.06s
+
