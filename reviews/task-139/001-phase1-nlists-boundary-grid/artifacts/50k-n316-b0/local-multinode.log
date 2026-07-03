@@ -1,0 +1,7 @@
+run_dir=/home/peter/dev/ecaz-task139/target/spire-local-multinode-t13950kn316b0
+coord_port=41030
+remote1_port=41031
+remote2_port=41032
+remote3_port=41033
+tier=representative
+prefix=ec_real_50k

@@ -1,0 +1,5 @@
+node_id=2
+status=ok
+elapsed_ms=7086
+rendered_sql=reviews/task-139/001-phase1-nlists-boundary-grid/artifacts/50k-n128-b2/remote-leaf-materialization/node-2-remote-materialize-rendered.sql
+log=reviews/task-139/001-phase1-nlists-boundary-grid/artifacts/50k-n128-b2/remote-leaf-materialization/node-2-remote-materialize.log

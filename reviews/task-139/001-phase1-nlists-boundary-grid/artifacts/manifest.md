@@ -22,7 +22,14 @@
   meaningful.
 - Sweep normalization (Phase 0): per-cell nprobe points are fractions of
   nlists — {3%, 6%, 12.5%, 25%} everywhere, plus {50%} for nlists <= 512 and
-  the historical 75% anchor (nprobe=96) for nlists=128. Corpus-fraction
+  the historical 75% anchor (nprobe=96) for nlists=128.
+- Constraint-driven reloption rule: `top_graph_search_list_size =
+  max(96, cell max nprobe)` (96/158/256/256/512 for n128/n316/n512/n1024/
+  n2048), because the AM rejects route counts above the top-graph search
+  list size. The completed n128 row already satisfies this rule (96). The
+  first n316 attempt with the uniform tgsl=96 failed on exactly that
+  constraint and was rerun; tgsl interaction with recall stays a Phase 2
+  lever on the frontier shape. Corpus-fraction
   scanned is additionally computed per cell from the production scan-profile
   row counters (rows available per query / total row-instances) in the
   readout table, alongside raw nprobe.

@@ -179,7 +179,7 @@
         "top_graph_enabled=1",
         "top_graph_degree=32",
         "top_graph_build_list_size=100",
-        "top_graph_search_list_size=96",
+        "top_graph_search_list_size=158",
         "boundary_replica_count=0",
         "training_sample_rows=50000",
         "source_identity=include"
@@ -226,7 +226,7 @@
         "top_graph_enabled=1",
         "top_graph_degree=32",
         "top_graph_build_list_size=100",
-        "top_graph_search_list_size=96",
+        "top_graph_search_list_size=158",
         "boundary_replica_count=1",
         "training_sample_rows=50000",
         "source_identity=include"
@@ -273,7 +273,7 @@
         "top_graph_enabled=1",
         "top_graph_degree=32",
         "top_graph_build_list_size=100",
-        "top_graph_search_list_size=96",
+        "top_graph_search_list_size=158",
         "boundary_replica_count=2",
         "training_sample_rows=50000",
         "source_identity=include"
@@ -320,7 +320,7 @@
         "top_graph_enabled=1",
         "top_graph_degree=32",
         "top_graph_build_list_size=100",
-        "top_graph_search_list_size=96",
+        "top_graph_search_list_size=256",
         "boundary_replica_count=0",
         "training_sample_rows=50000",
         "source_identity=include"
@@ -367,7 +367,7 @@
         "top_graph_enabled=1",
         "top_graph_degree=32",
         "top_graph_build_list_size=100",
-        "top_graph_search_list_size=96",
+        "top_graph_search_list_size=256",
         "boundary_replica_count=1",
         "training_sample_rows=50000",
         "source_identity=include"
@@ -414,7 +414,7 @@
         "top_graph_enabled=1",
         "top_graph_degree=32",
         "top_graph_build_list_size=100",
-        "top_graph_search_list_size=96",
+        "top_graph_search_list_size=256",
         "boundary_replica_count=2",
         "training_sample_rows=50000",
         "source_identity=include"
@@ -461,7 +461,7 @@
         "top_graph_enabled=1",
         "top_graph_degree=32",
         "top_graph_build_list_size=100",
-        "top_graph_search_list_size=96",
+        "top_graph_search_list_size=256",
         "boundary_replica_count=0",
         "training_sample_rows=50000",
         "source_identity=include"
@@ -508,7 +508,7 @@
         "top_graph_enabled=1",
         "top_graph_degree=32",
         "top_graph_build_list_size=100",
-        "top_graph_search_list_size=96",
+        "top_graph_search_list_size=256",
         "boundary_replica_count=1",
         "training_sample_rows=50000",
         "source_identity=include"
@@ -555,7 +555,7 @@
         "top_graph_enabled=1",
         "top_graph_degree=32",
         "top_graph_build_list_size=100",
-        "top_graph_search_list_size=96",
+        "top_graph_search_list_size=256",
         "boundary_replica_count=2",
         "training_sample_rows=50000",
         "source_identity=include"
@@ -602,7 +602,7 @@
         "top_graph_enabled=1",
         "top_graph_degree=32",
         "top_graph_build_list_size=100",
-        "top_graph_search_list_size=96",
+        "top_graph_search_list_size=512",
         "boundary_replica_count=0",
         "training_sample_rows=50000",
         "source_identity=include"
@@ -649,7 +649,7 @@
         "top_graph_enabled=1",
         "top_graph_degree=32",
         "top_graph_build_list_size=100",
-        "top_graph_search_list_size=96",
+        "top_graph_search_list_size=512",
         "boundary_replica_count=1",
         "training_sample_rows=50000",
         "source_identity=include"
@@ -696,7 +696,7 @@
         "top_graph_enabled=1",
         "top_graph_degree=32",
         "top_graph_build_list_size=100",
-        "top_graph_search_list_size=96",
+        "top_graph_search_list_size=512",
         "boundary_replica_count=2",
         "training_sample_rows=50000",
         "source_identity=include"
