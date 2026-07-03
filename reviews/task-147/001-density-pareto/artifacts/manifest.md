@@ -79,9 +79,45 @@ the same truth rows in the frontier.
 | TQ (A) | 81.7 MiB (Task 143/145 packets) |
 | rb1 (B) | **27.6 MiB (−66%)** |
 
-### 1m tier (winner only)
+### 1m tier (winner only; 990k anchor split, `task147_rb1_1m`, 4/4 steps succeeded)
 
-(to be filled from `artifacts/cells-1m/` when the run completes)
+Recall@10 (TQ → rb1): n8 0.8333 → 0.8417, n16 0.8875 → 0.9250,
+n24 0.9000 → 0.9417, **n32 0.9208 → 0.9667 (+4.6 pp)**,
+n48 0.9292 → 0.9750, n64 0.9292 → **0.9792 (+5.0 pp)**.
+
+Latency mean (n32 / n40): TQ 6.66 / 7.58 ms → rb1 **6.21 / 6.63 ms**
+(−6.8% / −12.5%). rb1 stage split at n32 (per-sweep, 16 scans):
+approximate_scan 74.1 ms + exact_rerank 7.8 ms (~0.49 ms/query for the
+50-row heap fetch + exact rescore).
+
+Index size: TQ 784.8 MiB → rb1 **247.8 MiB (−68%)**.
+
+### Verdict
+
+**rb1 (RaBitQ quant_bits=1 + dense posting blocks + heap_f32 rerank
+width 50) pareto-dominates the just-promoted TQ dense-int8 default at
+every measured scale**: latency parity at 10k–100k and −7..−12% at 1m,
+recall +3.5..+5.0 pp everywhere at n≥16, index −66..−68%. The density
+hypothesis holds emphatically — the win is 4-bit → 1-bit posting bytes
+(fewer pages, fewer parse bytes, cheaper kernel) with the exact rerank
+recovering recall, exactly as the rerank-masking insight predicted.
+rb2 closes the 2-bit branch (same recall as rb1, 4–5× slower — off the
+popcount kernel path), which also settles the reframed Task 96
+question: a TQ 2-bit lane is NOT worth building; the interesting
+follow-ups are at 1 bit.
+
+Follow-ups this evidence motivates (not started here):
+1. IVF default-format promotion question (rb1-style coarse_rerank vs
+   turboquant) — needs the Task 143-style promotion matrix
+   discipline: cold-cache + insert/churn + Graviton + a second corpus
+   before any default flip; also nprobe operating-point re-derivation
+   (rb1 at n16 ≈ the TQ default's n32 recall at ~2/3 the latency).
+2. The Task 111e `coarse_rerank` storage format is the productized
+   shape of this cell — revisit its promotion status with these
+   numbers.
+3. rb2's 4–5× penalty is a kernel-coverage gap (rb2 lacks the
+   popcount-class batch path) — only worth fixing if some future
+   regime needs 2-bit specifically.
 
 ## Run log
 

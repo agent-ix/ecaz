@@ -2,3 +2,132 @@
 [suite:task147-density-pareto-1m] wrote reviews/task-147/001-density-pareto/artifacts/cells-1m/suite-manifest.json
 [suite:task147-density-pareto-1m] load-rb1-1m -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 --log-file reviews/task-147/001-density-pareto/artifacts/cells-1m/load-rb1-1m.log corpus load --prefix task147_rb1_1m --profile ec_ivf --corpus-file data/staged-current/ec_real_ann_benchmarks_anchor_corpus.tsv --queries-file data/staged-current/ec_real_ann_benchmarks_anchor_queries.tsv --manifest-file data/staged-current/ec_real_ann_benchmarks_anchor_manifest.json --allow-manifest-mismatch --bits 4 --seed 42 --storage-format rabitq --reloption quant_bits=1 --reloption dense_posting_blocks=1 --reloption rerank=heap_f32 --reloption rerank_width=50
 [suite:task147-density-pareto-1m] wrote reviews/task-147/001-density-pareto/artifacts/cells-1m/suite-manifest.json
+┌─────────┬───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                                                                     │
+╞═════════╪═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_ivf                                                                                                                    │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ task147_rb1_1m_corpus (990000 rows)                                                                                       │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ task147_rb1_1m_queries (10000 rows)                                                                                       │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ task147_rb1_1m_rabitq_idx [quant_bits=1, dense_posting_blocks=1, rerank=heap_f32, rerank_width=50, storage_format=rabitq] │
+└─────────┴───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+[loader] warning: profile "ec_ivf" does not list quant_bits, dense_posting_blocks as known reloptions; passing through verbatim. Known reloptions: nlists, nprobe, rerank_width, training_sample_rows, seed, pq_group_size, storage_format, quantizer, rerank, coarse_format, coarse_bits, rerank_placement, rerank_format, rerank_group_width, stage2_final_rerank_width
+[loader] inspecting data/staged-current/ec_real_ann_benchmarks_anchor_corpus.tsv
+[loader] inspecting data/staged-current/ec_real_ann_benchmarks_anchor_queries.tsv
+[loader] corpus: 990000 rows, sha256=00d96d7665edc31cd8e4e62712c0ef2679fb714682f3ce4d522305e59faec687  queries: 10000 rows, sha256=34c4874e0e35734574f4ee9e1dd10753fcec2d295955061a407c258df163f5a0
+[loader] warning: manifest verification failed for data/staged-current/ec_real_ann_benchmarks_anchor_manifest.json: prefix="ec_real_ann_benchmarks_anchor" (expected "task147_rb1_1m")
+[loader] copied corpus table task147_rb1_1m_corpus in 143.46s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table task147_rb1_1m_corpus in 271.31s
+[loader] copied queries table task147_rb1_1m_queries in 3.12s
+[loader] building task147_rb1_1m_rabitq_idx using ec_ivf (reloptions=[quant_bits=1, dense_posting_blocks=1, rerank=heap_f32, rerank_width=50, storage_format=rabitq]) ...
+[loader] built task147_rb1_1m_rabitq_idx in 66.82s
+[loader] ec_ivf build timing: requested_workers=1 workers_launched=1 heap_tuples=990000 index_tuples=990000 heap_ingest_us=14229774 train_model_us=3703461 stage_build_plan_us=46162711 stage_pq_train_us=0 stage_centroids_us=1495 stage_assign_us=46034164 stage_postings_us=124878 stage_directory_us=65 flush_build_plan_us=2606954 parallel_begin_us=1102 parallel_drain_us=12972216 parallel_sort_push_us=1256446 parallel_worker_tuple_buffer_capacity=1048576 parallel_worker_tuple_buffer_struct_bytes=67108864
+[loader] completed prefix task147_rb1_1m in 550.01s
+[suite:task147-density-pareto-1m] wrote reviews/task-147/001-density-pareto/artifacts/cells-1m/suite-manifest.json
+[suite:task147-density-pareto-1m] recall-rb1-1m -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench recall --prefix task147_rb1_1m --profile ec_ivf --k 10 --sweep "8,16,24,32,48,64" --queries-limit 24 --bits 4 --seed 42 --force-index --truth-cache-dir reviews/task-147/001-density-pareto/truth-cache --log-output reviews/task-147/001-density-pareto/artifacts/cells-1m/recall-rb1-1m.log
+[suite:task147-density-pareto-1m] wrote reviews/task-147/001-density-pareto/artifacts/cells-1m/suite-manifest.json
+┌────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ nprobe ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 8      ┆ 24      ┆ 240           ┆ 0.8417   ┆ 0.7901          ┆ 0.8824           ┆ 0.6300     ┆ 0.9000     ┆ 1.0000     ┆ 0.4000       ┆ 0.9917 ┆ 4.12 ms     │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 16     ┆ 24      ┆ 240           ┆ 0.9250   ┆ 0.8846          ┆ 0.9520           ┆ 0.8000     ┆ 1.0000     ┆ 1.0000     ┆ 0.5000       ┆ 0.9973 ┆ 4.35 ms     │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 24     ┆ 24      ┆ 240           ┆ 0.9417   ┆ 0.9045          ┆ 0.9649           ┆ 0.8000     ┆ 1.0000     ┆ 1.0000     ┆ 0.7000       ┆ 0.9979 ┆ 5.24 ms     │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 32     ┆ 24      ┆ 240           ┆ 0.9667   ┆ 0.9356          ┆ 0.9830           ┆ 0.8300     ┆ 1.0000     ┆ 1.0000     ┆ 0.7000       ┆ 0.9987 ┆ 5.87 ms     │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 48     ┆ 24      ┆ 240           ┆ 0.9750   ┆ 0.9465          ┆ 0.9885           ┆ 0.9300     ┆ 1.0000     ┆ 1.0000     ┆ 0.7000       ┆ 0.9991 ┆ 8.36 ms     │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 64     ┆ 24      ┆ 240           ┆ 0.9792   ┆ 0.9522          ┆ 0.9911           ┆ 0.9300     ┆ 1.0000     ┆ 1.0000     ┆ 0.8000       ┆ 0.9991 ┆ 10.06 ms    │
+└────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from task147_rb1_1m_queries ...
+[recall] fetching corpus from task147_rb1_1m_corpus ...
+[recall] computing ground truth: 24 queries vs 990000 corpus rows (dim=1536) ...
+[recall] ground truth in 1.01s
+[recall] wrote ground truth cache reviews/task-147/001-density-pareto/truth-cache/truth-v1-rows990000-queries24-dim1536-k10-4d4d205900049474.json
+[suite:task147-density-pareto-1m] wrote reviews/task-147/001-density-pareto/artifacts/cells-1m/suite-manifest.json
+[suite:task147-density-pareto-1m] latency-rb1-1m -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench latency --prefix task147_rb1_1m --profile ec_ivf --k 10 --concurrency 1 --iterations 16 --sweep "32,40" --bits 4 --seed 42 --force-index --sample-backend-memory --cache-state task147_rb1_1m_warm --task87-candidate-batch-counters --ivf-stage-counters --memory-sample-interval-ms 25 --log-output reviews/task-147/001-density-pareto/artifacts/cells-1m/latency-rb1-1m.log
+[suite:task147-density-pareto-1m] wrote reviews/task-147/001-density-pareto/artifacts/cells-1m/suite-manifest.json
+┌────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────────────────┬─────────────┬─────────────┬────────────────┐
+│ nprobe ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state         ┆ rss_peak_kb ┆ hwm_peak_kb ┆ memory_samples │
+╞════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════════════════╪═════════════╪═════════════╪════════════════╡
+│ 32     ┆ 16    ┆ 6.21 ms ┆ 0.93 ms ┆ 5.13 ms ┆ 6.04 ms ┆ 7.59 ms ┆ 8.83 ms ┆ 9.14 ms ┆ task147_rb1_1m_warm ┆ 0           ┆ 0           ┆ 0              │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 40     ┆ 16    ┆ 6.63 ms ┆ 0.76 ms ┆ 5.66 ms ┆ 6.53 ms ┆ 7.86 ms ┆ 8.46 ms ┆ 8.61 ms ┆ task147_rb1_1m_warm ┆ 0           ┆ 0           ┆ 0              │
+└────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────────────────┴─────────────┴─────────────┴────────────────┘
+[block-kernel-counters] command=latency label=nprobe=32 surface=ivf quant=rabitq isa=neon flushes=2826 candidates=721524 elapsed_nanos=49068463 elapsed_ms=49.068463 kernel_flushes=2826 kernel_candidates=721524 kernel_elapsed_nanos=49068463 kernel_elapsed_ms=49.068463 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=1 width_8_15=1 width_16_31=2 width_ge32=2822 pruned_candidates=0 kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=ivf flushes=2826 candidates=721524 elapsed_nanos=49068463 elapsed_ms=49.068463 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[block-kernel-counters] command=latency label=nprobe=40 surface=ivf quant=rabitq isa=neon flushes=3380 candidates=863086 elapsed_nanos=58979571 elapsed_ms=58.979571 kernel_flushes=3380 kernel_candidates=863086 kernel_elapsed_nanos=58979571 kernel_elapsed_ms=58.979571 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=1 width_8_15=0 width_16_31=2 width_ge32=3377 pruned_candidates=0 kept_candidates=0
+[task87-counters] command=latency label=nprobe=40 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=40 surface=ivf flushes=3380 candidates=863086 elapsed_nanos=58979571 elapsed_ms=58.979571 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=40 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=40 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[ivf-stage-counters] command=latency label=nprobe=32 stage=approximate_scan scans=16 samples=16 elapsed_us=74052 elapsed_ms=74.052
+[ivf-stage-counters] command=latency label=nprobe=32 stage=candidate_record scans=16 samples=2826 elapsed_us=557 elapsed_ms=0.557
+[ivf-stage-counters] command=latency label=nprobe=32 stage=centroid_score scans=16 samples=16 elapsed_us=7270 elapsed_ms=7.270
+[ivf-stage-counters] command=latency label=nprobe=32 stage=exact_rerank scans=16 samples=16 elapsed_us=7823 elapsed_ms=7.823
+[ivf-stage-counters] command=latency label=nprobe=32 stage=posting_page_decode scans=16 samples=16 elapsed_us=67451 elapsed_ms=67.451
+[ivf-stage-counters] command=latency label=nprobe=32 stage=posting_visit scans=16 samples=16 elapsed_us=73844 elapsed_ms=73.844
+[ivf-stage-counters] command=latency label=nprobe=32 stage=probe_plan scans=16 samples=16 elapsed_us=6562 elapsed_ms=6.562
+[ivf-stage-counters] command=latency label=nprobe=32 stage=query_prep scans=16 samples=16 elapsed_us=144 elapsed_ms=0.144
+[ivf-stage-counters] command=latency label=nprobe=32 stage=rerank_payload_decode scans=16 samples=16 elapsed_us=6061 elapsed_ms=6.061
+[ivf-stage-counters] command=latency label=nprobe=32 stage=rerank_payload_score scans=16 samples=16 elapsed_us=79 elapsed_ms=0.079
+[ivf-stage-counters] command=latency label=nprobe=32 stage=rescan_total scans=16 samples=16 elapsed_us=95989 elapsed_ms=95.989
+[ivf-stage-counters] command=latency label=nprobe=32 stage=scorer_batch scans=16 samples=2826 elapsed_us=49429 elapsed_ms=49.429
+[ivf-stage-counters] command=latency label=nprobe=32 stage=scratch_flush scans=16 samples=2826 elapsed_us=52467 elapsed_ms=52.467
+[ivf-stage-counters] command=latency label=nprobe=32 stage=topk_collect scans=16 samples=16 elapsed_us=149 elapsed_ms=0.149
+[ivf-stage-counters] command=latency label=nprobe=40 stage=approximate_scan scans=16 samples=16 elapsed_us=86131 elapsed_ms=86.131
+[ivf-stage-counters] command=latency label=nprobe=40 stage=candidate_record scans=16 samples=3380 elapsed_us=618 elapsed_ms=0.618
+[ivf-stage-counters] command=latency label=nprobe=40 stage=centroid_score scans=16 samples=16 elapsed_us=6807 elapsed_ms=6.807
+[ivf-stage-counters] command=latency label=nprobe=40 stage=exact_rerank scans=16 samples=16 elapsed_us=4163 elapsed_ms=4.163
+[ivf-stage-counters] command=latency label=nprobe=40 stage=posting_page_decode scans=16 samples=16 elapsed_us=80765 elapsed_ms=80.765
+[ivf-stage-counters] command=latency label=nprobe=40 stage=posting_visit scans=16 samples=16 elapsed_us=85918 elapsed_ms=85.918
+[ivf-stage-counters] command=latency label=nprobe=40 stage=probe_plan scans=16 samples=16 elapsed_us=6297 elapsed_ms=6.297
+[ivf-stage-counters] command=latency label=nprobe=40 stage=query_prep scans=16 samples=16 elapsed_us=122 elapsed_ms=0.122
+[ivf-stage-counters] command=latency label=nprobe=40 stage=rerank_payload_decode scans=16 samples=16 elapsed_us=3849 elapsed_ms=3.849
+[ivf-stage-counters] command=latency label=nprobe=40 stage=rerank_payload_score scans=16 samples=16 elapsed_us=77 elapsed_ms=0.077
+[ivf-stage-counters] command=latency label=nprobe=40 stage=rescan_total scans=16 samples=16 elapsed_us=103649 elapsed_ms=103.649
+[ivf-stage-counters] command=latency label=nprobe=40 stage=scorer_batch scans=16 samples=3380 elapsed_us=59138 elapsed_ms=59.138
+[ivf-stage-counters] command=latency label=nprobe=40 stage=scratch_flush scans=16 samples=3380 elapsed_us=62822 elapsed_ms=62.822
+[ivf-stage-counters] command=latency label=nprobe=40 stage=topk_collect scans=16 samples=16 elapsed_us=140 elapsed_ms=0.140
+[suite:task147-density-pareto-1m] wrote reviews/task-147/001-density-pareto/artifacts/cells-1m/suite-manifest.json
+[suite:task147-density-pareto-1m] storage-rb1-1m -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 --log-file reviews/task-147/001-density-pareto/artifacts/cells-1m/storage-rb1-1m.log bench storage --prefix task147_rb1_1m
+[suite:task147-density-pareto-1m] wrote reviews/task-147/001-density-pareto/artifacts/cells-1m/suite-manifest.json
+┌───────────────────────────────┬───────────────────────┐
+│ field                         ┆ value                 │
+╞═══════════════════════════════╪═══════════════════════╡
+│ prefix                        ┆ task147_rb1_1m        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus                        ┆ task147_rb1_1m_corpus │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ rows                          ┆ 990000                │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ heap                          ┆ 72.3 MiB              │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ table (heap + toast + fsm/vm) ┆ 15.3 GiB              │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes                       ┆ 247.8 MiB             │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ total                         ┆ 15.6 GiB              │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (total)               ┆ 16907.9 B             │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (heap only)           ┆ 76.6 B                │
+└───────────────────────────────┴───────────────────────┘
+┌────────────────────────────┬───────────────┬───────────┬─────────────────────────────────────────────────────────────────────────────────────────────┬───────────┬─────────┐
+│ index                      ┆ access method ┆ profile   ┆ reloptions                                                                                  ┆ size      ┆ per row │
+╞════════════════════════════╪═══════════════╪═══════════╪═════════════════════════════════════════════════════════════════════════════════════════════╪═══════════╪═════════╡
+│ task147_rb1_1m_rabitq_idx  ┆ ec_ivf        ┆ ec_ivf    ┆ {quant_bits=1,dense_posting_blocks=1,rerank=heap_f32,rerank_width=50,storage_format=rabitq} ┆ 226.6 MiB ┆ 240.0 B │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ task147_rb1_1m_corpus_pkey ┆ btree         ┆ <unknown> ┆ {}                                                                                          ┆ 21.2 MiB  ┆ 22.5 B  │
+└────────────────────────────┴───────────────┴───────────┴─────────────────────────────────────────────────────────────────────────────────────────────┴───────────┴─────────┘
+[suite:task147-density-pareto-1m] wrote reviews/task-147/001-density-pareto/artifacts/cells-1m/suite-manifest.json
+[suite:task147-density-pareto-1m] wrote reviews/task-147/001-density-pareto/artifacts/cells-1m/results.jsonl
+[suite:task147-density-pareto-1m] wrote reviews/task-147/001-density-pareto/artifacts/cells-1m/suite-manifest.json

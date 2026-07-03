@@ -1,7 +1,12 @@
 # Task 147: IVF coarse-payload density pareto at the new defaults (1/2-bit + exact rerank vs 4-bit TQ)
 
-Status: **in progress** (2026-07-03). Owner: Codex (branch
-`task-146-outside-scan-profile` lane). Priority: P2.
+Status: **measured — awaiting review** (2026-07-03). Owner: Codex.
+Priority: P2. Packet: `reviews/task-147/001-density-pareto/` —
+**rb1 (1-bit + heap_f32 rerank, dense) pareto-dominates the TQ
+dense-int8 default at every scale** (1m: 6.21 vs 6.66 ms AND 0.9667 vs
+0.9208 recall @ n32; index −68%); rb2 dominated (recall == rb1, 4–5×
+slower) → 2-bit/Task 96 branch closed. Promotion question deliberately
+left to a follow-up task.
 Reopens the Task 96 premise as a measurement question; informed by the
 Task 115/122 rerank-masking insight and the Task 143/145 stage budgets.
 

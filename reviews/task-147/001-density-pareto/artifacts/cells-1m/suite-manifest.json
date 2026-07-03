@@ -68,8 +68,11 @@
       "expected_artifacts": [
         "reviews/task-147/001-density-pareto/artifacts/cells-1m/load-rb1-1m.log"
       ],
-      "status": "pending",
-      "started_at_unix_ms": 1783094098853
+      "status": "succeeded",
+      "started_at_unix_ms": 1783094098853,
+      "finished_at_unix_ms": 1783094648888,
+      "duration_ms": 550023,
+      "exit_code": 0
     },
     {
       "name": "recall-rb1-1m",
@@ -113,7 +116,11 @@
       "expected_artifacts": [
         "reviews/task-147/001-density-pareto/artifacts/cells-1m/recall-rb1-1m.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1783094648890,
+      "finished_at_unix_ms": 1783094703993,
+      "duration_ms": 55095,
+      "exit_code": 0
     },
     {
       "name": "latency-rb1-1m",
@@ -164,7 +171,11 @@
       "expected_artifacts": [
         "reviews/task-147/001-density-pareto/artifacts/cells-1m/latency-rb1-1m.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1783094703994,
+      "finished_at_unix_ms": 1783094704659,
+      "duration_ms": 665,
+      "exit_code": 0
     },
     {
       "name": "storage-rb1-1m",
@@ -193,7 +204,11 @@
       "expected_artifacts": [
         "reviews/task-147/001-density-pareto/artifacts/cells-1m/storage-rb1-1m.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1783094704660,
+      "finished_at_unix_ms": 1783094704693,
+      "duration_ms": 33,
+      "exit_code": 0
     }
   ]
 }
