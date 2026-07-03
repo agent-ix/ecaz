@@ -1,0 +1,3 @@
+# head: e6b08f497ba22b47fe69ce1b3c04b451d1302ba3 date: 2026-07-03T02:43:16Z
+# cmd: cargo test --no-default-features --features pg18 --lib am::ec_ivf
+test result: ok. 199 passed; 0 failed; 0 ignored; 0 measured; 2055 filtered out; finished in 0.34s

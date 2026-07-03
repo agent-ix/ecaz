@@ -77,3 +77,20 @@ both runs): `storage-real{10k,50k,100k}.log` per run dir.
 ## Not committed (regenerable / banned)
 
 - `baseline/truth-cache/`, `sdot/truth-cache/` (gitignored).
+
+## Addendum 2026-07-03 (feedback response)
+
+- HNSW A/B added per reviewer finding 1: fresh HNSW loads
+  (`task141_hnsw_real{10k,50k,100k}`, m=16, ef_construction=128, loads at
+  branch `e6b08f497`; `load-hnsw-real*.log` + `hnsw-loads-run.log`), then
+  same-tables A/B at ef sweep point 64 with
+  `ec_hnsw.turboquant_exact_score_mode=int8_approx` in both cells:
+  `hnsw-baseline/` (dylib `e5ef96109`, pre-SDOT) vs `hnsw-sdot/` (dylib
+  `e6b08f497`). Key lines: recall@10 0.9203/0.9333/0.8750 IDENTICAL in both
+  cells; latency mean 0.63→0.67 / 0.75→0.81 / 1.01→1.02 ms (neutral within
+  noise, no win) — claim narrowed to IVF-only in request.md. Bespoke fixed
+  ef=64 point (not the full default sweep) because this is a kernel-parity
+  A/B, not an HNSW operating-point study.
+- Packet-local validation logs added per finding 2:
+  `focused-tests-int8approx32.log`, `clippy-pg18.log` (regenerated at
+  `e6b08f497`).

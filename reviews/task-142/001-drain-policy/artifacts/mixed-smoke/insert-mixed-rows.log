@@ -1,0 +1,4 @@
+ERROR:  column "embedding" does not exist
+LINE 1: ..., source, embedding) SELECT id + 1000000, source, embedding ...
+                                                             ^
+DETAIL:  There is a column named "embedding" in table "task135ab_dense_real10k_corpus", but it cannot be referenced from this part of the query.

@@ -1,0 +1,8 @@
+# head: e6b08f497ba22b47fe69ce1b3c04b451d1302ba3 date: 2026-07-03T02:43:16Z
+# cmd: cargo test --no-default-features --features pg18 --lib int8_approx32
+test quant::int8_approx32::neon::neon_path_tests::legacy_and_dotprod_candidate_paths_match_scalar_bits ... ok
+test quant::int8_approx32::tests::simd_dim_tails_are_bit_equal_with_scalar_reference ... ok
+test quant::int8_approx32::tests::block32_is_bit_equal_at_extreme_i8_values ... ok
+test quant::int8_approx32::tests::scalar_reference_matches_production_scorer_bits ... ok
+test quant::int8_approx32::tests::block32_and_partial_are_bit_equal_with_scalar_reference ... ok
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 2249 filtered out; finished in 0.05s

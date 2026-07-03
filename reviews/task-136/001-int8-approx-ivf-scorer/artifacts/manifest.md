@@ -87,3 +87,11 @@ step per scale on the shared tables:
 ## Not committed (regenerable / banned)
 
 - `truth-cache/` (recall ground-truth cache; gitignored per repo policy).
+
+## Addendum 2026-07-03 (feedback response)
+
+- Packet-local validation logs added per reviewer finding 1:
+  `focused-tests-quantizer.log` (38 passed, includes the 5 int8_approx
+  dispatch/parity tests) and `clippy-pg18.log` (pre-existing finding only),
+  regenerated at branch head `e6b08f497` (136 code unchanged since
+  `9514c7518`).

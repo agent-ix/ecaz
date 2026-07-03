@@ -43,20 +43,41 @@ Stacked against the ORIGINAL i16-LUT baseline (Task 136 packet): 100k mean
 2.79 ms (lut) → 2.34 (int8) → 1.95 (int8+SDOT) — the scorer axis has now
 delivered ~−30% e2e in two bit-gated steps.
 
-## Validation
+## HNSW surface (feedback response, 2026-07-03, closes finding 1)
 
-- `cargo test --lib int8_approx32`: 5 passed (4 pre-existing parity tests
-  now exercising the SDOT path on this host, plus the new dual-path pin).
-- clippy pg18 gate: only the pre-existing manual-checked-division finding.
+The reviewer correctly rejected the unproven "HNSW inherits the win"
+claim. HNSW A/B added (same tables `task141_hnsw_real{scale}`, m=16
+efc=128, ef sweep point 64, `turboquant_exact_score_mode=int8_approx`
+both cells, pre-SDOT `e5ef96109` vs SDOT branch `e6b08f497`):
+
+| scale | recall@10 pre → post | latency mean pre → post |
+|---|---|---|
+| 10k | 0.9203 → 0.9203 | 0.63 → 0.67 ms |
+| 50k | 0.9333 → 0.9333 | 0.75 → 0.81 ms |
+| 100k | 0.8750 → 0.8750 | 1.01 → 1.02 ms |
+
+**Narrowed claim:** HNSW inherits the kernel's CORRECTNESS (recall
+byte-identical, bit-exact) but shows NO latency win at this operating
+point — neutral within run-to-run noise. This is consistent with the
+Task 134 finding that graph-AM exact-score batches are too narrow to be
+kernel-bound. The Task 141 win claim is IVF-only. Artifacts:
+`artifacts/hnsw-{baseline,sdot}/`, loads in `artifacts/load-hnsw-*.log`.
+
+## Validation (packet-local, closes finding 2)
+
+- `artifacts/focused-tests-int8approx32.log`: 5 passed (4 pre-existing
+  parity tests exercising the SDOT path on this host + the dual-path pin).
+- `artifacts/clippy-pg18.log`: only the pre-existing
+  manual-checked-division finding.
 - pgrx runtime tests skipped per the macOS policy; behavior validated
-  end-to-end by the A/B suite.
+  end-to-end by the A/B suites.
 
 ## Asks
 
 1. Review the `sdot_asm` wrapper against the `bfdot_asm` precedent
    (operand classes, `pure, nomem, nostack` options) and the dispatch
    ordering (dotprod before neon).
-2. Confirm this satisfies the Task 141 gate; the HNSW surface uses the
-   same kernel and inherits the win (no HNSW-side change needed).
+2. Confirm the narrowed scope satisfies the Task 141 gate: IVF win
+   proven, HNSW proven neutral-at-parity (not claimed as a win).
 3. Task 143's 1m matrix will take this as the int8 candidate; Graviton
    (also dotprod-capable) remains the standing cross-lane follow-up.

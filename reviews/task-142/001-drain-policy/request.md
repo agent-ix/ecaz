@@ -41,11 +41,36 @@ source-grounded correction; the change still ships on its merits (simpler
 code, row-level flush structure, small consistent latency win, recall
 byte-identical).
 
+## Mixed row+dense smoke (feedback response, 2026-07-03, closes finding 1)
+
+200 post-build rows were INSERTed into the dense 10k table
+(`task135ab_dense_real10k_corpus`, 10,000 → 10,200 rows; inserts append as
+ROW postings over the dense-block lists — the exact mixed boundary the
+drain removal changes). Three-way recall parity on the same binary
+(`e6b08f497`), nprobe=32, 64 queries:
+
+| path | recall@10 | mean q-time |
+|---|---|---|
+| default (no-drain accumulation, code under review) | 0.9781 | 1.27 ms |
+| `dense_posting_coalescing=off` (immediate per-block oracle) | 0.9781 | 1.51 ms |
+| `scratch_soa_batch_decode=off` (per-posting min-bound oracle) | 0.9781 | 1.72 ms |
+
+All three return identical recall and identical distribution stats
+(ci95/p10/p50/p90/worst/ndcg), proving the mixed row+dense boundary path
+against two independent oracles. The no-drain path is also the fastest on
+the mixed table. Artifacts: `artifacts/mixed-smoke/`.
+
+## Validation (packet-local)
+
+- `artifacts/focused-tests-ec-ivf.log`: 199 am::ec_ivf tests pass.
+- `artifacts/clippy-pg18.log`: only the pre-existing finding.
+
 ## Asks
 
 1. Confirm the soundness argument for cross-list accumulation (per-posting
    centroid_ip / append-time tid budget / dedup-by-tid) matches your
-   reading of `push_dense_posting` and `record_scored_posting_candidates`.
+   reading of `push_dense_posting` and `record_scored_posting_candidates`,
+   now backed by the mixed-boundary parity smoke.
 2. Accept the corrected attribution for the residual dense scorer gap (or
    direct a deeper probe); Task 143's 1m matrix proceeds either way with
    this commit as the dense candidate.

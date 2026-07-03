@@ -19,9 +19,13 @@ suffix-max table), slab batch, borrowed-ref batch, and the common `QuantCodec`
 batch route. Query-side only; no on-disk format/mode/reloption change (hard
 constraint respected). Default is unchanged (`lut`).
 
-Validation: 38 focused `am::ec_ivf::quantizer` tests pass (5 new int8_approx
-dispatch/parity tests, bit-equal batch-vs-scalar assertions); clippy pg18 gate
-carries only the two documented pre-existing findings. pgrx runtime tests
+Validation (packet-local per reviewer feedback 2026-07-03): 38 focused
+`am::ec_ivf::quantizer` tests pass (5 new int8_approx dispatch/parity tests,
+bit-equal batch-vs-scalar assertions) — `artifacts/focused-tests-quantizer.log`;
+clippy pg18 gate carries only the pre-existing manual-checked-division
+finding — `artifacts/clippy-pg18.log`. (Logs regenerated at branch head
+`e6b08f497`, which contains the 136 code unchanged; the original run at
+`9514c7518` predated the packet-local rule.) pgrx runtime tests
 skipped per the macOS `_BufferBlocks` policy; behavior validated end-to-end by
 the bench suite below.
 

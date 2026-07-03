@@ -74,3 +74,16 @@ Same tables both cells; unchanged (`storage-dense-real*.log` per run dir).
 ## Not committed
 
 - `baseline/truth-cache/`, `drainfix/truth-cache/` (gitignored).
+
+## Addendum 2026-07-03 (feedback response)
+
+- Mixed row+dense smoke added per reviewer finding 1: 200 rows INSERTed
+  into `task135ab_dense_real10k_corpus` (row postings over dense lists;
+  `mixed-smoke/insert-mixed-rows.log` shape, final state in
+  `mixed-smoke/mixed-table-state.log` with build sha `e6b08f497`).
+  Three-way recall parity at nprobe=32/64q: default no-drain 0.9781
+  (1.27 ms) == coalescing-off oracle 0.9781 (1.51 ms) == batch-decode-off
+  oracle 0.9781 (1.72 ms); identical distribution stats. Logs:
+  `mixed-smoke/recall-mixed-{default,coalescing-off,batchdecode-off}.log`.
+- Packet-local validation logs added: `focused-tests-ec-ivf.log` (199
+  passed), `clippy-pg18.log`.

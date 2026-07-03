@@ -1,0 +1,180 @@
+[suite:task141-hnsw-sdot-ab] wrote reviews/task-141/001-sdot-kernel/artifacts/hnsw-sdot/suite-manifest.json
+[suite:task141-hnsw-sdot-ab] wrote reviews/task-141/001-sdot-kernel/artifacts/hnsw-sdot/suite-manifest.json
+[suite:task141-hnsw-sdot-ab] precheck-build-sha -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 dev sql --pg 18 --db tqvector_bench --socket-dir /Users/peter/.pgrx --raw --sql "SELECT now() AS captured_at, ecaz_build_git_sha();" --log-output reviews/task-141/001-sdot-kernel/artifacts/hnsw-sdot/precheck-build-sha.log
+[suite:task141-hnsw-sdot-ab] wrote reviews/task-141/001-sdot-kernel/artifacts/hnsw-sdot/suite-manifest.json
+          captured_at          |            ecaz_build_git_sha            
+-------------------------------+------------------------------------------
+ 2026-07-02 20:34:19.468171-07 | e6b08f497ba22b47fe69ce1b3c04b451d1302ba3
+(1 row)
+
+[suite:task141-hnsw-sdot-ab] wrote reviews/task-141/001-sdot-kernel/artifacts/hnsw-sdot/suite-manifest.json
+[suite:task141-hnsw-sdot-ab] recall-hnsw-int8-real10k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench recall --prefix task141_hnsw_real10k --profile ec_hnsw --k 10 --sweep 64 --queries-limit 64 --bits 4 --seed 42 --force-index --session-guc ec_hnsw.turboquant_exact_score_mode=int8_approx --truth-cache-dir reviews/task-141/001-sdot-kernel/artifacts/hnsw-sdot/truth-cache --log-output reviews/task-141/001-sdot-kernel/artifacts/hnsw-sdot/recall-hnsw-int8-real10k.log
+[suite:task141-hnsw-sdot-ab] wrote reviews/task-141/001-sdot-kernel/artifacts/hnsw-sdot/suite-manifest.json
+┌───────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ ef_search ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞═══════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 64        ┆ 64      ┆ 640           ┆ 0.9203   ┆ 0.8967          ┆ 0.9389           ┆ 0.8000     ┆ 1.0000     ┆ 1.0000     ┆ 0.0000       ┆ 0.9836 ┆ 1.07 ms     │
+└───────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from task141_hnsw_real10k_queries ...
+[recall] fetching corpus from task141_hnsw_real10k_corpus ...
+[recall] computing ground truth: 64 queries vs 10000 corpus rows (dim=1536) ...
+[recall] ground truth in 20.60ms
+[recall] wrote ground truth cache reviews/task-141/001-sdot-kernel/artifacts/hnsw-sdot/truth-cache/truth-v1-rows10000-queries64-dim1536-k10-97f391fdef18b4eb.json
+[suite:task141-hnsw-sdot-ab] wrote reviews/task-141/001-sdot-kernel/artifacts/hnsw-sdot/suite-manifest.json
+[suite:task141-hnsw-sdot-ab] latency-hnsw-int8-real10k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench latency --prefix task141_hnsw_real10k --profile ec_hnsw --k 10 --concurrency 1 --iterations 64 --sweep 64 --bits 4 --seed 42 --force-index --sample-backend-memory --cache-state task141_hnsw_real10k_warm --session-guc ec_hnsw.turboquant_exact_score_mode=int8_approx --task87-candidate-batch-counters --memory-sample-interval-ms 25 --log-output reviews/task-141/001-sdot-kernel/artifacts/hnsw-sdot/latency-hnsw-int8-real10k.log
+[suite:task141-hnsw-sdot-ab] wrote reviews/task-141/001-sdot-kernel/artifacts/hnsw-sdot/suite-manifest.json
+┌───────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬───────────────────────────┬─────────────┬─────────────┬────────────────┐
+│ ef_search ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state               ┆ rss_peak_kb ┆ hwm_peak_kb ┆ memory_samples │
+╞═══════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═══════════════════════════╪═════════════╪═════════════╪════════════════╡
+│ 64        ┆ 64    ┆ 0.67 ms ┆ 0.31 ms ┆ 0.51 ms ┆ 0.61 ms ┆ 0.83 ms ┆ 1.73 ms ┆ 3.01 ms ┆ task141_hnsw_real10k_warm ┆ 0           ┆ 0           ┆ 0              │
+└───────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴───────────────────────────┴─────────────┴─────────────┴────────────────┘
+[task87-counters] command=latency label=ef_search=64 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=ef_search=64 surface=ivf flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=ef_search=64 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=ef_search=64 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[suite:task141-hnsw-sdot-ab] wrote reviews/task-141/001-sdot-kernel/artifacts/hnsw-sdot/suite-manifest.json
+[suite:task141-hnsw-sdot-ab] storage-hnsw-real10k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 --log-file reviews/task-141/001-sdot-kernel/artifacts/hnsw-sdot/storage-hnsw-real10k.log bench storage --prefix task141_hnsw_real10k
+[suite:task141-hnsw-sdot-ab] wrote reviews/task-141/001-sdot-kernel/artifacts/hnsw-sdot/suite-manifest.json
+┌───────────────────────────────┬─────────────────────────────┐
+│ field                         ┆ value                       │
+╞═══════════════════════════════╪═════════════════════════════╡
+│ prefix                        ┆ task141_hnsw_real10k        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus                        ┆ task141_hnsw_real10k_corpus │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ rows                          ┆ 10000                       │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ heap                          ┆ 752.0 KiB                   │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ table (heap + toast + fsm/vm) ┆ 158.8 MiB                   │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes                       ┆ 13.3 MiB                    │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ total                         ┆ 172.1 MiB                   │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (total)               ┆ 18043.7 B                   │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (heap only)           ┆ 77.0 B                      │
+└───────────────────────────────┴─────────────────────────────┘
+┌──────────────────────────────────┬───────────────┬───────────┬───────────────────────────────────────────────────────┬───────────┬──────────┐
+│ index                            ┆ access method ┆ profile   ┆ reloptions                                            ┆ size      ┆ per row  │
+╞══════════════════════════════════╪═══════════════╪═══════════╪═══════════════════════════════════════════════════════╪═══════════╪══════════╡
+│ task141_hnsw_real10k_m16_idx     ┆ ec_hnsw       ┆ ec_hnsw   ┆ {m=16,ef_construction=128,build_source_column=source} ┆ 13.0 MiB  ┆ 1366.4 B │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ task141_hnsw_real10k_corpus_pkey ┆ btree         ┆ <unknown> ┆ {}                                                    ┆ 240.0 KiB ┆ 24.6 B   │
+└──────────────────────────────────┴───────────────┴───────────┴───────────────────────────────────────────────────────┴───────────┴──────────┘
+[suite:task141-hnsw-sdot-ab] wrote reviews/task-141/001-sdot-kernel/artifacts/hnsw-sdot/suite-manifest.json
+[suite:task141-hnsw-sdot-ab] recall-hnsw-int8-real50k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench recall --prefix task141_hnsw_real50k --profile ec_hnsw --k 10 --sweep 64 --queries-limit 48 --bits 4 --seed 42 --force-index --session-guc ec_hnsw.turboquant_exact_score_mode=int8_approx --truth-cache-dir reviews/task-141/001-sdot-kernel/artifacts/hnsw-sdot/truth-cache --log-output reviews/task-141/001-sdot-kernel/artifacts/hnsw-sdot/recall-hnsw-int8-real50k.log
+[suite:task141-hnsw-sdot-ab] wrote reviews/task-141/001-sdot-kernel/artifacts/hnsw-sdot/suite-manifest.json
+┌───────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ ef_search ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞═══════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 64        ┆ 48      ┆ 480           ┆ 0.9333   ┆ 0.9074          ┆ 0.9524           ┆ 0.8000     ┆ 0.9000     ┆ 1.0000     ┆ 0.8000       ┆ 0.9982 ┆ 1.88 ms     │
+└───────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from task141_hnsw_real50k_queries ...
+[recall] fetching corpus from task141_hnsw_real50k_corpus ...
+[recall] computing ground truth: 48 queries vs 50000 corpus rows (dim=1536) ...
+[recall] ground truth in 79.84ms
+[recall] wrote ground truth cache reviews/task-141/001-sdot-kernel/artifacts/hnsw-sdot/truth-cache/truth-v1-rows50000-queries48-dim1536-k10-a93e9d1a3c4f8202.json
+[suite:task141-hnsw-sdot-ab] wrote reviews/task-141/001-sdot-kernel/artifacts/hnsw-sdot/suite-manifest.json
+[suite:task141-hnsw-sdot-ab] latency-hnsw-int8-real50k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench latency --prefix task141_hnsw_real50k --profile ec_hnsw --k 10 --concurrency 1 --iterations 48 --sweep 64 --bits 4 --seed 42 --force-index --sample-backend-memory --cache-state task141_hnsw_real50k_warm --session-guc ec_hnsw.turboquant_exact_score_mode=int8_approx --task87-candidate-batch-counters --memory-sample-interval-ms 25 --log-output reviews/task-141/001-sdot-kernel/artifacts/hnsw-sdot/latency-hnsw-int8-real50k.log
+[suite:task141-hnsw-sdot-ab] wrote reviews/task-141/001-sdot-kernel/artifacts/hnsw-sdot/suite-manifest.json
+┌───────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬───────────────────────────┬─────────────┬─────────────┬────────────────┐
+│ ef_search ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state               ┆ rss_peak_kb ┆ hwm_peak_kb ┆ memory_samples │
+╞═══════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═══════════════════════════╪═════════════╪═════════════╪════════════════╡
+│ 64        ┆ 48    ┆ 0.81 ms ┆ 0.32 ms ┆ 0.54 ms ┆ 0.76 ms ┆ 1.06 ms ┆ 2.11 ms ┆ 2.72 ms ┆ task141_hnsw_real50k_warm ┆ 0           ┆ 0           ┆ 0              │
+└───────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴───────────────────────────┴─────────────┴─────────────┴────────────────┘
+[task87-counters] command=latency label=ef_search=64 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=ef_search=64 surface=ivf flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=ef_search=64 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=ef_search=64 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[suite:task141-hnsw-sdot-ab] wrote reviews/task-141/001-sdot-kernel/artifacts/hnsw-sdot/suite-manifest.json
+[suite:task141-hnsw-sdot-ab] storage-hnsw-real50k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 --log-file reviews/task-141/001-sdot-kernel/artifacts/hnsw-sdot/storage-hnsw-real50k.log bench storage --prefix task141_hnsw_real50k
+[suite:task141-hnsw-sdot-ab] wrote reviews/task-141/001-sdot-kernel/artifacts/hnsw-sdot/suite-manifest.json
+┌───────────────────────────────┬─────────────────────────────┐
+│ field                         ┆ value                       │
+╞═══════════════════════════════╪═════════════════════════════╡
+│ prefix                        ┆ task141_hnsw_real50k        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus                        ┆ task141_hnsw_real50k_corpus │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ rows                          ┆ 50000                       │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ heap                          ┆ 3.7 MiB                     │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ table (heap + toast + fsm/vm) ┆ 793.8 MiB                   │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes                       ┆ 66.2 MiB                    │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ total                         ┆ 860.0 MiB                   │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (total)               ┆ 18035.8 B                   │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (heap only)           ┆ 76.7 B                      │
+└───────────────────────────────┴─────────────────────────────┘
+┌──────────────────────────────────┬───────────────┬───────────┬───────────────────────────────────────────────────────┬──────────┬──────────┐
+│ index                            ┆ access method ┆ profile   ┆ reloptions                                            ┆ size     ┆ per row  │
+╞══════════════════════════════════╪═══════════════╪═══════════╪═══════════════════════════════════════════════════════╪══════════╪══════════╡
+│ task141_hnsw_real50k_m16_idx     ┆ ec_hnsw       ┆ ec_hnsw   ┆ {m=16,ef_construction=128,build_source_column=source} ┆ 65.1 MiB ┆ 1365.6 B │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ task141_hnsw_real50k_corpus_pkey ┆ btree         ┆ <unknown> ┆ {}                                                    ┆ 1.1 MiB  ┆ 22.8 B   │
+└──────────────────────────────────┴───────────────┴───────────┴───────────────────────────────────────────────────────┴──────────┴──────────┘
+[suite:task141-hnsw-sdot-ab] wrote reviews/task-141/001-sdot-kernel/artifacts/hnsw-sdot/suite-manifest.json
+[suite:task141-hnsw-sdot-ab] recall-hnsw-int8-real100k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench recall --prefix task141_hnsw_real100k --profile ec_hnsw --k 10 --sweep 64 --queries-limit 32 --bits 4 --seed 42 --force-index --session-guc ec_hnsw.turboquant_exact_score_mode=int8_approx --truth-cache-dir reviews/task-141/001-sdot-kernel/artifacts/hnsw-sdot/truth-cache --log-output reviews/task-141/001-sdot-kernel/artifacts/hnsw-sdot/recall-hnsw-int8-real100k.log
+[suite:task141-hnsw-sdot-ab] wrote reviews/task-141/001-sdot-kernel/artifacts/hnsw-sdot/suite-manifest.json
+┌───────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ ef_search ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞═══════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 64        ┆ 32      ┆ 320           ┆ 0.8750   ┆ 0.8343          ┆ 0.9068           ┆ 0.7000     ┆ 0.9000     ┆ 1.0000     ┆ 0.4000       ┆ 0.9936 ┆ 3.76 ms     │
+└───────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from task141_hnsw_real100k_queries ...
+[recall] fetching corpus from task141_hnsw_real100k_corpus ...
+[recall] computing ground truth: 32 queries vs 100000 corpus rows (dim=1536) ...
+[recall] ground truth in 115.98ms
+[recall] wrote ground truth cache reviews/task-141/001-sdot-kernel/artifacts/hnsw-sdot/truth-cache/truth-v1-rows100000-queries32-dim1536-k10-22dfd78bf8c49028.json
+[suite:task141-hnsw-sdot-ab] wrote reviews/task-141/001-sdot-kernel/artifacts/hnsw-sdot/suite-manifest.json
+[suite:task141-hnsw-sdot-ab] latency-hnsw-int8-real100k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench latency --prefix task141_hnsw_real100k --profile ec_hnsw --k 10 --concurrency 1 --iterations 32 --sweep 64 --bits 4 --seed 42 --force-index --sample-backend-memory --cache-state task141_hnsw_real100k_warm --session-guc ec_hnsw.turboquant_exact_score_mode=int8_approx --task87-candidate-batch-counters --memory-sample-interval-ms 25 --log-output reviews/task-141/001-sdot-kernel/artifacts/hnsw-sdot/latency-hnsw-int8-real100k.log
+[suite:task141-hnsw-sdot-ab] wrote reviews/task-141/001-sdot-kernel/artifacts/hnsw-sdot/suite-manifest.json
+┌───────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬────────────────────────────┬─────────────┬─────────────┬────────────────┐
+│ ef_search ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state                ┆ rss_peak_kb ┆ hwm_peak_kb ┆ memory_samples │
+╞═══════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪════════════════════════════╪═════════════╪═════════════╪════════════════╡
+│ 64        ┆ 32    ┆ 1.02 ms ┆ 0.33 ms ┆ 0.71 ms ┆ 0.96 ms ┆ 1.31 ms ┆ 2.25 ms ┆ 2.62 ms ┆ task141_hnsw_real100k_warm ┆ 0           ┆ 0           ┆ 0              │
+└───────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴────────────────────────────┴─────────────┴─────────────┴────────────────┘
+[task87-counters] command=latency label=ef_search=64 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=ef_search=64 surface=ivf flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=ef_search=64 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=ef_search=64 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[suite:task141-hnsw-sdot-ab] wrote reviews/task-141/001-sdot-kernel/artifacts/hnsw-sdot/suite-manifest.json
+[suite:task141-hnsw-sdot-ab] storage-hnsw-real100k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 --log-file reviews/task-141/001-sdot-kernel/artifacts/hnsw-sdot/storage-hnsw-real100k.log bench storage --prefix task141_hnsw_real100k
+[suite:task141-hnsw-sdot-ab] wrote reviews/task-141/001-sdot-kernel/artifacts/hnsw-sdot/suite-manifest.json
+┌───────────────────────────────┬──────────────────────────────┐
+│ field                         ┆ value                        │
+╞═══════════════════════════════╪══════════════════════════════╡
+│ prefix                        ┆ task141_hnsw_real100k        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus                        ┆ task141_hnsw_real100k_corpus │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ rows                          ┆ 100000                       │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ heap                          ┆ 7.3 MiB                      │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ table (heap + toast + fsm/vm) ┆ 1.6 GiB                      │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes                       ┆ 132.4 MiB                    │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ total                         ┆ 1.7 GiB                      │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (total)               ┆ 18034.7 B                    │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (heap only)           ┆ 76.6 B                       │
+└───────────────────────────────┴──────────────────────────────┘
+┌───────────────────────────────────┬───────────────┬───────────┬───────────────────────────────────────────────────────┬───────────┬──────────┐
+│ index                             ┆ access method ┆ profile   ┆ reloptions                                            ┆ size      ┆ per row  │
+╞═══════════════════════════════════╪═══════════════╪═══════════╪═══════════════════════════════════════════════════════╪═══════════╪══════════╡
+│ task141_hnsw_real100k_m16_idx     ┆ ec_hnsw       ┆ ec_hnsw   ┆ {m=16,ef_construction=128,build_source_column=source} ┆ 130.2 MiB ┆ 1365.4 B │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ task141_hnsw_real100k_corpus_pkey ┆ btree         ┆ <unknown> ┆ {}                                                    ┆ 2.2 MiB   ┆ 22.6 B   │
+└───────────────────────────────────┴───────────────┴───────────┴───────────────────────────────────────────────────────┴───────────┴──────────┘
+[suite:task141-hnsw-sdot-ab] wrote reviews/task-141/001-sdot-kernel/artifacts/hnsw-sdot/suite-manifest.json
+[suite:task141-hnsw-sdot-ab] wrote reviews/task-141/001-sdot-kernel/artifacts/hnsw-sdot/results.jsonl
+[suite:task141-hnsw-sdot-ab] wrote reviews/task-141/001-sdot-kernel/artifacts/hnsw-sdot/suite-manifest.json

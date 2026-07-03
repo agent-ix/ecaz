@@ -1,0 +1,83 @@
+{
+ "name": "task141-hnsw-loads",
+ "schema_version": 1,
+ "artifact_dir": "reviews/task-141/001-sdot-kernel/artifacts",
+ "defaults": {
+  "pg": 18,
+  "socket_dir": "/Users/peter/.pgrx",
+  "profile": "ec_hnsw",
+  "bits": 4,
+  "seed": 42,
+  "queries_limit": 64,
+  "iterations": 64,
+  "force_index": true,
+  "sample_backend_memory": true,
+  "memory_sample_interval_ms": 25
+ },
+ "thresholds": [],
+ "steps": [
+  {
+   "kind": "load",
+   "name": "load-hnsw-real10k",
+   "tags": [
+    "load",
+    "task141hnsw",
+    "hnsw",
+    "real10k"
+   ],
+   "prefix": "task141_hnsw_real10k",
+   "profile": "ec_hnsw",
+   "corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+   "queries_file": "data/staged-current/ec_real_10k_queries.tsv",
+   "manifest_file": "data/staged-current/ec_real_10k_manifest.json",
+   "allow_manifest_mismatch": true,
+   "m": [
+    16
+   ],
+   "ef_construction": 128,
+   "log_file": "${artifact_dir}/load-hnsw-real10k.log"
+  },
+  {
+   "kind": "load",
+   "name": "load-hnsw-real50k",
+   "tags": [
+    "load",
+    "task141hnsw",
+    "hnsw",
+    "real50k"
+   ],
+   "prefix": "task141_hnsw_real50k",
+   "profile": "ec_hnsw",
+   "corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+   "queries_file": "data/staged-current/ec_real_50k_queries.tsv",
+   "manifest_file": "data/staged-current/ec_real_50k_manifest.json",
+   "allow_manifest_mismatch": true,
+   "m": [
+    16
+   ],
+   "ef_construction": 128,
+   "log_file": "${artifact_dir}/load-hnsw-real50k.log"
+  },
+  {
+   "kind": "load",
+   "name": "load-hnsw-real100k",
+   "tags": [
+    "load",
+    "task141hnsw",
+    "hnsw",
+    "real100k"
+   ],
+   "prefix": "task141_hnsw_real100k",
+   "profile": "ec_hnsw",
+   "corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+   "queries_file": "data/staged-current/ec_real_100k_queries.tsv",
+   "manifest_file": "data/staged-current/ec_real_100k_manifest.json",
+   "allow_manifest_mismatch": true,
+   "m": [
+    16
+   ],
+   "ef_construction": 128,
+   "log_file": "${artifact_dir}/load-hnsw-real100k.log"
+  }
+ ]
+}

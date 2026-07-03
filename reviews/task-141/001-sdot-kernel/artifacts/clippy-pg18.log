@@ -1,0 +1,3 @@
+# head: e6b08f497ba22b47fe69ce1b3c04b451d1302ba3 date: 2026-07-03T02:43:16Z
+# cmd: cargo clippy --all-targets --no-default-features --features pg18
+   1 warning: manual checked division
