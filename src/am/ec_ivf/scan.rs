@@ -696,6 +696,11 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amrescan(
             pgrx::error!("ec_ivf scan query must not be NULL");
         }
 
+        // Task 146: bound the whole rescan body, including query datum
+        // extraction, metadata read, query prep, centroid scoring, and the
+        // approximate scan, so e2e − rescan_total isolates the
+        // executor/gettuple share.
+        let rescan_started = Instant::now();
         let query =
             Vec::<f32>::from_polymorphic_datum(orderby.sk_argument, false, pg_sys::FLOAT4ARRAYOID)
                 .unwrap_or_else(|| pgrx::error!("ec_ivf scan requires a real[] ORDER BY query"));
@@ -766,11 +771,18 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amrescan(
             resolve_effective_nprobe(&metadata)
         };
         opaque.scan_nprobe = requested_nprobe;
+        let query_prep_started = Instant::now();
         store_scan_query(opaque, &query);
         store_scan_prepared_query(opaque, (*scan).indexRelation, &query, &metadata);
         configure_heap_rerank_state(scan, opaque, &index_options);
+        record_stage_elapsed(
+            opaque,
+            super::stage_counters::IvfQueryStage::QueryPrep,
+            query_prep_started.elapsed(),
+        );
 
         if metadata.dimensions != 0 {
+            let centroid_score_started = Instant::now();
             let centroid_scores = load_centroid_scores((*scan).indexRelation, &metadata, &query)
                 .unwrap_or_else(|e| pgrx::error!("{e}"));
             let selected_lists = select_probe_lists_with_adaptive(
@@ -779,6 +791,11 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amrescan(
                 super::options::current_session_adaptive_nprobe(),
                 super::options::current_session_adaptive_nprobe_score_gap_micros(),
                 super::options::current_session_adaptive_nprobe_score_margin_ratio_bps(),
+            );
+            record_stage_elapsed(
+                opaque,
+                super::stage_counters::IvfQueryStage::CentroidScore,
+                centroid_score_started.elapsed(),
             );
             opaque.scan_nprobe = u32::try_from(selected_lists.len()).unwrap_or(u32::MAX);
             opaque
@@ -809,6 +826,11 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amrescan(
                 }
             }
         };
+        record_stage_elapsed(
+            opaque,
+            super::stage_counters::IvfQueryStage::RescanTotal,
+            rescan_started.elapsed(),
+        );
     })
 }
 
@@ -951,6 +973,9 @@ fn record_stage_elapsed(
         Stage::ExactRerank => counters.record_exact_rerank_elapsed_us(elapsed_us),
         Stage::RerankPayloadDecode => counters.record_rerank_payload_decode_elapsed_us(elapsed_us),
         Stage::RerankPayloadScore => counters.record_rerank_payload_score_elapsed_us(elapsed_us),
+        Stage::QueryPrep => counters.record_query_prep_elapsed_us(elapsed_us),
+        Stage::CentroidScore => counters.record_centroid_score_elapsed_us(elapsed_us),
+        Stage::RescanTotal => counters.record_rescan_total_elapsed_us(elapsed_us),
     }
     super::stage_counters::record_stage_elapsed_us(stage, elapsed_us);
 }
