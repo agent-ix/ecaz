@@ -1,0 +1,12 @@
+[suite:task143-promotion-matrix] wrote reviews/task-143/001-promotion-matrix/artifacts/suite-manifest.json
+[suite:task143-promotion-matrix] wrote reviews/task-143/001-promotion-matrix/artifacts/suite-manifest.json
+[suite:task143-promotion-matrix] precheck-build-sha -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 dev sql --pg 18 --db tqvector_bench --socket-dir /Users/peter/.pgrx --raw --sql "SELECT now() AS captured_at, ecaz_build_git_sha();" --log-output reviews/task-143/001-promotion-matrix/artifacts/precheck-build-sha.log
+[suite:task143-promotion-matrix] wrote reviews/task-143/001-promotion-matrix/artifacts/suite-manifest.json
+          captured_at          |            ecaz_build_git_sha            
+-------------------------------+------------------------------------------
+ 2026-07-02 20:36:56.474121-07 | e6b08f497ba22b47fe69ce1b3c04b451d1302ba3
+(1 row)
+
+[suite:task143-promotion-matrix] wrote reviews/task-143/001-promotion-matrix/artifacts/suite-manifest.json
+[suite:task143-promotion-matrix] load-1m-row -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 --log-file reviews/task-143/001-promotion-matrix/artifacts/load-1m-row.log corpus load --prefix task143_row_1m --profile ec_ivf --corpus-file data/staged-current/ec_real_ann_benchmarks_anchor_corpus.tsv --queries-file data/staged-current/ec_real_ann_benchmarks_anchor_queries.tsv --manifest-file data/staged-current/ec_real_ann_benchmarks_anchor_manifest.json --allow-manifest-mismatch --bits 4 --seed 42 --storage-format turboquant
+[suite:task143-promotion-matrix] wrote reviews/task-143/001-promotion-matrix/artifacts/suite-manifest.json
