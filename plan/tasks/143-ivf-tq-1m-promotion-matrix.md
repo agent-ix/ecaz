@@ -1,6 +1,13 @@
 # Task 143: IVF TQ 1m promotion matrix (layout × scorer defaults)
 
-Status: **measured — decision requested** (2026-07-03). Owner: Codex. Priority: P2
+Status: **complete — defaults landed** (2026-07-03, operator-approved). Owner: Codex. Priority: P2
+
+Outcome: both defaults flipped at `815518d82` and confirmed on the pure
+default path (`reviews/task-143/002-default-flip/`): out-of-the-box ec_ivf
+TurboQuant now builds dense posting blocks and scores with the int8/SDOT
+kernel — 100k 3.16→1.75 ms, 1m 12.1→7.76 ms vs the old defaults at
+recall within noise; nprobe 40 offers +recall AND −latency vs the old
+operating point. Graviton remains the recorded cross-lane follow-up.
 
 Evidence: `reviews/task-143/001-promotion-matrix/` — old default (row+lut)
 → proposed (dense+int8) at nprobe 32: 100k 3.16→1.75 ms (−44.6%), 1m
