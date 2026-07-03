@@ -1,6 +1,8 @@
 # Task 130: TurboQuant Post-Task-124 Cleanup
 
-Status: **review requested — clean main-based branch** (2026-06-30; packet `reviews/task-130/001-clean-main-keep-set/`).
+Status: **approved - clean main-based branch landable** (2026-06-30; packet
+`reviews/task-130/001-clean-main-keep-set/`, feedback
+`2026-06-30-01-reviewer.md`).
 Owner: coder (to be assigned). One coder, one branch.
 Priority: P1 before any Task 124 landing or closeout PR merge.
 

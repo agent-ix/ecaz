@@ -1,6 +1,8 @@
 # Task 144: HNSW int8_approx exact-score default revisit
 
-Status: **measured — flip recommended, awaiting ack** (2026-07-03). Owner: Codex. Priority: P3
+Status: **review acked - default flip approved, code pending** (2026-07-03;
+feedback `reviews/task-144/001-hnsw-scorer-default/feedback/2026-07-03-01-reviewer.md`).
+Owner: Codex. Priority: P3
 
 Evidence: `reviews/task-144/001-hnsw-scorer-default/` — recall dips
 ≤0.42 pp across ef 40–200 at 10k/50k/100k (noise; Task 98 caution does

@@ -1,6 +1,7 @@
 # Task 134: TQ small-batch scorer for graph AMs (HNSW/DiskANN)
 
-Status: **proposed** (2026-07-01). Owner: coder (to be assigned). Priority: P3
+Status: **measured - negative / no code change** (2026-07-02;
+`reviews/task-134/001-graph-am-verify/`). Owner: Codex. Priority: P3
 Follow-up to Task 125/126.
 
 ## Why

@@ -1,6 +1,8 @@
 # Task 142: IVF dense-coalesced scratch drain policy
 
-Status: **measured — awaiting review** (2026-07-02). Owner: Codex. Priority: P2
+Status: **review accepted / measured** (2026-07-03; feedback
+`reviews/task-142/001-drain-policy/feedback/2026-07-03-02-reviewer.md`).
+Owner: Codex. Priority: P2
 
 Evidence: `reviews/task-142/001-drain-policy/` (code `86c05031d`): flush
 structure fully restored to row levels (100k flushes 1781→1311, width<32

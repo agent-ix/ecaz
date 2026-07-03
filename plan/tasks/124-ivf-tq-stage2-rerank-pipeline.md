@@ -1,7 +1,7 @@
 # Task 124: IVF TurboQuant Stage-2 Rerank Pipeline
 
-Status: **proposed** (TurboQuant-focused follow-up from Task 122 closeout; uses
-124 because Task 123 is reserved externally).
+Status: **measured / superseded by Task 130 clean keep-set** (2026-06-30; full
+experimental branch `origin/task-124-ivf-tq-stage2` is not landable as-is).
 Owner: coder (to be assigned). One coder, one branch.
 Priority: P1 follow-up for the Task 122 TurboQuant keep-experimental outcome.
 

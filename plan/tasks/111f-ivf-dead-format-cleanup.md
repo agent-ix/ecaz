@@ -1,6 +1,6 @@
 # Task 111f: IVF Dead Dense-Format Cleanup
 
-Status: **proposed**.
+Status: **complete / LGTM** (2026-06-18, `reviews/task-111f/001-dead-format-cleanup/`).
 Priority: P1 (integration / maintenance — do before the 111 → main merge).
 Parent: `111-ivf-scan-dense-posting-block-layout.md`.
 Evidence anchor: `reviews/task-111a/{004,007,008}`,
