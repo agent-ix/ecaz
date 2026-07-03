@@ -1,0 +1,106 @@
+{
+ "name": "task147-density-pareto-1m",
+ "schema_version": 1,
+ "artifact_dir": "reviews/task-147/001-density-pareto/artifacts",
+ "defaults": {
+  "pg": 18,
+  "socket_dir": "/Users/peter/.pgrx",
+  "profile": "ec_ivf",
+  "seed": 42,
+  "queries_limit": 24,
+  "iterations": 16,
+  "force_index": true,
+  "sample_backend_memory": true,
+  "memory_sample_interval_ms": 25
+ },
+ "thresholds": [],
+ "steps": [
+  {
+   "kind": "load",
+   "name": "load-rb1-1m",
+   "tags": [
+    "load",
+    "task147",
+    "rb1",
+    "real1m"
+   ],
+   "prefix": "task147_rb1_1m",
+   "profile": "ec_ivf",
+   "storage_format": "rabitq",
+   "bits": 4,
+   "corpus_file": "data/staged-current/ec_real_ann_benchmarks_anchor_corpus.tsv",
+   "queries_file": "data/staged-current/ec_real_ann_benchmarks_anchor_queries.tsv",
+   "manifest_file": "data/staged-current/ec_real_ann_benchmarks_anchor_manifest.json",
+   "allow_manifest_mismatch": true,
+   "reloptions": [
+    "quant_bits=1",
+    "dense_posting_blocks=1",
+    "rerank=heap_f32",
+    "rerank_width=50"
+   ],
+   "log_file": "${artifact_dir}/load-rb1-1m.log"
+  },
+  {
+   "kind": "recall",
+   "name": "recall-rb1-1m",
+   "tags": [
+    "recall",
+    "task147",
+    "rb1",
+    "real1m"
+   ],
+   "prefix": "task147_rb1_1m",
+   "profile": "ec_ivf",
+   "k": 10,
+   "bits": 4,
+   "sweep": [
+    8,
+    16,
+    24,
+    32,
+    48,
+    64
+   ],
+   "queries_limit": 24,
+   "truth_cache_dir": "reviews/task-147/001-density-pareto/truth-cache",
+   "log_output": "${artifact_dir}/recall-rb1-1m.log"
+  },
+  {
+   "kind": "latency",
+   "name": "latency-rb1-1m",
+   "tags": [
+    "latency",
+    "task147",
+    "rb1",
+    "real1m"
+   ],
+   "prefix": "task147_rb1_1m",
+   "profile": "ec_ivf",
+   "k": 10,
+   "bits": 4,
+   "sweep": [
+    32,
+    40
+   ],
+   "iterations": 16,
+   "queries_limit": 24,
+   "concurrency": 1,
+   "cache_state": "task147_rb1_1m_warm",
+   "task87_candidate_batch_counters": true,
+   "ivf_stage_counters": true,
+   "log_output": "${artifact_dir}/latency-rb1-1m.log"
+  },
+  {
+   "kind": "storage",
+   "name": "storage-rb1-1m",
+   "tags": [
+    "storage",
+    "task147",
+    "rb1",
+    "real1m"
+   ],
+   "prefix": "task147_rb1_1m",
+   "log_file": "${artifact_dir}/storage-rb1-1m.log"
+  }
+ ]
+}

@@ -1,0 +1,2 @@
+[loader] warning: profile "ec_ivf" does not list quant_bits, dense_posting_blocks as known reloptions; passing through verbatim. Known reloptions: nlists, nprobe, rerank_width, training_sample_rows, seed, pq_group_size, storage_format, quantizer, rerank, coarse_format, coarse_bits, rerank_placement, rerank_format, rerank_group_width, stage2_final_rerank_width
+[loader] inspecting data/staged-current/ec_real_ann_benchmarks_anchor_corpus.tsv

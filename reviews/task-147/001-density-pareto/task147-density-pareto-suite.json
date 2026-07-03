@@ -1,0 +1,568 @@
+{
+ "name": "task147-density-pareto",
+ "schema_version": 1,
+ "artifact_dir": "reviews/task-147/001-density-pareto/artifacts",
+ "defaults": {
+  "pg": 18,
+  "socket_dir": "/Users/peter/.pgrx",
+  "profile": "ec_ivf",
+  "seed": 42,
+  "queries_limit": 32,
+  "iterations": 32,
+  "force_index": true,
+  "sample_backend_memory": true,
+  "memory_sample_interval_ms": 25
+ },
+ "thresholds": [],
+ "steps": [
+  {
+   "kind": "raw",
+   "name": "precheck-build-sha",
+   "tags": [
+    "setup",
+    "precheck",
+    "task147"
+   ],
+   "args": [
+    "dev",
+    "sql",
+    "--pg",
+    "18",
+    "--db",
+    "tqvector_bench",
+    "--socket-dir",
+    "/Users/peter/.pgrx",
+    "--raw",
+    "--sql",
+    "SELECT now() AS captured_at, ecaz_build_git_sha(), current_setting('ec_ivf.turboquant_scorer') AS scorer_default;",
+    "--log-output",
+    "${artifact_dir}/precheck-build-sha.log"
+   ],
+   "expected_artifacts": [
+    "${artifact_dir}/precheck-build-sha.log"
+   ]
+  },
+  {
+   "kind": "load",
+   "name": "load-rb1-10k",
+   "tags": [
+    "load",
+    "task147",
+    "rb1",
+    "real10k"
+   ],
+   "prefix": "task147_rb1_real10k",
+   "profile": "ec_ivf",
+   "storage_format": "rabitq",
+   "bits": 4,
+   "corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+   "queries_file": "data/staged-current/ec_real_10k_queries.tsv",
+   "manifest_file": "data/staged-current/ec_real_10k_manifest.json",
+   "allow_manifest_mismatch": true,
+   "reloptions": [
+    "quant_bits=1",
+    "dense_posting_blocks=1",
+    "rerank=heap_f32",
+    "rerank_width=50"
+   ],
+   "log_file": "${artifact_dir}/load-rb1-10k.log"
+  },
+  {
+   "kind": "recall",
+   "name": "recall-rb1-10k",
+   "tags": [
+    "recall",
+    "task147",
+    "rb1",
+    "real10k"
+   ],
+   "prefix": "task147_rb1_real10k",
+   "profile": "ec_ivf",
+   "k": 10,
+   "bits": 4,
+   "sweep": [
+    8,
+    16,
+    24,
+    32,
+    48,
+    64
+   ],
+   "queries_limit": 32,
+   "truth_cache_dir": "reviews/task-147/001-density-pareto/truth-cache",
+   "log_output": "${artifact_dir}/recall-rb1-10k.log"
+  },
+  {
+   "kind": "latency",
+   "name": "latency-rb1-10k",
+   "tags": [
+    "latency",
+    "task147",
+    "rb1",
+    "real10k"
+   ],
+   "prefix": "task147_rb1_real10k",
+   "profile": "ec_ivf",
+   "k": 10,
+   "bits": 4,
+   "sweep": [
+    32,
+    40
+   ],
+   "iterations": 32,
+   "queries_limit": 32,
+   "concurrency": 1,
+   "cache_state": "task147_rb1_real10k_warm",
+   "task87_candidate_batch_counters": true,
+   "ivf_stage_counters": true,
+   "log_output": "${artifact_dir}/latency-rb1-10k.log"
+  },
+  {
+   "kind": "storage",
+   "name": "storage-rb1-10k",
+   "tags": [
+    "storage",
+    "task147",
+    "rb1",
+    "real10k"
+   ],
+   "prefix": "task147_rb1_real10k",
+   "log_file": "${artifact_dir}/storage-rb1-10k.log"
+  },
+  {
+   "kind": "load",
+   "name": "load-rb1-50k",
+   "tags": [
+    "load",
+    "task147",
+    "rb1",
+    "real50k"
+   ],
+   "prefix": "task147_rb1_real50k",
+   "profile": "ec_ivf",
+   "storage_format": "rabitq",
+   "bits": 4,
+   "corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+   "queries_file": "data/staged-current/ec_real_50k_queries.tsv",
+   "manifest_file": "data/staged-current/ec_real_50k_manifest.json",
+   "allow_manifest_mismatch": true,
+   "reloptions": [
+    "quant_bits=1",
+    "dense_posting_blocks=1",
+    "rerank=heap_f32",
+    "rerank_width=50"
+   ],
+   "log_file": "${artifact_dir}/load-rb1-50k.log"
+  },
+  {
+   "kind": "recall",
+   "name": "recall-rb1-50k",
+   "tags": [
+    "recall",
+    "task147",
+    "rb1",
+    "real50k"
+   ],
+   "prefix": "task147_rb1_real50k",
+   "profile": "ec_ivf",
+   "k": 10,
+   "bits": 4,
+   "sweep": [
+    8,
+    16,
+    24,
+    32,
+    48,
+    64
+   ],
+   "queries_limit": 32,
+   "truth_cache_dir": "reviews/task-147/001-density-pareto/truth-cache",
+   "log_output": "${artifact_dir}/recall-rb1-50k.log"
+  },
+  {
+   "kind": "latency",
+   "name": "latency-rb1-50k",
+   "tags": [
+    "latency",
+    "task147",
+    "rb1",
+    "real50k"
+   ],
+   "prefix": "task147_rb1_real50k",
+   "profile": "ec_ivf",
+   "k": 10,
+   "bits": 4,
+   "sweep": [
+    32,
+    40
+   ],
+   "iterations": 32,
+   "queries_limit": 32,
+   "concurrency": 1,
+   "cache_state": "task147_rb1_real50k_warm",
+   "task87_candidate_batch_counters": true,
+   "ivf_stage_counters": true,
+   "log_output": "${artifact_dir}/latency-rb1-50k.log"
+  },
+  {
+   "kind": "storage",
+   "name": "storage-rb1-50k",
+   "tags": [
+    "storage",
+    "task147",
+    "rb1",
+    "real50k"
+   ],
+   "prefix": "task147_rb1_real50k",
+   "log_file": "${artifact_dir}/storage-rb1-50k.log"
+  },
+  {
+   "kind": "load",
+   "name": "load-rb1-100k",
+   "tags": [
+    "load",
+    "task147",
+    "rb1",
+    "real100k"
+   ],
+   "prefix": "task147_rb1_real100k",
+   "profile": "ec_ivf",
+   "storage_format": "rabitq",
+   "bits": 4,
+   "corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+   "queries_file": "data/staged-current/ec_real_100k_queries.tsv",
+   "manifest_file": "data/staged-current/ec_real_100k_manifest.json",
+   "allow_manifest_mismatch": true,
+   "reloptions": [
+    "quant_bits=1",
+    "dense_posting_blocks=1",
+    "rerank=heap_f32",
+    "rerank_width=50"
+   ],
+   "log_file": "${artifact_dir}/load-rb1-100k.log"
+  },
+  {
+   "kind": "recall",
+   "name": "recall-rb1-100k",
+   "tags": [
+    "recall",
+    "task147",
+    "rb1",
+    "real100k"
+   ],
+   "prefix": "task147_rb1_real100k",
+   "profile": "ec_ivf",
+   "k": 10,
+   "bits": 4,
+   "sweep": [
+    8,
+    16,
+    24,
+    32,
+    48,
+    64
+   ],
+   "queries_limit": 32,
+   "truth_cache_dir": "reviews/task-147/001-density-pareto/truth-cache",
+   "log_output": "${artifact_dir}/recall-rb1-100k.log"
+  },
+  {
+   "kind": "latency",
+   "name": "latency-rb1-100k",
+   "tags": [
+    "latency",
+    "task147",
+    "rb1",
+    "real100k"
+   ],
+   "prefix": "task147_rb1_real100k",
+   "profile": "ec_ivf",
+   "k": 10,
+   "bits": 4,
+   "sweep": [
+    32,
+    40
+   ],
+   "iterations": 32,
+   "queries_limit": 32,
+   "concurrency": 1,
+   "cache_state": "task147_rb1_real100k_warm",
+   "task87_candidate_batch_counters": true,
+   "ivf_stage_counters": true,
+   "log_output": "${artifact_dir}/latency-rb1-100k.log"
+  },
+  {
+   "kind": "storage",
+   "name": "storage-rb1-100k",
+   "tags": [
+    "storage",
+    "task147",
+    "rb1",
+    "real100k"
+   ],
+   "prefix": "task147_rb1_real100k",
+   "log_file": "${artifact_dir}/storage-rb1-100k.log"
+  },
+  {
+   "kind": "load",
+   "name": "load-rb2-10k",
+   "tags": [
+    "load",
+    "task147",
+    "rb2",
+    "real10k"
+   ],
+   "prefix": "task147_rb2_real10k",
+   "profile": "ec_ivf",
+   "storage_format": "rabitq",
+   "bits": 4,
+   "corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+   "queries_file": "data/staged-current/ec_real_10k_queries.tsv",
+   "manifest_file": "data/staged-current/ec_real_10k_manifest.json",
+   "allow_manifest_mismatch": true,
+   "reloptions": [
+    "quant_bits=2",
+    "dense_posting_blocks=1",
+    "rerank=heap_f32",
+    "rerank_width=50"
+   ],
+   "log_file": "${artifact_dir}/load-rb2-10k.log"
+  },
+  {
+   "kind": "recall",
+   "name": "recall-rb2-10k",
+   "tags": [
+    "recall",
+    "task147",
+    "rb2",
+    "real10k"
+   ],
+   "prefix": "task147_rb2_real10k",
+   "profile": "ec_ivf",
+   "k": 10,
+   "bits": 4,
+   "sweep": [
+    8,
+    16,
+    24,
+    32,
+    48,
+    64
+   ],
+   "queries_limit": 32,
+   "truth_cache_dir": "reviews/task-147/001-density-pareto/truth-cache",
+   "log_output": "${artifact_dir}/recall-rb2-10k.log"
+  },
+  {
+   "kind": "latency",
+   "name": "latency-rb2-10k",
+   "tags": [
+    "latency",
+    "task147",
+    "rb2",
+    "real10k"
+   ],
+   "prefix": "task147_rb2_real10k",
+   "profile": "ec_ivf",
+   "k": 10,
+   "bits": 4,
+   "sweep": [
+    32,
+    40
+   ],
+   "iterations": 32,
+   "queries_limit": 32,
+   "concurrency": 1,
+   "cache_state": "task147_rb2_real10k_warm",
+   "task87_candidate_batch_counters": true,
+   "ivf_stage_counters": true,
+   "log_output": "${artifact_dir}/latency-rb2-10k.log"
+  },
+  {
+   "kind": "storage",
+   "name": "storage-rb2-10k",
+   "tags": [
+    "storage",
+    "task147",
+    "rb2",
+    "real10k"
+   ],
+   "prefix": "task147_rb2_real10k",
+   "log_file": "${artifact_dir}/storage-rb2-10k.log"
+  },
+  {
+   "kind": "load",
+   "name": "load-rb2-50k",
+   "tags": [
+    "load",
+    "task147",
+    "rb2",
+    "real50k"
+   ],
+   "prefix": "task147_rb2_real50k",
+   "profile": "ec_ivf",
+   "storage_format": "rabitq",
+   "bits": 4,
+   "corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+   "queries_file": "data/staged-current/ec_real_50k_queries.tsv",
+   "manifest_file": "data/staged-current/ec_real_50k_manifest.json",
+   "allow_manifest_mismatch": true,
+   "reloptions": [
+    "quant_bits=2",
+    "dense_posting_blocks=1",
+    "rerank=heap_f32",
+    "rerank_width=50"
+   ],
+   "log_file": "${artifact_dir}/load-rb2-50k.log"
+  },
+  {
+   "kind": "recall",
+   "name": "recall-rb2-50k",
+   "tags": [
+    "recall",
+    "task147",
+    "rb2",
+    "real50k"
+   ],
+   "prefix": "task147_rb2_real50k",
+   "profile": "ec_ivf",
+   "k": 10,
+   "bits": 4,
+   "sweep": [
+    8,
+    16,
+    24,
+    32,
+    48,
+    64
+   ],
+   "queries_limit": 32,
+   "truth_cache_dir": "reviews/task-147/001-density-pareto/truth-cache",
+   "log_output": "${artifact_dir}/recall-rb2-50k.log"
+  },
+  {
+   "kind": "latency",
+   "name": "latency-rb2-50k",
+   "tags": [
+    "latency",
+    "task147",
+    "rb2",
+    "real50k"
+   ],
+   "prefix": "task147_rb2_real50k",
+   "profile": "ec_ivf",
+   "k": 10,
+   "bits": 4,
+   "sweep": [
+    32,
+    40
+   ],
+   "iterations": 32,
+   "queries_limit": 32,
+   "concurrency": 1,
+   "cache_state": "task147_rb2_real50k_warm",
+   "task87_candidate_batch_counters": true,
+   "ivf_stage_counters": true,
+   "log_output": "${artifact_dir}/latency-rb2-50k.log"
+  },
+  {
+   "kind": "storage",
+   "name": "storage-rb2-50k",
+   "tags": [
+    "storage",
+    "task147",
+    "rb2",
+    "real50k"
+   ],
+   "prefix": "task147_rb2_real50k",
+   "log_file": "${artifact_dir}/storage-rb2-50k.log"
+  },
+  {
+   "kind": "load",
+   "name": "load-rb2-100k",
+   "tags": [
+    "load",
+    "task147",
+    "rb2",
+    "real100k"
+   ],
+   "prefix": "task147_rb2_real100k",
+   "profile": "ec_ivf",
+   "storage_format": "rabitq",
+   "bits": 4,
+   "corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+   "queries_file": "data/staged-current/ec_real_100k_queries.tsv",
+   "manifest_file": "data/staged-current/ec_real_100k_manifest.json",
+   "allow_manifest_mismatch": true,
+   "reloptions": [
+    "quant_bits=2",
+    "dense_posting_blocks=1",
+    "rerank=heap_f32",
+    "rerank_width=50"
+   ],
+   "log_file": "${artifact_dir}/load-rb2-100k.log"
+  },
+  {
+   "kind": "recall",
+   "name": "recall-rb2-100k",
+   "tags": [
+    "recall",
+    "task147",
+    "rb2",
+    "real100k"
+   ],
+   "prefix": "task147_rb2_real100k",
+   "profile": "ec_ivf",
+   "k": 10,
+   "bits": 4,
+   "sweep": [
+    8,
+    16,
+    24,
+    32,
+    48,
+    64
+   ],
+   "queries_limit": 32,
+   "truth_cache_dir": "reviews/task-147/001-density-pareto/truth-cache",
+   "log_output": "${artifact_dir}/recall-rb2-100k.log"
+  },
+  {
+   "kind": "latency",
+   "name": "latency-rb2-100k",
+   "tags": [
+    "latency",
+    "task147",
+    "rb2",
+    "real100k"
+   ],
+   "prefix": "task147_rb2_real100k",
+   "profile": "ec_ivf",
+   "k": 10,
+   "bits": 4,
+   "sweep": [
+    32,
+    40
+   ],
+   "iterations": 32,
+   "queries_limit": 32,
+   "concurrency": 1,
+   "cache_state": "task147_rb2_real100k_warm",
+   "task87_candidate_batch_counters": true,
+   "ivf_stage_counters": true,
+   "log_output": "${artifact_dir}/latency-rb2-100k.log"
+  },
+  {
+   "kind": "storage",
+   "name": "storage-rb2-100k",
+   "tags": [
+    "storage",
+    "task147",
+    "rb2",
+    "real100k"
+   ],
+   "prefix": "task147_rb2_real100k",
+   "log_file": "${artifact_dir}/storage-rb2-100k.log"
+  }
+ ]
+}
