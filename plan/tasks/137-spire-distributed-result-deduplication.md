@@ -1,6 +1,8 @@
 # Task 137: SPIRE Distributed Result Deduplication
 
-Status: proposed (2026-07-02; filed from Task 131 packet 027 identity
+Status: review requested (2026-07-02; fix + full 10k/50k/100k A/B evidence in
+`reviews/task-137/001-source-identity-dedupe-ab/`, decision per ADR-083;
+originally filed from Task 131 packet 027 identity
 artifacts and reviewer feedback).
 Numbering note: originally filed as task 132 on 2026-07-02; renumbered to 137
 the same day because the TQ optimization lane had already claimed 132-136

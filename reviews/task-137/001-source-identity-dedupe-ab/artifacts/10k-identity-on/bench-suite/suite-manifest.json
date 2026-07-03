@@ -1,0 +1,112 @@
+{
+  "suite": "local-multinode-production-read",
+  "schema_version": 1,
+  "config": "reviews/task-137/001-source-identity-dedupe-ab/artifacts/10k-identity-on/bench-suite/local-real-production-read-suite.json",
+  "config_sha256": "8e2d058f4bba69e8bcd0ec6775f146fcd4c448649d9686489dd108ff50a00863",
+  "dry_run": false,
+  "generated_at_unix_ms": 1783031586102,
+  "connection": {
+    "database": "postgres",
+    "host": "/home/peter/dev/ecaz-task137/target/spire-local-multinode-sockets-t13710kon",
+    "port": 40970,
+    "user": "ecaz_coord",
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "storage-local-coordinator",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/home/peter/dev/ecaz-task137/target/spire-local-multinode-sockets-t13710kon",
+        "--port",
+        "40970",
+        "--user",
+        "ecaz_coord",
+        "--log-file",
+        "reviews/task-137/001-source-identity-dedupe-ab/artifacts/10k-identity-on/bench-suite/storage.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "ec_real_10k"
+      ],
+      "selected": true,
+      "tags": [
+        "local",
+        "multinode",
+        "storage"
+      ],
+      "expected_artifacts": [
+        "reviews/task-137/001-source-identity-dedupe-ab/artifacts/10k-identity-on/bench-suite/storage.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783031586103,
+      "finished_at_unix_ms": 1783031586147,
+      "duration_ms": 43,
+      "exit_code": 0
+    },
+    {
+      "name": "production-read-k10-default-default",
+      "kind": "spire-pipeline",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/home/peter/dev/ecaz-task137/target/spire-local-multinode-sockets-t13710kon",
+        "--port",
+        "40970",
+        "--user",
+        "ecaz_coord",
+        "bench",
+        "spire-pipeline",
+        "--prefix",
+        "ec_real_10k",
+        "--index",
+        "t137_10k_on_coord_idx",
+        "--queries-limit",
+        "200",
+        "--sweep",
+        "96",
+        "--include-remote",
+        "--require-remote-placements",
+        "--top-k",
+        "10",
+        "--include-cost-snapshot",
+        "--include-query-metrics",
+        "--include-recall",
+        "--truth-corpus-file",
+        "data/task106_intel_dbpedia_staged/ec_real_10k_corpus.tsv",
+        "--include-production-read-profile",
+        "--production-read-only",
+        "--production-read-timeline-no-payload",
+        "--query-metric-k",
+        "10",
+        "--query-metric-projection-columns",
+        "id",
+        "--log-output",
+        "reviews/task-137/001-source-identity-dedupe-ab/artifacts/10k-identity-on/bench-suite/production-read-k10-default-default.log",
+        "--result-identity-output",
+        "reviews/task-137/001-source-identity-dedupe-ab/artifacts/10k-identity-on/bench-suite/production-read-k10-default-default-identity.jsonl"
+      ],
+      "selected": true,
+      "tags": [
+        "phase5",
+        "local",
+        "multinode",
+        "production-read",
+        "default-cap"
+      ],
+      "expected_artifacts": [
+        "reviews/task-137/001-source-identity-dedupe-ab/artifacts/10k-identity-on/bench-suite/production-read-k10-default-default.log",
+        "reviews/task-137/001-source-identity-dedupe-ab/artifacts/10k-identity-on/bench-suite/production-read-k10-default-default-identity.jsonl"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783031586147,
+      "finished_at_unix_ms": 1783032172615,
+      "duration_ms": 615789,
+      "exit_code": 0
+    }
+  ]
+}

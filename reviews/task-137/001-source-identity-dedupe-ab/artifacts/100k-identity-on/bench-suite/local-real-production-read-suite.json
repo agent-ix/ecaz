@@ -1,0 +1,56 @@
+{
+  "artifact_dir": "reviews/task-137/001-source-identity-dedupe-ab/artifacts/100k-identity-on/bench-suite",
+  "defaults": {
+    "pg": 18,
+    "queries_limit": 200
+  },
+  "name": "local-multinode-production-read",
+  "schema_version": 1,
+  "steps": [
+    {
+      "kind": "storage",
+      "log_file": "reviews/task-137/001-source-identity-dedupe-ab/artifacts/100k-identity-on/bench-suite/storage.log",
+      "name": "storage-local-coordinator",
+      "prefix": "ec_real_100k",
+      "tags": [
+        "local",
+        "multinode",
+        "storage"
+      ]
+    },
+    {
+      "include_cost_snapshot": true,
+      "include_production_read_profile": true,
+      "include_query_metrics": true,
+      "include_recall": true,
+      "include_remote": true,
+      "index": "t137_100k_on_coord_idx",
+      "kind": "spire-pipeline",
+      "log_output": "reviews/task-137/001-source-identity-dedupe-ab/artifacts/100k-identity-on/bench-suite/production-read-k10-default-default.log",
+      "name": "production-read-k10-default-default",
+      "prefix": "ec_real_100k",
+      "production_read_only": true,
+      "production_read_timeline_no_payload": true,
+      "queries_limit": 200,
+      "query_metric_k": 10,
+      "query_metric_projection_columns": [
+        "id"
+      ],
+      "require_remote_placements": true,
+      "result_identity_output": "reviews/task-137/001-source-identity-dedupe-ab/artifacts/100k-identity-on/bench-suite/production-read-k10-default-default-identity.jsonl",
+      "session_gucs": [],
+      "sweep": [
+        96
+      ],
+      "tags": [
+        "phase5",
+        "local",
+        "multinode",
+        "production-read",
+        "default-cap"
+      ],
+      "top_k": 10,
+      "truth_corpus_file": "data/staged-current/ec_real_100k_corpus.tsv"
+    }
+  ]
+}
