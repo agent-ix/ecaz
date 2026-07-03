@@ -1575,7 +1575,6 @@ unsafe fn materialize_probe_candidates(
             super::options::current_session_dense_posting_coalescing();
         let scratch = posting_scratch_soa(opaque, payload_len);
         let dense_scratch = dense_posting_coalescing_scratch(opaque, payload_len);
-        let mut dense_scratch_list_id: Option<u32> = None;
         let posting_visit_started = Instant::now();
         // SAFETY: `scratch` is a scan-opaque-owned `*mut IvfPostingScratchSoa`
         // allocated by `posting_scratch_soa`; the visitor and the post-loop
@@ -1588,20 +1587,20 @@ unsafe fn materialize_probe_candidates(
                 &probe_plan.block_sequence,
                 payload_len,
                 |_, entry| {
+                    // Task 142: neither scratch drains at row/dense or list
+                    // boundaries. Every pushed posting carries its own gamma,
+                    // centroid_ip (Task 115), and heap tids, and the live-tid
+                    // budget is consumed at append time, so cross-boundary
+                    // accumulation is score-identical; candidates dedup by
+                    // heap tid regardless of flush order. Draining only at
+                    // capacity keeps kernel flushes at the 256-posting target
+                    // (the Task 135 packet 002 A/B measured boundary drains
+                    // costing +36% flushes and +7.2% scorer_batch at 100k).
                     match entry {
                         super::page::IvfPostingEntryRef::Row(posting) => {
                             if !probe_plan.contains_list(posting.list_id) || posting.deleted {
                                 return Ok(());
                             }
-                            process_dense_coalesced_postings(
-                                &mut *dense_scratch,
-                                quantizer,
-                                prepared_query,
-                                opaque,
-                                best_by_heap_tid,
-                                &mut running_top,
-                            )?;
-                            dense_scratch_list_id = None;
                             opaque.explain_counters.record_row_posting_visited();
                             let heap_tid_count = posting.heaptid_count();
                             if !consume_live_tid_budget(
@@ -1630,15 +1629,6 @@ unsafe fn materialize_probe_candidates(
                                 return Ok(());
                             }
                             opaque.explain_counters.record_dense_block_visited();
-                            process_scratch_soa_postings(
-                                &mut *scratch,
-                                ScratchSoaFlushKind::Row,
-                                quantizer,
-                                prepared_query,
-                                opaque,
-                                best_by_heap_tid,
-                                &mut running_top,
-                            )?;
                             if !use_dense_posting_coalescing {
                                 process_dense_posting_block(
                                     super::page::IvfDensePostingRef::Block(block),
@@ -1652,21 +1642,6 @@ unsafe fn materialize_probe_candidates(
                                     centroid_ip_for_list(block.list_id),
                                 )?;
                                 return Ok(());
-                            }
-                            if dense_scratch_list_id.is_some_and(|list_id| list_id != block.list_id)
-                            {
-                                process_dense_coalesced_postings(
-                                    &mut *dense_scratch,
-                                    quantizer,
-                                    prepared_query,
-                                    opaque,
-                                    best_by_heap_tid,
-                                    &mut running_top,
-                                )?;
-                                dense_scratch_list_id = None;
-                            }
-                            if dense_scratch_list_id.is_none() {
-                                dense_scratch_list_id = Some(block.list_id);
                             }
                             append_dense_posting_block_to_coalesced_scratch(
                                 super::page::IvfDensePostingRef::Block(block),
