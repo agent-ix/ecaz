@@ -1,0 +1,241 @@
+{
+  "suite": "task143-default-flip-confirm",
+  "schema_version": 1,
+  "config": "reviews/task-143/002-default-flip/task143-default-flip-suite.json",
+  "config_sha256": "0aa4e3b0080326272f282c74f2ca412bb8b7a7b0ea29fb2ce8964f46f458c71b",
+  "dry_run": false,
+  "generated_at_unix_ms": 1783054603856,
+  "runner_git_commit": "815518d827073bf51dfddc25fc775c5c8bd80815",
+  "connection": {
+    "database": "tqvector_bench",
+    "host": "/Users/peter/.pgrx",
+    "port": 28818,
+    "user": null,
+    "password_configured": false
+  },
+  "backend": {
+    "build_profile": "release",
+    "git_commit": "815518d827073bf51dfddc25fc775c5c8bd80815"
+  },
+  "steps": [
+    {
+      "name": "precheck-build-sha",
+      "kind": "raw",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "tqvector_bench",
+        "--socket-dir",
+        "/Users/peter/.pgrx",
+        "--raw",
+        "--sql",
+        "SELECT now() AS captured_at, ecaz_build_git_sha(), current_setting('ec_ivf.turboquant_scorer') AS scorer_default;",
+        "--log-output",
+        "reviews/task-143/002-default-flip/artifacts/precheck-build-sha.log"
+      ],
+      "selected": true,
+      "tags": [
+        "setup",
+        "precheck",
+        "task143flip"
+      ],
+      "expected_artifacts": [
+        "reviews/task-143/002-default-flip/artifacts/precheck-build-sha.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783054603863,
+      "finished_at_unix_ms": 1783054603892,
+      "duration_ms": 28,
+      "exit_code": 0
+    },
+    {
+      "name": "load-default-100k",
+      "kind": "load",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-143/002-default-flip/artifacts/load-default-100k.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "task143flip_default_real100k",
+        "--profile",
+        "ec_ivf",
+        "--corpus-file",
+        "data/staged-current/ec_real_100k_corpus.tsv",
+        "--queries-file",
+        "data/staged-current/ec_real_100k_queries.tsv",
+        "--manifest-file",
+        "data/staged-current/ec_real_100k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--storage-format",
+        "turboquant"
+      ],
+      "selected": true,
+      "tags": [
+        "load",
+        "task143flip",
+        "real100k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-143/002-default-flip/artifacts/load-default-100k.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783054603892,
+      "finished_at_unix_ms": 1783055033356,
+      "duration_ms": 44581,
+      "exit_code": 0
+    },
+    {
+      "name": "recall-default-100k",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "recall",
+        "--prefix",
+        "task143flip_default_real100k",
+        "--profile",
+        "ec_ivf",
+        "--k",
+        "10",
+        "--sweep",
+        "8,16,24,32,40,48,64",
+        "--queries-limit",
+        "32",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--truth-cache-dir",
+        "reviews/task-143/002-default-flip/artifacts/truth-cache",
+        "--log-output",
+        "reviews/task-143/002-default-flip/artifacts/recall-default-100k.log"
+      ],
+      "selected": true,
+      "tags": [
+        "recall",
+        "task143flip",
+        "real100k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-143/002-default-flip/artifacts/recall-default-100k.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783055033356,
+      "finished_at_unix_ms": 1783055039135,
+      "duration_ms": 5777,
+      "exit_code": 0
+    },
+    {
+      "name": "latency-default-100k",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "latency",
+        "--prefix",
+        "task143flip_default_real100k",
+        "--profile",
+        "ec_ivf",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "32",
+        "--sweep",
+        "32,40",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--sample-backend-memory",
+        "--cache-state",
+        "task143flip_default_real100k_warm",
+        "--task87-candidate-batch-counters",
+        "--ivf-stage-counters",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "reviews/task-143/002-default-flip/artifacts/latency-default-100k.log"
+      ],
+      "selected": true,
+      "tags": [
+        "latency",
+        "task143flip",
+        "real100k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-143/002-default-flip/artifacts/latency-default-100k.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783055039135,
+      "finished_at_unix_ms": 1783055039359,
+      "duration_ms": 224,
+      "exit_code": 0
+    },
+    {
+      "name": "storage-default-100k",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-143/002-default-flip/artifacts/storage-default-100k.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "task143flip_default_real100k"
+      ],
+      "selected": true,
+      "tags": [
+        "storage",
+        "task143flip",
+        "real100k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-143/002-default-flip/artifacts/storage-default-100k.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783055039359,
+      "finished_at_unix_ms": 1783055039378,
+      "duration_ms": 18,
+      "exit_code": 0
+    }
+  ]
+}

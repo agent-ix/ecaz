@@ -1,0 +1,121 @@
+{
+ "name": "task143-default-flip-confirm",
+ "schema_version": 1,
+ "artifact_dir": "reviews/task-143/002-default-flip/artifacts",
+ "defaults": {
+  "pg": 18,
+  "socket_dir": "/Users/peter/.pgrx",
+  "profile": "ec_ivf",
+  "bits": 4,
+  "seed": 42,
+  "queries_limit": 32,
+  "iterations": 32,
+  "force_index": true,
+  "sample_backend_memory": true,
+  "memory_sample_interval_ms": 25
+ },
+ "thresholds": [],
+ "steps": [
+  {
+   "kind": "raw",
+   "name": "precheck-build-sha",
+   "tags": [
+    "setup",
+    "precheck",
+    "task143flip"
+   ],
+   "args": [
+    "dev",
+    "sql",
+    "--pg",
+    "18",
+    "--db",
+    "tqvector_bench",
+    "--socket-dir",
+    "/Users/peter/.pgrx",
+    "--raw",
+    "--sql",
+    "SELECT now() AS captured_at, ecaz_build_git_sha(), current_setting('ec_ivf.turboquant_scorer') AS scorer_default;",
+    "--log-output",
+    "${artifact_dir}/precheck-build-sha.log"
+   ],
+   "expected_artifacts": [
+    "${artifact_dir}/precheck-build-sha.log"
+   ]
+  },
+  {
+   "kind": "load",
+   "name": "load-default-100k",
+   "tags": [
+    "load",
+    "task143flip",
+    "real100k"
+   ],
+   "prefix": "task143flip_default_real100k",
+   "profile": "ec_ivf",
+   "storage_format": "turboquant",
+   "corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+   "queries_file": "data/staged-current/ec_real_100k_queries.tsv",
+   "manifest_file": "data/staged-current/ec_real_100k_manifest.json",
+   "allow_manifest_mismatch": true,
+   "log_file": "${artifact_dir}/load-default-100k.log"
+  },
+  {
+   "kind": "recall",
+   "name": "recall-default-100k",
+   "tags": [
+    "recall",
+    "task143flip",
+    "real100k"
+   ],
+   "prefix": "task143flip_default_real100k",
+   "profile": "ec_ivf",
+   "k": 10,
+   "sweep": [
+    8,
+    16,
+    24,
+    32,
+    40,
+    48,
+    64
+   ],
+   "queries_limit": 32,
+   "truth_cache_dir": "${artifact_dir}/truth-cache",
+   "log_output": "${artifact_dir}/recall-default-100k.log"
+  },
+  {
+   "kind": "latency",
+   "name": "latency-default-100k",
+   "tags": [
+    "latency",
+    "task143flip",
+    "real100k"
+   ],
+   "prefix": "task143flip_default_real100k",
+   "profile": "ec_ivf",
+   "k": 10,
+   "sweep": [
+    32,
+    40
+   ],
+   "iterations": 32,
+   "concurrency": 1,
+   "cache_state": "task143flip_default_real100k_warm",
+   "task87_candidate_batch_counters": true,
+   "ivf_stage_counters": true,
+   "log_output": "${artifact_dir}/latency-default-100k.log"
+  },
+  {
+   "kind": "storage",
+   "name": "storage-default-100k",
+   "tags": [
+    "storage",
+    "task143flip",
+    "real100k"
+   ],
+   "prefix": "task143flip_default_real100k",
+   "log_file": "${artifact_dir}/storage-default-100k.log"
+  }
+ ]
+}
