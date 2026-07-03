@@ -1,0 +1,216 @@
+[suite:task141-sdot-ab] wrote reviews/task-141/001-sdot-kernel/artifacts/sdot/suite-manifest.json
+[suite:task141-sdot-ab] wrote reviews/task-141/001-sdot-kernel/artifacts/sdot/suite-manifest.json
+[suite:task141-sdot-ab] precheck-build-sha -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 dev sql --pg 18 --db tqvector_bench --socket-dir /Users/peter/.pgrx --raw --sql "SELECT now() AS captured_at, ecaz_build_git_sha();" --log-output reviews/task-141/001-sdot-kernel/artifacts/sdot/precheck-build-sha.log
+[suite:task141-sdot-ab] wrote reviews/task-141/001-sdot-kernel/artifacts/sdot/suite-manifest.json
+          captured_at          |            ecaz_build_git_sha            
+-------------------------------+------------------------------------------
+ 2026-07-02 17:22:09.249322-07 | 2d98ec5b71f0d79e23c8452feba3cefc208d2fd3
+(1 row)
+
+[suite:task141-sdot-ab] wrote reviews/task-141/001-sdot-kernel/artifacts/sdot/suite-manifest.json
+[suite:task141-sdot-ab] recall-int8-real10k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench recall --prefix task135ab_row_real10k --profile ec_ivf --k 10 --sweep 32 --queries-limit 64 --bits 4 --seed 42 --force-index --session-guc ec_ivf.turboquant_scorer=int8_approx --truth-cache-dir reviews/task-141/001-sdot-kernel/artifacts/sdot/truth-cache --log-output reviews/task-141/001-sdot-kernel/artifacts/sdot/recall-int8-real10k.log
+[suite:task141-sdot-ab] wrote reviews/task-141/001-sdot-kernel/artifacts/sdot/suite-manifest.json
+┌────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ nprobe ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 32     ┆ 64      ┆ 640           ┆ 0.9719   ┆ 0.9560          ┆ 0.9821           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.8000       ┆ 0.9998 ┆ 0.90 ms     │
+└────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from task135ab_row_real10k_queries ...
+[recall] fetching corpus from task135ab_row_real10k_corpus ...
+[recall] computing ground truth: 64 queries vs 10000 corpus rows (dim=1536) ...
+[recall] ground truth in 20.26ms
+[recall] wrote ground truth cache reviews/task-141/001-sdot-kernel/artifacts/sdot/truth-cache/truth-v1-rows10000-queries64-dim1536-k10-97f391fdef18b4eb.json
+[suite:task141-sdot-ab] wrote reviews/task-141/001-sdot-kernel/artifacts/sdot/suite-manifest.json
+[suite:task141-sdot-ab] latency-int8-real10k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench latency --prefix task135ab_row_real10k --profile ec_ivf --k 10 --concurrency 1 --iterations 64 --sweep 32 --bits 4 --seed 42 --force-index --sample-backend-memory --cache-state task135ab_row_real10k_warm --session-guc ec_ivf.turboquant_scorer=int8_approx --task87-candidate-batch-counters --ivf-stage-counters --memory-sample-interval-ms 25 --log-output reviews/task-141/001-sdot-kernel/artifacts/sdot/latency-int8-real10k.log
+[suite:task141-sdot-ab] wrote reviews/task-141/001-sdot-kernel/artifacts/sdot/suite-manifest.json
+┌────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬────────────────────────────┬─────────────┬─────────────┬────────────────┐
+│ nprobe ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state                ┆ rss_peak_kb ┆ hwm_peak_kb ┆ memory_samples │
+╞════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪════════════════════════════╪═════════════╪═════════════╪════════════════╡
+│ 32     ┆ 64    ┆ 0.67 ms ┆ 0.26 ms ┆ 0.56 ms ┆ 0.62 ms ┆ 0.83 ms ┆ 1.56 ms ┆ 2.69 ms ┆ task135ab_row_real10k_warm ┆ 0           ┆ 0           ┆ 0              │
+└────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴────────────────────────────┴─────────────┴─────────────┴────────────────┘
+[block-kernel-counters] command=latency label=nprobe=32 surface=ivf quant=turboquant_int8 isa=neon flushes=840 candidates=205959 elapsed_nanos=8574561 elapsed_ms=8.574561 kernel_flushes=840 kernel_candidates=205959 kernel_elapsed_nanos=8574561 kernel_elapsed_ms=8.574561 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=0 width_8_15=1 width_16_31=6 width_ge32=833 pruned_candidates=0 kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=ivf flushes=840 candidates=205959 elapsed_nanos=8574561 elapsed_ms=8.574561 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[ivf-stage-counters] command=latency label=nprobe=32 stage=approximate_scan scans=64 samples=64 elapsed_us=26956 elapsed_ms=26.956
+[ivf-stage-counters] command=latency label=nprobe=32 stage=candidate_record scans=64 samples=840 elapsed_us=1611 elapsed_ms=1.611
+[ivf-stage-counters] command=latency label=nprobe=32 stage=exact_rerank scans=64 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=posting_page_decode scans=64 samples=64 elapsed_us=19553 elapsed_ms=19.553
+[ivf-stage-counters] command=latency label=nprobe=32 stage=posting_visit scans=64 samples=64 elapsed_us=22770 elapsed_ms=22.770
+[ivf-stage-counters] command=latency label=nprobe=32 stage=probe_plan scans=64 samples=64 elapsed_us=2754 elapsed_ms=2.754
+[ivf-stage-counters] command=latency label=nprobe=32 stage=rerank_payload_decode scans=64 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=rerank_payload_score scans=64 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=scorer_batch scans=64 samples=840 elapsed_us=8958 elapsed_ms=8.958
+[ivf-stage-counters] command=latency label=nprobe=32 stage=scratch_flush scans=64 samples=840 elapsed_us=10897 elapsed_ms=10.897
+[ivf-stage-counters] command=latency label=nprobe=32 stage=topk_collect scans=64 samples=64 elapsed_us=4088 elapsed_ms=4.088
+[suite:task141-sdot-ab] wrote reviews/task-141/001-sdot-kernel/artifacts/sdot/suite-manifest.json
+[suite:task141-sdot-ab] storage-real10k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 --log-file reviews/task-141/001-sdot-kernel/artifacts/sdot/storage-real10k.log bench storage --prefix task135ab_row_real10k
+[suite:task141-sdot-ab] wrote reviews/task-141/001-sdot-kernel/artifacts/sdot/suite-manifest.json
+┌───────────────────────────────┬──────────────────────────────┐
+│ field                         ┆ value                        │
+╞═══════════════════════════════╪══════════════════════════════╡
+│ prefix                        ┆ task135ab_row_real10k        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus                        ┆ task135ab_row_real10k_corpus │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ rows                          ┆ 10000                        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ heap                          ┆ 752.0 KiB                    │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ table (heap + toast + fsm/vm) ┆ 158.8 MiB                    │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes                       ┆ 10.0 MiB                     │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ total                         ┆ 168.9 MiB                    │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (total)               ┆ 17705.4 B                    │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (heap only)           ┆ 77.0 B                       │
+└───────────────────────────────┴──────────────────────────────┘
+┌──────────────────────────────────────┬───────────────┬───────────┬─────────────────────────────┬───────────┬──────────┐
+│ index                                ┆ access method ┆ profile   ┆ reloptions                  ┆ size      ┆ per row  │
+╞══════════════════════════════════════╪═══════════════╪═══════════╪═════════════════════════════╪═══════════╪══════════╡
+│ task135ab_row_real10k_turboquant_idx ┆ ec_ivf        ┆ ec_ivf    ┆ {storage_format=turboquant} ┆ 9.8 MiB   ┆ 1028.1 B │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ task135ab_row_real10k_corpus_pkey    ┆ btree         ┆ <unknown> ┆ {}                          ┆ 240.0 KiB ┆ 24.6 B   │
+└──────────────────────────────────────┴───────────────┴───────────┴─────────────────────────────┴───────────┴──────────┘
+[suite:task141-sdot-ab] wrote reviews/task-141/001-sdot-kernel/artifacts/sdot/suite-manifest.json
+[suite:task141-sdot-ab] recall-int8-real50k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench recall --prefix task135ab_row_real50k --profile ec_ivf --k 10 --sweep 32 --queries-limit 48 --bits 4 --seed 42 --force-index --session-guc ec_ivf.turboquant_scorer=int8_approx --truth-cache-dir reviews/task-141/001-sdot-kernel/artifacts/sdot/truth-cache --log-output reviews/task-141/001-sdot-kernel/artifacts/sdot/recall-int8-real50k.log
+[suite:task141-sdot-ab] wrote reviews/task-141/001-sdot-kernel/artifacts/sdot/suite-manifest.json
+┌────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ nprobe ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 32     ┆ 48      ┆ 480           ┆ 0.9521   ┆ 0.9291          ┆ 0.9679           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.8000       ┆ 0.9995 ┆ 1.87 ms     │
+└────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from task135ab_row_real50k_queries ...
+[recall] fetching corpus from task135ab_row_real50k_corpus ...
+[recall] computing ground truth: 48 queries vs 50000 corpus rows (dim=1536) ...
+[recall] ground truth in 79.94ms
+[recall] wrote ground truth cache reviews/task-141/001-sdot-kernel/artifacts/sdot/truth-cache/truth-v1-rows50000-queries48-dim1536-k10-a93e9d1a3c4f8202.json
+[suite:task141-sdot-ab] wrote reviews/task-141/001-sdot-kernel/artifacts/sdot/suite-manifest.json
+[suite:task141-sdot-ab] latency-int8-real50k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench latency --prefix task135ab_row_real50k --profile ec_ivf --k 10 --concurrency 1 --iterations 48 --sweep 32 --bits 4 --seed 42 --force-index --sample-backend-memory --cache-state task135ab_row_real50k_warm --session-guc ec_ivf.turboquant_scorer=int8_approx --task87-candidate-batch-counters --ivf-stage-counters --memory-sample-interval-ms 25 --log-output reviews/task-141/001-sdot-kernel/artifacts/sdot/latency-int8-real50k.log
+[suite:task141-sdot-ab] wrote reviews/task-141/001-sdot-kernel/artifacts/sdot/suite-manifest.json
+┌────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬────────────────────────────┬─────────────┬─────────────┬────────────────┐
+│ nprobe ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state                ┆ rss_peak_kb ┆ hwm_peak_kb ┆ memory_samples │
+╞════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪════════════════════════════╪═════════════╪═════════════╪════════════════╡
+│ 32     ┆ 48    ┆ 1.29 ms ┆ 0.37 ms ┆ 1.01 ms ┆ 1.23 ms ┆ 1.47 ms ┆ 2.73 ms ┆ 3.68 ms ┆ task135ab_row_real50k_warm ┆ 0           ┆ 0           ┆ 0              │
+└────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴────────────────────────────┴─────────────┴─────────────┴────────────────┘
+[block-kernel-counters] command=latency label=nprobe=32 surface=ivf quant=turboquant_int8 isa=neon flushes=1352 candidates=340407 elapsed_nanos=13539755 elapsed_ms=13.539755 kernel_flushes=1352 kernel_candidates=340407 kernel_elapsed_nanos=13539755 kernel_elapsed_ms=13.539755 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=0 width_8_15=3 width_16_31=3 width_ge32=1346 pruned_candidates=0 kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=ivf flushes=1352 candidates=340407 elapsed_nanos=13539755 elapsed_ms=13.539755 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[ivf-stage-counters] command=latency label=nprobe=32 stage=approximate_scan scans=48 samples=48 elapsed_us=45293 elapsed_ms=45.293
+[ivf-stage-counters] command=latency label=nprobe=32 stage=candidate_record scans=48 samples=1352 elapsed_us=2766 elapsed_ms=2.766
+[ivf-stage-counters] command=latency label=nprobe=32 stage=exact_rerank scans=48 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=posting_page_decode scans=48 samples=48 elapsed_us=33420 elapsed_ms=33.420
+[ivf-stage-counters] command=latency label=nprobe=32 stage=posting_visit scans=48 samples=48 elapsed_us=38143 elapsed_ms=38.143
+[ivf-stage-counters] command=latency label=nprobe=32 stage=probe_plan scans=48 samples=48 elapsed_us=4392 elapsed_ms=4.392
+[ivf-stage-counters] command=latency label=nprobe=32 stage=rerank_payload_decode scans=48 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=rerank_payload_score scans=48 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=scorer_batch scans=48 samples=1352 elapsed_us=14156 elapsed_ms=14.156
+[ivf-stage-counters] command=latency label=nprobe=32 stage=scratch_flush scans=48 samples=1352 elapsed_us=17159 elapsed_ms=17.159
+[ivf-stage-counters] command=latency label=nprobe=32 stage=topk_collect scans=48 samples=48 elapsed_us=7048 elapsed_ms=7.048
+[suite:task141-sdot-ab] wrote reviews/task-141/001-sdot-kernel/artifacts/sdot/suite-manifest.json
+[suite:task141-sdot-ab] storage-real50k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 --log-file reviews/task-141/001-sdot-kernel/artifacts/sdot/storage-real50k.log bench storage --prefix task135ab_row_real50k
+[suite:task141-sdot-ab] wrote reviews/task-141/001-sdot-kernel/artifacts/sdot/suite-manifest.json
+┌───────────────────────────────┬──────────────────────────────┐
+│ field                         ┆ value                        │
+╞═══════════════════════════════╪══════════════════════════════╡
+│ prefix                        ┆ task135ab_row_real50k        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus                        ┆ task135ab_row_real50k_corpus │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ rows                          ┆ 50000                        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ heap                          ┆ 3.7 MiB                      │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ table (heap + toast + fsm/vm) ┆ 793.8 MiB                    │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes                       ┆ 47.1 MiB                     │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ total                         ┆ 840.9 MiB                    │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (total)               ┆ 17634.9 B                    │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (heap only)           ┆ 76.7 B                       │
+└───────────────────────────────┴──────────────────────────────┘
+┌──────────────────────────────────────┬───────────────┬───────────┬─────────────────────────────┬──────────┬─────────┐
+│ index                                ┆ access method ┆ profile   ┆ reloptions                  ┆ size     ┆ per row │
+╞══════════════════════════════════════╪═══════════════╪═══════════╪═════════════════════════════╪══════════╪═════════╡
+│ task135ab_row_real50k_turboquant_idx ┆ ec_ivf        ┆ ec_ivf    ┆ {storage_format=turboquant} ┆ 46.0 MiB ┆ 964.7 B │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ task135ab_row_real50k_corpus_pkey    ┆ btree         ┆ <unknown> ┆ {}                          ┆ 1.1 MiB  ┆ 22.8 B  │
+└──────────────────────────────────────┴───────────────┴───────────┴─────────────────────────────┴──────────┴─────────┘
+[suite:task141-sdot-ab] wrote reviews/task-141/001-sdot-kernel/artifacts/sdot/suite-manifest.json
+[suite:task141-sdot-ab] recall-int8-real100k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench recall --prefix task135ab_row_real100k --profile ec_ivf --k 10 --sweep 32 --queries-limit 32 --bits 4 --seed 42 --force-index --session-guc ec_ivf.turboquant_scorer=int8_approx --truth-cache-dir reviews/task-141/001-sdot-kernel/artifacts/sdot/truth-cache --log-output reviews/task-141/001-sdot-kernel/artifacts/sdot/recall-int8-real100k.log
+[suite:task141-sdot-ab] wrote reviews/task-141/001-sdot-kernel/artifacts/sdot/suite-manifest.json
+┌────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ nprobe ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 32     ┆ 32      ┆ 320           ┆ 0.8938   ┆ 0.8552          ┆ 0.9230           ┆ 0.8000     ┆ 0.9000     ┆ 1.0000     ┆ 0.7000       ┆ 0.9957 ┆ 2.98 ms     │
+└────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from task135ab_row_real100k_queries ...
+[recall] fetching corpus from task135ab_row_real100k_corpus ...
+[recall] computing ground truth: 32 queries vs 100000 corpus rows (dim=1536) ...
+[recall] ground truth in 116.16ms
+[recall] wrote ground truth cache reviews/task-141/001-sdot-kernel/artifacts/sdot/truth-cache/truth-v1-rows100000-queries32-dim1536-k10-22dfd78bf8c49028.json
+[suite:task141-sdot-ab] wrote reviews/task-141/001-sdot-kernel/artifacts/sdot/suite-manifest.json
+[suite:task141-sdot-ab] latency-int8-real100k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench latency --prefix task135ab_row_real100k --profile ec_ivf --k 10 --concurrency 1 --iterations 32 --sweep 32 --bits 4 --seed 42 --force-index --sample-backend-memory --cache-state task135ab_row_real100k_warm --session-guc ec_ivf.turboquant_scorer=int8_approx --task87-candidate-batch-counters --ivf-stage-counters --memory-sample-interval-ms 25 --log-output reviews/task-141/001-sdot-kernel/artifacts/sdot/latency-int8-real100k.log
+[suite:task141-sdot-ab] wrote reviews/task-141/001-sdot-kernel/artifacts/sdot/suite-manifest.json
+┌────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────────────────────────┬─────────────┬─────────────┬────────────────┐
+│ nprobe ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state                 ┆ rss_peak_kb ┆ hwm_peak_kb ┆ memory_samples │
+╞════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════════════════════════╪═════════════╪═════════════╪════════════════╡
+│ 32     ┆ 32    ┆ 1.95 ms ┆ 0.48 ms ┆ 1.52 ms ┆ 1.84 ms ┆ 2.49 ms ┆ 3.75 ms ┆ 4.31 ms ┆ task135ab_row_real100k_warm ┆ 0           ┆ 0           ┆ 0              │
+└────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────────────────────────┴─────────────┴─────────────┴────────────────┘
+[block-kernel-counters] command=latency label=nprobe=32 surface=ivf quant=turboquant_int8 isa=neon flushes=1311 candidates=331757 elapsed_nanos=13015997 elapsed_ms=13.015997 kernel_flushes=1311 kernel_candidates=331757 kernel_elapsed_nanos=13015997 kernel_elapsed_ms=13.015997 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=2 width_8_15=0 width_16_31=2 width_ge32=1307 pruned_candidates=0 kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=ivf flushes=1311 candidates=331757 elapsed_nanos=13015997 elapsed_ms=13.015997 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[ivf-stage-counters] command=latency label=nprobe=32 stage=approximate_scan scans=32 samples=32 elapsed_us=48183 elapsed_ms=48.183
+[ivf-stage-counters] command=latency label=nprobe=32 stage=candidate_record scans=32 samples=1311 elapsed_us=2632 elapsed_ms=2.632
+[ivf-stage-counters] command=latency label=nprobe=32 stage=exact_rerank scans=32 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=posting_page_decode scans=32 samples=32 elapsed_us=36572 elapsed_ms=36.572
+[ivf-stage-counters] command=latency label=nprobe=32 stage=posting_visit scans=32 samples=32 elapsed_us=41135 elapsed_ms=41.135
+[ivf-stage-counters] command=latency label=nprobe=32 stage=probe_plan scans=32 samples=32 elapsed_us=4230 elapsed_ms=4.230
+[ivf-stage-counters] command=latency label=nprobe=32 stage=rerank_payload_decode scans=32 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=rerank_payload_score scans=32 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=scorer_batch scans=32 samples=1311 elapsed_us=13522 elapsed_ms=13.522
+[ivf-stage-counters] command=latency label=nprobe=32 stage=scratch_flush scans=32 samples=1311 elapsed_us=16474 elapsed_ms=16.474
+[ivf-stage-counters] command=latency label=nprobe=32 stage=topk_collect scans=32 samples=32 elapsed_us=6957 elapsed_ms=6.957
+[suite:task141-sdot-ab] wrote reviews/task-141/001-sdot-kernel/artifacts/sdot/suite-manifest.json
+[suite:task141-sdot-ab] storage-real100k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 --log-file reviews/task-141/001-sdot-kernel/artifacts/sdot/storage-real100k.log bench storage --prefix task135ab_row_real100k
+[suite:task141-sdot-ab] wrote reviews/task-141/001-sdot-kernel/artifacts/sdot/suite-manifest.json
+┌───────────────────────────────┬───────────────────────────────┐
+│ field                         ┆ value                         │
+╞═══════════════════════════════╪═══════════════════════════════╡
+│ prefix                        ┆ task135ab_row_real100k        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus                        ┆ task135ab_row_real100k_corpus │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ rows                          ┆ 100000                        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ heap                          ┆ 7.3 MiB                       │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ table (heap + toast + fsm/vm) ┆ 1.6 GiB                       │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes                       ┆ 92.6 MiB                      │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ total                         ┆ 1.6 GiB                       │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (total)               ┆ 17617.5 B                     │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (heap only)           ┆ 76.6 B                        │
+└───────────────────────────────┴───────────────────────────────┘
+┌───────────────────────────────────────┬───────────────┬───────────┬─────────────────────────────┬──────────┬─────────┐
+│ index                                 ┆ access method ┆ profile   ┆ reloptions                  ┆ size     ┆ per row │
+╞═══════════════════════════════════════╪═══════════════╪═══════════╪═════════════════════════════╪══════════╪═════════╡
+│ task135ab_row_real100k_turboquant_idx ┆ ec_ivf        ┆ ec_ivf    ┆ {storage_format=turboquant} ┆ 90.4 MiB ┆ 948.2 B │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ task135ab_row_real100k_corpus_pkey    ┆ btree         ┆ <unknown> ┆ {}                          ┆ 2.2 MiB  ┆ 22.6 B  │
+└───────────────────────────────────────┴───────────────┴───────────┴─────────────────────────────┴──────────┴─────────┘
+[suite:task141-sdot-ab] wrote reviews/task-141/001-sdot-kernel/artifacts/sdot/suite-manifest.json
+[suite:task141-sdot-ab] wrote reviews/task-141/001-sdot-kernel/artifacts/sdot/results.jsonl
+[suite:task141-sdot-ab] wrote reviews/task-141/001-sdot-kernel/artifacts/sdot/suite-manifest.json
