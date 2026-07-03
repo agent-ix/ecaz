@@ -1,0 +1,5 @@
+[32m[1m     Writing[0m[39m SQL entities to /opt/homebrew/share/postgresql@18/extension/ecaz--0.1.1.sql
+[32m[1m    Finished[0m[39m installing ecaz
+c93e8e985e5fd93186f0bd3cbed6ac60ecf5564d  /opt/homebrew/lib/postgresql@18/ecaz.dylib
+c93e8e985e5fd93186f0bd3cbed6ac60ecf5564d  target/release/libecaz.dylib
+22411e3ddb3741d0fb8db6640be45d81bb322daf

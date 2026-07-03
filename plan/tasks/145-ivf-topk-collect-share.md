@@ -1,9 +1,14 @@
 # Task 145: IVF top-k collect share at 1m (dedup map + ranked collect)
 
-Status: **in progress** (2026-07-03). Owner: Codex (branch
+Status: **measured — awaiting review** (2026-07-03). Owner: Codex (branch
 `task-145-topk-collect`). Priority: P3
 Discovered by the Task 143 promotion-matrix stage budget.
-Packet: `reviews/task-145/001-dedup-pool-collect/`.
+Packet: `reviews/task-145/001-dedup-pool-collect/` — dense dedup pool
+(`0679ac536`) + lazy-heap unbounded collect (`22411e3dd`): topk_collect
+−72..−77% at all four scales, e2e −8..−14% at 10k/100k/1m, recall
+byte-identical at all 24 cells. Key profile fact: the stage was
+dominated by the FULL SORT in the unbounded path (no pre-rerank limit
+at defaults), not the map walk.
 
 ## Why
 

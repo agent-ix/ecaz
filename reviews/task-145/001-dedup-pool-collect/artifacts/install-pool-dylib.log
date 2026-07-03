@@ -1,0 +1,9 @@
+warning: ecaz@0.1.1:       |                                                        ^
+warning: ecaz@0.1.1: 6 warnings generated.
+   Compiling pgrx v0.17.0
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 38.89s
+[32m[1m     Writing[0m[39m SQL entities to /opt/homebrew/share/postgresql@18/extension/ecaz--0.1.1.sql
+[32m[1m    Finished[0m[39m installing ecaz
+cc0821a51ca3aace1a1637565868be1b535f6a0c  /opt/homebrew/lib/postgresql@18/ecaz.dylib
+cc0821a51ca3aace1a1637565868be1b535f6a0c  target/release/libecaz.dylib
+115d608163805beb95385d9b9527a18ad1efd5a2
