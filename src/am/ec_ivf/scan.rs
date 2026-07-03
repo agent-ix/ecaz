@@ -1,6 +1,6 @@
 use hashbrown::hash_map::Entry;
 use hashbrown::HashMap;
-use std::cmp::Ordering;
+use std::cmp::{Ordering, Reverse};
 use std::collections::{BinaryHeap, HashSet};
 use std::ptr::{self, NonNull};
 use std::time::{Duration, Instant};
@@ -52,6 +52,13 @@ struct EcIvfScanOpaque {
     posting_candidates: *mut EcIvfScoredCandidate,
     posting_candidate_count: u32,
     next_candidate_index: u32,
+    /// Task 145: the unbounded-collect path (no pre-rerank limit) stores the
+    /// ranked candidates as a min-heap and `next_posting_candidate` pops them
+    /// on demand — exactly sorted order under the strict `candidate_cmp`
+    /// total order, without the former full O(n log n) sort or the palloc
+    /// copy of the whole candidate set. `None` whenever the bounded sorted
+    /// array path is active.
+    posting_candidate_heap: Option<BinaryHeap<Reverse<CandidateHeapEntry>>>,
     posting_scratch_soa: *mut IvfPostingScratchSoa,
     dense_posting_coalescing_scratch: *mut IvfPostingScratchSoa,
     dense_posting_block_scratch: *mut IvfDensePostingBlockScratch,
@@ -84,6 +91,10 @@ impl std::fmt::Debug for EcIvfScanOpaque {
             .field("posting_candidates", &self.posting_candidates)
             .field("posting_candidate_count", &self.posting_candidate_count)
             .field("next_candidate_index", &self.next_candidate_index)
+            .field(
+                "posting_candidate_heap",
+                &self.posting_candidate_heap.as_ref().map(BinaryHeap::len),
+            )
             .field("posting_scratch_soa", &self.posting_scratch_soa)
             .field(
                 "dense_posting_coalescing_scratch",
@@ -121,6 +132,9 @@ impl EcIvfScanOpaque {
     }
 
     fn next_posting_candidate(&mut self) -> Option<EcIvfScoredCandidate> {
+        if let Some(heap) = self.posting_candidate_heap.as_mut() {
+            return heap.pop().map(|entry| entry.0.candidate);
+        }
         if self.posting_candidates.is_null()
             || self.next_candidate_index >= self.posting_candidate_count
         {
@@ -786,7 +800,14 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amrescan(
             .unwrap_or_else(|e| pgrx::error!("{e}"));
             store_centroid_scores(opaque, &centroid_scores);
             store_selected_lists(opaque, &selected_lists);
-            store_posting_candidates(opaque, &posting_candidates);
+            match posting_candidates {
+                RankedProbeCandidates::Sorted(candidates) => {
+                    store_posting_candidates(opaque, &candidates);
+                }
+                RankedProbeCandidates::LazyHeap(heap) => {
+                    store_posting_candidate_heap(opaque, heap);
+                }
+            }
         };
     })
 }
@@ -1110,6 +1131,18 @@ fn free_posting_candidates(opaque: &mut EcIvfScanOpaque) {
     pfree_scan_slice(opaque, |opaque| &mut opaque.posting_candidates);
     opaque.posting_candidate_count = 0;
     opaque.next_candidate_index = 0;
+    opaque.posting_candidate_heap = None;
+}
+
+fn store_posting_candidate_heap(
+    opaque: &mut EcIvfScanOpaque,
+    heap: BinaryHeap<Reverse<CandidateHeapEntry>>,
+) {
+    free_posting_candidates(opaque);
+    if heap.is_empty() {
+        return;
+    }
+    opaque.posting_candidate_heap = Some(heap);
 }
 
 fn free_scan_query_prep(opaque: &mut EcIvfScanOpaque) {
@@ -1568,9 +1601,9 @@ unsafe fn materialize_probe_candidates(
     opaque: &mut EcIvfScanOpaque,
     selected_lists: &[u32],
     centroid_scores: &[EcIvfCentroidScore],
-) -> Result<Vec<EcIvfScoredCandidate>, String> {
+) -> Result<RankedProbeCandidates, String> {
     if selected_lists.is_empty() {
-        return Ok(Vec::new());
+        return Ok(RankedProbeCandidates::Sorted(Vec::new()));
     }
     if opaque.prepared_query.is_null() {
         return Err("ec_ivf posting-list scan requires a prepared query".to_owned());
@@ -1852,7 +1885,7 @@ unsafe fn materialize_probe_candidates(
     // during the posting visitor above.
     let best_by_heap_tid = unsafe { &mut *best_by_heap_tid };
     let topk_collect_started = Instant::now();
-    let mut candidates = collect_ranked_probe_candidates(
+    let mut ranked = collect_ranked_probe_candidates(
         best_by_heap_tid.candidates().iter().copied(),
         pre_rerank_candidate_limit(index_options),
     );
@@ -1866,31 +1899,30 @@ unsafe fn materialize_probe_candidates(
         super::stage_counters::IvfQueryStage::ApproximateScan,
         approximate_started.elapsed(),
     );
-    let should_record_exact_rerank = matches!(
-        index_options.rerank.v1_effective(),
-        super::options::RerankMode::HeapF32
-    ) && pre_rerank_candidate_limit(index_options).is_some()
-        && !candidates.is_empty();
-    // SAFETY: candidates were materialized for this live scan and opaque; the
-    // rerank helper validates whether heap_f32 state is present before use.
-    let rerank_started = should_record_exact_rerank.then(Instant::now);
-    unsafe {
-        rerank_probe_candidates(
-            scan,
-            index_options,
-            opaque,
-            centroid_scores,
-            &mut candidates,
-        )
-    };
-    if let Some(rerank_started) = rerank_started {
-        record_stage_elapsed(
-            opaque,
-            super::stage_counters::IvfQueryStage::ExactRerank,
-            rerank_started.elapsed(),
-        );
+    // The lazy-heap path never reranks: a `Some` pre-rerank limit is exactly
+    // the heap_f32 condition, and `rerank_probe_candidates` is a no-op for
+    // every other rerank mode, so skipping the call for `LazyHeap` is
+    // behavior-identical to the former unconditional call.
+    if let RankedProbeCandidates::Sorted(candidates) = &mut ranked {
+        let should_record_exact_rerank = matches!(
+            index_options.rerank.v1_effective(),
+            super::options::RerankMode::HeapF32
+        ) && pre_rerank_candidate_limit(index_options).is_some()
+            && !candidates.is_empty();
+        // SAFETY: candidates were materialized for this live scan and opaque;
+        // the rerank helper validates whether heap_f32 state is present
+        // before use.
+        let rerank_started = should_record_exact_rerank.then(Instant::now);
+        unsafe { rerank_probe_candidates(scan, index_options, opaque, centroid_scores, candidates) };
+        if let Some(rerank_started) = rerank_started {
+            record_stage_elapsed(
+                opaque,
+                super::stage_counters::IvfQueryStage::ExactRerank,
+                rerank_started.elapsed(),
+            );
+        }
     }
-    Ok(candidates)
+    Ok(ranked)
 }
 
 fn use_scratch_soa_batch_decode(metadata: &super::page::MetadataPage) -> bool {
@@ -2418,10 +2450,21 @@ fn pre_rerank_candidate_limit(index_options: &super::options::EcIvfOptions) -> O
     }
 }
 
-fn collect_ranked_probe_candidates<I>(
-    candidates: I,
-    limit: Option<usize>,
-) -> Vec<EcIvfScoredCandidate>
+/// The ranked output of a probe collect. The bounded pre-rerank path stays a
+/// fully sorted vec (the exact heap-f32 rerank consumes an ascending
+/// prefix); the unbounded path (no pre-rerank limit — the shipping default,
+/// where rerank mode is not heap_f32) becomes a min-heap popped lazily by
+/// `next_posting_candidate`. Pop order equals the former full-sort order
+/// because `candidate_cmp` is a strict total order over distinct heap tids,
+/// so this replaces the per-query O(n log n) sort over every deduped
+/// candidate (~45k at 1m/nprobe 32) with an O(n) heapify plus O(log n) per
+/// row actually pulled by the executor (k=10 in the standard sweeps).
+enum RankedProbeCandidates {
+    Sorted(Vec<EcIvfScoredCandidate>),
+    LazyHeap(BinaryHeap<Reverse<CandidateHeapEntry>>),
+}
+
+fn collect_ranked_probe_candidates<I>(candidates: I, limit: Option<usize>) -> RankedProbeCandidates
 where
     I: IntoIterator<Item = EcIvfScoredCandidate>,
 {
@@ -2430,11 +2473,14 @@ where
         for candidate in candidates {
             top_k.push(candidate);
         }
-        top_k.into_sorted_candidates()
+        RankedProbeCandidates::Sorted(top_k.into_sorted_candidates())
     } else {
-        let mut ranked = candidates.into_iter().collect::<Vec<_>>();
-        ranked.sort_by(candidate_cmp);
-        ranked
+        RankedProbeCandidates::LazyHeap(
+            candidates
+                .into_iter()
+                .map(|candidate| Reverse(CandidateHeapEntry { candidate }))
+                .collect(),
+        )
     }
 }
 
@@ -4741,7 +4787,8 @@ mod tests {
         rerank_group_payload_for_candidate, select_probe_lists, select_probe_lists_with_adaptive,
         use_scratch_soa_batch_decode_for_format, CandidateDedupPool, CandidateRecordOutcome,
         CandidateTopK, EcIvfCentroidScore, EcIvfScoredCandidate, IvfDensePostingBlockScratch,
-        IvfPostingScratchSoa, LoadedRerankGroup, ProbeBlockRange, SelectedRerankPayloadSlab,
+        IvfPostingScratchSoa, LoadedRerankGroup, ProbeBlockRange, RankedProbeCandidates,
+        SelectedRerankPayloadSlab,
     };
     use crate::storage::page::ItemPointer;
 
@@ -5319,14 +5366,43 @@ mod tests {
         }
 
         for limit in [None, Some(1), Some(50), Some(20_000)] {
-            let from_pool =
-                collect_ranked_probe_candidates(dedup.candidates().iter().copied(), limit);
-            let from_reference = collect_ranked_probe_candidates(reference.values().copied(), limit);
+            let from_pool = drain_ranked(collect_ranked_probe_candidates(
+                dedup.candidates().iter().copied(),
+                limit,
+            ));
+            let from_reference = drain_ranked(collect_ranked_probe_candidates(
+                reference.values().copied(),
+                limit,
+            ));
             assert_eq!(from_pool.len(), from_reference.len(), "limit {limit:?}");
             for (left, right) in from_pool.iter().zip(from_reference.iter()) {
                 assert_eq!(left.heap_tid, right.heap_tid, "limit {limit:?}");
                 assert_eq!(left.rerank_tid, right.rerank_tid, "limit {limit:?}");
                 assert_eq!(left.score.to_bits(), right.score.to_bits(), "limit {limit:?}");
+            }
+        }
+    }
+
+    /// Drain a ranked collect into the exact sequence `amgettuple` streams:
+    /// the sorted vec verbatim, or repeated lazy-heap pops. Also asserts the
+    /// lazy-heap pop sequence is ascending under `candidate_cmp` — the
+    /// byte-identity claim that heap pops equal the former full sort.
+    fn drain_ranked(ranked: RankedProbeCandidates) -> Vec<EcIvfScoredCandidate> {
+        match ranked {
+            RankedProbeCandidates::Sorted(candidates) => candidates,
+            RankedProbeCandidates::LazyHeap(mut heap) => {
+                let mut drained = Vec::with_capacity(heap.len());
+                while let Some(entry) = heap.pop() {
+                    drained.push(entry.0.candidate);
+                }
+                for pair in drained.windows(2) {
+                    assert_eq!(
+                        candidate_cmp(&pair[0], &pair[1]),
+                        std::cmp::Ordering::Less,
+                        "lazy-heap pops must be strictly ascending"
+                    );
+                }
+                drained
             }
         }
     }
@@ -5388,11 +5464,18 @@ mod tests {
             "map walk only (values -> black_box)",
             Box::new(move || map_ref.values().map(|c| c.heap_tid.offset_number as usize).sum()),
         );
+        let ranked_len = |ranked: RankedProbeCandidates| match ranked {
+            RankedProbeCandidates::Sorted(candidates) => candidates.len(),
+            RankedProbeCandidates::LazyHeap(heap) => heap.len(),
+        };
         let map_ref = &map;
         let map_collect = time_ns(
             "map walk + top-k(50) + sort  [pre-change topk_collect]",
             Box::new(move || {
-                collect_ranked_probe_candidates(map_ref.values().copied(), Some(LIMIT)).len()
+                ranked_len(collect_ranked_probe_candidates(
+                    map_ref.values().copied(),
+                    Some(LIMIT),
+                ))
             }),
         );
         let pool_ref = &pool;
@@ -5410,8 +5493,10 @@ mod tests {
         let pool_collect = time_ns(
             "pool walk + top-k(50) + sort [post-change topk_collect]",
             Box::new(move || {
-                collect_ranked_probe_candidates(pool_ref.candidates().iter().copied(), Some(LIMIT))
-                    .len()
+                ranked_len(collect_ranked_probe_candidates(
+                    pool_ref.candidates().iter().copied(),
+                    Some(LIMIT),
+                ))
             }),
         );
 
