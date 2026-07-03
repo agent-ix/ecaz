@@ -1,6 +1,12 @@
 # Task 144: HNSW int8_approx exact-score default revisit
 
-Status: **proposed** (2026-07-02). Owner: unassigned. Priority: P3
+Status: **measured — flip recommended, awaiting ack** (2026-07-03). Owner: Codex. Priority: P3
+
+Evidence: `reviews/task-144/001-hnsw-scorer-default/` — recall dips
+≤0.42 pp across ef 40–200 at 10k/50k/100k (noise; Task 98 caution does
+not reproduce), latency −10% at the ef64 mid points and neutral
+elsewhere. Recommends flipping the HNSW mode default to int8_approx
+(modest win, never worse); reviewer may prefer documented opt-in.
 Follow-up to Tasks 98 (int8_approx kernel, HNSW wiring) and 136 (IVF
 evidence); sweetened by Task 141 (SDOT) if it lands first.
 

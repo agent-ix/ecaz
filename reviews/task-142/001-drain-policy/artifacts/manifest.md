@@ -87,3 +87,15 @@ Same tables both cells; unchanged (`storage-dense-real*.log` per run dir).
   `mixed-smoke/recall-mixed-{default,coalescing-off,batchdecode-off}.log`.
 - Packet-local validation logs added: `focused-tests-ec-ivf.log` (199
   passed), `clippy-pg18.log`.
+
+## Addendum 2026-07-03 (residual scorer-gap probe: closed, no work needed)
+
+The packet's open question — why dense scorer_batch trailed row by ~2.9 ms
+at 100k with identical flush structure — is resolved by the Task 143
+matrix artifacts (`reviews/task-143/001-promotion-matrix/artifacts/`,
+same session, same binary): under the int8 scorer (now the default) the
+gap does not exist — scorer_batch row vs dense is 14.416 vs 14.394 ms
+(100k) and 31.554 vs 31.906 ms (1m), identical candidates/flush counts.
+The gap was a LUT-kernel phenomenon and is moot under the shipped
+default; no locality work is warranted. Source-grounded closure of the
+follow-up candidate.
