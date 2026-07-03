@@ -98,8 +98,11 @@
       "expected_artifacts": [
         "reviews/task-143/001-promotion-matrix/artifacts/load-1m-row.log"
       ],
-      "status": "pending",
-      "started_at_unix_ms": 1783049816479
+      "status": "succeeded",
+      "started_at_unix_ms": 1783049816479,
+      "finished_at_unix_ms": 1783050389843,
+      "duration_ms": 573375,
+      "exit_code": 0
     },
     {
       "name": "load-1m-dense",
@@ -144,7 +147,11 @@
       "expected_artifacts": [
         "reviews/task-143/001-promotion-matrix/artifacts/load-1m-dense.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1783050389844,
+      "finished_at_unix_ms": 1783050725046,
+      "duration_ms": 335203,
+      "exit_code": 0
     },
     {
       "name": "recall-100k-row-lut",
@@ -190,7 +197,11 @@
       "expected_artifacts": [
         "reviews/task-143/001-promotion-matrix/artifacts/recall-100k-row-lut.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1783050725047,
+      "finished_at_unix_ms": 1783050732807,
+      "duration_ms": 7760,
+      "exit_code": 0
     },
     {
       "name": "latency-100k-row-lut",
@@ -243,7 +254,11 @@
       "expected_artifacts": [
         "reviews/task-143/001-promotion-matrix/artifacts/latency-100k-row-lut.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1783050732808,
+      "finished_at_unix_ms": 1783050733110,
+      "duration_ms": 302,
+      "exit_code": 0
     },
     {
       "name": "recall-100k-row-int8",
@@ -289,7 +304,11 @@
       "expected_artifacts": [
         "reviews/task-143/001-promotion-matrix/artifacts/recall-100k-row-int8.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1783050733111,
+      "finished_at_unix_ms": 1783050738757,
+      "duration_ms": 5645,
+      "exit_code": 0
     },
     {
       "name": "latency-100k-row-int8",
@@ -342,7 +361,11 @@
       "expected_artifacts": [
         "reviews/task-143/001-promotion-matrix/artifacts/latency-100k-row-int8.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1783050738757,
+      "finished_at_unix_ms": 1783050739003,
+      "duration_ms": 245,
+      "exit_code": 0
     },
     {
       "name": "storage-100k-row",
@@ -370,7 +393,11 @@
       "expected_artifacts": [
         "reviews/task-143/001-promotion-matrix/artifacts/storage-100k-row.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1783050739004,
+      "finished_at_unix_ms": 1783050739022,
+      "duration_ms": 17,
+      "exit_code": 0
     },
     {
       "name": "recall-100k-dense-lut",
@@ -416,7 +443,11 @@
       "expected_artifacts": [
         "reviews/task-143/001-promotion-matrix/artifacts/recall-100k-dense-lut.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1783050739022,
+      "finished_at_unix_ms": 1783050746604,
+      "duration_ms": 7581,
+      "exit_code": 0
     },
     {
       "name": "latency-100k-dense-lut",
@@ -469,7 +500,11 @@
       "expected_artifacts": [
         "reviews/task-143/001-promotion-matrix/artifacts/latency-100k-dense-lut.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1783050746605,
+      "finished_at_unix_ms": 1783050746877,
+      "duration_ms": 272,
+      "exit_code": 0
     },
     {
       "name": "recall-100k-dense-int8",
@@ -515,7 +550,11 @@
       "expected_artifacts": [
         "reviews/task-143/001-promotion-matrix/artifacts/recall-100k-dense-int8.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1783050746877,
+      "finished_at_unix_ms": 1783050752410,
+      "duration_ms": 5532,
+      "exit_code": 0
     },
     {
       "name": "latency-100k-dense-int8",
@@ -568,7 +607,11 @@
       "expected_artifacts": [
         "reviews/task-143/001-promotion-matrix/artifacts/latency-100k-dense-int8.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1783050752411,
+      "finished_at_unix_ms": 1783050752630,
+      "duration_ms": 219,
+      "exit_code": 0
     },
     {
       "name": "storage-100k-dense",
@@ -596,7 +639,11 @@
       "expected_artifacts": [
         "reviews/task-143/001-promotion-matrix/artifacts/storage-100k-dense.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1783050752630,
+      "finished_at_unix_ms": 1783050752646,
+      "duration_ms": 15,
+      "exit_code": 0
     },
     {
       "name": "recall-1m-row-lut",
@@ -642,7 +689,11 @@
       "expected_artifacts": [
         "reviews/task-143/001-promotion-matrix/artifacts/recall-1m-row-lut.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1783050752646,
+      "finished_at_unix_ms": 1783050826484,
+      "duration_ms": 73838,
+      "exit_code": 0
     },
     {
       "name": "latency-1m-row-lut",
@@ -695,7 +746,11 @@
       "expected_artifacts": [
         "reviews/task-143/001-promotion-matrix/artifacts/latency-1m-row-lut.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1783050826484,
+      "finished_at_unix_ms": 1783050827394,
+      "duration_ms": 909,
+      "exit_code": 0
     },
     {
       "name": "recall-1m-row-int8",
@@ -741,7 +796,11 @@
       "expected_artifacts": [
         "reviews/task-143/001-promotion-matrix/artifacts/recall-1m-row-int8.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1783050827395,
+      "finished_at_unix_ms": 1783050892202,
+      "duration_ms": 64807,
+      "exit_code": 0
     },
     {
       "name": "latency-1m-row-int8",
@@ -794,7 +853,11 @@
       "expected_artifacts": [
         "reviews/task-143/001-promotion-matrix/artifacts/latency-1m-row-int8.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1783050892202,
+      "finished_at_unix_ms": 1783050893008,
+      "duration_ms": 805,
+      "exit_code": 0
     },
     {
       "name": "storage-1m-row",
@@ -822,7 +885,11 @@
       "expected_artifacts": [
         "reviews/task-143/001-promotion-matrix/artifacts/storage-1m-row.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1783050893009,
+      "finished_at_unix_ms": 1783050893036,
+      "duration_ms": 27,
+      "exit_code": 0
     },
     {
       "name": "recall-1m-dense-lut",
@@ -868,7 +935,11 @@
       "expected_artifacts": [
         "reviews/task-143/001-promotion-matrix/artifacts/recall-1m-dense-lut.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1783050893037,
+      "finished_at_unix_ms": 1783050957486,
+      "duration_ms": 64449,
+      "exit_code": 0
     },
     {
       "name": "latency-1m-dense-lut",
@@ -921,7 +992,11 @@
       "expected_artifacts": [
         "reviews/task-143/001-promotion-matrix/artifacts/latency-1m-dense-lut.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1783050957487,
+      "finished_at_unix_ms": 1783050958373,
+      "duration_ms": 886,
+      "exit_code": 0
     },
     {
       "name": "recall-1m-dense-int8",
@@ -967,7 +1042,11 @@
       "expected_artifacts": [
         "reviews/task-143/001-promotion-matrix/artifacts/recall-1m-dense-int8.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1783050958374,
+      "finished_at_unix_ms": 1783051021843,
+      "duration_ms": 63469,
+      "exit_code": 0
     },
     {
       "name": "latency-1m-dense-int8",
@@ -1020,7 +1099,11 @@
       "expected_artifacts": [
         "reviews/task-143/001-promotion-matrix/artifacts/latency-1m-dense-int8.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1783051021843,
+      "finished_at_unix_ms": 1783051022593,
+      "duration_ms": 750,
+      "exit_code": 0
     },
     {
       "name": "storage-1m-dense",
@@ -1048,7 +1131,11 @@
       "expected_artifacts": [
         "reviews/task-143/001-promotion-matrix/artifacts/storage-1m-dense.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1783051022593,
+      "finished_at_unix_ms": 1783051022619,
+      "duration_ms": 25,
+      "exit_code": 0
     }
   ]
 }
