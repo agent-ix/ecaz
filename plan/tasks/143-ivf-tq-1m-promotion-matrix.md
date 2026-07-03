@@ -1,6 +1,12 @@
 # Task 143: IVF TQ 1m promotion matrix (layout × scorer defaults)
 
-Status: **proposed** (2026-07-02). Owner: unassigned. Priority: P2
+Status: **measured — decision requested** (2026-07-03). Owner: Codex. Priority: P2
+
+Evidence: `reviews/task-143/001-promotion-matrix/` — old default (row+lut)
+→ proposed (dense+int8) at nprobe 32: 100k 3.16→1.75 ms (−44.6%), 1m
+12.1→7.76 ms (−35.9%), recall dips ≤0.42 pp (in noise), dense recall
+byte-identical to row at all 32 recall cells, storage −9.6/−9.9%. Both
+default flips recommended; awaiting reviewer approval to land them.
 Gated on: (a) Tasks 141 (SDOT) and 142 (drain policy) landing first — the
 1m matrix should measure the final candidates once; and (b) the
 `task-125-tq-scorer-optimization` + `task-136-rank1-scorer` stack being
