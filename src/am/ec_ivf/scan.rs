@@ -48,7 +48,7 @@ struct EcIvfScanOpaque {
     centroid_score_count: u32,
     selected_lists: *mut u32,
     selected_list_count: u32,
-    candidate_dedup: *mut HashMap<ItemPointer, EcIvfScoredCandidate>,
+    candidate_dedup: *mut CandidateDedupPool,
     posting_candidates: *mut EcIvfScoredCandidate,
     posting_candidate_count: u32,
     next_candidate_index: u32,
@@ -323,6 +323,84 @@ impl CandidateTopK {
             .collect::<Vec<_>>();
         candidates.sort_by(candidate_cmp);
         candidates
+    }
+}
+
+/// Outcome of recording one scored candidate against the dedup pool. The
+/// caller maps these onto the existing explain counters so the counter
+/// stream stays identical to the pre-Task-145 `HashMap` entry logic.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CandidateRecordOutcome {
+    Inserted,
+    ReplacedWorse,
+    KeptExisting,
+}
+
+/// Scan-owned candidate dedup state (Task 145). The authoritative candidate
+/// pool is the dense `pool` vec; `index_by_heap_tid` only maps a heap tid to
+/// its pool slot. The post-visit collect walks the contiguous pool slice
+/// instead of iterating the hash map — the Task 143 1m stage budget measured
+/// that full-map walk (plus per-entry top-k pushes) at 17% of the
+/// approximate scan. Dedup semantics are unchanged: one slot per heap tid,
+/// replaced only when a strictly better (`candidate_cmp` `Less`) score
+/// arrives, so the pool holds exactly the map's former value set and the
+/// collect's bounded top-k over it stays byte-identical (`candidate_cmp` is
+/// a strict total order over distinct heap tids, so top-k selection is
+/// iteration-order independent).
+#[derive(Debug, Default)]
+struct CandidateDedupPool {
+    index_by_heap_tid: HashMap<ItemPointer, u32>,
+    pool: Vec<EcIvfScoredCandidate>,
+}
+
+impl CandidateDedupPool {
+    fn with_capacity(capacity: usize) -> Self {
+        Self {
+            index_by_heap_tid: HashMap::with_capacity(capacity),
+            pool: Vec::with_capacity(capacity),
+        }
+    }
+
+    fn clear_and_reserve(&mut self, capacity: usize) {
+        self.index_by_heap_tid.clear();
+        if self.index_by_heap_tid.capacity() < capacity {
+            self.index_by_heap_tid
+                .reserve(capacity - self.index_by_heap_tid.capacity());
+        }
+        self.pool.clear();
+        if self.pool.capacity() < capacity {
+            self.pool.reserve(capacity - self.pool.capacity());
+        }
+    }
+
+    fn record_best(&mut self, candidate: EcIvfScoredCandidate) -> CandidateRecordOutcome {
+        match self.index_by_heap_tid.entry(candidate.heap_tid) {
+            Entry::Occupied(entry) => {
+                let slot = *entry.get() as usize;
+                let existing = &mut self.pool[slot];
+                if candidate_cmp(&candidate, existing) == Ordering::Less {
+                    *existing = candidate;
+                    CandidateRecordOutcome::ReplacedWorse
+                } else {
+                    CandidateRecordOutcome::KeptExisting
+                }
+            }
+            Entry::Vacant(entry) => {
+                // A u32 slot bounds the pool at ~4.29e9 candidates per scan;
+                // the dedup map held the same candidate count as 24-byte
+                // values before this layout, so that regime was already
+                // unreachable. Fail closed rather than wrap.
+                let slot = u32::try_from(self.pool.len())
+                    .expect("ec_ivf candidate dedup pool exceeds u32 slots");
+                entry.insert(slot);
+                self.pool.push(candidate);
+                CandidateRecordOutcome::Inserted
+            }
+        }
+    }
+
+    fn candidates(&self) -> &[EcIvfScoredCandidate] {
+        &self.pool
     }
 }
 
@@ -1053,17 +1131,16 @@ fn free_scan_query_prep(opaque: &mut EcIvfScanOpaque) {
 unsafe fn candidate_dedup_map(
     opaque: &mut EcIvfScanOpaque,
     capacity: usize,
-) -> *mut HashMap<ItemPointer, EcIvfScoredCandidate> {
+) -> *mut CandidateDedupPool {
     if opaque.candidate_dedup.is_null() {
-        opaque.candidate_dedup = Box::into_raw(Box::new(HashMap::with_capacity(capacity)));
+        opaque.candidate_dedup = Box::into_raw(Box::new(CandidateDedupPool::with_capacity(
+            capacity,
+        )));
         return opaque.candidate_dedup;
     }
 
-    let map = &mut *opaque.candidate_dedup;
-    map.clear();
-    if map.capacity() < capacity {
-        map.reserve(capacity - map.capacity());
-    }
+    let dedup = &mut *opaque.candidate_dedup;
+    dedup.clear_and_reserve(capacity);
     opaque.candidate_dedup
 }
 
@@ -1771,12 +1848,12 @@ unsafe fn materialize_probe_candidates(
         );
     }
 
-    // SAFETY: `best_by_heap_tid` points to the scan-owned dedup map populated
+    // SAFETY: `best_by_heap_tid` points to the scan-owned dedup pool populated
     // during the posting visitor above.
     let best_by_heap_tid = unsafe { &mut *best_by_heap_tid };
     let topk_collect_started = Instant::now();
     let mut candidates = collect_ranked_probe_candidates(
-        best_by_heap_tid.values().copied(),
+        best_by_heap_tid.candidates().iter().copied(),
         pre_rerank_candidate_limit(index_options),
     );
     record_stage_elapsed(
@@ -1861,7 +1938,7 @@ fn process_scratch_soa_postings(
     quantizer: IvfQuantizer,
     prepared_query: &IvfPreparedQuery,
     opaque: &mut EcIvfScanOpaque,
-    best_by_heap_tid: *mut HashMap<ItemPointer, EcIvfScoredCandidate>,
+    best_by_heap_tid: *mut CandidateDedupPool,
     running_top: &mut Option<CandidateTopK>,
 ) -> Result<(), String> {
     if scratch.is_empty() {
@@ -1892,7 +1969,7 @@ fn process_scratch_soa_postings_inner(
     quantizer: IvfQuantizer,
     prepared_query: &IvfPreparedQuery,
     opaque: &mut EcIvfScanOpaque,
-    best_by_heap_tid: *mut HashMap<ItemPointer, EcIvfScoredCandidate>,
+    best_by_heap_tid: *mut CandidateDedupPool,
     running_top: &mut Option<CandidateTopK>,
 ) -> Result<(), String> {
     let payload_bytes = scratch.payloads.len();
@@ -2062,7 +2139,7 @@ fn process_dense_coalesced_postings(
     quantizer: IvfQuantizer,
     prepared_query: &IvfPreparedQuery,
     opaque: &mut EcIvfScanOpaque,
-    best_by_heap_tid: *mut HashMap<ItemPointer, EcIvfScoredCandidate>,
+    best_by_heap_tid: *mut CandidateDedupPool,
     running_top: &mut Option<CandidateTopK>,
 ) -> Result<(), String> {
     process_scratch_soa_postings(
@@ -2084,7 +2161,7 @@ fn append_dense_posting_block_to_coalesced_scratch(
     quantizer: IvfQuantizer,
     prepared_query: &IvfPreparedQuery,
     opaque: &mut EcIvfScanOpaque,
-    best_by_heap_tid: *mut HashMap<ItemPointer, EcIvfScoredCandidate>,
+    best_by_heap_tid: *mut CandidateDedupPool,
     running_top: &mut Option<CandidateTopK>,
     remaining_live_tids_by_list: &mut [u64],
     // Task 115: exact `⟨q, c⟩` for this block's list (0.0 in plain mode).
@@ -2141,7 +2218,7 @@ fn process_dense_posting_block(
     quantizer: IvfQuantizer,
     prepared_query: &IvfPreparedQuery,
     opaque: &mut EcIvfScanOpaque,
-    best_by_heap_tid: *mut HashMap<ItemPointer, EcIvfScoredCandidate>,
+    best_by_heap_tid: *mut CandidateDedupPool,
     running_top: &mut Option<CandidateTopK>,
     remaining_live_tids_by_list: &mut [u64],
     // Task 115: exact `⟨q, c⟩` for this block's list (0.0 in plain mode).
@@ -2286,7 +2363,7 @@ fn posting_prune_cutoff(running_top: &Option<CandidateTopK>) -> Option<f32> {
 
 fn record_scored_posting_candidates<I>(
     opaque: &mut EcIvfScanOpaque,
-    best_by_heap_tid: *mut HashMap<ItemPointer, EcIvfScoredCandidate>,
+    best_by_heap_tid: *mut CandidateDedupPool,
     running_top: &mut Option<CandidateTopK>,
     candidate_tids: I,
     heap_tid_count: usize,
@@ -2315,23 +2392,18 @@ fn record_scored_posting_candidates<I>(
             rerank_tid,
             score,
         };
-        // SAFETY: `best_by_heap_tid` points to the scan-owned dedup map
+        // SAFETY: `best_by_heap_tid` points to the scan-owned dedup pool
         // returned by `candidate_dedup_map` above.
         let best_by_heap_tid = unsafe { &mut *best_by_heap_tid };
-        match best_by_heap_tid.entry(heap_tid) {
-            Entry::Occupied(mut entry) => {
-                opaque.explain_counters.record_filtered_duplicate();
-                let existing = entry.get_mut();
-                if candidate_cmp(&candidate, existing) == Ordering::Less {
-                    *existing = candidate;
-                }
-            }
-            Entry::Vacant(entry) => {
-                entry.insert(candidate);
+        match best_by_heap_tid.record_best(candidate) {
+            CandidateRecordOutcome::Inserted => {
                 opaque.explain_counters.record_candidate_inserted();
                 if let Some(top_k) = running_top.as_mut() {
                     top_k.push(candidate);
                 }
+            }
+            CandidateRecordOutcome::ReplacedWorse | CandidateRecordOutcome::KeptExisting => {
+                opaque.explain_counters.record_filtered_duplicate();
             }
         }
     }
@@ -4663,11 +4735,12 @@ mod tests {
         IvfPostingTupleRef, IvfRerankGroupHeaderTuple,
     };
     use super::{
-        build_probe_block_sequence, candidate_heap_blocks, candidate_heap_tid_cmp,
-        choose_adaptive_nprobe, consume_live_tid_budget, inner_product, inner_product_scalar,
-        pre_rerank_candidate_limit, rerank_group_payload_for_candidate, select_probe_lists,
-        select_probe_lists_with_adaptive, use_scratch_soa_batch_decode_for_format, CandidateTopK,
-        EcIvfCentroidScore, EcIvfScoredCandidate, IvfDensePostingBlockScratch,
+        build_probe_block_sequence, candidate_cmp, candidate_heap_blocks, candidate_heap_tid_cmp,
+        choose_adaptive_nprobe, collect_ranked_probe_candidates, consume_live_tid_budget,
+        inner_product, inner_product_scalar, pre_rerank_candidate_limit,
+        rerank_group_payload_for_candidate, select_probe_lists, select_probe_lists_with_adaptive,
+        use_scratch_soa_batch_decode_for_format, CandidateDedupPool, CandidateRecordOutcome,
+        CandidateTopK, EcIvfCentroidScore, EcIvfScoredCandidate, IvfDensePostingBlockScratch,
         IvfPostingScratchSoa, LoadedRerankGroup, ProbeBlockRange, SelectedRerankPayloadSlab,
     };
     use crate::storage::page::ItemPointer;
@@ -5171,6 +5244,185 @@ mod tests {
         assert!(top_k.would_reject_score(3.0));
         assert!(!top_k.would_reject_score(2.0));
         assert!(!top_k.would_reject_score(1.5));
+    }
+
+    #[test]
+    fn candidate_dedup_pool_reports_record_outcomes_and_keeps_best_scores() {
+        let mut dedup = CandidateDedupPool::with_capacity(4);
+
+        assert_eq!(
+            dedup.record_best(candidate(1, 1, 3.0)),
+            CandidateRecordOutcome::Inserted
+        );
+        // Worse (higher) score for the same heap tid is kept-existing.
+        assert_eq!(
+            dedup.record_best(candidate(1, 1, 4.0)),
+            CandidateRecordOutcome::KeptExisting
+        );
+        // Strictly better (lower) score replaces in place.
+        assert_eq!(
+            dedup.record_best(candidate(1, 1, 1.0)),
+            CandidateRecordOutcome::ReplacedWorse
+        );
+        // Equal score + equal tid compares `Equal`, not `Less`: kept.
+        assert_eq!(
+            dedup.record_best(candidate(1, 1, 1.0)),
+            CandidateRecordOutcome::KeptExisting
+        );
+        assert_eq!(
+            dedup.record_best(candidate(2, 7, 2.0)),
+            CandidateRecordOutcome::Inserted
+        );
+
+        let mut pool = dedup.candidates().to_vec();
+        pool.sort_by(candidate_cmp);
+        assert_eq!(pool.len(), 2);
+        assert_eq!(pool[0].heap_tid.block_number, 1);
+        assert_eq!(pool[0].score, 1.0);
+        assert_eq!(pool[1].heap_tid.block_number, 2);
+        assert_eq!(pool[1].score, 2.0);
+    }
+
+    #[test]
+    fn candidate_dedup_pool_collect_matches_reference_map_dedup() {
+        // Byte-identity guard: the pool + bounded collect must produce
+        // exactly what the pre-Task-145 shape (HashMap<tid, candidate> then
+        // full-map walk) produced, on a stream with duplicates, later
+        // improvements, and later-worse repeats, under both a bounded and an
+        // unbounded collect.
+        let mut stream = Vec::new();
+        let mut state = 0x2545F4914F6CDD1D_u64;
+        for i in 0..10_000_u32 {
+            state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            let block = (state >> 33) as u32 % 512;
+            let offset = 1 + ((state >> 17) as u16 % 128);
+            let score = ((state >> 40) as f32) / 1e6 - 8.0;
+            stream.push(candidate(block, offset, score));
+            let _ = i;
+        }
+
+        let mut dedup = CandidateDedupPool::with_capacity(stream.len());
+        let mut reference: HashMap<ItemPointer, EcIvfScoredCandidate> =
+            HashMap::with_capacity(stream.len());
+        for cand in &stream {
+            dedup.record_best(*cand);
+            match reference.entry(cand.heap_tid) {
+                hashbrown::hash_map::Entry::Occupied(mut entry) => {
+                    if candidate_cmp(cand, entry.get()) == std::cmp::Ordering::Less {
+                        *entry.get_mut() = *cand;
+                    }
+                }
+                hashbrown::hash_map::Entry::Vacant(entry) => {
+                    entry.insert(*cand);
+                }
+            }
+        }
+
+        for limit in [None, Some(1), Some(50), Some(20_000)] {
+            let from_pool =
+                collect_ranked_probe_candidates(dedup.candidates().iter().copied(), limit);
+            let from_reference = collect_ranked_probe_candidates(reference.values().copied(), limit);
+            assert_eq!(from_pool.len(), from_reference.len(), "limit {limit:?}");
+            for (left, right) in from_pool.iter().zip(from_reference.iter()) {
+                assert_eq!(left.heap_tid, right.heap_tid, "limit {limit:?}");
+                assert_eq!(left.rerank_tid, right.rerank_tid, "limit {limit:?}");
+                assert_eq!(left.score.to_bits(), right.score.to_bits(), "limit {limit:?}");
+            }
+        }
+    }
+
+    /// Task 145 packet profile: attribute the pre-change `topk_collect`
+    /// cost (full dedup-map walk + bounded top-k pushes + sort) against the
+    /// dense-pool walk shape, at the 1m operating shape (~45k candidates,
+    /// rerank_width 50). Ignored by default; run explicitly for packet
+    /// evidence with:
+    /// `cargo test --release --no-default-features --features pg18 \
+    ///    candidate_dedup_profile -- --ignored --nocapture`
+    #[test]
+    #[ignore = "packet profile measurement, not a correctness gate"]
+    fn candidate_dedup_profile_map_walk_vs_pool_walk() {
+        use std::hint::black_box;
+        use std::time::Instant;
+
+        const CANDIDATES: usize = 45_000;
+        const LIMIT: usize = 50;
+        const ITERS: u32 = 200;
+
+        let mut stream = Vec::with_capacity(CANDIDATES);
+        let mut state = 0x9E3779B97F4A7C15_u64;
+        for i in 0..CANDIDATES as u64 {
+            state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            // Unique tids so the map holds the full candidate count.
+            let block = (i / 291) as u32;
+            let offset = 1 + (i % 291) as u16;
+            let score = ((state >> 40) as f32) / 1e6 - 8.0;
+            stream.push(candidate(block, offset, score));
+        }
+
+        let mut map: HashMap<ItemPointer, EcIvfScoredCandidate> =
+            HashMap::with_capacity(CANDIDATES);
+        let mut pool = CandidateDedupPool::with_capacity(CANDIDATES);
+        for cand in &stream {
+            map.insert(cand.heap_tid, *cand);
+            pool.record_best(*cand);
+        }
+
+        let time_ns = |label: &str, mut body: Box<dyn FnMut() -> usize>| {
+            for _ in 0..10 {
+                black_box(body());
+            }
+            let started = Instant::now();
+            for _ in 0..ITERS {
+                black_box(body());
+            }
+            let ns = started.elapsed().as_nanos() / u128::from(ITERS);
+            println!(
+                "{label}: {ns} ns/iter ({:.1} ns/candidate)",
+                ns as f64 / CANDIDATES as f64
+            );
+            ns
+        };
+
+        let map_ref = &map;
+        let map_walk = time_ns(
+            "map walk only (values -> black_box)",
+            Box::new(move || map_ref.values().map(|c| c.heap_tid.offset_number as usize).sum()),
+        );
+        let map_ref = &map;
+        let map_collect = time_ns(
+            "map walk + top-k(50) + sort  [pre-change topk_collect]",
+            Box::new(move || {
+                collect_ranked_probe_candidates(map_ref.values().copied(), Some(LIMIT)).len()
+            }),
+        );
+        let pool_ref = &pool;
+        let pool_walk = time_ns(
+            "pool walk only (slice -> black_box)",
+            Box::new(move || {
+                pool_ref
+                    .candidates()
+                    .iter()
+                    .map(|c| c.heap_tid.offset_number as usize)
+                    .sum()
+            }),
+        );
+        let pool_ref = &pool;
+        let pool_collect = time_ns(
+            "pool walk + top-k(50) + sort [post-change topk_collect]",
+            Box::new(move || {
+                collect_ranked_probe_candidates(pool_ref.candidates().iter().copied(), Some(LIMIT))
+                    .len()
+            }),
+        );
+
+        println!(
+            "attribution: map-walk share of pre-change collect = {:.1}%; \
+             pool-walk share of post-change collect = {:.1}%; \
+             pool collect vs map collect = {:.1}%",
+            100.0 * map_walk as f64 / map_collect as f64,
+            100.0 * pool_walk as f64 / pool_collect as f64,
+            100.0 * pool_collect as f64 / map_collect as f64
+        );
     }
 
     #[test]
