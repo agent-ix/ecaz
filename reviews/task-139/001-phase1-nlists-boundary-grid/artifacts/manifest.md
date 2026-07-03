@@ -1,11 +1,11 @@
 # Task 139 Phase 1: nlists x boundary Grid (local multi-instance)
 
-- Pre-registration head SHA: TBD (filled at run start)
+- Pre-registration head SHA: c12ad4d52
 - Result head SHA: TBD
 - Task bucket: `reviews/task-139/001-phase1-nlists-boundary-grid`
 - Suite configs: `artifacts/task139-phase1-50k-suite.json`,
   `artifacts/task139-phase1-100k-suite.json`
-- Status: pre-registered; gated on Task 137 packet 001 proving the
+- Status: running; gate satisfied — Task 137 packet 001 proved the
   identity-on distributed surface returns distinct results, and on Task 138
   packet 001 (distinct_recall@k metric) — both consumed by this branch.
 
