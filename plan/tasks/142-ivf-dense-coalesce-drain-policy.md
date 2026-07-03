@@ -1,6 +1,13 @@
 # Task 142: IVF dense-coalesced scratch drain policy
 
-Status: **proposed** (2026-07-02). Owner: unassigned. Priority: P2
+Status: **measured — awaiting review** (2026-07-02). Owner: Codex. Priority: P2
+
+Evidence: `reviews/task-142/001-drain-policy/` (code `86c05031d`): flush
+structure fully restored to row levels (100k flushes 1781→1311, width<32
+93→4), recall byte-identical, latency mean −2.2/−1.1/−0.4%. Finding: the
++7.2% scorer recovery target was falsified — scorer_batch improved only
+−0.8% with flush structure restored, so the Task 135 dense scorer gap is
+mostly NOT flush-count-driven (correction recorded in the packet).
 Follow-up to Task 135 packet 002 (dense-layout A/B) and Task 111a
 (scan-side dense coalescing).
 

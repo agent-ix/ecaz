@@ -1,6 +1,11 @@
 # Task 141: int8_approx SDOT kernel (NEON dotprod upgrade)
 
-Status: **proposed** (2026-07-02). Owner: unassigned. Priority: P2
+Status: **measured — awaiting review** (2026-07-02). Owner: Codex. Priority: P2
+
+Evidence: `reviews/task-141/001-sdot-kernel/` (code `2d98ec5b7`, branch
+`task-141-sdot-kernel`): scorer_batch 15.9→9.0 / 26.6→14.2 / 25.8→13.5
+ms/sweep (−44/−47/−47.5%) at 10k/50k/100k, e2e mean 0.76→0.67 / 1.55→1.29 /
+2.34→1.95 ms (−11.8/−16.8/−16.7%), recall byte-identical (bit-exact kernel).
 Follow-up to Task 136 (int8_approx IVF wiring); serves the Task 98 HNSW
 surface too.
 
