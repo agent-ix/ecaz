@@ -1,6 +1,6 @@
 # Task 139: SPIRE Routing Selectivity Pareto
 
-Status: proposed (2026-07-02; filed from the Task 131 closeout research
+Status: in progress (2026-07-02; Phase 1 grid running in `reviews/task-139/001-phase1-nlists-boundary-grid/`, consuming Task 137's identity-on surface and Task 138's distinct-recall metric; originally filed from the Task 131 closeout research
 synthesis).
 Owner: coder (to be assigned). One coder, one branch.
 Priority: P1 — the highest-leverage measured latency direction after Task 131
