@@ -1,7 +1,13 @@
 # Task 144: HNSW int8_approx exact-score default revisit
 
-Status: **review acked - default flip approved, code pending** (2026-07-03;
-feedback `reviews/task-144/001-hnsw-scorer-default/feedback/2026-07-03-01-reviewer.md`).
+Status: **complete - default flipped + confirmed** (2026-07-03). Flip landed
+on main as `3f69d74c0` (`exact` → `auto`: int8_approx on the no-QJL 4-bit
+lane, exact elsewhere). Default path confirmed in
+`reviews/task-144/002-auto-default-confirm/` — auto recall matches the
+explicit-int8 A/B byte-for-byte at all 18 ef cells (10k/50k/100k × ef 40–200)
+and differs from exact at every point; fallback-lane smoke shows auto scans
+clean where int8 is unsupported (explicit int8 errors there). Approval:
+`reviews/task-144/001-hnsw-scorer-default/feedback/2026-07-03-01-reviewer.md`.
 Owner: Codex. Priority: P3
 
 Evidence: `reviews/task-144/001-hnsw-scorer-default/` — recall dips

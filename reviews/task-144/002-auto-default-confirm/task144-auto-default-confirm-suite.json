@@ -1,0 +1,223 @@
+{
+ "name": "task144-auto-default-confirm",
+ "schema_version": 1,
+ "artifact_dir": "reviews/task-144/002-auto-default-confirm/artifacts",
+ "defaults": {
+  "pg": 18,
+  "socket_dir": "/Users/peter/.pgrx",
+  "profile": "ec_hnsw",
+  "bits": 4,
+  "seed": 42,
+  "queries_limit": 64,
+  "iterations": 64,
+  "force_index": true,
+  "sample_backend_memory": true,
+  "memory_sample_interval_ms": 25
+ },
+ "thresholds": [],
+ "steps": [
+  {
+   "kind": "raw",
+   "name": "precheck-build-sha",
+   "tags": [
+    "setup",
+    "precheck",
+    "task144"
+   ],
+   "args": [
+    "dev",
+    "sql",
+    "--pg",
+    "18",
+    "--db",
+    "tqvector_bench",
+    "--socket-dir",
+    "/Users/peter/.pgrx",
+    "--raw",
+    "--sql",
+    "SELECT now() AS captured_at, ecaz_build_git_sha(), current_setting('ec_hnsw.turboquant_exact_score_mode') AS hnsw_mode_default;",
+    "--log-output",
+    "${artifact_dir}/precheck-build-sha.log"
+   ],
+   "expected_artifacts": [
+    "${artifact_dir}/precheck-build-sha.log"
+   ]
+  },
+  {
+   "kind": "recall",
+   "name": "recall-auto-real10k",
+   "tags": [
+    "recall",
+    "task144",
+    "hnsw",
+    "real10k",
+    "mode-auto"
+   ],
+   "prefix": "task141_hnsw_real10k",
+   "profile": "ec_hnsw",
+   "k": 10,
+   "sweep": [
+    40,
+    64,
+    100,
+    128,
+    160,
+    200
+   ],
+   "truth_cache_dir": "${artifact_dir}/truth-cache",
+   "log_output": "${artifact_dir}/recall-auto-real10k.log"
+  },
+  {
+   "kind": "latency",
+   "name": "latency-auto-real10k",
+   "tags": [
+    "latency",
+    "task144",
+    "hnsw",
+    "real10k",
+    "mode-auto"
+   ],
+   "prefix": "task141_hnsw_real10k",
+   "profile": "ec_hnsw",
+   "k": 10,
+   "sweep": [
+    64,
+    100
+   ],
+   "iterations": 64,
+   "concurrency": 1,
+   "cache_state": "task141_hnsw_real10k_warm",
+   "task87_candidate_batch_counters": true,
+   "log_output": "${artifact_dir}/latency-auto-real10k.log"
+  },
+  {
+   "kind": "storage",
+   "name": "storage-real10k",
+   "tags": [
+    "storage",
+    "task144",
+    "real10k"
+   ],
+   "prefix": "task141_hnsw_real10k",
+   "log_file": "${artifact_dir}/storage-real10k.log"
+  },
+  {
+   "kind": "recall",
+   "name": "recall-auto-real50k",
+   "tags": [
+    "recall",
+    "task144",
+    "hnsw",
+    "real50k",
+    "mode-auto"
+   ],
+   "prefix": "task141_hnsw_real50k",
+   "profile": "ec_hnsw",
+   "k": 10,
+   "sweep": [
+    40,
+    64,
+    100,
+    128,
+    160,
+    200
+   ],
+   "truth_cache_dir": "${artifact_dir}/truth-cache",
+   "log_output": "${artifact_dir}/recall-auto-real50k.log",
+   "queries_limit": 48
+  },
+  {
+   "kind": "latency",
+   "name": "latency-auto-real50k",
+   "tags": [
+    "latency",
+    "task144",
+    "hnsw",
+    "real50k",
+    "mode-auto"
+   ],
+   "prefix": "task141_hnsw_real50k",
+   "profile": "ec_hnsw",
+   "k": 10,
+   "sweep": [
+    64,
+    100
+   ],
+   "iterations": 48,
+   "concurrency": 1,
+   "cache_state": "task141_hnsw_real50k_warm",
+   "task87_candidate_batch_counters": true,
+   "log_output": "${artifact_dir}/latency-auto-real50k.log"
+  },
+  {
+   "kind": "storage",
+   "name": "storage-real50k",
+   "tags": [
+    "storage",
+    "task144",
+    "real50k"
+   ],
+   "prefix": "task141_hnsw_real50k",
+   "log_file": "${artifact_dir}/storage-real50k.log"
+  },
+  {
+   "kind": "recall",
+   "name": "recall-auto-real100k",
+   "tags": [
+    "recall",
+    "task144",
+    "hnsw",
+    "real100k",
+    "mode-auto"
+   ],
+   "prefix": "task141_hnsw_real100k",
+   "profile": "ec_hnsw",
+   "k": 10,
+   "sweep": [
+    40,
+    64,
+    100,
+    128,
+    160,
+    200
+   ],
+   "truth_cache_dir": "${artifact_dir}/truth-cache",
+   "log_output": "${artifact_dir}/recall-auto-real100k.log",
+   "queries_limit": 32
+  },
+  {
+   "kind": "latency",
+   "name": "latency-auto-real100k",
+   "tags": [
+    "latency",
+    "task144",
+    "hnsw",
+    "real100k",
+    "mode-auto"
+   ],
+   "prefix": "task141_hnsw_real100k",
+   "profile": "ec_hnsw",
+   "k": 10,
+   "sweep": [
+    64,
+    100
+   ],
+   "iterations": 32,
+   "concurrency": 1,
+   "cache_state": "task141_hnsw_real100k_warm",
+   "task87_candidate_batch_counters": true,
+   "log_output": "${artifact_dir}/latency-auto-real100k.log"
+  },
+  {
+   "kind": "storage",
+   "name": "storage-real100k",
+   "tags": [
+    "storage",
+    "task144",
+    "real100k"
+   ],
+   "prefix": "task141_hnsw_real100k",
+   "log_file": "${artifact_dir}/storage-real100k.log"
+  }
+ ]
+}
