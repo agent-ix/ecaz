@@ -1,0 +1,216 @@
+[suite:task142-drain-policy-ab] wrote reviews/task-142/001-drain-policy/artifacts/baseline/suite-manifest.json
+[suite:task142-drain-policy-ab] wrote reviews/task-142/001-drain-policy/artifacts/baseline/suite-manifest.json
+[suite:task142-drain-policy-ab] precheck-build-sha -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 dev sql --pg 18 --db tqvector_bench --socket-dir /Users/peter/.pgrx --raw --sql "SELECT now() AS captured_at, ecaz_build_git_sha();" --log-output reviews/task-142/001-drain-policy/artifacts/baseline/precheck-build-sha.log
+[suite:task142-drain-policy-ab] wrote reviews/task-142/001-drain-policy/artifacts/baseline/suite-manifest.json
+          captured_at          |            ecaz_build_git_sha            
+-------------------------------+------------------------------------------
+ 2026-07-02 17:34:31.681563-07 | 2d98ec5b71f0d79e23c8452feba3cefc208d2fd3
+(1 row)
+
+[suite:task142-drain-policy-ab] wrote reviews/task-142/001-drain-policy/artifacts/baseline/suite-manifest.json
+[suite:task142-drain-policy-ab] recall-dense-real10k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench recall --prefix task135ab_dense_real10k --profile ec_ivf --k 10 --sweep 32 --queries-limit 64 --bits 4 --seed 42 --force-index --truth-cache-dir reviews/task-142/001-drain-policy/artifacts/baseline/truth-cache --log-output reviews/task-142/001-drain-policy/artifacts/baseline/recall-dense-real10k.log
+[suite:task142-drain-policy-ab] wrote reviews/task-142/001-drain-policy/artifacts/baseline/suite-manifest.json
+┌────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ nprobe ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 32     ┆ 64      ┆ 640           ┆ 0.9734   ┆ 0.9579          ┆ 0.9834           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.8000       ┆ 0.9998 ┆ 1.29 ms     │
+└────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from task135ab_dense_real10k_queries ...
+[recall] fetching corpus from task135ab_dense_real10k_corpus ...
+[recall] computing ground truth: 64 queries vs 10000 corpus rows (dim=1536) ...
+[recall] ground truth in 21.32ms
+[recall] wrote ground truth cache reviews/task-142/001-drain-policy/artifacts/baseline/truth-cache/truth-v1-rows10000-queries64-dim1536-k10-97f391fdef18b4eb.json
+[suite:task142-drain-policy-ab] wrote reviews/task-142/001-drain-policy/artifacts/baseline/suite-manifest.json
+[suite:task142-drain-policy-ab] latency-dense-real10k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench latency --prefix task135ab_dense_real10k --profile ec_ivf --k 10 --concurrency 1 --iterations 64 --sweep 32 --bits 4 --seed 42 --force-index --sample-backend-memory --cache-state task135ab_dense_real10k_warm --task87-candidate-batch-counters --ivf-stage-counters --memory-sample-interval-ms 25 --log-output reviews/task-142/001-drain-policy/artifacts/baseline/latency-dense-real10k.log
+[suite:task142-drain-policy-ab] wrote reviews/task-142/001-drain-policy/artifacts/baseline/suite-manifest.json
+┌────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬──────────────────────────────┬─────────────┬─────────────┬────────────────┐
+│ nprobe ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state                  ┆ rss_peak_kb ┆ hwm_peak_kb ┆ memory_samples │
+╞════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪══════════════════════════════╪═════════════╪═════════════╪════════════════╡
+│ 32     ┆ 64    ┆ 0.92 ms ┆ 0.25 ms ┆ 0.79 ms ┆ 0.90 ms ┆ 1.01 ms ┆ 1.73 ms ┆ 2.85 ms ┆ task135ab_dense_real10k_warm ┆ 0           ┆ 0           ┆ 0              │
+└────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴──────────────────────────────┴─────────────┴─────────────┴────────────────┘
+[block-kernel-counters] command=latency label=nprobe=32 surface=ivf quant=turboquant isa=neon flushes=2050 candidates=205959 elapsed_nanos=26589580 elapsed_ms=26.589580 kernel_flushes=2050 kernel_candidates=205959 kernel_elapsed_nanos=26589580 kernel_elapsed_ms=26.589580 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=0 width_8_15=0 width_16_31=141 width_ge32=1909 pruned_candidates=0 kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=ivf flushes=2050 candidates=205959 elapsed_nanos=26589580 elapsed_ms=26.589580 lut32_flushes=2050 lut32_candidates=205959 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[ivf-stage-counters] command=latency label=nprobe=32 stage=approximate_scan scans=64 samples=64 elapsed_us=42275 elapsed_ms=42.275
+[ivf-stage-counters] command=latency label=nprobe=32 stage=candidate_record scans=64 samples=2050 elapsed_us=932 elapsed_ms=0.932
+[ivf-stage-counters] command=latency label=nprobe=32 stage=exact_rerank scans=64 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=posting_page_decode scans=64 samples=64 elapsed_us=34505 elapsed_ms=34.505
+[ivf-stage-counters] command=latency label=nprobe=32 stage=posting_visit scans=64 samples=64 elapsed_us=38108 elapsed_ms=38.108
+[ivf-stage-counters] command=latency label=nprobe=32 stage=probe_plan scans=64 samples=64 elapsed_us=2765 elapsed_ms=2.765
+[ivf-stage-counters] command=latency label=nprobe=32 stage=rerank_payload_decode scans=64 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=rerank_payload_score scans=64 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=scorer_batch scans=64 samples=2050 elapsed_us=26860 elapsed_ms=26.860
+[ivf-stage-counters] command=latency label=nprobe=32 stage=scratch_flush scans=64 samples=2050 elapsed_us=28619 elapsed_ms=28.619
+[ivf-stage-counters] command=latency label=nprobe=32 stage=topk_collect scans=64 samples=64 elapsed_us=4063 elapsed_ms=4.063
+[suite:task142-drain-policy-ab] wrote reviews/task-142/001-drain-policy/artifacts/baseline/suite-manifest.json
+[suite:task142-drain-policy-ab] storage-dense-real10k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 --log-file reviews/task-142/001-drain-policy/artifacts/baseline/storage-dense-real10k.log bench storage --prefix task135ab_dense_real10k
+[suite:task142-drain-policy-ab] wrote reviews/task-142/001-drain-policy/artifacts/baseline/suite-manifest.json
+┌───────────────────────────────┬────────────────────────────────┐
+│ field                         ┆ value                          │
+╞═══════════════════════════════╪════════════════════════════════╡
+│ prefix                        ┆ task135ab_dense_real10k        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus                        ┆ task135ab_dense_real10k_corpus │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ rows                          ┆ 10000                          │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ heap                          ┆ 752.0 KiB                      │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ table (heap + toast + fsm/vm) ┆ 158.8 MiB                      │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes                       ┆ 9.2 MiB                        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ total                         ┆ 168.0 MiB                      │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (total)               ┆ 17616.9 B                      │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (heap only)           ┆ 77.0 B                         │
+└───────────────────────────────┴────────────────────────────────┘
+┌────────────────────────────────────────┬───────────────┬───────────┬────────────────────────────────────────────────────┬───────────┬─────────┐
+│ index                                  ┆ access method ┆ profile   ┆ reloptions                                         ┆ size      ┆ per row │
+╞════════════════════════════════════════╪═══════════════╪═══════════╪════════════════════════════════════════════════════╪═══════════╪═════════╡
+│ task135ab_dense_real10k_turboquant_idx ┆ ec_ivf        ┆ ec_ivf    ┆ {dense_posting_blocks=1,storage_format=turboquant} ┆ 9.0 MiB   ┆ 939.6 B │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ task135ab_dense_real10k_corpus_pkey    ┆ btree         ┆ <unknown> ┆ {}                                                 ┆ 240.0 KiB ┆ 24.6 B  │
+└────────────────────────────────────────┴───────────────┴───────────┴────────────────────────────────────────────────────┴───────────┴─────────┘
+[suite:task142-drain-policy-ab] wrote reviews/task-142/001-drain-policy/artifacts/baseline/suite-manifest.json
+[suite:task142-drain-policy-ab] recall-dense-real50k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench recall --prefix task135ab_dense_real50k --profile ec_ivf --k 10 --sweep 32 --queries-limit 48 --bits 4 --seed 42 --force-index --truth-cache-dir reviews/task-142/001-drain-policy/artifacts/baseline/truth-cache --log-output reviews/task-142/001-drain-policy/artifacts/baseline/recall-dense-real50k.log
+[suite:task142-drain-policy-ab] wrote reviews/task-142/001-drain-policy/artifacts/baseline/suite-manifest.json
+┌────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ nprobe ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 32     ┆ 48      ┆ 480           ┆ 0.9521   ┆ 0.9291          ┆ 0.9679           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.8000       ┆ 0.9995 ┆ 2.18 ms     │
+└────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from task135ab_dense_real50k_queries ...
+[recall] fetching corpus from task135ab_dense_real50k_corpus ...
+[recall] computing ground truth: 48 queries vs 50000 corpus rows (dim=1536) ...
+[recall] ground truth in 82.41ms
+[recall] wrote ground truth cache reviews/task-142/001-drain-policy/artifacts/baseline/truth-cache/truth-v1-rows50000-queries48-dim1536-k10-a93e9d1a3c4f8202.json
+[suite:task142-drain-policy-ab] wrote reviews/task-142/001-drain-policy/artifacts/baseline/suite-manifest.json
+[suite:task142-drain-policy-ab] latency-dense-real50k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench latency --prefix task135ab_dense_real50k --profile ec_ivf --k 10 --concurrency 1 --iterations 48 --sweep 32 --bits 4 --seed 42 --force-index --sample-backend-memory --cache-state task135ab_dense_real50k_warm --task87-candidate-batch-counters --ivf-stage-counters --memory-sample-interval-ms 25 --log-output reviews/task-142/001-drain-policy/artifacts/baseline/latency-dense-real50k.log
+[suite:task142-drain-policy-ab] wrote reviews/task-142/001-drain-policy/artifacts/baseline/suite-manifest.json
+┌────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬──────────────────────────────┬─────────────┬─────────────┬────────────────┐
+│ nprobe ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state                  ┆ rss_peak_kb ┆ hwm_peak_kb ┆ memory_samples │
+╞════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪══════════════════════════════╪═════════════╪═════════════╪════════════════╡
+│ 32     ┆ 48    ┆ 1.85 ms ┆ 0.35 ms ┆ 1.52 ms ┆ 1.80 ms ┆ 2.03 ms ┆ 3.17 ms ┆ 4.08 ms ┆ task135ab_dense_real50k_warm ┆ 0           ┆ 0           ┆ 0              │
+└────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴──────────────────────────────┴─────────────┴─────────────┴────────────────┘
+[block-kernel-counters] command=latency label=nprobe=32 surface=ivf quant=turboquant isa=neon flushes=2088 candidates=340407 elapsed_nanos=43764655 elapsed_ms=43.764655 kernel_flushes=2088 kernel_candidates=340407 kernel_elapsed_nanos=43764655 kernel_elapsed_ms=43.764655 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=23 width_8_15=12 width_16_31=39 width_ge32=2014 pruned_candidates=0 kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=ivf flushes=2088 candidates=340407 elapsed_nanos=43764655 elapsed_ms=43.764655 lut32_flushes=2088 lut32_candidates=340407 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[ivf-stage-counters] command=latency label=nprobe=32 stage=approximate_scan scans=48 samples=48 elapsed_us=70963 elapsed_ms=70.963
+[ivf-stage-counters] command=latency label=nprobe=32 stage=candidate_record scans=48 samples=2088 elapsed_us=2447 elapsed_ms=2.447
+[ivf-stage-counters] command=latency label=nprobe=32 stage=exact_rerank scans=48 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=posting_page_decode scans=48 samples=48 elapsed_us=58143 elapsed_ms=58.143
+[ivf-stage-counters] command=latency label=nprobe=32 stage=posting_visit scans=48 samples=48 elapsed_us=63485 elapsed_ms=63.485
+[ivf-stage-counters] command=latency label=nprobe=32 stage=probe_plan scans=48 samples=48 elapsed_us=4506 elapsed_ms=4.506
+[ivf-stage-counters] command=latency label=nprobe=32 stage=rerank_payload_decode scans=48 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=rerank_payload_score scans=48 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=scorer_batch scans=48 samples=2088 elapsed_us=44405 elapsed_ms=44.405
+[ivf-stage-counters] command=latency label=nprobe=32 stage=scratch_flush scans=48 samples=2088 elapsed_us=47568 elapsed_ms=47.568
+[ivf-stage-counters] command=latency label=nprobe=32 stage=topk_collect scans=48 samples=48 elapsed_us=7366 elapsed_ms=7.366
+[suite:task142-drain-policy-ab] wrote reviews/task-142/001-drain-policy/artifacts/baseline/suite-manifest.json
+[suite:task142-drain-policy-ab] storage-dense-real50k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 --log-file reviews/task-142/001-drain-policy/artifacts/baseline/storage-dense-real50k.log bench storage --prefix task135ab_dense_real50k
+[suite:task142-drain-policy-ab] wrote reviews/task-142/001-drain-policy/artifacts/baseline/suite-manifest.json
+┌───────────────────────────────┬────────────────────────────────┐
+│ field                         ┆ value                          │
+╞═══════════════════════════════╪════════════════════════════════╡
+│ prefix                        ┆ task135ab_dense_real50k        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus                        ┆ task135ab_dense_real50k_corpus │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ rows                          ┆ 50000                          │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ heap                          ┆ 3.7 MiB                        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ table (heap + toast + fsm/vm) ┆ 793.8 MiB                      │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes                       ┆ 42.7 MiB                       │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ total                         ┆ 836.5 MiB                      │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (total)               ┆ 17542.2 B                      │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (heap only)           ┆ 76.7 B                         │
+└───────────────────────────────┴────────────────────────────────┘
+┌────────────────────────────────────────┬───────────────┬───────────┬────────────────────────────────────────────────────┬──────────┬─────────┐
+│ index                                  ┆ access method ┆ profile   ┆ reloptions                                         ┆ size     ┆ per row │
+╞════════════════════════════════════════╪═══════════════╪═══════════╪════════════════════════════════════════════════════╪══════════╪═════════╡
+│ task135ab_dense_real50k_turboquant_idx ┆ ec_ivf        ┆ ec_ivf    ┆ {dense_posting_blocks=1,storage_format=turboquant} ┆ 41.6 MiB ┆ 872.0 B │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ task135ab_dense_real50k_corpus_pkey    ┆ btree         ┆ <unknown> ┆ {}                                                 ┆ 1.1 MiB  ┆ 22.8 B  │
+└────────────────────────────────────────┴───────────────┴───────────┴────────────────────────────────────────────────────┴──────────┴─────────┘
+[suite:task142-drain-policy-ab] wrote reviews/task-142/001-drain-policy/artifacts/baseline/suite-manifest.json
+[suite:task142-drain-policy-ab] recall-dense-real100k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench recall --prefix task135ab_dense_real100k --profile ec_ivf --k 10 --sweep 32 --queries-limit 32 --bits 4 --seed 42 --force-index --truth-cache-dir reviews/task-142/001-drain-policy/artifacts/baseline/truth-cache --log-output reviews/task-142/001-drain-policy/artifacts/baseline/recall-dense-real100k.log
+[suite:task142-drain-policy-ab] wrote reviews/task-142/001-drain-policy/artifacts/baseline/suite-manifest.json
+┌────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ nprobe ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 32     ┆ 32      ┆ 320           ┆ 0.8969   ┆ 0.8587          ┆ 0.9256           ┆ 0.8000     ┆ 0.9000     ┆ 1.0000     ┆ 0.7000       ┆ 0.9957 ┆ 3.36 ms     │
+└────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from task135ab_dense_real100k_queries ...
+[recall] fetching corpus from task135ab_dense_real100k_corpus ...
+[recall] computing ground truth: 32 queries vs 100000 corpus rows (dim=1536) ...
+[recall] ground truth in 121.28ms
+[recall] wrote ground truth cache reviews/task-142/001-drain-policy/artifacts/baseline/truth-cache/truth-v1-rows100000-queries32-dim1536-k10-22dfd78bf8c49028.json
+[suite:task142-drain-policy-ab] wrote reviews/task-142/001-drain-policy/artifacts/baseline/suite-manifest.json
+[suite:task142-drain-policy-ab] latency-dense-real100k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench latency --prefix task135ab_dense_real100k --profile ec_ivf --k 10 --concurrency 1 --iterations 32 --sweep 32 --bits 4 --seed 42 --force-index --sample-backend-memory --cache-state task135ab_dense_real100k_warm --task87-candidate-batch-counters --ivf-stage-counters --memory-sample-interval-ms 25 --log-output reviews/task-142/001-drain-policy/artifacts/baseline/latency-dense-real100k.log
+[suite:task142-drain-policy-ab] wrote reviews/task-142/001-drain-policy/artifacts/baseline/suite-manifest.json
+┌────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬───────────────────────────────┬─────────────┬─────────────┬────────────────┐
+│ nprobe ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state                   ┆ rss_peak_kb ┆ hwm_peak_kb ┆ memory_samples │
+╞════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═══════════════════════════════╪═════════════╪═════════════╪════════════════╡
+│ 32     ┆ 32    ┆ 2.71 ms ┆ 0.47 ms ┆ 2.19 ms ┆ 2.66 ms ┆ 3.22 ms ┆ 4.43 ms ┆ 4.94 ms ┆ task135ab_dense_real100k_warm ┆ 0           ┆ 0           ┆ 0              │
+└────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴───────────────────────────────┴─────────────┴─────────────┴────────────────┘
+[block-kernel-counters] command=latency label=nprobe=32 surface=ivf quant=turboquant isa=neon flushes=1781 candidates=331757 elapsed_nanos=41746572 elapsed_ms=41.746572 kernel_flushes=1781 kernel_candidates=331757 kernel_elapsed_nanos=41746572 kernel_elapsed_ms=41.746572 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=22 width_8_15=38 width_16_31=33 width_ge32=1688 pruned_candidates=0 kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=ivf flushes=1781 candidates=331757 elapsed_nanos=41746572 elapsed_ms=41.746572 lut32_flushes=1781 lut32_candidates=331757 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[ivf-stage-counters] command=latency label=nprobe=32 stage=approximate_scan scans=32 samples=32 elapsed_us=71410 elapsed_ms=71.410
+[ivf-stage-counters] command=latency label=nprobe=32 stage=candidate_record scans=32 samples=1781 elapsed_us=2379 elapsed_ms=2.379
+[ivf-stage-counters] command=latency label=nprobe=32 stage=exact_rerank scans=32 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=posting_page_decode scans=32 samples=32 elapsed_us=59077 elapsed_ms=59.077
+[ivf-stage-counters] command=latency label=nprobe=32 stage=posting_visit scans=32 samples=32 elapsed_us=64051 elapsed_ms=64.051
+[ivf-stage-counters] command=latency label=nprobe=32 stage=probe_plan scans=32 samples=32 elapsed_us=4354 elapsed_ms=4.354
+[ivf-stage-counters] command=latency label=nprobe=32 stage=rerank_payload_decode scans=32 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=rerank_payload_score scans=32 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=scorer_batch scans=32 samples=1781 elapsed_us=42472 elapsed_ms=42.472
+[ivf-stage-counters] command=latency label=nprobe=32 stage=scratch_flush scans=32 samples=1781 elapsed_us=45332 elapsed_ms=45.332
+[ivf-stage-counters] command=latency label=nprobe=32 stage=topk_collect scans=32 samples=32 elapsed_us=7268 elapsed_ms=7.268
+[suite:task142-drain-policy-ab] wrote reviews/task-142/001-drain-policy/artifacts/baseline/suite-manifest.json
+[suite:task142-drain-policy-ab] storage-dense-real100k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 --log-file reviews/task-142/001-drain-policy/artifacts/baseline/storage-dense-real100k.log bench storage --prefix task135ab_dense_real100k
+[suite:task142-drain-policy-ab] wrote reviews/task-142/001-drain-policy/artifacts/baseline/suite-manifest.json
+┌───────────────────────────────┬─────────────────────────────────┐
+│ field                         ┆ value                           │
+╞═══════════════════════════════╪═════════════════════════════════╡
+│ prefix                        ┆ task135ab_dense_real100k        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus                        ┆ task135ab_dense_real100k_corpus │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ rows                          ┆ 100000                          │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ heap                          ┆ 7.3 MiB                         │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ table (heap + toast + fsm/vm) ┆ 1.6 GiB                         │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes                       ┆ 83.8 MiB                        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ total                         ┆ 1.6 GiB                         │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (total)               ┆ 17525.7 B                       │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (heap only)           ┆ 76.6 B                          │
+└───────────────────────────────┴─────────────────────────────────┘
+┌─────────────────────────────────────────┬───────────────┬───────────┬────────────────────────────────────────────────────┬──────────┬─────────┐
+│ index                                   ┆ access method ┆ profile   ┆ reloptions                                         ┆ size     ┆ per row │
+╞═════════════════════════════════════════╪═══════════════╪═══════════╪════════════════════════════════════════════════════╪══════════╪═════════╡
+│ task135ab_dense_real100k_turboquant_idx ┆ ec_ivf        ┆ ec_ivf    ┆ {dense_posting_blocks=1,storage_format=turboquant} ┆ 81.7 MiB ┆ 856.5 B │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ task135ab_dense_real100k_corpus_pkey    ┆ btree         ┆ <unknown> ┆ {}                                                 ┆ 2.2 MiB  ┆ 22.6 B  │
+└─────────────────────────────────────────┴───────────────┴───────────┴────────────────────────────────────────────────────┴──────────┴─────────┘
+[suite:task142-drain-policy-ab] wrote reviews/task-142/001-drain-policy/artifacts/baseline/suite-manifest.json
+[suite:task142-drain-policy-ab] wrote reviews/task-142/001-drain-policy/artifacts/baseline/results.jsonl
+[suite:task142-drain-policy-ab] wrote reviews/task-142/001-drain-policy/artifacts/baseline/suite-manifest.json

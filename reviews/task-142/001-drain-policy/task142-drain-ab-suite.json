@@ -1,0 +1,208 @@
+{
+ "name": "task142-drain-policy-ab",
+ "schema_version": 1,
+ "artifact_dir": "reviews/task-142/001-drain-policy/artifacts",
+ "defaults": {
+  "pg": 18,
+  "socket_dir": "/Users/peter/.pgrx",
+  "profile": "ec_ivf",
+  "bits": 4,
+  "seed": 42,
+  "queries_limit": 64,
+  "iterations": 64,
+  "force_index": true,
+  "sample_backend_memory": true,
+  "memory_sample_interval_ms": 25
+ },
+ "thresholds": [],
+ "steps": [
+  {
+   "kind": "raw",
+   "name": "precheck-build-sha",
+   "tags": [
+    "setup",
+    "precheck",
+    "task142"
+   ],
+   "args": [
+    "dev",
+    "sql",
+    "--pg",
+    "18",
+    "--db",
+    "tqvector_bench",
+    "--socket-dir",
+    "/Users/peter/.pgrx",
+    "--raw",
+    "--sql",
+    "SELECT now() AS captured_at, ecaz_build_git_sha();",
+    "--log-output",
+    "${artifact_dir}/precheck-build-sha.log"
+   ],
+   "expected_artifacts": [
+    "${artifact_dir}/precheck-build-sha.log"
+   ]
+  },
+  {
+   "kind": "recall",
+   "name": "recall-dense-real10k",
+   "tags": [
+    "recall",
+    "task142",
+    "ivf",
+    "turboquant",
+    "real10k"
+   ],
+   "prefix": "task135ab_dense_real10k",
+   "profile": "ec_ivf",
+   "k": 10,
+   "sweep": [
+    32
+   ],
+   "truth_cache_dir": "${artifact_dir}/truth-cache",
+   "log_output": "${artifact_dir}/recall-dense-real10k.log"
+  },
+  {
+   "kind": "latency",
+   "name": "latency-dense-real10k",
+   "tags": [
+    "latency",
+    "task142",
+    "ivf",
+    "turboquant",
+    "real10k"
+   ],
+   "prefix": "task135ab_dense_real10k",
+   "profile": "ec_ivf",
+   "k": 10,
+   "sweep": [
+    32
+   ],
+   "iterations": 64,
+   "concurrency": 1,
+   "cache_state": "task135ab_dense_real10k_warm",
+   "task87_candidate_batch_counters": true,
+   "ivf_stage_counters": true,
+   "log_output": "${artifact_dir}/latency-dense-real10k.log"
+  },
+  {
+   "kind": "storage",
+   "name": "storage-dense-real10k",
+   "tags": [
+    "storage",
+    "task142",
+    "real10k"
+   ],
+   "prefix": "task135ab_dense_real10k",
+   "log_file": "${artifact_dir}/storage-dense-real10k.log"
+  },
+  {
+   "kind": "recall",
+   "name": "recall-dense-real50k",
+   "tags": [
+    "recall",
+    "task142",
+    "ivf",
+    "turboquant",
+    "real50k"
+   ],
+   "prefix": "task135ab_dense_real50k",
+   "profile": "ec_ivf",
+   "k": 10,
+   "sweep": [
+    32
+   ],
+   "truth_cache_dir": "${artifact_dir}/truth-cache",
+   "log_output": "${artifact_dir}/recall-dense-real50k.log",
+   "queries_limit": 48
+  },
+  {
+   "kind": "latency",
+   "name": "latency-dense-real50k",
+   "tags": [
+    "latency",
+    "task142",
+    "ivf",
+    "turboquant",
+    "real50k"
+   ],
+   "prefix": "task135ab_dense_real50k",
+   "profile": "ec_ivf",
+   "k": 10,
+   "sweep": [
+    32
+   ],
+   "iterations": 48,
+   "concurrency": 1,
+   "cache_state": "task135ab_dense_real50k_warm",
+   "task87_candidate_batch_counters": true,
+   "ivf_stage_counters": true,
+   "log_output": "${artifact_dir}/latency-dense-real50k.log"
+  },
+  {
+   "kind": "storage",
+   "name": "storage-dense-real50k",
+   "tags": [
+    "storage",
+    "task142",
+    "real50k"
+   ],
+   "prefix": "task135ab_dense_real50k",
+   "log_file": "${artifact_dir}/storage-dense-real50k.log"
+  },
+  {
+   "kind": "recall",
+   "name": "recall-dense-real100k",
+   "tags": [
+    "recall",
+    "task142",
+    "ivf",
+    "turboquant",
+    "real100k"
+   ],
+   "prefix": "task135ab_dense_real100k",
+   "profile": "ec_ivf",
+   "k": 10,
+   "sweep": [
+    32
+   ],
+   "truth_cache_dir": "${artifact_dir}/truth-cache",
+   "log_output": "${artifact_dir}/recall-dense-real100k.log",
+   "queries_limit": 32
+  },
+  {
+   "kind": "latency",
+   "name": "latency-dense-real100k",
+   "tags": [
+    "latency",
+    "task142",
+    "ivf",
+    "turboquant",
+    "real100k"
+   ],
+   "prefix": "task135ab_dense_real100k",
+   "profile": "ec_ivf",
+   "k": 10,
+   "sweep": [
+    32
+   ],
+   "iterations": 32,
+   "concurrency": 1,
+   "cache_state": "task135ab_dense_real100k_warm",
+   "task87_candidate_batch_counters": true,
+   "ivf_stage_counters": true,
+   "log_output": "${artifact_dir}/latency-dense-real100k.log"
+  },
+  {
+   "kind": "storage",
+   "name": "storage-dense-real100k",
+   "tags": [
+    "storage",
+    "task142",
+    "real100k"
+   ],
+   "prefix": "task135ab_dense_real100k",
+   "log_file": "${artifact_dir}/storage-dense-real100k.log"
+  }
+ ]
+}
