@@ -12,6 +12,16 @@
             std::env::set_var(key, value);
             Self { key, previous }
         }
+
+        /// Guard that clears `key` for the guard's lifetime and restores the
+        /// prior value on drop. Used to exercise a GUC/env default (e.g. the
+        /// Task 144 `auto` exact-score resolution) with no environment override
+        /// in force.
+        fn unset(key: &'static str) -> Self {
+            let previous = std::env::var_os(key);
+            std::env::remove_var(key);
+            Self { key, previous }
+        }
     }
 
     impl Drop for ScopedEnvVar {
