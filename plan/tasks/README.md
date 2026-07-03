@@ -190,6 +190,7 @@ These pre-lane task files are retained only for historical context under
 144. `144-hnsw-int8-approx-default-revisit.md` — **measured — flip recommended, awaiting ack** (2026-07-03, `reviews/task-144/001-hnsw-scorer-default/`): exact vs int8_approx across ef 40–200 at 10k/50k/100k; recall dips ≤0.42 pp (noise), latency −10% at mid-ef, never worse. Flip recommended (modest).
 145. `145-ivf-topk-collect-share.md` — **measured — awaiting review** (2026-07-03, Codex, branch `task-145-topk-collect`): dense dedup pool + lazy-heap unbounded collect; topk_collect −72..−77% at every scale (1m: 17.1 → 4.2 ms/sweep, ~17% → ~4.5% of scan), e2e mean −8..−14% at 10k/100k/1m (50k in noise), all 24 recall cells byte-identical, storage unchanged. Packet `reviews/task-145/001-dedup-pool-collect/`.
 146. `146-ivf-outside-scan-latency-decomposition.md` — **in progress** (2026-07-03, Codex, branch `task-146-outside-scan-profile`): decompose the ~0.5–0.6 ms/query outside the approximate-scan window (Task 133 finding #4) via three new stage timers (`query_prep`, `centroid_score`, `rescan_total`); neutral-overhead gate + per-scale attribution table.
+147. `147-ivf-coarse-payload-density-pareto.md` — **in progress** (2026-07-03, Codex): measurement-only pareto of coarse-payload density at the new defaults — RaBitQ `quant_bits={1,2}` dense + heap_f32 rerank (existing surfaces) vs the TQ dense-int8 champion; reopens the Task 96 premise only if density wins. Phase-0 fact: TQ coarse encode is hardwired 4-bit, so a TQ 2-bit lane would be new surface.
 
 ## Coordination rules
 
