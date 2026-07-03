@@ -62,14 +62,15 @@ static EC_IVF_LAZY_HEAP_RERANK_GUC: GucSetting<bool> = GucSetting::<bool>::new(t
 // return byte-identical results (only the work counts differ).
 static EC_IVF_POSTING_BOUND_PRUNE_GUC: GucSetting<bool> = GucSetting::<bool>::new(true);
 // Task 136: session selector for the TurboQuant no-QJL 4-bit approximate
-// scorer. `lut` is the shipped i16-LUT block kernel (Task 125); `int8_approx`
+// scorer. `lut` is the i16-LUT block kernel (Task 125); `int8_approx`
 // routes the same prepared query through the factored rank-1 in-register
-// kernel (`quant::int8_approx32`, Task 98) that keeps the 16-entry codebook in
-// one register and streams an i8-quantized rotated query. Query-side only —
-// on-disk codes are decoded identically. Default stays `lut` pending the
-// Task 136 10k/50k/100k recall+latency A/B.
+// kernel (`quant::int8_approx32`, Task 98 + Task 141 SDOT) that keeps the
+// 16-entry codebook in one register and streams an i8-quantized rotated
+// query. Query-side only — on-disk codes are decoded identically. Default
+// flipped to `int8_approx` per the Task 143 promotion matrix (100k/1m:
+// −33/−30% latency vs lut at recall within noise across nprobe 8–64).
 static EC_IVF_TURBOQUANT_SCORER_GUC: GucSetting<TurboQuantScorerGuc> =
-    GucSetting::<TurboQuantScorerGuc>::new(TurboQuantScorerGuc::Lut);
+    GucSetting::<TurboQuantScorerGuc>::new(TurboQuantScorerGuc::Int8Approx);
 
 /// Session selector for the ec_ivf TurboQuant no-QJL 4-bit approximate-scan
 /// scorer (Task 136). Mirrors the `ec_hnsw.turboquant_exact_score_mode`
@@ -417,7 +418,9 @@ impl EcIvfOptions {
         posting_slack_percent: EC_IVF_DEFAULT_POSTING_SLACK_PERCENT,
         quant_bits: EC_IVF_DEFAULT_QUANT_BITS,
         coarse_bits: 0,
-        dense_posting_blocks: false,
+        // Task 143 promotion: the no-reloptions default (storage_format Auto
+        // resolves to TurboQuant) builds dense posting blocks.
+        dense_posting_blocks: true,
         dense_posting_typed_layout: false,
         rabitq_residual: false,
         rabitq_rerank_score: RaBitQRerankScoreMode::Estimator,
@@ -572,7 +575,7 @@ pub(super) fn register_gucs() {
     GucRegistry::define_enum_guc(
         c"ec_ivf.turboquant_scorer",
         c"Session selector for the ec_ivf TurboQuant no-QJL 4-bit approximate scorer.",
-        c"Task 136 A/B switch. Values: lut (default, i16-LUT block kernel), int8_approx (factored rank-1 in-register kernel with an i8-quantized rotated query). Query-side only; on-disk codes are unchanged.",
+        c"Task 136/141/143 scorer selector. Values: int8_approx (default per the Task 143 promotion: factored rank-1 in-register SDOT kernel with an i8-quantized rotated query), lut (i16-LUT block kernel, the pre-143 default). Query-side only; on-disk codes are unchanged.",
         &EC_IVF_TURBOQUANT_SCORER_GUC,
         GucContext::Userset,
         GucFlags::default(),
@@ -653,6 +656,11 @@ pub(super) fn current_session_dense_posting_typed_views() -> bool {
 
 pub(super) fn current_session_turboquant_scorer() -> TurboQuantScorerGuc {
     if cfg!(test) {
+        // Unit tests pin the LUT scorer so the legacy kernel keeps
+        // deterministic coverage (the int8 path is covered by the explicit
+        // `prepare_ip_query_with_turboquant_scorer` tests and the
+        // int8_approx32 parity suite). The production default is
+        // Int8Approx per the Task 143 promotion.
         TurboQuantScorerGuc::Lut
     } else {
         EC_IVF_TURBOQUANT_SCORER_GUC.get()
@@ -861,10 +869,10 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amoptions(
         pg_sys::add_local_int_reloption(
             &mut relopts,
             c"dense_posting_blocks".as_ptr(),
-            c"Experimental Task 111 build-time dense IVF posting block layout: 0 disables, 1 enables for frozen build postings."
+            c"Task 111 build-time dense IVF posting block layout: -1 auto (dense for the TurboQuant lane per the Task 143 promotion; row for RaBitQ pending its own promotion), 0 disables, 1 enables for frozen build postings."
                 .as_ptr(),
-            0,
-            0,
+            -1,
+            -1,
             1,
             offset_of!(EcIvfReloptions, dense_posting_blocks) as i32,
         );
@@ -1259,7 +1267,18 @@ fn build_options_from_reloptions(
         },
         coarse_bits,
         dense_posting_blocks: storage_format == StorageFormat::CoarseRerank
-            || reloptions.dense_posting_blocks != 0,
+            || match reloptions.dense_posting_blocks {
+                // Task 143 promotion: auto (-1) resolves to dense for the
+                // TurboQuant lane (recall byte-identical to row at every
+                // measured nprobe/scale cell, storage −10%, latency win at
+                // 100k/1m). RaBitQ auto stays row pending its own promotion
+                // decision (Task 111a closeout kept it gated).
+                -1 => matches!(
+                    storage_format,
+                    StorageFormat::Auto | StorageFormat::TurboQuant
+                ),
+                value => value != 0,
+            },
         dense_posting_typed_layout: storage_format == StorageFormat::CoarseRerank
             || reloptions.dense_posting_typed_layout != 0,
         rabitq_residual,
