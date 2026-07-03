@@ -1392,11 +1392,15 @@ fn turboquant_scan_storage(graph_storage: graph::GraphStorageDescriptor) -> bool
     )
 }
 
-fn resolve_turboquant_exact_score_mode() -> TurboQuantExactScoreMode {
+fn resolve_turboquant_exact_score_mode(int8_lane_supported: bool) -> TurboQuantExactScoreMode {
     // The session GUC replaces the former server environment variable; the
-    // env var is still honored as a fallback when the GUC is at its default
-    // so existing measurement workflows keep working.
+    // env var is still honored as a fallback when the GUC is at its `auto`
+    // default so existing measurement workflows keep working. Explicit GUC
+    // values (including `exact`) are no longer overridable by the env var.
     match super::options::current_turboquant_exact_score_mode() {
+        super::options::TurboQuantExactScoreModeGuc::Exact => {
+            return TurboQuantExactScoreMode::Exact;
+        }
         super::options::TurboQuantExactScoreModeGuc::FullLut => {
             return TurboQuantExactScoreMode::FullLut;
         }
@@ -1406,22 +1410,28 @@ fn resolve_turboquant_exact_score_mode() -> TurboQuantExactScoreMode {
         super::options::TurboQuantExactScoreModeGuc::Int8Approx => {
             return TurboQuantExactScoreMode::Int8Approx;
         }
-        super::options::TurboQuantExactScoreModeGuc::Exact => {}
+        super::options::TurboQuantExactScoreModeGuc::Auto => {}
     }
 
-    let Some(raw_mode) = std::env::var_os(TURBOQUANT_EXACT_SCORE_MODE_ENV) else {
-        return TurboQuantExactScoreMode::Exact;
-    };
+    if let Some(raw_mode) = std::env::var_os(TURBOQUANT_EXACT_SCORE_MODE_ENV) {
+        return match raw_mode.to_string_lossy().as_ref() {
+            "exact" => TurboQuantExactScoreMode::Exact,
+            "full_lut" => TurboQuantExactScoreMode::FullLut,
+            "tiled_lut" => TurboQuantExactScoreMode::TiledLut,
+            "int8_approx" => TurboQuantExactScoreMode::Int8Approx,
+            other => pgrx::error!(
+                "ec_hnsw TurboQuant exact score mode must be one of [exact, full_lut, tiled_lut, int8_approx], got {:?}",
+                other
+            ),
+        };
+    }
 
-    match raw_mode.to_string_lossy().as_ref() {
-        "exact" => TurboQuantExactScoreMode::Exact,
-        "full_lut" => TurboQuantExactScoreMode::FullLut,
-        "tiled_lut" => TurboQuantExactScoreMode::TiledLut,
-        "int8_approx" => TurboQuantExactScoreMode::Int8Approx,
-        other => pgrx::error!(
-            "ec_hnsw TurboQuant exact score mode must be one of [exact, full_lut, tiled_lut, int8_approx], got {:?}",
-            other
-        ),
+    // Task 144 default: the factored int8 kernel where the lane supports it
+    // (recall within noise, ~10% mid-ef latency win), exact everywhere else.
+    if int8_lane_supported {
+        TurboQuantExactScoreMode::Int8Approx
+    } else {
+        TurboQuantExactScoreMode::Exact
     }
 }
 
@@ -2122,7 +2132,7 @@ fn store_scan_prepared_query(
     let binary_prepared =
         binary_query_requested.then(|| quantizer.prepare_ip_query_binary_sign_no_qjl_4bit(query));
     let turboquant_exact_score_mode = if turboquant_scan_storage(opaque.scan_graph_storage) {
-        resolve_turboquant_exact_score_mode()
+        resolve_turboquant_exact_score_mode(quantizer.int8_approx_no_qjl_4bit_supported())
     } else {
         TurboQuantExactScoreMode::Exact
     };
