@@ -1,0 +1,28 @@
+Install record — Task 124 packet 001 (2026-07-04)
+
+Pre-install state: /opt/homebrew/lib/postgresql@18/ecaz.dylib reported
+ecaz_build_git_sha() = 3f69d74c08d24f54f99b71d7e9be2451b5da8808 (the
+co-located agent's Task 144 HNSW default flip, main lineage). That binary
+LACKS the Task 145 lazy-heap collect + Task 146 timers that the cited
+baseline cells (reviews/task-146 timers/, reviews/task-147 cells/) ran on,
+so it was replaced for this packet's A/B (shared-pgrx-install hazard rule).
+
+Command:
+  cargo pgrx install --release --no-default-features --features pg18 \
+    --pg-config /opt/homebrew/opt/postgresql@18/bin/pg_config
+
+Output tail:
+  Writing SQL entities to /opt/homebrew/share/postgresql@18/extension/ecaz--0.1.1.sql
+  Finished installing ecaz
+
+shasum after install:
+  1326b1c03996f2ba296f16d55d0f1ac82733971f  /opt/homebrew/lib/postgresql@18/ecaz.dylib
+  1326b1c03996f2ba296f16d55d0f1ac82733971f  target/release/libecaz.dylib
+
+Built at worktree HEAD: 1dda8e589e3472c4f5c2476331e785a0add82f6a
+(branch task-124-stage2-pareto). Code-identical to the baseline binary
+da6101a00 for src/ + crates/ + Cargo.{toml,lock}:
+  git diff da6101a00..1dda8e589 --stat -- src/ crates/ Cargo.toml Cargo.lock
+  -> empty (commits in between are plan/packet docs only).
+Live-sha precheck is captured in-suite (precheck-build-sha.log) and must
+read 1dda8e589e3472c4f5c2476331e785a0add82f6a.
