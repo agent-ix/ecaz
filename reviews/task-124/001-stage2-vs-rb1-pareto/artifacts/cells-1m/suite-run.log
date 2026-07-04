@@ -1,0 +1,12 @@
+[suite:task124-stage2-1m] wrote reviews/task-124/001-stage2-vs-rb1-pareto/artifacts/cells-1m/suite-manifest.json
+[suite:task124-stage2-1m] wrote reviews/task-124/001-stage2-vs-rb1-pareto/artifacts/cells-1m/suite-manifest.json
+[suite:task124-stage2-1m] precheck-build-sha -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 dev sql --pg 18 --db tqvector_bench --socket-dir /Users/peter/.pgrx --raw --sql "SELECT now() AS captured_at, ecaz_build_git_sha(), current_setting('ec_ivf.turboquant_scorer') AS scorer_default;" --log-output reviews/task-124/001-stage2-vs-rb1-pareto/artifacts/cells-1m/precheck-build-sha.log
+[suite:task124-stage2-1m] wrote reviews/task-124/001-stage2-vs-rb1-pareto/artifacts/cells-1m/suite-manifest.json
+          captured_at          |            ecaz_build_git_sha            | scorer_default 
+-------------------------------+------------------------------------------+----------------
+ 2026-07-04 16:36:39.660107-07 | 1dda8e589e3472c4f5c2476331e785a0add82f6a | int8_approx
+(1 row)
+
+[suite:task124-stage2-1m] wrote reviews/task-124/001-stage2-vs-rb1-pareto/artifacts/cells-1m/suite-manifest.json
+[suite:task124-stage2-1m] load-stage2-1m -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 --log-file reviews/task-124/001-stage2-vs-rb1-pareto/artifacts/cells-1m/load-stage2-1m.log corpus load --prefix task124_stage2_1m --profile ec_ivf --corpus-file data/staged-current/ec_real_ann_benchmarks_anchor_corpus.tsv --queries-file data/staged-current/ec_real_ann_benchmarks_anchor_queries.tsv --manifest-file data/staged-current/ec_real_ann_benchmarks_anchor_manifest.json --allow-manifest-mismatch --bits 4 --seed 42 --storage-format coarse_rerank --reloption rerank_placement=index --reloption rerank_format=turboquant --reloption rerank_width=50 --reloption stage2_final_rerank_width=25
+[suite:task124-stage2-1m] wrote reviews/task-124/001-stage2-vs-rb1-pareto/artifacts/cells-1m/suite-manifest.json
