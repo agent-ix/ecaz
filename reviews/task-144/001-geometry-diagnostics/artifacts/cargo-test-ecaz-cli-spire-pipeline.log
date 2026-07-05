@@ -1,0 +1,42 @@
+Script started on 2026-07-05 08:14:01-07:00 [<not executed on terminal>]
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz)
+   Compiling ecaz-cli v0.1.0 (/home/peter/dev/ecaz/crates/ecaz-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 40.41s
+     Running unittests src/main.rs (target/debug/deps/ecaz-bdbeafde08ddf599)
+
+running 30 tests
+test commands::bench::spire_pipeline::tests::funnel_record_carries_task85_read_and_score_breakdown ... [32mok(B[m
+test commands::bench::spire_pipeline::tests::mixed_value_reports_stable_or_mixed_values ... [32mok(B[m
+test commands::bench::spire_pipeline::tests::spire_pipeline_defaults_to_spire_sweep_values ... [32mok(B[m
+test commands::bench::spire_pipeline::tests::miss_attribution_classifies_hit_routing_block_and_cap_misses ... [32mok(B[m
+test commands::bench::spire_pipeline::tests::geometry_records_leaf_size_and_single_assignment_concentration ... [32mok(B[m
+test commands::bench::spire_pipeline::tests::spire_pipeline_query_matrix_requires_fixed_dimensions ... [32mok(B[m
+test commands::bench::spire_pipeline::tests::spire_pipeline_query_metric_sql_projects_payload_columns ... [32mok(B[m
+test commands::bench::spire_pipeline::tests::spire_pipeline_query_metrics_distinct_recall_counts_duplicates_once ... [32mok(B[m
+test commands::bench::spire_pipeline::tests::spire_pipeline_rejects_out_of_range_sweep_values ... [32mok(B[m
+test commands::bench::spire_pipeline::tests::spire_pipeline_remote_placement_gate_accepts_remote_placements ... [32mok(B[m
+test commands::bench::spire_pipeline::tests::spire_pipeline_remote_placement_gate_rejects_empty_or_local_only ... [32mok(B[m
+test commands::bench::spire_pipeline::tests::spire_pipeline_renders_degraded_skip_counters ... [32mok(B[m
+test commands::bench::spire_pipeline::tests::spire_pipeline_renders_cost_tuning_snapshot ... [32mok(B[m
+test commands::bench::spire_pipeline::tests::spire_pipeline_renders_endpoint_identity_readiness ... [32mok(B[m
+test commands::bench::spire_pipeline::tests::spire_pipeline_renders_local_store_overlap_counters ... [32mok(B[m
+test commands::bench::spire_pipeline::tests::spire_pipeline_renders_production_read_overlap ... [32mok(B[m
+test commands::bench::spire_pipeline::tests::spire_pipeline_rejects_invalid_limits ... [32mok(B[m
+test commands::bench::spire_pipeline::tests::spire_pipeline_renders_production_read_timeline ... [32mok(B[m
+test commands::bench::spire_pipeline::tests::spire_pipeline_renders_production_scan_profile ... [32mok(B[m
+test commands::bench::spire_pipeline::tests::spire_pipeline_reports_remote_tuple_transport_override ... [32mok(B[m
+test commands::bench::spire_pipeline::tests::spire_pipeline_renders_query_metrics_with_recall ... [32mok(B[m
+test commands::bench::spire_pipeline::tests::stage_containment_records_per_stage_truth_retention ... [32mok(B[m
+test commands::bench::suite::tests::release_guard_checks_selected_pending_spire_pipeline_steps ... [32mok(B[m
+test commands::bench::suite::tests::artifact_dir_supplies_default_spire_pipeline_log_output ... [32mok(B[m
+test commands::bench::suite::tests::expands_spire_pipeline_with_production_profile ... [32mok(B[m
+test commands::bench::spire_pipeline::tests::spire_pipeline_sql_uses_public_snapshot_contracts ... [32mok(B[m
+test commands::bench::suite::tests::artifact_dir_templates_rewrite_spire_pipeline_paths ... [32mok(B[m
+test commands::bench::spire_pipeline::tests::spire_pipeline_renders_production_threshold_profile ... [32mok(B[m
+test commands::bench::spire_pipeline::tests::spire_pipeline_renders_production_read_profile ... [32mok(B[m
+test cli::tests::cli_parses_spire_pipeline_remote_tuple_transport ... [32mok(B[m
+
+test result: [32mok(B[m. 30 passed; 0 failed; 0 ignored; 0 measured; 409 filtered out; finished in 0.00s
+
+
+Script done on 2026-07-05 08:14:41-07:00 [COMMAND_EXIT_CODE="0"]
