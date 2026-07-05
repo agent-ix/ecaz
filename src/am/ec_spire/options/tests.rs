@@ -9,8 +9,9 @@ mod tests {
         resolve_single_level_scan_plan_values_with_candidate_budget,
         validate_boundary_replica_count_value, validate_local_store_count_value,
         validate_max_candidate_rows_value, validate_recursive_fanout_value, EcSpireOptions,
-        SpireCandidateDedupeMode, SpireRecursiveRouteBudget, SpireSourceIdentityProvider,
-        SpireStorageFormat, SpireTopGraphOptionPlan, EC_SPIRE_MAX_MAX_CANDIDATE_ROWS,
+        SpireCandidateDedupeMode, SpireLeafRouteRanking, SpireRecursiveRouteBudget,
+        SpireSourceIdentityProvider, SpireStorageFormat, SpireTopGraphOptionPlan,
+        EC_SPIRE_MAX_MAX_CANDIDATE_ROWS,
     };
     use crate::am::ec_spire::quantizer::SpireAssignmentPayloadFormat;
 
@@ -294,8 +295,13 @@ mod tests {
             SpireRecursiveRouteBudget {
                 beam_width: 3,
                 max_leaf_routes: 3,
+                selected_leaf_routes: 3,
                 max_routing_expansions: 17,
             }
+        );
+        assert_eq!(
+            plan.leaf_route_ranking,
+            SpireLeafRouteRanking::AccumulatedPathScore
         );
         assert_eq!(
             plan.dedupe_mode,
@@ -327,29 +333,46 @@ mod tests {
     #[test]
     fn recursive_route_budget_resolves_finite_scan_guardrails() {
         assert_eq!(
-            resolve_recursive_route_budget(100, 7).unwrap(),
+            resolve_recursive_route_budget(100, 7, 1.0).unwrap(),
             SpireRecursiveRouteBudget {
                 beam_width: 7,
                 max_leaf_routes: 7,
+                selected_leaf_routes: 7,
                 max_routing_expansions: 100,
             }
         );
         assert_eq!(
-            resolve_recursive_route_budget(3, 7).unwrap(),
+            resolve_recursive_route_budget(3, 7, 1.0).unwrap(),
             SpireRecursiveRouteBudget {
                 beam_width: 7,
                 max_leaf_routes: 3,
+                selected_leaf_routes: 3,
                 max_routing_expansions: 7,
             }
         );
         assert_eq!(
-            resolve_recursive_route_budget(0, 7).unwrap(),
+            resolve_recursive_route_budget(0, 7, 1.0).unwrap(),
             SpireRecursiveRouteBudget {
                 beam_width: 0,
                 max_leaf_routes: 0,
+                selected_leaf_routes: 0,
                 max_routing_expansions: 0,
             }
         );
+    }
+
+    #[test]
+    fn recursive_route_budget_applies_overfetch_without_widening_selected_leaves() {
+        assert_eq!(
+            resolve_recursive_route_budget(100, 7, 1.5).unwrap(),
+            SpireRecursiveRouteBudget {
+                beam_width: 11,
+                max_leaf_routes: 11,
+                selected_leaf_routes: 7,
+                max_routing_expansions: 100,
+            }
+        );
+        assert!(resolve_recursive_route_budget(100, 7, 0.99).is_err());
     }
 
     #[test]

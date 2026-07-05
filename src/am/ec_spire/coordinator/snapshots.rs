@@ -412,8 +412,11 @@ pub(crate) fn index_options_snapshot(index: SpireLiveIndexRelation) -> SpireInde
                 )
             };
         let rerank_width = options::resolve_scan_rerank_width(relation_options.rerank_width);
-        let route_budget =
-            options::resolve_recursive_route_budget(active_leaf_count, nprobe.effective_nprobe)?;
+        let route_budget = options::resolve_recursive_route_budget(
+            active_leaf_count,
+            nprobe.effective_nprobe,
+            options::current_session_route_overfetch_multiplier(),
+        )?;
         let assignment_payload_format = relation_options.assignment_payload_format();
         let (
             assignment_payload_scannable,

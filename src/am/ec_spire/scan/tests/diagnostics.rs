@@ -63,6 +63,7 @@
             nprobe_source: "relation",
             recursive_nprobe_policy: SpireRecursiveNprobePolicy::conservative(1).unwrap(),
             recursive_route_budget: SpireRecursiveRouteBudget::unbounded(),
+            leaf_route_ranking: SpireLeafRouteRanking::AccumulatedPathScore,
             max_routed_candidate_rows: None,
             payload_format: SpireAssignmentPayloadFormat::TurboQuant,
             rerank_width: 10,
@@ -195,6 +196,7 @@
             nprobe_source: "relation",
             recursive_nprobe_policy: SpireRecursiveNprobePolicy::conservative(2).unwrap(),
             recursive_route_budget: SpireRecursiveRouteBudget::unbounded(),
+            leaf_route_ranking: SpireLeafRouteRanking::AccumulatedPathScore,
             max_routed_candidate_rows: None,
             payload_format: SpireAssignmentPayloadFormat::TurboQuant,
             rerank_width: 10,
@@ -304,6 +306,7 @@
             nprobe_source: "relation",
             recursive_nprobe_policy: SpireRecursiveNprobePolicy::conservative(2).unwrap(),
             recursive_route_budget: SpireRecursiveRouteBudget::unbounded(),
+            leaf_route_ranking: SpireLeafRouteRanking::AccumulatedPathScore,
             max_routed_candidate_rows: None,
             payload_format: SpireAssignmentPayloadFormat::TurboQuant,
             rerank_width: 10,
@@ -423,6 +426,7 @@
             nprobe_source: "relation",
             recursive_nprobe_policy: SpireRecursiveNprobePolicy::conservative(2).unwrap(),
             recursive_route_budget: SpireRecursiveRouteBudget::unbounded(),
+            leaf_route_ranking: SpireLeafRouteRanking::AccumulatedPathScore,
             max_routed_candidate_rows: None,
             payload_format: SpireAssignmentPayloadFormat::TurboQuant,
             rerank_width: 10,
@@ -550,6 +554,7 @@
             query.values(),
             &diagnostics.scan_plan.recursive_nprobe_policy,
             diagnostics.scan_plan.recursive_route_budget,
+            diagnostics.scan_plan.leaf_route_ranking,
         )
         .unwrap();
 
@@ -679,6 +684,7 @@
         let route_budget = SpireRecursiveRouteBudget {
             beam_width: 2,
             max_leaf_routes: 4,
+            selected_leaf_routes: 4,
             max_routing_expansions: 10,
         };
         let leaf_assignment_counts = HashMap::from([
@@ -702,6 +708,7 @@
             &[1.0, 0.0],
             &nprobe_policy,
             route_budget,
+            SpireLeafRouteRanking::AccumulatedPathScore,
             Some(3),
             &mut leaf_row_count,
         )
@@ -848,6 +855,7 @@
             query.values(),
             &diagnostics.scan_plan.recursive_nprobe_policy,
             diagnostics.scan_plan.recursive_route_budget,
+            diagnostics.scan_plan.leaf_route_ranking,
         )
         .unwrap();
 

@@ -121,6 +121,7 @@ pub(super) fn collect_snapshot_top_graph_routed_probe_leaf_rows(
         top_route_count,
         nprobe_policy,
         route_budget,
+        SpireLeafRouteRanking::AccumulatedPathScore,
         max_routed_candidate_rows,
         &mut leaf_row_count,
     )?
@@ -199,6 +200,7 @@ pub(super) fn collect_scan_routing_diagnostics(
             scan_plan.nprobe,
             &scan_plan.recursive_nprobe_policy,
             scan_plan.recursive_route_budget,
+            scan_plan.leaf_route_ranking,
             scan_plan.max_routed_candidate_rows,
             &mut leaf_row_count,
         )?
@@ -213,6 +215,7 @@ pub(super) fn collect_scan_routing_diagnostics(
             query.values(),
             &scan_plan.recursive_nprobe_policy,
             scan_plan.recursive_route_budget,
+            scan_plan.leaf_route_ranking,
             scan_plan.max_routed_candidate_rows,
             &mut leaf_row_count,
         )?
@@ -314,6 +317,7 @@ fn collect_validated_recursive_quantized_routed_probe_candidates(
         query_vector,
         nprobe_policy,
         route_budget,
+        SpireLeafRouteRanking::AccumulatedPathScore,
         max_routed_candidate_rows,
         &mut leaf_row_count,
     )?

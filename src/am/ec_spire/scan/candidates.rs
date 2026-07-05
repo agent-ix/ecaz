@@ -495,6 +495,7 @@ where
         scan_plan.nprobe,
         &scan_plan.recursive_nprobe_policy,
         scan_plan.recursive_route_budget,
+        scan_plan.leaf_route_ranking,
         scan_plan.max_routed_candidate_rows,
         &mut leaf_row_count,
     )?
@@ -710,6 +711,7 @@ fn collect_validated_top_graph_scan_placement_diagnostics(
         scan_plan.nprobe,
         &scan_plan.recursive_nprobe_policy,
         scan_plan.recursive_route_budget,
+        scan_plan.leaf_route_ranking,
         scan_plan.max_routed_candidate_rows,
         &mut leaf_row_count,
     )?
@@ -881,6 +883,7 @@ fn collect_validated_top_graph_scan_plan_approx_candidates(
         scan_plan.nprobe,
         &scan_plan.recursive_nprobe_policy,
         scan_plan.recursive_route_budget,
+        scan_plan.leaf_route_ranking,
         scan_plan.max_routed_candidate_rows,
         &mut leaf_row_count,
     )?
@@ -1206,6 +1209,7 @@ fn collect_validated_leaf_block_rank_snapshot(
             scan_plan.nprobe,
             &scan_plan.recursive_nprobe_policy,
             scan_plan.recursive_route_budget,
+            scan_plan.leaf_route_ranking,
             scan_plan.max_routed_candidate_rows,
             &mut leaf_row_count,
         )?
@@ -1217,6 +1221,7 @@ fn collect_validated_leaf_block_rank_snapshot(
             query.values(),
             &scan_plan.recursive_nprobe_policy,
             scan_plan.recursive_route_budget,
+            scan_plan.leaf_route_ranking,
             scan_plan.max_routed_candidate_rows,
             &mut leaf_row_count,
         )?
@@ -1425,6 +1430,7 @@ fn collect_validated_leaf_target_block_rank_snapshot(
             scan_plan.nprobe,
             &scan_plan.recursive_nprobe_policy,
             scan_plan.recursive_route_budget,
+            scan_plan.leaf_route_ranking,
             scan_plan.max_routed_candidate_rows,
             &mut leaf_row_count,
         )?
@@ -1436,6 +1442,7 @@ fn collect_validated_leaf_target_block_rank_snapshot(
             query.values(),
             &scan_plan.recursive_nprobe_policy,
             scan_plan.recursive_route_budget,
+            scan_plan.leaf_route_ranking,
             scan_plan.max_routed_candidate_rows,
             &mut leaf_row_count,
         )?

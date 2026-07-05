@@ -48,6 +48,8 @@ const EC_SPIRE_DEFAULT_LEAF_BLOCK_PRUNING_ROUTE_PRIOR_WEIGHT: f64 = 0.0;
 const EC_SPIRE_MAX_NPROBE_PER_LEVEL_ENTRIES: usize = 32;
 const EC_SPIRE_DEFAULT_ADAPTIVE_NPROBE_SCORE_GAP_MICROS: i32 = 1000;
 const EC_SPIRE_MAX_ADAPTIVE_NPROBE_SCORE_GAP_MICROS: i32 = 1_000_000;
+const EC_SPIRE_DEFAULT_ROUTE_OVERFETCH_MULTIPLIER: f64 = 1.0;
+const EC_SPIRE_MAX_ROUTE_OVERFETCH_MULTIPLIER: f64 = 8.0;
 const EC_SPIRE_DEFAULT_REMOTE_SEARCH_LIMIT_UNSET: i32 = 0;
 const EC_SPIRE_MAX_REMOTE_SEARCH_LIMIT: i32 = 1_000_000;
 const EC_SPIRE_MAX_REMOTE_SEARCH_CONCURRENCY_LIMIT: i32 = 4096;
@@ -103,6 +105,9 @@ static EC_SPIRE_LEAF_BLOCK_PRUNING_ROUTE_PRIOR_WEIGHT_GUC: GucSetting<f64> =
 static EC_SPIRE_ADAPTIVE_NPROBE_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
 static EC_SPIRE_ADAPTIVE_NPROBE_SCORE_GAP_MICROS_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(EC_SPIRE_DEFAULT_ADAPTIVE_NPROBE_SCORE_GAP_MICROS);
+static EC_SPIRE_LEAF_SCORE_ONLY_ROUTING_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
+static EC_SPIRE_ROUTE_OVERFETCH_MULTIPLIER_GUC: GucSetting<f64> =
+    GucSetting::<f64>::new(EC_SPIRE_DEFAULT_ROUTE_OVERFETCH_MULTIPLIER);
 static EC_SPIRE_REMOTE_SEARCH_MAX_NODES_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(EC_SPIRE_DEFAULT_REMOTE_SEARCH_LIMIT_UNSET);
 static EC_SPIRE_REMOTE_SEARCH_MAX_PIDS_GUC: GucSetting<i32> =
@@ -475,6 +480,7 @@ impl SpireRecursiveNprobePolicy {
 pub(super) struct SpireRecursiveRouteBudget {
     pub(super) beam_width: usize,
     pub(super) max_leaf_routes: usize,
+    pub(super) selected_leaf_routes: usize,
     pub(super) max_routing_expansions: usize,
 }
 
@@ -483,9 +489,16 @@ impl SpireRecursiveRouteBudget {
         Self {
             beam_width: usize::MAX,
             max_leaf_routes: usize::MAX,
+            selected_leaf_routes: usize::MAX,
             max_routing_expansions: usize::MAX,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum SpireLeafRouteRanking {
+    AccumulatedPathScore,
+    LeafScoreOnly,
 }
 
 fn validate_recursive_fanout_value(value: i32) -> Result<(), String> {
@@ -750,6 +763,7 @@ pub(super) struct SpireSingleLevelScanPlan {
     pub(super) nprobe_source: &'static str,
     pub(super) recursive_nprobe_policy: SpireRecursiveNprobePolicy,
     pub(super) recursive_route_budget: SpireRecursiveRouteBudget,
+    pub(super) leaf_route_ranking: SpireLeafRouteRanking,
     pub(super) max_routed_candidate_rows: Option<usize>,
     pub(super) payload_format: SpireAssignmentPayloadFormat,
     pub(super) rerank_width: usize,
@@ -936,6 +950,24 @@ pub(super) fn register_gucs() {
         &EC_SPIRE_ADAPTIVE_NPROBE_SCORE_GAP_MICROS_GUC,
         0,
         EC_SPIRE_MAX_ADAPTIVE_NPROBE_SCORE_GAP_MICROS,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    GucRegistry::define_bool_guc(
+        c"ec_spire.leaf_score_only_routing",
+        c"Rank final recursive SPIRE leaf routes by leaf score only.",
+        c"Diagnostic Task 143 switch; disabled by default. When enabled, final leaf-route selection ignores accumulated parent path score except as a tie-breaker.",
+        &EC_SPIRE_LEAF_SCORE_ONLY_ROUTING_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    GucRegistry::define_float_guc(
+        c"ec_spire.route_overfetch_multiplier",
+        c"Multiplier for SPIRE recursive routing exploration.",
+        c"Diagnostic Task 143 switch; 1.0 preserves the nprobe route budget. Higher values overfetch recursive route candidates while final scanned leaf routes remain capped by nprobe.",
+        &EC_SPIRE_ROUTE_OVERFETCH_MULTIPLIER_GUC,
+        1.0,
+        EC_SPIRE_MAX_ROUTE_OVERFETCH_MULTIPLIER,
         GucContext::Userset,
         GucFlags::default(),
     );
@@ -1288,6 +1320,22 @@ pub(super) fn current_session_adaptive_nprobe_score_gap_micros() -> i32 {
     }
 }
 
+pub(super) fn current_session_leaf_score_only_routing() -> bool {
+    if cfg!(test) {
+        false
+    } else {
+        EC_SPIRE_LEAF_SCORE_ONLY_ROUTING_GUC.get()
+    }
+}
+
+pub(super) fn current_session_route_overfetch_multiplier() -> f64 {
+    if cfg!(test) {
+        EC_SPIRE_DEFAULT_ROUTE_OVERFETCH_MULTIPLIER
+    } else {
+        EC_SPIRE_ROUTE_OVERFETCH_MULTIPLIER_GUC.get()
+    }
+}
+
 pub(super) fn current_session_remote_search_max_nodes() -> i32 {
     if cfg!(test) {
         EC_SPIRE_DEFAULT_REMOTE_SEARCH_LIMIT_UNSET
@@ -1476,6 +1524,8 @@ pub(super) fn resolve_single_level_scan_plan(
         current_session_max_routed_candidate_rows(),
         current_session_adaptive_nprobe(),
         current_session_adaptive_nprobe_score_gap_micros(),
+        current_session_leaf_score_only_routing(),
+        current_session_route_overfetch_multiplier(),
     )
 }
 
@@ -1510,6 +1560,8 @@ pub(super) fn resolve_single_level_scan_plan_values_with_candidate_budget(
         EC_SPIRE_SESSION_MAX_ROUTED_CANDIDATE_ROWS_DISABLED,
         false,
         EC_SPIRE_DEFAULT_ADAPTIVE_NPROBE_SCORE_GAP_MICROS,
+        false,
+        EC_SPIRE_DEFAULT_ROUTE_OVERFETCH_MULTIPLIER,
     )
 }
 
@@ -1522,6 +1574,8 @@ fn resolve_single_level_scan_plan_values_with_candidate_budget_and_adaptive(
     session_max_routed_candidate_rows_value: i32,
     adaptive_nprobe: bool,
     adaptive_score_gap_micros: i32,
+    leaf_score_only_routing: bool,
+    route_overfetch_multiplier: f64,
 ) -> Result<SpireSingleLevelScanPlan, String> {
     let relation_nprobe = u32::try_from(options.nprobe)
         .map_err(|_| "ec_spire nprobe reloption must be non-negative".to_owned())?;
@@ -1537,8 +1591,11 @@ fn resolve_single_level_scan_plan_values_with_candidate_budget_and_adaptive(
         adaptive_nprobe,
         adaptive_score_gap_micros,
     )?;
-    let recursive_route_budget =
-        resolve_recursive_route_budget(leaf_count, nprobe.effective_nprobe)?;
+    let recursive_route_budget = resolve_recursive_route_budget(
+        leaf_count,
+        nprobe.effective_nprobe,
+        route_overfetch_multiplier,
+    )?;
     let rerank_width =
         resolve_scan_rerank_width_values(options.rerank_width, session_rerank_width_value);
     let rerank_width_usize = usize::try_from(rerank_width.effective_rerank_width)
@@ -1563,6 +1620,11 @@ fn resolve_single_level_scan_plan_values_with_candidate_budget_and_adaptive(
         nprobe_source: nprobe.source,
         recursive_nprobe_policy,
         recursive_route_budget,
+        leaf_route_ranking: if leaf_score_only_routing {
+            SpireLeafRouteRanking::LeafScoreOnly
+        } else {
+            SpireLeafRouteRanking::AccumulatedPathScore
+        },
         max_routed_candidate_rows,
         payload_format: options.assignment_payload_format(),
         rerank_width: rerank_width_usize,
@@ -1593,27 +1655,40 @@ fn resolve_scan_max_routed_candidate_rows_value(value: i32) -> Result<Option<usi
 pub(super) fn resolve_recursive_route_budget(
     leaf_count: u32,
     effective_nprobe: u32,
+    overfetch_multiplier: f64,
 ) -> Result<SpireRecursiveRouteBudget, String> {
+    if !(1.0..=EC_SPIRE_MAX_ROUTE_OVERFETCH_MULTIPLIER).contains(&overfetch_multiplier) {
+        return Err(format!(
+            "ec_spire.route_overfetch_multiplier must be between 1.0 and {EC_SPIRE_MAX_ROUTE_OVERFETCH_MULTIPLIER}, got {overfetch_multiplier}"
+        ));
+    }
     if leaf_count == 0 || effective_nprobe == 0 {
         return Ok(SpireRecursiveRouteBudget {
             beam_width: 0,
             max_leaf_routes: 0,
+            selected_leaf_routes: 0,
             max_routing_expansions: 0,
         });
     }
-    let beam_width = usize::try_from(effective_nprobe)
-        .map_err(|_| "ec_spire recursive beam width exceeds usize".to_owned())?;
-    let max_leaf_routes = usize::try_from(effective_nprobe)
-        .map_err(|_| "ec_spire recursive max leaf routes exceeds usize".to_owned())?;
+    let selected_leaf_routes = usize::try_from(effective_nprobe)
+        .map_err(|_| "ec_spire recursive selected leaf routes exceeds usize".to_owned())?;
+    let overfetch_count = (f64::from(effective_nprobe) * overfetch_multiplier).ceil();
+    if !overfetch_count.is_finite() || overfetch_count > usize::MAX as f64 {
+        return Err("ec_spire recursive overfetch route budget exceeds usize".to_owned());
+    }
+    let overfetch_count = overfetch_count as usize;
     let leaf_count_usize = usize::try_from(leaf_count)
         .map_err(|_| "ec_spire recursive leaf count exceeds usize".to_owned())?;
     // `nprobe_per_level` remains a local per-parent exploration input. Until a
     // separate beam reloption lands, the leaf-level effective nprobe is the
-    // final global cap for routed internal parents and leaf routes.
+    // default global cap for routed internal parents and leaf routes. Task 143
+    // overfetch may widen route exploration, but the scanned leaf count stays
+    // capped by the effective nprobe unless a later rerank stage promotes more.
     Ok(SpireRecursiveRouteBudget {
-        beam_width,
-        max_leaf_routes: max_leaf_routes.min(leaf_count_usize),
-        max_routing_expansions: leaf_count_usize.max(beam_width),
+        beam_width: overfetch_count,
+        max_leaf_routes: overfetch_count.min(leaf_count_usize),
+        selected_leaf_routes: selected_leaf_routes.min(leaf_count_usize),
+        max_routing_expansions: leaf_count_usize.max(overfetch_count),
     })
 }
 

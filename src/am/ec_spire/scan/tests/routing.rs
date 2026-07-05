@@ -505,6 +505,7 @@
         let route_budget = SpireRecursiveRouteBudget {
             beam_width: 2,
             max_leaf_routes: 2,
+            selected_leaf_routes: 2,
             max_routing_expansions: 10,
         };
 
@@ -514,6 +515,7 @@
             &[1.0, 0.0],
             &nprobe_policy,
             route_budget,
+            SpireLeafRouteRanking::AccumulatedPathScore,
         )
         .unwrap();
 
@@ -527,6 +529,74 @@
                 (SPIRE_FIRST_PID + 20, SPIRE_FIRST_PID + 22),
             ]
         );
+    }
+
+    #[test]
+    fn route_recursive_routing_objects_to_leaf_routes_can_rank_final_leaves_by_leaf_score_only() {
+        let root = SpireRoutingPartitionObject::root_at_level(
+            SPIRE_FIRST_PID,
+            1,
+            2,
+            2,
+            vec![
+                routing_child(0, SPIRE_FIRST_PID + 10, vec![10.0, 0.0]),
+                routing_child(1, SPIRE_FIRST_PID + 20, vec![0.0, 0.0]),
+            ],
+        )
+        .unwrap();
+        let internal_a = SpireRoutingPartitionObject::internal(
+            SPIRE_FIRST_PID + 10,
+            1,
+            1,
+            SPIRE_FIRST_PID,
+            2,
+            vec![routing_child(0, SPIRE_FIRST_PID + 11, vec![1.0, 0.0])],
+        )
+        .unwrap();
+        let internal_b = SpireRoutingPartitionObject::internal(
+            SPIRE_FIRST_PID + 20,
+            1,
+            1,
+            SPIRE_FIRST_PID,
+            2,
+            vec![routing_child(0, SPIRE_FIRST_PID + 21, vec![5.0, 0.0])],
+        )
+        .unwrap();
+        let routing_objects_by_pid = HashMap::from([
+            (internal_a.header.pid, internal_a),
+            (internal_b.header.pid, internal_b),
+        ]);
+        let nprobe_policy = SpireRecursiveNprobePolicy::from_level_values(1, vec![2]).unwrap();
+        let route_budget = SpireRecursiveRouteBudget {
+            beam_width: 2,
+            max_leaf_routes: 2,
+            selected_leaf_routes: 1,
+            max_routing_expansions: 10,
+        };
+
+        let accumulated_routes = route_recursive_routing_objects_to_leaf_routes_with_budget(
+            &root,
+            &routing_objects_by_pid,
+            &[1.0, 0.0],
+            &nprobe_policy,
+            route_budget,
+            SpireLeafRouteRanking::AccumulatedPathScore,
+        )
+        .unwrap();
+        let leaf_only_routes = route_recursive_routing_objects_to_leaf_routes_with_budget(
+            &root,
+            &routing_objects_by_pid,
+            &[1.0, 0.0],
+            &nprobe_policy,
+            route_budget,
+            SpireLeafRouteRanking::LeafScoreOnly,
+        )
+        .unwrap();
+
+        assert_eq!(accumulated_routes[0].leaf_pid, SPIRE_FIRST_PID + 11);
+        assert_eq!(accumulated_routes[0].route_score, 11.0);
+        assert_eq!(leaf_only_routes[0].leaf_pid, SPIRE_FIRST_PID + 21);
+        assert_eq!(leaf_only_routes[0].route_score, 5.0);
     }
 
     #[test]
@@ -574,6 +644,7 @@
         let route_budget = SpireRecursiveRouteBudget {
             beam_width: 2,
             max_leaf_routes: 2,
+            selected_leaf_routes: 2,
             max_routing_expansions: 10,
         };
 
@@ -583,6 +654,7 @@
             &[1.0, 0.0],
             &nprobe_policy,
             route_budget,
+            SpireLeafRouteRanking::AccumulatedPathScore,
         )
         .unwrap();
 
@@ -896,6 +968,7 @@
             1,
             &SpireRecursiveNprobePolicy::conservative(1).unwrap(),
             SpireRecursiveRouteBudget::unbounded(),
+            SpireLeafRouteRanking::AccumulatedPathScore,
         )
         .unwrap();
 

@@ -258,6 +258,7 @@ fn collect_scan_plan_selected_leaf_pids_from_hierarchy(
             scan_plan.nprobe,
             &scan_plan.recursive_nprobe_policy,
             scan_plan.recursive_route_budget,
+            scan_plan.leaf_route_ranking,
         )?
     } else {
         route_recursive_routing_objects_to_leaf_routes_with_budget(
@@ -266,6 +267,7 @@ fn collect_scan_plan_selected_leaf_pids_from_hierarchy(
             query.values(),
             &scan_plan.recursive_nprobe_policy,
             scan_plan.recursive_route_budget,
+            scan_plan.leaf_route_ranking,
         )?
     };
 
@@ -538,6 +540,7 @@ fn route_top_graph_object_to_leaf_routes(
     top_route_count: u32,
     nprobe_policy: &SpireRecursiveNprobePolicy,
     route_budget: SpireRecursiveRouteBudget,
+    leaf_route_ranking: SpireLeafRouteRanking,
 ) -> Result<Vec<SpireRecursiveLeafRoute>, String> {
     let mut leaf_row_count = |_route: SpireRecursiveLeafRoute| {
         Err("ec_spire leaf row count should not be read without a row budget".to_owned())
@@ -551,6 +554,7 @@ fn route_top_graph_object_to_leaf_routes(
         top_route_count,
         nprobe_policy,
         route_budget,
+        leaf_route_ranking,
         None,
         &mut leaf_row_count,
     )?
@@ -566,6 +570,7 @@ fn route_top_graph_object_to_leaf_routes_with_row_budget<F>(
     top_route_count: u32,
     nprobe_policy: &SpireRecursiveNprobePolicy,
     route_budget: SpireRecursiveRouteBudget,
+    leaf_route_ranking: SpireLeafRouteRanking,
     max_routed_candidate_rows: Option<usize>,
     leaf_row_count: &mut F,
 ) -> Result<SpireLeafRouteSelection, String>
@@ -630,6 +635,7 @@ where
         query_vector,
         nprobe_policy,
         route_budget,
+        leaf_route_ranking,
         max_routed_candidate_rows,
         leaf_row_count,
     )
@@ -995,6 +1001,7 @@ fn route_recursive_routing_objects_to_leaf_routes_with_policy(
         query_vector,
         nprobe_policy,
         SpireRecursiveRouteBudget::unbounded(),
+        SpireLeafRouteRanking::AccumulatedPathScore,
     )
 }
 
@@ -1004,6 +1011,7 @@ fn route_recursive_routing_objects_to_leaf_routes_with_budget(
     query_vector: &[f32],
     nprobe_policy: &SpireRecursiveNprobePolicy,
     route_budget: SpireRecursiveRouteBudget,
+    leaf_route_ranking: SpireLeafRouteRanking,
 ) -> Result<Vec<SpireRecursiveLeafRoute>, String> {
     let mut leaf_row_count = |_route: SpireRecursiveLeafRoute| {
         Err("ec_spire leaf row count should not be read without a row budget".to_owned())
@@ -1014,6 +1022,7 @@ fn route_recursive_routing_objects_to_leaf_routes_with_budget(
         query_vector,
         nprobe_policy,
         route_budget,
+        leaf_route_ranking,
         None,
         &mut leaf_row_count,
     )?
@@ -1026,6 +1035,7 @@ fn route_recursive_routing_objects_to_leaf_routes_with_row_budget<F>(
     query_vector: &[f32],
     nprobe_policy: &SpireRecursiveNprobePolicy,
     route_budget: SpireRecursiveRouteBudget,
+    leaf_route_ranking: SpireLeafRouteRanking,
     max_routed_candidate_rows: Option<usize>,
     leaf_row_count: &mut F,
 ) -> Result<SpireLeafRouteSelection, String>
@@ -1063,6 +1073,7 @@ where
         query_vector,
         nprobe_policy,
         route_budget,
+        leaf_route_ranking,
         max_routed_candidate_rows,
         leaf_row_count,
     )
@@ -1084,6 +1095,7 @@ fn collect_recursive_routing_level_diagnostics_with_budget(
         query_vector,
         nprobe_policy,
         route_budget,
+        SpireLeafRouteRanking::AccumulatedPathScore,
         None,
         &mut leaf_row_count,
     )
@@ -1095,6 +1107,7 @@ fn collect_recursive_routing_level_diagnostics_with_row_budget<F>(
     query_vector: &[f32],
     nprobe_policy: &SpireRecursiveNprobePolicy,
     route_budget: SpireRecursiveRouteBudget,
+    leaf_route_ranking: SpireLeafRouteRanking,
     max_routed_candidate_rows: Option<usize>,
     leaf_row_count: &mut F,
 ) -> Result<Vec<SpireRoutingLevelDiagnostics>, String>
@@ -1113,6 +1126,7 @@ where
         query_vector,
         nprobe_policy,
         route_budget,
+        leaf_route_ranking,
         max_routed_candidate_rows,
         leaf_row_count,
         0,
@@ -1128,6 +1142,7 @@ fn collect_top_graph_routing_level_diagnostics<F>(
     top_route_count: u32,
     nprobe_policy: &SpireRecursiveNprobePolicy,
     route_budget: SpireRecursiveRouteBudget,
+    leaf_route_ranking: SpireLeafRouteRanking,
     max_routed_candidate_rows: Option<usize>,
     leaf_row_count: &mut F,
 ) -> Result<Vec<SpireRoutingLevelDiagnostics>, String>
@@ -1217,6 +1232,7 @@ where
         query_vector,
         nprobe_policy,
         route_budget,
+        leaf_route_ranking,
         max_routed_candidate_rows,
         leaf_row_count,
         0,
@@ -1230,6 +1246,7 @@ fn collect_recursive_parent_routing_level_diagnostics<F>(
     query_vector: &[f32],
     nprobe_policy: &SpireRecursiveNprobePolicy,
     route_budget: SpireRecursiveRouteBudget,
+    leaf_route_ranking: SpireLeafRouteRanking,
     max_routed_candidate_rows: Option<usize>,
     leaf_row_count: &mut F,
     mut expanded_parent_count: usize,
@@ -1277,13 +1294,13 @@ where
                     });
                 }
             }
-            leaf_candidates.sort_by(recursive_scored_child_route_cmp);
+            sort_recursive_leaf_candidates(&mut leaf_candidates, leaf_route_ranking);
             let selected_child_count = leaf_candidates.len();
             let leaf_routes = leaf_candidates.into_iter().map(|route| {
                 SpireRecursiveLeafRoute {
                     leaf_pid: route.child_pid,
                     parent_pid: route.parent_pid,
-                    route_score: route.total_score(),
+                    route_score: recursive_leaf_route_score(&route, leaf_route_ranking),
                 }
             });
             let selection = select_leaf_routes_with_row_budget(
@@ -1422,6 +1439,7 @@ fn route_recursive_parent_objects_to_leaf_routes(
         query_vector,
         nprobe_policy,
         route_budget,
+        SpireLeafRouteRanking::AccumulatedPathScore,
         None,
         &mut leaf_row_count,
     )?
@@ -1434,6 +1452,7 @@ fn route_recursive_parent_objects_to_leaf_routes_with_row_budget<F>(
     query_vector: &[f32],
     nprobe_policy: &SpireRecursiveNprobePolicy,
     route_budget: SpireRecursiveRouteBudget,
+    leaf_route_ranking: SpireLeafRouteRanking,
     max_routed_candidate_rows: Option<usize>,
     leaf_row_count: &mut F,
 ) -> Result<SpireLeafRouteSelection, String>
@@ -1473,12 +1492,12 @@ where
                     });
                 }
             }
-            leaf_candidates.sort_by(recursive_scored_child_route_cmp);
+            sort_recursive_leaf_candidates(&mut leaf_candidates, leaf_route_ranking);
             let leaf_routes = leaf_candidates.into_iter().map(|route| {
                 SpireRecursiveLeafRoute {
                     leaf_pid: route.child_pid,
                     parent_pid: route.parent_pid,
-                    route_score: route.total_score(),
+                    route_score: recursive_leaf_route_score(&route, leaf_route_ranking),
                 }
             });
             let selection = select_leaf_routes_with_row_budget(
@@ -1573,7 +1592,11 @@ where
         if !seen_leaf_pids.insert(route.leaf_pid) {
             continue;
         }
-        if routes.len() >= route_budget.max_leaf_routes {
+        if seen_leaf_pids.len() > route_budget.max_leaf_routes {
+            stopped_by_max_leaf_routes = true;
+            break;
+        }
+        if routes.len() >= route_budget.selected_leaf_routes {
             stopped_by_max_leaf_routes = true;
             break;
         }
@@ -1799,6 +1822,43 @@ fn recursive_scored_child_route_cmp(
         .then_with(|| left.parent_pid.cmp(&right.parent_pid))
         .then_with(|| left.centroid_index.cmp(&right.centroid_index))
         .then_with(|| left.child_pid.cmp(&right.child_pid))
+}
+
+fn recursive_leaf_score_child_route_cmp(
+    left: &SpireRecursiveScoredChildRoute,
+    right: &SpireRecursiveScoredChildRoute,
+) -> Ordering {
+    right
+        .score
+        .total_cmp(&left.score)
+        .then_with(|| right.path_score.total_cmp(&left.path_score))
+        .then_with(|| left.parent_pid.cmp(&right.parent_pid))
+        .then_with(|| left.centroid_index.cmp(&right.centroid_index))
+        .then_with(|| left.child_pid.cmp(&right.child_pid))
+}
+
+fn sort_recursive_leaf_candidates(
+    routes: &mut [SpireRecursiveScoredChildRoute],
+    ranking: SpireLeafRouteRanking,
+) {
+    match ranking {
+        SpireLeafRouteRanking::AccumulatedPathScore => {
+            routes.sort_by(recursive_scored_child_route_cmp)
+        }
+        SpireLeafRouteRanking::LeafScoreOnly => {
+            routes.sort_by(recursive_leaf_score_child_route_cmp)
+        }
+    }
+}
+
+fn recursive_leaf_route_score(
+    route: &SpireRecursiveScoredChildRoute,
+    ranking: SpireLeafRouteRanking,
+) -> f32 {
+    match ranking {
+        SpireLeafRouteRanking::AccumulatedPathScore => route.total_score(),
+        SpireLeafRouteRanking::LeafScoreOnly => route.score,
+    }
 }
 
 fn unique_child_pid_count(routes: &[SpireTopGraphRoute]) -> usize {
