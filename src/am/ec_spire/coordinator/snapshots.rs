@@ -53,14 +53,23 @@ impl SpireLiveIndexRelation {
         if root_control.active_epoch == 0 {
             return Ok(None);
         }
-        let (epoch_manifest, object_manifest, placement_directory) =
-            self.load_active_epoch_manifests(root_control)?;
-        Ok(Some(SpireActiveEpochAnchor {
-            root_control,
-            epoch_manifest,
-            object_manifest,
-            placement_directory,
-        }))
+        let anchor = load_cached_active_epoch_anchor(
+            SpireActiveEpochAnchorCacheKey {
+                index_relid: self.relid(),
+                active_epoch: root_control.active_epoch,
+            },
+            || {
+                let (epoch_manifest, object_manifest, placement_directory) =
+                    self.load_active_epoch_manifests(root_control)?;
+                Ok(SpireActiveEpochAnchor {
+                    root_control,
+                    epoch_manifest,
+                    object_manifest,
+                    placement_directory,
+                })
+            },
+        )?;
+        Ok(Some(anchor))
     }
 
     fn load_active_epoch_manifests(
@@ -170,6 +179,7 @@ pub(crate) fn live_index_relation_from_guard(
     unsafe { SpireLiveIndexRelation::new(index_relation.as_ptr()) }
 }
 
+#[derive(Clone)]
 struct SpireActiveEpochAnchor {
     root_control: meta::SpireRootControlState,
     epoch_manifest: meta::SpireEpochManifest,
@@ -193,6 +203,49 @@ impl SpireActiveEpochAnchor {
             &self.placement_directory,
         )
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SpireActiveEpochAnchorCacheKey {
+    index_relid: u32,
+    active_epoch: u64,
+}
+
+thread_local! {
+    static ACTIVE_EPOCH_ANCHOR_CACHE:
+        std::cell::RefCell<Option<(SpireActiveEpochAnchorCacheKey, SpireActiveEpochAnchor)>> =
+        std::cell::RefCell::new(None);
+}
+
+#[cfg(test)]
+fn reset_active_epoch_anchor_cache_for_test() {
+    ACTIVE_EPOCH_ANCHOR_CACHE.with(|cache| {
+        *cache.borrow_mut() = None;
+    });
+}
+
+fn load_cached_active_epoch_anchor<F>(
+    cache_key: SpireActiveEpochAnchorCacheKey,
+    load: F,
+) -> Result<SpireActiveEpochAnchor, String>
+where
+    F: FnOnce() -> Result<SpireActiveEpochAnchor, String>,
+{
+    if let Some(anchor) = ACTIVE_EPOCH_ANCHOR_CACHE.with(|cache| {
+        let cache = cache.borrow();
+        cache
+            .as_ref()
+            .filter(|(cached_key, _anchor)| *cached_key == cache_key)
+            .map(|(_cached_key, anchor)| anchor.clone())
+    }) {
+        return Ok(anchor);
+    }
+
+    let anchor = load()?;
+    ACTIVE_EPOCH_ANCHOR_CACHE.with(|cache| {
+        *cache.borrow_mut() = Some((cache_key, anchor.clone()));
+    });
+    Ok(anchor)
 }
 
 pub(crate) fn active_snapshot_diagnostics(

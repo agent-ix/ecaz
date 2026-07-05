@@ -85,6 +85,43 @@ mod production_executor_state_tests {
         )
     }
 
+    fn tid(block_number: u32, offset_number: u16) -> crate::storage::page::ItemPointer {
+        crate::storage::page::ItemPointer {
+            block_number,
+            offset_number,
+        }
+    }
+
+    fn active_epoch_anchor_for_epoch(epoch: u64) -> SpireActiveEpochAnchor {
+        SpireActiveEpochAnchor {
+            root_control: meta::SpireRootControlState::published(
+                epoch,
+                100,
+                200,
+                tid(1, 1),
+                tid(1, 2),
+                tid(1, 3),
+            )
+            .unwrap(),
+            epoch_manifest: meta::SpireEpochManifest {
+                epoch,
+                state: meta::SpireEpochState::Published,
+                consistency_mode: meta::SpireConsistencyMode::Strict,
+                published_at_micros: 1000,
+                retain_until_micros: 2000,
+                active_query_count: 0,
+            },
+            object_manifest: meta::SpireObjectManifest {
+                epoch,
+                entries: Vec::new(),
+            },
+            placement_directory: meta::SpirePlacementDirectory {
+                epoch,
+                entries: Vec::new(),
+            },
+        }
+    }
+
     fn validated_endpoint_identity_for_test(
         profile_fingerprint_bytes: Vec<u8>,
     ) -> SpireRemoteValidatedEndpointIdentity {
@@ -145,6 +182,44 @@ mod production_executor_state_tests {
 
         assert_eq!(loads.get(), 2);
         assert_eq!(next_epoch.0.epoch, 8);
+    }
+
+    #[test]
+    fn active_epoch_anchor_cache_reuses_epoch_anchor() {
+        reset_active_epoch_anchor_cache_for_test();
+        let loads = std::cell::Cell::new(0_u64);
+        let key = SpireActiveEpochAnchorCacheKey {
+            index_relid: 42,
+            active_epoch: 7,
+        };
+
+        let first = load_cached_active_epoch_anchor(key, || {
+            loads.set(loads.get() + 1);
+            Ok(active_epoch_anchor_for_epoch(7))
+        })
+        .unwrap();
+        let second = load_cached_active_epoch_anchor(key, || {
+            loads.set(loads.get() + 1);
+            Ok(active_epoch_anchor_for_epoch(7))
+        })
+        .unwrap();
+
+        assert_eq!(loads.get(), 1);
+        assert_eq!(first.epoch_manifest.epoch, 7);
+        assert_eq!(second.root_control.active_epoch, 7);
+
+        let next_epoch_key = SpireActiveEpochAnchorCacheKey {
+            active_epoch: 8,
+            ..key
+        };
+        let next_epoch = load_cached_active_epoch_anchor(next_epoch_key, || {
+            loads.set(loads.get() + 1);
+            Ok(active_epoch_anchor_for_epoch(8))
+        })
+        .unwrap();
+
+        assert_eq!(loads.get(), 2);
+        assert_eq!(next_epoch.epoch_manifest.epoch, 8);
     }
 
     #[test]
