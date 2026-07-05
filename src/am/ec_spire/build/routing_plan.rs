@@ -122,7 +122,21 @@ impl SpireSingleLevelRouteMap {
         vector: &[f32],
         boundary_replica_count: u32,
     ) -> Result<SpireBoundaryAssignmentPlan, String> {
+        self.route_closure_assignment_for_vector(vector, boundary_replica_count, 0.0)
+    }
+
+    pub(super) fn route_closure_assignment_for_vector(
+        &self,
+        vector: &[f32],
+        boundary_replica_count: u32,
+        closure_epsilon: f32,
+    ) -> Result<SpireBoundaryAssignmentPlan, String> {
         self.validate()?;
+        if !closure_epsilon.is_finite() || closure_epsilon < 0.0 {
+            return Err(format!(
+                "ec_spire closure_epsilon must be finite and non-negative, got {closure_epsilon}"
+            ));
+        }
 
         let scored_entries = rank_centroid_routes_by_ip(
             "ec_spire route map",
@@ -134,6 +148,14 @@ impl SpireSingleLevelRouteMap {
                 centroid: &entry.centroid,
             }),
         )?;
+
+        if closure_epsilon > 0.0 {
+            return Ok(select_closure_assignment_pids(
+                scored_entries,
+                boundary_replica_count,
+                closure_epsilon,
+            )?);
+        }
 
         let mut selected_pids = Vec::with_capacity(
             usize::try_from(boundary_replica_count)
@@ -210,6 +232,55 @@ impl SpireSingleLevelRouteMap {
             }
         }
         Ok(())
+    }
+}
+
+fn select_closure_assignment_pids(
+    scored_entries: Vec<SpireRankedCentroidRoute>,
+    boundary_replica_count: u32,
+    closure_epsilon: f32,
+) -> Result<SpireBoundaryAssignmentPlan, String> {
+    let best_distance = scored_entries
+        .first()
+        .map(|entry| route_score_distance_proxy(entry.score))
+        .ok_or_else(|| "ec_spire closure assignment needs at least one route".to_owned())?;
+    if !best_distance.is_finite() {
+        return Err("ec_spire closure assignment best distance is not finite".to_owned());
+    }
+    let threshold = best_distance * (1.0 + closure_epsilon);
+    let replica_cap = usize::try_from(boundary_replica_count).unwrap_or(usize::MAX);
+    let mut selected_pids = Vec::with_capacity(replica_cap.saturating_add(1));
+
+    for entry in scored_entries {
+        if route_score_distance_proxy(entry.score) > threshold {
+            continue;
+        }
+        if selected_pids.contains(&entry.pid) {
+            continue;
+        }
+        selected_pids.push(entry.pid);
+        if selected_pids.len() == replica_cap.saturating_add(1) {
+            break;
+        }
+    }
+
+    let primary_pid = selected_pids
+        .first()
+        .copied()
+        .ok_or_else(|| "ec_spire closure assignment needs at least one route".to_owned())?;
+    Ok(SpireBoundaryAssignmentPlan {
+        primary_pid,
+        replica_pids: selected_pids.into_iter().skip(1).collect(),
+    })
+}
+
+fn route_score_distance_proxy(score: f32) -> f32 {
+    // ADR-084: closure assignment and query-time probe pruning share this
+    // route-score surrogate while SPIRE routing remains plain inner product.
+    if score.is_finite() {
+        (1.0 - score).max(0.0)
+    } else {
+        f32::INFINITY
     }
 }
 

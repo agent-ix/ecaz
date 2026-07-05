@@ -803,6 +803,7 @@
                 target_fanout: 2,
                 seed: 42,
                 boundary_replica_count: 0,
+                closure_epsilon: 0.0,
                 assignments: vec![
                     local_identity_assignment(10, 1),
                     local_identity_assignment(10, 2),
@@ -891,6 +892,7 @@
                 target_fanout: 2,
                 seed: 42,
                 boundary_replica_count: 1,
+                closure_epsilon: 0.0,
                 assignments: vec![
                     local_identity_assignment(10, 1),
                     local_identity_assignment(10, 2),
@@ -946,6 +948,7 @@
                 target_fanout: 2,
                 seed: 42,
                 boundary_replica_count: 0,
+                closure_epsilon: 0.0,
                 assignments: vec![local_identity_assignment(10, 1)],
                 source_vectors: vec![vec![1.0, 0.0]],
                 centroid_plan,
@@ -982,6 +985,7 @@
                 target_fanout: 2,
                 seed: 42,
                 boundary_replica_count: 0,
+                closure_epsilon: 0.0,
                 assignments: vec![
                     local_identity_assignment(10, 1),
                     local_identity_assignment(10, 2),
@@ -1046,6 +1050,7 @@
                 target_fanout: 2,
                 seed: 42,
                 boundary_replica_count: 0,
+                closure_epsilon: 0.0,
                 assignments: vec![
                     local_identity_assignment(10, 1),
                     local_identity_assignment(10, 2),

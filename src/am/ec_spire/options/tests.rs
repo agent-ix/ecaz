@@ -7,7 +7,8 @@ mod tests {
         resolve_scan_max_candidate_rows_values, resolve_scan_max_routed_candidate_rows_value,
         resolve_scan_nprobe_values, resolve_scan_rerank_width_values, resolve_single_level_scan_plan_values,
         resolve_single_level_scan_plan_values_with_candidate_budget,
-        validate_boundary_replica_count_value, validate_local_store_count_value,
+        validate_boundary_replica_count_value, validate_closure_epsilon_value,
+        validate_local_store_count_value,
         validate_max_candidate_rows_value, validate_recursive_fanout_value, EcSpireOptions,
         SpireCandidateDedupeMode, SpireLeafRouteRanking, SpireRecursiveRouteBudget,
         SpireSourceIdentityProvider, SpireStorageFormat, SpireTopGraphOptionPlan,
@@ -264,6 +265,7 @@ mod tests {
             recursive_fanout: 4,
             local_store_count: 1,
             boundary_replica_count: 0,
+            closure_epsilon: 0.0,
             nprobe: 3,
             rerank_width: 128,
             max_candidate_rows: 0,
@@ -396,12 +398,23 @@ mod tests {
     }
 
     #[test]
+    fn closure_epsilon_reloption_accepts_default_off_ratio_band() {
+        assert!(validate_closure_epsilon_value(0.0).is_ok());
+        assert!(validate_closure_epsilon_value(0.25).is_ok());
+        assert!(validate_closure_epsilon_value(16.0).is_ok());
+        assert!(validate_closure_epsilon_value(-0.01).is_err());
+        assert!(validate_closure_epsilon_value(f32::NAN).is_err());
+        assert!(validate_closure_epsilon_value(16.01).is_err());
+    }
+
+    #[test]
     fn single_level_scan_plan_uses_session_overrides_and_full_rerank() {
         let options = EcSpireOptions {
             nlists: 17,
             recursive_fanout: 0,
             local_store_count: 1,
             boundary_replica_count: 0,
+            closure_epsilon: 0.0,
             nprobe: 0,
             rerank_width: 128,
             max_candidate_rows: 0,
@@ -474,6 +487,7 @@ mod tests {
             recursive_fanout: 0,
             local_store_count: 1,
             boundary_replica_count: 0,
+            closure_epsilon: 0.0,
             nprobe: -1,
             rerank_width: 0,
             max_candidate_rows: 0,
@@ -514,6 +528,7 @@ mod tests {
             recursive_fanout: 0,
             local_store_count: 1,
             boundary_replica_count: 1,
+            closure_epsilon: 0.0,
             nprobe: 3,
             rerank_width: 128,
             max_candidate_rows: 0,

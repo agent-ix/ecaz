@@ -50,6 +50,8 @@ const EC_SPIRE_DEFAULT_ADAPTIVE_NPROBE_SCORE_GAP_MICROS: i32 = 1000;
 const EC_SPIRE_MAX_ADAPTIVE_NPROBE_SCORE_GAP_MICROS: i32 = 1_000_000;
 const EC_SPIRE_DEFAULT_ROUTE_OVERFETCH_MULTIPLIER: f64 = 1.0;
 const EC_SPIRE_MAX_ROUTE_OVERFETCH_MULTIPLIER: f64 = 8.0;
+const EC_SPIRE_DEFAULT_CLOSURE_EPSILON: f32 = 0.0;
+const EC_SPIRE_MAX_CLOSURE_EPSILON: f32 = 16.0;
 const EC_SPIRE_DEFAULT_PROBE_DISTANCE_RATIO: f64 = 0.0;
 const EC_SPIRE_DEFAULT_PROBE_DISTANCE_RATIO_MICROS: i32 = 0;
 const EC_SPIRE_MAX_PROBE_DISTANCE_RATIO: f64 = 16.0;
@@ -192,6 +194,7 @@ struct EcSpireReloptions {
     recursive_fanout: i32,
     local_store_count: i32,
     boundary_replica_count: i32,
+    closure_epsilon: f64,
     nprobe: i32,
     rerank_width: i32,
     max_candidate_rows: i32,
@@ -285,6 +288,7 @@ pub(super) struct EcSpireOptions {
     pub(super) recursive_fanout: i32,
     pub(super) local_store_count: i32,
     pub(super) boundary_replica_count: i32,
+    pub(super) closure_epsilon: f32,
     pub(super) nprobe: i32,
     pub(super) rerank_width: i32,
     pub(super) max_candidate_rows: i32,
@@ -323,6 +327,7 @@ impl EcSpireOptions {
         recursive_fanout: EC_SPIRE_DEFAULT_RECURSIVE_FANOUT,
         local_store_count: EC_SPIRE_DEFAULT_LOCAL_STORE_COUNT,
         boundary_replica_count: EC_SPIRE_DEFAULT_BOUNDARY_REPLICA_COUNT,
+        closure_epsilon: EC_SPIRE_DEFAULT_CLOSURE_EPSILON,
         nprobe: EC_SPIRE_DEFAULT_NPROBE,
         rerank_width: EC_SPIRE_DEFAULT_RERANK_WIDTH,
         max_candidate_rows: EC_SPIRE_DEFAULT_MAX_CANDIDATE_ROWS,
@@ -534,6 +539,18 @@ fn validate_boundary_replica_count_value(value: i32) -> Result<(), String> {
     } else {
         Err(format!(
             "ec_spire boundary_replica_count reloption must be between {EC_SPIRE_MIN_BOUNDARY_REPLICA_COUNT} and {EC_SPIRE_MAX_BOUNDARY_REPLICA_COUNT}, got {value}"
+        ))
+    }
+}
+
+fn validate_closure_epsilon_value(value: f32) -> Result<(), String> {
+    if value.is_finite()
+        && (EC_SPIRE_DEFAULT_CLOSURE_EPSILON..=EC_SPIRE_MAX_CLOSURE_EPSILON).contains(&value)
+    {
+        Ok(())
+    } else {
+        Err(format!(
+            "ec_spire closure_epsilon reloption must be finite and between {EC_SPIRE_DEFAULT_CLOSURE_EPSILON} and {EC_SPIRE_MAX_CLOSURE_EPSILON}, got {value}"
         ))
     }
 }
@@ -1910,6 +1927,16 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_amoptions(
                 EC_SPIRE_MAX_BOUNDARY_REPLICA_COUNT,
                 offset_of!(EcSpireReloptions, boundary_replica_count) as i32,
             );
+        pg_sys::add_local_real_reloption(
+                &mut relopts,
+                c"closure_epsilon".as_ptr(),
+                c"Default-off epsilon for SPIRE closure assignment; positive values replicate within the ADR-084 route-score distance band, capped by boundary_replica_count."
+                    .as_ptr(),
+                EC_SPIRE_DEFAULT_CLOSURE_EPSILON as f64,
+                EC_SPIRE_DEFAULT_CLOSURE_EPSILON as f64,
+                EC_SPIRE_MAX_CLOSURE_EPSILON as f64,
+                offset_of!(EcSpireReloptions, closure_epsilon) as i32,
+            );
         pg_sys::add_local_int_reloption(
             &mut relopts,
             c"nprobe".as_ptr(),
@@ -2091,6 +2118,8 @@ impl EcSpireReloptionsView {
             .unwrap_or_else(|e| pgrx::error!("{e}"));
         validate_boundary_replica_count_value(reloptions.boundary_replica_count)
             .unwrap_or_else(|e| pgrx::error!("{e}"));
+        validate_closure_epsilon_value(reloptions.closure_epsilon as f32)
+            .unwrap_or_else(|e| pgrx::error!("{e}"));
         validate_max_candidate_rows_value(reloptions.max_candidate_rows)
             .unwrap_or_else(|e| pgrx::error!("{e}"));
         validate_top_graph_enabled_value(reloptions.top_graph_enabled)
@@ -2156,6 +2185,7 @@ impl EcSpireReloptionsView {
             recursive_fanout: reloptions.recursive_fanout,
             local_store_count: reloptions.local_store_count,
             boundary_replica_count: reloptions.boundary_replica_count,
+            closure_epsilon: reloptions.closure_epsilon as f32,
             nprobe: reloptions.nprobe,
             rerank_width: reloptions.rerank_width,
             max_candidate_rows: reloptions.max_candidate_rows,

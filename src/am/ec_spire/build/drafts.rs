@@ -275,7 +275,12 @@ unsafe fn publish_relation_partitioned_single_level_build(
         .map_err(|_| "ec_spire boundary_replica_count reloption must be non-negative".to_owned())?;
     for placement in build_boundary_leaf_assignment_placements_with_identity(
         &mut local_vec_id_allocator,
-        plan_boundary_assignment_identity_inputs(state, &route_map, boundary_replica_count)?,
+        plan_boundary_assignment_identity_inputs(
+            state,
+            &route_map,
+            boundary_replica_count,
+            state.options.closure_epsilon,
+        )?,
     )? {
         let centroid_index = centroid_pids
             .iter()
@@ -349,14 +354,16 @@ fn plan_boundary_assignment_identity_inputs(
     state: &SpireBuildState,
     route_map: &SpireSingleLevelRouteMap,
     boundary_replica_count: u32,
+    closure_epsilon: f32,
 ) -> Result<Vec<SpireBoundaryLeafAssignmentIdentityInput>, String> {
     state
         .tuples
         .iter()
         .map(|tuple| {
-            let plan = route_map.route_boundary_assignment_for_vector(
+            let plan = route_map.route_closure_assignment_for_vector(
                 &tuple.source_vector,
                 boundary_replica_count,
+                closure_epsilon,
             )?;
             Ok(SpireBoundaryLeafAssignmentIdentityInput {
                 primary_pid: plan.primary_pid,
@@ -406,6 +413,7 @@ unsafe fn publish_relation_recursive_routing_build(
             boundary_replica_count: u32::try_from(state.options.boundary_replica_count).map_err(
                 |_| "ec_spire boundary_replica_count reloption must be non-negative".to_owned(),
             )?,
+            closure_epsilon: state.options.closure_epsilon,
             assignments,
             source_vectors,
             centroid_plan,

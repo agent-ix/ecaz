@@ -244,6 +244,7 @@ fn build_recursive_epoch_input_from_centroid_plan_with_timing(
         &input.centroid_plan.assignment_indexes,
         &route_map,
         input.boundary_replica_count,
+        input.closure_epsilon,
         &mut local_vec_id_cursor,
     )?;
     timing.add_draft_leaf_rows(leaf_rows_started.elapsed());
@@ -311,6 +312,7 @@ fn build_recursive_leaf_rows_by_pid(
     assignment_indexes: &[u32],
     route_map: &SpireSingleLevelRouteMap,
     boundary_replica_count: u32,
+    closure_epsilon: f32,
     local_vec_id_cursor: &mut SpireLocalVecIdAllocator,
 ) -> Result<HashMap<u64, SpireLeafBlockMaterializationRows>, String> {
     let mut rows_by_leaf_pid = route_map
@@ -381,9 +383,10 @@ fn build_recursive_leaf_rows_by_pid(
                     )
                 })?
                 .pid;
-            let boundary_plan = route_map.route_boundary_assignment_for_vector(
+            let boundary_plan = route_map.route_closure_assignment_for_vector(
                 &source_vector,
                 boundary_replica_count.saturating_add(1),
+                closure_epsilon,
             )?;
             let replica_pids: Vec<u64> = std::iter::once(boundary_plan.primary_pid)
                 .chain(boundary_plan.replica_pids.into_iter())

@@ -63,6 +63,31 @@
     }
 
     #[test]
+    fn single_level_route_map_plans_closure_replica_pids_by_distance_ratio() {
+        let centroid_plan = SpireSingleLevelCentroidPlan {
+            dimensions: 2,
+            centroids: vec![vec![0.95, 0.0], vec![0.94, 0.0], vec![0.80, 0.0]],
+            assignment_indexes: Vec::new(),
+        };
+        let route_map =
+            SpireSingleLevelRouteMap::from_centroid_plan(&centroid_plan, &[11, 12, 13]).unwrap();
+
+        let plan = route_map
+            .route_closure_assignment_for_vector(&[1.0, 0.0], 2, 0.25)
+            .unwrap();
+
+        assert_eq!(plan.primary_pid, 11);
+        assert_eq!(plan.replica_pids, vec![12]);
+
+        let capped = route_map
+            .route_closure_assignment_for_vector(&[1.0, 0.0], 1, 16.0)
+            .unwrap();
+
+        assert_eq!(capped.primary_pid, 11);
+        assert_eq!(capped.replica_pids, vec![12]);
+    }
+
+    #[test]
     fn single_level_route_map_dedupes_duplicate_replica_pids() {
         let route_map = SpireSingleLevelRouteMap {
             dimensions: 2,

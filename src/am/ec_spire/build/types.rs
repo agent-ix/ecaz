@@ -281,6 +281,7 @@ pub(super) struct SpireRecursiveBuildCoordinatorInput {
     pub(super) target_fanout: u32,
     pub(super) seed: u64,
     pub(super) boundary_replica_count: u32,
+    pub(super) closure_epsilon: f32,
     pub(super) assignments: Vec<SpireLeafAssignmentIdentityInput>,
     pub(super) source_vectors: Vec<Vec<f32>>,
     pub(super) centroid_plan: SpireSingleLevelCentroidPlan,

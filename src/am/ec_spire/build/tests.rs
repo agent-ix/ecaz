@@ -59,6 +59,7 @@ mod tests {
             recursive_fanout: 0,
             local_store_count: 1,
             boundary_replica_count: 0,
+            closure_epsilon: 0.0,
             nprobe: 0,
             rerank_width: 0,
             max_candidate_rows: 0,
