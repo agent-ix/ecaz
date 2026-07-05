@@ -513,6 +513,10 @@ pub struct LocalMultinodePg18Args {
     /// Skip cargo pgrx install before starting fixture clusters.
     #[arg(long)]
     skip_install: bool,
+
+    /// Install the old pg_test/debug substrate instead of the release benchmark backend.
+    #[arg(long)]
+    debug_install: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1173,11 +1177,14 @@ async fn run_native_local_multinode_pg18(
             .current_dir(&repo_root)
             .arg("pgrx")
             .arg("install")
-            .arg("--test")
             .arg("--pg-config")
-            .arg(pgbin.join("pg_config"))
-            .arg("--features")
-            .arg("pg18 pg_test")
+            .arg(pgbin.join("pg_config"));
+        if args.debug_install {
+            command.arg("--test").arg("--features").arg("pg18 pg_test");
+        } else {
+            command.arg("--release").arg("--features").arg("pg18");
+        }
+        command
             .arg("--no-default-features")
             .stdin(Stdio::inherit())
             .stdout(Stdio::inherit())
@@ -1185,6 +1192,14 @@ async fn run_native_local_multinode_pg18(
         run_status(command)
             .await
             .wrap_err("installing ecaz into local PG18")?;
+        log_local_multinode(
+            smoke_log.as_deref(),
+            if args.debug_install {
+                "install_profile=debug-pg_test"
+            } else {
+                "install_profile=release"
+            },
+        )?;
     }
 
     let nodes = vec![
@@ -1231,6 +1246,13 @@ async fn run_native_local_multinode_pg18(
         init_local_pg_nodes(&cluster).await?;
         start_local_pg_nodes(&cluster, &socket_dir).await?;
         setup_local_pg_nodes(&cluster, &socket_dir).await?;
+        verify_local_pg_node_build_profiles(
+            &cluster,
+            &socket_dir,
+            smoke_log.as_deref(),
+            args.debug_install,
+        )
+        .await?;
         write_local_topology(&topology, &socket_dir, &cluster.nodes)?;
 
         let fixture = prepare_local_multinode_fixture(
@@ -1384,6 +1406,51 @@ async fn setup_local_pg_nodes(cluster: &LocalPgCluster, socket_dir: &Path) -> Re
         run_status(command)
             .await
             .wrap_err_with(|| format!("creating role/extension on {}", node.name))?;
+    }
+    Ok(())
+}
+
+async fn verify_local_pg_node_build_profiles(
+    cluster: &LocalPgCluster,
+    socket_dir: &Path,
+    smoke_log: Option<&Path>,
+    allow_debug: bool,
+) -> Result<()> {
+    for node in &cluster.nodes {
+        let mut command = psql_command(cluster, socket_dir, node.port);
+        command
+            .arg("-AtX")
+            .arg("-c")
+            .arg("SELECT ecaz_build_profile()");
+        let output = command
+            .output()
+            .await
+            .wrap_err_with(|| format!("probing ecaz_build_profile() on {}", node.name))?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!(
+                "ecaz_build_profile() probe failed on {}: {}",
+                node.name,
+                stderr.trim()
+            );
+        }
+        let build_profile = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+        log_local_multinode(
+            smoke_log,
+            &format!(
+                "node_build_profile node_id={} name={} port={} profile={}",
+                node.node_id, node.name, node.port, build_profile
+            ),
+        )?;
+        if build_profile != "release" && !allow_debug {
+            bail!(
+                "local multinode node {} ({}) has backend build profile {:?}; \
+                 rerun without --debug-install or pass --debug-install only for pg_test drills",
+                node.node_id,
+                node.name,
+                build_profile
+            );
+        }
     }
     Ok(())
 }
