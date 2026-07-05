@@ -1450,7 +1450,10 @@ impl IvfQuantizer {
         }
     }
 
-    fn validate_tq_calibration_model(self, model: &IvfTqCalibrationModel) -> Result<(), String> {
+    pub(super) fn validate_tq_calibration_model(
+        self,
+        model: &IvfTqCalibrationModel,
+    ) -> Result<(), String> {
         if !matches!(self.profile, IvfQuantizerProfile::TurboQuant) {
             return Err(
                 "ec_ivf TurboQuant calibration model used with non-TurboQuant quantizer".to_owned(),
@@ -1902,6 +1905,7 @@ impl IvfPreparedQuery {
             Self::TurboQuant(prepared) => prepared.lut.len(),
             Self::TurboQuantNoQjl4BitLut(prepared) => prepared.lut.len(),
             Self::TurboQuantNoQjl4BitInt8Approx(_) => 0,
+            Self::TurboQuantCalibratedNoQjl4Bit(prepared) => prepared.lut.len(),
             Self::PqFastScan { lut, .. } => lut.len(),
             Self::RaBitQ(_) => 0,
         }
@@ -1913,6 +1917,7 @@ impl IvfPreparedQuery {
             Self::TurboQuant(prepared) => prepared.sq.len(),
             Self::TurboQuantNoQjl4BitLut(_) => 0,
             Self::TurboQuantNoQjl4BitInt8Approx(_) => 0,
+            Self::TurboQuantCalibratedNoQjl4Bit(_) => 0,
             Self::PqFastScan { .. } => 0,
             Self::RaBitQ(_) => 0,
         }

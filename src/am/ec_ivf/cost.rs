@@ -412,6 +412,7 @@ mod tests {
             rabitq_residual: false,
             rabitq_rerank_score: options::RaBitQRerankScoreMode::Estimator,
             rabitq_rerank_clip: options::EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
+            turboquant_profile: options::TurboQuantProfile::Standard,
             storage_format: options::StorageFormat::TurboQuant,
             rerank: options::RerankMode::HeapF32,
             coarse_format: options::CoarseFormat::Auto,

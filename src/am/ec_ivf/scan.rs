@@ -2651,13 +2651,35 @@ unsafe fn rerank_probe_candidates(
             } else {
                 super::options::RerankPlacement::SourceDiagnostic
             };
+            let sidecar_tq_metadata = if sidecar_head.is_some()
+                && index_options.turboquant_profile == TurboQuantProfile::TqPlus
+                && index_options.rerank_format == super::options::RerankFormat::TurboQuant
+            {
+                Some(unsafe { super::page::read_metadata_page((*scan).indexRelation) })
+            } else {
+                None
+            };
+            let sidecar_tq_calibration_model = if let Some(metadata) = sidecar_tq_metadata.as_ref()
+            {
+                Some(
+                    unsafe {
+                        tq_calibration_model_for_scan(opaque, (*scan).indexRelation, metadata)
+                    }
+                    .unwrap_or_else(|e| {
+                        pgrx::error!("ec_ivf failed to load TurboQuant calibration model: {e}")
+                    })
+                    .clone(),
+                )
+            } else {
+                None
+            };
 
             // Task 111g: the rerank stage reads the heap source column
             // tid-sorted (unchanged) and rescores the frontier through the
             // configured `rerank_format`. The default `f32` path stays
             // bit-identical to the pre-111g heap_f32 rerank; compact formats
             // share the Task 111h rerank payload codec.
-            let scorer = super::rerank::RerankScorer::resolve(
+            let scorer = super::rerank::RerankScorer::resolve_with_tq_calibration_model(
                 index_options.rerank_format,
                 scorer_placement,
                 index_options.storage_format,
@@ -2665,6 +2687,7 @@ unsafe fn rerank_probe_candidates(
                 opaque.query_values(),
                 index_options.rabitq_rerank_score,
                 index_options.rabitq_rerank_clip,
+                sidecar_tq_calibration_model.as_ref(),
             )
             .unwrap_or_else(|e| pgrx::error!("{e}"));
             opaque.explain_counters.record_rerank_surface(
@@ -4922,6 +4945,7 @@ mod tests {
             rabitq_residual: false,
             rabitq_rerank_score: RaBitQRerankScoreMode::Estimator,
             rabitq_rerank_clip: EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
+            turboquant_profile: crate::am::ec_ivf::options::TurboQuantProfile::Standard,
             storage_format: IvfStorageFormat::RaBitQ,
             rerank,
             coarse_format: CoarseFormat::Auto,

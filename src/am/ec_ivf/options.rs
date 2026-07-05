@@ -1065,7 +1065,7 @@ impl EcIvfReloptionsView {
         let turboquant_profile_reloption =
             self.read_string_reloption(reloptions.turboquant_profile_offset, "turboquant_profile");
 
-        build_options_from_reloptions(
+        build_options_from_reloptions_with_turboquant_profile(
             reloptions,
             storage_format_reloption,
             quantizer_reloption,
@@ -1079,6 +1079,27 @@ impl EcIvfReloptionsView {
 }
 
 fn build_options_from_reloptions(
+    reloptions: &EcIvfReloptions,
+    storage_format_reloption: Option<String>,
+    quantizer_reloption: Option<String>,
+    rerank_reloption: Option<String>,
+    coarse_format_reloption: Option<String>,
+    rerank_placement_reloption: Option<String>,
+    rerank_format_reloption: Option<String>,
+) -> EcIvfOptions {
+    build_options_from_reloptions_with_turboquant_profile(
+        reloptions,
+        storage_format_reloption,
+        quantizer_reloption,
+        rerank_reloption,
+        coarse_format_reloption,
+        rerank_placement_reloption,
+        rerank_format_reloption,
+        None,
+    )
+}
+
+fn build_options_from_reloptions_with_turboquant_profile(
     reloptions: &EcIvfReloptions,
     storage_format_reloption: Option<String>,
     quantizer_reloption: Option<String>,
@@ -1302,9 +1323,12 @@ fn build_options_from_reloptions(
             storage_format,
             StorageFormat::Auto | StorageFormat::TurboQuant
         )
+        && !(storage_format == StorageFormat::CoarseRerank
+            && rerank_placement == RerankPlacement::Index
+            && rerank_format == RerankFormat::TurboQuant)
     {
         pgrx::error!(
-            "ec_ivf turboquant_profile = 'tqplus' currently requires storage_format = 'turboquant' or auto; coarse_rerank turboquant sidecar support is not wired yet"
+            "ec_ivf turboquant_profile = 'tqplus' requires TurboQuant posting storage or coarse_rerank with rerank_placement = 'index' and rerank_format = 'turboquant'"
         );
     }
 
@@ -1388,6 +1412,7 @@ mod tests {
             coarse_format_offset: 0,
             rerank_placement_offset: 0,
             rerank_format_offset: 0,
+            turboquant_profile_offset: 0,
         }
     }
 
@@ -1686,6 +1711,25 @@ mod tests {
         assert_eq!(options.stage2_final_rerank_width, 25);
         assert_eq!(options.rerank_placement, RerankPlacement::Index);
         assert_eq!(options.rerank_format, RerankFormat::TurboQuant);
+    }
+
+    #[test]
+    fn coarse_rerank_accepts_tqplus_turboquant_sidecar_profile() {
+        let options = build_options_from_reloptions_with_turboquant_profile(
+            &reloptions(),
+            Some("coarse_rerank".into()),
+            None,
+            None,
+            None,
+            Some("index".into()),
+            Some("turboquant".into()),
+            Some("tqplus".into()),
+        );
+
+        assert_eq!(options.storage_format, StorageFormat::CoarseRerank);
+        assert_eq!(options.rerank_placement, RerankPlacement::Index);
+        assert_eq!(options.rerank_format, RerankFormat::TurboQuant);
+        assert_eq!(options.turboquant_profile, TurboQuantProfile::TqPlus);
     }
 
     #[test]

@@ -257,10 +257,18 @@ unsafe fn append_rerank_group_entry(
     if reloptions.rerank_placement != options::RerankPlacement::Index {
         return Ok(None);
     }
-    let Some(encoder) = super::rerank::RerankSidecarEncoder::resolve(
+    let tq_calibration_model = if metadata.turboquant_profile == options::TurboQuantProfile::TqPlus
+        && reloptions.rerank_format == options::RerankFormat::TurboQuant
+    {
+        Some(unsafe { quantizer::load_tq_calibration_model(index_relation, metadata) }?)
+    } else {
+        None
+    };
+    let Some(encoder) = super::rerank::RerankSidecarEncoder::resolve_with_tq_calibration_model(
         reloptions.rerank_format,
         source_vector.len(),
         metadata.rabitq_rerank_clip_i32(),
+        tq_calibration_model.as_ref(),
     )?
     else {
         return Ok(None);

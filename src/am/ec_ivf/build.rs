@@ -559,7 +559,6 @@ impl BuildState {
         }
         let pq_train_start = Instant::now();
         let pq_model = self.train_pq_fastscan_model(dimensions)?;
-        let tq_calibration_model = self.train_tq_calibration_model(dimensions)?;
         timing.pq_train_us = elapsed_us(pq_train_start);
         let pq_centroid_count = pq_model
             .as_ref()
@@ -570,15 +569,6 @@ impl BuildState {
                 "pq_fastscan codebook tuple for group centroid count {pq_centroid_count} does not fit on a page"
             ));
         }
-        if tq_calibration_model.is_some()
-            && !page::tq_calibration_tuple_fits(usize::from(dimensions), self.page_size)
-        {
-            return Err(format!(
-                "TurboQuant calibration tuple for dim {} does not fit on a page",
-                dimensions
-            ));
-        }
-
         let nlists = model.centroid_count();
         let mut data_pages = DataPageChain::new(self.page_size);
         let mut centroid_tids = Vec::with_capacity(nlists);
@@ -625,6 +615,33 @@ impl BuildState {
                 .copied()
                 .unwrap_or(ItemPointer::INVALID);
         }
+        timing.centroids_us = elapsed_us(centroids_start);
+
+        let source_refs = self
+            .heap_tuples
+            .iter()
+            .map(|tuple| tuple.source_vector.as_slice())
+            .collect::<Vec<_>>();
+        let assign_start = Instant::now();
+        let list_ids = training::assign_vectors_to_centroids(&source_refs, model)?;
+        let mut tuple_indices_by_list = vec![Vec::new(); nlists];
+        for (tuple_index, list_id) in list_ids.iter().copied().enumerate() {
+            tuple_indices_by_list[list_id].push(tuple_index);
+        }
+        timing.assign_us = elapsed_us(assign_start);
+        let tq_train_start = Instant::now();
+        let tq_calibration_model = self.train_tq_calibration_model(dimensions, model, &list_ids)?;
+        timing.pq_train_us = timing
+            .pq_train_us
+            .saturating_add(elapsed_us(tq_train_start));
+        if tq_calibration_model.is_some()
+            && !page::tq_calibration_tuple_fits(usize::from(dimensions), self.page_size)
+        {
+            return Err(format!(
+                "TurboQuant calibration tuple for dim {} does not fit on a page",
+                dimensions
+            ));
+        }
         let mut tq_calibration_head = ItemPointer::INVALID;
         if let Some(model) = &tq_calibration_model {
             let shift_tuple = page::IvfTqCalibrationTuple {
@@ -646,20 +663,6 @@ impl BuildState {
             data_pages.update_ivf_tq_calibration(shift_tid, &linked_shift)?;
             tq_calibration_head = shift_tid;
         }
-        timing.centroids_us = elapsed_us(centroids_start);
-
-        let source_refs = self
-            .heap_tuples
-            .iter()
-            .map(|tuple| tuple.source_vector.as_slice())
-            .collect::<Vec<_>>();
-        let assign_start = Instant::now();
-        let list_ids = training::assign_vectors_to_centroids(&source_refs, model)?;
-        let mut tuple_indices_by_list = vec![Vec::new(); nlists];
-        for (tuple_index, list_id) in list_ids.into_iter().enumerate() {
-            tuple_indices_by_list[list_id].push(tuple_index);
-        }
-        timing.assign_us = elapsed_us(assign_start);
         let pq_posting_quantizer = if pq_model.is_some() {
             Some(IvfQuantizer::resolve_with_pq_group_size_and_bits(
                 self.options.storage_format,
@@ -698,6 +701,7 @@ impl BuildState {
                 &model.centroids,
                 &self.options,
                 dimensions,
+                &tq_calibration_model,
             )?;
 
         let mut posting_tids_by_list = vec![Vec::new(); nlists];
@@ -918,18 +922,32 @@ impl BuildState {
     fn train_tq_calibration_model(
         &self,
         dimensions: u16,
+        model: &training::SphericalKMeansModel,
+        list_ids: &[usize],
     ) -> Result<Option<IvfTqCalibrationModel>, String> {
         if self.options.turboquant_profile != options::TurboQuantProfile::TqPlus {
             return Ok(None);
         }
-        if !matches!(
+        let raw_tq_postings = matches!(
             self.options.storage_format,
             options::StorageFormat::Auto | options::StorageFormat::TurboQuant
-        ) {
+        );
+        let residual_tq_sidecar = self.options.storage_format
+            == options::StorageFormat::CoarseRerank
+            && self.options.rerank_placement == options::RerankPlacement::Index
+            && self.options.rerank_format == options::RerankFormat::TurboQuant;
+        if !raw_tq_postings && !residual_tq_sidecar {
             return Err(
-                "ec_ivf TurboQuant calibration currently requires TurboQuant posting storage"
+                "ec_ivf TurboQuant calibration requires TurboQuant posting storage or a TurboQuant coarse-rerank sidecar"
                     .to_owned(),
             );
+        }
+        if list_ids.len() != self.heap_tuples.len() {
+            return Err(format!(
+                "ec_ivf TurboQuant calibration assignment count {} does not match tuple count {}",
+                list_ids.len(),
+                self.heap_tuples.len()
+            ));
         }
         let quantizer = ProdQuantizer::cached(
             usize::from(dimensions),
@@ -939,11 +957,33 @@ impl BuildState {
         if quantizer.exact_score_mode() != crate::quant::prod::ExactScoreMode::MseNoQjl4Bit {
             return Err("ec_ivf TurboQuant calibration requires the no-QJL 4-bit lane".to_owned());
         }
-        let sample_vectors = self
-            .training_sample_vectors()
-            .into_iter()
-            .map(|vector| vector.to_vec())
-            .collect::<Vec<_>>();
+        let sample_count = self.training_sample_count();
+        let mut sample_vectors = Vec::with_capacity(sample_count);
+        for (tuple_index, tuple) in self.heap_tuples.iter().take(sample_count).enumerate() {
+            if residual_tq_sidecar {
+                let list_id = list_ids[tuple_index];
+                let centroid = model.centroids.get(list_id).ok_or_else(|| {
+                    format!("ec_ivf TurboQuant calibration list {list_id} has no centroid")
+                })?;
+                if tuple.source_vector.len() != centroid.len() {
+                    return Err(format!(
+                        "ec_ivf TurboQuant calibration source/centroid dimension mismatch: source {}, centroid {}",
+                        tuple.source_vector.len(),
+                        centroid.len()
+                    ));
+                }
+                sample_vectors.push(
+                    tuple
+                        .source_vector
+                        .iter()
+                        .zip(centroid.iter())
+                        .map(|(value, center)| value - center)
+                        .collect::<Vec<_>>(),
+                );
+            } else {
+                sample_vectors.push(tuple.source_vector.clone());
+            }
+        }
         Ok(Some(IvfTqCalibrationModel {
             calibration: quantizer.fit_calibration_no_qjl_4bit(&sample_vectors),
         }))
@@ -1010,6 +1050,7 @@ fn build_rerank_group_chain(
     centroids: &[Vec<f32>],
     options: &options::EcIvfOptions,
     dimensions: u16,
+    tq_calibration_model: &Option<IvfTqCalibrationModel>,
 ) -> Result<(ItemPointer, ItemPointer, HashMap<ItemPointer, ItemPointer>), String> {
     // Returns (group_head, directory_head, heap_tid -> group header tid).
     // The directory head is intentionally INVALID for the packed group layout;
@@ -1018,10 +1059,11 @@ fn build_rerank_group_chain(
     if options.rerank_placement != options::RerankPlacement::Index {
         return Ok((ItemPointer::INVALID, ItemPointer::INVALID, HashMap::new()));
     }
-    let Some(encoder) = super::rerank::RerankSidecarEncoder::resolve(
+    let Some(encoder) = super::rerank::RerankSidecarEncoder::resolve_with_tq_calibration_model(
         options.rerank_format,
         usize::from(dimensions),
         options.rabitq_rerank_clip,
+        tq_calibration_model.as_ref(),
     )?
     else {
         // f32 / auto keep the heap source: no sidecar.
@@ -1621,6 +1663,7 @@ mod tests {
             rabitq_residual: false,
             rabitq_rerank_score: options::RaBitQRerankScoreMode::Estimator,
             rabitq_rerank_clip: options::EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
+            turboquant_profile: options::TurboQuantProfile::Standard,
             storage_format: options::StorageFormat::Auto,
             rerank: options::RerankMode::Auto,
             coarse_format: options::CoarseFormat::Auto,
