@@ -115,7 +115,7 @@ pub(crate) fn remote_search_production_scan_handoff_summary_row(
         }
 
         let (epoch_manifest, object_manifest, placement_directory) =
-            load_relation_epoch_manifests_for_coordinator_fanout(index, root_control)?;
+            load_cached_relation_epoch_manifests_for_coordinator_fanout(index, root_control)?;
         let snapshot = meta::SpirePublishedEpochSnapshot::new(
             &epoch_manifest,
             &object_manifest,
@@ -597,7 +597,7 @@ fn remote_search_production_scan_heap_resolution_result_stream_impl(
 
     let manifest_start = std::time::Instant::now();
     let (epoch_manifest, object_manifest, placement_directory) =
-        load_relation_epoch_manifests_for_coordinator_fanout(index, root_control)?;
+        load_cached_relation_epoch_manifests_for_coordinator_fanout(index, root_control)?;
     add_profile_elapsed(&mut metrics.manifest_load_elapsed_ms, manifest_start);
     let snapshot = meta::SpirePublishedEpochSnapshot::new(
         &epoch_manifest,
@@ -969,7 +969,7 @@ fn remote_search_production_scan_profile_rows_result(
     }
 
     let (epoch_manifest, object_manifest, placement_directory) =
-        load_relation_epoch_manifests_for_coordinator_fanout(index, root_control)?;
+        load_cached_relation_epoch_manifests_for_coordinator_fanout(index, root_control)?;
     let snapshot = meta::SpirePublishedEpochSnapshot::new(
         &epoch_manifest,
         &object_manifest,
@@ -1056,7 +1056,7 @@ fn remote_search_production_global_candidate_threshold_score_result(
     }
 
     let (epoch_manifest, object_manifest, placement_directory) =
-        load_relation_epoch_manifests_for_coordinator_fanout(index, root_control)?;
+        load_cached_relation_epoch_manifests_for_coordinator_fanout(index, root_control)?;
     let snapshot = meta::SpirePublishedEpochSnapshot::new(
         &epoch_manifest,
         &object_manifest,
@@ -1192,7 +1192,7 @@ fn remote_search_production_threshold_profile_rows_result(
     }
 
     let (epoch_manifest, object_manifest, placement_directory) =
-        load_relation_epoch_manifests_for_coordinator_fanout(index, root_control)?;
+        load_cached_relation_epoch_manifests_for_coordinator_fanout(index, root_control)?;
     let snapshot = meta::SpirePublishedEpochSnapshot::new(
         &epoch_manifest,
         &object_manifest,

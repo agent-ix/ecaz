@@ -284,14 +284,7 @@ fn coordinator_metadata_read_placement(
 fn load_relation_epoch_manifests_for_coordinator_fanout(
     index: SpireLiveIndexRelation,
     root_control: meta::SpireRootControlState,
-) -> Result<
-    (
-        meta::SpireEpochManifest,
-        meta::SpireObjectManifest,
-        meta::SpirePlacementDirectory,
-    ),
-    String,
-> {
+) -> Result<SpireCoordinatorFanoutManifests, String> {
     if root_control.active_epoch == 0 {
         return Err("ec_spire cannot load manifests for empty active epoch".to_owned());
     }
@@ -313,6 +306,78 @@ fn load_relation_epoch_manifests_for_coordinator_fanout(
         &placement_directory,
     )?;
     Ok((epoch_manifest, object_manifest, placement_directory))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SpireCoordinatorFanoutManifestCacheKey {
+    index_relid: u32,
+    active_epoch: u64,
+}
+
+type SpireCoordinatorFanoutManifests = (
+    meta::SpireEpochManifest,
+    meta::SpireObjectManifest,
+    meta::SpirePlacementDirectory,
+);
+
+thread_local! {
+    static COORDINATOR_FANOUT_MANIFEST_CACHE:
+        std::cell::RefCell<Option<(SpireCoordinatorFanoutManifestCacheKey, SpireCoordinatorFanoutManifests)>> =
+        std::cell::RefCell::new(None);
+}
+
+#[cfg(test)]
+fn reset_coordinator_fanout_manifest_cache_for_test() {
+    COORDINATOR_FANOUT_MANIFEST_CACHE.with(|cache| {
+        *cache.borrow_mut() = None;
+    });
+}
+
+fn load_cached_coordinator_fanout_manifests<F>(
+    cache_key: SpireCoordinatorFanoutManifestCacheKey,
+    load: F,
+) -> Result<SpireCoordinatorFanoutManifests, String>
+where
+    F: FnOnce() -> Result<SpireCoordinatorFanoutManifests, String>,
+{
+    if let Some(manifests) = COORDINATOR_FANOUT_MANIFEST_CACHE.with(|cache| {
+        let cache = cache.borrow();
+        cache
+            .as_ref()
+            .filter(|(cached_key, _manifests)| *cached_key == cache_key)
+            .map(|(_cached_key, manifests)| manifests.clone())
+    }) {
+        return Ok(manifests);
+    }
+
+    let manifests = load()?;
+    COORDINATOR_FANOUT_MANIFEST_CACHE.with(|cache| {
+        *cache.borrow_mut() = Some((cache_key, manifests.clone()));
+    });
+    Ok(manifests)
+}
+
+fn load_cached_relation_epoch_manifests_for_coordinator_fanout(
+    index: SpireLiveIndexRelation,
+    root_control: meta::SpireRootControlState,
+) -> Result<
+    (
+        meta::SpireEpochManifest,
+        meta::SpireObjectManifest,
+        meta::SpirePlacementDirectory,
+    ),
+    String,
+> {
+    if root_control.active_epoch == 0 {
+        return Err("ec_spire cannot load manifests for empty active epoch".to_owned());
+    }
+    load_cached_coordinator_fanout_manifests(
+        SpireCoordinatorFanoutManifestCacheKey {
+            index_relid: index.relid(),
+            active_epoch: root_control.active_epoch,
+        },
+        || load_relation_epoch_manifests_for_coordinator_fanout(index, root_control),
+    )
 }
 
 pub(crate) fn remote_search_candidates(

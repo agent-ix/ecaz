@@ -150,7 +150,7 @@ pub(crate) fn remote_search_fanout_plan_rows(
         }
 
         let (epoch_manifest, object_manifest, placement_directory) =
-            load_relation_epoch_manifests_for_coordinator_fanout(index, root_control)?;
+            load_cached_relation_epoch_manifests_for_coordinator_fanout(index, root_control)?;
         if epoch_manifest.consistency_mode != requested_consistency_mode {
             return Err(format!(
                 "ec_spire remote search fanout requested consistency_mode '{consistency_mode}' does not match active epoch consistency mode '{}'",
@@ -242,7 +242,7 @@ pub(crate) fn remote_search_target_plan_rows(
         }
 
         let (epoch_manifest, object_manifest, placement_directory) =
-            load_relation_epoch_manifests_for_coordinator_fanout(index, root_control)?;
+            load_cached_relation_epoch_manifests_for_coordinator_fanout(index, root_control)?;
         if epoch_manifest.consistency_mode != requested_consistency_mode {
             return Err(format!(
                 "ec_spire remote search target plan requested consistency_mode '{consistency_mode}' does not match active epoch consistency mode '{}'",

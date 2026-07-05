@@ -64,6 +64,65 @@ mod production_executor_state_tests {
         }
     }
 
+    fn fanout_manifests_for_epoch(epoch: u64) -> SpireCoordinatorFanoutManifests {
+        (
+            meta::SpireEpochManifest {
+                epoch,
+                state: meta::SpireEpochState::Published,
+                consistency_mode: meta::SpireConsistencyMode::Strict,
+                published_at_micros: 1000,
+                retain_until_micros: 2000,
+                active_query_count: 0,
+            },
+            meta::SpireObjectManifest {
+                epoch,
+                entries: Vec::new(),
+            },
+            meta::SpirePlacementDirectory {
+                epoch,
+                entries: Vec::new(),
+            },
+        )
+    }
+
+    #[test]
+    fn coordinator_fanout_manifest_cache_reuses_epoch_manifests() {
+        reset_coordinator_fanout_manifest_cache_for_test();
+        let loads = std::cell::Cell::new(0_u64);
+        let key = SpireCoordinatorFanoutManifestCacheKey {
+            index_relid: 42,
+            active_epoch: 7,
+        };
+
+        let first = load_cached_coordinator_fanout_manifests(key, || {
+            loads.set(loads.get() + 1);
+            Ok(fanout_manifests_for_epoch(7))
+        })
+        .unwrap();
+        let second = load_cached_coordinator_fanout_manifests(key, || {
+            loads.set(loads.get() + 1);
+            Ok(fanout_manifests_for_epoch(7))
+        })
+        .unwrap();
+
+        assert_eq!(loads.get(), 1);
+        assert_eq!(first.0.epoch, 7);
+        assert_eq!(second.0.epoch, 7);
+
+        let next_epoch_key = SpireCoordinatorFanoutManifestCacheKey {
+            active_epoch: 8,
+            ..key
+        };
+        let next_epoch = load_cached_coordinator_fanout_manifests(next_epoch_key, || {
+            loads.set(loads.get() + 1);
+            Ok(fanout_manifests_for_epoch(8))
+        })
+        .unwrap();
+
+        assert_eq!(loads.get(), 2);
+        assert_eq!(next_epoch.0.epoch, 8);
+    }
+
     fn candidate_for_state_test(
         node_id: u32,
         pid: u64,
