@@ -318,7 +318,6 @@ struct SpireRemoteProductionCandidateAndHeapExecution {
 
 struct SpireRemoteProductionCandidateSession {
     request: SpireRemoteProductionCandidateReceiveRequest,
-    _governance_permit: SpireRemoteSearchLibpqGovernancePermit,
     connection: SpireRemotePooledConnection,
     remote_index_oid: u32,
     endpoint_identity: SpireRemoteValidatedEndpointIdentity,
@@ -469,6 +468,7 @@ struct SpireRemotePooledConnection {
     client: tokio_postgres::Client,
     connection_task: tokio::task::JoinHandle<()>,
     tls_config: SpireRemoteTlsConfig,
+    _governance_permit: SpireRemoteSearchLibpqGovernancePermit,
     validated_remote_index_oid: Option<u32>,
     validated_endpoint_identity: Option<SpireRemoteValidatedEndpointIdentity>,
     candidate_statement: Option<tokio_postgres::Statement>,
@@ -1215,28 +1215,29 @@ impl SpireRemoteProductionTransportAdapter {
                     };
                 }
             };
-        let governance_permit =
-            match remote_search_libpq_executor_governance_permit_for_node(request.node_id) {
-                Ok(permit) => permit,
-                Err(error) => {
-                    let failure_category = production_governance_failure_category(&error);
-                    metrics.record_failure_category(&request.consistency_mode, failure_category);
-                    return SpireRemoteProductionCandidateSessionResult {
-                        candidate_result: failed_production_candidate_receive_result(
-                            request.node_id,
-                            batch_start,
-                            request_start,
-                            failure_category,
-                        ),
-                        session: None,
-                        metrics,
-                    };
-                }
-            };
         let limits = SpireRemoteSearchLibpqExecutorBudgetLimits::from_session();
         let mut connection = match pooled_connection {
             Some(connection) => connection,
             None => {
+                let governance_permit =
+                    match remote_search_libpq_executor_governance_permit_for_node(request.node_id) {
+                        Ok(permit) => permit,
+                        Err(error) => {
+                            let failure_category = production_governance_failure_category(&error);
+                            metrics
+                                .record_failure_category(&request.consistency_mode, failure_category);
+                            return SpireRemoteProductionCandidateSessionResult {
+                                candidate_result: failed_production_candidate_receive_result(
+                                    request.node_id,
+                                    batch_start,
+                                    request_start,
+                                    failure_category,
+                                ),
+                                session: None,
+                                metrics,
+                            };
+                        }
+                    };
                 let connect_start = std::time::Instant::now();
                 match remote_search_libpq_connect_async_with_session_timeouts(
                     &request.conninfo,
@@ -1281,6 +1282,7 @@ impl SpireRemoteProductionTransportAdapter {
                             client: connection.client,
                             connection_task: connection.connection_task,
                             tls_config: connection.tls_config,
+                            _governance_permit: governance_permit,
                             validated_remote_index_oid: None,
                             validated_endpoint_identity: None,
                             candidate_statement: None,
@@ -1570,7 +1572,6 @@ impl SpireRemoteProductionTransportAdapter {
         };
         let session = SpireRemoteProductionCandidateSession {
             request,
-            _governance_permit: governance_permit,
             connection,
             remote_index_oid,
             endpoint_identity,
@@ -1597,7 +1598,6 @@ impl SpireRemoteProductionTransportAdapter {
         let mut metrics = SpireRemoteProductionReadMetrics::default();
         let SpireRemoteProductionCandidateSession {
             request,
-            _governance_permit,
             mut connection,
             remote_index_oid,
             endpoint_identity,
