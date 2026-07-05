@@ -151,6 +151,41 @@ fn load_snapshot_coordinator_routing_hierarchy(
     })
 }
 
+thread_local! {
+    static COORDINATOR_ROUTING_HIERARCHY_CACHE:
+        std::cell::RefCell<Option<(SpireRoutingHierarchyCacheKey, SpireLoadedRoutingHierarchy)>> =
+        std::cell::RefCell::new(None);
+}
+
+#[cfg(test)]
+pub(super) fn reset_coordinator_routing_hierarchy_cache_for_test() {
+    COORDINATOR_ROUTING_HIERARCHY_CACHE.with(|cache| {
+        *cache.borrow_mut() = None;
+    });
+}
+
+fn load_cached_coordinator_routing_hierarchy(
+    cache_key: SpireRoutingHierarchyCacheKey,
+    snapshot: &SpireValidatedEpochSnapshot<'_>,
+    object_store: &impl SpireObjectReader,
+) -> Result<(SpireLoadedRoutingHierarchy, u64), String> {
+    if let Some(hierarchy) = COORDINATOR_ROUTING_HIERARCHY_CACHE.with(|cache| {
+        let cache = cache.borrow();
+        cache
+            .as_ref()
+            .filter(|(cached_key, _hierarchy)| *cached_key == cache_key)
+            .map(|(_cached_key, hierarchy)| hierarchy.clone())
+    }) {
+        return Ok((hierarchy, 0));
+    }
+
+    let hierarchy = load_snapshot_coordinator_routing_hierarchy(snapshot, object_store)?;
+    COORDINATOR_ROUTING_HIERARCHY_CACHE.with(|cache| {
+        *cache.borrow_mut() = Some((cache_key, hierarchy.clone()));
+    });
+    Ok((hierarchy, 1))
+}
+
 fn load_snapshot_top_graph_object(
     snapshot: &SpireValidatedEpochSnapshot<'_>,
     object_store: &impl SpireObjectReader,
@@ -255,6 +290,42 @@ pub(super) fn collect_resolved_scan_plan_selection(
     let snapshot = SpireValidatedEpochSnapshot::from_snapshot(*snapshot)?;
     let leaf_count_start = Instant::now();
     let hierarchy = load_snapshot_coordinator_routing_hierarchy(&snapshot, object_store)?;
+    collect_resolved_scan_plan_selection_from_hierarchy(
+        &hierarchy,
+        1,
+        relation_options,
+        query,
+        leaf_count_start,
+    )
+}
+
+pub(super) fn collect_cached_resolved_scan_plan_selection(
+    cache_key: SpireRoutingHierarchyCacheKey,
+    snapshot: &SpirePublishedEpochSnapshot<'_>,
+    object_store: &impl SpireObjectReader,
+    relation_options: &EcSpireOptions,
+    query: &SpireScanQuery,
+) -> Result<SpireResolvedScanPlanSelection, String> {
+    let snapshot = SpireValidatedEpochSnapshot::from_snapshot(*snapshot)?;
+    let leaf_count_start = Instant::now();
+    let (hierarchy, routing_hierarchy_load_count) =
+        load_cached_coordinator_routing_hierarchy(cache_key, &snapshot, object_store)?;
+    collect_resolved_scan_plan_selection_from_hierarchy(
+        &hierarchy,
+        routing_hierarchy_load_count,
+        relation_options,
+        query,
+        leaf_count_start,
+    )
+}
+
+fn collect_resolved_scan_plan_selection_from_hierarchy(
+    hierarchy: &SpireLoadedRoutingHierarchy,
+    routing_hierarchy_load_count: u64,
+    relation_options: &EcSpireOptions,
+    query: &SpireScanQuery,
+    leaf_count_start: Instant,
+) -> Result<SpireResolvedScanPlanSelection, String> {
     let leaf_count =
         count_recursive_routing_leaf_pids(&hierarchy.root_object, &hierarchy.internal_objects_by_pid)?;
     let leaf_count_elapsed_ms =
@@ -273,8 +344,9 @@ pub(super) fn collect_resolved_scan_plan_selection(
     Ok(SpireResolvedScanPlanSelection {
         scan_plan,
         selected_leaf_pids,
-        routing_hierarchy_load_count: 1,
-        top_graph_load_count: u64::from(top_graph_plan.enabled && scan_plan.nprobe > 0),
+        routing_hierarchy_load_count,
+        top_graph_load_count: routing_hierarchy_load_count
+            * u64::from(top_graph_plan.enabled && scan_plan.nprobe > 0),
         leaf_count_elapsed_ms,
         route_select_elapsed_ms,
     })

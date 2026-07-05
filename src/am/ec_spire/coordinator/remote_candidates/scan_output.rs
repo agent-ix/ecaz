@@ -126,7 +126,11 @@ pub(crate) fn remote_search_production_scan_handoff_summary_row(
             pg_sys::AccessShareLock as pg_sys::LOCKMODE,
         )?;
         let relation_options = index.relation_options();
-        let scan_selection = scan::collect_resolved_scan_plan_selection(
+        let scan_selection = scan::collect_cached_resolved_scan_plan_selection(
+            scan::SpireRoutingHierarchyCacheKey {
+                index_relid: index.relid(),
+                active_epoch: root_control.active_epoch,
+            },
             &snapshot,
             &object_store,
             &relation_options,
@@ -605,7 +609,11 @@ fn remote_search_production_scan_heap_resolution_result_stream_impl(
         pg_sys::AccessShareLock as pg_sys::LOCKMODE,
     )?;
     let relation_options = index.relation_options();
-    let scan_selection = scan::collect_resolved_scan_plan_selection(
+    let scan_selection = scan::collect_cached_resolved_scan_plan_selection(
+        scan::SpireRoutingHierarchyCacheKey {
+            index_relid: index.relid(),
+            active_epoch: root_control.active_epoch,
+        },
         &snapshot,
         &object_store,
         &relation_options,
@@ -978,7 +986,11 @@ fn remote_search_production_scan_profile_rows_result(
     } else {
         options::SpireCandidateDedupeMode::NoReplicaDedupeDisabled
     };
-    let scan_selection = scan::collect_resolved_scan_plan_selection(
+    let scan_selection = scan::collect_cached_resolved_scan_plan_selection(
+        scan::SpireRoutingHierarchyCacheKey {
+            index_relid: index.relid(),
+            active_epoch: root_control.active_epoch,
+        },
         &snapshot,
         &object_store,
         &relation_options,
@@ -1061,7 +1073,11 @@ fn remote_search_production_global_candidate_threshold_score_result(
     } else {
         options::SpireCandidateDedupeMode::NoReplicaDedupeDisabled
     };
-    let scan_selection = scan::collect_resolved_scan_plan_selection(
+    let scan_selection = scan::collect_cached_resolved_scan_plan_selection(
+        scan::SpireRoutingHierarchyCacheKey {
+            index_relid: index.relid(),
+            active_epoch: root_control.active_epoch,
+        },
         &snapshot,
         &object_store,
         &relation_options,
@@ -1188,7 +1204,11 @@ fn remote_search_production_threshold_profile_rows_result(
     )?;
     let relation_options = index.relation_options();
     let payload_format = relation_options.assignment_payload_format();
-    let scan_selection = scan::collect_resolved_scan_plan_selection(
+    let scan_selection = scan::collect_cached_resolved_scan_plan_selection(
+        scan::SpireRoutingHierarchyCacheKey {
+            index_relid: index.relid(),
+            active_epoch: root_control.active_epoch,
+        },
         &snapshot,
         &object_store,
         &relation_options,

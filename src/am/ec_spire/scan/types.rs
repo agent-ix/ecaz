@@ -68,6 +68,12 @@ struct SpireLoadedRoutingHierarchy {
     top_graph: Option<(u64, SpireTopGraphPartitionObject)>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct SpireRoutingHierarchyCacheKey {
+    pub(super) index_relid: u32,
+    pub(super) active_epoch: u64,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct SpireResolvedScanPlanSelection {
     pub(super) scan_plan: SpireSingleLevelScanPlan,
