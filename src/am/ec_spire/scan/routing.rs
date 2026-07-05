@@ -208,6 +208,28 @@ pub(super) fn collect_scan_plan_selected_leaf_pids(
 
     let snapshot = SpireValidatedEpochSnapshot::from_snapshot(*snapshot)?;
     let hierarchy = load_snapshot_coordinator_routing_hierarchy(&snapshot, object_store)?;
+    collect_scan_plan_selected_leaf_pids_from_hierarchy(
+        &snapshot,
+        object_store,
+        &hierarchy,
+        query,
+        scan_plan,
+        top_graph_plan,
+    )
+}
+
+fn collect_scan_plan_selected_leaf_pids_from_hierarchy(
+    snapshot: &SpireValidatedEpochSnapshot<'_>,
+    object_store: &impl SpireObjectReader,
+    hierarchy: &SpireLoadedRoutingHierarchy,
+    query: &SpireScanQuery,
+    scan_plan: SpireSingleLevelScanPlan,
+    top_graph_plan: SpireTopGraphOptionPlan,
+) -> Result<Vec<u64>, String> {
+    if scan_plan.nprobe == 0 {
+        return Ok(Vec::new());
+    }
+
     let routes = if top_graph_plan.enabled {
         let (_top_graph_pid, top_graph) =
             load_snapshot_coordinator_top_graph_object(&snapshot, object_store)?.ok_or_else(
@@ -243,6 +265,42 @@ pub(super) fn count_scan_plan_routable_leaf_pids(
     let snapshot = SpireValidatedEpochSnapshot::from_snapshot(*snapshot)?;
     let hierarchy = load_snapshot_coordinator_routing_hierarchy(&snapshot, object_store)?;
     count_recursive_routing_leaf_pids(&hierarchy.root_object, &hierarchy.internal_objects_by_pid)
+}
+
+pub(super) fn collect_resolved_scan_plan_selection(
+    snapshot: &SpirePublishedEpochSnapshot<'_>,
+    object_store: &impl SpireObjectReader,
+    relation_options: &EcSpireOptions,
+    query: &SpireScanQuery,
+) -> Result<SpireResolvedScanPlanSelection, String> {
+    let snapshot = SpireValidatedEpochSnapshot::from_snapshot(*snapshot)?;
+    let leaf_count_start = Instant::now();
+    let hierarchy = load_snapshot_coordinator_routing_hierarchy(&snapshot, object_store)?;
+    let leaf_count =
+        count_recursive_routing_leaf_pids(&hierarchy.root_object, &hierarchy.internal_objects_by_pid)?;
+    let leaf_count_elapsed_ms =
+        u64::try_from(leaf_count_start.elapsed().as_millis()).unwrap_or(u64::MAX);
+    let scan_plan = resolve_single_level_scan_plan(leaf_count, relation_options.clone())?;
+    let top_graph_plan = relation_options.top_graph_plan()?;
+    let route_select_start = Instant::now();
+    let selected_leaf_pids = collect_scan_plan_selected_leaf_pids_from_hierarchy(
+        &snapshot,
+        object_store,
+        &hierarchy,
+        query,
+        scan_plan,
+        top_graph_plan,
+    )?;
+    let route_select_elapsed_ms =
+        u64::try_from(route_select_start.elapsed().as_millis()).unwrap_or(u64::MAX);
+    Ok(SpireResolvedScanPlanSelection {
+        scan_plan,
+        selected_leaf_pids,
+        routing_hierarchy_load_count: 1,
+        top_graph_load_count: u64::from(top_graph_plan.enabled && scan_plan.nprobe > 0),
+        leaf_count_elapsed_ms,
+        route_select_elapsed_ms,
+    })
 }
 
 fn route_root_object_to_leaf_pids(

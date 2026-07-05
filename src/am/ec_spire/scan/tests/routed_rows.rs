@@ -127,6 +127,44 @@
     }
 
     #[test]
+    fn collect_resolved_scan_plan_selection_loads_routing_hierarchy_once() {
+        let mut pid_allocator = SpirePidAllocator::default();
+        let mut local_vec_id_allocator = SpireLocalVecIdAllocator::default();
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let draft = build_partitioned_single_level_leaf_epoch_draft(
+            partitioned_build_input(
+                vec![assignment_input(10, 1), assignment_input(10, 2)],
+                vec![0, 1],
+            ),
+            &mut pid_allocator,
+            &mut local_vec_id_allocator,
+            &mut object_store,
+        )
+        .unwrap();
+        let snapshot = SpirePublishedEpochSnapshot::new(
+            &draft.epoch_manifest,
+            &draft.object_manifest,
+            &draft.placement_directory,
+        )
+        .unwrap();
+        let options = EcSpireOptions {
+            nprobe: 2,
+            ..EcSpireOptions::DEFAULT
+        };
+        let query = SpireScanQuery::new(vec![1.0, 0.0]).unwrap();
+
+        let selection =
+            collect_resolved_scan_plan_selection(&snapshot, &object_store, &options, &query)
+                .unwrap();
+
+        assert_eq!(selection.scan_plan.leaf_count, 2);
+        assert_eq!(selection.scan_plan.nprobe, 2);
+        assert_eq!(selection.selected_leaf_pids, draft.centroid_pids);
+        assert_eq!(selection.routing_hierarchy_load_count, 1);
+        assert_eq!(selection.top_graph_load_count, 0);
+    }
+
+    #[test]
     fn collect_snapshot_routed_probe_leaf_rows_accepts_recursive_leaf_parent() {
         let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
         let root_pid = SPIRE_FIRST_PID;

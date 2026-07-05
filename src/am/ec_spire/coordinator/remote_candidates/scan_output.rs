@@ -126,16 +126,14 @@ pub(crate) fn remote_search_production_scan_handoff_summary_row(
             pg_sys::AccessShareLock as pg_sys::LOCKMODE,
         )?;
         let relation_options = index.relation_options();
-        let top_graph_plan = relation_options.top_graph_plan()?;
-        let leaf_count = scan::count_scan_plan_routable_leaf_pids(&snapshot, &object_store)?;
-        let scan_plan = options::resolve_single_level_scan_plan(leaf_count, relation_options)?;
-        let selected_leaf_pids = scan::collect_scan_plan_selected_leaf_pids(
+        let scan_selection = scan::collect_resolved_scan_plan_selection(
             &snapshot,
             &object_store,
+            &relation_options,
             &query_for_scan,
-            scan_plan,
-            top_graph_plan,
         )?;
+        let scan_plan = scan_selection.scan_plan;
+        let selected_leaf_pids = scan_selection.selected_leaf_pids;
         let selected_pid_count = u64::try_from(selected_leaf_pids.len())
             .map_err(|_| "ec_spire production scan handoff selected PID count exceeds u64")?;
 
@@ -607,31 +605,36 @@ fn remote_search_production_scan_heap_resolution_result_stream_impl(
         pg_sys::AccessShareLock as pg_sys::LOCKMODE,
     )?;
     let relation_options = index.relation_options();
-    let top_graph_plan = relation_options.top_graph_plan()?;
-    let leaf_count_start = std::time::Instant::now();
-    let leaf_count = scan::count_scan_plan_routable_leaf_pids(&snapshot, &object_store)?;
-    add_profile_count(&mut metrics.routing_hierarchy_load_count, 1);
-    add_profile_elapsed(&mut metrics.leaf_count_elapsed_ms, leaf_count_start);
-    let scan_plan = options::resolve_single_level_scan_plan(leaf_count, relation_options)?;
+    let scan_selection = scan::collect_resolved_scan_plan_selection(
+        &snapshot,
+        &object_store,
+        &relation_options,
+        &query_for_scan,
+    )?;
+    add_profile_count(
+        &mut metrics.routing_hierarchy_load_count,
+        scan_selection.routing_hierarchy_load_count,
+    );
+    add_profile_count(
+        &mut metrics.top_graph_load_count,
+        scan_selection.top_graph_load_count,
+    );
+    add_profile_count(
+        &mut metrics.leaf_count_elapsed_ms,
+        scan_selection.leaf_count_elapsed_ms,
+    );
+    add_profile_count(
+        &mut metrics.route_select_elapsed_ms,
+        scan_selection.route_select_elapsed_ms,
+    );
+    let scan_plan = scan_selection.scan_plan;
     let top_k = match top_k_override {
         Some(top_k) => top_k,
         None => scan_plan.candidate_limit.ok_or_else(|| {
             "ec_spire production AM scan candidate limit is unavailable".to_owned()
         })?,
     };
-    let route_select_start = std::time::Instant::now();
-    let selected_leaf_pids = scan::collect_scan_plan_selected_leaf_pids(
-        &snapshot,
-        &object_store,
-        &query_for_scan,
-        scan_plan,
-        top_graph_plan,
-    )?;
-    add_profile_count(&mut metrics.routing_hierarchy_load_count, 1);
-    if top_graph_plan.enabled {
-        add_profile_count(&mut metrics.top_graph_load_count, 1);
-    }
-    add_profile_elapsed(&mut metrics.route_select_elapsed_ms, route_select_start);
+    let selected_leaf_pids = scan_selection.selected_leaf_pids;
     let selected_pid_count = u64::try_from(selected_leaf_pids.len())
         .map_err(|_| "ec_spire production scan heap selected PID count exceeds u64")?;
     let execution_summary = remote_search_execution_summary_row(
@@ -975,16 +978,13 @@ fn remote_search_production_scan_profile_rows_result(
     } else {
         options::SpireCandidateDedupeMode::NoReplicaDedupeDisabled
     };
-    let top_graph_plan = relation_options.top_graph_plan()?;
-    let leaf_count = scan::count_scan_plan_routable_leaf_pids(&snapshot, &object_store)?;
-    let scan_plan = options::resolve_single_level_scan_plan(leaf_count, relation_options)?;
-    let selected_leaf_pids = scan::collect_scan_plan_selected_leaf_pids(
+    let scan_selection = scan::collect_resolved_scan_plan_selection(
         &snapshot,
         &object_store,
+        &relation_options,
         &query_for_scan,
-        scan_plan,
-        top_graph_plan,
     )?;
+    let selected_leaf_pids = scan_selection.selected_leaf_pids;
     let fanout_plan = plan_remote_search_fanout(&snapshot, &selected_leaf_pids)?;
     let mut rows = Vec::new();
     if !fanout_plan.local_selected_pids.is_empty() {
@@ -1061,16 +1061,13 @@ fn remote_search_production_global_candidate_threshold_score_result(
     } else {
         options::SpireCandidateDedupeMode::NoReplicaDedupeDisabled
     };
-    let top_graph_plan = relation_options.top_graph_plan()?;
-    let leaf_count = scan::count_scan_plan_routable_leaf_pids(&snapshot, &object_store)?;
-    let scan_plan = options::resolve_single_level_scan_plan(leaf_count, relation_options)?;
-    let selected_leaf_pids = scan::collect_scan_plan_selected_leaf_pids(
+    let scan_selection = scan::collect_resolved_scan_plan_selection(
         &snapshot,
         &object_store,
+        &relation_options,
         &query_for_scan,
-        scan_plan,
-        top_graph_plan,
     )?;
+    let selected_leaf_pids = scan_selection.selected_leaf_pids;
     let fanout_plan = plan_remote_search_fanout(&snapshot, &selected_leaf_pids)?;
     let mut batches = Vec::new();
     if !fanout_plan.local_selected_pids.is_empty() {
@@ -1191,16 +1188,13 @@ fn remote_search_production_threshold_profile_rows_result(
     )?;
     let relation_options = index.relation_options();
     let payload_format = relation_options.assignment_payload_format();
-    let top_graph_plan = relation_options.top_graph_plan()?;
-    let leaf_count = scan::count_scan_plan_routable_leaf_pids(&snapshot, &object_store)?;
-    let scan_plan = options::resolve_single_level_scan_plan(leaf_count, relation_options)?;
-    let selected_leaf_pids = scan::collect_scan_plan_selected_leaf_pids(
+    let scan_selection = scan::collect_resolved_scan_plan_selection(
         &snapshot,
         &object_store,
+        &relation_options,
         &query_for_scan,
-        scan_plan,
-        top_graph_plan,
     )?;
+    let selected_leaf_pids = scan_selection.selected_leaf_pids;
     let fanout_plan = plan_remote_search_fanout(&snapshot, &selected_leaf_pids)?;
     let mut rows = Vec::new();
     if !fanout_plan.local_selected_pids.is_empty() {
