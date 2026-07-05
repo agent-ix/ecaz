@@ -471,6 +471,11 @@ struct SpireRemotePooledConnection {
     tls_config: SpireRemoteTlsConfig,
     validated_remote_index_oid: Option<u32>,
     validated_endpoint_identity: Option<SpireRemoteValidatedEndpointIdentity>,
+    candidate_statement: Option<tokio_postgres::Statement>,
+    candidate_initial_threshold_statement: Option<tokio_postgres::Statement>,
+    heap_statement: Option<tokio_postgres::Statement>,
+    explicit_heap_statement: Option<tokio_postgres::Statement>,
+    typed_tuple_payload_statement: Option<tokio_postgres::Statement>,
 }
 
 impl Drop for SpireRemotePooledConnection {
@@ -596,6 +601,23 @@ fn cached_production_endpoint_identity(
         return None;
     }
     Some((remote_index_oid, endpoint_identity.clone()))
+}
+
+async fn production_pooled_statement<'a>(
+    client: &tokio_postgres::Client,
+    slot: &'a mut Option<tokio_postgres::Statement>,
+    sql: &'static str,
+) -> Result<&'a tokio_postgres::Statement, &'static str> {
+    if slot.is_none() {
+        let statement = client
+            .prepare(sql)
+            .await
+            .map_err(|error| production_remote_query_failure_category(&error))?;
+        *slot = Some(statement);
+    }
+    Ok(slot
+        .as_ref()
+        .expect("SPIRE production pooled statement initialized"))
 }
 
 fn with_spire_remote_backend_transport_state<T>(
@@ -1261,6 +1283,11 @@ impl SpireRemoteProductionTransportAdapter {
                             tls_config: connection.tls_config,
                             validated_remote_index_oid: None,
                             validated_endpoint_identity: None,
+                            candidate_statement: None,
+                            candidate_initial_threshold_statement: None,
+                            heap_statement: None,
+                            explicit_heap_statement: None,
+                            typed_tuple_payload_statement: None,
                         }
                     }
                     Err(error) => {
@@ -1372,10 +1399,16 @@ impl SpireRemoteProductionTransportAdapter {
                 add_profile_count(&mut query_metrics.candidate_receive_query_count, 1);
                 let result_rows =
                     if let Some(initial_threshold_score) = request.initial_threshold_score {
+                        let statement = production_pooled_statement(
+                            &connection.client,
+                            &mut connection.candidate_initial_threshold_statement,
+                            SPIRE_REMOTE_SEARCH_LIBPQ_INITIAL_THRESHOLD_SQL_TEMPLATE,
+                        )
+                        .await?;
                         connection
                             .client
                             .query(
-                                SPIRE_REMOTE_SEARCH_LIBPQ_INITIAL_THRESHOLD_SQL_TEMPLATE,
+                                statement,
                                 &[
                                     &remote_index_oid,
                                     &requested_epoch,
@@ -1389,10 +1422,16 @@ impl SpireRemoteProductionTransportAdapter {
                             .await
                             .map_err(|error| production_remote_query_failure_category(&error))?
                     } else {
+                        let statement = production_pooled_statement(
+                            &connection.client,
+                            &mut connection.candidate_statement,
+                            SPIRE_REMOTE_SEARCH_LIBPQ_SQL_TEMPLATE,
+                        )
+                        .await?;
                         connection
                             .client
                             .query(
-                                SPIRE_REMOTE_SEARCH_LIBPQ_SQL_TEMPLATE,
+                                statement,
                                 &[
                                     &remote_index_oid,
                                     &requested_epoch,
@@ -1559,7 +1598,7 @@ impl SpireRemoteProductionTransportAdapter {
         let SpireRemoteProductionCandidateSession {
             request,
             _governance_permit,
-            connection,
+            mut connection,
             remote_index_oid,
             endpoint_identity,
             selected_pids,
@@ -1603,10 +1642,16 @@ impl SpireRemoteProductionTransportAdapter {
                     None if global_heap_candidates.is_some() => {
                         let candidates = global_heap_candidates.as_ref().expect("checked is_some");
                         let parameters = explicit_heap_candidate_parameters(candidates)?;
+                        let statement = production_pooled_statement(
+                            &connection.client,
+                            &mut connection.explicit_heap_statement,
+                            SPIRE_REMOTE_SEARCH_LIBPQ_EXPLICIT_HEAP_SQL_TEMPLATE,
+                        )
+                        .await?;
                         connection
                             .client
                             .query(
-                                SPIRE_REMOTE_SEARCH_LIBPQ_EXPLICIT_HEAP_SQL_TEMPLATE,
+                                statement,
                                 &[
                                     &remote_index_oid,
                                     &requested_epoch,
@@ -1626,10 +1671,16 @@ impl SpireRemoteProductionTransportAdapter {
                     }
                     Some(tuple_payload_columns) => {
                         let sql = remote_tuple_payload_production_sql(&endpoint_identity)?;
+                        let statement = production_pooled_statement(
+                            &connection.client,
+                            &mut connection.typed_tuple_payload_statement,
+                            sql,
+                        )
+                        .await?;
                         connection
                             .client
                             .query(
-                                sql,
+                                statement,
                                 &[
                                     &remote_index_oid,
                                     &requested_epoch,
@@ -1643,21 +1694,29 @@ impl SpireRemoteProductionTransportAdapter {
                             .await
                             .map_err(|error| production_remote_query_failure_category(&error))
                     }
-                    None => connection
-                        .client
-                        .query(
+                    None => {
+                        let statement = production_pooled_statement(
+                            &connection.client,
+                            &mut connection.heap_statement,
                             SPIRE_REMOTE_SEARCH_LIBPQ_HEAP_SQL_TEMPLATE,
-                            &[
-                                &remote_index_oid,
-                                &requested_epoch,
-                                &request.query,
-                                &selected_pids,
-                                &top_k,
-                                &request.consistency_mode,
-                            ],
                         )
-                        .await
-                        .map_err(|error| production_remote_query_failure_category(&error)),
+                        .await?;
+                        connection
+                            .client
+                            .query(
+                                statement,
+                                &[
+                                    &remote_index_oid,
+                                    &requested_epoch,
+                                    &request.query,
+                                    &selected_pids,
+                                    &top_k,
+                                    &request.consistency_mode,
+                                ],
+                            )
+                            .await
+                            .map_err(|error| production_remote_query_failure_category(&error))
+                    }
                 }?;
                 add_profile_elapsed(&mut query_metrics.heap_receive_elapsed_ms, heap_start);
                 Ok((result, query_metrics))
