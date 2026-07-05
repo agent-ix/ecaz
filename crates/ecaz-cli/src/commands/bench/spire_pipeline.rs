@@ -1695,15 +1695,19 @@ async fn fetch_source_vectors_for_truth_ids(
     if ids.is_empty() {
         return Ok(HashMap::new());
     }
-    let sql = format!("SELECT id::bigint, source FROM {corpus_table} WHERE id = ANY($1::bigint[])");
-    let rows = client
-        .query(&sql, &[&ids])
-        .await
-        .wrap_err_with(|| format!("fetching geometry truth sources from {corpus_table}"))?;
-    Ok(rows
-        .into_iter()
-        .map(|row| (row.get::<_, i64>(0), row.get::<_, Vec<f32>>(1)))
-        .collect())
+    let sql = format!("SELECT id::bigint, source FROM {corpus_table} WHERE id = $1::bigint");
+    let mut vectors = HashMap::with_capacity(ids.len());
+    for id in ids {
+        let row = client
+            .query_opt(&sql, &[&id])
+            .await
+            .wrap_err_with(|| {
+                format!("fetching geometry truth source id {id} from {corpus_table}")
+            })?
+            .ok_or_else(|| eyre!("truth source id {id} not found in {corpus_table}"))?;
+        vectors.insert(row.get::<_, i64>(0), row.get::<_, Vec<f32>>(1));
+    }
+    Ok(vectors)
 }
 
 async fn query_leaf_block_rank_rows(
