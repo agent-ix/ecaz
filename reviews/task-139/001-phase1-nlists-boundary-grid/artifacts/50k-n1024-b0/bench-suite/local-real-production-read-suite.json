@@ -1,0 +1,59 @@
+{
+  "artifact_dir": "reviews/task-139/001-phase1-nlists-boundary-grid/artifacts/50k-n1024-b0/bench-suite",
+  "defaults": {
+    "pg": 18,
+    "queries_limit": 200
+  },
+  "name": "local-multinode-production-read",
+  "schema_version": 1,
+  "steps": [
+    {
+      "kind": "storage",
+      "log_file": "reviews/task-139/001-phase1-nlists-boundary-grid/artifacts/50k-n1024-b0/bench-suite/storage.log",
+      "name": "storage-local-coordinator",
+      "prefix": "ec_real_50k",
+      "tags": [
+        "local",
+        "multinode",
+        "storage"
+      ]
+    },
+    {
+      "include_cost_snapshot": true,
+      "include_production_read_profile": true,
+      "include_query_metrics": true,
+      "include_recall": true,
+      "include_remote": true,
+      "index": "t139_50k_n1024_b0_coord_idx",
+      "kind": "spire-pipeline",
+      "log_output": "reviews/task-139/001-phase1-nlists-boundary-grid/artifacts/50k-n1024-b0/bench-suite/production-read-k10-default-default.log",
+      "name": "production-read-k10-default-default",
+      "prefix": "ec_real_50k",
+      "production_read_only": true,
+      "production_read_timeline_no_payload": true,
+      "queries_limit": 200,
+      "query_metric_k": 10,
+      "query_metric_projection_columns": [
+        "id"
+      ],
+      "require_remote_placements": true,
+      "result_identity_output": "reviews/task-139/001-phase1-nlists-boundary-grid/artifacts/50k-n1024-b0/bench-suite/production-read-k10-default-default-identity.jsonl",
+      "session_gucs": [],
+      "sweep": [
+        31,
+        61,
+        128,
+        256
+      ],
+      "tags": [
+        "phase5",
+        "local",
+        "multinode",
+        "production-read",
+        "default-cap"
+      ],
+      "top_k": 10,
+      "truth_corpus_file": "data/task111a_real50k/ec_real_50k_corpus.tsv"
+    }
+  ]
+}

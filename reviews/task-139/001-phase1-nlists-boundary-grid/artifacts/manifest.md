@@ -1,13 +1,26 @@
 # Task 139 Phase 1: nlists x boundary Grid (local multi-instance)
 
 - Pre-registration head SHA: c12ad4d52
-- Result head SHA: TBD
+- Result head SHA: 19e32e5ef
 - Task bucket: `reviews/task-139/001-phase1-nlists-boundary-grid`
 - Suite configs: `artifacts/task139-phase1-50k-suite.json`,
   `artifacts/task139-phase1-100k-suite.json`
-- Status: running; gate satisfied — Task 137 packet 001 proved the
-  identity-on distributed surface returns distinct results, and on Task 138
-  packet 001 (distinct_recall@k metric) — both consumed by this branch.
+- Status: superseded — debug-build substrate. Wind-down feedback:
+  `reviews/task-139/001-phase1-nlists-boundary-grid/feedback/2026-07-04-01-agent-ix.md`.
+
+## Measurement Substrate Warning
+
+All completed cells in this packet ran through the local multi-instance fixture
+that installed `ecaz.so` from the dev profile (`cargo pgrx install --test` /
+`Finished 'dev' profile [unoptimized + debuginfo]`). The packet is therefore
+not decision-grade for absolute latency claims, and no p50/p95/p99 number here
+may be cited against release baselines.
+
+Usable with this caveat: distinct recall, scan-profile counters, selected-PID
+counts, storage shape, and failure modes observed on the debug substrate.
+Superseded work: all remaining Task 139 phases and the unrun 100k grid are
+deferred to the remediation program filed as Tasks 141-146, with honest Pareto
+confirmation owned by Task 146 after the release-fixture and bench-guard fixes.
 
 ## Matrix
 
@@ -59,4 +72,12 @@ shelve is decided in the Phase 4 closeout packet, not here.
 
 ## Key Results
 
-TBD.
+- Completed 50k result files: 12/15 cells. Successful cells cover nlists
+  128/316/512/1024 x boundary_replica_count 0/1/2.
+- Failed 50k cells: n2048/b0 and n2048/b1 both reached production read and
+  failed with `remote_candidate_receive_failed` from node_id 2. Failure logs are
+  preserved under `artifacts/50k-n2048-b{0,1}/`.
+- Halted and pruned: n2048/b2 was interrupted per wind-down feedback before a
+  completed result; its non-decision partial fixture/artifacts were removed.
+- Not run: 100k grid and Task 139 phases 2-4. Do not treat this packet as a
+  promote/iterate/shelve decision for a default distributed read shape.

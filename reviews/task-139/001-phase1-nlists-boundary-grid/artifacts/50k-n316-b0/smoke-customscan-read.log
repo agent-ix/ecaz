@@ -6,19 +6,19 @@ SET
 3	active	105
 4	active	105
 === EXPLAIN ANALYZE: vector ORDER BY LIMIT through CustomScan ===
-Limit  (cost=7.84..8.36 rows=10 width=12) (actual time=166.153..166.193 rows=10.00 loops=1)
-  Buffers: shared hit=1046 read=1
-  ->  Custom Scan (EcSpireDistributedScan) on ec_real_50k_corpus  (cost=7.84..8.36 rows=10 width=12) (actual time=166.150..166.189 rows=10.00 loops=1)
+Limit  (cost=7.84..8.36 rows=10 width=12) (actual time=220.347..220.436 rows=10.00 loops=1)
+  Buffers: shared hit=1044 read=1
+  ->  Custom Scan (EcSpireDistributedScan) on ec_real_50k_corpus  (cost=7.84..8.36 rows=10 width=12) (actual time=220.344..220.431 rows=10.00 loops=1)
         node: EcSpireDistributedScan
         remote_fanout: 3
         tuple_transport_status: ready
         nprobe: 18
         rerank_width: 0
-        Buffers: shared hit=1046 read=1
+        Buffers: shared hit=1044 read=1
 Planning:
   Buffers: shared hit=1700 read=289 dirtied=1
-Planning Time: 84.759 ms
-Execution Time: 166.611 ms
+Planning Time: 104.248 ms
+Execution Time: 220.975 ms
 === Handoff summary ===
 1	ec_spire.remote_search_consistency_mode	strict	18	18	0	18	0	3	3	0	0	none	30	10	0	requires_remote_heap_resolution	remote_heap_resolution	requires_remote_heap_resolution	add origin-node row locator resolution before returning remote heap rows
 === Production read profile ===
@@ -42,18 +42,18 @@ final_heap_fetch_status	remote_ready
 next_blocker	none
 status	ready
 recommendation	none
-planning_elapsed_ms	90
-fingerprint_guard_elapsed_ms	28
+planning_elapsed_ms	116
+fingerprint_guard_elapsed_ms	38
 conninfo_secret_lookup_elapsed_ms	0
 connect_elapsed_ms	0
 statement_timeout_setup_elapsed_ms	0
-regclass_probe_elapsed_ms	0
-endpoint_identity_elapsed_ms	3
-candidate_receive_elapsed_ms	57
-heap_receive_elapsed_ms	60
+regclass_probe_elapsed_ms	4
+endpoint_identity_elapsed_ms	6
+candidate_receive_elapsed_ms	81
+heap_receive_elapsed_ms	80
 payload_decode_elapsed_ms	0
 merge_elapsed_ms	0
-total_elapsed_ms	134
+total_elapsed_ms	178
 conninfo_secret_lookup_count	3
 socket_open_count	0
 tls_disable_count	0

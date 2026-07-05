@@ -1,0 +1,9 @@
+run_dir=/home/peter/dev/ecaz-task139/target/spire-local-multinode-t13950kn316b2
+coord_port=41050
+remote1_port=41051
+remote2_port=41052
+remote3_port=41053
+tier=representative
+prefix=ec_real_50k
+SPIRE local multinode fixture passed
+HARNESS PASSED

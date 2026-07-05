@@ -5,3 +5,5 @@ remote2_port=41032
 remote3_port=41033
 tier=representative
 prefix=ec_real_50k
+SPIRE local multinode fixture passed
+HARNESS PASSED

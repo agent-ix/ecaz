@@ -1,0 +1,44 @@
+2026-07-03 09:43:36.412 PDT [1206322] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-07-03 09:43:36.414 PDT [1206322] LOG:  listening on Unix socket "/home/peter/dev/ecaz-task139/target/spire-local-multinode-sockets-t13950kn512b1/.s.PGSQL.41073"
+2026-07-03 09:43:36.422 PDT [1206328] LOG:  database system was shut down at 2026-07-03 09:43:35 PDT
+2026-07-03 09:43:36.426 PDT [1206322] LOG:  database system is ready to accept connections
+2026-07-03 09:48:36.429 PDT [1206326] LOG:  checkpoint starting: time
+2026-07-03 09:49:13.705 PDT [1206326] LOG:  checkpoint complete: wrote 385 buffers (2.3%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=36.968 s, sync=0.273 s, total=37.276 s; sync files=145, longest=0.010 s, average=0.002 s; distance=3033 kB, estimate=3033 kB; lsn=0/1A4ACA8, redo lsn=0/1A4AC18
+2026-07-03 10:41:06.732 PDT [1212402] LOG:  skipping vacuum of "ec_real_50k_node_4_corpus" --- lock not available
+2026-07-03 10:42:06.724 PDT [1212473] LOG:  skipping vacuum of "ec_real_50k_node_4_corpus" --- lock not available
+2026-07-03 10:43:06.722 PDT [1212556] LOG:  skipping vacuum of "ec_real_50k_node_4_corpus" --- lock not available
+2026-07-03 10:43:36.382 PDT [1206326] LOG:  checkpoint starting: time
+2026-07-03 10:44:06.720 PDT [1212675] LOG:  skipping vacuum of "ec_real_50k_node_4_corpus" --- lock not available
+2026-07-03 10:45:06.743 PDT [1212746] LOG:  skipping vacuum of "ec_real_50k_node_4_corpus" --- lock not available
+2026-07-03 10:46:06.724 PDT [1212872] LOG:  skipping vacuum of "ec_real_50k_node_4_corpus" --- lock not available
+2026-07-03 10:47:06.725 PDT [1212939] LOG:  skipping vacuum of "ec_real_50k_node_4_corpus" --- lock not available
+2026-07-03 10:48:06.193 PDT [1206326] LOG:  checkpoint complete: wrote 15140 buffers (92.4%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 24 recycled; write=269.708 s, sync=0.022 s, total=269.811 s; sync files=51, longest=0.005 s, average=0.001 s; distance=389011 kB, estimate=389011 kB; lsn=0/1962FB78, redo lsn=0/1962FA88
+2026-07-03 10:48:06.727 PDT [1213060] LOG:  skipping vacuum of "ec_real_50k_node_4_corpus" --- lock not available
+2026-07-03 10:49:06.733 PDT [1213138] LOG:  skipping vacuum of "ec_real_50k_node_4_corpus" --- lock not available
+2026-07-03 10:50:06.735 PDT [1213200] LOG:  skipping vacuum of "ec_real_50k_node_4_corpus" --- lock not available
+2026-07-03 10:51:06.750 PDT [1213309] LOG:  skipping vacuum of "ec_real_50k_node_4_corpus" --- lock not available
+2026-07-03 10:52:06.751 PDT [1213404] LOG:  skipping vacuum of "ec_real_50k_node_4_corpus" --- lock not available
+2026-07-03 10:53:06.752 PDT [1213505] LOG:  skipping vacuum of "ec_real_50k_node_4_corpus" --- lock not available
+2026-07-03 10:58:37.002 PDT [1206326] LOG:  checkpoint starting: time
+2026-07-03 10:59:14.847 PDT [1206326] LOG:  checkpoint complete: wrote 412 buffers (2.5%), wrote 2 SLRU buffers; 0 WAL file(s) added, 0 removed, 5 recycled; write=37.793 s, sync=0.021 s, total=37.846 s; sync files=45, longest=0.005 s, average=0.001 s; distance=89705 kB, estimate=359080 kB; lsn=0/1EDCE6D8, redo lsn=0/1EDC9FB8
+2026-07-03 11:03:36.058 PDT [1206326] LOG:  checkpoint starting: time
+2026-07-03 11:03:36.072 PDT [1206326] LOG:  checkpoint complete: wrote 0 buffers (0.0%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.004 s, sync=0.001 s, total=0.014 s; sync files=1, longest=0.001 s, average=0.001 s; distance=121 kB, estimate=323185 kB; lsn=0/1EDE8740, redo lsn=0/1EDE86E8
+2026-07-03 11:08:36.866 PDT [1206326] LOG:  checkpoint starting: time
+2026-07-03 11:08:36.893 PDT [1206326] LOG:  checkpoint complete: wrote 0 buffers (0.0%), wrote 2 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.004 s, sync=0.001 s, total=0.028 s; sync files=1, longest=0.001 s, average=0.001 s; distance=98 kB, estimate=290876 kB; lsn=0/1EE00F78, redo lsn=0/1EE00F20
+2026-07-03 11:13:36.309 PDT [1206326] LOG:  checkpoint starting: time
+2026-07-03 11:13:36.340 PDT [1206326] LOG:  checkpoint complete: wrote 0 buffers (0.0%), wrote 2 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.009 s, sync=0.003 s, total=0.032 s; sync files=1, longest=0.003 s, average=0.003 s; distance=79 kB, estimate=261796 kB; lsn=0/1EE14CD0, redo lsn=0/1EE14C78
+2026-07-03 11:18:36.011 PDT [1206326] LOG:  checkpoint starting: time
+2026-07-03 11:18:36.055 PDT [1206326] LOG:  checkpoint complete: wrote 0 buffers (0.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.002 s, sync=0.002 s, total=0.044 s; sync files=1, longest=0.002 s, average=0.002 s; distance=63 kB, estimate=235623 kB; lsn=0/1EE24B80, redo lsn=0/1EE24B28
+2026-07-03 11:23:36.736 PDT [1206326] LOG:  checkpoint starting: time
+2026-07-03 11:23:36.758 PDT [1206326] LOG:  checkpoint complete: wrote 0 buffers (0.0%), wrote 2 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.004 s, sync=0.003 s, total=0.022 s; sync files=1, longest=0.003 s, average=0.003 s; distance=51 kB, estimate=212066 kB; lsn=0/1EE31A90, redo lsn=0/1EE31A38
+2026-07-03 11:28:36.135 PDT [1206326] LOG:  checkpoint starting: time
+2026-07-03 11:28:36.238 PDT [1206326] LOG:  checkpoint complete: wrote 0 buffers (0.0%), wrote 2 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.012 s, sync=0.003 s, total=0.103 s; sync files=1, longest=0.003 s, average=0.003 s; distance=40 kB, estimate=190863 kB; lsn=0/1EE3BDE0, redo lsn=0/1EE3BD60
+2026-07-03 11:33:36.853 PDT [1206326] LOG:  checkpoint starting: time
+2026-07-03 11:33:36.869 PDT [1206326] LOG:  checkpoint complete: wrote 0 buffers (0.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.003 s, sync=0.001 s, total=0.016 s; sync files=1, longest=0.001 s, average=0.001 s; distance=40 kB, estimate=171781 kB; lsn=0/1EE46058, redo lsn=0/1EE45FE8
+2026-07-03 11:35:53.029 PDT [1206322] LOG:  received fast shutdown request
+2026-07-03 11:35:53.032 PDT [1206322] LOG:  aborting any active transactions
+2026-07-03 11:35:53.033 PDT [1206322] LOG:  background worker "logical replication launcher" (PID 1206331) exited with exit code 1
+2026-07-03 11:35:53.037 PDT [1206326] LOG:  shutting down
+2026-07-03 11:35:53.039 PDT [1206326] LOG:  checkpoint starting: shutdown immediate
+2026-07-03 11:35:53.052 PDT [1206326] LOG:  checkpoint complete: wrote 0 buffers (0.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.002 s, sync=0.002 s, total=0.015 s; sync files=1, longest=0.002 s, average=0.002 s; distance=18 kB, estimate=154605 kB; lsn=0/1EE4A810, redo lsn=0/1EE4A810
+2026-07-03 11:35:53.082 PDT [1206322] LOG:  database system is shut down

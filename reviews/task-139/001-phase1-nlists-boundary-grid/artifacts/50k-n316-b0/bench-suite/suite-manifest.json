@@ -4,7 +4,7 @@
   "config": "reviews/task-139/001-phase1-nlists-boundary-grid/artifacts/50k-n316-b0/bench-suite/local-real-production-read-suite.json",
   "config_sha256": "0590ae4faa06aae2dc577018e0b0ba58b56c7a3e83f36fa268ce72536c98d959",
   "dry_run": false,
-  "generated_at_unix_ms": 1783073347375,
+  "generated_at_unix_ms": 1783076674048,
   "connection": {
     "database": "postgres",
     "host": "/home/peter/dev/ecaz-task139/target/spire-local-multinode-sockets-t13950kn316b0",
@@ -42,9 +42,9 @@
         "reviews/task-139/001-phase1-nlists-boundary-grid/artifacts/50k-n316-b0/bench-suite/storage.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1783073347376,
-      "finished_at_unix_ms": 1783073347438,
-      "duration_ms": 62,
+      "started_at_unix_ms": 1783076674049,
+      "finished_at_unix_ms": 1783076674112,
+      "duration_ms": 63,
       "exit_code": 0
     },
     {
@@ -102,11 +102,11 @@
         "reviews/task-139/001-phase1-nlists-boundary-grid/artifacts/50k-n316-b0/bench-suite/production-read-k10-default-default.log",
         "reviews/task-139/001-phase1-nlists-boundary-grid/artifacts/50k-n316-b0/bench-suite/production-read-k10-default-default-identity.jsonl"
       ],
-      "status": "failed",
-      "started_at_unix_ms": 1783073347439,
-      "finished_at_unix_ms": 1783074279223,
-      "duration_ms": 985870,
-      "exit_code": 1
+      "status": "succeeded",
+      "started_at_unix_ms": 1783076674113,
+      "finished_at_unix_ms": 1783078049794,
+      "duration_ms": 1455185,
+      "exit_code": 0
     }
   ]
 }
