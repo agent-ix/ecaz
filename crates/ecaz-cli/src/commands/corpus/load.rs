@@ -1517,11 +1517,12 @@ async fn ensure_chunked_target_table(
     }
     let with_clause = reloptions::format_with_clause(table_reloptions);
     let ddl = if is_corpus {
+        let source_identity_column = spire_source_identity_column_ddl(profile);
         format!(
             "CREATE TABLE {table} (
                 id        bigint PRIMARY KEY,
                 source    real[] NOT NULL,
-                embedding {embedding} NOT NULL
+                embedding {embedding} NOT NULL{source_identity_column}
             ){with_clause}",
             embedding = profile.embedding_type
         )
@@ -1740,12 +1741,12 @@ async fn load_one_chunk(
     copy_rows_to_stage(&tx, chunk_path, dim, chunk.rows, kind.as_str()).await?;
     match encode {
         Some((profile, bits, seed)) => {
+            let (insert_columns, select_columns) = corpus_insert_columns(profile, bits, seed);
             tx.batch_execute(&format!(
-                "INSERT INTO {table} (id, source, embedding)
-                 SELECT id, source, {fn_name}(source, {bits}, {seed})
+                "INSERT INTO {table} ({insert_columns})
+                 SELECT {select_columns}
                  FROM ecaz_chunk_stage
-                 ORDER BY id",
-                fn_name = profile.encoder_function
+                 ORDER BY id"
             ))
             .await
             .wrap_err_with(|| format!("inserting corpus chunk {}", chunk.path))?;
@@ -1804,12 +1805,13 @@ async fn ensure_corpus_table(
             .await?;
     }
     let with_clause = reloptions::format_with_clause(table_reloptions);
+    let source_identity_column = spire_source_identity_column_ddl(profile);
     client
         .batch_execute(&format!(
             "CREATE TABLE {table} (
                 id        bigint PRIMARY KEY,
                 source    real[] NOT NULL,
-                embedding {embedding} NOT NULL
+                embedding {embedding} NOT NULL{source_identity_column}
             ){with_clause}",
             embedding = profile.embedding_type
         ))
@@ -1838,12 +1840,12 @@ async fn ensure_corpus_table(
         fn_name = profile.encoder_function
     );
     let encode_started = Instant::now();
+    let (insert_columns, select_columns) = corpus_insert_columns(profile, bits, seed);
     tx.batch_execute(&format!(
-        "INSERT INTO {table} (id, source, embedding)
-             SELECT id, source, {fn_name}(source, {bits}, {seed})
+        "INSERT INTO {table} ({insert_columns})
+             SELECT {select_columns}
              FROM ecaz_corpus_stage
-             ORDER BY id",
-        fn_name = profile.encoder_function
+             ORDER BY id"
     ))
     .await
     .wrap_err_with(|| format!("encoding embeddings for {table}"))?;
@@ -1855,6 +1857,30 @@ async fn ensure_corpus_table(
         encode_started.elapsed()
     );
     psql::row_count(client, table).await.map(|n| n as usize)
+}
+
+fn spire_source_identity_column_ddl(profile: &IndexProfile) -> &'static str {
+    if profile.name == "ec_spire" {
+        ",
+                source_identity bytea NOT NULL"
+    } else {
+        ""
+    }
+}
+
+fn corpus_insert_columns(profile: &IndexProfile, bits: i32, seed: i64) -> (String, String) {
+    let embedding_expr = format!("{}(source, {bits}, {seed})", profile.encoder_function);
+    if profile.name == "ec_spire" {
+        (
+            "id, source, embedding, source_identity".to_owned(),
+            format!("id, source, {embedding_expr}, decode(lpad(to_hex(id), 32, '0'), 'hex')"),
+        )
+    } else {
+        (
+            "id, source, embedding".to_owned(),
+            format!("id, source, {embedding_expr}"),
+        )
+    }
 }
 
 async fn apply_table_reloptions(
@@ -2316,6 +2342,18 @@ mod tests {
             table_reloption_set_clause(&[opt("parallel_workers", "4")]),
             "(parallel_workers = 4)"
         );
+    }
+
+    #[test]
+    fn spire_corpus_insert_columns_include_stable_source_identity() {
+        let (insert_columns, select_columns) = corpus_insert_columns(&EC_SPIRE, 4, 42);
+        assert_eq!(insert_columns, "id, source, embedding, source_identity");
+        assert!(select_columns.contains("encode_to_ecvector(source, 4, 42)"));
+        assert!(select_columns.contains("decode(lpad(to_hex(id), 32, '0'), 'hex')"));
+
+        let (ivf_insert_columns, ivf_select_columns) = corpus_insert_columns(&EC_IVF, 4, 42);
+        assert_eq!(ivf_insert_columns, "id, source, embedding");
+        assert!(!ivf_select_columns.contains("source_identity"));
     }
 
     #[test]

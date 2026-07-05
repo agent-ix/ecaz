@@ -218,8 +218,17 @@ pub fn build_create_index_sql(
     reloptions: &[(String, String)],
 ) -> String {
     let with_clause = crate::reloptions::format_with_clause(reloptions);
+    let include_clause = if profile.name == "ec_spire"
+        && reloptions
+            .iter()
+            .any(|(key, value)| key == "source_identity" && value == "include")
+    {
+        " INCLUDE (source_identity)"
+    } else {
+        ""
+    };
     format!(
-        "CREATE INDEX {index_name} ON {corpus_table}\n        USING {am} (embedding {opclass}){with_clause}",
+        "CREATE INDEX {index_name} ON {corpus_table}\n        USING {am} (embedding {opclass}){include_clause}{with_clause}",
         am = profile.access_method,
         opclass = profile.operator_class,
     )
@@ -352,6 +361,18 @@ mod tests {
         assert!(sql.contains("nprobe = 16"));
         assert!(sql.contains("local_store_count = 1"));
         assert!(sql.contains("storage_format = 'turboquant'"));
+    }
+
+    #[test]
+    fn spire_source_identity_include_reloption_adds_include_column() {
+        let opts = vec![
+            ("nlists".into(), "128".into()),
+            ("source_identity".into(), "include".into()),
+        ];
+        let sql = build_create_index_sql("corpus", "spire_idx", &EC_SPIRE, &opts);
+        assert!(sql.contains("USING ec_spire (embedding ecvector_spire_ip_ops)"));
+        assert!(sql.contains("INCLUDE (source_identity)"));
+        assert!(sql.contains("source_identity = 'include'"));
     }
 
     #[test]
