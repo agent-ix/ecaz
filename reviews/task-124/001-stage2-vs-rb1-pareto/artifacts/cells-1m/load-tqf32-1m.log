@@ -1,0 +1,23 @@
+[loader] inspecting data/staged-current/ec_real_ann_benchmarks_anchor_corpus.tsv
+[loader] inspecting data/staged-current/ec_real_ann_benchmarks_anchor_queries.tsv
+[loader] corpus: 990000 rows, sha256=00d96d7665edc31cd8e4e62712c0ef2679fb714682f3ce4d522305e59faec687  queries: 10000 rows, sha256=34c4874e0e35734574f4ee9e1dd10753fcec2d295955061a407c258df163f5a0
+[loader] warning: manifest verification failed for data/staged-current/ec_real_ann_benchmarks_anchor_manifest.json: prefix="ec_real_ann_benchmarks_anchor" (expected "task124_tqf32_1m")
+[loader] copied corpus table task124_tqf32_1m_corpus in 138.05s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table task124_tqf32_1m_corpus in 141.63s
+[loader] copied queries table task124_tqf32_1m_queries in 1.43s
+[loader] building task124_tqf32_1m_turboquant_idx using ec_ivf (reloptions=[rerank=heap_f32, rerank_width=50, storage_format=turboquant]) ...
+[loader] built task124_tqf32_1m_turboquant_idx in 70.56s
+[loader] ec_ivf build timing: requested_workers=1 workers_launched=1 heap_tuples=990000 index_tuples=990000 heap_ingest_us=12337595 train_model_us=3591425 stage_build_plan_us=45732291 stage_pq_train_us=0 stage_centroids_us=1369 stage_assign_us=45448414 stage_postings_us=280450 stage_directory_us=264 flush_build_plan_us=8675270 parallel_begin_us=894 parallel_drain_us=11142720 parallel_sort_push_us=1193971 parallel_worker_tuple_buffer_capacity=1048576 parallel_worker_tuple_buffer_struct_bytes=67108864
+┌─────────┬───────────────────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                                         │
+╞═════════╪═══════════════════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_ivf                                                                                        │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ task124_tqf32_1m_corpus (990000 rows)                                                         │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ task124_tqf32_1m_queries (10000 rows)                                                         │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ task124_tqf32_1m_turboquant_idx [rerank=heap_f32, rerank_width=50, storage_format=turboquant] │
+└─────────┴───────────────────────────────────────────────────────────────────────────────────────────────┘
+[loader] completed prefix task124_tqf32_1m in 414.31s

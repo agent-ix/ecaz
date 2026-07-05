@@ -107,8 +107,11 @@
       "expected_artifacts": [
         "reviews/task-124/001-stage2-vs-rb1-pareto/artifacts/cells-1m/load-stage2-1m.log"
       ],
-      "status": "pending",
-      "started_at_unix_ms": 1783208199664
+      "status": "succeeded",
+      "started_at_unix_ms": 1783208199664,
+      "finished_at_unix_ms": 1783208758553,
+      "duration_ms": 558894,
+      "exit_code": 0
     },
     {
       "name": "recall-stage2-1m",
@@ -152,7 +155,11 @@
       "expected_artifacts": [
         "reviews/task-124/001-stage2-vs-rb1-pareto/artifacts/cells-1m/recall-stage2-1m.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1783208758554,
+      "finished_at_unix_ms": 1783208829967,
+      "duration_ms": 71413,
+      "exit_code": 0
     },
     {
       "name": "latency-stage2-1m",
@@ -203,7 +210,11 @@
       "expected_artifacts": [
         "reviews/task-124/001-stage2-vs-rb1-pareto/artifacts/cells-1m/latency-stage2-1m.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1783208829968,
+      "finished_at_unix_ms": 1783208830841,
+      "duration_ms": 873,
+      "exit_code": 0
     },
     {
       "name": "storage-stage2-1m",
@@ -232,7 +243,11 @@
       "expected_artifacts": [
         "reviews/task-124/001-stage2-vs-rb1-pareto/artifacts/cells-1m/storage-stage2-1m.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1783208830841,
+      "finished_at_unix_ms": 1783208830873,
+      "duration_ms": 31,
+      "exit_code": 0
     },
     {
       "name": "load-tqf32-1m",
@@ -280,7 +295,11 @@
       "expected_artifacts": [
         "reviews/task-124/001-stage2-vs-rb1-pareto/artifacts/cells-1m/load-tqf32-1m.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1783208830873,
+      "finished_at_unix_ms": 1783210003335,
+      "duration_ms": 414323,
+      "exit_code": 0
     },
     {
       "name": "recall-tqf32-1m",
@@ -324,7 +343,11 @@
       "expected_artifacts": [
         "reviews/task-124/001-stage2-vs-rb1-pareto/artifacts/cells-1m/recall-tqf32-1m.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1783210003336,
+      "finished_at_unix_ms": 1783210072314,
+      "duration_ms": 68971,
+      "exit_code": 0
     },
     {
       "name": "latency-tqf32-1m",
@@ -375,7 +398,11 @@
       "expected_artifacts": [
         "reviews/task-124/001-stage2-vs-rb1-pareto/artifacts/cells-1m/latency-tqf32-1m.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1783210072314,
+      "finished_at_unix_ms": 1783210073233,
+      "duration_ms": 918,
+      "exit_code": 0
     },
     {
       "name": "storage-tqf32-1m",
@@ -404,7 +431,11 @@
       "expected_artifacts": [
         "reviews/task-124/001-stage2-vs-rb1-pareto/artifacts/cells-1m/storage-tqf32-1m.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1783210073233,
+      "finished_at_unix_ms": 1783210073261,
+      "duration_ms": 28,
+      "exit_code": 0
     }
   ]
 }

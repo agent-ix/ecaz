@@ -1,0 +1,47 @@
+┌────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬────────────────────────┬─────────────┬─────────────┬────────────────┐
+│ nprobe ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state            ┆ rss_peak_kb ┆ hwm_peak_kb ┆ memory_samples │
+╞════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪════════════════════════╪═════════════╪═════════════╪════════════════╡
+│ 32     ┆ 32    ┆ 5.50 ms ┆ 0.98 ms ┆ 4.16 ms ┆ 5.29 ms ┆ 6.59 ms ┆ 8.99 ms ┆ 9.90 ms ┆ task124_stage2_1m_warm ┆ 0           ┆ 0           ┆ 0              │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 40     ┆ 32    ┆ 6.30 ms ┆ 0.85 ms ┆ 5.17 ms ┆ 6.17 ms ┆ 7.52 ms ┆ 9.14 ms ┆ 9.86 ms ┆ task124_stage2_1m_warm ┆ 0           ┆ 0           ┆ 0              │
+└────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴────────────────────────┴─────────────┴─────────────┴────────────────┘
+[block-kernel-counters] command=latency label=nprobe=32 surface=ivf quant=rabitq isa=neon flushes=5250 candidates=1340430 elapsed_nanos=91197458 elapsed_ms=91.197458 kernel_flushes=5250 kernel_candidates=1340430 kernel_elapsed_nanos=91197458 kernel_elapsed_ms=91.197458 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=1 width_8_15=2 width_16_31=2 width_ge32=5245 pruned_candidates=0 kept_candidates=0
+[block-kernel-counters] command=latency label=nprobe=32 surface=ivf quant=turboquant_int8 isa=neon flushes=32 candidates=1600 elapsed_nanos=71081 elapsed_ms=0.071081 kernel_flushes=32 kernel_candidates=1600 kernel_elapsed_nanos=71081 kernel_elapsed_ms=0.071081 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=0 width_8_15=0 width_16_31=0 width_ge32=32 pruned_candidates=0 kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=ivf flushes=5282 candidates=1342030 elapsed_nanos=91268539 elapsed_ms=91.268539 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[block-kernel-counters] command=latency label=nprobe=40 surface=ivf quant=rabitq isa=neon flushes=6377 candidates=1627949 elapsed_nanos=109740401 elapsed_ms=109.740401 kernel_flushes=6377 kernel_candidates=1627949 kernel_elapsed_nanos=109740401 kernel_elapsed_ms=109.740401 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=2 width_8_15=1 width_16_31=4 width_ge32=6370 pruned_candidates=0 kept_candidates=0
+[block-kernel-counters] command=latency label=nprobe=40 surface=ivf quant=turboquant_int8 isa=neon flushes=32 candidates=1600 elapsed_nanos=73078 elapsed_ms=0.073078 kernel_flushes=32 kernel_candidates=1600 kernel_elapsed_nanos=73078 kernel_elapsed_ms=0.073078 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=0 width_8_15=0 width_16_31=0 width_ge32=32 pruned_candidates=0 kept_candidates=0
+[task87-counters] command=latency label=nprobe=40 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=40 surface=ivf flushes=6409 candidates=1629549 elapsed_nanos=109813479 elapsed_ms=109.813479 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=40 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=40 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[ivf-stage-counters] command=latency label=nprobe=32 stage=approximate_scan scans=32 samples=32 elapsed_us=132009 elapsed_ms=132.009
+[ivf-stage-counters] command=latency label=nprobe=32 stage=candidate_record scans=32 samples=5250 elapsed_us=974 elapsed_ms=0.974
+[ivf-stage-counters] command=latency label=nprobe=32 stage=centroid_score scans=32 samples=32 elapsed_us=10714 elapsed_ms=10.714
+[ivf-stage-counters] command=latency label=nprobe=32 stage=exact_rerank scans=32 samples=32 elapsed_us=16214 elapsed_ms=16.214
+[ivf-stage-counters] command=latency label=nprobe=32 stage=posting_page_decode scans=32 samples=32 elapsed_us=119793 elapsed_ms=119.793
+[ivf-stage-counters] command=latency label=nprobe=32 stage=posting_visit scans=32 samples=32 elapsed_us=131651 elapsed_ms=131.651
+[ivf-stage-counters] command=latency label=nprobe=32 stage=probe_plan scans=32 samples=32 elapsed_us=11654 elapsed_ms=11.654
+[ivf-stage-counters] command=latency label=nprobe=32 stage=query_prep scans=32 samples=32 elapsed_us=190 elapsed_ms=0.190
+[ivf-stage-counters] command=latency label=nprobe=32 stage=rerank_payload_decode scans=32 samples=64 elapsed_us=12633 elapsed_ms=12.633
+[ivf-stage-counters] command=latency label=nprobe=32 stage=rerank_payload_score scans=32 samples=64 elapsed_us=150 elapsed_ms=0.150
+[ivf-stage-counters] command=latency label=nprobe=32 stage=rescan_total scans=32 samples=32 elapsed_us=171031 elapsed_ms=171.031
+[ivf-stage-counters] command=latency label=nprobe=32 stage=scorer_batch scans=32 samples=5250 elapsed_us=91704 elapsed_ms=91.704
+[ivf-stage-counters] command=latency label=nprobe=32 stage=scratch_flush scans=32 samples=5250 elapsed_us=97314 elapsed_ms=97.314
+[ivf-stage-counters] command=latency label=nprobe=32 stage=topk_collect scans=32 samples=32 elapsed_us=260 elapsed_ms=0.260
+[ivf-stage-counters] command=latency label=nprobe=40 stage=approximate_scan scans=32 samples=32 elapsed_us=158393 elapsed_ms=158.393
+[ivf-stage-counters] command=latency label=nprobe=40 stage=candidate_record scans=32 samples=6377 elapsed_us=1045 elapsed_ms=1.045
+[ivf-stage-counters] command=latency label=nprobe=40 stage=centroid_score scans=32 samples=32 elapsed_us=10758 elapsed_ms=10.758
+[ivf-stage-counters] command=latency label=nprobe=40 stage=exact_rerank scans=32 samples=32 elapsed_us=13515 elapsed_ms=13.515
+[ivf-stage-counters] command=latency label=nprobe=40 stage=posting_page_decode scans=32 samples=32 elapsed_us=144864 elapsed_ms=144.864
+[ivf-stage-counters] command=latency label=nprobe=40 stage=posting_visit scans=32 samples=32 elapsed_us=158026 elapsed_ms=158.026
+[ivf-stage-counters] command=latency label=nprobe=40 stage=probe_plan scans=32 samples=32 elapsed_us=11794 elapsed_ms=11.794
+[ivf-stage-counters] command=latency label=nprobe=40 stage=query_prep scans=32 samples=32 elapsed_us=180 elapsed_ms=0.180
+[ivf-stage-counters] command=latency label=nprobe=40 stage=rerank_payload_decode scans=32 samples=64 elapsed_us=11269 elapsed_ms=11.269
+[ivf-stage-counters] command=latency label=nprobe=40 stage=rerank_payload_score scans=32 samples=64 elapsed_us=142 elapsed_ms=0.142
+[ivf-stage-counters] command=latency label=nprobe=40 stage=rescan_total scans=32 samples=32 elapsed_us=194878 elapsed_ms=194.878
+[ivf-stage-counters] command=latency label=nprobe=40 stage=scorer_batch scans=32 samples=6377 elapsed_us=110171 elapsed_ms=110.171
+[ivf-stage-counters] command=latency label=nprobe=40 stage=scratch_flush scans=32 samples=6377 elapsed_us=117000 elapsed_ms=117.000
+[ivf-stage-counters] command=latency label=nprobe=40 stage=topk_collect scans=32 samples=32 elapsed_us=258 elapsed_ms=0.258

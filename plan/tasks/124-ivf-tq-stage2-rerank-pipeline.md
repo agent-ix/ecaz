@@ -1,11 +1,19 @@
 # Task 124: IVF TurboQuant Stage-2 Rerank Pipeline
 
-Status: **in progress — re-baselined measurement phase** (2026-07-04).
+Status: **measured — awaiting review; Phase 6 (IO-sensitive) is the
+remaining gate** (2026-07-04).
 Owner: Codex (measurement re-baseline; branch `task-124-stage2-pareto`,
 packet `reviews/task-124/001-stage2-vs-rb1-pareto/`). Original in-engine
 implementation ran on the historical `task-124-ivf-tq-stage2` branch; its
 validated keep-set landed on `main` via Task 130
 (`130-tq-post-task124-cleanup.md`).
+Packet 001 verdict: **no warm-cache promotion** — stage2@25 matches
+rb1@w50 recall at ≤100k and wins −4..−10% latency at 100k, but at 1m it
+pays 0.3–1.0 pp recall and is pareto-equivalent at matched recall, at
+4.4× the index size. Density control (TQ 4-bit + same rerank) proves
+the Task 147 win was primarily the rerank stage. Live paths: Phase 6
+cold-cache (halved heap fetches, 25 vs 50/query) and TQ sidecar decode
+optimization (98% of stage-2 payload cost).
 Priority: P1 follow-up for the Task 122 TurboQuant keep-experimental outcome.
 
 ## 2026-07-04 Re-baseline (supersedes Phase 5 comparators below)

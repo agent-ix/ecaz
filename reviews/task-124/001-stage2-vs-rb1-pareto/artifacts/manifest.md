@@ -127,10 +127,82 @@ storage crown by a wide margin; stage2's value must come from latency
 (marginal at ≤100k) or from halving exact heap fetches (25 vs 50/query
 — the IO-sensitive Phase 6 axis).
 
-### 1m tier
+### 1m tier (990k anchor split, 9/9 steps succeeded)
 
-Pending — `artifacts/cells-1m/` (stage2 + tqf32; launched 2026-07-04,
-results to be appended).
+Recall@10:
+
+| cell | n8 | n16 | n24 | n32 | n48 | n64 |
+|---|---|---|---|---|---|---|
+| stage2 | 0.8438 | 0.9187 | 0.9375 | 0.9563 | 0.9719 | 0.9781 |
+| tqf32 | 0.8500 | 0.9250 | 0.9437 | 0.9625 | 0.9781 | 0.9844 |
+| rb1@w50 (147) | 0.8417 | 0.9250 | 0.9417 | 0.9667 | 0.9750 | 0.9792 |
+
+Latency (mean / p95 ms):
+
+| cell | n32 | n40 |
+|---|---|---|
+| stage2 | 5.50 / 6.59 | 6.30 / 7.52 |
+| tqf32 | 5.92 / 7.56 | 7.20 / 8.86 |
+| rb1@w50 (147) | 6.21 / 7.59 | 6.63 / 7.86 |
+
+Index size: stage2 **1003.3 MiB**, tqf32 784.8 MiB, rb1@w50 226.6 MiB.
+
+Stage split at n32 (per-sweep of 32 scans; rb1@w50 line scaled from its
+16-scan sweep): approximate_scan stage2 4.13 ms/query vs tqf32 4.58 vs
+rb1@w50 4.63; exact_rerank stage2 0.51 ms/query (incl. TQ decode 0.39)
+vs tqf32 0.35 vs rb1@w50 0.49.
+
+1m reading — the ≤100k recall-identity does NOT fully carry:
+
+- **stage2 gives up 0.3–1.0 pp recall at n≥24** (n32: 0.9563 vs
+  rb1@w50's 0.9667). At matched recall the latency win disappears:
+  stage2 needs ~n40 (0.9719 @ 6.30 ms) to clear rb1@w50's n32 point
+  (0.9667 @ 6.21 ms) — roughly pareto-EQUIVALENT warm, at 4.4× the
+  index size. The raw −11% at n32 is not a matched-recall comparison.
+- **tqf32 vs rb1@w50 stays recall-equivalent within noise** (32-query
+  CI ~±2 pp; deltas −0.4..+0.8 pp) with mixed latency (−5% at n32,
+  +9% at n40) and 3.5× the storage. The controlled density conclusion:
+  with the SAME exact rerank, the 4-bit vs 1-bit coarse payload is
+  ~recall/latency-neutral warm; **the Task 147 rb1-vs-TQ-default win
+  was primarily the rerank stage, and density's durable payoff is
+  storage** (3.2–3.5× smaller) plus a latency edge that only appears
+  at deeper sweeps.
+
+### Verdict
+
+**No warm-cache promotion case.** rb1 + heap_f32 width 50 (the Task 147
+champion) survives all three challengers on the warm pareto once recall
+is matched, and keeps a 3.2–4.4× storage advantage:
+
+- **D (stage2@25)**: recall-identical and −4..−10% latency at ≤100k,
+  but at 1m it pays 0.3–1.0 pp recall and lands pareto-equivalent at
+  matched recall — while costing 4.4× the index bytes. **Iterate, not
+  promote**: its two live rationales are (1) it halves exact heap
+  fetches per query (25 vs 50) — the Phase 6 IO-sensitive/cold-cache
+  axis, still unmeasured, is now the deciding evidence for the whole
+  Task 124 premise; (2) TQ payload decode is 98% of the stage-2 cost
+  (5.45 of 5.58 ms/sweep at 100k) — a decode-path optimization could
+  tilt the warm comparison before Phase 6 is even run.
+- **E (tqf32)**: closes the Task 147 apples-to-apples gap — density
+  alone (holding rerank fixed) is recall-neutral and roughly
+  latency-neutral warm; rb1's structural win is storage. No reason to
+  run a TQ coarse stage under rerank at 3.5× the bytes.
+- **F (rb1@w25)**: cheapest and fastest but loses 0.3–1.3 pp recall at
+  every scale — naive width reduction is not free; if 25-wide exact
+  fetches are ever needed (IO regimes), the stage-2 reducer (D) is the
+  recall-preserving way to get there at ≤100k scales.
+
+Follow-ups this evidence motivates (not started here):
+
+1. **Phase 6 cold-cache A/B** (rb1@w50 vs stage2@25 vs TQ no-rerank at
+   100k/1m) — the fetch-count rationale is now the only path to a
+   stage2 promotion; TQ-no-rerank's zero-heap-fetch niche gets tested
+   by the same run.
+2. **TQ sidecar decode optimization** (98% of stage-2 payload cost is
+   decode, not scoring) — bounded, well-attributed target if Phase 6
+   shows promise.
+3. The rb1 promotion-matrix task (Task 147 follow-up) should cite this
+   packet's E-cell as the controlled density evidence.
 
 ## Run log
 
@@ -139,4 +211,8 @@ results to be appended).
   needs `PGHOST`; prior sessions had it exported). Relaunched with
   `PGHOST=/Users/peter/.pgrx PGPORT=28818`; 37/37 succeeded
   (`artifacts/cells/suite-manifest.json`).
-- 2026-07-04 ~17:0x: 1m tier launched (`artifacts/cells-1m/`).
+- 2026-07-04 ~17:0x: first 1m launch failed on a config authoring error
+  (`ec_real_1m_*` staged names do not exist; the staged 1m corpus is the
+  990k `ec_real_ann_benchmarks_anchor_*` split, as in the Task 147 1m
+  cell); paths fixed, relaunched, 9/9 succeeded
+  (`artifacts/cells-1m/suite-manifest.json`).
