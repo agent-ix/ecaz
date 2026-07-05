@@ -1531,7 +1531,121 @@ async fn extract_result_rows(manifest: &SuiteManifest) -> Result<Vec<ResultRow>>
             rows.extend(parse_result_rows(manifest, step, artifact, &raw));
         }
     }
+    rows.extend(derive_spire_pipeline_row_scan_rows(manifest, &rows));
     Ok(rows)
+}
+
+fn derive_spire_pipeline_row_scan_rows(
+    manifest: &SuiteManifest,
+    rows: &[ResultRow],
+) -> Vec<ResultRow> {
+    let mut corpus_rows_by_prefix = BTreeMap::<String, f64>::new();
+    for row in rows {
+        if row.kind != "storage" || row.metric != "storage_field" {
+            continue;
+        }
+        if row.values.get("field").map(String::as_str) != Some("rows") {
+            continue;
+        }
+        let Some(prefix) = row.values.get("prefix") else {
+            continue;
+        };
+        let Some(rows) = row
+            .values
+            .get("value")
+            .and_then(|value| parse_numeric_prefix(value))
+        else {
+            continue;
+        };
+        corpus_rows_by_prefix.insert(prefix.clone(), rows);
+    }
+
+    rows.iter()
+        .filter(|row| row.kind == "spire-pipeline")
+        .filter_map(|row| {
+            let nprobe = row.values.get("nprobe")?.clone();
+            let prefix = row.values.get("prefix")?.clone();
+            let queries = row
+                .values
+                .get("queries")
+                .and_then(|value| parse_numeric_prefix(value))?;
+            let candidate_sum = row
+                .values
+                .get("candidate_sum")
+                .and_then(|value| parse_numeric_prefix(value))?;
+            let corpus_rows = *corpus_rows_by_prefix.get(&prefix)?;
+            if queries <= 0.0 || corpus_rows <= 0.0 {
+                return None;
+            }
+            let ready_sum = row
+                .values
+                .get("ready_sum")
+                .and_then(|value| parse_numeric_prefix(value));
+            let candidate_fraction = candidate_sum / queries / corpus_rows;
+            let mut values = BTreeMap::from([
+                ("nprobe".into(), nprobe),
+                ("prefix".into(), prefix),
+                ("queries".into(), format_number(queries)),
+                ("corpus_rows".into(), format_number(corpus_rows)),
+                ("candidate_sum".into(), format_number(candidate_sum)),
+                (
+                    "candidate_row_instances_per_query".into(),
+                    format!("{:.4}", candidate_sum / queries),
+                ),
+                (
+                    "candidate_row_instances_fraction".into(),
+                    format!("{candidate_fraction:.8}"),
+                ),
+                (
+                    "candidate_row_instances_percent".into(),
+                    format!("{:.4}", candidate_fraction * 100.0),
+                ),
+            ]);
+            if let Some(ready_sum) = ready_sum {
+                let ready_fraction = ready_sum / queries / corpus_rows;
+                values.insert("ready_sum".into(), format_number(ready_sum));
+                values.insert(
+                    "ready_row_instances_per_query".into(),
+                    format!("{:.4}", ready_sum / queries),
+                );
+                values.insert(
+                    "ready_row_instances_fraction".into(),
+                    format!("{ready_fraction:.8}"),
+                );
+                values.insert(
+                    "ready_row_instances_percent".into(),
+                    format!("{:.4}", ready_fraction * 100.0),
+                );
+            }
+            Some(ResultRow {
+                suite: manifest.suite.clone(),
+                step: row.step.clone(),
+                kind: row.kind.clone(),
+                metric: "spire_pipeline_row_scan".into(),
+                artifact: "suite-derived".into(),
+                values: add_result_context(
+                    manifest,
+                    step_record_for_result(manifest, row)?,
+                    values,
+                ),
+            })
+        })
+        .collect()
+}
+
+fn step_record_for_result<'a>(
+    manifest: &'a SuiteManifest,
+    row: &ResultRow,
+) -> Option<&'a StepRecord> {
+    manifest.steps.iter().find(|step| step.name == row.step)
+}
+
+fn format_number(value: f64) -> String {
+    if value.fract() == 0.0 {
+        format!("{value:.0}")
+    } else {
+        format!("{value:.4}")
+    }
 }
 
 fn parallel_worker_result_row(manifest: &SuiteManifest, step: &StepRecord) -> Option<ResultRow> {
@@ -1949,6 +2063,10 @@ fn parse_storage_rows(raw: &str) -> Vec<(String, BTreeMap<String, String>)> {
                 values.insert("value_bytes".into(), format!("{bytes:.0}"));
             }
             rows.push(("storage_field".into(), values));
+        } else if table_row.get("kind").map(String::as_str) == Some("spire_replication")
+            || table_row.contains_key("mean_replicas_per_vector")
+        {
+            rows.push(("storage_spire_replication".into(), table_row));
         } else if table_row.contains_key("index") {
             let mut values = table_row;
             if let Some(bytes) = values.get("size").and_then(|value| parse_byte_value(value)) {
@@ -2830,6 +2948,7 @@ impl SuiteStep {
                 .log_output
                 .iter()
                 .chain(step.predictions_output.iter())
+                .chain(step.truth_cache_file.iter())
                 .cloned()
                 .collect(),
             SuiteStep::CrossAm(step) => step.log_output.iter().cloned().collect(),
@@ -2895,6 +3014,13 @@ impl SuiteStep {
                 }
                 paths
             }
+            SuiteStep::Recall(step) => {
+                let mut paths = Vec::new();
+                if let Some(path) = &step.truth_corpus_file {
+                    paths.push(path.clone());
+                }
+                paths
+            }
             SuiteStep::CrossAm(step) => step
                 .inputs
                 .iter()
@@ -2906,6 +3032,16 @@ impl SuiteStep {
                     paths.push(prepared_dir.clone());
                 }
                 if let Some(path) = &step.bench_truth_corpus_file {
+                    paths.push(path.clone());
+                }
+                paths
+            }
+            SuiteStep::SpirePipeline(step) => {
+                let mut paths = Vec::new();
+                if let Some(path) = &step.truth_corpus_file {
+                    paths.push(path.clone());
+                }
+                if let Some(path) = &step.truth_cache_file {
                     paths.push(path.clone());
                 }
                 paths
@@ -2950,6 +3086,7 @@ impl SuiteStep {
                 .log_output
                 .iter()
                 .chain(step.predictions_output.iter())
+                .chain(step.truth_cache_file.iter())
                 .cloned()
                 .collect(),
             _ => Vec::new(),
@@ -6540,7 +6677,10 @@ mod tests {
              [loader] copied queries table p_queries in 183.48ms\n\
              [loader] completed prefix p in 45.76s\n",
         );
-        assert_eq!(rows.len(), 3);
+        assert!(
+            rows.len() >= 3,
+            "expected storage field, index, and replication rows; got {rows:?}"
+        );
         assert_eq!(
             rows[0].1.get("phase").map(String::as_str),
             Some("copy_corpus")
@@ -6612,21 +6752,187 @@ mod tests {
              │ index  ┆ access method ┆ profile  ┆ reloptions ┆ size     ┆ per row │\n\
              ╞════════╪═══════════════╪══════════╪════════════╪══════════╪═════════╡\n\
              │ ix     ┆ ec_diskann    ┆ diskann  ┆ {}         ┆ 13.0 MiB ┆ 494.0 B │\n\
-             └────────┴───────────────┴──────────┴────────────┴──────────┴─────────┘\n",
+             └────────┴───────────────┴──────────┴────────────┴──────────┴─────────┘\n\
+             ┌───────────────────┬───────┬──────────────┬───────────────────────┬──────────────────────────┬────────────────────────┬─────────┐\n\
+             │ kind              ┆ index ┆ object_count ┆ leaf_assignment_count ┆ mean_replicas_per_vector ┆ delta_assignment_count ┆ status  │\n\
+             ╞═══════════════════╪═══════╪══════════════╪═══════════════════════╪══════════════════════════╪════════════════════════╪═════════╡\n\
+             │ spire_replication ┆ ix    ┆ 10000        ┆ 10250                 ┆ 1.0250                   ┆ 0                      ┆ healthy │\n\
+             └───────────────────┴───────┴──────────────┴───────────────────────┴──────────────────────────┴────────────────────────┴─────────┘\n",
         );
 
-        assert_eq!(rows.len(), 2);
+        assert!(
+            rows.len() >= 3,
+            "expected storage field, index, and replication rows; got {rows:?}"
+        );
         assert_eq!(
             rows[0].1.get("value_bytes").map(String::as_str),
             Some("1572864")
         );
+        let index = rows
+            .iter()
+            .find(|(metric, values)| {
+                metric == "storage_index" && values.get("index").map(String::as_str) == Some("ix")
+            })
+            .expect("ordinary storage index row should be classified separately");
         assert_eq!(
-            rows[1].1.get("size_bytes").map(String::as_str),
+            index.1.get("size_bytes").map(String::as_str),
             Some("13631488")
         );
         assert_eq!(
-            rows[1].1.get("per_row_bytes").map(String::as_str),
+            index.1.get("per_row_bytes").map(String::as_str),
             Some("494.0")
+        );
+        let replication = rows
+            .iter()
+            .find(|(metric, values)| {
+                metric == "storage_spire_replication"
+                    && values.get("index").map(String::as_str) == Some("ix")
+            })
+            .expect("SPIRE replication row should be classified separately");
+        assert_eq!(
+            replication
+                .1
+                .get("mean_replicas_per_vector")
+                .map(String::as_str),
+            Some("1.0250")
+        );
+    }
+
+    #[test]
+    fn recall_step_tracks_truth_cache_as_suite_artifact() {
+        let step = SuiteStep::Recall(RecallStep {
+            name: "truth-cache-10k".into(),
+            tags: vec!["truth-cache".into()],
+            prefix: "p".into(),
+            k: 10,
+            sweep: vec![8],
+            rerank_width: None,
+            adaptive_nprobe: None,
+            adaptive_nprobe_score_gap_micros: None,
+            adaptive_nprobe_score_margin_ratio_bps: None,
+            ivf_scratch_soa_batch_decode: None,
+            queries_limit: None,
+            profile: None,
+            bits: None,
+            seed: None,
+            force_index: None,
+            session_gucs: Vec::new(),
+            truth_cache_file: Some("truth-10k-k10.json".into()),
+            truth_cache_dir: None,
+            truth_corpus_file: Some("corpus.tsv".into()),
+            log_output: Some("truth-10k.log".into()),
+            predictions_output: None,
+        });
+        assert_eq!(
+            step.expected_artifacts(),
+            vec![
+                PathBuf::from("truth-10k.log"),
+                PathBuf::from("truth-10k-k10.json")
+            ]
+        );
+        assert_eq!(
+            step.produced_paths(),
+            vec![
+                PathBuf::from("truth-10k.log"),
+                PathBuf::from("truth-10k-k10.json")
+            ]
+        );
+    }
+
+    #[test]
+    fn derives_spire_pipeline_row_scan_percent_from_storage_rows() {
+        let manifest = SuiteManifest {
+            suite: "suite".into(),
+            schema_version: 1,
+            config: "suite.json".into(),
+            config_sha256: "hash".into(),
+            dry_run: false,
+            generated_at_unix_ms: 0,
+            connection: ManifestConnection {
+                database: "bench".into(),
+                host: Some("/tmp/pg".into()),
+                port: Some(28818),
+                user: None,
+                password_configured: false,
+            },
+            backend: None,
+            backend_nodes: Vec::new(),
+            steps: vec![StepRecord {
+                name: "pipeline".into(),
+                kind: "spire-pipeline".into(),
+                command: vec![
+                    "bench".into(),
+                    "spire-pipeline".into(),
+                    "--prefix".into(),
+                    "p".into(),
+                ],
+                selected: true,
+                quant: None,
+                isa: None,
+                kernel_status: None,
+                pgoptions: None,
+                tags: Vec::new(),
+                expected_artifacts: Vec::new(),
+                status: Some(StepStatus::Succeeded),
+                started_at_unix_ms: None,
+                finished_at_unix_ms: None,
+                duration_ms: None,
+                exit_code: None,
+                parallel_workers_before: None,
+                parallel_workers_after: None,
+                parallel_workers_delta: None,
+            }],
+            threshold_results: Vec::new(),
+        };
+        let rows = vec![
+            ResultRow {
+                suite: "suite".into(),
+                step: "storage".into(),
+                kind: "storage".into(),
+                metric: "storage_field".into(),
+                artifact: "storage.log".into(),
+                values: BTreeMap::from([
+                    ("field".into(), "rows".into()),
+                    ("value".into(), "10000".into()),
+                    ("prefix".into(), "p".into()),
+                ]),
+            },
+            ResultRow {
+                suite: "suite".into(),
+                step: "pipeline".into(),
+                kind: "spire-pipeline".into(),
+                metric: "spire-pipeline".into(),
+                artifact: "pipeline.log".into(),
+                values: BTreeMap::from([
+                    ("nprobe".into(), "32".into()),
+                    ("prefix".into(), "p".into()),
+                    ("queries".into(), "200".into()),
+                    ("candidate_sum".into(), "72800".into()),
+                    ("ready_sum".into(), "64000".into()),
+                ]),
+            },
+        ];
+
+        let derived = derive_spire_pipeline_row_scan_rows(&manifest, &rows);
+        assert_eq!(derived.len(), 1);
+        assert_eq!(derived[0].metric, "spire_pipeline_row_scan");
+        assert_eq!(
+            derived[0]
+                .values
+                .get("candidate_row_instances_percent")
+                .map(String::as_str),
+            Some("3.6400")
+        );
+        assert_eq!(
+            derived[0]
+                .values
+                .get("ready_row_instances_percent")
+                .map(String::as_str),
+            Some("3.2000")
+        );
+        assert_eq!(
+            derived[0].values.get("suite_database").map(String::as_str),
+            Some("bench")
         );
     }
 

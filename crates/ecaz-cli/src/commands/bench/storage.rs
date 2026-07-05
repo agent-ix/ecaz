@@ -132,6 +132,7 @@ pub async fn run(conn: &ConnectionOptions, args: StorageArgs) -> Result<()> {
         "size",
         "per row",
     ]);
+    let mut spire_indexes = Vec::new();
     if index_rows.is_empty() {
         idx.add_row(vec![
             Cell::new("<none>"),
@@ -147,6 +148,9 @@ pub async fn run(conn: &ConnectionOptions, args: StorageArgs) -> Result<()> {
             let am: String = r.get(1);
             let opts: String = r.get(2);
             let size: i64 = r.get(3);
+            if am == "ec_spire" {
+                spire_indexes.push(name.clone());
+            }
             idx.add_row(vec![
                 Cell::new(name),
                 Cell::new(&am),
@@ -158,6 +162,52 @@ pub async fn run(conn: &ConnectionOptions, args: StorageArgs) -> Result<()> {
         }
     }
     crate::ecaz_println!("{idx}");
+
+    if !spire_indexes.is_empty() {
+        let mut replication = Table::new();
+        replication.load_preset(UTF8_FULL);
+        replication.set_header(vec![
+            "kind",
+            "index",
+            "object_count",
+            "leaf_assignment_count",
+            "mean_replicas_per_vector",
+            "delta_assignment_count",
+            "status",
+        ]);
+        for index in spire_indexes {
+            let Some(row) = client
+                .query_opt(
+                    "SELECT object_count, leaf_assignment_count, delta_assignment_count, status
+                     FROM ec_spire_index_health_snapshot(to_regclass($1)::oid)",
+                    &[&index],
+                )
+                .await
+                .wrap_err_with(|| format!("reading SPIRE replication summary for {index:?}"))?
+            else {
+                continue;
+            };
+            let object_count: i64 = row.get(0);
+            let leaf_assignment_count: i64 = row.get(1);
+            let delta_assignment_count: i64 = row.get(2);
+            let status: String = row.get(3);
+            let mean_replicas = if object_count > 0 {
+                leaf_assignment_count as f64 / object_count as f64
+            } else {
+                0.0
+            };
+            replication.add_row(vec![
+                Cell::new("spire_replication"),
+                Cell::new(index),
+                Cell::new(object_count),
+                Cell::new(leaf_assignment_count),
+                Cell::new(format!("{mean_replicas:.4}")),
+                Cell::new(delta_assignment_count),
+                Cell::new(status),
+            ]);
+        }
+        crate::ecaz_println!("{replication}");
+    }
     Ok(())
 }
 
