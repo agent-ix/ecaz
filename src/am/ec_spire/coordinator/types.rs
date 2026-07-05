@@ -965,6 +965,8 @@ pub(crate) struct SpireRemoteProductionReadProfileRow {
     pub(crate) merge_elapsed_ms: u64,
     pub(crate) total_elapsed_ms: u64,
     pub(crate) conninfo_secret_lookup_count: u64,
+    pub(crate) manifest_cache_hit_count: u64,
+    pub(crate) manifest_cache_miss_count: u64,
     pub(crate) connection_pool_hit_count: u64,
     pub(crate) connection_pool_miss_count: u64,
     pub(crate) socket_open_count: u64,

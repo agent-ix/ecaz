@@ -340,6 +340,17 @@ fn load_cached_coordinator_fanout_manifests<F>(
 where
     F: FnOnce() -> Result<SpireCoordinatorFanoutManifests, String>,
 {
+    load_cached_coordinator_fanout_manifests_with_status(cache_key, load)
+        .map(|(manifests, _cache_hit)| manifests)
+}
+
+fn load_cached_coordinator_fanout_manifests_with_status<F>(
+    cache_key: SpireCoordinatorFanoutManifestCacheKey,
+    load: F,
+) -> Result<(SpireCoordinatorFanoutManifests, bool), String>
+where
+    F: FnOnce() -> Result<SpireCoordinatorFanoutManifests, String>,
+{
     if let Some(manifests) = COORDINATOR_FANOUT_MANIFEST_CACHE.with(|cache| {
         let cache = cache.borrow();
         cache
@@ -347,14 +358,14 @@ where
             .filter(|(cached_key, _manifests)| *cached_key == cache_key)
             .map(|(_cached_key, manifests)| manifests.clone())
     }) {
-        return Ok(manifests);
+        return Ok((manifests, true));
     }
 
     let manifests = load()?;
     COORDINATOR_FANOUT_MANIFEST_CACHE.with(|cache| {
         *cache.borrow_mut() = Some((cache_key, manifests.clone()));
     });
-    Ok(manifests)
+    Ok((manifests, false))
 }
 
 fn load_cached_relation_epoch_manifests_for_coordinator_fanout(
@@ -378,6 +389,31 @@ fn load_cached_relation_epoch_manifests_for_coordinator_fanout(
         },
         || load_relation_epoch_manifests_for_coordinator_fanout(index, root_control),
     )
+}
+
+fn load_cached_relation_epoch_manifests_for_coordinator_fanout_with_status(
+    index: SpireLiveIndexRelation,
+    root_control: meta::SpireRootControlState,
+) -> Result<
+    (
+        meta::SpireEpochManifest,
+        meta::SpireObjectManifest,
+        meta::SpirePlacementDirectory,
+        bool,
+    ),
+    String,
+> {
+    if root_control.active_epoch == 0 {
+        return Err("ec_spire cannot load manifests for empty active epoch".to_owned());
+    }
+    let (manifests, cache_hit) = load_cached_coordinator_fanout_manifests_with_status(
+        SpireCoordinatorFanoutManifestCacheKey {
+            index_relid: index.relid(),
+            active_epoch: root_control.active_epoch,
+        },
+        || load_relation_epoch_manifests_for_coordinator_fanout(index, root_control),
+    )?;
+    Ok((manifests.0, manifests.1, manifests.2, cache_hit))
 }
 
 pub(crate) fn remote_search_candidates(

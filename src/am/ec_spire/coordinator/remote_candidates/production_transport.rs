@@ -55,6 +55,8 @@ struct SpireRemoteProductionReadMetrics {
     merge_elapsed_ms: u64,
     total_elapsed_ms: u64,
     conninfo_secret_lookup_count: u64,
+    manifest_cache_hit_count: u64,
+    manifest_cache_miss_count: u64,
     connection_pool_hit_count: u64,
     connection_pool_miss_count: u64,
     socket_open_count: u64,
@@ -115,6 +117,12 @@ impl SpireRemoteProductionReadMetrics {
         self.conninfo_secret_lookup_count = self
             .conninfo_secret_lookup_count
             .saturating_add(other.conninfo_secret_lookup_count);
+        self.manifest_cache_hit_count = self
+            .manifest_cache_hit_count
+            .saturating_add(other.manifest_cache_hit_count);
+        self.manifest_cache_miss_count = self
+            .manifest_cache_miss_count
+            .saturating_add(other.manifest_cache_miss_count);
         self.connection_pool_hit_count = self
             .connection_pool_hit_count
             .saturating_add(other.connection_pool_hit_count);

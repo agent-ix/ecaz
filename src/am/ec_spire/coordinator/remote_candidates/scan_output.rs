@@ -519,6 +519,8 @@ fn production_read_profile_row(
         merge_elapsed_ms: metrics.merge_elapsed_ms,
         total_elapsed_ms: metrics.total_elapsed_ms,
         conninfo_secret_lookup_count: metrics.conninfo_secret_lookup_count,
+        manifest_cache_hit_count: metrics.manifest_cache_hit_count,
+        manifest_cache_miss_count: metrics.manifest_cache_miss_count,
         connection_pool_hit_count: metrics.connection_pool_hit_count,
         connection_pool_miss_count: metrics.connection_pool_miss_count,
         socket_open_count: metrics.socket_open_count,
@@ -598,8 +600,16 @@ fn remote_search_production_scan_heap_resolution_result_stream_impl(
     }
 
     let manifest_start = std::time::Instant::now();
-    let (epoch_manifest, object_manifest, placement_directory) =
-        load_cached_relation_epoch_manifests_for_coordinator_fanout(index, root_control)?;
+    let (epoch_manifest, object_manifest, placement_directory, manifest_cache_hit) =
+        load_cached_relation_epoch_manifests_for_coordinator_fanout_with_status(
+            index,
+            root_control,
+        )?;
+    if manifest_cache_hit {
+        add_profile_count(&mut metrics.manifest_cache_hit_count, 1);
+    } else {
+        add_profile_count(&mut metrics.manifest_cache_miss_count, 1);
+    }
     add_profile_elapsed(&mut metrics.manifest_load_elapsed_ms, manifest_start);
     let snapshot = meta::SpirePublishedEpochSnapshot::new(
         &epoch_manifest,

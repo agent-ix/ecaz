@@ -13709,6 +13709,16 @@ fn ec_spire_remote_search_production_read_profile(
     );
     metric!(
         rows,
+        "manifest_cache_hit_count",
+        row.manifest_cache_hit_count
+    );
+    metric!(
+        rows,
+        "manifest_cache_miss_count",
+        row.manifest_cache_miss_count
+    );
+    metric!(
+        rows,
         "connection_pool_hit_count",
         row.connection_pool_hit_count
     );
