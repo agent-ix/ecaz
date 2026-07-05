@@ -1,9 +1,0 @@
-[suite:task92-offpath-calibration] wrote reviews/task-92/014-offpath-calibration-run/artifacts/suite-manifest.json
-[suite:task92-offpath-calibration] latency-spire-turboquant-lut32-kernel-on -> --database postgres --host /home/peter/.pgrx --port 28818 bench latency --prefix task92_offpath_spire_turboquant --profile ec_spire --k 10 --concurrency 1 --iterations 32 --sweep 32 --bits 4 --seed 42 --force-index --cache-state task92_offpath_kernel_on --task87-candidate-batch-counters --memory-sample-interval-ms 25 --log-output reviews/task-92/014-offpath-calibration-run/artifacts/latency-spire-turboquant-lut32-kernel-on.log
-[suite:task92-offpath-calibration] wrote reviews/task-92/014-offpath-calibration-run/artifacts/suite-manifest.json
-[suite:task92-offpath-calibration] wrote reviews/task-92/014-offpath-calibration-run/artifacts/suite-manifest.json
-[suite:task92-offpath-calibration] latency-spire-turboquant-lut32-kernel-off -> --database postgres --host /home/peter/.pgrx --port 28818 bench latency --prefix task92_offpath_spire_turboquant --profile ec_spire --k 10 --concurrency 1 --iterations 32 --sweep 32 --bits 4 --seed 42 --force-index --cache-state task92_offpath_kernel_off --session-guc ec_spire.candidate_batch_scoring=off --task87-candidate-batch-counters --memory-sample-interval-ms 25 --log-output reviews/task-92/014-offpath-calibration-run/artifacts/latency-spire-turboquant-lut32-kernel-off.log
-[suite:task92-offpath-calibration] wrote reviews/task-92/014-offpath-calibration-run/artifacts/suite-manifest.json
-[suite:task92-offpath-calibration] wrote reviews/task-92/014-offpath-calibration-run/artifacts/suite-manifest.json
-[suite:task92-offpath-calibration] wrote reviews/task-92/014-offpath-calibration-run/artifacts/results.jsonl
-[suite:task92-offpath-calibration] wrote reviews/task-92/014-offpath-calibration-run/artifacts/suite-manifest.json

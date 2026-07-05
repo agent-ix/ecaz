@@ -1,6 +1,0 @@
-Script started on 2026-05-21 11:05:43-07:00 [<not executed on terminal>]
-590:    let opaque = unsafe { debug_scan_opaque_mut(scan) };
-632:    pgrx::itemptr::item_pointer_get_both(unsafe { (*scan).xs_heaptid })
-644:        unsafe { debug_scan_heap_tid(scan) }
-
-Script done on 2026-05-21 11:05:43-07:00 [COMMAND_EXIT_CODE="0"]

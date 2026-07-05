@@ -1,4 +1,0 @@
-Script started on 2026-05-27 08:37:53-07:00 [<not executed on terminal>]
-ERROR: auto_stop_at must be in the future before provisioning, got: 2026-05-27T06:00:00Z
-
-Script done on 2026-05-27 08:37:53-07:00 [COMMAND_EXIT_CODE="2"]

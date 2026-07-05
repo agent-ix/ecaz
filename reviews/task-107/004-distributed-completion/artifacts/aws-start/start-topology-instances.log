@@ -1,4 +1,0 @@
-topology=reviews/task-107/002-aws-provisioning/artifacts/aws-topology.json
-region=us-west-2
-instance_ids=i-00c2f2aca9dbdd6bd i-07bcc98c3d5d027ee i-0b4386fa5017f1363
-started topology instances: i-00c2f2aca9dbdd6bd i-07bcc98c3d5d027ee i-0b4386fa5017f1363

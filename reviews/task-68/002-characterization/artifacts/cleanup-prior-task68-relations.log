@@ -1,8 +1,0 @@
-DROP TABLE
-DROP TABLE
-DROP TABLE
-DROP TABLE
-NOTICE:  table "task68_spire_10k_load_corpus" does not exist, skipping
-NOTICE:  table "task68_spire_10k_load_queries" does not exist, skipping
-NOTICE:  table "task68_spire_100k_load_corpus" does not exist, skipping
-NOTICE:  table "task68_spire_100k_load_queries" does not exist, skipping

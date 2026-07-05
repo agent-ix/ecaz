@@ -1,5 +1,0 @@
-warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:882:56: warning: unused parameter 'arg' [-Wunused-parameter]
-warning: ecaz@0.1.1:   882 | pgstat_hash_hash_key(const void *d, size_t size, void *arg)
-warning: ecaz@0.1.1:       |                                                        ^
-warning: ecaz@0.1.1: 6 warnings generated.
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.08s

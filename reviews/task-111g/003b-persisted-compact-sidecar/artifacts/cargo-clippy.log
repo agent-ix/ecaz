@@ -1,7 +1,0 @@
-    Blocking waiting for file lock on build directory
-    Checking ring v0.17.14
-    Checking rustls-webpki v0.103.13
-    Checking rustls v0.23.40
-    Checking tokio-rustls v0.26.4
-    Checking ecaz v0.1.1 (/home/peter/dev/ecaz/.claude/worktrees/agent-a101e65e3315fb52f)
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2m 06s

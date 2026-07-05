@@ -1,8 +1,0 @@
-Script started on 2026-05-27 11:17:14-07:00 [<not executed on terminal>]
-[33me868d5401[m[33m ([m[1;36mHEAD -> [m[1;32mdiskann-aws-optimization[m[33m)[m Wire SPIRE representative pass plan target
- infra/spire-aws/Makefile                                       | 5 [32m++++[m[31m-[m
- plan/tasks/task30-phase13e-spire-aws-production-gap-closure.md | 3 [32m+++[m
- scripts/spire-aws/preflight-representative-performance.sh      | 2 [32m++[m
- 3 files changed, 9 insertions(+), 1 deletion(-)
-
-Script done on 2026-05-27 11:17:14-07:00 [COMMAND_EXIT_CODE="0"]

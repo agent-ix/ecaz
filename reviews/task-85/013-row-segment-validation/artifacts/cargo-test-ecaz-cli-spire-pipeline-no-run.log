@@ -1,5 +1,0 @@
-Script started on 2026-06-07 09:18:51-07:00 [<not executed on terminal>]
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.22s
-  Executable unittests src/main.rs (target/debug/deps/ecaz-27bbce43e3160435)
-
-Script done on 2026-06-07 09:18:51-07:00 [COMMAND_EXIT_CODE="0"]

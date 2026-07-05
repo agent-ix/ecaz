@@ -1,9 +1,0 @@
-{
-  "commands": [
-    "set -euxo pipefail",
-    "date -Is",
-    "ps -eo pid,ppid,stat,etime,pcpu,pmem,comm,args | egrep 'cargo|rustc|postgres|ssm|systemctl' | head -80",
-    "du -sh /var/lib/pgsql/build/ecaz/target 2>/dev/null || true",
-    "sudo -u postgres test -f /var/lib/pgsql/build/ecaz/target/release/libecaz.so && ls -lh /var/lib/pgsql/build/ecaz/target/release/libecaz.so || true"
-  ]
-}

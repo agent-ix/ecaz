@@ -1,3 +1,0 @@
-$ git diff --check HEAD~1..HEAD
-
-<no output>

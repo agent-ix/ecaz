@@ -1,2 +1,0 @@
-python3 scripts/unsafe_ledger.py generate --output reviews/task-50/126-relation-block-count-boundary/artifacts/unsafe-ledger-after.jsonl --packet reviews/task-50/126-relation-block-count-boundary src
-wrote 1607 unsafe ledger rows to reviews/task-50/126-relation-block-count-boundary/artifacts/unsafe-ledger-after.jsonl

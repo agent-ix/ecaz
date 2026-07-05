@@ -1,5 +1,0 @@
-   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz)
-   Compiling ecaz-cli v0.1.0 (/home/peter/dev/ecaz/crates/ecaz-cli)
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 55.32s
-     Running `target/debug/ecaz bench suite audit --config benchmarks/task60-diskann-rabitq-format/suite.json`
-[suite:task60-diskann-rabitq-format] audit passed: 24 steps

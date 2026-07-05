@@ -1,5 +1,0 @@
-plan/tasks/74-spire-leaf-scan-overhead.md:66:- Profile via `samply` or `cargo flamegraph` — capture the
-reviews/task-74/002-closeout/request.md:10:without a local external flamegraph/samply profile, there is not enough
-reviews/task-74/002-closeout/request.md:58:The Task 74 Phase 1 packet did not include an external `samply` or
-reviews/task-74/002-closeout/request.md:59:`cargo flamegraph` artifact. It used suite-visible query metrics, SPIRE
-reviews/task-74/001-spire-m5-overhead-gate/request.md:28:Ran `ecaz bench suite` on PG18 against local M5 fixture data. No separate external profiler was installed or run; this packet uses suite-visible query metrics, SPIRE pipeline counters, local production-read totals, and the IVF same-host control.

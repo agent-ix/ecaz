@@ -1,3 +1,0 @@
-ssm: instance=i-0a6951577c705f238 command_id=538ea236-6e7a-4999-a04c-407295407e34 timeout_secs=21600
-bench: synced artifacts from s3://ecaz-cloud-10k-medium-268ea93e/bench-artifacts/vchord-g4-probe/20260616T191230Z/
-bench: profile=10k-medium suite=vchord-g4-probe run=20260616T191230Z log=/home/peter/dev/ecaz/benchmarks/comparators-50k-100k-1m/artifacts/vchord-g4-run/artifacts/suite-run.log

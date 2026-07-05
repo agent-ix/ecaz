@@ -1,5 +1,0 @@
-command: git diff --check d26361e7^ d26361e7
-exit status: 0
-
-output:
-<no output>

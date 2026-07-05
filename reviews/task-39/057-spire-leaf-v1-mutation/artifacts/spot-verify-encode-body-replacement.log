@@ -1,5 +1,0 @@
-    careful_spire::storage::tests::local_object_store_writes_and_reads_leaf_object
-
-test result: FAILED. 542 passed; 8 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.55s
-
-error: test failed, to rerun pass `--lib`

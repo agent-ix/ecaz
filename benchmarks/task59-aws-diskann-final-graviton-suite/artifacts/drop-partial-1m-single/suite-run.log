@@ -1,6 +1,0 @@
-[suite:task59-drop-partial-1m-single] wrote benchmarks/task59-aws-diskann-final-graviton-suite/artifacts/drop-partial-1m-single/suite-manifest.json
-[suite:task59-drop-partial-1m-single] drop-partial-1m-corpus -> --database postgres --host /var/run/postgresql --user postgres dev sql --pg 18 --db postgres --socket-dir /var/run/postgresql --raw --sql "DROP TABLE IF EXISTS task59_real_1m_diskann_corpus CASCADE;" --log-output benchmarks/task59-aws-diskann-final-graviton-suite/artifacts/drop-partial-1m-single/drop-partial-1m-corpus.log
-[suite:task59-drop-partial-1m-single] wrote benchmarks/task59-aws-diskann-final-graviton-suite/artifacts/drop-partial-1m-single/suite-manifest.json
-[suite:task59-drop-partial-1m-single] wrote benchmarks/task59-aws-diskann-final-graviton-suite/artifacts/drop-partial-1m-single/suite-manifest.json
-[suite:task59-drop-partial-1m-single] wrote benchmarks/task59-aws-diskann-final-graviton-suite/artifacts/drop-partial-1m-single/results.jsonl
-[suite:task59-drop-partial-1m-single] wrote benchmarks/task59-aws-diskann-final-graviton-suite/artifacts/drop-partial-1m-single/suite-manifest.json

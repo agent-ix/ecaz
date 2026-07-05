@@ -1,5 +1,0 @@
-Script started on 2026-05-20 16:28:25-07:00 [<not executed on terminal>]
-python3 scripts/unsafe_ledger.py check --ledger reviews/task-50/105-hnsw-planner-cost-boundary/artifacts/unsafe-ledger-after.jsonl src
-ledger covers 1756 current unsafe rows
-
-Script done on 2026-05-20 16:28:25-07:00 [COMMAND_EXIT_CODE="0"]

@@ -1,5 +1,0 @@
-node_id=3
-status=ok
-elapsed_ms=279
-rendered_sql=reviews/task-142/014-release-multinode-smoke/artifacts/release-10k-n128-b0-smoke/remote-leaf-materialization/node-3-remote-materialize-rendered.sql
-log=reviews/task-142/014-release-multinode-smoke/artifacts/release-10k-n128-b0-smoke/remote-leaf-materialization/node-3-remote-materialize.log

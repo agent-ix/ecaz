@@ -1,6 +1,0 @@
-[suite:task121-stage1-routing-screen-100k] wrote reviews/task-121/001-stage1-routing-screen/artifacts/fmt-turboquant-storage-suite-manifest.json
-[suite:task121-stage1-routing-screen-100k] storage-fmt-turboquant -> --database tqvector_bench_task121 --host /home/peter/.pgrx --port 28818 --log-file reviews/task-121/001-stage1-routing-screen/artifacts/storage-fmt-turboquant.log bench storage --prefix t121_s1_100k_fmt_tq
-[suite:task121-stage1-routing-screen-100k] wrote reviews/task-121/001-stage1-routing-screen/artifacts/fmt-turboquant-storage-suite-manifest.json
-[suite:task121-stage1-routing-screen-100k] wrote reviews/task-121/001-stage1-routing-screen/artifacts/fmt-turboquant-storage-suite-manifest.json
-[suite:task121-stage1-routing-screen-100k] wrote reviews/task-121/001-stage1-routing-screen/artifacts/fmt-turboquant-storage-suite-results.jsonl
-[suite:task121-stage1-routing-screen-100k] wrote reviews/task-121/001-stage1-routing-screen/artifacts/fmt-turboquant-storage-suite-manifest.json

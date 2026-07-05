@@ -1,9 +1,0 @@
-profile              = "100m"
-db_instance_type     = "r7g.4xlarge"
-db_volume_gb         = 2048
-db_volume_iops       = 12000
-db_volume_throughput = 500
-loader_instance_type = "c7g.4xlarge"
-ecaz_git_ref         = "main"
-region               = "us-west-2"
-az                   = "us-west-2a"

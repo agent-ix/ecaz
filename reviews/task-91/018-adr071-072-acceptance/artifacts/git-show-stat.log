@@ -1,8 +1,0 @@
-Script started on 2026-06-09 00:29:54-07:00 [<not executed on terminal>]
-[33mdea59fcf9[m[33m ([m[1;36mHEAD -> [m[1;32mtask-91-92-quantcodec-kernel-infra[m[33m, [m[1;31morigin/task-91-92-quantcodec-kernel-infra[m[33m)[m Accept QuantCodec architecture ADRs
- spec/adr/ADR-071-unified-quantizer-interface.md    | 89 [32m++++++++++++++++[m[31m-----[m
- ...ADR-072-index-local-quantized-codec-adapters.md | 91 [32m++++++++++++++[m[31m--------[m
- spec/adr/index.md                                  |  4 [32m+[m[31m-[m
- 3 files changed, 129 insertions(+), 55 deletions(-)
-
-Script done on 2026-06-09 00:29:54-07:00 [COMMAND_EXIT_CODE="0"]

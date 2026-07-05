@@ -1,2 +1,0 @@
-[suite:task59-diagnose-prepare-1m] wrote benchmarks/task59-aws-diskann-final-graviton-suite/artifacts/diagnose-prepare-1m/suite-manifest.json
-[suite:task59-diagnose-prepare-1m] prepare-ec-real-1m-debug -> --database tqvector_bench --log-file benchmarks/task59-aws-diskann-final-graviton-suite/artifacts/diagnose-prepare-1m/prepare-ec-real-1m-debug.log corpus prepare --profile ec_real_ann_benchmarks_anchor --parquet /var/lib/pgsql/18/datasets/dbpedia-openai3-1m/data --output-dir /var/lib/pgsql/18/datasets/staged-task59-diskann-final --chunk-rows 25000

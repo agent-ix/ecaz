@@ -1,5 +1,0 @@
-Script started on 2026-05-26 10:55:11-07:00 [<not executed on terminal>]
-ssm_online instance_count=4 status=ready
-coordinator remote conninfo ssm command id: cd7ca982-dcf0-4559-b0d2-1bd2fc039660
-
-Script done on 2026-05-26 10:56:19-07:00 [COMMAND_EXIT_CODE="0"]

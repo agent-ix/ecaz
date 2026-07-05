@@ -1,116 +1,0 @@
-Script started on 2026-06-13 06:29:44-07:00 [<not executed on terminal>]
-   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz)
-    Finished `bench` profile [optimized + debuginfo] target(s) in 4m 58s
-     Running benches/criterion/quant_score.rs (target/release/deps/quant_score-aaf99c26a8049f61)
-Gnuplot not found, using plotters backend
-Benchmarking quant/rabitq32_multibit_block32/scalar_estimate_bits2/256[2KBenchmarking quant/rabitq32_multibit_block32/scalar_estimate_bits2/256: Warming up for 3.0000 s[2KBenchmarking quant/rabitq32_multibit_block32/scalar_estimate_bits2/256: Collecting 100 samples in estimated 5.0814 s (212k iterations)[2KBenchmarking quant/rabitq32_multibit_block32/scalar_estimate_bits2/256: Analyzing[2K[38;5;2mquant/rabitq32_multibit_block32/scalar_estimate_bits2/256[0m
-[38;5;2m[0m                        time:   [[2m23.135 µs[0m [1m23.260 µs[0m [2m23.397 µs[0m]
-                        thrpt:  [[2m1.3677 Melem/s[0m [1m1.3758 Melem/s[0m [2m1.3832 Melem/s[0m]
-[38;5;3mFound 4 outliers among 100 measurements (4.00%)[0m
-  4 (4.00%) high mild
-Benchmarking quant/rabitq32_multibit_block32/block_dispatch_bits2/256[2KBenchmarking quant/rabitq32_multibit_block32/block_dispatch_bits2/256: Warming up for 3.0000 s[2KBenchmarking quant/rabitq32_multibit_block32/block_dispatch_bits2/256: Collecting 100 samples in estimated 5.0101 s (429k iterations)[2KBenchmarking quant/rabitq32_multibit_block32/block_dispatch_bits2/256: Analyzing[2K[38;5;2mquant/rabitq32_multibit_block32/block_dispatch_bits2/256[0m
-[38;5;2m[0m                        time:   [[2m11.680 µs[0m [1m11.745 µs[0m [2m11.809 µs[0m]
-                        thrpt:  [[2m2.7098 Melem/s[0m [1m2.7246 Melem/s[0m [2m2.7398 Melem/s[0m]
-[38;5;3mFound 3 outliers among 100 measurements (3.00%)[0m
-  1 (1.00%) high mild
-  2 (2.00%) high severe
-Benchmarking quant/rabitq32_multibit_block32/scalar_estimate_bits4/256[2KBenchmarking quant/rabitq32_multibit_block32/scalar_estimate_bits4/256: Warming up for 3.0000 s[2KBenchmarking quant/rabitq32_multibit_block32/scalar_estimate_bits4/256: Collecting 100 samples in estimated 5.0073 s (2.0M iterations)[2KBenchmarking quant/rabitq32_multibit_block32/scalar_estimate_bits4/256: Analyzing[2K[38;5;2mquant/rabitq32_multibit_block32/scalar_estimate_bits4/256[0m
-[38;5;2m[0m                        time:   [[2m2.5223 µs[0m [1m2.5546 µs[0m [2m2.5881 µs[0m]
-                        thrpt:  [[2m12.364 Melem/s[0m [1m12.527 Melem/s[0m [2m12.687 Melem/s[0m]
-[38;5;3mFound 8 outliers among 100 measurements (8.00%)[0m
-  7 (7.00%) high mild
-  1 (1.00%) high severe
-Benchmarking quant/rabitq32_multibit_block32/block_dispatch_bits4/256[2KBenchmarking quant/rabitq32_multibit_block32/block_dispatch_bits4/256: Warming up for 3.0000 s[2KBenchmarking quant/rabitq32_multibit_block32/block_dispatch_bits4/256: Collecting 100 samples in estimated 5.0624 s (409k iterations)[2KBenchmarking quant/rabitq32_multibit_block32/block_dispatch_bits4/256: Analyzing[2K[38;5;2mquant/rabitq32_multibit_block32/block_dispatch_bits4/256[0m
-[38;5;2m[0m                        time:   [[2m12.471 µs[0m [1m12.740 µs[0m [2m13.063 µs[0m]
-                        thrpt:  [[2m2.4496 Melem/s[0m [1m2.5118 Melem/s[0m [2m2.5660 Melem/s[0m]
-[38;5;3mFound 5 outliers among 100 measurements (5.00%)[0m
-  4 (4.00%) high mild
-  1 (1.00%) high severe
-Benchmarking quant/rabitq32_multibit_block32/scalar_estimate_bits2/768[2KBenchmarking quant/rabitq32_multibit_block32/scalar_estimate_bits2/768: Warming up for 3.0000 s[2KBenchmarking quant/rabitq32_multibit_block32/scalar_estimate_bits2/768: Collecting 100 samples in estimated 5.0214 s (71k iterations)[2KBenchmarking quant/rabitq32_multibit_block32/scalar_estimate_bits2/768: Analyzing[2K[38;5;2mquant/rabitq32_multibit_block32/scalar_estimate_bits2/768[0m
-[38;5;2m[0m                        time:   [[2m68.961 µs[0m [1m69.463 µs[0m [2m70.029 µs[0m]
-                        thrpt:  [[2m456.95 Kelem/s[0m [1m460.68 Kelem/s[0m [2m464.03 Kelem/s[0m]
-[38;5;3mFound 10 outliers among 100 measurements (10.00%)[0m
-  6 (6.00%) high mild
-  4 (4.00%) high severe
-Benchmarking quant/rabitq32_multibit_block32/block_dispatch_bits2/768[2KBenchmarking quant/rabitq32_multibit_block32/block_dispatch_bits2/768: Warming up for 3.0000 s[2KBenchmarking quant/rabitq32_multibit_block32/block_dispatch_bits2/768: Collecting 100 samples in estimated 5.0044 s (126k iterations)[2KBenchmarking quant/rabitq32_multibit_block32/block_dispatch_bits2/768: Analyzing[2K[38;5;2mquant/rabitq32_multibit_block32/block_dispatch_bits2/768[0m
-[38;5;2m[0m                        time:   [[2m34.380 µs[0m [1m34.552 µs[0m [2m34.746 µs[0m]
-                        thrpt:  [[2m920.96 Kelem/s[0m [1m926.15 Kelem/s[0m [2m930.76 Kelem/s[0m]
-[38;5;3mFound 1 outliers among 100 measurements (1.00%)[0m
-  1 (1.00%) high mild
-Benchmarking quant/rabitq32_multibit_block32/scalar_estimate_bits4/768[2KBenchmarking quant/rabitq32_multibit_block32/scalar_estimate_bits4/768: Warming up for 3.0000 s[2KBenchmarking quant/rabitq32_multibit_block32/scalar_estimate_bits4/768: Collecting 100 samples in estimated 5.0280 s (763k iterations)[2KBenchmarking quant/rabitq32_multibit_block32/scalar_estimate_bits4/768: Analyzing[2K[38;5;2mquant/rabitq32_multibit_block32/scalar_estimate_bits4/768[0m
-[38;5;2m[0m                        time:   [[2m6.5832 µs[0m [1m6.6177 µs[0m [2m6.6527 µs[0m]
-                        thrpt:  [[2m4.8101 Melem/s[0m [1m4.8355 Melem/s[0m [2m4.8609 Melem/s[0m]
-Benchmarking quant/rabitq32_multibit_block32/block_dispatch_bits4/768[2KBenchmarking quant/rabitq32_multibit_block32/block_dispatch_bits4/768: Warming up for 3.0000 s[2KBenchmarking quant/rabitq32_multibit_block32/block_dispatch_bits4/768: Collecting 100 samples in estimated 5.0795 s (141k iterations)[2KBenchmarking quant/rabitq32_multibit_block32/block_dispatch_bits4/768: Analyzing[2K[38;5;2mquant/rabitq32_multibit_block32/block_dispatch_bits4/768[0m
-[38;5;2m[0m                        time:   [[2m36.095 µs[0m [1m36.264 µs[0m [2m36.437 µs[0m]
-                        thrpt:  [[2m878.23 Kelem/s[0m [1m882.41 Kelem/s[0m [2m886.56 Kelem/s[0m]
-[38;5;3mFound 4 outliers among 100 measurements (4.00%)[0m
-  4 (4.00%) high mild
-Benchmarking quant/rabitq32_multibit_block32/scalar_estimate_bits2/1024[2KBenchmarking quant/rabitq32_multibit_block32/scalar_estimate_bits2/1024: Warming up for 3.0000 s[2KBenchmarking quant/rabitq32_multibit_block32/scalar_estimate_bits2/1024: Collecting 100 samples in estimated 5.1629 s (56k iterations)[2KBenchmarking quant/rabitq32_multibit_block32/scalar_estimate_bits2/1024: Analyzing[2K[38;5;2mquant/rabitq32_multibit_block32/scalar_estimate_bits2/1024[0m
-[38;5;2m[0m                        time:   [[2m94.090 µs[0m [1m95.164 µs[0m [2m96.429 µs[0m]
-                        thrpt:  [[2m331.85 Kelem/s[0m [1m336.26 Kelem/s[0m [2m340.10 Kelem/s[0m]
-[38;5;3mFound 7 outliers among 100 measurements (7.00%)[0m
-  2 (2.00%) high mild
-  5 (5.00%) high severe
-Benchmarking quant/rabitq32_multibit_block32/block_dispatch_bits2/1024[2KBenchmarking quant/rabitq32_multibit_block32/block_dispatch_bits2/1024: Warming up for 3.0000 s[2KBenchmarking quant/rabitq32_multibit_block32/block_dispatch_bits2/1024: Collecting 100 samples in estimated 5.1576 s (111k iterations)[2KBenchmarking quant/rabitq32_multibit_block32/block_dispatch_bits2/1024: Analyzing[2K[38;5;2mquant/rabitq32_multibit_block32/block_dispatch_bits2/1024[0m
-[38;5;2m[0m                        time:   [[2m46.725 µs[0m [1m47.205 µs[0m [2m47.761 µs[0m]
-                        thrpt:  [[2m670.00 Kelem/s[0m [1m677.89 Kelem/s[0m [2m684.86 Kelem/s[0m]
-[38;5;3mFound 2 outliers among 100 measurements (2.00%)[0m
-  2 (2.00%) high mild
-Benchmarking quant/rabitq32_multibit_block32/scalar_estimate_bits4/1024[2KBenchmarking quant/rabitq32_multibit_block32/scalar_estimate_bits4/1024: Warming up for 3.0000 s[2KBenchmarking quant/rabitq32_multibit_block32/scalar_estimate_bits4/1024: Collecting 100 samples in estimated 5.0225 s (566k iterations)[2KBenchmarking quant/rabitq32_multibit_block32/scalar_estimate_bits4/1024: Analyzing[2K[38;5;2mquant/rabitq32_multibit_block32/scalar_estimate_bits4/1024[0m
-[38;5;2m[0m                        time:   [[2m8.8251 µs[0m [1m8.8941 µs[0m [2m8.9683 µs[0m]
-                        thrpt:  [[2m3.5681 Melem/s[0m [1m3.5979 Melem/s[0m [2m3.6260 Melem/s[0m]
-[38;5;3mFound 7 outliers among 100 measurements (7.00%)[0m
-  2 (2.00%) high mild
-  5 (5.00%) high severe
-Benchmarking quant/rabitq32_multibit_block32/block_dispatch_bits4/1024[2KBenchmarking quant/rabitq32_multibit_block32/block_dispatch_bits4/1024: Warming up for 3.0000 s[2KBenchmarking quant/rabitq32_multibit_block32/block_dispatch_bits4/1024: Collecting 100 samples in estimated 5.1334 s (106k iterations)[2KBenchmarking quant/rabitq32_multibit_block32/block_dispatch_bits4/1024: Analyzing[2K[38;5;2mquant/rabitq32_multibit_block32/block_dispatch_bits4/1024[0m
-[38;5;2m[0m                        time:   [[2m50.579 µs[0m [1m52.080 µs[0m [2m53.450 µs[0m]
-                        thrpt:  [[2m598.69 Kelem/s[0m [1m614.44 Kelem/s[0m [2m632.67 Kelem/s[0m]
-[38;5;3mFound 21 outliers among 100 measurements (21.00%)[0m
-  2 (2.00%) high mild
-  19 (19.00%) high severe
-Benchmarking quant/rabitq32_multibit_block32/scalar_estimate_bits2/1536[2KBenchmarking quant/rabitq32_multibit_block32/scalar_estimate_bits2/1536: Warming up for 3.0000 s[2KBenchmarking quant/rabitq32_multibit_block32/scalar_estimate_bits2/1536: Collecting 100 samples in estimated 5.1844 s (35k iterations)[2KBenchmarking quant/rabitq32_multibit_block32/scalar_estimate_bits2/1536: Analyzing[2K[38;5;2mquant/rabitq32_multibit_block32/scalar_estimate_bits2/1536[0m
-[38;5;2m[0m                        time:   [[2m138.25 µs[0m [1m138.88 µs[0m [2m139.57 µs[0m]
-                        thrpt:  [[2m229.28 Kelem/s[0m [1m230.42 Kelem/s[0m [2m231.46 Kelem/s[0m]
-[38;5;3mFound 5 outliers among 100 measurements (5.00%)[0m
-  4 (4.00%) high mild
-  1 (1.00%) high severe
-Benchmarking quant/rabitq32_multibit_block32/block_dispatch_bits2/1536[2KBenchmarking quant/rabitq32_multibit_block32/block_dispatch_bits2/1536: Warming up for 3.0000 s[2KBenchmarking quant/rabitq32_multibit_block32/block_dispatch_bits2/1536: Collecting 100 samples in estimated 5.2952 s (76k iterations)[2KBenchmarking quant/rabitq32_multibit_block32/block_dispatch_bits2/1536: Analyzing[2K[38;5;2mquant/rabitq32_multibit_block32/block_dispatch_bits2/1536[0m
-[38;5;2m[0m                        time:   [[2m69.096 µs[0m [1m69.377 µs[0m [2m69.708 µs[0m]
-                        thrpt:  [[2m459.06 Kelem/s[0m [1m461.25 Kelem/s[0m [2m463.13 Kelem/s[0m]
-[38;5;3mFound 8 outliers among 100 measurements (8.00%)[0m
-  4 (4.00%) high mild
-  4 (4.00%) high severe
-Benchmarking quant/rabitq32_multibit_block32/scalar_estimate_bits4/1536[2KBenchmarking quant/rabitq32_multibit_block32/scalar_estimate_bits4/1536: Warming up for 3.0000 s[2KBenchmarking quant/rabitq32_multibit_block32/scalar_estimate_bits4/1536: Collecting 100 samples in estimated 5.0579 s (389k iterations)[2KBenchmarking quant/rabitq32_multibit_block32/scalar_estimate_bits4/1536: Analyzing[2K[38;5;2mquant/rabitq32_multibit_block32/scalar_estimate_bits4/1536[0m
-[38;5;2m[0m                        time:   [[2m12.756 µs[0m [1m12.810 µs[0m [2m12.882 µs[0m]
-                        thrpt:  [[2m2.4841 Melem/s[0m [1m2.4980 Melem/s[0m [2m2.5086 Melem/s[0m]
-[38;5;3mFound 8 outliers among 100 measurements (8.00%)[0m
-  6 (6.00%) high mild
-  2 (2.00%) high severe
-Benchmarking quant/rabitq32_multibit_block32/block_dispatch_bits4/1536[2KBenchmarking quant/rabitq32_multibit_block32/block_dispatch_bits4/1536: Warming up for 3.0000 s[2KBenchmarking quant/rabitq32_multibit_block32/block_dispatch_bits4/1536: Collecting 100 samples in estimated 5.1048 s (71k iterations)[2KBenchmarking quant/rabitq32_multibit_block32/block_dispatch_bits4/1536: Analyzing[2K[38;5;2mquant/rabitq32_multibit_block32/block_dispatch_bits4/1536[0m
-[38;5;2m[0m                        time:   [[2m72.404 µs[0m [1m72.900 µs[0m [2m73.497 µs[0m]
-                        thrpt:  [[2m435.39 Kelem/s[0m [1m438.96 Kelem/s[0m [2m441.96 Kelem/s[0m]
-[38;5;3mFound 5 outliers among 100 measurements (5.00%)[0m
-  5 (5.00%) high mild
-Benchmarking quant/rabitq32_multibit_block32/scalar_estimate_bits2/3072[2KBenchmarking quant/rabitq32_multibit_block32/scalar_estimate_bits2/3072: Warming up for 3.0000 s[2KBenchmarking quant/rabitq32_multibit_block32/scalar_estimate_bits2/3072: Collecting 100 samples in estimated 5.6817 s (20k iterations)[2KBenchmarking quant/rabitq32_multibit_block32/scalar_estimate_bits2/3072: Analyzing[2K[38;5;2mquant/rabitq32_multibit_block32/scalar_estimate_bits2/3072[0m
-[38;5;2m[0m                        time:   [[2m277.17 µs[0m [1m278.50 µs[0m [2m279.94 µs[0m]
-                        thrpt:  [[2m114.31 Kelem/s[0m [1m114.90 Kelem/s[0m [2m115.45 Kelem/s[0m]
-[38;5;3mFound 2 outliers among 100 measurements (2.00%)[0m
-  2 (2.00%) high mild
-Benchmarking quant/rabitq32_multibit_block32/block_dispatch_bits2/3072[2KBenchmarking quant/rabitq32_multibit_block32/block_dispatch_bits2/3072: Warming up for 3.0000 s[2KBenchmarking quant/rabitq32_multibit_block32/block_dispatch_bits2/3072: Collecting 100 samples in estimated 5.0244 s (35k iterations)[2KBenchmarking quant/rabitq32_multibit_block32/block_dispatch_bits2/3072: Analyzing[2K[38;5;2mquant/rabitq32_multibit_block32/block_dispatch_bits2/3072[0m
-[38;5;2m[0m                        time:   [[2m142.69 µs[0m [1m145.28 µs[0m [2m148.03 µs[0m]
-                        thrpt:  [[2m216.17 Kelem/s[0m [1m220.26 Kelem/s[0m [2m224.26 Kelem/s[0m]
-[38;5;3mFound 11 outliers among 100 measurements (11.00%)[0m
-  4 (4.00%) high mild
-  7 (7.00%) high severe
-Benchmarking quant/rabitq32_multibit_block32/scalar_estimate_bits4/3072[2KBenchmarking quant/rabitq32_multibit_block32/scalar_estimate_bits4/3072: Warming up for 3.0000 s[2KBenchmarking quant/rabitq32_multibit_block32/scalar_estimate_bits4/3072: Collecting 100 samples in estimated 5.0706 s (167k iterations)[2KBenchmarking quant/rabitq32_multibit_block32/scalar_estimate_bits4/3072: Analyzing[2K[38;5;2mquant/rabitq32_multibit_block32/scalar_estimate_bits4/3072[0m
-[38;5;2m[0m                        time:   [[2m25.960 µs[0m [1m26.240 µs[0m [2m26.602 µs[0m]
-                        thrpt:  [[2m1.2029 Melem/s[0m [1m1.2195 Melem/s[0m [2m1.2327 Melem/s[0m]
-Benchmarking quant/rabitq32_multibit_block32/block_dispatch_bits4/3072[2KBenchmarking quant/rabitq32_multibit_block32/block_dispatch_bits4/3072: Warming up for 3.0000 s[2KBenchmarking quant/rabitq32_multibit_block32/block_dispatch_bits4/3072: Collecting 100 samples in estimated 5.2272 s (35k iterations)[2KBenchmarking quant/rabitq32_multibit_block32/block_dispatch_bits4/3072: Analyzing[2K[38;5;2mquant/rabitq32_multibit_block32/block_dispatch_bits4/3072[0m
-[38;5;2m[0m                        time:   [[2m146.92 µs[0m [1m148.14 µs[0m [2m149.44 µs[0m]
-                        thrpt:  [[2m214.13 Kelem/s[0m [1m216.01 Kelem/s[0m [2m217.80 Kelem/s[0m]
-[38;5;3mFound 6 outliers among 100 measurements (6.00%)[0m
-  3 (3.00%) high mild
-  3 (3.00%) high severe
-
-
-Script done on 2026-06-13 06:37:26-07:00 [COMMAND_EXIT_CODE="0"]

@@ -1,6 +1,0 @@
-0	/var/lib/pgsql/18/datasets/staged-task59-diskann-final
-2.0G	/var/lib/pgsql/18/datasets/staged-100k
-20G	/var/lib/pgsql/18/datasets/staged-1m
-22G	/var/lib/pgsql/18/datasets
-Filesystem      Size  Used Avail Use% Mounted on
-/dev/nvme1n1    100G   71G   30G  71% /var/lib/pgsql/18

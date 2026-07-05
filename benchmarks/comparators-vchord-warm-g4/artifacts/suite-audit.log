@@ -1,9 +1,0 @@
-
-   0: [91mparsing benchmarks/comparators-vchord-warm-g4/suite.json[0m
-   1: [91munknown variant `comparator`, expected one of `corpus-fetch`, `corpus-prepare`, `load`, `recall`, `cross-am`, `latency`, `spire-pipeline`, `storage`, `explain`, `sidecar-rerank`, `compare-pgvector`, `compare-vectorscale`, `raw` at line 13 column 26[0m
-
-Location:
-   [35mcrates/ecaz-cli/src/commands/bench/suite.rs[0m:[35m1112[0m
-
-Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
-Run with RUST_BACKTRACE=full to include source snippets.

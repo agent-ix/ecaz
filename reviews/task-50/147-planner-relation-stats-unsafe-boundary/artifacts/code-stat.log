@@ -1,3 +1,0 @@
-5ce5415c Require unsafe context for planner relation stats
- src/am/common/cost.rs | 4 ++--
- 1 file changed, 2 insertions(+), 2 deletions(-)

@@ -1,2 +1,0 @@
-hardening/careful/src/../../../src/quant/rabitq.rs:1127:30: replace < with == in estimate_ip_impl
-hardening/careful/src/../../../src/quant/rabitq.rs:1127:30: replace < with <= in estimate_ip_impl

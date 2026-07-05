@@ -1,3 +1,0 @@
-[suite:profile-hnsw-1m] wrote benchmarks/profile-hnsw-1m/artifacts/suite-manifest.json
-[suite:profile-hnsw-1m] load-hnsw-real1m-m16 -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 --log-file benchmarks/profile-hnsw-1m/artifacts/load-hnsw-real1m-m16.log corpus load --prefix ec_hnsw_real_ann_benchmarks_anchor --profile ec_hnsw --manifest-file data/benchmark-profile-inputs/dbpedia-openai3-1m-staged/ec_hnsw_real_ann_benchmarks_anchor_manifest.json --chunked --bits 4 --seed 42 --m 16 --ef-construction 128
-[suite:profile-hnsw-1m] wrote benchmarks/profile-hnsw-1m/artifacts/suite-manifest.json

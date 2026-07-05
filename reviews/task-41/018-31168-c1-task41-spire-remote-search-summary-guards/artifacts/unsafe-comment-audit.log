@@ -1,5 +1,0 @@
-command: bash scripts/check_unsafe_comments.sh
-exit status: 0
-
-output:
-<no output>

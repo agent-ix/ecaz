@@ -1,5 +1,0 @@
-Script started on 2026-05-21 12:31:36-07:00 [<not executed on terminal>]
-python3 scripts/unsafe_ledger.py check --ledger reviews/task-50/301-rabitq-simd-safety-comment-split/artifacts/unsafe-ledger-after.jsonl src
-ledger covers 1389 current unsafe rows
-
-Script done on 2026-05-21 12:31:36-07:00 [COMMAND_EXIT_CODE="0"]

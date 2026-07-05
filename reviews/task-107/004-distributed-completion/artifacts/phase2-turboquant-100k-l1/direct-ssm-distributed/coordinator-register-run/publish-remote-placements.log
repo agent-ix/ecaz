@@ -1,5 +1,0 @@
- active_epoch | rewritten_placement_count | remote_node_count |               status               
---------------+---------------------------+-------------------+------------------------------------
-            1 |                       317 |                 2 | published_static_remote_placements
-(1 row)
-

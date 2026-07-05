@@ -1,2 +1,0 @@
-python3 scripts/unsafe_ledger.py check --ledger reviews/task-50/134-relation-descriptor-metadata-boundary/artifacts/unsafe-ledger-after.jsonl src
-ledger covers 1571 current unsafe rows

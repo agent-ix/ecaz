@@ -1,8 +1,0 @@
-
-   0: [91mssm command 221ba958-827b-4160-b9ab-f49cab4be94f on i-06ace3e95ab942623 ended in Failed (rc=1): + cd /var/lib/pgsql/build/ecaz / ++ dirname reviews/task-85/025-aws-rerank-locality-measurement/suite-aws-1m-rerank-locality-q500.json / + mkdir -p reviews/task-85/025-aws-rerank-locality-measurement reviews/task-85/025-aws-rerank-locality-measurement/artifacts/aws-1m-rerank-locality-q500 / + trap 'status=$?; set +e; aws s3 sync reviews/task-85/025-aws-rerank-locality-measurement/artifacts/aws-1m-rerank-locality-q500 s3://ecaz-cloud-1m-b62eb804/bench-artifacts/task85-aws-1m-rerank-locality-q500/20260607T211731Z/ --region us-west-2 --only-show-errors || true; exit $status' EXIT / + aws s3 cp s3://ecaz-cloud-1m-b62eb804/bench-artifacts/task85-aws-1m-rerank-locality-q500/20260607T211731Z/suite-config.json reviews/task-85/025-aws-rerank-locality-measurement/suite-aws-1m-rerank-locality-q500.json --region us-west-2 --only-show-errors[0m
-
-Location:
-   [35mcrates/ecaz-cloud/src/ssm.rs[0m:[35m122[0m
-
-Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
-Run with RUST_BACKTRACE=full to include source snippets.

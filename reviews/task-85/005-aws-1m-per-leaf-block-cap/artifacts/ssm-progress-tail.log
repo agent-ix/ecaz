@@ -1,4 +1,0 @@
-Read-only SSM progress checks during the long suite showed the run was active,
-not stuck. The suite log had advanced through `perleaf12` and was running
-`perleaf14`; a PostgreSQL activity check showed active 1M corpus KNN query work
-with `wait_event_type=IO` and `wait_event=DataFileRead`.

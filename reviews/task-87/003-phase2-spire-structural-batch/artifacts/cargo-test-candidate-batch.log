@@ -1,9 +1,0 @@
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.15s
-     Running unittests src/lib.rs (target/debug/deps/ecaz-52f8c7085962b346)
-
-running 2 tests
-test am::common::candidate_batch::tests::candidate_batch_preserves_ids_and_payloads ... ok
-test am::common::candidate_batch::tests::candidate_batch_rejects_capacity_overflow ... ok
-
-test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 1990 filtered out; finished in 0.00s
-

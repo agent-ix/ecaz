@@ -1,2 +1,0 @@
-DROP INDEX
-NOTICE:  index "task111h021_1m_source_f32_w64_idx" does not exist, skipping

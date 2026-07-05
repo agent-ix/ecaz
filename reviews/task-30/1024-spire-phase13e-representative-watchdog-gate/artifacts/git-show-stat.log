@@ -1,6 +1,0 @@
-Script started on 2026-05-27 10:47:47-07:00 [<not executed on terminal>]
-[33mb21c718c9[m[33m ([m[1;36mHEAD -> [m[1;32mdiskann-aws-optimization[m[33m)[m Gate SPIRE representative pass watchdog wiring
- .../preflight-representative-performance.sh        | 57 [32m++++++++++++++++++++++[m
- 1 file changed, 57 insertions(+)
-
-Script done on 2026-05-27 10:47:48-07:00 [COMMAND_EXIT_CODE="0"]

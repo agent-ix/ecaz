@@ -1,8 +1,0 @@
-Script started on 2026-05-21 19:19:58-07:00 [<not executed on terminal>]
-152:    unsafe {
-214:        let existing = unsafe { pg_sys::get_relname_relid(relname.as_ptr(), namespace_oid) };
-233:        let store_relid = unsafe {
-281:        unsafe {
-301:        unsafe { page::initialize_aux_store_metadata_page(store_relation.as_ptr()) };
-
-Script done on 2026-05-21 19:19:58-07:00 [COMMAND_EXIT_CODE="0"]

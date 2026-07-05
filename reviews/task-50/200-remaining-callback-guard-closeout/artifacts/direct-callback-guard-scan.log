@@ -1,9 +1,0 @@
-Script started on 2026-05-21 01:59:55-07:00 [<not executed on terminal>]
-src/am/common/callback.rs
-4:    // `pgrx_extern_c_guard` is the required FFI boundary guard that prevents
-6:    unsafe { pgrx::pgrx_extern_c_guard(callback) }
-15:        unsafe { pgrx::pgrx_extern_c_guard(|| $body) }
-24:        // `pgrx_extern_c_guard` prevents Rust unwinds from crossing the C ABI.
-25:        unsafe { pgrx::pgrx_extern_c_guard(|| $body) }
-
-Script done on 2026-05-21 01:59:55-07:00 [COMMAND_EXIT_CODE="0"]

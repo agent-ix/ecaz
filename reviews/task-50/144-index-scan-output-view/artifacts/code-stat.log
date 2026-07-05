@@ -1,7 +1,0 @@
-7eb1ec04 Bind scan output writes to callback descriptors
- src/am/common/scan_output.rs      | 107 +++++++++++++++++++++++---------------
- src/am/ec_hnsw/scan.rs            |  51 ++++++++++--------
- src/am/ec_ivf/scan.rs             |  23 ++++----
- src/am/ec_spire/scan/callbacks.rs |  10 ++--
- src/am/ec_spire/scan/relation.rs  |  30 ++++++-----
- 5 files changed, 129 insertions(+), 92 deletions(-)

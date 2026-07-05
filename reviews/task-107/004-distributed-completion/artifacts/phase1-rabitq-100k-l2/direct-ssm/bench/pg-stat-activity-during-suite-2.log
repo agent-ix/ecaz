@@ -1,2 +1,0 @@
-7139	idle	Client	ClientRead	00:00:00.308113	SELECT id FROM task107_phase1_rabitq_100k_l2_corpus ORDER BY embedding <#> $1::real[] LIMIT $2
-7465	active			00:00:00	SELECT pid, state, wait_event_type, wait_event, now() - query_start AS age, left(query, 160) AS query FROM pg_stat_activity WHERE datname='postgres' AND (query 

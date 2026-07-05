@@ -1,5 +1,0 @@
-SET
-SET
-SET
-PREPARE
-ERROR:  EcSpireDistributedScan tuple payload column "source" has unsupported non-scalar JSON value

@@ -1,1 +1,0 @@
-standalone rustfmt skipped: changed files include src/tests include files whose indentation is owned by the including module; formatting checked by cargo parser and git diff --check instead

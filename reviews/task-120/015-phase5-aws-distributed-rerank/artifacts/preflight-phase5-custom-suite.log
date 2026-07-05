@@ -1,6 +1,0 @@
-make: Entering directory '/home/peter/dev/ecaz/infra/spire-aws'
-cd /home/peter/dev/ecaz && /home/peter/dev/ecaz/scripts/spire-aws/preflight-representative-performance.sh
-jq: error (at /home/peter/dev/ecaz/reviews/task-120/015-phase5-aws-distributed-rerank/artifacts/suite-task120-phase5-aws.json:190): Cannot iterate over null (null)
-ERROR: representative priority suite recall thresholds failed in /home/peter/dev/ecaz/reviews/task-120/015-phase5-aws-distributed-rerank/artifacts/suite-task120-phase5-aws.json
-make: *** [Makefile:87: preflight-representative-performance] Error 2
-make: Leaving directory '/home/peter/dev/ecaz/infra/spire-aws'

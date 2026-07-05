@@ -1,5 +1,0 @@
-Script started on 2026-05-20 17:17:11-07:00 [<not executed on terminal>]
-python3 scripts/unsafe_ledger.py check --ledger reviews/task-50/113-ivf-reloptions-wrapper-boundary/artifacts/unsafe-ledger-after.jsonl src
-ledger covers 1672 current unsafe rows
-
-Script done on 2026-05-20 17:17:12-07:00 [COMMAND_EXIT_CODE="0"]

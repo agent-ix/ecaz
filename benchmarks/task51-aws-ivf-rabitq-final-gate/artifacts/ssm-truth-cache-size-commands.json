@@ -1,7 +1,0 @@
-{
-  "commands": [
-    "set -x",
-    "ls -lh /var/lib/pgsql/build/ecaz/benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/truth-aws-real-1m-q500-k10.json 2>/dev/null || true",
-    "du -sh /var/lib/pgsql/build/ecaz/benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts 2>/dev/null || true"
-  ]
-}

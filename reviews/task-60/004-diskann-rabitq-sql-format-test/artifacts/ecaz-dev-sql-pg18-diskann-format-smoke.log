@@ -1,2 +1,0 @@
-psql: error: connection to server on socket "/home/peter/.pgrx/.s.PGSQL.28818" failed: Operation not permitted
-	Is the server running locally and accepting connections on that socket?

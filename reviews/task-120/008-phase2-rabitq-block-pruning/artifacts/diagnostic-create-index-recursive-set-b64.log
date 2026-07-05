@@ -1,8 +1,0 @@
-DROP INDEX
-SET
-SET
-SET
-CREATE INDEX
-RESET
-NOTICE:  index "task120_phase2_diag10k_recursive_b64_idx" does not exist, skipping
-NOTICE:  ec_spire_ambuild_timing index=task120_phase2_diag10k_recursive_b64_idx phase=complete heap_tuples=10000 scanned_tuples=10000 index_tuples=10000 recursive_fanout=8 setup_ms=0 heap_scan_ms=500 sample_collect_ms=0 kmeans_ms=881 kmeans_calls=1 assignment_ms=108 recursive_kmeans_ms=10 recursive_kmeans_calls=1 recursive_kmeans_max_level=1 recursive_assignment_ms=1 recursive_routing_initial_children=128 recursive_routing_final_children=8 recursive_routing_iterations=1 draft_ms=968 draft_total_ms=979 draft_input_clone_ms=25 draft_pid_alloc_ms=0 draft_recursive_routing_ms=12 draft_route_map_ms=0 draft_leaf_rows_ms=4 draft_leaf_inputs_ms=933 draft_validation_ms=0 top_graph_ms=162 pq4_training_ms=0 object_store_ms=0 object_store_total_ms=162 publish_ms=7 total_ms=2642

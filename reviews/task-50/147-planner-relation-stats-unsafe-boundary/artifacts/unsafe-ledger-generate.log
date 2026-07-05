@@ -1,2 +1,0 @@
-python3 scripts/unsafe_ledger.py generate --output reviews/task-50/147-planner-relation-stats-unsafe-boundary/artifacts/unsafe-ledger-after.jsonl --packet reviews/task-50/147-planner-relation-stats-unsafe-boundary src
-wrote 1613 unsafe ledger rows to reviews/task-50/147-planner-relation-stats-unsafe-boundary/artifacts/unsafe-ledger-after.jsonl

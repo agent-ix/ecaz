@@ -1,8 +1,0 @@
-Script started on 2026-05-26 10:10:18-07:00 [<not executed on terminal>]
-make: Entering directory '/home/peter/dev/ecaz/infra/spire-aws'
-cd /home/peter/dev/ecaz && /home/peter/dev/ecaz/scripts/spire-aws/archive-local-state.sh /home/peter/dev/ecaz/infra/spire-aws/terraform.tfstate /home/peter/dev/ecaz/reviews/task-30/990-spire-phase13e-aws-correctness-after-conninfo/artifacts
-Archived local Terraform state to /home/peter/dev/ecaz/reviews/task-30/990-spire-phase13e-aws-correctness-after-conninfo/artifacts/terraform.tfstate.20260526T171018Z.archived
-Moved local Terraform state aside to /home/peter/dev/ecaz/infra/spire-aws/terraform.tfstate.20260526T171018Z.archived
-make: Leaving directory '/home/peter/dev/ecaz/infra/spire-aws'
-
-Script done on 2026-05-26 10:10:18-07:00 [COMMAND_EXIT_CODE="0"]

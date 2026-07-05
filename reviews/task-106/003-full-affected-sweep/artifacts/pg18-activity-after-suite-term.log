@@ -1,4 +1,0 @@
- pid | state | wait_event_type | wait_event | age | query 
------+-------+-----------------+------------+-----+-------
-(0 rows)
-

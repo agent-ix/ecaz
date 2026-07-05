@@ -1,8 +1,0 @@
-
-   0: [91mssm command 1e572ba1-5b1d-4e07-a1bf-75fe5f22533e on i-0056e46b981edbb17 ended in Failed (rc=1): + cd /var/lib/pgsql/build/ecaz / ++ dirname reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/task67-diskann-1m-min-rerun-resume-suite.json / + mkdir -p reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-diskann / + trap 'status=$?; set +e; aws s3 sync reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-diskann s3://ecaz-cloud-1m-b62eb804/bench-artifacts/task67-diskann-1m-min-rerun-resume/20260530T190348Z/ --region us-west-2 --only-show-errors || true; exit $status' EXIT / + cat[0m
-
-Location:
-   [35mcrates/ecaz-cloud/src/ssm.rs[0m:[35m111[0m
-
-Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
-Run with RUST_BACKTRACE=full to include source snippets.

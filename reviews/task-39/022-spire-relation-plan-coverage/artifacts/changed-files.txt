@@ -1,3 +1,0 @@
-src/am/ec_spire/storage/local_store.rs
-src/am/ec_spire/storage/local_store_set.rs
-src/am/ec_spire/storage/relation_plan.rs

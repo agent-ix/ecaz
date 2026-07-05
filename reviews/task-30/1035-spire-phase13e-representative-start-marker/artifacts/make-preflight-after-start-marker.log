@@ -1,8 +1,0 @@
-Script started on 2026-05-27 11:30:23-07:00 [<not executed on terminal>]
-make: Entering directory '/home/peter/dev/ecaz/infra/spire-aws'
-cd /home/peter/dev/ecaz && /home/peter/dev/ecaz/scripts/spire-aws/preflight-representative-performance.sh
-ERROR: ARTIFACT_DIR already contains representative run output: /home/peter/dev/ecaz/reviews/task-30/1035-spire-phase13e-representative-start-marker/artifacts/.representative-performance-pass.started
-make: *** [Makefile:85: preflight-representative-performance] Error 2
-make: Leaving directory '/home/peter/dev/ecaz/infra/spire-aws'
-
-Script done on 2026-05-27 11:30:23-07:00 [COMMAND_EXIT_CODE="2"]

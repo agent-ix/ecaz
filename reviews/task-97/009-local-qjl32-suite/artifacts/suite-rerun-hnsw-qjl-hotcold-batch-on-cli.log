@@ -1,6 +1,0 @@
-[suite:task97-local-qjl32-suite] wrote reviews/task-97/009-local-qjl32-suite/artifacts/suite-rerun-hnsw-qjl-hotcold-batch-on-manifest.json
-[suite:task97-local-qjl32-suite] latency-hnsw-turboquant-qjl32-batch-on -> --database postgres --host /home/peter/.pgrx --port 28818 bench latency --prefix task97_qjl32_hnsw --profile ec_hnsw --k 10 --concurrency 1 --iterations 100 --sweep 32 --bits 4 --seed 42 --force-index --cache-state task97_qjl32_hnsw_batch_on --task87-candidate-batch-counters --memory-sample-interval-ms 25 --log-output reviews/task-97/009-local-qjl32-suite/artifacts/latency-hnsw-turboquant-qjl32-batch-on.log
-[suite:task97-local-qjl32-suite] wrote reviews/task-97/009-local-qjl32-suite/artifacts/suite-rerun-hnsw-qjl-hotcold-batch-on-manifest.json
-[suite:task97-local-qjl32-suite] wrote reviews/task-97/009-local-qjl32-suite/artifacts/suite-rerun-hnsw-qjl-hotcold-batch-on-manifest.json
-[suite:task97-local-qjl32-suite] wrote reviews/task-97/009-local-qjl32-suite/artifacts/results-rerun-hnsw-qjl-hotcold-batch-on.jsonl
-[suite:task97-local-qjl32-suite] wrote reviews/task-97/009-local-qjl32-suite/artifacts/suite-rerun-hnsw-qjl-hotcold-batch-on-manifest.json

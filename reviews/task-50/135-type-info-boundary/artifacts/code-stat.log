@@ -1,8 +1,0 @@
-68a7d617 Centralize PostgreSQL type metadata unsafe
- src/am/ec_diskann/ambuild.rs    | 17 +++--------------
- src/am/ec_hnsw/source.rs        | 25 +++----------------------
- src/am/ec_spire/build.rs        |  2 +-
- src/am/ec_spire/build/tuples.rs | 19 ++-----------------
- src/storage/mod.rs              |  1 +
- src/storage/type_info.rs        | 26 ++++++++++++++++++++++++++
- 6 files changed, 36 insertions(+), 54 deletions(-)

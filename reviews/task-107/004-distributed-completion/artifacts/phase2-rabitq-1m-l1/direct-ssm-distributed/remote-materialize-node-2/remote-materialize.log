@@ -1,9 +1,0 @@
-CREATE TABLE
-COPY 504734
-SELECT 504734
-DO
- active_epoch | leaf_count | assignment_count | next_pid | next_local_vec_seq |    status    
---------------+------------+------------------+----------+--------------------+--------------
-            1 |        498 |           504734 |      997 |             989995 | materialized
-(1 row)
-

@@ -1,5 +1,0 @@
-ec_spire_aws_synth_10k_corpus	id	bigint	int8
-ec_spire_aws_synth_10k_corpus	source	ARRAY	_float4
-ec_spire_aws_synth_10k_corpus	embedding	USER-DEFINED	ecvector
-ec_spire_aws_synth_10k_queries	id	bigint	int8
-ec_spire_aws_synth_10k_queries	source	ARRAY	_float4

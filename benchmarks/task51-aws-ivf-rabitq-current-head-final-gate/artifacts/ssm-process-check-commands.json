@@ -1,7 +1,0 @@
-{
-  "Parameters": {
-    "commands": [
-      "ps -eo pid,ppid,etime,pcpu,pmem,cmd | grep -E 'cargo|rustc|ecaz|pgrx' | grep -v grep || true"
-    ]
-  }
-}

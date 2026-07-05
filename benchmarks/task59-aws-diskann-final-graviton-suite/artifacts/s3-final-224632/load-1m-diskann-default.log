@@ -1,8 +1,0 @@
-
-   0: [91mparsing chunked manifest: missing field `chunks`[0m
-
-Location:
-   [35mcrates/ecaz-cli/src/manifest.rs[0m:[35m105[0m
-
-Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
-Run with RUST_BACKTRACE=full to include source snippets.

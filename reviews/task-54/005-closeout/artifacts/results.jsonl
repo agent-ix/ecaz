@@ -1,2 +1,0 @@
-{"suite":"task-54-005-closeout","step":"load-100k-hnsw","kind":"load","metric":"load_timing","artifact":"reviews/task-54/005-closeout/artifacts/corpus-load-ec_real_100k-hnsw.log","values":{"phase":"build_index","seconds":"32.230000","subject":"ec_real_100k_hnsw_m16_idx"}}
-{"suite":"task-54-005-closeout","step":"load-100k-hnsw","kind":"load","metric":"load_timing","artifact":"reviews/task-54/005-closeout/artifacts/corpus-load-ec_real_100k-hnsw.log","values":{"phase":"total","seconds":"37.800000","subject":"ec_real_100k_hnsw"}}

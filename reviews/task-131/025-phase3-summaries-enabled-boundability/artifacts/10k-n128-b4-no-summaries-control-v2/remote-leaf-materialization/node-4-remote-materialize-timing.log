@@ -1,5 +1,0 @@
-node_id=4
-status=ok
-elapsed_ms=2943
-rendered_sql=reviews/task-131/025-phase3-summaries-enabled-boundability/artifacts/10k-n128-b4-no-summaries-control-v2/remote-leaf-materialization/node-4-remote-materialize-rendered.sql
-log=reviews/task-131/025-phase3-summaries-enabled-boundability/artifacts/10k-n128-b4-no-summaries-control-v2/remote-leaf-materialization/node-4-remote-materialize.log

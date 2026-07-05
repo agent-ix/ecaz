@@ -1,8 +1,0 @@
-d888b912 Require unsafe context for planner cost globals
- src/am/common/cost.rs                       | 8 +++++---
- src/am/ec_diskann/cost.rs                   | 8 ++++++--
- src/am/ec_hnsw/shared.rs                    | 4 +++-
- src/am/ec_ivf/cost.rs                       | 8 ++++++--
- src/am/ec_spire/cost/mod.rs                 | 8 ++++++--
- src/am/ec_spire/custom_scan/cost_helpers.rs | 7 +++++--
- 6 files changed, 31 insertions(+), 12 deletions(-)

@@ -1,7 +1,0 @@
-Script started on 2026-07-01 09:50:12-07:00 [<not executed on terminal>]
-    Blocking waiting for file lock on package cache
-    Blocking waiting for file lock on package cache
-    Checking ecaz v0.1.1 (/home/peter/dev/ecaz)
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 7.58s
-
-Script done on 2026-07-01 09:50:19-07:00 [COMMAND_EXIT_CODE="0"]

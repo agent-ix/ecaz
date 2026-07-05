@@ -1,2 +1,0 @@
-python3 scripts/unsafe_ledger.py check --ledger reviews/task-50/125-spire-timestamp-boundary/artifacts/unsafe-ledger-after.jsonl src
-ledger covers 1630 current unsafe rows

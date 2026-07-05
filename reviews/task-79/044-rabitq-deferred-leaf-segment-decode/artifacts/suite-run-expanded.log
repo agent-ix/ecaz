@@ -1,8 +1,0 @@
-
-   0: [91mresume manifest config hash b4e209b68d7db3912a45d5429537924044721e1cf655d2f85dd98061f149d8a1 does not match current config hash f39a16494c7f51281dde45f72eae38be3c875aacacb55ca4a567de9bdb52b3ac[0m
-
-Location:
-   [35mcrates/ecaz-cli/src/commands/bench/suite.rs[0m:[35m1179[0m
-
-Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
-Run with RUST_BACKTRACE=full to include source snippets.

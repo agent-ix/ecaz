@@ -1,8 +1,0 @@
-Command:
-target/debug/ecaz cloud bench --profile 1m --database postgres --config reviews/task-85/006-aws-1m-block32-geometry/suite-aws-1m-block32-geometry-q500.json --suite task85-aws-1m-block32-geometry-q500 --ecaz-bin /usr/local/bin/ecaz --log-file reviews/task-85/006-aws-1m-block32-geometry/artifacts/cloud-bench-block32-geometry.log
-
-SSM command id:
-93bf30a9-9b0c-48fa-9f19-d691c841eab7
-
-Synced artifacts:
-s3://ecaz-cloud-1m-b62eb804/bench-artifacts/task85-aws-1m-block32-geometry-q500/20260607T102609Z/

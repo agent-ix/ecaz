@@ -1,9 +1,0 @@
-psql:scripts/spire-aws/export-coordinator-leaf-base-assignments.sql:57: ERROR:  ec_spire placement local_store_id 1 does not match relation object store id 0
-
-   0: [91mCommand { std: "/home/peter/.pgrx/18.3/pgrx-install/bin/psql" "-h" "127.0.0.1" "-p" "15432" "-U" "ecaz_coord" "-d" "postgres" "-v" "ON_ERROR_STOP=1" "-v" "coord_index=task107_rabitq_100k_l4_idx" "-v" "coord_table=task107_rabitq_100k_l4_corpus" "-v" "node_id=2" "-v" "remotes_json=[{\"node_id\":2},{\"node_id\":3}]" "-A" "-t" "-F" "\t" "-f" "scripts/spire-aws/export-coordinator-leaf-base-assignments.sql", kill_on_drop: false } failed with status exit status: 3[0m
-
-Location:
-   [35mcrates/ecaz-cli/src/commands/dev/support.rs[0m:[35m210[0m
-
-Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
-Run with RUST_BACKTRACE=full to include source snippets.

@@ -1,9 +1,0 @@
- ec_block_kernel_scoring_reset 
--------------------------------
- 
-(1 row)
-
- surface | quant_kind | isa | flushes | candidates | elapsed_nanos | elapsed_ms | kernel_flushes | kernel_candidates | kernel_elapsed_nanos | kernel_elapsed_ms | scalar_flushes | scalar_candidates | scalar_elapsed_nanos | scalar_elapsed_ms | width_lt8_flushes | width_8_15_flushes | width_16_31_flushes | width_ge32_flushes 
----------+------------+-----+---------+------------+---------------+------------+----------------+-------------------+----------------------+-------------------+----------------+-------------------+----------------------+-------------------+-------------------+--------------------+---------------------+--------------------
-(0 rows)
-

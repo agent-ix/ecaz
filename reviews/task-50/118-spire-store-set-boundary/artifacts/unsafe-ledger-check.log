@@ -1,2 +1,0 @@
-python3 scripts/unsafe_ledger.py check --ledger reviews/task-50/118-spire-store-set-boundary/artifacts/unsafe-ledger-after.jsonl src
-ledger covers 1652 current unsafe rows
