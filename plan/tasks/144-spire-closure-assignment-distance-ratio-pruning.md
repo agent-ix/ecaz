@@ -57,6 +57,10 @@ and fixed-count probing with ratio-bounded versions of both.
   `dist ≤ (1+ε)·dist_nearest` (cap per-vector replicas; report replication
   factor and storage delta). Keep `boundary_replica_count` as the fixed-count
   fallback for A/B.
+- If Phase 0 shows high leaf-size variance, add a size-capped/balanced
+  k-means assignment constraint as its own gated, individually-A/B'd change
+  (SPANN's third mechanism). If variance is already low, record that and
+  skip.
 
 ### Phase 2 — Distance-ratio probe pruning (query side)
 
@@ -68,7 +72,9 @@ and fixed-count probing with ratio-bounded versions of both.
 ### Phase 3 — Matrix + decision
 
 - A/B grid at 10k/50k/100k: {single-assignment, fixed-b, closure-ε} ×
-  {fixed nprobe, ratio pruning}, distinct recall + % scanned + p50 + storage.
+  {fixed nprobe, ratio pruning, adaptive_nprobe score-gap as-is (the Task 140
+  Phase-0 baseline — it has never been measured beyond one local smoke)},
+  distinct recall + % scanned + p50 + storage.
   Success: ≥0.99 distinct recall at ≤5% row-instances scanned at 50k/100k.
   If closure+pruning cannot reach it, escalate per ADR-051/060 reopen
   conditions (multi-probe / anisotropic centroid scoring) with the funnel

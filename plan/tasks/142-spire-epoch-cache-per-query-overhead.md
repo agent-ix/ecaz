@@ -65,6 +65,9 @@ their snapshot. Fixed per-query overhead should stop scaling with nlists.
 - Time `compute_amcostestimate` / `index_hierarchy_snapshot` /
   each `load_snapshot_coordinator_routing_hierarchy` call; confirm the
   staircase via EXPLAIN-only latency vs nlists on release build.
+- Cover the candidate-row decode loop (`dispatch.rs:1431-1441`) with its own
+  timer — it sits inside `candidate_receive` but outside `payload_decode`
+  (which is heap-only), so decode cost is currently invisible.
 
 ### Phase 1 — Coordinator caching
 
@@ -82,6 +85,11 @@ their snapshot. Fixed per-query overhead should stop scaling with nlists.
 - Wire the endpoint-identity cache into the async production path; drop the
   per-query regclass probe on pooled connections; evaluate replacing the
   per-query SPI advisory-lock pair with a session-scoped permit.
+- Verify the thread-local connection pool (`dispatch.rs:480-600`) actually
+  reuses connections on the production path — the smoke run opened 3 fresh
+  sockets per query (pool disabled or key churn); fix whatever defeats it.
+- Use named prepared statements for the candidate/heap queries on pooled
+  connections (`tokio_postgres::query` currently re-parses every time).
 
 ### Phase 3 — A/B
 

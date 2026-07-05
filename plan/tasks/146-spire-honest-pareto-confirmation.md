@@ -29,6 +29,10 @@ baselines on the same host/corpus.
 
 - From 143/144/145 packets, pick ≤6 candidate shapes (including one
   fixed-count-replication control and the historical n128/b0 anchor).
+- Carry Task 139 Phase 2's router-saturation levers as shape axes if
+  143/144 leave recall short of the gate: `top_graph_search_list_size`
+  {96, 128, 200, 400} (Task 121 found it clipped at 96 with recall still
+  rising) and `training_sample_rows` {50k, 100k, full} (centroid quality).
 
 ### Phase 1 — Matrix
 
