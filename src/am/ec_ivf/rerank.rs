@@ -590,25 +590,6 @@ impl RerankPayloadCodec {
                 }
                 match score_mode {
                     RaBitQRerankScoreMode::Estimator | RaBitQRerankScoreMode::LeastSquares => {
-                        if matches!(
-                            prepared_query,
-                            IvfPreparedQuery::TurboQuantCalibratedNoQjl4Bit(_)
-                        ) {
-                            for (out, payload) in out_scores
-                                .iter_mut()
-                                .zip(payloads.chunks_exact(*payload_len))
-                            {
-                                let (gamma, code) = split_turboquant_payload(
-                                    payload,
-                                    *code_len,
-                                    *payload_len,
-                                    *stores_gamma,
-                                )?;
-                                *out =
-                                    -quantizer.score_ip_from_parts(prepared_query, gamma, code)?;
-                            }
-                            return Ok(());
-                        }
                         let (scored, scored_len) = if *stores_gamma {
                             let mut gammas = Vec::with_capacity(out_scores.len());
                             let mut code_slab = Vec::with_capacity(out_scores.len() * code_len);
@@ -706,25 +687,6 @@ impl RerankPayloadCodec {
                 }
                 match score_mode {
                     RaBitQRerankScoreMode::Estimator | RaBitQRerankScoreMode::LeastSquares => {
-                        if matches!(
-                            prepared_query,
-                            IvfPreparedQuery::TurboQuantCalibratedNoQjl4Bit(_)
-                        ) {
-                            for (out, payload) in out_scores.iter_mut().zip(payloads.iter()) {
-                                let (gamma, code) = split_turboquant_payload(
-                                    payload,
-                                    *code_len,
-                                    *payload_len,
-                                    *stores_gamma,
-                                )?;
-                                *out = -quantizer.score_ip_from_parts(
-                                    prepared_query,
-                                    gamma,
-                                    code,
-                                )?;
-                            }
-                            return Ok(());
-                        }
                         let (scored, scored_len) = if *stores_gamma {
                             let mut gammas = Vec::with_capacity(out_scores.len());
                             let mut codes = Vec::with_capacity(out_scores.len());

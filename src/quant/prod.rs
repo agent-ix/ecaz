@@ -59,7 +59,9 @@ pub struct EncodedTqCalibratedNoQjl4Bit {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct PreparedTqCalibratedNoQjl4BitQuery {
-    pub lut: Vec<f32>,
+    pub lut: Vec<i16>,
+    pub lut_scale: f32,
+    pub suffix_max: Vec<f32>,
     pub bias: f32,
 }
 
@@ -535,17 +537,22 @@ impl ProdQuantizer {
         assert_eq!(calibration.scale.len(), self.original_dim);
 
         let rotated = rotation::srht_padded(query, &self.signs);
-        let mut lut = Vec::with_capacity(self.original_dim * 16);
+        let mut calibrated_rotated = Vec::with_capacity(self.original_dim);
         let mut bias = 0.0_f32;
         for dim_index in 0..self.original_dim {
             let q_calibrated = rotated[dim_index] / calibration.scale[dim_index];
-            for &centroid in &self.codebook {
-                lut.push(centroid * q_calibrated);
-            }
+            calibrated_rotated.push(q_calibrated);
             bias -= rotated[dim_index] * calibration.shift[dim_index];
         }
+        let (lut, lut_scale) =
+            build_prepared_query_lut_i16(&calibrated_rotated, &self.codebook, 16);
 
-        PreparedTqCalibratedNoQjl4BitQuery { lut, bias }
+        PreparedTqCalibratedNoQjl4BitQuery {
+            suffix_max: build_lut_suffix_max_i16(&lut, lut_scale, 16),
+            lut_scale,
+            lut,
+            bias,
+        }
     }
 
     pub fn score_calibrated_no_qjl_4bit(
@@ -560,13 +567,13 @@ impl ProdQuantizer {
         assert_eq!(prepared.lut.len(), self.original_dim * 16);
         assert_eq!(mse_packed.len(), mse_code_len(self.original_dim, self.bits));
 
-        let mut score = 0.0_f32;
+        let mut score = 0_i32;
         for dim_index in 0..self.original_dim {
             let centroid_index = mse_index_at(mse_packed, dim_index, 4) as usize;
-            score += prepared.lut[dim_index * 16 + centroid_index];
+            score += prepared.lut[dim_index * 16 + centroid_index] as i32;
         }
 
-        score + prepared.bias
+        score as f32 * prepared.lut_scale + prepared.bias
     }
 
     pub fn binary_sign_no_qjl_4bit_supported(&self) -> bool {

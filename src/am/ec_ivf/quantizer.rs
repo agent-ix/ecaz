@@ -3,9 +3,9 @@ use super::page;
 use crate::am::common::candidate_batch::{
     record_ivf_rabitq_arithmetic_batch_flush_width, score_grouped_pq_batch_for,
     score_rabitq_bits1_batch_for, score_rabitq_bitsn_batch_for,
-    score_turboquant_int8_approx_batch_for, score_turboquant_no_qjl_4bit_batch_for,
-    score_turboquant_qjl_batch_for, CandidateBatch, CandidateBatchScoringSurface, CandidateMeta,
-    CandidatePayload,
+    score_turboquant_calibrated_no_qjl_4bit_batch_for, score_turboquant_int8_approx_batch_for,
+    score_turboquant_no_qjl_4bit_batch_for, score_turboquant_qjl_batch_for, CandidateBatch,
+    CandidateBatchScoringSurface, CandidateMeta, CandidatePayload,
 };
 use crate::am::common::quant_codec::{
     EncodedQuantPayload, QuantCodec, QuantCodecKind, QuantSearchCodecTag,
@@ -914,6 +914,51 @@ impl IvfQuantizer {
                 }
                 Ok(true)
             }
+            (
+                IvfQuantizerProfile::TurboQuant,
+                IvfPreparedQuery::TurboQuantCalibratedNoQjl4Bit(prepared_query),
+            ) => {
+                if payload_len == 0 {
+                    return Err("ec_ivf TurboQuant batch payload length must be nonzero".to_owned());
+                }
+                if payloads.len() != payload_len * out_scores.len() {
+                    return Err(format!(
+                        "ec_ivf TurboQuant calibrated batch payload length mismatch: got {} bytes for {} postings with {} byte payloads",
+                        payloads.len(),
+                        out_scores.len(),
+                        payload_len
+                    ));
+                }
+
+                let quantizer = ProdQuantizer::cached(
+                    self.dimensions,
+                    crate::DEFAULT_QUANT_BITS,
+                    crate::DEFAULT_QUANT_SEED,
+                );
+                let mut batch = CandidateBatch::with_capacity(out_scores.len());
+                for (index, payload) in payloads.chunks_exact(payload_len).enumerate() {
+                    batch.push(
+                        index,
+                        CandidatePayload {
+                            code: payload,
+                            meta: CandidateMeta::None,
+                        },
+                    )?;
+                }
+                score_turboquant_calibrated_no_qjl_4bit_batch_for(
+                    CandidateBatchScoringSurface::Ivf,
+                    quantizer.as_ref(),
+                    prepared_query,
+                    &batch,
+                    out_scores,
+                )?;
+                if negate {
+                    for score in out_scores {
+                        *score = -*score;
+                    }
+                }
+                Ok(true)
+            }
             (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::TurboQuant(prepared_query)) => {
                 if payload_len == 0 {
                     return Err(
@@ -964,10 +1009,6 @@ impl IvfQuantizer {
                 Ok(true)
             }
             (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::RaBitQ(_))
-            | (
-                IvfQuantizerProfile::TurboQuant,
-                IvfPreparedQuery::TurboQuantCalibratedNoQjl4Bit(_),
-            )
             | (IvfQuantizerProfile::PqFastScan { .. }, IvfPreparedQuery::PqFastScan { .. }) => {
                 Ok(false)
             }
@@ -1009,6 +1050,9 @@ impl IvfQuantizer {
             ) | (
                 IvfQuantizerProfile::TurboQuant,
                 IvfPreparedQuery::TurboQuantNoQjl4BitInt8Approx(_)
+            ) | (
+                IvfQuantizerProfile::TurboQuant,
+                IvfPreparedQuery::TurboQuantCalibratedNoQjl4Bit(_)
             ) | (
                 IvfQuantizerProfile::TurboQuant,
                 IvfPreparedQuery::TurboQuant(_)
@@ -1172,6 +1216,60 @@ impl IvfQuantizer {
                 }
                 Ok(true)
             }
+            (
+                IvfQuantizerProfile::TurboQuant,
+                IvfPreparedQuery::TurboQuantCalibratedNoQjl4Bit(prepared_query),
+            ) => {
+                if payload_len == 0 {
+                    return Err("ec_ivf TurboQuant batch payload length must be nonzero".to_owned());
+                }
+                if payloads.len() != out_scores.len() {
+                    return Err(format!(
+                        "ec_ivf TurboQuant calibrated borrowed batch payload count {} does not match score count {}",
+                        payloads.len(),
+                        out_scores.len()
+                    ));
+                }
+                if let Some((index, payload)) = payloads
+                    .iter()
+                    .enumerate()
+                    .find(|(_, payload)| payload.len() != payload_len)
+                {
+                    return Err(format!(
+                        "ec_ivf TurboQuant calibrated borrowed batch payload {index} has {} bytes, expected {payload_len}",
+                        payload.len()
+                    ));
+                }
+
+                let quantizer = ProdQuantizer::cached(
+                    self.dimensions,
+                    crate::DEFAULT_QUANT_BITS,
+                    crate::DEFAULT_QUANT_SEED,
+                );
+                let mut batch = CandidateBatch::with_capacity(out_scores.len());
+                for (index, payload) in payloads.iter().copied().enumerate() {
+                    batch.push(
+                        index,
+                        CandidatePayload {
+                            code: payload,
+                            meta: CandidateMeta::None,
+                        },
+                    )?;
+                }
+                score_turboquant_calibrated_no_qjl_4bit_batch_for(
+                    CandidateBatchScoringSurface::Ivf,
+                    quantizer.as_ref(),
+                    prepared_query,
+                    &batch,
+                    out_scores,
+                )?;
+                if negate {
+                    for score in out_scores {
+                        *score = -*score;
+                    }
+                }
+                Ok(true)
+            }
             (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::TurboQuant(prepared_query)) => {
                 if payload_len == 0 {
                     return Err(
@@ -1231,10 +1329,6 @@ impl IvfQuantizer {
                 Ok(true)
             }
             (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::RaBitQ(_))
-            | (
-                IvfQuantizerProfile::TurboQuant,
-                IvfPreparedQuery::TurboQuantCalibratedNoQjl4Bit(_),
-            )
             | (IvfQuantizerProfile::PqFastScan { .. }, IvfPreparedQuery::PqFastScan { .. }) => {
                 Ok(false)
             }
@@ -1689,6 +1783,23 @@ impl QuantCodec for IvfQuantCodec<'_> {
                     crate::DEFAULT_QUANT_SEED,
                 );
                 score_turboquant_qjl_batch_for(
+                    CandidateBatchScoringSurface::Ivf,
+                    quantizer.as_ref(),
+                    prepared_query,
+                    batch,
+                    out_scores,
+                )
+            }
+            (
+                IvfQuantizerProfile::TurboQuant,
+                IvfPreparedQuery::TurboQuantCalibratedNoQjl4Bit(prepared_query),
+            ) => {
+                let quantizer = ProdQuantizer::cached(
+                    self.quantizer.dimensions,
+                    crate::DEFAULT_QUANT_BITS,
+                    crate::DEFAULT_QUANT_SEED,
+                );
+                score_turboquant_calibrated_no_qjl_4bit_batch_for(
                     CandidateBatchScoringSurface::Ivf,
                     quantizer.as_ref(),
                     prepared_query,
