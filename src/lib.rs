@@ -1247,6 +1247,9 @@ fn ec_block_kernel_scoring_reset() {
 
 #[pg_extern(stable)]
 fn ecaz_build_profile() -> &'static str {
+    // This intentionally keys on debug assertions: a release build with
+    // assertions forced on is over-flagged as debug, which is the safe side for
+    // benchmark provenance.
     if cfg!(debug_assertions) {
         "debug"
     } else {

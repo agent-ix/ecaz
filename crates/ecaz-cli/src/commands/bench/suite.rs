@@ -891,26 +891,7 @@ async fn run_suite(conn: &ConnectionOptions, args: SuiteRunOptions) -> Result<()
         manifest.backend = Some(preflight.clone());
         manifest.backend_nodes = backend_nodes;
         write_manifest_if_requested(&args, &config, &manifest).await?;
-        if preflight.build_profile != "release" && !args.allow_debug_backend {
-            bail!(
-                "suite selected release-guarded latency-emitting steps but backend build profile is {:?}; \
-                 reinstall a release backend or pass --allow-debug-backend",
-                preflight.build_profile
-            );
-        }
-        if !args.allow_debug_backend {
-            for node in &manifest.backend_nodes {
-                if node.build_profile != "release" {
-                    bail!(
-                        "suite selected release-guarded latency-emitting steps but node {} port {:?} backend build profile is {:?}; \
-                         reinstall a release backend or pass --allow-debug-backend",
-                        node.node,
-                        node.port,
-                        node.build_profile
-                    );
-                }
-            }
-        }
+        validate_release_backend_profiles(&manifest, args.allow_debug_backend)?;
     }
     write_manifest_if_requested(&args, &config, &manifest).await?;
 
@@ -1772,6 +1753,22 @@ fn add_result_context(
     insert_if_absent(&mut values, "isa", step.isa.as_deref());
     let kernel_status = step.kernel_status.map(kernel_status_label);
     insert_if_absent(&mut values, "kernel_status", kernel_status);
+    if release_guarded_step_kind(&step.kind) {
+        insert_if_absent(
+            &mut values,
+            "backend_build_profile",
+            manifest
+                .backend
+                .as_ref()
+                .map(|backend| backend.build_profile.as_str()),
+        );
+        let backend_node_profiles = backend_node_profiles_label(&manifest.backend_nodes);
+        insert_if_absent(
+            &mut values,
+            "backend_node_profiles",
+            backend_node_profiles.as_deref(),
+        );
+    }
     insert_if_absent(
         &mut values,
         "storage_format",
@@ -1787,6 +1784,25 @@ fn add_result_context(
             .as_deref(),
     );
     values
+}
+
+fn backend_node_profiles_label(nodes: &[BackendNodePreflight]) -> Option<String> {
+    if nodes.is_empty() {
+        return None;
+    }
+    Some(
+        nodes
+            .iter()
+            .map(|node| {
+                let endpoint = node
+                    .port
+                    .map(|port| port.to_string())
+                    .unwrap_or_else(|| "default".to_owned());
+                format!("{}:{}:{}", node.node, endpoint, node.build_profile)
+            })
+            .collect::<Vec<_>>()
+            .join(","),
+    )
 }
 
 fn insert_if_absent(values: &mut BTreeMap<String, String>, key: &str, value: Option<&str>) {
@@ -3982,6 +3998,36 @@ fn release_guarded_step_kind(kind: &str) -> bool {
     )
 }
 
+fn validate_release_backend_profiles(
+    manifest: &SuiteManifest,
+    allow_debug_backend: bool,
+) -> Result<()> {
+    if allow_debug_backend {
+        return Ok(());
+    }
+    if let Some(preflight) = &manifest.backend {
+        if preflight.build_profile != "release" {
+            bail!(
+                "suite selected release-guarded latency-emitting steps but backend build profile is {:?}; \
+                 reinstall a release backend or pass --allow-debug-backend",
+                preflight.build_profile
+            );
+        }
+    }
+    for node in &manifest.backend_nodes {
+        if node.build_profile != "release" {
+            bail!(
+                "suite selected release-guarded latency-emitting steps but node {} port {:?} backend build profile is {:?}; \
+                 reinstall a release backend or pass --allow-debug-backend",
+                node.node,
+                node.port,
+                node.build_profile
+            );
+        }
+    }
+    Ok(())
+}
+
 async fn preflight_backend(conn: &ConnectionOptions) -> Result<BackendPreflight> {
     let client = crate::psql::connect(conn).await?;
     let build_profile = query_backend_build_profile(&client).await?;
@@ -4011,7 +4057,22 @@ async fn preflight_backend_nodes(
         .as_deref()
         .or(conn.host.as_deref().map(Path::new));
     if let Some(socket_dir) = socket_dir {
-        for port in discover_postgres_socket_ports(socket_dir)? {
+        let discovered_ports = discover_postgres_socket_ports(socket_dir)?;
+        if discovered_ports.is_empty() && suite_declares_spire_local_multinode(config) {
+            bail!(
+                "suite declares spire-local-multinode but no PostgreSQL socket lock files were discovered in {}; \
+                 refusing coordinator-only release preflight for a multinode latency suite",
+                socket_dir.display()
+            );
+        }
+        if discovered_ports.is_empty() {
+            crate::ecaz_eprintln!(
+                "[suite:{}] warning: no PostgreSQL socket lock files discovered in {}; backend preflight will cover only the configured coordinator",
+                config.name,
+                socket_dir.display()
+            );
+        }
+        for port in discovered_ports {
             ports.insert(port);
         }
     }
@@ -4048,6 +4109,13 @@ async fn preflight_backend_nodes(
         nodes.push(backend_node_preflight(node_name, &node_conn, preflight));
     }
     Ok(nodes)
+}
+
+fn suite_declares_spire_local_multinode(config: &SuiteConfig) -> bool {
+    config
+        .steps
+        .iter()
+        .any(|step| matches!(step, SuiteStep::SpireLocalMultinode(_)))
 }
 
 fn backend_node_preflight(
@@ -5305,6 +5373,158 @@ mod tests {
         assert!(manifest_has_release_guarded_steps(&manifest));
         manifest.steps[0].selected = false;
         assert!(!manifest_has_release_guarded_steps(&manifest));
+    }
+
+    #[test]
+    fn release_guard_rejects_debug_backend_nodes() {
+        let mut manifest = guarded_manifest_with_backend_nodes(vec![
+            backend_node("coordinator", Some(28818), "release"),
+            backend_node("local-port-28819", Some(28819), "debug"),
+        ]);
+
+        let err = validate_release_backend_profiles(&manifest, false).unwrap_err();
+        assert!(err.to_string().contains("local-port-28819"));
+        assert!(err.to_string().contains("debug"));
+
+        validate_release_backend_profiles(&manifest, true)
+            .expect("explicit debug allowance should permit debug evidence runs");
+
+        manifest.backend_nodes[1].build_profile = "release".into();
+        validate_release_backend_profiles(&manifest, false)
+            .expect("all-release nodes should satisfy the guard");
+    }
+
+    #[test]
+    fn release_guarded_result_rows_include_backend_profiles() {
+        let manifest = guarded_manifest_with_backend_nodes(vec![backend_node(
+            "coordinator",
+            Some(28818),
+            "debug",
+        )]);
+        let row = ResultRow {
+            suite: manifest.suite.clone(),
+            step: manifest.steps[0].name.clone(),
+            kind: manifest.steps[0].kind.clone(),
+            metric: manifest.steps[0].kind.clone(),
+            artifact: "artifact.log".into(),
+            values: add_result_context(
+                &manifest,
+                &manifest.steps[0],
+                BTreeMap::from([("nprobe".into(), "64".into())]),
+            ),
+        };
+
+        assert_eq!(
+            row.values.get("backend_build_profile").map(String::as_str),
+            Some("debug")
+        );
+        assert_eq!(
+            row.values.get("backend_node_profiles").map(String::as_str),
+            Some("coordinator:28818:debug")
+        );
+    }
+
+    #[test]
+    fn socket_port_discovery_empty_dir_documents_coordinator_fallback() {
+        let dir = tempfile::tempdir().unwrap();
+        let ports = discover_postgres_socket_ports(dir.path()).unwrap();
+        assert!(ports.is_empty());
+
+        let mut config = SuiteConfig {
+            name: "single-node".into(),
+            schema_version: 1,
+            artifact_dir: None,
+            defaults: SuiteDefaults::default(),
+            thresholds: Vec::new(),
+            steps: Vec::new(),
+        };
+        assert!(!suite_declares_spire_local_multinode(&config));
+
+        let multinode: SuiteConfig = serde_json::from_str(
+            r#"{
+              "name": "multinode",
+              "schema_version": 1,
+              "steps": [{
+                "kind": "spire-local-multinode",
+                "name": "local4",
+                "pg": 18,
+                "tier": "correctness",
+                "storage_format": "rabitq",
+                "coord_index": "coord_idx",
+                "remote_index": "remote_idx"
+              }]
+            }"#,
+        )
+        .unwrap();
+        config.steps = multinode.steps;
+        assert!(suite_declares_spire_local_multinode(&config));
+    }
+
+    fn guarded_manifest_with_backend_nodes(
+        backend_nodes: Vec<BackendNodePreflight>,
+    ) -> SuiteManifest {
+        SuiteManifest {
+            suite: "suite".into(),
+            schema_version: 1,
+            config: "suite.json".into(),
+            config_sha256: "hash".into(),
+            dry_run: false,
+            generated_at_unix_ms: 0,
+            connection: ManifestConnection {
+                database: "postgres".into(),
+                host: Some("/tmp/pg".into()),
+                port: Some(28818),
+                user: None,
+                password_configured: false,
+            },
+            backend: Some(BackendPreflight {
+                build_profile: backend_nodes
+                    .first()
+                    .map(|node| node.build_profile.clone())
+                    .unwrap_or_else(|| "release".into()),
+                sha256: None,
+                path: None,
+            }),
+            backend_nodes,
+            steps: vec![StepRecord {
+                name: "pipeline".into(),
+                kind: "spire-pipeline".into(),
+                command: vec![
+                    "bench".into(),
+                    "spire-pipeline".into(),
+                    "--prefix".into(),
+                    "p".into(),
+                ],
+                selected: true,
+                quant: None,
+                isa: None,
+                kernel_status: None,
+                pgoptions: None,
+                tags: Vec::new(),
+                expected_artifacts: Vec::new(),
+                status: Some(StepStatus::Pending),
+                started_at_unix_ms: None,
+                finished_at_unix_ms: None,
+                duration_ms: None,
+                exit_code: None,
+                parallel_workers_before: None,
+                parallel_workers_after: None,
+                parallel_workers_delta: None,
+            }],
+            threshold_results: Vec::new(),
+        }
+    }
+
+    fn backend_node(node: &str, port: Option<u16>, build_profile: &str) -> BackendNodePreflight {
+        BackendNodePreflight {
+            node: node.into(),
+            database: "postgres".into(),
+            host: Some("/tmp/pg".into()),
+            port,
+            build_profile: build_profile.into(),
+            sha256: None,
+            path: None,
+        }
     }
 
     #[test]
