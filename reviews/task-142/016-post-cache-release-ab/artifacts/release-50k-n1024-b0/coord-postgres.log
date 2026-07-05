@@ -1,0 +1,26 @@
+2026-07-05 05:30:57.975 PDT [1970220] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-07-05 05:30:57.977 PDT [1970220] LOG:  listening on Unix socket "/home/peter/dev/ecaz/target/spire-local-multinode-sockets-task142-release-50k-n1024-b0/.s.PGSQL.39800"
+2026-07-05 05:30:57.984 PDT [1970226] LOG:  database system was shut down at 2026-07-05 05:30:53 PDT
+2026-07-05 05:30:57.988 PDT [1970220] LOG:  database system is ready to accept connections
+2026-07-05 05:31:37.354 PDT [1970224] LOG:  checkpoint starting: wal
+2026-07-05 05:31:58.094 PDT [1970370] LOG:  skipping vacuum of "ec_real_50k_corpus" --- lock not available
+2026-07-05 05:32:20.329 PDT [1970224] LOG:  checkpoint complete: wrote 93 buffers (0.6%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=42.726 s, sync=0.160 s, total=43.060 s; sync files=147, longest=0.077 s, average=0.002 s; distance=537264 kB, estimate=537264 kB; lsn=0/402D3AF0, redo lsn=0/224007B0
+2026-07-05 05:32:22.666 PDT [1970224] LOG:  checkpoint starting: wal
+2026-07-05 05:32:28.117 PDT [1970485] LOG:  skipping vacuum of "ec_real_50k_corpus" --- lock not available
+2026-07-05 05:32:43.195 PDT [1970224] LOG:  checkpoint complete: wrote 25 buffers (0.2%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=20.437 s, sync=0.014 s, total=20.529 s; sync files=10, longest=0.008 s, average=0.002 s; distance=536968 kB, estimate=537234 kB; lsn=0/51E78048, redo lsn=0/43062848
+2026-07-05 05:33:28.121 PDT [1970572] LOG:  skipping vacuum of "ec_real_50k_corpus" --- lock not available
+2026-07-05 05:37:22.498 PDT [1970224] LOG:  checkpoint starting: time
+2026-07-05 05:37:42.384 PDT [1972041] LOG:  could not send data to client: Broken pipe
+2026-07-05 05:37:42.384 PDT [1972041] FATAL:  connection to client lost
+2026-07-05 05:39:03.403 PDT [1970224] LOG:  checkpoint complete: wrote 1011 buffers (6.2%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 19 recycled; write=100.848 s, sync=0.012 s, total=100.905 s; sync files=33, longest=0.002 s, average=0.001 s; distance=313779 kB, estimate=514889 kB; lsn=0/56326518, redo lsn=0/562CF4B8
+2026-07-05 05:42:22.688 PDT [1970224] LOG:  checkpoint starting: time
+2026-07-05 05:42:26.918 PDT [1970224] LOG:  checkpoint complete: wrote 42 buffers (0.3%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=4.212 s, sync=0.008 s, total=4.231 s; sync files=14, longest=0.003 s, average=0.001 s; distance=479 kB, estimate=463448 kB; lsn=0/56347F08, redo lsn=0/56347460
+2026-07-05 05:42:39.874 PDT [1972063] LOG:  could not send data to client: Broken pipe
+2026-07-05 05:42:39.874 PDT [1972063] FATAL:  connection to client lost
+2026-07-05 05:42:39.892 PDT [1970220] LOG:  received fast shutdown request
+2026-07-05 05:42:39.894 PDT [1970220] LOG:  aborting any active transactions
+2026-07-05 05:42:39.895 PDT [1970220] LOG:  background worker "logical replication launcher" (PID 1970229) exited with exit code 1
+2026-07-05 05:42:39.899 PDT [1970224] LOG:  shutting down
+2026-07-05 05:42:39.901 PDT [1970224] LOG:  checkpoint starting: shutdown immediate
+2026-07-05 05:42:39.914 PDT [1970224] LOG:  checkpoint complete: wrote 0 buffers (0.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.003 s, sync=0.001 s, total=0.015 s; sync files=1, longest=0.001 s, average=0.001 s; distance=10 kB, estimate=417104 kB; lsn=0/56349F38, redo lsn=0/56349F38
+2026-07-05 05:42:39.930 PDT [1970220] LOG:  database system is shut down

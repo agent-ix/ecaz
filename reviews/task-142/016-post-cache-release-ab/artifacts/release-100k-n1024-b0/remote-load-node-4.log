@@ -1,0 +1,19 @@
+[loader] inspecting reviews/task-142/016-post-cache-release-ab/artifacts/release-100k-n1024-b0/distributed-correctness/node-4/ec_real_100k_node_4_corpus.tsv
+[loader] corpus: 32365 rows, sha256=e0990a206d9532341354ef5a58522f8aa9acec2b957187be031cd9c6788b2b4c  queries: skipped (--corpus-only)
+[loader] copied corpus table ec_real_100k_node_4_corpus in 12.67s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table ec_real_100k_node_4_corpus in 10.70s
+[loader] building t142_release_100k_n1024_b0_remote_idx using ec_spire (reloptions=[nlists=1024, boundary_replica_count=0, source_identity=include, storage_format=rabitq]) ...
+[loader] built t142_release_100k_n1024_b0_remote_idx in 97.22s
+┌─────────┬───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                                                                         │
+╞═════════╪═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_spire                                                                                                                      │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ ec_real_100k_node_4_corpus (32365 rows)                                                                                       │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ skipped (--corpus-only)                                                                                                       │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ t142_release_100k_n1024_b0_remote_idx [nlists=1024, boundary_replica_count=0, source_identity=include, storage_format=rabitq] │
+└─────────┴───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+[loader] completed prefix ec_real_100k_node_4 in 123.89s

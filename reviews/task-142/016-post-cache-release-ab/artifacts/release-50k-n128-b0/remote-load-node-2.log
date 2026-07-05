@@ -1,0 +1,19 @@
+[loader] inspecting reviews/task-142/016-post-cache-release-ab/artifacts/release-50k-n128-b0/distributed-correctness/node-2/ec_real_50k_node_2_corpus.tsv
+[loader] corpus: 16368 rows, sha256=f192d8ba188fa161d109328b48c4730cde2c60b0de072f49cd674d22e91da0ae  queries: skipped (--corpus-only)
+[loader] copied corpus table ec_real_50k_node_2_corpus in 6.35s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table ec_real_50k_node_2_corpus in 5.14s
+[loader] building t142_release_50k_n128_b0_remote_idx using ec_spire (reloptions=[nlists=128, boundary_replica_count=0, source_identity=include, storage_format=rabitq]) ...
+[loader] built t142_release_50k_n128_b0_remote_idx in 7.33s
+┌─────────┬────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                                                                      │
+╞═════════╪════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_spire                                                                                                                   │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ ec_real_50k_node_2_corpus (16368 rows)                                                                                     │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ skipped (--corpus-only)                                                                                                    │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ t142_release_50k_n128_b0_remote_idx [nlists=128, boundary_replica_count=0, source_identity=include, storage_format=rabitq] │
+└─────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+[loader] completed prefix ec_real_50k_node_2 in 20.49s

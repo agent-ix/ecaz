@@ -1,0 +1,31 @@
+2026-07-05 05:17:29.980 PDT [1910940] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-07-05 05:17:29.983 PDT [1910940] LOG:  listening on Unix socket "/home/peter/dev/ecaz/target/spire-local-multinode-sockets-task142-release-10k-n128-b0/.s.PGSQL.39800"
+2026-07-05 05:17:29.990 PDT [1910946] LOG:  database system was shut down at 2026-07-05 05:17:25 PDT
+2026-07-05 05:17:29.993 PDT [1910940] LOG:  database system is ready to accept connections
+2026-07-05 05:18:02.055 PDT [1912081] LOG:  could not receive data from client: Connection reset by peer
+2026-07-05 05:18:30.104 PDT [1914982] ERROR:  ec_spire vacuum cleanup stats failed: ec_spire local heap tuple delivery requires custom_scan_tuple_delivery before consuming 128 remote placement(s); first remote pid 2 is on node_id 2
+2026-07-05 05:18:30.104 PDT [1914982] CONTEXT:  while cleaning up index "t142_release_10k_n128_b0_coord_idx" of relation "public.ec_real_10k_corpus"
+	automatic vacuum of table "postgres.public.ec_real_10k_corpus"
+2026-07-05 05:19:00.123 PDT [1918074] ERROR:  ec_spire vacuum cleanup stats failed: ec_spire local heap tuple delivery requires custom_scan_tuple_delivery before consuming 128 remote placement(s); first remote pid 2 is on node_id 2
+2026-07-05 05:19:00.123 PDT [1918074] CONTEXT:  while cleaning up index "t142_release_10k_n128_b0_coord_idx" of relation "public.ec_real_10k_corpus"
+	automatic vacuum of table "postgres.public.ec_real_10k_corpus"
+2026-07-05 05:20:00.127 PDT [1924371] ERROR:  ec_spire vacuum cleanup stats failed: ec_spire local heap tuple delivery requires custom_scan_tuple_delivery before consuming 128 remote placement(s); first remote pid 2 is on node_id 2
+2026-07-05 05:20:00.127 PDT [1924371] CONTEXT:  while cleaning up index "t142_release_10k_n128_b0_coord_idx" of relation "public.ec_real_10k_corpus"
+	automatic vacuum of table "postgres.public.ec_real_10k_corpus"
+2026-07-05 05:21:00.140 PDT [1930465] ERROR:  ec_spire vacuum cleanup stats failed: ec_spire local heap tuple delivery requires custom_scan_tuple_delivery before consuming 128 remote placement(s); first remote pid 2 is on node_id 2
+2026-07-05 05:21:00.140 PDT [1930465] CONTEXT:  while cleaning up index "t142_release_10k_n128_b0_coord_idx" of relation "public.ec_real_10k_corpus"
+	automatic vacuum of table "postgres.public.ec_real_10k_corpus"
+2026-07-05 05:22:00.151 PDT [1936389] ERROR:  ec_spire vacuum cleanup stats failed: ec_spire local heap tuple delivery requires custom_scan_tuple_delivery before consuming 128 remote placement(s); first remote pid 2 is on node_id 2
+2026-07-05 05:22:00.151 PDT [1936389] CONTEXT:  while cleaning up index "t142_release_10k_n128_b0_coord_idx" of relation "public.ec_real_10k_corpus"
+	automatic vacuum of table "postgres.public.ec_real_10k_corpus"
+2026-07-05 05:22:29.299 PDT [1910944] LOG:  checkpoint starting: time
+2026-07-05 05:22:32.107 PDT [1912103] LOG:  could not send data to client: Broken pipe
+2026-07-05 05:22:32.107 PDT [1912103] FATAL:  connection to client lost
+2026-07-05 05:22:32.116 PDT [1910940] LOG:  received fast shutdown request
+2026-07-05 05:22:32.119 PDT [1910940] LOG:  aborting any active transactions
+2026-07-05 05:22:32.119 PDT [1910940] LOG:  background worker "logical replication launcher" (PID 1910949) exited with exit code 1
+2026-07-05 05:22:32.235 PDT [1910944] LOG:  checkpoint complete: wrote 6212 buffers (37.9%), wrote 5 SLRU buffers; 0 WAL file(s) added, 0 removed, 9 recycled; write=2.828 s, sync=0.060 s, total=2.937 s; sync files=161, longest=0.006 s, average=0.001 s; distance=148318 kB, estimate=148318 kB; lsn=0/A82C680, redo lsn=0/A82BEB8
+2026-07-05 05:22:32.235 PDT [1910944] LOG:  shutting down
+2026-07-05 05:22:32.237 PDT [1910944] LOG:  checkpoint starting: shutdown immediate
+2026-07-05 05:22:32.247 PDT [1910944] LOG:  checkpoint complete: wrote 0 buffers (0.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.002 s, sync=0.001 s, total=0.013 s; sync files=1, longest=0.001 s, average=0.001 s; distance=2 kB, estimate=133486 kB; lsn=0/A82C6F8, redo lsn=0/A82C6F8
+2026-07-05 05:22:32.271 PDT [1910940] LOG:  database system is shut down

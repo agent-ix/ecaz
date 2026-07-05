@@ -1,0 +1,147 @@
+{
+  "suite": "local-multinode-production-read",
+  "schema_version": 1,
+  "config": "reviews/task-142/016-post-cache-release-ab/artifacts/release-50k-n128-b0/bench-suite/local-real-production-read-suite.json",
+  "config_sha256": "6b24ff934a11df52771be5b00ab3c97f2b85622aa8da1fdbaa40118fb7a4bbc7",
+  "dry_run": false,
+  "generated_at_unix_ms": 1783254312671,
+  "connection": {
+    "database": "postgres",
+    "host": "/home/peter/dev/ecaz/target/spire-local-multinode-sockets-task142-release-50k-n128-b0",
+    "port": 39800,
+    "user": "ecaz_coord",
+    "password_configured": false
+  },
+  "backend": {
+    "build_profile": "release"
+  },
+  "backend_nodes": [
+    {
+      "node": "coordinator",
+      "database": "postgres",
+      "host": "/home/peter/dev/ecaz/target/spire-local-multinode-sockets-task142-release-50k-n128-b0",
+      "port": 39800,
+      "build_profile": "release"
+    },
+    {
+      "node": "local-port-39801",
+      "database": "postgres",
+      "host": "/home/peter/dev/ecaz/target/spire-local-multinode-sockets-task142-release-50k-n128-b0",
+      "port": 39801,
+      "build_profile": "release"
+    },
+    {
+      "node": "local-port-39802",
+      "database": "postgres",
+      "host": "/home/peter/dev/ecaz/target/spire-local-multinode-sockets-task142-release-50k-n128-b0",
+      "port": 39802,
+      "build_profile": "release"
+    },
+    {
+      "node": "local-port-39803",
+      "database": "postgres",
+      "host": "/home/peter/dev/ecaz/target/spire-local-multinode-sockets-task142-release-50k-n128-b0",
+      "port": 39803,
+      "build_profile": "release"
+    }
+  ],
+  "steps": [
+    {
+      "name": "storage-local-coordinator",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/home/peter/dev/ecaz/target/spire-local-multinode-sockets-task142-release-50k-n128-b0",
+        "--port",
+        "39800",
+        "--user",
+        "ecaz_coord",
+        "--log-file",
+        "reviews/task-142/016-post-cache-release-ab/artifacts/release-50k-n128-b0/bench-suite/storage.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "ec_real_50k"
+      ],
+      "selected": true,
+      "tags": [
+        "local",
+        "multinode",
+        "storage"
+      ],
+      "expected_artifacts": [
+        "reviews/task-142/016-post-cache-release-ab/artifacts/release-50k-n128-b0/bench-suite/storage.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783254312695,
+      "finished_at_unix_ms": 1783254312721,
+      "duration_ms": 25,
+      "exit_code": 0
+    },
+    {
+      "name": "production-read-k10-default-default",
+      "kind": "spire-pipeline",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/home/peter/dev/ecaz/target/spire-local-multinode-sockets-task142-release-50k-n128-b0",
+        "--port",
+        "39800",
+        "--user",
+        "ecaz_coord",
+        "bench",
+        "spire-pipeline",
+        "--prefix",
+        "ec_real_50k",
+        "--index",
+        "t142_release_50k_n128_b0_coord_idx",
+        "--queries-limit",
+        "200",
+        "--sweep",
+        "8,16,32,64,96",
+        "--include-remote",
+        "--require-remote-placements",
+        "--top-k",
+        "10",
+        "--include-cost-snapshot",
+        "--include-query-metrics",
+        "--include-recall",
+        "--truth-corpus-file",
+        "data/staged-current/ec_real_50k_corpus.tsv",
+        "--include-production-read-profile",
+        "--production-read-only",
+        "--production-read-timeline-no-payload",
+        "--query-metric-k",
+        "10",
+        "--query-metric-projection-columns",
+        "id,source",
+        "--session-guc",
+        "ec_spire.max_remote_payload_bytes_per_row=16384",
+        "--log-output",
+        "reviews/task-142/016-post-cache-release-ab/artifacts/release-50k-n128-b0/bench-suite/production-read-k10-default-default.log",
+        "--result-identity-output",
+        "reviews/task-142/016-post-cache-release-ab/artifacts/release-50k-n128-b0/bench-suite/production-read-k10-default-default-identity.jsonl"
+      ],
+      "selected": true,
+      "tags": [
+        "phase5",
+        "local",
+        "multinode",
+        "production-read",
+        "default-cap"
+      ],
+      "expected_artifacts": [
+        "reviews/task-142/016-post-cache-release-ab/artifacts/release-50k-n128-b0/bench-suite/production-read-k10-default-default.log",
+        "reviews/task-142/016-post-cache-release-ab/artifacts/release-50k-n128-b0/bench-suite/production-read-k10-default-default-identity.jsonl"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783254312721,
+      "finished_at_unix_ms": 1783254634369,
+      "duration_ms": 322836,
+      "exit_code": 0
+    }
+  ]
+}
