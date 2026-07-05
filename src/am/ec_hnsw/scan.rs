@@ -3372,27 +3372,15 @@ impl<'a> QuantCodec for HnswTurboQuantScanCodec<'a> {
                 self.quantizer
                     .score_ip_from_parts(prepared, gamma, payload.code)
             }
-            HnswTurboQuantPreparedQuery::FullLut(prepared) => {
-                self.quantizer
-                    .score_ip_from_parts_lut_no_qjl_4bit(prepared, payload.code)
-                    * self
-                        .quantizer
-                        .length_renorm_scale_no_qjl_4bit(gamma, payload.code)
-            }
-            HnswTurboQuantPreparedQuery::TiledLut(prepared) => {
-                self.quantizer
-                    .score_ip_from_parts_tiled_lut_no_qjl_4bit(prepared, payload.code)
-                    * self
-                        .quantizer
-                        .length_renorm_scale_no_qjl_4bit(gamma, payload.code)
-            }
-            HnswTurboQuantPreparedQuery::Int8Approx(prepared) => {
-                self.quantizer
-                    .score_ip_from_parts_int8_approx_no_qjl_4bit(prepared, payload.code)
-                    * self
-                        .quantizer
-                        .length_renorm_scale_no_qjl_4bit(gamma, payload.code)
-            }
+            HnswTurboQuantPreparedQuery::FullLut(prepared) => self
+                .quantizer
+                .score_ip_from_parts_lut_no_qjl_4bit(prepared, payload.code),
+            HnswTurboQuantPreparedQuery::TiledLut(prepared) => self
+                .quantizer
+                .score_ip_from_parts_tiled_lut_no_qjl_4bit(prepared, payload.code),
+            HnswTurboQuantPreparedQuery::Int8Approx(prepared) => self
+                .quantizer
+                .score_ip_from_parts_int8_approx_no_qjl_4bit(prepared, payload.code),
         };
         Ok(score)
     }

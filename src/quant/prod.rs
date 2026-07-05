@@ -545,45 +545,6 @@ impl ProdQuantizer {
         mse_packed
     }
 
-    pub(crate) fn decoded_norm_squared_no_qjl_4bit(&self, code_bytes: &[u8]) -> f32 {
-        let mse_packed = self.mse_code_bytes_no_qjl_4bit(code_bytes);
-        let mut norm_squared = 0.0_f32;
-        let mut dim_index = 0usize;
-
-        for &packed in mse_packed {
-            if dim_index >= self.original_dim {
-                break;
-            }
-
-            let low_nibble = (packed & 0x0F) as usize;
-            let value = self.codebook[low_nibble];
-            norm_squared += value * value;
-            dim_index += 1;
-
-            if dim_index >= self.original_dim {
-                break;
-            }
-
-            let high_nibble = (packed >> 4) as usize;
-            let value = self.codebook[high_nibble];
-            norm_squared += value * value;
-            dim_index += 1;
-        }
-
-        norm_squared
-    }
-
-    pub(crate) fn length_renorm_scale_no_qjl_4bit(&self, gamma: f32, code_bytes: &[u8]) -> f32 {
-        if gamma <= 0.0 || !gamma.is_finite() {
-            return 1.0;
-        }
-        let decoded_norm_squared = self.decoded_norm_squared_no_qjl_4bit(code_bytes);
-        if decoded_norm_squared <= f32::MIN_POSITIVE || !decoded_norm_squared.is_finite() {
-            return 1.0;
-        }
-        ((decoded_norm_squared + gamma * gamma) / decoded_norm_squared).sqrt()
-    }
-
     pub fn score_ip_from_parts_tiled_lut_no_qjl_4bit(
         &self,
         prepared: &PreparedTiledLutNoQjl4BitQuery,
@@ -2517,25 +2478,6 @@ mod tests {
                 score + 1.0
             ),
             None
-        );
-    }
-
-    #[test]
-    fn no_qjl_4bit_length_renorm_scale_uses_gamma_and_decoded_norm() {
-        let quantizer = ProdQuantizer::new(1536, 4, 42);
-        let vector = random_unit_vector(1536, 24);
-        let encoded = quantizer.encode(&vector);
-        let decoded_norm_squared = quantizer.decoded_norm_squared_no_qjl_4bit(&encoded.mse_packed);
-        let expected =
-            ((decoded_norm_squared + encoded.gamma * encoded.gamma) / decoded_norm_squared).sqrt();
-
-        let observed =
-            quantizer.length_renorm_scale_no_qjl_4bit(encoded.gamma, &encoded.mse_packed);
-
-        assert!((observed - expected).abs() < 1e-6);
-        assert_eq!(
-            quantizer.length_renorm_scale_no_qjl_4bit(0.0, &encoded.mse_packed),
-            1.0
         );
     }
 

@@ -318,8 +318,6 @@ pub(crate) fn score_turboquant_int8_approx_batch_for<Id>(
         },
     );
 
-    renormalize_turboquant_no_qjl_4bit_scores(quantizer, batch.payloads(), out_scores);
-
     record_batch_scoring_timing(
         surface,
         QuantCodecKind::TurboQuantInt8,
@@ -575,7 +573,7 @@ fn score_turboquant_no_qjl_4bit_batch_inner<Id>(
         crate::quant::lut32::validate_mse_code_shape(index, quantizer.original_dim, mse_code)?;
     }
 
-    let timing = score_turboquant_no_qjl_4bit_payloads_lut32(
+    Ok(score_turboquant_no_qjl_4bit_payloads_lut32(
         quantizer.original_dim,
         quantizer,
         &prepared.lut,
@@ -583,9 +581,7 @@ fn score_turboquant_no_qjl_4bit_batch_inner<Id>(
         batch.payloads(),
         out_scores,
         false,
-    );
-    renormalize_turboquant_no_qjl_4bit_scores(quantizer, batch.payloads(), out_scores);
-    Ok(timing)
+    ))
 }
 
 fn score_turboquant_no_qjl_4bit_payloads_lut32(
@@ -707,18 +703,6 @@ fn prefetch_read_l1(ptr: *const u8) {
 #[cfg(not(target_arch = "aarch64"))]
 #[inline]
 fn prefetch_read_l1(_ptr: *const u8) {}
-
-fn renormalize_turboquant_no_qjl_4bit_scores(
-    quantizer: &ProdQuantizer,
-    payloads: &[CandidatePayload<'_>],
-    out_scores: &mut [f32],
-) {
-    for (payload, out_score) in payloads.iter().zip(out_scores.iter_mut()) {
-        if let CandidateMeta::Gamma(gamma) = payload.meta {
-            *out_score *= quantizer.length_renorm_scale_no_qjl_4bit(gamma, payload.code);
-        }
-    }
-}
 
 fn score_rabitq_bits1_batch_inner<Id>(
     prepared: crate::quant::rabitq32::PreparedBits1<'_>,
@@ -1100,30 +1084,6 @@ mod tests {
             let scalar = quantizer.score_ip_from_parts_lut_no_qjl_4bit(&prepared, payload);
             assert_eq!(score.to_bits(), scalar.to_bits());
         }
-    }
-
-    #[test]
-    fn turboquant_lut_batch_applies_gamma_length_renorm_epilogue() {
-        let quantizer = crate::quant::prod::ProdQuantizer::new(1536, 4, 42);
-        let query = random_unit_vector(1536, 32);
-        let prepared = quantizer.prepare_ip_query_lut_no_qjl_4bit(&query);
-        let encoded = quantizer.encode(&random_unit_vector(1536, 33));
-        let mut batch = CandidateBatch::with_capacity(1);
-        batch
-            .push(
-                0_u32,
-                CandidatePayload::new(&encoded.mse_packed, CandidateMeta::Gamma(encoded.gamma)),
-            )
-            .unwrap();
-        let mut batch_scores = vec![0.0];
-
-        super::score_turboquant_no_qjl_4bit_batch(&quantizer, &prepared, &batch, &mut batch_scores)
-            .unwrap();
-
-        let unscaled =
-            quantizer.score_ip_from_parts_lut_no_qjl_4bit(&prepared, &encoded.mse_packed);
-        let scale = quantizer.length_renorm_scale_no_qjl_4bit(encoded.gamma, &encoded.mse_packed);
-        assert_eq!(batch_scores[0].to_bits(), (unscaled * scale).to_bits());
     }
 
     #[test]
