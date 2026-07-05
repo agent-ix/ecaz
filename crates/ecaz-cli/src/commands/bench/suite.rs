@@ -468,6 +468,8 @@ struct SpireLocalMultinodeStep {
     skip_fault_drills: bool,
     #[serde(default)]
     skip_install: bool,
+    #[serde(default)]
+    debug_install: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -3375,6 +3377,9 @@ fn expand_spire_local_multinode(
     if step.skip_install {
         args.push("--skip-install".into());
     }
+    if step.debug_install {
+        args.push("--debug-install".into());
+    }
     args
 }
 
@@ -4413,7 +4418,8 @@ mod tests {
             ],
             "skip_bench_suite": true,
             "skip_fault_drills": true,
-            "skip_install": true
+            "skip_install": true,
+            "debug_install": true
           }]
         }"#;
         let mut config: SuiteConfig = serde_json::from_str(raw).expect("suite parses");
@@ -4519,6 +4525,7 @@ mod tests {
             ]));
         assert!(step.command.contains(&"--skip-bench-suite".into()));
         assert!(step.command.contains(&"--skip-fault-drills".into()));
+        assert!(step.command.contains(&"--debug-install".into()));
         assert!(step
             .expected_artifacts
             .iter()
