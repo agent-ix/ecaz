@@ -42,6 +42,89 @@ mod tests {
         }
     }
 
+    fn cost_epoch_snapshot_for_epoch(epoch: u64) -> SpireCostEpochSnapshot {
+        SpireCostEpochSnapshot {
+            diagnostics: SpireActiveSnapshotDiagnostics {
+                active_epoch: epoch,
+                next_pid: 100,
+                next_local_vec_seq: 200,
+                consistency_mode: "strict",
+                object_count: 3,
+                placement_count: 3,
+                local_store_count: 1,
+                available_placement_count: 3,
+                stale_placement_count: 0,
+                unavailable_placement_count: 0,
+                skipped_placement_count: 0,
+                root_object_count: 1,
+                internal_object_count: 0,
+                leaf_object_count: 2,
+                delta_object_count: 0,
+                routing_child_count: 2,
+                leaf_assignment_count: 128,
+                delta_assignment_count: 0,
+                available_object_bytes: 4096,
+                routing_object_bytes: 1024,
+                leaf_object_bytes: 3072,
+                delta_object_bytes: 0,
+            },
+            hierarchy: SpireIndexHierarchySnapshot {
+                active_epoch: epoch,
+                root_pid: 1,
+                root_level: 1,
+                max_observed_level: 1,
+                hierarchy_depth: 2,
+                routing_object_count: 1,
+                root_routing_object_count: 1,
+                internal_routing_object_count: 0,
+                leaf_object_count: 2,
+                delta_object_count: 0,
+                centroid_dimensions: 1536,
+                root_child_count: 2,
+                distinct_leaf_parent_count: 1,
+                recursive_routing_supported: true,
+                per_level_nprobe_supported: true,
+                status: "ready",
+                recommendation: "none",
+            },
+        }
+    }
+
+    #[test]
+    fn cost_epoch_snapshot_cache_reuses_epoch_snapshot() {
+        reset_cost_epoch_snapshot_cache_for_test();
+        let loads = std::cell::Cell::new(0_u64);
+        let key = SpireCostEpochSnapshotCacheKey {
+            index_relid: 42,
+            active_epoch: 7,
+        };
+
+        let first = load_cached_cost_epoch_snapshot_with_key(key, || {
+            loads.set(loads.get() + 1);
+            cost_epoch_snapshot_for_epoch(7)
+        });
+        let second = load_cached_cost_epoch_snapshot_with_key(key, || {
+            loads.set(loads.get() + 1);
+            cost_epoch_snapshot_for_epoch(7)
+        });
+
+        assert_eq!(loads.get(), 1);
+        assert_eq!(first.diagnostics.active_epoch, 7);
+        assert_eq!(second.hierarchy.active_epoch, 7);
+
+        let next_epoch_key = SpireCostEpochSnapshotCacheKey {
+            active_epoch: 8,
+            ..key
+        };
+        let next_epoch = load_cached_cost_epoch_snapshot_with_key(next_epoch_key, || {
+            loads.set(loads.get() + 1);
+            cost_epoch_snapshot_for_epoch(8)
+        });
+
+        assert_eq!(loads.get(), 2);
+        assert_eq!(next_epoch.diagnostics.active_epoch, 8);
+    }
+
     fn assert_linear_total_cost_scaling(
         label: &str,
         baseline: PlannerCostEstimate,
