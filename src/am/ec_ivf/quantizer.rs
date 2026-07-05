@@ -994,7 +994,9 @@ impl IvfQuantizer {
                 if payload_len == 0 {
                     return Err("ec_ivf TurboQuant batch payload length must be nonzero".to_owned());
                 }
-                if payloads.len() != out_scores.len() || gammas.len() != out_scores.len() {
+                if payloads.len() != out_scores.len()
+                    || (!gammas.is_empty() && gammas.len() != out_scores.len())
+                {
                     return Err(format!(
                         "ec_ivf TurboQuant borrowed batch payload/gamma count {}/{} does not match score count {}",
                         payloads.len(),
@@ -1019,17 +1021,16 @@ impl IvfQuantizer {
                     crate::DEFAULT_QUANT_SEED,
                 );
                 let mut batch = CandidateBatch::with_capacity(out_scores.len());
-                for (index, (payload, gamma)) in payloads
-                    .iter()
-                    .copied()
-                    .zip(gammas.iter().copied())
-                    .enumerate()
-                {
+                for (index, payload) in payloads.iter().copied().enumerate() {
                     batch.push(
                         index,
                         CandidatePayload {
                             code: payload,
-                            meta: CandidateMeta::Gamma(gamma),
+                            meta: gammas
+                                .get(index)
+                                .copied()
+                                .map(CandidateMeta::Gamma)
+                                .unwrap_or(CandidateMeta::None),
                         },
                     )?;
                 }
@@ -1054,7 +1055,9 @@ impl IvfQuantizer {
                 if payload_len == 0 {
                     return Err("ec_ivf TurboQuant batch payload length must be nonzero".to_owned());
                 }
-                if payloads.len() != out_scores.len() || gammas.len() != out_scores.len() {
+                if payloads.len() != out_scores.len()
+                    || (!gammas.is_empty() && gammas.len() != out_scores.len())
+                {
                     return Err(format!(
                         "ec_ivf TurboQuant borrowed batch payload/gamma count {}/{} does not match score count {}",
                         payloads.len(),
@@ -1079,17 +1082,16 @@ impl IvfQuantizer {
                     crate::DEFAULT_QUANT_SEED,
                 );
                 let mut batch = CandidateBatch::with_capacity(out_scores.len());
-                for (index, (payload, gamma)) in payloads
-                    .iter()
-                    .copied()
-                    .zip(gammas.iter().copied())
-                    .enumerate()
-                {
+                for (index, payload) in payloads.iter().copied().enumerate() {
                     batch.push(
                         index,
                         CandidatePayload {
                             code: payload,
-                            meta: CandidateMeta::Gamma(gamma),
+                            meta: gammas
+                                .get(index)
+                                .copied()
+                                .map(CandidateMeta::Gamma)
+                                .unwrap_or(CandidateMeta::None),
                         },
                     )?;
                 }
@@ -1994,7 +1996,7 @@ mod tests {
     }
 
     #[test]
-    fn turboquant_no_qjl_4bit_batch_ignores_gamma_side_input() {
+    fn turboquant_no_qjl_4bit_batch_requires_gamma_side_input() {
         let dimensions = 1536;
         let query = unit_vector(dimensions);
         let dispatch = IvfQuantizer::resolve(StorageFormat::TurboQuant, dimensions).unwrap();
@@ -2015,8 +2017,43 @@ mod tests {
             .collect::<Vec<_>>();
         let mut batch_scores = Vec::new();
 
-        let used_batch = dispatch
+        let err = dispatch
             .score_turboquant_no_qjl_4bit_batch_from_payloads(
+                &prepared,
+                &payloads,
+                dispatch.payload_len(),
+                &[],
+                &mut batch_scores,
+            )
+            .unwrap_err();
+
+        assert!(err.contains("payload/gamma length mismatch"));
+    }
+
+    #[test]
+    fn turboquant_no_qjl_4bit_payload_refs_allow_missing_gamma() {
+        let dimensions = 1536;
+        let query = unit_vector(dimensions);
+        let dispatch = IvfQuantizer::resolve(StorageFormat::TurboQuant, dimensions).unwrap();
+        let prepared = dispatch.prepare_ip_query(&query).unwrap();
+        let sources = [
+            unit_vector(dimensions),
+            (0..dimensions)
+                .map(|index| ((index % 19) as f32 - 9.0) / dimensions as f32)
+                .collect::<Vec<_>>(),
+        ];
+        let encoded = sources
+            .iter()
+            .map(|source| dispatch.encode_source(source).unwrap())
+            .collect::<Vec<_>>();
+        let payloads = encoded
+            .iter()
+            .map(|(_, _, payload)| payload.as_slice())
+            .collect::<Vec<_>>();
+        let mut batch_scores = Vec::new();
+
+        let used_batch = dispatch
+            .score_turboquant_batch_from_payload_refs(
                 &prepared,
                 &payloads,
                 dispatch.payload_len(),
@@ -2025,12 +2062,16 @@ mod tests {
             )
             .unwrap();
 
+        let direct = ProdQuantizer::cached(
+            dimensions,
+            crate::DEFAULT_QUANT_BITS,
+            crate::DEFAULT_QUANT_SEED,
+        );
+        let direct_prepared = direct.prepare_ip_query_lut_no_qjl_4bit(&query);
         assert!(used_batch);
         assert_eq!(batch_scores.len(), sources.len());
-        for (index, (_, gamma, payload)) in encoded.iter().enumerate() {
-            let scalar = dispatch
-                .score_ip_from_parts(&prepared, *gamma, payload)
-                .unwrap();
+        for (index, (_, _, payload)) in encoded.iter().enumerate() {
+            let scalar = direct.score_ip_from_parts_lut_no_qjl_4bit(&direct_prepared, payload);
             assert!(
                 (batch_scores[index] - scalar).abs() < 1e-6,
                 "index={index} batch={} scalar={scalar}",
@@ -2055,6 +2096,10 @@ mod tests {
             .iter()
             .map(|source| dispatch.encode_source(source).unwrap())
             .collect::<Vec<_>>();
+        let gammas = encoded
+            .iter()
+            .map(|(_, gamma, _)| *gamma)
+            .collect::<Vec<_>>();
         let payloads = encoded
             .iter()
             .flat_map(|(_, _, payload)| payload.iter().copied())
@@ -2066,7 +2111,7 @@ mod tests {
                 &prepared,
                 &payloads,
                 dispatch.payload_len(),
-                &[],
+                &gammas,
                 &mut negated_scores,
             )
             .unwrap();
