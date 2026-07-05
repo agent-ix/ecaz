@@ -191,8 +191,8 @@ pub async fn run(conn: &ConnectionOptions, args: StorageArgs) -> Result<()> {
             let leaf_assignment_count: i64 = row.get(1);
             let delta_assignment_count: i64 = row.get(2);
             let status: String = row.get(3);
-            let mean_replicas = if object_count > 0 {
-                leaf_assignment_count as f64 / object_count as f64
+            let mean_replicas = if rows > 0 {
+                leaf_assignment_count as f64 / rows as f64
             } else {
                 0.0
             };
