@@ -103,6 +103,11 @@ and fixed-count probing with ratio-bounded versions of both.
 ## References
 
 - `spec/adr/ADR-049-spire-on-single-level-ivf-foundation.md` (SPANN summary)
+- Papers (local): `~/dev_bak/papers/spann-2111.08566.pdf` (closure assignment
+  §3 + (1+ε) query-time pruning — the normative definitions),
+  `~/dev_bak/papers/2512.17264v1.pdf` (SPIRE), and for architectural context
+  `~/dev_bak/papers/distributedann-2509.06046.pdf`,
+  `~/dev_bak/papers/batann-2512.09331.pdf`
 - `src/am/ec_spire/build/routing_plan.rs:122-150`, `scan/routing.rs:735-810`,
   `options/mod.rs:383-472,1571`
 - `plan/tasks/140-spire-adaptive-termination-recall-slo.md` (subsumed)
