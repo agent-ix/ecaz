@@ -8,7 +8,7 @@ use clap::{Args, Subcommand};
 use color_eyre::eyre::{bail, Context, ContextCompat, Result};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::ExitStatus;
@@ -703,6 +703,8 @@ struct SuiteManifest {
     connection: ManifestConnection,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     backend: Option<BackendPreflight>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    backend_nodes: Vec<BackendNodePreflight>,
     steps: Vec<StepRecord>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     threshold_results: Vec<ThresholdResult>,
@@ -719,6 +721,19 @@ struct ManifestConnection {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct BackendPreflight {
+    build_profile: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    sha256: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct BackendNodePreflight {
+    node: String,
+    database: String,
+    host: Option<String>,
+    port: Option<u16>,
     build_profile: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     sha256: Option<String>,
@@ -870,14 +885,29 @@ async fn run_suite(conn: &ConnectionOptions, args: SuiteRunOptions) -> Result<()
     }
     if !args.dry_run && manifest_has_release_guarded_steps(&manifest) {
         let preflight = preflight_backend(conn).await?;
+        let backend_nodes = preflight_backend_nodes(conn, &config).await?;
         manifest.backend = Some(preflight.clone());
+        manifest.backend_nodes = backend_nodes;
         write_manifest_if_requested(&args, &config, &manifest).await?;
         if preflight.build_profile != "release" && !args.allow_debug_backend {
             bail!(
-                "suite selected latency/recall steps but backend build profile is {:?}; \
+                "suite selected release-guarded latency-emitting steps but backend build profile is {:?}; \
                  reinstall a release backend or pass --allow-debug-backend",
                 preflight.build_profile
             );
+        }
+        if !args.allow_debug_backend {
+            for node in &manifest.backend_nodes {
+                if node.build_profile != "release" {
+                    bail!(
+                        "suite selected release-guarded latency-emitting steps but node {} port {:?} backend build profile is {:?}; \
+                         reinstall a release backend or pass --allow-debug-backend",
+                        node.node,
+                        node.port,
+                        node.build_profile
+                    );
+                }
+            }
         }
     }
     write_manifest_if_requested(&args, &config, &manifest).await?;
@@ -1345,6 +1375,7 @@ fn build_manifest(
             password_configured: conn.password.is_some(),
         },
         backend: None,
+        backend_nodes: Vec::new(),
         steps: Vec::with_capacity(config.steps.len()),
         threshold_results: Vec::new(),
     };
@@ -3935,8 +3966,15 @@ fn manifest_has_release_guarded_steps(manifest: &SuiteManifest) -> bool {
     manifest.steps.iter().any(|step| {
         step.selected
             && matches!(step.status, Some(StepStatus::Pending))
-            && matches!(step.kind.as_str(), "latency" | "recall")
+            && release_guarded_step_kind(&step.kind)
     })
+}
+
+fn release_guarded_step_kind(kind: &str) -> bool {
+    matches!(
+        kind,
+        "latency" | "recall" | "sidecar-rerank" | "spire-pipeline"
+    )
 }
 
 async fn preflight_backend(conn: &ConnectionOptions) -> Result<BackendPreflight> {
@@ -3952,6 +3990,98 @@ async fn preflight_backend(conn: &ConnectionOptions) -> Result<BackendPreflight>
         sha256,
         path: backend_path.map(|path| path.display().to_string()),
     })
+}
+
+async fn preflight_backend_nodes(
+    conn: &ConnectionOptions,
+    config: &SuiteConfig,
+) -> Result<Vec<BackendNodePreflight>> {
+    let mut ports = BTreeSet::new();
+    if let Some(port) = conn.port {
+        ports.insert(port);
+    }
+    let socket_dir = config
+        .defaults
+        .socket_dir
+        .as_deref()
+        .or(conn.host.as_deref().map(Path::new));
+    if let Some(socket_dir) = socket_dir {
+        for port in discover_postgres_socket_ports(socket_dir)? {
+            ports.insert(port);
+        }
+    }
+
+    let mut nodes = Vec::new();
+    if ports.is_empty() {
+        let preflight = preflight_backend(conn).await?;
+        nodes.push(backend_node_preflight(
+            "coordinator".into(),
+            conn,
+            preflight,
+        ));
+        return Ok(nodes);
+    }
+
+    for port in ports {
+        let node_conn = ConnectionOptions {
+            database: conn.database.clone(),
+            host: socket_dir
+                .map(|path| path.display().to_string())
+                .or_else(|| conn.host.clone()),
+            port: Some(port),
+            user: conn.user.clone(),
+            password: conn.password.clone(),
+        };
+        let preflight = preflight_backend(&node_conn)
+            .await
+            .wrap_err_with(|| format!("probing backend build profile on port {port}"))?;
+        let node_name = if Some(port) == conn.port {
+            "coordinator".to_owned()
+        } else {
+            format!("local-port-{port}")
+        };
+        nodes.push(backend_node_preflight(node_name, &node_conn, preflight));
+    }
+    Ok(nodes)
+}
+
+fn backend_node_preflight(
+    node: String,
+    conn: &ConnectionOptions,
+    preflight: BackendPreflight,
+) -> BackendNodePreflight {
+    BackendNodePreflight {
+        node,
+        database: conn.database.clone(),
+        host: conn.host.clone(),
+        port: conn.port,
+        build_profile: preflight.build_profile,
+        sha256: preflight.sha256,
+        path: preflight.path,
+    }
+}
+
+fn discover_postgres_socket_ports(socket_dir: &Path) -> Result<Vec<u16>> {
+    let Ok(entries) = std::fs::read_dir(socket_dir) else {
+        return Ok(Vec::new());
+    };
+    let mut ports = Vec::new();
+    for entry in entries {
+        let entry = entry.wrap_err_with(|| format!("reading {}", socket_dir.display()))?;
+        let file_name = entry.file_name();
+        let file_name = file_name.to_string_lossy();
+        let Some(port) = file_name
+            .strip_prefix(".s.PGSQL.")
+            .and_then(|name| name.strip_suffix(".lock"))
+        else {
+            continue;
+        };
+        if let Ok(port) = port.parse::<u16>() {
+            ports.push(port);
+        }
+    }
+    ports.sort_unstable();
+    Ok(ports)
 }
 
 async fn query_backend_build_profile(client: &tokio_postgres::Client) -> Result<String> {
@@ -5112,6 +5242,65 @@ mod tests {
     }
 
     #[test]
+    fn release_guarded_step_kinds_include_latency_emitting_steps() {
+        for kind in ["latency", "recall", "sidecar-rerank", "spire-pipeline"] {
+            assert!(release_guarded_step_kind(kind), "{kind} should be guarded");
+        }
+        for kind in ["storage", "load", "explain", "spire-local-multinode"] {
+            assert!(
+                !release_guarded_step_kind(kind),
+                "{kind} should not require release preflight"
+            );
+        }
+    }
+
+    #[test]
+    fn release_guard_checks_selected_pending_spire_pipeline_steps() {
+        let mut manifest = SuiteManifest {
+            suite: "suite".into(),
+            schema_version: 1,
+            config: "suite.json".into(),
+            config_sha256: "hash".into(),
+            dry_run: false,
+            generated_at_unix_ms: 0,
+            connection: ManifestConnection {
+                database: "postgres".into(),
+                host: Some("/tmp/pg".into()),
+                port: Some(28818),
+                user: None,
+                password_configured: false,
+            },
+            backend: None,
+            backend_nodes: Vec::new(),
+            steps: vec![StepRecord {
+                name: "pipeline".into(),
+                kind: "spire-pipeline".into(),
+                command: Vec::new(),
+                selected: true,
+                quant: None,
+                isa: None,
+                kernel_status: None,
+                pgoptions: None,
+                tags: Vec::new(),
+                expected_artifacts: Vec::new(),
+                status: Some(StepStatus::Pending),
+                started_at_unix_ms: None,
+                finished_at_unix_ms: None,
+                duration_ms: None,
+                exit_code: None,
+                parallel_workers_before: None,
+                parallel_workers_after: None,
+                parallel_workers_delta: None,
+            }],
+            threshold_results: Vec::new(),
+        };
+
+        assert!(manifest_has_release_guarded_steps(&manifest));
+        manifest.steps[0].selected = false;
+        assert!(!manifest_has_release_guarded_steps(&manifest));
+    }
+
+    #[test]
     fn retired_kernel_cells_execute_and_emit_marker_row() {
         let config = SuiteConfig {
             name: "kernel-axis-retired".into(),
@@ -5322,6 +5511,7 @@ mod tests {
                 password_configured: false,
             },
             backend: None,
+            backend_nodes: Vec::new(),
             steps: vec![StepRecord {
                 name: "load-real10k-w4".into(),
                 kind: "load".into(),
@@ -5841,6 +6031,7 @@ mod tests {
                 password_configured: false,
             },
             backend: None,
+            backend_nodes: Vec::new(),
             steps: Vec::new(),
             threshold_results: Vec::new(),
         };
@@ -5932,6 +6123,7 @@ mod tests {
                 password_configured: false,
             },
             backend: None,
+            backend_nodes: Vec::new(),
             steps: Vec::new(),
             threshold_results: Vec::new(),
         };
