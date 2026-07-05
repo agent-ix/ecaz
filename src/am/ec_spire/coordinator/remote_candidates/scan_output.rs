@@ -519,6 +519,8 @@ fn production_read_profile_row(
         merge_elapsed_ms: metrics.merge_elapsed_ms,
         total_elapsed_ms: metrics.total_elapsed_ms,
         conninfo_secret_lookup_count: metrics.conninfo_secret_lookup_count,
+        connection_pool_hit_count: metrics.connection_pool_hit_count,
+        connection_pool_miss_count: metrics.connection_pool_miss_count,
         socket_open_count: metrics.socket_open_count,
         tls_disable_count: metrics.tls_disable_count,
         tls_require_count: metrics.tls_require_count,

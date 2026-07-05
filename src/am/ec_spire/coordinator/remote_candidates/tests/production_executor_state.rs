@@ -516,6 +516,8 @@ mod production_executor_state_tests {
             merge_elapsed_ms: 31,
             total_elapsed_ms: 37,
             conninfo_secret_lookup_count: 1,
+            connection_pool_hit_count: 3,
+            connection_pool_miss_count: 2,
             socket_open_count: 1,
             tls_disable_count: 0,
             tls_require_count: 1,
@@ -546,6 +548,8 @@ mod production_executor_state_tests {
         let row = production_read_profile_row(&profile_summary_for_test(), &metrics);
 
         assert_eq!(row.requested_epoch, 7);
+        assert_eq!(row.connection_pool_hit_count, 3);
+        assert_eq!(row.connection_pool_miss_count, 2);
         assert_eq!(row.socket_open_count, 1);
         assert_eq!(row.manifest_load_elapsed_ms, 41);
         assert_eq!(row.leaf_count_elapsed_ms, 43);

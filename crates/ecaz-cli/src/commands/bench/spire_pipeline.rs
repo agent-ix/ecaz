@@ -4173,6 +4173,8 @@ struct ProductionReadProfileAggregate {
     remote_heap_failed_dispatch_count_sum: i64,
     remote_heap_candidate_count_sum: i64,
     local_heap_candidate_count_sum: i64,
+    connection_pool_hit_count_sum: i64,
+    connection_pool_miss_count_sum: i64,
     socket_open_count_sum: i64,
     candidate_receive_query_count_sum: i64,
     heap_receive_query_count_sum: i64,
@@ -4225,6 +4227,8 @@ impl ProductionReadProfileAggregate {
             row.i64_metric("remote_heap_failed_dispatch_count");
         self.remote_heap_candidate_count_sum += row.i64_metric("remote_heap_candidate_count");
         self.local_heap_candidate_count_sum += row.i64_metric("local_heap_candidate_count");
+        self.connection_pool_hit_count_sum += row.i64_metric("connection_pool_hit_count");
+        self.connection_pool_miss_count_sum += row.i64_metric("connection_pool_miss_count");
         self.socket_open_count_sum += row.i64_metric("socket_open_count");
         self.candidate_receive_query_count_sum += row.i64_metric("candidate_receive_query_count");
         self.heap_receive_query_count_sum += row.i64_metric("heap_receive_query_count");
@@ -5043,6 +5047,8 @@ fn render_production_read_profile_table(
         "remote_heap_failed_dispatch_sum",
         "remote_heap_candidate_sum",
         "local_heap_candidate_sum",
+        "connection_pool_hit_sum",
+        "connection_pool_miss_sum",
         "socket_open_sum",
         "manifest_load_p50",
         "manifest_load_p95",
@@ -5128,6 +5134,8 @@ fn render_production_read_profile_table(
             Cell::new(aggregate.remote_heap_failed_dispatch_count_sum),
             Cell::new(aggregate.remote_heap_candidate_count_sum),
             Cell::new(aggregate.local_heap_candidate_count_sum),
+            Cell::new(aggregate.connection_pool_hit_count_sum),
+            Cell::new(aggregate.connection_pool_miss_count_sum),
             Cell::new(aggregate.socket_open_count_sum),
             Cell::new(format_duration_ms(manifest_load.p50)),
             Cell::new(format_duration_ms(manifest_load.p95)),
@@ -6238,6 +6246,8 @@ mod tests {
                 ("remote_heap_failed_dispatch_count".into(), "0".into()),
                 ("remote_heap_candidate_count".into(), "5".into()),
                 ("local_heap_candidate_count".into(), "1".into()),
+                ("connection_pool_hit_count".into(), "3".into()),
+                ("connection_pool_miss_count".into(), "2".into()),
                 ("socket_open_count".into(), "2".into()),
                 ("manifest_load_elapsed_ms".into(), "11".into()),
                 ("leaf_count_elapsed_ms".into(), "12".into()),
@@ -6282,6 +6292,8 @@ mod tests {
         assert!(rendered.contains("route_select_p95"));
         assert!(rendered.contains("local_heap_p99"));
         assert!(rendered.contains("candidate_decode_p95"));
+        assert!(rendered.contains("connection_pool_hit_sum"));
+        assert!(rendered.contains("connection_pool_miss_sum"));
         assert!(rendered.contains("connect_p99"));
         assert!(rendered.contains("connect_p95"));
         assert!(rendered.contains("heap_p99"));

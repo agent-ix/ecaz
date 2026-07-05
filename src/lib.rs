@@ -13707,6 +13707,16 @@ fn ec_spire_remote_search_production_read_profile(
         "conninfo_secret_lookup_count",
         row.conninfo_secret_lookup_count
     );
+    metric!(
+        rows,
+        "connection_pool_hit_count",
+        row.connection_pool_hit_count
+    );
+    metric!(
+        rows,
+        "connection_pool_miss_count",
+        row.connection_pool_miss_count
+    );
     metric!(rows, "socket_open_count", row.socket_open_count);
     metric!(rows, "tls_disable_count", row.tls_disable_count);
     metric!(rows, "tls_require_count", row.tls_require_count);

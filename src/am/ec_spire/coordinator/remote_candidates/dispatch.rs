@@ -1217,8 +1217,12 @@ impl SpireRemoteProductionTransportAdapter {
             };
         let limits = SpireRemoteSearchLibpqExecutorBudgetLimits::from_session();
         let mut connection = match pooled_connection {
-            Some(connection) => connection,
+            Some(connection) => {
+                add_profile_count(&mut metrics.connection_pool_hit_count, 1);
+                connection
+            }
             None => {
+                add_profile_count(&mut metrics.connection_pool_miss_count, 1);
                 let governance_permit =
                     match remote_search_libpq_executor_governance_permit_for_node(request.node_id) {
                         Ok(permit) => permit,
