@@ -68,6 +68,7 @@ fn load_snapshot_routing_hierarchy(
         root_object,
         internal_objects_by_pid,
         leaf_assignment_counts_by_pid,
+        top_graph: None,
     })
 }
 
@@ -78,6 +79,7 @@ fn load_snapshot_coordinator_routing_hierarchy(
     let mut root = None;
     let mut internal_objects_by_pid = HashMap::new();
     let mut leaf_assignment_counts_by_pid = HashMap::new();
+    let mut top_graph = None;
     for manifest_entry in &snapshot.object_manifest().entries {
         let lookup =
             snapshot.require_lookup(manifest_entry.pid, "scan coordinator routing load")?;
@@ -116,6 +118,17 @@ fn load_snapshot_coordinator_routing_hierarchy(
                     ));
                 }
             }
+            if header.kind == SpirePartitionObjectKind::TopGraph {
+                if top_graph.is_some() {
+                    return Err(
+                        "ec_spire scan snapshot contains multiple top graph objects".to_owned(),
+                    );
+                }
+                top_graph = Some((
+                    manifest_entry.pid,
+                    object_store.read_top_graph_object(placement)?,
+                ));
+            }
             continue;
         }
         if root.is_some() {
@@ -134,6 +147,7 @@ fn load_snapshot_coordinator_routing_hierarchy(
         root_object,
         internal_objects_by_pid,
         leaf_assignment_counts_by_pid,
+        top_graph,
     })
 }
 
@@ -146,37 +160,6 @@ fn load_snapshot_top_graph_object(
         let lookup = snapshot.require_lookup(manifest_entry.pid, "scan top graph load")?;
         let placement = lookup.placement;
         if should_skip_placement(snapshot.epoch_manifest().consistency_mode, placement.state)? {
-            continue;
-        }
-
-        let header = object_store.read_object_header(placement)?;
-        if header.kind != SpirePartitionObjectKind::TopGraph {
-            continue;
-        }
-        if top_graph.is_some() {
-            return Err("ec_spire scan snapshot contains multiple top graph objects".to_owned());
-        }
-        top_graph = Some((
-            manifest_entry.pid,
-            object_store.read_top_graph_object(placement)?,
-        ));
-    }
-    Ok(top_graph)
-}
-
-fn load_snapshot_coordinator_top_graph_object(
-    snapshot: &SpireValidatedEpochSnapshot<'_>,
-    object_store: &impl SpireObjectReader,
-) -> Result<Option<(u64, SpireTopGraphPartitionObject)>, String> {
-    let mut top_graph = None;
-    for manifest_entry in &snapshot.object_manifest().entries {
-        let lookup =
-            snapshot.require_lookup(manifest_entry.pid, "scan coordinator top graph load")?;
-        let placement = lookup.placement;
-        if should_skip_placement(snapshot.epoch_manifest().consistency_mode, placement.state)? {
-            continue;
-        }
-        if placement.node_id != super::meta::SPIRE_LOCAL_NODE_ID {
             continue;
         }
 
@@ -209,8 +192,6 @@ pub(super) fn collect_scan_plan_selected_leaf_pids(
     let snapshot = SpireValidatedEpochSnapshot::from_snapshot(*snapshot)?;
     let hierarchy = load_snapshot_coordinator_routing_hierarchy(&snapshot, object_store)?;
     collect_scan_plan_selected_leaf_pids_from_hierarchy(
-        &snapshot,
-        object_store,
         &hierarchy,
         query,
         scan_plan,
@@ -219,8 +200,6 @@ pub(super) fn collect_scan_plan_selected_leaf_pids(
 }
 
 fn collect_scan_plan_selected_leaf_pids_from_hierarchy(
-    snapshot: &SpireValidatedEpochSnapshot<'_>,
-    object_store: &impl SpireObjectReader,
     hierarchy: &SpireLoadedRoutingHierarchy,
     query: &SpireScanQuery,
     scan_plan: SpireSingleLevelScanPlan,
@@ -231,14 +210,14 @@ fn collect_scan_plan_selected_leaf_pids_from_hierarchy(
     }
 
     let routes = if top_graph_plan.enabled {
-        let (_top_graph_pid, top_graph) =
-            load_snapshot_coordinator_top_graph_object(&snapshot, object_store)?.ok_or_else(
-                || "ec_spire scan snapshot has no available top graph object".to_owned(),
-            )?;
+        let (_top_graph_pid, top_graph) = hierarchy
+            .top_graph
+            .as_ref()
+            .ok_or_else(|| "ec_spire scan snapshot has no available top graph object".to_owned())?;
         route_top_graph_object_to_leaf_routes(
             &hierarchy.root_object,
             &hierarchy.internal_objects_by_pid,
-            &top_graph,
+            top_graph,
             query.values(),
             top_graph_plan.search_list_size.unwrap_or(scan_plan.nprobe),
             scan_plan.nprobe,
@@ -284,8 +263,6 @@ pub(super) fn collect_resolved_scan_plan_selection(
     let top_graph_plan = relation_options.top_graph_plan()?;
     let route_select_start = Instant::now();
     let selected_leaf_pids = collect_scan_plan_selected_leaf_pids_from_hierarchy(
-        &snapshot,
-        object_store,
         &hierarchy,
         query,
         scan_plan,

@@ -65,6 +65,7 @@ struct SpireLoadedRoutingHierarchy {
     root_object: SpireRoutingPartitionObject,
     internal_objects_by_pid: HashMap<u64, SpireRoutingPartitionObject>,
     leaf_assignment_counts_by_pid: HashMap<u64, usize>,
+    top_graph: Option<(u64, SpireTopGraphPartitionObject)>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
