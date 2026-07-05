@@ -507,6 +507,7 @@
             max_leaf_routes: 2,
             selected_leaf_routes: 2,
             max_routing_expansions: 10,
+            probe_distance_ratio_micros: 0,
         };
 
         let leaf_routes = route_recursive_routing_objects_to_leaf_routes_with_budget(
@@ -572,6 +573,7 @@
             max_leaf_routes: 1,
             selected_leaf_routes: 1,
             max_routing_expansions: 10,
+            probe_distance_ratio_micros: 0,
         };
 
         let accumulated_routes = route_recursive_routing_objects_to_leaf_routes_with_budget(
@@ -640,6 +642,7 @@
             max_leaf_routes: 2,
             selected_leaf_routes: 1,
             max_routing_expansions: 10,
+            probe_distance_ratio_micros: 0,
         };
 
         let leaf_routes = route_recursive_routing_objects_to_leaf_routes_with_budget(
@@ -656,6 +659,58 @@
         assert_eq!(leaf_routes[0].leaf_pid, SPIRE_FIRST_PID + 21);
         assert_eq!(leaf_routes[0].route_score, 5.0);
         assert_eq!(leaf_routes[0].leaf_score, 5.0);
+    }
+
+    #[test]
+    fn route_recursive_routing_objects_to_leaf_routes_applies_probe_distance_ratio() {
+        let root = SpireRoutingPartitionObject::root(
+            SPIRE_FIRST_PID,
+            1,
+            2,
+            vec![
+                routing_child(0, SPIRE_FIRST_PID + 1, vec![0.95, 0.0]),
+                routing_child(1, SPIRE_FIRST_PID + 2, vec![0.94, 0.0]),
+                routing_child(2, SPIRE_FIRST_PID + 3, vec![0.90, 0.0]),
+            ],
+        )
+        .unwrap();
+        let nprobe_policy = SpireRecursiveNprobePolicy::from_level_values(3, vec![]).unwrap();
+        let route_budget = SpireRecursiveRouteBudget {
+            beam_width: 3,
+            max_leaf_routes: 3,
+            selected_leaf_routes: 3,
+            max_routing_expansions: 10,
+            probe_distance_ratio_micros: 1_100_000,
+        };
+
+        let leaf_routes = route_recursive_routing_objects_to_leaf_routes_with_budget(
+            &root,
+            &HashMap::new(),
+            &[1.0, 0.0],
+            &nprobe_policy,
+            route_budget,
+            SpireLeafRouteRanking::AccumulatedPathScore,
+        )
+        .unwrap();
+
+        assert_eq!(leaf_routes.len(), 1);
+        assert_eq!(leaf_routes[0].leaf_pid, SPIRE_FIRST_PID + 1);
+
+        let mut leaf_row_count = |_route: SpireRecursiveLeafRoute| Ok(1usize);
+        let diagnostics = collect_recursive_routing_level_diagnostics_with_row_budget(
+            &root,
+            &HashMap::new(),
+            &[1.0, 0.0],
+            &nprobe_policy,
+            route_budget,
+            SpireLeafRouteRanking::AccumulatedPathScore,
+            None,
+            &mut leaf_row_count,
+        )
+        .unwrap();
+
+        assert_eq!(diagnostics[0].deduped_route_count, 1);
+        assert_eq!(diagnostics[0].truncation_reason, "probe_distance_ratio");
     }
 
     #[test]
@@ -705,6 +760,7 @@
             max_leaf_routes: 2,
             selected_leaf_routes: 2,
             max_routing_expansions: 10,
+            probe_distance_ratio_micros: 0,
         };
 
         let leaf_routes = route_recursive_routing_objects_to_leaf_routes_with_budget(

@@ -686,6 +686,7 @@
             max_leaf_routes: 4,
             selected_leaf_routes: 4,
             max_routing_expansions: 10,
+            probe_distance_ratio_micros: 0,
         };
         let leaf_assignment_counts = HashMap::from([
             (SPIRE_FIRST_PID + 11, 2usize),

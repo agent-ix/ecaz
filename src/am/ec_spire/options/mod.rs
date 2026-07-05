@@ -50,6 +50,10 @@ const EC_SPIRE_DEFAULT_ADAPTIVE_NPROBE_SCORE_GAP_MICROS: i32 = 1000;
 const EC_SPIRE_MAX_ADAPTIVE_NPROBE_SCORE_GAP_MICROS: i32 = 1_000_000;
 const EC_SPIRE_DEFAULT_ROUTE_OVERFETCH_MULTIPLIER: f64 = 1.0;
 const EC_SPIRE_MAX_ROUTE_OVERFETCH_MULTIPLIER: f64 = 8.0;
+const EC_SPIRE_DEFAULT_PROBE_DISTANCE_RATIO: f64 = 0.0;
+const EC_SPIRE_DEFAULT_PROBE_DISTANCE_RATIO_MICROS: i32 = 0;
+const EC_SPIRE_MAX_PROBE_DISTANCE_RATIO: f64 = 16.0;
+const EC_SPIRE_MAX_PROBE_DISTANCE_RATIO_MICROS: i32 = 16_000_000;
 const EC_SPIRE_DEFAULT_REMOTE_SEARCH_LIMIT_UNSET: i32 = 0;
 const EC_SPIRE_MAX_REMOTE_SEARCH_LIMIT: i32 = 1_000_000;
 const EC_SPIRE_MAX_REMOTE_SEARCH_CONCURRENCY_LIMIT: i32 = 4096;
@@ -108,6 +112,8 @@ static EC_SPIRE_ADAPTIVE_NPROBE_SCORE_GAP_MICROS_GUC: GucSetting<i32> =
 static EC_SPIRE_LEAF_SCORE_ONLY_ROUTING_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
 static EC_SPIRE_ROUTE_OVERFETCH_MULTIPLIER_GUC: GucSetting<f64> =
     GucSetting::<f64>::new(EC_SPIRE_DEFAULT_ROUTE_OVERFETCH_MULTIPLIER);
+static EC_SPIRE_PROBE_DISTANCE_RATIO_GUC: GucSetting<f64> =
+    GucSetting::<f64>::new(EC_SPIRE_DEFAULT_PROBE_DISTANCE_RATIO);
 static EC_SPIRE_REMOTE_SEARCH_MAX_NODES_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(EC_SPIRE_DEFAULT_REMOTE_SEARCH_LIMIT_UNSET);
 static EC_SPIRE_REMOTE_SEARCH_MAX_PIDS_GUC: GucSetting<i32> =
@@ -482,6 +488,7 @@ pub(super) struct SpireRecursiveRouteBudget {
     pub(super) max_leaf_routes: usize,
     pub(super) selected_leaf_routes: usize,
     pub(super) max_routing_expansions: usize,
+    pub(super) probe_distance_ratio_micros: i32,
 }
 
 impl SpireRecursiveRouteBudget {
@@ -491,6 +498,7 @@ impl SpireRecursiveRouteBudget {
             max_leaf_routes: usize::MAX,
             selected_leaf_routes: usize::MAX,
             max_routing_expansions: usize::MAX,
+            probe_distance_ratio_micros: EC_SPIRE_DEFAULT_PROBE_DISTANCE_RATIO_MICROS,
         }
     }
 }
@@ -548,6 +556,37 @@ fn validate_adaptive_nprobe_score_gap_micros(value: i32) -> Result<(), String> {
             "ec_spire adaptive_nprobe_score_gap_micros must be between 0 and {EC_SPIRE_MAX_ADAPTIVE_NPROBE_SCORE_GAP_MICROS}, got {value}"
         ))
     }
+}
+
+fn validate_probe_distance_ratio_micros(value: i32) -> Result<(), String> {
+    if value == 0 || (1_000_000..=EC_SPIRE_MAX_PROBE_DISTANCE_RATIO_MICROS).contains(&value) {
+        Ok(())
+    } else {
+        Err(format!(
+            "ec_spire.probe_distance_ratio_micros must be 0 or between 1000000 and {EC_SPIRE_MAX_PROBE_DISTANCE_RATIO_MICROS}, got {value}"
+        ))
+    }
+}
+
+fn probe_distance_ratio_to_micros(value: f64) -> Result<i32, String> {
+    if !value.is_finite() {
+        return Err("ec_spire.probe_distance_ratio must be finite".to_owned());
+    }
+    if value == 0.0 {
+        return Ok(EC_SPIRE_DEFAULT_PROBE_DISTANCE_RATIO_MICROS);
+    }
+    if !(1.0..=EC_SPIRE_MAX_PROBE_DISTANCE_RATIO).contains(&value) {
+        return Err(format!(
+            "ec_spire.probe_distance_ratio must be 0 or between 1.0 and {EC_SPIRE_MAX_PROBE_DISTANCE_RATIO}, got {value}"
+        ));
+    }
+    let micros = (value * 1_000_000.0).round();
+    if !(0.0..=f64::from(EC_SPIRE_MAX_PROBE_DISTANCE_RATIO_MICROS)).contains(&micros) {
+        return Err("ec_spire.probe_distance_ratio exceeds micros range".to_owned());
+    }
+    let micros = micros as i32;
+    validate_probe_distance_ratio_micros(micros)?;
+    Ok(micros)
 }
 
 fn validate_top_graph_enabled_value(value: i32) -> Result<(), String> {
@@ -971,6 +1010,16 @@ pub(super) fn register_gucs() {
         GucContext::Userset,
         GucFlags::default(),
     );
+    GucRegistry::define_float_guc(
+        c"ec_spire.probe_distance_ratio",
+        c"Distance-ratio bound for SPIRE leaf probing.",
+        c"Diagnostic Task 144 switch; 0 disables ratio pruning. Values >= 1.0 retain final leaf routes whose IP-distance proxy is within this ratio of the best routed leaf.",
+        &EC_SPIRE_PROBE_DISTANCE_RATIO_GUC,
+        0.0,
+        EC_SPIRE_MAX_PROBE_DISTANCE_RATIO,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
     GucRegistry::define_int_guc(
         c"ec_spire.remote_search_max_nodes",
         c"Session cap for ec_spire remote-search libpq node fanout.",
@@ -1336,6 +1385,15 @@ pub(super) fn current_session_route_overfetch_multiplier() -> f64 {
     }
 }
 
+pub(super) fn current_session_probe_distance_ratio_micros() -> i32 {
+    if cfg!(test) {
+        EC_SPIRE_DEFAULT_PROBE_DISTANCE_RATIO_MICROS
+    } else {
+        probe_distance_ratio_to_micros(EC_SPIRE_PROBE_DISTANCE_RATIO_GUC.get())
+            .unwrap_or_else(|e| pgrx::error!("{e}"))
+    }
+}
+
 pub(super) fn current_session_remote_search_max_nodes() -> i32 {
     if cfg!(test) {
         EC_SPIRE_DEFAULT_REMOTE_SEARCH_LIMIT_UNSET
@@ -1526,6 +1584,7 @@ pub(super) fn resolve_single_level_scan_plan(
         current_session_adaptive_nprobe_score_gap_micros(),
         current_session_leaf_score_only_routing(),
         current_session_route_overfetch_multiplier(),
+        current_session_probe_distance_ratio_micros(),
     )
 }
 
@@ -1562,6 +1621,7 @@ pub(super) fn resolve_single_level_scan_plan_values_with_candidate_budget(
         EC_SPIRE_DEFAULT_ADAPTIVE_NPROBE_SCORE_GAP_MICROS,
         false,
         EC_SPIRE_DEFAULT_ROUTE_OVERFETCH_MULTIPLIER,
+        EC_SPIRE_DEFAULT_PROBE_DISTANCE_RATIO_MICROS,
     )
 }
 
@@ -1576,6 +1636,7 @@ fn resolve_single_level_scan_plan_values_with_candidate_budget_and_adaptive(
     adaptive_score_gap_micros: i32,
     leaf_score_only_routing: bool,
     route_overfetch_multiplier: f64,
+    probe_distance_ratio_micros: i32,
 ) -> Result<SpireSingleLevelScanPlan, String> {
     let relation_nprobe = u32::try_from(options.nprobe)
         .map_err(|_| "ec_spire nprobe reloption must be non-negative".to_owned())?;
@@ -1591,10 +1652,11 @@ fn resolve_single_level_scan_plan_values_with_candidate_budget_and_adaptive(
         adaptive_nprobe,
         adaptive_score_gap_micros,
     )?;
-    let recursive_route_budget = resolve_recursive_route_budget(
+    let recursive_route_budget = resolve_recursive_route_budget_with_probe_distance_ratio(
         leaf_count,
         nprobe.effective_nprobe,
         route_overfetch_multiplier,
+        probe_distance_ratio_micros,
     )?;
     let rerank_width =
         resolve_scan_rerank_width_values(options.rerank_width, session_rerank_width_value);
@@ -1657,17 +1719,33 @@ pub(super) fn resolve_recursive_route_budget(
     effective_nprobe: u32,
     overfetch_multiplier: f64,
 ) -> Result<SpireRecursiveRouteBudget, String> {
+    resolve_recursive_route_budget_with_probe_distance_ratio(
+        leaf_count,
+        effective_nprobe,
+        overfetch_multiplier,
+        EC_SPIRE_DEFAULT_PROBE_DISTANCE_RATIO_MICROS,
+    )
+}
+
+pub(super) fn resolve_recursive_route_budget_with_probe_distance_ratio(
+    leaf_count: u32,
+    effective_nprobe: u32,
+    overfetch_multiplier: f64,
+    probe_distance_ratio_micros: i32,
+) -> Result<SpireRecursiveRouteBudget, String> {
     if !(1.0..=EC_SPIRE_MAX_ROUTE_OVERFETCH_MULTIPLIER).contains(&overfetch_multiplier) {
         return Err(format!(
             "ec_spire.route_overfetch_multiplier must be between 1.0 and {EC_SPIRE_MAX_ROUTE_OVERFETCH_MULTIPLIER}, got {overfetch_multiplier}"
         ));
     }
+    validate_probe_distance_ratio_micros(probe_distance_ratio_micros)?;
     if leaf_count == 0 || effective_nprobe == 0 {
         return Ok(SpireRecursiveRouteBudget {
             beam_width: 0,
             max_leaf_routes: 0,
             selected_leaf_routes: 0,
             max_routing_expansions: 0,
+            probe_distance_ratio_micros,
         });
     }
     let selected_leaf_routes = usize::try_from(effective_nprobe)
@@ -1689,6 +1767,7 @@ pub(super) fn resolve_recursive_route_budget(
         max_leaf_routes: overfetch_count.min(leaf_count_usize),
         selected_leaf_routes: selected_leaf_routes.min(leaf_count_usize),
         max_routing_expansions: leaf_count_usize.max(overfetch_count),
+        probe_distance_ratio_micros,
     })
 }
 

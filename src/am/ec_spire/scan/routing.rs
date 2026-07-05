@@ -1592,6 +1592,7 @@ where
     let mut seen_leaf_pids = HashSet::new();
     let mut stopped_by_row_budget = false;
     let mut stopped_by_max_leaf_routes = false;
+    let mut stopped_by_probe_distance_ratio = false;
 
     for route in ordered_routes {
         if !seen_leaf_pids.insert(route.leaf_pid) {
@@ -1616,12 +1617,50 @@ where
         routes.truncate(route_budget.selected_leaf_routes);
         stopped_by_max_leaf_routes = true;
     }
+    if apply_probe_distance_ratio_pruning(
+        &mut routes,
+        route_budget.probe_distance_ratio_micros,
+    ) {
+        stopped_by_probe_distance_ratio = true;
+    }
 
     Ok(SpireLeafRouteSelection {
         routes,
         stopped_by_row_budget,
         stopped_by_max_leaf_routes,
+        stopped_by_probe_distance_ratio,
     })
+}
+
+fn apply_probe_distance_ratio_pruning(
+    routes: &mut Vec<SpireRecursiveLeafRoute>,
+    ratio_micros: i32,
+) -> bool {
+    if ratio_micros == 0 || routes.len() <= 1 {
+        return false;
+    }
+    let ratio = ratio_micros as f32 / 1_000_000.0;
+    let best_distance = routes
+        .iter()
+        .map(|route| ip_score_distance_proxy(route.leaf_score))
+        .fold(f32::INFINITY, f32::min);
+    if !best_distance.is_finite() {
+        return false;
+    }
+    let threshold = best_distance * ratio;
+    let original_len = routes.len();
+    routes.retain(|route| ip_score_distance_proxy(route.leaf_score) <= threshold);
+    routes.len() != original_len
+}
+
+fn ip_score_distance_proxy(score: f32) -> f32 {
+    // ADR-084 pins Task 144 closure/pruning to this route-score surrogate.
+    // It is order-preserving for inner-product routing but not norm-robust.
+    if score.is_finite() {
+        (1.0 - score).max(0.0)
+    } else {
+        f32::INFINITY
+    }
 }
 
 fn count_recursive_routing_leaf_pids(
@@ -1909,6 +1948,8 @@ fn leaf_route_selection_truncation_reason(
         "max_routing_expansions"
     } else if selection.stopped_by_row_budget {
         "row_budget"
+    } else if selection.stopped_by_probe_distance_ratio {
+        "probe_distance_ratio"
     } else if selection.stopped_by_max_leaf_routes {
         "max_leaf_routes"
     } else {

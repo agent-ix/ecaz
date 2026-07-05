@@ -97,6 +97,7 @@ struct SpireLeafRouteSelection {
     routes: Vec<SpireRecursiveLeafRoute>,
     stopped_by_row_budget: bool,
     stopped_by_max_leaf_routes: bool,
+    stopped_by_probe_distance_ratio: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

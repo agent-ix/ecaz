@@ -2,10 +2,10 @@
 mod tests {
     use super::{
         normalize_local_store_tablespaces_reloption, parse_nprobe_per_level_reloption,
-        plan_local_store_tablespaces_with_resolver, resolve_recursive_route_budget,
+        plan_local_store_tablespaces_with_resolver, probe_distance_ratio_to_micros,
+        resolve_recursive_route_budget, resolve_recursive_route_budget_with_probe_distance_ratio,
         resolve_scan_max_candidate_rows_values, resolve_scan_max_routed_candidate_rows_value,
-        resolve_scan_nprobe_values, resolve_scan_rerank_width_values,
-        resolve_single_level_scan_plan_values,
+        resolve_scan_nprobe_values, resolve_scan_rerank_width_values, resolve_single_level_scan_plan_values,
         resolve_single_level_scan_plan_values_with_candidate_budget,
         validate_boundary_replica_count_value, validate_local_store_count_value,
         validate_max_candidate_rows_value, validate_recursive_fanout_value, EcSpireOptions,
@@ -297,6 +297,7 @@ mod tests {
                 max_leaf_routes: 3,
                 selected_leaf_routes: 3,
                 max_routing_expansions: 17,
+                probe_distance_ratio_micros: 0,
             }
         );
         assert_eq!(
@@ -339,6 +340,7 @@ mod tests {
                 max_leaf_routes: 7,
                 selected_leaf_routes: 7,
                 max_routing_expansions: 100,
+                probe_distance_ratio_micros: 0,
             }
         );
         assert_eq!(
@@ -348,6 +350,7 @@ mod tests {
                 max_leaf_routes: 3,
                 selected_leaf_routes: 3,
                 max_routing_expansions: 7,
+                probe_distance_ratio_micros: 0,
             }
         );
         assert_eq!(
@@ -357,6 +360,7 @@ mod tests {
                 max_leaf_routes: 0,
                 selected_leaf_routes: 0,
                 max_routing_expansions: 0,
+                probe_distance_ratio_micros: 0,
             }
         );
     }
@@ -370,9 +374,25 @@ mod tests {
                 max_leaf_routes: 11,
                 selected_leaf_routes: 7,
                 max_routing_expansions: 100,
+                probe_distance_ratio_micros: 0,
             }
         );
         assert!(resolve_recursive_route_budget(100, 7, 0.99).is_err());
+    }
+
+    #[test]
+    fn recursive_route_budget_carries_probe_distance_ratio() {
+        assert_eq!(probe_distance_ratio_to_micros(0.0).unwrap(), 0);
+        assert_eq!(probe_distance_ratio_to_micros(1.25).unwrap(), 1_250_000);
+        assert!(probe_distance_ratio_to_micros(0.5).is_err());
+
+        let budget =
+            resolve_recursive_route_budget_with_probe_distance_ratio(100, 7, 1.0, 1_250_000)
+                .unwrap();
+
+        assert_eq!(budget.probe_distance_ratio_micros, 1_250_000);
+        assert!(resolve_recursive_route_budget_with_probe_distance_ratio(100, 7, 1.0, 999_999)
+            .is_err());
     }
 
     #[test]
