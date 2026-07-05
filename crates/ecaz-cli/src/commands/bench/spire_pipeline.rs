@@ -198,6 +198,13 @@ pub struct SpirePipelineArgs {
     /// surface.
     #[arg(long)]
     pub geometry_output: Option<PathBuf>,
+    /// Epsilon values for diagnostic closure simulation.
+    ///
+    /// Each value emits additional geometry rows using IP-distance ratio
+    /// closure against active leaf centroids. This does not change index
+    /// assignment or scan behavior.
+    #[arg(long, value_delimiter = ',')]
+    pub geometry_closure_epsilon: Vec<f64>,
     /// Write per-query returned id lists as JSONL for A/B result identity checks.
     #[arg(long)]
     pub result_identity_output: Option<PathBuf>,
@@ -397,6 +404,19 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
             truth_ids,
             &target_assignments,
         )?);
+        if !args.geometry_closure_epsilon.is_empty() {
+            let target_vectors =
+                fetch_source_vectors_for_truth_ids(&client, &corpus_table, truth_ids).await?;
+            let leaf_centroids = query_leaf_routing_centroids(&client, &index).await?;
+            for epsilon in &args.geometry_closure_epsilon {
+                geometry_rows.extend(GeometryRecord::closure_simulated_concentration(
+                    truth_ids,
+                    &target_vectors,
+                    &leaf_centroids,
+                    *epsilon,
+                )?);
+            }
+        }
     }
 
     for nprobe in &sweep_values {
@@ -1117,6 +1137,18 @@ fn validate_args(args: &SpirePipelineArgs) -> Result<()> {
             "--geometry-output requires --include-recall so exact truth ids are available"
         ));
     }
+    if !args.geometry_closure_epsilon.is_empty() && args.geometry_output.is_none() {
+        return Err(eyre!(
+            "--geometry-closure-epsilon requires --geometry-output"
+        ));
+    }
+    for epsilon in &args.geometry_closure_epsilon {
+        if !(epsilon.is_finite() && *epsilon >= 0.0) {
+            return Err(eyre!(
+                "--geometry-closure-epsilon values must be finite and >= 0"
+            ));
+        }
+    }
     if args.miss_attribution_output.is_some() && !args.include_query_metrics {
         return Err(eyre!(
             "--miss-attribution-output requires --include-query-metrics so returned ids are available"
@@ -1637,6 +1669,43 @@ async fn query_leaf_size_rows(client: &Client, index: &str) -> Result<Vec<LeafSi
     Ok(rows.into_iter().map(LeafSizeRow::from).collect())
 }
 
+async fn query_leaf_routing_centroids(
+    client: &Client,
+    index: &str,
+) -> Result<Vec<LeafRoutingCentroidRow>> {
+    let rows = client
+        .query(leaf_routing_centroid_snapshot_sql(), &[&index])
+        .await
+        .wrap_err("querying ec_spire_index_routing_centroid_snapshot")?;
+    Ok(rows.into_iter().map(LeafRoutingCentroidRow::from).collect())
+}
+
+async fn fetch_source_vectors_for_truth_ids(
+    client: &Client,
+    corpus_table: &str,
+    truth_ids: &[Vec<i64>],
+) -> Result<HashMap<i64, Vec<f32>>> {
+    let mut ids = truth_ids
+        .iter()
+        .flat_map(|row| row.iter().copied())
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    ids.sort_unstable();
+    if ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let sql = format!("SELECT id::bigint, source FROM {corpus_table} WHERE id = ANY($1::bigint[])");
+    let rows = client
+        .query(&sql, &[&ids])
+        .await
+        .wrap_err_with(|| format!("fetching geometry truth sources from {corpus_table}"))?;
+    Ok(rows
+        .into_iter()
+        .map(|row| (row.get::<_, i64>(0), row.get::<_, Vec<f32>>(1)))
+        .collect())
+}
+
 async fn query_leaf_block_rank_rows(
     client: &Client,
     index: &str,
@@ -1916,6 +1985,13 @@ fn leaf_size_snapshot_sql() -> &'static str {
      FROM ec_spire_index_leaf_snapshot($1::text::regclass::oid)
      WHERE placement_state = 'available'
      ORDER BY leaf_pid"
+}
+
+fn leaf_routing_centroid_snapshot_sql() -> &'static str {
+    "SELECT child_pid, centroid
+     FROM ec_spire_index_routing_centroid_snapshot($1::text::regclass::oid)
+     WHERE child_kind = 'leaf' AND child_placement_state = 'available'
+     ORDER BY child_pid"
 }
 
 fn leaf_block_rank_snapshot_sql() -> &'static str {
@@ -2346,6 +2422,21 @@ impl From<Row> for LeafSizeRow {
         Self {
             leaf_pid: row.get(0),
             effective_assignment_count: row.get(1),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct LeafRoutingCentroidRow {
+    leaf_pid: i64,
+    centroid: Vec<f32>,
+}
+
+impl From<Row> for LeafRoutingCentroidRow {
+    fn from(row: Row) -> Self {
+        Self {
+            leaf_pid: row.get(0),
+            centroid: row.get(1),
         }
     }
 }
@@ -2921,6 +3012,7 @@ enum GeometryRecord {
     #[serde(rename = "spire_geometry_true_neighbor_concentration")]
     TrueNeighborConcentration {
         mode: &'static str,
+        closure_epsilon: Option<f64>,
         query_ordinal: usize,
         truth_top_k_count: usize,
         found_truth_count: usize,
@@ -3031,6 +3123,7 @@ impl GeometryRecord {
                 minimum_leaf_cover_count(query_truth_ids.len(), leaf_counts.values().copied());
             records.push(Self::TrueNeighborConcentration {
                 mode: "single_assignment",
+                closure_epsilon: None,
                 query_ordinal,
                 truth_top_k_count: query_truth_ids.len(),
                 found_truth_count,
@@ -3048,6 +3141,119 @@ impl GeometryRecord {
         }
         Ok(records)
     }
+
+    fn closure_simulated_concentration(
+        truth_ids: &[Vec<i64>],
+        target_vectors: &HashMap<i64, Vec<f32>>,
+        leaf_centroids: &[LeafRoutingCentroidRow],
+        epsilon: f64,
+    ) -> Result<Vec<Self>> {
+        if leaf_centroids.is_empty() {
+            return Err(eyre!(
+                "geometry closure simulation requires at least one active leaf centroid"
+            ));
+        }
+        let centroid_dimensions = leaf_centroids[0].centroid.len();
+        if centroid_dimensions == 0 {
+            return Err(eyre!(
+                "geometry closure simulation requires non-empty centroids"
+            ));
+        }
+        for centroid in leaf_centroids {
+            if centroid.centroid.len() != centroid_dimensions {
+                return Err(eyre!(
+                    "geometry closure simulation requires fixed centroid dimensions"
+                ));
+            }
+        }
+
+        let mut records = Vec::with_capacity(truth_ids.len());
+        for (query_ordinal, query_truth_ids) in truth_ids.iter().enumerate() {
+            let mut leaf_counts = HashMap::<i64, usize>::new();
+            let mut found_truth_count = 0_usize;
+            let mut assignment_row_count = 0_usize;
+            for truth_id in query_truth_ids {
+                let Some(vector) = target_vectors.get(truth_id) else {
+                    continue;
+                };
+                let closure_leaf_pids =
+                    closure_leaf_pids_for_vector(vector, leaf_centroids, epsilon)?;
+                if closure_leaf_pids.is_empty() {
+                    continue;
+                }
+                found_truth_count += 1;
+                assignment_row_count = assignment_row_count.saturating_add(closure_leaf_pids.len());
+                for leaf_pid in closure_leaf_pids {
+                    *leaf_counts.entry(leaf_pid).or_default() += 1;
+                }
+            }
+            let min_leaf_cover_count =
+                minimum_leaf_cover_count(query_truth_ids.len(), leaf_counts.values().copied());
+            records.push(Self::TrueNeighborConcentration {
+                mode: "closure_simulated_ip_distance_ratio",
+                closure_epsilon: Some(epsilon),
+                query_ordinal,
+                truth_top_k_count: query_truth_ids.len(),
+                found_truth_count,
+                assigned_leaf_count: leaf_counts.len(),
+                assignment_row_count,
+                min_leaf_cover_count,
+                missing_truth_count: query_truth_ids.len().saturating_sub(found_truth_count),
+            });
+        }
+        Ok(records)
+    }
+}
+
+fn closure_leaf_pids_for_vector(
+    vector: &[f32],
+    leaf_centroids: &[LeafRoutingCentroidRow],
+    epsilon: f64,
+) -> Result<Vec<i64>> {
+    let Some(first) = leaf_centroids.first() else {
+        return Ok(Vec::new());
+    };
+    if vector.len() != first.centroid.len() {
+        return Err(eyre!(
+            "geometry closure vector dimension {} does not match centroid dimension {}",
+            vector.len(),
+            first.centroid.len()
+        ));
+    }
+    let mut scored = leaf_centroids
+        .iter()
+        .map(|centroid| {
+            if centroid.centroid.len() != vector.len() {
+                return Err(eyre!(
+                    "geometry closure centroid dimension {} does not match vector dimension {}",
+                    centroid.centroid.len(),
+                    vector.len()
+                ));
+            }
+            let ip = vector
+                .iter()
+                .zip(centroid.centroid.iter())
+                .map(|(left, right)| f64::from(*left) * f64::from(*right))
+                .sum::<f64>();
+            let distance = (1.0 - ip).max(0.0);
+            Ok((centroid.leaf_pid, distance))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    scored.sort_by(|left, right| {
+        left.1
+            .partial_cmp(&right.1)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| left.0.cmp(&right.0))
+    });
+    let Some((_best_pid, best_distance)) = scored.first().copied() else {
+        return Ok(Vec::new());
+    };
+    let threshold = best_distance * (1.0 + epsilon);
+    Ok(scored
+        .into_iter()
+        .filter(|(_pid, distance)| *distance <= threshold + f64::EPSILON)
+        .map(|(pid, _distance)| pid)
+        .collect())
 }
 
 fn minimum_leaf_cover_count(
@@ -5746,6 +5952,7 @@ mod tests {
             funnel_output: None,
             stage_containment_output: None,
             geometry_output: None,
+            geometry_closure_epsilon: vec![],
             result_identity_output: None,
         }
     }
@@ -5892,6 +6099,14 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("--stage-containment-output requires --include-query-metrics"));
+
+        let mut args = default_args();
+        args.geometry_closure_epsilon = vec![0.1];
+        args.include_recall = true;
+        assert!(validate_args(&args)
+            .unwrap_err()
+            .to_string()
+            .contains("--geometry-closure-epsilon requires --geometry-output"));
 
         let mut args = default_args();
         args.production_read_only = true;
@@ -6187,6 +6402,56 @@ mod tests {
         assert_eq!(assigned_leaf_count, 1);
         assert_eq!(min_leaf_cover_count, 1);
         assert_eq!(missing_truth_count, 1);
+
+        let mut target_vectors = HashMap::new();
+        target_vectors.insert(10, vec![1.0, 0.0]);
+        target_vectors.insert(20, vec![0.98, 0.02]);
+        target_vectors.insert(30, vec![0.0, 1.0]);
+        target_vectors.insert(40, vec![0.0, 1.0]);
+        let centroids = vec![
+            LeafRoutingCentroidRow {
+                leaf_pid: 101,
+                centroid: vec![1.0, 0.0],
+            },
+            LeafRoutingCentroidRow {
+                leaf_pid: 102,
+                centroid: vec![0.9, 0.1],
+            },
+            LeafRoutingCentroidRow {
+                leaf_pid: 201,
+                centroid: vec![0.0, 1.0],
+            },
+        ];
+        let closure = GeometryRecord::closure_simulated_concentration(
+            &[vec![10, 20, 30], vec![40, 50]],
+            &target_vectors,
+            &centroids,
+            10.0,
+        )
+        .unwrap();
+        let GeometryRecord::TrueNeighborConcentration {
+            mode,
+            closure_epsilon,
+            query_ordinal,
+            truth_top_k_count,
+            found_truth_count,
+            assigned_leaf_count,
+            assignment_row_count,
+            min_leaf_cover_count,
+            missing_truth_count,
+        } = closure[0]
+        else {
+            panic!("expected closure concentration record");
+        };
+        assert_eq!(mode, "closure_simulated_ip_distance_ratio");
+        assert_eq!(closure_epsilon, Some(10.0));
+        assert_eq!(query_ordinal, 0);
+        assert_eq!(truth_top_k_count, 3);
+        assert_eq!(found_truth_count, 3);
+        assert_eq!(assigned_leaf_count, 3);
+        assert_eq!(assignment_row_count, 4);
+        assert_eq!(min_leaf_cover_count, 2);
+        assert_eq!(missing_truth_count, 0);
     }
 
     fn leaf_target_assignment_row(

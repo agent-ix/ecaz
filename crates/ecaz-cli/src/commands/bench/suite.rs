@@ -566,6 +566,8 @@ struct SpirePipelineStep {
     #[serde(default)]
     geometry_output: Option<PathBuf>,
     #[serde(default)]
+    geometry_closure_epsilon: Vec<f64>,
+    #[serde(default)]
     result_identity_output: Option<PathBuf>,
 }
 
@@ -3585,6 +3587,18 @@ fn expand_spire_pipeline(step: &SpirePipelineStep, defaults: &SuiteDefaults) -> 
         "--geometry-output",
         step.geometry_output.as_deref(),
     );
+    if !step.geometry_closure_epsilon.is_empty() {
+        push_arg(
+            &mut args,
+            "--geometry-closure-epsilon",
+            &step
+                .geometry_closure_epsilon
+                .iter()
+                .map(|value| value.to_string())
+                .collect::<Vec<_>>()
+                .join(","),
+        );
+    }
     push_opt_path(
         &mut args,
         "--result-identity-output",
@@ -4775,6 +4789,7 @@ mod tests {
                 funnel_output: Some("${artifact_dir}/profile-funnel.jsonl".into()),
                 stage_containment_output: Some("${artifact_dir}/profile-stage.jsonl".into()),
                 geometry_output: Some("${artifact_dir}/profile-geometry.jsonl".into()),
+                geometry_closure_epsilon: vec![0.05, 0.1],
                 result_identity_output: Some("${artifact_dir}/profile-identity.jsonl".into()),
             })],
         };
@@ -4831,6 +4846,9 @@ mod tests {
                 "--geometry-output",
                 "artifacts/current/profile-geometry.jsonl"
             ]));
+        assert!(args
+            .windows(2)
+            .any(|w| w == ["--geometry-closure-epsilon", "0.05,0.1"]));
         assert!(args.windows(2).any(|w| w
             == [
                 "--result-identity-output",
@@ -5936,6 +5954,7 @@ mod tests {
             funnel_output: None,
             stage_containment_output: Some("stage-containment.jsonl".into()),
             geometry_output: Some("geometry.jsonl".into()),
+            geometry_closure_epsilon: vec![0.2],
             result_identity_output: Some("identity.jsonl".into()),
         };
 
@@ -5989,6 +6008,9 @@ mod tests {
         assert!(args
             .windows(2)
             .any(|w| w == ["--geometry-output", "geometry.jsonl"]));
+        assert!(args
+            .windows(2)
+            .any(|w| w == ["--geometry-closure-epsilon", "0.2"]));
         assert!(args
             .windows(2)
             .any(|w| w == ["--result-identity-output", "identity.jsonl"]));
@@ -6053,6 +6075,7 @@ mod tests {
                 funnel_output: None,
                 stage_containment_output: None,
                 geometry_output: None,
+                geometry_closure_epsilon: Vec::new(),
                 result_identity_output: None,
             })],
         };
