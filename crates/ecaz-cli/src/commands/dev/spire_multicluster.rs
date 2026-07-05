@@ -1309,6 +1309,7 @@ async fn run_native_local_multinode_pg18(
                 &args.bench_query_metric_projection_columns,
                 &args.bench_session_gucs,
                 &args.bench_production_read_variants,
+                args.debug_install,
             )
             .await?;
         }
@@ -2475,6 +2476,7 @@ async fn run_local_multinode_bench_suite(
     query_metric_projection_columns: &[String],
     session_gucs: &[String],
     production_read_variants: &[String],
+    allow_debug_backend: bool,
 ) -> Result<()> {
     let suite_artifact_dir = log_dir.join("bench-suite");
     fs::create_dir_all(&suite_artifact_dir)
@@ -2600,9 +2602,11 @@ async fn run_local_multinode_bench_suite(
         .arg("--results-output")
         .arg(suite_artifact_dir.join("results.jsonl"))
         .arg("--log-file")
-        .arg(suite_artifact_dir.join("suite-run.log"))
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit());
+        .arg(suite_artifact_dir.join("suite-run.log"));
+    if allow_debug_backend {
+        command.arg("--allow-debug-backend");
+    }
+    command.stdout(Stdio::inherit()).stderr(Stdio::inherit());
     run_status(command)
         .await
         .wrap_err("running local multinode nested bench suite")
