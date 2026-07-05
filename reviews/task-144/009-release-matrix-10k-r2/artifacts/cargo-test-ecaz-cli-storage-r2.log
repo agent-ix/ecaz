@@ -1,0 +1,20 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.22s
+     Running unittests src/main.rs (target/debug/deps/ecaz-bdbeafde08ddf599)
+
+running 13 tests
+test commands::bench::storage::tests::per_row_bytes_computes_floating_ratio ... ok
+test commands::bench::storage::tests::format_bytes_negative_falls_back_to_raw ... ok
+test commands::bench::storage::tests::per_row_bytes_zero_or_negative_size_is_zero ... ok
+test commands::bench::storage::tests::per_row_bytes_handles_billion_row_corpus_without_overflow ... ok
+test commands::bench::storage::tests::format_bytes_scales_units_and_promotes_at_1024 ... ok
+test commands::bench::comparator::tests::storage_layout_validation_accepts_known_values ... ok
+test commands::bench::storage::tests::per_row_bytes_zero_rows_is_zero_not_nan ... ok
+test commands::bench::storage::tests::profile_label_for_access_method_marks_unknown_access_methods ... ok
+test commands::bench::storage::tests::profile_label_for_access_method_maps_known_profiles ... ok
+test commands::corpus::load::tests::diskann_plan_appends_storage_format_to_extras ... ok
+test commands::corpus::load::tests::collision_storage_format_flagged_only_when_cli_flag_set ... ok
+test commands::bench::suite::tests::parses_storage_rows_with_raw_byte_fields ... ok
+test commands::bench::suite::tests::derives_spire_pipeline_row_scan_percent_from_storage_rows ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 428 filtered out; finished in 0.00s
+
