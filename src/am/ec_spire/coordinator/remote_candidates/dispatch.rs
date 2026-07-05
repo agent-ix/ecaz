@@ -469,6 +469,8 @@ struct SpireRemotePooledConnection {
     client: tokio_postgres::Client,
     connection_task: tokio::task::JoinHandle<()>,
     tls_config: SpireRemoteTlsConfig,
+    validated_remote_index_oid: Option<u32>,
+    validated_endpoint_identity: Option<SpireRemoteValidatedEndpointIdentity>,
 }
 
 impl Drop for SpireRemotePooledConnection {
@@ -581,6 +583,19 @@ impl SpireRemoteBackendTransportState {
         }
         self.idle_connections.push_back(connection);
     }
+}
+
+fn cached_production_endpoint_identity(
+    validated_remote_index_oid: Option<u32>,
+    validated_endpoint_identity: Option<&SpireRemoteValidatedEndpointIdentity>,
+    remote_index_identity: &[u8],
+) -> Option<(u32, SpireRemoteValidatedEndpointIdentity)> {
+    let remote_index_oid = validated_remote_index_oid?;
+    let endpoint_identity = validated_endpoint_identity?;
+    if endpoint_identity.profile_fingerprint_bytes.as_slice() != remote_index_identity {
+        return None;
+    }
+    Some((remote_index_oid, endpoint_identity.clone()))
 }
 
 fn with_spire_remote_backend_transport_state<T>(
@@ -1197,7 +1212,7 @@ impl SpireRemoteProductionTransportAdapter {
                 }
             };
         let limits = SpireRemoteSearchLibpqExecutorBudgetLimits::from_session();
-        let connection = match pooled_connection {
+        let mut connection = match pooled_connection {
             Some(connection) => connection,
             None => {
                 let connect_start = std::time::Instant::now();
@@ -1244,6 +1259,8 @@ impl SpireRemoteProductionTransportAdapter {
                             client: connection.client,
                             connection_task: connection.connection_task,
                             tls_config: connection.tls_config,
+                            validated_remote_index_oid: None,
+                            validated_endpoint_identity: None,
                         }
                     }
                     Err(error) => {
@@ -1289,50 +1306,67 @@ impl SpireRemoteProductionTransportAdapter {
                         timeout_start,
                     );
                 }
-                let regclass_start = std::time::Instant::now();
-                add_profile_count(&mut query_metrics.regclass_probe_count, 1);
-                let remote_index_oid = connection
-                    .client
-                    .query_one(
-                        "SELECT to_regclass($1)::oid",
-                        &[&request.remote_index_regclass.as_str()],
-                    )
-                    .await
-                    .map_err(|error| {
-                        let category = production_remote_query_failure_category(&error);
-                        if category == SPIRE_REMOTE_PRODUCTION_TRANSPORT_REMOTE_QUERY_FAILED {
-                            SPIRE_REMOTE_PRODUCTION_REMOTE_INDEX_UNAVAILABLE
-                        } else {
-                            category
-                        }
-                    })?
-                    .try_get::<_, Option<u32>>(0)
-                    .map_err(|_| SPIRE_REMOTE_PRODUCTION_REMOTE_INDEX_UNAVAILABLE)?
-                    .ok_or(SPIRE_REMOTE_PRODUCTION_REMOTE_INDEX_UNAVAILABLE)?;
-                add_profile_elapsed(&mut query_metrics.regclass_probe_elapsed_ms, regclass_start);
+                let (remote_index_oid, endpoint_identity) = match cached_production_endpoint_identity(
+                    connection.validated_remote_index_oid,
+                    connection.validated_endpoint_identity.as_ref(),
+                    &request.remote_index_identity,
+                ) {
+                    Some((remote_index_oid, endpoint_identity)) => {
+                        (remote_index_oid, endpoint_identity)
+                    }
+                    None => {
+                        let regclass_start = std::time::Instant::now();
+                        add_profile_count(&mut query_metrics.regclass_probe_count, 1);
+                        let remote_index_oid = connection
+                            .client
+                            .query_one(
+                                "SELECT to_regclass($1)::oid",
+                                &[&request.remote_index_regclass.as_str()],
+                            )
+                            .await
+                            .map_err(|error| {
+                                let category = production_remote_query_failure_category(&error);
+                                if category == SPIRE_REMOTE_PRODUCTION_TRANSPORT_REMOTE_QUERY_FAILED {
+                                    SPIRE_REMOTE_PRODUCTION_REMOTE_INDEX_UNAVAILABLE
+                                } else {
+                                    category
+                                }
+                            })?
+                            .try_get::<_, Option<u32>>(0)
+                            .map_err(|_| SPIRE_REMOTE_PRODUCTION_REMOTE_INDEX_UNAVAILABLE)?
+                            .ok_or(SPIRE_REMOTE_PRODUCTION_REMOTE_INDEX_UNAVAILABLE)?;
+                        add_profile_elapsed(
+                            &mut query_metrics.regclass_probe_elapsed_ms,
+                            regclass_start,
+                        );
 
-                let identity_start = std::time::Instant::now();
-                add_profile_count(&mut query_metrics.endpoint_identity_query_count, 1);
-                let endpoint_identity_row = connection
-                    .client
-                    .query_one(
-                        SPIRE_REMOTE_SEARCH_ENDPOINT_IDENTITY_SQL_TEMPLATE,
-                        &[&remote_index_oid],
-                    )
-                    .await
-                    .map_err(|_| SPIRE_REMOTE_STATUS_ENDPOINT_IDENTITY_MISMATCH)?;
-                let endpoint_identity =
-                    validate_remote_search_endpoint_identity_row(&endpoint_identity_row)
-                        .map_err(|_| SPIRE_REMOTE_STATUS_ENDPOINT_IDENTITY_MISMATCH)?;
-                if endpoint_identity.profile_fingerprint_bytes.as_slice()
-                    != request.remote_index_identity.as_slice()
-                {
-                    return Err(SPIRE_REMOTE_STATUS_ENDPOINT_IDENTITY_MISMATCH);
-                }
-                add_profile_elapsed(
-                    &mut query_metrics.endpoint_identity_elapsed_ms,
-                    identity_start,
-                );
+                        let identity_start = std::time::Instant::now();
+                        add_profile_count(&mut query_metrics.endpoint_identity_query_count, 1);
+                        let endpoint_identity_row = connection
+                            .client
+                            .query_one(
+                                SPIRE_REMOTE_SEARCH_ENDPOINT_IDENTITY_SQL_TEMPLATE,
+                                &[&remote_index_oid],
+                            )
+                            .await
+                            .map_err(|_| SPIRE_REMOTE_STATUS_ENDPOINT_IDENTITY_MISMATCH)?;
+                        let endpoint_identity =
+                            validate_remote_search_endpoint_identity_row(&endpoint_identity_row)
+                                .map_err(|_| SPIRE_REMOTE_STATUS_ENDPOINT_IDENTITY_MISMATCH)?;
+                        if endpoint_identity.profile_fingerprint_bytes.as_slice()
+                            != request.remote_index_identity.as_slice()
+                        {
+                            return Err(SPIRE_REMOTE_STATUS_ENDPOINT_IDENTITY_MISMATCH);
+                        }
+                        add_profile_elapsed(
+                            &mut query_metrics.endpoint_identity_elapsed_ms,
+                            identity_start,
+                        );
+                        connection.validated_remote_index_oid = Some(remote_index_oid);
+                        connection.validated_endpoint_identity = Some(endpoint_identity.clone());
+                        (remote_index_oid, endpoint_identity)
+                    }
+                };
 
                 let candidate_start = std::time::Instant::now();
                 add_profile_count(&mut query_metrics.candidate_receive_query_count, 1);

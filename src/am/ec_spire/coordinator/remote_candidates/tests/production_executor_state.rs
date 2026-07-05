@@ -85,6 +85,30 @@ mod production_executor_state_tests {
         )
     }
 
+    fn validated_endpoint_identity_for_test(
+        profile_fingerprint_bytes: Vec<u8>,
+    ) -> SpireRemoteValidatedEndpointIdentity {
+        let profile_fingerprint = profile_fingerprint_bytes
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        SpireRemoteValidatedEndpointIdentity {
+            protocol_version: "1".to_owned(),
+            extension_version: "0.1.1".to_owned(),
+            opclass_identity: "ecaz".to_owned(),
+            storage_format: "turboquant".to_owned(),
+            assignment_payload_format: "binary".to_owned(),
+            quantizer_profile: "test".to_owned(),
+            scoring_profile: "ip".to_owned(),
+            tuple_transport_capabilities: vec![SPIRE_REMOTE_TUPLE_TRANSPORT_PG_BINARY_ATTR_V1
+                .to_owned()],
+            tuple_transport_default: SPIRE_REMOTE_TUPLE_TRANSPORT_PG_BINARY_ATTR_V1.to_owned(),
+            tuple_transport_status: SPIRE_REMOTE_STATUS_READY.to_owned(),
+            profile_fingerprint,
+            profile_fingerprint_bytes,
+        }
+    }
+
     #[test]
     fn coordinator_fanout_manifest_cache_reuses_epoch_manifests() {
         reset_coordinator_fanout_manifest_cache_for_test();
@@ -121,6 +145,25 @@ mod production_executor_state_tests {
 
         assert_eq!(loads.get(), 2);
         assert_eq!(next_epoch.0.epoch, 8);
+    }
+
+    #[test]
+    fn cached_production_endpoint_identity_requires_matching_identity() {
+        let identity = validated_endpoint_identity_for_test(vec![1, 2, 3, 4]);
+
+        let hit = cached_production_endpoint_identity(Some(99), Some(&identity), &[1, 2, 3, 4]);
+        let mismatch =
+            cached_production_endpoint_identity(Some(99), Some(&identity), &[9, 9, 9, 9]);
+        let missing_oid = cached_production_endpoint_identity(None, Some(&identity), &[1, 2, 3, 4]);
+        let missing_identity = cached_production_endpoint_identity(Some(99), None, &[1, 2, 3, 4]);
+
+        assert_eq!(
+            hit.map(|(oid, identity)| (oid, identity.profile_fingerprint_bytes)),
+            Some((99, vec![1, 2, 3, 4]))
+        );
+        assert!(mismatch.is_none());
+        assert!(missing_oid.is_none());
+        assert!(missing_identity.is_none());
     }
 
     fn candidate_for_state_test(
