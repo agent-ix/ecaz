@@ -415,7 +415,8 @@ impl IvfQuantizer {
                     crate::DEFAULT_QUANT_BITS,
                     crate::DEFAULT_QUANT_SEED,
                 );
-                Ok(quantizer.score_ip_from_parts_lut_no_qjl_4bit(prepared_query, payload))
+                let scale = quantizer.length_renorm_scale_no_qjl_4bit(gamma, payload);
+                Ok(quantizer.score_ip_from_parts_lut_no_qjl_4bit(prepared_query, payload) * scale)
             }
             (
                 IvfQuantizerProfile::TurboQuant,
@@ -426,7 +427,11 @@ impl IvfQuantizer {
                     crate::DEFAULT_QUANT_BITS,
                     crate::DEFAULT_QUANT_SEED,
                 );
-                Ok(quantizer.score_ip_from_parts_int8_approx_no_qjl_4bit(prepared_query, payload))
+                let scale = quantizer.length_renorm_scale_no_qjl_4bit(gamma, payload);
+                Ok(
+                    quantizer.score_ip_from_parts_int8_approx_no_qjl_4bit(prepared_query, payload)
+                        * scale,
+                )
             }
             (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::RaBitQ(prepared_query)) => {
                 let _ = gamma;
@@ -449,10 +454,7 @@ impl IvfQuantizer {
             (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::RaBitQ(_))
             | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuant(_))
             | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuantNoQjl4BitLut(_))
-            | (
-                IvfQuantizerProfile::RaBitQ,
-                IvfPreparedQuery::TurboQuantNoQjl4BitInt8Approx(_),
-            )
+            | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuantNoQjl4BitInt8Approx(_))
             | (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::PqFastScan { .. })
             | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::PqFastScan { .. })
             | (IvfQuantizerProfile::PqFastScan { .. }, IvfPreparedQuery::TurboQuant(_))
@@ -543,14 +545,20 @@ impl IvfQuantizer {
                 IvfPreparedQuery::TurboQuantNoQjl4BitLut(prepared),
                 Some(min_ip),
             ) => {
-                let _ = gamma;
                 let quantizer = ProdQuantizer::cached(
                     self.dimensions,
                     crate::DEFAULT_QUANT_BITS,
                     crate::DEFAULT_QUANT_SEED,
                 );
+                let scale = quantizer.length_renorm_scale_no_qjl_4bit(gamma, payload);
+                let adjusted_min = min_ip / scale;
                 Ok(quantizer
-                    .score_ip_from_parts_lut_no_qjl_4bit_with_min_bound(prepared, payload, min_ip))
+                    .score_ip_from_parts_lut_no_qjl_4bit_with_min_bound(
+                        prepared,
+                        payload,
+                        adjusted_min,
+                    )
+                    .map(|score| score * scale))
             }
             _ => self
                 .score_ip_from_parts(prepared_query, gamma, payload)
@@ -663,10 +671,7 @@ impl IvfQuantizer {
             (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::RaBitQ(_))
             | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuant(_))
             | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuantNoQjl4BitLut(_))
-            | (
-                IvfQuantizerProfile::RaBitQ,
-                IvfPreparedQuery::TurboQuantNoQjl4BitInt8Approx(_),
-            )
+            | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuantNoQjl4BitInt8Approx(_))
             | (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::PqFastScan { .. })
             | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::PqFastScan { .. })
             | (IvfQuantizerProfile::PqFastScan { .. }, IvfPreparedQuery::TurboQuant(_))
@@ -744,10 +749,13 @@ impl IvfQuantizer {
                 if payload_len == 0 {
                     return Err("ec_ivf TurboQuant batch payload length must be nonzero".to_owned());
                 }
-                if payloads.len() != payload_len * out_scores.len() {
+                if payloads.len() != payload_len * out_scores.len()
+                    || gammas.len() != out_scores.len()
+                {
                     return Err(format!(
-                        "ec_ivf TurboQuant batch payload length mismatch: got {} bytes for {} postings with {} byte payloads",
+                        "ec_ivf TurboQuant batch payload/gamma length mismatch: got {} bytes and {} gammas for {} postings with {} byte payloads",
                         payloads.len(),
+                        gammas.len(),
                         out_scores.len(),
                         payload_len
                     ));
@@ -759,12 +767,16 @@ impl IvfQuantizer {
                     crate::DEFAULT_QUANT_SEED,
                 );
                 let mut batch = CandidateBatch::with_capacity(out_scores.len());
-                for (index, payload) in payloads.chunks_exact(payload_len).enumerate() {
+                for (index, (payload, gamma)) in payloads
+                    .chunks_exact(payload_len)
+                    .zip(gammas.iter().copied())
+                    .enumerate()
+                {
                     batch.push(
                         index,
                         CandidatePayload {
                             code: payload,
-                            meta: CandidateMeta::None,
+                            meta: CandidateMeta::Gamma(gamma),
                         },
                     )?;
                 }
@@ -789,10 +801,13 @@ impl IvfQuantizer {
                 if payload_len == 0 {
                     return Err("ec_ivf TurboQuant batch payload length must be nonzero".to_owned());
                 }
-                if payloads.len() != payload_len * out_scores.len() {
+                if payloads.len() != payload_len * out_scores.len()
+                    || gammas.len() != out_scores.len()
+                {
                     return Err(format!(
-                        "ec_ivf TurboQuant batch payload length mismatch: got {} bytes for {} postings with {} byte payloads",
+                        "ec_ivf TurboQuant batch payload/gamma length mismatch: got {} bytes and {} gammas for {} postings with {} byte payloads",
                         payloads.len(),
+                        gammas.len(),
                         out_scores.len(),
                         payload_len
                     ));
@@ -804,12 +819,16 @@ impl IvfQuantizer {
                     crate::DEFAULT_QUANT_SEED,
                 );
                 let mut batch = CandidateBatch::with_capacity(out_scores.len());
-                for (index, payload) in payloads.chunks_exact(payload_len).enumerate() {
+                for (index, (payload, gamma)) in payloads
+                    .chunks_exact(payload_len)
+                    .zip(gammas.iter().copied())
+                    .enumerate()
+                {
                     batch.push(
                         index,
                         CandidatePayload {
                             code: payload,
-                            meta: CandidateMeta::None,
+                            meta: CandidateMeta::Gamma(gamma),
                         },
                     )?;
                 }
@@ -883,10 +902,7 @@ impl IvfQuantizer {
             (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::RaBitQ(_))
             | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuant(_))
             | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuantNoQjl4BitLut(_))
-            | (
-                IvfQuantizerProfile::RaBitQ,
-                IvfPreparedQuery::TurboQuantNoQjl4BitInt8Approx(_),
-            )
+            | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuantNoQjl4BitInt8Approx(_))
             | (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::PqFastScan { .. })
             | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::PqFastScan { .. })
             | (IvfQuantizerProfile::PqFastScan { .. }, IvfPreparedQuery::TurboQuant(_))
@@ -978,10 +994,11 @@ impl IvfQuantizer {
                 if payload_len == 0 {
                     return Err("ec_ivf TurboQuant batch payload length must be nonzero".to_owned());
                 }
-                if payloads.len() != out_scores.len() {
+                if payloads.len() != out_scores.len() || gammas.len() != out_scores.len() {
                     return Err(format!(
-                        "ec_ivf TurboQuant borrowed batch payload count {} does not match score count {}",
+                        "ec_ivf TurboQuant borrowed batch payload/gamma count {}/{} does not match score count {}",
                         payloads.len(),
+                        gammas.len(),
                         out_scores.len()
                     ));
                 }
@@ -1002,12 +1019,17 @@ impl IvfQuantizer {
                     crate::DEFAULT_QUANT_SEED,
                 );
                 let mut batch = CandidateBatch::with_capacity(out_scores.len());
-                for (index, payload) in payloads.iter().copied().enumerate() {
+                for (index, (payload, gamma)) in payloads
+                    .iter()
+                    .copied()
+                    .zip(gammas.iter().copied())
+                    .enumerate()
+                {
                     batch.push(
                         index,
                         CandidatePayload {
                             code: payload,
-                            meta: CandidateMeta::None,
+                            meta: CandidateMeta::Gamma(gamma),
                         },
                     )?;
                 }
@@ -1032,10 +1054,11 @@ impl IvfQuantizer {
                 if payload_len == 0 {
                     return Err("ec_ivf TurboQuant batch payload length must be nonzero".to_owned());
                 }
-                if payloads.len() != out_scores.len() {
+                if payloads.len() != out_scores.len() || gammas.len() != out_scores.len() {
                     return Err(format!(
-                        "ec_ivf TurboQuant borrowed batch payload count {} does not match score count {}",
+                        "ec_ivf TurboQuant borrowed batch payload/gamma count {}/{} does not match score count {}",
                         payloads.len(),
+                        gammas.len(),
                         out_scores.len()
                     ));
                 }
@@ -1056,12 +1079,17 @@ impl IvfQuantizer {
                     crate::DEFAULT_QUANT_SEED,
                 );
                 let mut batch = CandidateBatch::with_capacity(out_scores.len());
-                for (index, payload) in payloads.iter().copied().enumerate() {
+                for (index, (payload, gamma)) in payloads
+                    .iter()
+                    .copied()
+                    .zip(gammas.iter().copied())
+                    .enumerate()
+                {
                     batch.push(
                         index,
                         CandidatePayload {
                             code: payload,
-                            meta: CandidateMeta::None,
+                            meta: CandidateMeta::Gamma(gamma),
                         },
                     )?;
                 }
@@ -1144,10 +1172,7 @@ impl IvfQuantizer {
             (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::RaBitQ(_))
             | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuant(_))
             | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuantNoQjl4BitLut(_))
-            | (
-                IvfQuantizerProfile::RaBitQ,
-                IvfPreparedQuery::TurboQuantNoQjl4BitInt8Approx(_),
-            )
+            | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuantNoQjl4BitInt8Approx(_))
             | (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::PqFastScan { .. })
             | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::PqFastScan { .. })
             | (IvfQuantizerProfile::PqFastScan { .. }, IvfPreparedQuery::TurboQuant(_))
@@ -1249,10 +1274,7 @@ impl IvfQuantizer {
             (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::RaBitQ(_))
             | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuant(_))
             | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuantNoQjl4BitLut(_))
-            | (
-                IvfQuantizerProfile::RaBitQ,
-                IvfPreparedQuery::TurboQuantNoQjl4BitInt8Approx(_),
-            )
+            | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuantNoQjl4BitInt8Approx(_))
             | (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::PqFastScan { .. })
             | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::PqFastScan { .. })
             | (IvfQuantizerProfile::PqFastScan { .. }, IvfPreparedQuery::TurboQuant(_))
@@ -1917,6 +1939,7 @@ mod tests {
                 .score_ip_from_parts(&prepared, gamma, &payload)
                 .unwrap(),
             direct.score_ip_from_parts_lut_no_qjl_4bit(&direct_prepared, &payload)
+                * direct.length_renorm_scale_no_qjl_4bit(gamma, &payload)
         );
     }
 
@@ -2091,9 +2114,9 @@ mod tests {
                 .score_ip_from_parts(&prepared, gamma, &payload)
                 .unwrap()
                 .to_bits(),
-            direct
-                .score_ip_from_parts_int8_approx_no_qjl_4bit(&direct_prepared, &payload)
-                .to_bits()
+            (direct.score_ip_from_parts_int8_approx_no_qjl_4bit(&direct_prepared, &payload)
+                * direct.length_renorm_scale_no_qjl_4bit(gamma, &payload))
+            .to_bits()
         );
     }
 
