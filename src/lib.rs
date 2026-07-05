@@ -13654,6 +13654,10 @@ fn ec_spire_remote_search_production_read_profile(
     metric!(rows, "status", row.status);
     metric!(rows, "recommendation", row.recommendation);
     metric!(rows, "planning_elapsed_ms", row.planning_elapsed_ms);
+    metric!(rows, "manifest_load_elapsed_ms", row.manifest_load_elapsed_ms);
+    metric!(rows, "leaf_count_elapsed_ms", row.leaf_count_elapsed_ms);
+    metric!(rows, "route_select_elapsed_ms", row.route_select_elapsed_ms);
+    metric!(rows, "local_heap_elapsed_ms", row.local_heap_elapsed_ms);
     metric!(
         rows,
         "fingerprint_guard_elapsed_ms",
@@ -13684,6 +13688,11 @@ fn ec_spire_remote_search_production_read_profile(
         rows,
         "candidate_receive_elapsed_ms",
         row.candidate_receive_elapsed_ms
+    );
+    metric!(
+        rows,
+        "candidate_decode_elapsed_ms",
+        row.candidate_decode_elapsed_ms
     );
     metric!(rows, "heap_receive_elapsed_ms", row.heap_receive_elapsed_ms);
     metric!(
@@ -13729,6 +13738,12 @@ fn ec_spire_remote_search_production_read_profile(
         row.payload_decode_row_count
     );
     metric!(rows, "payload_decode_bytes", row.payload_decode_bytes);
+    metric!(
+        rows,
+        "routing_hierarchy_load_count",
+        row.routing_hierarchy_load_count
+    );
+    metric!(rows, "top_graph_load_count", row.top_graph_load_count);
     metric!(
         rows,
         "global_pre_heap_input_count",
@@ -19714,6 +19729,45 @@ fn ec_spire_index_cost_tuning_snapshot(
         snapshot.effective_storage_scoring_multiplier,
         snapshot.cost_rerank_multiplier,
         snapshot.effective_rerank_multiplier,
+    ))
+}
+
+#[pg_extern(stable)]
+fn ec_spire_reset_cost_callback_profile() {
+    am::spire_reset_cost_callback_profile();
+}
+
+#[pg_extern(stable)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_cost_callback_profile() -> TableIterator<
+    'static,
+    (
+        name!(amcostestimate_count, i64),
+        name!(amcostestimate_elapsed_ms, i64),
+        name!(active_snapshot_count, i64),
+        name!(active_snapshot_elapsed_ms, i64),
+        name!(hierarchy_snapshot_count, i64),
+        name!(hierarchy_snapshot_elapsed_ms, i64),
+        name!(amgettreeheight_count, i64),
+        name!(amgettreeheight_elapsed_ms, i64),
+    ),
+> {
+    let profile = am::spire_cost_callback_profile();
+    TableIterator::once((
+        i64::try_from(profile.amcostestimate_count).expect("amcostestimate count should fit i64"),
+        i64::try_from(profile.amcostestimate_elapsed_ms)
+            .expect("amcostestimate elapsed should fit i64"),
+        i64::try_from(profile.active_snapshot_count)
+            .expect("active snapshot count should fit i64"),
+        i64::try_from(profile.active_snapshot_elapsed_ms)
+            .expect("active snapshot elapsed should fit i64"),
+        i64::try_from(profile.hierarchy_snapshot_count)
+            .expect("hierarchy snapshot count should fit i64"),
+        i64::try_from(profile.hierarchy_snapshot_elapsed_ms)
+            .expect("hierarchy snapshot elapsed should fit i64"),
+        i64::try_from(profile.amgettreeheight_count).expect("amgettreeheight count should fit i64"),
+        i64::try_from(profile.amgettreeheight_elapsed_ms)
+            .expect("amgettreeheight elapsed should fit i64"),
     ))
 }
 

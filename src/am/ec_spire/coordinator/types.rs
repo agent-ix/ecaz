@@ -976,6 +976,8 @@ pub(crate) struct SpireRemoteProductionReadProfileRow {
     pub(crate) heap_receive_query_count: u64,
     pub(crate) payload_decode_row_count: u64,
     pub(crate) payload_decode_bytes: u64,
+    pub(crate) routing_hierarchy_load_count: u64,
+    pub(crate) top_graph_load_count: u64,
     pub(crate) global_pre_heap_input_count: u64,
     pub(crate) global_pre_heap_candidate_count: u64,
     pub(crate) global_pre_heap_duplicate_vec_id_count: u64,

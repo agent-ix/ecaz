@@ -1,5 +1,5 @@
 use pgrx::pg_sys;
-use std::ptr::NonNull;
+use std::{cell::RefCell, ptr::NonNull, time::Instant};
 
 use super::{
     active_snapshot_diagnostics, index_hierarchy_snapshot, live_index_relation, options,
@@ -60,6 +60,44 @@ pub(crate) struct SpireIndexCostTuningSnapshot {
     pub(crate) effective_rerank_multiplier: f64,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct SpireCostCallbackProfile {
+    pub(crate) amcostestimate_count: u64,
+    pub(crate) amcostestimate_elapsed_ms: u64,
+    pub(crate) active_snapshot_count: u64,
+    pub(crate) active_snapshot_elapsed_ms: u64,
+    pub(crate) hierarchy_snapshot_count: u64,
+    pub(crate) hierarchy_snapshot_elapsed_ms: u64,
+    pub(crate) amgettreeheight_count: u64,
+    pub(crate) amgettreeheight_elapsed_ms: u64,
+}
+
+thread_local! {
+    static COST_CALLBACK_PROFILE: RefCell<SpireCostCallbackProfile> =
+        RefCell::new(SpireCostCallbackProfile::default());
+}
+
+pub(crate) fn reset_cost_callback_profile() {
+    COST_CALLBACK_PROFILE.with(|profile| {
+        *profile.borrow_mut() = SpireCostCallbackProfile::default();
+    });
+}
+
+pub(crate) fn cost_callback_profile() -> SpireCostCallbackProfile {
+    COST_CALLBACK_PROFILE.with(|profile| *profile.borrow())
+}
+
+fn elapsed_millis_u64(start: Instant) -> u64 {
+    u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX)
+}
+
+fn record_cost_callback_profile(update: impl FnOnce(&mut SpireCostCallbackProfile)) {
+    COST_CALLBACK_PROFILE.with(|profile| {
+        let mut profile = profile.borrow_mut();
+        update(&mut profile);
+    });
+}
+
 pub(super) unsafe extern "C-unwind" fn ec_spire_amcostestimate(
     _root: *mut pg_sys::PlannerInfo,
     path: *mut pg_sys::IndexPath,
@@ -81,7 +119,14 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_amcostestimate(
         // SAFETY: the planner-opened relation guard keeps this SPIRE index
         // relation live for the duration of cost estimation.
         let index = live_index_relation(index_relation.as_ptr());
+        let cost_start = Instant::now();
         let estimate = compute_amcostestimate(index);
+        record_cost_callback_profile(|profile| {
+            profile.amcostestimate_count = profile.amcostestimate_count.saturating_add(1);
+            profile.amcostestimate_elapsed_ms = profile
+                .amcostestimate_elapsed_ms
+                .saturating_add(elapsed_millis_u64(cost_start));
+        });
 
         *index_startup_cost = estimate.startup_cost;
         *index_total_cost = estimate.total_cost;
@@ -206,8 +251,22 @@ fn compute_amcostestimate(index: SpireLiveIndexRelation) -> PlannerCostEstimate 
     // context where backend-local planner cost globals are valid to read.
     let constants = unsafe { current_planner_cost_constants() };
     let relation_options = options::relation_options(index_relation);
+    let active_snapshot_start = Instant::now();
     let diagnostics = cost_active_snapshot_diagnostics(index);
+    record_cost_callback_profile(|profile| {
+        profile.active_snapshot_count = profile.active_snapshot_count.saturating_add(1);
+        profile.active_snapshot_elapsed_ms = profile
+            .active_snapshot_elapsed_ms
+            .saturating_add(elapsed_millis_u64(active_snapshot_start));
+    });
+    let hierarchy_snapshot_start = Instant::now();
     let hierarchy = cost_index_hierarchy_snapshot(index);
+    record_cost_callback_profile(|profile| {
+        profile.hierarchy_snapshot_count = profile.hierarchy_snapshot_count.saturating_add(1);
+        profile.hierarchy_snapshot_elapsed_ms = profile
+            .hierarchy_snapshot_elapsed_ms
+            .saturating_add(elapsed_millis_u64(hierarchy_snapshot_start));
+    });
     let inputs = SpireCostInputs::from_snapshots(
         &relation_options,
         &diagnostics,
@@ -237,10 +296,18 @@ fn cost_index_hierarchy_snapshot(index: SpireLiveIndexRelation) -> SpireIndexHie
 #[cfg(feature = "pg18")]
 pub(super) unsafe extern "C-unwind" fn ec_spire_amgettreeheight(rel: pg_sys::Relation) -> i32 {
     am_callback(|| {
+        let tree_height_start = Instant::now();
         // SAFETY: PostgreSQL calls amgettreeheight with a live SPIRE index
         // relation for the duration of the AM callback.
         let index = unsafe { live_index_relation(rel) };
-        spire_tree_height_callback_value(index)
+        let value = spire_tree_height_callback_value(index);
+        record_cost_callback_profile(|profile| {
+            profile.amgettreeheight_count = profile.amgettreeheight_count.saturating_add(1);
+            profile.amgettreeheight_elapsed_ms = profile
+                .amgettreeheight_elapsed_ms
+                .saturating_add(elapsed_millis_u64(tree_height_start));
+        });
+        value
     })
 }
 

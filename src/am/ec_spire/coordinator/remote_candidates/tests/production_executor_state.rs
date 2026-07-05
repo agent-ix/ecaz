@@ -350,6 +350,8 @@ mod production_executor_state_tests {
             heap_receive_query_count: 1,
             payload_decode_row_count: 2,
             payload_decode_bytes: 128,
+            routing_hierarchy_load_count: 2,
+            top_graph_load_count: 1,
             global_pre_heap_input_count: 4,
             global_pre_heap_candidate_count: 2,
             global_pre_heap_duplicate_vec_id_count: 1,
@@ -373,6 +375,8 @@ mod production_executor_state_tests {
         assert_eq!(row.route_select_elapsed_ms, 47);
         assert_eq!(row.local_heap_elapsed_ms, 53);
         assert_eq!(row.candidate_decode_elapsed_ms, 59);
+        assert_eq!(row.routing_hierarchy_load_count, 2);
+        assert_eq!(row.top_graph_load_count, 1);
         assert_eq!(row.tls_require_count, 1);
         assert_eq!(row.global_pre_heap_candidate_count, 2);
         assert_eq!(row.global_pre_heap_pruned_candidate_count, 2);

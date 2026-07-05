@@ -528,6 +528,8 @@ fn production_read_profile_row(
         heap_receive_query_count: metrics.heap_receive_query_count,
         payload_decode_row_count: metrics.payload_decode_row_count,
         payload_decode_bytes: metrics.payload_decode_bytes,
+        routing_hierarchy_load_count: metrics.routing_hierarchy_load_count,
+        top_graph_load_count: metrics.top_graph_load_count,
         global_pre_heap_input_count: metrics.global_pre_heap_input_count,
         global_pre_heap_candidate_count: metrics.global_pre_heap_candidate_count,
         global_pre_heap_duplicate_vec_id_count: metrics.global_pre_heap_duplicate_vec_id_count,
@@ -608,6 +610,7 @@ fn remote_search_production_scan_heap_resolution_result_stream_impl(
     let top_graph_plan = relation_options.top_graph_plan()?;
     let leaf_count_start = std::time::Instant::now();
     let leaf_count = scan::count_scan_plan_routable_leaf_pids(&snapshot, &object_store)?;
+    add_profile_count(&mut metrics.routing_hierarchy_load_count, 1);
     add_profile_elapsed(&mut metrics.leaf_count_elapsed_ms, leaf_count_start);
     let scan_plan = options::resolve_single_level_scan_plan(leaf_count, relation_options)?;
     let top_k = match top_k_override {
@@ -624,6 +627,10 @@ fn remote_search_production_scan_heap_resolution_result_stream_impl(
         scan_plan,
         top_graph_plan,
     )?;
+    add_profile_count(&mut metrics.routing_hierarchy_load_count, 1);
+    if top_graph_plan.enabled {
+        add_profile_count(&mut metrics.top_graph_load_count, 1);
+    }
     add_profile_elapsed(&mut metrics.route_select_elapsed_ms, route_select_start);
     let selected_pid_count = u64::try_from(selected_leaf_pids.len())
         .map_err(|_| "ec_spire production scan heap selected PID count exceeds u64")?;

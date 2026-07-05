@@ -3788,6 +3788,17 @@ fn explain_sql(step: &ExplainStep, defaults: &SuiteDefaults) -> String {
             )
         })
         .unwrap_or_default();
+    let reset_cost_callback_profile_sql = if profile.name == "ec_spire" {
+        "SELECT ec_spire_reset_cost_callback_profile();\n\n"
+    } else {
+        ""
+    };
+    let cost_callback_profile_sql = if profile.name == "ec_spire" {
+        "SELECT *\n\
+         FROM ec_spire_cost_callback_profile();\n\n"
+    } else {
+        ""
+    };
     format!(
         "\\pset pager off\n\
          \\timing on\n\n\
@@ -3807,6 +3818,7 @@ fn explain_sql(step: &ExplainStep, defaults: &SuiteDefaults) -> String {
            pg_size_pretty(pg_relation_size('{index}'::regclass)) AS index_size;\n\n\
          {cost_snapshot_sql}\
          {cost_tuning_snapshot_sql}\
+         {reset_cost_callback_profile_sql}\
          EXPLAIN (FORMAT JSON, ecaz, ANALYZE, COSTS OFF)\n\
          SELECT id\n\
          FROM {corpus_table}\n\
@@ -3817,6 +3829,7 @@ fn explain_sql(step: &ExplainStep, defaults: &SuiteDefaults) -> String {
            LIMIT 1\n\
          )::real[]\n\
          LIMIT 10;\n\n\
+         {cost_callback_profile_sql}\
          RESET enable_seqscan;\n\
          RESET {scan_guc};\n\
          {session_reset_sql}\
@@ -3833,6 +3846,8 @@ fn explain_sql(step: &ExplainStep, defaults: &SuiteDefaults) -> String {
         index = index,
         cost_snapshot_sql = cost_snapshot_sql,
         cost_tuning_snapshot_sql = cost_tuning_snapshot_sql,
+        reset_cost_callback_profile_sql = reset_cost_callback_profile_sql,
+        cost_callback_profile_sql = cost_callback_profile_sql,
         corpus_table = corpus_table,
         query_table = query_table,
         reset_scratch_soa_sql = reset_scratch_soa_sql,
@@ -6863,6 +6878,8 @@ mod tests {
         assert!(
             sql.contains("FROM ec_spire_index_cost_tuning_snapshot('spire_pfx_idx'::regclass);")
         );
+        assert!(sql.contains("SELECT ec_spire_reset_cost_callback_profile();"));
+        assert!(sql.contains("FROM ec_spire_cost_callback_profile();"));
         assert!(sql.contains("'ec_spire' AS profile"));
         assert!(sql.contains("RESET ec_spire.nprobe;"));
         assert!(sql.contains("RESET ec_spire.rerank_width;"));

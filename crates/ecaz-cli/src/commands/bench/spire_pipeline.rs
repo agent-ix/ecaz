@@ -4179,6 +4179,8 @@ struct ProductionReadProfileAggregate {
     endpoint_identity_query_count_sum: i64,
     payload_decode_row_count_sum: i64,
     payload_decode_bytes_sum: i64,
+    routing_hierarchy_load_count_sum: i64,
+    top_graph_load_count_sum: i64,
     global_pre_heap_input_count_sum: i64,
     global_pre_heap_candidate_count_sum: i64,
     global_pre_heap_duplicate_vec_id_count_sum: i64,
@@ -4229,6 +4231,8 @@ impl ProductionReadProfileAggregate {
         self.endpoint_identity_query_count_sum += row.i64_metric("endpoint_identity_query_count");
         self.payload_decode_row_count_sum += row.i64_metric("payload_decode_row_count");
         self.payload_decode_bytes_sum += row.i64_metric("payload_decode_bytes");
+        self.routing_hierarchy_load_count_sum += row.i64_metric("routing_hierarchy_load_count");
+        self.top_graph_load_count_sum += row.i64_metric("top_graph_load_count");
         self.global_pre_heap_input_count_sum += row.i64_metric("global_pre_heap_input_count");
         self.global_pre_heap_candidate_count_sum +=
             row.i64_metric("global_pre_heap_candidate_count");
@@ -5081,6 +5085,8 @@ fn render_production_read_profile_table(
         "endpoint_identity_query_sum",
         "payload_rows_sum",
         "payload_bytes_sum",
+        "routing_hierarchy_load_sum",
+        "top_graph_load_sum",
         "global_pre_heap_input_sum",
         "global_pre_heap_candidate_sum",
         "global_pre_heap_duplicate_vec_id_sum",
@@ -5164,6 +5170,8 @@ fn render_production_read_profile_table(
             Cell::new(aggregate.endpoint_identity_query_count_sum),
             Cell::new(aggregate.payload_decode_row_count_sum),
             Cell::new(aggregate.payload_decode_bytes_sum),
+            Cell::new(aggregate.routing_hierarchy_load_count_sum),
+            Cell::new(aggregate.top_graph_load_count_sum),
             Cell::new(aggregate.global_pre_heap_input_count_sum),
             Cell::new(aggregate.global_pre_heap_candidate_count_sum),
             Cell::new(aggregate.global_pre_heap_duplicate_vec_id_count_sum),
@@ -6248,6 +6256,8 @@ mod tests {
                 ("endpoint_identity_query_count".into(), "2".into()),
                 ("payload_decode_row_count".into(), "6".into()),
                 ("payload_decode_bytes".into(), "256".into()),
+                ("routing_hierarchy_load_count".into(), "2".into()),
+                ("top_graph_load_count".into(), "1".into()),
                 ("global_pre_heap_input_count".into(), "6".into()),
                 ("global_pre_heap_candidate_count".into(), "5".into()),
                 ("global_pre_heap_duplicate_vec_id_count".into(), "1".into()),
@@ -6281,6 +6291,8 @@ mod tests {
         assert!(rendered.contains("payload_decode_p95"));
         assert!(rendered.contains("payload_decode_p99"));
         assert!(rendered.contains("compact_candidate_sum"));
+        assert!(rendered.contains("routing_hierarchy_load_sum"));
+        assert!(rendered.contains("top_graph_load_sum"));
         assert!(rendered.contains("global_pre_heap_pruned_sum"));
         assert!(rendered.contains("merge_duplicate_vec_id_sum"));
         assert!(rendered.contains("256"));

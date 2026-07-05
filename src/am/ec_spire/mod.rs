@@ -34,7 +34,10 @@ pub(crate) fn ec_spire_access_method_oid() -> Option<pg_sys::Oid> {
     (am_oid != pg_sys::InvalidOid).then_some(am_oid)
 }
 
-pub(crate) use self::cost::{index_cost_snapshot, index_cost_tuning_snapshot};
+pub(crate) use self::cost::{
+    cost_callback_profile, index_cost_snapshot, index_cost_tuning_snapshot,
+    reset_cost_callback_profile,
+};
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::custom_scan::custom_scan_dml_plan_private_copy_roundtrip_for_test;
 #[cfg(any(test, feature = "pg_test"))]
