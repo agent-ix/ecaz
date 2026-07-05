@@ -1,0 +1,1016 @@
+{
+  "suite": "task148-length-renorm-ab",
+  "schema_version": 1,
+  "config": "reviews/task-148/002-length-renorm-ab/task148-length-renorm-suite.json",
+  "config_sha256": "189b2d1089eceb547bb55f38d193b257057afae230f16e76e3edd5784240e38c",
+  "dry_run": true,
+  "generated_at_unix_ms": 1783224114698,
+  "runner_git_commit": "4003fbc6be20e110cd6b57dafef4f3598a0ea1a3-dirty",
+  "connection": {
+    "database": "tqvector_bench",
+    "host": null,
+    "port": null,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "precheck-build-sha",
+      "kind": "raw",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "tqvector_bench",
+        "--socket-dir",
+        "/Users/peter/.pgrx",
+        "--raw",
+        "--sql",
+        "SELECT now() AS captured_at, ecaz_build_git_sha(), current_setting('ec_ivf.turboquant_scorer') AS scorer_default;",
+        "--log-output",
+        "reviews/task-148/002-length-renorm-ab/artifacts/dry-run/precheck-build-sha.log"
+      ],
+      "selected": true,
+      "tags": [
+        "setup",
+        "precheck",
+        "task148"
+      ],
+      "expected_artifacts": [
+        "reviews/task-148/002-length-renorm-ab/artifacts/dry-run/precheck-build-sha.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "load-tqdefault-10k",
+      "kind": "load",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "reviews/task-148/002-length-renorm-ab/artifacts/dry-run/load-tqdefault-10k.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "task148_tqdefault_real10k",
+        "--profile",
+        "ec_ivf",
+        "--corpus-file",
+        "data/staged-current/ec_real_10k_corpus.tsv",
+        "--queries-file",
+        "data/staged-current/ec_real_10k_queries.tsv",
+        "--manifest-file",
+        "data/staged-current/ec_real_10k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--storage-format",
+        "turboquant"
+      ],
+      "selected": true,
+      "tags": [
+        "load",
+        "task148",
+        "tqdefault",
+        "real10k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-148/002-length-renorm-ab/artifacts/dry-run/load-tqdefault-10k.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "recall-tqdefault-10k",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "recall",
+        "--prefix",
+        "task148_tqdefault_real10k",
+        "--profile",
+        "ec_ivf",
+        "--k",
+        "10",
+        "--sweep",
+        "8,16,24,32,48,64",
+        "--queries-limit",
+        "32",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--truth-cache-dir",
+        "reviews/task-148/002-length-renorm-ab/truth-cache",
+        "--log-output",
+        "reviews/task-148/002-length-renorm-ab/artifacts/dry-run/recall-tqdefault-10k.log"
+      ],
+      "selected": true,
+      "tags": [
+        "recall",
+        "task148",
+        "tqdefault",
+        "real10k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-148/002-length-renorm-ab/artifacts/dry-run/recall-tqdefault-10k.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "latency-tqdefault-10k",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "latency",
+        "--prefix",
+        "task148_tqdefault_real10k",
+        "--profile",
+        "ec_ivf",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "32",
+        "--sweep",
+        "32,40",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--sample-backend-memory",
+        "--cache-state",
+        "task148_tqdefault_real10k_warm",
+        "--task87-candidate-batch-counters",
+        "--ivf-stage-counters",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "reviews/task-148/002-length-renorm-ab/artifacts/dry-run/latency-tqdefault-10k.log"
+      ],
+      "selected": true,
+      "tags": [
+        "latency",
+        "task148",
+        "tqdefault",
+        "real10k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-148/002-length-renorm-ab/artifacts/dry-run/latency-tqdefault-10k.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "storage-tqdefault-10k",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "reviews/task-148/002-length-renorm-ab/artifacts/dry-run/storage-tqdefault-10k.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "task148_tqdefault_real10k"
+      ],
+      "selected": true,
+      "tags": [
+        "storage",
+        "task148",
+        "tqdefault",
+        "real10k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-148/002-length-renorm-ab/artifacts/dry-run/storage-tqdefault-10k.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "load-tqdefault-50k",
+      "kind": "load",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "reviews/task-148/002-length-renorm-ab/artifacts/dry-run/load-tqdefault-50k.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "task148_tqdefault_real50k",
+        "--profile",
+        "ec_ivf",
+        "--corpus-file",
+        "data/staged-current/ec_real_50k_corpus.tsv",
+        "--queries-file",
+        "data/staged-current/ec_real_50k_queries.tsv",
+        "--manifest-file",
+        "data/staged-current/ec_real_50k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--storage-format",
+        "turboquant"
+      ],
+      "selected": true,
+      "tags": [
+        "load",
+        "task148",
+        "tqdefault",
+        "real50k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-148/002-length-renorm-ab/artifacts/dry-run/load-tqdefault-50k.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "recall-tqdefault-50k",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "recall",
+        "--prefix",
+        "task148_tqdefault_real50k",
+        "--profile",
+        "ec_ivf",
+        "--k",
+        "10",
+        "--sweep",
+        "8,16,24,32,48,64",
+        "--queries-limit",
+        "32",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--truth-cache-dir",
+        "reviews/task-148/002-length-renorm-ab/truth-cache",
+        "--log-output",
+        "reviews/task-148/002-length-renorm-ab/artifacts/dry-run/recall-tqdefault-50k.log"
+      ],
+      "selected": true,
+      "tags": [
+        "recall",
+        "task148",
+        "tqdefault",
+        "real50k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-148/002-length-renorm-ab/artifacts/dry-run/recall-tqdefault-50k.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "latency-tqdefault-50k",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "latency",
+        "--prefix",
+        "task148_tqdefault_real50k",
+        "--profile",
+        "ec_ivf",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "32",
+        "--sweep",
+        "32,40",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--sample-backend-memory",
+        "--cache-state",
+        "task148_tqdefault_real50k_warm",
+        "--task87-candidate-batch-counters",
+        "--ivf-stage-counters",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "reviews/task-148/002-length-renorm-ab/artifacts/dry-run/latency-tqdefault-50k.log"
+      ],
+      "selected": true,
+      "tags": [
+        "latency",
+        "task148",
+        "tqdefault",
+        "real50k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-148/002-length-renorm-ab/artifacts/dry-run/latency-tqdefault-50k.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "storage-tqdefault-50k",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "reviews/task-148/002-length-renorm-ab/artifacts/dry-run/storage-tqdefault-50k.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "task148_tqdefault_real50k"
+      ],
+      "selected": true,
+      "tags": [
+        "storage",
+        "task148",
+        "tqdefault",
+        "real50k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-148/002-length-renorm-ab/artifacts/dry-run/storage-tqdefault-50k.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "load-tqdefault-100k",
+      "kind": "load",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "reviews/task-148/002-length-renorm-ab/artifacts/dry-run/load-tqdefault-100k.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "task148_tqdefault_real100k",
+        "--profile",
+        "ec_ivf",
+        "--corpus-file",
+        "data/staged-current/ec_real_100k_corpus.tsv",
+        "--queries-file",
+        "data/staged-current/ec_real_100k_queries.tsv",
+        "--manifest-file",
+        "data/staged-current/ec_real_100k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--storage-format",
+        "turboquant"
+      ],
+      "selected": true,
+      "tags": [
+        "load",
+        "task148",
+        "tqdefault",
+        "real100k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-148/002-length-renorm-ab/artifacts/dry-run/load-tqdefault-100k.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "recall-tqdefault-100k",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "recall",
+        "--prefix",
+        "task148_tqdefault_real100k",
+        "--profile",
+        "ec_ivf",
+        "--k",
+        "10",
+        "--sweep",
+        "8,16,24,32,48,64",
+        "--queries-limit",
+        "32",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--truth-cache-dir",
+        "reviews/task-148/002-length-renorm-ab/truth-cache",
+        "--log-output",
+        "reviews/task-148/002-length-renorm-ab/artifacts/dry-run/recall-tqdefault-100k.log"
+      ],
+      "selected": true,
+      "tags": [
+        "recall",
+        "task148",
+        "tqdefault",
+        "real100k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-148/002-length-renorm-ab/artifacts/dry-run/recall-tqdefault-100k.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "latency-tqdefault-100k",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "latency",
+        "--prefix",
+        "task148_tqdefault_real100k",
+        "--profile",
+        "ec_ivf",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "32",
+        "--sweep",
+        "32,40",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--sample-backend-memory",
+        "--cache-state",
+        "task148_tqdefault_real100k_warm",
+        "--task87-candidate-batch-counters",
+        "--ivf-stage-counters",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "reviews/task-148/002-length-renorm-ab/artifacts/dry-run/latency-tqdefault-100k.log"
+      ],
+      "selected": true,
+      "tags": [
+        "latency",
+        "task148",
+        "tqdefault",
+        "real100k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-148/002-length-renorm-ab/artifacts/dry-run/latency-tqdefault-100k.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "storage-tqdefault-100k",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "reviews/task-148/002-length-renorm-ab/artifacts/dry-run/storage-tqdefault-100k.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "task148_tqdefault_real100k"
+      ],
+      "selected": true,
+      "tags": [
+        "storage",
+        "task148",
+        "tqdefault",
+        "real100k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-148/002-length-renorm-ab/artifacts/dry-run/storage-tqdefault-100k.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "load-stage2-10k",
+      "kind": "load",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "reviews/task-148/002-length-renorm-ab/artifacts/dry-run/load-stage2-10k.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "task148_stage2_real10k",
+        "--profile",
+        "ec_ivf",
+        "--corpus-file",
+        "data/staged-current/ec_real_10k_corpus.tsv",
+        "--queries-file",
+        "data/staged-current/ec_real_10k_queries.tsv",
+        "--manifest-file",
+        "data/staged-current/ec_real_10k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--storage-format",
+        "coarse_rerank",
+        "--reloption",
+        "rerank_placement=index",
+        "--reloption",
+        "rerank_format=turboquant",
+        "--reloption",
+        "rerank_width=50",
+        "--reloption",
+        "stage2_final_rerank_width=25"
+      ],
+      "selected": true,
+      "tags": [
+        "load",
+        "task148",
+        "stage2",
+        "real10k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-148/002-length-renorm-ab/artifacts/dry-run/load-stage2-10k.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "recall-stage2-10k",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "recall",
+        "--prefix",
+        "task148_stage2_real10k",
+        "--profile",
+        "ec_ivf",
+        "--k",
+        "10",
+        "--sweep",
+        "8,16,24,32,48,64",
+        "--queries-limit",
+        "32",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--truth-cache-dir",
+        "reviews/task-148/002-length-renorm-ab/truth-cache",
+        "--log-output",
+        "reviews/task-148/002-length-renorm-ab/artifacts/dry-run/recall-stage2-10k.log"
+      ],
+      "selected": true,
+      "tags": [
+        "recall",
+        "task148",
+        "stage2",
+        "real10k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-148/002-length-renorm-ab/artifacts/dry-run/recall-stage2-10k.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "latency-stage2-10k",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "latency",
+        "--prefix",
+        "task148_stage2_real10k",
+        "--profile",
+        "ec_ivf",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "32",
+        "--sweep",
+        "32,40",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--sample-backend-memory",
+        "--cache-state",
+        "task148_stage2_real10k_warm",
+        "--task87-candidate-batch-counters",
+        "--ivf-stage-counters",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "reviews/task-148/002-length-renorm-ab/artifacts/dry-run/latency-stage2-10k.log"
+      ],
+      "selected": true,
+      "tags": [
+        "latency",
+        "task148",
+        "stage2",
+        "real10k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-148/002-length-renorm-ab/artifacts/dry-run/latency-stage2-10k.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "storage-stage2-10k",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "reviews/task-148/002-length-renorm-ab/artifacts/dry-run/storage-stage2-10k.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "task148_stage2_real10k"
+      ],
+      "selected": true,
+      "tags": [
+        "storage",
+        "task148",
+        "stage2",
+        "real10k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-148/002-length-renorm-ab/artifacts/dry-run/storage-stage2-10k.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "load-stage2-50k",
+      "kind": "load",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "reviews/task-148/002-length-renorm-ab/artifacts/dry-run/load-stage2-50k.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "task148_stage2_real50k",
+        "--profile",
+        "ec_ivf",
+        "--corpus-file",
+        "data/staged-current/ec_real_50k_corpus.tsv",
+        "--queries-file",
+        "data/staged-current/ec_real_50k_queries.tsv",
+        "--manifest-file",
+        "data/staged-current/ec_real_50k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--storage-format",
+        "coarse_rerank",
+        "--reloption",
+        "rerank_placement=index",
+        "--reloption",
+        "rerank_format=turboquant",
+        "--reloption",
+        "rerank_width=50",
+        "--reloption",
+        "stage2_final_rerank_width=25"
+      ],
+      "selected": true,
+      "tags": [
+        "load",
+        "task148",
+        "stage2",
+        "real50k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-148/002-length-renorm-ab/artifacts/dry-run/load-stage2-50k.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "recall-stage2-50k",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "recall",
+        "--prefix",
+        "task148_stage2_real50k",
+        "--profile",
+        "ec_ivf",
+        "--k",
+        "10",
+        "--sweep",
+        "8,16,24,32,48,64",
+        "--queries-limit",
+        "32",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--truth-cache-dir",
+        "reviews/task-148/002-length-renorm-ab/truth-cache",
+        "--log-output",
+        "reviews/task-148/002-length-renorm-ab/artifacts/dry-run/recall-stage2-50k.log"
+      ],
+      "selected": true,
+      "tags": [
+        "recall",
+        "task148",
+        "stage2",
+        "real50k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-148/002-length-renorm-ab/artifacts/dry-run/recall-stage2-50k.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "latency-stage2-50k",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "latency",
+        "--prefix",
+        "task148_stage2_real50k",
+        "--profile",
+        "ec_ivf",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "32",
+        "--sweep",
+        "32,40",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--sample-backend-memory",
+        "--cache-state",
+        "task148_stage2_real50k_warm",
+        "--task87-candidate-batch-counters",
+        "--ivf-stage-counters",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "reviews/task-148/002-length-renorm-ab/artifacts/dry-run/latency-stage2-50k.log"
+      ],
+      "selected": true,
+      "tags": [
+        "latency",
+        "task148",
+        "stage2",
+        "real50k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-148/002-length-renorm-ab/artifacts/dry-run/latency-stage2-50k.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "storage-stage2-50k",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "reviews/task-148/002-length-renorm-ab/artifacts/dry-run/storage-stage2-50k.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "task148_stage2_real50k"
+      ],
+      "selected": true,
+      "tags": [
+        "storage",
+        "task148",
+        "stage2",
+        "real50k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-148/002-length-renorm-ab/artifacts/dry-run/storage-stage2-50k.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "load-stage2-100k",
+      "kind": "load",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "reviews/task-148/002-length-renorm-ab/artifacts/dry-run/load-stage2-100k.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "task148_stage2_real100k",
+        "--profile",
+        "ec_ivf",
+        "--corpus-file",
+        "data/staged-current/ec_real_100k_corpus.tsv",
+        "--queries-file",
+        "data/staged-current/ec_real_100k_queries.tsv",
+        "--manifest-file",
+        "data/staged-current/ec_real_100k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--storage-format",
+        "coarse_rerank",
+        "--reloption",
+        "rerank_placement=index",
+        "--reloption",
+        "rerank_format=turboquant",
+        "--reloption",
+        "rerank_width=50",
+        "--reloption",
+        "stage2_final_rerank_width=25"
+      ],
+      "selected": true,
+      "tags": [
+        "load",
+        "task148",
+        "stage2",
+        "real100k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-148/002-length-renorm-ab/artifacts/dry-run/load-stage2-100k.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "recall-stage2-100k",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "recall",
+        "--prefix",
+        "task148_stage2_real100k",
+        "--profile",
+        "ec_ivf",
+        "--k",
+        "10",
+        "--sweep",
+        "8,16,24,32,48,64",
+        "--queries-limit",
+        "32",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--truth-cache-dir",
+        "reviews/task-148/002-length-renorm-ab/truth-cache",
+        "--log-output",
+        "reviews/task-148/002-length-renorm-ab/artifacts/dry-run/recall-stage2-100k.log"
+      ],
+      "selected": true,
+      "tags": [
+        "recall",
+        "task148",
+        "stage2",
+        "real100k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-148/002-length-renorm-ab/artifacts/dry-run/recall-stage2-100k.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "latency-stage2-100k",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "latency",
+        "--prefix",
+        "task148_stage2_real100k",
+        "--profile",
+        "ec_ivf",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "32",
+        "--sweep",
+        "32,40",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--sample-backend-memory",
+        "--cache-state",
+        "task148_stage2_real100k_warm",
+        "--task87-candidate-batch-counters",
+        "--ivf-stage-counters",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "reviews/task-148/002-length-renorm-ab/artifacts/dry-run/latency-stage2-100k.log"
+      ],
+      "selected": true,
+      "tags": [
+        "latency",
+        "task148",
+        "stage2",
+        "real100k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-148/002-length-renorm-ab/artifacts/dry-run/latency-stage2-100k.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "storage-stage2-100k",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "reviews/task-148/002-length-renorm-ab/artifacts/dry-run/storage-stage2-100k.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "task148_stage2_real100k"
+      ],
+      "selected": true,
+      "tags": [
+        "storage",
+        "task148",
+        "stage2",
+        "real100k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-148/002-length-renorm-ab/artifacts/dry-run/storage-stage2-100k.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "postcheck-build-sha",
+      "kind": "raw",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "tqvector_bench",
+        "--socket-dir",
+        "/Users/peter/.pgrx",
+        "--raw",
+        "--sql",
+        "SELECT now() AS captured_at, ecaz_build_git_sha(), current_setting('ec_ivf.turboquant_scorer') AS scorer_default;",
+        "--log-output",
+        "reviews/task-148/002-length-renorm-ab/artifacts/dry-run/postcheck-build-sha.log"
+      ],
+      "selected": true,
+      "tags": [
+        "setup",
+        "postcheck",
+        "task148"
+      ],
+      "expected_artifacts": [
+        "reviews/task-148/002-length-renorm-ab/artifacts/dry-run/postcheck-build-sha.log"
+      ],
+      "status": "dry-run"
+    }
+  ]
+}
