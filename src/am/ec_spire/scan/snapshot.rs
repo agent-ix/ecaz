@@ -369,6 +369,7 @@ fn collect_validated_quantized_routed_probe_candidates(
             leaf_pid,
             parent_pid: root_pid,
             route_score: 0.0,
+            leaf_score: 0.0,
         })
         .collect();
     collect_validated_quantized_leaf_route_candidates(

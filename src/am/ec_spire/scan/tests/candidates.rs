@@ -1141,16 +1141,19 @@
                     leaf_pid: SPIRE_FIRST_PID + 3,
                     parent_pid: SPIRE_FIRST_PID,
                     route_score: 0.0,
+                    leaf_score: 0.0,
                 },
                 SpireRecursiveLeafRoute {
                     leaf_pid: SPIRE_FIRST_PID + 1,
                     parent_pid: SPIRE_FIRST_PID,
                     route_score: 0.0,
+                    leaf_score: 0.0,
                 },
                 SpireRecursiveLeafRoute {
                     leaf_pid: SPIRE_FIRST_PID + 2,
                     parent_pid: SPIRE_FIRST_PID,
                     route_score: 0.0,
+                    leaf_score: 0.0,
                 },
             ],
             Vec::new(),
@@ -1250,6 +1253,7 @@
                 leaf_pid: selected_leaf_pid,
                 parent_pid: SPIRE_FIRST_PID,
                 route_score: 0.0,
+                leaf_score: 0.0,
             }],
             vec![
                 SpireDeltaObjectRoute {
@@ -1535,6 +1539,7 @@
                 leaf_pid,
                 parent_pid: SPIRE_FIRST_PID,
                 route_score: 0.0,
+                leaf_score: 0.0,
             }],
             vec![SpireDeltaObjectRoute {
                 delta_pid,

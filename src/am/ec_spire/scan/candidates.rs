@@ -429,6 +429,7 @@ fn selected_leaf_routes_from_snapshot(
             leaf_pid,
             parent_pid: header.parent_pid,
             route_score: 0.0,
+            leaf_score: 0.0,
         });
     }
 

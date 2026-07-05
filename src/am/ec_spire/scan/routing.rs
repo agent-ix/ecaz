@@ -596,6 +596,7 @@ where
                 leaf_pid: route.child_pid,
                 parent_pid: root_object.header.pid,
                 route_score: -route.distance,
+                leaf_score: -route.distance,
             });
         }
         return select_leaf_routes_with_row_budget(
@@ -1055,6 +1056,7 @@ where
             leaf_pid: route.child_pid,
             parent_pid: root_object.header.pid,
             route_score: route.score,
+            leaf_score: route.score,
         });
         return select_leaf_routes_with_row_budget(
             leaf_routes,
@@ -1168,6 +1170,7 @@ where
                 leaf_pid: route.child_pid,
                 parent_pid: root_object.header.pid,
                 route_score: -route.distance,
+                leaf_score: -route.distance,
             });
         let selection = select_leaf_routes_with_row_budget(
             leaf_routes,
@@ -1301,6 +1304,7 @@ where
                     leaf_pid: route.child_pid,
                     parent_pid: route.parent_pid,
                     route_score: recursive_leaf_route_score(&route, leaf_route_ranking),
+                    leaf_score: route.score,
                 }
             });
             let selection = select_leaf_routes_with_row_budget(
@@ -1498,6 +1502,7 @@ where
                     leaf_pid: route.child_pid,
                     parent_pid: route.parent_pid,
                     route_score: recursive_leaf_route_score(&route, leaf_route_ranking),
+                    leaf_score: route.score,
                 }
             });
             let selection = select_leaf_routes_with_row_budget(
@@ -1596,10 +1601,6 @@ where
             stopped_by_max_leaf_routes = true;
             break;
         }
-        if routes.len() >= route_budget.selected_leaf_routes {
-            stopped_by_max_leaf_routes = true;
-            break;
-        }
 
         routes.push(route);
         if let Some(max_rows) = max_routed_candidate_rows {
@@ -1609,6 +1610,11 @@ where
                 break;
             }
         }
+    }
+    if routes.len() > route_budget.selected_leaf_routes {
+        routes.sort_by(leaf_route_leaf_score_cmp);
+        routes.truncate(route_budget.selected_leaf_routes);
+        stopped_by_max_leaf_routes = true;
     }
 
     Ok(SpireLeafRouteSelection {
@@ -1835,6 +1841,18 @@ fn recursive_leaf_score_child_route_cmp(
         .then_with(|| left.parent_pid.cmp(&right.parent_pid))
         .then_with(|| left.centroid_index.cmp(&right.centroid_index))
         .then_with(|| left.child_pid.cmp(&right.child_pid))
+}
+
+fn leaf_route_leaf_score_cmp(
+    left: &SpireRecursiveLeafRoute,
+    right: &SpireRecursiveLeafRoute,
+) -> Ordering {
+    right
+        .leaf_score
+        .total_cmp(&left.leaf_score)
+        .then_with(|| right.route_score.total_cmp(&left.route_score))
+        .then_with(|| left.parent_pid.cmp(&right.parent_pid))
+        .then_with(|| left.leaf_pid.cmp(&right.leaf_pid))
 }
 
 fn sort_recursive_leaf_candidates(

@@ -89,6 +89,7 @@ struct SpireRecursiveLeafRoute {
     leaf_pid: u64,
     parent_pid: u64,
     route_score: f32,
+    leaf_score: f32,
 }
 
 #[derive(Debug, Clone, PartialEq)]
