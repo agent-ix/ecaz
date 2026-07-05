@@ -515,6 +515,7 @@ struct EcIvfParallelBuildWorkerScanState {
     queue_handle: *mut pg_sys::shm_mq_handle,
     indexed_vector_kind: build::IndexedVectorKind,
     storage_format: super::options::StorageFormat,
+    turboquant_profile: super::options::TurboQuantProfile,
     quant_bits: u8,
     encoded_tuples: u64,
 }
@@ -536,6 +537,7 @@ unsafe extern "C-unwind" fn ec_ivf_parallel_build_callback(
             heap_tid,
             state.indexed_vector_kind,
             state.storage_format,
+            state.turboquant_profile,
             state.quant_bits,
             "parallel ambuild",
         );
@@ -627,6 +629,7 @@ unsafe fn parallel_build_worker_main(seg: *mut pg_sys::dsm_segment, toc: *mut pg
         queue_handle,
         indexed_vector_kind,
         storage_format: options.storage_format,
+        turboquant_profile: options.turboquant_profile,
         quant_bits: options.effective_quant_bits(),
         encoded_tuples: 0,
     };

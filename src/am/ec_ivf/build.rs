@@ -4,7 +4,7 @@ use std::ptr::{self, NonNull};
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::time::Instant;
 
-use super::quantizer::{self, IvfPqFastScanModel, IvfQuantizer};
+use super::quantizer::{self, IvfPqFastScanModel, IvfQuantizer, IvfTqCalibrationModel};
 use super::{build_parallel, options, page, training, P_NEW};
 use crate::am::common::{
     callback::pg_am_callback, detoast::DetoastedVarlena, training as common_training,
@@ -167,6 +167,7 @@ unsafe extern "C-unwind" fn ec_ivf_build_callback(
                 heap_tid,
                 state.indexed_vector_kind,
                 state.options.storage_format,
+                state.options.turboquant_profile,
                 state.options.effective_quant_bits(),
                 "ambuild",
             );
@@ -446,7 +447,17 @@ impl BuildState {
         .payload_len();
         let deferred_pq_encode = self.options.storage_format == options::StorageFormat::PqFastScan
             && tuple.payload.is_empty();
-        if !deferred_pq_encode && tuple.payload.len() != expected_payload_len {
+        let deferred_tq_calibration_encode = self.options.turboquant_profile
+            == options::TurboQuantProfile::TqPlus
+            && matches!(
+                self.options.storage_format,
+                options::StorageFormat::Auto | options::StorageFormat::TurboQuant
+            )
+            && tuple.payload.is_empty();
+        if !deferred_pq_encode
+            && !deferred_tq_calibration_encode
+            && tuple.payload.len() != expected_payload_len
+        {
             return Err(format!(
                 "posting payload length mismatch: got {}, expected {expected_payload_len} for dim {}",
                 tuple.payload.len(),
@@ -548,6 +559,7 @@ impl BuildState {
         }
         let pq_train_start = Instant::now();
         let pq_model = self.train_pq_fastscan_model(dimensions)?;
+        let tq_calibration_model = self.train_tq_calibration_model(dimensions)?;
         timing.pq_train_us = elapsed_us(pq_train_start);
         let pq_centroid_count = pq_model
             .as_ref()
@@ -556,6 +568,14 @@ impl BuildState {
         if pq_model.is_some() && !page::pq_codebook_tuple_fits(pq_centroid_count, self.page_size) {
             return Err(format!(
                 "pq_fastscan codebook tuple for group centroid count {pq_centroid_count} does not fit on a page"
+            ));
+        }
+        if tq_calibration_model.is_some()
+            && !page::tq_calibration_tuple_fits(usize::from(dimensions), self.page_size)
+        {
+            return Err(format!(
+                "TurboQuant calibration tuple for dim {} does not fit on a page",
+                dimensions
             ));
         }
 
@@ -604,6 +624,27 @@ impl BuildState {
                 .first()
                 .copied()
                 .unwrap_or(ItemPointer::INVALID);
+        }
+        let mut tq_calibration_head = ItemPointer::INVALID;
+        if let Some(model) = &tq_calibration_model {
+            let shift_tuple = page::IvfTqCalibrationTuple {
+                array_kind: page::IvfTqCalibrationArrayKind::Shift,
+                next_tid: ItemPointer::INVALID,
+                values: model.calibration.shift.clone(),
+            };
+            let scale_tuple = page::IvfTqCalibrationTuple {
+                array_kind: page::IvfTqCalibrationArrayKind::Scale,
+                next_tid: ItemPointer::INVALID,
+                values: model.calibration.scale.clone(),
+            };
+            let shift_tid = data_pages.insert_ivf_tq_calibration(&shift_tuple)?;
+            let scale_tid = data_pages.insert_ivf_tq_calibration(&scale_tuple)?;
+            let linked_shift = page::IvfTqCalibrationTuple {
+                next_tid: scale_tid,
+                ..shift_tuple
+            };
+            data_pages.update_ivf_tq_calibration(shift_tid, &linked_shift)?;
+            tq_calibration_head = shift_tid;
         }
         timing.centroids_us = elapsed_us(centroids_start);
 
@@ -683,6 +724,7 @@ impl BuildState {
                     let (heap_tid, gamma, payload) = encode_build_posting(
                         &self.heap_tuples[*tuple_index],
                         &pq_model,
+                        &tq_calibration_model,
                         pq_posting_quantizer,
                         residual_posting,
                     )?;
@@ -734,6 +776,7 @@ impl BuildState {
                     let (heap_tid, gamma, payload) = encode_build_posting(
                         &self.heap_tuples[*tuple_index],
                         &pq_model,
+                        &tq_calibration_model,
                         pq_posting_quantizer,
                         residual_posting,
                     )?;
@@ -823,6 +866,9 @@ impl BuildState {
             metadata.pq_group_size = u16::try_from(pq_model.group_size)
                 .map_err(|_| "pq_fastscan group size exceeds u16".to_owned())?;
         }
+        if tq_calibration_model.is_some() {
+            metadata.turboquant_calibration_head = tq_calibration_head;
+        }
         metadata.total_live_tuples = u64::try_from(self.heap_tuples.len())
             .map_err(|_| "heap tuple count exceeds u64".to_owned())?;
         metadata.rerank_sidecar_head = rerank_sidecar_head;
@@ -866,6 +912,40 @@ impl BuildState {
             group_size: model.group_size,
             signs: model.signs,
             flat_codebooks: model.codebooks.into_iter().flatten().collect(),
+        }))
+    }
+
+    fn train_tq_calibration_model(
+        &self,
+        dimensions: u16,
+    ) -> Result<Option<IvfTqCalibrationModel>, String> {
+        if self.options.turboquant_profile != options::TurboQuantProfile::TqPlus {
+            return Ok(None);
+        }
+        if !matches!(
+            self.options.storage_format,
+            options::StorageFormat::Auto | options::StorageFormat::TurboQuant
+        ) {
+            return Err(
+                "ec_ivf TurboQuant calibration currently requires TurboQuant posting storage"
+                    .to_owned(),
+            );
+        }
+        let quantizer = ProdQuantizer::cached(
+            usize::from(dimensions),
+            crate::DEFAULT_QUANT_BITS,
+            crate::DEFAULT_QUANT_SEED,
+        );
+        if quantizer.exact_score_mode() != crate::quant::prod::ExactScoreMode::MseNoQjl4Bit {
+            return Err("ec_ivf TurboQuant calibration requires the no-QJL 4-bit lane".to_owned());
+        }
+        let sample_vectors = self
+            .training_sample_vectors()
+            .into_iter()
+            .map(|vector| vector.to_vec())
+            .collect::<Vec<_>>();
+        Ok(Some(IvfTqCalibrationModel {
+            calibration: quantizer.fit_calibration_no_qjl_4bit(&sample_vectors),
         }))
     }
 }
@@ -1186,25 +1266,35 @@ fn insert_dense_posting_group(
 fn encode_build_posting(
     tuple: &BuildTuple,
     pq_model: &Option<IvfPqFastScanModel>,
+    tq_calibration_model: &Option<IvfTqCalibrationModel>,
     pq_posting_quantizer: Option<IvfQuantizer>,
     residual_posting: Option<(IvfQuantizer, &[f32])>,
 ) -> Result<(ItemPointer, f32, Vec<u8>), String> {
-    let (gamma, payload) = match (pq_model, residual_posting) {
-        (Some(pq_model), _) => {
+    let (gamma, payload) = match (pq_model, tq_calibration_model, residual_posting) {
+        (Some(pq_model), _, _) => {
             let (_, gamma, payload) = pq_posting_quantizer
                 .expect("pq posting quantizer should exist for pq model")
                 .encode_source_with_pq_model(&tuple.source_vector, pq_model)?;
             (gamma, payload)
         }
+        (None, Some(model), _) => {
+            let quantizer = IvfQuantizer::resolve(
+                options::StorageFormat::TurboQuant,
+                tuple.source_vector.len(),
+            )?;
+            let (_, gamma, payload) =
+                quantizer.encode_source_with_tq_calibration_model(&tuple.source_vector, model)?;
+            (gamma, payload)
+        }
         // Task 115: residual mode re-encodes the source against the assigned
         // centroid here (the only point in the build where the list's centroid
         // is in hand), mirroring the deferred PQ re-encode path above.
-        (None, Some((residual_quantizer, centroid))) => {
+        (None, None, Some((residual_quantizer, centroid))) => {
             let (_, gamma, payload) =
                 residual_quantizer.encode_source_residual(&tuple.source_vector, centroid)?;
             (gamma, payload)
         }
-        (None, None) => (tuple.gamma, tuple.payload.clone()),
+        (None, None, None) => (tuple.gamma, tuple.payload.clone()),
     };
     Ok((tuple.heap_tid, gamma, payload))
 }
@@ -1277,6 +1367,7 @@ pub(super) fn build_index_tuple(
     heap_tid: ItemPointer,
     indexed_vector_kind: IndexedVectorKind,
     storage_format: options::StorageFormat,
+    turboquant_profile: options::TurboQuantProfile,
     quant_bits: u8,
     context: &str,
 ) -> BuildTuple {
@@ -1290,9 +1381,14 @@ pub(super) fn build_index_tuple(
 
     let bytes = detoasted_varlena_bytes(datum, "indexed vector column");
     match indexed_vector_kind {
-        IndexedVectorKind::Ecvector => {
-            build_ecvector_tuple(heap_tid, &bytes, storage_format, quant_bits, context)
-        }
+        IndexedVectorKind::Ecvector => build_ecvector_tuple(
+            heap_tid,
+            &bytes,
+            storage_format,
+            turboquant_profile,
+            quant_bits,
+            context,
+        ),
         IndexedVectorKind::Tqvector => {
             build_tqvector_tuple(heap_tid, &bytes, storage_format, quant_bits, context)
         }
@@ -1322,12 +1418,19 @@ fn build_ecvector_tuple(
     heap_tid: ItemPointer,
     bytes: &[u8],
     storage_format: options::StorageFormat,
+    turboquant_profile: options::TurboQuantProfile,
     quant_bits: u8,
     context: &str,
 ) -> BuildTuple {
     let source_vector = crate::unpack_raw_f32(bytes, "ec_ivf indexed ecvector column")
         .unwrap_or_else(|e| pgrx::error!("ec_ivf {context} found invalid indexed ecvector: {e}"));
-    if storage_format == options::StorageFormat::PqFastScan {
+    if storage_format == options::StorageFormat::PqFastScan
+        || (turboquant_profile == options::TurboQuantProfile::TqPlus
+            && matches!(
+                storage_format,
+                options::StorageFormat::Auto | options::StorageFormat::TurboQuant
+            ))
+    {
         let dimensions = u16::try_from(source_vector.len()).unwrap_or_else(|_| {
             pgrx::error!(
                 "ec_ivf {context} found invalid indexed ecvector: embedding dimension {} exceeds maximum 65535",

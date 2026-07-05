@@ -45,6 +45,7 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_aminsert(
             heap_tid,
             indexed_vector_kind,
             metadata.storage_format,
+            metadata.turboquant_profile,
             metadata.quant_bits,
             "aminsert",
         );
@@ -99,12 +100,6 @@ unsafe fn reencode_tuple_for_storage(
     metadata: &page::MetadataPage,
     mut tuple: build::BuildTuple,
 ) -> Result<build::BuildTuple, String> {
-    if metadata.storage_format != options::StorageFormat::PqFastScan {
-        return Ok(tuple);
-    }
-    // SAFETY: caller passes the live IVF index relation and metadata read from
-    // it; the model chain is validated by the loader.
-    let model = unsafe { quantizer::load_pq_fastscan_model(index_relation, metadata) }?;
     let ivf_quantizer = quantizer::IvfQuantizer::resolve_with_pq_group_size_and_bits(
         metadata.storage_format,
         usize::from(metadata.dimensions),
@@ -112,7 +107,17 @@ unsafe fn reencode_tuple_for_storage(
         Some(metadata.quant_bits),
     )?;
     let (dimensions, gamma, payload) =
-        ivf_quantizer.encode_source_with_pq_model(&tuple.source_vector, &model)?;
+        if metadata.storage_format == options::StorageFormat::PqFastScan {
+            // SAFETY: caller passes the live IVF index relation and metadata read
+            // from it; the model chain is validated by the loader.
+            let model = unsafe { quantizer::load_pq_fastscan_model(index_relation, metadata) }?;
+            ivf_quantizer.encode_source_with_pq_model(&tuple.source_vector, &model)?
+        } else if metadata.turboquant_profile == options::TurboQuantProfile::TqPlus {
+            let model = unsafe { quantizer::load_tq_calibration_model(index_relation, metadata) }?;
+            ivf_quantizer.encode_source_with_tq_calibration_model(&tuple.source_vector, &model)?
+        } else {
+            return Ok(tuple);
+        };
     tuple.dimensions = dimensions;
     tuple.gamma = gamma;
     tuple.payload = payload;
@@ -488,6 +493,7 @@ fn options_from_metadata(
         rabitq_rerank_score: metadata.rabitq_rerank_score_mode(),
         rabitq_rerank_clip: metadata.rabitq_rerank_clip_i32(),
         storage_format: metadata.storage_format,
+        turboquant_profile: metadata.turboquant_profile,
         rerank: metadata.rerank,
         coarse_format: if metadata.storage_format == options::StorageFormat::CoarseRerank {
             options::CoarseFormat::RaBitQ
