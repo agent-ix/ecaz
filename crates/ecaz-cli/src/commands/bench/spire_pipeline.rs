@@ -1921,7 +1921,7 @@ fn production_read_profile_sql() -> &'static str {
 
 fn production_read_timeline_sql() -> &'static str {
     "SELECT requested_epoch, node_id, phase, started_after_ms, completed_after_ms,
-            elapsed_ms, candidate_count, payload_decode_elapsed_ms,
+            elapsed_ms, candidate_count, payload_decode_elapsed_us,
             payload_decode_row_count, payload_decode_bytes, status, failure_category
        FROM ec_spire_remote_search_production_read_timeline(
             $1::text::regclass::oid, $2::real[], $3::integer, $4::text[])"
@@ -3749,8 +3749,20 @@ impl ProductionReadProfileRow {
     }
 
     fn duration_metric(&self, metric: &str) -> Duration {
-        let millis = self.i64_metric(metric).max(0) as u64;
-        Duration::from_millis(millis)
+        let value = self.i64_metric(metric).max(0) as u64;
+        if metric.ends_with("_us") {
+            Duration::from_micros(value)
+        } else {
+            Duration::from_millis(value)
+        }
+    }
+
+    fn production_profile_duration_metric(&self, stem: &str) -> Duration {
+        let micros_metric = format!("{stem}_elapsed_us");
+        if self.values.contains_key(&micros_metric) {
+            return self.duration_metric(&micros_metric);
+        }
+        self.duration_metric(&format!("{stem}_elapsed_ms"))
     }
 }
 
@@ -3778,7 +3790,7 @@ impl From<Row> for ProductionReadTimelineRow {
             completed_after_ms: row.get(4),
             elapsed: Duration::from_millis(row.get::<_, i64>(5).max(0) as u64),
             candidate_count: row.get(6),
-            payload_decode_elapsed: Duration::from_millis(row.get::<_, i64>(7).max(0) as u64),
+            payload_decode_elapsed: Duration::from_micros(row.get::<_, i64>(7).max(0) as u64),
             payload_decode_row_count: row.get(8),
             payload_decode_bytes: row.get(9),
             status: row.get(10),
@@ -4258,29 +4270,29 @@ impl ProductionReadProfileAggregate {
             row.i64_metric("degraded_skipped_dispatch_count");
         self.returned_candidate_count_sum += row.i64_metric("returned_candidate_count");
         self.manifest_load_elapsed
-            .push(row.duration_metric("manifest_load_elapsed_ms"));
+            .push(row.production_profile_duration_metric("manifest_load"));
         self.leaf_count_elapsed
-            .push(row.duration_metric("leaf_count_elapsed_ms"));
+            .push(row.production_profile_duration_metric("leaf_count"));
         self.route_select_elapsed
-            .push(row.duration_metric("route_select_elapsed_ms"));
+            .push(row.production_profile_duration_metric("route_select"));
         self.local_heap_elapsed
-            .push(row.duration_metric("local_heap_elapsed_ms"));
+            .push(row.production_profile_duration_metric("local_heap"));
         self.connect_elapsed
-            .push(row.duration_metric("connect_elapsed_ms"));
+            .push(row.production_profile_duration_metric("connect"));
         self.endpoint_identity_elapsed
-            .push(row.duration_metric("endpoint_identity_elapsed_ms"));
+            .push(row.production_profile_duration_metric("endpoint_identity"));
         self.candidate_receive_elapsed
-            .push(row.duration_metric("candidate_receive_elapsed_ms"));
+            .push(row.production_profile_duration_metric("candidate_receive"));
         self.candidate_decode_elapsed
-            .push(row.duration_metric("candidate_decode_elapsed_ms"));
+            .push(row.production_profile_duration_metric("candidate_decode"));
         self.heap_receive_elapsed
-            .push(row.duration_metric("heap_receive_elapsed_ms"));
+            .push(row.production_profile_duration_metric("heap_receive"));
         self.payload_decode_elapsed
-            .push(row.duration_metric("payload_decode_elapsed_ms"));
+            .push(row.production_profile_duration_metric("payload_decode"));
         self.merge_elapsed
-            .push(row.duration_metric("merge_elapsed_ms"));
+            .push(row.production_profile_duration_metric("merge"));
         self.total_elapsed
-            .push(row.duration_metric("total_elapsed_ms"));
+            .push(row.production_profile_duration_metric("total"));
     }
 }
 
@@ -6259,18 +6271,18 @@ mod tests {
                 ("connection_pool_hit_count".into(), "3".into()),
                 ("connection_pool_miss_count".into(), "2".into()),
                 ("socket_open_count".into(), "2".into()),
-                ("manifest_load_elapsed_ms".into(), "11".into()),
-                ("leaf_count_elapsed_ms".into(), "12".into()),
-                ("route_select_elapsed_ms".into(), "13".into()),
-                ("local_heap_elapsed_ms".into(), "14".into()),
-                ("connect_elapsed_ms".into(), "1".into()),
-                ("endpoint_identity_elapsed_ms".into(), "2".into()),
-                ("candidate_receive_elapsed_ms".into(), "5".into()),
-                ("candidate_decode_elapsed_ms".into(), "4".into()),
-                ("heap_receive_elapsed_ms".into(), "7".into()),
-                ("payload_decode_elapsed_ms".into(), "3".into()),
-                ("merge_elapsed_ms".into(), "1".into()),
-                ("total_elapsed_ms".into(), "10".into()),
+                ("manifest_load_elapsed_us".into(), "11000".into()),
+                ("leaf_count_elapsed_us".into(), "12000".into()),
+                ("route_select_elapsed_us".into(), "13000".into()),
+                ("local_heap_elapsed_us".into(), "14000".into()),
+                ("connect_elapsed_us".into(), "1000".into()),
+                ("endpoint_identity_elapsed_us".into(), "2000".into()),
+                ("candidate_receive_elapsed_us".into(), "5000".into()),
+                ("candidate_decode_elapsed_us".into(), "4000".into()),
+                ("heap_receive_elapsed_us".into(), "7000".into()),
+                ("payload_decode_elapsed_us".into(), "3000".into()),
+                ("merge_elapsed_us".into(), "1000".into()),
+                ("total_elapsed_us".into(), "10000".into()),
                 ("candidate_receive_query_count".into(), "2".into()),
                 ("heap_receive_query_count".into(), "2".into()),
                 ("endpoint_identity_query_count".into(), "2".into()),

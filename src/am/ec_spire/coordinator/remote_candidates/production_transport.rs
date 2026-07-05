@@ -19,12 +19,16 @@ fn elapsed_millis_u64(start: std::time::Instant) -> u64 {
     u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX)
 }
 
+fn elapsed_micros_u64(start: std::time::Instant) -> u64 {
+    u64::try_from(start.elapsed().as_micros()).unwrap_or(u64::MAX)
+}
+
 fn add_profile_count(counter: &mut u64, delta: u64) {
     *counter = counter.saturating_add(delta);
 }
 
 fn add_profile_elapsed(counter: &mut u64, start: std::time::Instant) {
-    add_profile_count(counter, elapsed_millis_u64(start));
+    add_profile_count(counter, elapsed_micros_u64(start));
 }
 
 fn is_remote_timeout_failure_category(failure_category: &str) -> bool {
@@ -37,23 +41,23 @@ fn is_remote_cancel_failure_category(failure_category: &str) -> bool {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct SpireRemoteProductionReadMetrics {
-    planning_elapsed_ms: u64,
-    manifest_load_elapsed_ms: u64,
-    leaf_count_elapsed_ms: u64,
-    route_select_elapsed_ms: u64,
-    local_heap_elapsed_ms: u64,
-    fingerprint_guard_elapsed_ms: u64,
-    conninfo_secret_lookup_elapsed_ms: u64,
-    connect_elapsed_ms: u64,
-    statement_timeout_setup_elapsed_ms: u64,
-    regclass_probe_elapsed_ms: u64,
-    endpoint_identity_elapsed_ms: u64,
-    candidate_receive_elapsed_ms: u64,
-    candidate_decode_elapsed_ms: u64,
-    heap_receive_elapsed_ms: u64,
-    payload_decode_elapsed_ms: u64,
-    merge_elapsed_ms: u64,
-    total_elapsed_ms: u64,
+    planning_elapsed_us: u64,
+    manifest_load_elapsed_us: u64,
+    leaf_count_elapsed_us: u64,
+    route_select_elapsed_us: u64,
+    local_heap_elapsed_us: u64,
+    fingerprint_guard_elapsed_us: u64,
+    conninfo_secret_lookup_elapsed_us: u64,
+    connect_elapsed_us: u64,
+    statement_timeout_setup_elapsed_us: u64,
+    regclass_probe_elapsed_us: u64,
+    endpoint_identity_elapsed_us: u64,
+    candidate_receive_elapsed_us: u64,
+    candidate_decode_elapsed_us: u64,
+    heap_receive_elapsed_us: u64,
+    payload_decode_elapsed_us: u64,
+    merge_elapsed_us: u64,
+    total_elapsed_us: u64,
     conninfo_secret_lookup_count: u64,
     manifest_cache_hit_count: u64,
     manifest_cache_miss_count: u64,
@@ -87,33 +91,33 @@ struct SpireRemoteProductionReadMetrics {
 
 impl SpireRemoteProductionReadMetrics {
     fn add_transport_metrics(&mut self, other: &Self) {
-        self.conninfo_secret_lookup_elapsed_ms = self
-            .conninfo_secret_lookup_elapsed_ms
-            .saturating_add(other.conninfo_secret_lookup_elapsed_ms);
-        self.connect_elapsed_ms = self
-            .connect_elapsed_ms
-            .saturating_add(other.connect_elapsed_ms);
-        self.statement_timeout_setup_elapsed_ms = self
-            .statement_timeout_setup_elapsed_ms
-            .saturating_add(other.statement_timeout_setup_elapsed_ms);
-        self.regclass_probe_elapsed_ms = self
-            .regclass_probe_elapsed_ms
-            .saturating_add(other.regclass_probe_elapsed_ms);
-        self.endpoint_identity_elapsed_ms = self
-            .endpoint_identity_elapsed_ms
-            .saturating_add(other.endpoint_identity_elapsed_ms);
-        self.candidate_receive_elapsed_ms = self
-            .candidate_receive_elapsed_ms
-            .saturating_add(other.candidate_receive_elapsed_ms);
-        self.candidate_decode_elapsed_ms = self
-            .candidate_decode_elapsed_ms
-            .saturating_add(other.candidate_decode_elapsed_ms);
-        self.heap_receive_elapsed_ms = self
-            .heap_receive_elapsed_ms
-            .saturating_add(other.heap_receive_elapsed_ms);
-        self.payload_decode_elapsed_ms = self
-            .payload_decode_elapsed_ms
-            .saturating_add(other.payload_decode_elapsed_ms);
+        self.conninfo_secret_lookup_elapsed_us = self
+            .conninfo_secret_lookup_elapsed_us
+            .saturating_add(other.conninfo_secret_lookup_elapsed_us);
+        self.connect_elapsed_us = self
+            .connect_elapsed_us
+            .saturating_add(other.connect_elapsed_us);
+        self.statement_timeout_setup_elapsed_us = self
+            .statement_timeout_setup_elapsed_us
+            .saturating_add(other.statement_timeout_setup_elapsed_us);
+        self.regclass_probe_elapsed_us = self
+            .regclass_probe_elapsed_us
+            .saturating_add(other.regclass_probe_elapsed_us);
+        self.endpoint_identity_elapsed_us = self
+            .endpoint_identity_elapsed_us
+            .saturating_add(other.endpoint_identity_elapsed_us);
+        self.candidate_receive_elapsed_us = self
+            .candidate_receive_elapsed_us
+            .saturating_add(other.candidate_receive_elapsed_us);
+        self.candidate_decode_elapsed_us = self
+            .candidate_decode_elapsed_us
+            .saturating_add(other.candidate_decode_elapsed_us);
+        self.heap_receive_elapsed_us = self
+            .heap_receive_elapsed_us
+            .saturating_add(other.heap_receive_elapsed_us);
+        self.payload_decode_elapsed_us = self
+            .payload_decode_elapsed_us
+            .saturating_add(other.payload_decode_elapsed_us);
         self.conninfo_secret_lookup_count = self
             .conninfo_secret_lookup_count
             .saturating_add(other.conninfo_secret_lookup_count);
@@ -240,7 +244,7 @@ fn failed_production_heap_receive_result(
         completed_after_ms: elapsed_millis_u64(batch_start),
         elapsed_ms: elapsed_millis_u64(request_start),
         candidate_count: 0,
-        payload_decode_elapsed_ms: 0,
+        payload_decode_elapsed_us: 0,
         payload_decode_row_count: 0,
         payload_decode_bytes: 0,
         status: SPIRE_REMOTE_PRODUCTION_REMOTE_HEAP_RESOLUTION_FAILED,
@@ -967,7 +971,7 @@ impl SpireRemoteFanoutExecutor {
             let secret_start = std::time::Instant::now();
             let conninfo_result = remote_conninfo_secret_value(&dispatch.conninfo_secret_name);
             if let Some(metrics) = metrics.as_deref_mut() {
-                add_profile_elapsed(&mut metrics.conninfo_secret_lookup_elapsed_ms, secret_start);
+                add_profile_elapsed(&mut metrics.conninfo_secret_lookup_elapsed_us, secret_start);
             }
             match conninfo_result {
                 Ok(conninfo) => {

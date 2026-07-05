@@ -328,8 +328,8 @@ fn collect_resolved_scan_plan_selection_from_hierarchy(
 ) -> Result<SpireResolvedScanPlanSelection, String> {
     let leaf_count =
         count_recursive_routing_leaf_pids(&hierarchy.root_object, &hierarchy.internal_objects_by_pid)?;
-    let leaf_count_elapsed_ms =
-        u64::try_from(leaf_count_start.elapsed().as_millis()).unwrap_or(u64::MAX);
+    let leaf_count_elapsed_us =
+        u64::try_from(leaf_count_start.elapsed().as_micros()).unwrap_or(u64::MAX);
     let scan_plan = resolve_single_level_scan_plan(leaf_count, relation_options.clone())?;
     let top_graph_plan = relation_options.top_graph_plan()?;
     let route_select_start = Instant::now();
@@ -339,16 +339,16 @@ fn collect_resolved_scan_plan_selection_from_hierarchy(
         scan_plan,
         top_graph_plan,
     )?;
-    let route_select_elapsed_ms =
-        u64::try_from(route_select_start.elapsed().as_millis()).unwrap_or(u64::MAX);
+    let route_select_elapsed_us =
+        u64::try_from(route_select_start.elapsed().as_micros()).unwrap_or(u64::MAX);
     Ok(SpireResolvedScanPlanSelection {
         scan_plan,
         selected_leaf_pids,
         routing_hierarchy_load_count,
         top_graph_load_count: routing_hierarchy_load_count
             * u64::from(top_graph_plan.enabled && scan_plan.nprobe > 0),
-        leaf_count_elapsed_ms,
-        route_select_elapsed_ms,
+        leaf_count_elapsed_us,
+        route_select_elapsed_us,
     })
 }
 

@@ -80,8 +80,8 @@ pub(super) struct SpireResolvedScanPlanSelection {
     pub(super) selected_leaf_pids: Vec<u64>,
     pub(super) routing_hierarchy_load_count: u64,
     pub(super) top_graph_load_count: u64,
-    pub(super) leaf_count_elapsed_ms: u64,
-    pub(super) route_select_elapsed_ms: u64,
+    pub(super) leaf_count_elapsed_us: u64,
+    pub(super) route_select_elapsed_us: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

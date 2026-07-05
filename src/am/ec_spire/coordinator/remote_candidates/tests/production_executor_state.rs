@@ -400,7 +400,7 @@ mod production_executor_state_tests {
             completed_after_ms: 4,
             elapsed_ms: 1,
             candidate_count: 1,
-            payload_decode_elapsed_ms: 0,
+            payload_decode_elapsed_us: 0,
             payload_decode_row_count: 0,
             payload_decode_bytes: 0,
             status: SPIRE_REMOTE_STATUS_READY,
@@ -461,7 +461,7 @@ mod production_executor_state_tests {
             completed_after_ms: 4,
             elapsed_ms: 1,
             candidate_count: 0,
-            payload_decode_elapsed_ms: 0,
+            payload_decode_elapsed_us: 0,
             payload_decode_row_count: 0,
             payload_decode_bytes: 0,
             status: SPIRE_REMOTE_PRODUCTION_REMOTE_HEAP_RESOLUTION_FAILED,
@@ -498,23 +498,23 @@ mod production_executor_state_tests {
     #[test]
     fn production_read_profile_row_preserves_metric_rollup() {
         let mut metrics = SpireRemoteProductionReadMetrics {
-            planning_elapsed_ms: 11,
-            manifest_load_elapsed_ms: 41,
-            leaf_count_elapsed_ms: 43,
-            route_select_elapsed_ms: 47,
-            local_heap_elapsed_ms: 53,
-            fingerprint_guard_elapsed_ms: 3,
-            conninfo_secret_lookup_elapsed_ms: 2,
-            connect_elapsed_ms: 5,
-            statement_timeout_setup_elapsed_ms: 7,
-            regclass_probe_elapsed_ms: 13,
-            endpoint_identity_elapsed_ms: 17,
-            candidate_receive_elapsed_ms: 19,
-            candidate_decode_elapsed_ms: 59,
-            heap_receive_elapsed_ms: 23,
-            payload_decode_elapsed_ms: 29,
-            merge_elapsed_ms: 31,
-            total_elapsed_ms: 37,
+            planning_elapsed_us: 11,
+            manifest_load_elapsed_us: 41,
+            leaf_count_elapsed_us: 43,
+            route_select_elapsed_us: 47,
+            local_heap_elapsed_us: 53,
+            fingerprint_guard_elapsed_us: 3,
+            conninfo_secret_lookup_elapsed_us: 2,
+            connect_elapsed_us: 5,
+            statement_timeout_setup_elapsed_us: 7,
+            regclass_probe_elapsed_us: 13,
+            endpoint_identity_elapsed_us: 17,
+            candidate_receive_elapsed_us: 19,
+            candidate_decode_elapsed_us: 59,
+            heap_receive_elapsed_us: 23,
+            payload_decode_elapsed_us: 29,
+            merge_elapsed_us: 31,
+            total_elapsed_us: 37,
             conninfo_secret_lookup_count: 1,
             manifest_cache_hit_count: 4,
             manifest_cache_miss_count: 1,
@@ -555,11 +555,11 @@ mod production_executor_state_tests {
         assert_eq!(row.connection_pool_hit_count, 3);
         assert_eq!(row.connection_pool_miss_count, 2);
         assert_eq!(row.socket_open_count, 1);
-        assert_eq!(row.manifest_load_elapsed_ms, 41);
-        assert_eq!(row.leaf_count_elapsed_ms, 43);
-        assert_eq!(row.route_select_elapsed_ms, 47);
-        assert_eq!(row.local_heap_elapsed_ms, 53);
-        assert_eq!(row.candidate_decode_elapsed_ms, 59);
+        assert_eq!(row.manifest_load_elapsed_us, 41);
+        assert_eq!(row.leaf_count_elapsed_us, 43);
+        assert_eq!(row.route_select_elapsed_us, 47);
+        assert_eq!(row.local_heap_elapsed_us, 53);
+        assert_eq!(row.candidate_decode_elapsed_us, 59);
         assert_eq!(row.routing_hierarchy_load_count, 2);
         assert_eq!(row.top_graph_load_count, 1);
         assert_eq!(row.tls_require_count, 1);

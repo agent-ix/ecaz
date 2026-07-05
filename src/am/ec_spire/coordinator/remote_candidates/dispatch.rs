@@ -296,7 +296,7 @@ pub(crate) struct SpireRemoteProductionHeapReceiveResult {
     pub(crate) completed_after_ms: u64,
     pub(crate) elapsed_ms: u64,
     pub(crate) candidate_count: u64,
-    pub(crate) payload_decode_elapsed_ms: u64,
+    pub(crate) payload_decode_elapsed_us: u64,
     pub(crate) payload_decode_row_count: u64,
     pub(crate) payload_decode_bytes: u64,
     pub(crate) status: &'static str,
@@ -1251,7 +1251,7 @@ impl SpireRemoteProductionTransportAdapter {
                 .await
                 {
                     Ok(connection) => {
-                        add_profile_elapsed(&mut metrics.connect_elapsed_ms, connect_start);
+                        add_profile_elapsed(&mut metrics.connect_elapsed_us, connect_start);
                         add_profile_count(&mut metrics.socket_open_count, 1);
                         metrics.record_tls_config(&connection.tls_config);
                         let key = match SpireRemotePooledConnectionKey::from_request_fields(
@@ -1297,7 +1297,7 @@ impl SpireRemoteProductionTransportAdapter {
                         }
                     }
                     Err(error) => {
-                        add_profile_elapsed(&mut metrics.connect_elapsed_ms, connect_start);
+                        add_profile_elapsed(&mut metrics.connect_elapsed_us, connect_start);
                         metrics.record_failure_category(&request.consistency_mode, error.category);
                         return SpireRemoteProductionCandidateSessionResult {
                             candidate_result: failed_production_candidate_receive_result(
@@ -1335,7 +1335,7 @@ impl SpireRemoteProductionTransportAdapter {
                             SPIRE_REMOTE_PRODUCTION_TRANSPORT_STATEMENT_TIMEOUT_SETUP_FAILED
                         })?;
                     add_profile_elapsed(
-                        &mut query_metrics.statement_timeout_setup_elapsed_ms,
+                        &mut query_metrics.statement_timeout_setup_elapsed_us,
                         timeout_start,
                     );
                 }
@@ -1369,7 +1369,7 @@ impl SpireRemoteProductionTransportAdapter {
                             .map_err(|_| SPIRE_REMOTE_PRODUCTION_REMOTE_INDEX_UNAVAILABLE)?
                             .ok_or(SPIRE_REMOTE_PRODUCTION_REMOTE_INDEX_UNAVAILABLE)?;
                         add_profile_elapsed(
-                            &mut query_metrics.regclass_probe_elapsed_ms,
+                            &mut query_metrics.regclass_probe_elapsed_us,
                             regclass_start,
                         );
 
@@ -1392,7 +1392,7 @@ impl SpireRemoteProductionTransportAdapter {
                             return Err(SPIRE_REMOTE_STATUS_ENDPOINT_IDENTITY_MISMATCH);
                         }
                         add_profile_elapsed(
-                            &mut query_metrics.endpoint_identity_elapsed_ms,
+                            &mut query_metrics.endpoint_identity_elapsed_us,
                             identity_start,
                         );
                         connection.validated_remote_index_oid = Some(remote_index_oid);
@@ -1451,7 +1451,7 @@ impl SpireRemoteProductionTransportAdapter {
                             .map_err(|error| production_remote_query_failure_category(&error))?
                     };
                 add_profile_elapsed(
-                    &mut query_metrics.candidate_receive_elapsed_ms,
+                    &mut query_metrics.candidate_receive_elapsed_us,
                     candidate_start,
                 );
 
@@ -1519,7 +1519,7 @@ impl SpireRemoteProductionTransportAdapter {
             Ok(candidates) => candidates,
             Err(error) => {
                 add_profile_elapsed(
-                    &mut metrics.candidate_decode_elapsed_ms,
+                    &mut metrics.candidate_decode_elapsed_us,
                     candidate_decode_start,
                 );
                 let failure_category = production_candidate_decode_failure_category(&error);
@@ -1537,7 +1537,7 @@ impl SpireRemoteProductionTransportAdapter {
             }
         };
         add_profile_elapsed(
-            &mut metrics.candidate_decode_elapsed_ms,
+            &mut metrics.candidate_decode_elapsed_us,
             candidate_decode_start,
         );
         if let Err(error) = validate_remote_search_candidate_batch(
@@ -1621,7 +1621,7 @@ impl SpireRemoteProductionTransportAdapter {
                     completed_after_ms,
                     elapsed_ms: 0,
                     candidate_count: 0,
-                    payload_decode_elapsed_ms: 0,
+                    payload_decode_elapsed_us: 0,
                     payload_decode_row_count: 0,
                     payload_decode_bytes: 0,
                     status: SPIRE_REMOTE_STATUS_READY,
@@ -1722,7 +1722,7 @@ impl SpireRemoteProductionTransportAdapter {
                             .map_err(|error| production_remote_query_failure_category(&error))
                     }
                 }?;
-                add_profile_elapsed(&mut query_metrics.heap_receive_elapsed_ms, heap_start);
+                add_profile_elapsed(&mut query_metrics.heap_receive_elapsed_us, heap_start);
                 Ok((result, query_metrics))
             },
             SpireRemoteLocalCancelSource::production(),
@@ -1793,7 +1793,7 @@ impl SpireRemoteProductionTransportAdapter {
                 };
             }
         };
-        add_profile_elapsed(&mut metrics.payload_decode_elapsed_ms, decode_start);
+        add_profile_elapsed(&mut metrics.payload_decode_elapsed_us, decode_start);
         add_profile_count(
             &mut metrics.payload_decode_row_count,
             u64::try_from(candidates.len()).unwrap_or(u64::MAX),
@@ -1843,7 +1843,7 @@ impl SpireRemoteProductionTransportAdapter {
                 completed_after_ms: elapsed_millis_u64(batch_start),
                 elapsed_ms: elapsed_millis_u64(heap_start),
                 candidate_count,
-                payload_decode_elapsed_ms: metrics.payload_decode_elapsed_ms,
+                payload_decode_elapsed_us: metrics.payload_decode_elapsed_us,
                 payload_decode_row_count: metrics.payload_decode_row_count,
                 payload_decode_bytes: metrics.payload_decode_bytes,
                 status: SPIRE_REMOTE_STATUS_READY,
@@ -2317,7 +2317,7 @@ impl SpireRemoteProductionTransportAdapter {
                 );
             }
         };
-        let payload_decode_elapsed_ms = elapsed_millis_u64(decode_start);
+        let payload_decode_elapsed_us = elapsed_micros_u64(decode_start);
         let payload_decode_row_count = u64::try_from(candidates.len()).unwrap_or(u64::MAX);
         let payload_decode_bytes = remote_heap_payload_decode_bytes(&candidates);
         let merge_candidates = candidates
@@ -2354,7 +2354,7 @@ impl SpireRemoteProductionTransportAdapter {
             completed_after_ms: elapsed_millis_u64(batch_start),
             elapsed_ms: elapsed_millis_u64(request_start),
             candidate_count,
-            payload_decode_elapsed_ms,
+            payload_decode_elapsed_us,
             payload_decode_row_count,
             payload_decode_bytes,
             status: SPIRE_REMOTE_STATUS_READY,

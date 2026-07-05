@@ -440,7 +440,7 @@ fn production_read_timeline_rows(
             completed_after_ms: result.completed_after_ms,
             elapsed_ms: result.elapsed_ms,
             candidate_count: result.candidate_count,
-            payload_decode_elapsed_ms: 0,
+            payload_decode_elapsed_us: 0,
             payload_decode_row_count: 0,
             payload_decode_bytes: 0,
             status: result.status,
@@ -459,7 +459,7 @@ fn production_read_timeline_rows(
                 completed_after_ms: result.completed_after_ms,
                 elapsed_ms: result.elapsed_ms,
                 candidate_count: result.candidate_count,
-                payload_decode_elapsed_ms: result.payload_decode_elapsed_ms,
+                payload_decode_elapsed_us: result.payload_decode_elapsed_us,
                 payload_decode_row_count: result.payload_decode_row_count,
                 payload_decode_bytes: result.payload_decode_bytes,
                 status: result.status,
@@ -501,23 +501,23 @@ fn production_read_profile_row(
         next_blocker: summary.next_blocker,
         status: summary.status,
         recommendation: summary.recommendation,
-        planning_elapsed_ms: metrics.planning_elapsed_ms,
-        manifest_load_elapsed_ms: metrics.manifest_load_elapsed_ms,
-        leaf_count_elapsed_ms: metrics.leaf_count_elapsed_ms,
-        route_select_elapsed_ms: metrics.route_select_elapsed_ms,
-        local_heap_elapsed_ms: metrics.local_heap_elapsed_ms,
-        fingerprint_guard_elapsed_ms: metrics.fingerprint_guard_elapsed_ms,
-        conninfo_secret_lookup_elapsed_ms: metrics.conninfo_secret_lookup_elapsed_ms,
-        connect_elapsed_ms: metrics.connect_elapsed_ms,
-        statement_timeout_setup_elapsed_ms: metrics.statement_timeout_setup_elapsed_ms,
-        regclass_probe_elapsed_ms: metrics.regclass_probe_elapsed_ms,
-        endpoint_identity_elapsed_ms: metrics.endpoint_identity_elapsed_ms,
-        candidate_receive_elapsed_ms: metrics.candidate_receive_elapsed_ms,
-        candidate_decode_elapsed_ms: metrics.candidate_decode_elapsed_ms,
-        heap_receive_elapsed_ms: metrics.heap_receive_elapsed_ms,
-        payload_decode_elapsed_ms: metrics.payload_decode_elapsed_ms,
-        merge_elapsed_ms: metrics.merge_elapsed_ms,
-        total_elapsed_ms: metrics.total_elapsed_ms,
+        planning_elapsed_us: metrics.planning_elapsed_us,
+        manifest_load_elapsed_us: metrics.manifest_load_elapsed_us,
+        leaf_count_elapsed_us: metrics.leaf_count_elapsed_us,
+        route_select_elapsed_us: metrics.route_select_elapsed_us,
+        local_heap_elapsed_us: metrics.local_heap_elapsed_us,
+        fingerprint_guard_elapsed_us: metrics.fingerprint_guard_elapsed_us,
+        conninfo_secret_lookup_elapsed_us: metrics.conninfo_secret_lookup_elapsed_us,
+        connect_elapsed_us: metrics.connect_elapsed_us,
+        statement_timeout_setup_elapsed_us: metrics.statement_timeout_setup_elapsed_us,
+        regclass_probe_elapsed_us: metrics.regclass_probe_elapsed_us,
+        endpoint_identity_elapsed_us: metrics.endpoint_identity_elapsed_us,
+        candidate_receive_elapsed_us: metrics.candidate_receive_elapsed_us,
+        candidate_decode_elapsed_us: metrics.candidate_decode_elapsed_us,
+        heap_receive_elapsed_us: metrics.heap_receive_elapsed_us,
+        payload_decode_elapsed_us: metrics.payload_decode_elapsed_us,
+        merge_elapsed_us: metrics.merge_elapsed_us,
+        total_elapsed_us: metrics.total_elapsed_us,
         conninfo_secret_lookup_count: metrics.conninfo_secret_lookup_count,
         manifest_cache_hit_count: metrics.manifest_cache_hit_count,
         manifest_cache_miss_count: metrics.manifest_cache_miss_count,
@@ -567,8 +567,8 @@ fn remote_search_production_scan_heap_resolution_result_stream_impl(
     let consistency_mode = options::current_session_remote_search_consistency_mode_name();
     let root_control = index.root_control();
     if root_control.active_epoch == 0 {
-        add_profile_elapsed(&mut metrics.planning_elapsed_ms, planning_start);
-        add_profile_elapsed(&mut metrics.total_elapsed_ms, total_start);
+        add_profile_elapsed(&mut metrics.planning_elapsed_us, planning_start);
+        add_profile_elapsed(&mut metrics.total_elapsed_us, total_start);
         return production_profiled_scan_result_stream(
             SpireRemoteProductionScanHeapResolutionSummaryRow {
                 requested_epoch: 0,
@@ -610,7 +610,7 @@ fn remote_search_production_scan_heap_resolution_result_stream_impl(
     } else {
         add_profile_count(&mut metrics.manifest_cache_miss_count, 1);
     }
-    add_profile_elapsed(&mut metrics.manifest_load_elapsed_ms, manifest_start);
+    add_profile_elapsed(&mut metrics.manifest_load_elapsed_us, manifest_start);
     let snapshot = meta::SpirePublishedEpochSnapshot::new(
         &epoch_manifest,
         &object_manifest,
@@ -640,12 +640,12 @@ fn remote_search_production_scan_heap_resolution_result_stream_impl(
         scan_selection.top_graph_load_count,
     );
     add_profile_count(
-        &mut metrics.leaf_count_elapsed_ms,
-        scan_selection.leaf_count_elapsed_ms,
+        &mut metrics.leaf_count_elapsed_us,
+        scan_selection.leaf_count_elapsed_us,
     );
     add_profile_count(
-        &mut metrics.route_select_elapsed_ms,
-        scan_selection.route_select_elapsed_ms,
+        &mut metrics.route_select_elapsed_us,
+        scan_selection.route_select_elapsed_us,
     );
     let scan_plan = scan_selection.scan_plan;
     let top_k = match top_k_override {
@@ -667,8 +667,8 @@ fn remote_search_production_scan_heap_resolution_result_stream_impl(
     );
 
     if top_k == 0 {
-        add_profile_elapsed(&mut metrics.planning_elapsed_ms, planning_start);
-        add_profile_elapsed(&mut metrics.total_elapsed_ms, total_start);
+        add_profile_elapsed(&mut metrics.planning_elapsed_us, planning_start);
+        add_profile_elapsed(&mut metrics.total_elapsed_us, total_start);
         return production_profiled_scan_result_stream(
             SpireRemoteProductionScanHeapResolutionSummaryRow {
                 requested_epoch: root_control.active_epoch,
@@ -711,7 +711,7 @@ fn remote_search_production_scan_heap_resolution_result_stream_impl(
     } else {
         Vec::new()
     };
-    add_profile_elapsed(&mut metrics.local_heap_elapsed_ms, local_heap_start);
+    add_profile_elapsed(&mut metrics.local_heap_elapsed_us, local_heap_start);
     let local_heap_candidate_count = u64::try_from(
         local_heap_rows
             .iter()
@@ -731,8 +731,8 @@ fn remote_search_production_scan_heap_resolution_result_stream_impl(
         top_k,
         consistency_mode,
     );
-    add_profile_elapsed(&mut metrics.fingerprint_guard_elapsed_ms, fingerprint_start);
-    add_profile_elapsed(&mut metrics.planning_elapsed_ms, planning_start);
+    add_profile_elapsed(&mut metrics.fingerprint_guard_elapsed_us, fingerprint_start);
+    add_profile_elapsed(&mut metrics.planning_elapsed_us, planning_start);
     let dispatch_count = u64::try_from(dispatch_rows.len())
         .map_err(|_| "ec_spire production scan heap dispatch count exceeds u64")?;
     let mut executor = SpireRemoteFanoutExecutor::from_libpq_dispatch_rows(
@@ -777,7 +777,7 @@ fn remote_search_production_scan_heap_resolution_result_stream_impl(
     metrics.merge_input_count = u64::try_from(heap_rows.len()).unwrap_or(u64::MAX);
     let merge_start = std::time::Instant::now();
     let merge_result = merge_remote_search_heap_candidates_for_result_with_stats(heap_rows, top_k)?;
-    add_profile_elapsed(&mut metrics.merge_elapsed_ms, merge_start);
+    add_profile_elapsed(&mut metrics.merge_elapsed_us, merge_start);
     metrics.merge_duplicate_vec_id_count = merge_result.duplicate_vec_id_count;
     let merged = merge_result.candidates;
     metrics.merge_output_count = u64::try_from(merged.len()).unwrap_or(u64::MAX);
@@ -835,7 +835,7 @@ fn remote_search_production_scan_heap_resolution_result_stream_impl(
     };
 
     metrics.degraded_skipped_dispatch_count = executor_summary.degraded_skipped_dispatch_count;
-    add_profile_elapsed(&mut metrics.total_elapsed_ms, total_start);
+    add_profile_elapsed(&mut metrics.total_elapsed_us, total_start);
     production_profiled_scan_result_stream(
         SpireRemoteProductionScanHeapResolutionSummaryRow {
             requested_epoch: root_control.active_epoch,

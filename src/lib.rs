@@ -13653,55 +13653,55 @@ fn ec_spire_remote_search_production_read_profile(
     metric!(rows, "next_blocker", row.next_blocker);
     metric!(rows, "status", row.status);
     metric!(rows, "recommendation", row.recommendation);
-    metric!(rows, "planning_elapsed_ms", row.planning_elapsed_ms);
-    metric!(rows, "manifest_load_elapsed_ms", row.manifest_load_elapsed_ms);
-    metric!(rows, "leaf_count_elapsed_ms", row.leaf_count_elapsed_ms);
-    metric!(rows, "route_select_elapsed_ms", row.route_select_elapsed_ms);
-    metric!(rows, "local_heap_elapsed_ms", row.local_heap_elapsed_ms);
+    metric!(rows, "planning_elapsed_us", row.planning_elapsed_us);
+    metric!(rows, "manifest_load_elapsed_us", row.manifest_load_elapsed_us);
+    metric!(rows, "leaf_count_elapsed_us", row.leaf_count_elapsed_us);
+    metric!(rows, "route_select_elapsed_us", row.route_select_elapsed_us);
+    metric!(rows, "local_heap_elapsed_us", row.local_heap_elapsed_us);
     metric!(
         rows,
-        "fingerprint_guard_elapsed_ms",
-        row.fingerprint_guard_elapsed_ms
+        "fingerprint_guard_elapsed_us",
+        row.fingerprint_guard_elapsed_us
     );
     metric!(
         rows,
-        "conninfo_secret_lookup_elapsed_ms",
-        row.conninfo_secret_lookup_elapsed_ms
+        "conninfo_secret_lookup_elapsed_us",
+        row.conninfo_secret_lookup_elapsed_us
     );
-    metric!(rows, "connect_elapsed_ms", row.connect_elapsed_ms);
+    metric!(rows, "connect_elapsed_us", row.connect_elapsed_us);
     metric!(
         rows,
-        "statement_timeout_setup_elapsed_ms",
-        row.statement_timeout_setup_elapsed_ms
-    );
-    metric!(
-        rows,
-        "regclass_probe_elapsed_ms",
-        row.regclass_probe_elapsed_ms
+        "statement_timeout_setup_elapsed_us",
+        row.statement_timeout_setup_elapsed_us
     );
     metric!(
         rows,
-        "endpoint_identity_elapsed_ms",
-        row.endpoint_identity_elapsed_ms
+        "regclass_probe_elapsed_us",
+        row.regclass_probe_elapsed_us
     );
     metric!(
         rows,
-        "candidate_receive_elapsed_ms",
-        row.candidate_receive_elapsed_ms
+        "endpoint_identity_elapsed_us",
+        row.endpoint_identity_elapsed_us
     );
     metric!(
         rows,
-        "candidate_decode_elapsed_ms",
-        row.candidate_decode_elapsed_ms
+        "candidate_receive_elapsed_us",
+        row.candidate_receive_elapsed_us
     );
-    metric!(rows, "heap_receive_elapsed_ms", row.heap_receive_elapsed_ms);
     metric!(
         rows,
-        "payload_decode_elapsed_ms",
-        row.payload_decode_elapsed_ms
+        "candidate_decode_elapsed_us",
+        row.candidate_decode_elapsed_us
     );
-    metric!(rows, "merge_elapsed_ms", row.merge_elapsed_ms);
-    metric!(rows, "total_elapsed_ms", row.total_elapsed_ms);
+    metric!(rows, "heap_receive_elapsed_us", row.heap_receive_elapsed_us);
+    metric!(
+        rows,
+        "payload_decode_elapsed_us",
+        row.payload_decode_elapsed_us
+    );
+    metric!(rows, "merge_elapsed_us", row.merge_elapsed_us);
+    metric!(rows, "total_elapsed_us", row.total_elapsed_us);
     metric!(
         rows,
         "conninfo_secret_lookup_count",
@@ -14053,7 +14053,7 @@ fn ec_spire_remote_search_production_read_timeline(
         name!(completed_after_ms, i64),
         name!(elapsed_ms, i64),
         name!(candidate_count, i64),
-        name!(payload_decode_elapsed_ms, i64),
+        name!(payload_decode_elapsed_us, i64),
         name!(payload_decode_row_count, i64),
         name!(payload_decode_bytes, i64),
         name!(status, &'static str),
@@ -14086,7 +14086,7 @@ fn ec_spire_remote_search_production_read_timeline(
             i64::try_from(row.completed_after_ms).expect("completed_after_ms should fit in i64"),
             i64::try_from(row.elapsed_ms).expect("elapsed_ms should fit in i64"),
             i64::try_from(row.candidate_count).expect("candidate count should fit in i64"),
-            i64::try_from(row.payload_decode_elapsed_ms)
+            i64::try_from(row.payload_decode_elapsed_us)
                 .expect("payload decode elapsed should fit in i64"),
             i64::try_from(row.payload_decode_row_count)
                 .expect("payload decode row count should fit in i64"),
