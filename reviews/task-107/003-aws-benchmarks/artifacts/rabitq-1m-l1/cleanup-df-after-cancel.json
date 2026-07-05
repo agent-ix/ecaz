@@ -1,0 +1,22 @@
+{
+    "CommandId": "26133f41-1ced-4562-93b2-aa162787642d",
+    "InstanceId": "i-0b4386fa5017f1363",
+    "Comment": "task107 df after cancelled 1m cleanup",
+    "DocumentName": "AWS-RunShellScript",
+    "DocumentVersion": "$DEFAULT",
+    "PluginName": "aws:runShellScript",
+    "ResponseCode": 0,
+    "ExecutionStartDateTime": "2026-06-15T02:36:39.724Z",
+    "ExecutionElapsedTime": "PT0.011S",
+    "ExecutionEndDateTime": "2026-06-15T02:36:39.724Z",
+    "Status": "Success",
+    "StatusDetails": "Success",
+    "StandardOutputContent": "Filesystem      Size  Used Avail Use% Mounted on\n/dev/nvme0n1p1  400G   27G  374G   7% /\n/dev/nvme3n1    200G  1.5G  199G   1% /var/lib/ecaz-spire-store-1\n/dev/nvme2n1    200G  1.5G  199G   1% /var/lib/ecaz-spire-store-2\n/dev/nvme4n1    200G  1.5G  199G   1% /var/lib/ecaz-spire-store-3\n/dev/nvme1n1    200G  1.5G  199G   1% /var/lib/ecaz-spire-store-4\n    PID    PPID STAT     ELAPSED CMD\n  55977       1 Ss         00:54 /usr/bin/postgres -D /var/lib/pgsql/data\n  55980   55977 Ss         00:53 postgres: logger \n  55981   55977 Ss         00:53 postgres: io worker 0\n  55982   55977 Ss         00:53 postgres: io worker 1\n  55983   55977 Ss         00:53 postgres: io worker 2\n  55984   55977 Ss         00:53 postgres: checkpointer \n  55985   55977 Ss         00:53 postgres: background writer \n  55987   55977 Ss         00:53 postgres: walwriter \n  55988   55977 Ss         00:53 postgres: autovacuum launcher \n  55989   55977 Ss         00:53 postgres: logical replication launcher \n",
+    "StandardOutputUrl": "",
+    "StandardErrorContent": "",
+    "StandardErrorUrl": "",
+    "CloudWatchOutputConfig": {
+        "CloudWatchLogGroupName": "",
+        "CloudWatchOutputEnabled": false
+    }
+}

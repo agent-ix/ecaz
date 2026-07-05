@@ -1,0 +1,28 @@
+Timing is on.
+SET
+Time: 0.253 ms
+SET
+Time: 0.142 ms
+SET
+Time: 0.173 ms
+                                                                                              QUERY PLAN                                                                                               
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=760.92..764.13 rows=10 width=12) (actual time=63.801..67.865 rows=10.00 loops=1)
+   Buffers: shared hit=370 read=192
+   InitPlan 1
+     ->  Limit  (cost=0.14..0.28 rows=1 width=26) (actual time=0.040..0.041 rows=1.00 loops=1)
+           Buffers: shared hit=2
+           ->  Index Scan using task28_ivf_postopt10k_n128w25_queries_pkey on task28_ivf_postopt10k_n128w25_queries  (cost=0.14..13.64 rows=100 width=26) (actual time=0.040..0.040 rows=1.00 loops=1)
+                 Index Searches: 1
+                 Buffers: shared hit=2
+   ->  Index Scan using task28_ivf_postopt10k_n128w25_idx on task28_ivf_postopt10k_n128w25_corpus  (cost=760.64..3977.39 rows=10000 width=12) (actual time=63.799..67.858 rows=10.00 loops=1)
+         Order By: (embedding <#> (InitPlan 1).col1)
+         Index Searches: 0
+         Buffers: shared hit=370 read=192
+ Planning:
+   Buffers: shared hit=128
+ Planning Time: 2.434 ms
+ Execution Time: 67.987 ms
+(16 rows)
+
+Time: 73.052 ms

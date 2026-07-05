@@ -1,0 +1,4 @@
+Script started on 2026-05-27 11:24:45-07:00 [<not executed on terminal>]
+SPIRE representative performance preflight passed: priority=/home/peter/dev/ecaz/scripts/spire-aws/suite-representative-priority.json pooling=/home/peter/dev/ecaz/scripts/spire-aws/suite-representative-pooling.json
+
+Script done on 2026-05-27 11:24:46-07:00 [COMMAND_EXIT_CODE="0"]

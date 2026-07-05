@@ -1,0 +1,16 @@
+==== SIZE=50k ====
+[comparator:pgvector] 20:34:36 done. tables: real_50k_pgv_corpus, real_50k_pgv_queries; indexes: real_50k_pgv_hnsw_idx, real_50k_pgv_ivfflat_idx
+[comparator:pgvectorscale] 20:34:37 done. tables: real_50k_pgvscale_corpus, real_50k_pgvscale_queries; index: real_50k_pgvscale_diskann_idx
+==== SIZE=100k ====
+[comparator:pgvector] 20:34:37 done. tables: real_100k_pgv_corpus, real_100k_pgv_queries; indexes: real_100k_pgv_hnsw_idx, real_100k_pgv_ivfflat_idx
+[comparator:pgvectorscale] 20:34:37 done. tables: real_100k_pgvscale_corpus, real_100k_pgvscale_queries; index: real_100k_pgvscale_diskann_idx
+==== SIZE=1m ====
+[comparator:pgvector] 20:34:37 done. tables: real_1m_pgv_corpus, real_1m_pgv_queries; indexes: real_1m_pgv_hnsw_idx, real_1m_pgv_ivfflat_idx
+[comparator:pgvectorscale] 20:34:37 building real_1m_pgvscale_diskann_idx (pgvectorscale StreamingDiskANN, maintenance_work_mem=4GB)
+NOTICE:  Starting index build with num_neighbors=-1, search_list_size=100, max_alpha=1.2, storage_layout=SbqCompression.
+WARNING:  Builder neighbor cache is full after processing 941879 vectors; consider increasing maintenance_work_mem
+NOTICE:  Indexed 990000 tuples
+SET
+CREATE INDEX
+[comparator:pgvectorscale] 21:47:24 done. tables: real_1m_pgvscale_corpus, real_1m_pgvscale_queries; index: real_1m_pgvscale_diskann_idx
+ALL_DONE

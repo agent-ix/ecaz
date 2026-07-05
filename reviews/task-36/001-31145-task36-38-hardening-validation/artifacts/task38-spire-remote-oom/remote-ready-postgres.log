@@ -1,0 +1,23 @@
+2026-05-16 22:39:25.036 PDT [3447131] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-05-16 22:39:25.038 PDT [3447131] LOG:  listening on Unix socket "/home/peter/dev/ecaz/target/s-1656884002/.s.PGSQL.39424"
+2026-05-16 22:39:25.046 PDT [3447137] LOG:  database system was shut down at 2026-05-16 22:39:23 PDT
+2026-05-16 22:39:25.049 PDT [3447131] LOG:  database system is ready to accept connections
+2026-05-16 22:39:25.485 PDT [3447162] ERROR:  simulated remote out of memory
+2026-05-16 22:39:25.485 PDT [3447162] CONTEXT:  PL/pgSQL function inline_code_block line 1 at RAISE
+2026-05-16 22:39:25.485 PDT [3447162] STATEMENT:  DO $$ BEGIN RAISE EXCEPTION 'simulated remote out of memory' USING ERRCODE = '53200'; END $$
+2026-05-16 22:39:25.498 PDT [3447166] ERROR:  simulated remote out of memory
+2026-05-16 22:39:25.498 PDT [3447166] CONTEXT:  PL/pgSQL function inline_code_block line 1 at RAISE
+2026-05-16 22:39:25.498 PDT [3447166] STATEMENT:  DO $$ BEGIN RAISE EXCEPTION 'simulated remote out of memory' USING ERRCODE = '53200'; END $$
+2026-05-16 22:39:25.515 PDT [3447172] ERROR:  simulated remote out of memory
+2026-05-16 22:39:25.515 PDT [3447172] CONTEXT:  PL/pgSQL function inline_code_block line 1 at RAISE
+2026-05-16 22:39:25.515 PDT [3447172] STATEMENT:  DO $$ BEGIN RAISE EXCEPTION 'simulated remote out of memory' USING ERRCODE = '53200'; END $$
+2026-05-16 22:39:25.529 PDT [3447176] ERROR:  simulated remote out of memory
+2026-05-16 22:39:25.529 PDT [3447176] CONTEXT:  PL/pgSQL function inline_code_block line 1 at RAISE
+2026-05-16 22:39:25.529 PDT [3447176] STATEMENT:  DO $$ BEGIN RAISE EXCEPTION 'simulated remote out of memory' USING ERRCODE = '53200'; END $$
+2026-05-16 22:39:25.736 PDT [3447131] LOG:  received fast shutdown request
+2026-05-16 22:39:25.804 PDT [3447131] LOG:  aborting any active transactions
+2026-05-16 22:39:25.805 PDT [3447131] LOG:  background worker "logical replication launcher" (PID 3447140) exited with exit code 1
+2026-05-16 22:39:25.805 PDT [3447135] LOG:  shutting down
+2026-05-16 22:39:25.807 PDT [3447135] LOG:  checkpoint starting: shutdown immediate
+2026-05-16 22:39:25.819 PDT [3447135] LOG:  checkpoint complete: wrote 0 buffers (0.0%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.004 s, sync=0.002 s, total=0.015 s; sync files=2, longest=0.001 s, average=0.001 s; distance=0 kB, estimate=0 kB; lsn=0/1754600, redo lsn=0/1754600
+2026-05-16 22:39:25.827 PDT [3447131] LOG:  database system is shut down

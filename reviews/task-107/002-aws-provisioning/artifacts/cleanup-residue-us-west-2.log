@@ -1,0 +1,64 @@
+Script started on 2026-06-14 13:29:20-07:00 [<not executed on terminal>]
+SPIRE AWS residue cleanup mode: execute
+No S3 buckets matched prefix ecaz-spire-aws-
+Secrets Manager secrets matched prefix ecaz-spire-aws:
+  arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-3abbddbb-remote-1-20260528050941755800000005-J6qTez
+  arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-3abbddbb-remote-3-20260528050941755200000001-zgs0VE
+  arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-0718e80d-remote-3-20260528151229348100000005-S9h34p
+  arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-0718e80d-remote-2-20260528151229347500000001-O7YcNm
+  arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-0718e80d-remote-1-20260528151229347600000003-r75JHo
+  arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-6c82889a-remote-1-20260528155909986000000001-GOipTs
+  arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-6c82889a-remote-3-20260528155909986000000003-fM85ws
+  arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-6c82889a-remote-2-20260528155909986100000005-CKZyDs
+  arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-459392ef-remote-1-20260528164954972800000005-bHtSCN
+  arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-459392ef-remote-2-20260528164954972700000003-ZHzD5O
+  arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-459392ef-remote-3-20260528164954972700000001-CJFbZN
+  arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-ad27322f-remote-1-20260528175902580200000005-uLdzgI
+  arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-ad27322f-remote-2-20260528175902579900000003-uLdzgI
+  arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-ad27322f-remote-3-20260528175902579700000001-qGUIZG
+  arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-445aa3d1-remote-1-20260528203756139000000005-gb7WhI
+  arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-445aa3d1-remote-3-20260528203756138800000003-3qOvVQ
+  arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-445aa3d1-remote-2-20260528203756138700000001-xmjmiN
+  arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-09f84fe5-remote-1-20260528222347706300000001-clgCW0
+  arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-09f84fe5-remote-3-20260528222347706400000003-vhQdLY
+  arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-09f84fe5-remote-2-20260528222347706700000005-4fGUpX
+  arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-b022beea-remote-1-20260528234028480000000003-YVYRiz
+  arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-b022beea-remote-2-20260528234028478600000001-MV2DLy
+  arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-b022beea-remote-3-20260528234028480100000005-hQzs8x
+Force-deleted secret arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-3abbddbb-remote-1-20260528050941755800000005-J6qTez
+Force-deleted secret arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-3abbddbb-remote-3-20260528050941755200000001-zgs0VE
+Force-deleted secret arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-0718e80d-remote-3-20260528151229348100000005-S9h34p
+Force-deleted secret arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-0718e80d-remote-2-20260528151229347500000001-O7YcNm
+Force-deleted secret arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-0718e80d-remote-1-20260528151229347600000003-r75JHo
+Force-deleted secret arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-6c82889a-remote-1-20260528155909986000000001-GOipTs
+Force-deleted secret arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-6c82889a-remote-3-20260528155909986000000003-fM85ws
+Force-deleted secret arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-6c82889a-remote-2-20260528155909986100000005-CKZyDs
+Force-deleted secret arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-459392ef-remote-1-20260528164954972800000005-bHtSCN
+Force-deleted secret arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-459392ef-remote-2-20260528164954972700000003-ZHzD5O
+Force-deleted secret arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-459392ef-remote-3-20260528164954972700000001-CJFbZN
+Force-deleted secret arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-ad27322f-remote-1-20260528175902580200000005-uLdzgI
+Force-deleted secret arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-ad27322f-remote-2-20260528175902579900000003-uLdzgI
+Force-deleted secret arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-ad27322f-remote-3-20260528175902579700000001-qGUIZG
+Force-deleted secret arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-445aa3d1-remote-1-20260528203756139000000005-gb7WhI
+Force-deleted secret arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-445aa3d1-remote-3-20260528203756138800000003-3qOvVQ
+Force-deleted secret arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-445aa3d1-remote-2-20260528203756138700000001-xmjmiN
+Force-deleted secret arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-09f84fe5-remote-1-20260528222347706300000001-clgCW0
+Force-deleted secret arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-09f84fe5-remote-3-20260528222347706400000003-vhQdLY
+Force-deleted secret arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-09f84fe5-remote-2-20260528222347706700000005-4fGUpX
+Force-deleted secret arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-b022beea-remote-1-20260528234028480000000003-YVYRiz
+Force-deleted secret arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-b022beea-remote-2-20260528234028478600000001-MV2DLy
+Force-deleted secret arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-b022beea-remote-3-20260528234028480100000005-hQzs8x
+VPCs matched Phase=13-spire-aws-verification and Name=ecaz-spire-aws:
+  vpc-0311c5d3eadd72992
+VPC vpc-0311c5d3eadd72992 residue: instances=0 endpoints=0 subnets=0 route_tables=0 security_groups=1
+Deleted security group sg-0fdd6566aa3e96b2e
+Deleted VPC vpc-0311c5d3eadd72992
+IAM role matched: ecaz-spire-aws-node
+Removed role ecaz-spire-aws-node from instance profile ecaz-spire-aws-node
+Detached policy arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore from role ecaz-spire-aws-node
+Deleted inline policy ecaz-spire-aws-node-artifacts-secrets from role ecaz-spire-aws-node
+Deleted IAM role ecaz-spire-aws-node
+IAM instance profile matched: ecaz-spire-aws-node
+Deleted IAM instance profile ecaz-spire-aws-node
+
+Script done on 2026-06-14 13:30:12-07:00 [COMMAND_EXIT_CODE="0"]

@@ -1,0 +1,2 @@
+hardening/careful/src/../../../src/am/ec_diskann/page.rs:79:9: replace VamanaMetadataPage::empty -> Self with Default::default()
+hardening/careful/src/../../../src/am/ec_diskann/page.rs:125:9: replace VamanaMetadataPage::decode -> Result<Self, String> with Ok(Default::default())

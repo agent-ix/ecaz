@@ -1,0 +1,18 @@
+Script started on 2026-05-25 14:57:15-07:00 [<not executed on terminal>]
+make: Entering directory '/home/peter/dev/ecaz/infra/spire-aws'
+cd /home/peter/dev/ecaz && /home/peter/dev/ecaz/scripts/spire-aws/preflight-permissions.sh
+AWS identity: arn:aws:iam::932658697181:user/ecaz-operator
+S3 buckets matched prefix ecaz-spire-aws-:
+  ecaz-spire-aws-20260523165108075000000003
+  ecaz-spire-aws-20260525201045387900000003
+
+aws: [ERROR]: An error occurred (AccessDenied) when calling the ListObjectVersions operation: User: arn:aws:iam::932658697181:user/ecaz-operator is not authorized to perform: s3:ListBucketVersions on resource: "arn:aws:s3:::ecaz-spire-aws-20260523165108075000000003" because no identity-based policy allows the s3:ListBucketVersions action
+ERROR: missing s3:ListBucketVersions for bucket ecaz-spire-aws-20260523165108075000000003
+
+aws: [ERROR]: An error occurred (AccessDenied) when calling the ListObjectVersions operation: User: arn:aws:iam::932658697181:user/ecaz-operator is not authorized to perform: s3:ListBucketVersions on resource: "arn:aws:s3:::ecaz-spire-aws-20260525201045387900000003" because no identity-based policy allows the s3:ListBucketVersions action
+ERROR: missing s3:ListBucketVersions for bucket ecaz-spire-aws-20260525201045387900000003
+Secrets Manager list permission ok for prefix ecaz-spire-aws
+make: *** [Makefile:50: preflight-permissions] Error 2
+make: Leaving directory '/home/peter/dev/ecaz/infra/spire-aws'
+
+Script done on 2026-05-25 14:57:20-07:00 [COMMAND_EXIT_CODE="2"]

@@ -1,0 +1,1 @@
+task29c_phase_profile_idx	{graph_degree=32,build_list_size=100,alpha=1.2,rerank_budget=64,top_k=10}

@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "${1:-}" == "ec2" && "${2:-}" == "describe-images" ]]; then
+  printf 'arm64\n'
+  exit 0
+fi
+
+printf 'fake aws only supports: aws ec2 describe-images\n' >&2
+exit 2

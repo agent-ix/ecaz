@@ -1,0 +1,13 @@
+2026-06-04T14:02Z: launched q10 SPIRE recall smoke:
+
+target/debug/ecaz cloud bench --profile 1m --database postgres \
+  --config benchmarks/aws-spire-1m/001-run/suite-recall-10.json \
+  --suite aws-spire-1m-rabitq-global1152-recall-10 \
+  --ecaz-bin /usr/local/bin/ecaz \
+  --log-file benchmarks/aws-spire-1m/001-run/artifacts/cloud-bench-recall-10.log
+
+The run produced no synced artifacts and no stdout within approximately
+10 minutes. The likely bottleneck is `bench spire-pipeline --include-recall`
+loading the full 990k corpus and computing exact truth before emitting any
+suite output. The AWS profile was paused and the stale local wrapper PID
+158975 was terminated after final status reported `$0.00/hr running`.

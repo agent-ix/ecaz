@@ -1,0 +1,10 @@
+CREATE EXTENSION
+DROP FUNCTION
+CREATE FUNCTION
+                    proname                     |     args      
+------------------------------------------------+---------------
+ ec_spire_index_leaf_target_assignment_snapshot | oid, bigint[]
+(1 row)
+
+NOTICE:  extension "ecaz" already exists, skipping
+NOTICE:  function ec_spire_index_leaf_target_assignment_snapshot(oid,pg_catalog.int8[]) does not exist, skipping

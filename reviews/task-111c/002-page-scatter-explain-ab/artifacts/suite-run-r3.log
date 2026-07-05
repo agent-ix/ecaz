@@ -1,0 +1,9 @@
+[suite:task111c-page-scatter-explain-ab] wrote reviews/task-111c/002-page-scatter-explain-ab/artifacts/suite-r3/suite-manifest.json
+[suite:task111c-page-scatter-explain-ab] explain-50k-tq-columnar-page-scatter -> --database task111b_columnar_bench_r2 --host /home/peter/.pgrx dev sql --pg 18 --db task111b_columnar_bench_r2 --socket-dir /home/peter/.pgrx --raw --file reviews/task-111c/002-page-scatter-explain-ab/artifacts/suite-r3/explain-50k-tq-columnar-page-scatter.sql --log-output reviews/task-111c/002-page-scatter-explain-ab/artifacts/suite-r3/explain-50k-tq-columnar-page-scatter.log
+[suite:task111c-page-scatter-explain-ab] wrote reviews/task-111c/002-page-scatter-explain-ab/artifacts/suite-r3/suite-manifest.json
+[suite:task111c-page-scatter-explain-ab] wrote reviews/task-111c/002-page-scatter-explain-ab/artifacts/suite-r3/suite-manifest.json
+[suite:task111c-page-scatter-explain-ab] explain-50k-tq-columnar-copy-fallback -> --database task111b_columnar_bench_r2 --host /home/peter/.pgrx dev sql --pg 18 --db task111b_columnar_bench_r2 --socket-dir /home/peter/.pgrx --raw --file reviews/task-111c/002-page-scatter-explain-ab/artifacts/suite-r3/explain-50k-tq-columnar-copy-fallback.sql --log-output reviews/task-111c/002-page-scatter-explain-ab/artifacts/suite-r3/explain-50k-tq-columnar-copy-fallback.log
+[suite:task111c-page-scatter-explain-ab] wrote reviews/task-111c/002-page-scatter-explain-ab/artifacts/suite-r3/suite-manifest.json
+[suite:task111c-page-scatter-explain-ab] wrote reviews/task-111c/002-page-scatter-explain-ab/artifacts/suite-r3/suite-manifest.json
+[suite:task111c-page-scatter-explain-ab] wrote reviews/task-111c/002-page-scatter-explain-ab/artifacts/suite-r3/results.jsonl
+[suite:task111c-page-scatter-explain-ab] wrote reviews/task-111c/002-page-scatter-explain-ab/artifacts/suite-r3/suite-manifest.json

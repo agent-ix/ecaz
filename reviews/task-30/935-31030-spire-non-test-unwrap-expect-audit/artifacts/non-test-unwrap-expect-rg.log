@@ -1,0 +1,174 @@
+Script started on 2026-05-13 20:05:37-07:00 [<not executed on terminal>]
+src/am/ec_spire/storage/routing_delta.rs
+214:        let dimensions = u16::from_le_bytes(tail[0..2].try_into().expect("routing dimensions"));
+215:        let reserved = u16::from_le_bytes(tail[2..4].try_into().expect("routing reserved"));
+251:                u32::from_le_bytes(tail[cursor..cursor + 4].try_into().expect("centroid index"));
+254:                u64::from_le_bytes(tail[cursor..cursor + 8].try_into().expect("child pid"));
+262:                        .expect("centroid component"),
+
+src/am/ec_spire/coordinator/diagnostics.rs
+589:            .map(|value| i32::try_from(value).expect("session nprobe should fit in i32"));
+
+src/am/ec_spire/storage/vec_id.rs
+199:                .expect("local vec_id length is validated"),
+230:                .expect("local vec_id length is validated"),
+
+src/am/ec_spire/update/types.rs
+31:            .expect("delta draft placements should form a local store config"),
+135:            .expect("replacement draft placements should form a local store config"),
+
+src/am/ec_spire/storage/relation_store.rs
+989:    let dimensions = u16::from_le_bytes(tail[0..2].try_into().expect("object dimensions"));
+990:    let reserved = u16::from_le_bytes(tail[2..4].try_into().expect("object reserved"));
+996:    let segment_count = u32::from_le_bytes(tail[4..8].try_into().expect("segment count"));
+999:        u64::from_le_bytes(tail[14..22].try_into().expect("object bytes total"));
+1090:    let segment_no = u32::from_le_bytes(tail[0..4].try_into().expect("segment no"));
+1091:    let byte_base = u32::from_le_bytes(tail[4..8].try_into().expect("byte base"));
+
+src/am/ec_spire/storage/leaf_v2_parts.rs
+88:        let reserved = u16::from_le_bytes(tail[2..4].try_into().expect("leaf V2 reserved"));
+94:        let reserved2 = u16::from_le_bytes(tail[10..12].try_into().expect("leaf V2 reserved2"));
+105:            payload_stride: u32::from_le_bytes(tail[4..8].try_into().expect("payload stride")),
+106:            vec_id_stride: u16::from_le_bytes(tail[8..10].try_into().expect("vec id stride")),
+107:            segment_count: u32::from_le_bytes(tail[12..16].try_into().expect("segment count")),
+110:                tail[22..30].try_into().expect("object bytes total"),
+312:        let segment_no = u32::from_le_bytes(tail[0..4].try_into().expect("segment no"));
+313:        let row_base = u32::from_le_bytes(tail[4..8].try_into().expect("row base"));
+314:        let row_count = u32::from_le_bytes(tail[8..12].try_into().expect("row count"));
+360:            flags.push(u16::from_le_bytes(chunk.try_into().expect("flag bytes")));
+372:            let gamma = f32::from_le_bytes(chunk.try_into().expect("gamma bytes"));
+
+src/am/ec_spire/coordinator/snapshots.rs
+177:                .map(|value| i32::try_from(value).expect("session nprobe should fit in i32")),
+346:                    .expect("kmeans iteration count should fit in u64"),
+972:                .expect("node row should exist for local stores");
+
+src/am/ec_spire/storage/top_graph.rs
+98:        let root_pid = u64::from_le_bytes(tail[0..8].try_into().expect("top graph root pid"));
+99:        let dimensions = u16::from_le_bytes(tail[8..10].try_into().expect("top graph dimensions"));
+100:        let reserved = u16::from_le_bytes(tail[10..12].try_into().expect("top graph reserved"));
+107:            u32::from_le_bytes(tail[12..16].try_into().expect("top graph degree"));
+109:            u32::from_le_bytes(tail[16..20].try_into().expect("top graph build list size"));
+110:        let alpha = f32::from_le_bytes(tail[20..24].try_into().expect("top graph alpha"));
+111:        let entry_node = u32::from_le_bytes(tail[24..28].try_into().expect("top graph entry"));
+127:                u64::from_le_bytes(tail[cursor..cursor + 8].try_into().expect("child pid"));
+132:                    .expect("centroid ordinal"),
+138:                    .expect("neighbor count"),
+159:                        .expect("neighbor ordinal"),
+
+src/am/ec_spire/storage/assignment.rs
+69:            .expect("assignment row was validated before encoding");
+71:            .expect("assignment row vec_id length was validated");
+73:            .expect("assignment row payload length was validated");
+113:        let flags = u16::from_le_bytes(input[0..2].try_into().expect("assignment flags bytes"));
+146:        let gamma = f32::from_le_bytes(input[gamma_start..gamma_end].try_into().expect("gamma"));
+153:                .expect("payload len"),
+
+src/am/ec_spire/coordinator/remote_candidates/contracts.rs
+57:    u64::try_from(value.max(0)).expect("non-negative session limit should fit in u64")
+61:    usize::try_from(value.max(0)).expect("non-negative session limit should fit in usize")
+386:                .expect("conninfo byte length should fit in u64"),
+
+src/am/ec_spire/storage/header.rs
+76:        let magic = u32::from_le_bytes(input[0..4].try_into().expect("magic bytes"));
+83:            u16::from_le_bytes(input[4..6].try_into().expect("format version bytes"));
+100:            pid: u64::from_le_bytes(input[8..16].try_into().expect("pid bytes")),
+102:                input[16..24].try_into().expect("object version bytes"),
+105:                input[24..32].try_into().expect("published epoch bytes"),
+107:            level: u16::from_le_bytes(input[32..34].try_into().expect("level bytes")),
+108:            parent_pid: u64::from_le_bytes(input[34..42].try_into().expect("parent pid bytes")),
+109:            child_count: u32::from_le_bytes(input[42..46].try_into().expect("child count bytes")),
+111:                input[46..50].try_into().expect("assignment count bytes"),
+113:            flags: u32::from_le_bytes(input[50..54].try_into().expect("flags bytes")),
+
+src/am/ec_spire/storage/helpers.rs
+21:                u64::from_le_bytes(bytes[1..].try_into().expect("local vec_id sequence bytes"));
+185:            .expect("local vec_id bytes"),
+
+src/am/ec_spire/coordinator/remote_candidates/libpq_plan.rs
+24:        .expect("remote search result contract row count should fit in u64")
+
+src/am/ec_spire/custom_scan/planner.rs
+526:    let root_ref = unsafe { root.as_ref().expect("checked root pointer") };
+527:    let rel_ref = unsafe { rel.as_ref().expect("checked rel pointer") };
+577:    let rel_ref = unsafe { rel.as_ref().expect("checked rel pointer") };
+
+src/am/ec_spire/scan/relation.rs
+21:        *(*scan).xs_orderbyvals = score.into_datum().expect("score should convert to datum");
+87:        .expect("remote placement count should have a first remote placement");
+
+src/am/ec_spire/scan/routing.rs
+504:                .expect("top graph route validation checked node centroid");
+549:                .expect("top graph route validation checked node centroid");
+
+src/am/ec_spire/quantizer/mod.rs
+327:            .expect("default RaBitQ configuration should be valid"),
+
+src/am/ec_spire/build/tuples.rs
+126:        .expect("resolved indexed attribute should exist");
+141:                .expect("resolved source identity attribute should exist");
+
+src/am/ec_spire/scan/candidates.rs
+1062:            let evicted = self.pop_live_worst_deduped().expect("peeked live worst");
+1081:            .expect("checked retained vec_id");
+
+src/am/ec_spire/coordinator/remote_candidates/pipeline.rs
+103:        u64::try_from(receive_rows.len()).expect("receive row count should fit in u64");
+
+src/am/ec_spire/meta/local_store.rs
+54:                input[0..4].try_into().expect("local store id bytes"),
+56:            store_relid: u32::from_le_bytes(input[4..8].try_into().expect("store relid bytes")),
+58:                input[8..12].try_into().expect("tablespace oid bytes"),
+179:        let magic = u32::from_le_bytes(input[0..4].try_into().expect("store config magic bytes"));
+186:        let reserved = u16::from_le_bytes(input[6..8].try_into().expect("reserved bytes"));
+193:            u64::from_le_bytes(input[8..16].try_into().expect("store generation bytes"));
+195:            u32::from_le_bytes(input[16..20].try_into().expect("store count bytes")) as usize;
+
+src/am/ec_spire/meta/snapshot.rs
+177:    let format_version = u16::from_le_bytes(input.try_into().expect("format version bytes"));
+
+src/am/ec_spire/meta/placement_directory.rs
+47:        let magic = u32::from_le_bytes(input[0..4].try_into().expect("directory magic bytes"));
+54:        let reserved = u16::from_le_bytes(input[6..8].try_into().expect("reserved bytes"));
+60:        let epoch = u64::from_le_bytes(input[8..16].try_into().expect("directory epoch bytes"));
+62:            u32::from_le_bytes(input[16..20].try_into().expect("directory count bytes")) as usize;
+
+src/am/ec_spire/meta/placement.rs
+246:            epoch: u64::from_le_bytes(input[4..12].try_into().expect("epoch bytes")),
+247:            pid: u64::from_le_bytes(input[12..20].try_into().expect("pid bytes")),
+248:            node_id: u32::from_le_bytes(input[20..24].try_into().expect("node id bytes")),
+250:                input[24..28].try_into().expect("local store id bytes"),
+252:            store_relid: u32::from_le_bytes(input[28..32].try_into().expect("store relid bytes")),
+254:                input[32..40].try_into().expect("object version bytes"),
+258:                input[46..50].try_into().expect("object bytes length"),
+
+src/am/ec_spire/meta/root_control.rs
+96:        let magic = u32::from_le_bytes(input[0..4].try_into().expect("root magic bytes"));
+103:        let reserved = u16::from_le_bytes(input[6..8].try_into().expect("reserved bytes"));
+111:            active_epoch: u64::from_le_bytes(input[8..16].try_into().expect("active epoch bytes")),
+112:            next_pid: u64::from_le_bytes(input[16..24].try_into().expect("next pid bytes")),
+114:                input[24..32].try_into().expect("next local vec seq bytes"),
+
+src/am/ec_spire/build/recursive.rs
+938:            .expect("single-level draft placements should form a local store config"),
+973:            .expect("partitioned draft placements should form a local store config"),
+1008:            .expect("recursive draft placements should form a local store config"),
+
+src/am/ec_spire/meta/epoch.rs
+39:        let magic = u32::from_le_bytes(input[0..4].try_into().expect("epoch magic bytes"));
+48:            epoch: u64::from_le_bytes(input[8..16].try_into().expect("epoch bytes")),
+50:                input[16..24].try_into().expect("published_at bytes"),
+53:                input[24..32].try_into().expect("retain_until bytes"),
+56:                input[32..40].try_into().expect("active query count bytes"),
+
+src/am/ec_spire/meta/object_manifest.rs
+32:        let reserved = u16::from_le_bytes(input[2..4].try_into().expect("reserved bytes"));
+40:            epoch: u64::from_le_bytes(input[4..12].try_into().expect("epoch bytes")),
+41:            pid: u64::from_le_bytes(input[12..20].try_into().expect("pid bytes")),
+43:                input[20..28].try_into().expect("object version bytes"),
+114:        let magic = u32::from_le_bytes(input[0..4].try_into().expect("manifest magic bytes"));
+121:        let reserved = u16::from_le_bytes(input[6..8].try_into().expect("reserved bytes"));
+127:        let epoch = u64::from_le_bytes(input[8..16].try_into().expect("manifest epoch bytes"));
+129:            u32::from_le_bytes(input[16..20].try_into().expect("manifest count bytes")) as usize;
+
+Script done on 2026-05-13 20:05:37-07:00 [COMMAND_EXIT_CODE="0"]

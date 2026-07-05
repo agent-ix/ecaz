@@ -1,0 +1,1569 @@
+    Checking ecaz v0.1.1 (/home/peter/dev/ecaz)
+error: unnecessary `>= y + 1` or `x - 1 >=`
+     --> src/lib.rs:16329:17
+      |
+16329 |         assert!(storage_relation_block_count >= auxiliary_store_relation_count + 1);
+      |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: change it to: `storage_relation_block_count > auxiliary_store_relation_count`
+      |
+      = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#int_plus_one
+      = note: `-D clippy::int-plus-one` implied by `-D warnings`
+      = help: to override `-D warnings` add `#[allow(clippy::int_plus_one)]`
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+   --> src/am/ec_diskann/ambuild.rs:650:30
+    |
+650 |     let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::BufferGetPageSize(buffer)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+    = note: `-D clippy::unnecessary-cast` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::unnecessary_cast)]`
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+   --> src/am/ec_diskann/ambuild.rs:682:34
+    |
+682 |         let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    |                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::BufferGetPageSize(buffer)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+   --> src/am/ec_diskann/insert.rs:673:34
+    |
+673 |         let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    |                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::BufferGetPageSize(buffer)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+    --> src/am/ec_diskann/insert.rs:1165:30
+     |
+1165 |     let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+     |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::BufferGetPageSize(buffer)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+    --> src/am/ec_diskann/insert.rs:1351:30
+     |
+1351 |     let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+     |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::BufferGetPageSize(buffer)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+    --> src/am/ec_diskann/insert.rs:1358:35
+     |
+1358 |         let free_space = unsafe { pg_sys::PageGetFreeSpace(page_ptr) as usize };
+     |                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::PageGetFreeSpace(page_ptr)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+    --> src/am/ec_diskann/insert.rs:1428:34
+     |
+1428 |         let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+     |                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::BufferGetPageSize(buffer)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+    --> src/am/ec_diskann/insert.rs:1533:34
+     |
+1533 |         let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+     |                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::BufferGetPageSize(buffer)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+    --> src/am/ec_diskann/routine.rs:1647:38
+     |
+1647 |             let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+     |                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::BufferGetPageSize(buffer)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+   --> src/am/ec_diskann/scan_state.rs:102:34
+    |
+102 |         let page_size = unsafe { pg_sys::BufferGetPageSize(metadata_buffer) as usize };
+    |                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::BufferGetPageSize(metadata_buffer)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+    --> src/am/ec_hnsw/build.rs:2389:34
+     |
+2389 |         let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+     |                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::BufferGetPageSize(buffer)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+    --> src/am/ec_hnsw/graph.rs:1618:30
+     |
+1618 |     let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+     |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::BufferGetPageSize(buffer)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+    --> src/am/ec_hnsw/graph.rs:1662:30
+     |
+1662 |     let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+     |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::BufferGetPageSize(buffer)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+    --> src/am/ec_hnsw/insert.rs:1135:30
+     |
+1135 |     let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+     |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::BufferGetPageSize(buffer)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+    --> src/am/ec_hnsw/insert.rs:1475:30
+     |
+1475 |     let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+     |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::BufferGetPageSize(buffer)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+    --> src/am/ec_hnsw/insert.rs:1482:35
+     |
+1482 |         let free_space = unsafe { pg_sys::PageGetFreeSpace(page_ptr) as usize };
+     |                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::PageGetFreeSpace(page_ptr)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+    --> src/am/ec_hnsw/insert.rs:1560:30
+     |
+1560 |     let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+     |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::BufferGetPageSize(buffer)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+    --> src/am/ec_hnsw/insert.rs:1709:30
+     |
+1709 |     let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+     |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::BufferGetPageSize(buffer)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+    --> src/am/ec_hnsw/insert.rs:1716:35
+     |
+1716 |         let free_space = unsafe { pg_sys::PageGetFreeSpace(page_ptr) as usize };
+     |                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::PageGetFreeSpace(page_ptr)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+    --> src/am/ec_hnsw/insert.rs:1817:30
+     |
+1817 |     let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+     |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::BufferGetPageSize(buffer)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+    --> src/am/ec_hnsw/insert.rs:2048:30
+     |
+2048 |     let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+     |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::BufferGetPageSize(buffer)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+    --> src/am/ec_hnsw/insert.rs:2055:35
+     |
+2055 |         let free_space = unsafe { pg_sys::PageGetFreeSpace(page_ptr) as usize };
+     |                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::PageGetFreeSpace(page_ptr)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+    --> src/am/ec_hnsw/insert.rs:2158:30
+     |
+2158 |     let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+     |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::BufferGetPageSize(buffer)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+    --> src/am/ec_hnsw/insert.rs:2263:34
+     |
+2263 |         let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+     |                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::BufferGetPageSize(buffer)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+    --> src/am/ec_hnsw/insert.rs:2334:34
+     |
+2334 |         let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+     |                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::BufferGetPageSize(buffer)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+    --> src/am/ec_hnsw/insert.rs:2412:34
+     |
+2412 |         let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+     |                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::BufferGetPageSize(buffer)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+    --> src/am/ec_hnsw/insert.rs:2492:30
+     |
+2492 |     let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+     |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::BufferGetPageSize(buffer)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+    --> src/am/ec_hnsw/insert.rs:2566:30
+     |
+2566 |     let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+     |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::BufferGetPageSize(buffer)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+    --> src/am/ec_hnsw/insert.rs:2642:30
+     |
+2642 |     let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+     |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::BufferGetPageSize(buffer)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+    --> src/am/ec_hnsw/scan.rs:4676:30
+     |
+4676 |     let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+     |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::BufferGetPageSize(buffer)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+  --> src/am/ec_hnsw/shared.rs:50:30
+   |
+50 |     let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+   |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::BufferGetPageSize(buffer)`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+  --> src/am/ec_hnsw/shared.rs:87:30
+   |
+87 |     let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+   |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::BufferGetPageSize(buffer)`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+   --> src/am/ec_hnsw/shared.rs:117:30
+    |
+117 |     let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::BufferGetPageSize(buffer)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+   --> src/am/ec_hnsw/shared.rs:234:30
+    |
+234 |     let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::BufferGetPageSize(buffer)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+   --> src/am/ec_hnsw/shared.rs:327:34
+    |
+327 |         let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    |                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::BufferGetPageSize(buffer)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+   --> src/am/ec_hnsw/shared.rs:510:30
+    |
+510 |     let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::BufferGetPageSize(buffer)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+   --> src/am/ec_hnsw/vacuum.rs:417:40
+    |
+417 |         let share_page_size = unsafe { pg_sys::BufferGetPageSize(share_buffer) as usize };
+    |                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::BufferGetPageSize(share_buffer)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+   --> src/am/ec_hnsw/vacuum.rs:520:30
+    |
+520 |     let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::BufferGetPageSize(buffer)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+   --> src/am/ec_hnsw/vacuum.rs:791:34
+    |
+791 |         let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    |                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::BufferGetPageSize(buffer)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+   --> src/am/ec_hnsw/vacuum.rs:960:40
+    |
+960 |         let share_page_size = unsafe { pg_sys::BufferGetPageSize(share_buffer) as usize };
+    |                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::BufferGetPageSize(share_buffer)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+    --> src/am/ec_hnsw/vacuum.rs:1287:34
+     |
+1287 |         let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+     |                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::BufferGetPageSize(buffer)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+    --> src/am/ec_hnsw/vacuum.rs:1550:30
+     |
+1550 |     let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+     |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::BufferGetPageSize(buffer)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+    --> src/am/ec_hnsw/vacuum.rs:1674:30
+     |
+1674 |     let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+     |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::BufferGetPageSize(buffer)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+    --> src/am/ec_hnsw/vacuum.rs:1851:30
+     |
+1851 |     let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+     |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::BufferGetPageSize(buffer)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+   --> src/am/ec_ivf/build.rs:560:34
+    |
+560 |         let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    |                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::BufferGetPageSize(buffer)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+    --> src/am/ec_ivf/page.rs:1328:34
+     |
+1328 |         let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+     |                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::BufferGetPageSize(buffer)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+    --> src/am/ec_ivf/page.rs:1378:34
+     |
+1378 |         let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+     |                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::BufferGetPageSize(buffer)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+    --> src/am/ec_ivf/page.rs:1550:31
+     |
+1550 |     let free_space = unsafe { pg_sys::PageGetFreeSpace(page) as usize };
+     |                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::PageGetFreeSpace(page)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+    --> src/am/ec_ivf/page.rs:1576:31
+     |
+1576 |     let free_space = unsafe { pg_sys::PageGetFreeSpace(page) as usize };
+     |                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::PageGetFreeSpace(page)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+    --> src/am/ec_ivf/page.rs:1602:30
+     |
+1602 |     let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+     |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::BufferGetPageSize(buffer)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+    --> src/am/ec_ivf/page.rs:1624:31
+     |
+1624 |     let free_space = unsafe { pg_sys::PageGetFreeSpace(page) as usize };
+     |                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::PageGetFreeSpace(page)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+    --> src/am/ec_ivf/page.rs:1659:30
+     |
+1659 |     let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+     |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::BufferGetPageSize(buffer)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+    --> src/am/ec_ivf/page.rs:1732:30
+     |
+1732 |     let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+     |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::BufferGetPageSize(buffer)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+    --> src/am/ec_ivf/page.rs:1819:30
+     |
+1819 |     let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+     |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::BufferGetPageSize(buffer)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+    --> src/am/ec_ivf/page.rs:1969:34
+     |
+1969 |         let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+     |                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::BufferGetPageSize(buffer)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+    --> src/am/ec_ivf/page.rs:2045:30
+     |
+2045 |     let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+     |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::BufferGetPageSize(buffer)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+    --> src/am/ec_ivf/page.rs:2133:31
+     |
+2133 |     let free_space = unsafe { pg_sys::PageGetFreeSpace(page) as usize };
+     |                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::PageGetFreeSpace(page)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+    --> src/am/ec_ivf/page.rs:2210:30
+     |
+2210 |     let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+     |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::BufferGetPageSize(buffer)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+    --> src/am/ec_ivf/page.rs:2271:34
+     |
+2271 |         let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+     |                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::BufferGetPageSize(buffer)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+    --> src/am/ec_ivf/page.rs:2407:30
+     |
+2407 |     let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+     |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::BufferGetPageSize(buffer)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+  --> src/am/ec_spire/page.rs:63:30
+   |
+63 |     let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+   |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::BufferGetPageSize(buffer)`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+   --> src/am/ec_spire/page.rs:201:30
+    |
+201 |     let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::BufferGetPageSize(buffer)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+   --> src/am/ec_spire/page.rs:239:34
+    |
+239 |         let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    |                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::BufferGetPageSize(buffer)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+   --> src/am/ec_spire/page.rs:288:30
+    |
+288 |     let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::BufferGetPageSize(buffer)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+   --> src/am/ec_spire/page.rs:358:34
+    |
+358 |         let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    |                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::BufferGetPageSize(buffer)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+   --> src/am/ec_spire/page.rs:406:35
+    |
+406 |         let free_space = unsafe { pg_sys::PageGetFreeSpace(page) as usize };
+    |                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::PageGetFreeSpace(page)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+   --> src/am/ec_spire/page.rs:436:30
+    |
+436 |     let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::BufferGetPageSize(buffer)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+   --> src/am/ec_spire/page.rs:446:31
+    |
+446 |     let free_space = unsafe { pg_sys::PageGetFreeSpace(page) as usize };
+    |                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::PageGetFreeSpace(page)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+   --> src/am/ec_spire/page.rs:472:31
+    |
+472 |     let free_space = unsafe { pg_sys::PageGetFreeSpace(page) as usize };
+    |                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::PageGetFreeSpace(page)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+   --> src/am/ec_spire/page.rs:507:30
+    |
+507 |     let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::BufferGetPageSize(buffer)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+   --> src/am/ec_spire/page.rs:511:17
+    |
+511 |     if unsafe { pg_sys::PageGetFreeSpace(page) as usize } < raw_tuple_storage_bytes(payload.len()) {
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::PageGetFreeSpace(page)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+   --> src/am/ec_spire/page.rs:537:31
+    |
+537 |     let free_space = unsafe { pg_sys::PageGetFreeSpace(page) as usize };
+    |                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::PageGetFreeSpace(page)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: this `impl` can be derived
+   --> src/am/ec_spire/scan/types.rs:303:1
+    |
+303 | / impl Default for SpireScanOpaque {
+304 | |     fn default() -> Self {
+305 | |         Self {
+306 | |             rescan_called: false,
+...   |
+313 | | }
+    | |_^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#derivable_impls
+    = note: `-D clippy::derivable-impls` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::derivable_impls)]`
+help: replace the manual implementation with a derive attribute
+    |
+293 + #[derive(Default)]
+294 | struct SpireScanOpaque {
+    |
+
+error: this function has too many arguments (9/8)
+   --> src/am/ec_spire/scan/snapshot.rs:185:1
+    |
+185 | / fn collect_validated_recursive_quantized_routed_probe_candidates(
+186 | |     snapshot: &SpireValidatedEpochSnapshot<'_>,
+187 | |     object_store: &impl SpireObjectReader,
+188 | |     query_vector: &[f32],
+...   |
+194 | |     observer: &mut impl SpireRoutedScanObserver,
+195 | | ) -> Result<Vec<SpireScoredScanCandidate>, String> {
+    | |__________________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#too_many_arguments
+    = note: `-D clippy::too-many-arguments` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::too_many_arguments)]`
+
+error: this function has too many arguments (10/8)
+   --> src/am/ec_spire/scan/snapshot.rs:215:1
+    |
+215 | / fn collect_validated_quantized_routed_probe_candidates(
+216 | |     snapshot: &SpireValidatedEpochSnapshot<'_>,
+217 | |     object_store: &impl SpireObjectReader,
+218 | |     query_vector: &[f32],
+...   |
+225 | |     observer: &mut impl SpireRoutedScanObserver,
+226 | | ) -> Result<Vec<SpireScoredScanCandidate>, String> {
+    | |__________________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#too_many_arguments
+
+error: this function has too many arguments (9/8)
+  --> src/am/ec_spire/scan/candidates.rs:1:1
+   |
+ 1 | / pub(super) fn collect_reranked_quantized_routed_probe_candidates<F>(
+ 2 | |     snapshot: &SpirePublishedEpochSnapshot<'_>,
+ 3 | |     object_store: &impl SpireObjectReader,
+ 4 | |     query_vector: &[f32],
+...  |
+12 | | where
+13 | |     F: FnMut(&SpireScoredScanCandidate) -> Result<Option<f32>, String>,
+   | |_______________________________________________________________________^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#too_many_arguments
+
+error: this function has too many arguments (10/8)
+   --> src/am/ec_spire/scan/candidates.rs:491:1
+    |
+491 | / fn append_quantized_v2_column_candidates(
+492 | |     columns: SpireLeafObjectColumns<'_>,
+493 | |     epoch: u64,
+494 | |     pid: u64,
+...   |
+501 | |     observer: &mut impl SpireRoutedScanObserver,
+502 | | ) -> Result<(), String> {
+    | |_______________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#too_many_arguments
+
+error: this function has too many arguments (10/8)
+   --> src/am/ec_spire/scan/candidates.rs:641:1
+    |
+641 | / fn append_quantized_v1_leaf_candidates(
+642 | |     leaf_object: SpireLeafPartitionObject,
+643 | |     epoch: u64,
+644 | |     pid: u64,
+...   |
+651 | |     observer: &mut impl SpireRoutedScanObserver,
+652 | | ) -> Result<(), String> {
+    | |_______________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#too_many_arguments
+
+error: this function has too many arguments (10/8)
+  --> src/am/ec_spire/storage/leaf_v2_parts.rs:14:5
+   |
+14 | /     fn new(
+15 | |         pid: u64,
+16 | |         object_version: u64,
+17 | |         parent_pid: u64,
+...  |
+24 | |         published_epoch_backref: u64,
+25 | |     ) -> Result<Self, String> {
+   | |_____________________________^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#too_many_arguments
+
+error: this function has too many arguments (10/8)
+  --> src/am/ec_spire/storage/top_graph.rs:21:5
+   |
+21 | /     pub(super) fn new(
+22 | |         pid: u64,
+23 | |         object_version: u64,
+24 | |         root_pid: u64,
+...  |
+31 | |         nodes: Vec<SpireTopGraphNodeRecord>,
+32 | |     ) -> Result<Self, String> {
+   | |_____________________________^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#too_many_arguments
+
+error: this function has too many arguments (9/8)
+   --> src/am/ec_spire/update/routing.rs:278:1
+    |
+278 | / pub(super) fn build_relation_scheduled_merge_replacement_execution_parts(
+279 | |     decision: &SpireLeafReplacementScheduleDecision,
+280 | |     pid_plan: &SpireLeafReplacementPidPlan,
+281 | |     parent: &SpireRoutingPartitionObject,
+...   |
+287 | |     retain_until_micros: i64,
+288 | | ) -> Result<SpireRelationScheduledReplacementExecutionParts, String> {
+    | |____________________________________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#too_many_arguments
+
+error: this function has too many arguments (9/8)
+   --> src/am/ec_spire/update/routing.rs:310:1
+    |
+310 | / pub(super) fn build_relation_scheduled_split_replacement_execution_parts(
+311 | |     decision: &SpireLeafReplacementScheduleDecision,
+312 | |     pid_plan: &SpireLeafReplacementPidPlan,
+313 | |     parent: &SpireRoutingPartitionObject,
+...   |
+319 | |     retain_until_micros: i64,
+320 | | ) -> Result<SpireRelationScheduledReplacementExecutionParts, String> {
+    | |____________________________________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#too_many_arguments
+
+error: this function has too many arguments (10/8)
+   --> src/am/ec_spire/update/routing.rs:356:1
+    |
+356 | / pub(super) fn build_local_scheduled_merge_replacement_execution_parts(
+357 | |     decision: &SpireLeafReplacementScheduleDecision,
+358 | |     pid_plan: &SpireLeafReplacementPidPlan,
+359 | |     parent: &SpireRoutingPartitionObject,
+...   |
+366 | |     placement_write_evidence: Vec<SpirePublishPlacementWriteEvidence>,
+367 | | ) -> Result<SpireLocalScheduledReplacementExecutionParts, String> {
+    | |_________________________________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#too_many_arguments
+
+error: this function has too many arguments (10/8)
+   --> src/am/ec_spire/update/routing.rs:387:1
+    |
+387 | / pub(super) fn build_local_scheduled_split_replacement_execution_parts(
+388 | |     decision: &SpireLeafReplacementScheduleDecision,
+389 | |     pid_plan: &SpireLeafReplacementPidPlan,
+390 | |     parent: &SpireRoutingPartitionObject,
+...   |
+397 | |     placement_write_evidence: Vec<SpirePublishPlacementWriteEvidence>,
+398 | | ) -> Result<SpireLocalScheduledReplacementExecutionParts, String> {
+    | |_________________________________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#too_many_arguments
+
+error: this function has too many arguments (10/8)
+   --> src/am/ec_spire/update/routing.rs:418:1
+    |
+418 | / pub(super) fn build_relation_scheduled_split_replacement_execution_input(
+419 | |     publish_plan: &SpireScheduledReplacementPublishPlan,
+420 | |     pid_plan: &SpireLeafReplacementPidPlan,
+421 | |     decision: &SpireLeafReplacementScheduleDecision,
+...   |
+428 | |     retain_until_micros: i64,
+429 | | ) -> Result<SpireRelationScheduledReplacementExecutionInput, String> {
+    | |____________________________________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#too_many_arguments
+
+error: this function has too many arguments (9/8)
+   --> src/am/ec_spire/update/routing.rs:473:1
+    |
+473 | / pub(super) fn build_relation_selected_scheduled_split_replacement_execution_input_from_snapshot(
+474 | |     snapshot: &SpirePublishedEpochSnapshot<'_>,
+475 | |     object_store: &impl SpireObjectReader,
+476 | |     selected: &SpireSelectedScheduledReplacementPublishLockPlan,
+...   |
+482 | |     retain_until_micros: i64,
+483 | | ) -> Result<SpireRelationScheduledReplacementExecutionInput, String> {
+    | |____________________________________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#too_many_arguments
+
+error: this function has too many arguments (12/8)
+   --> src/am/ec_spire/update/routing.rs:498:1
+    |
+498 | / pub(super) fn build_relation_selected_scheduled_split_replacement_execution_input_from_snapshot_sources(
+499 | |     snapshot: &SpirePublishedEpochSnapshot<'_>,
+500 | |     object_store: &impl SpireObjectReader,
+501 | |     selected: &SpireSelectedScheduledReplacementPublishLockPlan,
+...   |
+510 | |     retain_until_micros: i64,
+511 | | ) -> Result<SpireRelationScheduledReplacementExecutionInput, String> {
+    | |____________________________________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#too_many_arguments
+
+error: this function has too many arguments (15/8)
+   --> src/am/ec_spire/update/routing.rs:538:1
+    |
+538 | / pub(super) unsafe fn build_relation_selected_scheduled_split_replacement_execution_input_from_heap_sources(
+539 | |     heap_relation: pgrx::pg_sys::Relation,
+540 | |     heap_snapshot: pgrx::pg_sys::Snapshot,
+541 | |     slot: *mut pgrx::pg_sys::TupleTableSlot,
+...   |
+553 | |     retain_until_micros: i64,
+554 | | ) -> Result<SpireRelationScheduledReplacementExecutionInput, String> {
+    | |____________________________________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#too_many_arguments
+
+error: this function has too many arguments (9/8)
+   --> src/am/ec_spire/update/routing.rs:592:1
+    |
+592 | / pub(super) fn build_local_selected_scheduled_split_replacement_execution_input(
+593 | |     selected: &SpireSelectedScheduledReplacementPublishLockPlan,
+594 | |     parent: &SpireRoutingPartitionObject,
+595 | |     centroids: Vec<Vec<f32>>,
+...   |
+601 | |     placement_write_evidence: Vec<SpirePublishPlacementWriteEvidence>,
+602 | | ) -> Result<SpireLocalScheduledReplacementExecutionInput, String> {
+    | |_________________________________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#too_many_arguments
+
+error: this function has too many arguments (10/8)
+   --> src/am/ec_spire/update/routing.rs:618:1
+    |
+618 | / pub(super) fn build_local_selected_scheduled_split_replacement_execution_input_from_snapshot(
+619 | |     snapshot: &SpirePublishedEpochSnapshot<'_>,
+620 | |     object_store: &impl SpireObjectReader,
+621 | |     selected: &SpireSelectedScheduledReplacementPublishLockPlan,
+...   |
+628 | |     placement_write_evidence: Vec<SpirePublishPlacementWriteEvidence>,
+629 | | ) -> Result<SpireLocalScheduledReplacementExecutionInput, String> {
+    | |_________________________________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#too_many_arguments
+
+error: this function has too many arguments (11/8)
+   --> src/am/ec_spire/update/routing.rs:645:1
+    |
+645 | / pub(super) fn build_local_scheduled_split_replacement_execution_input(
+646 | |     publish_plan: &SpireScheduledReplacementPublishPlan,
+647 | |     pid_plan: &SpireLeafReplacementPidPlan,
+648 | |     decision: &SpireLeafReplacementScheduleDecision,
+...   |
+656 | |     placement_write_evidence: Vec<SpirePublishPlacementWriteEvidence>,
+657 | | ) -> Result<SpireLocalScheduledReplacementExecutionInput, String> {
+    | |_________________________________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#too_many_arguments
+
+error: this function has too many arguments (11/8)
+   --> src/am/ec_spire/update/routing.rs:678:1
+    |
+678 | / pub(super) fn build_local_scheduled_merge_replacement_execution_input(
+679 | |     publish_plan: &SpireScheduledReplacementPublishPlan,
+680 | |     pid_plan: &SpireLeafReplacementPidPlan,
+681 | |     decision: &SpireLeafReplacementScheduleDecision,
+...   |
+689 | |     placement_write_evidence: Vec<SpirePublishPlacementWriteEvidence>,
+690 | | ) -> Result<SpireLocalScheduledReplacementExecutionInput, String> {
+    | |_________________________________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#too_many_arguments
+
+error: this function has too many arguments (10/8)
+   --> src/am/ec_spire/update/routing.rs:711:1
+    |
+711 | / pub(super) fn build_relation_scheduled_merge_replacement_execution_input(
+712 | |     publish_plan: &SpireScheduledReplacementPublishPlan,
+713 | |     pid_plan: &SpireLeafReplacementPidPlan,
+714 | |     decision: &SpireLeafReplacementScheduleDecision,
+...   |
+721 | |     retain_until_micros: i64,
+722 | | ) -> Result<SpireRelationScheduledReplacementExecutionInput, String> {
+    | |____________________________________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#too_many_arguments
+
+error: this function has too many arguments (9/8)
+   --> src/am/ec_spire/update/routing.rs:792:1
+    |
+792 | / pub(super) fn build_local_selected_scheduled_merge_replacement_execution_input(
+793 | |     selected: &SpireSelectedScheduledReplacementPublishLockPlan,
+794 | |     parent: &SpireRoutingPartitionObject,
+795 | |     rows: &[SpireIndexLeafSnapshotRow],
+...   |
+801 | |     placement_write_evidence: Vec<SpirePublishPlacementWriteEvidence>,
+802 | | ) -> Result<SpireLocalScheduledReplacementExecutionInput, String> {
+    | |_________________________________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#too_many_arguments
+
+error: this function has too many arguments (9/8)
+   --> src/am/ec_spire/update/routing.rs:818:1
+    |
+818 | / pub(super) fn build_local_selected_scheduled_merge_replacement_execution_input_from_snapshot(
+819 | |     snapshot: &SpirePublishedEpochSnapshot<'_>,
+820 | |     object_store: &impl SpireObjectReader,
+821 | |     selected: &SpireSelectedScheduledReplacementPublishLockPlan,
+...   |
+827 | |     placement_write_evidence: Vec<SpirePublishPlacementWriteEvidence>,
+828 | | ) -> Result<SpireLocalScheduledReplacementExecutionInput, String> {
+    | |_________________________________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#too_many_arguments
+
+error: this function has too many arguments (11/8)
+  --> src/am/ec_spire/update/publish/local_drafts.rs:65:1
+   |
+65 | / pub(super) fn build_local_selected_scheduled_split_replacement_epoch_draft(
+66 | |     snapshot: &SpirePublishedEpochSnapshot<'_>,
+67 | |     selected: &SpireSelectedScheduledReplacementPublishLockPlan,
+68 | |     parent: &SpireRoutingPartitionObject,
+...  |
+76 | |     object_store: &mut SpireLocalObjectStore,
+77 | | ) -> Result<SpireReplacementEpochDraft, String> {
+   | |_______________________________________________^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#too_many_arguments
+
+error: this function has too many arguments (10/8)
+   --> src/am/ec_spire/update/publish/local_drafts.rs:92:1
+    |
+ 92 | / pub(super) fn build_local_selected_scheduled_split_replacement_epoch_draft_from_snapshot(
+ 93 | |     snapshot: &SpirePublishedEpochSnapshot<'_>,
+ 94 | |     selected: &SpireSelectedScheduledReplacementPublishLockPlan,
+ 95 | |     centroids: Vec<Vec<f32>>,
+...   |
+102 | |     object_store: &mut SpireLocalObjectStore,
+103 | | ) -> Result<SpireReplacementEpochDraft, String> {
+    | |_______________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#too_many_arguments
+
+error: this function has too many arguments (11/8)
+   --> src/am/ec_spire/update/publish/local_drafts.rs:121:1
+    |
+121 | / pub(super) fn build_local_selected_scheduled_merge_replacement_epoch_draft(
+122 | |     snapshot: &SpirePublishedEpochSnapshot<'_>,
+123 | |     selected: &SpireSelectedScheduledReplacementPublishLockPlan,
+124 | |     parent: &SpireRoutingPartitionObject,
+...   |
+132 | |     object_store: &mut SpireLocalObjectStore,
+133 | | ) -> Result<SpireReplacementEpochDraft, String> {
+    | |_______________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#too_many_arguments
+
+error: this function has too many arguments (9/8)
+   --> src/am/ec_spire/update/publish/local_drafts.rs:148:1
+    |
+148 | / pub(super) fn build_local_selected_scheduled_merge_replacement_epoch_draft_from_snapshot(
+149 | |     snapshot: &SpirePublishedEpochSnapshot<'_>,
+150 | |     selected: &SpireSelectedScheduledReplacementPublishLockPlan,
+151 | |     rows: &[SpireIndexLeafSnapshotRow],
+...   |
+157 | |     object_store: &mut SpireLocalObjectStore,
+158 | | ) -> Result<SpireReplacementEpochDraft, String> {
+    | |_______________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#too_many_arguments
+
+error: using `clone` on type `SpirePlacementEntry` which implements the `Copy` trait
+   --> src/am/ec_spire/vacuum.rs:346:35
+    |
+346 |                 let mut carried = placement.clone();
+    |                                   ^^^^^^^^^^^^^^^^^ help: try dereferencing it: `*placement`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#clone_on_copy
+    = note: `-D clippy::clone-on-copy` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::clone_on_copy)]`
+
+error: try not to call a closure in the expression where it is declared
+   --> src/am/ec_spire/root/remote_candidates.rs:816:18
+    |
+816 |       let result = (|| -> Result<Vec<SpireRemoteSearchTargetReadinessRow>, String> {
+    |  __________________^
+817 | |         let target_rows = unsafe {
+818 | |             remote_search_target_plan_rows(
+819 | |                 index_relation,
+...   |
+864 | |             .collect()
+865 | |     })();
+    | |________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#redundant_closure_call
+    = note: `-D clippy::redundant-closure-call` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::redundant_closure_call)]`
+help: try doing something like
+    |
+816 ~     let result = {
+817 +         let target_rows = unsafe {
+818 +             remote_search_target_plan_rows(
+819 +                 index_relation,
+820 +                 requested_epoch,
+821 +                 selected_pids,
+822 +                 consistency_mode,
+823 +             )
+824 +         };
+825 +         let node_rows = unsafe { remote_node_snapshot(index_relation) }
+826 +             .into_iter()
+827 +             .map(|row| (row.node_id, row))
+828 +             .collect::<BTreeMap<_, _>>();
+829 + 
+830 +         target_rows
+831 +             .into_iter()
+832 +             .map(|target| {
+833 +                 let node = node_rows.get(&target.node_id).ok_or_else(|| {
+834 +                     format!(
+835 +                         "ec_spire remote search target readiness missing node snapshot for node_id {}",
+836 +                         target.node_id
+837 +                     )
+838 +                 })?;
+839 +                 let status = if target.target_kind == SPIRE_REMOTE_TARGET_SKIPPED {
+840 +                     target.status
+841 +                 } else if matches!(
+842 +                     node.descriptor_state,
+843 +                     SPIRE_REMOTE_DESCRIPTOR_STATE_DISABLED | SPIRE_REMOTE_DESCRIPTOR_STATE_FAILED
+844 +                 ) {
+845 +                     SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR
+846 +                 } else if node.status != SPIRE_REMOTE_STATUS_READY {
+847 +                     node.status
+848 +                 } else {
+849 +                     target.status
+850 +                 };
+851 +                 Ok(SpireRemoteSearchTargetReadinessRow {
+852 +                     requested_epoch: target.requested_epoch,
+853 +                     target_kind: target.target_kind,
+854 +                     node_id: target.node_id,
+855 +                     selected_pids: target.selected_pids,
+856 +                     pid_count: target.pid_count,
+857 +                     placement_state: target.placement_state,
+858 +                     node_kind: node.node_kind,
+859 +                     descriptor_state: node.descriptor_state,
+860 +                     node_status: node.status,
+861 +                     status,
+862 +                 })
+863 +             })
+864 +             .collect()
+865 ~     };
+    |
+
+error: try not to call a closure in the expression where it is declared
+    --> src/am/ec_spire/root/remote_candidates.rs:1486:18
+     |
+1486 |       let result = (|| -> Result<Vec<SpireRemoteSearchLibpqConnectionPlanRow>, String> {
+     |  __________________^
+1487 | |         let request_rows = unsafe {
+1488 | |             remote_search_libpq_request_plan_rows(
+1489 | |                 index_relation,
+...    |
+1501 | |     })();
+     | |________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#redundant_closure_call
+help: try doing something like
+     |
+1486 ~     let result = {
+1487 +         let request_rows = unsafe {
+1488 +             remote_search_libpq_request_plan_rows(
+1489 +                 index_relation,
+1490 +                 requested_epoch,
+1491 +                 query,
+1492 +                 selected_pids,
+1493 +                 top_k,
+1494 +                 consistency_mode,
+1495 +             )
+1496 +         };
+1497 +         remote_search_libpq_connection_plan_rows_from_requests(
+1498 +             unsafe { (*index_relation).rd_id },
+1499 +             &request_rows,
+1500 +         )
+1501 ~     };
+     |
+
+error: try not to call a closure in the expression where it is declared
+    --> src/am/ec_spire/root/remote_candidates.rs:2951:18
+     |
+2951 |       let result = (|| -> Result<SpireRemoteSearchMergeInputSummaryRow, String> {
+     |  __________________^
+2952 | |         let execution_summary = unsafe {
+2953 | |             remote_search_execution_summary_row(
+2954 | |                 index_relation,
+...    |
+2964 | |         ))
+2965 | |     })();
+     | |________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#redundant_closure_call
+help: try doing something like
+     |
+2951 ~     let result = {
+2952 +         let execution_summary = unsafe {
+2953 +             remote_search_execution_summary_row(
+2954 +                 index_relation,
+2955 +                 requested_epoch,
+2956 +                 query,
+2957 +                 selected_pids,
+2958 +                 top_k,
+2959 +                 consistency_mode,
+2960 +             )
+2961 +         };
+2962 +         Ok(remote_search_merge_input_summary_from_execution(
+2963 +             &execution_summary,
+2964 +         ))
+2965 ~     };
+     |
+
+error: very complex type used. Consider factoring parts into `type` definitions
+   --> src/am/ec_spire/root/snapshots.rs:587:6
+    |
+587 |   ) -> Result<(
+    |  ______^
+588 | |     HashSet<u64>,
+589 | |     HashSet<(u32, crate::storage::page::ItemPointer)>,
+590 | |     BTreeMap<u32, Vec<crate::storage::page::ItemPointer>>,
+591 | | ), String> {
+    | |__________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#type_complexity
+    = note: `-D clippy::type-complexity` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::type_complexity)]`
+
+error: this function has too many arguments (11/8)
+    --> src/lib.rs:1378:1
+     |
+1378 | / fn ec_spire_register_remote_node_descriptor(
+1379 | |     index_oid: pg_sys::Oid,
+1380 | |     node_id: i32,
+1381 | |     descriptor_generation: i64,
+...    |
+1389 | |     last_error: String,
+1390 | | ) -> bool {
+     | |_________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#too_many_arguments
+
+error: explicit call to `.into_iter()` in function argument accepting `IntoIterator`
+    --> src/lib.rs:2190:24
+     |
+2190 |     TableIterator::new(rows.into_iter())
+     |                        ^^^^------------
+     |                            |
+     |                            help: consider removing the `.into_iter()`
+     |
+note: this parameter accepts any `IntoIterator`, so you don't need to call `.into_iter()`
+    --> /home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pgrx-0.17.0/src/iter.rs:146:27
+     |
+ 146 |     pub fn new(iter: impl IntoIterator<Item = Row> + 'a) -> Self {
+     |                           ^^^^^^^^^^^^^^^^^^^^^^^^
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#useless_conversion
+     = note: `-D clippy::useless-conversion` implied by `-D warnings`
+     = help: to override `-D warnings` add `#[allow(clippy::useless_conversion)]`
+
+error: explicit call to `.into_iter()` in function argument accepting `IntoIterator`
+    --> src/lib.rs:2299:24
+     |
+2299 |     TableIterator::new(rows.into_iter())
+     |                        ^^^^------------
+     |                            |
+     |                            help: consider removing the `.into_iter()`
+     |
+note: this parameter accepts any `IntoIterator`, so you don't need to call `.into_iter()`
+    --> /home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pgrx-0.17.0/src/iter.rs:146:27
+     |
+ 146 |     pub fn new(iter: impl IntoIterator<Item = Row> + 'a) -> Self {
+     |                           ^^^^^^^^^^^^^^^^^^^^^^^^
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#useless_conversion
+
+error: explicit call to `.into_iter()` in function argument accepting `IntoIterator`
+    --> src/lib.rs:2530:35
+     |
+2530 |         return TableIterator::new(Vec::new().into_iter());
+     |                                   ^^^^^^^^^^------------
+     |                                             |
+     |                                             help: consider removing the `.into_iter()`
+     |
+note: this parameter accepts any `IntoIterator`, so you don't need to call `.into_iter()`
+    --> /home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pgrx-0.17.0/src/iter.rs:146:27
+     |
+ 146 |     pub fn new(iter: impl IntoIterator<Item = Row> + 'a) -> Self {
+     |                           ^^^^^^^^^^^^^^^^^^^^^^^^
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#useless_conversion
+
+error: explicit call to `.into_iter()` in function argument accepting `IntoIterator`
+    --> src/lib.rs:2711:24
+     |
+2711 |     TableIterator::new(rows.into_iter())
+     |                        ^^^^------------
+     |                            |
+     |                            help: consider removing the `.into_iter()`
+     |
+note: this parameter accepts any `IntoIterator`, so you don't need to call `.into_iter()`
+    --> /home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pgrx-0.17.0/src/iter.rs:146:27
+     |
+ 146 |     pub fn new(iter: impl IntoIterator<Item = Row> + 'a) -> Self {
+     |                           ^^^^^^^^^^^^^^^^^^^^^^^^
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#useless_conversion
+
+error: explicit call to `.into_iter()` in function argument accepting `IntoIterator`
+    --> src/lib.rs:3069:24
+     |
+3069 |     TableIterator::new(rows.into_iter())
+     |                        ^^^^------------
+     |                            |
+     |                            help: consider removing the `.into_iter()`
+     |
+note: this parameter accepts any `IntoIterator`, so you don't need to call `.into_iter()`
+    --> /home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pgrx-0.17.0/src/iter.rs:146:27
+     |
+ 146 |     pub fn new(iter: impl IntoIterator<Item = Row> + 'a) -> Self {
+     |                           ^^^^^^^^^^^^^^^^^^^^^^^^
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#useless_conversion
+
+error: explicit call to `.into_iter()` in function argument accepting `IntoIterator`
+    --> src/lib.rs:3311:24
+     |
+3311 |     TableIterator::new(rows.into_iter())
+     |                        ^^^^------------
+     |                            |
+     |                            help: consider removing the `.into_iter()`
+     |
+note: this parameter accepts any `IntoIterator`, so you don't need to call `.into_iter()`
+    --> /home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pgrx-0.17.0/src/iter.rs:146:27
+     |
+ 146 |     pub fn new(iter: impl IntoIterator<Item = Row> + 'a) -> Self {
+     |                           ^^^^^^^^^^^^^^^^^^^^^^^^
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#useless_conversion
+
+error: explicit call to `.into_iter()` in function argument accepting `IntoIterator`
+    --> src/lib.rs:3922:24
+     |
+3922 |     TableIterator::new(rows.into_iter())
+     |                        ^^^^------------
+     |                            |
+     |                            help: consider removing the `.into_iter()`
+     |
+note: this parameter accepts any `IntoIterator`, so you don't need to call `.into_iter()`
+    --> /home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pgrx-0.17.0/src/iter.rs:146:27
+     |
+ 146 |     pub fn new(iter: impl IntoIterator<Item = Row> + 'a) -> Self {
+     |                           ^^^^^^^^^^^^^^^^^^^^^^^^
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#useless_conversion
+
+error: explicit call to `.into_iter()` in function argument accepting `IntoIterator`
+    --> src/lib.rs:4318:24
+     |
+4318 |     TableIterator::new(rows.into_iter())
+     |                        ^^^^------------
+     |                            |
+     |                            help: consider removing the `.into_iter()`
+     |
+note: this parameter accepts any `IntoIterator`, so you don't need to call `.into_iter()`
+    --> /home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pgrx-0.17.0/src/iter.rs:146:27
+     |
+ 146 |     pub fn new(iter: impl IntoIterator<Item = Row> + 'a) -> Self {
+     |                           ^^^^^^^^^^^^^^^^^^^^^^^^
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#useless_conversion
+
+error: explicit call to `.into_iter()` in function argument accepting `IntoIterator`
+    --> src/lib.rs:4852:24
+     |
+4852 |     TableIterator::new(rows.into_iter())
+     |                        ^^^^------------
+     |                            |
+     |                            help: consider removing the `.into_iter()`
+     |
+note: this parameter accepts any `IntoIterator`, so you don't need to call `.into_iter()`
+    --> /home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pgrx-0.17.0/src/iter.rs:146:27
+     |
+ 146 |     pub fn new(iter: impl IntoIterator<Item = Row> + 'a) -> Self {
+     |                           ^^^^^^^^^^^^^^^^^^^^^^^^
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#useless_conversion
+
+error: explicit call to `.into_iter()` in function argument accepting `IntoIterator`
+    --> src/lib.rs:5343:24
+     |
+5343 |     TableIterator::new(rows.into_iter())
+     |                        ^^^^------------
+     |                            |
+     |                            help: consider removing the `.into_iter()`
+     |
+note: this parameter accepts any `IntoIterator`, so you don't need to call `.into_iter()`
+    --> /home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pgrx-0.17.0/src/iter.rs:146:27
+     |
+ 146 |     pub fn new(iter: impl IntoIterator<Item = Row> + 'a) -> Self {
+     |                           ^^^^^^^^^^^^^^^^^^^^^^^^
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#useless_conversion
+
+error: explicit call to `.into_iter()` in function argument accepting `IntoIterator`
+    --> src/lib.rs:5723:9
+     |
+5723 | /          vec![
+5724 | |              (
+5725 | |                  1_i64,
+5726 | |                  "remote_index_oid",
+...    |
+5745 | |          ]
+     | | __________-
+5746 | ||         .into_iter(),
+     | ||____________________^
+     |  |____________________|
+     |                       help: consider removing the `.into_iter()`
+     |
+note: this parameter accepts any `IntoIterator`, so you don't need to call `.into_iter()`
+    --> /home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pgrx-0.17.0/src/iter.rs:146:27
+     |
+ 146 |     pub fn new(iter: impl IntoIterator<Item = Row> + 'a) -> Self {
+     |                           ^^^^^^^^^^^^^^^^^^^^^^^^
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#useless_conversion
+
+error: explicit call to `.into_iter()` in function argument accepting `IntoIterator`
+    --> src/lib.rs:5764:9
+     |
+5764 | /          vec![
+5765 | |              (
+5766 | |                  1_i64,
+5767 | |                  "active_epoch",
+...    |
+5789 | |          ]
+     | | __________-
+5790 | ||         .into_iter(),
+     | ||____________________^
+     |  |____________________|
+     |                       help: consider removing the `.into_iter()`
+     |
+note: this parameter accepts any `IntoIterator`, so you don't need to call `.into_iter()`
+    --> /home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pgrx-0.17.0/src/iter.rs:146:27
+     |
+ 146 |     pub fn new(iter: impl IntoIterator<Item = Row> + 'a) -> Self {
+     |                           ^^^^^^^^^^^^^^^^^^^^^^^^
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#useless_conversion
+
+error: explicit call to `.into_iter()` in function argument accepting `IntoIterator`
+    --> src/lib.rs:5809:9
+     |
+5809 | /          vec![
+5810 | |              (
+5811 | |                  1_i64,
+5812 | |                  "conninfo_secret_resolution",
+...    |
+5855 | |          ]
+     | | __________-
+5856 | ||         .into_iter(),
+     | ||____________________^
+     |  |____________________|
+     |                       help: consider removing the `.into_iter()`
+     |
+note: this parameter accepts any `IntoIterator`, so you don't need to call `.into_iter()`
+    --> /home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pgrx-0.17.0/src/iter.rs:146:27
+     |
+ 146 |     pub fn new(iter: impl IntoIterator<Item = Row> + 'a) -> Self {
+     |                           ^^^^^^^^^^^^^^^^^^^^^^^^
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#useless_conversion
+
+error: explicit call to `.into_iter()` in function argument accepting `IntoIterator`
+    --> src/lib.rs:6396:9
+     |
+6396 | /          vec![
+6397 | |              (
+6398 | |                  1_i64,
+6399 | |                  "not_required",
+...    |
+6433 | |          ]
+     | | __________-
+6434 | ||         .into_iter(),
+     | ||____________________^
+     |  |____________________|
+     |                       help: consider removing the `.into_iter()`
+     |
+note: this parameter accepts any `IntoIterator`, so you don't need to call `.into_iter()`
+    --> /home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pgrx-0.17.0/src/iter.rs:146:27
+     |
+ 146 |     pub fn new(iter: impl IntoIterator<Item = Row> + 'a) -> Self {
+     |                           ^^^^^^^^^^^^^^^^^^^^^^^^
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#useless_conversion
+
+error: explicit call to `.into_iter()` in function argument accepting `IntoIterator`
+    --> src/lib.rs:9321:9
+     |
+9321 | /          vec![
+9322 | |              (
+9323 | |                  "local_heap_candidates",
+9324 | |                  "ready_or_degraded_ready",
+...    |
+9346 | |          ]
+     | | __________-
+9347 | ||         .into_iter(),
+     | ||____________________^
+     |  |____________________|
+     |                       help: consider removing the `.into_iter()`
+     |
+note: this parameter accepts any `IntoIterator`, so you don't need to call `.into_iter()`
+    --> /home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pgrx-0.17.0/src/iter.rs:146:27
+     |
+ 146 |     pub fn new(iter: impl IntoIterator<Item = Row> + 'a) -> Self {
+     |                           ^^^^^^^^^^^^^^^^^^^^^^^^
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#useless_conversion
+
+error: could not compile `ecaz` (lib) due to 120 previous errors
+warning: build failed, waiting for other jobs to finish...
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+    --> src/am/ec_diskann/routine.rs:1719:34
+     |
+1719 |         let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+     |                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::BufferGetPageSize(buffer)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+    --> src/am/ec_hnsw/scan_debug.rs:1285:34
+     |
+1285 |         let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+     |                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::BufferGetPageSize(buffer)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+    --> src/am/ec_hnsw/scan_debug.rs:1356:34
+     |
+1356 |         let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+     |                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::BufferGetPageSize(buffer)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+    --> src/am/ec_hnsw/scan_debug.rs:1426:34
+     |
+1426 |         let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+     |                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::BufferGetPageSize(buffer)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: casting to the same type is unnecessary (`usize` -> `usize`)
+   --> src/am/ec_hnsw/shared.rs:854:30
+    |
+854 |     let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `pg_sys::BufferGetPageSize(buffer)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_cast
+
+error: items after a test module
+   --> src/am/ec_spire/cost.rs:394:1
+    |
+394 |   mod tests {
+    |   ^^^^^^^^^
+...
+464 | / pub(super) unsafe extern "C-unwind" fn ec_spire_amtranslatestrategy(
+465 | |     strategy: pg_sys::StrategyNumber,
+466 | |     _opfamily: pg_sys::Oid,
+467 | | ) -> pg_sys::CompareType::Type {
+    | |______________________________^
+...
+486 | / pub(super) unsafe extern "C-unwind" fn ec_spire_amtranslatecmptype(
+487 | |     compare_type: pg_sys::CompareType::Type,
+488 | |     _opfamily: pg_sys::Oid,
+489 | | ) -> pg_sys::StrategyNumber {
+    | |___________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#items_after_test_module
+    = note: `-D clippy::items-after-test-module` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::items_after_test_module)]`
+    = help: move the items to before the test module was defined
+
+error: using `clone` on type `SpireEpochManifest` which implements the `Copy` trait
+   --> src/am/ec_spire/update/tests/selected_validators.rs:353:15
+    |
+353 |             ..fixture.epoch_manifest.clone()
+    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try removing the `clone` call: `fixture.epoch_manifest`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#clone_on_copy
+    = note: `-D clippy::clone-on-copy` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::clone_on_copy)]`
+
+error: using `clone` on type `SpirePlacementEntry` which implements the `Copy` trait
+   --> src/am/ec_spire/vacuum.rs:346:35
+    |
+346 |                 let mut carried = placement.clone();
+    |                                   ^^^^^^^^^^^^^^^^^ help: try dereferencing it: `*placement`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#clone_on_copy
+
+error: very complex type used. Consider factoring parts into `type` definitions
+  --> src/am/ec_spire/root/debug.rs:11:25
+   |
+11 |     let result = (|| -> Result<(u32, u16, u64, u32, u64, u64, u32, u64), String> {
+   |                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#type_complexity
+
+error: very complex type used. Consider factoring parts into `type` definitions
+   --> src/am/ec_spire/root/debug.rs:112:25
+    |
+112 |     let result = (|| -> Result<(u64, u64, u64, u32, u16, u32, u16, u32, u16), String> {
+    |                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#type_complexity
+
+error: useless use of `format!`
+     --> src/lib.rs:23504:72
+      |
+23504 |           let operator_entrypoint_reachable_count = Spi::get_one::<i64>(&format!(
+      |  ________________________________________________________________________^
+23505 | |             "SELECT count(*) \
+23506 | |                FROM ec_spire_remote_operator_entrypoint_contract() contract \
+23507 | |               WHERE EXISTS ( \
+...     |
+23510 | |                      WHERE proc.proname = contract.entrypoint_name)"
+23511 | |         ))
+      | |_________^
+      |
+      = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#useless_format
+      = note: `-D clippy::useless-format` implied by `-D warnings`
+      = help: to override `-D warnings` add `#[allow(clippy::useless_format)]`
+help: consider using `.to_string()`
+      |
+23504 ~         let operator_entrypoint_reachable_count = Spi::get_one::<i64>(&"SELECT count(*) \
+23505 +                FROM ec_spire_remote_operator_entrypoint_contract() contract \
+23506 +               WHERE EXISTS ( \
+23507 +                     SELECT 1 \
+23508 +                       FROM pg_proc proc \
+23509 ~                      WHERE proc.proname = contract.entrypoint_name)".to_string())
+      |
+
+error: useless use of `vec!`
+    --> src/am/ec_ivf/scan.rs:1810:30
+     |
+1810 |           let mut candidates = vec![
+     |  ______________________________^
+1811 | |             candidate(8, 3, 0.5),
+1812 | |             candidate(7, 9, 9.0),
+1813 | |             candidate(8, 1, 0.1),
+1814 | |             candidate(7, 9, 1.0),
+1815 | |         ];
+     | |_________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#useless_vec
+     = note: `-D clippy::useless-vec` implied by `-D warnings`
+     = help: to override `-D warnings` add `#[allow(clippy::useless_vec)]`
+help: you can use an array directly
+     |
+1810 ~         let mut candidates = [candidate(8, 3, 0.5),
+1811 +             candidate(7, 9, 9.0),
+1812 +             candidate(8, 1, 0.1),
+1813 ~             candidate(7, 9, 1.0)];
+     |
+
+error: useless use of `vec!`
+  --> src/am/ec_spire/storage/tests/vec_and_routing.rs:22:36
+   |
+22 |         assert!(SpireVecId::global(&vec![7; SPIRE_VEC_ID_MAX_BYTES]).is_err());
+   |                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: you can use a slice directly: `&[7; SPIRE_VEC_ID_MAX_BYTES]`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#useless_vec
+
+error: could not compile `ecaz` (lib test) due to 133 previous errors

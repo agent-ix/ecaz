@@ -1,0 +1,6 @@
+ scripts/unsafe_comment_baseline.txt       | 476 ++++++++++++++----------------
+ src/lib.rs                                | 103 +++----
+ src/tests/insert.rs                       |  19 +-
+ src/tests/mod.rs                          |  23 +-
+ src/tests/remote_search/libpq_executor.rs |  14 +-
+ 5 files changed, 296 insertions(+), 339 deletions(-)

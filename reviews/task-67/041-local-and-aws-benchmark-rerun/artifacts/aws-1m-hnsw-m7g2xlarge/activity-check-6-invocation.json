@@ -1,0 +1,22 @@
+{
+    "CommandId": "6d2ee880-9d8b-40e6-aba6-af16c5f06d62",
+    "InstanceId": "i-0056e46b981edbb17",
+    "Comment": "",
+    "DocumentName": "AWS-RunShellScript",
+    "DocumentVersion": "$DEFAULT",
+    "PluginName": "aws:runShellScript",
+    "ResponseCode": 0,
+    "ExecutionStartDateTime": "2026-05-31T02:16:50.566Z",
+    "ExecutionElapsedTime": "PT0.146S",
+    "ExecutionEndDateTime": "2026-05-31T02:16:50.566Z",
+    "Status": "Success",
+    "StatusDetails": "Success",
+    "StandardOutputContent": "          captured_at          | state  | wait_event_type | wait_event |    query_age    |                                               query                                               \n-------------------------------+--------+-----------------+------------+-----------------+---------------------------------------------------------------------------------------------------\n 2026-05-31 02:16:50.707386+00 | active |                 |            | 00:16:04.851989 | CREATE INDEX task67_1m_hnsw_m7g2xlarge_m16_idx ON task67_1m_hnsw_m7g2xlarge_corpus               +\n                               |        |                 |            |                 |         USING ec_hnsw (embedding ecvector_ip_ops) WITH (m = 16, ef_construction = 128, build_sour\n 2026-05-31 02:16:50.707386+00 |        |                 |            |                 | \n 2026-05-31 02:16:50.707386+00 |        |                 |            |                 | \n(3 rows)\n\n",
+    "StandardOutputUrl": "",
+    "StandardErrorContent": "++ sudo -u postgres psql -h /var/run/postgresql -d postgres -c 'SELECT now() AS captured_at, state, wait_event_type, wait_event, now() - query_start AS query_age, left(query, 180) AS query FROM pg_stat_activity WHERE datname = '\\''postgres'\\'' AND usename = '\\''postgres'\\'' AND pid <> pg_backend_pid() ORDER BY backend_start;'\n",
+    "StandardErrorUrl": "",
+    "CloudWatchOutputConfig": {
+        "CloudWatchLogGroupName": "",
+        "CloudWatchOutputEnabled": false
+    }
+}

@@ -1,0 +1,17 @@
+Script started on 2026-05-13 15:41:25-07:00 [<not executed on terminal>]
+src/tests/insert.rs
+2:    fn test_ec_spire_plan_coordinator_insert_sql() {
+1507:    fn test_ec_spire_insert_trigger_payload_type_roundtrip_sql() {
+
+src/tests/mod.rs
+4009:    include!("insert.rs");
+4012:    fn test_ec_spire_schema_drift_fails_before_dispatch_sql() {
+19885:    fn test_ec_spire_insert_after_build_delta_epoch() {
+  43534 src/tests/mod.rs
+   1766 src/tests/insert.rs
+   2634 src/tests/remote_search.rs
+    796 src/tests/custom_scan.rs
+  17812 src/lib.rs
+  66542 total
+
+Script done on 2026-05-13 15:41:25-07:00 [COMMAND_EXIT_CODE="0"]

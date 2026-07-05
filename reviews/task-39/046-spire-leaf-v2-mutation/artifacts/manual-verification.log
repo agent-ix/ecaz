@@ -1,0 +1,34 @@
+Manual mutation verification on src/am/ec_spire/storage/leaf_v2.rs.
+
+For each mutation enumerated by `cargo mutants --Zmutate-file
+/Users/peter/dev/tqvector/src/am/ec_spire/storage/leaf_v2.rs --list`,
+the mutation was applied to the production source, the careful test
+suite was run with focused filters, the result was recorded, and the
+file was restored from /tmp/leaf_v2_original.rs.
+
+Mutations M1, M5, M6 were verified interactively via the Edit tool
+before this script run; M2-M4, M7-M10 were verified via
+/tmp/verify_leaf_v2_mutations.sh; M11-M14 via a Python helper that
+performed full-body replacements.
+
+  KILLED M1  (18:9  validate -> Ok(()))                       6 tests failed
+  KILLED M2  (20:36 != -> ==)                                 segment_count mismatch detection
+  KILLED M3  (31:35 != -> ==)                                 segment_no mismatch detection
+  KILLED M4  (37:33 != -> ==)                                 row_base mismatch detection
+  KILLED M5  (46:40 == -> !=)                                 final-segment branch select
+  KILLED M6  (46:36 + -> -)                                   subtract-with-overflow panic
+  KILLED M7  (46:36 + -> *)                                   final-vs-nonfinal detection
+  KILLED M8  (47:49 != -> ==)                                 final segment locator check
+  KILLED M9  (52:52 == -> !=)                                 non-final segment locator check
+  KILLED M10 (56:46 != -> ==)                                 meta assignment_count mismatch
+  KILLED M11 (68:9  column_segments -> Ok(empty()))           validate short-circuit detection
+  KILLED M12 (68:9  column_segments -> Ok(once(default)))     same - validate short-circuit
+  KILLED M13 (76:9  assignment_rows -> Ok(vec![]))            len mismatch in round-trip test
+  KILLED M14 (76:9  assignment_rows -> Ok(vec![Default]))     len mismatch in round-trip test
+
+  14/14 KILLED. 0 MISSED. 0 TIMEOUTS.
+
+After all verifications, `diff /tmp/leaf_v2_original.rs
+src/am/ec_spire/storage/leaf_v2.rs` returned empty, and
+`cargo test --manifest-path hardening/careful/Cargo.toml --lib`
+reported `test result: ok. 529 passed`.

@@ -1,0 +1,22 @@
+DROP EXTENSION
+CREATE EXTENSION
+off
+NOTICE:  drop cascades to 18 other objects
+DETAIL:  drop cascades to column embedding of table ec_real_10k_hnsw_corpus
+drop cascades to column embedding of table ec_real_100k_hnsw_corpus
+drop cascades to column embedding of table ec_real_10k_diskann_corpus
+drop cascades to column embedding of table ec_real_100k_diskann_corpus
+drop cascades to column embedding of table task57_005_10k_ivf_rabitq_n64_corpus
+drop cascades to column embedding of table task56_006_10k_spire_corpus
+drop cascades to column embedding of table task63_real_50k_hnsw_turboquant_corpus
+drop cascades to column embedding of table task63_real_50k_hnsw_pq_corpus
+drop cascades to column embedding of table task63_real_50k_hnsw_rabitq_corpus
+drop cascades to column embedding of table task63_real_100k_hnsw_turboquant_corpus
+drop cascades to column embedding of table task63_real_100k_hnsw_pq_corpus
+drop cascades to column embedding of table task63_real_100k_hnsw_rabitq_corpus
+drop cascades to column embedding of table task60_real_100k_diskann_pq_corpus
+drop cascades to column embedding of table task60_real_100k_diskann_rabitq_corpus
+drop cascades to column embedding of table task60_real_1m_diskann_pq_corpus
+drop cascades to column embedding of table task60_real_1m_diskann_rabitq_corpus
+drop cascades to column embedding of table ec_hnsw_real_ann_benchmarks_anchor_corpus
+drop cascades to column embedding of table task66_m5_10k_ivf_rabitq1_n64_sidecar_off_corpus

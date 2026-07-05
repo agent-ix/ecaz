@@ -1,0 +1,5 @@
+coverage ok: am/ec_spire/storage/relation_store.rs actual=58.66 baseline=58.66
+coverage ok: am/ec_spire/coordinator/diagnostics.rs actual=0.00 baseline=0.00
+coverage ok: am/ec_spire/coordinator/diagnostics_helpers.rs actual=100.00 baseline=100.00
+coverage ok: am/ec_diskann/routine.rs actual=0.00 baseline=0.00
+coverage ok: am/ec_diskann/routine_helpers.rs actual=100.00 baseline=100.00

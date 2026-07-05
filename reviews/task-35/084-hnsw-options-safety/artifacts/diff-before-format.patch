@@ -1,0 +1,89 @@
+Script started on 2026-05-19 03:20:58-07:00 [<not executed on terminal>]
+[1mdiff --git a/scripts/unsafe_comment_baseline.txt b/scripts/unsafe_comment_baseline.txt[m
+[1mindex 6882a312..6e7962de 100644[m
+[1m--- a/scripts/unsafe_comment_baseline.txt[m
+[1m+++ b/scripts/unsafe_comment_baseline.txt[m
+[36m@@ -639,14 +639,6 @@[m [msrc/am/ec_hnsw/insert.rs:879[m
+ src/am/ec_hnsw/insert.rs:908[m
+ src/am/ec_hnsw/insert.rs:909[m
+ src/am/ec_hnsw/insert.rs:952[m
+[31m-src/am/ec_hnsw/options.rs:160[m
+[31m-src/am/ec_hnsw/options.rs:243[m
+[31m-src/am/ec_hnsw/options.rs:249[m
+[31m-src/am/ec_hnsw/options.rs:259[m
+[31m-src/am/ec_hnsw/options.rs:264[m
+[31m-src/am/ec_hnsw/options.rs:265[m
+[31m-src/am/ec_hnsw/options.rs:272[m
+[31m-src/am/ec_hnsw/options.rs:279[m
+ src/am/ec_hnsw/scan_debug.rs:1004[m
+ src/am/ec_hnsw/scan_debug.rs:1018[m
+ src/am/ec_hnsw/scan_debug.rs:1023[m
+[1mdiff --git a/src/am/ec_hnsw/options.rs b/src/am/ec_hnsw/options.rs[m
+[1mindex 2cb5b5e5..d3e05264 100644[m
+[1m--- a/src/am/ec_hnsw/options.rs[m
+[1m+++ b/src/am/ec_hnsw/options.rs[m
+[36m@@ -157,6 +157,8 @@[m [mpub(super) unsafe extern "C-unwind" fn ec_hnsw_amoptions([m
+     reloptions: pg_sys::Datum,[m
+     validate: bool,[m
+ ) -> *mut pg_sys::bytea {[m
+[32m+[m[32m    // SAFETY: PostgreSQL invokes amoptions with a reloptions Datum and expects[m
+[32m+[m[32m    // a bytea allocated by build_local_reloptions; pgrx guards the FFI boundary.[m
+     unsafe {[m
+         pgrx::pgrx_extern_c_guard(|| {[m
+             let mut relopts = pg_sys::local_relopts::default();[m
+[36m@@ -240,12 +242,16 @@[m [munsafe fn read_string_reloption([m
+         return None;[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: rd_options is PostgreSQL's varlena reloptions blob and offset is[m
+[32m+[m[32m    // a string reloption offset written by build_local_reloptions.[m
+     let value_ptr = unsafe {[m
+         rd_options[m
+             .cast::<u8>()[m
+             .add(offset as usize)[m
+             .cast::<std::ffi::c_char>()[m
+     };[m
+[32m+[m[32m    // SAFETY: string reloptions are stored as NUL-terminated strings inside the[m
+[32m+[m[32m    // reloptions blob at the validated offset.[m
+     let value = unsafe { std::ffi::CStr::from_ptr(value_ptr) }[m
+         .to_str()[m
+         .unwrap_or_else(|e| pgrx::error!("invalid ec_hnsw {name} reloption: {e}"));[m
+[36m@@ -256,12 +262,18 @@[m [munsafe fn read_string_reloption([m
+ }[m
+ [m
+ pub(crate) unsafe fn relation_options(index_relation: pg_sys::Relation) -> TqHnswOptions {[m
+[32m+[m[32m    // SAFETY: index_relation is an open HNSW index relation; rd_options is the[m
+[32m+[m[32m    // PostgreSQL-owned reloptions varlena pointer for this relation.[m
+     let rd_options = unsafe { (*index_relation).rd_options };[m
+     if rd_options.is_null() {[m
+         return TqHnswOptions::DEFAULT;[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: rd_options was produced by ec_hnsw_amoptions using the[m
+[32m+[m[32m    // TqHnswReloptions layout.[m
+     let reloptions = unsafe { &*rd_options.cast::<TqHnswReloptions>() };[m
+[32m+[m[32m    // SAFETY: build_source_column_offset is a string reloption offset in the[m
+[32m+[m[32m    // same rd_options blob.[m
+     let build_source_column = unsafe {[m
+         read_string_reloption([m
+             rd_options,[m
+[36m@@ -269,6 +281,8 @@[m [mpub(crate) unsafe fn relation_options(index_relation: pg_sys::Relation) -> TqHns[m
+             "build_source_column",[m
+         )[m
+     };[m
+[32m+[m[32m    // SAFETY: rerank_source_column_offset is a string reloption offset in the[m
+[32m+[m[32m    // same rd_options blob.[m
+     let rerank_source_column = unsafe {[m
+         read_string_reloption([m
+             rd_options,[m
+[36m@@ -276,6 +290,8 @@[m [mpub(crate) unsafe fn relation_options(index_relation: pg_sys::Relation) -> TqHns[m
+             "rerank_source_column",[m
+         )[m
+     };[m
+[32m+[m[32m    // SAFETY: storage_format_offset is a string reloption offset in the same[m
+[32m+[m[32m    // rd_options blob.[m
+     let storage_format = match unsafe {[m
+         read_string_reloption([m
+             rd_options,[m
+
+Script done on 2026-05-19 03:20:58-07:00 [COMMAND_EXIT_CODE="0"]

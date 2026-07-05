@@ -1,0 +1,63 @@
+{
+  "name": "task67-hnsw-1m-min-rerun",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-hnsw",
+  "steps": [
+    {
+      "kind": "corpus-fetch",
+      "name": "fetch-dbpedia-openai3-1m",
+      "dataset": "qdrant-dbpedia-openai3-large-1536-1m",
+      "output_dir": "/var/lib/pgsql/18/datasets/task67-dbpedia-openai3-1m"
+    },
+    {
+      "kind": "corpus-prepare",
+      "name": "prepare-real1m",
+      "profile": "ec_real_ann_benchmarks_anchor",
+      "parquet": "/var/lib/pgsql/18/datasets/task67-dbpedia-openai3-1m/data",
+      "output_dir": "/var/lib/pgsql/18/datasets/staged-task67-1m",
+      "chunk_rows": 25000
+    },
+    {
+      "kind": "load",
+      "name": "load-hnsw-real1m-m16",
+      "prefix": "task67_1m_hnsw_m16_rerun",
+      "profile": "ec_hnsw",
+      "manifest_file": "/var/lib/pgsql/18/datasets/staged-task67-1m/ec_real_ann_benchmarks_anchor_manifest.json",
+      "allow_manifest_mismatch": true,
+      "chunked": true,
+      "m": [16],
+      "ef_construction": 128,
+      "log_file": "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-hnsw/load-hnsw-real1m-m16.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-hnsw-real1m-ef-sweep",
+      "prefix": "task67_1m_hnsw_m16_rerun",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [64, 128, 200, 400],
+      "queries_limit": 100,
+      "force_index": true,
+      "truth_cache_file": "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-hnsw/truth-hnsw-real1m-k10.json",
+      "log_output": "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-hnsw/recall-hnsw-real1m-ef-sweep.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-hnsw-real1m-ef-sweep",
+      "prefix": "task67_1m_hnsw_m16_rerun",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [64, 128, 200, 400],
+      "iterations": 50,
+      "concurrency": 1,
+      "force_index": true,
+      "log_output": "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-hnsw/latency-hnsw-real1m-ef-sweep.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-hnsw-real1m-m16",
+      "prefix": "task67_1m_hnsw_m16_rerun",
+      "log_file": "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-hnsw/storage-hnsw-real1m-m16.log"
+    }
+  ]
+}

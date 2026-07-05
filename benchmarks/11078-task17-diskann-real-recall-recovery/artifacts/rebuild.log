@@ -1,0 +1,18 @@
+[loader] inspecting /home/peter/dev/tqvector/target/real-corpus/ec_hnsw_real_10k/ec_hnsw_real_10k_corpus.tsv
+[loader] inspecting /home/peter/dev/tqvector/target/real-corpus/ec_hnsw_real_10k/ec_hnsw_real_10k_queries.tsv
+[loader] corpus: 10000 rows, sha256=c67c5810b66d982d705974e48d4775479adfbd92a988f694091266e049a35e75  queries: 200 rows, sha256=a2c191bb742017d849e73f6e6866e8e0f0bac1579ba212f7fc76b8eb09904ae8
+[loader] verified manifest /home/peter/dev/tqvector/target/real-corpus/ec_hnsw_real_10k/ec_hnsw_real_10k_manifest.json for prefix ec_hnsw_real_10k
+[loader] ec_hnsw_real_10k_corpus already has 10000 rows; skipping reload
+[loader] ec_hnsw_real_10k_queries already has 200 rows; skipping reload
+[loader] building ec_hnsw_real_10k_idx using ec_diskann (reloptions=[graph_degree=32, build_list_size=100, alpha=1.2]) ...
+┌─────────┬────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                  │
+╞═════════╪════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_diskann                                                             │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ ec_hnsw_real_10k_corpus (10000 rows)                                   │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ ec_hnsw_real_10k_queries (200 rows)                                    │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ ec_hnsw_real_10k_idx [graph_degree=32, build_list_size=100, alpha=1.2] │
+└─────────┴────────────────────────────────────────────────────────────────────────┘

@@ -1,0 +1,10 @@
+^DWARNING: The requested image's platform (linux/amd64) does not match the detected host platform (linux/arm64/v8) and no specific platform was requested
+2026-05-16 19:38:50.172935 |INFO | [rudra-progress] Running cargo rudra
+2026-05-16 19:38:52.348108 |INFO | [rudra-progress] Running rudra for target lib:ecaz-rudra-hardening
+2026-05-16 19:38:55.296160 |INFO | [rudra-progress] Rudra started
+2026-05-16 19:38:55.299324 |INFO | [rudra-progress] SendSyncVariance analysis started
+2026-05-16 19:38:55.299601 |INFO | [rudra-progress] SendSyncVariance analysis finished
+2026-05-16 19:38:55.299609 |INFO | [rudra-progress] UnsafeDataflow analysis started
+2026-05-16 19:38:55.311912 |INFO | [rudra-progress] UnsafeDataflow analysis finished
+2026-05-16 19:38:55.311941 |INFO | [rudra-progress] Rudra finished
+2026-05-16 19:38:55.934708 |INFO | [rudra-progress] cargo rudra finished

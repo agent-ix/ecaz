@@ -1,0 +1,261 @@
+{
+  "suite": "profile-ivf-100k",
+  "schema_version": 1,
+  "config": "crates/ecaz-cli/suites/profile-ivf-100k.json",
+  "config_sha256": "00a923cfe507e14dac82e6d6c3e42f410e1845435b4e15b6947854a34a0f5c62",
+  "dry_run": false,
+  "generated_at_unix_ms": 1778392199753,
+  "connection": {
+    "database": "postgres",
+    "host": "/Users/peter/.pgrx",
+    "port": 28818,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "load-real100k-n128-w500",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "ivf",
+        "real100k",
+        "n128",
+        "w500"
+      ],
+      "expected_artifacts": [
+        "artifacts/benchmark-profiles/profile-ivf-100k/load-real100k-n128-w500.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall10-nprobe-sweep-w500",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "recall",
+        "ivf",
+        "real100k",
+        "n128",
+        "w500"
+      ],
+      "expected_artifacts": [
+        "artifacts/benchmark-profiles/profile-ivf-100k/recall10-nprobe-sweep-w500.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-nprobe-sweep-w500",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "latency",
+        "ivf",
+        "real100k",
+        "n128",
+        "w500"
+      ],
+      "expected_artifacts": [
+        "artifacts/benchmark-profiles/profile-ivf-100k/latency-nprobe-sweep-w500.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall100-candidates-w500",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "recall",
+        "ivf",
+        "real100k",
+        "n128",
+        "w500",
+        "k100"
+      ],
+      "expected_artifacts": [
+        "artifacts/benchmark-profiles/profile-ivf-100k/recall100-candidates-w500.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall100-candidates-w1000",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "recall",
+        "ivf",
+        "real100k",
+        "n128",
+        "w1000",
+        "k100"
+      ],
+      "expected_artifacts": [
+        "artifacts/benchmark-profiles/profile-ivf-100k/recall100-candidates-w1000.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-candidates-w1000",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "latency",
+        "ivf",
+        "real100k",
+        "n128",
+        "w1000"
+      ],
+      "expected_artifacts": [
+        "artifacts/benchmark-profiles/profile-ivf-100k/latency-candidates-w1000.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-real100k-n128",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "ivf",
+        "real100k",
+        "n128"
+      ],
+      "expected_artifacts": [
+        "artifacts/benchmark-profiles/profile-ivf-100k/storage-real100k-n128.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "compare-pgvector-ivfflat-real100k-k10",
+      "kind": "compare-pgvector",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "artifacts/benchmark-profiles/profile-ivf-100k/compare-pgvector-ivfflat-real100k-k10.log",
+        "compare",
+        "pgvector",
+        "--prefix",
+        "profile_real100k_pqg8_n128",
+        "--profile",
+        "ec_ivf",
+        "--k",
+        "10",
+        "--pgvector-am",
+        "ivfflat",
+        "--sweep",
+        "40,48,56,64,80,96",
+        "--pgvector-maintenance-work-mem",
+        "256MB",
+        "--pgvector-lists",
+        "128",
+        "--rerank-width",
+        "500",
+        "--queries-limit",
+        "100",
+        "--rebuild"
+      ],
+      "selected": true,
+      "tags": [
+        "compare",
+        "pgvector",
+        "ivfflat",
+        "ivf",
+        "real100k",
+        "n128",
+        "k10"
+      ],
+      "expected_artifacts": [
+        "artifacts/benchmark-profiles/profile-ivf-100k/compare-pgvector-ivfflat-real100k-k10.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1778391919878,
+      "finished_at_unix_ms": 1778392026556,
+      "duration_ms": 106677,
+      "exit_code": 0
+    },
+    {
+      "name": "compare-pgvector-ivfflat-real100k-k100",
+      "kind": "compare-pgvector",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "artifacts/benchmark-profiles/profile-ivf-100k/compare-pgvector-ivfflat-real100k-k100.log",
+        "compare",
+        "pgvector",
+        "--prefix",
+        "profile_real100k_pqg8_n128",
+        "--profile",
+        "ec_ivf",
+        "--k",
+        "100",
+        "--pgvector-am",
+        "ivfflat",
+        "--sweep",
+        "80,96",
+        "--pgvector-maintenance-work-mem",
+        "256MB",
+        "--pgvector-lists",
+        "128",
+        "--rerank-width",
+        "1000",
+        "--queries-limit",
+        "100"
+      ],
+      "selected": true,
+      "tags": [
+        "compare",
+        "pgvector",
+        "ivfflat",
+        "ivf",
+        "real100k",
+        "n128",
+        "k100",
+        "w1000"
+      ],
+      "expected_artifacts": [
+        "artifacts/benchmark-profiles/profile-ivf-100k/compare-pgvector-ivfflat-real100k-k100.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1778392026556,
+      "finished_at_unix_ms": 1778392101889,
+      "duration_ms": 75332,
+      "exit_code": 0
+    },
+    {
+      "name": "explain-quality-candidate",
+      "kind": "explain",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "explain",
+        "ivf",
+        "real100k",
+        "n128",
+        "w1000"
+      ],
+      "expected_artifacts": [
+        "artifacts/benchmark-profiles/profile-ivf-100k/explain-quality-candidate.sql",
+        "artifacts/benchmark-profiles/profile-ivf-100k/explain-quality-candidate.log"
+      ],
+      "status": "skipped"
+    }
+  ]
+}

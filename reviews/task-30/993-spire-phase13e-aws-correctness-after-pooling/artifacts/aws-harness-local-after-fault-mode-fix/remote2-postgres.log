@@ -1,0 +1,15 @@
+2026-05-26 15:42:37.289 PDT [2642136] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-05-26 15:42:37.292 PDT [2642136] LOG:  listening on Unix socket "/home/peter/dev/ecaz/target/spire-phase13e-aws-local-sockets-20260526T224232Z/.s.PGSQL.39702"
+2026-05-26 15:42:37.299 PDT [2642142] LOG:  database system was shut down at 2026-05-26 15:42:35 PDT
+2026-05-26 15:42:37.303 PDT [2642136] LOG:  database system is ready to accept connections
+2026-05-26 15:46:57.475 PDT [2645028] LOG:  could not send data to client: Broken pipe
+2026-05-26 15:46:57.476 PDT [2645028] FATAL:  connection to client lost
+2026-05-26 15:47:37.738 PDT [2642140] LOG:  checkpoint starting: time
+2026-05-26 15:47:45.191 PDT [2642136] LOG:  received fast shutdown request
+2026-05-26 15:47:45.204 PDT [2642136] LOG:  aborting any active transactions
+2026-05-26 15:47:45.205 PDT [2642136] LOG:  background worker "logical replication launcher" (PID 2642145) exited with exit code 1
+2026-05-26 15:47:45.298 PDT [2642140] LOG:  checkpoint complete: wrote 7958 buffers (48.6%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 3 recycled; write=7.499 s, sync=0.043 s, total=7.561 s; sync files=159, longest=0.003 s, average=0.001 s; distance=54176 kB, estimate=54176 kB; lsn=0/4C3D3F0, redo lsn=0/4C3C588
+2026-05-26 15:47:45.298 PDT [2642140] LOG:  shutting down
+2026-05-26 15:47:45.300 PDT [2642140] LOG:  checkpoint starting: shutdown immediate
+2026-05-26 15:47:45.310 PDT [2642140] LOG:  checkpoint complete: wrote 0 buffers (0.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.002 s, sync=0.001 s, total=0.013 s; sync files=1, longest=0.001 s, average=0.001 s; distance=3 kB, estimate=48758 kB; lsn=0/4C3D468, redo lsn=0/4C3D468
+2026-05-26 15:47:45.326 PDT [2642136] LOG:  database system is shut down

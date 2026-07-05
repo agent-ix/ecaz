@@ -1,0 +1,21 @@
+--- hardening/careful/src/../../../src/am/common/cost.rs
++++ replace * with + in estimate_planner_cost
+@@ -229,17 +229,17 @@
+         inputs.index_pages * 10.0
+     };
+     let scoring_dimensions = f64::from(inputs.dimensions) * LUT_CPU_DIMENSION_SCALE;
+     let ef_search = f64::from(inputs.ef_search);
+     let tree_height = inputs.tree_height;
+ 
+     let (startup_cost, total_cost) = if tree_height <= 0.0 {
+         let linear_cost = inputs.index_pages * constants.seq_page_cost;
+-        let linear_cpu = tuple_estimate * constants.cpu_operator_cost * scoring_dimensions;
++        let linear_cpu = tuple_estimate * constants.cpu_operator_cost + /* ~ changed by cargo-mutants ~ */ scoring_dimensions;
+         (0.0, linear_cost + linear_cpu)
+     } else {
+         // Graph phase visits ~1 page per upper level (greedy descent to the
+         // entry neighborhood) plus ef_search candidate pages at the bottom
+         // layer. The earlier `tree_height * m + ef_search * 2 * m` formula
+         // wildly overcharged by multiplying ef_search by m, which kept
+         // ec_hnsw costlier than a seqscan on every realistic table size.
+         let graph_pages = tree_height + ef_search;

@@ -1,0 +1,27 @@
+^D    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.05s
+     Running unittests src/lib.rs (target/debug/deps/ecaz_careful_hardening-3bca8b65b65b7ce7)
+
+running 21 tests
+test careful_ivf_page::tests::block_in_range_rejects_invalid_and_out_of_range_blocks ... ok
+test careful_ivf_page::tests::block_ref_roundtrip ... ok
+test careful_ivf_page::tests::centroid_tuple_rejects_dimension_mismatch ... ok
+test careful_ivf_page::tests::layout_constants_pin_tuple_offsets_and_flags ... ok
+test careful_ivf_page::tests::centroid_tuple_roundtrip ... ok
+test careful_ivf_page::tests::layout_fit_helpers_track_page_capacity ... ok
+test careful_ivf_page::tests::data_page_chain_ivf_tuple_roundtrips ... ok
+test careful_ivf_page::tests::data_page_ivf_tuple_roundtrips ... ok
+test careful_ivf_page::tests::data_page_chain_extends_for_large_posting_tuples ... ok
+test careful_ivf_page::tests::list_directory_tuple_roundtrip ... ok
+test careful_ivf_page::tests::metadata_decode_accepts_known_format_codes_and_rejects_unknown_codes ... ok
+test careful_ivf_page::tests::metadata_decode_rejects_truncated_input ... ok
+test careful_ivf_page::tests::metadata_roundtrip ... ok
+test careful_ivf_page::tests::next_physical_tuple_tid_advances_within_page_and_across_blocks ... ok
+test careful_ivf_page::tests::page_line_pointer_count_uses_header_lower_bound ... ok
+test careful_ivf_page::tests::posting_delete_compaction_is_disabled_on_mixed_pages ... ok
+test careful_ivf_page::tests::posting_free_hint_roundtrip_is_keyed_by_relation_and_list ... ok
+test careful_ivf_page::tests::posting_tuple_rejects_heaptid_overflow ... ok
+test careful_ivf_page::tests::posting_tuple_rejects_invalid_flags_and_heap_tid_counts ... ok
+test careful_ivf_page::tests::posting_tuple_roundtrip_preserves_duplicate_heap_tids ... ok
+test careful_ivf_page::tests::pq_codebook_tuple_roundtrip ... ok
+
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 228 filtered out; finished in 0.00s

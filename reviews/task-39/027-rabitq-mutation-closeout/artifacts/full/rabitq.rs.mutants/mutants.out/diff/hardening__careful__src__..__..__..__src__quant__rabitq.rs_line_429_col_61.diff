@@ -1,0 +1,21 @@
+--- hardening/careful/src/../../../src/quant/rabitq.rs
++++ replace * with + in <impl crate::quant::Quantizer for RaBitQQuantizer>::encode_code
+@@ -421,17 +421,17 @@
+         // so we can also accumulate ⟨o, x_dec⟩ and ||x_dec||² as we
+         // go — one pass, no intermediate Vec.
+         let mut inner_o_xdec = 0.0_f32;
+         let mut x_dec_norm_sq = 0.0_f32;
+ 
+         let bits = self.bits_per_dim as usize;
+ 
+         for (i, &o_i) in rotated.iter().enumerate() {
+-            let (level_idx, dequant_i) = quantize_level(o_i * inv_norm, bits, sqrt_d);
++            let (level_idx, dequant_i) = quantize_level(o_i + /* ~ changed by cargo-mutants ~ */ inv_norm, bits, sqrt_d);
+             write_level(&mut out, i, bits, level_idx);
+             inner_o_xdec += o_i * dequant_i;
+             x_dec_norm_sq += dequant_i * dequant_i;
+         }
+ 
+         let x_dec_norm = x_dec_norm_sq.sqrt();
+         let denom = norm * x_dec_norm;
+         let o_dot = if denom > 0.0 {

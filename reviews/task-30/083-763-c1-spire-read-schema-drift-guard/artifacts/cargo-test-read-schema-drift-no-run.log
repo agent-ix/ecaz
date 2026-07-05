@@ -1,0 +1,12 @@
+Script started on 2026-05-14 19:59:00-07:00 [<not executed on terminal>]
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.19s
+  Executable unittests src/lib.rs (target/debug/deps/ecaz-4a6e0718723ccfd4)
+  Executable unittests src/bin/approx_score_study.rs (target/debug/deps/approx_score_study-3f13dcd43e3a9132)
+  Executable unittests src/bin/pgrx_embed.rs (target/debug/deps/pgrx_embed_ecaz-b7a6992ae3665ac4)
+  Executable unittests src/bin/simd_bench.rs (target/debug/deps/simd_bench-061b6c61d187b1e7)
+  Executable tests/proptest_page.rs (target/debug/deps/proptest_page-b1548bf1a9b6e535)
+  Executable tests/proptest_quant.rs (target/debug/deps/proptest_quant-d4d81395935b0d0b)
+  Executable tests/recall_integration.rs (target/debug/deps/recall_integration-a788659718462175)
+  Executable tests/size_of_assertions.rs (target/debug/deps/size_of_assertions-c4d72cf593bcb1f6)
+
+Script done on 2026-05-14 19:59:01-07:00 [COMMAND_EXIT_CODE="0"]

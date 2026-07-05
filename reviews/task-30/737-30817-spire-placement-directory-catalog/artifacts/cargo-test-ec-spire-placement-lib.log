@@ -1,0 +1,17 @@
+command: cargo test ec_spire_placement --lib
+timestamp: 2026-05-11 America/Los_Angeles
+
+Finished `test` profile [unoptimized + debuginfo] target(s) in 44.74s
+Running unittests src/lib.rs (target/debug/deps/ecaz-1903db179d6aa6e7)
+
+running 2 tests
+Using PgConfig("pg18") and `pg_config` from /home/peter/.pgrx/18.3/pgrx-install/bin/pg_config
+Building extension with features pg_test pg18
+Running command "/home/peter/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "build" "--lib" "--features" "pg_test pg18" "--no-default-features" "--message-format=json-render-diagnostics"
+Finished `dev` profile [unoptimized + debuginfo] target(s) in 25.80s
+Writing SQL entities to /home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/ecaz--0.1.1.sql
+Finished installing ecaz
+test tests::pg_test_ec_spire_placement_directory_catalog_sql ... ok
+test tests::pg_test_ec_spire_placement_snapshot_sql ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 1615 filtered out; finished in 53.76s

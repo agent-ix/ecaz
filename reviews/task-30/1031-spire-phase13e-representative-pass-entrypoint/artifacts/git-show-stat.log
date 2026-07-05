@@ -1,0 +1,7 @@
+Script started on 2026-05-27 11:12:26-07:00 [<not executed on terminal>]
+[33mb8fbe56cc[m[33m ([m[1;36mHEAD -> [m[1;32mdiskann-aws-optimization[m[33m)[m Add SPIRE representative pass entrypoint
+ ...30-phase13e-spire-aws-production-gap-closure.md |   6 [32m++[m
+ .../run-representative-performance-pass.sh         | 118 [32m+++++++++++++++++++++[m
+ 2 files changed, 124 insertions(+)
+
+Script done on 2026-05-27 11:12:26-07:00 [COMMAND_EXIT_CODE="0"]

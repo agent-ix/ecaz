@@ -1,0 +1,21 @@
+
+unsafe fn dml_frontdoor_attr_name(
+    attr: *mut pg_sys::FormData_pg_attribute,
+) -> Result<String, String> {
+    unsafe { CStr::from_ptr((*attr).attname.data.as_ptr()) }
+        .to_str()
+        .map(str::to_owned)
+        .map_err(|e| format!("ec_spire DML frontdoor catalog attribute name is not UTF-8: {e}"))
+}
+
+unsafe fn dml_frontdoor_format_type_name(type_oid: pg_sys::Oid) -> Result<String, String> {
+    let type_name = unsafe { pg_sys::format_type_be(type_oid) };
+    if type_name.is_null() {
+        return Err("ec_spire DML frontdoor catalog format_type returned NULL".to_owned());
+    }
+    let decoded = unsafe { CStr::from_ptr(type_name) }
+        .to_str()
+        .map(str::to_owned)
+        .map_err(|e| format!("ec_spire DML frontdoor catalog type name is not UTF-8: {e}"));
+    unsafe { pg_sys::pfree(type_name.cast()) };
+    decoded

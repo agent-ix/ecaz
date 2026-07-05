@@ -1,0 +1,22 @@
+{
+    "CommandId": "f1157628-47c6-43be-841d-d9686d1a4570",
+    "InstanceId": "i-0f1eadb5b42491dbd",
+    "Comment": "",
+    "DocumentName": "AWS-RunShellScript",
+    "DocumentVersion": "$DEFAULT",
+    "PluginName": "aws:runShellScript",
+    "ResponseCode": 0,
+    "ExecutionStartDateTime": "2026-05-25T23:47:24.148Z",
+    "ExecutionElapsedTime": "PT0.27S",
+    "ExecutionEndDateTime": "2026-05-25T23:47:24.148Z",
+    "Status": "Success",
+    "StatusDetails": "Success",
+    "StandardOutputContent": "0.1.1\n/usr/lib64/pgsql/ecaz.so: ELF 64-bit LSB shared object, ARM aarch64, version 1 (SYSV), dynamically linked, BuildID[sha1]=acec5ef57d1572d5cc48d6afc72f45c185d0af48, not stripped\n",
+    "StandardOutputUrl": "",
+    "StandardErrorContent": "",
+    "StandardErrorUrl": "",
+    "CloudWatchOutputConfig": {
+        "CloudWatchLogGroupName": "",
+        "CloudWatchOutputEnabled": false
+    }
+}

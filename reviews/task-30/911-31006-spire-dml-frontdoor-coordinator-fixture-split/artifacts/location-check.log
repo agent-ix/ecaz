@@ -1,0 +1,14 @@
+Script started on 2026-05-13 16:21:17-07:00 [<not executed on terminal>]
+src/tests/dml_frontdoor.rs
+1672:    fn test_ec_spire_update_delete_schema_drift_guard_sql() {
+1830:    fn test_ec_spire_forward_coordinator_update_tuple_payload_sql() {
+1945:    fn test_ec_spire_forward_coordinator_update_local_sql() {
+2015:    fn test_ec_spire_forward_coordinator_update_missing_placement_sql() {
+2049:    fn test_ec_spire_update_rejects_embedding_column_sql() {
+2100:    fn test_ec_spire_prepare_coordinator_delete_tuple_payload_sql() {
+2243:    fn test_ec_spire_prepare_coordinator_delete_local_sql() {
+2315:    fn test_ec_spire_prepare_coordinator_delete_idempotent_sql() {
+2401:    fn test_ec_spire_forward_coordinator_select_tuple_payload_sql() {
+2503:    fn test_ec_spire_forward_coordinator_select_local_sql() {
+
+Script done on 2026-05-13 16:21:17-07:00 [COMMAND_EXIT_CODE="0"]

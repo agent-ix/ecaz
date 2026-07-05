@@ -1,0 +1,2 @@
+python3 scripts/unsafe_ledger.py check --ledger reviews/task-50/143-generic-xlog-register-return-check/artifacts/unsafe-ledger-after.jsonl src
+ledger covers 1550 current unsafe rows

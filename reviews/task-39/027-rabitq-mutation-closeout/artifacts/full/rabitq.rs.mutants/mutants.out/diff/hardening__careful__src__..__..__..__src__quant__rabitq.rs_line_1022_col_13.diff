@@ -1,0 +1,21 @@
+--- hardening/careful/src/../../../src/quant/rabitq.rs
++++ delete - in dequant_level
+@@ -1014,17 +1014,17 @@
+ 
+ /// Inverse of [`quantize_level`]: given a stored level index and
+ /// `bits`, return the dequantized coordinate value.
+ fn dequant_level(level: u32, bits: usize, sqrt_d: f32) -> f32 {
+     if bits == 1 {
+         if level == 1 {
+             1.0
+         } else {
+-            -1.0
++             /* ~ changed by cargo-mutants ~ */1.0
+         }
+     } else {
+         let levels = 1_u32 << bits;
+         let c = RABITQ_QUANT_CLIP;
+         let center_scaled = (level as f32 + 0.5) / levels as f32 * RABITQ_QUANT_RANGE - c;
+         center_scaled / sqrt_d
+     }
+ }

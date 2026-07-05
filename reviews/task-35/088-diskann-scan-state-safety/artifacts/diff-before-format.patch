@@ -1,0 +1,230 @@
+Script started on 2026-05-19 03:40:50-07:00 [<not executed on terminal>]
+[1mdiff --git a/scripts/unsafe_comment_baseline.txt b/scripts/unsafe_comment_baseline.txt[m
+[1mindex 64ea6e9a..8ce5d2a5 100644[m
+[1m--- a/scripts/unsafe_comment_baseline.txt[m
+[1m+++ b/scripts/unsafe_comment_baseline.txt[m
+[36m@@ -196,30 +196,6 @@[m [msrc/am/ec_diskann/routine.rs:964[m
+ src/am/ec_diskann/routine.rs:970[m
+ src/am/ec_diskann/routine.rs:977[m
+ src/am/ec_diskann/routine.rs:985[m
+[31m-src/am/ec_diskann/scan_state.rs:154[m
+[31m-src/am/ec_diskann/scan_state.rs:160[m
+[31m-src/am/ec_diskann/scan_state.rs:162[m
+[31m-src/am/ec_diskann/scan_state.rs:175[m
+[31m-src/am/ec_diskann/scan_state.rs:192[m
+[31m-src/am/ec_diskann/scan_state.rs:194[m
+[31m-src/am/ec_diskann/scan_state.rs:214[m
+[31m-src/am/ec_diskann/scan_state.rs:220[m
+[31m-src/am/ec_diskann/scan_state.rs:233[m
+[31m-src/am/ec_diskann/scan_state.rs:239[m
+[31m-src/am/ec_diskann/scan_state.rs:246[m
+[31m-src/am/ec_diskann/scan_state.rs:247[m
+[31m-src/am/ec_diskann/scan_state.rs:252[m
+[31m-src/am/ec_diskann/scan_state.rs:264[m
+[31m-src/am/ec_diskann/scan_state.rs:265[m
+[31m-src/am/ec_diskann/scan_state.rs:270[m
+[31m-src/am/ec_diskann/scan_state.rs:287[m
+[31m-src/am/ec_diskann/scan_state.rs:296[m
+[31m-src/am/ec_diskann/scan_state.rs:311[m
+[31m-src/am/ec_diskann/scan_state.rs:312[m
+[31m-src/am/ec_diskann/scan_state.rs:315[m
+[31m-src/am/ec_diskann/scan_state.rs:318[m
+[31m-src/am/ec_diskann/scan_state.rs:325[m
+[31m-src/am/ec_diskann/scan_state.rs:333[m
+ src/am/ec_hnsw/build_parallel.rs:1000[m
+ src/am/ec_hnsw/build_parallel.rs:1020[m
+ src/am/ec_hnsw/build_parallel.rs:1024[m
+[1mdiff --git a/src/am/ec_diskann/scan_state.rs b/src/am/ec_diskann/scan_state.rs[m
+[1mindex 474588fa..defdb9ff 100644[m
+[1m--- a/src/am/ec_diskann/scan_state.rs[m
+[1m+++ b/src/am/ec_diskann/scan_state.rs[m
+[36m@@ -142,6 +142,8 @@[m [mpub(super) unsafe fn materialize_chain_from_index([m
+     index_relation: pg_sys::Relation,[m
+ ) -> Result<(VamanaMetadataPage, DataPageChain), String> {[m
+     let metadata_result: Result<(VamanaMetadataPage, usize), String> = {[m
+[32m+[m[32m        // SAFETY: `index_relation` is a live DISKANN index relation during[m
+[32m+[m[32m        // beginscan, and block 0 is the metadata page read under a share lock.[m
+         let metadata_buffer = LockedBufferGuard::read_main([m
+             index_relation,[m
+             0,[m
+[36m@@ -151,13 +153,19 @@[m [mpub(super) unsafe fn materialize_chain_from_index([m
+         .ok_or_else(|| "ec_diskann beginscan could not open metadata page".to_owned())?;[m
+         let page = metadata_buffer.page();[m
+         let page_size = metadata_buffer.page_size();[m
+[32m+[m[32m        // SAFETY: `page` comes from the locked metadata buffer and remains[m
+[32m+[m[32m        // pinned while the special area is inspected.[m
+         let special_size = unsafe { pg_sys::PageGetSpecialSize(page) as usize };[m
+         if special_size < VAMANA_METADATA_BYTES {[m
+             return Err(format!([m
+                 "ec_diskann metadata page special area too small: got {special_size}, expected at least {VAMANA_METADATA_BYTES}"[m
+             ));[m
+         }[m
+[32m+[m[32m        // SAFETY: The special area is at least `VAMANA_METADATA_BYTES`, so the[m
+[32m+[m[32m        // special pointer can be viewed as the serialized metadata payload.[m
+         let metadata_ptr = unsafe { pg_sys::PageGetSpecialPointer(page) }.cast::<u8>();[m
+[32m+[m[32m        // SAFETY: `metadata_ptr` points into the locked metadata page special[m
+[32m+[m[32m        // area, whose size was checked above.[m
+         let metadata_bytes =[m
+             unsafe { slice::from_raw_parts(metadata_ptr.cast_const(), VAMANA_METADATA_BYTES) };[m
+         let format_version =[m
+[36m@@ -172,12 +180,16 @@[m [mpub(super) unsafe fn materialize_chain_from_index([m
+     };[m
+     let (metadata, page_size) = metadata_result?;[m
+ [m
+[32m+[m[32m    // SAFETY: `index_relation` is live while beginscan materializes the index[m
+[32m+[m[32m    // and PostgreSQL can report the current main-fork block count.[m
+     let block_count = unsafe {[m
+         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)[m
+     };[m
+     let mut chain = DataPageChain::new(page_size);[m
+     for block_number in FIRST_DATA_BLOCK_NUMBER..block_count {[m
+         let page_result: Result<(), String> = {[m
+[32m+[m[32m            // SAFETY: `block_number` is within the reported main-fork block[m
+[32m+[m[32m            // count and the buffer guard pins/share-locks the data page.[m
+             let buffer = LockedBufferGuard::read_main([m
+                 index_relation,[m
+                 block_number,[m
+[36m@@ -189,8 +201,12 @@[m [mpub(super) unsafe fn materialize_chain_from_index([m
+             })?;[m
+             let page = buffer.page();[m
+             let data_page_size = buffer.page_size();[m
+[32m+[m[32m            // SAFETY: `page` comes from the locked data-page buffer and remains[m
+[32m+[m[32m            // pinned while line pointers are enumerated.[m
+             let max_offset = unsafe { pg_sys::PageGetMaxOffsetNumber(page) };[m
+             for offset in 1..=max_offset {[m
+[32m+[m[32m                // SAFETY: `offset` is within the page's max offset, and the[m
+[32m+[m[32m                // helper validates item id and tuple bounds before copying.[m
+                 if let Some(tuple_bytes) = unsafe {[m
+                     copy_data_page_tuple_bytes(page, data_page_size, block_number, offset)?[m
+                 } {[m
+[36m@@ -211,12 +227,15 @@[m [munsafe fn copy_data_page_tuple_bytes([m
+     block_number: pg_sys::BlockNumber,[m
+     offset: pg_sys::OffsetNumber,[m
+ ) -> Result<Option<Vec<u8>>, String> {[m
+[32m+[m[32m    // SAFETY: Callers pass an offset within the locked page's max offset.[m
+     let item_id = unsafe { pg_sys::PageGetItemId(page, offset) };[m
+     if item_id.is_null() {[m
+         return Err(format!([m
+             "ec_diskann data block {block_number} returned a null item id at offset {offset}"[m
+         ));[m
+     }[m
+[32m+[m[32m    // SAFETY: `item_id` was checked non-null and points into the locked page's[m
+[32m+[m[32m    // line pointer array.[m
+     let item_id_ref = unsafe { &*item_id };[m
+     if item_id_ref.lp_flags() == 0 {[m
+         return Ok(None);[m
+[36m@@ -230,12 +249,16 @@[m [munsafe fn copy_data_page_tuple_bytes([m
+         ));[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: The item id is valid and its byte bounds were checked against the[m
+[32m+[m[32m    // locked page size before retrieving the tuple pointer.[m
+     let tuple_ptr = unsafe { pg_sys::PageGetItem(page, item_id) }.cast::<u8>();[m
+     if tuple_ptr.is_null() {[m
+         return Err(format!([m
+             "ec_diskann data block {block_number} returned a null tuple pointer at offset {offset}"[m
+         ));[m
+     }[m
+[32m+[m[32m    // SAFETY: `tuple_ptr` is non-null and the validated tuple length is copied[m
+[32m+[m[32m    // into owned memory before the page lock is released.[m
+     let tuple_bytes = unsafe { slice::from_raw_parts(tuple_ptr.cast_const(), tuple_len) }.to_vec();[m
+     Ok(Some(tuple_bytes))[m
+ }[m
+[36m@@ -243,12 +266,18 @@[m [munsafe fn copy_data_page_tuple_bytes([m
+ pub(super) unsafe fn resolve_scan_heap_relation([m
+     scan: pg_sys::IndexScanDesc,[m
+ ) -> Result<ResolvedScanHeapRelation, String> {[m
+[32m+[m[32m    // SAFETY: `scan` is the live IndexScanDesc supplied by PostgreSQL; when[m
+[32m+[m[32m    // heapRelation is present, PostgreSQL owns it for the scan duration.[m
+     if unsafe { !(*scan).heapRelation.is_null() } {[m
+[32m+[m[32m        // SAFETY: The heapRelation null check above proved this scan-owned[m
+[32m+[m[32m        // relation pointer can be borrowed.[m
+         return Ok(ResolvedScanHeapRelation::borrowed(unsafe {[m
+             (*scan).heapRelation[m
+         }));[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: The scan owns a live index relation descriptor, whose OID can be[m
+[32m+[m[32m    // resolved to the heap relation when PostgreSQL did not attach one.[m
+     let heap_oid = unsafe { pg_sys::IndexGetRelation((*(*scan).indexRelation).rd_id, false) };[m
+     if heap_oid == pg_sys::InvalidOid {[m
+         return Err("ec_diskann scan could not resolve heap relation".into());[m
+[36m@@ -261,12 +290,18 @@[m [mpub(super) unsafe fn resolve_scan_heap_relation([m
+ pub(super) unsafe fn resolve_scan_snapshot([m
+     scan: pg_sys::IndexScanDesc,[m
+ ) -> Result<ResolvedScanSnapshot, String> {[m
+[32m+[m[32m    // SAFETY: `scan` is the live IndexScanDesc supplied by PostgreSQL; when[m
+[32m+[m[32m    // xs_snapshot is set, PostgreSQL owns it for the scan duration.[m
+     if unsafe { !(*scan).xs_snapshot.is_null() } {[m
+[32m+[m[32m        // SAFETY: The xs_snapshot null check above proved this scan-owned[m
+[32m+[m[32m        // snapshot pointer can be borrowed.[m
+         return Ok(ResolvedScanSnapshot::borrowed(unsafe {[m
+             (*scan).xs_snapshot[m
+         }));[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: PostgreSQL exposes the current active snapshot for this backend;[m
+[32m+[m[32m    // a null return is handled by registering our own snapshot below.[m
+     let active_snapshot = unsafe { pg_sys::GetActiveSnapshot() };[m
+     if !active_snapshot.is_null() {[m
+         return Ok(ResolvedScanSnapshot::borrowed(active_snapshot));[m
+[36m@@ -284,6 +319,8 @@[m [mpub(super) unsafe fn fetch_heap_row_version([m
+     slot: *mut pg_sys::TupleTableSlot,[m
+ ) -> Result<(), String> {[m
+     let mut tid = pg_sys::ItemPointerData::default();[m
+[32m+[m[32m    // SAFETY: `tid` is local storage initialized with a valid heap TID, and the[m
+[32m+[m[32m    // caller provided a live tuple slot that may be cleared before fetch.[m
+     unsafe {[m
+         pgrx::itemptr::item_pointer_set_all([m
+             &mut tid,[m
+[36m@@ -292,6 +329,8 @@[m [mpub(super) unsafe fn fetch_heap_row_version([m
+         );[m
+         pg_sys::ExecClearTuple(slot);[m
+     }[m
+[32m+[m[32m    // SAFETY: `heap_relation`, `snapshot`, and `slot` are live for the scan, and[m
+[32m+[m[32m    // `tid` was initialized to the requested heap item pointer above.[m
+     let fetched =[m
+         unsafe { pg_sys::table_tuple_fetch_row_version(heap_relation, &mut tid, snapshot, slot) };[m
+     if !fetched {[m
+[36m@@ -308,13 +347,21 @@[m [mpub(super) unsafe fn required_slot_datum([m
+     attnum: i32,[m
+     label: &str,[m
+ ) -> Result<pg_sys::Datum, String> {[m
+[32m+[m[32m    // SAFETY: `slot` is a live TupleTableSlot and `tts_nvalid` may be inspected[m
+[32m+[m[32m    // to decide whether PostgreSQL must materialize more attributes.[m
+     if unsafe { (*slot).tts_nvalid } < attnum as i16 {[m
+[32m+[m[32m        // SAFETY: `attnum` names the requested one-based attribute and the live[m
+[32m+[m[32m        // slot can materialize attributes through that number.[m
+         unsafe { pg_sys::slot_getsomeattrs_int(slot, attnum) };[m
+     }[m
+     let attr_index = usize::try_from(attnum - 1).expect("attribute number should be positive");[m
+[32m+[m[32m    // SAFETY: The slot has materialized at least `attnum` attributes, so the[m
+[32m+[m[32m    // null bitmap contains `attr_index`.[m
+     if unsafe { *(*slot).tts_isnull.add(attr_index) } {[m
+         return Err(format!("ec_diskann does not support NULL {label}"));[m
+     }[m
+[32m+[m[32m    // SAFETY: The attribute is non-null and materialized, so the Datum value at[m
+[32m+[m[32m    // `attr_index` can be read from the slot values array.[m
+     Ok(unsafe { *(*slot).tts_values.add(attr_index) })[m
+ }[m
+ [m
+[36m@@ -322,6 +369,8 @@[m [mpub(super) unsafe fn decode_heap_tid(tid: pg_sys::ItemPointer) -> Result<ItemPoi[m
+     if tid.is_null() {[m
+         return Err("ec_diskann scan received a null heap tid".into());[m
+     }[m
+[32m+[m[32m    // SAFETY: `tid` was checked non-null and points at PostgreSQL ItemPointer[m
+[32m+[m[32m    // storage valid for this callback/scan step.[m
+     let (block_number, offset_number) = item_pointer_get_both(unsafe { *tid });[m
+     Ok(ItemPointer {[m
+         block_number,[m
+[36m@@ -330,6 +379,8 @@[m [mpub(super) unsafe fn decode_heap_tid(tid: pg_sys::ItemPointer) -> Result<ItemPoi[m
+ }[m
+ [m
+ pub(super) fn set_scan_heap_tid(scan: pg_sys::IndexScanDesc, heap_tid: ItemPointer) {[m
+[32m+[m[32m    // SAFETY: `scan` is the live IndexScanDesc currently returning a tuple, and[m
+[32m+[m[32m    // `xs_heaptid` is PostgreSQL-owned output storage for the heap TID.[m
+     unsafe {[m
+         pgrx::itemptr::item_pointer_set_all([m
+             &mut (*scan).xs_heaptid,[m
+
+Script done on 2026-05-19 03:40:50-07:00 [COMMAND_EXIT_CODE="0"]

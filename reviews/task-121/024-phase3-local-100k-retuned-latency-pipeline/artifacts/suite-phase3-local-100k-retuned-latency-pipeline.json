@@ -1,0 +1,174 @@
+{
+  "name": "task121-phase3-local-100k-retuned-latency-pipeline",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-121/024-phase3-local-100k-retuned-latency-pipeline/artifacts",
+  "defaults": {
+    "profile": "ec_spire",
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 200,
+    "iterations": 200,
+    "force_index": true,
+    "sample_backend_memory": true,
+    "memory_sample_interval_ms": 25,
+    "pg": 18,
+    "socket_dir": "/tmp"
+  },
+  "thresholds": [],
+  "_doc": {
+    "intent": "Task 121 Phase 3 100k latency/pipeline A/B for the packet 023 recall-neutral sampled global pruning retune.",
+    "scope": "Local PG18 RaBitQ b4/tr50/f8 100k block-summary index from packet 023; compare pruning off against g4096/p8192/r4 sampled pruning across low and high nprobe checkpoints.",
+    "reviewer_feedback_addressed": "Packet 022 reviewer asked whether the pruning win lands at the shipped low-nprobe operating point or only in the saturated high-nprobe regime. This suite includes nprobe 8/16/32 as well as 48/96.",
+    "fixture": {
+      "prefix": "t121_s3_100k_b4_tr50_f8_b64",
+      "index": "t121_s3_100k_b4_tr50_f8_b64_idx",
+      "storage_format": "rabitq",
+      "leaf_block_rows": 64,
+      "leaf_block_summary_representatives": 2
+    },
+    "ab_policy": {
+      "off": [
+        "ec_spire.leaf_block_pruning_max_blocks_per_leaf=0",
+        "ec_spire.leaf_block_pruning_max_global_blocks=0",
+        "ec_spire.leaf_block_pruning_global_probe_blocks=0",
+        "ec_spire.leaf_block_pruning_sample_rows_per_block=0"
+      ],
+      "retuned_sampled": [
+        "ec_spire.leaf_block_pruning_max_blocks_per_leaf=0",
+        "ec_spire.leaf_block_pruning_max_global_blocks=4096",
+        "ec_spire.leaf_block_pruning_global_probe_blocks=8192",
+        "ec_spire.leaf_block_pruning_sample_rows_per_block=4",
+        "ec_spire.leaf_block_pruning_sample_summary_prior_weight=0.8",
+        "ec_spire.leaf_block_pruning_summary_radius_weight=0.25",
+        "ec_spire.leaf_block_pruning_route_prior_weight=0.0"
+      ]
+    },
+    "sweep": [8, 16, 32, 48, 96]
+  },
+  "steps": [
+    {
+      "kind": "raw",
+      "name": "precheck-host",
+      "tags": ["setup", "precheck", "task121", "phase3", "100k", "retuned-sampled-pruning", "intel-local"],
+      "args": [
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "tqvector_bench_task121",
+        "--socket-dir",
+        "/tmp",
+        "--raw",
+        "--sql",
+        "LOAD 'ecaz'; SELECT now() AS captured_at, version() AS postgres_version, ecaz_build_profile() AS ecaz_build_profile; SELECT relname FROM pg_class WHERE relname IN ('t121_s3_100k_b4_tr50_f8_b64_corpus', 't121_s3_100k_b4_tr50_f8_b64_queries', 't121_s3_100k_b4_tr50_f8_b64_idx') ORDER BY relname; SELECT name, setting FROM pg_settings WHERE name IN ('ec_spire.leaf_block_rows', 'ec_spire.leaf_block_summary_representatives', 'ec_spire.leaf_block_pruning_max_blocks_per_leaf', 'ec_spire.leaf_block_pruning_max_global_blocks', 'ec_spire.leaf_block_pruning_global_probe_blocks', 'ec_spire.leaf_block_pruning_sample_rows_per_block', 'ec_spire.leaf_block_pruning_sample_summary_prior_weight', 'ec_spire.leaf_block_pruning_summary_radius_weight', 'ec_spire.leaf_block_pruning_route_prior_weight') ORDER BY name;",
+        "--log-output",
+        "${artifact_dir}/precheck-host.log"
+      ],
+      "expected_artifacts": ["${artifact_dir}/precheck-host.log"]
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k_b4_tr50_f8_block64",
+      "tags": ["storage", "task121", "phase3", "100k", "retuned-sampled-pruning", "storage_format=rabitq", "leaf_block_rows=64"],
+      "prefix": "t121_s3_100k_b4_tr50_f8_b64",
+      "log_file": "${artifact_dir}/storage-100k_b4_tr50_f8_block64.log"
+    },
+    {
+      "kind": "recall",
+      "name": "truth-cache-100k-q200-k10",
+      "tags": ["recall", "truth-cache", "task121", "phase3", "100k", "retuned-sampled-pruning"],
+      "prefix": "t121_s3_100k_b4_tr50_f8_b64",
+      "k": 10,
+      "sweep": [96],
+      "queries_limit": 200,
+      "profile": "ec_spire",
+      "force_index": true,
+      "truth_corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-cache-100k-q200-k10.json",
+      "log_output": "${artifact_dir}/truth-cache-100k-q200-k10.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k_b4_tr50_f8_block64_off",
+      "tags": ["latency", "task121", "phase3", "100k", "retuned-sampled-pruning", "policy=off"],
+      "prefix": "t121_s3_100k_b4_tr50_f8_b64",
+      "k": 10,
+      "sweep": [8, 16, 32, 48, 96],
+      "concurrency": 1,
+      "cache_state": "cache_warm_phase3_100k_retune_off",
+      "session_gucs": [
+        "ec_spire.leaf_block_pruning_max_blocks_per_leaf=0",
+        "ec_spire.leaf_block_pruning_max_global_blocks=0",
+        "ec_spire.leaf_block_pruning_global_probe_blocks=0",
+        "ec_spire.leaf_block_pruning_sample_rows_per_block=0"
+      ],
+      "log_output": "${artifact_dir}/latency-100k_b4_tr50_f8_block64_off.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k_b4_tr50_f8_block64_retuned_sampled",
+      "tags": ["latency", "task121", "phase3", "100k", "retuned-sampled-pruning", "policy=retuned-sampled-global"],
+      "prefix": "t121_s3_100k_b4_tr50_f8_b64",
+      "k": 10,
+      "sweep": [8, 16, 32, 48, 96],
+      "concurrency": 1,
+      "cache_state": "cache_warm_phase3_100k_retune_sampled",
+      "session_gucs": [
+        "ec_spire.leaf_block_pruning_max_blocks_per_leaf=0",
+        "ec_spire.leaf_block_pruning_max_global_blocks=4096",
+        "ec_spire.leaf_block_pruning_global_probe_blocks=8192",
+        "ec_spire.leaf_block_pruning_sample_rows_per_block=4",
+        "ec_spire.leaf_block_pruning_sample_summary_prior_weight=0.8",
+        "ec_spire.leaf_block_pruning_summary_radius_weight=0.25",
+        "ec_spire.leaf_block_pruning_route_prior_weight=0.0"
+      ],
+      "log_output": "${artifact_dir}/latency-100k_b4_tr50_f8_block64_retuned_sampled.log"
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-100k_b4_tr50_f8_block64_off",
+      "tags": ["pipeline", "task121", "phase3", "100k", "retuned-sampled-pruning", "policy=off"],
+      "prefix": "t121_s3_100k_b4_tr50_f8_b64",
+      "sweep": [8, 16, 32, 48, 96],
+      "queries_limit": 200,
+      "include_query_metrics": true,
+      "include_recall": true,
+      "include_local_store_overlap": true,
+      "include_cost_snapshot": true,
+      "truth_corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-cache-100k-q200-k10.json",
+      "session_gucs": [
+        "ec_spire.leaf_block_pruning_max_blocks_per_leaf=0",
+        "ec_spire.leaf_block_pruning_max_global_blocks=0",
+        "ec_spire.leaf_block_pruning_global_probe_blocks=0",
+        "ec_spire.leaf_block_pruning_sample_rows_per_block=0"
+      ],
+      "log_output": "${artifact_dir}/pipeline-100k_b4_tr50_f8_block64_off.log"
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-100k_b4_tr50_f8_block64_retuned_sampled",
+      "tags": ["pipeline", "task121", "phase3", "100k", "retuned-sampled-pruning", "policy=retuned-sampled-global"],
+      "prefix": "t121_s3_100k_b4_tr50_f8_b64",
+      "sweep": [8, 16, 32, 48, 96],
+      "queries_limit": 200,
+      "include_query_metrics": true,
+      "include_recall": true,
+      "include_local_store_overlap": true,
+      "include_cost_snapshot": true,
+      "truth_corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-cache-100k-q200-k10.json",
+      "session_gucs": [
+        "ec_spire.leaf_block_pruning_max_blocks_per_leaf=0",
+        "ec_spire.leaf_block_pruning_max_global_blocks=4096",
+        "ec_spire.leaf_block_pruning_global_probe_blocks=8192",
+        "ec_spire.leaf_block_pruning_sample_rows_per_block=4",
+        "ec_spire.leaf_block_pruning_sample_summary_prior_weight=0.8",
+        "ec_spire.leaf_block_pruning_summary_radius_weight=0.25",
+        "ec_spire.leaf_block_pruning_route_prior_weight=0.0"
+      ],
+      "log_output": "${artifact_dir}/pipeline-100k_b4_tr50_f8_block64_retuned_sampled.log"
+    }
+  ]
+}

@@ -1,0 +1,120 @@
+---
+id: FR-023
+title: Strategy Translation Callbacks
+type: FR
+status: DRAFT
+object: entity
+traces:
+  - US-007
+  - FR-009
+  - StR-004
+---
+# FR-023: Strategy Translation Callbacks
+
+## Description
+
+While running on PG18, the extension SHALL implement `amtranslatestrategy` and `amtranslatecmptype` callbacks and set the `amconsistentordering` flag to enable the optimizer to reason about the `<#>` operator's ordering semantics.
+
+Current staged behavior:
+- On PG18, `amconsistentordering`, `amtranslatestrategy`, and `amtranslatecmptype` are now bound in
+  the live `IndexAmRoutine`.
+- The pure helper-level mapping still exists for unit coverage and snapshot inspection, including
+  the explicit rejection of non-`COMPARE_LT` reverse mappings, but the callbacks are no longer
+  descriptive-only on PG18.
+- On PG17, the new `IndexAmRoutine` fields remain unset and the fallback behavior is preserved.
+
+### CompareType Mapping
+
+tqvector defines one strategy number:
+
+| Strategy | Operator | SQL Usage | CompareType |
+|---|---|---|---|
+| 1 | `<#>` | `ORDER BY col <#> $q ASC` | `COMPARE_LT` |
+
+The `<#>` operator returns negative inner product (lower = more similar). `ORDER BY ASC` produces results in similarity order. This maps to `COMPARE_LT` semantics: the index returns values in ascending order of the distance metric.
+
+### Callback Implementations
+
+```rust
+// amtranslatestrategy: AM strategy → generic CompareType
+fn ec_hnsw_amtranslatestrategy(strategy: StrategyNumber, _opfamily: Oid) -> CompareType {
+    match strategy {
+        1 => CompareType::COMPARE_LT,
+        _ => CompareType::COMPARE_INVALID,
+    }
+}
+
+// amtranslatecmptype: generic CompareType → AM strategy
+fn ec_hnsw_amtranslatecmptype(cmptype: CompareType, _opfamily: Oid) -> StrategyNumber {
+    match cmptype {
+        CompareType::COMPARE_LT => 1,
+        _ => InvalidStrategy,
+    }
+}
+```
+
+### IndexAmRoutine Flags
+
+```rust
+amroutine.amconsistentequality = false;   // no equality operator
+amroutine.amconsistentordering = true;    // ORDER BY semantics
+amroutine.amtranslatestrategy = Some(ec_hnsw_amtranslatestrategy);
+amroutine.amtranslatecmptype = Some(ec_hnsw_amtranslatecmptype);
+```
+
+### PG Version Compatibility
+
+On PG17, these fields do not exist in `IndexAmRoutine`. The implementation SHALL use `#[cfg(feature = "pg18")]` guards:
+
+```rust
+#[cfg(feature = "pg18")]
+{
+    amroutine.amconsistentordering = true;
+    amroutine.amtranslatestrategy = Some(ec_hnsw_amtranslatestrategy);
+    amroutine.amtranslatecmptype = Some(ec_hnsw_amtranslatecmptype);
+}
+```
+
+## Properties
+
+The strategy-translation surface is captured by `StrategyTranslationSnapshot` (`src/am/common/cost.rs`), which records the single ordering strategy and its mapped generic compare type.
+
+| Field | Type | Description |
+|---|---|---|
+| ordering_strategy | i32 | The single ordering strategy number for the `<#>` order-by operator; value `1`. |
+| ordering_compare_type | PlannerCompareType | Generic compare type strategy `1` maps to: `COMPARE_LT` (ascending order of the distance metric). Produced by `amtranslatestrategy_callback(1)`. |
+
+`amtranslatestrategy_callback` maps strategy `1 → Lt` and every other strategy → `Invalid`. `amtranslatecmptype_callback` maps `Lt → 1` and every other compare type → `0` (`InvalidStrategy`).
+
+## Acceptance Criteria
+
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-023-AC-1 | On PG18, `ec_hnsw_handler` returns an `IndexAmRoutine` with non-null `amtranslatestrategy` and `amtranslatecmptype` | Test |
+| FR-023-AC-2 | `amtranslatestrategy(1, opfamily)` returns `COMPARE_LT` | Test |
+| FR-023-AC-3 | `amtranslatecmptype(COMPARE_LT, opfamily)` returns strategy number 1 | Test |
+| FR-023-AC-4 | Invalid inputs return `COMPARE_INVALID` and `InvalidStrategy` respectively | Test |
+
+### FR-023-AC-1: Strategy translation registered
+On PG18, the `IndexAmRoutine` returned by `ec_hnsw_handler` SHALL have non-null `amtranslatestrategy` and `amtranslatecmptype` callbacks.
+
+### FR-023-AC-2: COMPARE_LT mapping
+`amtranslatestrategy(1, opfamily)` SHALL return `COMPARE_LT`.
+
+### FR-023-AC-3: Reverse mapping
+`amtranslatecmptype(COMPARE_LT, opfamily)` SHALL return strategy number 1.
+
+### FR-023-AC-4: Invalid inputs
+`amtranslatestrategy(99, opfamily)` SHALL return `COMPARE_INVALID`. `amtranslatecmptype(COMPARE_EQ, opfamily)` SHALL return `InvalidStrategy`.
+
+## References
+
+- PG source: `src/include/access/amapi.h` — `amtranslate_strategy_function`, `amtranslate_cmptype_function` typedefs
+- PG source: `src/include/access/cmptype.h` — `CompareType` enum (`COMPARE_INVALID`, `COMPARE_LT`, `COMPARE_LE`, `COMPARE_EQ`, `COMPARE_GE`, `COMPARE_GT`, `COMPARE_NE`, `COMPARE_OVERLAP`, `COMPARE_CONTAINED_BY`)
+- PG source: `src/backend/access/index/amapi.c` — `IndexAmTranslateStrategy()` and `IndexAmTranslateCompareType()` wrapper functions that call the AM callbacks
+- PG source: `src/backend/access/nbtree/nbtree.c` — `bttranslatestrategy()` and `bttranslatecmptype()` reference implementations
+
+## Dependencies
+
+- **Upstream**: US-007, FR-009, StR-004 (traces)
+- **Downstream**: none identified

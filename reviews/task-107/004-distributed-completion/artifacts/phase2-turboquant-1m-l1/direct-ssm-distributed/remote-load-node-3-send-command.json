@@ -1,0 +1,52 @@
+{
+    "Command": {
+        "CommandId": "74a0fbdb-d8d9-4d0b-a6dc-1a29ab6c0d27",
+        "DocumentName": "AWS-RunShellScript",
+        "DocumentVersion": "$DEFAULT",
+        "Comment": "",
+        "ExpiresAfter": "2026-06-19T14:43:17.347000-07:00",
+        "Parameters": {
+            "commands": [
+                "set -euo pipefail",
+                "mkdir -p /var/tmp/ecaz-task107-phase2-turboquant-1m-l1/remote-node-3",
+                "aws s3 cp s3://ecaz-spire-aws-20260614203301860100000009/task107/004/phase2-turboquant-1m-l1/direct-ssm-distributed/config/remote-load-node-3.sh /var/tmp/ecaz-task107-phase2-turboquant-1m-l1/remote-node-3.sh --region us-west-2",
+                "bash /var/tmp/ecaz-task107-phase2-turboquant-1m-l1/remote-node-3.sh"
+            ],
+            "executionTimeout": [
+                "172800"
+            ]
+        },
+        "InstanceIds": [
+            "i-00c2f2aca9dbdd6bd"
+        ],
+        "Targets": [],
+        "RequestedDateTime": "2026-06-15T14:43:17.347000-07:00",
+        "Status": "Pending",
+        "StatusDetails": "Pending",
+        "OutputS3Region": "us-west-2",
+        "OutputS3BucketName": "",
+        "OutputS3KeyPrefix": "",
+        "MaxConcurrency": "50",
+        "MaxErrors": "0",
+        "TargetCount": 1,
+        "CompletedCount": 0,
+        "ErrorCount": 0,
+        "DeliveryTimedOutCount": 0,
+        "ServiceRole": "",
+        "NotificationConfig": {
+            "NotificationArn": "",
+            "NotificationEvents": [],
+            "NotificationType": ""
+        },
+        "CloudWatchOutputConfig": {
+            "CloudWatchLogGroupName": "",
+            "CloudWatchOutputEnabled": false
+        },
+        "TimeoutSeconds": 172800,
+        "AlarmConfiguration": {
+            "IgnorePollAlarmFailure": false,
+            "Alarms": []
+        },
+        "TriggeredAlarms": []
+    }
+}

@@ -1,0 +1,11 @@
+Script started on 2026-05-10 04:09:15-07:00 [<not executed on terminal>]
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.14s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-1bcc1a720f8a77b1)
+
+running 1 test
+test am::ec_spire::scan::tests::collect_scan_plan_selected_leaf_pids_does_not_read_remote_leaf_payloads ... [32mok[m
+
+test result: [32mok[m. 1 passed; 0 failed; 0 ignored; 0 measured; 1545 filtered out; finished in 0.00s
+
+
+Script done on 2026-05-10 04:09:15-07:00 [COMMAND_EXIT_CODE="0"]

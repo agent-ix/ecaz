@@ -1,0 +1,18 @@
+Script started on 2026-05-30 09:44:06-07:00 [<not executed on terminal>]
+[
+    {
+        "InstanceId": "i-02811174cc6ded75c",
+        "InstanceType": "m7i.2xlarge",
+        "Architecture": "x86_64",
+        "PlatformDetails": "Linux/UNIX",
+        "CpuOptions": {
+            "CoreCount": 4,
+            "ThreadsPerCore": 2
+        },
+        "State": "stopped",
+        "ImageId": "ami-029a761f237195c2c",
+        "PrivateIpAddress": "10.42.1.147"
+    }
+]
+
+Script done on 2026-05-30 09:44:07-07:00 [COMMAND_EXIT_CODE="0"]

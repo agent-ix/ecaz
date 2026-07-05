@@ -1,0 +1,50 @@
+{
+    "Command": {
+        "CommandId": "72239c71-7e44-4641-a073-862c07984dd6",
+        "DocumentName": "AWS-RunShellScript",
+        "DocumentVersion": "$DEFAULT",
+        "Comment": "",
+        "ExpiresAfter": "2026-05-30T18:21:15.064000-07:00",
+        "Parameters": {
+            "commands": [
+                "set -eux",
+                "cd /var/lib/pgsql/build/ecaz",
+                "git rev-parse HEAD",
+                "git log --oneline -1",
+                "/usr/local/bin/ecaz --version || true"
+            ]
+        },
+        "InstanceIds": [
+            "i-0056e46b981edbb17"
+        ],
+        "Targets": [],
+        "RequestedDateTime": "2026-05-30T16:21:15.064000-07:00",
+        "Status": "Pending",
+        "StatusDetails": "Pending",
+        "OutputS3Region": "us-west-2",
+        "OutputS3BucketName": "",
+        "OutputS3KeyPrefix": "",
+        "MaxConcurrency": "50",
+        "MaxErrors": "0",
+        "TargetCount": 1,
+        "CompletedCount": 0,
+        "ErrorCount": 0,
+        "DeliveryTimedOutCount": 0,
+        "ServiceRole": "",
+        "NotificationConfig": {
+            "NotificationArn": "",
+            "NotificationEvents": [],
+            "NotificationType": ""
+        },
+        "CloudWatchOutputConfig": {
+            "CloudWatchLogGroupName": "",
+            "CloudWatchOutputEnabled": false
+        },
+        "TimeoutSeconds": 3600,
+        "AlarmConfiguration": {
+            "IgnorePollAlarmFailure": false,
+            "Alarms": []
+        },
+        "TriggeredAlarms": []
+    }
+}

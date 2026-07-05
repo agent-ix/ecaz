@@ -1,0 +1,24 @@
+=== cmin fuzz_unpack_mse ===
+MERGE-OUTER: consumed 0Mb (37Mb rss) to parse the control file
+MERGE-OUTER: 24 new files with 102 new features added; 51 new coverage edges
+=== cmin fuzz_unpack_mse_structured ===
+MERGE-OUTER: consumed 0Mb (38Mb rss) to parse the control file
+MERGE-OUTER: 85 new files with 681 new features added; 213 new coverage edges
+=== cmin fuzz_parse_text_structured ===
+MERGE-OUTER: consumed 0Mb (38Mb rss) to parse the control file
+MERGE-OUTER: 64 new files with 635 new features added; 253 new coverage edges
+=== cmin fuzz_element_tuple_decode ===
+MERGE-OUTER: consumed 0Mb (38Mb rss) to parse the control file
+MERGE-OUTER: 31 new files with 264 new features added; 151 new coverage edges
+=== cmin fuzz_neighbor_tuple_decode ===
+MERGE-OUTER: consumed 0Mb (37Mb rss) to parse the control file
+MERGE-OUTER: 29 new files with 248 new features added; 89 new coverage edges
+=== cmin fuzz_diskann_metadata_decode ===
+MERGE-OUTER: consumed 0Mb (37Mb rss) to parse the control file
+MERGE-OUTER: 3 new files with 80 new features added; 80 new coverage edges
+=== cmin fuzz_item_pointer_decode ===
+MERGE-OUTER: consumed 0Mb (37Mb rss) to parse the control file
+MERGE-OUTER: 2 new files with 43 new features added; 43 new coverage edges
+=== cmin fuzz_vector_normalize ===
+MERGE-OUTER: consumed 0Mb (38Mb rss) to parse the control file
+MERGE-OUTER: 15 new files with 455 new features added; 357 new coverage edges

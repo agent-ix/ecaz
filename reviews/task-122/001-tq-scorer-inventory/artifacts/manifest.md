@@ -1,0 +1,26 @@
+# Artifact Manifest
+
+- Head SHA: `06f3813928881d1dad8017d58f43e946bb33163c`
+- Task bucket: `reviews/task-122`
+- Packet path: `reviews/task-122/001-tq-scorer-inventory`
+- Timestamp: 2026-06-26
+- Lane / fixture / storage format / rerank mode: code inventory only; no benchmark lane.
+- Isolation: not applicable; no index/table benchmark run.
+- Commands:
+  - `git status --short --branch`
+  - `sed -n 1,220p plan/tasks/122-tq-performance-rerank-pipeline.md`
+  - `rg -n -e score_turboquant_tiled_lut_batch_for -e score_turboquant_int8_approx_batch_for -e score_turboquant_no_qjl_4bit_batch_for -e score_turboquant_qjl_batch_for -e score_turboquant_no_qjl_4bit_batch_inner -e score_turboquant_qjl_batch_inner src/am/common/candidate_batch/mod.rs`
+  - `rg -n -e score_ip_from_parts -e score_ip_dequantized_from_parts -e score_turboquant_batch_from_payloads -e score_turboquant_batch_from_payload_refs -e supports_turboquant_payload_ref_batch src/am/ec_ivf/quantizer.rs`
+  - `rg -n -e Self::TurboQuant -e score_payloads_batch -e score_payload_refs_batch -e score_ip_dequantized_from_parts src/am/ec_ivf/rerank.rs`
+  - `rg -n -e score_payloads_ip -e score_candidate_batch_ip -e score_v2_column_payloads_ip_with_quant_codec -e append_quantized_v2_leaf_candidates -e append_quantized_v2_filtered_column_candidates src/am/ec_spire/quantizer/mod.rs src/am/ec_spire/scan/candidates.rs`
+  - `rg -n -e score_and_cache_turboquant_full_lut_payload_batch -e flush_turboquant_full_lut_payload_batch -e HnswTurboQuantScanCodec -e score_ip_batch -e score_turboquant_qjl_batch_for src/am/ec_hnsw/scan.rs`
+  - `rg -n -e DiskannPreparedPrefilter::TurboQuant -e DiskannTurboQuantPrefilterCodec -e score_turboquant_no_qjl_4bit_batch_for -e score_ip_batch src/am/ec_diskann/quantizer.rs`
+- Key result lines:
+  - Shared no-QJL block scorer: `src/am/common/candidate_batch/mod.rs:317`, implementation at `src/am/common/candidate_batch/mod.rs:543`.
+  - Shared QJL block scorer: `src/am/common/candidate_batch/mod.rs:331`, implementation at `src/am/common/candidate_batch/mod.rs:747`.
+  - IVF TQ batch scorers: `src/am/ec_ivf/quantizer.rs:616` and `src/am/ec_ivf/quantizer.rs:752`.
+  - IVF TQ rerank batch path: `src/am/ec_ivf/rerank.rs:415`; exact-dequant scalar path at `src/am/ec_ivf/rerank.rs:555` and `src/am/ec_ivf/rerank.rs:628`.
+  - SPIRE candidate batch scorer: `src/am/ec_spire/quantizer/mod.rs:439`.
+  - SPIRE V2 leaf score-then-materialize path: `src/am/ec_spire/scan/candidates.rs:2293` and `src/am/ec_spire/scan/candidates.rs:2636`.
+  - HNSW TQ exact payload batch path: `src/am/ec_hnsw/scan.rs:2452`; QJL batch arm at `src/am/ec_hnsw/scan.rs:2543`.
+  - DiskANN TQ prefilter batch path: `src/am/ec_diskann/quantizer.rs:380` and `src/am/ec_diskann/quantizer.rs:773`.

@@ -1,0 +1,13 @@
+CREATE EXTENSION
+DROP TABLE
+CREATE TABLE
+INSERT 0 8
+CREATE INDEX
+SET
+SET
+SET
+DO
+DELETE 1
+NOTICE:  extension "ecaz" already exists, skipping
+NOTICE:  table "task63_hnsw_rabitq" does not exist, skipping
+ERROR:  VACUUM cannot run inside a transaction block

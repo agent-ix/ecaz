@@ -1,0 +1,30 @@
+Script started on 2026-05-21 00:25:04-07:00 [<not executed on terminal>]
+164:    unsafe {
+229:    unsafe {
+247:    unsafe {
+433:    unsafe { write_data_pages(index_relation, &chain) };
+438:    unsafe { overwrite_metadata_page(index_relation, &metadata) };
+450:    unsafe { crate::storage::relation::relation_name(relation) }
+542:        unsafe { source_inner_product_avx2_fma(left, right) }
+553:        unsafe { source_inner_product_neon(left, right) }
+584:    Some(unsafe { source_inner_product_avx2_fma(left, right) })
+594:    Some(unsafe { source_inner_product_neon(left, right) })
+615:        let (l0, r0, l1, r1, l2, r2, l3, r3) = unsafe {
+639:    unsafe { _mm256_storeu_ps(lanes.as_mut_ptr(), total) };
+668:        let (l0, r0, l1, r1, l2, r2, l3, r3) = unsafe {
+690:        let (l, r) = unsafe {
+704:    unsafe { vst1q_f32(lanes.as_mut_ptr(), acc) };
+720:        unsafe { crate::storage::relation::main_fork_block_count(index_relation) };
+762:    let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+769:    unsafe {
+792:        let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+797:        unsafe {
+827:    let (block_number, offset_number) = item_pointer_get_both(unsafe { *tid });
+843:    let info = unsafe { &*index_info };
+859:    let tuple_desc = unsafe { crate::storage::relation::relation_tuple_desc_copy(heap_relation) };
+880:    let detoasted = unsafe { DetoastedVarlena::plain_from_datum(datum) }
+888:    let (prefix, body, suffix) = unsafe { bytes.align_to::<f32>() };
+898:    unsafe { with_ecvector_datum_slice(datum, |body| body.to_vec()) }
+948:            let neon = unsafe { super::source_inner_product_neon(&left, &right) };
+
+Script done on 2026-05-21 00:25:04-07:00 [COMMAND_EXIT_CODE="0"]

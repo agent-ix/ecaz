@@ -1,0 +1,33 @@
+Script started on 2026-05-18 12:52:48-07:00 [<not executed on terminal>]
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.17s
+     Running unittests src/lib.rs (target/miri/x86_64-unknown-linux-gnu/debug/deps/ecaz-76140ec678fb61eb)
+warning: function `fwht_in_place_scalar_reference` is never used
+  --> src/quant/hadamard.rs:42:8
+   |
+42 | pub fn fwht_in_place_scalar_reference(values: &mut [f32]) {
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `fwht_in_place_avx2_for_test` is never used
+  --> src/quant/hadamard.rs:47:8
+   |
+47 | pub fn fwht_in_place_avx2_for_test(values: &mut [f32]) -> bool {
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+
+running 9 tests
+test am::ec_spire::scan::tests::miri_route_recursive_routing_objects_to_leaf_pids_descends_to_leaf_level ... ok
+test am::ec_spire::scan::tests::miri_route_recursive_routing_objects_to_leaf_pids_rejects_missing_internal_child ... ok
+test am::ec_spire::scan::tests::miri_route_recursive_routing_objects_to_leaf_pids_rejects_wrong_child_level ... ok
+test am::ec_spire::scan::tests::miri_route_recursive_routing_objects_to_leaf_pids_uses_conservative_upper_level_nprobe ... ok
+test am::ec_spire::scan::tests::miri_route_root_object_to_leaf_pids_keeps_bounded_best_routes ... ok
+test am::ec_spire::scan::tests::miri_route_root_object_to_leaf_pids_still_rejects_internal_parent ... ok
+test am::ec_spire::scan::tests::miri_route_routing_object_to_child_pids_routes_internal_level ... ok
+test am::ec_spire::scan::tests::miri_route_top_graph_to_child_pids_rejects_root_mismatch ... ok
+test am::ec_spire::scan::tests::miri_route_top_graph_to_child_pids_uses_graph_frontier_with_deterministic_routes ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 1785 filtered out; finished in 13.81s
+
+
+Script done on 2026-05-18 12:53:41-07:00 [COMMAND_EXIT_CODE="0"]

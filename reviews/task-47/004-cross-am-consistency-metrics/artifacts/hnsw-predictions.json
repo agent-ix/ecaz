@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "prefix": "task47_smoke_hnsw",
+  "profile": "ec_hnsw",
+  "k": 3,
+  "query_ids": [101, 102],
+  "rows": [
+    {
+      "sweep_axis": "ef_search",
+      "sweep_value": 128,
+      "rerank_width": null,
+      "predictions": [
+        [1, 2, 3],
+        [4, 5, 6]
+      ]
+    }
+  ]
+}

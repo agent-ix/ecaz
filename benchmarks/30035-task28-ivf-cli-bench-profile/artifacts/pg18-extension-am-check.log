@@ -1,0 +1,10 @@
+ extname | extversion 
+---------+------------
+ ecaz    | 0.1.1
+(1 row)
+
+ amname  
+---------
+ ec_hnsw
+(1 row)
+

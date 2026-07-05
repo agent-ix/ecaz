@@ -1,0 +1,5 @@
+ pg_cancel_backend 
+-------------------
+ t
+(1 row)
+

@@ -1,0 +1,12 @@
+Script started on 2026-05-13 11:52:59-07:00 [<not executed on terminal>]
+   152 src/am/ec_spire/custom_scan/cost_helpers.rs
+   185 src/am/ec_spire/custom_scan/mod.rs
+   259 src/am/ec_spire/custom_scan/begin_exec.rs
+   293 src/am/ec_spire/custom_scan/tuple_payload.rs
+   326 src/am/ec_spire/custom_scan/tests.rs
+   383 src/am/ec_spire/custom_scan/plan_private.rs
+   609 src/am/ec_spire/custom_scan/planner.rs
+   746 src/am/ec_spire/custom_scan/dml.rs
+  2953 total
+
+Script done on 2026-05-13 11:52:59-07:00 [COMMAND_EXIT_CODE="0"]

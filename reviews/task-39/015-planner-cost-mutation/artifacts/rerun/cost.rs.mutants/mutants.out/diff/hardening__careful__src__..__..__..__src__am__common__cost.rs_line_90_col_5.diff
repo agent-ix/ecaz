@@ -1,0 +1,27 @@
+--- hardening/careful/src/../../../src/am/common/cost.rs
++++ replace gated_planner_cost_estimate -> PlannerCostEstimate with Default::default()
+@@ -82,23 +82,17 @@
+ #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+ pub(crate) struct StrategyTranslationSnapshot {
+     pub ordering_strategy: i32,
+     pub ordering_compare_type: PlannerCompareType,
+     pub pg18_callback_ready: bool,
+ }
+ 
+ pub(crate) fn gated_planner_cost_estimate(index_pages: f64) -> PlannerCostEstimate {
+-    PlannerCostEstimate {
+-        startup_cost: f64::MAX,
+-        total_cost: f64::MAX,
+-        selectivity: 0.0,
+-        correlation: 0.0,
+-        index_pages,
+-    }
++    Default::default() /* ~ changed by cargo-mutants ~ */
+ }
+ 
+ #[cfg(any(feature = "pg17", feature = "pg18"))]
+ pub(crate) unsafe fn current_planner_cost_constants() -> PlannerCostConstants {
+     PlannerCostConstants {
+         random_page_cost: unsafe { pg_sys::random_page_cost },
+         seq_page_cost: unsafe { pg_sys::seq_page_cost },
+         cpu_operator_cost: unsafe { pg_sys::cpu_operator_cost },

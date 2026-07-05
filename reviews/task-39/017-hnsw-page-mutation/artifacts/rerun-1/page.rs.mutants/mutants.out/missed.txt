@@ -1,0 +1,9 @@
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:25:49: replace + with *
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:27:60: replace + with *
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:401:23: replace < with <= in MetadataPage::decode_page
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:401:43: replace + with * in MetadataPage::decode_page
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:409:44: replace + with * in MetadataPage::decode_page
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:422:27: replace < with <= in MetadataPage::decode_contents
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:429:27: replace >= with < in MetadataPage::decode_contents
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1095:24: replace < with <= in TqNeighborTuple::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1129:24: replace > with >= in max_level_that_fits

@@ -1,0 +1,36 @@
+timestamp_utc=2026-05-02T22:49:08Z
+ProductName:		macOS
+ProductVersion:		26.4.1
+BuildVersion:		25E253
+Darwin Peters-MBP 25.4.0 Darwin Kernel Version 25.4.0: Thu Mar 19 19:33:50 PDT 2026; root:xnu-12377.101.15~1/RELEASE_ARM64_T6050 arm64
+2026-05-02 15:49:08.954 system_profiler[17337:167391] Error fetching hw.cpufamily: -1
+Hardware:
+
+    Hardware Overview:
+
+      Model Name: MacBook Pro
+      Model Identifier: Mac17,9
+      Model Number: Z1MM001WCLL/A
+      Chip: Apple M5 Pro
+      Total Number of Cores: 18 (6 Super and 12 Performance)
+      Memory: 64 GB
+      System Firmware Version: 18000.101.7
+      OS Loader Version: 18000.101.7
+
+sysctl: sysctl fmt -1 1024 1: Operation not permitted
+sysctl: sysctl fmt -1 1024 1: Operation not permitted
+sysctl: sysctl fmt -1 1024 1: Operation not permitted
+sysctl: sysctl fmt -1 1024 1: Operation not permitted
+sysctl: sysctl fmt -1 1024 1: Operation not permitted
+sysctl: sysctl fmt -1 1024 1: Operation not permitted
+sysctl: sysctl fmt -1 1024 1: Operation not permitted
+Mach kernel version:
+	 Darwin Kernel Version 25.4.0: Thu Mar 19 19:33:50 PDT 2026; root:xnu-12377.101.15~1/RELEASE_ARM64_T6050
+Kernel configured for up to 18 processors.
+18 processors are physically available.
+18 processors are logically available.
+Processor type: arm64e (ARM64E)
+Processors active: 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17
+Primary memory available: 64.00 gigabytes
+Default processor set: 765 tasks, 3637 threads, 18 processors
+Load average: 2.73, Mach factor: 15.26

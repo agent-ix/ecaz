@@ -1,0 +1,385 @@
+Note: switching to 'FETCH_HEAD'.
+
+You are in 'detached HEAD' state. You can look around, make experimental
+changes and commit them, and you can discard any commits you make in this
+state without impacting any branches by switching back to a branch.
+
+If you want to create a new branch to retain commits you create, you may
+do so (now or later) by using -c with the switch command. Example:
+
+  git switch -c <new-branch-name>
+
+Or undo this operation with:
+
+  git switch -
+
+Turn off this advice by setting config variable advice.detachedHead to false
+
+HEAD is now at aae0a56 Merge pull request #33 from endorlabs/bump_version
+error: package ID specification `mirai` did not match any packages
+  Installing mirai v1.1.12 (/Users/peter/.ecaz/hardening-tools/MIRAI/checker)
+    Updating crates.io index
+   Compiling z3-sys v0.8.1 (https://github.com/prove-rs/z3.rs.git?rev=cb10013a2a0a017048b1d218bc734afa390f34ff#cb10013a)
+   Compiling cargo_metadata v0.19.1
+   Compiling mirai v1.1.12 (/Users/peter/.ecaz/hardening-tools/MIRAI/checker)
+error[E0463]: can't find crate for `rustc_abi`
+  --> checker/src/lib.rs:27:1
+   |
+27 | extern crate rustc_abi;
+   | ^^^^^^^^^^^^^^^^^^^^^^^ can't find crate
+   |
+   = help: maybe you need to install the missing components with: `rustup component add rust-src rustc-dev llvm-tools-preview`
+
+error[E0463]: can't find crate for `rustc_ast`
+  --> checker/src/lib.rs:28:1
+   |
+28 | extern crate rustc_ast;
+   | ^^^^^^^^^^^^^^^^^^^^^^^ can't find crate
+   |
+   = help: maybe you need to install the missing components with: `rustup component add rust-src rustc-dev llvm-tools-preview`
+
+error[E0463]: can't find crate for `rustc_attr_parsing`
+  --> checker/src/lib.rs:29:1
+   |
+29 | extern crate rustc_attr_parsing;
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ can't find crate
+   |
+   = help: maybe you need to install the missing components with: `rustup component add rust-src rustc-dev llvm-tools-preview`
+
+error[E0463]: can't find crate for `rustc_data_structures`
+  --> checker/src/lib.rs:30:1
+   |
+30 | extern crate rustc_data_structures;
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ can't find crate
+   |
+   = help: maybe you need to install the missing components with: `rustup component add rust-src rustc-dev llvm-tools-preview`
+
+error[E0463]: can't find crate for `rustc_driver`
+  --> checker/src/lib.rs:31:1
+   |
+31 | extern crate rustc_driver;
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^ can't find crate
+   |
+   = help: maybe you need to install the missing components with: `rustup component add rust-src rustc-dev llvm-tools-preview`
+
+error[E0463]: can't find crate for `rustc_errors`
+  --> checker/src/lib.rs:32:1
+   |
+32 | extern crate rustc_errors;
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^ can't find crate
+   |
+   = help: maybe you need to install the missing components with: `rustup component add rust-src rustc-dev llvm-tools-preview`
+
+error[E0463]: can't find crate for `rustc_hir`
+  --> checker/src/lib.rs:33:1
+   |
+33 | extern crate rustc_hir;
+   | ^^^^^^^^^^^^^^^^^^^^^^^ can't find crate
+   |
+   = help: maybe you need to install the missing components with: `rustup component add rust-src rustc-dev llvm-tools-preview`
+
+error[E0463]: can't find crate for `rustc_index`
+  --> checker/src/lib.rs:34:1
+   |
+34 | extern crate rustc_index;
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^ can't find crate
+   |
+   = help: maybe you need to install the missing components with: `rustup component add rust-src rustc-dev llvm-tools-preview`
+
+error[E0463]: can't find crate for `rustc_interface`
+  --> checker/src/lib.rs:35:1
+   |
+35 | extern crate rustc_interface;
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ can't find crate
+   |
+   = help: maybe you need to install the missing components with: `rustup component add rust-src rustc-dev llvm-tools-preview`
+
+error[E0463]: can't find crate for `rustc_middle`
+  --> checker/src/lib.rs:36:1
+   |
+36 | extern crate rustc_middle;
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^ can't find crate
+   |
+   = help: maybe you need to install the missing components with: `rustup component add rust-src rustc-dev llvm-tools-preview`
+
+error[E0463]: can't find crate for `rustc_session`
+  --> checker/src/lib.rs:37:1
+   |
+37 | extern crate rustc_session;
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ can't find crate
+   |
+   = help: maybe you need to install the missing components with: `rustup component add rust-src rustc-dev llvm-tools-preview`
+
+error[E0463]: can't find crate for `rustc_span`
+  --> checker/src/lib.rs:38:1
+   |
+38 | extern crate rustc_span;
+   | ^^^^^^^^^^^^^^^^^^^^^^^^ can't find crate
+   |
+   = help: maybe you need to install the missing components with: `rustup component add rust-src rustc-dev llvm-tools-preview`
+
+error[E0463]: can't find crate for `rustc_target`
+  --> checker/src/lib.rs:39:1
+   |
+39 | extern crate rustc_target;
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^ can't find crate
+   |
+   = help: maybe you need to install the missing components with: `rustup component add rust-src rustc-dev llvm-tools-preview`
+
+error[E0463]: can't find crate for `rustc_trait_selection`
+  --> checker/src/lib.rs:40:1
+   |
+40 | extern crate rustc_trait_selection;
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ can't find crate
+   |
+   = help: maybe you need to install the missing components with: `rustup component add rust-src rustc-dev llvm-tools-preview`
+
+error[E0432]: unresolved imports `mir::AssertKind::*`, `mir::BinOp`, `DefPathData::*`
+    --> checker/src/block_visitor.rs:1620:17
+     |
+1620 |             use mir::AssertKind::*;
+     |                 ^^^^^^^^^^^^^^^^^^
+1621 |             use mir::BinOp;
+     |                 ^^^^^^^^^^
+     |
+    ::: checker/src/utils.rs:430:9
+     |
+ 430 |     use DefPathData::*;
+     |         ^^^^^^^^^^^^^^
+
+error[E0422]: cannot find struct, variant or union type `BoundsCheck` in this scope
+    --> checker/src/block_visitor.rs:1625:17
+     |
+1625 |                 BoundsCheck { .. } => "index out of bounds",
+     |                 ^^^^^^^^^^^ not found in this scope
+
+error[E0422]: cannot find struct, variant or union type `MisalignedPointerDereference` in this scope
+    --> checker/src/block_visitor.rs:1626:17
+     |
+1626 |                 MisalignedPointerDereference { .. } => "misaligned pointer dereference",
+     |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ not found in this scope
+
+error[E0531]: cannot find tuple struct or tuple variant `Overflow` in this scope
+    --> checker/src/block_visitor.rs:1627:17
+     |
+1627 |                 Overflow(BinOp::Add, _, _) => "attempt to add with overflow",
+     |                 ^^^^^^^^ not found in this scope
+
+error[E0531]: cannot find tuple struct or tuple variant `Overflow` in this scope
+    --> checker/src/block_visitor.rs:1628:17
+     |
+1628 |                 Overflow(BinOp::Sub, _, _) => "attempt to subtract with overflow",
+     |                 ^^^^^^^^ not found in this scope
+
+error[E0531]: cannot find tuple struct or tuple variant `Overflow` in this scope
+    --> checker/src/block_visitor.rs:1629:17
+     |
+1629 |                 Overflow(BinOp::Mul, _, _) => "attempt to multiply with overflow",
+     |                 ^^^^^^^^ not found in this scope
+
+error[E0531]: cannot find tuple struct or tuple variant `Overflow` in this scope
+    --> checker/src/block_visitor.rs:1630:17
+     |
+1630 |                 Overflow(BinOp::Div, _, _) => "attempt to divide with overflow",
+     |                 ^^^^^^^^ not found in this scope
+
+error[E0531]: cannot find tuple struct or tuple variant `Overflow` in this scope
+    --> checker/src/block_visitor.rs:1631:17
+     |
+1631 |                 Overflow(BinOp::Rem, _, _) => "attempt to calculate the remainder with overflow",
+     |                 ^^^^^^^^ not found in this scope
+
+error[E0531]: cannot find tuple struct or tuple variant `OverflowNeg` in this scope
+    --> checker/src/block_visitor.rs:1632:17
+     |
+1632 |                 OverflowNeg(_) => "attempt to negate with overflow",
+     |                 ^^^^^^^^^^^ not found in this scope
+
+error[E0531]: cannot find tuple struct or tuple variant `Overflow` in this scope
+    --> checker/src/block_visitor.rs:1633:17
+     |
+1633 |                 Overflow(BinOp::Shr, _, _) => "attempt to shift right with overflow",
+     |                 ^^^^^^^^ not found in this scope
+
+error[E0531]: cannot find tuple struct or tuple variant `Overflow` in this scope
+    --> checker/src/block_visitor.rs:1634:17
+     |
+1634 |                 Overflow(BinOp::Shl, _, _) => "attempt to shift left with overflow",
+     |                 ^^^^^^^^ not found in this scope
+
+error[E0531]: cannot find tuple struct or tuple variant `Overflow` in this scope
+    --> checker/src/block_visitor.rs:1635:17
+     |
+1635 |                 Overflow(..) => "bug, op cannot overflow",
+     |                 ^^^^^^^^ not found in this scope
+
+error[E0531]: cannot find tuple struct or tuple variant `DivisionByZero` in this scope
+    --> checker/src/block_visitor.rs:1636:17
+     |
+1636 |                 DivisionByZero(_) => "attempt to divide by zero",
+     |                 ^^^^^^^^^^^^^^ not found in this scope
+
+error[E0531]: cannot find tuple struct or tuple variant `RemainderByZero` in this scope
+    --> checker/src/block_visitor.rs:1637:17
+     |
+1637 |                 RemainderByZero(_) => "attempt to calculate the remainder with a divisor of zero",
+     |                 ^^^^^^^^^^^^^^^ not found in this scope
+
+error[E0531]: cannot find tuple struct or tuple variant `ResumedAfterReturn` in this scope
+    --> checker/src/block_visitor.rs:1638:17
+     |
+1638 |                 ResumedAfterReturn(CoroutineKind::Coroutine(_)) => {
+     |                 ^^^^^^^^^^^^^^^^^^ not found in this scope
+
+error[E0531]: cannot find tuple struct or tuple variant `ResumedAfterReturn` in this scope
+    --> checker/src/block_visitor.rs:1641:17
+     |
+1641 |                 ResumedAfterReturn(CoroutineKind::Desugared(CoroutineDesugaring::Async, _)) => {
+     |                 ^^^^^^^^^^^^^^^^^^ not found in this scope
+
+error[E0531]: cannot find tuple struct or tuple variant `ResumedAfterReturn` in this scope
+    --> checker/src/block_visitor.rs:1644:17
+     |
+1644 |                 ResumedAfterReturn(CoroutineKind::Desugared(CoroutineDesugaring::AsyncGen, _)) => {
+     |                 ^^^^^^^^^^^^^^^^^^ not found in this scope
+
+error[E0531]: cannot find tuple struct or tuple variant `ResumedAfterReturn` in this scope
+    --> checker/src/block_visitor.rs:1647:17
+     |
+1647 |                 ResumedAfterReturn(CoroutineKind::Desugared(CoroutineDesugaring::Gen, _)) => {
+     |                 ^^^^^^^^^^^^^^^^^^ not found in this scope
+
+error[E0531]: cannot find tuple struct or tuple variant `ResumedAfterPanic` in this scope
+    --> checker/src/block_visitor.rs:1650:17
+     |
+1650 |                 ResumedAfterPanic(CoroutineKind::Coroutine(_)) => {
+     |                 ^^^^^^^^^^^^^^^^^ not found in this scope
+
+error[E0531]: cannot find tuple struct or tuple variant `ResumedAfterPanic` in this scope
+    --> checker/src/block_visitor.rs:1653:17
+     |
+1653 |                 ResumedAfterPanic(CoroutineKind::Desugared(CoroutineDesugaring::Async, _)) => {
+     |                 ^^^^^^^^^^^^^^^^^ not found in this scope
+
+error[E0531]: cannot find tuple struct or tuple variant `ResumedAfterPanic` in this scope
+    --> checker/src/block_visitor.rs:1656:17
+     |
+1656 |                 ResumedAfterPanic(CoroutineKind::Desugared(CoroutineDesugaring::AsyncGen, _)) => {
+     |                 ^^^^^^^^^^^^^^^^^ not found in this scope
+
+error[E0531]: cannot find tuple struct or tuple variant `ResumedAfterPanic` in this scope
+    --> checker/src/block_visitor.rs:1659:17
+     |
+1659 |                 ResumedAfterPanic(CoroutineKind::Desugared(CoroutineDesugaring::Gen, _)) => {
+     |                 ^^^^^^^^^^^^^^^^^ not found in this scope
+
+error[E0425]: cannot find function `nearbyintf16` in module `std::intrinsics`
+   --> checker/src/constant_domain.rs:866:46
+    |
+866 | ...                   std::intrinsics::nearbyintf16(val)
+    |                                        ^^^^^^^^^^^^ not found in `std::intrinsics`
+
+error[E0425]: cannot find function `rintf16` in module `std::intrinsics`
+    --> checker/src/constant_domain.rs:869:46
+     |
+ 869 | ...                   std::intrinsics::rintf16(val)
+     |                                        ^^^^^^^
+     |
+    ::: /opt/homebrew/Cellar/rust/1.95.0/lib/rustlib/src/rust/library/core/src/intrinsics/mod.rs:1086:1
+     |
+1086 | pub fn sinf16(x: f16) -> f16;
+     | ----------------------------- similarly named function `sinf16` defined here
+     |
+help: a function with a similar name exists
+     |
+ 869 -                             std::intrinsics::rintf16(val)
+ 869 +                             std::intrinsics::sinf16(val)
+     |
+
+error[E0425]: cannot find function `nearbyintf32` in module `std::intrinsics`
+   --> checker/src/constant_domain.rs:895:46
+    |
+895 | ...                   std::intrinsics::nearbyintf32(val)
+    |                                        ^^^^^^^^^^^^ not found in `std::intrinsics`
+
+error[E0425]: cannot find function `rintf32` in module `std::intrinsics`
+    --> checker/src/constant_domain.rs:898:46
+     |
+ 898 | ...                   std::intrinsics::rintf32(val)
+     |                                        ^^^^^^^
+     |
+    ::: /opt/homebrew/Cellar/rust/1.95.0/lib/rustlib/src/rust/library/core/src/intrinsics/mod.rs:1093:1
+     |
+1093 | pub fn sinf32(x: f32) -> f32;
+     | ----------------------------- similarly named function `sinf32` defined here
+     |
+help: a function with a similar name exists
+     |
+ 898 -                             std::intrinsics::rintf32(val)
+ 898 +                             std::intrinsics::sinf32(val)
+     |
+
+error[E0425]: cannot find function `nearbyintf64` in module `std::intrinsics`
+   --> checker/src/constant_domain.rs:924:46
+    |
+924 | ...                   std::intrinsics::nearbyintf64(val)
+    |                                        ^^^^^^^^^^^^ not found in `std::intrinsics`
+
+error[E0425]: cannot find function `rintf64` in module `std::intrinsics`
+    --> checker/src/constant_domain.rs:927:46
+     |
+ 927 | ...                   std::intrinsics::rintf64(val)
+     |                                        ^^^^^^^
+     |
+    ::: /opt/homebrew/Cellar/rust/1.95.0/lib/rustlib/src/rust/library/core/src/intrinsics/mod.rs:1100:1
+     |
+1100 | pub fn sinf64(x: f64) -> f64;
+     | ----------------------------- similarly named function `sinf64` defined here
+     |
+help: a function with a similar name exists
+     |
+ 927 -                             std::intrinsics::rintf64(val)
+ 927 +                             std::intrinsics::sinf64(val)
+     |
+
+error[E0531]: cannot find tuple struct or tuple variant `TypeNs` in this scope
+   --> checker/src/utils.rs:432:9
+    |
+432 |         TypeNs(name) | ValueNs(name) | MacroNs(name) | LifetimeNs(name) => {
+    |         ^^^^^^ not found in this scope
+
+error[E0531]: cannot find tuple struct or tuple variant `ValueNs` in this scope
+   --> checker/src/utils.rs:432:24
+    |
+432 |         TypeNs(name) | ValueNs(name) | MacroNs(name) | LifetimeNs(name) => {
+    |                        ^^^^^^^ not found in this scope
+
+error[E0531]: cannot find tuple struct or tuple variant `MacroNs` in this scope
+   --> checker/src/utils.rs:432:40
+    |
+432 |         TypeNs(name) | ValueNs(name) | MacroNs(name) | LifetimeNs(name) => {
+    |                                        ^^^^^^^ not found in this scope
+
+error[E0531]: cannot find tuple struct or tuple variant `LifetimeNs` in this scope
+   --> checker/src/utils.rs:432:56
+    |
+432 |         TypeNs(name) | ValueNs(name) | MacroNs(name) | LifetimeNs(name) => {
+    |                                                        ^^^^^^^^^^ not found in this scope
+
+error[E0554]: `#![feature]` may not be used on the stable release channel
+  --> checker/src/lib.rs:16:1
+   |
+16 | #![feature(rustc_private)]
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0635]: unknown feature `array_chunks`
+  --> checker/src/lib.rs:17:12
+   |
+17 | #![feature(array_chunks)]
+   |            ^^^^^^^^^^^^
+
+Some errors have detailed explanations: E0422, E0425, E0432, E0463, E0531, E0554, E0635.
+For more information about an error, try `rustc --explain E0422`.
+error: could not compile `mirai` (lib) due to 48 previous errors
+error: failed to compile `mirai v1.1.12 (/Users/peter/.ecaz/hardening-tools/MIRAI/checker)`, intermediate artifacts can be found at `/Users/peter/.ecaz/hardening-tools/MIRAI/target`.
+To reuse those artifacts with a future compilation, set the environment variable `CARGO_BUILD_BUILD_DIR` to that path.

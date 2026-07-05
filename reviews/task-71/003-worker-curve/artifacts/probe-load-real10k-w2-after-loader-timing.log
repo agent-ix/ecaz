@@ -1,0 +1,23 @@
+[loader] inspecting data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_corpus.tsv
+[loader] inspecting data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_queries.tsv
+[loader] corpus: 10000 rows, sha256=c67c5810b66d982d705974e48d4775479adfbd92a988f694091266e049a35e75  queries: 200 rows, sha256=a2c191bb742017d849e73f6e6866e8e0f0bac1579ba212f7fc76b8eb09904ae8
+[loader] warning: manifest verification failed for data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_manifest.json: prefix="ec_hnsw_real_10k" (expected "task71_probe_w2")
+[loader] copied corpus table task71_probe_w2_corpus in 5.63s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table task71_probe_w2_corpus in 1.85s
+[loader] copied queries table task71_probe_w2_queries in 118.49ms
+[loader] building task71_probe_w2_idx using ec_ivf (reloptions=[storage_format=pq_fastscan, pq_group_size=8, nlists=64, nprobe=48, rerank=heap_f32, rerank_width=750]) ...
+[loader] built task71_probe_w2_idx in 433.37ms
+[loader] ec_ivf build timing: requested_workers=2 workers_launched=2 heap_tuples=10000 index_tuples=10000 heap_ingest_us=54463 parallel_begin_us=1097 parallel_drain_us=42015 parallel_sort_push_us=11350 parallel_worker_tuple_buffer_capacity=16384 parallel_worker_tuple_buffer_struct_bytes=1048576
+┌─────────┬────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                                                                      │
+╞═════════╪════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_ivf                                                                                                                     │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ task71_probe_w2_corpus (10000 rows)                                                                                        │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ task71_probe_w2_queries (200 rows)                                                                                         │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ task71_probe_w2_idx [storage_format=pq_fastscan, pq_group_size=8, nlists=64, nprobe=48, rerank=heap_f32, rerank_width=750] │
+└─────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+[loader] completed prefix task71_probe_w2 in 17.85s

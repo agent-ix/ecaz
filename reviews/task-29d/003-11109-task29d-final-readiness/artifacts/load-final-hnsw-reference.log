@@ -1,0 +1,20 @@
+[loader] inspecting target/real-corpus/ec_hnsw_real_10k/ec_hnsw_real_10k_corpus.tsv
+[loader] inspecting target/real-corpus/ec_hnsw_real_10k/ec_hnsw_real_10k_queries.tsv
+[loader] corpus: 10000 rows, sha256=c67c5810b66d982d705974e48d4775479adfbd92a988f694091266e049a35e75  queries: 200 rows, sha256=a2c191bb742017d849e73f6e6866e8e0f0bac1579ba212f7fc76b8eb09904ae8
+[loader] warning: manifest verification failed for target/real-corpus/ec_hnsw_real_10k/ec_hnsw_real_10k_manifest.json: prefix="ec_hnsw_real_10k" (expected "task29c_phase_profile")
+[loader] task29c_phase_profile_corpus already has 10000 rows; skipping reload
+[loader] task29c_phase_profile_queries already has 200 rows; skipping reload
+[loader] building task29c_phase_profile_m32_idx using ec_hnsw (reloptions=[m=32, ef_construction=100, build_source_column=source]) ...
+[loader] built task29c_phase_profile_m32_idx in 4.92s
+┌─────────┬───────────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                                 │
+╞═════════╪═══════════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_hnsw                                                                               │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ task29c_phase_profile_corpus (10000 rows)                                             │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ task29c_phase_profile_queries (200 rows)                                              │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ task29c_phase_profile_m32_idx [m=32, ef_construction=100, build_source_column=source] │
+└─────────┴───────────────────────────────────────────────────────────────────────────────────────┘
+[loader] completed prefix task29c_phase_profile in 6.92s

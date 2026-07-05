@@ -1,0 +1,5 @@
+python3 scripts/check_task39_quality_ci.py
+Task 39 CI audit passed
+- coverage: per-PR make coverage + baseline completeness + delta gate + artifact upload
+- mutation: workflow_dispatch and weekly make mutants-full + artifact upload
+- flake-hunt: workflow_dispatch and nightly 8-seed sweep + seed artifact upload

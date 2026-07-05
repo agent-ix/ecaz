@@ -1,0 +1,29 @@
+Script started on 2026-05-10 10:55:20-07:00 [<not executed on terminal>]
+CREATE EXTENSION
+ test_ec_spire_production_fault_matrix_contract 
+------------------------------------------------
+ 
+(1 row)
+
+ test_ec_spire_prod_transport_governance_overload 
+--------------------------------------------------
+ 
+(1 row)
+
+ test_ec_spire_prod_receive_governance_overload 
+------------------------------------------------
+ 
+(1 row)
+
+ test_ec_spire_prod_transport_local_cancel_remote_cancel 
+---------------------------------------------------------
+ 
+(1 row)
+
+ test_ec_spire_prod_receive_local_cancel_remote_cancel 
+-------------------------------------------------------
+ 
+(1 row)
+
+
+Script done on 2026-05-10 10:55:20-07:00 [COMMAND_EXIT_CODE="0"]

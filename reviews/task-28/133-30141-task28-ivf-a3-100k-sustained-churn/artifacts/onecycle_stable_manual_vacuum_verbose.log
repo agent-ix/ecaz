@@ -1,0 +1,1 @@
+ERROR:  VACUUM cannot run inside a transaction block

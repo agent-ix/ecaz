@@ -1,0 +1,133 @@
+diff --git a/scripts/unsafe_comment_baseline.txt b/scripts/unsafe_comment_baseline.txt
+index 89603aeb..88bca3f6 100644
+--- a/scripts/unsafe_comment_baseline.txt
++++ b/scripts/unsafe_comment_baseline.txt
+@@ -1307,44 +1307,37 @@ src/am/ec_ivf/insert.rs:81
+ src/am/ec_ivf/insert.rs:84
+ src/am/ec_ivf/insert.rs:87
+ src/am/ec_ivf/insert.rs:98
+-src/am/ec_ivf/page.rs:2305
+-src/am/ec_ivf/page.rs:2307
+-src/am/ec_ivf/page.rs:2316
+-src/am/ec_ivf/page.rs:2379
+-src/am/ec_ivf/page.rs:2391
+-src/am/ec_ivf/page.rs:2396
+-src/am/ec_ivf/page.rs:2398
+-src/am/ec_ivf/page.rs:2399
+-src/am/ec_ivf/page.rs:2458
+-src/am/ec_ivf/page.rs:2483
+-src/am/ec_ivf/page.rs:2496
+-src/am/ec_ivf/page.rs:2502
++src/am/ec_ivf/page.rs:2324
++src/am/ec_ivf/page.rs:2475
++src/am/ec_ivf/page.rs:2500
++src/am/ec_ivf/page.rs:2513
+ src/am/ec_ivf/page.rs:2519
+-src/am/ec_ivf/page.rs:2576
+-src/am/ec_ivf/page.rs:2601
+-src/am/ec_ivf/page.rs:2613
+-src/am/ec_ivf/page.rs:2628
++src/am/ec_ivf/page.rs:2536
++src/am/ec_ivf/page.rs:2593
++src/am/ec_ivf/page.rs:2618
++src/am/ec_ivf/page.rs:2630
+ src/am/ec_ivf/page.rs:2645
+-src/am/ec_ivf/page.rs:2674
+-src/am/ec_ivf/page.rs:2688
+-src/am/ec_ivf/page.rs:2690
+-src/am/ec_ivf/page.rs:2702
+-src/am/ec_ivf/page.rs:2704
++src/am/ec_ivf/page.rs:2662
++src/am/ec_ivf/page.rs:2691
++src/am/ec_ivf/page.rs:2705
+ src/am/ec_ivf/page.rs:2707
+-src/am/ec_ivf/page.rs:2708
+-src/am/ec_ivf/page.rs:2709
+-src/am/ec_ivf/page.rs:2713
+-src/am/ec_ivf/page.rs:2718
+-src/am/ec_ivf/page.rs:2729
++src/am/ec_ivf/page.rs:2719
++src/am/ec_ivf/page.rs:2721
++src/am/ec_ivf/page.rs:2724
++src/am/ec_ivf/page.rs:2725
++src/am/ec_ivf/page.rs:2726
+ src/am/ec_ivf/page.rs:2730
+-src/am/ec_ivf/page.rs:2742
+-src/am/ec_ivf/page.rs:2752
+-src/am/ec_ivf/page.rs:2754
+-src/am/ec_ivf/page.rs:2755
+-src/am/ec_ivf/page.rs:2756
+-src/am/ec_ivf/page.rs:2770
++src/am/ec_ivf/page.rs:2735
++src/am/ec_ivf/page.rs:2746
++src/am/ec_ivf/page.rs:2747
++src/am/ec_ivf/page.rs:2759
++src/am/ec_ivf/page.rs:2769
+ src/am/ec_ivf/page.rs:2771
+-src/am/ec_ivf/page.rs:3270
++src/am/ec_ivf/page.rs:2772
++src/am/ec_ivf/page.rs:2773
++src/am/ec_ivf/page.rs:2787
++src/am/ec_ivf/page.rs:2788
++src/am/ec_ivf/page.rs:3287
+ src/am/ec_ivf/scan.rs:1028
+ src/am/ec_ivf/scan.rs:1033
+ src/am/ec_ivf/scan.rs:1101
+diff --git a/src/am/ec_ivf/page.rs b/src/am/ec_ivf/page.rs
+index f2698c18..aa077709 100644
+--- a/src/am/ec_ivf/page.rs
++++ b/src/am/ec_ivf/page.rs
+@@ -2302,7 +2302,11 @@ unsafe fn rewrite_ivf_postings_from_exclusive_buffer<F>(
+ where
+     F: FnMut(ItemPointer, IvfPostingTuple) -> Result<IvfPostingRewrite, String>,
+ {
++    // SAFETY: starts a generic WAL transaction for the live index relation;
++    // the caller holds `buffer` with an exclusive lock for this block.
+     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
++    // SAFETY: the exclusive-locked buffer is registered as a full-page image,
++    // yielding a mutable page pointer for rewrite/delete decisions.
+     let page =
+         unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+     let page_ptr = page.cast::<u8>();
+@@ -2313,6 +2317,10 @@ where
+     let mut saw_non_posting_tuple = false;
+ 
+     for offset in 1..=line_pointer_count {
++        // SAFETY: `page_ptr` and `page_size` come from the exclusive-locked
++        // registered page; the helper validates item-id bounds before exposing
++        // tuple bytes. In-place rewrites preserve tuple length and use the
++        // validated line pointer's tuple offset.
+         let tuple_visit = unsafe {
+             with_page_line_tuple_bytes(
+                 page_ptr,
+@@ -2376,6 +2384,9 @@ where
+     if should_compact_posting_deletes(compact_deletes, saw_non_posting_tuple)
+         && !delete_offsets.is_empty()
+     {
++        // SAFETY: offsets were collected from valid posting tuple line
++        // pointers on the registered page and converted to PostgreSQL's count
++        // type after checking the length fits.
+         unsafe {
+             pg_sys::PageIndexMultiDelete(
+                 page,
+@@ -2388,14 +2399,20 @@ where
+         };
+     } else {
+         for offset in delete_offsets.iter().rev() {
++            // SAFETY: each offset was collected from a valid posting tuple line
++            // pointer on this registered page; reverse order preserves the
++            // remaining offsets while deleting without compaction.
+             unsafe { pg_sys::PageIndexTupleDeleteNoCompact(page, *offset) };
+         }
+     }
+ 
+     if changed {
++        // SAFETY: finishes the WAL transaction after registered page changes.
+         unsafe { wal_txn.finish() };
+     }
++    // SAFETY: `page` is the registered page image for the still-held buffer.
+     let free_space = unsafe { pg_sys::PageGetFreeSpace(page) as usize };
++    // SAFETY: records the measured free space for the live relation block.
+     unsafe { pg_sys::RecordPageWithFreeSpace(index_relation, block_number, free_space) };
+     Ok(())
+ }

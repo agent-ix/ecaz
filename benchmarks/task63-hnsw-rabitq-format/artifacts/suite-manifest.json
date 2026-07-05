@@ -1,0 +1,1113 @@
+{
+  "suite": "task63-hnsw-rabitq-format",
+  "schema_version": 1,
+  "config": "benchmarks/task63-hnsw-rabitq-format/suite.json",
+  "config_sha256": "9f3c4550429838bb75971f34379d450eeb94eaed737894170e6a4eb64dcbfcae",
+  "dry_run": true,
+  "generated_at_unix_ms": 1779842864169,
+  "connection": {
+    "database": "tqvector_bench",
+    "host": null,
+    "port": null,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "fetch-dbpedia-openai3-1m",
+      "kind": "corpus-fetch",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "corpus",
+        "fetch",
+        "--dataset",
+        "qdrant-dbpedia-openai3-large-1536-1m",
+        "--output-dir",
+        "/var/lib/pgsql/18/datasets/dbpedia-openai3-1m"
+      ],
+      "selected": true,
+      "tags": [
+        "setup",
+        "fetch",
+        "dbpedia",
+        "benchmark-host",
+        "task63"
+      ],
+      "expected_artifacts": [
+        "/var/lib/pgsql/18/datasets/dbpedia-openai3-1m/ecaz_fetch_manifest.json"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "prepare-ec-real-50k",
+      "kind": "corpus-prepare",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "corpus",
+        "prepare",
+        "--profile",
+        "ec_real_50k",
+        "--parquet",
+        "/var/lib/pgsql/18/datasets/dbpedia-openai3-1m/data",
+        "--output-dir",
+        "/var/lib/pgsql/18/datasets/staged-task63-hnsw-rabitq"
+      ],
+      "selected": true,
+      "tags": [
+        "setup",
+        "prepare",
+        "ec_real_50k",
+        "benchmark-host",
+        "task63"
+      ],
+      "expected_artifacts": [
+        "/var/lib/pgsql/18/datasets/staged-task63-hnsw-rabitq/ec_real_50k_corpus.tsv",
+        "/var/lib/pgsql/18/datasets/staged-task63-hnsw-rabitq/ec_real_50k_queries.tsv",
+        "/var/lib/pgsql/18/datasets/staged-task63-hnsw-rabitq/ec_real_50k_manifest.json"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "prepare-ec-real-100k",
+      "kind": "corpus-prepare",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "corpus",
+        "prepare",
+        "--profile",
+        "ec_real_100k",
+        "--parquet",
+        "/var/lib/pgsql/18/datasets/dbpedia-openai3-1m/data",
+        "--output-dir",
+        "/var/lib/pgsql/18/datasets/staged-task63-hnsw-rabitq"
+      ],
+      "selected": true,
+      "tags": [
+        "setup",
+        "prepare",
+        "ec_real_100k",
+        "benchmark-host",
+        "task63"
+      ],
+      "expected_artifacts": [
+        "/var/lib/pgsql/18/datasets/staged-task63-hnsw-rabitq/ec_real_100k_corpus.tsv",
+        "/var/lib/pgsql/18/datasets/staged-task63-hnsw-rabitq/ec_real_100k_queries.tsv",
+        "/var/lib/pgsql/18/datasets/staged-task63-hnsw-rabitq/ec_real_100k_manifest.json"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "precheck-host",
+      "kind": "raw",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "postgres",
+        "--socket-dir",
+        "/var/run/postgresql",
+        "--raw",
+        "--sql",
+        "SELECT now() AS captured_at, version() AS postgres_version, current_setting('shared_buffers') AS shared_buffers, current_setting('work_mem') AS work_mem, current_setting('maintenance_work_mem') AS maintenance_work_mem, current_setting('effective_cache_size') AS effective_cache_size; SELECT left(pg_read_file('/proc/cpuinfo', 0, 20000), 20000) AS cpuinfo_prefix; SELECT left(pg_read_file('/proc/meminfo', 0, 12000), 12000) AS meminfo_prefix;",
+        "--log-output",
+        "benchmarks/task63-hnsw-rabitq-format/artifacts/precheck-host.log"
+      ],
+      "selected": true,
+      "tags": [
+        "setup",
+        "precheck",
+        "benchmark-host",
+        "task63"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task63-hnsw-rabitq-format/artifacts/precheck-host.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "load-50k-hnsw-turboquant",
+      "kind": "load",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "benchmarks/task63-hnsw-rabitq-format/artifacts/load-50k-hnsw-turboquant.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "task63_real_50k_hnsw_turboquant",
+        "--profile",
+        "ec_hnsw",
+        "--corpus-file",
+        "/var/lib/pgsql/18/datasets/staged-task63-hnsw-rabitq/ec_real_50k_corpus.tsv",
+        "--queries-file",
+        "/var/lib/pgsql/18/datasets/staged-task63-hnsw-rabitq/ec_real_50k_queries.tsv",
+        "--manifest-file",
+        "/var/lib/pgsql/18/datasets/staged-task63-hnsw-rabitq/ec_real_50k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--m",
+        "16",
+        "--ef-construction",
+        "128",
+        "--storage-format",
+        "turboquant"
+      ],
+      "selected": true,
+      "tags": [
+        "load",
+        "ec_real_50k",
+        "hnsw",
+        "turboquant",
+        "benchmark-host",
+        "task63"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task63-hnsw-rabitq-format/artifacts/load-50k-hnsw-turboquant.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "load-50k-hnsw-pq-fastscan",
+      "kind": "load",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "benchmarks/task63-hnsw-rabitq-format/artifacts/load-50k-hnsw-pq-fastscan.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "task63_real_50k_hnsw_pq",
+        "--profile",
+        "ec_hnsw",
+        "--corpus-file",
+        "/var/lib/pgsql/18/datasets/staged-task63-hnsw-rabitq/ec_real_50k_corpus.tsv",
+        "--queries-file",
+        "/var/lib/pgsql/18/datasets/staged-task63-hnsw-rabitq/ec_real_50k_queries.tsv",
+        "--manifest-file",
+        "/var/lib/pgsql/18/datasets/staged-task63-hnsw-rabitq/ec_real_50k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--m",
+        "16",
+        "--ef-construction",
+        "128",
+        "--storage-format",
+        "pq_fastscan"
+      ],
+      "selected": true,
+      "tags": [
+        "load",
+        "ec_real_50k",
+        "hnsw",
+        "pq_fastscan",
+        "benchmark-host",
+        "task63"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task63-hnsw-rabitq-format/artifacts/load-50k-hnsw-pq-fastscan.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "load-50k-hnsw-rabitq",
+      "kind": "load",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "benchmarks/task63-hnsw-rabitq-format/artifacts/load-50k-hnsw-rabitq.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "task63_real_50k_hnsw_rabitq",
+        "--profile",
+        "ec_hnsw",
+        "--corpus-file",
+        "/var/lib/pgsql/18/datasets/staged-task63-hnsw-rabitq/ec_real_50k_corpus.tsv",
+        "--queries-file",
+        "/var/lib/pgsql/18/datasets/staged-task63-hnsw-rabitq/ec_real_50k_queries.tsv",
+        "--manifest-file",
+        "/var/lib/pgsql/18/datasets/staged-task63-hnsw-rabitq/ec_real_50k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--m",
+        "16",
+        "--ef-construction",
+        "128",
+        "--storage-format",
+        "rabitq"
+      ],
+      "selected": true,
+      "tags": [
+        "load",
+        "ec_real_50k",
+        "hnsw",
+        "rabitq",
+        "benchmark-host",
+        "task63"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task63-hnsw-rabitq-format/artifacts/load-50k-hnsw-rabitq.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "recall-50k-hnsw-turboquant",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "recall",
+        "--prefix",
+        "task63_real_50k_hnsw_turboquant",
+        "--profile",
+        "ec_hnsw",
+        "--k",
+        "10",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--queries-limit",
+        "200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--truth-cache-file",
+        "benchmarks/task63-hnsw-rabitq-format/artifacts/truth-50k-k10.json",
+        "--log-output",
+        "benchmarks/task63-hnsw-rabitq-format/artifacts/recall-50k-hnsw-turboquant.log"
+      ],
+      "selected": true,
+      "tags": [
+        "recall",
+        "ec_real_50k",
+        "hnsw",
+        "turboquant",
+        "benchmark-host",
+        "task63"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task63-hnsw-rabitq-format/artifacts/recall-50k-hnsw-turboquant.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "recall-50k-hnsw-pq-fastscan",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "recall",
+        "--prefix",
+        "task63_real_50k_hnsw_pq",
+        "--profile",
+        "ec_hnsw",
+        "--k",
+        "10",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--queries-limit",
+        "200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--truth-cache-file",
+        "benchmarks/task63-hnsw-rabitq-format/artifacts/truth-50k-k10.json",
+        "--log-output",
+        "benchmarks/task63-hnsw-rabitq-format/artifacts/recall-50k-hnsw-pq-fastscan.log"
+      ],
+      "selected": true,
+      "tags": [
+        "recall",
+        "ec_real_50k",
+        "hnsw",
+        "pq_fastscan",
+        "benchmark-host",
+        "task63"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task63-hnsw-rabitq-format/artifacts/recall-50k-hnsw-pq-fastscan.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "recall-50k-hnsw-rabitq",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "recall",
+        "--prefix",
+        "task63_real_50k_hnsw_rabitq",
+        "--profile",
+        "ec_hnsw",
+        "--k",
+        "10",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--queries-limit",
+        "200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--truth-cache-file",
+        "benchmarks/task63-hnsw-rabitq-format/artifacts/truth-50k-k10.json",
+        "--log-output",
+        "benchmarks/task63-hnsw-rabitq-format/artifacts/recall-50k-hnsw-rabitq.log"
+      ],
+      "selected": true,
+      "tags": [
+        "recall",
+        "ec_real_50k",
+        "hnsw",
+        "rabitq",
+        "benchmark-host",
+        "task63"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task63-hnsw-rabitq-format/artifacts/recall-50k-hnsw-rabitq.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "latency-50k-hnsw-turboquant",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "latency",
+        "--prefix",
+        "task63_real_50k_hnsw_turboquant",
+        "--profile",
+        "ec_hnsw",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "200",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--sample-backend-memory",
+        "--cache-state",
+        "post_recall_warm",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "benchmarks/task63-hnsw-rabitq-format/artifacts/latency-50k-hnsw-turboquant.log"
+      ],
+      "selected": true,
+      "tags": [
+        "latency",
+        "ec_real_50k",
+        "hnsw",
+        "turboquant",
+        "post_recall_warm",
+        "benchmark-host",
+        "task63"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task63-hnsw-rabitq-format/artifacts/latency-50k-hnsw-turboquant.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "latency-50k-hnsw-pq-fastscan",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "latency",
+        "--prefix",
+        "task63_real_50k_hnsw_pq",
+        "--profile",
+        "ec_hnsw",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "200",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--sample-backend-memory",
+        "--cache-state",
+        "post_recall_warm",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "benchmarks/task63-hnsw-rabitq-format/artifacts/latency-50k-hnsw-pq-fastscan.log"
+      ],
+      "selected": true,
+      "tags": [
+        "latency",
+        "ec_real_50k",
+        "hnsw",
+        "pq_fastscan",
+        "post_recall_warm",
+        "benchmark-host",
+        "task63"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task63-hnsw-rabitq-format/artifacts/latency-50k-hnsw-pq-fastscan.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "latency-50k-hnsw-rabitq",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "latency",
+        "--prefix",
+        "task63_real_50k_hnsw_rabitq",
+        "--profile",
+        "ec_hnsw",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "200",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--sample-backend-memory",
+        "--cache-state",
+        "post_recall_warm",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "benchmarks/task63-hnsw-rabitq-format/artifacts/latency-50k-hnsw-rabitq.log"
+      ],
+      "selected": true,
+      "tags": [
+        "latency",
+        "ec_real_50k",
+        "hnsw",
+        "rabitq",
+        "post_recall_warm",
+        "benchmark-host",
+        "task63"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task63-hnsw-rabitq-format/artifacts/latency-50k-hnsw-rabitq.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "storage-50k-hnsw-turboquant",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "benchmarks/task63-hnsw-rabitq-format/artifacts/storage-50k-hnsw-turboquant.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "task63_real_50k_hnsw_turboquant"
+      ],
+      "selected": true,
+      "tags": [
+        "storage",
+        "ec_real_50k",
+        "hnsw",
+        "turboquant",
+        "benchmark-host",
+        "task63"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task63-hnsw-rabitq-format/artifacts/storage-50k-hnsw-turboquant.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "storage-50k-hnsw-pq-fastscan",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "benchmarks/task63-hnsw-rabitq-format/artifacts/storage-50k-hnsw-pq-fastscan.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "task63_real_50k_hnsw_pq"
+      ],
+      "selected": true,
+      "tags": [
+        "storage",
+        "ec_real_50k",
+        "hnsw",
+        "pq_fastscan",
+        "benchmark-host",
+        "task63"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task63-hnsw-rabitq-format/artifacts/storage-50k-hnsw-pq-fastscan.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "storage-50k-hnsw-rabitq",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "benchmarks/task63-hnsw-rabitq-format/artifacts/storage-50k-hnsw-rabitq.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "task63_real_50k_hnsw_rabitq"
+      ],
+      "selected": true,
+      "tags": [
+        "storage",
+        "ec_real_50k",
+        "hnsw",
+        "rabitq",
+        "benchmark-host",
+        "task63"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task63-hnsw-rabitq-format/artifacts/storage-50k-hnsw-rabitq.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "load-100k-hnsw-turboquant",
+      "kind": "load",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "benchmarks/task63-hnsw-rabitq-format/artifacts/load-100k-hnsw-turboquant.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "task63_real_100k_hnsw_turboquant",
+        "--profile",
+        "ec_hnsw",
+        "--corpus-file",
+        "/var/lib/pgsql/18/datasets/staged-task63-hnsw-rabitq/ec_real_100k_corpus.tsv",
+        "--queries-file",
+        "/var/lib/pgsql/18/datasets/staged-task63-hnsw-rabitq/ec_real_100k_queries.tsv",
+        "--manifest-file",
+        "/var/lib/pgsql/18/datasets/staged-task63-hnsw-rabitq/ec_real_100k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--m",
+        "16",
+        "--ef-construction",
+        "128",
+        "--storage-format",
+        "turboquant"
+      ],
+      "selected": true,
+      "tags": [
+        "load",
+        "ec_real_100k",
+        "hnsw",
+        "turboquant",
+        "benchmark-host",
+        "task63"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task63-hnsw-rabitq-format/artifacts/load-100k-hnsw-turboquant.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "load-100k-hnsw-pq-fastscan",
+      "kind": "load",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "benchmarks/task63-hnsw-rabitq-format/artifacts/load-100k-hnsw-pq-fastscan.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "task63_real_100k_hnsw_pq",
+        "--profile",
+        "ec_hnsw",
+        "--corpus-file",
+        "/var/lib/pgsql/18/datasets/staged-task63-hnsw-rabitq/ec_real_100k_corpus.tsv",
+        "--queries-file",
+        "/var/lib/pgsql/18/datasets/staged-task63-hnsw-rabitq/ec_real_100k_queries.tsv",
+        "--manifest-file",
+        "/var/lib/pgsql/18/datasets/staged-task63-hnsw-rabitq/ec_real_100k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--m",
+        "16",
+        "--ef-construction",
+        "128",
+        "--storage-format",
+        "pq_fastscan"
+      ],
+      "selected": true,
+      "tags": [
+        "load",
+        "ec_real_100k",
+        "hnsw",
+        "pq_fastscan",
+        "benchmark-host",
+        "task63"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task63-hnsw-rabitq-format/artifacts/load-100k-hnsw-pq-fastscan.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "load-100k-hnsw-rabitq",
+      "kind": "load",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "benchmarks/task63-hnsw-rabitq-format/artifacts/load-100k-hnsw-rabitq.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "task63_real_100k_hnsw_rabitq",
+        "--profile",
+        "ec_hnsw",
+        "--corpus-file",
+        "/var/lib/pgsql/18/datasets/staged-task63-hnsw-rabitq/ec_real_100k_corpus.tsv",
+        "--queries-file",
+        "/var/lib/pgsql/18/datasets/staged-task63-hnsw-rabitq/ec_real_100k_queries.tsv",
+        "--manifest-file",
+        "/var/lib/pgsql/18/datasets/staged-task63-hnsw-rabitq/ec_real_100k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--m",
+        "16",
+        "--ef-construction",
+        "128",
+        "--storage-format",
+        "rabitq"
+      ],
+      "selected": true,
+      "tags": [
+        "load",
+        "ec_real_100k",
+        "hnsw",
+        "rabitq",
+        "benchmark-host",
+        "task63"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task63-hnsw-rabitq-format/artifacts/load-100k-hnsw-rabitq.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "recall-100k-hnsw-turboquant",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "recall",
+        "--prefix",
+        "task63_real_100k_hnsw_turboquant",
+        "--profile",
+        "ec_hnsw",
+        "--k",
+        "10",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--queries-limit",
+        "200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--truth-cache-file",
+        "benchmarks/task63-hnsw-rabitq-format/artifacts/truth-100k-k10.json",
+        "--log-output",
+        "benchmarks/task63-hnsw-rabitq-format/artifacts/recall-100k-hnsw-turboquant.log"
+      ],
+      "selected": true,
+      "tags": [
+        "recall",
+        "ec_real_100k",
+        "hnsw",
+        "turboquant",
+        "benchmark-host",
+        "task63"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task63-hnsw-rabitq-format/artifacts/recall-100k-hnsw-turboquant.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "recall-100k-hnsw-pq-fastscan",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "recall",
+        "--prefix",
+        "task63_real_100k_hnsw_pq",
+        "--profile",
+        "ec_hnsw",
+        "--k",
+        "10",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--queries-limit",
+        "200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--truth-cache-file",
+        "benchmarks/task63-hnsw-rabitq-format/artifacts/truth-100k-k10.json",
+        "--log-output",
+        "benchmarks/task63-hnsw-rabitq-format/artifacts/recall-100k-hnsw-pq-fastscan.log"
+      ],
+      "selected": true,
+      "tags": [
+        "recall",
+        "ec_real_100k",
+        "hnsw",
+        "pq_fastscan",
+        "benchmark-host",
+        "task63"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task63-hnsw-rabitq-format/artifacts/recall-100k-hnsw-pq-fastscan.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "recall-100k-hnsw-rabitq",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "recall",
+        "--prefix",
+        "task63_real_100k_hnsw_rabitq",
+        "--profile",
+        "ec_hnsw",
+        "--k",
+        "10",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--queries-limit",
+        "200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--truth-cache-file",
+        "benchmarks/task63-hnsw-rabitq-format/artifacts/truth-100k-k10.json",
+        "--log-output",
+        "benchmarks/task63-hnsw-rabitq-format/artifacts/recall-100k-hnsw-rabitq.log"
+      ],
+      "selected": true,
+      "tags": [
+        "recall",
+        "ec_real_100k",
+        "hnsw",
+        "rabitq",
+        "benchmark-host",
+        "task63"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task63-hnsw-rabitq-format/artifacts/recall-100k-hnsw-rabitq.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "latency-100k-hnsw-turboquant",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "latency",
+        "--prefix",
+        "task63_real_100k_hnsw_turboquant",
+        "--profile",
+        "ec_hnsw",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "200",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--sample-backend-memory",
+        "--cache-state",
+        "post_recall_warm",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "benchmarks/task63-hnsw-rabitq-format/artifacts/latency-100k-hnsw-turboquant.log"
+      ],
+      "selected": true,
+      "tags": [
+        "latency",
+        "ec_real_100k",
+        "hnsw",
+        "turboquant",
+        "post_recall_warm",
+        "benchmark-host",
+        "task63"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task63-hnsw-rabitq-format/artifacts/latency-100k-hnsw-turboquant.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "latency-100k-hnsw-pq-fastscan",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "latency",
+        "--prefix",
+        "task63_real_100k_hnsw_pq",
+        "--profile",
+        "ec_hnsw",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "200",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--sample-backend-memory",
+        "--cache-state",
+        "post_recall_warm",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "benchmarks/task63-hnsw-rabitq-format/artifacts/latency-100k-hnsw-pq-fastscan.log"
+      ],
+      "selected": true,
+      "tags": [
+        "latency",
+        "ec_real_100k",
+        "hnsw",
+        "pq_fastscan",
+        "post_recall_warm",
+        "benchmark-host",
+        "task63"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task63-hnsw-rabitq-format/artifacts/latency-100k-hnsw-pq-fastscan.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "latency-100k-hnsw-rabitq",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "latency",
+        "--prefix",
+        "task63_real_100k_hnsw_rabitq",
+        "--profile",
+        "ec_hnsw",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "200",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--sample-backend-memory",
+        "--cache-state",
+        "post_recall_warm",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "benchmarks/task63-hnsw-rabitq-format/artifacts/latency-100k-hnsw-rabitq.log"
+      ],
+      "selected": true,
+      "tags": [
+        "latency",
+        "ec_real_100k",
+        "hnsw",
+        "rabitq",
+        "post_recall_warm",
+        "benchmark-host",
+        "task63"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task63-hnsw-rabitq-format/artifacts/latency-100k-hnsw-rabitq.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "storage-100k-hnsw-turboquant",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "benchmarks/task63-hnsw-rabitq-format/artifacts/storage-100k-hnsw-turboquant.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "task63_real_100k_hnsw_turboquant"
+      ],
+      "selected": true,
+      "tags": [
+        "storage",
+        "ec_real_100k",
+        "hnsw",
+        "turboquant",
+        "benchmark-host",
+        "task63"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task63-hnsw-rabitq-format/artifacts/storage-100k-hnsw-turboquant.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "storage-100k-hnsw-pq-fastscan",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "benchmarks/task63-hnsw-rabitq-format/artifacts/storage-100k-hnsw-pq-fastscan.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "task63_real_100k_hnsw_pq"
+      ],
+      "selected": true,
+      "tags": [
+        "storage",
+        "ec_real_100k",
+        "hnsw",
+        "pq_fastscan",
+        "benchmark-host",
+        "task63"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task63-hnsw-rabitq-format/artifacts/storage-100k-hnsw-pq-fastscan.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "storage-100k-hnsw-rabitq",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "benchmarks/task63-hnsw-rabitq-format/artifacts/storage-100k-hnsw-rabitq.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "task63_real_100k_hnsw_rabitq"
+      ],
+      "selected": true,
+      "tags": [
+        "storage",
+        "ec_real_100k",
+        "hnsw",
+        "rabitq",
+        "benchmark-host",
+        "task63"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task63-hnsw-rabitq-format/artifacts/storage-100k-hnsw-rabitq.log"
+      ],
+      "status": "dry-run"
+    }
+  ]
+}

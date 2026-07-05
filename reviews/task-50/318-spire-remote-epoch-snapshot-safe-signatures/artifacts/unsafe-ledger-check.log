@@ -1,0 +1,2 @@
+python3 scripts/unsafe_ledger.py check --ledger reviews/task-50/318-spire-remote-epoch-snapshot-safe-signatures/artifacts/unsafe-ledger-after.jsonl src
+ledger covers 1379 current unsafe rows

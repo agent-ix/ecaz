@@ -1,0 +1,47 @@
+Script started on 2026-05-22 21:46:18-07:00 [<not executed on terminal>]
+ shared_preload_libraries 
+--------------------------
+ ecaz
+(1 row)
+
+CREATE EXTENSION
+CREATE TABLE
+INSERT 0 6
+CREATE INDEX
+SET
+SET
+SET
+                                                                     QUERY PLAN                                                                      
+-----------------------------------------------------------------------------------------------------------------------------------------------------
+ Limit (actual time=0.545..0.553 rows=3.00 loops=1)
+   Output: id, ((embedding <#> '{1,0}'::real[]))
+   Buffers: shared hit=13
+   ->  Index Scan using task51_ivf_rabitq_prefetch_smoke_idx on public.task51_ivf_rabitq_prefetch_smoke (actual time=0.543..0.552 rows=3.00 loops=1)
+         Output: id, (embedding <#> '{1,0}'::real[])
+         Order By: (task51_ivf_rabitq_prefetch_smoke.embedding <#> '{1,0}'::real[])
+         Index Searches: 0
+         Buffers: shared hit=13
+         Centroid Scores: 2
+         Selected Lists: 2
+         Posting Pages Read: 2
+         Postings Visited: 6
+         Postings Scored: 6
+         Postings Pruned By Bound: 0
+         Heap TIDs Scored: 6
+         Candidates Scored: 6
+         Candidates Inserted: 6
+         Candidates Emitted: 3
+         Rerank Rows: 3
+         Heap Blocks Fetched: 1
+         Approximate Scan Elapsed Us: 102
+         Exact Rerank Elapsed Us: 67
+         Filtered Duplicates: 0
+ Planning:
+   Buffers: shared hit=35 read=4
+ Planning Time: 0.854 ms
+ Execution Time: 0.664 ms
+(27 rows)
+
+run_dir=/home/peter/dev/ecaz/target/task51-local-pg18-prefetch-smoke-1779511578
+
+Script done on 2026-05-22 21:46:19-07:00 [COMMAND_EXIT_CODE="0"]

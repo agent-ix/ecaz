@@ -1,0 +1,3 @@
+hnsw-rs source graph timings: m=8 ef_search=128 build=416.330819783s search=5.309683839s
+hnsw-rs source graph clustered probe: queries=20 m=8 ef_search=128 hnsw=0.2850
+test tests::test_hnsw_rs_source_graph_recall_clustered_10k ... ok

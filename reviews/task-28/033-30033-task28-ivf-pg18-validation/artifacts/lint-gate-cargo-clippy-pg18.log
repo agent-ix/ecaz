@@ -1,0 +1,50 @@
+    Checking ecaz v0.1.1 (/home/peter/dev/tqvector)
+error: redundant closure
+  --> src/am/ec_ivf/cost.rs:99:40
+   |
+99 |     unsafe { pgrx::pgrx_extern_c_guard(|| ivf_tree_height_callback_value()) }
+   |                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: replace the closure with the function itself: `ivf_tree_height_callback_value`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#redundant_closure
+   = note: `-D clippy::redundant-closure` implied by `-D warnings`
+   = help: to override `-D warnings` add `#[allow(clippy::redundant_closure)]`
+
+error: unnecessary `>= y + 1` or `x - 1 >=`
+    --> src/lib.rs:4877:13
+     |
+4877 | /             Spi::get_one::<i64>("SELECT total_scans_started FROM ecaz_stats()")
+4878 | |                 .expect("stats query should succeed")
+4879 | |                 .expect("scan counter should be non-null")
+4880 | |                 >= scans_before + 1
+     | |___________________________________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#int_plus_one
+     = note: `-D clippy::int-plus-one` implied by `-D warnings`
+     = help: to override `-D warnings` add `#[allow(clippy::int_plus_one)]`
+help: change it to
+     |
+4877 ~             Spi::get_one::<i64>("SELECT total_scans_started FROM ecaz_stats()")
+4878 +                 .expect("stats query should succeed")
+4879 +                 .expect("scan counter should be non-null") > scans_before
+     |
+
+error: could not compile `ecaz` (lib) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+error: very complex type used. Consider factoring parts into `type` definitions
+   --> src/am/ec_ivf/scan.rs:875:6
+    |
+875 |   ) -> (
+    |  ______^
+876 | |     bool,
+877 | |     u16,
+878 | |     Vec<f32>,
+...   |
+887 | |     Vec<u32>,
+888 | | ) {
+    | |_^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#type_complexity
+    = note: `-D clippy::type-complexity` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::type_complexity)]`
+
+error: could not compile `ecaz` (lib test) due to 3 previous errors

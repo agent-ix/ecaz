@@ -1,0 +1,5 @@
+         datname         | state  | wait_event_type | wait_event |                                                             query                                                              
+-------------------------+--------+-----------------+------------+--------------------------------------------------------------------------------------------------------------------------------
+ task29_diskann_baseline | active |                 |            | SELECT id FROM ec_hnsw_real_10k_corpus ORDER BY embedding <#> encode_to_ecvector($1::real[], $2::integer, $3::bigint) LIMIT $4
+(1 row)
+

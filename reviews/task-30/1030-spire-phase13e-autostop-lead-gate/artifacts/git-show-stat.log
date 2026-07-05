@@ -1,0 +1,7 @@
+Script started on 2026-05-27 11:08:19-07:00 [<not executed on terminal>]
+[33m2a9435ccb[m[33m ([m[1;36mHEAD -> [m[1;32mdiskann-aws-optimization[m[33m)[m Gate SPIRE AWS auto-stop lead time
+ plan/tasks/task30-phase13e-spire-aws-production-gap-closure.md | 4 [32m++++[m
+ scripts/spire-aws/preflight-operator.sh                        | 5 [32m+++++[m
+ 2 files changed, 9 insertions(+)
+
+Script done on 2026-05-27 11:08:19-07:00 [COMMAND_EXIT_CODE="0"]

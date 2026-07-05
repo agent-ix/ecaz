@@ -1,0 +1,3569 @@
+{
+  "name": "task144-release-matrix-r2",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-144/008-release-matrix-config-r2/artifacts",
+  "defaults": {
+    "profile": "ec_spire",
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 200,
+    "iterations": 200,
+    "force_index": true,
+    "sample_backend_memory": true,
+    "memory_sample_interval_ms": 25,
+    "pg": 18,
+    "socket_dir": "/home/peter/dev/ecaz/target/task144-pg18-socket"
+  },
+  "thresholds": [],
+  "_doc": {
+    "intent": "Task 144 release A/B matrix r2 after packet 006/007 feedback. Adds truth-cache prerequisite steps and broadens the two experimental knobs before 50k/100k spend.",
+    "assignment_variants": {
+      "single": "boundary_replica_count=0, closure_epsilon=0",
+      "fixed_b2": "boundary_replica_count=2, closure_epsilon=0",
+      "closure_e010_b8": "boundary_replica_count=8, closure_epsilon=0.10",
+      "closure_e025_b8": "boundary_replica_count=8, closure_epsilon=0.25",
+      "closure_e050_b8": "boundary_replica_count=8, closure_epsilon=0.50"
+    },
+    "query_modes": {
+      "fixed": "ordinary nprobe sweep",
+      "ratio125": "ordinary sweep as a ceiling plus ec_spire.probe_distance_ratio=1.25; retained as the falsified over-pruning baseline from packet 007",
+      "ratio200": "looser distance-ratio pruning sweep point",
+      "ratio400": "looser distance-ratio pruning sweep point",
+      "ratio800": "looser distance-ratio pruning sweep point",
+      "adaptive": "existing ec_spire adaptive_nprobe score-gap policy"
+    },
+    "sweep": [
+      8,
+      16,
+      32,
+      64,
+      96
+    ],
+    "sweep_rationale": "Uses [8,16,32,64,96] rather than the registered ec_spire default [8,16,24,32] because packet 007 showed 10k reaches >=0.99 only around nprobe 32 and the ratio arms need a high fixed ceiling to reveal whether the ratio band, not nprobe, is binding.",
+    "truth_cache_prereq": "Each scale has a recall step truth-cache-{scale}-k10 that produces ${artifact_dir}/truth-{scale}-k10.json before spire-pipeline consumers; truth cache files are generated artifacts and should remain uncommitted per AGENTS.md.",
+    "reporting": "Suite result rows derive spire_pipeline_row_scan from candidate_sum/queries/corpus_rows, and bench storage emits SPIRE mean_replicas_per_vector from ec_spire_index_health_snapshot.",
+    "expected_steps": 124
+  },
+  "steps": [
+    {
+      "kind": "raw",
+      "name": "precheck-release-profile",
+      "tags": [
+        "setup",
+        "precheck",
+        "task144",
+        "release"
+      ],
+      "args": [
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "tqvector_bench_task144",
+        "--socket-dir",
+        "/home/peter/dev/ecaz/target/task144-pg18-socket",
+        "--raw",
+        "--sql",
+        "LOAD 'ecaz'; SELECT now() AS captured_at, version() AS postgres_version, ecaz_build_profile() AS ecaz_build_profile;",
+        "--log-output",
+        "${artifact_dir}/precheck-release-profile.log"
+      ],
+      "expected_artifacts": [
+        "${artifact_dir}/precheck-release-profile.log"
+      ]
+    },
+    {
+      "kind": "load",
+      "name": "load-10k-single",
+      "tags": [
+        "load",
+        "task144",
+        "10k",
+        "variant=single"
+      ],
+      "prefix": "t144_10k_single",
+      "index_name": "t144_10k_single_idx",
+      "dim": 1536,
+      "corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_10k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_10k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "storage_format": "rabitq",
+      "reloptions": [
+        "nlists=1024",
+        "recursive_fanout=8",
+        "top_graph_enabled=1",
+        "top_graph_degree=32",
+        "top_graph_build_list_size=100",
+        "top_graph_search_list_size=96",
+        "boundary_replica_count=0",
+        "closure_epsilon=0",
+        "training_sample_rows=10000"
+      ],
+      "log_file": "${artifact_dir}/load-10k-single.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-10k-fixed_b2",
+      "tags": [
+        "load",
+        "task144",
+        "10k",
+        "variant=fixed_b2"
+      ],
+      "prefix": "t144_10k_fixed_b2",
+      "index_name": "t144_10k_fixed_b2_idx",
+      "dim": 1536,
+      "corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_10k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_10k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "storage_format": "rabitq",
+      "reloptions": [
+        "nlists=1024",
+        "recursive_fanout=8",
+        "top_graph_enabled=1",
+        "top_graph_degree=32",
+        "top_graph_build_list_size=100",
+        "top_graph_search_list_size=96",
+        "boundary_replica_count=2",
+        "closure_epsilon=0",
+        "training_sample_rows=10000"
+      ],
+      "log_file": "${artifact_dir}/load-10k-fixed_b2.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-10k-closure_e010_b8",
+      "tags": [
+        "load",
+        "task144",
+        "10k",
+        "variant=closure_e010_b8"
+      ],
+      "prefix": "t144_10k_closure_e010_b8",
+      "index_name": "t144_10k_closure_e010_b8_idx",
+      "dim": 1536,
+      "corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_10k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_10k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "storage_format": "rabitq",
+      "reloptions": [
+        "nlists=1024",
+        "recursive_fanout=8",
+        "top_graph_enabled=1",
+        "top_graph_degree=32",
+        "top_graph_build_list_size=100",
+        "top_graph_search_list_size=96",
+        "boundary_replica_count=8",
+        "closure_epsilon=0.10",
+        "training_sample_rows=10000"
+      ],
+      "log_file": "${artifact_dir}/load-10k-closure_e010_b8.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-10k-closure_e025_b8",
+      "tags": [
+        "load",
+        "task144",
+        "10k",
+        "variant=closure_e025_b8"
+      ],
+      "prefix": "t144_10k_closure_e025_b8",
+      "index_name": "t144_10k_closure_e025_b8_idx",
+      "dim": 1536,
+      "corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_10k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_10k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "storage_format": "rabitq",
+      "reloptions": [
+        "nlists=1024",
+        "recursive_fanout=8",
+        "top_graph_enabled=1",
+        "top_graph_degree=32",
+        "top_graph_build_list_size=100",
+        "top_graph_search_list_size=96",
+        "boundary_replica_count=8",
+        "closure_epsilon=0.25",
+        "training_sample_rows=10000"
+      ],
+      "log_file": "${artifact_dir}/load-10k-closure_e025_b8.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-10k-closure_e050_b8",
+      "tags": [
+        "load",
+        "task144",
+        "10k",
+        "variant=closure_e050_b8"
+      ],
+      "prefix": "t144_10k_closure_e050_b8",
+      "index_name": "t144_10k_closure_e050_b8_idx",
+      "dim": 1536,
+      "corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_10k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_10k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "storage_format": "rabitq",
+      "reloptions": [
+        "nlists=1024",
+        "recursive_fanout=8",
+        "top_graph_enabled=1",
+        "top_graph_degree=32",
+        "top_graph_build_list_size=100",
+        "top_graph_search_list_size=96",
+        "boundary_replica_count=8",
+        "closure_epsilon=0.50",
+        "training_sample_rows=10000"
+      ],
+      "log_file": "${artifact_dir}/load-10k-closure_e050_b8.log"
+    },
+    {
+      "kind": "recall",
+      "name": "truth-cache-10k-k10",
+      "tags": [
+        "truth-cache",
+        "recall",
+        "task144",
+        "10k"
+      ],
+      "prefix": "t144_10k_single",
+      "k": 10,
+      "sweep": [
+        8
+      ],
+      "queries_limit": 200,
+      "truth_corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-10k-k10.json",
+      "log_output": "${artifact_dir}/truth-cache-10k-k10.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-10k-single",
+      "tags": [
+        "storage",
+        "task144",
+        "10k",
+        "variant=single"
+      ],
+      "prefix": "t144_10k_single",
+      "log_file": "${artifact_dir}/storage-10k-single.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-10k-fixed_b2",
+      "tags": [
+        "storage",
+        "task144",
+        "10k",
+        "variant=fixed_b2"
+      ],
+      "prefix": "t144_10k_fixed_b2",
+      "log_file": "${artifact_dir}/storage-10k-fixed_b2.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-10k-closure_e010_b8",
+      "tags": [
+        "storage",
+        "task144",
+        "10k",
+        "variant=closure_e010_b8"
+      ],
+      "prefix": "t144_10k_closure_e010_b8",
+      "log_file": "${artifact_dir}/storage-10k-closure_e010_b8.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-10k-closure_e025_b8",
+      "tags": [
+        "storage",
+        "task144",
+        "10k",
+        "variant=closure_e025_b8"
+      ],
+      "prefix": "t144_10k_closure_e025_b8",
+      "log_file": "${artifact_dir}/storage-10k-closure_e025_b8.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-10k-closure_e050_b8",
+      "tags": [
+        "storage",
+        "task144",
+        "10k",
+        "variant=closure_e050_b8"
+      ],
+      "prefix": "t144_10k_closure_e050_b8",
+      "log_file": "${artifact_dir}/storage-10k-closure_e050_b8.log"
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-10k-single-fixed",
+      "tags": [
+        "pipeline",
+        "task144",
+        "10k",
+        "variant=single",
+        "query=fixed"
+      ],
+      "prefix": "t144_10k_single",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-10k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-10k-single-fixed.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-10k-single-fixed.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-10k-single-fixed.jsonl"
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-10k-single-ratio125",
+      "tags": [
+        "pipeline",
+        "task144",
+        "10k",
+        "variant=single",
+        "query=ratio125"
+      ],
+      "prefix": "t144_10k_single",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-10k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-10k-single-ratio125.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-10k-single-ratio125.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-10k-single-ratio125.jsonl",
+      "session_gucs": [
+        "ec_spire.probe_distance_ratio=1.25"
+      ]
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-10k-single-ratio200",
+      "tags": [
+        "pipeline",
+        "task144",
+        "10k",
+        "variant=single",
+        "query=ratio200"
+      ],
+      "prefix": "t144_10k_single",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-10k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-10k-single-ratio200.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-10k-single-ratio200.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-10k-single-ratio200.jsonl",
+      "session_gucs": [
+        "ec_spire.probe_distance_ratio=2.0"
+      ]
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-10k-single-ratio400",
+      "tags": [
+        "pipeline",
+        "task144",
+        "10k",
+        "variant=single",
+        "query=ratio400"
+      ],
+      "prefix": "t144_10k_single",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-10k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-10k-single-ratio400.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-10k-single-ratio400.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-10k-single-ratio400.jsonl",
+      "session_gucs": [
+        "ec_spire.probe_distance_ratio=4.0"
+      ]
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-10k-single-ratio800",
+      "tags": [
+        "pipeline",
+        "task144",
+        "10k",
+        "variant=single",
+        "query=ratio800"
+      ],
+      "prefix": "t144_10k_single",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-10k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-10k-single-ratio800.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-10k-single-ratio800.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-10k-single-ratio800.jsonl",
+      "session_gucs": [
+        "ec_spire.probe_distance_ratio=8.0"
+      ]
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-10k-single-adaptive",
+      "tags": [
+        "pipeline",
+        "task144",
+        "10k",
+        "variant=single",
+        "query=adaptive"
+      ],
+      "prefix": "t144_10k_single",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-10k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-10k-single-adaptive.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-10k-single-adaptive.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-10k-single-adaptive.jsonl",
+      "adaptive_nprobe": true
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-10k-fixed_b2-fixed",
+      "tags": [
+        "pipeline",
+        "task144",
+        "10k",
+        "variant=fixed_b2",
+        "query=fixed"
+      ],
+      "prefix": "t144_10k_fixed_b2",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-10k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-10k-fixed_b2-fixed.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-10k-fixed_b2-fixed.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-10k-fixed_b2-fixed.jsonl"
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-10k-fixed_b2-ratio125",
+      "tags": [
+        "pipeline",
+        "task144",
+        "10k",
+        "variant=fixed_b2",
+        "query=ratio125"
+      ],
+      "prefix": "t144_10k_fixed_b2",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-10k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-10k-fixed_b2-ratio125.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-10k-fixed_b2-ratio125.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-10k-fixed_b2-ratio125.jsonl",
+      "session_gucs": [
+        "ec_spire.probe_distance_ratio=1.25"
+      ]
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-10k-fixed_b2-ratio200",
+      "tags": [
+        "pipeline",
+        "task144",
+        "10k",
+        "variant=fixed_b2",
+        "query=ratio200"
+      ],
+      "prefix": "t144_10k_fixed_b2",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-10k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-10k-fixed_b2-ratio200.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-10k-fixed_b2-ratio200.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-10k-fixed_b2-ratio200.jsonl",
+      "session_gucs": [
+        "ec_spire.probe_distance_ratio=2.0"
+      ]
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-10k-fixed_b2-ratio400",
+      "tags": [
+        "pipeline",
+        "task144",
+        "10k",
+        "variant=fixed_b2",
+        "query=ratio400"
+      ],
+      "prefix": "t144_10k_fixed_b2",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-10k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-10k-fixed_b2-ratio400.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-10k-fixed_b2-ratio400.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-10k-fixed_b2-ratio400.jsonl",
+      "session_gucs": [
+        "ec_spire.probe_distance_ratio=4.0"
+      ]
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-10k-fixed_b2-ratio800",
+      "tags": [
+        "pipeline",
+        "task144",
+        "10k",
+        "variant=fixed_b2",
+        "query=ratio800"
+      ],
+      "prefix": "t144_10k_fixed_b2",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-10k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-10k-fixed_b2-ratio800.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-10k-fixed_b2-ratio800.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-10k-fixed_b2-ratio800.jsonl",
+      "session_gucs": [
+        "ec_spire.probe_distance_ratio=8.0"
+      ]
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-10k-fixed_b2-adaptive",
+      "tags": [
+        "pipeline",
+        "task144",
+        "10k",
+        "variant=fixed_b2",
+        "query=adaptive"
+      ],
+      "prefix": "t144_10k_fixed_b2",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-10k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-10k-fixed_b2-adaptive.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-10k-fixed_b2-adaptive.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-10k-fixed_b2-adaptive.jsonl",
+      "adaptive_nprobe": true
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-10k-closure_e010_b8-fixed",
+      "tags": [
+        "pipeline",
+        "task144",
+        "10k",
+        "variant=closure_e010_b8",
+        "query=fixed"
+      ],
+      "prefix": "t144_10k_closure_e010_b8",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-10k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-10k-closure_e010_b8-fixed.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-10k-closure_e010_b8-fixed.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-10k-closure_e010_b8-fixed.jsonl"
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-10k-closure_e010_b8-ratio125",
+      "tags": [
+        "pipeline",
+        "task144",
+        "10k",
+        "variant=closure_e010_b8",
+        "query=ratio125"
+      ],
+      "prefix": "t144_10k_closure_e010_b8",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-10k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-10k-closure_e010_b8-ratio125.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-10k-closure_e010_b8-ratio125.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-10k-closure_e010_b8-ratio125.jsonl",
+      "session_gucs": [
+        "ec_spire.probe_distance_ratio=1.25"
+      ]
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-10k-closure_e010_b8-ratio200",
+      "tags": [
+        "pipeline",
+        "task144",
+        "10k",
+        "variant=closure_e010_b8",
+        "query=ratio200"
+      ],
+      "prefix": "t144_10k_closure_e010_b8",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-10k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-10k-closure_e010_b8-ratio200.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-10k-closure_e010_b8-ratio200.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-10k-closure_e010_b8-ratio200.jsonl",
+      "session_gucs": [
+        "ec_spire.probe_distance_ratio=2.0"
+      ]
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-10k-closure_e010_b8-ratio400",
+      "tags": [
+        "pipeline",
+        "task144",
+        "10k",
+        "variant=closure_e010_b8",
+        "query=ratio400"
+      ],
+      "prefix": "t144_10k_closure_e010_b8",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-10k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-10k-closure_e010_b8-ratio400.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-10k-closure_e010_b8-ratio400.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-10k-closure_e010_b8-ratio400.jsonl",
+      "session_gucs": [
+        "ec_spire.probe_distance_ratio=4.0"
+      ]
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-10k-closure_e010_b8-ratio800",
+      "tags": [
+        "pipeline",
+        "task144",
+        "10k",
+        "variant=closure_e010_b8",
+        "query=ratio800"
+      ],
+      "prefix": "t144_10k_closure_e010_b8",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-10k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-10k-closure_e010_b8-ratio800.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-10k-closure_e010_b8-ratio800.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-10k-closure_e010_b8-ratio800.jsonl",
+      "session_gucs": [
+        "ec_spire.probe_distance_ratio=8.0"
+      ]
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-10k-closure_e010_b8-adaptive",
+      "tags": [
+        "pipeline",
+        "task144",
+        "10k",
+        "variant=closure_e010_b8",
+        "query=adaptive"
+      ],
+      "prefix": "t144_10k_closure_e010_b8",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-10k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-10k-closure_e010_b8-adaptive.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-10k-closure_e010_b8-adaptive.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-10k-closure_e010_b8-adaptive.jsonl",
+      "adaptive_nprobe": true
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-10k-closure_e025_b8-fixed",
+      "tags": [
+        "pipeline",
+        "task144",
+        "10k",
+        "variant=closure_e025_b8",
+        "query=fixed"
+      ],
+      "prefix": "t144_10k_closure_e025_b8",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-10k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-10k-closure_e025_b8-fixed.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-10k-closure_e025_b8-fixed.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-10k-closure_e025_b8-fixed.jsonl"
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-10k-closure_e025_b8-ratio125",
+      "tags": [
+        "pipeline",
+        "task144",
+        "10k",
+        "variant=closure_e025_b8",
+        "query=ratio125"
+      ],
+      "prefix": "t144_10k_closure_e025_b8",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-10k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-10k-closure_e025_b8-ratio125.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-10k-closure_e025_b8-ratio125.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-10k-closure_e025_b8-ratio125.jsonl",
+      "session_gucs": [
+        "ec_spire.probe_distance_ratio=1.25"
+      ]
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-10k-closure_e025_b8-ratio200",
+      "tags": [
+        "pipeline",
+        "task144",
+        "10k",
+        "variant=closure_e025_b8",
+        "query=ratio200"
+      ],
+      "prefix": "t144_10k_closure_e025_b8",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-10k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-10k-closure_e025_b8-ratio200.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-10k-closure_e025_b8-ratio200.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-10k-closure_e025_b8-ratio200.jsonl",
+      "session_gucs": [
+        "ec_spire.probe_distance_ratio=2.0"
+      ]
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-10k-closure_e025_b8-ratio400",
+      "tags": [
+        "pipeline",
+        "task144",
+        "10k",
+        "variant=closure_e025_b8",
+        "query=ratio400"
+      ],
+      "prefix": "t144_10k_closure_e025_b8",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-10k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-10k-closure_e025_b8-ratio400.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-10k-closure_e025_b8-ratio400.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-10k-closure_e025_b8-ratio400.jsonl",
+      "session_gucs": [
+        "ec_spire.probe_distance_ratio=4.0"
+      ]
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-10k-closure_e025_b8-ratio800",
+      "tags": [
+        "pipeline",
+        "task144",
+        "10k",
+        "variant=closure_e025_b8",
+        "query=ratio800"
+      ],
+      "prefix": "t144_10k_closure_e025_b8",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-10k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-10k-closure_e025_b8-ratio800.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-10k-closure_e025_b8-ratio800.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-10k-closure_e025_b8-ratio800.jsonl",
+      "session_gucs": [
+        "ec_spire.probe_distance_ratio=8.0"
+      ]
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-10k-closure_e025_b8-adaptive",
+      "tags": [
+        "pipeline",
+        "task144",
+        "10k",
+        "variant=closure_e025_b8",
+        "query=adaptive"
+      ],
+      "prefix": "t144_10k_closure_e025_b8",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-10k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-10k-closure_e025_b8-adaptive.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-10k-closure_e025_b8-adaptive.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-10k-closure_e025_b8-adaptive.jsonl",
+      "adaptive_nprobe": true
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-10k-closure_e050_b8-fixed",
+      "tags": [
+        "pipeline",
+        "task144",
+        "10k",
+        "variant=closure_e050_b8",
+        "query=fixed"
+      ],
+      "prefix": "t144_10k_closure_e050_b8",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-10k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-10k-closure_e050_b8-fixed.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-10k-closure_e050_b8-fixed.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-10k-closure_e050_b8-fixed.jsonl"
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-10k-closure_e050_b8-ratio125",
+      "tags": [
+        "pipeline",
+        "task144",
+        "10k",
+        "variant=closure_e050_b8",
+        "query=ratio125"
+      ],
+      "prefix": "t144_10k_closure_e050_b8",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-10k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-10k-closure_e050_b8-ratio125.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-10k-closure_e050_b8-ratio125.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-10k-closure_e050_b8-ratio125.jsonl",
+      "session_gucs": [
+        "ec_spire.probe_distance_ratio=1.25"
+      ]
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-10k-closure_e050_b8-ratio200",
+      "tags": [
+        "pipeline",
+        "task144",
+        "10k",
+        "variant=closure_e050_b8",
+        "query=ratio200"
+      ],
+      "prefix": "t144_10k_closure_e050_b8",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-10k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-10k-closure_e050_b8-ratio200.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-10k-closure_e050_b8-ratio200.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-10k-closure_e050_b8-ratio200.jsonl",
+      "session_gucs": [
+        "ec_spire.probe_distance_ratio=2.0"
+      ]
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-10k-closure_e050_b8-ratio400",
+      "tags": [
+        "pipeline",
+        "task144",
+        "10k",
+        "variant=closure_e050_b8",
+        "query=ratio400"
+      ],
+      "prefix": "t144_10k_closure_e050_b8",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-10k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-10k-closure_e050_b8-ratio400.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-10k-closure_e050_b8-ratio400.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-10k-closure_e050_b8-ratio400.jsonl",
+      "session_gucs": [
+        "ec_spire.probe_distance_ratio=4.0"
+      ]
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-10k-closure_e050_b8-ratio800",
+      "tags": [
+        "pipeline",
+        "task144",
+        "10k",
+        "variant=closure_e050_b8",
+        "query=ratio800"
+      ],
+      "prefix": "t144_10k_closure_e050_b8",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-10k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-10k-closure_e050_b8-ratio800.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-10k-closure_e050_b8-ratio800.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-10k-closure_e050_b8-ratio800.jsonl",
+      "session_gucs": [
+        "ec_spire.probe_distance_ratio=8.0"
+      ]
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-10k-closure_e050_b8-adaptive",
+      "tags": [
+        "pipeline",
+        "task144",
+        "10k",
+        "variant=closure_e050_b8",
+        "query=adaptive"
+      ],
+      "prefix": "t144_10k_closure_e050_b8",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-10k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-10k-closure_e050_b8-adaptive.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-10k-closure_e050_b8-adaptive.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-10k-closure_e050_b8-adaptive.jsonl",
+      "adaptive_nprobe": true
+    },
+    {
+      "kind": "load",
+      "name": "load-50k-single",
+      "tags": [
+        "load",
+        "task144",
+        "50k",
+        "variant=single"
+      ],
+      "prefix": "t144_50k_single",
+      "index_name": "t144_50k_single_idx",
+      "dim": 1536,
+      "corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_50k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "storage_format": "rabitq",
+      "reloptions": [
+        "nlists=1024",
+        "recursive_fanout=8",
+        "top_graph_enabled=1",
+        "top_graph_degree=32",
+        "top_graph_build_list_size=100",
+        "top_graph_search_list_size=96",
+        "boundary_replica_count=0",
+        "closure_epsilon=0",
+        "training_sample_rows=10000"
+      ],
+      "log_file": "${artifact_dir}/load-50k-single.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-50k-fixed_b2",
+      "tags": [
+        "load",
+        "task144",
+        "50k",
+        "variant=fixed_b2"
+      ],
+      "prefix": "t144_50k_fixed_b2",
+      "index_name": "t144_50k_fixed_b2_idx",
+      "dim": 1536,
+      "corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_50k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "storage_format": "rabitq",
+      "reloptions": [
+        "nlists=1024",
+        "recursive_fanout=8",
+        "top_graph_enabled=1",
+        "top_graph_degree=32",
+        "top_graph_build_list_size=100",
+        "top_graph_search_list_size=96",
+        "boundary_replica_count=2",
+        "closure_epsilon=0",
+        "training_sample_rows=10000"
+      ],
+      "log_file": "${artifact_dir}/load-50k-fixed_b2.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-50k-closure_e010_b8",
+      "tags": [
+        "load",
+        "task144",
+        "50k",
+        "variant=closure_e010_b8"
+      ],
+      "prefix": "t144_50k_closure_e010_b8",
+      "index_name": "t144_50k_closure_e010_b8_idx",
+      "dim": 1536,
+      "corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_50k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "storage_format": "rabitq",
+      "reloptions": [
+        "nlists=1024",
+        "recursive_fanout=8",
+        "top_graph_enabled=1",
+        "top_graph_degree=32",
+        "top_graph_build_list_size=100",
+        "top_graph_search_list_size=96",
+        "boundary_replica_count=8",
+        "closure_epsilon=0.10",
+        "training_sample_rows=10000"
+      ],
+      "log_file": "${artifact_dir}/load-50k-closure_e010_b8.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-50k-closure_e025_b8",
+      "tags": [
+        "load",
+        "task144",
+        "50k",
+        "variant=closure_e025_b8"
+      ],
+      "prefix": "t144_50k_closure_e025_b8",
+      "index_name": "t144_50k_closure_e025_b8_idx",
+      "dim": 1536,
+      "corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_50k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "storage_format": "rabitq",
+      "reloptions": [
+        "nlists=1024",
+        "recursive_fanout=8",
+        "top_graph_enabled=1",
+        "top_graph_degree=32",
+        "top_graph_build_list_size=100",
+        "top_graph_search_list_size=96",
+        "boundary_replica_count=8",
+        "closure_epsilon=0.25",
+        "training_sample_rows=10000"
+      ],
+      "log_file": "${artifact_dir}/load-50k-closure_e025_b8.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-50k-closure_e050_b8",
+      "tags": [
+        "load",
+        "task144",
+        "50k",
+        "variant=closure_e050_b8"
+      ],
+      "prefix": "t144_50k_closure_e050_b8",
+      "index_name": "t144_50k_closure_e050_b8_idx",
+      "dim": 1536,
+      "corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_50k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "storage_format": "rabitq",
+      "reloptions": [
+        "nlists=1024",
+        "recursive_fanout=8",
+        "top_graph_enabled=1",
+        "top_graph_degree=32",
+        "top_graph_build_list_size=100",
+        "top_graph_search_list_size=96",
+        "boundary_replica_count=8",
+        "closure_epsilon=0.50",
+        "training_sample_rows=10000"
+      ],
+      "log_file": "${artifact_dir}/load-50k-closure_e050_b8.log"
+    },
+    {
+      "kind": "recall",
+      "name": "truth-cache-50k-k10",
+      "tags": [
+        "truth-cache",
+        "recall",
+        "task144",
+        "50k"
+      ],
+      "prefix": "t144_50k_single",
+      "k": 10,
+      "sweep": [
+        8
+      ],
+      "queries_limit": 200,
+      "truth_corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-50k-k10.json",
+      "log_output": "${artifact_dir}/truth-cache-50k-k10.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-50k-single",
+      "tags": [
+        "storage",
+        "task144",
+        "50k",
+        "variant=single"
+      ],
+      "prefix": "t144_50k_single",
+      "log_file": "${artifact_dir}/storage-50k-single.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-50k-fixed_b2",
+      "tags": [
+        "storage",
+        "task144",
+        "50k",
+        "variant=fixed_b2"
+      ],
+      "prefix": "t144_50k_fixed_b2",
+      "log_file": "${artifact_dir}/storage-50k-fixed_b2.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-50k-closure_e010_b8",
+      "tags": [
+        "storage",
+        "task144",
+        "50k",
+        "variant=closure_e010_b8"
+      ],
+      "prefix": "t144_50k_closure_e010_b8",
+      "log_file": "${artifact_dir}/storage-50k-closure_e010_b8.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-50k-closure_e025_b8",
+      "tags": [
+        "storage",
+        "task144",
+        "50k",
+        "variant=closure_e025_b8"
+      ],
+      "prefix": "t144_50k_closure_e025_b8",
+      "log_file": "${artifact_dir}/storage-50k-closure_e025_b8.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-50k-closure_e050_b8",
+      "tags": [
+        "storage",
+        "task144",
+        "50k",
+        "variant=closure_e050_b8"
+      ],
+      "prefix": "t144_50k_closure_e050_b8",
+      "log_file": "${artifact_dir}/storage-50k-closure_e050_b8.log"
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-50k-single-fixed",
+      "tags": [
+        "pipeline",
+        "task144",
+        "50k",
+        "variant=single",
+        "query=fixed"
+      ],
+      "prefix": "t144_50k_single",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-50k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-50k-single-fixed.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-50k-single-fixed.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-50k-single-fixed.jsonl"
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-50k-single-ratio125",
+      "tags": [
+        "pipeline",
+        "task144",
+        "50k",
+        "variant=single",
+        "query=ratio125"
+      ],
+      "prefix": "t144_50k_single",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-50k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-50k-single-ratio125.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-50k-single-ratio125.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-50k-single-ratio125.jsonl",
+      "session_gucs": [
+        "ec_spire.probe_distance_ratio=1.25"
+      ]
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-50k-single-ratio200",
+      "tags": [
+        "pipeline",
+        "task144",
+        "50k",
+        "variant=single",
+        "query=ratio200"
+      ],
+      "prefix": "t144_50k_single",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-50k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-50k-single-ratio200.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-50k-single-ratio200.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-50k-single-ratio200.jsonl",
+      "session_gucs": [
+        "ec_spire.probe_distance_ratio=2.0"
+      ]
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-50k-single-ratio400",
+      "tags": [
+        "pipeline",
+        "task144",
+        "50k",
+        "variant=single",
+        "query=ratio400"
+      ],
+      "prefix": "t144_50k_single",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-50k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-50k-single-ratio400.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-50k-single-ratio400.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-50k-single-ratio400.jsonl",
+      "session_gucs": [
+        "ec_spire.probe_distance_ratio=4.0"
+      ]
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-50k-single-ratio800",
+      "tags": [
+        "pipeline",
+        "task144",
+        "50k",
+        "variant=single",
+        "query=ratio800"
+      ],
+      "prefix": "t144_50k_single",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-50k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-50k-single-ratio800.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-50k-single-ratio800.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-50k-single-ratio800.jsonl",
+      "session_gucs": [
+        "ec_spire.probe_distance_ratio=8.0"
+      ]
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-50k-single-adaptive",
+      "tags": [
+        "pipeline",
+        "task144",
+        "50k",
+        "variant=single",
+        "query=adaptive"
+      ],
+      "prefix": "t144_50k_single",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-50k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-50k-single-adaptive.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-50k-single-adaptive.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-50k-single-adaptive.jsonl",
+      "adaptive_nprobe": true
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-50k-fixed_b2-fixed",
+      "tags": [
+        "pipeline",
+        "task144",
+        "50k",
+        "variant=fixed_b2",
+        "query=fixed"
+      ],
+      "prefix": "t144_50k_fixed_b2",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-50k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-50k-fixed_b2-fixed.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-50k-fixed_b2-fixed.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-50k-fixed_b2-fixed.jsonl"
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-50k-fixed_b2-ratio125",
+      "tags": [
+        "pipeline",
+        "task144",
+        "50k",
+        "variant=fixed_b2",
+        "query=ratio125"
+      ],
+      "prefix": "t144_50k_fixed_b2",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-50k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-50k-fixed_b2-ratio125.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-50k-fixed_b2-ratio125.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-50k-fixed_b2-ratio125.jsonl",
+      "session_gucs": [
+        "ec_spire.probe_distance_ratio=1.25"
+      ]
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-50k-fixed_b2-ratio200",
+      "tags": [
+        "pipeline",
+        "task144",
+        "50k",
+        "variant=fixed_b2",
+        "query=ratio200"
+      ],
+      "prefix": "t144_50k_fixed_b2",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-50k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-50k-fixed_b2-ratio200.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-50k-fixed_b2-ratio200.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-50k-fixed_b2-ratio200.jsonl",
+      "session_gucs": [
+        "ec_spire.probe_distance_ratio=2.0"
+      ]
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-50k-fixed_b2-ratio400",
+      "tags": [
+        "pipeline",
+        "task144",
+        "50k",
+        "variant=fixed_b2",
+        "query=ratio400"
+      ],
+      "prefix": "t144_50k_fixed_b2",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-50k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-50k-fixed_b2-ratio400.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-50k-fixed_b2-ratio400.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-50k-fixed_b2-ratio400.jsonl",
+      "session_gucs": [
+        "ec_spire.probe_distance_ratio=4.0"
+      ]
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-50k-fixed_b2-ratio800",
+      "tags": [
+        "pipeline",
+        "task144",
+        "50k",
+        "variant=fixed_b2",
+        "query=ratio800"
+      ],
+      "prefix": "t144_50k_fixed_b2",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-50k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-50k-fixed_b2-ratio800.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-50k-fixed_b2-ratio800.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-50k-fixed_b2-ratio800.jsonl",
+      "session_gucs": [
+        "ec_spire.probe_distance_ratio=8.0"
+      ]
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-50k-fixed_b2-adaptive",
+      "tags": [
+        "pipeline",
+        "task144",
+        "50k",
+        "variant=fixed_b2",
+        "query=adaptive"
+      ],
+      "prefix": "t144_50k_fixed_b2",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-50k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-50k-fixed_b2-adaptive.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-50k-fixed_b2-adaptive.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-50k-fixed_b2-adaptive.jsonl",
+      "adaptive_nprobe": true
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-50k-closure_e010_b8-fixed",
+      "tags": [
+        "pipeline",
+        "task144",
+        "50k",
+        "variant=closure_e010_b8",
+        "query=fixed"
+      ],
+      "prefix": "t144_50k_closure_e010_b8",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-50k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-50k-closure_e010_b8-fixed.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-50k-closure_e010_b8-fixed.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-50k-closure_e010_b8-fixed.jsonl"
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-50k-closure_e010_b8-ratio125",
+      "tags": [
+        "pipeline",
+        "task144",
+        "50k",
+        "variant=closure_e010_b8",
+        "query=ratio125"
+      ],
+      "prefix": "t144_50k_closure_e010_b8",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-50k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-50k-closure_e010_b8-ratio125.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-50k-closure_e010_b8-ratio125.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-50k-closure_e010_b8-ratio125.jsonl",
+      "session_gucs": [
+        "ec_spire.probe_distance_ratio=1.25"
+      ]
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-50k-closure_e010_b8-ratio200",
+      "tags": [
+        "pipeline",
+        "task144",
+        "50k",
+        "variant=closure_e010_b8",
+        "query=ratio200"
+      ],
+      "prefix": "t144_50k_closure_e010_b8",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-50k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-50k-closure_e010_b8-ratio200.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-50k-closure_e010_b8-ratio200.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-50k-closure_e010_b8-ratio200.jsonl",
+      "session_gucs": [
+        "ec_spire.probe_distance_ratio=2.0"
+      ]
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-50k-closure_e010_b8-ratio400",
+      "tags": [
+        "pipeline",
+        "task144",
+        "50k",
+        "variant=closure_e010_b8",
+        "query=ratio400"
+      ],
+      "prefix": "t144_50k_closure_e010_b8",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-50k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-50k-closure_e010_b8-ratio400.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-50k-closure_e010_b8-ratio400.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-50k-closure_e010_b8-ratio400.jsonl",
+      "session_gucs": [
+        "ec_spire.probe_distance_ratio=4.0"
+      ]
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-50k-closure_e010_b8-ratio800",
+      "tags": [
+        "pipeline",
+        "task144",
+        "50k",
+        "variant=closure_e010_b8",
+        "query=ratio800"
+      ],
+      "prefix": "t144_50k_closure_e010_b8",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-50k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-50k-closure_e010_b8-ratio800.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-50k-closure_e010_b8-ratio800.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-50k-closure_e010_b8-ratio800.jsonl",
+      "session_gucs": [
+        "ec_spire.probe_distance_ratio=8.0"
+      ]
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-50k-closure_e010_b8-adaptive",
+      "tags": [
+        "pipeline",
+        "task144",
+        "50k",
+        "variant=closure_e010_b8",
+        "query=adaptive"
+      ],
+      "prefix": "t144_50k_closure_e010_b8",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-50k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-50k-closure_e010_b8-adaptive.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-50k-closure_e010_b8-adaptive.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-50k-closure_e010_b8-adaptive.jsonl",
+      "adaptive_nprobe": true
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-50k-closure_e025_b8-fixed",
+      "tags": [
+        "pipeline",
+        "task144",
+        "50k",
+        "variant=closure_e025_b8",
+        "query=fixed"
+      ],
+      "prefix": "t144_50k_closure_e025_b8",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-50k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-50k-closure_e025_b8-fixed.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-50k-closure_e025_b8-fixed.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-50k-closure_e025_b8-fixed.jsonl"
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-50k-closure_e025_b8-ratio125",
+      "tags": [
+        "pipeline",
+        "task144",
+        "50k",
+        "variant=closure_e025_b8",
+        "query=ratio125"
+      ],
+      "prefix": "t144_50k_closure_e025_b8",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-50k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-50k-closure_e025_b8-ratio125.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-50k-closure_e025_b8-ratio125.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-50k-closure_e025_b8-ratio125.jsonl",
+      "session_gucs": [
+        "ec_spire.probe_distance_ratio=1.25"
+      ]
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-50k-closure_e025_b8-ratio200",
+      "tags": [
+        "pipeline",
+        "task144",
+        "50k",
+        "variant=closure_e025_b8",
+        "query=ratio200"
+      ],
+      "prefix": "t144_50k_closure_e025_b8",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-50k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-50k-closure_e025_b8-ratio200.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-50k-closure_e025_b8-ratio200.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-50k-closure_e025_b8-ratio200.jsonl",
+      "session_gucs": [
+        "ec_spire.probe_distance_ratio=2.0"
+      ]
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-50k-closure_e025_b8-ratio400",
+      "tags": [
+        "pipeline",
+        "task144",
+        "50k",
+        "variant=closure_e025_b8",
+        "query=ratio400"
+      ],
+      "prefix": "t144_50k_closure_e025_b8",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-50k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-50k-closure_e025_b8-ratio400.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-50k-closure_e025_b8-ratio400.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-50k-closure_e025_b8-ratio400.jsonl",
+      "session_gucs": [
+        "ec_spire.probe_distance_ratio=4.0"
+      ]
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-50k-closure_e025_b8-ratio800",
+      "tags": [
+        "pipeline",
+        "task144",
+        "50k",
+        "variant=closure_e025_b8",
+        "query=ratio800"
+      ],
+      "prefix": "t144_50k_closure_e025_b8",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-50k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-50k-closure_e025_b8-ratio800.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-50k-closure_e025_b8-ratio800.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-50k-closure_e025_b8-ratio800.jsonl",
+      "session_gucs": [
+        "ec_spire.probe_distance_ratio=8.0"
+      ]
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-50k-closure_e025_b8-adaptive",
+      "tags": [
+        "pipeline",
+        "task144",
+        "50k",
+        "variant=closure_e025_b8",
+        "query=adaptive"
+      ],
+      "prefix": "t144_50k_closure_e025_b8",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-50k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-50k-closure_e025_b8-adaptive.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-50k-closure_e025_b8-adaptive.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-50k-closure_e025_b8-adaptive.jsonl",
+      "adaptive_nprobe": true
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-50k-closure_e050_b8-fixed",
+      "tags": [
+        "pipeline",
+        "task144",
+        "50k",
+        "variant=closure_e050_b8",
+        "query=fixed"
+      ],
+      "prefix": "t144_50k_closure_e050_b8",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-50k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-50k-closure_e050_b8-fixed.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-50k-closure_e050_b8-fixed.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-50k-closure_e050_b8-fixed.jsonl"
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-50k-closure_e050_b8-ratio125",
+      "tags": [
+        "pipeline",
+        "task144",
+        "50k",
+        "variant=closure_e050_b8",
+        "query=ratio125"
+      ],
+      "prefix": "t144_50k_closure_e050_b8",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-50k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-50k-closure_e050_b8-ratio125.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-50k-closure_e050_b8-ratio125.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-50k-closure_e050_b8-ratio125.jsonl",
+      "session_gucs": [
+        "ec_spire.probe_distance_ratio=1.25"
+      ]
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-50k-closure_e050_b8-ratio200",
+      "tags": [
+        "pipeline",
+        "task144",
+        "50k",
+        "variant=closure_e050_b8",
+        "query=ratio200"
+      ],
+      "prefix": "t144_50k_closure_e050_b8",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-50k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-50k-closure_e050_b8-ratio200.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-50k-closure_e050_b8-ratio200.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-50k-closure_e050_b8-ratio200.jsonl",
+      "session_gucs": [
+        "ec_spire.probe_distance_ratio=2.0"
+      ]
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-50k-closure_e050_b8-ratio400",
+      "tags": [
+        "pipeline",
+        "task144",
+        "50k",
+        "variant=closure_e050_b8",
+        "query=ratio400"
+      ],
+      "prefix": "t144_50k_closure_e050_b8",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-50k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-50k-closure_e050_b8-ratio400.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-50k-closure_e050_b8-ratio400.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-50k-closure_e050_b8-ratio400.jsonl",
+      "session_gucs": [
+        "ec_spire.probe_distance_ratio=4.0"
+      ]
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-50k-closure_e050_b8-ratio800",
+      "tags": [
+        "pipeline",
+        "task144",
+        "50k",
+        "variant=closure_e050_b8",
+        "query=ratio800"
+      ],
+      "prefix": "t144_50k_closure_e050_b8",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-50k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-50k-closure_e050_b8-ratio800.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-50k-closure_e050_b8-ratio800.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-50k-closure_e050_b8-ratio800.jsonl",
+      "session_gucs": [
+        "ec_spire.probe_distance_ratio=8.0"
+      ]
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-50k-closure_e050_b8-adaptive",
+      "tags": [
+        "pipeline",
+        "task144",
+        "50k",
+        "variant=closure_e050_b8",
+        "query=adaptive"
+      ],
+      "prefix": "t144_50k_closure_e050_b8",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-50k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-50k-closure_e050_b8-adaptive.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-50k-closure_e050_b8-adaptive.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-50k-closure_e050_b8-adaptive.jsonl",
+      "adaptive_nprobe": true
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-single",
+      "tags": [
+        "load",
+        "task144",
+        "100k",
+        "variant=single"
+      ],
+      "prefix": "t144_100k_single",
+      "index_name": "t144_100k_single_idx",
+      "dim": 1536,
+      "corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_100k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "storage_format": "rabitq",
+      "reloptions": [
+        "nlists=1024",
+        "recursive_fanout=8",
+        "top_graph_enabled=1",
+        "top_graph_degree=32",
+        "top_graph_build_list_size=100",
+        "top_graph_search_list_size=96",
+        "boundary_replica_count=0",
+        "closure_epsilon=0",
+        "training_sample_rows=10000"
+      ],
+      "log_file": "${artifact_dir}/load-100k-single.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-fixed_b2",
+      "tags": [
+        "load",
+        "task144",
+        "100k",
+        "variant=fixed_b2"
+      ],
+      "prefix": "t144_100k_fixed_b2",
+      "index_name": "t144_100k_fixed_b2_idx",
+      "dim": 1536,
+      "corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_100k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "storage_format": "rabitq",
+      "reloptions": [
+        "nlists=1024",
+        "recursive_fanout=8",
+        "top_graph_enabled=1",
+        "top_graph_degree=32",
+        "top_graph_build_list_size=100",
+        "top_graph_search_list_size=96",
+        "boundary_replica_count=2",
+        "closure_epsilon=0",
+        "training_sample_rows=10000"
+      ],
+      "log_file": "${artifact_dir}/load-100k-fixed_b2.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-closure_e010_b8",
+      "tags": [
+        "load",
+        "task144",
+        "100k",
+        "variant=closure_e010_b8"
+      ],
+      "prefix": "t144_100k_closure_e010_b8",
+      "index_name": "t144_100k_closure_e010_b8_idx",
+      "dim": 1536,
+      "corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_100k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "storage_format": "rabitq",
+      "reloptions": [
+        "nlists=1024",
+        "recursive_fanout=8",
+        "top_graph_enabled=1",
+        "top_graph_degree=32",
+        "top_graph_build_list_size=100",
+        "top_graph_search_list_size=96",
+        "boundary_replica_count=8",
+        "closure_epsilon=0.10",
+        "training_sample_rows=10000"
+      ],
+      "log_file": "${artifact_dir}/load-100k-closure_e010_b8.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-closure_e025_b8",
+      "tags": [
+        "load",
+        "task144",
+        "100k",
+        "variant=closure_e025_b8"
+      ],
+      "prefix": "t144_100k_closure_e025_b8",
+      "index_name": "t144_100k_closure_e025_b8_idx",
+      "dim": 1536,
+      "corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_100k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "storage_format": "rabitq",
+      "reloptions": [
+        "nlists=1024",
+        "recursive_fanout=8",
+        "top_graph_enabled=1",
+        "top_graph_degree=32",
+        "top_graph_build_list_size=100",
+        "top_graph_search_list_size=96",
+        "boundary_replica_count=8",
+        "closure_epsilon=0.25",
+        "training_sample_rows=10000"
+      ],
+      "log_file": "${artifact_dir}/load-100k-closure_e025_b8.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-closure_e050_b8",
+      "tags": [
+        "load",
+        "task144",
+        "100k",
+        "variant=closure_e050_b8"
+      ],
+      "prefix": "t144_100k_closure_e050_b8",
+      "index_name": "t144_100k_closure_e050_b8_idx",
+      "dim": 1536,
+      "corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_100k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "storage_format": "rabitq",
+      "reloptions": [
+        "nlists=1024",
+        "recursive_fanout=8",
+        "top_graph_enabled=1",
+        "top_graph_degree=32",
+        "top_graph_build_list_size=100",
+        "top_graph_search_list_size=96",
+        "boundary_replica_count=8",
+        "closure_epsilon=0.50",
+        "training_sample_rows=10000"
+      ],
+      "log_file": "${artifact_dir}/load-100k-closure_e050_b8.log"
+    },
+    {
+      "kind": "recall",
+      "name": "truth-cache-100k-k10",
+      "tags": [
+        "truth-cache",
+        "recall",
+        "task144",
+        "100k"
+      ],
+      "prefix": "t144_100k_single",
+      "k": 10,
+      "sweep": [
+        8
+      ],
+      "queries_limit": 200,
+      "truth_corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-100k-k10.json",
+      "log_output": "${artifact_dir}/truth-cache-100k-k10.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k-single",
+      "tags": [
+        "storage",
+        "task144",
+        "100k",
+        "variant=single"
+      ],
+      "prefix": "t144_100k_single",
+      "log_file": "${artifact_dir}/storage-100k-single.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k-fixed_b2",
+      "tags": [
+        "storage",
+        "task144",
+        "100k",
+        "variant=fixed_b2"
+      ],
+      "prefix": "t144_100k_fixed_b2",
+      "log_file": "${artifact_dir}/storage-100k-fixed_b2.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k-closure_e010_b8",
+      "tags": [
+        "storage",
+        "task144",
+        "100k",
+        "variant=closure_e010_b8"
+      ],
+      "prefix": "t144_100k_closure_e010_b8",
+      "log_file": "${artifact_dir}/storage-100k-closure_e010_b8.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k-closure_e025_b8",
+      "tags": [
+        "storage",
+        "task144",
+        "100k",
+        "variant=closure_e025_b8"
+      ],
+      "prefix": "t144_100k_closure_e025_b8",
+      "log_file": "${artifact_dir}/storage-100k-closure_e025_b8.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k-closure_e050_b8",
+      "tags": [
+        "storage",
+        "task144",
+        "100k",
+        "variant=closure_e050_b8"
+      ],
+      "prefix": "t144_100k_closure_e050_b8",
+      "log_file": "${artifact_dir}/storage-100k-closure_e050_b8.log"
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-100k-single-fixed",
+      "tags": [
+        "pipeline",
+        "task144",
+        "100k",
+        "variant=single",
+        "query=fixed"
+      ],
+      "prefix": "t144_100k_single",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-100k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-100k-single-fixed.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-100k-single-fixed.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-100k-single-fixed.jsonl"
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-100k-single-ratio125",
+      "tags": [
+        "pipeline",
+        "task144",
+        "100k",
+        "variant=single",
+        "query=ratio125"
+      ],
+      "prefix": "t144_100k_single",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-100k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-100k-single-ratio125.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-100k-single-ratio125.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-100k-single-ratio125.jsonl",
+      "session_gucs": [
+        "ec_spire.probe_distance_ratio=1.25"
+      ]
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-100k-single-ratio200",
+      "tags": [
+        "pipeline",
+        "task144",
+        "100k",
+        "variant=single",
+        "query=ratio200"
+      ],
+      "prefix": "t144_100k_single",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-100k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-100k-single-ratio200.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-100k-single-ratio200.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-100k-single-ratio200.jsonl",
+      "session_gucs": [
+        "ec_spire.probe_distance_ratio=2.0"
+      ]
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-100k-single-ratio400",
+      "tags": [
+        "pipeline",
+        "task144",
+        "100k",
+        "variant=single",
+        "query=ratio400"
+      ],
+      "prefix": "t144_100k_single",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-100k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-100k-single-ratio400.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-100k-single-ratio400.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-100k-single-ratio400.jsonl",
+      "session_gucs": [
+        "ec_spire.probe_distance_ratio=4.0"
+      ]
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-100k-single-ratio800",
+      "tags": [
+        "pipeline",
+        "task144",
+        "100k",
+        "variant=single",
+        "query=ratio800"
+      ],
+      "prefix": "t144_100k_single",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-100k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-100k-single-ratio800.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-100k-single-ratio800.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-100k-single-ratio800.jsonl",
+      "session_gucs": [
+        "ec_spire.probe_distance_ratio=8.0"
+      ]
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-100k-single-adaptive",
+      "tags": [
+        "pipeline",
+        "task144",
+        "100k",
+        "variant=single",
+        "query=adaptive"
+      ],
+      "prefix": "t144_100k_single",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-100k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-100k-single-adaptive.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-100k-single-adaptive.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-100k-single-adaptive.jsonl",
+      "adaptive_nprobe": true
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-100k-fixed_b2-fixed",
+      "tags": [
+        "pipeline",
+        "task144",
+        "100k",
+        "variant=fixed_b2",
+        "query=fixed"
+      ],
+      "prefix": "t144_100k_fixed_b2",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-100k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-100k-fixed_b2-fixed.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-100k-fixed_b2-fixed.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-100k-fixed_b2-fixed.jsonl"
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-100k-fixed_b2-ratio125",
+      "tags": [
+        "pipeline",
+        "task144",
+        "100k",
+        "variant=fixed_b2",
+        "query=ratio125"
+      ],
+      "prefix": "t144_100k_fixed_b2",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-100k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-100k-fixed_b2-ratio125.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-100k-fixed_b2-ratio125.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-100k-fixed_b2-ratio125.jsonl",
+      "session_gucs": [
+        "ec_spire.probe_distance_ratio=1.25"
+      ]
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-100k-fixed_b2-ratio200",
+      "tags": [
+        "pipeline",
+        "task144",
+        "100k",
+        "variant=fixed_b2",
+        "query=ratio200"
+      ],
+      "prefix": "t144_100k_fixed_b2",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-100k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-100k-fixed_b2-ratio200.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-100k-fixed_b2-ratio200.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-100k-fixed_b2-ratio200.jsonl",
+      "session_gucs": [
+        "ec_spire.probe_distance_ratio=2.0"
+      ]
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-100k-fixed_b2-ratio400",
+      "tags": [
+        "pipeline",
+        "task144",
+        "100k",
+        "variant=fixed_b2",
+        "query=ratio400"
+      ],
+      "prefix": "t144_100k_fixed_b2",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-100k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-100k-fixed_b2-ratio400.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-100k-fixed_b2-ratio400.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-100k-fixed_b2-ratio400.jsonl",
+      "session_gucs": [
+        "ec_spire.probe_distance_ratio=4.0"
+      ]
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-100k-fixed_b2-ratio800",
+      "tags": [
+        "pipeline",
+        "task144",
+        "100k",
+        "variant=fixed_b2",
+        "query=ratio800"
+      ],
+      "prefix": "t144_100k_fixed_b2",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-100k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-100k-fixed_b2-ratio800.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-100k-fixed_b2-ratio800.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-100k-fixed_b2-ratio800.jsonl",
+      "session_gucs": [
+        "ec_spire.probe_distance_ratio=8.0"
+      ]
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-100k-fixed_b2-adaptive",
+      "tags": [
+        "pipeline",
+        "task144",
+        "100k",
+        "variant=fixed_b2",
+        "query=adaptive"
+      ],
+      "prefix": "t144_100k_fixed_b2",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-100k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-100k-fixed_b2-adaptive.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-100k-fixed_b2-adaptive.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-100k-fixed_b2-adaptive.jsonl",
+      "adaptive_nprobe": true
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-100k-closure_e010_b8-fixed",
+      "tags": [
+        "pipeline",
+        "task144",
+        "100k",
+        "variant=closure_e010_b8",
+        "query=fixed"
+      ],
+      "prefix": "t144_100k_closure_e010_b8",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-100k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-100k-closure_e010_b8-fixed.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-100k-closure_e010_b8-fixed.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-100k-closure_e010_b8-fixed.jsonl"
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-100k-closure_e010_b8-ratio125",
+      "tags": [
+        "pipeline",
+        "task144",
+        "100k",
+        "variant=closure_e010_b8",
+        "query=ratio125"
+      ],
+      "prefix": "t144_100k_closure_e010_b8",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-100k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-100k-closure_e010_b8-ratio125.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-100k-closure_e010_b8-ratio125.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-100k-closure_e010_b8-ratio125.jsonl",
+      "session_gucs": [
+        "ec_spire.probe_distance_ratio=1.25"
+      ]
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-100k-closure_e010_b8-ratio200",
+      "tags": [
+        "pipeline",
+        "task144",
+        "100k",
+        "variant=closure_e010_b8",
+        "query=ratio200"
+      ],
+      "prefix": "t144_100k_closure_e010_b8",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-100k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-100k-closure_e010_b8-ratio200.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-100k-closure_e010_b8-ratio200.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-100k-closure_e010_b8-ratio200.jsonl",
+      "session_gucs": [
+        "ec_spire.probe_distance_ratio=2.0"
+      ]
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-100k-closure_e010_b8-ratio400",
+      "tags": [
+        "pipeline",
+        "task144",
+        "100k",
+        "variant=closure_e010_b8",
+        "query=ratio400"
+      ],
+      "prefix": "t144_100k_closure_e010_b8",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-100k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-100k-closure_e010_b8-ratio400.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-100k-closure_e010_b8-ratio400.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-100k-closure_e010_b8-ratio400.jsonl",
+      "session_gucs": [
+        "ec_spire.probe_distance_ratio=4.0"
+      ]
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-100k-closure_e010_b8-ratio800",
+      "tags": [
+        "pipeline",
+        "task144",
+        "100k",
+        "variant=closure_e010_b8",
+        "query=ratio800"
+      ],
+      "prefix": "t144_100k_closure_e010_b8",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-100k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-100k-closure_e010_b8-ratio800.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-100k-closure_e010_b8-ratio800.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-100k-closure_e010_b8-ratio800.jsonl",
+      "session_gucs": [
+        "ec_spire.probe_distance_ratio=8.0"
+      ]
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-100k-closure_e010_b8-adaptive",
+      "tags": [
+        "pipeline",
+        "task144",
+        "100k",
+        "variant=closure_e010_b8",
+        "query=adaptive"
+      ],
+      "prefix": "t144_100k_closure_e010_b8",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-100k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-100k-closure_e010_b8-adaptive.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-100k-closure_e010_b8-adaptive.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-100k-closure_e010_b8-adaptive.jsonl",
+      "adaptive_nprobe": true
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-100k-closure_e025_b8-fixed",
+      "tags": [
+        "pipeline",
+        "task144",
+        "100k",
+        "variant=closure_e025_b8",
+        "query=fixed"
+      ],
+      "prefix": "t144_100k_closure_e025_b8",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-100k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-100k-closure_e025_b8-fixed.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-100k-closure_e025_b8-fixed.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-100k-closure_e025_b8-fixed.jsonl"
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-100k-closure_e025_b8-ratio125",
+      "tags": [
+        "pipeline",
+        "task144",
+        "100k",
+        "variant=closure_e025_b8",
+        "query=ratio125"
+      ],
+      "prefix": "t144_100k_closure_e025_b8",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-100k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-100k-closure_e025_b8-ratio125.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-100k-closure_e025_b8-ratio125.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-100k-closure_e025_b8-ratio125.jsonl",
+      "session_gucs": [
+        "ec_spire.probe_distance_ratio=1.25"
+      ]
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-100k-closure_e025_b8-ratio200",
+      "tags": [
+        "pipeline",
+        "task144",
+        "100k",
+        "variant=closure_e025_b8",
+        "query=ratio200"
+      ],
+      "prefix": "t144_100k_closure_e025_b8",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-100k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-100k-closure_e025_b8-ratio200.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-100k-closure_e025_b8-ratio200.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-100k-closure_e025_b8-ratio200.jsonl",
+      "session_gucs": [
+        "ec_spire.probe_distance_ratio=2.0"
+      ]
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-100k-closure_e025_b8-ratio400",
+      "tags": [
+        "pipeline",
+        "task144",
+        "100k",
+        "variant=closure_e025_b8",
+        "query=ratio400"
+      ],
+      "prefix": "t144_100k_closure_e025_b8",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-100k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-100k-closure_e025_b8-ratio400.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-100k-closure_e025_b8-ratio400.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-100k-closure_e025_b8-ratio400.jsonl",
+      "session_gucs": [
+        "ec_spire.probe_distance_ratio=4.0"
+      ]
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-100k-closure_e025_b8-ratio800",
+      "tags": [
+        "pipeline",
+        "task144",
+        "100k",
+        "variant=closure_e025_b8",
+        "query=ratio800"
+      ],
+      "prefix": "t144_100k_closure_e025_b8",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-100k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-100k-closure_e025_b8-ratio800.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-100k-closure_e025_b8-ratio800.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-100k-closure_e025_b8-ratio800.jsonl",
+      "session_gucs": [
+        "ec_spire.probe_distance_ratio=8.0"
+      ]
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-100k-closure_e025_b8-adaptive",
+      "tags": [
+        "pipeline",
+        "task144",
+        "100k",
+        "variant=closure_e025_b8",
+        "query=adaptive"
+      ],
+      "prefix": "t144_100k_closure_e025_b8",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-100k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-100k-closure_e025_b8-adaptive.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-100k-closure_e025_b8-adaptive.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-100k-closure_e025_b8-adaptive.jsonl",
+      "adaptive_nprobe": true
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-100k-closure_e050_b8-fixed",
+      "tags": [
+        "pipeline",
+        "task144",
+        "100k",
+        "variant=closure_e050_b8",
+        "query=fixed"
+      ],
+      "prefix": "t144_100k_closure_e050_b8",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-100k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-100k-closure_e050_b8-fixed.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-100k-closure_e050_b8-fixed.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-100k-closure_e050_b8-fixed.jsonl"
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-100k-closure_e050_b8-ratio125",
+      "tags": [
+        "pipeline",
+        "task144",
+        "100k",
+        "variant=closure_e050_b8",
+        "query=ratio125"
+      ],
+      "prefix": "t144_100k_closure_e050_b8",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-100k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-100k-closure_e050_b8-ratio125.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-100k-closure_e050_b8-ratio125.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-100k-closure_e050_b8-ratio125.jsonl",
+      "session_gucs": [
+        "ec_spire.probe_distance_ratio=1.25"
+      ]
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-100k-closure_e050_b8-ratio200",
+      "tags": [
+        "pipeline",
+        "task144",
+        "100k",
+        "variant=closure_e050_b8",
+        "query=ratio200"
+      ],
+      "prefix": "t144_100k_closure_e050_b8",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-100k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-100k-closure_e050_b8-ratio200.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-100k-closure_e050_b8-ratio200.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-100k-closure_e050_b8-ratio200.jsonl",
+      "session_gucs": [
+        "ec_spire.probe_distance_ratio=2.0"
+      ]
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-100k-closure_e050_b8-ratio400",
+      "tags": [
+        "pipeline",
+        "task144",
+        "100k",
+        "variant=closure_e050_b8",
+        "query=ratio400"
+      ],
+      "prefix": "t144_100k_closure_e050_b8",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-100k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-100k-closure_e050_b8-ratio400.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-100k-closure_e050_b8-ratio400.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-100k-closure_e050_b8-ratio400.jsonl",
+      "session_gucs": [
+        "ec_spire.probe_distance_ratio=4.0"
+      ]
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-100k-closure_e050_b8-ratio800",
+      "tags": [
+        "pipeline",
+        "task144",
+        "100k",
+        "variant=closure_e050_b8",
+        "query=ratio800"
+      ],
+      "prefix": "t144_100k_closure_e050_b8",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-100k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-100k-closure_e050_b8-ratio800.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-100k-closure_e050_b8-ratio800.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-100k-closure_e050_b8-ratio800.jsonl",
+      "session_gucs": [
+        "ec_spire.probe_distance_ratio=8.0"
+      ]
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-100k-closure_e050_b8-adaptive",
+      "tags": [
+        "pipeline",
+        "task144",
+        "100k",
+        "variant=closure_e050_b8",
+        "query=adaptive"
+      ],
+      "prefix": "t144_100k_closure_e050_b8",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-100k-k10.json",
+      "log_output": "${artifact_dir}/pipeline-100k-closure_e050_b8-adaptive.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-100k-closure_e050_b8-adaptive.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-100k-closure_e050_b8-adaptive.jsonl",
+      "adaptive_nprobe": true
+    }
+  ]
+}

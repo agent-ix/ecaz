@@ -1,0 +1,35 @@
+[loader] inspecting /home/peter/dev/ecaz/target/real-corpus/staged-task50/ec_real_50k_corpus.tsv
+[loader] inspecting /home/peter/dev/ecaz/target/real-corpus/staged-task50/ec_real_50k_queries.tsv
+[loader] corpus: 50000 rows, sha256=56ca9efe174709116ca8919f85d40043c525fc68377e23d6b824adec3c1de923  queries: 1000 rows, sha256=95ac7992578aa80bb193657f10fbcbf1ea3867e559739244bf5a467f7a5a9fa3
+[loader] warning: manifest verification failed for /home/peter/dev/ecaz/target/real-corpus/staged-task50/ec_real_50k_manifest.json: prefix="ec_real_50k" (expected "ec_real_50k_diskann")
+[loader] copied corpus table ec_real_50k_diskann_corpus in 21.61s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table ec_real_50k_diskann_corpus in 6.64s
+[loader] copied queries table ec_real_50k_diskann_queries in 425.39ms
+[loader] building ec_real_50k_diskann_idx using ec_diskann (reloptions=[<none>]) ...
+[loader] built ec_real_50k_diskann_idx in 193.67s
+┌─────────┬─────────────────────────────────────────┐
+│ field   ┆ value                                   │
+╞═════════╪═════════════════════════════════════════╡
+│ profile ┆ ec_diskann                              │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ ec_real_50k_diskann_corpus (50000 rows) │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ ec_real_50k_diskann_queries (1000 rows) │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ ec_real_50k_diskann_idx [<default>]     │
+└─────────┴─────────────────────────────────────────┘
+[loader] completed prefix ec_real_50k_diskann in 227.82s
+┌─────────┬─────────────────────────────────────────┐
+│ field   ┆ value                                   │
+╞═════════╪═════════════════════════════════════════╡
+│ profile ┆ ec_diskann                              │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ ec_real_50k_diskann_corpus (50000 rows) │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ ec_real_50k_diskann_queries (1000 rows) │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ ec_real_50k_diskann_idx [<default>]     │
+└─────────┴─────────────────────────────────────────┘
+[loader] completed prefix ec_real_50k_diskann in 227.82s
+__ecaz_exit__=0

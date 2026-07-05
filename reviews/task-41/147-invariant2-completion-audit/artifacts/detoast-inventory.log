@@ -1,0 +1,29 @@
+Script started on 2026-05-17 21:24:33-07:00 [<not executed on terminal>]
+src/lib.rs
+881:            unsafe { pg_sys::pg_detoast_datum_packed(original.cast()) }.cast::<pg_sys::ArrayType>();
+
+src/am/ec_diskann/ambuild.rs
+857:        let varlena = unsafe { pg_sys::pg_detoast_datum(original.cast()) };
+868:        unsafe { pgrx::varlena::varlena_to_byte_slice(self.varlena) }
+
+src/am/ec_ivf/build.rs
+711:        let varlena = unsafe { pg_sys::pg_detoast_datum_packed(original.cast()) };
+722:        unsafe { pgrx::varlena::varlena_to_byte_slice(self.varlena) }
+
+src/am/ec_hnsw/source.rs
+506:        let varlena = unsafe { pg_sys::pg_detoast_datum(original.cast()) };
+522:        unsafe { pgrx::varlena::varlena_to_byte_slice(self.varlena) }
+
+src/am/ec_hnsw/build.rs
+655:        let varlena = unsafe { pg_sys::pg_detoast_datum_packed(original.cast()) };
+666:        unsafe { pgrx::varlena::varlena_to_byte_slice(self.varlena) }
+
+src/am/ec_spire/build/tuples.rs
+70:        let varlena = unsafe { pg_sys::pg_detoast_datum_packed(original.cast()) };
+81:        unsafe { pgrx::varlena::varlena_to_byte_slice(self.varlena) }
+
+src/am/ec_spire/scan/relation.rs
+435:        let varlena = unsafe { pg_sys::pg_detoast_datum_packed(original.cast()) };
+446:        unsafe { pgrx::varlena::varlena_to_byte_slice(self.varlena) }
+
+Script done on 2026-05-17 21:24:33-07:00 [COMMAND_EXIT_CODE="0"]

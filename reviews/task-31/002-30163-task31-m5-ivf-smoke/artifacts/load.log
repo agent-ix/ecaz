@@ -1,0 +1,22 @@
+[loader] inspecting data/task31_m5_smoke/task31_m5_smoke_corpus.tsv
+[loader] inspecting data/task31_m5_smoke/task31_m5_smoke_queries.tsv
+[loader] corpus: 10000 rows, sha256=38dde7700ef3d60357035833aa7eb101a834264044f1ba24506c52d494fa3a89  queries: 20 rows, sha256=0c381a769a984698e9bc3863f74b0ffefab2bbbc2ce9974d2969d7abf544b180
+[loader] no sibling manifest at data/task31_m5_smoke/task31_m5_smoke_manifest.json; continuing without verification
+[loader] copied corpus table task31_m5_smoke_pqg8_corpus in 1.70s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table task31_m5_smoke_pqg8_corpus in 303.24ms
+[loader] copied queries table task31_m5_smoke_pqg8_queries in 6.32ms
+[loader] building task31_m5_smoke_pqg8_idx using ec_ivf (reloptions=[storage_format=pq_fastscan, pq_group_size=8, nlists=128, nprobe=8, rerank=heap_f32, rerank_width=500]) ...
+[loader] built task31_m5_smoke_pqg8_idx in 4.76s
+┌─────────┬─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                                                                           │
+╞═════════╪═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_ivf                                                                                                                          │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ task31_m5_smoke_pqg8_corpus (10000 rows)                                                                                        │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ task31_m5_smoke_pqg8_queries (20 rows)                                                                                          │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ task31_m5_smoke_pqg8_idx [storage_format=pq_fastscan, pq_group_size=8, nlists=128, nprobe=8, rerank=heap_f32, rerank_width=500] │
+└─────────┴─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+[loader] completed prefix task31_m5_smoke_pqg8 in 7.21s

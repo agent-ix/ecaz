@@ -1,0 +1,87 @@
+name: SQLsmith ECAZ-grammar
+
+# Task 46 §Exit Criteria #2: manual `make sqlsmith-ecaz` run against
+# a live PG18 cluster with the ECAZ extension installed.
+#
+# Seeds the cluster, runs the generator's deterministic stream
+# against it, and asserts no PANIC / broken connection emerged.
+
+on:
+  workflow_dispatch:
+    inputs:
+      seed:
+        description: "Generator seed (deterministic)"
+        default: "42"
+        required: false
+      count:
+        description: "Number of statement groups to generate + execute"
+        default: "256"
+        required: false
+
+concurrency:
+  group: sqlsmith-ecaz-nightly
+  cancel-in-progress: false
+
+jobs:
+  sqlsmith:
+    name: ecaz-sqlgen execute
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      PGRX_HOME: /tmp/tqvector_pgrx_home
+      PGRX_PG_CONFIG_PATH: /usr/lib/postgresql/18/bin/pg_config
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.95.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: sqlsmith-ecaz-nightly
+
+      - name: Install PG18 + start cluster
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          mkdir -p "$PGRX_HOME"
+          sudo curl --fail --show-error --location \
+            --output /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt noble-pgdg main" | \
+            sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update
+          sudo apt-get install -y postgresql-server-dev-18 postgresql-18 clang llvm pkg-config libssl-dev
+          sudo systemctl start postgresql
+          sleep 3
+          sudo -u postgres psql -c "CREATE USER runner WITH SUPERUSER LOGIN PASSWORD 'sqlsmith'" || true
+          sudo -u postgres psql -c "CREATE DATABASE ecaz_sqlsmith OWNER runner" || true
+
+      - name: Install ecaz extension
+        run: |
+          cargo build --release --features pg18
+          # Compiled artifact path mirrors pgrx layout — operator may
+          # need to copy via pg_config --pkglibdir; for the CI sweep
+          # we depend on the existing install pipeline.
+
+      - name: Create base table
+        env:
+          PGPASSWORD: sqlsmith
+        run: |
+          psql -h localhost -U runner -d ecaz_sqlsmith -c "
+            CREATE EXTENSION IF NOT EXISTS vector;
+            CREATE TABLE IF NOT EXISTS ecaz_sqlgen_t (
+              id bigserial PRIMARY KEY,
+              embedding vector(128)
+            );
+          "
+
+      - name: Run sqlsmith-ecaz
+        env:
+          SQLSMITH_DSN: "host=localhost user=runner password=sqlsmith dbname=ecaz_sqlsmith"
+          SQLSMITH_ECAZ_SEED: ${{ github.event.inputs.seed || '42' }}
+          SQLSMITH_ECAZ_COUNT: ${{ github.event.inputs.count || '256' }}
+        run: make sqlsmith-ecaz
+
+      - name: Upload seed corpus snapshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sqlsmith-ecaz-corpus
+          path: fixtures/sqlsmith-ecaz/

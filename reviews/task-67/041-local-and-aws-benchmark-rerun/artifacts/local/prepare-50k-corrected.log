@@ -1,0 +1,6 @@
+[suite:task67-local-50k-100k-standard] wrote reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/prepare-50k-corrected-manifest.json
+[suite:task67-local-50k-100k-standard] prepare-ec-real-50k -> --database postgres --host /home/peter/.pgrx --port 28818 corpus prepare --profile ec_real_50k --parquet target/real-corpus/data --output-dir target/real-corpus/staged-task67-local
+[suite:task67-local-50k-100k-standard] wrote reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/prepare-50k-corrected-manifest.json
+[suite:task67-local-50k-100k-standard] wrote reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/prepare-50k-corrected-manifest.json
+[suite:task67-local-50k-100k-standard] wrote reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/results.jsonl
+[suite:task67-local-50k-100k-standard] wrote reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/prepare-50k-corrected-manifest.json

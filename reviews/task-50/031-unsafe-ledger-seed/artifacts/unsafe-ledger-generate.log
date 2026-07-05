@@ -1,0 +1,2 @@
+python3 scripts/unsafe_ledger.py generate --output reviews/task-50/031-unsafe-ledger-seed/artifacts/unsafe-ledger.jsonl --packet reviews/task-50/031-unsafe-ledger-seed src
+wrote 2446 unsafe ledger rows to reviews/task-50/031-unsafe-ledger-seed/artifacts/unsafe-ledger.jsonl

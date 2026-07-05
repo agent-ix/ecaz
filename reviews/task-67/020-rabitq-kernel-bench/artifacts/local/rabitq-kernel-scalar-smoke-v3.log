@@ -1,0 +1,20 @@
+backend=scalar
+dim=256
+candidates=16
+iterations=10
+variant	mode	bits	clip	iterations	scores	total_ns	ns_per_score	checksum
+bits1	single-dispatch	1	2.0	10	10	30462	3046.20	3.747467
+bits1	single-scalar	1	2.0	10	10	6923	692.30	3.747467
+bits1	batch	1	2.0	10	160	172011	1075.07	-0.433243
+bits4	single-dispatch	4	2.0	10	10	37810	3781.00	3.765099
+bits4	single-scalar	4	2.0	10	10	37704	3770.40	3.765099
+bits4	batch	4	2.0	10	160	677818	4236.36	0.221699
+bits8	single-dispatch	8	2.0	10	10	21727	2172.70	3.763799
+bits8	single-scalar	8	2.0	10	10	22047	2204.70	3.763799
+bits8	batch	8	2.0	10	160	349346	2183.41	0.278008
+bits8c3	single-dispatch	8	3.0	10	10	21727	2172.70	3.716264
+bits8c3	single-scalar	8	3.0	10	10	21834	2183.40	3.716264
+bits8c3	batch	8	3.0	10	160	403240	2520.25	0.212796
+bits8c4	single-dispatch	8	4.0	10	10	21728	2172.80	3.711038
+bits8c4	single-scalar	8	4.0	10	10	21728	2172.80	3.711038
+bits8c4	batch	8	4.0	10	160	535310	3345.69	0.203587

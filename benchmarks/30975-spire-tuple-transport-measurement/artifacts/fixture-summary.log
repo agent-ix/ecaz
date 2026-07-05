@@ -1,0 +1,10 @@
+SET
+SET
+remote_rows	2000
+coordinator_rows	2000
+query_rows	40
+phase12_tuple_measure_coord_idx	{nlists=16,nprobe=8,rerank_width=16,recursive_fanout=2,nprobe_per_level=2,storage_format=rabitq}
+phase12_tuple_measure_remote_idx	{nlists=16,nprobe=8,rerank_width=16,recursive_fanout=2,nprobe_per_level=2,storage_format=rabitq}
+1	0	local	0	active	3	3	0	0	0	1	0	1	1	0.1.1	none	ready	none
+1	2	remote	1	active	16	16	0	0	0	1	1778655229254926	1	1	0.1.1	none	ready	none
+pg_binary_attr_v1	ready	{pg_binary_attr_v1}

@@ -1,0 +1,19 @@
+[compare] --rebuild: dropping task70_012_diskann_corpus_vectorscale (and dependent index)
+[compare] populating task70_012_diskann_corpus_vectorscale: 10000 rows missing from 10000
+[compare] building pgvectorscale DiskANN index task70_012_diskann_corpus_vectorscale_diskann_idx
+[compare] built task70_012_diskann_corpus_vectorscale_diskann_idx in 1.54s
+[compare] task70_012_diskann_corpus_vectorscale_diskann_idx pg_relation_size=5136384 bytes
+[compare] fetching corpus + queries for ground truth ...
+[compare] computing ground truth ...
+[compare] ground truth in 5.55s
+┌───────────────────────────────────────────┬───────┬──────────┬────────┬─────────┬─────────┬─────────┬─────────┐
+│ engine                                    ┆ sweep ┆ recall@k ┆ ndcg@k ┆ p50     ┆ p95     ┆ p99     ┆ mean    │
+╞═══════════════════════════════════════════╪═══════╪══════════╪════════╪═════════╪═════════╪═════════╪═════════╡
+│ ec_diskann[list_size=64]                  ┆ 64    ┆ 0.9965   ┆ 0.9999 ┆ 0.63 ms ┆ 0.77 ms ┆ 0.91 ms ┆ 0.64 ms │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ pgvectorscale[query_search_list_size=64]  ┆ 64    ┆ 0.9960   ┆ 0.9999 ┆ 0.60 ms ┆ 0.72 ms ┆ 0.89 ms ┆ 0.60 ms │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ ec_diskann[list_size=200]                 ┆ 200   ┆ 0.9975   ┆ 0.9999 ┆ 0.87 ms ┆ 1.02 ms ┆ 1.13 ms ┆ 0.88 ms │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ pgvectorscale[query_search_list_size=200] ┆ 200   ┆ 1.0000   ┆ 1.0000 ┆ 1.13 ms ┆ 1.40 ms ┆ 1.47 ms ┆ 1.14 ms │
+└───────────────────────────────────────────┴───────┴──────────┴────────┴─────────┴─────────┴─────────┴─────────┘

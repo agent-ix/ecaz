@@ -1,0 +1,185 @@
+[workspace]
+members = [".", "crates/*", "hardening/careful"]
+exclude = ["crates/ecaz-lints"]
+resolver = "2"
+
+[package]
+name = "ecaz"
+version = "0.1.1"
+edition = "2021"
+license = "MIT"
+include = [
+    "Cargo.toml",
+    "README.md",
+    "LICENSE*",
+    "build.rs",
+    "benches/**",
+    "csrc/**",
+    "src/**",
+    "tests/**",
+]
+
+[lib]
+crate-type = ["cdylib", "lib"]
+
+[[bin]]
+name = "pgrx_embed_ecaz"
+path = "./src/bin/pgrx_embed.rs"
+
+[features]
+default = ["pg18"]
+pg17 = ["pgrx/pg17", "pgrx-tests/pg17"]
+pg18 = ["pgrx/pg18", "pgrx-tests/pg18"]
+pg_test = []
+bench = []
+dhat-heap = ["dhat"]
+# Experimental: enable the aarch64 bf16 bfdot RaBitQ scoring kernel.
+# Off by default — measured neutral to slightly slower than the f32
+# NEON kernel on Neoverse-V2 (Graviton 4), and lacks a deterministic
+# scalar/f32-NEON↔bf16 score-drift gate. Flip on a host where the
+# bfdot path can be re-evaluated with proper drift + recall checks.
+rabitq-bf16 = []
+
+[dependencies]
+pgrx = "0.17"
+hex = "0.4"
+sha2 = "0.10"
+rand = "0.8"
+rand_chacha = "0.3"
+rayon = "1"
+hashbrown = "0.15"
+postgres = "0.19"
+tokio = { version = "1.51", features = ["rt", "time", "net"] }
+tokio-postgres = "0.7"
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+webpki-roots = "1"
+url = "2.5"
+futures-util = "0.3"
+serde_json = "1"
+
+[dependencies.dhat]
+version = "0.3"
+optional = true
+
+[dev-dependencies]
+pgrx-tests = { version = "0.17", default-features = false, features = ["proptest"] }
+criterion = { version = "0.5", features = ["html_reports"] }
+proptest = "1.5"
+iai-callgrind = "0.14"
+
+[build-dependencies]
+cc = "1"
+pgrx-pg-config = "0.17"
+
+[profile.dev]
+panic = "unwind"
+lto = "thin"
+
+[profile.release]
+panic = "unwind"
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+
+[profile.bench]
+inherits = "release"
+debug = true
+# Override release's lto = "fat" + codegen-units = 1: those settings let
+# the LTO link peak at > 24 GB on the ecaz crate, which OOMs a 16 GB
+# bench host (observed 2026-05-16 during the Graviton baseline cycle).
+# Thin LTO + multi-unit codegen drops peak link memory to ~6-8 GB and
+# costs a few percent on benchmark binary codegen quality -- immaterial
+# for criterion microbench timing, which measures wall time of small
+# inlinable kernels that already get inlined the same way.
+# If you want fat LTO for a specific bench (e.g. to compare codegen),
+# pass `--profile release --bench ...` instead of `--profile bench`.
+lto = "thin"
+codegen-units = 4
+
+# --- Criterion benchmarks ---
+
+[[bench]]
+name = "quant_encode"
+harness = false
+path = "benches/criterion/quant_encode.rs"
+required-features = ["bench"]
+
+[[bench]]
+name = "quant_score"
+harness = false
+path = "benches/criterion/quant_score.rs"
+required-features = ["bench"]
+
+[[bench]]
+name = "quant_prepare"
+harness = false
+path = "benches/criterion/quant_prepare.rs"
+required-features = ["bench"]
+
+[[bench]]
+name = "hadamard"
+harness = false
+path = "benches/criterion/hadamard.rs"
+required-features = ["bench"]
+
+[[bench]]
+name = "codebook"
+harness = false
+path = "benches/criterion/codebook.rs"
+required-features = ["bench"]
+
+[[bench]]
+name = "bitpack"
+harness = false
+path = "benches/criterion/bitpack.rs"
+required-features = ["bench"]
+
+[[bench]]
+name = "page_codec"
+harness = false
+path = "benches/criterion/page_codec.rs"
+required-features = ["bench"]
+
+[[bench]]
+name = "text_io"
+harness = false
+path = "benches/criterion/text_io.rs"
+required-features = ["bench"]
+
+# --- iai-callgrind benchmarks ---
+
+[[bench]]
+name = "iai_quant_score"
+harness = false
+path = "benches/iai/quant_score.rs"
+required-features = ["bench"]
+
+[[bench]]
+name = "iai_hadamard"
+harness = false
+path = "benches/iai/hadamard.rs"
+required-features = ["bench"]
+
+[[bench]]
+name = "iai_bitpack"
+harness = false
+path = "benches/iai/bitpack.rs"
+required-features = ["bench"]
+
+# --- dhat profiling binaries ---
+
+[[bin]]
+name = "dhat_encode"
+path = "benches/dhat/encode.rs"
+required-features = ["dhat-heap"]
+
+[[bin]]
+name = "dhat_score"
+path = "benches/dhat/score.rs"
+required-features = ["dhat-heap"]
+
+[[bin]]
+name = "dhat_vamana_build"
+path = "benches/dhat/vamana_build.rs"
+required-features = ["bench", "dhat-heap"]

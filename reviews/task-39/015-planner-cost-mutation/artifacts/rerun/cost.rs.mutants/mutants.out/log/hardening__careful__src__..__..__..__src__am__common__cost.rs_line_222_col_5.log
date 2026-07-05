@@ -1,0 +1,121 @@
+
+*** hardening/careful/src/../../../src/am/common/cost.rs:222:5: replace estimate_planner_cost -> PlannerCostEstimate with Default::default()
+
+*** mutation diff:
+--- hardening/careful/src/../../../src/am/common/cost.rs
++++ replace estimate_planner_cost -> PlannerCostEstimate with Default::default()
+@@ -214,63 +214,17 @@
+         })
+     }
+ }
+ 
+ pub(crate) fn estimate_planner_cost(
+     inputs: PlannerCostInputs,
+     constants: PlannerCostConstants,
+ ) -> PlannerCostEstimate {
+-    if inputs.index_pages <= 0.0 {
+-        return gated_planner_cost_estimate(inputs.index_pages);
+-    }
+-
+-    let tuple_estimate = if inputs.reltuples > 0.0 {
+-        inputs.reltuples
+-    } else {
+-        inputs.index_pages * 10.0
+-    };
+-    let scoring_dimensions = f64::from(inputs.dimensions) * LUT_CPU_DIMENSION_SCALE;
+-    let ef_search = f64::from(inputs.ef_search);
+-    let tree_height = inputs.tree_height;
+-
+-    let (startup_cost, total_cost) = if tree_height <= 0.0 {
+-        let linear_cost = inputs.index_pages * constants.seq_page_cost;
+-        let linear_cpu = tuple_estimate * constants.cpu_operator_cost * scoring_dimensions;
+-        (0.0, linear_cost + linear_cpu)
+-    } else {
+-        // Graph phase visits ~1 page per upper level (greedy descent to the
+-        // entry neighborhood) plus ef_search candidate pages at the bottom
+-        // layer. The earlier `tree_height * m + ef_search * 2 * m` formula
+-        // wildly overcharged by multiplying ef_search by m, which kept
+-        // ec_hnsw costlier than a seqscan on every realistic table size.
+-        let graph_pages = tree_height + ef_search;
+-        let graph_cost = graph_pages * constants.random_page_cost;
+-        let graph_cpu = graph_pages * constants.cpu_operator_cost * scoring_dimensions;
+-        let linear_pages = (inputs.index_pages - graph_pages).max(0.0);
+-        let linear_cost = linear_pages * constants.seq_page_cost;
+-        // Scale per-tuple CPU work by the fraction of pages the graph phase
+-        // did NOT cover. Charging the full tuple_estimate sweep here would
+-        // double-count the graph traversal and make ec_hnsw always look
+-        // costlier than a seqscan, even when the graph covers the whole
+-        // index (linear_pages == 0).
+-        let linear_fraction = linear_pages / inputs.index_pages;
+-        let linear_cpu =
+-            tuple_estimate * constants.cpu_operator_cost * scoring_dimensions * linear_fraction;
+-        let startup_cost = graph_cost + graph_cpu;
+-        (startup_cost, startup_cost + linear_cost + linear_cpu)
+-    };
+-
+-    PlannerCostEstimate {
+-        startup_cost,
+-        total_cost,
+-        selectivity: 1.0,
+-        correlation: 0.0,
+-        index_pages: inputs.index_pages,
+-    }
++    Default::default() /* ~ changed by cargo-mutants ~ */
+ }
+ 
+ #[cfg(any(feature = "pg17", feature = "pg18"))]
+ pub(crate) unsafe extern "C-unwind" fn ec_hnsw_amcostestimate(
+     _root: *mut pg_sys::PlannerInfo,
+     path: *mut pg_sys::IndexPath,
+     _loop_count: f64,
+     index_startup_cost: *mut pg_sys::Cost,
+
+
+*** /opt/homebrew/bin/cargo test --no-run --verbose --package=ecaz-careful-hardening@0.1.0
+warning: failed to save last-use data
+This may prevent cargo from accurately tracking what is being used in its global cache. This information is used for automatically removing unused data in the cache.
+
+attempt to write a readonly database
+
+Caused by:
+  Error code 8: attempt to write a readonly database
+       Fresh cfg-if v1.0.4
+       Fresh foldhash v0.1.5
+       Fresh allocator-api2 v0.2.21
+       Fresh equivalent v1.0.2
+       Fresh libc v0.2.186
+       Fresh hashbrown v0.15.5
+       Fresh zerocopy v0.8.48
+       Fresh getrandom v0.2.17
+       Fresh rand_core v0.6.4
+       Fresh ppv-lite86 v0.2.21
+       Fresh rand_chacha v0.3.1
+       Fresh rand v0.8.6
+       Dirty ecaz-careful-hardening v0.1.0 (/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-GFE5t0.tmp/hardening/careful): couldn't read metadata for file `target/debug/deps/libecaz_careful_hardening-48cfc8e37a0985df.rlib`
+   Compiling ecaz-careful-hardening v0.1.0 (/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-GFE5t0.tmp/hardening/careful)
+     Running `rustc --crate-name ecaz_careful_hardening --edition=2021 hardening/careful/src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type lib --emit=dep-info,metadata,link -C linker-plugin-lto -C debuginfo=2 -C split-debuginfo=unpacked --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values("bench", "pg17", "pg18", "pg_test"))' -C metadata=f055a7a7910e821f -C extra-filename=-48cfc8e37a0985df --out-dir /private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-GFE5t0.tmp/target/debug/deps -C incremental=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-GFE5t0.tmp/target/debug/incremental -L dependency=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-GFE5t0.tmp/target/debug/deps --extern hashbrown=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-GFE5t0.tmp/target/debug/deps/libhashbrown-a11478429b79192f.rmeta --extern rand=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-GFE5t0.tmp/target/debug/deps/librand-d3f4ad8ecd072b17.rmeta --extern rand_chacha=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-GFE5t0.tmp/target/debug/deps/librand_chacha-3b2dcfba3561f35f.rmeta -C target-cpu=native -C link-arg=-undefined -C link-arg=dynamic_lookup`
+     Running `rustc --crate-name ecaz_careful_hardening --edition=2021 hardening/careful/src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --emit=dep-info,link -C lto=thin -C debuginfo=2 -C split-debuginfo=unpacked --test --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values("bench", "pg17", "pg18", "pg_test"))' -C metadata=fea95cb08e562e2e -C extra-filename=-3bca8b65b65b7ce7 --out-dir /private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-GFE5t0.tmp/target/debug/deps -C incremental=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-GFE5t0.tmp/target/debug/incremental -L dependency=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-GFE5t0.tmp/target/debug/deps --extern hashbrown=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-GFE5t0.tmp/target/debug/deps/libhashbrown-a11478429b79192f.rlib --extern rand=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-GFE5t0.tmp/target/debug/deps/librand-d3f4ad8ecd072b17.rlib --extern rand_chacha=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-GFE5t0.tmp/target/debug/deps/librand_chacha-3b2dcfba3561f35f.rlib -C target-cpu=native -C link-arg=-undefined -C link-arg=dynamic_lookup`
+error[E0277]: the trait bound `PlannerCostEstimate: Default` is not satisfied
+   --> hardening/careful/src/../../../src/am/common/cost.rs:222:5
+    |
+222 |     Default::default() /* ~ changed by cargo-mutants ~ */
+    |     ^^^^^^^^^^^^^^^^^^ the trait `Default` is not implemented for `PlannerCostEstimate`
+    |
+help: consider annotating `PlannerCostEstimate` with `#[derive(Default)]`
+    |
+ 38 + #[derive(Default)]
+ 39 | pub(crate) struct PlannerCostEstimate {
+    |
+
+For more information about this error, try `rustc --explain E0277`.
+error: could not compile `ecaz-careful-hardening` (lib) due to 1 previous error
+
+Caused by:
+  process didn't exit successfully: `rustc --crate-name ecaz_careful_hardening --edition=2021 hardening/careful/src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type lib --emit=dep-info,metadata,link -C linker-plugin-lto -C debuginfo=2 -C split-debuginfo=unpacked --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values("bench", "pg17", "pg18", "pg_test"))' -C metadata=f055a7a7910e821f -C extra-filename=-48cfc8e37a0985df --out-dir /private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-GFE5t0.tmp/target/debug/deps -C incremental=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-GFE5t0.tmp/target/debug/incremental -L dependency=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-GFE5t0.tmp/target/debug/deps --extern hashbrown=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-GFE5t0.tmp/target/debug/deps/libhashbrown-a11478429b79192f.rmeta --extern rand=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-GFE5t0.tmp/target/debug/deps/librand-d3f4ad8ecd072b17.rmeta --extern rand_chacha=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-GFE5t0.tmp/target/debug/deps/librand_chacha-3b2dcfba3561f35f.rmeta -C target-cpu=native -C link-arg=-undefined -C link-arg=dynamic_lookup` (exit status: 1)
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `ecaz-careful-hardening` (lib test) due to 1 previous error
+
+Caused by:
+  process didn't exit successfully: `rustc --crate-name ecaz_careful_hardening --edition=2021 hardening/careful/src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --emit=dep-info,link -C lto=thin -C debuginfo=2 -C split-debuginfo=unpacked --test --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values("bench", "pg17", "pg18", "pg_test"))' -C metadata=fea95cb08e562e2e -C extra-filename=-3bca8b65b65b7ce7 --out-dir /private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-GFE5t0.tmp/target/debug/deps -C incremental=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-GFE5t0.tmp/target/debug/incremental -L dependency=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-GFE5t0.tmp/target/debug/deps --extern hashbrown=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-GFE5t0.tmp/target/debug/deps/libhashbrown-a11478429b79192f.rlib --extern rand=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-GFE5t0.tmp/target/debug/deps/librand-d3f4ad8ecd072b17.rlib --extern rand_chacha=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-GFE5t0.tmp/target/debug/deps/librand_chacha-3b2dcfba3561f35f.rlib -C target-cpu=native -C link-arg=-undefined -C link-arg=dynamic_lookup` (exit status: 1)
+
+*** result: Failure(101)

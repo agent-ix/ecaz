@@ -1,0 +1,4 @@
+unsafe comment baseline
+file: artifacts/unsafe-baseline-before.txt
+entries: 4347
+src/am/ec_spire/coordinator/debug.rs: 60

@@ -1,0 +1,8 @@
+
+   0: [91mecaz bench suite exited exit status: 1[0m
+
+Location:
+   [35mcrates/ecaz-cloud/src/commands/bench.rs[0m:[35m84[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.

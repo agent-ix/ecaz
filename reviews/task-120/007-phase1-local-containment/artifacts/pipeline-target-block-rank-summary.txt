@@ -1,0 +1,13 @@
+scale	nprobe	status	truth_rows	selected_by_global_cap	avg_scored_block_count	avg_block_rank	p95_block_rank
+10k	8	not_found_in_routed_leaves	2000	0	0
+10k	16	not_found_in_routed_leaves	2000	0	0
+10k	24	not_found_in_routed_leaves	2000	0	0
+10k	32	not_found_in_routed_leaves	2000	0	0
+50k	8	not_found_in_routed_leaves	2000	0	0
+50k	16	not_found_in_routed_leaves	2000	0	0
+50k	24	not_found_in_routed_leaves	2000	0	0
+50k	32	not_found_in_routed_leaves	2000	0	0
+100k	8	not_found_in_routed_leaves	2000	0	0
+100k	16	not_found_in_routed_leaves	2000	0	0
+100k	24	not_found_in_routed_leaves	2000	0	0
+100k	32	not_found_in_routed_leaves	2000	0	0

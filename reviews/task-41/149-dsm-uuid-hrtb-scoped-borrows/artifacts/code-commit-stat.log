@@ -1,0 +1,7 @@
+705b2c94 Scope invariant2 DSM and UUID helper borrows
+ src/am/ec_hnsw/build_parallel.rs | 51 +++++++++++++++++++++++++++++++++-------
+ src/am/ec_hnsw/scan_debug.rs     |  2 +-
+ src/am/ec_hnsw/shared.rs         |  2 +-
+ src/am/ec_ivf/page.rs            |  6 ++---
+ src/am/ec_spire/build/drafts.rs  |  9 ++++++-
+ 5 files changed, 55 insertions(+), 15 deletions(-)

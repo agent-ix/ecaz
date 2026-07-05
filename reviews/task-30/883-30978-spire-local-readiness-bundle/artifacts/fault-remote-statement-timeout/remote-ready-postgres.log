@@ -1,0 +1,22 @@
+2026-05-13 01:10:15.534 PDT [1793676] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-05-13 01:10:15.536 PDT [1793676] LOG:  listening on Unix socket "/home/peter/dev/ecaz/target/spire-stage-e-transport-fault-pg18-p12rst/sockets/.s.PGSQL.39195"
+2026-05-13 01:10:15.543 PDT [1793682] LOG:  database system was shut down at 2026-05-13 01:10:14 PDT
+2026-05-13 01:10:15.546 PDT [1793676] LOG:  database system is ready to accept connections
+2026-05-13 01:10:15.975 PDT [1793707] ERROR:  canceling statement due to statement timeout
+2026-05-13 01:10:15.975 PDT [1793707] STATEMENT:  SELECT pg_sleep(0.30)
+2026-05-13 01:10:15.976 PDT [1793707] LOG:  could not receive data from client: Connection reset by peer
+2026-05-13 01:10:16.011 PDT [1793711] ERROR:  canceling statement due to statement timeout
+2026-05-13 01:10:16.011 PDT [1793711] STATEMENT:  SELECT pg_sleep(0.30)
+2026-05-13 01:10:16.012 PDT [1793711] LOG:  could not receive data from client: Connection reset by peer
+2026-05-13 01:10:16.050 PDT [1793717] ERROR:  canceling statement due to statement timeout
+2026-05-13 01:10:16.050 PDT [1793717] STATEMENT:  SELECT pg_sleep(0.30)
+2026-05-13 01:10:16.051 PDT [1793717] LOG:  could not receive data from client: Connection reset by peer
+2026-05-13 01:10:16.086 PDT [1793721] ERROR:  canceling statement due to statement timeout
+2026-05-13 01:10:16.086 PDT [1793721] STATEMENT:  SELECT pg_sleep(0.30)
+2026-05-13 01:10:16.192 PDT [1793676] LOG:  received fast shutdown request
+2026-05-13 01:10:16.201 PDT [1793676] LOG:  aborting any active transactions
+2026-05-13 01:10:16.202 PDT [1793676] LOG:  background worker "logical replication launcher" (PID 1793685) exited with exit code 1
+2026-05-13 01:10:16.202 PDT [1793680] LOG:  shutting down
+2026-05-13 01:10:16.205 PDT [1793680] LOG:  checkpoint starting: shutdown immediate
+2026-05-13 01:10:16.221 PDT [1793680] LOG:  checkpoint complete: wrote 0 buffers (0.0%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.004 s, sync=0.002 s, total=0.019 s; sync files=2, longest=0.001 s, average=0.001 s; distance=0 kB, estimate=0 kB; lsn=0/1754600, redo lsn=0/1754600
+2026-05-13 01:10:16.227 PDT [1793676] LOG:  database system is shut down

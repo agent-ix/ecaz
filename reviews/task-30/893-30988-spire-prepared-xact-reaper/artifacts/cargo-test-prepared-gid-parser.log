@@ -1,0 +1,11 @@
+Script started on 2026-05-13 09:03:11-07:00 [<not executed on terminal>]
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.20s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-1903db179d6aa6e7)
+
+running 1 test
+test am::ec_spire::production_executor_state_tests::prepared_transaction_gid_parser_extracts_reaper_identity ... [32mok[m
+
+test result: [32mok[m. 1 passed; 0 failed; 0 ignored; 0 measured; 1710 filtered out; finished in 0.00s
+
+
+Script done on 2026-05-13 09:03:11-07:00 [COMMAND_EXIT_CODE="0"]

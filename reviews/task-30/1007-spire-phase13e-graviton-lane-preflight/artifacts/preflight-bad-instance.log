@@ -1,0 +1,4 @@
+Script started on 2026-05-27 08:34:10-07:00 [<not executed on terminal>]
+ERROR: coordinator_instance_type must use the established Graviton/aarch64 lane, got: r6i.large
+
+Script done on 2026-05-27 08:34:10-07:00 [COMMAND_EXIT_CODE="2"]

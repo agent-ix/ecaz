@@ -1,0 +1,19 @@
+Command:
+cargo run -p ecaz-cli -- --host /home/peter/.pgrx --port 28818 --database postgres bench recall --prefix task28_ivf_postopt25k_n128w25 --profile ec_ivf --k 10 --queries-limit 100 --sweep 8,16,24,32,48,64 --force-index
+
+Output:
+Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.15s
+Running `target/debug/ecaz --host /home/peter/.pgrx --port 28818 --database postgres bench recall --prefix task28_ivf_postopt25k_n128w25 --profile ec_ivf --k 10 --queries-limit 100 --sweep 8,16,24,32,48,64 --force-index`
+[recall] fetching corpus from task28_ivf_postopt25k_n128w25_corpus ...
+[recall] fetching queries from task28_ivf_postopt25k_n128w25_queries ...
+[recall] computing ground truth: 100 queries vs 25000 corpus rows (dim=1536) ...
+[recall] ground truth in 4.96s
+
+| sweep | recall@k | ndcg@k | mean q-time |
+|---:|---:|---:|---:|
+| 8 | 0.6740 | 0.9655 | 56.48 ms |
+| 16 | 0.8090 | 0.9831 | 89.01 ms |
+| 24 | 0.8990 | 0.9909 | 118.46 ms |
+| 32 | 0.9370 | 0.9949 | 144.76 ms |
+| 48 | 0.9770 | 0.9987 | 202.66 ms |
+| 64 | 0.9860 | 0.9992 | 264.68 ms |

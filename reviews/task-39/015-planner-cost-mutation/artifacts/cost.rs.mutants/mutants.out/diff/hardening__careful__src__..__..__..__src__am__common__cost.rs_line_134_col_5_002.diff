@@ -1,0 +1,21 @@
+--- hardening/careful/src/../../../src/am/common/cost.rs
++++ replace amgettreeheight_callback_value -> i32 with -1
+@@ -126,17 +126,17 @@
+ 
+     #[cfg(not(feature = "pg18"))]
+     {
+         metadata_fallback_tree_height(max_level)
+     }
+ }
+ 
+ pub(crate) fn amgettreeheight_callback_value(max_level: u8) -> i32 {
+-    i32::from(max_level)
++    -1 /* ~ changed by cargo-mutants ~ */
+ }
+ 
+ pub(crate) fn amtranslatestrategy_callback(strategy: i32) -> PlannerCompareType {
+     match strategy {
+         1 => PlannerCompareType::Lt,
+         _ => PlannerCompareType::Invalid,
+     }
+ }

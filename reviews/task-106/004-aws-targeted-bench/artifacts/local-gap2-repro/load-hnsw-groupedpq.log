@@ -1,0 +1,22 @@
+[loader] inspecting reviews/task-106/004-aws-targeted-bench/artifacts/local-gap2-repro/gap2_local_corpus.tsv
+[loader] inspecting reviews/task-106/004-aws-targeted-bench/artifacts/local-gap2-repro/gap2_local_queries.tsv
+[loader] corpus: 1000 rows, sha256=f9ba4586f03716aa4582fefa37c49bc2356569bb4e6c3009887c82d57b68c570  queries: 50 rows, sha256=6cdacd64d45ef635a622dca3c47f7733f02ad54ab874c204a43e54a2aecb4378
+[loader] no sibling manifest at reviews/task-106/004-aws-targeted-bench/artifacts/local-gap2-repro/gap2_local_manifest.json; continuing without verification
+[loader] copied corpus table t106_local_gap2_hnsw_groupedpq_corpus in 28.89ms
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table t106_local_gap2_hnsw_groupedpq_corpus in 57.62ms
+[loader] copied queries table t106_local_gap2_hnsw_groupedpq_queries in 5.70ms
+[loader] building t106_local_gap2_hnsw_groupedpq_pq_fastscan_m8_idx using ec_hnsw (reloptions=[m=8, ef_construction=64, build_source_column=source, storage_format=pq_fastscan]) ...
+[loader] built t106_local_gap2_hnsw_groupedpq_pq_fastscan_m8_idx in 67.36ms
+┌─────────┬─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                                                                               │
+╞═════════╪═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_hnsw                                                                                                                             │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ t106_local_gap2_hnsw_groupedpq_corpus (1000 rows)                                                                                   │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ t106_local_gap2_hnsw_groupedpq_queries (50 rows)                                                                                    │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ t106_local_gap2_hnsw_groupedpq_pq_fastscan_m8_idx [m=8, ef_construction=64, build_source_column=source, storage_format=pq_fastscan] │
+└─────────┴─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+[loader] completed prefix t106_local_gap2_hnsw_groupedpq in 241.70ms

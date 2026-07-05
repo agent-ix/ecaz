@@ -1,0 +1,177 @@
+diff --git a/src/am/ec_hnsw/vacuum.rs b/src/am/ec_hnsw/vacuum.rs
+index 7b7dd04d8..feca85ff5 100644
+--- a/src/am/ec_hnsw/vacuum.rs
++++ b/src/am/ec_hnsw/vacuum.rs
+@@ -837,7 +837,7 @@ unsafe fn repair_graph_connections_with_storage(
+     unsafe { apply_repair_plans(index, metadata.m, &deleted_tids, &repair_plans) };
+ }
+ 
+-unsafe fn collect_repair_requests(
++fn collect_repair_requests(
+     index: VacuumIndexRelation,
+     storage: graph::GraphStorageDescriptor,
+     m: u16,
+@@ -855,20 +855,16 @@ unsafe fn collect_repair_requests(
+ 
+         let page_ptr = buffer.page().cast::<u8>();
+         let page_size = buffer.page_size();
+-        // SAFETY: The shared buffer remains pinned/locked while tuple bytes and
+-        // same-index neighbor payloads are inspected.
+-        unsafe {
+-            collect_repair_requests_on_page(
+-                index.as_ptr(),
+-                page_ptr,
+-                page_size,
+-                block_number,
+-                storage,
+-                m,
+-                deleted_tids,
+-                &mut requests,
+-            )
+-        };
++        collect_repair_requests_on_page(
++            index.as_ptr(),
++            page_ptr,
++            page_size,
++            block_number,
++            storage,
++            m,
++            deleted_tids,
++            &mut requests,
++        );
+     }
+ 
+     requests.sort_unstable_by(|left, right| {
+@@ -880,7 +876,7 @@ unsafe fn collect_repair_requests(
+     requests
+ }
+ 
+-unsafe fn collect_repair_requests_on_page(
++fn collect_repair_requests_on_page(
+     index_relation: pg_sys::Relation,
+     page_ptr: *mut u8,
+     page_size: usize,
+@@ -1007,7 +1003,7 @@ fn layer_slice_contains_deleted_ref(
+         .any(|tid| deleted_tids.contains(tid))
+ }
+ 
+-unsafe fn unlink_deleted_graph_connections(
++fn unlink_deleted_graph_connections(
+     index: VacuumIndexRelation,
+     deleted_tids: &HashSet<page::ItemPointer>,
+ ) {
+@@ -1020,9 +1016,7 @@ unsafe fn unlink_deleted_graph_connections(
+ 
+             let share_page_ptr = share_buffer.page().cast::<u8>();
+             let share_page_size = share_buffer.page_size();
+-            // SAFETY: The shared buffer remains pinned/locked while tuple bytes
+-            // are scanned for deleted neighbor references.
+-            unsafe { plan_page_pass2(share_page_ptr, share_page_size, block_number, deleted_tids) }
++            plan_page_pass2(share_page_ptr, share_page_size, block_number, deleted_tids)
+         };
+ 
+         if share_updates.is_empty() {
+@@ -1032,9 +1026,7 @@ unsafe fn unlink_deleted_graph_connections(
+         let exclusive_buffer =
+             index.read_main_locked(block_number, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32, "repair");
+ 
+-        // SAFETY: The exclusive buffer belongs to this block and the deleted set
+-        // came from the same vacuum pass.
+-        unsafe { rewrite_page_pass2(index, exclusive_buffer, block_number, deleted_tids) };
++        rewrite_page_pass2(index, exclusive_buffer, block_number, deleted_tids);
+     }
+ }
+ 
+@@ -1347,20 +1339,16 @@ unsafe fn top_up_repair_replacements_from_linear_scan(
+ 
+         let page_ptr = buffer.page().cast::<u8>();
+         let page_size = buffer.page_size();
+-        // SAFETY: The shared buffer remains pinned/locked while candidate tuple
+-        // bytes are decoded and scored.
+-        unsafe {
+-            collect_linear_repair_candidates_on_page(
+-                index,
+-                page_ptr,
+-                page_size,
+-                block_number,
+-                metric,
+-                planner,
+-                replacements,
+-                &mut scored,
+-            )
+-        };
++        collect_linear_repair_candidates_on_page(
++            index,
++            page_ptr,
++            page_size,
++            block_number,
++            metric,
++            planner,
++            replacements,
++            &mut scored,
++        );
+     }
+ 
+     scored.sort_unstable_by(|left, right| {
+@@ -1378,7 +1366,7 @@ unsafe fn top_up_repair_replacements_from_linear_scan(
+     }
+ }
+ 
+-unsafe fn collect_linear_repair_candidates_on_page(
++fn collect_linear_repair_candidates_on_page(
+     index: VacuumIndexRelation,
+     page_ptr: *mut u8,
+     page_size: usize,
+@@ -1510,7 +1498,7 @@ unsafe fn collect_linear_repair_candidates_on_page(
+     }
+ }
+ 
+-unsafe fn load_grouped_rerank_payload_for_linear_repair_candidate(
++fn load_grouped_rerank_payload_for_linear_repair_candidate(
+     index: VacuumIndexRelation,
+     page_ptr: *mut u8,
+     page_size: usize,
+@@ -1711,7 +1699,7 @@ fn apply_repair_plan(
+     changed
+ }
+ 
+-unsafe fn rewrite_page_pass2(
++fn rewrite_page_pass2(
+     index: VacuumIndexRelation,
+     buffer: LockedBufferGuard,
+     block_number: u32,
+@@ -1719,22 +1707,18 @@ unsafe fn rewrite_page_pass2(
+ ) {
+     let page_ptr = buffer.page().cast::<u8>();
+     let page_size = buffer.page_size();
+-    // SAFETY: The caller holds the page locked and pinned while pass-2 planning
+-    // reads neighbor tuple bytes.
+-    let updates = unsafe { plan_page_pass2(page_ptr, page_size, block_number, deleted_tids) };
++    let updates = plan_page_pass2(page_ptr, page_size, block_number, deleted_tids);
+     if updates.is_empty() {
+         return;
+     }
+ 
+     let rewrite = index.begin_page_rewrite(&buffer);
+     let wal_page_ptr = rewrite.page_ptr();
+-    // SAFETY: Updates were planned from this same page/block and preserve tuple
+-    // lengths when rewritten.
+-    unsafe { apply_page_pass2_updates(wal_page_ptr, page_size, block_number, &updates) };
++    apply_page_pass2_updates(wal_page_ptr, page_size, block_number, &updates);
+     rewrite.finish();
+ }
+ 
+-unsafe fn plan_page_pass2(
++fn plan_page_pass2(
+     page_ptr: *mut u8,
+     page_size: usize,
+     block_number: u32,
+@@ -1806,7 +1790,7 @@ fn unlink_deleted_neighbor_refs(
+     changed
+ }
+ 
+-unsafe fn apply_page_pass2_updates(
++fn apply_page_pass2_updates(
+     page_ptr: *mut u8,
+     page_size: usize,
+     block_number: u32,

@@ -1,0 +1,22 @@
+Pager usage is off.
+   pid   | state  | wait_event_type | wait_event |    query_age    |                    query
+---------+--------+-----------------+------------+-----------------+---------------------------------------------
+ 2797871 | active |                 |            | 00:11:45.754286 | CREATE INDEX task28_ivf_pqg990k_g8_n128_idx+
+         |        |                 |            |                 | ON task28_ivf_pqg990k_g8_n128_corpus       +
+         |        |                 |            |                 | USING ec_ivf (embedding ecvector_ip_ops)   +
+         |        |                 |            |                 | WITH (                                     +
+         |        |                 |            |                 |   nlists = 128,                            +
+         |        |                 |            |                 |   nprobe = 128,
+ 2803240 | active |                 |            | 00:00:00        | SELECT pid,                                +
+         |        |                 |            |                 |        state,                              +
+         |        |                 |            |                 |        wait_event_type,                    +
+         |        |                 |            |                 |        wait_event,                         +
+         |        |                 |            |                 |        now() - query_start AS query_age,   +
+         |        |                 |            |                 |        left(query, 160) AS query           +
+         |        |                 |            |                 | FROM pg_stat_acti
+(2 rows)
+
+     phase      | lockers_total | lockers_done | blocks_total | blocks_done | tuples_total | tuples_done | partitions_total | partitions_done
+----------------+---------------+--------------+--------------+-------------+--------------+-------------+------------------+-----------------
+ building index |             0 |            0 |            0 |           0 |            0 |           0 |                0 |               0
+(1 row)

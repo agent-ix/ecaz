@@ -1,0 +1,4 @@
+Script started on 2026-05-27 09:21:53-07:00 [<not executed on terminal>]
+ERROR: representative latency p50/p95/p99 rows for all priority nprobe values missing or incomplete in reviews/task-30/1013-spire-phase13e-pooling-latency-delta-gate/artifacts/sample-output/representative-latency-recall-summary.tsv
+
+Script done on 2026-05-27 09:21:53-07:00 [COMMAND_EXIT_CODE="2"]

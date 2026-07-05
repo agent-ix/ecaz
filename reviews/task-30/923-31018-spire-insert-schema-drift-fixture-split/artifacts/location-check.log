@@ -1,0 +1,6 @@
+Script started on 2026-05-13 17:44:33-07:00 [<not executed on terminal>]
+src/tests/insert.rs
+1767:    fn test_ec_spire_schema_drift_fails_before_dispatch_sql() {
+1908:    fn test_ec_spire_remote_schema_fingerprint_pre_dispatch_sql() {
+
+Script done on 2026-05-13 17:44:33-07:00 [COMMAND_EXIT_CODE="0"]

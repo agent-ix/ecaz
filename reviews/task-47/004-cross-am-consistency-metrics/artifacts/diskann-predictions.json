@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "prefix": "task47_smoke_diskann",
+  "profile": "ec_diskann",
+  "k": 3,
+  "query_ids": [101, 102],
+  "rows": [
+    {
+      "sweep_axis": "list_size",
+      "sweep_value": 200,
+      "rerank_width": null,
+      "predictions": [
+        [1, 3, 4],
+        [6, 5, 4]
+      ]
+    }
+  ]
+}

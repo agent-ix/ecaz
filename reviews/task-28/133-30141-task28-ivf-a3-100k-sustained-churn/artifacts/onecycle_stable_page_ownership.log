@@ -1,0 +1,4 @@
+ posting_blocks | unused_lps | deleted_postings | posting_tuples | heap_tid_refs | cross_list_blocks | mixed_blocks
+----------------+------------+------------------+----------------+---------------+-------------------+--------------
+           1299 |          0 |                0 |         125000 |        125000 |               226 |            2
+(1 row)

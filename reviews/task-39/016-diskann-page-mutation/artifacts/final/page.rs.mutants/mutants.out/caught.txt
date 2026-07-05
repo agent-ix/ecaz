@@ -1,0 +1,8 @@
+hardening/careful/src/../../../src/am/ec_diskann/page.rs:27:52: replace << with >>
+hardening/careful/src/../../../src/am/ec_diskann/page.rs:28:52: replace << with >>
+hardening/careful/src/../../../src/am/ec_diskann/page.rs:104:9: replace VamanaMetadataPage::encode -> Vec<u8> with vec![]
+hardening/careful/src/../../../src/am/ec_diskann/page.rs:104:9: replace VamanaMetadataPage::encode -> Vec<u8> with vec![0]
+hardening/careful/src/../../../src/am/ec_diskann/page.rs:104:9: replace VamanaMetadataPage::encode -> Vec<u8> with vec![1]
+hardening/careful/src/../../../src/am/ec_diskann/page.rs:125:24: replace != with == in VamanaMetadataPage::decode
+hardening/careful/src/../../../src/am/ec_diskann/page.rs:134:27: replace != with == in VamanaMetadataPage::decode
+hardening/careful/src/../../../src/am/ec_diskann/page.rs:157:45: replace != with == in VamanaMetadataPage::decode

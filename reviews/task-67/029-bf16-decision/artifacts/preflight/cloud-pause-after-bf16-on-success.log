@@ -1,0 +1,30 @@
+Script started on 2026-05-30 08:30:35-07:00 [<not executed on terminal>]
+{
+    "StoppingInstances": [
+        {
+            "InstanceId": "i-018e3386be2cc0e9b",
+            "CurrentState": {
+                "Code": 64,
+                "Name": "stopping"
+            },
+            "PreviousState": {
+                "Code": 16,
+                "Name": "running"
+            }
+        },
+        {
+            "InstanceId": "i-02811174cc6ded75c",
+            "CurrentState": {
+                "Code": 64,
+                "Name": "stopping"
+            },
+            "PreviousState": {
+                "Code": 16,
+                "Name": "running"
+            }
+        }
+    ]
+}
+pause: profile=10k-intel stopped (db + loader)
+
+Script done on 2026-05-30 08:30:39-07:00 [COMMAND_EXIT_CODE="0"]

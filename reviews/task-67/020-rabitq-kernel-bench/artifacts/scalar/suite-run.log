@@ -1,0 +1,6 @@
+[suite:task67-rabitq-kernel-scalar] wrote reviews/task-67/020-rabitq-kernel-bench/artifacts/scalar/suite-manifest.json
+[suite:task67-rabitq-kernel-scalar] rabitq-kernel-scalar -> --database postgres --host /var/run/postgresql --user postgres bench rabitq-kernel --dim 1536 --candidates 1000 --iterations 1000 --simd-mode scalar --log-output reviews/task-67/020-rabitq-kernel-bench/artifacts/scalar/rabitq-kernel-scalar.log
+[suite:task67-rabitq-kernel-scalar] wrote reviews/task-67/020-rabitq-kernel-bench/artifacts/scalar/suite-manifest.json
+[suite:task67-rabitq-kernel-scalar] wrote reviews/task-67/020-rabitq-kernel-bench/artifacts/scalar/suite-manifest.json
+[suite:task67-rabitq-kernel-scalar] wrote reviews/task-67/020-rabitq-kernel-bench/artifacts/scalar/results.jsonl
+[suite:task67-rabitq-kernel-scalar] wrote reviews/task-67/020-rabitq-kernel-bench/artifacts/scalar/suite-manifest.json

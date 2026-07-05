@@ -1,0 +1,21 @@
+Script started on 2026-05-15 17:17:26-07:00 [<not executed on terminal>]
+make: Entering directory '/home/peter/dev/ecaz/infra/spire-aws'
+mkdir -p /home/peter/dev/ecaz/review/spire-aws-verification/artifacts
+cd /home/peter/dev/ecaz/infra/spire-aws && terraform init
+cd /home/peter/dev/ecaz/infra/spire-aws && terraform apply -auto-approve
+cd /home/peter/dev/ecaz/infra/spire-aws && terraform output -json topology > /home/peter/dev/ecaz/review/spire-aws-verification/artifacts/aws-topology.json
+cd /home/peter/dev/ecaz && /home/peter/dev/ecaz/scripts/spire-aws/install.sh /home/peter/dev/ecaz/review/spire-aws-verification/artifacts/aws-topology.json /home/peter/dev/ecaz/review/spire-aws-verification/artifacts
+cd /home/peter/dev/ecaz && /home/peter/dev/ecaz/scripts/spire-aws/register.sh /home/peter/dev/ecaz/review/spire-aws-verification/artifacts/aws-topology.json /home/peter/dev/ecaz/review/spire-aws-verification/artifacts
+cd /home/peter/dev/ecaz && /home/peter/dev/ecaz/scripts/spire-aws/load.sh correctness /home/peter/dev/ecaz/review/spire-aws-verification/artifacts/aws-topology.json /home/peter/dev/ecaz/review/spire-aws-verification/artifacts
+cd /home/peter/dev/ecaz && PREFIX=ec_spire_aws_synth_10k /home/peter/dev/ecaz/scripts/spire-aws/smoke.sh /home/peter/dev/ecaz/review/spire-aws-verification/artifacts/aws-topology.json /home/peter/dev/ecaz/review/spire-aws-verification/artifacts
+cd /home/peter/dev/ecaz && /home/peter/dev/ecaz/scripts/spire-aws/bench.sh correctness /home/peter/dev/ecaz/review/spire-aws-verification/artifacts/aws-topology.json /home/peter/dev/ecaz/review/spire-aws-verification/artifacts
+cd /home/peter/dev/ecaz && /home/peter/dev/ecaz/scripts/spire-aws/fault.sh degraded /home/peter/dev/ecaz/review/spire-aws-verification/artifacts/aws-topology.json /home/peter/dev/ecaz/review/spire-aws-verification/artifacts
+cd /home/peter/dev/ecaz && /home/peter/dev/ecaz/scripts/spire-aws/fault.sh strict /home/peter/dev/ecaz/review/spire-aws-verification/artifacts/aws-topology.json /home/peter/dev/ecaz/review/spire-aws-verification/artifacts
+cd /home/peter/dev/ecaz/infra/spire-aws && terraform destroy -auto-approve
+cd /home/peter/dev/ecaz && /home/peter/dev/ecaz/scripts/spire-aws/load.sh representative /home/peter/dev/ecaz/review/spire-aws-verification/artifacts/aws-topology.json /home/peter/dev/ecaz/review/spire-aws-verification/artifacts
+cd /home/peter/dev/ecaz && /home/peter/dev/ecaz/scripts/spire-aws/bench.sh representative /home/peter/dev/ecaz/review/spire-aws-verification/artifacts/aws-topology.json /home/peter/dev/ecaz/review/spire-aws-verification/artifacts
+cd /home/peter/dev/ecaz && /home/peter/dev/ecaz/scripts/spire-aws/fault.sh orphaned-2pc /home/peter/dev/ecaz/review/spire-aws-verification/artifacts/aws-topology.json /home/peter/dev/ecaz/review/spire-aws-verification/artifacts
+cd /home/peter/dev/ecaz && /home/peter/dev/ecaz/scripts/spire-aws/fault.sh schema-drift /home/peter/dev/ecaz/review/spire-aws-verification/artifacts/aws-topology.json /home/peter/dev/ecaz/review/spire-aws-verification/artifacts
+make: Leaving directory '/home/peter/dev/ecaz/infra/spire-aws'
+
+Script done on 2026-05-15 17:17:26-07:00 [COMMAND_EXIT_CODE="0"]

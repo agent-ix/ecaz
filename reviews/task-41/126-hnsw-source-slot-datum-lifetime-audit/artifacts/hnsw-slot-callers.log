@@ -1,0 +1,20 @@
+src/am/ec_hnsw/scan_debug.rs:1008:            pg_sys::ExecClearTuple(slot);
+src/am/ec_hnsw/source.rs:464:    unsafe { pg_sys::ExecClearTuple(slot) };
+src/am/ec_hnsw/source.rs:476:pub(crate) unsafe fn required_slot_datum(
+src/am/ec_hnsw/source.rs:677:    let source_datum = unsafe { required_slot_datum(slot, source_attribute.attnum, label) };
+src/am/ec_hnsw/source.rs:678:    unsafe { with_flat_float4_source_from_datum(source_datum, source_attribute.kind, label, f) }
+src/am/ec_hnsw/source.rs:687:    let source_datum = unsafe { required_slot_datum(slot, attnum, label) };
+src/am/ec_hnsw/vacuum.rs:72:                source::with_source_from_heap_row(
+src/am/ec_hnsw/vacuum.rs:96:            unsafe { pg_sys::ExecClearTuple(self.slot.as_ptr()) };
+src/am/ec_hnsw/insert.rs:59:            source::with_source_from_heap_row(
+src/am/ec_hnsw/insert.rs:69:        unsafe { pg_sys::ExecClearTuple(self.slot.as_ptr()) };
+src/am/ec_hnsw/insert.rs:83:                source::with_source_from_heap_row(
+src/am/ec_hnsw/insert.rs:107:            unsafe { pg_sys::ExecClearTuple(self.slot.as_ptr()) };
+src/am/ec_hnsw/build.rs:606:                source::with_flat_float4_source_from_datum(
+src/am/ec_hnsw/build.rs:745:        pg_sys::heap_getnextslot(
+src/am/ec_hnsw/build.rs:754:            source::required_slot_datum(slot_ptr, indexed_attribute.attnum, "indexed column")
+src/am/ec_hnsw/build.rs:757:            source::required_slot_datum(
+src/am/ec_hnsw/build.rs:764:            source::with_flat_float4_source_from_datum(
+src/am/ec_hnsw/scan.rs:2596:        source::with_flat_float4_source_from_datum(
+src/am/ec_hnsw/scan.rs:2597:            source::required_slot_datum(
+src/am/ec_hnsw/scan.rs:2625:    unsafe { pg_sys::ExecClearTuple(heap_rerank_state.slot()) };

@@ -1,0 +1,6 @@
+run_dir=/home/peter/dev/ecaz/target/spire-insert-read-after-cscan-pg18-phase12-final-insert-read-rerun
+remote_port=39188
+coord_port=39187
+insert_mode=trigger
+pg_ctl: could not start server
+Examine the log output.

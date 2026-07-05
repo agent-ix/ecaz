@@ -1,0 +1,15 @@
+Script started on 2026-05-13 15:35:38-07:00 [<not executed on terminal>]
+src/tests/remote_search.rs
+2:    fn test_ec_spire_remote_search_sql_scores_selected_leaf_pids() {
+2553:    fn test_ec_spire_remote_search_final_contract() {
+
+src/tests/mod.rs
+10354:    include!("remote_search.rs");
+10357:    fn test_ec_spire_custom_scan_status_registered_fail_closed() {
+  45298 src/tests/mod.rs
+   2636 src/tests/remote_search.rs
+    796 src/tests/custom_scan.rs
+  17812 src/lib.rs
+  66542 total
+
+Script done on 2026-05-13 15:35:38-07:00 [COMMAND_EXIT_CODE="0"]

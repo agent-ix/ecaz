@@ -1,0 +1,7 @@
+Script started on 2026-05-13 16:57:22-07:00 [<not executed on terminal>]
+src/tests/diagnostics.rs
+983:    fn test_ec_spire_active_snapshot_diagnostics_sql() {
+1047:    fn test_ec_spire_large_routing_object_builds_and_scans() {
+1099:    fn test_ec_spire_allocator_snapshot_sql() {
+
+Script done on 2026-05-13 16:57:22-07:00 [COMMAND_EXIT_CODE="0"]

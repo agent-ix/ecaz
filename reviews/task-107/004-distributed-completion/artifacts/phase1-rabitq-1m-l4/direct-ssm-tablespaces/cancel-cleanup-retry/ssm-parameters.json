@@ -1,0 +1,19 @@
+{
+  "executionTimeout": [
+    "3600"
+  ],
+  "commands": [
+    "set -euo pipefail",
+    "export AWS_DEFAULT_REGION=us-west-2",
+    "NODE_DIR=/var/tmp/ecaz-task107-phase1-rabitq-1m-l4-cancel-cleanup-retry",
+    "BUCKET=ecaz-spire-aws-20260614203301860100000009",
+    "S3_PREFIX=task107/004/phase1-rabitq-1m-l4/direct-ssm-tablespaces/cancel-cleanup-retry",
+    "PG_BIN=/usr/pgsql-18/bin; if [ ! -x \"$PG_BIN/psql\" ]; then PG_BIN=$(dirname \"$(command -v psql)\"); fi",
+    "mkdir -p \"$NODE_DIR\"",
+    "\"$PG_BIN/psql\" -v ON_ERROR_STOP=1 -h 127.0.0.1 -p 5432 -U ecaz_coord -d postgres -At -c \"SELECT relname FROM pg_class WHERE relname LIKE 'task107_phase1_rabitq_1m_l4%' ORDER BY relname;\" > \"$NODE_DIR/residue-before-cleanup.log\"",
+    "\"$PG_BIN/psql\" -v ON_ERROR_STOP=1 -h 127.0.0.1 -p 5432 -U ecaz_coord -d postgres -c \"DROP INDEX IF EXISTS task107_phase1_rabitq_1m_l4_idx; DROP TABLE IF EXISTS task107_phase1_rabitq_1m_l4_queries CASCADE; DROP TABLE IF EXISTS task107_phase1_rabitq_1m_l4_corpus CASCADE;\" > \"$NODE_DIR/cleanup-drop.log\" 2>&1",
+    "\"$PG_BIN/psql\" -v ON_ERROR_STOP=1 -h 127.0.0.1 -p 5432 -U ecaz_coord -d postgres -At -c \"SELECT relname FROM pg_class WHERE relname LIKE 'task107_phase1_rabitq_1m_l4%' ORDER BY relname;\" > \"$NODE_DIR/residue-after-cleanup.log\"",
+    "aws s3 cp \"$NODE_DIR\" \"s3://$BUCKET/$S3_PREFIX/load\" --recursive --region us-west-2",
+    "echo step=cleanup-complete"
+  ]
+}

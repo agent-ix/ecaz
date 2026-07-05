@@ -1,0 +1,11 @@
+Script started on 2026-06-09 19:29:18-07:00 [<not executed on terminal>]
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.17s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-c2925dc8ee61e76b)
+
+running 1 test
+test am::ec_ivf::quantizer::tests::common_quant_codec_turboquant_batch_is_bit_exact_with_scalar ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2066 filtered out; finished in 0.06s
+
+
+Script done on 2026-06-09 19:29:19-07:00 [COMMAND_EXIT_CODE="0"]

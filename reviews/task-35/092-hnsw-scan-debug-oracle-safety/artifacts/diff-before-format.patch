@@ -1,0 +1,1215 @@
+Script started on 2026-05-19 04:03:18-07:00 [<not executed on terminal>]
+[1mdiff --git a/scripts/unsafe_comment_baseline.txt b/scripts/unsafe_comment_baseline.txt[m
+[1mindex 2ff9e7e6..56d4b6ac 100644[m
+[1m--- a/scripts/unsafe_comment_baseline.txt[m
+[1m+++ b/scripts/unsafe_comment_baseline.txt[m
+[36m@@ -482,293 +482,187 @@[m [msrc/am/ec_hnsw/insert.rs:879[m
+ src/am/ec_hnsw/insert.rs:908[m
+ src/am/ec_hnsw/insert.rs:909[m
+ src/am/ec_hnsw/insert.rs:952[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1171[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1181[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1185[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1195[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1198[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1231[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1238[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1240[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1246[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1250[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1270[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1297[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1304[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1320[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1333[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1363[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1370[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1386[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1399[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1428[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1435[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1451[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1464[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1497[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1505[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1510[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1512[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1515[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1541[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1546[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1558[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1567[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1594[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1599[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1611[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1617[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1643[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1651[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1656[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1658[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1660[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1661[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1663[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1669[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1689[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1690[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1704[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1712[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1717[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1719[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1721[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1722[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1724[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1730[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1746[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1771[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1781[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1782[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1799[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1809[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1814[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1816[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1818[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1819[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1821[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1827[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1845[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1868[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1893[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1903[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1904[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1920[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1930[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1935[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1937[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1939[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1940[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1942[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1948[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1969[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1974[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1988[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2011[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2012[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2026[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2034[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2039[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2041[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2043[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2044[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2046[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2059[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2069[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2094[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2104[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2105[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2114[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2121[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2124[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2125[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2131[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2140[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2147[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2150[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2151[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2160[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2169[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2171[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2310[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2311[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2394[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2395[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2449[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2450[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2516[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2527[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2528[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2602[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2608[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2611[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2612[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2618[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2620[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2622[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2623[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2644[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2650[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2652[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1621[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1684[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2520[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2521[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2604[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2605[m
+ src/am/ec_hnsw/scan_debug.rs:2659[m
+ src/am/ec_hnsw/scan_debug.rs:2660[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2666[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2667[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2688[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2694[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2696[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2697[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2700[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2702[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2705[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2709[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2710[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2716[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2730[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2726[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2737[m
+ src/am/ec_hnsw/scan_debug.rs:2738[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2746[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2760[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2767[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2771[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2774[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2781[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2784[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2785[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2797[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2803[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2805[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2817[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2819[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2823[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2824[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2850[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2856[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2858[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2863[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2865[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2871[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2872[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2891[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2897[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2899[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2812[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2818[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2821[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2822[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2828[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2830[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2832[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2833[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2854[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2860[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2862[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2869[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2870[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2876[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2877[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2898[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2904[m
+ src/am/ec_hnsw/scan_debug.rs:2906[m
+ src/am/ec_hnsw/scan_debug.rs:2907[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2925[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2931[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2933[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2910[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2912[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2915[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2919[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2920[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2926[m
+ src/am/ec_hnsw/scan_debug.rs:2940[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2944[m
+ src/am/ec_hnsw/scan_debug.rs:2948[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2949[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2967[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2973[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2975[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2956[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2970[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2977[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2981[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2984[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2991[m
+ src/am/ec_hnsw/scan_debug.rs:2994[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3003[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3004[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3021[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3028[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3030[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2995[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3007[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3013[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3015[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3027[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3029[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3033[m
+ src/am/ec_hnsw/scan_debug.rs:3034[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3038[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3041[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3051[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3053[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3056[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3057[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3060[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3066[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3068[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3073[m
+ src/am/ec_hnsw/scan_debug.rs:3075[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3081[m
+ src/am/ec_hnsw/scan_debug.rs:3082[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3084[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3089[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3092[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3096[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3098[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3103[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3104[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3123[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3130[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3132[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3137[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3101[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3107[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3109[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3116[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3117[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3135[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3141[m
+ src/am/ec_hnsw/scan_debug.rs:3143[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3148[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3149[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3168[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3175[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3150[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3154[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3158[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3159[m
+ src/am/ec_hnsw/scan_debug.rs:3177[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3181[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3187[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3208[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3209[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3229[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3236[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3183[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3185[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3204[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3213[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3214[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3231[m
+ src/am/ec_hnsw/scan_debug.rs:3238[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3242[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3245[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3240[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3244[m
+ src/am/ec_hnsw/scan_debug.rs:3248[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3249[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3252[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3253[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3277[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3284[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3286[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3251[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3261[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3263[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3266[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3267[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3285[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3292[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3294[m
+ src/am/ec_hnsw/scan_debug.rs:3299[m
+ src/am/ec_hnsw/scan_debug.rs:3302[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3309[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3311[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3315[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3316[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3350[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3357[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3360[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3363[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3368[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3371[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3377[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3379[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3389[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3306[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3308[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3313[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3314[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3333[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3340[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3342[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3347[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3353[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3358[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3359[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3378[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3385[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3387[m
+ src/am/ec_hnsw/scan_debug.rs:3391[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3396[m
+ src/am/ec_hnsw/scan_debug.rs:3397[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3418[m
+ src/am/ec_hnsw/scan_debug.rs:3419[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3425[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3426[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3429[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3433[m
+ src/am/ec_hnsw/scan_debug.rs:3439[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3447[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3446[m
+ src/am/ec_hnsw/scan_debug.rs:3448[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3470[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3476[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3479[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3482[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3490[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3493[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3500[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3501[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3517[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3523[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3524[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3535[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3542[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3545[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3546[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3555[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3558[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3559[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3564[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3565[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3577[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3584[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3452[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3455[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3458[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3459[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3462[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3463[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3487[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3494[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3496[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3509[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3512[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3519[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3521[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3525[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3526[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3560[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3567[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3570[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3573[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3578[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3581[m
+ src/am/ec_hnsw/scan_debug.rs:3587[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3592[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3598[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3589[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3599[m
+ src/am/ec_hnsw/scan_debug.rs:3601[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3602[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3606[m
+ src/am/ec_hnsw/scan_debug.rs:3607[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3608[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3617[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3622[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3624[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3629[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3635[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3636[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3639[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3643[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3649[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3657[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3658[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3680[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3686[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3689[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3692[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3700[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3703[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3710[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3711[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3727[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3733[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3734[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3745[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3752[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3755[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3756[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3765[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3768[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3769[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3774[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3775[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3787[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3794[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3797[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3802[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3808[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3811[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3812[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3817[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3818[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3827[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3832[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3834[m
+ src/am/ec_hnsw/shared.rs:100[m
+ src/am/ec_hnsw/shared.rs:105[m
+ src/am/ec_hnsw/shared.rs:107[m
+[1mdiff --git a/src/am/ec_hnsw/scan_debug.rs b/src/am/ec_hnsw/scan_debug.rs[m
+[1mindex 31a8c048..ef535a76 100644[m
+[1m--- a/src/am/ec_hnsw/scan_debug.rs[m
+[1m+++ b/src/am/ec_hnsw/scan_debug.rs[m
+[36m@@ -1168,6 +1168,8 @@[m [mpub(crate) unsafe fn debug_grouped_rerank_profile([m
+     query: Vec<f32>,[m
+     limit_count: i32,[m
+ ) -> DebugGroupedRerankProfile {[m
+[32m+[m[32m    // SAFETY: The debug helper opens the index, owning heap, and scan snapshot[m
+[32m+[m[32m    // and keeps them alive in `scan_state`.[m
+     let scan_state = unsafe { debug_begin_heap_backed_scan(index_oid) };[m
+     let scan = scan_state.scan.as_ptr();[m
+     let result_limit =[m
+[36m@@ -1178,10 +1180,14 @@[m [mpub(crate) unsafe fn debug_grouped_rerank_profile([m
+         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),[m
+         ..Default::default()[m
+     };[m
+[32m+[m[32m    // SAFETY: `scan_state` owns a live heap-backed scan, there are no index[m
+[32m+[m[32m    // quals, and `orderby` is a valid one-key buffer.[m
+     unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };[m
+     let emit_started = Instant::now();[m
+     let mut emitted = 0_i32;[m
+     while usize::try_from(emitted).expect("emitted count should fit in usize") < result_limit[m
+[32m+[m[32m        // SAFETY: AM rescan initialized the HNSW opaque, so repeated gettuple[m
+[32m+[m[32m        // calls may advance the live scan descriptor.[m
+         && unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) }[m
+     {[m
+         emitted += 1;[m
+[36m@@ -1192,9 +1198,13 @@[m [mpub(crate) unsafe fn debug_grouped_rerank_profile([m
+     let total_elapsed_us =[m
+         i64::try_from(total_started.elapsed().as_micros()).expect("total timing should fit in i64");[m
+ [m
+[32m+[m[32m    // SAFETY: The scan descriptor remains live until `debug_end_heap_backed_scan`[m
+[32m+[m[32m    // consumes `scan_state` below.[m
+     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };[m
+     let debug_profile = opaque.debug_profile;[m
+ [m
+[32m+[m[32m    // SAFETY: `scan_state` owns the scan and relation guards and is consumed[m
+[32m+[m[32m    // once after profiling completes.[m
+     unsafe { debug_end_heap_backed_scan(scan_state) };[m
+ [m
+     ([m
+[36m@@ -1228,6 +1238,8 @@[m [mpub(crate) unsafe fn debug_turboquant_scan_stage_profile([m
+     index_oid: pg_sys::Oid,[m
+     query: Vec<f32>,[m
+ ) -> DebugTurboQuantScanStageProfile {[m
+[32m+[m[32m    // SAFETY: The debug helper opens the index, owning heap, and scan snapshot[m
+[32m+[m[32m    // and keeps them alive in `scan_state`.[m
+     let scan_state = unsafe { debug_begin_heap_backed_scan(index_oid) };[m
+     let scan = scan_state.scan.as_ptr();[m
+ [m
+[36m@@ -1235,18 +1247,25 @@[m [mpub(crate) unsafe fn debug_turboquant_scan_stage_profile([m
+         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),[m
+         ..Default::default()[m
+     };[m
+[32m+[m[32m    // SAFETY: `scan_state` owns a live heap-backed scan, there are no index[m
+[32m+[m[32m    // quals, and `orderby` is a valid one-key buffer.[m
+     unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };[m
+ [m
+[32m+[m[32m    // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.[m
+     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };[m
+     if !matches!([m
+         opaque.scan_graph_storage,[m
+         graph::GraphStorageDescriptor::TurboQuant { .. }[m
+             | graph::GraphStorageDescriptor::TurboQuantHotCold(_)[m
+     ) {[m
+[32m+[m[32m        // SAFETY: `scan_state` owns the scan and relation guards and is[m
+[32m+[m[32m        // consumed before the debug error aborts this path.[m
+         unsafe { debug_end_heap_backed_scan(scan_state) };[m
+         pgrx::error!("debug turboquant scan stage profile requires a turboquant index");[m
+     }[m
+     if opaque.cached_quantizer.is_null() {[m
+[32m+[m[32m        // SAFETY: `scan_state` owns the scan and relation guards and is[m
+[32m+[m[32m        // consumed before the debug error aborts this path.[m
+         unsafe { debug_end_heap_backed_scan(scan_state) };[m
+         pgrx::error!("debug turboquant scan stage profile requires a prepared quantizer");[m
+     }[m
+[36m@@ -1267,6 +1286,8 @@[m [mpub(crate) unsafe fn debug_turboquant_scan_stage_profile([m
+     let exact_score_uses_lut = turboquant_exact_score_uses_lut(opaque);[m
+     let exact_score_uses_qjl = turboquant_exact_score_uses_qjl(opaque);[m
+ [m
+[32m+[m[32m    // SAFETY: `scan_state` owns the scan and relation guards and is consumed[m
+[32m+[m[32m    // once after profiling completes.[m
+     unsafe { debug_end_heap_backed_scan(scan_state) };[m
+ [m
+     ([m
+[36m@@ -1294,6 +1315,8 @@[m [munsafe fn debug_collect_element_tids_at_level([m
+     storage: graph::GraphStorageDescriptor,[m
+     target_level: u8,[m
+ ) -> Vec<page::ItemPointer> {[m
+[32m+[m[32m    // SAFETY: `index_relation` is an open index relation supplied by the debug[m
+[32m+[m[32m    // caller; PostgreSQL returns the current main-fork block count.[m
+     let block_count = unsafe {[m
+         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)[m
+     };[m
+[36m@@ -1301,6 +1324,8 @@[m [munsafe fn debug_collect_element_tids_at_level([m
+     let mut tids = Vec::new();[m
+ [m
+     for block_number in page::FIRST_DATA_BLOCK_NUMBER..block_count {[m
+[32m+[m[32m        // SAFETY: The block number is within the relation's main-fork block[m
+[32m+[m[32m        // count and is read under a shared buffer lock for inspection.[m
+         let buffer = unsafe {[m
+             LockedBufferGuard::read_main([m
+                 index_relation,[m
+[36m@@ -1317,6 +1342,8 @@[m [munsafe fn debug_collect_element_tids_at_level([m
+         let line_pointer_count = super::shared::page_line_pointer_count(page_ptr);[m
+ [m
+         for offset_number in 1..=line_pointer_count {[m
+[32m+[m[32m            // SAFETY: The buffer remains share-locked while the helper validates[m
+[32m+[m[32m            // this line pointer and exposes tuple bytes only to the closure.[m
+             let matches_element_tag = unsafe {[m
+                 debug_with_page_line_tuple_bytes([m
+                     page_ptr,[m
+[36m@@ -1330,6 +1357,8 @@[m [munsafe fn debug_collect_element_tids_at_level([m
+                 continue;[m
+             }[m
+ [m
+[32m+[m[32m            // SAFETY: The tuple tag matched the graph element tag on a locked[m
+[32m+[m[32m            // page, and the graph loader validates the storage-specific body.[m
+             let element = unsafe {[m
+                 graph::load_exact_graph_element([m
+                     index_relation,[m
+[36m@@ -1360,6 +1389,8 @@[m [munsafe fn debug_collect_element_tids_at_or_above_level([m
+     storage: graph::GraphStorageDescriptor,[m
+     min_level: u8,[m
+ ) -> Vec<page::ItemPointer> {[m
+[32m+[m[32m    // SAFETY: `index_relation` is an open index relation supplied by the debug[m
+[32m+[m[32m    // caller; PostgreSQL returns the current main-fork block count.[m
+     let block_count = unsafe {[m
+         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)[m
+     };[m
+[36m@@ -1367,6 +1398,8 @@[m [munsafe fn debug_collect_element_tids_at_or_above_level([m
+     let mut tids = Vec::new();[m
+ [m
+     for block_number in page::FIRST_DATA_BLOCK_NUMBER..block_count {[m
+[32m+[m[32m        // SAFETY: The block number is within the relation's main-fork block[m
+[32m+[m[32m        // count and is read under a shared buffer lock for inspection.[m
+         let buffer = unsafe {[m
+             LockedBufferGuard::read_main([m
+                 index_relation,[m
+[36m@@ -1383,6 +1416,8 @@[m [munsafe fn debug_collect_element_tids_at_or_above_level([m
+         let line_pointer_count = super::shared::page_line_pointer_count(page_ptr);[m
+ [m
+         for offset_number in 1..=line_pointer_count {[m
+[32m+[m[32m            // SAFETY: The buffer remains share-locked while the helper validates[m
+[32m+[m[32m            // this line pointer and exposes tuple bytes only to the closure.[m
+             let matches_element_tag = unsafe {[m
+                 debug_with_page_line_tuple_bytes([m
+                     page_ptr,[m
+[36m@@ -1396,6 +1431,8 @@[m [munsafe fn debug_collect_element_tids_at_or_above_level([m
+                 continue;[m
+             }[m
+ [m
+[32m+[m[32m            // SAFETY: The tuple tag matched the graph element tag on a locked[m
+[32m+[m[32m            // page, and the graph loader validates the storage-specific body.[m
+             let element = unsafe {[m
+                 graph::load_exact_graph_element([m
+                     index_relation,[m
+[36m@@ -1425,6 +1462,8 @@[m [munsafe fn debug_collect_element_tid_by_heap_tid([m
+     index_relation: pg_sys::Relation,[m
+     storage: graph::GraphStorageDescriptor,[m
+ ) -> std::collections::HashMap<HeapTidCoords, page::ItemPointer> {[m
+[32m+[m[32m    // SAFETY: `index_relation` is an open index relation supplied by the debug[m
+[32m+[m[32m    // caller; PostgreSQL returns the current main-fork block count.[m
+     let block_count = unsafe {[m
+         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)[m
+     };[m
+[36m@@ -1432,6 +1471,8 @@[m [munsafe fn debug_collect_element_tid_by_heap_tid([m
+     let mut map = std::collections::HashMap::new();[m
+ [m
+     for block_number in page::FIRST_DATA_BLOCK_NUMBER..block_count {[m
+[32m+[m[32m        // SAFETY: The block number is within the relation's main-fork block[m
+[32m+[m[32m        // count and is read under a shared buffer lock for inspection.[m
+         let buffer = unsafe {[m
+             LockedBufferGuard::read_main([m
+                 index_relation,[m
+[36m@@ -1448,6 +1489,8 @@[m [munsafe fn debug_collect_element_tid_by_heap_tid([m
+         let line_pointer_count = super::shared::page_line_pointer_count(page_ptr);[m
+ [m
+         for offset_number in 1..=line_pointer_count {[m
+[32m+[m[32m            // SAFETY: The buffer remains share-locked while the helper validates[m
+[32m+[m[32m            // this line pointer and exposes tuple bytes only to the closure.[m
+             let matches_element_tag = unsafe {[m
+                 debug_with_page_line_tuple_bytes([m
+                     page_ptr,[m
+[36m@@ -1461,6 +1504,8 @@[m [munsafe fn debug_collect_element_tid_by_heap_tid([m
+                 continue;[m
+             }[m
+ [m
+[32m+[m[32m            // SAFETY: The tuple tag matched the graph element tag on a locked[m
+[32m+[m[32m            // page, and the graph loader validates the storage-specific body.[m
+             let element = unsafe {[m
+                 graph::load_exact_graph_element([m
+                     index_relation,[m
+[36m@@ -1494,6 +1539,8 @@[m [mpub(crate) unsafe fn debug_top_level_oracle_scan_heap_tids([m
+     query: Vec<f32>,[m
+     ef_search: usize,[m
+ ) -> Vec<HeapTidCoords> {[m
+[32m+[m[32m    // SAFETY: This wrapper forwards the caller-provided index oid, query, and[m
+[32m+[m[32m    // bounded search parameters to the k-seed oracle helper.[m
+     unsafe { debug_top_level_oracle_k_seed_scan_heap_tids(index_oid, query, ef_search, 1) }[m
+ }[m
+ [m
+[36m@@ -1502,16 +1549,25 @@[m [mpub(crate) unsafe fn debug_all_top_level_heap_tids(index_oid: pg_sys::Oid) -> Ve[m
+     let index_relation_guard =[m
+         IndexRelationGuard::access_share(index_oid, "debug_all_top_level_heap_tids");[m
+     let index_relation = index_relation_guard.as_ptr();[m
+[32m+[m[32m    // SAFETY: The relation guard keeps the index relation open while its[m
+[32m+[m[32m    // metadata page is read.[m
+     let metadata = unsafe { super::shared::read_metadata_page(index_relation) };[m
+     if metadata.entry_point == page::ItemPointer::INVALID || metadata.dimensions == 0 {[m
+         return Vec::new();[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: Metadata was read from the open index relation and validated[m
+[32m+[m[32m    // enough to resolve the graph storage descriptor for debug inspection.[m
+     let storage = unsafe { debug_graph_storage(index_relation, &metadata) };[m
+[32m+[m[32m    // SAFETY: The relation guard keeps the graph relation open while the helper[m
+[32m+[m[32m    // scans locked pages for top-level element TIDs.[m
+     let mut heap_tids =[m
+         unsafe { debug_collect_element_tids_at_level(index_relation, storage, metadata.max_level) }[m
+             .into_iter()[m
+             .filter_map(|element_tid| {[m
+[32m+[m[32m                // SAFETY: `element_tid` was collected from graph pages matching[m
+[32m+[m[32m                // the storage element tag, and the graph loader validates the[m
+[32m+[m[32m                // tuple body.[m
+                 let element = unsafe {[m
+                     graph::load_exact_graph_element(index_relation, element_tid, storage)[m
+                 };[m
+[36m@@ -1538,11 +1594,15 @@[m [mpub(crate) unsafe fn debug_top_level_reachable_heap_tids([m
+     let index_relation_guard =[m
+         IndexRelationGuard::access_share(index_oid, "debug_top_level_reachable_heap_tids");[m
+     let index_relation = index_relation_guard.as_ptr();[m
+[32m+[m[32m    // SAFETY: The relation guard keeps the index relation open while its[m
+[32m+[m[32m    // metadata page is read.[m
+     let metadata = unsafe { super::shared::read_metadata_page(index_relation) };[m
+     if metadata.entry_point == page::ItemPointer::INVALID || metadata.dimensions == 0 {[m
+         return Vec::new();[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: Metadata was read from the open index relation and validated[m
+[32m+[m[32m    // enough to resolve the graph storage descriptor for debug inspection.[m
+     let storage = unsafe { debug_graph_storage(index_relation, &metadata) };[m
+     let m = usize::from(metadata.m);[m
+     let mut queue = std::collections::VecDeque::from([metadata.entry_point]);[m
+[36m@@ -1554,6 +1614,9 @@[m [mpub(crate) unsafe fn debug_top_level_reachable_heap_tids([m
+             continue;[m
+         }[m
+ [m
+[32m+[m[32m        // SAFETY: `element_tid` is either the metadata entry point or a neighbor[m
+[32m+[m[32m        // returned by graph adjacency loading; the graph loader validates the[m
+[32m+[m[32m        // tuple body before returning it.[m
+         let element =[m
+             unsafe { graph::load_exact_graph_element(index_relation, element_tid, storage) };[m
+         if element.deleted {[m
+[36m@@ -1564,6 +1627,9 @@[m [mpub(crate) unsafe fn debug_top_level_reachable_heap_tids([m
+             heap_tids.push(debug_item_pointer_coords(heap_tid));[m
+         }[m
+ [m
+[32m+[m[32m        // SAFETY: The current element was loaded from graph storage and `m`[m
+[32m+[m[32m        // comes from validated metadata; adjacency loading validates the graph[m
+[32m+[m[32m        // tuple before returning layer neighbors.[m
+         for neighbor_tid in unsafe {[m
+             debug_load_neighbor_tids_for_layer([m
+                 index_relation,[m
+[36m@@ -1591,11 +1657,15 @@[m [mpub(crate) unsafe fn debug_layer0_reachable_live_element_tids([m
+     let index_relation_guard =[m
+         IndexRelationGuard::access_share(index_oid, "debug_layer0_reachable_live_element_tids");[m
+     let index_relation = index_relation_guard.as_ptr();[m
+[32m+[m[32m    // SAFETY: The relation guard keeps the index relation open while its[m
+[32m+[m[32m    // metadata page is read.[m
+     let metadata = unsafe { super::shared::read_metadata_page(index_relation) };[m
+     if metadata.entry_point == page::ItemPointer::INVALID || metadata.dimensions == 0 {[m
+         return Vec::new();[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: Metadata was read from the open index relation and validated[m
+[32m+[m[32m    // enough to resolve the graph storage descriptor for debug inspection.[m
+     let storage = unsafe { debug_graph_storage(index_relation, &metadata) };[m
+     let m = usize::from(metadata.m);[m
+     let mut queue = std::collections::VecDeque::from([metadata.entry_point]);[m
+[36m@@ -1607,6 +1677,9 @@[m [mpub(crate) unsafe fn debug_layer0_reachable_live_element_tids([m
+             continue;[m
+         }[m
+ [m
+[32m+[m[32m        // SAFETY: `element_tid` is either the metadata entry point or a neighbor[m
+[32m+[m[32m        // returned by graph adjacency loading; the graph loader validates the[m
+[32m+[m[32m        // tuple body before returning it.[m
+         let element =[m
+             unsafe { graph::load_exact_graph_element(index_relation, element_tid, storage) };[m
+         if element.deleted || element.heaptids.is_empty() {[m
+[36m@@ -1614,6 +1687,9 @@[m [mpub(crate) unsafe fn debug_layer0_reachable_live_element_tids([m
+         }[m
+         reachable.push(element_tid);[m
+ [m
+[32m+[m[32m        // SAFETY: The current element was loaded from graph storage and `m`[m
+[32m+[m[32m        // comes from validated metadata; adjacency loading validates the graph[m
+[32m+[m[32m        // tuple before returning layer-0 neighbors.[m
+         for neighbor_tid in unsafe {[m
+             debug_load_neighbor_tids_for_layer(index_relation, storage, element_tid, m, 0)[m
+         } {[m
+[36m@@ -1640,6 +1716,8 @@[m [mpub(crate) unsafe fn debug_top_level_oracle_k_seed_heap_tids([m
+     let index_relation_guard =[m
+         IndexRelationGuard::access_share(index_oid, "debug_top_level_oracle_k_seed_heap_tids");[m
+     let index_relation = index_relation_guard.as_ptr();[m
+[32m+[m[32m    // SAFETY: The relation guard keeps the index relation open while its[m
+[32m+[m[32m    // metadata page is read.[m
+     let metadata = unsafe { super::shared::read_metadata_page(index_relation) };[m
+     if metadata.entry_point == page::ItemPointer::INVALID[m
+         || metadata.dimensions == 0[m
+[36m@@ -1648,23 +1726,36 @@[m [mpub(crate) unsafe fn debug_top_level_oracle_k_seed_heap_tids([m
+         return Vec::new();[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: The relation guard keeps the index open for the AM scan[m
+[32m+[m[32m    // descriptor used to prepare query state.[m
+     let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };[m
+     let mut orderby = pg_sys::ScanKeyData {[m
+         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),[m
+         ..Default::default()[m
+     };[m
+[32m+[m[32m    // SAFETY: `scan` is live, there are no index quals, and `orderby` is a[m
+[32m+[m[32m    // valid one-key buffer.[m
+     unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };[m
+ [m
+[32m+[m[32m    // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.[m
+     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };[m
+     let storage = opaque.scan_graph_storage;[m
+[32m+[m[32m    // SAFETY: The opaque belongs to the live scan and rescan prepares a cached[m
+[32m+[m[32m    // quantizer for score computation.[m
+     let quantizer = unsafe { &*opaque.cached_quantizer };[m
+[32m+[m[32m    // SAFETY: The opaque belongs to the live scan and rescan prepares query[m
+[32m+[m[32m    // storage for score computation.[m
+     let prepared_query = unsafe { &*opaque.prepared_query };[m
+[32m+[m[32m    // SAFETY: The relation guard keeps the graph relation open while the helper[m
+[32m+[m[32m    // scans locked pages for top-level element TIDs.[m
+     let top_level_tids =[m
+         unsafe { debug_collect_element_tids_at_level(index_relation, storage, metadata.max_level) };[m
+ [m
+     let mut heap_tids = top_level_tids[m
+         .into_iter()[m
+         .filter_map(|seed_tid| {[m
+[32m+[m[32m            // SAFETY: `seed_tid` was collected from graph pages matching the[m
+[32m+[m[32m            // storage element tag, and the graph loader validates the tuple.[m
+             let element =[m
+                 unsafe { graph::load_exact_graph_element(index_relation, seed_tid, storage) };[m
+             if element.deleted || element.heaptids.is_empty() {[m
+[36m@@ -1686,7 +1777,9 @@[m [mpub(crate) unsafe fn debug_top_level_oracle_k_seed_heap_tids([m
+         .map(|(_, heap_tid)| heap_tid)[m
+         .collect();[m
+ [m
+[32m+[m[32m    // SAFETY: The scan descriptor is live and belongs to the HNSW AM.[m
+     unsafe { ec_hnsw_amendscan(scan) };[m
+[32m+[m[32m    // SAFETY: AM cleanup has run, and the descriptor is released once here.[m
+     unsafe { pg_sys::IndexScanEnd(scan) };[m
+     heap_tids[m
+ }[m
+[36m@@ -1701,6 +1794,8 @@[m [mpub(crate) unsafe fn debug_top_level_oracle_k_seed_scan_heap_tids([m
+     let index_relation_guard =[m
+         IndexRelationGuard::access_share(index_oid, "debug_top_level_oracle_k_seed_scan_heap_tids");[m
+     let index_relation = index_relation_guard.as_ptr();[m
+[32m+[m[32m    // SAFETY: The relation guard keeps the index relation open while its[m
+[32m+[m[32m    // metadata page is read.[m
+     let metadata = unsafe { super::shared::read_metadata_page(index_relation) };[m
+     if metadata.entry_point == page::ItemPointer::INVALID[m
+         || metadata.dimensions == 0[m
+[36m@@ -1709,23 +1804,36 @@[m [mpub(crate) unsafe fn debug_top_level_oracle_k_seed_scan_heap_tids([m
+         return Vec::new();[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: The relation guard keeps the index open for the AM scan[m
+[32m+[m[32m    // descriptor used to prepare query state.[m
+     let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };[m
+     let mut orderby = pg_sys::ScanKeyData {[m
+         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),[m
+         ..Default::default()[m
+     };[m
+[32m+[m[32m    // SAFETY: `scan` is live, there are no index quals, and `orderby` is a[m
+[32m+[m[32m    // valid one-key buffer.[m
+     unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };[m
+ [m
+[32m+[m[32m    // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.[m
+     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };[m
+     let storage = opaque.scan_graph_storage;[m
+[32m+[m[32m    // SAFETY: The opaque belongs to the live scan and rescan prepares a cached[m
+[32m+[m[32m    // quantizer for score computation.[m
+     let quantizer = unsafe { &*opaque.cached_quantizer };[m
+[32m+[m[32m    // SAFETY: The opaque belongs to the live scan and rescan prepares query[m
+[32m+[m[32m    // storage for score computation.[m
+     let prepared_query = unsafe { &*opaque.prepared_query };[m
+[32m+[m[32m    // SAFETY: The relation guard keeps the graph relation open while the helper[m
+[32m+[m[32m    // scans locked pages for top-level element TIDs.[m
+     let top_level_tids =[m
+         unsafe { debug_collect_element_tids_at_level(index_relation, storage, metadata.max_level) };[m
+ [m
+     let mut seeds = top_level_tids[m
+         .into_iter()[m
+         .filter_map(|seed_tid| {[m
+[32m+[m[32m            // SAFETY: `seed_tid` was collected from graph pages matching the[m
+[32m+[m[32m            // storage element tag, and the graph loader validates the tuple.[m
+             let element =[m
+                 unsafe { graph::load_exact_graph_element(index_relation, seed_tid, storage) };[m
+             if element.deleted || element.heaptids.is_empty() {[m
+[36m@@ -1743,6 +1851,9 @@[m [mpub(crate) unsafe fn debug_top_level_oracle_k_seed_scan_heap_tids([m
+     let tids = if seeds.is_empty() {[m
+         Vec::new()[m
+     } else {[m
+[32m+[m[32m        // SAFETY: The seed candidates were loaded from graph storage for this[m
+[32m+[m[32m        // index, and the search helper validates neighbor tuples as it walks[m
+[32m+[m[32m        // layer 0 with the supplied storage descriptor.[m
+         let ordered_candidates = unsafe {[m
+             graph::search_layer0_result_candidates_with_storage([m
+                 index_relation,[m
+[36m@@ -1767,6 +1878,8 @@[m [mpub(crate) unsafe fn debug_top_level_oracle_k_seed_scan_heap_tids([m
+                 continue;[m
+             }[m
+ [m
+[32m+[m[32m            // SAFETY: Search candidates come from graph traversal on this[m
+[32m+[m[32m            // relation/storage pair, and the loader validates the tuple body.[m
+             let element =[m
+                 unsafe { graph::load_exact_graph_element(index_relation, candidate.node, storage) };[m
+             if element.deleted || element.heaptids.is_empty() {[m
+[36m@@ -1778,7 +1891,9 @@[m [mpub(crate) unsafe fn debug_top_level_oracle_k_seed_scan_heap_tids([m
+         heap_tids[m
+     };[m
+ [m
+[32m+[m[32m    // SAFETY: The scan descriptor is live and belongs to the HNSW AM.[m
+     unsafe { ec_hnsw_amendscan(scan) };[m
+[32m+[m[32m    // SAFETY: AM cleanup has run, and the descriptor is released once here.[m
+     unsafe { pg_sys::IndexScanEnd(scan) };[m
+     tids[m
+ }[m
+[36m@@ -1796,6 +1911,8 @@[m [mpub(crate) unsafe fn debug_layer_oracle_k_carrydown_scan_heap_tids([m
+         "debug_layer_oracle_k_carrydown_scan_heap_tids",[m
+     );[m
+     let index_relation = index_relation_guard.as_ptr();[m
+[32m+[m[32m    // SAFETY: The relation guard keeps the index relation open while its[m
+[32m+[m[32m    // metadata page is read.[m
+     let metadata = unsafe { super::shared::read_metadata_page(index_relation) };[m
+     if metadata.entry_point == page::ItemPointer::INVALID[m
+         || metadata.dimensions == 0[m
+[36m@@ -1806,23 +1923,36 @@[m [mpub(crate) unsafe fn debug_layer_oracle_k_carrydown_scan_heap_tids([m
+         return Vec::new();[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: The relation guard keeps the index open for the AM scan[m
+[32m+[m[32m    // descriptor used to prepare query state.[m
+     let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };[m
+     let mut orderby = pg_sys::ScanKeyData {[m
+         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),[m
+         ..Default::default()[m
+     };[m
+[32m+[m[32m    // SAFETY: `scan` is live, there are no index quals, and `orderby` is a[m
+[32m+[m[32m    // valid one-key buffer.[m
+     unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };[m
+ [m
+[32m+[m[32m    // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.[m
+     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };[m
+     let storage = opaque.scan_graph_storage;[m
+[32m+[m[32m    // SAFETY: The opaque belongs to the live scan and rescan prepares a cached[m
+[32m+[m[32m    // quantizer for score computation.[m
+     let quantizer = unsafe { &*opaque.cached_quantizer };[m
+[32m+[m[32m    // SAFETY: The opaque belongs to the live scan and rescan prepares query[m
+[32m+[m[32m    // storage for score computation.[m
+     let prepared_query = unsafe { &*opaque.prepared_query };[m
+[32m+[m[32m    // SAFETY: The relation guard keeps the graph relation open while the helper[m
+[32m+[m[32m    // scans locked pages for candidate element TIDs.[m
+     let layer_tids =[m
+         unsafe { debug_collect_element_tids_at_or_above_level(index_relation, storage, layer) };[m
+ [m
+     let mut seeds = layer_tids[m
+         .into_iter()[m
+         .filter_map(|seed_tid| {[m
+[32m+[m[32m            // SAFETY: `seed_tid` was collected from graph pages matching the[m
+[32m+[m[32m            // storage element tag, and the graph loader validates the tuple.[m
+             let element =[m
+                 unsafe { graph::load_exact_graph_element(index_relation, seed_tid, storage) };[m
+             if element.deleted || element.heaptids.is_empty() {[m
+[36m@@ -1842,6 +1972,9 @@[m [mpub(crate) unsafe fn debug_layer_oracle_k_carrydown_scan_heap_tids([m
+     } else {[m
+         let mut carrydown_seeds = seeds;[m
+         for current_layer in (1..=layer).rev() {[m
+[32m+[m[32m            // SAFETY: The carrydown seeds were loaded from graph storage for[m
+[32m+[m[32m            // this index, and the search helper validates neighbor tuples as it[m
+[32m+[m[32m            // walks the requested upper layer.[m
+             carrydown_seeds = unsafe {[m
+                 graph::search_layer_result_candidates_with_storage([m
+                     index_relation,[m
+[36m@@ -1865,6 +1998,9 @@[m [mpub(crate) unsafe fn debug_layer_oracle_k_carrydown_scan_heap_tids([m
+             }[m
+         }[m
+ [m
+[32m+[m[32m        // SAFETY: The carrydown seeds came from upper-layer graph traversal on[m
+[32m+[m[32m        // this relation/storage pair, and the layer-0 helper validates neighbor[m
+[32m+[m[32m        // tuples as it walks.[m
+         let ordered_candidates = unsafe {[m
+             graph::search_layer0_result_candidates_with_storage([m
+                 index_relation,[m
+[36m@@ -1889,6 +2025,8 @@[m [mpub(crate) unsafe fn debug_layer_oracle_k_carrydown_scan_heap_tids([m
+                 continue;[m
+             }[m
+ [m
+[32m+[m[32m            // SAFETY: Search candidates come from graph traversal on this[m
+[32m+[m[32m            // relation/storage pair, and the loader validates the tuple body.[m
+             let element =[m
+                 unsafe { graph::load_exact_graph_element(index_relation, candidate.node, storage) };[m
+             if element.deleted || element.heaptids.is_empty() {[m
+[36m@@ -1900,7 +2038,9 @@[m [mpub(crate) unsafe fn debug_layer_oracle_k_carrydown_scan_heap_tids([m
+         heap_tids[m
+     };[m
+ [m
+[32m+[m[32m    // SAFETY: The scan descriptor is live and belongs to the HNSW AM.[m
+     unsafe { ec_hnsw_amendscan(scan) };[m
+[32m+[m[32m    // SAFETY: AM cleanup has run, and the descriptor is released once here.[m
+     unsafe { pg_sys::IndexScanEnd(scan) };[m
+     tids[m
+ }[m
+[36m@@ -1917,6 +2057,8 @@[m [mpub(crate) unsafe fn debug_layer_oracle_k_seed_layer0_neighbor_heap_tids([m
+         "debug_layer_oracle_k_seed_layer0_neighbor_heap_tids",[m
+     );[m
+     let index_relation = index_relation_guard.as_ptr();[m
+[32m+[m[32m    // SAFETY: The relation guard keeps the index relation open while its[m
+[32m+[m[32m    // metadata page is read.[m
+     let metadata = unsafe { super::shared::read_metadata_page(index_relation) };[m
+     if metadata.entry_point == page::ItemPointer::INVALID[m
+         || metadata.dimensions == 0[m
+[36m@@ -1927,23 +2069,36 @@[m [mpub(crate) unsafe fn debug_layer_oracle_k_seed_layer0_neighbor_heap_tids([m
+         return Vec::new();[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: The relation guard keeps the index open for the AM scan[m
+[32m+[m[32m    // descriptor used to prepare query state.[m
+     let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };[m
+     let mut orderby = pg_sys::ScanKeyData {[m
+         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),[m
+         ..Default::default()[m
+     };[m
+[32m+[m[32m    // SAFETY: `scan` is live, there are no index quals, and `orderby` is a[m
+[32m+[m[32m    // valid one-key buffer.[m
+     unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };[m
+ [m
+[32m+[m[32m    // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.[m
+     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };[m
+     let storage = opaque.scan_graph_storage;[m
+[32m+[m[32m    // SAFETY: The opaque belongs to the live scan and rescan prepares a cached[m
+[32m+[m[32m    // quantizer for score computation.[m
+     let quantizer = unsafe { &*opaque.cached_quantizer };[m
+[32m+[m[32m    // SAFETY: The opaque belongs to the live scan and rescan prepares query[m
+[32m+[m[32m    // storage for score computation.[m
+     let prepared_query = unsafe { &*opaque.prepared_query };[m
+[32m+[m[32m    // SAFETY: The relation guard keeps the graph relation open while the helper[m
+[32m+[m[32m    // scans locked pages for candidate element TIDs.[m
+     let layer_tids =[m
+         unsafe { debug_collect_element_tids_at_or_above_level(index_relation, storage, layer) };[m
+ [m
+     let mut seeds = layer_tids[m
+         .into_iter()[m
+         .filter_map(|seed_tid| {[m
+[32m+[m[32m            // SAFETY: `seed_tid` was collected from graph pages matching the[m
+[32m+[m[32m            // storage element tag, and the graph loader validates the tuple.[m
+             let element =[m
+                 unsafe { graph::load_exact_graph_element(index_relation, seed_tid, storage) };[m
+             if element.deleted || element.heaptids.is_empty() {[m
+[36m@@ -1965,12 +2120,17 @@[m [mpub(crate) unsafe fn debug_layer_oracle_k_seed_layer0_neighbor_heap_tids([m
+             continue;[m
+         }[m
+ [m
+[32m+[m[32m        // SAFETY: Seed candidates were loaded from graph pages for this[m
+[32m+[m[32m        // relation/storage pair, and the graph loader validates the tuple.[m
+         let seed_element =[m
+             unsafe { graph::load_exact_graph_element(index_relation, seed.node, storage) };[m
+         if !seed_element.deleted {[m
+             scored_elements.push((seed.score, seed_element.heaptids.clone()));[m
+         }[m
+ [m
+[32m+[m[32m        // SAFETY: The seed element was loaded from graph storage and `scan_m`[m
+[32m+[m[32m        // comes from the initialized scan opaque; adjacency loading validates[m
+[32m+[m[32m        // the graph tuple before returning layer-0 neighbors.[m
+         for neighbor_tid in unsafe {[m
+             debug_load_neighbor_tids_for_layer([m
+                 index_relation,[m
+[36m@@ -1984,6 +2144,8 @@[m [mpub(crate) unsafe fn debug_layer_oracle_k_seed_layer0_neighbor_heap_tids([m
+                 continue;[m
+             }[m
+ [m
+[32m+[m[32m            // SAFETY: Neighbor TIDs come from graph adjacency loading for this[m
+[32m+[m[32m            // relation/storage pair, and the loader validates the tuple body.[m
+             let neighbor =[m
+                 unsafe { graph::load_exact_graph_element(index_relation, neighbor_tid, storage) };[m
+             if neighbor.deleted || neighbor.heaptids.is_empty() {[m
+[36m@@ -2008,7 +2170,9 @@[m [mpub(crate) unsafe fn debug_layer_oracle_k_seed_layer0_neighbor_heap_tids([m
+         }[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: The scan descriptor is live and belongs to the HNSW AM.[m
+     unsafe { ec_hnsw_amendscan(scan) };[m
+[32m+[m[32m    // SAFETY: AM cleanup has run, and the descriptor is released once here.[m
+     unsafe { pg_sys::IndexScanEnd(scan) };[m
+     heap_tids[m
+ }[m
+[36m@@ -2023,6 +2187,8 @@[m [mpub(crate) unsafe fn debug_exact_seed_scan_heap_tids([m
+     let index_relation_guard =[m
+         IndexRelationGuard::access_share(index_oid, "debug_exact_seed_scan_heap_tids");[m
+     let index_relation = index_relation_guard.as_ptr();[m
+[32m+[m[32m    // SAFETY: The relation guard keeps the index relation open while its[m
+[32m+[m[32m    // metadata page is read.[m
+     let metadata = unsafe { super::shared::read_metadata_page(index_relation) };[m
+     if metadata.entry_point == page::ItemPointer::INVALID[m
+         || metadata.dimensions == 0[m
+[36m@@ -2031,17 +2197,28 @@[m [mpub(crate) unsafe fn debug_exact_seed_scan_heap_tids([m
+         return Vec::new();[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: The relation guard keeps the index open for the AM scan[m
+[32m+[m[32m    // descriptor used to prepare query state.[m
+     let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };[m
+     let mut orderby = pg_sys::ScanKeyData {[m
+         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),[m
+         ..Default::default()[m
+     };[m
+[32m+[m[32m    // SAFETY: `scan` is live, there are no index quals, and `orderby` is a[m
+[32m+[m[32m    // valid one-key buffer.[m
+     unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };[m
+ [m
+[32m+[m[32m    // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.[m
+     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };[m
+     let storage = opaque.scan_graph_storage;[m
+[32m+[m[32m    // SAFETY: The opaque belongs to the live scan and rescan prepares a cached[m
+[32m+[m[32m    // quantizer for score computation.[m
+     let quantizer = unsafe { &*opaque.cached_quantizer };[m
+[32m+[m[32m    // SAFETY: The opaque belongs to the live scan and rescan prepares query[m
+[32m+[m[32m    // storage for score computation.[m
+     let prepared_query = unsafe { &*opaque.prepared_query };[m
+[32m+[m[32m    // SAFETY: The relation guard keeps the graph relation open while the helper[m
+[32m+[m[32m    // scans locked graph pages and maps heap TIDs to element TIDs.[m
+     let element_by_heap_tid =[m
+         unsafe { debug_collect_element_tid_by_heap_tid(index_relation, storage) };[m
+     let seed_element_tids = seed_heap_tids[m
+[36m@@ -2055,6 +2232,8 @@[m [mpub(crate) unsafe fn debug_exact_seed_scan_heap_tids([m
+         let seeds = seed_element_tids[m
+             .into_iter()[m
+             .filter_map(|seed_tid| {[m
+[32m+[m[32m                // SAFETY: Seed element TIDs were resolved from graph pages for[m
+[32m+[m[32m                // this relation/storage pair, and the loader validates tuples.[m
+                 let element =[m
+                     unsafe { graph::load_exact_graph_element(index_relation, seed_tid, storage) };[m
+                 if element.deleted || element.heaptids.is_empty() {[m
+[36m@@ -2066,6 +2245,9 @@[m [mpub(crate) unsafe fn debug_exact_seed_scan_heap_tids([m
+                 ))[m
+             })[m
+             .collect::<Vec<_>>();[m
+[32m+[m[32m        // SAFETY: Seed candidates were resolved from graph storage for this[m
+[32m+[m[32m        // index, and the search helper validates neighbor tuples as it walks[m
+[32m+[m[32m        // layer 0 with the supplied storage descriptor.[m
+         let ordered_candidates = unsafe {[m
+             graph::search_layer0_result_candidates_with_storage([m
+                 index_relation,[m
+[36m@@ -2090,6 +2272,8 @@[m [mpub(crate) unsafe fn debug_exact_seed_scan_heap_tids([m
+                 continue;[m
+             }[m
+ [m
+[32m+[m[32m            // SAFETY: Search candidates come from graph traversal on this[m
+[32m+[m[32m            // relation/storage pair, and the loader validates the tuple body.[m
+             let element =[m
+                 unsafe { graph::load_exact_graph_element(index_relation, candidate.node, storage) };[m
+             if element.deleted || element.heaptids.is_empty() {[m
+[36m@@ -2101,7 +2285,9 @@[m [mpub(crate) unsafe fn debug_exact_seed_scan_heap_tids([m
+         heap_tids[m
+     };[m
+ [m
+[32m+[m[32m    // SAFETY: The scan descriptor is live and belongs to the HNSW AM.[m
+     unsafe { ec_hnsw_amendscan(scan) };[m
+[32m+[m[32m    // SAFETY: AM cleanup has run, and the descriptor is released once here.[m
+     unsafe { pg_sys::IndexScanEnd(scan) };[m
+     tids[m
+ }[m
+[36m@@ -2111,6 +2297,8 @@[m [mpub(crate) unsafe fn debug_gettuple_scan_heap_tids_with_scores([m
+     index_oid: pg_sys::Oid,[m
+     query: Vec<f32>,[m
+ ) -> Vec<(HeapTidCoords, f32)> {[m
+[32m+[m[32m    // SAFETY: The debug helper opens the index, owning heap, and scan snapshot[m
+[32m+[m[32m    // and keeps them alive in `scan_state`.[m
+     let scan_state = unsafe { debug_begin_heap_backed_scan(index_oid) };[m
+     let scan = scan_state.scan.as_ptr();[m
+ [m
+[36m@@ -2118,16 +2306,24 @@[m [mpub(crate) unsafe fn debug_gettuple_scan_heap_tids_with_scores([m
+         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),[m
+         ..Default::default()[m
+     };[m
+[32m+[m[32m    // SAFETY: `scan_state` owns a live heap-backed scan, there are no index[m
+[32m+[m[32m    // quals, and `orderby` is a valid one-key buffer.[m
+     unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };[m
+ [m
+     let mut tids = Vec::new();[m
+[32m+[m[32m    // SAFETY: AM rescan initialized the HNSW opaque, so repeated gettuple calls[m
+[32m+[m[32m    // may advance the live scan descriptor.[m
+     while unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {[m
+[32m+[m[32m        // SAFETY: A successful gettuple call populated `xs_heaptid` for this[m
+[32m+[m[32m        // live index scan descriptor.[m
+         let heap_tid = pgrx::itemptr::item_pointer_get_both(unsafe { (*scan).xs_heaptid });[m
+         let score = debug_scan_orderby_score(scan)[m
+             .expect("graph-first scan should publish an order-by score for emitted tuples");[m
+         tids.push((heap_tid, score));[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: `scan_state` owns the scan and relation guards and is consumed[m
+[32m+[m[32m    // once after iteration completes.[m
+     unsafe { debug_end_heap_backed_scan(scan_state) };[m
+     tids[m
+ }[m
+[36m@@ -2137,6 +2333,8 @@[m [mpub(crate) unsafe fn debug_gettuple_scan_heap_tids_with_score_comparisons([m
+     index_oid: pg_sys::Oid,[m
+     query: Vec<f32>,[m
+ ) -> Vec<(HeapTidCoords, f32, Option<f32>, Option<i32>)> {[m
+[32m+[m[32m    // SAFETY: The debug helper opens the index, owning heap, and scan snapshot[m
+[32m+[m[32m    // and keeps them alive in `scan_state`.[m
+     let scan_state = unsafe { debug_begin_heap_backed_scan(index_oid) };[m
+     let scan = scan_state.scan.as_ptr();[m
+ [m
+[36m@@ -2144,10 +2342,16 @@[m [mpub(crate) unsafe fn debug_gettuple_scan_heap_tids_with_score_comparisons([m
+         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),[m
+         ..Default::default()[m
+     };[m
+[32m+[m[32m    // SAFETY: `scan_state` owns a live heap-backed scan, there are no index[m
+[32m+[m[32m    // quals, and `orderby` is a valid one-key buffer.[m
+     unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };[m
+ [m
+     let mut tids = Vec::new();[m
+[32m+[m[32m    // SAFETY: AM rescan initialized the HNSW opaque, so repeated gettuple calls[m
+[32m+[m[32m    // may advance the live scan descriptor.[m
+     while unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {[m
+[32m+[m[32m        // SAFETY: A successful gettuple call populated `xs_heaptid` for this[m
+[32m+[m[32m        // live index scan descriptor.[m
+         let heap_tid = pgrx::itemptr::item_pointer_get_both(unsafe { (*scan).xs_heaptid });[m
+         let approx_score = debug_current_result_approx_score(scan)[m
+             .or_else(|| debug_scan_orderby_score(scan))[m
+[36m@@ -2157,6 +2361,8 @@[m [mpub(crate) unsafe fn debug_gettuple_scan_heap_tids_with_score_comparisons([m
+         tids.push((heap_tid, approx_score, comparison_score, approx_rank));[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: `scan_state` owns the scan and relation guards and is consumed[m
+[32m+[m[32m    // once after iteration completes.[m
+     unsafe { debug_end_heap_backed_scan(scan_state) };[m
+     tids[m
+ }[m
+[36m@@ -2166,8 +2372,12 @@[m [munsafe fn debug_scan_uses_grouped_storage(index_oid: pg_sys::Oid) -> bool {[m
+     let index_relation_guard =[m
+         IndexRelationGuard::access_share(index_oid, "debug_scan_uses_grouped_storage");[m
+     let index_relation = index_relation_guard.as_ptr();[m
+[32m+[m[32m    // SAFETY: The relation guard keeps the index relation open while its[m
+[32m+[m[32m    // metadata page is read.[m
+     let metadata = unsafe { super::shared::read_metadata_page(index_relation) };[m
+     let grouped_results = matches!([m
+[32m+[m[32m        // SAFETY: Metadata was read from the open index relation and is used to[m
+[32m+[m[32m        // resolve the graph storage descriptor for debug classification.[m
+         unsafe { graph::GraphStorageDescriptor::from_index_relation(index_relation, &metadata) }[m
+             .unwrap_or_else(|e| {[m
+                 pgrx::error!("ec_hnsw debug grouped scan comparison requires valid metadata: {e}")[m
+
+Script done on 2026-05-19 04:03:18-07:00 [COMMAND_EXIT_CODE="0"]

@@ -1,0 +1,4 @@
+52a6e1a5 Fix HNSW read helper all-targets compile
+ src/am/ec_hnsw/shared.rs | 6 ++++--
+ src/am/ec_hnsw/vacuum.rs | 4 ++--
+ 2 files changed, 6 insertions(+), 4 deletions(-)

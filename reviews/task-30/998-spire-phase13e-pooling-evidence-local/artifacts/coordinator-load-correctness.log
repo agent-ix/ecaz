@@ -1,0 +1,22 @@
+[loader] inspecting /home/peter/dev/ecaz/target/spire-phase13e-aws-local-20260527T050034Z/work/ec_spire_aws_synth_10k_corpus.tsv
+[loader] inspecting /home/peter/dev/ecaz/target/spire-phase13e-aws-local-20260527T050034Z/work/ec_spire_aws_synth_10k_queries.tsv
+[loader] corpus: 10000 rows, sha256=ccd9a13cdf99eded145fe92ba65d135a57495b55513444caf35c54d5bdcc6f2f  queries: 100 rows, sha256=bb94538673add7f7073f0cd5150f7fd0687749f6de01d7fba964e5a305fc99c4
+[loader] no sibling manifest at /home/peter/dev/ecaz/target/spire-phase13e-aws-local-20260527T050034Z/work/ec_spire_aws_synth_10k_manifest.json; continuing without verification
+[loader] copied corpus table ec_spire_aws_synth_10k_corpus in 3.75s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table ec_spire_aws_synth_10k_corpus in 4.44s
+[loader] copied queries table ec_spire_aws_synth_10k_queries in 50.68ms
+[loader] building ec_spire_aws_synth_10k_idx using ec_spire (reloptions=[storage_format=rabitq]) ...
+[loader] built ec_spire_aws_synth_10k_idx in 188.34s
+┌─────────┬────────────────────────────────────────────────────┐
+│ field   ┆ value                                              │
+╞═════════╪════════════════════════════════════════════════════╡
+│ profile ┆ ec_spire                                           │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ ec_spire_aws_synth_10k_corpus (10000 rows)         │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ ec_spire_aws_synth_10k_queries (100 rows)          │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ ec_spire_aws_synth_10k_idx [storage_format=rabitq] │
+└─────────┴────────────────────────────────────────────────────┘
+[loader] completed prefix ec_spire_aws_synth_10k in 197.39s

@@ -1,0 +1,5 @@
+Script started on 2026-06-09 06:30:39-07:00 [<not executed on terminal>]
+bash scripts/check_coverage_baseline_complete.sh fixtures/quality/coverage-baseline.tsv
+coverage baseline complete for 43 critical paths
+
+Script done on 2026-06-09 06:30:39-07:00 [COMMAND_EXIT_CODE="0"]

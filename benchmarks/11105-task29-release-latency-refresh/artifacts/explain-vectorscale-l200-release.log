@@ -1,0 +1,23 @@
+CREATE EXTENSION
+CREATE EXTENSION
+SET
+SET
+SET
+Limit  (cost=28.98..29.40 rows=10 width=16) (actual time=11.330..11.979 rows=10.00 loops=1)
+  Buffers: shared hit=5289 read=1
+  InitPlan 1
+    ->  Limit  (cost=0.14..0.23 rows=1 width=40) (actual time=0.408..0.409 rows=1.00 loops=1)
+          Buffers: shared hit=35 read=1
+          ->  Index Scan using task29c_phase_profile_queries_pkey on task29c_phase_profile_queries  (cost=0.14..16.64 rows=200 width=40) (actual time=0.407..0.408 rows=1.00 loops=1)
+                Index Searches: 1
+                Buffers: shared hit=35 read=1
+  ->  Index Scan using task29c_phase_profile_corpus_vectorscale_diskann_idx on task29c_phase_profile_corpus_vectorscale  (cost=28.75..449.75 rows=10000 width=16) (actual time=11.328..11.974 rows=10.00 loops=1)
+        Order By: (embedding <#> (InitPlan 1).col1)
+        Index Searches: 0
+        Buffers: shared hit=5289 read=1
+Planning:
+  Buffers: shared hit=124 read=3
+Planning Time: 1.606 ms
+Execution Time: 12.120 ms
+NOTICE:  extension "vector" already exists, skipping
+NOTICE:  extension "vectorscale" already exists, skipping

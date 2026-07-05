@@ -1,0 +1,1318 @@
+//! Golden on-disk fixture decode checks.
+
+use ecaz::bench_api::{
+    spire_decode_delta_partition_object_fixture, spire_decode_leaf_partition_object_fixture,
+    spire_decode_leaf_v2_meta_fixture, spire_decode_leaf_v2_segment_fixture,
+    spire_decode_partition_object_v2_chain_meta_fixture,
+    spire_decode_partition_object_v2_chain_segment_fixture,
+    spire_decode_routing_partition_object_fixture, spire_decode_top_graph_partition_object_fixture,
+    vamana_decode_overflow_tuple_fixture, ItemPointer, IvfBlockRef, IvfCentroidTuple,
+    IvfListDirectoryTuple, IvfMetadataPage, IvfPostingTuple, IvfPqCodebookTuple, IvfRerankMode,
+    IvfRerankScoreMode, IvfStorageFormat, MetadataPage, SpireConsistencyMode, SpireEpochManifest,
+    SpireEpochState, SpireLocalStoreConfig, SpireLocalStoreState, SpireManifestEntry,
+    SpireObjectManifest, SpirePlacementDirectory, SpirePlacementEntry, SpirePlacementState,
+    TqElementTuple, TqGroupedCodebookTuple, TqGroupedHotTuple, TqNeighborTuple, TqRerankTuple,
+    TqTurboHotTuple, VamanaCodebookTuple, VamanaMetadataPage, VamanaNodeTuple,
+    EC_IVF_CENTROID_DIMENSIONS_OFFSET, EC_IVF_METADATA_FORMAT_VERSION_OFFSET,
+    HNSW_METADATA_FORMAT_VERSION_OFFSET, INDEX_FORMAT_V3_DISKANN,
+    SPIRE_EPOCH_MANIFEST_FORMAT_VERSION_OFFSET, SPIRE_LOCAL_STORE_CONFIG_FORMAT_VERSION_OFFSET,
+    SPIRE_MANIFEST_ENTRY_FORMAT_VERSION_OFFSET, SPIRE_OBJECT_MANIFEST_FORMAT_VERSION_OFFSET,
+    SPIRE_PARTITION_OBJECT_FORMAT_VERSION_OFFSET, SPIRE_PLACEMENT_DIRECTORY_FORMAT_VERSION_OFFSET,
+    SPIRE_PLACEMENT_ENTRY_FORMAT_VERSION_OFFSET, VAMANA_METADATA_FORMAT_VERSION_OFFSET,
+    VAMANA_NODE_NEIGHBOR_COUNT_OFFSET,
+};
+
+fn decode_hex_fixture(contents: &str) -> Vec<u8> {
+    let hex = contents
+        .lines()
+        .filter(|line| !line.trim_start().starts_with('#'))
+        .collect::<String>();
+    hex::decode(hex.trim()).expect("fixture hex should decode")
+}
+
+#[test]
+fn hnsw_metadata_v3_fixture_decodes() {
+    let bytes = decode_hex_fixture(include_str!("../fixtures/on-disk/hnsw_metadata_v3.hex"));
+
+    let metadata = MetadataPage::decode(&bytes).expect("hnsw metadata fixture should decode");
+
+    assert_eq!(metadata.m, 16);
+    assert_eq!(metadata.ef_construction, 200);
+    assert_eq!(
+        metadata.entry_point,
+        ItemPointer {
+            block_number: 5,
+            offset_number: 2
+        }
+    );
+    assert_eq!(metadata.dimensions, 128);
+    assert_eq!(metadata.bits, 4);
+    assert_eq!(metadata.max_level, 3);
+    assert_eq!(metadata.seed, 0x0102_0304_0506_0708);
+    assert_eq!(metadata.inserted_since_rebuild, 42);
+    assert_eq!(metadata.format_version, 3);
+    assert_eq!(metadata.payload_flags, 1 << 2);
+    assert_eq!(
+        metadata.grouped_codebook_head,
+        ItemPointer {
+            block_number: u32::MAX,
+            offset_number: u16::MAX
+        }
+    );
+}
+
+#[test]
+fn hnsw_metadata_v3_byteswapped_version_is_rejected() {
+    let mut bytes = decode_hex_fixture(include_str!("../fixtures/on-disk/hnsw_metadata_v3.hex"));
+    bytes.swap(
+        HNSW_METADATA_FORMAT_VERSION_OFFSET,
+        HNSW_METADATA_FORMAT_VERSION_OFFSET + 1,
+    );
+
+    let err = MetadataPage::decode(&bytes).expect_err("byte-swapped version should fail");
+
+    assert!(
+        err.contains("invalid metadata format version"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn hnsw_metadata_v4_rabitq_fixture_decodes() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/hnsw_metadata_v4_rabitq.hex"
+    ));
+
+    let metadata = MetadataPage::decode(&bytes).expect("hnsw v4 RaBitQ metadata should decode");
+
+    assert_eq!(metadata.m, 16);
+    assert_eq!(metadata.ef_construction, 200);
+    assert_eq!(
+        metadata.entry_point,
+        ItemPointer {
+            block_number: 5,
+            offset_number: 2
+        }
+    );
+    assert_eq!(metadata.dimensions, 128);
+    assert_eq!(metadata.bits, 4);
+    assert_eq!(metadata.max_level, 3);
+    assert_eq!(metadata.seed, 0x0102_0304_0506_0708);
+    assert_eq!(metadata.inserted_since_rebuild, 42);
+    assert_eq!(metadata.format_version, 4);
+    assert_eq!(metadata.transform_kind as u8, 1);
+    assert_eq!(metadata.search_codec_kind as u8, 3);
+    assert_eq!(metadata.payload_flags, 1 << 2);
+    assert_eq!(metadata.search_bits, 1);
+    assert_eq!(metadata.rerank_codec_kind as u8, 1);
+    assert_eq!(metadata.search_subvector_count, 0);
+    assert_eq!(metadata.search_subvector_dim, 1);
+    assert_eq!(
+        metadata.grouped_codebook_head,
+        ItemPointer {
+            block_number: u32::MAX,
+            offset_number: u16::MAX
+        }
+    );
+}
+
+#[test]
+fn hnsw_metadata_v4_rabitq_byteswapped_version_is_rejected() {
+    let mut bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/hnsw_metadata_v4_rabitq.hex"
+    ));
+    bytes.swap(
+        HNSW_METADATA_FORMAT_VERSION_OFFSET,
+        HNSW_METADATA_FORMAT_VERSION_OFFSET + 1,
+    );
+
+    let err = MetadataPage::decode(&bytes).expect_err("byte-swapped version should fail");
+
+    assert!(
+        err.contains("invalid metadata format version"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn diskann_metadata_v3_fixture_decodes() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/diskann_vamana_metadata_v3.hex"
+    ));
+
+    let metadata =
+        VamanaMetadataPage::decode(&bytes).expect("diskann metadata fixture should decode");
+
+    assert_eq!(metadata.format_version, INDEX_FORMAT_V3_DISKANN);
+    assert_eq!(metadata.entry_point, ItemPointer::INVALID);
+    assert_eq!(metadata.graph_degree_r, 32);
+    assert_eq!(metadata.build_list_size_l, 100);
+    assert_eq!(metadata.alpha.to_bits(), 1.2_f32.to_bits());
+    assert_eq!(metadata.dimensions, 128);
+    assert_eq!(metadata.seed, 0x0102_0304_0506_0708);
+    assert_eq!(metadata.inserted_since_rebuild, 42);
+    assert!(!metadata.needs_medoid_refresh);
+    assert_eq!(metadata.transform_kind, 1);
+    assert_eq!(metadata.search_codec_kind, 2);
+    assert_eq!(metadata.payload_flags, 1 << 1);
+    assert_eq!(metadata.search_subvector_count, 16);
+    assert_eq!(metadata.search_subvector_dim, 8);
+    assert_eq!(
+        metadata.grouped_codebook_head,
+        ItemPointer {
+            block_number: 7,
+            offset_number: 1
+        }
+    );
+}
+
+#[test]
+fn diskann_metadata_v3_byteswapped_version_is_rejected() {
+    let mut bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/diskann_vamana_metadata_v3.hex"
+    ));
+    bytes.swap(
+        VAMANA_METADATA_FORMAT_VERSION_OFFSET,
+        VAMANA_METADATA_FORMAT_VERSION_OFFSET + 1,
+    );
+
+    let err = VamanaMetadataPage::decode(&bytes).expect_err("byte-swapped version should fail");
+
+    assert!(
+        err.contains("invalid vamana metadata format version"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn hnsw_element_tuple_v3_fixture_decodes() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/hnsw_element_tuple_v3.hex"
+    ));
+
+    let element = TqElementTuple::decode(&bytes, 4).expect("hnsw element tuple should decode");
+
+    assert_eq!(element.level, 2);
+    assert!(!element.deleted);
+    assert_eq!(
+        element.heaptids,
+        vec![
+            ItemPointer {
+                block_number: 10,
+                offset_number: 1
+            },
+            ItemPointer {
+                block_number: 11,
+                offset_number: 2
+            }
+        ]
+    );
+    assert_eq!(element.gamma.to_bits(), 0.5_f32.to_bits());
+    assert_eq!(
+        element.neighbortid,
+        ItemPointer {
+            block_number: 20,
+            offset_number: 1
+        }
+    );
+    assert_eq!(element.code, vec![0xaa, 0xbb, 0xcc, 0xdd]);
+    assert!(element.binary_words.is_empty());
+}
+
+#[test]
+fn hnsw_neighbor_tuple_v3_fixture_decodes() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/hnsw_neighbor_tuple_v3.hex"
+    ));
+
+    let neighbors = TqNeighborTuple::decode(&bytes).expect("hnsw neighbor tuple should decode");
+
+    assert_eq!(neighbors.count, 3);
+    assert_eq!(
+        neighbors.tids,
+        vec![
+            ItemPointer {
+                block_number: 30,
+                offset_number: 1
+            },
+            ItemPointer {
+                block_number: 31,
+                offset_number: 2
+            },
+            ItemPointer {
+                block_number: 32,
+                offset_number: 3
+            }
+        ]
+    );
+}
+
+#[test]
+fn hnsw_grouped_codebook_tuple_v3_fixture_decodes() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/hnsw_grouped_codebook_tuple_v3.hex"
+    ));
+
+    let codebook =
+        TqGroupedCodebookTuple::decode(&bytes, 2).expect("hnsw codebook tuple should decode");
+
+    assert_eq!(codebook.group_index, 5);
+    assert_eq!(
+        codebook.nexttid,
+        ItemPointer {
+            block_number: 40,
+            offset_number: 1
+        }
+    );
+    assert_eq!(
+        codebook
+            .centroids
+            .iter()
+            .map(|centroid| centroid.to_bits())
+            .collect::<Vec<_>>(),
+        vec![1.0_f32.to_bits(), 2.0_f32.to_bits()]
+    );
+}
+
+#[test]
+fn hnsw_grouped_hot_tuple_v2_fixture_decodes() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/hnsw_grouped_hot_tuple_v2.hex"
+    ));
+
+    let hot = TqGroupedHotTuple::decode(&bytes, 1, 3).expect("hnsw grouped hot tuple decodes");
+
+    assert_eq!(hot.level, 2);
+    assert!(!hot.deleted);
+    assert_eq!(
+        hot.heaptids,
+        vec![
+            ItemPointer {
+                block_number: 70,
+                offset_number: 1
+            },
+            ItemPointer {
+                block_number: 71,
+                offset_number: 2
+            }
+        ]
+    );
+    assert_eq!(
+        hot.neighbortid,
+        ItemPointer {
+            block_number: 80,
+            offset_number: 1
+        }
+    );
+    assert_eq!(
+        hot.reranktid,
+        ItemPointer {
+            block_number: 81,
+            offset_number: 2
+        }
+    );
+    assert_eq!(hot.binary_words, vec![0x0102_0304_0506_0708]);
+    assert_eq!(hot.search_code, vec![0xaa, 0xbb, 0xcc]);
+}
+
+#[test]
+fn hnsw_turbo_hot_tuple_v3_fixture_decodes() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/hnsw_turbo_hot_tuple_v3.hex"
+    ));
+
+    let hot = TqTurboHotTuple::decode(&bytes, 2).expect("hnsw turbo hot tuple decodes");
+
+    assert_eq!(hot.level, 3);
+    assert!(hot.deleted);
+    assert_eq!(
+        hot.heaptids,
+        vec![ItemPointer {
+            block_number: 90,
+            offset_number: 1
+        }]
+    );
+    assert_eq!(
+        hot.neighbortid,
+        ItemPointer {
+            block_number: 91,
+            offset_number: 1
+        }
+    );
+    assert_eq!(
+        hot.reranktid,
+        ItemPointer {
+            block_number: 92,
+            offset_number: 2
+        }
+    );
+    assert_eq!(
+        hot.binary_words,
+        vec![0x1112_1314_1516_1718, 0x2122_2324_2526_2728]
+    );
+}
+
+#[test]
+fn hnsw_rerank_tuple_v3_fixture_decodes() {
+    let bytes = decode_hex_fixture(include_str!("../fixtures/on-disk/hnsw_rerank_tuple_v3.hex"));
+
+    let rerank = TqRerankTuple::decode(&bytes, 4).expect("hnsw rerank tuple decodes");
+
+    assert_eq!(rerank.gamma.to_bits(), 0.75_f32.to_bits());
+    assert_eq!(rerank.code, vec![0xde, 0xad, 0xbe, 0xef]);
+}
+
+#[test]
+fn diskann_vamana_node_tuple_v3_fixture_decodes() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/diskann_vamana_node_tuple_v3.hex"
+    ));
+
+    let node =
+        VamanaNodeTuple::decode(&bytes, 4, 1, 3).expect("diskann vamana node tuple should decode");
+
+    assert!(!node.deleted);
+    assert!(!node.has_overflow_heaptids);
+    assert_eq!(
+        node.primary_heaptid,
+        ItemPointer {
+            block_number: 50,
+            offset_number: 1
+        }
+    );
+    assert_eq!(node.rerank_tid, ItemPointer::INVALID);
+    assert_eq!(node.binary_words, vec![0x0102_0304_0506_0708]);
+    assert_eq!(node.search_code, vec![0xaa, 0xbb, 0xcc]);
+    assert_eq!(node.neighbor_count, 2);
+    assert_eq!(
+        node.neighbors,
+        vec![
+            ItemPointer {
+                block_number: 60,
+                offset_number: 1
+            },
+            ItemPointer {
+                block_number: 61,
+                offset_number: 2
+            },
+            ItemPointer::INVALID,
+            ItemPointer::INVALID,
+        ]
+    );
+}
+
+#[test]
+fn diskann_vamana_node_tuple_v3_byteswapped_neighbor_count_is_rejected() {
+    let mut bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/diskann_vamana_node_tuple_v3.hex"
+    ));
+    bytes.swap(
+        VAMANA_NODE_NEIGHBOR_COUNT_OFFSET,
+        VAMANA_NODE_NEIGHBOR_COUNT_OFFSET + 1,
+    );
+
+    let err = VamanaNodeTuple::decode(&bytes, 4, 1, 3)
+        .expect_err("byte-swapped neighbor_count should fail");
+
+    assert!(
+        err.contains("neighbor_count 512 exceeds graph_degree_r 4"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn diskann_vamana_overflow_tuple_v3_fixture_decodes() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/diskann_vamana_overflow_tuple_v3.hex"
+    ));
+
+    let overflow =
+        vamana_decode_overflow_tuple_fixture(&bytes).expect("diskann overflow tuple decodes");
+
+    assert_eq!(
+        overflow.owner_tid,
+        ItemPointer {
+            block_number: 100,
+            offset_number: 1
+        }
+    );
+    assert_eq!(
+        overflow.nexttid,
+        ItemPointer {
+            block_number: 200,
+            offset_number: 2
+        }
+    );
+    assert_eq!(overflow.heap_tid_count, 2);
+    assert_eq!(
+        &overflow.heap_tids[..2],
+        &[
+            ItemPointer {
+                block_number: 300,
+                offset_number: 1
+            },
+            ItemPointer {
+                block_number: 301,
+                offset_number: 2
+            }
+        ]
+    );
+    assert!(overflow.heap_tids[2..]
+        .iter()
+        .all(|tid| *tid == ItemPointer::INVALID));
+}
+
+#[test]
+fn diskann_vamana_overflow_tuple_v3_byteswapped_count_is_rejected() {
+    let mut bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/diskann_vamana_overflow_tuple_v3.hex"
+    ));
+    bytes.swap(1, 2);
+
+    let err = vamana_decode_overflow_tuple_fixture(&bytes)
+        .expect_err("byte-swapped heap tid count should fail");
+
+    assert!(
+        err.contains("ec_diskann overflow tuple heap_tid_count 512 exceeds capacity 10"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn diskann_vamana_codebook_tuple_v3_fixture_decodes() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/diskann_vamana_codebook_tuple_v3.hex"
+    ));
+
+    let codebook =
+        VamanaCodebookTuple::decode(&bytes, 2).expect("diskann codebook tuple should decode");
+
+    assert_eq!(codebook.group_index, 7);
+    assert_eq!(
+        codebook.nexttid,
+        ItemPointer {
+            block_number: 70,
+            offset_number: 1
+        }
+    );
+    assert_eq!(
+        codebook
+            .centroids
+            .iter()
+            .map(|centroid| centroid.to_bits())
+            .collect::<Vec<_>>(),
+        vec![1.0_f32.to_bits(), 2.0_f32.to_bits()]
+    );
+}
+
+#[test]
+fn ivf_metadata_v9_fixture_decodes() {
+    // Task 111h: current IVF format is v9 (92 bytes; compact rerank scorer
+    // mode persisted at byte 22, RaBitQ clip at byte 23, rerank sidecar head
+    // points at packed 0x2B rerank group headers when index placement is used).
+    let bytes = decode_hex_fixture(include_str!("../fixtures/on-disk/ivf_metadata_v9.hex"));
+
+    let metadata = IvfMetadataPage::decode(&bytes).expect("ivf metadata fixture should decode");
+
+    assert_eq!(metadata.format_version, 9);
+    assert_eq!(metadata.dimensions, 128);
+    assert_eq!(metadata.nlists, 16);
+    assert_eq!(metadata.nprobe, 4);
+    assert_eq!(metadata.training_sample_rows, 1_000);
+    assert_eq!(metadata.training_version, 3);
+    assert_eq!(metadata.seed, 0x0102_0304_0506_0708);
+    assert_eq!(metadata.storage_format, IvfStorageFormat::PqFastScan);
+    assert_eq!(metadata.rerank, IvfRerankMode::HeapF32);
+    assert_eq!(
+        metadata.rabitq_rerank_score_mode,
+        IvfRerankScoreMode::Estimator
+    );
+    assert_eq!(metadata.rabitq_rerank_clip, 2);
+    assert_eq!(metadata.quant_bits, 4);
+    assert_eq!(
+        metadata.centroid_head,
+        ItemPointer {
+            block_number: 10,
+            offset_number: 1
+        }
+    );
+    assert_eq!(
+        metadata.directory_head,
+        ItemPointer {
+            block_number: 11,
+            offset_number: 2
+        }
+    );
+    assert_eq!(metadata.total_live_tuples, 42);
+    assert_eq!(metadata.total_dead_tuples, 5);
+    assert_eq!(metadata.inserted_since_build, 7);
+    assert_eq!(
+        metadata.pq_codebook_head,
+        ItemPointer {
+            block_number: 12,
+            offset_number: 3
+        }
+    );
+    assert_eq!(metadata.pq_group_size, 4);
+    // This fixture carries no rerank sidecar (head = INVALID), the legitimate
+    // "no sidecar -> table/heap source" runtime state for table placement / f32.
+    assert_eq!(metadata.rerank_sidecar_head, ItemPointer::INVALID);
+    // ADR-079: no sidecar directory either (head = INVALID -> full-chain fallback).
+    assert_eq!(metadata.rerank_sidecar_directory_head, ItemPointer::INVALID);
+}
+
+#[test]
+fn ivf_metadata_byteswapped_version_is_rejected() {
+    let mut bytes = decode_hex_fixture(include_str!("../fixtures/on-disk/ivf_metadata_v9.hex"));
+    bytes.swap(
+        EC_IVF_METADATA_FORMAT_VERSION_OFFSET,
+        EC_IVF_METADATA_FORMAT_VERSION_OFFSET + 1,
+    );
+
+    let err = IvfMetadataPage::decode(&bytes).expect_err("byte-swapped version should fail");
+
+    assert!(
+        err.contains("unsupported ec_ivf metadata format version: 2304"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn ivf_metadata_v8_is_rejected_by_version() {
+    // Task 111h / NFR-016: v8 persisted byte 22 as a two-value RaBitQ
+    // estimator/least-squares flag. v9 expands it to a compact rerank score
+    // mode enum including exact-dequant diagnostics, so v8 is rejected rather
+    // than sharing an ambiguous format tag.
+    let bytes = decode_hex_fixture(include_str!("../fixtures/on-disk/ivf_metadata_v8.hex"));
+    let err = IvfMetadataPage::decode(&bytes).expect_err("old v8 layout should be rejected");
+    assert!(
+        err.contains("unsupported ec_ivf metadata format version: 8"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn ivf_metadata_v7_is_rejected_by_version() {
+    // Task 111h / NFR-016: v7 had the current 92-byte packed 0x2B layout but
+    // did not persist RaBitQ rerank score/clip; v9 rejects it so ALTERed
+    // reloptions cannot silently reinterpret existing sidecar bytes.
+    let bytes = decode_hex_fixture(include_str!("../fixtures/on-disk/ivf_metadata_v7.hex"));
+    let err = IvfMetadataPage::decode(&bytes).expect_err("old v7 layout should be rejected");
+    assert!(
+        err.contains("unsupported ec_ivf metadata format version: 7"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn ivf_metadata_v6_is_rejected_by_version() {
+    // Task 111h TurboQuant centroid-relative follow-up / NFR-016: v6 used the
+    // same packed 0x2B layout, but TurboQuant sidecar payloads encoded whole
+    // source vectors. v9 rejects it so old sidecar bytes cannot be silently
+    // scored as centroid-relative payloads.
+    let bytes = decode_hex_fixture(include_str!("../fixtures/on-disk/ivf_metadata_v6.hex"));
+    let err = IvfMetadataPage::decode(&bytes).expect_err("old v6 layout should be rejected");
+    assert!(
+        err.contains("unsupported ec_ivf metadata format version: 6"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn ivf_metadata_v5_is_rejected_by_version() {
+    // Task 111h residual rerank follow-up / NFR-016: v5 used the same packed
+    // 0x2B layout but RaBitQ rerank payloads were non-residual. v9 rejects it
+    // so old sidecar bytes cannot be silently scored as residual payloads.
+    let bytes = decode_hex_fixture(include_str!("../fixtures/on-disk/ivf_metadata_v5.hex"));
+    let err = IvfMetadataPage::decode(&bytes).expect_err("old v5 layout should be rejected");
+    assert!(
+        err.contains("unsupported ec_ivf metadata format version: 5"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn ivf_metadata_v4_is_rejected_by_version() {
+    // Task 111h / NFR-016: v4 used the legacy 0x2A heap-TID sidecar. The v9
+    // writer emits packed 0x2B/0x2C rerank groups, so v4 is an explicit rebuild
+    // boundary in this research branch.
+    let bytes = decode_hex_fixture(include_str!("../fixtures/on-disk/ivf_metadata_v4.hex"));
+    let err = IvfMetadataPage::decode(&bytes).expect_err("old v4 layout should be rejected");
+    assert!(
+        err.contains("unsupported ec_ivf metadata format version: 4"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn ivf_metadata_v3_is_rejected_by_version() {
+    // ADR-079 / NFR-016: the old 86-byte v3 layout is rejected by version (and
+    // width), not silently mis-decoded. Research project => clean break + rebuild.
+    let bytes = decode_hex_fixture(include_str!("../fixtures/on-disk/ivf_metadata_v3.hex"));
+    let err = IvfMetadataPage::decode(&bytes).expect_err("old v3 layout should be rejected");
+    assert!(
+        err.contains("format version") || err.contains("length mismatch"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn ivf_centroid_tuple_v1_fixture_decodes() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/ivf_centroid_tuple_v1.hex"
+    ));
+
+    let centroid = IvfCentroidTuple::decode(&bytes, 2).expect("ivf centroid should decode");
+
+    assert_eq!(centroid.list_id, 3);
+    assert_eq!(
+        centroid
+            .centroid
+            .iter()
+            .map(|value| value.to_bits())
+            .collect::<Vec<_>>(),
+        vec![0.25_f32.to_bits(), (-0.5_f32).to_bits()]
+    );
+}
+
+#[test]
+fn ivf_centroid_tuple_v1_byteswapped_dimensions_is_rejected() {
+    let mut bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/ivf_centroid_tuple_v1.hex"
+    ));
+    bytes.swap(
+        EC_IVF_CENTROID_DIMENSIONS_OFFSET,
+        EC_IVF_CENTROID_DIMENSIONS_OFFSET + 1,
+    );
+
+    let err = IvfCentroidTuple::decode(&bytes, 2).expect_err("byte-swapped dimensions should fail");
+
+    assert!(
+        err.contains("ec_ivf centroid dimensions mismatch: got 512, expected 2"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn ivf_list_directory_tuple_v1_fixture_decodes() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/ivf_list_directory_tuple_v1.hex"
+    ));
+
+    let directory =
+        IvfListDirectoryTuple::decode(&bytes).expect("ivf list directory should decode");
+
+    assert_eq!(directory.list_id, 9);
+    assert_eq!(directory.head_block, IvfBlockRef { block_number: 20 });
+    assert_eq!(directory.tail_block, IvfBlockRef { block_number: 25 });
+    assert_eq!(directory.live_count, 101);
+    assert_eq!(directory.dead_count, 7);
+    assert_eq!(directory.inserted_since_build, 11);
+}
+
+#[test]
+fn ivf_posting_tuple_v1_fixture_decodes() {
+    let bytes = decode_hex_fixture(include_str!("../fixtures/on-disk/ivf_posting_tuple_v1.hex"));
+
+    let posting = IvfPostingTuple::decode(&bytes, 5).expect("ivf posting tuple should decode");
+
+    assert_eq!(posting.list_id, 2);
+    assert!(!posting.deleted);
+    assert_eq!(
+        posting.heaptids,
+        vec![
+            ItemPointer {
+                block_number: 1,
+                offset_number: 1
+            },
+            ItemPointer {
+                block_number: 1,
+                offset_number: 4
+            },
+            ItemPointer {
+                block_number: 2,
+                offset_number: 1
+            }
+        ]
+    );
+    assert_eq!(posting.gamma.to_bits(), 0.75_f32.to_bits());
+    assert_eq!(
+        posting.rerank_tid,
+        ItemPointer {
+            block_number: 7,
+            offset_number: 2
+        }
+    );
+    assert_eq!(posting.payload, vec![1, 2, 3, 4, 5]);
+}
+
+#[test]
+fn ivf_pq_codebook_tuple_v1_fixture_decodes() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/ivf_pq_codebook_tuple_v1.hex"
+    ));
+
+    let codebook =
+        IvfPqCodebookTuple::decode(&bytes, 4).expect("ivf pq codebook tuple should decode");
+
+    assert_eq!(codebook.group_index, 2);
+    assert_eq!(
+        codebook.next_tid,
+        ItemPointer {
+            block_number: 9,
+            offset_number: 3
+        }
+    );
+    assert_eq!(
+        codebook
+            .centroids
+            .iter()
+            .map(|value| value.to_bits())
+            .collect::<Vec<_>>(),
+        vec![
+            0.0_f32.to_bits(),
+            0.25_f32.to_bits(),
+            (-0.5_f32).to_bits(),
+            1.0_f32.to_bits()
+        ]
+    );
+}
+
+#[test]
+fn spire_local_store_config_v1_fixture_decodes() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/spire_local_store_config_v1.hex"
+    ));
+
+    let config =
+        SpireLocalStoreConfig::decode(&bytes).expect("spire local store config should decode");
+
+    assert_eq!(config.generation, 7);
+    assert_eq!(config.stores.len(), 2);
+    assert_eq!(config.stores[0].local_store_id, 2);
+    assert_eq!(config.stores[0].store_relid, 502);
+    assert_eq!(config.stores[0].tablespace_oid, 1002);
+    assert_eq!(config.stores[0].state, SpireLocalStoreState::Available);
+    assert_eq!(config.stores[1].local_store_id, 5);
+    assert_eq!(config.stores[1].store_relid, 505);
+    assert_eq!(config.stores[1].tablespace_oid, 1005);
+    assert_eq!(config.stores[1].state, SpireLocalStoreState::Available);
+}
+
+#[test]
+fn spire_local_store_config_v1_byteswapped_version_is_rejected() {
+    let mut bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/spire_local_store_config_v1.hex"
+    ));
+    bytes.swap(
+        SPIRE_LOCAL_STORE_CONFIG_FORMAT_VERSION_OFFSET,
+        SPIRE_LOCAL_STORE_CONFIG_FORMAT_VERSION_OFFSET + 1,
+    );
+
+    let err = SpireLocalStoreConfig::decode(&bytes).expect_err("byte-swapped version should fail");
+
+    assert!(
+        err.contains("ec_spire unsupported metadata format version: 256"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn spire_placement_entry_v1_fixture_decodes() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/spire_placement_entry_v1.hex"
+    ));
+
+    let entry = SpirePlacementEntry::decode(&bytes).expect("spire placement entry should decode");
+
+    assert_eq!(entry.state, SpirePlacementState::Available);
+    assert_eq!(entry.epoch, 7);
+    assert_eq!(entry.pid, 17);
+    assert_eq!(entry.node_id, 0);
+    assert_eq!(entry.local_store_id, 2);
+    assert_eq!(entry.store_relid, 502);
+    assert_eq!(entry.object_version, 3);
+    assert_eq!(
+        entry.object_tid,
+        ItemPointer {
+            block_number: 20,
+            offset_number: 1
+        }
+    );
+    assert_eq!(entry.object_bytes, 108);
+}
+
+#[test]
+fn spire_placement_entry_v1_byteswapped_version_is_rejected() {
+    let mut bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/spire_placement_entry_v1.hex"
+    ));
+    bytes.swap(
+        SPIRE_PLACEMENT_ENTRY_FORMAT_VERSION_OFFSET,
+        SPIRE_PLACEMENT_ENTRY_FORMAT_VERSION_OFFSET + 1,
+    );
+
+    let err = SpirePlacementEntry::decode(&bytes).expect_err("byte-swapped version should fail");
+
+    assert!(
+        err.contains("ec_spire unsupported metadata format version: 256"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn spire_placement_directory_v1_fixture_decodes() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/spire_placement_directory_v1.hex"
+    ));
+
+    let directory =
+        SpirePlacementDirectory::decode(&bytes).expect("spire placement directory should decode");
+
+    assert_eq!(directory.epoch, 7);
+    assert_eq!(directory.entries.len(), 1);
+    assert_eq!(directory.entries[0].pid, 17);
+    assert_eq!(directory.entries[0].local_store_id, 2);
+}
+
+#[test]
+fn spire_placement_directory_v1_byteswapped_version_is_rejected() {
+    let mut bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/spire_placement_directory_v1.hex"
+    ));
+    bytes.swap(
+        SPIRE_PLACEMENT_DIRECTORY_FORMAT_VERSION_OFFSET,
+        SPIRE_PLACEMENT_DIRECTORY_FORMAT_VERSION_OFFSET + 1,
+    );
+
+    let err =
+        SpirePlacementDirectory::decode(&bytes).expect_err("byte-swapped version should fail");
+
+    assert!(
+        err.contains("ec_spire unsupported metadata format version: 256"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn spire_epoch_manifest_v1_fixture_decodes() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/spire_epoch_manifest_v1.hex"
+    ));
+
+    let manifest = SpireEpochManifest::decode(&bytes).expect("spire epoch manifest should decode");
+
+    assert_eq!(manifest.state, SpireEpochState::Published);
+    assert_eq!(manifest.consistency_mode, SpireConsistencyMode::Strict);
+    assert_eq!(manifest.epoch, 7);
+    assert_eq!(manifest.published_at_micros, 1_000);
+    assert_eq!(manifest.retain_until_micros, 2_000);
+    assert_eq!(manifest.active_query_count, 3);
+}
+
+#[test]
+fn spire_epoch_manifest_v1_byteswapped_version_is_rejected() {
+    let mut bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/spire_epoch_manifest_v1.hex"
+    ));
+    bytes.swap(
+        SPIRE_EPOCH_MANIFEST_FORMAT_VERSION_OFFSET,
+        SPIRE_EPOCH_MANIFEST_FORMAT_VERSION_OFFSET + 1,
+    );
+
+    let err = SpireEpochManifest::decode(&bytes).expect_err("byte-swapped version should fail");
+
+    assert!(
+        err.contains("ec_spire unsupported metadata format version: 256"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn spire_manifest_entry_v1_fixture_decodes() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/spire_manifest_entry_v1.hex"
+    ));
+
+    let entry = SpireManifestEntry::decode(&bytes).expect("spire manifest entry should decode");
+
+    assert_eq!(entry.epoch, 7);
+    assert_eq!(entry.pid, 17);
+    assert_eq!(entry.object_version, 3);
+    assert_eq!(
+        entry.placement_tid,
+        ItemPointer {
+            block_number: 30,
+            offset_number: 2
+        }
+    );
+}
+
+#[test]
+fn spire_manifest_entry_v1_byteswapped_version_is_rejected() {
+    let mut bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/spire_manifest_entry_v1.hex"
+    ));
+    bytes.swap(
+        SPIRE_MANIFEST_ENTRY_FORMAT_VERSION_OFFSET,
+        SPIRE_MANIFEST_ENTRY_FORMAT_VERSION_OFFSET + 1,
+    );
+
+    let err = SpireManifestEntry::decode(&bytes).expect_err("byte-swapped version should fail");
+
+    assert!(
+        err.contains("ec_spire unsupported metadata format version: 256"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn spire_object_manifest_v1_fixture_decodes() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/spire_object_manifest_v1.hex"
+    ));
+
+    let manifest =
+        SpireObjectManifest::decode(&bytes).expect("spire object manifest should decode");
+
+    assert_eq!(manifest.epoch, 7);
+    assert_eq!(manifest.entries.len(), 1);
+    assert_eq!(manifest.entries[0].pid, 17);
+    assert_eq!(manifest.entries[0].object_version, 3);
+}
+
+#[test]
+fn spire_object_manifest_v1_byteswapped_version_is_rejected() {
+    let mut bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/spire_object_manifest_v1.hex"
+    ));
+    bytes.swap(
+        SPIRE_OBJECT_MANIFEST_FORMAT_VERSION_OFFSET,
+        SPIRE_OBJECT_MANIFEST_FORMAT_VERSION_OFFSET + 1,
+    );
+
+    let err = SpireObjectManifest::decode(&bytes).expect_err("byte-swapped version should fail");
+
+    assert!(
+        err.contains("ec_spire unsupported metadata format version: 256"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn spire_leaf_partition_object_v1_fixture_decodes() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/spire_leaf_partition_object_v1.hex"
+    ));
+
+    let object =
+        spire_decode_leaf_partition_object_fixture(&bytes).expect("spire leaf object decodes");
+
+    assert_eq!(object.header.kind, 3);
+    assert_eq!(object.header.pid, 17);
+    assert_eq!(object.header.object_version, 3);
+    assert_eq!(object.header.published_epoch_backref, 7);
+    assert_eq!(object.header.parent_pid, 5);
+    assert_eq!(object.header.assignment_count, 1);
+    assert_eq!(object.assignments.len(), 1);
+    assert_eq!(object.assignments[0].flags, 1);
+    assert_eq!(
+        object.assignments[0].vec_id,
+        vec![1, 5, 0, 0, 0, 0, 0, 0, 0]
+    );
+    assert_eq!(
+        object.assignments[0].heap_tid,
+        ItemPointer {
+            block_number: 100,
+            offset_number: 1
+        }
+    );
+    assert_eq!(object.assignments[0].payload_format, 1);
+    assert_eq!(object.assignments[0].gamma.to_bits(), 0.5_f32.to_bits());
+    assert_eq!(object.assignments[0].encoded_payload, vec![0xaa, 0xbb]);
+}
+
+#[test]
+fn spire_leaf_partition_object_v1_byteswapped_version_is_rejected() {
+    let mut bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/spire_leaf_partition_object_v1.hex"
+    ));
+    bytes.swap(
+        SPIRE_PARTITION_OBJECT_FORMAT_VERSION_OFFSET,
+        SPIRE_PARTITION_OBJECT_FORMAT_VERSION_OFFSET + 1,
+    );
+
+    let err = spire_decode_leaf_partition_object_fixture(&bytes)
+        .expect_err("byte-swapped version should fail");
+
+    assert!(
+        err.contains("ec_spire unsupported partition object format version: 256"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn spire_routing_root_partition_object_v1_fixture_decodes() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/spire_routing_root_partition_object_v1.hex"
+    ));
+
+    let object = spire_decode_routing_partition_object_fixture(&bytes)
+        .expect("spire routing object decodes");
+
+    assert_eq!(object.header.kind, 1);
+    assert_eq!(object.header.pid, 11);
+    assert_eq!(object.header.object_version, 2);
+    assert_eq!(object.header.level, 1);
+    assert_eq!(object.header.child_count, 2);
+    assert_eq!(object.dimensions, 2);
+    assert_eq!(object.centroid_ordinals, vec![0, 1]);
+    assert_eq!(object.child_pids, vec![17, 18]);
+    assert_eq!(
+        object
+            .centroids
+            .iter()
+            .map(|value| value.to_bits())
+            .collect::<Vec<_>>(),
+        vec![
+            1.0_f32.to_bits(),
+            0.0_f32.to_bits(),
+            (-1.0_f32).to_bits(),
+            0.0_f32.to_bits()
+        ]
+    );
+}
+
+#[test]
+fn spire_delta_partition_object_v1_fixture_decodes() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/spire_delta_partition_object_v1.hex"
+    ));
+
+    let object =
+        spire_decode_delta_partition_object_fixture(&bytes).expect("spire delta object decodes");
+
+    assert_eq!(object.header.kind, 4);
+    assert_eq!(object.header.pid, 19);
+    assert_eq!(object.header.object_version, 2);
+    assert_eq!(object.header.parent_pid, 17);
+    assert_eq!(object.header.assignment_count, 1);
+    assert_eq!(object.assignments.len(), 1);
+    assert_eq!(object.assignments[0].flags, 1 | 8);
+    assert_eq!(
+        object.assignments[0].vec_id,
+        vec![1, 6, 0, 0, 0, 0, 0, 0, 0]
+    );
+    assert_eq!(
+        object.assignments[0].heap_tid,
+        ItemPointer {
+            block_number: 101,
+            offset_number: 1
+        }
+    );
+    assert_eq!(object.assignments[0].gamma.to_bits(), 1.0_f32.to_bits());
+    assert_eq!(object.assignments[0].encoded_payload, vec![0xcc, 0xdd]);
+}
+
+#[test]
+fn spire_top_graph_partition_object_v1_fixture_decodes() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/spire_top_graph_partition_object_v1.hex"
+    ));
+
+    let object = spire_decode_top_graph_partition_object_fixture(&bytes)
+        .expect("spire top graph object decodes");
+
+    assert_eq!(object.header.kind, 5);
+    assert_eq!(object.header.pid, 21);
+    assert_eq!(object.header.object_version, 2);
+    assert_eq!(object.header.level, 2);
+    assert_eq!(object.header.parent_pid, 11);
+    assert_eq!(object.root_pid, 11);
+    assert_eq!(object.dimensions, 2);
+    assert_eq!(object.graph_degree, 2);
+    assert_eq!(object.build_list_size, 16);
+    assert_eq!(object.alpha.to_bits(), 1.0_f32.to_bits());
+    assert_eq!(object.entry_node, 1);
+    assert_eq!(object.nodes.len(), 2);
+    assert_eq!(object.nodes[0].child_pid, 17);
+    assert_eq!(object.nodes[0].centroid_ordinal, 0);
+    assert_eq!(object.nodes[0].neighbors, vec![1]);
+    assert_eq!(object.nodes[1].child_pid, 18);
+    assert_eq!(object.nodes[1].centroid_ordinal, 1);
+    assert_eq!(object.nodes[1].neighbors, vec![0]);
+}
+
+#[test]
+fn spire_leaf_v2_meta_fixture_decodes() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/spire_leaf_v2_meta_v2.hex"
+    ));
+
+    let meta = spire_decode_leaf_v2_meta_fixture(&bytes).expect("spire leaf V2 meta decodes");
+
+    assert_eq!(meta.header.kind, 3);
+    assert_eq!(meta.header.pid, 23);
+    assert_eq!(meta.header.object_version, 4);
+    assert_eq!(meta.header.published_epoch_backref, 8);
+    assert_eq!(meta.header.parent_pid, 5);
+    assert_eq!(meta.header.assignment_count, 2);
+    assert_eq!(meta.header.flags, 1);
+    assert_eq!(meta.payload_format, 1);
+    assert_eq!(meta.payload_stride, 2);
+    assert_eq!(meta.vec_id_kind, 1);
+    assert_eq!(meta.vec_id_stride, 16);
+    assert_eq!(meta.segment_count, 1);
+    assert_eq!(
+        meta.first_segment_locator,
+        ItemPointer {
+            block_number: 300,
+            offset_number: 4
+        }
+    );
+    assert_eq!(meta.object_bytes_total, 132);
+}
+
+#[test]
+fn spire_leaf_v2_meta_byteswapped_version_is_rejected() {
+    let mut bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/spire_leaf_v2_meta_v2.hex"
+    ));
+    bytes.swap(
+        SPIRE_PARTITION_OBJECT_FORMAT_VERSION_OFFSET,
+        SPIRE_PARTITION_OBJECT_FORMAT_VERSION_OFFSET + 1,
+    );
+
+    let err =
+        spire_decode_leaf_v2_meta_fixture(&bytes).expect_err("byte-swapped version should fail");
+
+    assert!(
+        err.contains("ec_spire unsupported partition object format version: 512"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn spire_leaf_v2_segment_fixture_decodes() {
+    let meta_bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/spire_leaf_v2_meta_v2.hex"
+    ));
+    let segment_bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/spire_leaf_v2_segment_v2.hex"
+    ));
+
+    let segment = spire_decode_leaf_v2_segment_fixture(&meta_bytes, &segment_bytes)
+        .expect("spire leaf V2 segment decodes");
+
+    assert_eq!(segment.header.kind, 3);
+    assert_eq!(segment.header.pid, 23);
+    assert_eq!(segment.header.object_version, 4);
+    assert_eq!(segment.header.parent_pid, 5);
+    assert_eq!(segment.header.assignment_count, 2);
+    assert_eq!(segment.header.flags, 2);
+    assert_eq!(segment.segment_no, 0);
+    assert_eq!(segment.row_base, 0);
+    assert_eq!(segment.next_segment_locator, ItemPointer::INVALID);
+    assert_eq!(segment.flags, vec![1, 2]);
+    assert_eq!(
+        &segment.vec_ids[..16],
+        &[1, 9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    );
+    assert_eq!(
+        &segment.vec_ids[16..],
+        &[1, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    );
+    assert_eq!(
+        segment.heap_tids,
+        vec![
+            ItemPointer {
+                block_number: 101,
+                offset_number: 1
+            },
+            ItemPointer {
+                block_number: 102,
+                offset_number: 2
+            }
+        ]
+    );
+    assert_eq!(
+        segment
+            .gammas
+            .iter()
+            .map(|value| value.to_bits())
+            .collect::<Vec<_>>(),
+        vec![0.5_f32.to_bits(), 1.0_f32.to_bits()]
+    );
+    assert_eq!(segment.payloads, vec![0xaa, 0xbb, 0xcc, 0xdd]);
+}
+
+#[test]
+fn spire_partition_object_v2_chain_meta_fixture_decodes() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/spire_partition_object_v2_chain_meta.hex"
+    ));
+
+    let meta =
+        spire_decode_partition_object_v2_chain_meta_fixture(&bytes).expect("chain meta decodes");
+
+    assert_eq!(meta.header.kind, 1);
+    assert_eq!(meta.header.pid, 11);
+    assert_eq!(meta.header.object_version, 2);
+    assert_eq!(meta.header.level, 1);
+    assert_eq!(meta.header.child_count, 2);
+    assert_eq!(meta.header.flags, 4);
+    assert_eq!(meta.dimensions, 2);
+    assert_eq!(meta.segment_count, 1);
+    assert_eq!(
+        meta.first_segment_locator,
+        ItemPointer {
+            block_number: 400,
+            offset_number: 5
+        }
+    );
+    assert_eq!(meta.object_bytes_total, 32);
+}
+
+#[test]
+fn spire_partition_object_v2_chain_meta_byteswapped_version_is_rejected() {
+    let mut bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/spire_partition_object_v2_chain_meta.hex"
+    ));
+    bytes.swap(
+        SPIRE_PARTITION_OBJECT_FORMAT_VERSION_OFFSET,
+        SPIRE_PARTITION_OBJECT_FORMAT_VERSION_OFFSET + 1,
+    );
+
+    let err = spire_decode_partition_object_v2_chain_meta_fixture(&bytes)
+        .expect_err("byte-swapped version should fail");
+
+    assert!(
+        err.contains("ec_spire unsupported partition object format version: 512"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn spire_partition_object_v2_chain_segment_fixture_decodes() {
+    let meta_bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/spire_partition_object_v2_chain_meta.hex"
+    ));
+    let segment_bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/spire_partition_object_v2_chain_segment.hex"
+    ));
+
+    let segment =
+        spire_decode_partition_object_v2_chain_segment_fixture(&meta_bytes, &segment_bytes)
+            .expect("chain segment decodes");
+
+    assert_eq!(segment.header.kind, 1);
+    assert_eq!(segment.header.pid, 11);
+    assert_eq!(segment.header.object_version, 2);
+    assert_eq!(segment.header.level, 1);
+    assert_eq!(segment.header.child_count, 0);
+    assert_eq!(segment.header.flags, 8);
+    assert_eq!(segment.segment_no, 0);
+    assert_eq!(segment.byte_base, 0);
+    assert_eq!(segment.next_segment_locator, ItemPointer::INVALID);
+    assert_eq!(segment.payload, vec![1, 2, 3, 4, 0xaa, 0xbb, 0xcc, 0xdd]);
+}

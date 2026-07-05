@@ -1,0 +1,6 @@
+unsafe comment baseline
+file: scripts/unsafe_comment_baseline.txt at HEAD^
+entries: 4319
+
+touched file
+39 src/am/ec_spire/vacuum/mod.rs

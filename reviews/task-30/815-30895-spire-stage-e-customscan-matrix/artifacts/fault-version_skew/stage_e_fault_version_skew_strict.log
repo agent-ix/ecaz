@@ -1,0 +1,11 @@
+matrix_row=version_skew,incompatible_extension_version,fail_closed,incompatible_extension_version,skip_node,degraded_skipped,strict_failed_dispatch_count+1; degraded_skipped_dispatch_count+1
+injection=fault_node_extension_version=0.0.0-test-skew
+injection=fault_node_epoch_window=1/1 requested=1
+ready_remote_identity=5cb85e4dd0b5bf9f
+query_command=ec_spire_remote_search_production_executor_state_summary('ec_spire_stage_e_version_skew_strict_coord_idx', ..., 'strict')
+expected_status=incompatible_extension_version
+expected_blocked_before_dispatch_count=1
+expected_degraded_skipped_dispatch_count=0
+expected_first_degraded_skip_category=none
+expected_next_executor_step=remote_extension_version
+observed_summary=spire_remote_fanout_executor_v1,2,1,1,1,0,none,remote_extension_version,incompatible_extension_version

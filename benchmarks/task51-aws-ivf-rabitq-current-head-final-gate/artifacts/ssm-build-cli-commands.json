@@ -1,0 +1,8 @@
+{
+  "Parameters": {
+    "commands": [
+      "sudo -u postgres bash -lc 'set -eux; export PATH=$HOME/.cargo/bin:$PATH; cd /var/lib/pgsql/build/ecaz; cargo build -p ecaz-cli --release --no-default-features; target/release/ecaz --version || true'"
+    ]
+  },
+  "TimeoutSeconds": 3600
+}

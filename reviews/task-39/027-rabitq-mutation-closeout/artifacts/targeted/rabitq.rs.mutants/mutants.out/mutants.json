@@ -1,0 +1,770 @@
+[
+  {
+    "diff": "--- hardening/careful/src/../../../src/quant/rabitq.rs\n+++ replace > with == in <impl crate::quant::Quantizer for RaBitQQuantizer>::encode_code\n@@ -401,17 +401,17 @@\n     /// information; the estimator formula is unified across bits\n     /// via the stored `||x_dec||`.\n     fn encode_code(&self, v: &[f32]) -> Box<[u8]> {\n         let rotated = self.rotated(v);\n         let packed_bytes = self.packed_bytes();\n         let mut out = vec![0_u8; packed_bytes + RABITQ_SCALAR_LEN];\n \n         let norm = l2_norm(&rotated);\n-        let inv_norm = if norm > 0.0 { 1.0 / norm } else { 0.0 };\n+        let inv_norm = if norm == /* ~ changed by cargo-mutants ~ */ 0.0 { 1.0 / norm } else { 0.0 };\n         let sqrt_d = (self.dimensions as f32).sqrt();\n \n         // Compute dequantized levels in-line with the packing loop\n         // so we can also accumulate ⟨o, x_dec⟩ and ||x_dec||² as we\n         // go — one pass, no intermediate Vec.\n         let mut inner_o_xdec = 0.0_f32;\n         let mut x_dec_norm_sq = 0.0_f32;\n \n",
+    "file": "hardening/careful/src/../../../src/quant/rabitq.rs",
+    "function": {
+      "function_name": "<impl crate::quant::Quantizer for RaBitQQuantizer>::encode_code",
+      "return_type": "-> Box<[u8]>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 443
+        },
+        "start": {
+          "column": 5,
+          "line": 393
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/quant/rabitq.rs:409:32: replace > with == in <impl crate::quant::Quantizer for RaBitQQuantizer>::encode_code",
+    "package": "ecaz-careful-hardening",
+    "replacement": "==",
+    "span": {
+      "end": {
+        "column": 33,
+        "line": 409
+      },
+      "start": {
+        "column": 32,
+        "line": 409
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/quant/rabitq.rs\n+++ replace > with < in <impl crate::quant::Quantizer for RaBitQQuantizer>::encode_code\n@@ -401,17 +401,17 @@\n     /// information; the estimator formula is unified across bits\n     /// via the stored `||x_dec||`.\n     fn encode_code(&self, v: &[f32]) -> Box<[u8]> {\n         let rotated = self.rotated(v);\n         let packed_bytes = self.packed_bytes();\n         let mut out = vec![0_u8; packed_bytes + RABITQ_SCALAR_LEN];\n \n         let norm = l2_norm(&rotated);\n-        let inv_norm = if norm > 0.0 { 1.0 / norm } else { 0.0 };\n+        let inv_norm = if norm < /* ~ changed by cargo-mutants ~ */ 0.0 { 1.0 / norm } else { 0.0 };\n         let sqrt_d = (self.dimensions as f32).sqrt();\n \n         // Compute dequantized levels in-line with the packing loop\n         // so we can also accumulate ⟨o, x_dec⟩ and ||x_dec||² as we\n         // go — one pass, no intermediate Vec.\n         let mut inner_o_xdec = 0.0_f32;\n         let mut x_dec_norm_sq = 0.0_f32;\n \n",
+    "file": "hardening/careful/src/../../../src/quant/rabitq.rs",
+    "function": {
+      "function_name": "<impl crate::quant::Quantizer for RaBitQQuantizer>::encode_code",
+      "return_type": "-> Box<[u8]>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 443
+        },
+        "start": {
+          "column": 5,
+          "line": 393
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/quant/rabitq.rs:409:32: replace > with < in <impl crate::quant::Quantizer for RaBitQQuantizer>::encode_code",
+    "package": "ecaz-careful-hardening",
+    "replacement": "<",
+    "span": {
+      "end": {
+        "column": 33,
+        "line": 409
+      },
+      "start": {
+        "column": 32,
+        "line": 409
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/quant/rabitq.rs\n+++ replace > with >= in <impl crate::quant::Quantizer for RaBitQQuantizer>::encode_code\n@@ -401,17 +401,17 @@\n     /// information; the estimator formula is unified across bits\n     /// via the stored `||x_dec||`.\n     fn encode_code(&self, v: &[f32]) -> Box<[u8]> {\n         let rotated = self.rotated(v);\n         let packed_bytes = self.packed_bytes();\n         let mut out = vec![0_u8; packed_bytes + RABITQ_SCALAR_LEN];\n \n         let norm = l2_norm(&rotated);\n-        let inv_norm = if norm > 0.0 { 1.0 / norm } else { 0.0 };\n+        let inv_norm = if norm >= /* ~ changed by cargo-mutants ~ */ 0.0 { 1.0 / norm } else { 0.0 };\n         let sqrt_d = (self.dimensions as f32).sqrt();\n \n         // Compute dequantized levels in-line with the packing loop\n         // so we can also accumulate ⟨o, x_dec⟩ and ||x_dec||² as we\n         // go — one pass, no intermediate Vec.\n         let mut inner_o_xdec = 0.0_f32;\n         let mut x_dec_norm_sq = 0.0_f32;\n \n",
+    "file": "hardening/careful/src/../../../src/quant/rabitq.rs",
+    "function": {
+      "function_name": "<impl crate::quant::Quantizer for RaBitQQuantizer>::encode_code",
+      "return_type": "-> Box<[u8]>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 443
+        },
+        "start": {
+          "column": 5,
+          "line": 393
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/quant/rabitq.rs:409:32: replace > with >= in <impl crate::quant::Quantizer for RaBitQQuantizer>::encode_code",
+    "package": "ecaz-careful-hardening",
+    "replacement": ">=",
+    "span": {
+      "end": {
+        "column": 33,
+        "line": 409
+      },
+      "start": {
+        "column": 32,
+        "line": 409
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/quant/rabitq.rs\n+++ replace > with == in <impl crate::quant::Quantizer for RaBitQQuantizer>::encode_code\n@@ -421,17 +421,17 @@\n             let (level_idx, dequant_i) = quantize_level(o_i * inv_norm, bits, sqrt_d);\n             write_level(&mut out, i, bits, level_idx);\n             inner_o_xdec += o_i * dequant_i;\n             x_dec_norm_sq += dequant_i * dequant_i;\n         }\n \n         let x_dec_norm = x_dec_norm_sq.sqrt();\n         let denom = norm * x_dec_norm;\n-        let o_dot = if denom > 0.0 {\n+        let o_dot = if denom == /* ~ changed by cargo-mutants ~ */ 0.0 {\n             inner_o_xdec / denom\n         } else {\n             0.0\n         };\n \n         let s = packed_bytes;\n         out[s..s + RABITQ_NORM_LEN].copy_from_slice(&norm.to_le_bytes());\n         out[s + RABITQ_NORM_LEN..s + RABITQ_NORM_LEN + RABITQ_UNIT_DOT_LEN]\n",
+    "file": "hardening/careful/src/../../../src/quant/rabitq.rs",
+    "function": {
+      "function_name": "<impl crate::quant::Quantizer for RaBitQQuantizer>::encode_code",
+      "return_type": "-> Box<[u8]>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 443
+        },
+        "start": {
+          "column": 5,
+          "line": 393
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/quant/rabitq.rs:429:30: replace > with == in <impl crate::quant::Quantizer for RaBitQQuantizer>::encode_code",
+    "package": "ecaz-careful-hardening",
+    "replacement": "==",
+    "span": {
+      "end": {
+        "column": 31,
+        "line": 429
+      },
+      "start": {
+        "column": 30,
+        "line": 429
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/quant/rabitq.rs\n+++ replace > with < in <impl crate::quant::Quantizer for RaBitQQuantizer>::encode_code\n@@ -421,17 +421,17 @@\n             let (level_idx, dequant_i) = quantize_level(o_i * inv_norm, bits, sqrt_d);\n             write_level(&mut out, i, bits, level_idx);\n             inner_o_xdec += o_i * dequant_i;\n             x_dec_norm_sq += dequant_i * dequant_i;\n         }\n \n         let x_dec_norm = x_dec_norm_sq.sqrt();\n         let denom = norm * x_dec_norm;\n-        let o_dot = if denom > 0.0 {\n+        let o_dot = if denom < /* ~ changed by cargo-mutants ~ */ 0.0 {\n             inner_o_xdec / denom\n         } else {\n             0.0\n         };\n \n         let s = packed_bytes;\n         out[s..s + RABITQ_NORM_LEN].copy_from_slice(&norm.to_le_bytes());\n         out[s + RABITQ_NORM_LEN..s + RABITQ_NORM_LEN + RABITQ_UNIT_DOT_LEN]\n",
+    "file": "hardening/careful/src/../../../src/quant/rabitq.rs",
+    "function": {
+      "function_name": "<impl crate::quant::Quantizer for RaBitQQuantizer>::encode_code",
+      "return_type": "-> Box<[u8]>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 443
+        },
+        "start": {
+          "column": 5,
+          "line": 393
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/quant/rabitq.rs:429:30: replace > with < in <impl crate::quant::Quantizer for RaBitQQuantizer>::encode_code",
+    "package": "ecaz-careful-hardening",
+    "replacement": "<",
+    "span": {
+      "end": {
+        "column": 31,
+        "line": 429
+      },
+      "start": {
+        "column": 30,
+        "line": 429
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/quant/rabitq.rs\n+++ replace > with >= in <impl crate::quant::Quantizer for RaBitQQuantizer>::encode_code\n@@ -421,17 +421,17 @@\n             let (level_idx, dequant_i) = quantize_level(o_i * inv_norm, bits, sqrt_d);\n             write_level(&mut out, i, bits, level_idx);\n             inner_o_xdec += o_i * dequant_i;\n             x_dec_norm_sq += dequant_i * dequant_i;\n         }\n \n         let x_dec_norm = x_dec_norm_sq.sqrt();\n         let denom = norm * x_dec_norm;\n-        let o_dot = if denom > 0.0 {\n+        let o_dot = if denom >= /* ~ changed by cargo-mutants ~ */ 0.0 {\n             inner_o_xdec / denom\n         } else {\n             0.0\n         };\n \n         let s = packed_bytes;\n         out[s..s + RABITQ_NORM_LEN].copy_from_slice(&norm.to_le_bytes());\n         out[s + RABITQ_NORM_LEN..s + RABITQ_NORM_LEN + RABITQ_UNIT_DOT_LEN]\n",
+    "file": "hardening/careful/src/../../../src/quant/rabitq.rs",
+    "function": {
+      "function_name": "<impl crate::quant::Quantizer for RaBitQQuantizer>::encode_code",
+      "return_type": "-> Box<[u8]>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 443
+        },
+        "start": {
+          "column": 5,
+          "line": 393
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/quant/rabitq.rs:429:30: replace > with >= in <impl crate::quant::Quantizer for RaBitQQuantizer>::encode_code",
+    "package": "ecaz-careful-hardening",
+    "replacement": ">=",
+    "span": {
+      "end": {
+        "column": 31,
+        "line": 429
+      },
+      "start": {
+        "column": 30,
+        "line": 429
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/quant/rabitq.rs\n+++ replace += with -= in RaBitQQuantizer::encode_code_centered\n@@ -576,17 +576,17 @@\n \n         let mut sum_abs = 0.0_f32;\n         let mut sum_center_sign = 0.0_f32;\n         for (i, &r_i) in residual_rotated.iter().enumerate() {\n             let level = if r_i >= 0.0 { 1_u32 } else { 0_u32 };\n             write_level(&mut out, i, 1, level);\n             sum_abs += r_i.abs();\n             if level == 1 {\n-                sum_center_sign += center.rotated[i];\n+                sum_center_sign -= /* ~ changed by cargo-mutants ~ */ center.rotated[i];\n             } else {\n                 sum_center_sign -= center.rotated[i];\n             }\n         }\n \n         let inv_denom = if residual_mag > 0.0 {\n             1.0 / (residual_mag * sqrt_d)\n         } else {\n",
+    "file": "hardening/careful/src/../../../src/quant/rabitq.rs",
+    "function": {
+      "function_name": "RaBitQQuantizer::encode_code_centered",
+      "return_type": "-> Box<[u8]>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 607
+        },
+        "start": {
+          "column": 5,
+          "line": 533
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/quant/rabitq.rs:584:33: replace += with -= in RaBitQQuantizer::encode_code_centered",
+    "package": "ecaz-careful-hardening",
+    "replacement": "-=",
+    "span": {
+      "end": {
+        "column": 35,
+        "line": 584
+      },
+      "start": {
+        "column": 33,
+        "line": 584
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/quant/rabitq.rs\n+++ replace += with *= in RaBitQQuantizer::encode_code_centered\n@@ -576,17 +576,17 @@\n \n         let mut sum_abs = 0.0_f32;\n         let mut sum_center_sign = 0.0_f32;\n         for (i, &r_i) in residual_rotated.iter().enumerate() {\n             let level = if r_i >= 0.0 { 1_u32 } else { 0_u32 };\n             write_level(&mut out, i, 1, level);\n             sum_abs += r_i.abs();\n             if level == 1 {\n-                sum_center_sign += center.rotated[i];\n+                sum_center_sign *= /* ~ changed by cargo-mutants ~ */ center.rotated[i];\n             } else {\n                 sum_center_sign -= center.rotated[i];\n             }\n         }\n \n         let inv_denom = if residual_mag > 0.0 {\n             1.0 / (residual_mag * sqrt_d)\n         } else {\n",
+    "file": "hardening/careful/src/../../../src/quant/rabitq.rs",
+    "function": {
+      "function_name": "RaBitQQuantizer::encode_code_centered",
+      "return_type": "-> Box<[u8]>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 607
+        },
+        "start": {
+          "column": 5,
+          "line": 533
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/quant/rabitq.rs:584:33: replace += with *= in RaBitQQuantizer::encode_code_centered",
+    "package": "ecaz-careful-hardening",
+    "replacement": "*=",
+    "span": {
+      "end": {
+        "column": 35,
+        "line": 584
+      },
+      "start": {
+        "column": 33,
+        "line": 584
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/quant/rabitq.rs\n+++ replace -= with += in RaBitQQuantizer::encode_code_centered\n@@ -578,17 +578,17 @@\n         let mut sum_center_sign = 0.0_f32;\n         for (i, &r_i) in residual_rotated.iter().enumerate() {\n             let level = if r_i >= 0.0 { 1_u32 } else { 0_u32 };\n             write_level(&mut out, i, 1, level);\n             sum_abs += r_i.abs();\n             if level == 1 {\n                 sum_center_sign += center.rotated[i];\n             } else {\n-                sum_center_sign -= center.rotated[i];\n+                sum_center_sign += /* ~ changed by cargo-mutants ~ */ center.rotated[i];\n             }\n         }\n \n         let inv_denom = if residual_mag > 0.0 {\n             1.0 / (residual_mag * sqrt_d)\n         } else {\n             0.0\n         };\n",
+    "file": "hardening/careful/src/../../../src/quant/rabitq.rs",
+    "function": {
+      "function_name": "RaBitQQuantizer::encode_code_centered",
+      "return_type": "-> Box<[u8]>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 607
+        },
+        "start": {
+          "column": 5,
+          "line": 533
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/quant/rabitq.rs:586:33: replace -= with += in RaBitQQuantizer::encode_code_centered",
+    "package": "ecaz-careful-hardening",
+    "replacement": "+=",
+    "span": {
+      "end": {
+        "column": 35,
+        "line": 586
+      },
+      "start": {
+        "column": 33,
+        "line": 586
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/quant/rabitq.rs\n+++ replace -= with /= in RaBitQQuantizer::encode_code_centered\n@@ -578,17 +578,17 @@\n         let mut sum_center_sign = 0.0_f32;\n         for (i, &r_i) in residual_rotated.iter().enumerate() {\n             let level = if r_i >= 0.0 { 1_u32 } else { 0_u32 };\n             write_level(&mut out, i, 1, level);\n             sum_abs += r_i.abs();\n             if level == 1 {\n                 sum_center_sign += center.rotated[i];\n             } else {\n-                sum_center_sign -= center.rotated[i];\n+                sum_center_sign /= /* ~ changed by cargo-mutants ~ */ center.rotated[i];\n             }\n         }\n \n         let inv_denom = if residual_mag > 0.0 {\n             1.0 / (residual_mag * sqrt_d)\n         } else {\n             0.0\n         };\n",
+    "file": "hardening/careful/src/../../../src/quant/rabitq.rs",
+    "function": {
+      "function_name": "RaBitQQuantizer::encode_code_centered",
+      "return_type": "-> Box<[u8]>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 607
+        },
+        "start": {
+          "column": 5,
+          "line": 533
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/quant/rabitq.rs:586:33: replace -= with /= in RaBitQQuantizer::encode_code_centered",
+    "package": "ecaz-careful-hardening",
+    "replacement": "/=",
+    "span": {
+      "end": {
+        "column": 35,
+        "line": 586
+      },
+      "start": {
+        "column": 33,
+        "line": 586
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/quant/rabitq.rs\n+++ replace > with == in RaBitQQuantizer::encode_code_centered\n@@ -582,17 +582,17 @@\n             sum_abs += r_i.abs();\n             if level == 1 {\n                 sum_center_sign += center.rotated[i];\n             } else {\n                 sum_center_sign -= center.rotated[i];\n             }\n         }\n \n-        let inv_denom = if residual_mag > 0.0 {\n+        let inv_denom = if residual_mag == /* ~ changed by cargo-mutants ~ */ 0.0 {\n             1.0 / (residual_mag * sqrt_d)\n         } else {\n             0.0\n         };\n         let o_dot = sum_abs * inv_denom;\n         // ⟨x̄, c_tilde⟩ = (1/√D) · Σ c_tilde_i · sign(r_i), since\n         // x̄ has elements ±1/√D and we accumulated with ±1 weights.\n         let center_dot = sum_center_sign / sqrt_d;\n",
+    "file": "hardening/careful/src/../../../src/quant/rabitq.rs",
+    "function": {
+      "function_name": "RaBitQQuantizer::encode_code_centered",
+      "return_type": "-> Box<[u8]>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 607
+        },
+        "start": {
+          "column": 5,
+          "line": 533
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/quant/rabitq.rs:590:41: replace > with == in RaBitQQuantizer::encode_code_centered",
+    "package": "ecaz-careful-hardening",
+    "replacement": "==",
+    "span": {
+      "end": {
+        "column": 42,
+        "line": 590
+      },
+      "start": {
+        "column": 41,
+        "line": 590
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/quant/rabitq.rs\n+++ replace > with < in RaBitQQuantizer::encode_code_centered\n@@ -582,17 +582,17 @@\n             sum_abs += r_i.abs();\n             if level == 1 {\n                 sum_center_sign += center.rotated[i];\n             } else {\n                 sum_center_sign -= center.rotated[i];\n             }\n         }\n \n-        let inv_denom = if residual_mag > 0.0 {\n+        let inv_denom = if residual_mag < /* ~ changed by cargo-mutants ~ */ 0.0 {\n             1.0 / (residual_mag * sqrt_d)\n         } else {\n             0.0\n         };\n         let o_dot = sum_abs * inv_denom;\n         // ⟨x̄, c_tilde⟩ = (1/√D) · Σ c_tilde_i · sign(r_i), since\n         // x̄ has elements ±1/√D and we accumulated with ±1 weights.\n         let center_dot = sum_center_sign / sqrt_d;\n",
+    "file": "hardening/careful/src/../../../src/quant/rabitq.rs",
+    "function": {
+      "function_name": "RaBitQQuantizer::encode_code_centered",
+      "return_type": "-> Box<[u8]>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 607
+        },
+        "start": {
+          "column": 5,
+          "line": 533
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/quant/rabitq.rs:590:41: replace > with < in RaBitQQuantizer::encode_code_centered",
+    "package": "ecaz-careful-hardening",
+    "replacement": "<",
+    "span": {
+      "end": {
+        "column": 42,
+        "line": 590
+      },
+      "start": {
+        "column": 41,
+        "line": 590
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/quant/rabitq.rs\n+++ replace > with >= in RaBitQQuantizer::encode_code_centered\n@@ -582,17 +582,17 @@\n             sum_abs += r_i.abs();\n             if level == 1 {\n                 sum_center_sign += center.rotated[i];\n             } else {\n                 sum_center_sign -= center.rotated[i];\n             }\n         }\n \n-        let inv_denom = if residual_mag > 0.0 {\n+        let inv_denom = if residual_mag >= /* ~ changed by cargo-mutants ~ */ 0.0 {\n             1.0 / (residual_mag * sqrt_d)\n         } else {\n             0.0\n         };\n         let o_dot = sum_abs * inv_denom;\n         // ⟨x̄, c_tilde⟩ = (1/√D) · Σ c_tilde_i · sign(r_i), since\n         // x̄ has elements ±1/√D and we accumulated with ±1 weights.\n         let center_dot = sum_center_sign / sqrt_d;\n",
+    "file": "hardening/careful/src/../../../src/quant/rabitq.rs",
+    "function": {
+      "function_name": "RaBitQQuantizer::encode_code_centered",
+      "return_type": "-> Box<[u8]>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 607
+        },
+        "start": {
+          "column": 5,
+          "line": 533
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/quant/rabitq.rs:590:41: replace > with >= in RaBitQQuantizer::encode_code_centered",
+    "package": "ecaz-careful-hardening",
+    "replacement": ">=",
+    "span": {
+      "end": {
+        "column": 42,
+        "line": 590
+      },
+      "start": {
+        "column": 41,
+        "line": 590
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/quant/rabitq.rs\n+++ replace < with == in CenteredScorer::score_at\n@@ -747,17 +747,17 @@\n \n         // Paper eq (6):\n         //   ⟨x̄, q_tilde_unit⟩ = (query_dot_code − center_dot) / ||q_r − c||\n         //\n         // RaBitQ estimator (residual unit vectors):\n         //   ⟨q_unit_res, o_unit_res⟩ ≈ ⟨x̄, q_tilde_unit⟩ / o_dot\n         const O_DOT_FLOOR: f32 = 1e-6;\n         const QR_FLOOR: f32 = 1e-6;\n-        if o_dot.abs() < O_DOT_FLOOR\n+        if o_dot.abs() == /* ~ changed by cargo-mutants ~ */ O_DOT_FLOOR\n             || !o_dot.is_finite()\n             || query_residual_mag < QR_FLOOR\n             || residual_mag <= 0.0\n         {\n             return DistanceEstimate {\n                 estimate: 0.0,\n                 bound: f32::INFINITY,\n             };\n",
+    "file": "hardening/careful/src/../../../src/quant/rabitq.rs",
+    "function": {
+      "function_name": "CenteredScorer::score_at",
+      "return_type": "-> DistanceEstimate",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 779
+        },
+        "start": {
+          "column": 5,
+          "line": 683
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/quant/rabitq.rs:755:24: replace < with == in CenteredScorer::score_at",
+    "package": "ecaz-careful-hardening",
+    "replacement": "==",
+    "span": {
+      "end": {
+        "column": 25,
+        "line": 755
+      },
+      "start": {
+        "column": 24,
+        "line": 755
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/quant/rabitq.rs\n+++ replace < with > in CenteredScorer::score_at\n@@ -747,17 +747,17 @@\n \n         // Paper eq (6):\n         //   ⟨x̄, q_tilde_unit⟩ = (query_dot_code − center_dot) / ||q_r − c||\n         //\n         // RaBitQ estimator (residual unit vectors):\n         //   ⟨q_unit_res, o_unit_res⟩ ≈ ⟨x̄, q_tilde_unit⟩ / o_dot\n         const O_DOT_FLOOR: f32 = 1e-6;\n         const QR_FLOOR: f32 = 1e-6;\n-        if o_dot.abs() < O_DOT_FLOOR\n+        if o_dot.abs() > /* ~ changed by cargo-mutants ~ */ O_DOT_FLOOR\n             || !o_dot.is_finite()\n             || query_residual_mag < QR_FLOOR\n             || residual_mag <= 0.0\n         {\n             return DistanceEstimate {\n                 estimate: 0.0,\n                 bound: f32::INFINITY,\n             };\n",
+    "file": "hardening/careful/src/../../../src/quant/rabitq.rs",
+    "function": {
+      "function_name": "CenteredScorer::score_at",
+      "return_type": "-> DistanceEstimate",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 779
+        },
+        "start": {
+          "column": 5,
+          "line": 683
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/quant/rabitq.rs:755:24: replace < with > in CenteredScorer::score_at",
+    "package": "ecaz-careful-hardening",
+    "replacement": ">",
+    "span": {
+      "end": {
+        "column": 25,
+        "line": 755
+      },
+      "start": {
+        "column": 24,
+        "line": 755
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/quant/rabitq.rs\n+++ replace < with <= in CenteredScorer::score_at\n@@ -747,17 +747,17 @@\n \n         // Paper eq (6):\n         //   ⟨x̄, q_tilde_unit⟩ = (query_dot_code − center_dot) / ||q_r − c||\n         //\n         // RaBitQ estimator (residual unit vectors):\n         //   ⟨q_unit_res, o_unit_res⟩ ≈ ⟨x̄, q_tilde_unit⟩ / o_dot\n         const O_DOT_FLOOR: f32 = 1e-6;\n         const QR_FLOOR: f32 = 1e-6;\n-        if o_dot.abs() < O_DOT_FLOOR\n+        if o_dot.abs() <= /* ~ changed by cargo-mutants ~ */ O_DOT_FLOOR\n             || !o_dot.is_finite()\n             || query_residual_mag < QR_FLOOR\n             || residual_mag <= 0.0\n         {\n             return DistanceEstimate {\n                 estimate: 0.0,\n                 bound: f32::INFINITY,\n             };\n",
+    "file": "hardening/careful/src/../../../src/quant/rabitq.rs",
+    "function": {
+      "function_name": "CenteredScorer::score_at",
+      "return_type": "-> DistanceEstimate",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 779
+        },
+        "start": {
+          "column": 5,
+          "line": 683
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/quant/rabitq.rs:755:24: replace < with <= in CenteredScorer::score_at",
+    "package": "ecaz-careful-hardening",
+    "replacement": "<=",
+    "span": {
+      "end": {
+        "column": 25,
+        "line": 755
+      },
+      "start": {
+        "column": 24,
+        "line": 755
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/quant/rabitq.rs\n+++ replace < with == in CenteredScorer::score_at\n@@ -749,17 +749,17 @@\n         //   ⟨x̄, q_tilde_unit⟩ = (query_dot_code − center_dot) / ||q_r − c||\n         //\n         // RaBitQ estimator (residual unit vectors):\n         //   ⟨q_unit_res, o_unit_res⟩ ≈ ⟨x̄, q_tilde_unit⟩ / o_dot\n         const O_DOT_FLOOR: f32 = 1e-6;\n         const QR_FLOOR: f32 = 1e-6;\n         if o_dot.abs() < O_DOT_FLOOR\n             || !o_dot.is_finite()\n-            || query_residual_mag < QR_FLOOR\n+            || query_residual_mag == /* ~ changed by cargo-mutants ~ */ QR_FLOOR\n             || residual_mag <= 0.0\n         {\n             return DistanceEstimate {\n                 estimate: 0.0,\n                 bound: f32::INFINITY,\n             };\n         }\n         let x_dot_q_unit = (query_dot_code - center_dot) / query_residual_mag;\n",
+    "file": "hardening/careful/src/../../../src/quant/rabitq.rs",
+    "function": {
+      "function_name": "CenteredScorer::score_at",
+      "return_type": "-> DistanceEstimate",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 779
+        },
+        "start": {
+          "column": 5,
+          "line": 683
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/quant/rabitq.rs:757:35: replace < with == in CenteredScorer::score_at",
+    "package": "ecaz-careful-hardening",
+    "replacement": "==",
+    "span": {
+      "end": {
+        "column": 36,
+        "line": 757
+      },
+      "start": {
+        "column": 35,
+        "line": 757
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/quant/rabitq.rs\n+++ replace < with > in CenteredScorer::score_at\n@@ -749,17 +749,17 @@\n         //   ⟨x̄, q_tilde_unit⟩ = (query_dot_code − center_dot) / ||q_r − c||\n         //\n         // RaBitQ estimator (residual unit vectors):\n         //   ⟨q_unit_res, o_unit_res⟩ ≈ ⟨x̄, q_tilde_unit⟩ / o_dot\n         const O_DOT_FLOOR: f32 = 1e-6;\n         const QR_FLOOR: f32 = 1e-6;\n         if o_dot.abs() < O_DOT_FLOOR\n             || !o_dot.is_finite()\n-            || query_residual_mag < QR_FLOOR\n+            || query_residual_mag > /* ~ changed by cargo-mutants ~ */ QR_FLOOR\n             || residual_mag <= 0.0\n         {\n             return DistanceEstimate {\n                 estimate: 0.0,\n                 bound: f32::INFINITY,\n             };\n         }\n         let x_dot_q_unit = (query_dot_code - center_dot) / query_residual_mag;\n",
+    "file": "hardening/careful/src/../../../src/quant/rabitq.rs",
+    "function": {
+      "function_name": "CenteredScorer::score_at",
+      "return_type": "-> DistanceEstimate",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 779
+        },
+        "start": {
+          "column": 5,
+          "line": 683
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/quant/rabitq.rs:757:35: replace < with > in CenteredScorer::score_at",
+    "package": "ecaz-careful-hardening",
+    "replacement": ">",
+    "span": {
+      "end": {
+        "column": 36,
+        "line": 757
+      },
+      "start": {
+        "column": 35,
+        "line": 757
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/quant/rabitq.rs\n+++ replace < with <= in CenteredScorer::score_at\n@@ -749,17 +749,17 @@\n         //   ⟨x̄, q_tilde_unit⟩ = (query_dot_code − center_dot) / ||q_r − c||\n         //\n         // RaBitQ estimator (residual unit vectors):\n         //   ⟨q_unit_res, o_unit_res⟩ ≈ ⟨x̄, q_tilde_unit⟩ / o_dot\n         const O_DOT_FLOOR: f32 = 1e-6;\n         const QR_FLOOR: f32 = 1e-6;\n         if o_dot.abs() < O_DOT_FLOOR\n             || !o_dot.is_finite()\n-            || query_residual_mag < QR_FLOOR\n+            || query_residual_mag <= /* ~ changed by cargo-mutants ~ */ QR_FLOOR\n             || residual_mag <= 0.0\n         {\n             return DistanceEstimate {\n                 estimate: 0.0,\n                 bound: f32::INFINITY,\n             };\n         }\n         let x_dot_q_unit = (query_dot_code - center_dot) / query_residual_mag;\n",
+    "file": "hardening/careful/src/../../../src/quant/rabitq.rs",
+    "function": {
+      "function_name": "CenteredScorer::score_at",
+      "return_type": "-> DistanceEstimate",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 779
+        },
+        "start": {
+          "column": 5,
+          "line": 683
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/quant/rabitq.rs:757:35: replace < with <= in CenteredScorer::score_at",
+    "package": "ecaz-careful-hardening",
+    "replacement": "<=",
+    "span": {
+      "end": {
+        "column": 36,
+        "line": 757
+      },
+      "start": {
+        "column": 35,
+        "line": 757
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/quant/rabitq.rs\n+++ replace * with + in quantize_level\n@@ -990,17 +990,17 @@\n             (1, 1.0)\n         } else {\n             (0, -1.0)\n         }\n     } else {\n         let levels = 1_u32 << bits;\n         let c = RABITQ_QUANT_CLIP;\n         let scaled = o_hat_i * sqrt_d;\n-        let t = ((scaled + c) / (2.0 * c)).clamp(0.0, 1.0);\n+        let t = ((scaled + c) / (2.0 + /* ~ changed by cargo-mutants ~ */ c)).clamp(0.0, 1.0);\n         let level = ((t * levels as f32) as u32).min(levels - 1);\n         // Bin center, mapped back to unit-vector scale.\n         let center_scaled = (level as f32 + 0.5) / levels as f32 * 2.0 * c - c;\n         let dequant = center_scaled / sqrt_d;\n         (level, dequant)\n     }\n }\n \n",
+    "file": "hardening/careful/src/../../../src/quant/rabitq.rs",
+    "function": {
+      "function_name": "quantize_level",
+      "return_type": "-> (u32, f32)",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 1005
+        },
+        "start": {
+          "column": 1,
+          "line": 971
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/quant/rabitq.rs:998:38: replace * with + in quantize_level",
+    "package": "ecaz-careful-hardening",
+    "replacement": "+",
+    "span": {
+      "end": {
+        "column": 39,
+        "line": 998
+      },
+      "start": {
+        "column": 38,
+        "line": 998
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/quant/rabitq.rs\n+++ replace * with / in quantize_level\n@@ -990,17 +990,17 @@\n             (1, 1.0)\n         } else {\n             (0, -1.0)\n         }\n     } else {\n         let levels = 1_u32 << bits;\n         let c = RABITQ_QUANT_CLIP;\n         let scaled = o_hat_i * sqrt_d;\n-        let t = ((scaled + c) / (2.0 * c)).clamp(0.0, 1.0);\n+        let t = ((scaled + c) / (2.0 / /* ~ changed by cargo-mutants ~ */ c)).clamp(0.0, 1.0);\n         let level = ((t * levels as f32) as u32).min(levels - 1);\n         // Bin center, mapped back to unit-vector scale.\n         let center_scaled = (level as f32 + 0.5) / levels as f32 * 2.0 * c - c;\n         let dequant = center_scaled / sqrt_d;\n         (level, dequant)\n     }\n }\n \n",
+    "file": "hardening/careful/src/../../../src/quant/rabitq.rs",
+    "function": {
+      "function_name": "quantize_level",
+      "return_type": "-> (u32, f32)",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 1005
+        },
+        "start": {
+          "column": 1,
+          "line": 971
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/quant/rabitq.rs:998:38: replace * with / in quantize_level",
+    "package": "ecaz-careful-hardening",
+    "replacement": "/",
+    "span": {
+      "end": {
+        "column": 39,
+        "line": 998
+      },
+      "start": {
+        "column": 38,
+        "line": 998
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/quant/rabitq.rs\n+++ replace < with == in estimate_ip_impl\n@@ -1124,17 +1124,17 @@\n     for (i, &query_i) in query_rotated.iter().enumerate().take(dimensions) {\n         let level = read_level(code, i, bits);\n         let dequant = dequant_level(level, bits, sqrt_d);\n         sum_q_dequant += query_i * dequant;\n     }\n \n     // Guard degenerate cases.\n     const O_DOT_FLOOR: f32 = 1e-6;\n-    if candidate_o_dot.abs() < O_DOT_FLOOR\n+    if candidate_o_dot.abs() == /* ~ changed by cargo-mutants ~ */ O_DOT_FLOOR\n         || !candidate_o_dot.is_finite()\n         || candidate_x_norm <= 0.0\n         || !candidate_x_norm.is_finite()\n     {\n         return DistanceEstimate {\n             estimate: 0.0,\n             bound: f32::INFINITY,\n         };\n",
+    "file": "hardening/careful/src/../../../src/quant/rabitq.rs",
+    "function": {
+      "function_name": "estimate_ip_impl",
+      "return_type": "-> DistanceEstimate",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 1159
+        },
+        "start": {
+          "column": 1,
+          "line": 1063
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/quant/rabitq.rs:1132:30: replace < with == in estimate_ip_impl",
+    "package": "ecaz-careful-hardening",
+    "replacement": "==",
+    "span": {
+      "end": {
+        "column": 31,
+        "line": 1132
+      },
+      "start": {
+        "column": 30,
+        "line": 1132
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/quant/rabitq.rs\n+++ replace < with > in estimate_ip_impl\n@@ -1124,17 +1124,17 @@\n     for (i, &query_i) in query_rotated.iter().enumerate().take(dimensions) {\n         let level = read_level(code, i, bits);\n         let dequant = dequant_level(level, bits, sqrt_d);\n         sum_q_dequant += query_i * dequant;\n     }\n \n     // Guard degenerate cases.\n     const O_DOT_FLOOR: f32 = 1e-6;\n-    if candidate_o_dot.abs() < O_DOT_FLOOR\n+    if candidate_o_dot.abs() > /* ~ changed by cargo-mutants ~ */ O_DOT_FLOOR\n         || !candidate_o_dot.is_finite()\n         || candidate_x_norm <= 0.0\n         || !candidate_x_norm.is_finite()\n     {\n         return DistanceEstimate {\n             estimate: 0.0,\n             bound: f32::INFINITY,\n         };\n",
+    "file": "hardening/careful/src/../../../src/quant/rabitq.rs",
+    "function": {
+      "function_name": "estimate_ip_impl",
+      "return_type": "-> DistanceEstimate",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 1159
+        },
+        "start": {
+          "column": 1,
+          "line": 1063
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/quant/rabitq.rs:1132:30: replace < with > in estimate_ip_impl",
+    "package": "ecaz-careful-hardening",
+    "replacement": ">",
+    "span": {
+      "end": {
+        "column": 31,
+        "line": 1132
+      },
+      "start": {
+        "column": 30,
+        "line": 1132
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/quant/rabitq.rs\n+++ replace < with <= in estimate_ip_impl\n@@ -1124,17 +1124,17 @@\n     for (i, &query_i) in query_rotated.iter().enumerate().take(dimensions) {\n         let level = read_level(code, i, bits);\n         let dequant = dequant_level(level, bits, sqrt_d);\n         sum_q_dequant += query_i * dequant;\n     }\n \n     // Guard degenerate cases.\n     const O_DOT_FLOOR: f32 = 1e-6;\n-    if candidate_o_dot.abs() < O_DOT_FLOOR\n+    if candidate_o_dot.abs() <= /* ~ changed by cargo-mutants ~ */ O_DOT_FLOOR\n         || !candidate_o_dot.is_finite()\n         || candidate_x_norm <= 0.0\n         || !candidate_x_norm.is_finite()\n     {\n         return DistanceEstimate {\n             estimate: 0.0,\n             bound: f32::INFINITY,\n         };\n",
+    "file": "hardening/careful/src/../../../src/quant/rabitq.rs",
+    "function": {
+      "function_name": "estimate_ip_impl",
+      "return_type": "-> DistanceEstimate",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 1159
+        },
+        "start": {
+          "column": 1,
+          "line": 1063
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/quant/rabitq.rs:1132:30: replace < with <= in estimate_ip_impl",
+    "package": "ecaz-careful-hardening",
+    "replacement": "<=",
+    "span": {
+      "end": {
+        "column": 31,
+        "line": 1132
+      },
+      "start": {
+        "column": 30,
+        "line": 1132
+      }
+    }
+  }
+]

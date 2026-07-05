@@ -1,0 +1,1 @@
+ERROR:  ec_spire coordinator read status schema_drift: coordinator side drifted for index_oid 17558: descriptor coordinator fingerprint c74a9f89b09768d94e4d973ff3a23869 does not match current coordinator fingerprint 0983fe454fc96b16ff6f5d8a04d123d9; hint: pause reads, apply matching DDL on every remote, refresh descriptors, then retry

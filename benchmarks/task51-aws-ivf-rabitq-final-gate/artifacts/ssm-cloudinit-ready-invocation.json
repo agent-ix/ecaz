@@ -1,0 +1,25 @@
+Script started on 2026-05-23 01:31:00-07:00 [<not executed on terminal>]
+{
+    "CommandId": "a27fa3a1-12a9-4695-94f2-4906664822dc",
+    "InstanceId": "i-09a3d149ad259b2d3",
+    "Comment": "",
+    "DocumentName": "AWS-RunShellScript",
+    "DocumentVersion": "$DEFAULT",
+    "PluginName": "aws:runShellScript",
+    "ResponseCode": 0,
+    "ExecutionStartDateTime": "2026-05-23T08:30:53.692Z",
+    "ExecutionElapsedTime": "PT0.197S",
+    "ExecutionEndDateTime": "2026-05-23T08:30:53.692Z",
+    "Status": "Success",
+    "StatusDetails": "Success",
+    "StandardOutputContent": "697b6d690b4311f36e95ff6c63f368acda1367b8\necaz 0.1.0\nactive\necaz|0.1.1\nreal_1m_ivf_rabitq1_rerank_rabitq_idx|ec_ivf|{quant_bits=1,rerank=heap_f32,rerank_width=50,storage_format=rabitq}\n",
+    "StandardOutputUrl": "",
+    "StandardErrorContent": "++ test -f /var/lib/cloud/instance/boot-finished\n++ sudo -u postgres bash -lc 'cd /var/lib/pgsql/build/ecaz; git rev-parse HEAD; test -x target/release/ecaz; target/release/ecaz --version'\n++ systemctl is-active postgresql\n++ sudo -u postgres psql -d tqvector_bench -Atc 'SELECT extname, extversion FROM pg_extension WHERE extname = '\\''ecaz'\\'';'\n++ sudo -u postgres psql -d tqvector_bench -Atc 'SELECT c.relname, am.amname, c.reloptions FROM pg_class c JOIN pg_am am ON am.oid = c.relam WHERE c.relname = '\\''real_1m_ivf_rabitq1_rerank_rabitq_idx'\\'';'\n",
+    "StandardErrorUrl": "",
+    "CloudWatchOutputConfig": {
+        "CloudWatchLogGroupName": "",
+        "CloudWatchOutputEnabled": false
+    }
+}
+
+Script done on 2026-05-23 01:31:01-07:00 [COMMAND_EXIT_CODE="0"]

@@ -1,0 +1,58 @@
+{
+  "suite": "task67-rabitq8ls-kernel-scalar",
+  "schema_version": 1,
+  "config": "reviews/task-67/023-rabitq8ls-kernel-bench/artifacts/task67-rabitq8ls-kernel-scalar-suite.json",
+  "config_sha256": "5185050580b92224d73dcfb7e497c3233dee301c0fad10aff7022c680c1cdce0",
+  "dry_run": false,
+  "generated_at_unix_ms": 1780124277519,
+  "connection": {
+    "database": "postgres",
+    "host": "/var/run/postgresql",
+    "port": null,
+    "user": "postgres",
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "rabitq8ls-kernel-scalar",
+      "kind": "raw",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/var/run/postgresql",
+        "--user",
+        "postgres",
+        "bench",
+        "rabitq-kernel",
+        "--dim",
+        "1536",
+        "--candidates",
+        "1000",
+        "--iterations",
+        "1000",
+        "--simd-mode",
+        "scalar",
+        "--log-output",
+        "reviews/task-67/023-rabitq8ls-kernel-bench/artifacts/scalar/rabitq-kernel-scalar.log"
+      ],
+      "selected": true,
+      "tags": [
+        "aws",
+        "intel",
+        "kernel",
+        "scalar",
+        "rabitq",
+        "rabitq8ls"
+      ],
+      "expected_artifacts": [
+        "reviews/task-67/023-rabitq8ls-kernel-bench/artifacts/scalar/rabitq-kernel-scalar.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1780124277521,
+      "finished_at_unix_ms": 1780124284237,
+      "duration_ms": 6714,
+      "exit_code": 0
+    }
+  ]
+}

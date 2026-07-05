@@ -1,0 +1,20 @@
+2026-05-12 20:54:29.909 PDT [1374662] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-05-12 20:54:29.912 PDT [1374662] LOG:  listening on Unix socket "/home/peter/dev/ecaz/target/se30961-fault-remote-timeout/sockets/.s.PGSQL.39324"
+2026-05-12 20:54:29.920 PDT [1374668] LOG:  database system was shut down at 2026-05-12 20:54:28 PDT
+2026-05-12 20:54:29.924 PDT [1374662] LOG:  database system is ready to accept connections
+2026-05-12 20:54:30.364 PDT [1374694] ERROR:  canceling statement due to statement timeout
+2026-05-12 20:54:30.364 PDT [1374694] STATEMENT:  SELECT pg_sleep(0.30)
+2026-05-12 20:54:30.365 PDT [1374694] LOG:  could not receive data from client: Connection reset by peer
+2026-05-12 20:54:30.401 PDT [1374698] ERROR:  canceling statement due to statement timeout
+2026-05-12 20:54:30.401 PDT [1374698] STATEMENT:  SELECT pg_sleep(0.30)
+2026-05-12 20:54:30.442 PDT [1374704] ERROR:  canceling statement due to statement timeout
+2026-05-12 20:54:30.442 PDT [1374704] STATEMENT:  SELECT pg_sleep(0.30)
+2026-05-12 20:54:30.478 PDT [1374708] ERROR:  canceling statement due to statement timeout
+2026-05-12 20:54:30.478 PDT [1374708] STATEMENT:  SELECT pg_sleep(0.30)
+2026-05-12 20:54:30.583 PDT [1374662] LOG:  received fast shutdown request
+2026-05-12 20:54:30.646 PDT [1374662] LOG:  aborting any active transactions
+2026-05-12 20:54:30.646 PDT [1374662] LOG:  background worker "logical replication launcher" (PID 1374671) exited with exit code 1
+2026-05-12 20:54:30.647 PDT [1374666] LOG:  shutting down
+2026-05-12 20:54:30.651 PDT [1374666] LOG:  checkpoint starting: shutdown immediate
+2026-05-12 20:54:30.666 PDT [1374666] LOG:  checkpoint complete: wrote 0 buffers (0.0%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.004 s, sync=0.002 s, total=0.020 s; sync files=2, longest=0.001 s, average=0.001 s; distance=0 kB, estimate=0 kB; lsn=0/1754600, redo lsn=0/1754600
+2026-05-12 20:54:30.673 PDT [1374662] LOG:  database system is shut down

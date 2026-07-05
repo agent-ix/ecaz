@@ -1,0 +1,11 @@
+DROP TABLE
+DROP TABLE
+DROP TABLE
+DROP TABLE
+DROP TABLE
+DROP TABLE
+NOTICE:  table "task61_opt_10k_hnsw_corpus" does not exist, skipping
+NOTICE:  table "task61_opt_10k_hnsw_queries" does not exist, skipping
+NOTICE:  table "task61_opt_50k_hnsw_corpus" does not exist, skipping
+NOTICE:  table "task61_opt_50k_hnsw_queries" does not exist, skipping
+NOTICE:  table "task61_opt_100k_hnsw_queries" does not exist, skipping

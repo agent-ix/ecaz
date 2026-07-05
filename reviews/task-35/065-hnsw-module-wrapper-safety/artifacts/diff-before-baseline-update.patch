@@ -1,0 +1,40 @@
+Script started on 2026-05-19 01:40:03-07:00 [<not executed on terminal>]
+[1mdiff --git a/src/am/ec_hnsw/mod.rs b/src/am/ec_hnsw/mod.rs[m
+[1mindex 3672353b..1587f60b 100644[m
+[1m--- a/src/am/ec_hnsw/mod.rs[m
+[1m+++ b/src/am/ec_hnsw/mod.rs[m
+[36m@@ -50,24 +50,32 @@[m [mpub(crate) use self::scan::{[m
+ pub(crate) unsafe fn index_cost_snapshot([m
+     index_relation: pgrx::pg_sys::Relation,[m
+ ) -> shared::IndexCostSnapshot {[m
+[32m+[m[32m    // SAFETY: forwards the live HNSW index relation supplied by the SQL[m
+[32m+[m[32m    // diagnostic wrapper to the shared snapshot implementation.[m
+     unsafe { shared::index_cost_snapshot(index_relation) }[m
+ }[m
+ [m
+ pub(crate) unsafe fn index_admin_snapshot([m
+     index_relation: pgrx::pg_sys::Relation,[m
+ ) -> shared::IndexAdminSnapshot {[m
+[32m+[m[32m    // SAFETY: forwards the live HNSW index relation supplied by the SQL[m
+[32m+[m[32m    // diagnostic wrapper to the shared admin snapshot implementation.[m
+     unsafe { shared::index_admin_snapshot(index_relation) }[m
+ }[m
+ [m
+ pub(crate) unsafe fn planner_integration_snapshot([m
+     index_relation: pgrx::pg_sys::Relation,[m
+ ) -> shared::PlannerIntegrationSnapshot {[m
+[32m+[m[32m    // SAFETY: forwards the live HNSW index relation supplied by the SQL[m
+[32m+[m[32m    // diagnostic wrapper to the shared planner integration snapshot reader.[m
+     unsafe { shared::planner_integration_snapshot(index_relation) }[m
+ }[m
+ [m
+ pub(crate) unsafe fn explain_counters_from_index_scan_state([m
+     index_state: *mut pgrx::pg_sys::IndexScanState,[m
+ ) -> explain::TqExplainCounters {[m
+[32m+[m[32m    // SAFETY: forwards PostgreSQL's live IndexScanState pointer from EXPLAIN[m
+[32m+[m[32m    // callback plumbing to the scan module counter extractor.[m
+     unsafe { scan::explain_counters_from_index_scan_state(index_state) }[m
+ }[m
+ [m
+
+Script done on 2026-05-19 01:40:03-07:00 [COMMAND_EXIT_CODE="0"]

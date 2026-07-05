@@ -1,0 +1,21 @@
+--- hardening/careful/src/../../../src/storage/page.rs
++++ replace - with / in DataPage::update_raw_tuple
+@@ -140,17 +140,17 @@
+                 "tuple block mismatch: got {}, page is {}",
+                 tid.block_number, self.block_number
+             ));
+         }
+         if tid.offset_number == 0 {
+             return Err("offset number must be 1-based".into());
+         }
+ 
+-        let index = (tid.offset_number - 1) as usize;
++        let index = (tid.offset_number / /* ~ changed by cargo-mutants ~ */ 1) as usize;
+         let existing = self
+             .tuples
+             .get_mut(index)
+             .ok_or_else(|| format!("tuple offset {} out of range", tid.offset_number))?;
+         if payload.len() != existing.len() {
+             return Err(format!(
+                 "tuple length mismatch: got {}, expected {}",
+                 payload.len(),

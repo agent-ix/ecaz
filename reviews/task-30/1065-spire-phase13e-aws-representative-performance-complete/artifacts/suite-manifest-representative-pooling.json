@@ -1,0 +1,153 @@
+{
+  "suite": "spire-aws-representative-pooling",
+  "schema_version": 1,
+  "config": "/home/peter/dev/ecaz/reviews/task-30/1065-spire-phase13e-aws-representative-performance-complete/artifacts/suite-representative-pooling.json",
+  "config_sha256": "9d1082a6bf98b1c54cb5ea3531a3be062b5df57fccc5716905f6a0292b38cc7d",
+  "dry_run": false,
+  "generated_at_unix_ms": 1780062161437,
+  "connection": {
+    "database": "postgres",
+    "host": "127.0.0.1",
+    "port": 15432,
+    "user": "ecaz_coord",
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "13e4-pooling-disabled-profile-k10",
+      "kind": "spire-pipeline",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "15432",
+        "--user",
+        "ecaz_coord",
+        "bench",
+        "spire-pipeline",
+        "--prefix",
+        "ec_spire_aws_repr_1m",
+        "--queries-limit",
+        "1000",
+        "--sweep",
+        "64",
+        "--include-remote",
+        "--require-remote-placements",
+        "--top-k",
+        "10",
+        "--include-query-metrics",
+        "--include-recall",
+        "--truth-corpus-file",
+        "/home/peter/dev/ecaz/reviews/task-30/1062-spire-phase13e-aws-representative-after-preserve-harness/artifacts/work/qdrant-dbpedia/prepared/ec_real_100k_corpus.tsv",
+        "--include-production-read-profile",
+        "--production-read-only",
+        "--query-metric-k",
+        "10",
+        "--query-metric-projection-columns",
+        "id",
+        "--log-output",
+        "/home/peter/dev/ecaz/reviews/task-30/1065-spire-phase13e-aws-representative-performance-complete/artifacts/13e4-pooling-disabled-profile-k10.log"
+      ],
+      "selected": true,
+      "pgoptions": "-c enable_seqscan=off -c enable_indexscan=off -c ec_spire.remote_search_connection_pool_size=0",
+      "tags": [
+        "phase13e",
+        "pooling-compare",
+        "pool-disabled"
+      ],
+      "expected_artifacts": [
+        "/home/peter/dev/ecaz/reviews/task-30/1065-spire-phase13e-aws-representative-performance-complete/artifacts/13e4-pooling-disabled-profile-k10.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1780062161437,
+      "finished_at_unix_ms": 1780062411006,
+      "duration_ms": 262411,
+      "exit_code": 0
+    },
+    {
+      "name": "13e4-pooling-enabled-profile-k10",
+      "kind": "spire-pipeline",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "15432",
+        "--user",
+        "ecaz_coord",
+        "bench",
+        "spire-pipeline",
+        "--prefix",
+        "ec_spire_aws_repr_1m",
+        "--queries-limit",
+        "1000",
+        "--sweep",
+        "64",
+        "--include-remote",
+        "--require-remote-placements",
+        "--top-k",
+        "10",
+        "--include-query-metrics",
+        "--include-recall",
+        "--truth-corpus-file",
+        "/home/peter/dev/ecaz/reviews/task-30/1062-spire-phase13e-aws-representative-after-preserve-harness/artifacts/work/qdrant-dbpedia/prepared/ec_real_100k_corpus.tsv",
+        "--include-production-read-profile",
+        "--production-read-only",
+        "--query-metric-k",
+        "10",
+        "--query-metric-projection-columns",
+        "id",
+        "--log-output",
+        "/home/peter/dev/ecaz/reviews/task-30/1065-spire-phase13e-aws-representative-performance-complete/artifacts/13e4-pooling-enabled-profile-k10.log"
+      ],
+      "selected": true,
+      "pgoptions": "-c enable_seqscan=off -c enable_indexscan=off -c ec_spire.remote_search_connection_pool_size=16",
+      "tags": [
+        "phase13e",
+        "pooling-compare",
+        "pool-enabled"
+      ],
+      "expected_artifacts": [
+        "/home/peter/dev/ecaz/reviews/task-30/1065-spire-phase13e-aws-representative-performance-complete/artifacts/13e4-pooling-enabled-profile-k10.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1780062411007,
+      "finished_at_unix_ms": 1780062638570,
+      "duration_ms": 240417,
+      "exit_code": 0
+    }
+  ],
+  "threshold_results": [
+    {
+      "name": "representative-pooling-disabled-k10-nprobe64-recall-floor",
+      "step": "13e4-pooling-disabled-profile-k10",
+      "metric": "spire-pipeline",
+      "filters": {
+        "nprobe": "64"
+      },
+      "field": "recall@k",
+      "op": "gte",
+      "expected": 0.95,
+      "actual": 0.9573,
+      "passed": true,
+      "message": "recall@k 0.9573 Gte 0.95 -> true"
+    },
+    {
+      "name": "representative-pooling-enabled-k10-nprobe64-recall-floor",
+      "step": "13e4-pooling-enabled-profile-k10",
+      "metric": "spire-pipeline",
+      "filters": {
+        "nprobe": "64"
+      },
+      "field": "recall@k",
+      "op": "gte",
+      "expected": 0.95,
+      "actual": 0.9573,
+      "passed": true,
+      "message": "recall@k 0.9573 Gte 0.95 -> true"
+    }
+  ]
+}

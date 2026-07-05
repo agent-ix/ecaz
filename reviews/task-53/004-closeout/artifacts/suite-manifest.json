@@ -1,0 +1,355 @@
+{
+  "suite": "task-53/004-closeout",
+  "schema_version": 1,
+  "config": "reviews/task-53/004-closeout/artifacts/suite.json",
+  "config_sha256": "5f0d39a1a411d6697080f156025ac7432fc95c4a449e13bfbb0365f2600acaff",
+  "dry_run": false,
+  "generated_at_unix_ms": 1779573416900,
+  "connection": {
+    "database": "tqvector_bench",
+    "host": "/Users/peter/.pgrx",
+    "port": 28818,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "load-10k-hnsw",
+      "kind": "load",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-53/004-closeout/artifacts/corpus-load-ec_real_10k-hnsw.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "ec_real_10k_hnsw",
+        "--profile",
+        "ec_hnsw",
+        "--corpus-file",
+        "fixtures/m5_diskann_real10k/m5_diskann_real10k_corpus.tsv",
+        "--queries-file",
+        "fixtures/m5_diskann_real10k/m5_diskann_real10k_queries.tsv",
+        "--allow-manifest-mismatch",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--m",
+        "8,16",
+        "--ef-construction",
+        "128"
+      ],
+      "selected": true,
+      "tags": [
+        "load",
+        "ec_real_10k",
+        "hnsw"
+      ],
+      "expected_artifacts": [
+        "reviews/task-53/004-closeout/artifacts/corpus-load-ec_real_10k-hnsw.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1779573416901,
+      "finished_at_unix_ms": 1779573423464,
+      "duration_ms": 6562,
+      "exit_code": 0
+    },
+    {
+      "name": "recall-10k-hnsw",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "recall",
+        "--prefix",
+        "ec_real_10k_hnsw",
+        "--profile",
+        "ec_hnsw",
+        "--k",
+        "10",
+        "--sweep",
+        "40,80,120,200,400",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--log-output",
+        "reviews/task-53/004-closeout/artifacts/recall-ec_real_10k-hnsw.log"
+      ],
+      "selected": true,
+      "tags": [
+        "recall",
+        "ec_real_10k",
+        "hnsw"
+      ],
+      "expected_artifacts": [
+        "reviews/task-53/004-closeout/artifacts/recall-ec_real_10k-hnsw.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1779573423464,
+      "finished_at_unix_ms": 1779573425141,
+      "duration_ms": 1676,
+      "exit_code": 0
+    },
+    {
+      "name": "latency-10k-hnsw",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "latency",
+        "--prefix",
+        "ec_real_10k_hnsw",
+        "--profile",
+        "ec_hnsw",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "1000",
+        "--sweep",
+        "40,80,120,200,400",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "reviews/task-53/004-closeout/artifacts/latency-ec_real_10k-hnsw.log"
+      ],
+      "selected": true,
+      "tags": [
+        "latency",
+        "ec_real_10k",
+        "hnsw"
+      ],
+      "expected_artifacts": [
+        "reviews/task-53/004-closeout/artifacts/latency-ec_real_10k-hnsw.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1779573425141,
+      "finished_at_unix_ms": 1779573430218,
+      "duration_ms": 5076,
+      "exit_code": 0
+    },
+    {
+      "name": "storage-10k-hnsw",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-53/004-closeout/artifacts/storage-ec_real_10k-hnsw.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "ec_real_10k_hnsw"
+      ],
+      "selected": true,
+      "tags": [
+        "storage",
+        "ec_real_10k",
+        "hnsw"
+      ],
+      "expected_artifacts": [
+        "reviews/task-53/004-closeout/artifacts/storage-ec_real_10k-hnsw.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1779573430219,
+      "finished_at_unix_ms": 1779573430237,
+      "duration_ms": 18,
+      "exit_code": 0
+    },
+    {
+      "name": "load-100k-hnsw",
+      "kind": "load",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-53/004-closeout/artifacts/corpus-load-ec_real_100k-hnsw.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "ec_real_100k_hnsw",
+        "--profile",
+        "ec_hnsw",
+        "--corpus-file",
+        "fixtures/m5_diskann_real100k/m5_diskann_real100k_corpus.tsv",
+        "--queries-file",
+        "fixtures/m5_diskann_real100k/m5_diskann_real100k_queries.tsv",
+        "--allow-manifest-mismatch",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--m",
+        "16",
+        "--ef-construction",
+        "128"
+      ],
+      "selected": true,
+      "tags": [
+        "load",
+        "ec_real_100k",
+        "hnsw"
+      ],
+      "expected_artifacts": [
+        "reviews/task-53/004-closeout/artifacts/corpus-load-ec_real_100k-hnsw.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1779573430238,
+      "finished_at_unix_ms": 1779573493215,
+      "duration_ms": 62977,
+      "exit_code": 0
+    },
+    {
+      "name": "recall-100k-hnsw",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "recall",
+        "--prefix",
+        "ec_real_100k_hnsw",
+        "--profile",
+        "ec_hnsw",
+        "--k",
+        "10",
+        "--sweep",
+        "40,80,120,200,400",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--log-output",
+        "reviews/task-53/004-closeout/artifacts/recall-ec_real_100k-hnsw.log"
+      ],
+      "selected": true,
+      "tags": [
+        "recall",
+        "ec_real_100k",
+        "hnsw"
+      ],
+      "expected_artifacts": [
+        "reviews/task-53/004-closeout/artifacts/recall-ec_real_100k-hnsw.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1779573493215,
+      "finished_at_unix_ms": 1779573512643,
+      "duration_ms": 19427,
+      "exit_code": 0
+    },
+    {
+      "name": "latency-100k-hnsw",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "latency",
+        "--prefix",
+        "ec_real_100k_hnsw",
+        "--profile",
+        "ec_hnsw",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "1000",
+        "--sweep",
+        "40,80,120,200,400",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "reviews/task-53/004-closeout/artifacts/latency-ec_real_100k-hnsw.log"
+      ],
+      "selected": true,
+      "tags": [
+        "latency",
+        "ec_real_100k",
+        "hnsw"
+      ],
+      "expected_artifacts": [
+        "reviews/task-53/004-closeout/artifacts/latency-ec_real_100k-hnsw.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1779573512643,
+      "finished_at_unix_ms": 1779573524101,
+      "duration_ms": 11457,
+      "exit_code": 0
+    },
+    {
+      "name": "storage-100k-hnsw",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-53/004-closeout/artifacts/storage-ec_real_100k-hnsw.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "ec_real_100k_hnsw"
+      ],
+      "selected": true,
+      "tags": [
+        "storage",
+        "ec_real_100k",
+        "hnsw"
+      ],
+      "expected_artifacts": [
+        "reviews/task-53/004-closeout/artifacts/storage-ec_real_100k-hnsw.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1779573524101,
+      "finished_at_unix_ms": 1779573524122,
+      "duration_ms": 20,
+      "exit_code": 0
+    }
+  ]
+}

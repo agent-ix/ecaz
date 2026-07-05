@@ -1,0 +1,17 @@
+Script started on 2026-06-09 10:55:50-07:00 [<not executed on terminal>]
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on artifact directory
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.24s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-c2925dc8ee61e76b)
+
+running 3 tests
+test am::ec_diskann::quantizer::tests::diskann_grouped_pq_prefilter_codec_matches_direct_search_code_score ... [32mok[m
+test am::ec_diskann::quantizer::tests::diskann_grouped_pq_prefilter_codec_batch_uses_block_kernel_counters ... [32mok[m
+test am::ec_diskann::quantizer::tests::diskann_grouped_pq_prepared_prefilter_batch_scores_and_records_counters ... [32mok[m
+
+test result: [32mok[m. 3 passed; 0 failed; 0 ignored; 0 measured; 2049 filtered out; finished in 0.00s
+
+
+Script done on 2026-06-09 10:55:50-07:00 [COMMAND_EXIT_CODE="0"]

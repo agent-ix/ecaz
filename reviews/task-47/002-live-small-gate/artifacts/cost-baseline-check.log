@@ -1,0 +1,12 @@
+cost ok: hnsw-small-cost.index_pages actual=23 baseline=23
+cost ok: hnsw-small-cost.modeled_correlation actual=0 baseline=0
+cost ok: hnsw-small-cost.modeled_selectivity actual=1 baseline=1
+cost ok: hnsw-small-cost.modeled_startup_cost actual=527.8 baseline=527.8
+cost ok: hnsw-small-cost.modeled_total_cost actual=527.8 baseline=527.8
+cost ok: hnsw-small-cost.reltuples actual=512 baseline=512
+cost ok: ivf-small-cost.index_pages actual=19 baseline=19
+cost ok: ivf-small-cost.modeled_correlation actual=0 baseline=0
+cost ok: ivf-small-cost.modeled_selectivity actual=1 baseline=1
+cost ok: ivf-small-cost.modeled_startup_cost actual=5.0128 baseline=5.0128
+cost ok: ivf-small-cost.modeled_total_cost actual=22.4224 baseline=22.4224
+cost ok: ivf-small-cost.reltuples actual=512 baseline=512

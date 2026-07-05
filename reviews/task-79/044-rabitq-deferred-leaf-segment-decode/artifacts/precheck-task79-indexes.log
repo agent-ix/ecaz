@@ -1,0 +1,7 @@
+CREATE EXTENSION
+         relname         | relpages | reltuples 
+-------------------------+----------+-----------
+ task79_surface_100k_idx |    12320 |    100000
+(1 row)
+
+NOTICE:  extension "ecaz" already exists, skipping

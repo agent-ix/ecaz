@@ -1,0 +1,3 @@
+DROP INDEX
+CREATE INDEX
+NOTICE:  index "task29c_hnsw_reference_idx" does not exist, skipping

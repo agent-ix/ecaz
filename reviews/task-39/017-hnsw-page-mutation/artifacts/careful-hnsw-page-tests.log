@@ -1,0 +1,49 @@
+^D    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.05s
+     Running unittests src/lib.rs (target/debug/deps/ecaz_careful_hardening-3bca8b65b65b7ce7)
+
+running 42 tests
+test careful_hnsw_page::tests::compressed_element_tuple_fits_on_default_page ... ok
+test careful_hnsw_page::tests::element_tuple_lengths_and_heap_tid_bounds_are_checked ... ok
+test careful_hnsw_page::tests::element_tuple_ref_exposes_borrowed_code_and_live_heaptids ... ok
+test careful_hnsw_page::tests::element_tuple_page_roundtrip ... ok
+test careful_hnsw_page::tests::data_page_typed_updates_mutate_tuple_payloads_and_report_missing_tids ... ok
+test careful_hnsw_page::tests::data_page_chain_typed_updates_mutate_tuple_payloads_and_report_missing_blocks ... ok
+test careful_hnsw_page::tests::grouped_hot_tuple_lengths_and_heap_tid_bounds_are_checked ... ok
+test careful_hnsw_page::tests::grouped_hot_tuple_page_roundtrip ... ok
+test careful_hnsw_page::tests::element_tuple_roundtrip ... ok
+test careful_hnsw_page::tests::grouped_codebook_tuple_roundtrip ... ok
+test careful_hnsw_page::tests::grouped_hot_tuple_roundtrip ... ok
+test careful_hnsw_page::tests::grouped_hot_tuple_ref_exposes_borrowed_payloads ... ok
+test careful_hnsw_page::tests::grouped_codebook_tuple_page_roundtrip ... ok
+test careful_hnsw_page::tests::level_cap_produces_fitting_neighbor_tuple ... ok
+test careful_hnsw_page::tests::metadata_current_builders_gate_codecs_on_dimensions_and_bits ... ok
+test careful_hnsw_page::tests::layout_constants_pin_metadata_tuple_and_flag_bytes ... ok
+test careful_hnsw_page::tests::metadata_decode_page_accepts_legacy_layout ... ok
+test careful_hnsw_page::tests::metadata_graph_storage_format_distinguishes_v1_v2_and_v3 ... ok
+test careful_hnsw_page::tests::metadata_page_boundaries_and_current_to_legacy_fallbacks ... ok
+test careful_hnsw_page::tests::metadata_page_roundtrip ... ok
+test careful_hnsw_page::tests::metadata_roundtrip ... ok
+test careful_hnsw_page::tests::metadata_roundtrip_preserves_v3_turbo_hot_cold_layout ... ok
+test careful_hnsw_page::tests::miri_element_tuple_roundtrip ... ok
+test careful_hnsw_page::tests::miri_grouped_hot_tuple_roundtrip ... ok
+test careful_hnsw_page::tests::miri_metadata_roundtrip ... ok
+test careful_hnsw_page::tests::miri_neighbor_tuple_roundtrip ... ok
+test careful_hnsw_page::tests::miri_rerank_tuple_roundtrip ... ok
+test careful_hnsw_page::tests::miri_turbo_hot_tuple_roundtrip ... ok
+test careful_hnsw_page::tests::neighbor_tuple_lengths_counts_and_fit_boundaries_are_checked ... ok
+test careful_hnsw_page::tests::neighbor_tuple_page_roundtrip ... ok
+test careful_hnsw_page::tests::neighbor_tuple_roundtrip ... ok
+test careful_hnsw_page::tests::page_chain_extends_for_multiple_element_tuples ... ok
+test careful_hnsw_page::tests::page_chain_extends_for_multiple_rerank_tuples ... ok
+test careful_hnsw_page::tests::page_chain_extends_for_multiple_grouped_hot_tuples ... ok
+test careful_hnsw_page::tests::rerank_tuple_page_roundtrip ... ok
+test careful_hnsw_page::tests::rerank_tuple_roundtrip ... ok
+test careful_hnsw_page::tests::turbo_hot_tuple_lengths_and_heap_tid_bounds_are_checked ... ok
+test careful_hnsw_page::tests::page_chain_extends_for_multiple_turbo_hot_tuples ... ok
+test careful_hnsw_page::tests::turbo_hot_tuple_page_roundtrip ... ok
+test careful_hnsw_page::tests::turbo_hot_tuple_ref_exposes_borrowed_payloads ... ok
+test careful_hnsw_page::tests::turbo_hot_tuple_roundtrip ... ok
+test careful_hnsw_page::tests::page_chain_extends_for_multiple_grouped_codebook_tuples ... ok
+
+test result: ok. 42 passed; 0 failed; 0 ignored; 0 measured; 186 filtered out; finished in 0.00s
+

@@ -1,0 +1,21 @@
+--- hardening/careful/src/../../../src/quant/rabitq.rs
++++ replace * with + in hamming_similarity
+@@ -914,17 +914,17 @@
+ pub(crate) fn hamming_similarity(query_words: &[u64], candidate_words: &[u64], dim: usize) -> f32 {
+     let hamming_distance = query_words
+         .iter()
+         .zip(candidate_words.iter())
+         .map(|(query, candidate)| (query ^ candidate).count_ones())
+         .sum::<u32>();
+     let dim_i32 = i32::try_from(dim).expect("dimensions should fit in i32");
+     let distance_i32 = i32::try_from(hamming_distance).expect("hamming distance should fit in i32");
+-    (dim_i32 - (2 * distance_i32)) as f32
++    (dim_i32 - (2 + /* ~ changed by cargo-mutants ~ */ distance_i32)) as f32
+ }
+ 
+ /// Sign lookup for a 4-bit, 16-entry MSE codebook. Used by
+ /// [`sign_words_from_packed_4bit`] to translate a packed code index
+ /// into a sign bit.
+ pub(crate) fn binary_sign_lookup_4bit(codebook: &[f32]) -> [u8; 16] {
+     assert_eq!(
+         codebook.len(),

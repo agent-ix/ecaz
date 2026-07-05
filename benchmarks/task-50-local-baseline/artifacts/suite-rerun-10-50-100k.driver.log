@@ -1,0 +1,624 @@
+[suite:task-50-local-baseline] wrote /home/peter/dev/ecaz/benchmarks/task-50-local-baseline/artifacts/suite-manifest-rerun-10-50-100k.json
+[suite:task-50-local-baseline] recall-10k-ivfrabitq -> --database tqvector_bench --host /home/peter/.pgrx --port 28818 bench recall --prefix ec_real_10k_ivfrabitq --profile ec_ivf --k 10 --sweep "8,16,24,32,48,64" --bits 4 --seed 42 --log-output benchmarks/task-50-local-baseline/artifacts/recall-ec_real_10k-ivfrabitq.log
+[suite:task-50-local-baseline] wrote /home/peter/dev/ecaz/benchmarks/task-50-local-baseline/artifacts/suite-manifest-rerun-10-50-100k.json
+[recall] fetching queries from ec_real_10k_ivfrabitq_queries ...
+[recall] fetching corpus from ec_real_10k_ivfrabitq_corpus ...
+[recall] computing ground truth: 200 queries vs 10000 corpus rows (dim=1536) ...
+[recall] ground truth in 79.89ms
+┌────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬────────┬─────────────┐
+│ nprobe ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ ndcg@k ┆ mean q-time │
+╞════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪════════╪═════════════╡
+│ 8      ┆ 200     ┆ 2000          ┆ 0.9735   ┆ 0.9655          ┆ 0.9797           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.9995 ┆ 5.12 ms     │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 16     ┆ 200     ┆ 2000          ┆ 0.9780   ┆ 0.9706          ┆ 0.9836           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.9998 ┆ 8.63 ms     │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 24     ┆ 200     ┆ 2000          ┆ 0.9790   ┆ 0.9717          ┆ 0.9844           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.9999 ┆ 12.50 ms    │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 32     ┆ 200     ┆ 2000          ┆ 0.9790   ┆ 0.9717          ┆ 0.9844           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.9999 ┆ 15.73 ms    │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 48     ┆ 200     ┆ 2000          ┆ 0.9790   ┆ 0.9717          ┆ 0.9844           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.9999 ┆ 21.91 ms    │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 64     ┆ 200     ┆ 2000          ┆ 0.9790   ┆ 0.9717          ┆ 0.9844           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.9999 ┆ 29.74 ms    │
+└────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴────────┴─────────────┘
+[suite:task-50-local-baseline] wrote /home/peter/dev/ecaz/benchmarks/task-50-local-baseline/artifacts/suite-manifest-rerun-10-50-100k.json
+[suite:task-50-local-baseline] latency-10k-ivfrabitq -> --database tqvector_bench --host /home/peter/.pgrx --port 28818 bench latency --prefix ec_real_10k_ivfrabitq --profile ec_ivf --k 10 --concurrency 1 --iterations 1000 --sweep "8,16,24,32,48,64" --bits 4 --seed 42 --memory-sample-interval-ms 25 --log-output benchmarks/task-50-local-baseline/artifacts/latency-ec_real_10k-ivfrabitq.log
+[suite:task-50-local-baseline] wrote /home/peter/dev/ecaz/benchmarks/task-50-local-baseline/artifacts/suite-manifest-rerun-10-50-100k.json
+┌────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┐
+│ nprobe ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     │
+╞════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╡
+│ 8      ┆ 1000  ┆ 4.95 ms ┆ 0.99 ms ┆ 2.42 ms ┆ 5.00 ms ┆ 6.38 ms ┆ 7.01 ms ┆ 10.1 ms │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ 16     ┆ 1000  ┆ 8.64 ms ┆ 1.67 ms ┆ 5.01 ms ┆ 8.86 ms ┆ 10.2 ms ┆ 16.1 ms ┆ 19.5 ms │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ 24     ┆ 1000  ┆ 11.8 ms ┆ 1.57 ms ┆ 8.53 ms ┆ 11.9 ms ┆ 13.5 ms ┆ 17.7 ms ┆ 23.9 ms │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ 32     ┆ 1000  ┆ 15.2 ms ┆ 2.21 ms ┆ 12.1 ms ┆ 15.0 ms ┆ 18.1 ms ┆ 25.4 ms ┆ 31.1 ms │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ 48     ┆ 1000  ┆ 21.8 ms ┆ 2.61 ms ┆ 19.1 ms ┆ 21.2 ms ┆ 26.1 ms ┆ 35.0 ms ┆ 43.1 ms │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ 64     ┆ 1000  ┆ 28.4 ms ┆ 3.26 ms ┆ 25.3 ms ┆ 27.7 ms ┆ 34.9 ms ┆ 44.9 ms ┆ 53.3 ms │
+└────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┘
+[suite:task-50-local-baseline] wrote /home/peter/dev/ecaz/benchmarks/task-50-local-baseline/artifacts/suite-manifest-rerun-10-50-100k.json
+[suite:task-50-local-baseline] storage-10k-ivfrabitq -> --database tqvector_bench --host /home/peter/.pgrx --port 28818 --log-file benchmarks/task-50-local-baseline/artifacts/storage-ec_real_10k-ivfrabitq.log bench storage --prefix ec_real_10k_ivfrabitq
+[suite:task-50-local-baseline] wrote /home/peter/dev/ecaz/benchmarks/task-50-local-baseline/artifacts/suite-manifest-rerun-10-50-100k.json
+┌───────────────────────────────┬──────────────────────────────┐
+│ field                         ┆ value                        │
+╞═══════════════════════════════╪══════════════════════════════╡
+│ prefix                        ┆ ec_real_10k_ivfrabitq        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus                        ┆ ec_real_10k_ivfrabitq_corpus │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ rows                          ┆ 10000                        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ heap                          ┆ 1.3 MiB                      │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ table (heap + toast + fsm/vm) ┆ 159.4 MiB                    │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes                       ┆ 10.3 MiB                     │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ total                         ┆ 169.7 MiB                    │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (total)               ┆ 17789.7 B                    │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (heap only)           ┆ 136.8 B                      │
+└───────────────────────────────┴──────────────────────────────┘
+┌───────────────────────────────────┬───────────────┬───────────┬─────────────────────────┬───────────┬──────────┐
+│ index                             ┆ access method ┆ profile   ┆ reloptions              ┆ size      ┆ per row  │
+╞═══════════════════════════════════╪═══════════════╪═══════════╪═════════════════════════╪═══════════╪══════════╡
+│ ec_real_10k_ivfrabitq_rabitq_idx  ┆ ec_ivf        ┆ ec_ivf    ┆ {storage_format=rabitq} ┆ 9.8 MiB   ┆ 1028.1 B │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ ec_real_10k_ivfrabitq_corpus_pkey ┆ btree         ┆ <unknown> ┆ {}                      ┆ 456.0 KiB ┆ 46.7 B   │
+└───────────────────────────────────┴───────────────┴───────────┴─────────────────────────┴───────────┴──────────┘
+[suite:task-50-local-baseline] wrote /home/peter/dev/ecaz/benchmarks/task-50-local-baseline/artifacts/suite-manifest-rerun-10-50-100k.json
+[suite:task-50-local-baseline] recall-10k-hnsw -> --database tqvector_bench --host /home/peter/.pgrx --port 28818 bench recall --prefix ec_real_10k_hnsw --profile ec_hnsw --k 10 --sweep "40,80,120,200,400" --bits 4 --seed 42 --log-output benchmarks/task-50-local-baseline/artifacts/recall-ec_real_10k-hnsw.log
+[suite:task-50-local-baseline] wrote /home/peter/dev/ecaz/benchmarks/task-50-local-baseline/artifacts/suite-manifest-rerun-10-50-100k.json
+[recall] fetching queries from ec_real_10k_hnsw_queries ...
+[recall] fetching corpus from ec_real_10k_hnsw_corpus ...
+[recall] computing ground truth: 200 queries vs 10000 corpus rows (dim=1536) ...
+[recall] ground truth in 96.12ms
+┌───────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬────────┬─────────────┐
+│ ef_search ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ ndcg@k ┆ mean q-time │
+╞═══════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪════════╪═════════════╡
+│ 40        ┆ 200     ┆ 2000          ┆ 0.8845   ┆ 0.8697          ┆ 0.8978           ┆ 0.7000     ┆ 1.0000     ┆ 1.0000     ┆ 0.9616 ┆ 4.00 ms     │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 80        ┆ 200     ┆ 2000          ┆ 0.9300   ┆ 0.9180          ┆ 0.9404           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.9819 ┆ 2.76 ms     │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 120       ┆ 200     ┆ 2000          ┆ 0.9385   ┆ 0.9271          ┆ 0.9482           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.9864 ┆ 3.61 ms     │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 200       ┆ 200     ┆ 2000          ┆ 0.9545   ┆ 0.9445          ┆ 0.9628           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.9931 ┆ 3.24 ms     │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 400       ┆ 200     ┆ 2000          ┆ 0.9720   ┆ 0.9638          ┆ 0.9784           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.9994 ┆ 5.07 ms     │
+└───────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴────────┴─────────────┘
+[suite:task-50-local-baseline] wrote /home/peter/dev/ecaz/benchmarks/task-50-local-baseline/artifacts/suite-manifest-rerun-10-50-100k.json
+[suite:task-50-local-baseline] latency-10k-hnsw -> --database tqvector_bench --host /home/peter/.pgrx --port 28818 bench latency --prefix ec_real_10k_hnsw --profile ec_hnsw --k 10 --concurrency 1 --iterations 1000 --sweep "40,80,120,200,400" --bits 4 --seed 42 --memory-sample-interval-ms 25 --log-output benchmarks/task-50-local-baseline/artifacts/latency-ec_real_10k-hnsw.log
+[suite:task-50-local-baseline] wrote /home/peter/dev/ecaz/benchmarks/task-50-local-baseline/artifacts/suite-manifest-rerun-10-50-100k.json
+┌───────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┐
+│ ef_search ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     │
+╞═══════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╡
+│ 40        ┆ 1000  ┆ 1.77 ms ┆ 0.30 ms ┆ 1.44 ms ┆ 1.71 ms ┆ 2.17 ms ┆ 2.57 ms ┆ 8.15 ms │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ 80        ┆ 1000  ┆ 2.58 ms ┆ 0.35 ms ┆ 2.13 ms ┆ 2.49 ms ┆ 3.28 ms ┆ 3.69 ms ┆ 7.41 ms │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ 120       ┆ 1000  ┆ 2.24 ms ┆ 0.34 ms ┆ 1.87 ms ┆ 2.14 ms ┆ 2.89 ms ┆ 3.40 ms ┆ 7.49 ms │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ 200       ┆ 1000  ┆ 2.97 ms ┆ 0.37 ms ┆ 2.53 ms ┆ 2.89 ms ┆ 3.64 ms ┆ 4.23 ms ┆ 8.13 ms │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ 400       ┆ 1000  ┆ 4.70 ms ┆ 0.50 ms ┆ 4.02 ms ┆ 4.61 ms ┆ 5.40 ms ┆ 6.21 ms ┆ 10.5 ms │
+└───────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┘
+[suite:task-50-local-baseline] wrote /home/peter/dev/ecaz/benchmarks/task-50-local-baseline/artifacts/suite-manifest-rerun-10-50-100k.json
+[suite:task-50-local-baseline] storage-10k-hnsw -> --database tqvector_bench --host /home/peter/.pgrx --port 28818 --log-file benchmarks/task-50-local-baseline/artifacts/storage-ec_real_10k-hnsw.log bench storage --prefix ec_real_10k_hnsw
+[suite:task-50-local-baseline] wrote /home/peter/dev/ecaz/benchmarks/task-50-local-baseline/artifacts/suite-manifest-rerun-10-50-100k.json
+┌───────────────────────────────┬─────────────────────────┐
+│ field                         ┆ value                   │
+╞═══════════════════════════════╪═════════════════════════╡
+│ prefix                        ┆ ec_real_10k_hnsw        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus                        ┆ ec_real_10k_hnsw_corpus │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ rows                          ┆ 10000                   │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ heap                          ┆ 1.3 MiB                 │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ table (heap + toast + fsm/vm) ┆ 159.4 MiB               │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes                       ┆ 25.3 MiB                │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ total                         ┆ 184.6 MiB               │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (total)               ┆ 19361.0 B               │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (heap only)           ┆ 136.8 B                 │
+└───────────────────────────────┴─────────────────────────┘
+┌──────────────────────────────┬───────────────┬───────────┬───────────────────────────────────────────────────────┬───────────┬──────────┐
+│ index                        ┆ access method ┆ profile   ┆ reloptions                                            ┆ size      ┆ per row  │
+╞══════════════════════════════╪═══════════════╪═══════════╪═══════════════════════════════════════════════════════╪═══════════╪══════════╡
+│ ec_real_10k_hnsw_m16_idx     ┆ ec_hnsw       ┆ ec_hnsw   ┆ {m=16,ef_construction=128,build_source_column=source} ┆ 13.0 MiB  ┆ 1366.4 B │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ ec_real_10k_hnsw_m8_idx      ┆ ec_hnsw       ┆ ec_hnsw   ┆ {m=8,ef_construction=128,build_source_column=source}  ┆ 11.8 MiB  ┆ 1235.4 B │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ ec_real_10k_hnsw_corpus_pkey ┆ btree         ┆ <unknown> ┆ {}                                                    ┆ 456.0 KiB ┆ 46.7 B   │
+└──────────────────────────────┴───────────────┴───────────┴───────────────────────────────────────────────────────┴───────────┴──────────┘
+[suite:task-50-local-baseline] wrote /home/peter/dev/ecaz/benchmarks/task-50-local-baseline/artifacts/suite-manifest-rerun-10-50-100k.json
+[suite:task-50-local-baseline] recall-10k-diskann -> --database tqvector_bench --host /home/peter/.pgrx --port 28818 bench recall --prefix ec_real_10k_diskann --profile ec_diskann --k 10 --sweep "64,128,200,400,800" --bits 4 --seed 42 --log-output benchmarks/task-50-local-baseline/artifacts/recall-ec_real_10k-diskann.log
+[suite:task-50-local-baseline] wrote /home/peter/dev/ecaz/benchmarks/task-50-local-baseline/artifacts/suite-manifest-rerun-10-50-100k.json
+[recall] fetching queries from ec_real_10k_diskann_queries ...
+[recall] fetching corpus from ec_real_10k_diskann_corpus ...
+[recall] computing ground truth: 200 queries vs 10000 corpus rows (dim=1536) ...
+[recall] ground truth in 80.35ms
+┌───────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬────────┬─────────────┐
+│ list_size ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ ndcg@k ┆ mean q-time │
+╞═══════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪════════╪═════════════╡
+│ 64        ┆ 200     ┆ 2000          ┆ 0.9965   ┆ 0.9928          ┆ 0.9983           ┆ 1.0000     ┆ 1.0000     ┆ 1.0000     ┆ 0.9999 ┆ 11.10 ms    │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 128       ┆ 200     ┆ 2000          ┆ 0.9965   ┆ 0.9928          ┆ 0.9983           ┆ 1.0000     ┆ 1.0000     ┆ 1.0000     ┆ 0.9999 ┆ 8.81 ms     │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 200       ┆ 200     ┆ 2000          ┆ 0.9970   ┆ 0.9935          ┆ 0.9986           ┆ 1.0000     ┆ 1.0000     ┆ 1.0000     ┆ 0.9999 ┆ 8.46 ms     │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 400       ┆ 200     ┆ 2000          ┆ 0.9970   ┆ 0.9935          ┆ 0.9986           ┆ 1.0000     ┆ 1.0000     ┆ 1.0000     ┆ 0.9999 ┆ 9.47 ms     │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 800       ┆ 200     ┆ 2000          ┆ 0.9975   ┆ 0.9942          ┆ 0.9989           ┆ 1.0000     ┆ 1.0000     ┆ 1.0000     ┆ 0.9999 ┆ 10.14 ms    │
+└───────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴────────┴─────────────┘
+[suite:task-50-local-baseline] wrote /home/peter/dev/ecaz/benchmarks/task-50-local-baseline/artifacts/suite-manifest-rerun-10-50-100k.json
+[suite:task-50-local-baseline] latency-10k-diskann -> --database tqvector_bench --host /home/peter/.pgrx --port 28818 bench latency --prefix ec_real_10k_diskann --profile ec_diskann --k 10 --concurrency 1 --iterations 1000 --sweep "64,128,200,400,800" --bits 4 --seed 42 --memory-sample-interval-ms 25 --log-output benchmarks/task-50-local-baseline/artifacts/latency-ec_real_10k-diskann.log
+[suite:task-50-local-baseline] wrote /home/peter/dev/ecaz/benchmarks/task-50-local-baseline/artifacts/suite-manifest-rerun-10-50-100k.json
+┌───────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┐
+│ list_size ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     │
+╞═══════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╡
+│ 64        ┆ 1000  ┆ 8.15 ms ┆ 0.66 ms ┆ 7.09 ms ┆ 8.02 ms ┆ 8.96 ms ┆ 11.4 ms ┆ 14.5 ms │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ 128       ┆ 1000  ┆ 8.45 ms ┆ 0.70 ms ┆ 7.53 ms ┆ 8.33 ms ┆ 9.25 ms ┆ 12.0 ms ┆ 15.4 ms │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ 200       ┆ 1000  ┆ 8.94 ms ┆ 1.21 ms ┆ 7.64 ms ┆ 8.60 ms ┆ 11.5 ms ┆ 14.7 ms ┆ 17.4 ms │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ 400       ┆ 1000  ┆ 9.53 ms ┆ 1.17 ms ┆ 7.91 ms ┆ 9.25 ms ┆ 11.7 ms ┆ 14.9 ms ┆ 19.2 ms │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ 800       ┆ 1000  ┆ 10.4 ms ┆ 1.00 ms ┆ 8.86 ms ┆ 10.2 ms ┆ 12.1 ms ┆ 14.7 ms ┆ 17.2 ms │
+└───────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┘
+[suite:task-50-local-baseline] wrote /home/peter/dev/ecaz/benchmarks/task-50-local-baseline/artifacts/suite-manifest-rerun-10-50-100k.json
+[suite:task-50-local-baseline] storage-10k-diskann -> --database tqvector_bench --host /home/peter/.pgrx --port 28818 --log-file benchmarks/task-50-local-baseline/artifacts/storage-ec_real_10k-diskann.log bench storage --prefix ec_real_10k_diskann
+[suite:task-50-local-baseline] wrote /home/peter/dev/ecaz/benchmarks/task-50-local-baseline/artifacts/suite-manifest-rerun-10-50-100k.json
+┌───────────────────────────────┬────────────────────────────┐
+│ field                         ┆ value                      │
+╞═══════════════════════════════╪════════════════════════════╡
+│ prefix                        ┆ ec_real_10k_diskann        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus                        ┆ ec_real_10k_diskann_corpus │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ rows                          ┆ 10000                      │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ heap                          ┆ 1.3 MiB                    │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ table (heap + toast + fsm/vm) ┆ 159.4 MiB                  │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes                       ┆ 5.2 MiB                    │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ total                         ┆ 164.5 MiB                  │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (total)               ┆ 17253.2 B                  │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (heap only)           ┆ 136.8 B                    │
+└───────────────────────────────┴────────────────────────────┘
+┌─────────────────────────────────┬───────────────┬────────────┬────────────┬───────────┬─────────┐
+│ index                           ┆ access method ┆ profile    ┆ reloptions ┆ size      ┆ per row │
+╞═════════════════════════════════╪═══════════════╪════════════╪════════════╪═══════════╪═════════╡
+│ ec_real_10k_diskann_idx         ┆ ec_diskann    ┆ ec_diskann ┆ {}         ┆ 4.7 MiB   ┆ 494.0 B │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ ec_real_10k_diskann_corpus_pkey ┆ btree         ┆ <unknown>  ┆ {}         ┆ 456.0 KiB ┆ 46.7 B  │
+└─────────────────────────────────┴───────────────┴────────────┴────────────┴───────────┴─────────┘
+[suite:task-50-local-baseline] wrote /home/peter/dev/ecaz/benchmarks/task-50-local-baseline/artifacts/suite-manifest-rerun-10-50-100k.json
+[suite:task-50-local-baseline] recall-50k-ivfrabitq -> --database tqvector_bench --host /home/peter/.pgrx --port 28818 bench recall --prefix ec_real_50k_ivfrabitq --profile ec_ivf --k 10 --sweep "8,16,24,32,48,64" --bits 4 --seed 42 --log-output benchmarks/task-50-local-baseline/artifacts/recall-ec_real_50k-ivfrabitq.log
+[suite:task-50-local-baseline] wrote /home/peter/dev/ecaz/benchmarks/task-50-local-baseline/artifacts/suite-manifest-rerun-10-50-100k.json
+[recall] fetching queries from ec_real_50k_ivfrabitq_queries ...
+[recall] fetching corpus from ec_real_50k_ivfrabitq_corpus ...
+[recall] computing ground truth: 1000 queries vs 50000 corpus rows (dim=1536) ...
+[recall] ground truth in 1.95s
+┌────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬────────┬─────────────┐
+│ nprobe ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ ndcg@k ┆ mean q-time │
+╞════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪════════╪═════════════╡
+│ 8      ┆ 1000    ┆ 10000         ┆ 0.8287   ┆ 0.8212          ┆ 0.8360           ┆ 0.6000     ┆ 0.9000     ┆ 1.0000     ┆ 0.9885 ┆ 11.52 ms    │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 16     ┆ 1000    ┆ 10000         ┆ 0.8841   ┆ 0.8777          ┆ 0.8902           ┆ 0.7000     ┆ 0.9000     ┆ 1.0000     ┆ 0.9940 ┆ 18.51 ms    │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 24     ┆ 1000    ┆ 10000         ┆ 0.9075   ┆ 0.9017          ┆ 0.9130           ┆ 0.8000     ┆ 0.9000     ┆ 1.0000     ┆ 0.9960 ┆ 25.14 ms    │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 32     ┆ 1000    ┆ 10000         ┆ 0.9202   ┆ 0.9147          ┆ 0.9254           ┆ 0.8000     ┆ 0.9000     ┆ 1.0000     ┆ 0.9973 ┆ 32.35 ms    │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 48     ┆ 1000    ┆ 10000         ┆ 0.9331   ┆ 0.9280          ┆ 0.9378           ┆ 0.8000     ┆ 0.9000     ┆ 1.0000     ┆ 0.9984 ┆ 46.98 ms    │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 64     ┆ 1000    ┆ 10000         ┆ 0.9379   ┆ 0.9330          ┆ 0.9425           ┆ 0.9000     ┆ 0.9000     ┆ 1.0000     ┆ 0.9988 ┆ 61.07 ms    │
+└────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴────────┴─────────────┘
+[suite:task-50-local-baseline] wrote /home/peter/dev/ecaz/benchmarks/task-50-local-baseline/artifacts/suite-manifest-rerun-10-50-100k.json
+[suite:task-50-local-baseline] latency-50k-ivfrabitq -> --database tqvector_bench --host /home/peter/.pgrx --port 28818 bench latency --prefix ec_real_50k_ivfrabitq --profile ec_ivf --k 10 --concurrency 1 --iterations 1000 --sweep "8,16,24,32,48,64" --bits 4 --seed 42 --memory-sample-interval-ms 25 --log-output benchmarks/task-50-local-baseline/artifacts/latency-ec_real_50k-ivfrabitq.log
+[suite:task-50-local-baseline] wrote /home/peter/dev/ecaz/benchmarks/task-50-local-baseline/artifacts/suite-manifest-rerun-10-50-100k.json
+┌────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬──────────┐
+│ nprobe ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max      │
+╞════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪══════════╡
+│ 8      ┆ 1000  ┆ 9.49 ms ┆ 1.68 ms ┆ 6.14 ms ┆ 9.39 ms ┆ 12.2 ms ┆ 15.8 ms ┆ 20.5 ms  │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ 16     ┆ 1000  ┆ 16.6 ms ┆ 2.23 ms ┆ 11.9 ms ┆ 16.3 ms ┆ 19.9 ms ┆ 25.8 ms ┆ 34.1 ms  │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ 24     ┆ 1000  ┆ 24.4 ms ┆ 3.31 ms ┆ 17.6 ms ┆ 23.8 ms ┆ 29.8 ms ┆ 40.7 ms ┆ 47.7 ms  │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ 32     ┆ 1000  ┆ 31.9 ms ┆ 4.33 ms ┆ 24.5 ms ┆ 31.2 ms ┆ 38.8 ms ┆ 52.6 ms ┆ 61.9 ms  │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ 48     ┆ 1000  ┆ 46.8 ms ┆ 5.32 ms ┆ 38.5 ms ┆ 45.7 ms ┆ 57.4 ms ┆ 70.1 ms ┆ 85.4 ms  │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ 64     ┆ 1000  ┆ 61.7 ms ┆ 7.03 ms ┆ 52.0 ms ┆ 59.6 ms ┆ 77.3 ms ┆ 90.6 ms ┆ 107.6 ms │
+└────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴──────────┘
+[suite:task-50-local-baseline] wrote /home/peter/dev/ecaz/benchmarks/task-50-local-baseline/artifacts/suite-manifest-rerun-10-50-100k.json
+[suite:task-50-local-baseline] storage-50k-ivfrabitq -> --database tqvector_bench --host /home/peter/.pgrx --port 28818 --log-file benchmarks/task-50-local-baseline/artifacts/storage-ec_real_50k-ivfrabitq.log bench storage --prefix ec_real_50k_ivfrabitq
+[suite:task-50-local-baseline] wrote /home/peter/dev/ecaz/benchmarks/task-50-local-baseline/artifacts/suite-manifest-rerun-10-50-100k.json
+┌───────────────────────────────┬──────────────────────────────┐
+│ field                         ┆ value                        │
+╞═══════════════════════════════╪══════════════════════════════╡
+│ prefix                        ┆ ec_real_50k_ivfrabitq        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus                        ┆ ec_real_50k_ivfrabitq_corpus │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ rows                          ┆ 50000                        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ heap                          ┆ 6.5 MiB                      │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ table (heap + toast + fsm/vm) ┆ 796.7 MiB                    │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes                       ┆ 48.2 MiB                     │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ total                         ┆ 844.9 MiB                    │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (total)               ┆ 17718.0 B                    │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (heap only)           ┆ 136.8 B                      │
+└───────────────────────────────┴──────────────────────────────┘
+┌───────────────────────────────────┬───────────────┬───────────┬─────────────────────────┬──────────┬─────────┐
+│ index                             ┆ access method ┆ profile   ┆ reloptions              ┆ size     ┆ per row │
+╞═══════════════════════════════════╪═══════════════╪═══════════╪═════════════════════════╪══════════╪═════════╡
+│ ec_real_50k_ivfrabitq_rabitq_idx  ┆ ec_ivf        ┆ ec_ivf    ┆ {storage_format=rabitq} ┆ 46.0 MiB ┆ 964.7 B │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ ec_real_50k_ivfrabitq_corpus_pkey ┆ btree         ┆ <unknown> ┆ {}                      ┆ 2.1 MiB  ┆ 45.1 B  │
+└───────────────────────────────────┴───────────────┴───────────┴─────────────────────────┴──────────┴─────────┘
+[suite:task-50-local-baseline] wrote /home/peter/dev/ecaz/benchmarks/task-50-local-baseline/artifacts/suite-manifest-rerun-10-50-100k.json
+[suite:task-50-local-baseline] recall-50k-hnsw -> --database tqvector_bench --host /home/peter/.pgrx --port 28818 bench recall --prefix ec_real_50k_hnsw --profile ec_hnsw --k 10 --sweep "40,80,120,200,400" --bits 4 --seed 42 --log-output benchmarks/task-50-local-baseline/artifacts/recall-ec_real_50k-hnsw.log
+[suite:task-50-local-baseline] wrote /home/peter/dev/ecaz/benchmarks/task-50-local-baseline/artifacts/suite-manifest-rerun-10-50-100k.json
+[recall] fetching queries from ec_real_50k_hnsw_queries ...
+[recall] fetching corpus from ec_real_50k_hnsw_corpus ...
+[recall] computing ground truth: 1000 queries vs 50000 corpus rows (dim=1536) ...
+[recall] ground truth in 1.97s
+┌───────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬────────┬─────────────┐
+│ ef_search ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ ndcg@k ┆ mean q-time │
+╞═══════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪════════╪═════════════╡
+│ 40        ┆ 1000    ┆ 10000         ┆ 0.8546   ┆ 0.8476          ┆ 0.8614           ┆ 0.7000     ┆ 0.9000     ┆ 1.0000     ┆ 0.9866 ┆ 5.01 ms     │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 80        ┆ 1000    ┆ 10000         ┆ 0.9090   ┆ 0.9032          ┆ 0.9145           ┆ 0.8000     ┆ 0.9000     ┆ 1.0000     ┆ 0.9941 ┆ 3.29 ms     │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 120       ┆ 1000    ┆ 10000         ┆ 0.9180   ┆ 0.9125          ┆ 0.9232           ┆ 0.8000     ┆ 0.9000     ┆ 1.0000     ┆ 0.9956 ┆ 4.15 ms     │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 200       ┆ 1000    ┆ 10000         ┆ 0.9289   ┆ 0.9237          ┆ 0.9338           ┆ 0.8000     ┆ 0.9000     ┆ 1.0000     ┆ 0.9971 ┆ 5.73 ms     │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 400       ┆ 1000    ┆ 10000         ┆ 0.9188   ┆ 0.9133          ┆ 0.9240           ┆ 0.8000     ┆ 0.9000     ┆ 1.0000     ┆ 0.9943 ┆ 7.48 ms     │
+└───────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴────────┴─────────────┘
+[suite:task-50-local-baseline] wrote /home/peter/dev/ecaz/benchmarks/task-50-local-baseline/artifacts/suite-manifest-rerun-10-50-100k.json
+[suite:task-50-local-baseline] latency-50k-hnsw -> --database tqvector_bench --host /home/peter/.pgrx --port 28818 bench latency --prefix ec_real_50k_hnsw --profile ec_hnsw --k 10 --concurrency 1 --iterations 1000 --sweep "40,80,120,200,400" --bits 4 --seed 42 --memory-sample-interval-ms 25 --log-output benchmarks/task-50-local-baseline/artifacts/latency-ec_real_50k-hnsw.log
+[suite:task-50-local-baseline] wrote /home/peter/dev/ecaz/benchmarks/task-50-local-baseline/artifacts/suite-manifest-rerun-10-50-100k.json
+┌───────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┐
+│ ef_search ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     │
+╞═══════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╡
+│ 40        ┆ 1000  ┆ 2.69 ms ┆ 1.98 ms ┆ 1.59 ms ┆ 2.22 ms ┆ 5.30 ms ┆ 12.7 ms ┆ 26.8 ms │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ 80        ┆ 1000  ┆ 3.28 ms ┆ 0.59 ms ┆ 2.29 ms ┆ 3.16 ms ┆ 4.32 ms ┆ 4.97 ms ┆ 10.0 ms │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ 120       ┆ 1000  ┆ 3.96 ms ┆ 0.59 ms ┆ 2.89 ms ┆ 3.90 ms ┆ 4.93 ms ┆ 5.82 ms ┆ 11.7 ms │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ 200       ┆ 1000  ┆ 5.61 ms ┆ 0.81 ms ┆ 4.21 ms ┆ 5.50 ms ┆ 6.85 ms ┆ 8.66 ms ┆ 13.8 ms │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ 400       ┆ 1000  ┆ 6.34 ms ┆ 3.84 ms ┆ 4.46 ms ┆ 5.79 ms ┆ 8.64 ms ┆ 17.3 ms ┆ 93.6 ms │
+└───────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┘
+[suite:task-50-local-baseline] wrote /home/peter/dev/ecaz/benchmarks/task-50-local-baseline/artifacts/suite-manifest-rerun-10-50-100k.json
+[suite:task-50-local-baseline] storage-50k-hnsw -> --database tqvector_bench --host /home/peter/.pgrx --port 28818 --log-file benchmarks/task-50-local-baseline/artifacts/storage-ec_real_50k-hnsw.log bench storage --prefix ec_real_50k_hnsw
+[suite:task-50-local-baseline] wrote /home/peter/dev/ecaz/benchmarks/task-50-local-baseline/artifacts/suite-manifest-rerun-10-50-100k.json
+┌───────────────────────────────┬─────────────────────────┐
+│ field                         ┆ value                   │
+╞═══════════════════════════════╪═════════════════════════╡
+│ prefix                        ┆ ec_real_50k_hnsw        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus                        ┆ ec_real_50k_hnsw_corpus │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ rows                          ┆ 50000                   │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ heap                          ┆ 6.5 MiB                 │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ table (heap + toast + fsm/vm) ┆ 796.7 MiB               │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes                       ┆ 126.1 MiB               │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ total                         ┆ 922.8 MiB               │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (total)               ┆ 19352.0 B               │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (heap only)           ┆ 136.8 B                 │
+└───────────────────────────────┴─────────────────────────┘
+┌──────────────────────────────┬───────────────┬───────────┬───────────────────────────────────────────────────────┬──────────┬──────────┐
+│ index                        ┆ access method ┆ profile   ┆ reloptions                                            ┆ size     ┆ per row  │
+╞══════════════════════════════╪═══════════════╪═══════════╪═══════════════════════════════════════════════════════╪══════════╪══════════╡
+│ ec_real_50k_hnsw_m16_idx     ┆ ec_hnsw       ┆ ec_hnsw   ┆ {m=16,ef_construction=128,build_source_column=source} ┆ 65.1 MiB ┆ 1365.6 B │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ ec_real_50k_hnsw_m8_idx      ┆ ec_hnsw       ┆ ec_hnsw   ┆ {m=8,ef_construction=128,build_source_column=source}  ┆ 58.8 MiB ┆ 1233.7 B │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ ec_real_50k_hnsw_corpus_pkey ┆ btree         ┆ <unknown> ┆ {}                                                    ┆ 2.1 MiB  ┆ 45.1 B   │
+└──────────────────────────────┴───────────────┴───────────┴───────────────────────────────────────────────────────┴──────────┴──────────┘
+[suite:task-50-local-baseline] wrote /home/peter/dev/ecaz/benchmarks/task-50-local-baseline/artifacts/suite-manifest-rerun-10-50-100k.json
+[suite:task-50-local-baseline] recall-50k-diskann -> --database tqvector_bench --host /home/peter/.pgrx --port 28818 bench recall --prefix ec_real_50k_diskann --profile ec_diskann --k 10 --sweep "64,128,200,400,800" --bits 4 --seed 42 --log-output benchmarks/task-50-local-baseline/artifacts/recall-ec_real_50k-diskann.log
+[suite:task-50-local-baseline] wrote /home/peter/dev/ecaz/benchmarks/task-50-local-baseline/artifacts/suite-manifest-rerun-10-50-100k.json
+[recall] fetching queries from ec_real_50k_diskann_queries ...
+[recall] fetching corpus from ec_real_50k_diskann_corpus ...
+[recall] computing ground truth: 1000 queries vs 50000 corpus rows (dim=1536) ...
+[recall] ground truth in 1.90s
+┌───────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬────────┬─────────────┐
+│ list_size ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ ndcg@k ┆ mean q-time │
+╞═══════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪════════╪═════════════╡
+│ 64        ┆ 1000    ┆ 10000         ┆ 0.9550   ┆ 0.9508          ┆ 0.9589           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.9968 ┆ 46.64 ms    │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 128       ┆ 1000    ┆ 10000         ┆ 0.9697   ┆ 0.9662          ┆ 0.9729           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.9987 ┆ 41.16 ms    │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 200       ┆ 1000    ┆ 10000         ┆ 0.9745   ┆ 0.9712          ┆ 0.9774           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.9993 ┆ 43.23 ms    │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 400       ┆ 1000    ┆ 10000         ┆ 0.9787   ┆ 0.9757          ┆ 0.9814           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.9996 ┆ 42.33 ms    │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 800       ┆ 1000    ┆ 10000         ┆ 0.9796   ┆ 0.9766          ┆ 0.9822           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.9997 ┆ 45.05 ms    │
+└───────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴────────┴─────────────┘
+[suite:task-50-local-baseline] wrote /home/peter/dev/ecaz/benchmarks/task-50-local-baseline/artifacts/suite-manifest-rerun-10-50-100k.json
+[suite:task-50-local-baseline] latency-50k-diskann -> --database tqvector_bench --host /home/peter/.pgrx --port 28818 bench latency --prefix ec_real_50k_diskann --profile ec_diskann --k 10 --concurrency 1 --iterations 1000 --sweep "64,128,200,400,800" --bits 4 --seed 42 --memory-sample-interval-ms 25 --log-output benchmarks/task-50-local-baseline/artifacts/latency-ec_real_50k-diskann.log
+[suite:task-50-local-baseline] wrote /home/peter/dev/ecaz/benchmarks/task-50-local-baseline/artifacts/suite-manifest-rerun-10-50-100k.json
+┌───────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬──────────┐
+│ list_size ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max      │
+╞═══════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪══════════╡
+│ 64        ┆ 1000  ┆ 44.6 ms ┆ 8.38 ms ┆ 38.4 ms ┆ 42.5 ms ┆ 54.6 ms ┆ 71.1 ms ┆ 169.5 ms │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ 128       ┆ 1000  ┆ 43.9 ms ┆ 4.58 ms ┆ 38.0 ms ┆ 42.4 ms ┆ 53.1 ms ┆ 60.5 ms ┆ 75.5 ms  │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ 200       ┆ 1000  ┆ 44.7 ms ┆ 5.89 ms ┆ 38.5 ms ┆ 43.3 ms ┆ 53.1 ms ┆ 62.8 ms ┆ 161.5 ms │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ 400       ┆ 1000  ┆ 45.9 ms ┆ 4.96 ms ┆ 39.9 ms ┆ 44.5 ms ┆ 54.6 ms ┆ 67.8 ms ┆ 87.5 ms  │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ 800       ┆ 1000  ┆ 48.9 ms ┆ 5.60 ms ┆ 42.2 ms ┆ 47.3 ms ┆ 59.3 ms ┆ 69.0 ms ┆ 106.4 ms │
+└───────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴──────────┘
+[suite:task-50-local-baseline] wrote /home/peter/dev/ecaz/benchmarks/task-50-local-baseline/artifacts/suite-manifest-rerun-10-50-100k.json
+[suite:task-50-local-baseline] storage-50k-diskann -> --database tqvector_bench --host /home/peter/.pgrx --port 28818 --log-file benchmarks/task-50-local-baseline/artifacts/storage-ec_real_50k-diskann.log bench storage --prefix ec_real_50k_diskann
+[suite:task-50-local-baseline] wrote /home/peter/dev/ecaz/benchmarks/task-50-local-baseline/artifacts/suite-manifest-rerun-10-50-100k.json
+┌───────────────────────────────┬────────────────────────────┐
+│ field                         ┆ value                      │
+╞═══════════════════════════════╪════════════════════════════╡
+│ prefix                        ┆ ec_real_50k_diskann        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus                        ┆ ec_real_50k_diskann_corpus │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ rows                          ┆ 50000                      │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ heap                          ┆ 6.5 MiB                    │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ table (heap + toast + fsm/vm) ┆ 796.7 MiB                  │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes                       ┆ 25.2 MiB                   │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ total                         ┆ 821.9 MiB                  │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (total)               ┆ 17237.0 B                  │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (heap only)           ┆ 136.8 B                    │
+└───────────────────────────────┴────────────────────────────┘
+┌─────────────────────────────────┬───────────────┬────────────┬────────────┬──────────┬─────────┐
+│ index                           ┆ access method ┆ profile    ┆ reloptions ┆ size     ┆ per row │
+╞═════════════════════════════════╪═══════════════╪════════════╪════════════╪══════════╪═════════╡
+│ ec_real_50k_diskann_idx         ┆ ec_diskann    ┆ ec_diskann ┆ {}         ┆ 23.1 MiB ┆ 484.3 B │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ ec_real_50k_diskann_corpus_pkey ┆ btree         ┆ <unknown>  ┆ {}         ┆ 2.1 MiB  ┆ 45.1 B  │
+└─────────────────────────────────┴───────────────┴────────────┴────────────┴──────────┴─────────┘
+[suite:task-50-local-baseline] wrote /home/peter/dev/ecaz/benchmarks/task-50-local-baseline/artifacts/suite-manifest-rerun-10-50-100k.json
+[suite:task-50-local-baseline] recall-100k-ivfrabitq -> --database tqvector_bench --host /home/peter/.pgrx --port 28818 bench recall --prefix ec_real_100k_ivfrabitq --profile ec_ivf --k 10 --sweep "8,16,24,32,48,64" --bits 4 --seed 42 --log-output benchmarks/task-50-local-baseline/artifacts/recall-ec_real_100k-ivfrabitq.log
+[suite:task-50-local-baseline] wrote /home/peter/dev/ecaz/benchmarks/task-50-local-baseline/artifacts/suite-manifest-rerun-10-50-100k.json
+[recall] fetching queries from ec_real_100k_ivfrabitq_queries ...
+[recall] fetching corpus from ec_real_100k_ivfrabitq_corpus ...
+[recall] computing ground truth: 1000 queries vs 100000 corpus rows (dim=1536) ...
+[recall] ground truth in 3.78s
+┌────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬────────┬─────────────┐
+│ nprobe ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ ndcg@k ┆ mean q-time │
+╞════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪════════╪═════════════╡
+│ 8      ┆ 1000    ┆ 10000         ┆ 0.7734   ┆ 0.7651          ┆ 0.7815           ┆ 0.5000     ┆ 0.8000     ┆ 1.0000     ┆ 0.9816 ┆ 13.70 ms    │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 16     ┆ 1000    ┆ 10000         ┆ 0.8411   ┆ 0.8338          ┆ 0.8481           ┆ 0.7000     ┆ 0.9000     ┆ 1.0000     ┆ 0.9890 ┆ 23.68 ms    │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 24     ┆ 1000    ┆ 10000         ┆ 0.8690   ┆ 0.8622          ┆ 0.8755           ┆ 0.7000     ┆ 0.9000     ┆ 1.0000     ┆ 0.9923 ┆ 34.22 ms    │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 32     ┆ 1000    ┆ 10000         ┆ 0.8877   ┆ 0.8814          ┆ 0.8937           ┆ 0.8000     ┆ 0.9000     ┆ 1.0000     ┆ 0.9944 ┆ 45.23 ms    │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 48     ┆ 1000    ┆ 10000         ┆ 0.9052   ┆ 0.8993          ┆ 0.9108           ┆ 0.8000     ┆ 0.9000     ┆ 1.0000     ┆ 0.9961 ┆ 68.22 ms    │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 64     ┆ 1000    ┆ 10000         ┆ 0.9180   ┆ 0.9125          ┆ 0.9232           ┆ 0.8000     ┆ 0.9000     ┆ 1.0000     ┆ 0.9973 ┆ 89.57 ms    │
+└────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴────────┴─────────────┘
+[suite:task-50-local-baseline] wrote /home/peter/dev/ecaz/benchmarks/task-50-local-baseline/artifacts/suite-manifest-rerun-10-50-100k.json
+[suite:task-50-local-baseline] latency-100k-ivfrabitq -> --database tqvector_bench --host /home/peter/.pgrx --port 28818 bench latency --prefix ec_real_100k_ivfrabitq --profile ec_ivf --k 10 --concurrency 1 --iterations 1000 --sweep "8,16,24,32,48,64" --bits 4 --seed 42 --memory-sample-interval-ms 25 --log-output benchmarks/task-50-local-baseline/artifacts/latency-ec_real_100k-ivfrabitq.log
+[suite:task-50-local-baseline] wrote /home/peter/dev/ecaz/benchmarks/task-50-local-baseline/artifacts/suite-manifest-rerun-10-50-100k.json
+┌────────┬───────┬─────────┬─────────┬─────────┬─────────┬──────────┬──────────┬──────────┐
+│ nprobe ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95      ┆ p99      ┆ max      │
+╞════════╪═══════╪═════════╪═════════╪═════════╪═════════╪══════════╪══════════╪══════════╡
+│ 8      ┆ 1000  ┆ 12.3 ms ┆ 2.24 ms ┆ 7.58 ms ┆ 12.0 ms ┆ 15.7 ms  ┆ 20.6 ms  ┆ 27.9 ms  │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ 16     ┆ 1000  ┆ 23.4 ms ┆ 3.80 ms ┆ 16.7 ms ┆ 22.8 ms ┆ 30.4 ms  ┆ 40.0 ms  ┆ 44.4 ms  │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ 24     ┆ 1000  ┆ 34.3 ms ┆ 4.97 ms ┆ 24.2 ms ┆ 33.6 ms ┆ 43.0 ms  ┆ 54.3 ms  ┆ 63.6 ms  │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ 32     ┆ 1000  ┆ 45.0 ms ┆ 5.75 ms ┆ 33.6 ms ┆ 44.3 ms ┆ 55.1 ms  ┆ 67.0 ms  ┆ 89.1 ms  │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ 48     ┆ 1000  ┆ 67.2 ms ┆ 8.63 ms ┆ 51.4 ms ┆ 65.8 ms ┆ 84.3 ms  ┆ 97.3 ms  ┆ 132.3 ms │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ 64     ┆ 1000  ┆ 90.6 ms ┆ 11.5 ms ┆ 67.5 ms ┆ 88.2 ms ┆ 114.0 ms ┆ 129.0 ms ┆ 151.8 ms │
+└────────┴───────┴─────────┴─────────┴─────────┴─────────┴──────────┴──────────┴──────────┘
+[suite:task-50-local-baseline] wrote /home/peter/dev/ecaz/benchmarks/task-50-local-baseline/artifacts/suite-manifest-rerun-10-50-100k.json
+[suite:task-50-local-baseline] storage-100k-ivfrabitq -> --database tqvector_bench --host /home/peter/.pgrx --port 28818 --log-file benchmarks/task-50-local-baseline/artifacts/storage-ec_real_100k-ivfrabitq.log bench storage --prefix ec_real_100k_ivfrabitq
+[suite:task-50-local-baseline] wrote /home/peter/dev/ecaz/benchmarks/task-50-local-baseline/artifacts/suite-manifest-rerun-10-50-100k.json
+┌───────────────────────────────┬───────────────────────────────┐
+│ field                         ┆ value                         │
+╞═══════════════════════════════╪═══════════════════════════════╡
+│ prefix                        ┆ ec_real_100k_ivfrabitq        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus                        ┆ ec_real_100k_ivfrabitq_corpus │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ rows                          ┆ 100000                        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ heap                          ┆ 13.0 MiB                      │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ table (heap + toast + fsm/vm) ┆ 1.6 GiB                       │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes                       ┆ 94.8 MiB                      │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ total                         ┆ 1.6 GiB                       │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (total)               ┆ 17700.6 B                     │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (heap only)           ┆ 136.8 B                       │
+└───────────────────────────────┴───────────────────────────────┘
+┌────────────────────────────────────┬───────────────┬───────────┬─────────────────────────┬──────────┬─────────┐
+│ index                              ┆ access method ┆ profile   ┆ reloptions              ┆ size     ┆ per row │
+╞════════════════════════════════════╪═══════════════╪═══════════╪═════════════════════════╪══════════╪═════════╡
+│ ec_real_100k_ivfrabitq_rabitq_idx  ┆ ec_ivf        ┆ ec_ivf    ┆ {storage_format=rabitq} ┆ 90.4 MiB ┆ 948.2 B │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ ec_real_100k_ivfrabitq_corpus_pkey ┆ btree         ┆ <unknown> ┆ {}                      ┆ 4.3 MiB  ┆ 45.1 B  │
+└────────────────────────────────────┴───────────────┴───────────┴─────────────────────────┴──────────┴─────────┘
+[suite:task-50-local-baseline] wrote /home/peter/dev/ecaz/benchmarks/task-50-local-baseline/artifacts/suite-manifest-rerun-10-50-100k.json
+[suite:task-50-local-baseline] recall-100k-hnsw -> --database tqvector_bench --host /home/peter/.pgrx --port 28818 bench recall --prefix ec_real_100k_hnsw --profile ec_hnsw --k 10 --sweep "40,80,120,200,400" --bits 4 --seed 42 --log-output benchmarks/task-50-local-baseline/artifacts/recall-ec_real_100k-hnsw.log
+[suite:task-50-local-baseline] wrote /home/peter/dev/ecaz/benchmarks/task-50-local-baseline/artifacts/suite-manifest-rerun-10-50-100k.json
+[recall] fetching queries from ec_real_100k_hnsw_queries ...
+[recall] fetching corpus from ec_real_100k_hnsw_corpus ...
+[recall] computing ground truth: 1000 queries vs 100000 corpus rows (dim=1536) ...
+[recall] ground truth in 3.82s
+┌───────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬────────┬─────────────┐
+│ ef_search ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ ndcg@k ┆ mean q-time │
+╞═══════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪════════╪═════════════╡
+│ 40        ┆ 1000    ┆ 10000         ┆ 0.7254   ┆ 0.7166          ┆ 0.7341           ┆ 0.3000     ┆ 0.8000     ┆ 1.0000     ┆ 0.9682 ┆ 6.10 ms     │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 80        ┆ 1000    ┆ 10000         ┆ 0.8266   ┆ 0.8191          ┆ 0.8339           ┆ 0.6000     ┆ 0.9000     ┆ 1.0000     ┆ 0.9861 ┆ 4.09 ms     │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 120       ┆ 1000    ┆ 10000         ┆ 0.8671   ┆ 0.8603          ┆ 0.8736           ┆ 0.7000     ┆ 0.9000     ┆ 1.0000     ┆ 0.9906 ┆ 4.85 ms     │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 200       ┆ 1000    ┆ 10000         ┆ 0.9054   ┆ 0.8995          ┆ 0.9110           ┆ 0.8000     ┆ 0.9000     ┆ 1.0000     ┆ 0.9957 ┆ 7.04 ms     │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 400       ┆ 1000    ┆ 10000         ┆ 0.9262   ┆ 0.9209          ┆ 0.9312           ┆ 0.8000     ┆ 0.9000     ┆ 1.0000     ┆ 0.9978 ┆ 11.84 ms    │
+└───────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴────────┴─────────────┘
+[suite:task-50-local-baseline] wrote /home/peter/dev/ecaz/benchmarks/task-50-local-baseline/artifacts/suite-manifest-rerun-10-50-100k.json
+[suite:task-50-local-baseline] latency-100k-hnsw -> --database tqvector_bench --host /home/peter/.pgrx --port 28818 bench latency --prefix ec_real_100k_hnsw --profile ec_hnsw --k 10 --concurrency 1 --iterations 1000 --sweep "40,80,120,200,400" --bits 4 --seed 42 --memory-sample-interval-ms 25 --log-output benchmarks/task-50-local-baseline/artifacts/latency-ec_real_100k-hnsw.log
+[suite:task-50-local-baseline] wrote /home/peter/dev/ecaz/benchmarks/task-50-local-baseline/artifacts/suite-manifest-rerun-10-50-100k.json
+┌───────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┐
+│ ef_search ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     │
+╞═══════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╡
+│ 40        ┆ 1000  ┆ 2.53 ms ┆ 0.97 ms ┆ 1.41 ms ┆ 2.26 ms ┆ 4.06 ms ┆ 6.10 ms ┆ 11.7 ms │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ 80        ┆ 1000  ┆ 3.67 ms ┆ 1.38 ms ┆ 2.25 ms ┆ 3.32 ms ┆ 5.72 ms ┆ 8.59 ms ┆ 20.8 ms │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ 120       ┆ 1000  ┆ 4.62 ms ┆ 1.46 ms ┆ 3.12 ms ┆ 4.25 ms ┆ 6.75 ms ┆ 9.96 ms ┆ 25.4 ms │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ 200       ┆ 1000  ┆ 6.53 ms ┆ 1.66 ms ┆ 4.48 ms ┆ 6.20 ms ┆ 8.77 ms ┆ 11.5 ms ┆ 32.2 ms │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ 400       ┆ 1000  ┆ 12.0 ms ┆ 2.02 ms ┆ 8.58 ms ┆ 11.6 ms ┆ 15.4 ms ┆ 18.6 ms ┆ 36.1 ms │
+└───────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┘
+[suite:task-50-local-baseline] wrote /home/peter/dev/ecaz/benchmarks/task-50-local-baseline/artifacts/suite-manifest-rerun-10-50-100k.json
+[suite:task-50-local-baseline] storage-100k-hnsw -> --database tqvector_bench --host /home/peter/.pgrx --port 28818 --log-file benchmarks/task-50-local-baseline/artifacts/storage-ec_real_100k-hnsw.log bench storage --prefix ec_real_100k_hnsw
+[suite:task-50-local-baseline] wrote /home/peter/dev/ecaz/benchmarks/task-50-local-baseline/artifacts/suite-manifest-rerun-10-50-100k.json
+┌───────────────────────────────┬──────────────────────────┐
+│ field                         ┆ value                    │
+╞═══════════════════════════════╪══════════════════════════╡
+│ prefix                        ┆ ec_real_100k_hnsw        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus                        ┆ ec_real_100k_hnsw_corpus │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ rows                          ┆ 100000                   │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ heap                          ┆ 13.0 MiB                 │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ table (heap + toast + fsm/vm) ┆ 1.6 GiB                  │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes                       ┆ 252.2 MiB                │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ total                         ┆ 1.8 GiB                  │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (total)               ┆ 19351.1 B                │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (heap only)           ┆ 136.8 B                  │
+└───────────────────────────────┴──────────────────────────┘
+┌───────────────────────────────┬───────────────┬───────────┬───────────────────────────────────────────────────────┬───────────┬──────────┐
+│ index                         ┆ access method ┆ profile   ┆ reloptions                                            ┆ size      ┆ per row  │
+╞═══════════════════════════════╪═══════════════╪═══════════╪═══════════════════════════════════════════════════════╪═══════════╪══════════╡
+│ ec_real_100k_hnsw_m16_idx     ┆ ec_hnsw       ┆ ec_hnsw   ┆ {m=16,ef_construction=128,build_source_column=source} ┆ 130.2 MiB ┆ 1365.4 B │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ ec_real_100k_hnsw_m8_idx      ┆ ec_hnsw       ┆ ec_hnsw   ┆ {m=8,ef_construction=128,build_source_column=source}  ┆ 117.6 MiB ┆ 1233.6 B │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ ec_real_100k_hnsw_corpus_pkey ┆ btree         ┆ <unknown> ┆ {}                                                    ┆ 4.3 MiB   ┆ 45.1 B   │
+└───────────────────────────────┴───────────────┴───────────┴───────────────────────────────────────────────────────┴───────────┴──────────┘
+[suite:task-50-local-baseline] wrote /home/peter/dev/ecaz/benchmarks/task-50-local-baseline/artifacts/suite-manifest-rerun-10-50-100k.json
+[suite:task-50-local-baseline] recall-100k-diskann -> --database tqvector_bench --host /home/peter/.pgrx --port 28818 bench recall --prefix ec_real_100k_diskann --profile ec_diskann --k 10 --sweep "64,128,200,400,800" --bits 4 --seed 42 --log-output benchmarks/task-50-local-baseline/artifacts/recall-ec_real_100k-diskann.log
+[suite:task-50-local-baseline] wrote /home/peter/dev/ecaz/benchmarks/task-50-local-baseline/artifacts/suite-manifest-rerun-10-50-100k.json
+[recall] fetching queries from ec_real_100k_diskann_queries ...
+[recall] fetching corpus from ec_real_100k_diskann_corpus ...
+[recall] computing ground truth: 1000 queries vs 100000 corpus rows (dim=1536) ...
+[recall] ground truth in 3.78s
+┌───────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬────────┬─────────────┐
+│ list_size ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ ndcg@k ┆ mean q-time │
+╞═══════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪════════╪═════════════╡
+│ 64        ┆ 1000    ┆ 10000         ┆ 0.9200   ┆ 0.9145          ┆ 0.9252           ┆ 0.8000     ┆ 1.0000     ┆ 1.0000     ┆ 0.9943 ┆ 144.30 ms   │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 128       ┆ 1000    ┆ 10000         ┆ 0.9571   ┆ 0.9529          ┆ 0.9609           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.9977 ┆ 143.61 ms   │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 200       ┆ 1000    ┆ 10000         ┆ 0.9682   ┆ 0.9646          ┆ 0.9715           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.9987 ┆ 150.19 ms   │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 400       ┆ 1000    ┆ 10000         ┆ 0.9758   ┆ 0.9726          ┆ 0.9786           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.9993 ┆ 138.67 ms   │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 800       ┆ 1000    ┆ 10000         ┆ 0.9780   ┆ 0.9749          ┆ 0.9807           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.9996 ┆ 148.39 ms   │
+└───────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴────────┴─────────────┘
+[suite:task-50-local-baseline] wrote /home/peter/dev/ecaz/benchmarks/task-50-local-baseline/artifacts/suite-manifest-rerun-10-50-100k.json
+[suite:task-50-local-baseline] latency-100k-diskann -> --database tqvector_bench --host /home/peter/.pgrx --port 28818 bench latency --prefix ec_real_100k_diskann --profile ec_diskann --k 10 --concurrency 1 --iterations 1000 --sweep "64,128,200,400,800" --bits 4 --seed 42 --memory-sample-interval-ms 25 --log-output benchmarks/task-50-local-baseline/artifacts/latency-ec_real_100k-diskann.log
+[suite:task-50-local-baseline] wrote /home/peter/dev/ecaz/benchmarks/task-50-local-baseline/artifacts/suite-manifest-rerun-10-50-100k.json
+┌───────────┬───────┬──────────┬─────────┬──────────┬──────────┬──────────┬──────────┬──────────┐
+│ list_size ┆ count ┆ mean     ┆ stddev  ┆ min      ┆ p50      ┆ p95      ┆ p99      ┆ max      │
+╞═══════════╪═══════╪══════════╪═════════╪══════════╪══════════╪══════════╪══════════╪══════════╡
+│ 64        ┆ 1000  ┆ 157.4 ms ┆ 33.9 ms ┆ 109.4 ms ┆ 145.9 ms ┆ 221.9 ms ┆ 264.6 ms ┆ 312.3 ms │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ 128       ┆ 1000  ┆ 158.7 ms ┆ 35.3 ms ┆ 107.7 ms ┆ 145.8 ms ┆ 231.0 ms ┆ 255.7 ms ┆ 328.0 ms │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ 200       ┆ 1000  ┆ 158.9 ms ┆ 36.0 ms ┆ 109.5 ms ┆ 147.4 ms ┆ 224.3 ms ┆ 261.8 ms ┆ 461.3 ms │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ 400       ┆ 1000  ┆ 163.7 ms ┆ 35.0 ms ┆ 111.4 ms ┆ 152.7 ms ┆ 231.3 ms ┆ 256.7 ms ┆ 295.2 ms │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ 800       ┆ 1000  ┆ 161.8 ms ┆ 31.0 ms ┆ 117.5 ms ┆ 151.5 ms ┆ 223.0 ms ┆ 249.0 ms ┆ 280.5 ms │
+└───────────┴───────┴──────────┴─────────┴──────────┴──────────┴──────────┴──────────┴──────────┘
+[suite:task-50-local-baseline] wrote /home/peter/dev/ecaz/benchmarks/task-50-local-baseline/artifacts/suite-manifest-rerun-10-50-100k.json
+[suite:task-50-local-baseline] storage-100k-diskann -> --database tqvector_bench --host /home/peter/.pgrx --port 28818 --log-file benchmarks/task-50-local-baseline/artifacts/storage-ec_real_100k-diskann.log bench storage --prefix ec_real_100k_diskann
+[suite:task-50-local-baseline] wrote /home/peter/dev/ecaz/benchmarks/task-50-local-baseline/artifacts/suite-manifest-rerun-10-50-100k.json
+┌───────────────────────────────┬─────────────────────────────┐
+│ field                         ┆ value                       │
+╞═══════════════════════════════╪═════════════════════════════╡
+│ prefix                        ┆ ec_real_100k_diskann        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus                        ┆ ec_real_100k_diskann_corpus │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ rows                          ┆ 100000                      │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ heap                          ┆ 13.0 MiB                    │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ table (heap + toast + fsm/vm) ┆ 1.6 GiB                     │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes                       ┆ 50.4 MiB                    │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ total                         ┆ 1.6 GiB                     │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (total)               ┆ 17235.1 B                   │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (heap only)           ┆ 136.8 B                     │
+└───────────────────────────────┴─────────────────────────────┘
+┌──────────────────────────────────┬───────────────┬────────────┬────────────┬──────────┬─────────┐
+│ index                            ┆ access method ┆ profile    ┆ reloptions ┆ size     ┆ per row │
+╞══════════════════════════════════╪═══════════════╪════════════╪════════════╪══════════╪═════════╡
+│ ec_real_100k_diskann_idx         ┆ ec_diskann    ┆ ec_diskann ┆ {}         ┆ 46.1 MiB ┆ 483.1 B │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ ec_real_100k_diskann_corpus_pkey ┆ btree         ┆ <unknown>  ┆ {}         ┆ 4.3 MiB  ┆ 45.1 B  │
+└──────────────────────────────────┴───────────────┴────────────┴────────────┴──────────┴─────────┘
+[suite:task-50-local-baseline] wrote /home/peter/dev/ecaz/benchmarks/task-50-local-baseline/artifacts/suite-manifest-rerun-10-50-100k.json
+[suite:task-50-local-baseline] wrote /home/peter/dev/ecaz/benchmarks/task-50-local-baseline/artifacts/results-rerun-10-50-100k.jsonl
+[suite:task-50-local-baseline] wrote /home/peter/dev/ecaz/benchmarks/task-50-local-baseline/artifacts/suite-manifest-rerun-10-50-100k.json

@@ -1,0 +1,22 @@
+[loader] inspecting /Users/peter/dev/tqvector/fixtures/m5_diskann_real100k/m5_diskann_real100k_corpus.tsv
+[loader] inspecting /Users/peter/dev/tqvector/fixtures/m5_diskann_real100k/m5_diskann_real100k_queries.tsv
+[loader] corpus: 100000 rows, sha256=9707553428380a6ff1f24a1eaa222c47cab5dc8943f22e94fb5b5e29c6046d11  queries: 1000 rows, sha256=98062e05c8f5454c01c0ab22fed611f5e4d0da05cf0164c3355b7de28b739905
+[loader] no sibling manifest at /Users/peter/dev/tqvector/fixtures/m5_diskann_real100k/m5_diskann_real100k_manifest.json; continuing without verification
+[loader] copied corpus table m5_diskann_real100k_corpus in 19.68s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table m5_diskann_real100k_corpus in 6.14s
+[loader] copied queries table m5_diskann_real100k_queries in 176.55ms
+[loader] building m5_diskann_real100k_idx using ec_diskann (reloptions=[graph_degree=32, build_list_size=100, alpha=1.2, rerank_budget=800]) ...
+[loader] built m5_diskann_real100k_idx in 213.09s
+┌─────────┬──────────────────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                                        │
+╞═════════╪══════════════════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_diskann                                                                                   │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ m5_diskann_real100k_corpus (100000 rows)                                                     │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ m5_diskann_real100k_queries (1000 rows)                                                      │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ m5_diskann_real100k_idx [graph_degree=32, build_list_size=100, alpha=1.2, rerank_budget=800] │
+└─────────┴──────────────────────────────────────────────────────────────────────────────────────────────┘
+[loader] completed prefix m5_diskann_real100k in 244.74s

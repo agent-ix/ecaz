@@ -1,0 +1,121 @@
+{
+  "suite": "spire-aws-correctness",
+  "schema_version": 1,
+  "config": "reviews/task-30/973-spire-phase13e-suite-read-matrix/artifacts/suite-correctness.json",
+  "config_sha256": "60452de7e63233b543dde2d26b42b759e7a584fe45c43b0c723f5aaabf58d2ac",
+  "dry_run": true,
+  "generated_at_unix_ms": 1779735503238,
+  "connection": {
+    "database": "postgres",
+    "host": null,
+    "port": null,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "13a3a-recall-k10",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "postgres",
+        "bench",
+        "recall",
+        "--prefix",
+        "ec_spire_aws_synth_10k",
+        "--profile",
+        "ec_spire",
+        "--k",
+        "10",
+        "--sweep",
+        "8,16,24,32",
+        "--queries-limit",
+        "100",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--log-output",
+        "reviews/task-30/973-spire-phase13e-suite-read-matrix/artifacts/correctness/13a3a-recall-k10.log"
+      ],
+      "selected": true,
+      "expected_artifacts": [
+        "reviews/task-30/973-spire-phase13e-suite-read-matrix/artifacts/correctness/13a3a-recall-k10.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "13a3a-latency-k10-c1",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "postgres",
+        "bench",
+        "latency",
+        "--prefix",
+        "ec_spire_aws_synth_10k",
+        "--profile",
+        "ec_spire",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "200",
+        "--sweep",
+        "8,16,24,32",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "reviews/task-30/973-spire-phase13e-suite-read-matrix/artifacts/correctness/13a3a-latency-k10-c1.log"
+      ],
+      "selected": true,
+      "expected_artifacts": [
+        "reviews/task-30/973-spire-phase13e-suite-read-matrix/artifacts/correctness/13a3a-latency-k10-c1.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "13e3-production-read-profile-k10",
+      "kind": "spire-pipeline",
+      "command": [
+        "--database",
+        "postgres",
+        "bench",
+        "spire-pipeline",
+        "--prefix",
+        "ec_spire_aws_synth_10k",
+        "--queries-limit",
+        "100",
+        "--sweep",
+        "8,16,24,32",
+        "--include-remote",
+        "--require-remote-placements",
+        "--top-k",
+        "10",
+        "--include-query-metrics",
+        "--include-recall",
+        "--include-production-read-profile",
+        "--query-metric-k",
+        "10",
+        "--query-metric-projection-columns",
+        "id",
+        "--log-output",
+        "reviews/task-30/973-spire-phase13e-suite-read-matrix/artifacts/correctness/13e3-production-read-profile-k10.log"
+      ],
+      "selected": true,
+      "tags": [
+        "phase13e",
+        "production-read-profile"
+      ],
+      "expected_artifacts": [
+        "reviews/task-30/973-spire-phase13e-suite-read-matrix/artifacts/correctness/13e3-production-read-profile-k10.log"
+      ],
+      "status": "dry-run"
+    }
+  ]
+}

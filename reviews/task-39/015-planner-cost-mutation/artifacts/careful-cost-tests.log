@@ -1,0 +1,20 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.04s
+     Running unittests src/lib.rs (target/debug/deps/ecaz_careful_hardening-3bca8b65b65b7ce7)
+
+running 13 tests
+test careful_common_cost::tests::planner_cost_model_does_not_charge_linear_tail_when_graph_covers_index ... ok
+test careful_common_cost::tests::planner_cost_model_keeps_real_10k_ef200_probe_below_seqscan_sort_crossover ... ok
+test careful_common_cost::tests::planner_cost_model_accounts_for_graph_and_linear_components ... ok
+test careful_common_cost::tests::planner_cost_model_stays_cheaper_than_seqscan_for_large_tables ... ok
+test careful_common_cost::tests::planner_cost_model_returns_max_for_empty_index ... ok
+test careful_common_cost::tests::planner_cost_model_uses_reltuples_heuristic_when_stats_are_missing ... ok
+test careful_common_cost::tests::planner_cost_model_stays_more_expensive_than_seqscan_for_small_tables ... ok
+test careful_common_cost::tests::planner_cost_tree_height_snapshot_matches_build_target ... ok
+test careful_common_cost::tests::planner_cost_model_uses_reltuples_when_stats_are_available ... ok
+test careful_common_cost::tests::strategy_translation_maps_ordering_strategy_to_compare_lt ... ok
+test careful_common_cost::tests::strategy_translation_rejects_invalid_inputs ... ok
+test careful_common_cost::tests::tree_height_callback_value_returns_metadata_max_level ... ok
+test careful_common_cost::tests::strategy_translation_snapshot_matches_build_target ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 206 filtered out; finished in 0.00s
+

@@ -1,0 +1,168 @@
+commit c16fcbfbb52e2d003166d90c121bc15485b210ff
+Author:     Agent IX <agent@agent-ix.dev>
+AuthorDate: Wed May 20 18:39:01 2026 -0700
+Commit:     Agent IX <agent@agent-ix.dev>
+CommitDate: Wed May 20 18:39:01 2026 -0700
+
+    Centralize relcache metadata unsafe
+---
+ src/am/common/explain.rs                 |  4 +--
+ src/am/ec_diskann/ambuild.rs             | 11 ++------
+ src/am/ec_spire/storage/relation_plan.rs |  8 ++----
+ src/lib.rs                               | 22 +++++-----------
+ src/storage/relation.rs                  | 45 ++++++++++++++++++++++++++++++++
+ 5 files changed, 57 insertions(+), 33 deletions(-)
+
+diff --git a/src/am/common/explain.rs b/src/am/common/explain.rs
+index 374379d4..ec2f94ba 100644
+--- a/src/am/common/explain.rs
++++ b/src/am/common/explain.rs
+@@ -372,9 +372,7 @@ unsafe fn explain_access_method_name(index_state: *mut pg_sys::IndexScanState) -
+         return None;
+     }
+
+-    // SAFETY: The relation descriptor is non-null and PostgreSQL owns its
+-    // relcache tuple for the duration of the hook.
+-    let am_oid = unsafe { (*(*index_relation).rd_rel).relam };
++    let am_oid = crate::storage::relation::relation_am_oid(index_relation);
+     // SAFETY: `am_oid` comes from the relation descriptor; PostgreSQL returns a
+     // palloc-owned C string or null when no AM name exists.
+     let am_name_ptr = unsafe { pg_sys::get_am_name(am_oid) };
+diff --git a/src/am/ec_diskann/ambuild.rs b/src/am/ec_diskann/ambuild.rs
+index 2a50c887..f6dd0378 100644
+--- a/src/am/ec_diskann/ambuild.rs
++++ b/src/am/ec_diskann/ambuild.rs
+@@ -445,15 +445,8 @@ fn elapsed_ms(duration: Duration) -> u128 {
+     duration.as_millis()
+ }
+
+-unsafe fn relation_name(relation: pg_sys::Relation) -> String {
+-    // SAFETY: The relation is live and PostgreSQL keeps `rd_rel` valid for the
+-    // opened relation lifetime.
+-    let rd_rel = unsafe { (*relation).rd_rel.as_ref() }
+-        .expect("opened relation should expose pg_class metadata");
+-    // SAFETY: `relname.data` is PostgreSQL's fixed NUL-terminated name buffer.
+-    unsafe { CStr::from_ptr(rd_rel.relname.data.as_ptr()) }
+-        .to_string_lossy()
+-        .into_owned()
++fn relation_name(relation: pg_sys::Relation) -> String {
++    crate::storage::relation::relation_name(relation)
+ }
+
+ fn log_ambuild_empty_timing(
+diff --git a/src/am/ec_spire/storage/relation_plan.rs b/src/am/ec_spire/storage/relation_plan.rs
+index a22ec1ec..0bdf24cb 100644
+--- a/src/am/ec_spire/storage/relation_plan.rs
++++ b/src/am/ec_spire/storage/relation_plan.rs
+@@ -194,12 +194,8 @@ pub(super) fn create_local_store_relations_for_build(
+         return Ok(vec![(relation_plan[0].local_store_id, index_relid.into())]);
+     }
+
+-    // SAFETY: index_relation is live and rd_rel points at its relcache class
+-    // tuple while the relation remains open.
+-    let index_class = unsafe { &*(*index_relation).rd_rel };
+-    let namespace_oid = index_class.relnamespace;
+-    let owner_oid = index_class.relowner;
+-    let relpersistence = index_class.relpersistence;
++    let (namespace_oid, owner_oid, relpersistence) =
++        crate::storage::relation::relation_namespace_owner_persistence(index_relation);
+     let mut created = Vec::with_capacity(relation_plan.len());
+
+     for entry in relation_plan {
+diff --git a/src/lib.rs b/src/lib.rs
+index fdb5e0c9..2c133df9 100644
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -414,23 +414,15 @@ fn open_valid_ec_index_guard(
+     expected_am_name: &'static str,
+ ) -> IndexRelationGuard {
+     let index_relation = IndexRelationGuard::access_share(index_oid, caller_name);
+-    // SAFETY: `index_relation` is live while the guard is in scope.
+-    let rd_rel = unsafe { (*index_relation.as_ptr()).rd_rel.as_ref() }
+-        .expect("opened index relation should expose pg_class metadata");
+-    if rd_rel.relkind != pg_sys::RELKIND_INDEX as i8 as std::ffi::c_char {
+-        // SAFETY: `rd_rel` belongs to the live opened relation and its relname
+-        // field is PostgreSQL's fixed-size C string.
+-        let relation_name = unsafe { std::ffi::CStr::from_ptr(rd_rel.relname.data.as_ptr()) }
+-            .to_string_lossy()
+-            .into_owned();
++    let relation = index_relation.as_ptr();
++    if crate::storage::relation::relation_kind(relation)
++        != pg_sys::RELKIND_INDEX as i8 as std::ffi::c_char
++    {
++        let relation_name = crate::storage::relation::relation_name(relation);
+         pgrx::error!("{caller_name} requires an index relation, got \"{relation_name}\"");
+     }
+-    if rd_rel.relam != expected_am_oid {
+-        // SAFETY: `rd_rel` belongs to the live opened relation and its relname
+-        // field is PostgreSQL's fixed-size C string.
+-        let relation_name = unsafe { std::ffi::CStr::from_ptr(rd_rel.relname.data.as_ptr()) }
+-            .to_string_lossy()
+-            .into_owned();
++    if crate::storage::relation::relation_am_oid(relation) != expected_am_oid {
++        let relation_name = crate::storage::relation::relation_name(relation);
+         pgrx::error!(
+             "{caller_name} requires a {expected_am_name} index, got relation \"{relation_name}\""
+         );
+diff --git a/src/storage/relation.rs b/src/storage/relation.rs
+index 47ec2d15..f4317aed 100644
+--- a/src/storage/relation.rs
++++ b/src/storage/relation.rs
+@@ -1,5 +1,7 @@
+ //! PostgreSQL relation descriptor helpers.
+
++use std::ffi::{c_char, CStr};
++
+ use pgrx::pg_sys;
+
+ pub(crate) fn main_fork_block_count(relation: pg_sys::Relation) -> pg_sys::BlockNumber {
+@@ -38,6 +40,49 @@ pub(crate) fn relation_tablespace(relation: pg_sys::Relation) -> pg_sys::Oid {
+     unsafe { (*(*relation).rd_rel).reltablespace }
+ }
+
++pub(crate) fn relation_name(relation: pg_sys::Relation) -> String {
++    if relation.is_null() {
++        pgrx::error!("relation name read needs a valid relation");
++    }
++    // SAFETY: callers pass a live opened PostgreSQL relation descriptor; rd_rel
++    // belongs to that descriptor and relname is PostgreSQL's fixed C string.
++    unsafe { CStr::from_ptr((*(*relation).rd_rel).relname.data.as_ptr()) }
++        .to_string_lossy()
++        .into_owned()
++}
++
++pub(crate) fn relation_kind(relation: pg_sys::Relation) -> c_char {
++    if relation.is_null() {
++        pgrx::error!("relation kind read needs a valid relation");
++    }
++    // SAFETY: callers pass a live opened PostgreSQL relation descriptor; rd_rel
++    // belongs to that descriptor and relkind is copied by value.
++    unsafe { (*(*relation).rd_rel).relkind }
++}
++
++pub(crate) fn relation_am_oid(relation: pg_sys::Relation) -> pg_sys::Oid {
++    if relation.is_null() {
++        pgrx::error!("relation access method read needs a valid relation");
++    }
++    // SAFETY: callers pass a live opened PostgreSQL relation descriptor; rd_rel
++    // belongs to that descriptor and relam is copied by value.
++    unsafe { (*(*relation).rd_rel).relam }
++}
++
++pub(crate) fn relation_namespace_owner_persistence(
++    relation: pg_sys::Relation,
++) -> (pg_sys::Oid, pg_sys::Oid, c_char) {
++    if relation.is_null() {
++        pgrx::error!("relation catalog field read needs a valid relation");
++    }
++    // SAFETY: callers pass a live opened PostgreSQL relation descriptor; rd_rel
++    // belongs to that descriptor and fields are copied by value.
++    unsafe {
++        let rd_rel = &*(*relation).rd_rel;
++        (rd_rel.relnamespace, rd_rel.relowner, rd_rel.relpersistence)
++    }
++}
++
+ pub(crate) fn index_heap_relation_oid(index_relation: pg_sys::Relation) -> pg_sys::Oid {
+     index_heap_relation_oid_from_index_oid(relation_oid(index_relation))
+ }

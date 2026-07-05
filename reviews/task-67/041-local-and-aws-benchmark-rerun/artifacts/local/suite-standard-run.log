@@ -1,0 +1,39 @@
+[suite:task67-local-50k-100k-standard] wrote reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/suite-standard-manifest.json
+[suite:task67-local-50k-100k-standard] prepare-ec-real-50k -> --database postgres --host /home/peter/.pgrx --port 28818 corpus prepare --profile ec_real_50k --parquet target/real-corpus/data --output-dir target/real-corpus/staged-task67-local
+[suite:task67-local-50k-100k-standard] wrote reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/suite-standard-manifest.json
+[suite:task67-local-50k-100k-standard] wrote reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/suite-standard-manifest.json
+[suite:task67-local-50k-100k-standard] load-50k-ivfrabitq -> --database postgres --host /home/peter/.pgrx --port 28818 --log-file reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/load-50k-ivfrabitq.log corpus load --prefix task67_local_fullq_50k_ivfrabitq --profile ec_ivf --corpus-file target/real-corpus/staged-task67-local/ec_real_50k_corpus.tsv --queries-file target/real-corpus/staged-task67-local/ec_real_50k_queries.tsv --manifest-file target/real-corpus/staged-task67-local/ec_real_50k_manifest.json --allow-manifest-mismatch --bits 4 --seed 42 --storage-format rabitq
+[suite:task67-local-50k-100k-standard] wrote reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/suite-standard-manifest.json
+[suite:task67-local-50k-100k-standard] wrote reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/suite-standard-manifest.json
+[suite:task67-local-50k-100k-standard] recall-50k-ivfrabitq -> --database postgres --host /home/peter/.pgrx --port 28818 bench recall --prefix task67_local_fullq_50k_ivfrabitq --profile ec_ivf --k 10 --sweep "8,16,24,32,48,64" --queries-limit 200 --bits 4 --seed 42 --force-index --truth-cache-file reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/truth-50k-k10.json --log-output reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/recall-50k-ivfrabitq.log
+[suite:task67-local-50k-100k-standard] wrote reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/suite-standard-manifest.json
+[suite:task67-local-50k-100k-standard] wrote reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/suite-standard-manifest.json
+[suite:task67-local-50k-100k-standard] latency-50k-ivfrabitq -> --database postgres --host /home/peter/.pgrx --port 28818 bench latency --prefix task67_local_fullq_50k_ivfrabitq --profile ec_ivf --k 10 --concurrency 1 --iterations 200 --sweep "8,16,24,32,48,64" --bits 4 --seed 42 --force-index --memory-sample-interval-ms 25 --log-output reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/latency-50k-ivfrabitq.log
+[suite:task67-local-50k-100k-standard] wrote reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/suite-standard-manifest.json
+[suite:task67-local-50k-100k-standard] wrote reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/suite-standard-manifest.json
+[suite:task67-local-50k-100k-standard] storage-50k-ivfrabitq -> --database postgres --host /home/peter/.pgrx --port 28818 --log-file reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/storage-50k-ivfrabitq.log bench storage --prefix task67_local_fullq_50k_ivfrabitq
+[suite:task67-local-50k-100k-standard] wrote reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/suite-standard-manifest.json
+[suite:task67-local-50k-100k-standard] wrote reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/suite-standard-manifest.json
+[suite:task67-local-50k-100k-standard] load-50k-hnsw -> --database postgres --host /home/peter/.pgrx --port 28818 --log-file reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/load-50k-hnsw.log corpus load --prefix task67_local_fullq_50k_hnsw --profile ec_hnsw --corpus-file target/real-corpus/staged-task67-local/ec_real_50k_corpus.tsv --queries-file target/real-corpus/staged-task67-local/ec_real_50k_queries.tsv --manifest-file target/real-corpus/staged-task67-local/ec_real_50k_manifest.json --allow-manifest-mismatch --bits 4 --seed 42 --m "8,16" --ef-construction 128
+[suite:task67-local-50k-100k-standard] wrote reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/suite-standard-manifest.json
+[suite:task67-local-50k-100k-standard] wrote reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/suite-standard-manifest.json
+[suite:task67-local-50k-100k-standard] recall-50k-hnsw -> --database postgres --host /home/peter/.pgrx --port 28818 bench recall --prefix task67_local_fullq_50k_hnsw --profile ec_hnsw --k 10 --sweep "40,80,120,200,400" --queries-limit 200 --bits 4 --seed 42 --force-index --truth-cache-file reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/truth-50k-k10.json --log-output reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/recall-50k-hnsw.log
+[suite:task67-local-50k-100k-standard] wrote reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/suite-standard-manifest.json
+[suite:task67-local-50k-100k-standard] wrote reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/suite-standard-manifest.json
+[suite:task67-local-50k-100k-standard] latency-50k-hnsw -> --database postgres --host /home/peter/.pgrx --port 28818 bench latency --prefix task67_local_fullq_50k_hnsw --profile ec_hnsw --k 10 --concurrency 1 --iterations 200 --sweep "40,80,120,200,400" --bits 4 --seed 42 --force-index --memory-sample-interval-ms 25 --log-output reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/latency-50k-hnsw.log
+[suite:task67-local-50k-100k-standard] wrote reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/suite-standard-manifest.json
+[suite:task67-local-50k-100k-standard] wrote reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/suite-standard-manifest.json
+[suite:task67-local-50k-100k-standard] storage-50k-hnsw -> --database postgres --host /home/peter/.pgrx --port 28818 --log-file reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/storage-50k-hnsw.log bench storage --prefix task67_local_fullq_50k_hnsw
+[suite:task67-local-50k-100k-standard] wrote reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/suite-standard-manifest.json
+[suite:task67-local-50k-100k-standard] wrote reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/suite-standard-manifest.json
+[suite:task67-local-50k-100k-standard] load-50k-diskann -> --database postgres --host /home/peter/.pgrx --port 28818 --log-file reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/load-50k-diskann.log corpus load --prefix task67_local_fullq_50k_diskann --profile ec_diskann --corpus-file target/real-corpus/staged-task67-local/ec_real_50k_corpus.tsv --queries-file target/real-corpus/staged-task67-local/ec_real_50k_queries.tsv --manifest-file target/real-corpus/staged-task67-local/ec_real_50k_manifest.json --allow-manifest-mismatch --bits 4 --seed 42
+[suite:task67-local-50k-100k-standard] wrote reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/suite-standard-manifest.json
+[suite:task67-local-50k-100k-standard] wrote reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/suite-standard-manifest.json
+
+   0: [91msuite step "load-50k-diskann" failed with exit code 1; rerun with --continue-on-error to keep going[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/bench/suite.rs[0m:[35m808[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.

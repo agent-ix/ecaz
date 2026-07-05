@@ -1,0 +1,26 @@
+Script started on 2026-05-19 01:26:57-07:00 [<not executed on terminal>]
+[1mdiff --git a/src/am/ec_diskann/cost.rs b/src/am/ec_diskann/cost.rs[m
+[1mindex 24d215ae..f26dd03a 100644[m
+[1m--- a/src/am/ec_diskann/cost.rs[m
+[1m+++ b/src/am/ec_diskann/cost.rs[m
+[36m@@ -53,6 +53,9 @@[m [mpub(super) unsafe extern "C-unwind" fn ec_diskann_amcostestimate([m
+     index_correlation: *mut f64,[m
+     index_pages: *mut f64,[m
+ ) {[m
+[32m+[m[32m    // SAFETY: PostgreSQL calls this access-method callback with planner-owned[m
+[32m+[m[32m    // output pointers. The guarded body rejects null inputs before reading the[m
+[32m+[m[32m    // IndexPath or writing the cost outputs.[m
+     unsafe {[m
+         pgrx::pgrx_extern_c_guard(|| {[m
+             if path.is_null()[m
+[36m@@ -149,6 +152,8 @@[m [mpub(crate) unsafe fn index_cost_snapshot(index_relation: pg_sys::Relation) -> In[m
+                 gated_planner_cost_estimate(index_pages),[m
+             )[m
+         } else {[m
+[32m+[m[32m            // SAFETY: The diagnostic caller supplies a live index relation, and[m
+[32m+[m[32m            // this branch only reads metadata after confirming data pages exist.[m
+             let metadata = unsafe { insert::read_metadata_page(index_relation) }[m
+                 .unwrap_or_else(|e| pgrx::error!("ec_diskann cost snapshot failed: {e}"));[m
+             let estimate = estimate_planner_cost([m
+
+Script done on 2026-05-19 01:26:57-07:00 [COMMAND_EXIT_CODE="0"]

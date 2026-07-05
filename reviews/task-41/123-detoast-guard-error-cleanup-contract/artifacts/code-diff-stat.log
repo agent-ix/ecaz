@@ -1,0 +1,9 @@
+b199aadb Document detoast guard ERROR cleanup
+ src/am/ec_diskann/ambuild.rs     | 2 ++
+ src/am/ec_hnsw/build.rs          | 2 ++
+ src/am/ec_hnsw/source.rs         | 2 ++
+ src/am/ec_ivf/build.rs           | 2 ++
+ src/am/ec_spire/build/tuples.rs  | 2 ++
+ src/am/ec_spire/scan/relation.rs | 2 ++
+ src/lib.rs                       | 2 ++
+ 7 files changed, 14 insertions(+)

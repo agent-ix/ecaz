@@ -1,0 +1,7 @@
+Script started on 2026-05-25 11:58:23-07:00 [<not executed on terminal>]
+[suite:spire-aws-stress] wrote reviews/task-30/973-spire-phase13e-suite-read-matrix/artifacts/suite-manifest-stress.json
+[suite:spire-aws-stress] 13a3a-stress-recall-k10 -> --database postgres bench recall --prefix ec_spire_aws_synth_10m --profile ec_spire --k 10 --sweep "8,16,24,32" --queries-limit 10000 --bits 4 --seed 42 --log-output reviews/task-30/973-spire-phase13e-suite-read-matrix/artifacts/stress/13a3a-stress-recall-k10.log
+[suite:spire-aws-stress] 13a3a-stress-latency-k10-c1 -> --database postgres bench latency --prefix ec_spire_aws_synth_10m --profile ec_spire --k 10 --concurrency 1 --iterations 2000 --sweep "8,16,24,32" --bits 4 --seed 42 --memory-sample-interval-ms 25 --log-output reviews/task-30/973-spire-phase13e-suite-read-matrix/artifacts/stress/13a3a-stress-latency-k10-c1.log
+[suite:spire-aws-stress] 13e3-stress-production-read-profile-k10 -> --database postgres bench spire-pipeline --prefix ec_spire_aws_synth_10m --queries-limit 10000 --sweep "8,16,24,32" --include-remote --require-remote-placements --top-k 10 --include-query-metrics --include-recall --include-production-read-profile --query-metric-k 10 --query-metric-projection-columns id --log-output reviews/task-30/973-spire-phase13e-suite-read-matrix/artifacts/stress/13e3-stress-production-read-profile-k10.log
+
+Script done on 2026-05-25 11:58:23-07:00 [COMMAND_EXIT_CODE="0"]

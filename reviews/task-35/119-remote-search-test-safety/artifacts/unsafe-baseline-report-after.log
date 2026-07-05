@@ -1,0 +1,25 @@
+Script started on 2026-05-19 06:36:52-07:00 [<not executed on terminal>]
+unsafe comment baseline
+file: scripts/unsafe_comment_baseline.txt
+entries: 60
+files: 13
+
+top directories
+60 src/tests
+
+top files
+16 src/tests/insert.rs
+12 src/tests/vacuum.rs
+8 src/tests/diagnostics.rs
+8 src/tests/custom_scan.rs
+4 src/tests/build.rs
+3 src/tests/custom_scan_concurrency.rs
+2 src/tests/scan.rs
+2 src/tests/data_shape.rs
+1 src/tests/placement.rs
+1 src/tests/custom_scan_planner.rs
+1 src/tests/custom_scan_lifecycle.rs
+1 src/tests/custom_scan_fanout.rs
+1 src/tests/custom_scan_execution.rs
+
+Script done on 2026-05-19 06:36:52-07:00 [COMMAND_EXIT_CODE="0"]

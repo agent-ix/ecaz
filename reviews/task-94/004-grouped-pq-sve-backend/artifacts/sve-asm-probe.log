@@ -1,0 +1,28 @@
+command: rustc --target aarch64-unknown-linux-gnu --emit=obj /tmp/grouped_pq_sve_backend_probe.rs -o /tmp/grouped_pq_sve_backend_probe.o
+timestamp: 2026-06-09T17:13:24Z
+head: f67107166e6dc1485b1a884250c52c79e1d9cc32
+
+Result: passed.
+
+The standalone probe used the same SVE global assembly instruction shape as
+`src/quant/grouped_pq_block/sve.rs`:
+
+- `.arch armv8.2-a+sve`
+- `whilelt p0.s, x3, x2`
+- `ld1w z0.s, p0/z, [...]`
+- `ld1w z1.s, p0/z, [...]`
+- `fadd z0.s, z0.s, z1.s`
+- `st1w z0.s, p0, [...]`
+- `incw x3`
+- `cntw x0`
+
+Compiler output:
+
+```text
+warning: enum `Isa` is never used
+warning: function `runtime_vector_lanes` is never used
+warning: function `impl_probe` is never used
+warning: function `ecaz_grouped_pq_sve_accumulate_f32` is never used
+warning: function `ecaz_grouped_pq_sve_cntw` is never used
+warning: 5 warnings emitted
+```

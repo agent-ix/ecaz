@@ -1,0 +1,204 @@
+{
+  "suite": "task47-recall-gate-small",
+  "schema_version": 1,
+  "config": "fixtures/gates/recall-gate-small.json",
+  "config_sha256": "119b57a018ea717175a2553e8658235d10f0453a90cf8bc1387e009ede8d749a",
+  "dry_run": false,
+  "generated_at_unix_ms": 1779129335110,
+  "connection": {
+    "database": "postgres",
+    "host": "/Users/peter/.pgrx",
+    "port": 28818,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "hnsw-small-k10",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "recall",
+        "--prefix",
+        "task47_gate_hnsw",
+        "--profile",
+        "ec_hnsw",
+        "--k",
+        "10",
+        "--sweep",
+        "128",
+        "--queries-limit",
+        "50",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--truth-cache-file",
+        "target/gates/recall-small/real10k-truth-k10.json",
+        "--log-output",
+        "target/gates/recall-small/hnsw-real10k-k10.log"
+      ],
+      "selected": true,
+      "tags": [
+        "recall",
+        "small",
+        "pr"
+      ],
+      "expected_artifacts": [
+        "target/gates/recall-small/hnsw-real10k-k10.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1779129335112,
+      "finished_at_unix_ms": 1779129335183,
+      "duration_ms": 70,
+      "exit_code": 0
+    },
+    {
+      "name": "ivf-small-k10",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "recall",
+        "--prefix",
+        "task47_gate_ivf",
+        "--profile",
+        "ec_ivf",
+        "--k",
+        "10",
+        "--sweep",
+        "48",
+        "--rerank-width",
+        "750",
+        "--queries-limit",
+        "50",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--truth-cache-file",
+        "target/gates/recall-small/real10k-truth-k10.json",
+        "--log-output",
+        "target/gates/recall-small/ivf-real10k-k10.log"
+      ],
+      "selected": true,
+      "tags": [
+        "recall",
+        "small",
+        "pr"
+      ],
+      "expected_artifacts": [
+        "target/gates/recall-small/ivf-real10k-k10.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1779129335183,
+      "finished_at_unix_ms": 1779129335212,
+      "duration_ms": 28,
+      "exit_code": 0
+    },
+    {
+      "name": "diskann-small-k10",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "recall",
+        "--prefix",
+        "task47_gate_diskann",
+        "--profile",
+        "ec_diskann",
+        "--k",
+        "10",
+        "--sweep",
+        "200",
+        "--queries-limit",
+        "50",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--truth-cache-file",
+        "target/gates/recall-small/real10k-truth-k10.json",
+        "--log-output",
+        "target/gates/recall-small/diskann-real10k-k10.log"
+      ],
+      "selected": true,
+      "tags": [
+        "recall",
+        "small",
+        "pr"
+      ],
+      "expected_artifacts": [
+        "target/gates/recall-small/diskann-real10k-k10.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1779129335212,
+      "finished_at_unix_ms": 1779129335246,
+      "duration_ms": 33,
+      "exit_code": 0
+    }
+  ],
+  "threshold_results": [
+    {
+      "name": "hnsw-small-k10-floor",
+      "step": "hnsw-small-k10",
+      "metric": "recall",
+      "filters": {
+        "ef_search": "128"
+      },
+      "field": "recall@k",
+      "op": "gte",
+      "expected": 0.84,
+      "actual": 0.85,
+      "passed": true,
+      "message": "recall@k 0.85 Gte 0.84 -> true"
+    },
+    {
+      "name": "ivf-small-k10-floor",
+      "step": "ivf-small-k10",
+      "metric": "recall",
+      "filters": {
+        "nprobe": "48"
+      },
+      "field": "recall@k",
+      "op": "gte",
+      "expected": 0.84,
+      "actual": 0.85,
+      "passed": true,
+      "message": "recall@k 0.85 Gte 0.84 -> true"
+    },
+    {
+      "name": "diskann-small-k10-floor",
+      "step": "diskann-small-k10",
+      "metric": "recall",
+      "filters": {
+        "list_size": "200"
+      },
+      "field": "recall@k",
+      "op": "gte",
+      "expected": 0.55,
+      "actual": 0.566,
+      "passed": true,
+      "message": "recall@k 0.566 Gte 0.55 -> true"
+    }
+  ]
+}

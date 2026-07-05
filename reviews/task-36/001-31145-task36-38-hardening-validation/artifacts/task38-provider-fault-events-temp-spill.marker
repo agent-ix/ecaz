@@ -1,0 +1,7 @@
+pid=3866580 mode=enospc-write match=pgsql_tmp
+pid=3866581 mode=enospc-write match=pgsql_tmp
+pid=3866582 mode=enospc-write match=pgsql_tmp
+pid=3866583 mode=enospc-write match=pgsql_tmp
+pid=3866583 mode=enospc-write match=pgsql_tmp
+fault=1 pid=3866681 mode=enospc-write op=open count=1 errno=28 target=base/pgsql_tmp/pgsql_tmp3866681.0
+fault=1 pid=3866681 mode=enospc-write op=open count=2 errno=28 target=base/pgsql_tmp/pgsql_tmp3866681.0

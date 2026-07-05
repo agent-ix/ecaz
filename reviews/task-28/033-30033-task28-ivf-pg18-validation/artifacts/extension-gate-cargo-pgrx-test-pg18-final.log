@@ -1,0 +1,752 @@
+[32m[1m       Using[0m[39m [37m[1mCliArgument("pg18")[0m[39m and `pg_config` from [36m/home/peter/.pgrx/18.3/pgrx-install/bin/pg_config[39m
+CARGO_TARGET_DIR="/home/peter/dev/tqvector/target" PGRX_ALL_FEATURES="false" PGRX_BUILD_PROFILE="dev" PGRX_FEATURES="pg18 pg_test" PGRX_NO_DEFAULT_FEATURES="true" PGRX_NO_SCHEMA="false" "/home/peter/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "test" "--features" "pg18 pg_test" "--no-default-features"
+   Compiling ecaz v0.1.1 (/home/peter/dev/tqvector)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 34s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-6af67ae4ece7325b)
+
+running 622 tests
+test am::common::cost::tests::planner_cost_model_keeps_real_10k_ef200_probe_below_seqscan_sort_crossover ... ok
+test am::common::cost::tests::planner_cost_model_returns_max_for_empty_index ... ok
+test am::common::cost::tests::planner_cost_model_stays_cheaper_than_seqscan_for_large_tables ... ok
+test am::common::cost::tests::planner_cost_model_stays_more_expensive_than_seqscan_for_small_tables ... ok
+test am::common::cost::tests::planner_cost_tree_height_snapshot_matches_build_target ... ok
+test am::common::cost::tests::planner_cost_model_uses_reltuples_heuristic_when_stats_are_missing ... ok
+test am::common::cost::tests::strategy_translation_maps_ordering_strategy_to_compare_lt ... ok
+test am::common::cost::tests::strategy_translation_rejects_invalid_inputs ... ok
+test am::common::cost::tests::strategy_translation_snapshot_matches_build_target ... ok
+test am::common::cost::tests::tree_height_callback_value_returns_metadata_max_level ... ok
+test am::common::explain::tests::explain_counter_definitions_match_the_staged_fr024_contract ... ok
+test am::common::explain::tests::explain_counters_record_each_staged_statistic ... ok
+test am::common::explain::tests::explain_counters_reset_back_to_zero_state ... ok
+test am::common::explain::tests::explain_option_snapshot_matches_build_target ... ok
+test am::common::explain::tests::explain_output_group_matches_fr024_hook_contract ... ok
+test am::common::explain::tests::explain_properties_render_the_current_counter_values ... ok
+test am::common::explain::tests::explain_property_emission_requires_option_index_scan_and_supported_access_method ... ok
+test am::common::explain::tests::ivf_explain_counters_record_each_staged_statistic ... ok
+test am::common::explain::tests::ivf_explain_properties_render_the_current_counter_values ... ok
+test am::common::parallel::tests::descriptor_size_covers_state_coordinator_and_slots ... ok
+test am::common::parallel::tests::claim_parallel_scan_worker_slot_claims_first_free_slots_in_order ... ok
+test am::common::parallel::tests::ec_parallel_scan_layout_sizes_are_maxaligned ... ok
+test am::common::parallel::tests::initialize_parallel_scan_target_round_trips_through_attachment ... ok
+test am::common::parallel::tests::initialize_parallel_scan_target_seeds_slot_headers ... ok
+test am::common::parallel::tests::parallel_scan_attachment_rejects_uninitialized_state ... ok
+test am::common::parallel::tests::publish_parallel_scan_worker_slot_runtime_snapshot_records_live_state ... ok
+test am::common::parallel::tests::publish_parallel_scan_worker_slot_runtime_snapshot_rejects_stale_epoch ... ok
+test am::common::parallel::tests::release_parallel_scan_worker_slot_drops_live_claims_only_once ... ok
+test am::common::parallel::tests::reset_parallel_scan_state_advances_epoch_and_reinitializes_layout ... ok
+test am::common::parallel::tests::worker_slot_lookup_rejects_out_of_bounds_indices ... ok
+test am::common::stats::tests::stats_counters_record_each_staged_metric ... ok
+test am::common::stats::tests::stats_counters_reset_to_zero_state ... ok
+test am::common::stats::tests::stats_snapshot_matches_build_target ... ok
+test am::common::stats::tests::stats_summary_handles_zero_denominators ... ok
+test am::common::stats::tests::stats_summary_reports_derived_rates ... ok
+test am::common::stream::tests::graph_callback_signature_matches_fr019_contract ... ok
+test am::common::stream::tests::graph_prefetch_callback_returns_blocks_then_end_of_stream ... ok
+test am::common::stream::tests::graph_prefetch_state_advances_until_exhausted ... ok
+test am::common::stream::tests::linear_callback_signature_matches_fr019_contract ... ok
+test am::common::stream::tests::graph_prefetch_state_reset_restarts_with_new_batch ... ok
+test am::common::stream::tests::linear_prefetch_callback_returns_blocks_then_end_of_stream ... ok
+test am::common::stream::tests::linear_prefetch_state_advances_sequentially_until_exhausted ... ok
+test am::common::stream::tests::linear_prefetch_state_reset_restarts_range ... ok
+test am::common::stream::tests::stream_snapshot_matches_build_target ... ok
+test am::common::training::tests::grouped_pq4_training_rejects_empty_input ... ok
+test am::common::training::tests::srht_forward_transform_pads_to_effective_dimension ... ok
+test am::ec_hnsw::build::tests::add_native_backlinks_uses_free_slot_before_rewrite ... ok
+test am::ec_hnsw::build::tests::average_source_representative_weights_by_duplicate_count ... ok
+test am::ec_hnsw::build::tests::add_native_backlinks_rewrites_full_slice_for_better_candidate ... ok
+test am::ec_hnsw::build::tests::flatten_native_neighbor_slots_dedups_and_skips_origin ... ok
+test am::ec_hnsw::build::tests::grouped_build_model_requires_source_vectors ... ok
+test am::ec_hnsw::build::tests::grouped_build_model_supports_low_cardinality_source_sets ... ok
+test am::ec_hnsw::build::tests::hnsw_graph_build_is_deterministic_for_source_vectors ... ok
+test am::ec_hnsw::build::tests::initial_metadata_uses_grouped_format_for_pq_fastscan_indexes ... ok
+test am::ec_hnsw::build::tests::native_forward_slot_packing_preserves_layer_boundaries_with_padding ... ok
+test am::common::training::tests::grouped_pq4_model_trains_and_derives_codes ... ok
+test am::ec_hnsw::build::tests::grouped_build_model_trains_and_derives_codes_from_source_vectors ... ok
+test am::ec_hnsw::build::tests::scored_neighbor_graph_prefers_similarity_over_insert_order ... ok
+test am::ec_hnsw::build::tests::default_pq_fastscan_flush_output_derives_small_dimension_group_size ... ok
+test am::ec_hnsw::build::tests::hnsw_graph_builds_for_small_dataset ... ok
+test am::ec_hnsw::build::tests::plan_v2_grouped_source_build_reports_entry_point_and_levels ... ok
+test am::ec_hnsw::build::tests::hnsw_graph_build_is_deterministic_for_scalar_codes ... ok
+test am::ec_hnsw::build::tests::pq_fastscan_flush_output_marks_grouped_metadata_and_pages ... ok
+test am::ec_hnsw::build::tests::default_pq_fastscan_flush_output_uses_default_v2_parameters ... ok
+test am::ec_hnsw::build::tests::source_scored_entry_point_prefers_raw_vectors ... ok
+test am::ec_hnsw::build::tests::stage_v2_grouped_codebook_tuples_links_groups_in_order ... ok
+test am::ec_hnsw::graph::tests::derive_grouped_search_code_from_source_rejects_dimension_mismatch ... ok
+test am::ec_hnsw::graph::tests::derive_grouped_search_code_from_source_uses_persisted_codebook_shape ... ok
+test am::ec_hnsw::graph::tests::graph_storage_descriptor_accepts_empty_grouped_metadata ... ok
+test am::ec_hnsw::graph::tests::expand_visible_seeds_with_successors_reports_only_seed_sources_and_non_seed_discoveries ... ok
+test am::ec_hnsw::graph::tests::graph_storage_descriptor_rejects_pq_fastscan_missing_codebook_head ... ok
+test am::ec_hnsw::graph::tests::graph_storage_descriptor_rejects_pq_fastscan_missing_cold_rerank_flag ... ok
+test am::ec_hnsw::graph::tests::graph_storage_descriptor_rejects_pq_fastscan_missing_grouped_payload_flag ... ok
+test am::ec_hnsw::graph::tests::graph_storage_descriptor_uses_scalar_code_len_for_v1_metadata ... ok
+test am::ec_hnsw::graph::tests::greedy_descend_with_successors_walks_down_to_best_upper_layer_local_optimum ... ok
+test am::ec_hnsw::graph::tests::layer0_successor_candidates_from_elements_skips_unselectable_neighbors ... ok
+test am::ec_hnsw::graph::tests::refill_successors_with_successors_returns_best_frontier_candidates ... ok
+test am::ec_hnsw::graph::tests::run_layer0_beam_search_with_successors_expands_best_first ... ok
+test am::ec_hnsw::graph::tests::search_layer0_result_candidates_with_successors_keeps_best_result_window ... ok
+test am::ec_hnsw::graph::tests::valid_neighbor_tids_for_layer_limits_to_requested_layer_slice ... ok
+test am::ec_hnsw::graph::tests::valid_neighbor_tids_for_layer_skips_invalid ... ok
+test am::ec_hnsw::insert::tests::choose_insert_level_for_page_size_respects_supplied_page_size ... ok
+test am::ec_hnsw::insert::tests::resolve_insert_format_adapter_accepts_scalar_v1 ... ok
+test am::ec_hnsw::insert::tests::resolve_insert_format_adapter_recognizes_pq_fastscan ... ok
+test am::ec_hnsw::insert::tests::rewrite_full_slice_applies_after_replanning_against_current_slice ... ok
+test am::ec_hnsw::insert::tests::rewrite_full_slice_requests_retry_when_snapshot_drifted ... ok
+test am::ec_hnsw::options::tests::disable_binary_prefilter_defaults_off ... ok
+test am::ec_hnsw::options::tests::force_binary_derivation_defaults_off ... ok
+test am::ec_hnsw::options::tests::resolve_scan_tuning_keeps_default_relation_when_both_are_default ... ok
+test am::ec_hnsw::options::tests::resolve_scan_tuning_uses_explicit_default_session_override ... ok
+test am::ec_hnsw::options::tests::resolve_scan_tuning_uses_relation_value_when_session_is_default ... ok
+test am::ec_hnsw::options::tests::resolve_scan_tuning_uses_session_value_when_non_default ... ok
+test am::ec_hnsw::options::tests::storage_format_reloption_accepts_supported_values ... ok
+test am::ec_hnsw::options::tests::storage_format_reloption_rejects_unknown_values ... ok
+test am::ec_hnsw::page::tests::compressed_element_tuple_fits_on_default_page ... ok
+test am::ec_hnsw::page::tests::element_tuple_page_roundtrip ... ok
+test am::ec_hnsw::page::tests::element_tuple_ref_exposes_borrowed_code_and_live_heaptids ... ok
+test am::ec_hnsw::page::tests::element_tuple_roundtrip ... ok
+test am::ec_hnsw::page::tests::grouped_codebook_tuple_page_roundtrip ... ok
+test am::ec_hnsw::page::tests::grouped_codebook_tuple_roundtrip ... ok
+test am::ec_hnsw::page::tests::grouped_hot_tuple_page_roundtrip ... ok
+test am::ec_hnsw::page::tests::grouped_hot_tuple_ref_exposes_borrowed_payloads ... ok
+test am::ec_hnsw::page::tests::grouped_hot_tuple_roundtrip ... ok
+test am::ec_hnsw::page::tests::level_cap_produces_fitting_neighbor_tuple ... ok
+test am::ec_hnsw::page::tests::metadata_decode_page_accepts_legacy_layout ... ok
+test am::ec_hnsw::page::tests::metadata_graph_storage_format_distinguishes_v1_v2_and_v3 ... ok
+test am::ec_hnsw::page::tests::metadata_page_roundtrip ... ok
+test am::ec_hnsw::page::tests::metadata_roundtrip ... ok
+test am::ec_hnsw::page::tests::metadata_roundtrip_preserves_v3_turbo_hot_cold_layout ... ok
+test am::ec_hnsw::page::tests::miri_element_tuple_roundtrip ... ok
+test am::ec_hnsw::page::tests::miri_grouped_hot_tuple_roundtrip ... ok
+test am::ec_hnsw::page::tests::miri_metadata_roundtrip ... ok
+test am::ec_hnsw::page::tests::miri_neighbor_tuple_roundtrip ... ok
+test am::ec_hnsw::page::tests::miri_rerank_tuple_roundtrip ... ok
+test am::ec_hnsw::page::tests::miri_turbo_hot_tuple_roundtrip ... ok
+test am::ec_hnsw::page::tests::neighbor_tuple_page_roundtrip ... ok
+test am::ec_hnsw::page::tests::neighbor_tuple_roundtrip ... ok
+test am::ec_hnsw::page::tests::page_chain_extends_for_multiple_element_tuples ... ok
+test am::ec_hnsw::page::tests::page_chain_extends_for_multiple_grouped_hot_tuples ... ok
+test am::ec_hnsw::page::tests::page_chain_extends_for_multiple_rerank_tuples ... ok
+test am::ec_hnsw::page::tests::page_chain_extends_for_multiple_turbo_hot_tuples ... ok
+test am::ec_hnsw::page::tests::rerank_tuple_page_roundtrip ... ok
+test am::ec_hnsw::page::tests::rerank_tuple_roundtrip ... ok
+test am::ec_hnsw::page::tests::turbo_hot_tuple_page_roundtrip ... ok
+test am::ec_hnsw::page::tests::turbo_hot_tuple_ref_exposes_borrowed_payloads ... ok
+test am::ec_hnsw::page::tests::page_chain_extends_for_multiple_grouped_codebook_tuples ... ok
+test am::ec_hnsw::page::tests::turbo_hot_tuple_roundtrip ... ok
+test am::ec_hnsw::scan::tests::binary_prefilter_survivor_budget_only_filters_full_source_widths ... ok
+test am::ec_hnsw::scan::tests::bind_parallel_scan_state_captures_shared_rescan_epoch ... ok
+test am::ec_hnsw::scan::tests::build_prepared_grouped_scan_query_uses_persisted_codebooks ... ok
+test am::ec_hnsw::scan::tests::cached_binary_words_fallback_for_wider_code_paths ... ok
+test am::ec_hnsw::scan::tests::cached_binary_words_inline_target_adr031_width ... ok
+test am::ec_hnsw::scan::tests::cached_graph_element_from_grouped_tuple_ref_keeps_grouped_hot_payloads ... ok
+test am::ec_hnsw::scan::tests::cached_graph_element_from_scalar_tuple_ref_has_no_grouped_hot_payloads ... ok
+test am::ec_hnsw::scan::tests::cached_heap_tids_use_inline_storage ... ok
+test am::ec_hnsw::scan::tests::candidate_score_dispatch_keeps_scalar_loaded_state_exact ... ok
+test am::ec_hnsw::scan::tests::candidate_score_dispatch_uses_grouped_input_for_cached_grouped_hit ... ok
+test am::ec_hnsw::scan::tests::candidate_score_dispatch_uses_grouped_input_for_exact_unavailable ... ok
+test am::ec_hnsw::scan::tests::clear_parallel_scan_state_releases_claimed_worker_slot ... ok
+test am::ec_hnsw::scan::tests::collect_successor_candidates_skips_invalid_and_collects_multiple ... ok
+test am::ec_hnsw::scan::tests::consume_candidate_frontier_head_prefers_scheduler_best_node ... ok
+test am::ec_hnsw::scan::tests::consume_candidate_frontier_head_reselects_then_clears ... ok
+test am::ec_hnsw::scan::tests::consuming_frontier_head_forgets_it_from_bootstrap_scheduler ... ok
+test am::ec_hnsw::scan::tests::current_candidate_frontier_head_tid_drops_stale_scheduler_nodes ... ok
+test am::ec_hnsw::scan::tests::current_candidate_frontier_head_tid_falls_back_after_scheduler_drains ... ok
+test am::ec_hnsw::scan::tests::current_candidate_frontier_head_tid_prefers_scheduler_best_node ... ok
+test am::ec_hnsw::scan::tests::enter_linear_fallback_phase_clears_frontier_scheduler_and_expanded_state ... ok
+test am::ec_hnsw::scan::tests::fill_bootstrap_frontier_can_expand_beyond_entry_neighbors ... ok
+test am::ec_hnsw::scan::tests::graph_traversal_cursor_has_prefetched_output_requires_pending_duplicate_drain ... ok
+test am::ec_hnsw::scan::tests::graph_traversal_cursor_take_pending_output_drains_prefetched_heap_tid ... ok
+test am::ec_hnsw::scan::tests::graph_traversal_prefetch_ready_clears_stale_current_without_pending_output ... ok
+test am::ec_hnsw::scan::tests::grouped_binary_traversal_score_gate_requires_pq_fastscan_storage ... ok
+test am::ec_hnsw::scan::tests::grouped_exact_traversal_candidate_budget_requires_enabled_layer ... ok
+test am::ec_hnsw::scan::tests::grouped_exact_traversal_candidate_indices_pick_lowest_scores_stably ... ok
+test am::ec_hnsw::scan::tests::grouped_exact_traversal_full_candidate_scoring_requires_expansion_strategy_without_limit ... ok
+test am::ec_hnsw::scan::tests::grouped_exact_traversal_mode_enables_every_layer_in_all_scope ... ok
+test am::ec_hnsw::scan::tests::grouped_exact_traversal_mode_limits_layer0_scope_to_layer0 ... ok
+test am::ec_hnsw::scan::tests::grouped_score_context_requires_grouped_scan_storage ... ok
+test am::ec_hnsw::scan::tests::grouped_score_context_uses_scan_shape_and_cached_payloads ... ok
+test am::ec_hnsw::scan::tests::grouped_score_input_uses_cached_grouped_hot_payloads ... ok
+test am::ec_hnsw::scan::tests::grouped_score_payload_view_preserves_context_fields ... ok
+test am::ec_hnsw::scan::tests::grouped_score_payload_view_rejects_shape_mismatch ... ok
+test am::ec_hnsw::scan::tests::grouped_score_rerank_payload_preserves_hot_and_cold_fields ... ok
+test am::ec_hnsw::scan::tests::grouped_score_rerank_payload_rejects_mismatched_cold_payload ... ok
+test am::ec_hnsw::scan::tests::grouped_score_search_code_preserves_metadata_aligned_search_codes ... ok
+test am::ec_hnsw::scan::tests::grouped_score_search_code_rejects_search_code_shape_mismatch ... ok
+test am::ec_hnsw::scan::tests::grouped_score_shape_uses_grouped_scan_layout ... ok
+test am::ec_hnsw::scan::tests::indexed_ecvector_pq_fastscan_default_rerank_resolves_to_heap_f32 ... ok
+test am::ec_hnsw::scan::tests::indexed_tqvector_pq_fastscan_default_rerank_resolves_to_quantized ... ok
+test am::ec_hnsw::scan::tests::linear_fallback_cursor_advance_after_emit_clears_current_result_after_last_duplicate ... ok
+test am::ec_hnsw::scan::tests::linear_fallback_cursor_advance_after_emit_keeps_current_result_until_last_duplicate ... ok
+test am::ec_hnsw::scan::tests::linear_fallback_cursor_materialize_uses_fallback_storage ... ok
+test am::ec_hnsw::scan::tests::linear_fallback_cursor_uses_fallback_storage_in_linear_phase ... ok
+test am::ec_hnsw::scan::tests::mark_scan_exhausted_clears_result_state ... ok
+test am::ec_hnsw::scan::tests::miri_score_scan_element_result_via_raw_opaque_ptr_updates_stats_delta ... ok
+test am::ec_hnsw::scan::tests::publish_parallel_scan_worker_slot_snapshot_mirrors_scan_runtime_state ... ok
+test am::ec_hnsw::scan::tests::refill_after_consume_skips_already_expanded_source ... ok
+test am::ec_hnsw::scan::tests::rerank_source_backed_pq_fastscan_default_rerank_resolves_to_heap_f32 ... ok
+test am::ec_hnsw::scan::tests::reset_scan_position_clears_scan_local_caches ... ok
+test am::ec_hnsw::scan::tests::reset_scan_position_restores_bootstrap_execution_phase ... ok
+test am::ec_hnsw::scan::tests::scan_result_state_clear_clears_pending_heap_tid_drain ... ok
+test am::ec_hnsw::scan::tests::scan_result_state_comparison_score_tracks_current_result_lifecycle ... ok
+test am::ec_hnsw::scan::tests::scan_result_state_take_pending_advances_current_result_progress ... ok
+test am::ec_hnsw::scan::tests::scan_result_state_take_pending_output_preserves_score_and_heap_progress ... ok
+test am::ec_hnsw::scan::tests::score_grouped_rerank_payload_result_matches_prod_quantizer_path ... ok
+test am::ec_hnsw::scan::tests::score_grouped_search_code_result_negates_shared_grouped_pq_score ... ok
+test am::ec_hnsw::scan::tests::score_order_policy_prefers_lowest_score_unexpanded_frontier_candidate ... ok
+test am::ec_hnsw::scan::tests::seed_bootstrap_trace_marks_only_seed_entry_as_expanded ... ok
+test am::ec_hnsw::scan::tests::seed_scan_result_state_seeds_current_result_and_pending_drain ... ok
+test am::ec_hnsw::scan::tests::select_next_bootstrap_candidate_refills_only_after_successful_adjudication ... ok
+test am::ec_hnsw::scan::tests::select_next_bootstrap_candidate_returns_none_when_frontier_never_selects ... ok
+test am::ec_hnsw::scan::tests::select_next_bootstrap_candidate_skips_unselectable_candidates ... ok
+test am::ec_hnsw::scan::tests::source_backed_pq_fastscan_default_rerank_resolves_to_heap_f32 ... ok
+test am::ec_hnsw::scan::tests::source_backed_turboquant_default_rerank_resolves_to_quantized ... ok
+test am::ec_hnsw::scan::tests::top_up_bootstrap_frontier_preserves_expanded_state ... ok
+test am::ec_hnsw::scan::tests::top_up_bootstrap_frontier_requires_seeded_scheduler ... ok
+test am::ec_hnsw::scan::tests::unseeded_scans_enter_linear_fallback_explicitly ... ok
+test am::ec_hnsw::scan::tests::validate_runtime_scan_format_accepts_pq_fastscan_metadata ... ok
+test am::ec_hnsw::scan_debug::tests::grouped_window_simulation_handles_windows_at_or_beyond_row_count ... ok
+test am::ec_hnsw::scan_debug::tests::grouped_window_simulation_is_noop_for_window_one ... ok
+test am::ec_hnsw::scan_debug::tests::grouped_window_simulation_keeps_approx_order_for_tied_exact_scores ... ok
+test am::ec_hnsw::search::tests::beam_search_deduplicates_self_loops_and_parallel_edges ... ok
+test am::ec_hnsw::search::tests::beam_search_expand_one_matches_incremental_best_first_progress ... ok
+test am::ec_hnsw::search::tests::beam_search_expands_best_first_from_seeds ... ok
+test am::ec_hnsw::search::tests::beam_search_forget_queued_ignores_expanded_or_unknown_nodes ... ok
+test am::ec_hnsw::search::tests::beam_search_forget_queued_removes_frontier_node_and_allows_reseed ... ok
+test am::ec_hnsw::search::tests::beam_search_peek_best_matching_returns_none_after_dropping_fully_stale_frontier ... ok
+test am::ec_hnsw::search::tests::beam_search_peek_best_matching_skips_stale_leaders ... ok
+test am::ec_hnsw::search::tests::beam_search_respects_expansion_budget ... ok
+test am::ec_hnsw::search::tests::beam_search_run_matches_repeated_expand_one ... ok
+test am::ec_hnsw::search::tests::beam_search_seed_many_accepts_unique_candidates_only ... ok
+test am::ec_hnsw::search::tests::beam_search_take_best_matching_consumes_first_live_candidate ... ok
+test am::ec_hnsw::search::tests::visible_frontier_advance_after_consume_marks_refills_and_tops_up_unexpanded_source ... ok
+test am::ec_hnsw::search::tests::visible_frontier_advance_after_consume_skips_refill_for_expanded_source ... ok
+test am::ec_hnsw::search::tests::visible_frontier_best_candidate_falls_back_after_scheduler_drains ... ok
+test am::ec_hnsw::search::tests::visible_frontier_best_candidate_prefers_live_scheduler_node ... ok
+test am::ec_hnsw::search::tests::visible_frontier_consume_best_prefers_live_scheduler_node ... ok
+test am::ec_hnsw::search::tests::visible_frontier_refill_from_source_uses_remaining_capacity_and_seeds ... ok
+test am::ec_hnsw::search::tests::visible_frontier_seed_bootstrap_trace_seeds_and_marks_entry_source ... ok
+test am::ec_hnsw::graph::tests::graph_storage_descriptor_uses_grouped_lengths_for_v2_metadata ... ok
+test am::ec_hnsw::search::tests::visible_frontier_seed_discovered_marks_nodes_and_seeds_scheduler ... ok
+test am::ec_hnsw::scan::tests::prepared_query_cache_lifetime_tracks_scan_state ... ok
+test am::ec_hnsw::build::tests::stage_v2_grouped_build_payload_skips_binary_sidecar_when_unsupported ... ok
+test am::ec_hnsw::search::tests::visible_frontier_select_next_with_refill_skips_until_selected_then_advances ... ok
+test am::ec_hnsw::build::tests::stage_v2_grouped_build_payload_keeps_hot_and_cold_split ... ok
+test am::ec_hnsw::search::tests::visible_frontier_top_up_from_visible_seeds_filters_marks_and_seeds ... ok
+test am::ec_hnsw::source::tests::average_source_representatives_tracks_weighted_mean ... ok
+test am::ec_hnsw::build::tests::stage_v2_grouped_page_chain_from_source_derives_codes_and_links_pages ... ok
+test am::ec_hnsw::vacuum::tests::resolve_vacuum_format_adapter_accepts_scalar_v1 ... ok
+test am::ec_hnsw::vacuum::tests::resolve_vacuum_format_adapter_recognizes_pq_fastscan ... ok
+test am::ec_hnsw::source::tests::negative_inner_product_matches_expected_sign ... ok
+test am::ec_ivf::build::tests::build_state_rejects_zero_norm_training_source ... ok
+test am::ec_ivf::build::tests::build_state_rejects_dimension_mismatch ... ok
+test am::ec_ivf::build::tests::build_state_stages_empty_lists_with_invalid_directory_refs ... ok
+test am::ec_ivf::build::tests::build_state_stages_readable_centroid_and_directory_heads ... ok
+test am::ec_hnsw::build::tests::stage_v2_grouped_page_chain_links_hot_neighbor_and_rerank_tuples ... ok
+test am::ec_ivf::build::tests::build_state_collects_deterministic_training_sample ... ok
+test am::ec_ivf::build::tests::build_state_stages_bulk_assignments_by_list ... ok
+test am::ec_ivf::build::tests::training_sample_count_respects_auto_explicit_and_empty ... ok
+test am::ec_ivf::insert::tests::directory_insert_stats_extends_tail_forward ... ok
+test am::ec_ivf::insert::tests::directory_insert_stats_initializes_empty_block_range ... ok
+test am::ec_ivf::insert::tests::directory_insert_stats_preserves_newer_tail_after_stale_tail_append ... ok
+test am::ec_ivf::page::tests::block_ref_roundtrip ... ok
+test am::ec_ivf::page::tests::centroid_tuple_rejects_dimension_mismatch ... ok
+test am::ec_ivf::page::tests::centroid_tuple_roundtrip ... ok
+test am::ec_ivf::page::tests::data_page_ivf_tuple_roundtrips ... ok
+test am::ec_ivf::page::tests::data_page_chain_extends_for_large_posting_tuples ... ok
+test am::ec_ivf::page::tests::layout_fit_helpers_track_page_capacity ... ok
+test am::ec_ivf::page::tests::list_directory_tuple_roundtrip ... ok
+test am::ec_ivf::page::tests::metadata_decode_rejects_truncated_input ... ok
+test am::ec_ivf::page::tests::metadata_roundtrip ... ok
+test am::ec_ivf::page::tests::posting_tuple_rejects_heaptid_overflow ... ok
+test am::ec_ivf::page::tests::posting_tuple_roundtrip_preserves_duplicate_heap_tids ... ok
+test am::ec_ivf::scan::tests::candidate_top_k_keeps_best_scores_in_output_order ... ok
+test am::ec_ivf::scan::tests::candidate_top_k_uses_heap_tid_as_score_tiebreaker ... ok
+test am::ec_ivf::training::tests::assign_vector_to_centroid_uses_inner_product_router ... ok
+test am::ec_ivf::build::tests::build_state_trains_model_from_sample ... ok
+test am::ec_ivf::training::tests::normalize_vector_rejects_bad_inputs ... ok
+test am::ec_ivf::training::tests::deterministic_sample_indices_are_stable_and_unique ... ok
+test am::ec_ivf::training::tests::normalize_vector_returns_unit_length ... ok
+test am::ec_ivf::training::tests::resolve_auto_nlists_handles_empty_and_small_tables ... ok
+test am::ec_ivf::training::tests::spherical_kmeans_rejects_empty_training_input ... ok
+test am::ec_ivf::training::tests::spherical_kmeans_is_deterministic_for_seed ... ok
+test am::ec_ivf::training::tests::spherical_kmeans_supports_more_lists_than_rows ... ok
+test quant::codebook::tests::beta_pdf_out_of_range ... ok
+test quant::codebook::tests::log_gamma_known_values ... ok
+test quant::grouped_pq::tests::build_grouped_pq_lut_f32_uses_flat_codebooks_by_group ... ok
+test quant::grouped_pq::tests::encode_grouped_pq_packs_nibbles_from_shared_codebooks ... ok
+test quant::grouped_pq::tests::grouped_pq_nibble_reads_even_and_odd_groups ... ok
+test quant::grouped_pq::tests::grouped_pq_score_f32_sums_lut_rows_by_nibble ... ok
+test quant::grouped_pq::tests::nearest_centroid_l2_prefers_lowest_distance ... ok
+test quant::grouped_pq::tests::pack_grouped_pq_nibbles_packs_even_count ... ok
+test quant::grouped_pq::tests::pack_grouped_pq_nibbles_packs_odd_count ... ok
+test quant::hadamard::tests::fwht16_avx2_block_matches_scalar_when_available ... ok
+test quant::hadamard::tests::fwht32_avx2_block_matches_scalar_when_available ... ok
+test am::ec_hnsw::build::tests::hnsw_graph_builds_for_qjl_enabled_scalar_codes ... ok
+test quant::hadamard::tests::fwht8_avx2_block_matches_scalar_when_available ... ok
+test quant::hadamard::tests::fwht64_avx2_block_matches_scalar_when_available ... ok
+test quant::hadamard::tests::fwht_preserves_norm_after_normalization ... ok
+test quant::hadamard::tests::miri_fwht_small ... ok
+test quant::hadamard::tests::miri_orthonormal_fwht_small ... ok
+test quant::hadamard::tests::tiled_fwht_matches_chunkwise_full_fwht ... ok
+test quant::hadamard::tests::tiled_orthonormal_fwht_preserves_norm_per_tile ... ok
+test quant::hadamard::tests::fwht_tiled_avx2_exact_sizes_match_scalar_when_available ... ok
+test quant::mse::tests::nearest_centroid_index_prefers_lower_index_on_tie ... ok
+test quant::mse::tests::quantize_to_indices_dispatches_unrolled_for_16_centroids ... ok
+test quant::codebook::tests::lloyd_max_b1_centroids_symmetric ... ok
+test quant::mse::tests::branchless_matches_branching_over_random_inputs ... ok
+test quant::mse::tests::unrolled_16_matches_generic_branchless ... ok
+test quant::codebook::tests::beta_pdf_integrates_to_one ... ok
+test quant::hadamard::tests::orthonormal_fwht_runtime_path_matches_scalar_on_random_inputs ... ok
+test quant::hadamard::tests::fwht_runtime_path_matches_scalar_on_random_inputs ... ok
+test quant::prod::tests::decode_eight_3bit_aligned_matches_packer ... ok
+test quant::prod::tests::decode_eight_3bit_lanes_avx2_matches_scalar_when_available ... ok
+test quant::grouped_pq::tests::pq_fastscan_quantizer_trait_score_matches_direct_helpers ... ok
+test quant::prod::tests::binary_sign_no_qjl_4bit_keeps_identical_vector_ranked_first ... ok
+test quant::prod::tests::cached_quantizer_reuses_instances ... ok
+test quant::prod::tests::binary_sign_query_prep_rejects_qjl_active_lane - should panic ... ok
+test quant::prod::tests::code_to_code_score_is_symmetric_and_ignores_qjl ... ok
+test quant::prod::tests::encode_decode_has_reasonable_fidelity ... ok
+test quant::prod::tests::encode_payload_length_matches_spec ... ok
+test quant::prod::tests::encode_is_deterministic ... ok
+test quant::prod::tests::explicit_lut_no_qjl_4bit_matches_direct_scoring ... ok
+test quant::prod::tests::int8_approx_no_qjl_4bit_keeps_identical_vector_ranked_first ... ok
+test quant::prod::tests::explicit_lut_query_prep_rejects_qjl_active_lane - should panic ... ok
+test quant::prod::tests::miri_pack_unpack_mse ... ok
+test quant::prod::tests::miri_pack_unpack_qjl ... ok
+test quant::hadamard::tests::fwht_runtime_path_matches_scalar_at_large_sizes ... ok
+test quant::prod::tests::dispatched_score_matches_scalar_at_production_dims ... ok
+test quant::prod::tests::mse_pack_unpack_roundtrip_all_widths ... ok
+test quant::prod::tests::pack_mse_indices_fast_paths_match_generic ... ok
+test quant::prod::tests::int8_approx_query_prep_rejects_qjl_active_lane - should panic ... ok
+test quant::prod::tests::qjl_pack_unpack_roundtrip ... ok
+test quant::prod::tests::qjl_sign_lanes_exhaustive ... ok
+test quant::prod::tests::miri_encode_decode_roundtrip ... ok
+test quant::prod::tests::quantizer_1536_4bit_disables_unused_qjl_and_lut_state ... ok
+test quant::prod::tests::miri_score_ip_codes_lite ... ok
+test quant::prod::tests::dispatched_score_matches_scalar_with_tail_dims ... ok
+test quant::prod::tests::cached_with_presence_reports_whether_entry_already_existed ... ok
+test quant::prod::tests::prepared_query_score_matches_explicit_formula ... ok
+test quant::prod::tests::miri_score_ip_encoded ... ok
+test quant::prod::tests::quantizer_1536_4bit_reallocates_qjl_budget_to_mse ... ok
+test quant::prod::tests::quantizer_1536_4bit_supports_binary_sign_query_prep ... ok
+test quant::prod::tests::quantizer_1536_4bit_supports_explicit_lut_query_prep ... ok
+test quant::prod::tests::quantizer_1536_4bit_supports_int8_approx_query_prep ... ok
+test quant::prod::tests::quantizer_1536_4bit_supports_tiled_lut_query_prep ... ok
+test quant::prod::tests::quantizer_1536_uses_tiled_working_dimension ... ok
+test quant::prod::tests::quantizer_trait_score_matches_inherent_score_ip_encoded ... ok
+test quant::rabitq::tests::centered_api_rejects_qbit_bits ... ok
+test quant::rabitq::tests::centered_estimator_bound_dominates_error_on_random_vectors ... ok
+test quant::rabitq::tests::centered_estimator_is_exact_on_sign_aligned_residual ... ok
+test quant::prod::tests::quantizer_32_4bit_keeps_qjl_and_lut_state_when_active ... ok
+test quant::rabitq::tests::custom_rotation_plugs_into_seam ... ok
+test quant::prod::tests::tiled_lut_no_qjl_4bit_matches_direct_scoring ... ok
+test quant::rabitq::tests::estimator_bound_dominates_error_on_random_vectors ... ok
+test quant::rabitq::tests::estimator_recovers_self_ip_on_sign_aligned_vector ... ok
+test quant::rabitq::tests::hamming_similarity_identity_equals_dim ... ok
+test quant::rabitq::tests::qbit_code_len_scales_with_bits ... ok
+test quant::rabitq::tests::qbit_encoder_reduces_error_vs_binary ... ok
+test quant::rabitq::tests::qbit_rejects_unsupported_bits ... ok
+test quant::rabitq::tests::sign_words_from_rotated_matches_manual_pack ... ok
+test quant::prod::tests::raw_code_score_matches_encoded_lite_path ... ok
+test quant::rabitq::tests::code_len_matches_dimension ... ok
+test quant::rotation::tests::srht_preserves_norm ... ok
+test quant::prod::tests::score_from_parts_honors_supplied_gamma ... ok
+test quant::rotation::tests::tiled_srht_roundtrip_1536 ... ok
+test storage::page::tests::data_page_chain_overflow_creates_new_block ... ok
+test storage::page::tests::data_page_raw_round_trip ... ok
+test storage::page::tests::miri_item_pointer_roundtrip ... ok
+test quant::prod::tests::score_from_parts_matches_encoded_payload_path ... ok
+test quant::prod::tests::tiled_lut_query_prep_rejects_qjl_active_lane - should panic ... ok
+test quant::rabitq::tests::encode_then_score_same_vector_is_nonnegative ... ok
+test quant::rabitq::tests::srht_seeded_rotation_is_deterministic_and_independent_of_prod ... ok
+test quant::rotation::tests::srht_runtime_path_matches_scalar_on_random_inputs ... ok
+test quant::rotation::tests::srht_padded_matches_pad_input_plus_srht ... ok
+[32m[1m       Using[0m[39m [37m[1mPgConfig("pg18")[0m[39m and `pg_config` from [36m/home/peter/.pgrx/18.3/pgrx-install/bin/pg_config[39m
+[32m[1m    Building[0m[39m extension with features [36mpg18 pg_test[39m
+[32m[1m     Running[0m[39m command [36m"/home/peter/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "build" "--lib" "--features" "pg18 pg_test" "--no-default-features" "--message-format=json-render-diagnostics"[39m
+   Compiling ecaz v0.1.1 (/home/peter/dev/tqvector)
+test quant::prod::tests::dispatched_score_matches_scalar_on_random_inputs ... ok
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 9.35s
+[32m[1m  Installing[0m[39m extension
+[32m[1m     Copying[0m[39m control file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/ecaz.control[39m
+[32m[1m     Copying[0m[39m shared library to [36m/home/peter/.pgrx/18.3/pgrx-install/lib/postgresql/ecaz.so[39m
+[32m[1m  Discovered[0m[39m [36m[1m333[0m[39m SQL entities: [36m[1m1[0m[39m schemas ([36m[1m1[0m[39m unique), [36m[1m331[0m[39m functions, [36m[1m0[0m[39m types, [36m[1m0[0m[39m enums, [36m[1m1[0m[39m sqls, [36m[1m0[0m[39m ords, [36m[1m0[0m[39m hashes, [36m[1m0[0m[39m aggregates, [36m[1m0[0m[39m triggers
+[32m[1m  Rebuilding[0m[39m [36mpgrx_embed[39m, in debug mode, for SQL generation with features [36mpg18 pg_test[39m
+   Compiling ecaz v0.1.1 (/home/peter/dev/tqvector)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 10.81s
+[32m[1m     Writing[0m[39m SQL entities to /home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/ecaz--0.1.1.sql
+[32m[1m    Finished[0m[39m installing ecaz
+test tests::pg_test_binary_send_matches_internal_layout ... ok
+test tests::pg_test_access_method_is_registered ... ok
+test tests::pg_test_ec_ivf_access_method_is_registered ... ok
+test tests::pg_test_ec_ivf_auto_rerank_resolves_to_off_metadata ... ok
+test tests::pg_test_ec_ivf_drift_snapshot_handles_empty_index ... ok
+test tests::pg_test_ec_ivf_admin_snapshot ... ok
+test tests::pg_test_ec_ivf_cost_snapshot_reports_modeled_costs ... ok
+test tests::pg_test_ec_ivf_empty_gettuple_returns_false_after_rescan ... ok
+test tests::pg_test_ec_ivf_empty_index_build_initializes_metadata_page ... ok
+test tests::pg_test_ec_ivf_duplicate_heavy_build_keeps_empty_list_counts ... ok
+test tests::pg_test_build_keeps_element_neighbor_local ... ok
+test tests::pg_test_ec_ivf_drift_snapshot_tracks_insert_and_vacuum_churn ... ok
+test tests::pg_test_ec_ivf_empty_rescan_query_prep_has_no_probe_lists ... ok
+test tests::pg_test_ec_ivf_empty_vacuum_callbacks_report_noop_stats ... ok
+test tests::pg_test_ec_ivf_full_probe_matches_simple_exact_oracle_top1 ... ok
+test tests::pg_test_ec_ivf_insert_appends_posting_and_updates_stats ... ok
+test tests::pg_test_ec_ivf_gettuple_emits_probe_candidates_with_scores ... ok
+test tests::pg_test_ec_ivf_insert_bootstraps_empty_index ... ok
+test tests::pg_test_ec_ivf_insert_vacuum_scan_safety ... ok
+test tests::pg_test_ec_ivf_insert_reuses_same_list_tail_page ... ok
+test tests::pg_test_ec_ivf_multi_page_list_build_writes_multiple_data_pages ... ok
+test tests::pg_test_ec_ivf_operator_classes_are_registered ... ok
+test tests::pg_test_ec_ivf_non_empty_index_build_writes_staged_pages ... ok
+test tests::pg_test_ec_ivf_recall_smoke_compares_exact_hnsw_ivf ... ok
+test tests::pg_test_ec_ivf_rescan_query_prep_selects_nprobe_lists ... ok
+test tests::pg_test_binary_recv_rejects_trailing_bytes - should panic ... ok
+test tests::pg_test_binary_recv_rejects_truncated_bytes - should panic ... ok
+test tests::pg_test_ec_ivf_singleton_index_build_records_one_live_list ... ok
+test tests::pg_test_ec_ivf_vacuum_bulkdelete_removes_dead_heap_tid ... ok
+test tests::pg_test_ec_ivf_vacuum_callbacks_keep_live_count_noop ... ok
+test tests::pg_test_ec_ivf_vacuum_repairs_empty_list_directory_refs ... ok
+test tests::pg_test_ec_ivf_concurrent_inserts ... ok
+test tests::pg_test_ec_ivf_vacuum_repeated_bulkdelete_is_idempotent ... ok
+test tests::pg_test_ec_ivf_heap_f32_rerank_mode_is_explicitly_unsupported - should panic ... ok
+test tests::pg_test_ech_bootstrap_candidate_materializes_into_pending_drain ... ok
+test tests::pg_test_ech_bootstrap_phase_completes_and_resets_on_rescan ... ok
+test tests::pg_test_ech_debug_runtime_settings_reflect_controls ... ok
+test tests::pg_test_ech_consume_candidate_frontier_head_reselects_or_clears ... ok
+test tests::pg_test_ech_debug_runtime_settings_surface_effective_defaults ... ok
+test tests::pg_test_ech_debug_reachable_live_count_matches_admin_snapshot ... ok
+test tests::pg_test_ech_debug_pq_fastscan_rerank_profile_sql_surface ... ok
+test tests::pg_test_ech_debug_pq_fastscan_scan_hot_path_profile_sql_surface ... ok
+test tests::pg_test_ec_ivf_insert_rejects_duplicate_heap_tid - should panic ... ok
+test tests::pg_test_ech_debug_scan_heap_fetch_profile_projects_rows ... ok
+test tests::pg_test_ech_debug_scan_profile_limit_stops_early ... ok
+test tests::pg_test_ec_ivf_insert_rejects_dimension_mismatch - should panic ... ok
+test tests::pg_test_ech_empty_scan_rescan_stays_false ... ok
+test tests::pg_test_ech_debug_scan_profile_reports_graph_first_counters ... ok
+test tests::pg_test_ech_empty_scan_stays_false ... ok
+test tests::pg_test_ec_ivf_pq_fastscan_storage_is_unsupported - should panic ... ok
+test tests::pg_test_ech_debug_scan_result_count_matches_scan_helper ... ok
+test tests::pg_test_ech_empty_index_reuses_initialized_metadata ... ok
+test tests::pg_test_ech_empty_index_insert_initializes_shape_metadata ... ok
+test tests::pg_test_ech_entry_candidate_persists_until_exhaustion ... ok
+test tests::pg_test_ech_entry_point_neighbor_refs_point_to_elements ... ok
+test tests::pg_test_ech_frontier_head_refills_from_consumed_neighbors ... ok
+test tests::pg_test_ech_frontier_head_persists_until_exhaustion ... ok
+test tests::pg_test_ech_gettuple_clears_orderby_score_on_rescan ... ok
+test tests::pg_test_ech_gettuple_consumes_bootstrap_candidate_state ... ok
+test tests::pg_test_ech_debug_turboquant_scan_stage_profile_sql_surface ... ok
+test tests::pg_test_ech_gettuple_current_result_exposes_neighbor_refs ... ok
+test tests::pg_test_ech_gettuple_current_result_lifecycle ... ok
+test tests::pg_test_ech_gettuple_current_result_tracks_heap_progress ... ok
+test tests::pg_test_ech_gettuple_drains_selected_duplicate_heap_tids ... ok
+test tests::pg_test_ech_gettuple_exhaustion_stays_false ... ok
+test tests::pg_test_ech_gettuple_emits_orderby_score ... ok
+test tests::pg_test_ech_gettuple_scaffold_returns_false_for_empty_index ... ok
+test tests::pg_test_ech_gettuple_duplicate_scan_drains_selected_duplicates ... ok
+test tests::pg_test_ech_gettuple_rescan_resets_duplicate_progress ... ok
+test tests::pg_test_ech_graph_scan_recall_fixture_gate_10k_tiled_fwht ... ignored
+test tests::pg_test_ech_graph_scan_recall_fixture_summary_1k_tiled_fwht ... ignored
+test tests::pg_test_ech_gettuple_rescan_after_exhaustion_restarts_scan ... ok
+test tests::pg_test_ech_graph_scan_recall_source_gate_10k ... ignored
+test tests::pg_test_ech_graph_scan_recall_gate ... ok
+test tests::pg_test_ech_gettuple_returns_heap_tids ... ok
+test tests::pg_test_ech_gettuple_tracks_current_result_state ... ok
+test tests::pg_test_ech_graph_first_scan_emits_distance_sorted_scores ... ok
+test tests::pg_test_ech_index_admin_snapshot_counts_empty_first_insert ... ok
+test tests::pg_test_ech_index_admin_snapshot_tracks_insert_drift ... ok
+test tests::pg_test_ech_insert_allocates_new_page_when_tail_is_full ... ok
+test tests::pg_test_ech_index_cost_snapshot_reports_modeled_and_gated_costs ... ok
+test tests::pg_test_ech_insert_appends_new_element_tuple ... ok
+test tests::pg_test_ech_insert_appends_to_built_pq_fastscan_index ... ok
+test tests::pg_test_ech_insert_bootstraps_empty_pq_fastscan_index ... ok
+test tests::pg_test_ech_insert_coalesces_duplicate_vectors ... ok
+test tests::pg_test_ech_insert_coalesces_duplicate_vectors_for_pq_fastscan ... ok
+test tests::pg_test_ech_insert_keeps_gamma_distinct ... ok
+test tests::pg_test_ech_insert_neighbor_tuple_sizing_matches_levels ... ok
+test tests::pg_test_ech_insert_populates_forward_links_against_built_graph ... ok
+test tests::pg_test_ech_insert_populates_forward_links_from_live_entry_seed ... ok
+test tests::pg_test_ech_insert_populates_upper_layer_links_when_available ... ok
+test tests::pg_test_ech_insert_promotes_entry_point_on_level_up ... ok
+test tests::pg_test_ech_gettuple_rejects_backward_scan_direction - should panic ... ok
+test tests::pg_test_ech_index_admin_snapshot_rejects_non_ec_hnsw_index - should panic ... ok
+test tests::pg_test_ech_gettuple_scaffold_requires_rescan - should panic ... ok
+test tests::pg_test_ech_insert_repairs_invalid_entry_point_after_shape_init ... ok
+test tests::pg_test_ech_index_cost_snapshot_rejects_non_ec_hnsw_index - should panic ... ok
+test tests::pg_test_ech_insert_rewrites_full_layer0_backlink_slice ... ok
+test tests::pg_test_ech_insert_reuses_tail_page_when_space_remains ... ok
+test tests::pg_test_ech_insert_supports_build_source_column_index ... ok
+test tests::pg_test_ech_insert_reuses_new_tail_page_after_rollover ... ok
+test tests::pg_test_ech_insert_supports_ecvector_build_source_column_index ... ok
+test tests::pg_test_ech_live_insert_is_graph_reachable_via_backlinks ... ok
+test tests::pg_test_ech_planner_integration_snapshot_reports_blockers ... ok
+test tests::pg_test_ech_planner_chooses_index_scan_for_ordered_query ... ok
+test tests::pg_test_ech_pq_fastscan_small_source_build_writes_grouped_pages ... ok
+test tests::pg_test_ech_pq_fastscan_reloption_round_trip ... ok
+test tests::pg_test_ech_recall_external_smoke_500_formats ... ignored
+test tests::pg_test_ech_pq_fastscan_small_dim_build_derives_group_size ... ok
+test tests::pg_test_ech_rescan_repeat_overwrites_query_dimensions ... ok
+test tests::pg_test_ech_rescan_builds_bootstrap_candidate_frontier ... ok
+test tests::pg_test_ech_rescan_respects_ef_search_frontier_limit ... ok
+test tests::pg_test_ech_pq_fastscan_source_build_writes_grouped_pages ... ok
+test tests::pg_test_ech_insert_rejects_non_finite_gamma - should panic ... ok
+test tests::pg_test_ech_insert_rejects_duplicate_heaptid_overflow - should panic ... ok
+test tests::pg_test_ech_rescan_scaffold_accepts_unused_zero_key_buffer ... ok
+test tests::pg_test_ech_insert_rejects_mismatched_seed - should panic ... ok
+test tests::pg_test_ech_rescan_scaffold_records_query_dimensions ... ok
+test tests::pg_test_ech_planner_integration_snapshot_rejects_wrong_am - should panic ... ok
+test tests::pg_test_ech_rescan_seeds_entry_candidate_state ... ok
+test tests::pg_test_ech_scan_falls_back_from_stale_entry_metadata ... ok
+test tests::pg_test_ech_scan_scaffold_allocates_and_frees_state ... ok
+test tests::pg_test_ech_scan_scaffold_amendscan_is_idempotent ... ok
+test tests::pg_test_ech_rescan_scaffold_rejects_empty_query - should panic ... ok
+test tests::pg_test_ech_rescan_scaffold_rejects_index_quals - should panic ... ok
+test tests::pg_test_ech_rescan_scaffold_rejects_oversized_query - should panic ... ok
+test tests::pg_test_ech_session_ef_search_defaults_to_relation_setting ... ok
+test tests::pg_test_ech_rescan_scaffold_rejects_multiple_orderbys - should panic ... ok
+test tests::pg_test_ech_rescan_scaffold_rejects_null_query - should panic ... ok
+test tests::pg_test_ech_session_ef_search_override_limits_runtime_frontier ... ok
+test tests::pg_test_ech_rescan_scaffold_rejects_wrong_query_dimensions - should panic ... ok
+test tests::pg_test_ech_session_ef_search_overrides_reloption ... ok
+test tests::pg_test_ech_sql_ordered_index_scan_executes ... ok
+test tests::pg_test_ech_storage_format_switch_reindex_restores_runtime ... ok
+test tests::pg_test_ech_successor_candidate_from_entry_adjacency ... ok
+test tests::pg_test_ech_turboquant_reloption_round_trip ... ok
+test tests::pg_test_ech_turboquant_storage_format_build_writes_scalar_pages ... ok
+test tests::pg_test_ech_vacuum_callbacks_are_benign_noops ... ok
+test tests::pg_test_ech_vacuum_callbacks_are_stable_across_repeated_calls ... ok
+test tests::pg_test_ech_external_summary_exact_baseline_multiidx ... ok
+test tests::pg_test_ech_vacuum_callbacks_handle_empty_index ... ok
+test tests::pg_test_ech_vacuum_finalized_nodes_skip_duplicate_coalesce ... ok
+test tests::pg_test_ech_vacuum_pass1_compacts_duplicate_heaptids ... ok
+test tests::pg_test_ech_storage_format_switch_requires_reindex - should panic ... ok
+test tests::pg_test_ech_storage_format_switch_rejects_vacuum_until_reindex - should panic ... ok
+test tests::pg_test_ech_storage_format_switch_rejects_insert_until_reindex - should panic ... ok
+test tests::pg_test_ech_storage_format_switch_reverse_rejects_insert - should panic ... ok
+test tests::pg_test_ech_vacuum_pass1_compacts_pq_fastscan_duplicates ... ok
+test tests::pg_test_ech_vacuum_pass1_is_stable_across_repeated_replays ... ok
+test tests::pg_test_ech_storage_format_switch_reverse_rejects_vacuum - should panic ... ok
+test tests::pg_test_ech_storage_format_switch_reverse_requires_reindex - should panic ... ok
+test tests::pg_test_ech_vacuum_pass2_layer0_replacement_fills_broken_edges ... ok
+test tests::pg_test_ech_vacuum_pass2_unlinks_deleted_neighbor_refs ... ok
+test tests::pg_test_ech_vacuum_pass2_replaces_pq_fastscan_layer0_edges ... ok
+test tests::pg_test_ech_vacuum_pass2_unlinks_pq_fastscan_refs ... ok
+test tests::pg_test_ecvector_binary_send_matches_internal_layout ... ok
+test tests::pg_test_ech_vacuum_repairs_deleted_entry_point_metadata ... ok
+test tests::pg_test_ecvector_real_array_cast_round_trips ... ok
+test tests::pg_test_ech_vacuum_stats_accepts_pq_fastscan_index ... ok
+test tests::pg_test_ecvector_typmod_cast_round_trips ... ok
+test tests::pg_test_ech_vacuum_pass2_upper_replacement_fills_broken_edges ... ok
+test tests::pg_test_ech_visited_seed_state_tracks_frontier_candidates ... ok
+test tests::pg_test_empty_index_build_initializes_metadata_page ... ok
+test tests::pg_test_fr020_empty_index_remains_planner_gated ... ok
+test tests::pg_test_ech_vacuum_pass1_makes_deleted_row_unreachable ... ok
+test tests::pg_test_encode_to_tqvector_round_trips_canonical_artifact_layout ... ok
+test tests::pg_test_fr020_ac2_planner_prefers_seqscan_for_small_tables ... ok
+test tests::pg_test_non_empty_index_build_keeps_gamma_distinct ... ok
+test tests::pg_test_non_empty_index_build_coalesces_duplicate_vectors ... ok
+test tests::pg_test_non_empty_index_build_writes_minimal_data_pages ... ok
+test tests::pg_test_non_empty_index_build_supports_raw_source_column ... ok
+test tests::pg_test_operator_class_is_registered ... ok
+test tests::pg_test_non_empty_index_build_spans_multiple_data_pages ... ok
+test tests::pg_test_pg18_ecaz_stats_reports_backend_local_counters_for_ec_ivf ... ok
+test tests::pg_test_pg18_ecaz_stats_reports_backend_local_counters ... ok
+test tests::pg_test_pg18_explain_option_emits_ecaz_stats_group ... ok
+test tests::pg_test_pg18_explain_option_emits_ecaz_stats_group_for_ec_ivf ... ok
+test tests::pg_test_pg18_module_identity_reports_loaded_module_version ... ok
+test tests::pg_test_pq_fastscan_build_source_accepts_ecvector ... ok
+test tests::pg_test_ecvector_assignment_enforces_typmod - should panic ... ok
+test tests::pg_test_ecvector_rejects_non_finite_text - should panic ... ok
+test tests::pg_test_pq_fastscan_comparison_summary_matches_rows ... ok
+test tests::pg_test_ecvector_typmod_rejects_dimension_mismatch - should panic ... ok
+test tests::pg_test_pq_fastscan_default_rerank_matches_explicit_heap ... ok
+test tests::pg_test_pq_fastscan_exact_traversal_emits_exact_scores ... ok
+test tests::pg_test_non_empty_index_build_rejects_non_finite_gamma - should panic ... ok
+test tests::pg_test_pq_fastscan_default_source_rerank_emits_heap_scores ... ok
+test tests::pg_test_pq_fastscan_binary_score_mode_bypasses_grouped_pq_scoring ... ok
+test tests::pg_test_pq_fastscan_graph_reads_load_cold_rerank_payload ... ok
+test tests::pg_test_pq_fastscan_graph_reads_load_entry_and_neighbors ... ok
+test tests::pg_test_pq_fastscan_graph_reads_load_persisted_codebooks ... ok
+test tests::pg_test_pq_fastscan_heap_rerank_bytea_source_emits_exact_scores ... ok
+test tests::pg_test_pq_fastscan_heap_rerank_emits_heap_exact_scores ... ok
+test tests::pg_test_pg18_ec_ivf_concurrent_same_list_inserts_remain_reachable ... ok
+test tests::pg_test_pq_fastscan_heap_rerank_profile_reports_heap_only ... ok
+test tests::pg_test_pq_fastscan_index_runtime_settings_report_heap_override ... ok
+test tests::pg_test_pq_fastscan_index_runtime_settings_report_binary_default ... ok
+test tests::pg_test_pq_fastscan_exact_traversal_rejects_invalid_limit_env - should panic ... ok
+test tests::pg_test_pq_fastscan_exact_traversal_rejects_invalid_scope_env - should panic ... ok
+test tests::pg_test_pq_fastscan_index_runtime_settings_report_env_override ... ok
+test tests::pg_test_pq_fastscan_index_runtime_settings_report_binary_fallback ... ok
+test tests::pg_test_pq_fastscan_indexed_ecvector_ignores_tqvector_sibling ... ok
+test tests::pg_test_pq_fastscan_live_window_matches_simulation ... ok
+test tests::pg_test_pq_fastscan_exact_traversal_rejects_invalid_strategy_env - should panic ... ok
+test tests::pg_test_pq_fastscan_order_drift_summary_matches_rows ... ok
+test tests::pg_test_pq_fastscan_persisted_bytea_rerank_emits_scores ... ok
+test tests::pg_test_pq_fastscan_ordered_scan_plan_smoke ... ok
+test tests::pg_test_pq_fastscan_ordered_scan_smoke ... ok
+test tests::pg_test_pq_fastscan_quantized_rerank_profile_quantized_only ... ok
+test tests::pg_test_pq_fastscan_profile_exact_counters_zero_without_gate ... ok
+test tests::pg_test_pq_fastscan_runtime_captures_rerank_scores ... ok
+test tests::pg_test_pq_fastscan_runtime_comparison_rows_report_exact_ranks ... ok
+test tests::pg_test_pq_fastscan_runtime_live_window_respects_window_env ... ok
+test tests::pg_test_pq_fastscan_runtime_live_window_supports_higher_window_env ... ok
+test tests::pg_test_pq_fastscan_runtime_profile_frontier_head_exact_counters ... ok
+test tests::pg_test_pq_fastscan_runtime_profile_budgeted_exact_counters ... ok
+test tests::pg_test_pq_fastscan_runtime_settings_report_persisted_source ... ok
+test tests::pg_test_pq_fastscan_persisted_ecvector_rerank_emits_scores ... ok
+test tests::pg_test_pq_fastscan_windowed_rows_match_simulation ... ok
+test tests::pg_test_pq_fastscan_windowed_summary_matches_rows ... ok
+test tests::pg_test_raw_source_build_coalesces_duplicate_vectors ... ok
+test tests::pg_test_pq_fastscan_rerank_source_rejects_missing_column - should panic ... ok
+test tests::pg_test_pq_fastscan_rerank_source_rejects_wrong_type - should panic ... ok
+test tests::pg_test_pq_fastscan_rerank_mode_rejects_invalid_env - should panic ... ok
+test tests::pg_test_pq_fastscan_runtime_rejects_invalid_live_window_env - should panic ... ok
+test tests::pg_test_pq_fastscan_traversal_score_mode_rejects_invalid_env - should panic ... ok
+test tests::pg_test_scalar_order_drift_summary_is_inert ... ok
+test tests::pg_test_scalar_runtime_comparison_rows_leave_exact_order_null ... ok
+test tests::pg_test_raw_source_rejects_expression_index - should panic ... ok
+test tests::pg_test_raw_source_rejects_dimension_mismatch - should panic ... ok
+test tests::pg_test_raw_source_rejects_missing_column - should panic ... ok
+test tests::pg_test_raw_source_rejects_null_value - should panic ... ok
+test tests::pg_test_scalar_runtime_summary_reports_no_grouped_comparisons ... ok
+test tests::pg_test_raw_source_rejects_partial_index - should panic ... ok
+test tests::pg_test_scalar_windowed_rows_are_inert ... ok
+test tests::pg_test_scalar_windowed_summary_is_inert ... ok
+test tests::pg_test_turboquant_quantized_rerank_profile_reports_quantized_only ... ok
+test tests::pg_test_raw_source_rejects_wrong_type - should panic ... ok
+test tests::pg_test_turboquant_persisted_bytea_rerank_emits_scores ... ok
+test tests::pg_test_turboquant_heap_rerank_profile_reports_heap_only ... ok
+test tests::pg_test_turboquant_persisted_rerank_source_default_stays_quantized ... ok
+test tests::pg_test_turboquant_scan_stage_profile_full_lut_mode ... ok
+test tests::pg_test_turboquant_rerank_source_reloption_reset_round_trip ... ok
+test unit_tests::test_encode_embedding_to_tqvector_rejects_dimensions_over_u16_max ... ok
+test unit_tests::test_pack_unpack_roundtrip ... ok
+test tests::pg_test_turboquant_rerank_source_rejects_wrong_type - should panic ... ok
+test unit_tests::test_parse_text_rejects_invalid_hex ... ok
+test unit_tests::test_parse_text_rejects_wrong_code_length ... ok
+test unit_tests::test_payload_len_4bit_1536 ... ok
+test unit_tests::test_payload_len_8bit_1536 ... ok
+test unit_tests::test_quantized_scores_can_be_negated ... ok
+test tests::pg_test_vacuum_source_backed_repair_prefers_source_candidate ... ok
+test unit_tests::test_quantizer_encode_is_deterministic ... ok
+test unit_tests::test_score_code_inner_product_matches_quantizer_lite ... ok
+test unit_tests::test_text_roundtrip ... ok
+test unit_tests::test_tqvector_negative_query_inner_product_negates_query_score ... ok
+test unit_tests::test_tqvector_query_inner_product_rejects_dimension_mismatch ... ok
+test unit_tests::test_tqvector_query_inner_product_uses_persisted_gamma ... ok
+test unit_tests::test_unpack_rejects_trailing_binary ... ok
+test unit_tests::test_unpack_rejects_truncated_binary ... ok
+test tests::pg_test_turboquant_scan_stage_profile_tiled_lut_mode ... ok
+test unit_tests::test_parse_text_fuzz_stability ... ok
+test tests::pg_test_turboquant_exact_score_mode_rejects_invalid_env - should panic ... ok
+test tests::pg_test_turboquant_source_backed_default_rerank_stays_quantized ... ok
+test tests::pg_test_turboquant_scan_stage_profile_int8_mode ... ok
+test tests::pg_test_fr020_ac1_planner_chooses_index_scan_for_large_table ... ok
+
+test result: ok. 618 passed; 0 failed; 4 ignored; 0 measured; 0 filtered out; finished in 90.67s
+
+     Running unittests src/bin/approx_score_study.rs (target/debug/deps/approx_score_study-dd4741351b139856)
+
+running 5 tests
+test tests::binary_sign_similarity_from_packed_matches_precomputed_words ... ok
+test tests::grouped_mean_code_counts_track_centroid_histogram_per_group ... ok
+test tests::binary_sign_words_from_packed_matches_expected_sign_bits ... ok
+test tests::grouped_pq_u8_score_tracks_f32_for_same_code ... ok
+test tests::grouped_pq_encode_packs_two_nibbles_per_byte ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/pgrx_embed.rs (target/debug/deps/pgrx_embed_ecaz-8301cc0aa95d351d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/simd_bench.rs (target/debug/deps/simd_bench-fd67955a23bc1261)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/proptest_page.rs (target/debug/deps/proptest_page-6db7fac07b91cf53)
+
+running 5 tests
+test item_pointer_roundtrip ... ok
+test metadata_roundtrip ... ok
+test element_encoded_len_matches ... ok
+test element_tuple_roundtrip ... ok
+test neighbor_tuple_roundtrip ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/proptest_quant.rs (target/debug/deps/proptest_quant-8363396efefb292f)
+
+running 10 tests
+test srht_preserves_norm ... ok
+test srht_roundtrip ... ok
+test mse_pack_unpack_roundtrip ... ok
+test qjl_pack_unpack_roundtrip ... ok
+test srht_roundtrip_real_world_dims ... ok
+test encode_determinism ... ok
+test score_ip_codes_lite_symmetric ... ok
+test score_consistency ... ok
+test decode_approximate_bounded_error has been running for over 60 seconds
+test payload_len_matches_actual has been running for over 60 seconds
+test decode_approximate_bounded_error ... ok
+test payload_len_matches_actual ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 160.62s
+
+     Running tests/recall_integration.rs (target/debug/deps/recall_integration-bf15d094a2a5041f)
+
+running 23 tests
+test ann_benchmarks_anchor_within_tolerance ... ignored
+test quantizer_recall_1536_4mse_codebook_dim_sweep_10k_clustered ... ignored
+test quantizer_recall_1536_full_tail_exact_1k_clustered ... ignored
+test quantizer_recall_1536_full_tail_exact_1k_uniform ... ignored
+test quantizer_recall_1536_padding_ablations_1k_clustered ... ignored
+test quantizer_recall_1536_padding_ablations_1k_uniform ... ignored
+test quantizer_recall_1536_payload_equivalent_operating_points_10k_clustered ... ignored
+test quantizer_recall_1536_qjl_increment_after_4mse_10k_clustered ... ignored
+test quantizer_recall_1536_same_payload_qjl_vs_mse_10k_clustered ... ignored
+test quantizer_recall_1536_tiled_codebook_dim_sweep_1k_clustered ... ignored
+test quantizer_recall_1536_tiled_codebook_dim_sweep_1k_uniform ... ignored
+test quantizer_recall_1536_tiled_fwht_reference_1k_clustered ... ignored
+test quantizer_recall_1536_upstream_gap_10k_clustered ... ignored
+test quantizer_recall_1k_1536_bitwidth_sweep ... ignored
+test quantizer_recall_1k_dimension_sweep ... ignored
+test quantizer_recall_50k_1536_4bit ... ignored
+test quantizer_recall_clustered_10k ... ignored
+test quantizer_recall_clustered_10k_bitwidth_spot_check ... ignored
+test quantizer_recall_clustered_bitwidth_sweep ... ignored
+test quantizer_recall_near_duplicates ... ignored
+test quantizer_recall_scoring_ablation_1k_uniform ... ignored
+test recall_harness_clustered_smoke_test ... ok
+test recall_harness_smoke_test ... ok
+
+test result: ok. 2 passed; 0 failed; 21 ignored; 0 measured; 0 filtered out; finished in 0.09s
+
+     Running tests/size_of_assertions.rs (target/debug/deps/size_of_assertions-afc81e22d60af87d)
+
+running 13 tests
+test compression_ratio_1536_4bit ... ok
+test element_tuple_encoded_len_1536_4bit ... ok
+test item_pointer_wire_size ... ok
+test item_pointer_struct_size ... ok
+test heaptid_inline_capacity ... ok
+test mse_code_len_1536_4bit ... ok
+test page_header_size ... ok
+test payload_len_1536_dim_2bit ... ok
+test payload_len_1536_dim_3bit ... ok
+test payload_len_1536_dim_4bit ... ok
+test payload_len_1536_dim_6bit ... ok
+test payload_len_1536_dim_8bit ... ok
+test qjl_code_len_1536 ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests ecaz
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

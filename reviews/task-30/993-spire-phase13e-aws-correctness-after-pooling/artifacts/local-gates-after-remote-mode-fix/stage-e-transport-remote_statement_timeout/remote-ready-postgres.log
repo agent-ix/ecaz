@@ -1,0 +1,19 @@
+2026-05-26 16:49:51.805 PDT [2711651] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-05-26 16:49:51.807 PDT [2711651] LOG:  listening on Unix socket "/home/peter/dev/ecaz/target/s-1503443593/.s.PGSQL.39647"
+2026-05-26 16:49:51.813 PDT [2711657] LOG:  database system was shut down at 2026-05-26 16:49:50 PDT
+2026-05-26 16:49:51.817 PDT [2711651] LOG:  database system is ready to accept connections
+2026-05-26 16:49:52.263 PDT [2711685] ERROR:  canceling statement due to statement timeout
+2026-05-26 16:49:52.263 PDT [2711685] STATEMENT:  SELECT pg_sleep(0.30)
+2026-05-26 16:49:52.300 PDT [2711689] ERROR:  canceling statement due to statement timeout
+2026-05-26 16:49:52.300 PDT [2711689] STATEMENT:  SELECT pg_sleep(0.30)
+2026-05-26 16:49:52.340 PDT [2711695] ERROR:  canceling statement due to statement timeout
+2026-05-26 16:49:52.340 PDT [2711695] STATEMENT:  SELECT pg_sleep(0.30)
+2026-05-26 16:49:52.377 PDT [2711699] ERROR:  canceling statement due to statement timeout
+2026-05-26 16:49:52.377 PDT [2711699] STATEMENT:  SELECT pg_sleep(0.30)
+2026-05-26 16:49:52.483 PDT [2711651] LOG:  received fast shutdown request
+2026-05-26 16:49:52.485 PDT [2711651] LOG:  aborting any active transactions
+2026-05-26 16:49:52.485 PDT [2711651] LOG:  background worker "logical replication launcher" (PID 2711660) exited with exit code 1
+2026-05-26 16:49:52.485 PDT [2711655] LOG:  shutting down
+2026-05-26 16:49:52.487 PDT [2711655] LOG:  checkpoint starting: shutdown immediate
+2026-05-26 16:49:52.499 PDT [2711655] LOG:  checkpoint complete: wrote 0 buffers (0.0%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.004 s, sync=0.002 s, total=0.014 s; sync files=2, longest=0.001 s, average=0.001 s; distance=0 kB, estimate=0 kB; lsn=0/1754600, redo lsn=0/1754600
+2026-05-26 16:49:52.507 PDT [2711651] LOG:  database system is shut down

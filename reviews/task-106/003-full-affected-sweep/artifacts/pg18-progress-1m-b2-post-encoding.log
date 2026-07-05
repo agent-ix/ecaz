@@ -1,0 +1,12 @@
+  pid   | state  | wait_event_type |  wait_event  |      age       |                                     query                                     
+--------+--------+-----------------+--------------+----------------+-------------------------------------------------------------------------------
+ 617056 | active |                 |              | 00:00:03.21651 | CREATE INDEX t106_1m_ivf_rabitq_b2_rabitq_idx ON t106_1m_ivf_rabitq_b2_corpus+
+        |        |                 |              |                |         USING ec_ivf (embedding ecvector_i
+ 618123 |        | IO              | DataFileRead |                | 
+(2 rows)
+
+  pid   |     phase      
+--------+----------------
+ 617056 | building index
+(1 row)
+

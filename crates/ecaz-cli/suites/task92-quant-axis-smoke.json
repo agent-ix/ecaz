@@ -1,0 +1,62 @@
+{
+  "name": "task92-quant-axis-smoke",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-92/011-quant-axis-smoke-config/artifacts",
+  "defaults": {
+    "pg": 18,
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 8,
+    "iterations": 8,
+    "force_index": true,
+    "sample_backend_memory": false
+  },
+  "steps": [
+    {
+      "kind": "latency",
+      "name": "latency-spire-turboquant-lut32-scalar-populated",
+      "tags": [
+        "task92",
+        "quant-axis",
+        "spire",
+        "turboquant",
+        "lut32",
+        "quant=turboquant",
+        "isa=scalar",
+        "kernel_status=valid"
+      ],
+      "prefix": "task92_quant_axis_spire_turboquant",
+      "profile": "ec_spire",
+      "k": 10,
+      "sweep": [32],
+      "iterations": 8,
+      "concurrency": 1,
+      "cache_state": "task92_smoke",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-spire-turboquant-lut32-scalar-populated.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-spire-rabitq-sve2-missing",
+      "tags": [
+        "task92",
+        "quant-axis",
+        "spire",
+        "rabitq",
+        "graviton4",
+        "quant=rabitq",
+        "isa=sve2",
+        "kernel_status=missing_kernel"
+      ],
+      "prefix": "task92_quant_axis_spire_rabitq",
+      "profile": "ec_spire",
+      "k": 10,
+      "sweep": [32],
+      "iterations": 8,
+      "concurrency": 1,
+      "cache_state": "task92_smoke",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-spire-rabitq-sve2-missing.log"
+    }
+  ]
+}

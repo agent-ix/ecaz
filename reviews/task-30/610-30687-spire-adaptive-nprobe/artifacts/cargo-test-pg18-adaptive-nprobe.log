@@ -1,0 +1,51 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.13s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-0e919f08513aac0f)
+
+running 3 tests
+test am::ec_spire::scan::tests::adaptive_nprobe_keeps_configured_width_when_boundary_gap_is_small ... ok
+test am::ec_spire::scan::tests::adaptive_nprobe_reduces_routing_width_when_boundary_gap_is_large ... ok
+[32m[1m       Using[0m[39m [37m[1mPgConfig("pg18")[0m[39m and `pg_config` from [36m/home/peter/.pgrx/18.3/pgrx-install/bin/pg_config[39m
+[32m[1m    Building[0m[39m extension with features [36mpg_test pg18[39m
+[32m[1m     Running[0m[39m command [36m"/home/peter/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "build" "--lib" "--features" "pg_test pg18" "--no-default-features" "--message-format=json-render-diagnostics"[39m
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 10.06s
+[32m[1m  Installing[0m[39m extension
+[32m[1m     Copying[0m[39m control file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/ecaz.control[39m
+Error: 
+   0: failed writing `/home/peter/dev/ecaz/ecaz.control` to `/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/ecaz.control`
+   1: Read-only file system (os error 30)
+
+Location:
+   /home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cargo-pgrx-0.17.0/src/command/install.rs:269
+
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ SPANTRACE ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+   0: cargo_pgrx::command::install::install_extension with pg_version=18.3 profile=Dev test=true features=["pg_test", "pg18"]
+      at /home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cargo-pgrx-0.17.0/src/command/install.rs:117
+   1: cargo_pgrx::command::install::execute
+      at /home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cargo-pgrx-0.17.0/src/command/install.rs:65
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.
+test tests::pg_test_ec_spire_adaptive_nprobe_routing_snapshot_sql ... FAILED
+
+failures:
+
+---- tests::pg_test_ec_spire_adaptive_nprobe_routing_snapshot_sql stdout ----
+
+thread 'tests::pg_test_ec_spire_adaptive_nprobe_routing_snapshot_sql' (16) panicked at /home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pgrx-tests-0.17.0/src/framework.rs:217:14:
+Could not initialize test framework: Failure installing extension using command: CARGO_TARGET_DIR="/home/peter/dev/ecaz/target" "/home/peter/.cargo/bin/cargo-pgrx" "pgrx" "install" "--test" "--pg-config" "/home/peter/.pgrx/18.3/pgrx-install/bin/pg_config" "--features" "pg_test pg18" "--no-default-features"
+
+
+
+Location:
+    /home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pgrx-tests-0.17.0/src/framework.rs:387:20
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    tests::pg_test_ec_spire_adaptive_nprobe_routing_snapshot_sql
+
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 1492 filtered out; finished in 10.33s
+
+error: test failed, to rerun pass `--lib`

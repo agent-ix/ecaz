@@ -1,0 +1,21 @@
+--- hardening/careful/src/../../../src/storage/page.rs
++++ replace DataPage::tuple_count -> usize with 0
+@@ -78,17 +78,17 @@
+         }
+     }
+ 
+     pub fn block_number(&self) -> u32 {
+         self.block_number
+     }
+ 
+     pub fn tuple_count(&self) -> usize {
+-        self.tuples.len()
++        0 /* ~ changed by cargo-mutants ~ */
+     }
+ 
+     pub fn tuples(&self) -> &[Vec<u8>] {
+         &self.tuples
+     }
+ 
+     pub fn free_bytes(&self) -> usize {
+         self.page_size.saturating_sub(self.used_bytes)

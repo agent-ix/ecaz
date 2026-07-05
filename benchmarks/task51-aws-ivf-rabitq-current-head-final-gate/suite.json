@@ -1,0 +1,112 @@
+{
+  "name": "task51-aws-ivf-rabitq-current-head-final-gate",
+  "schema_version": 1,
+  "artifact_dir": "benchmarks/task51-aws-ivf-rabitq-current-head-final-gate/artifacts",
+  "defaults": {
+    "pg": 18,
+    "socket_dir": "/var/run/postgresql",
+    "profile": "ec_ivf",
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 200,
+    "iterations": 200,
+    "force_index": true
+  },
+  "steps": [
+    {
+      "kind": "raw",
+      "name": "precheck-preserved-1m-ivf-rabitq",
+      "tags": ["aws", "precheck", "ivf", "rabitq"],
+      "args": [
+        "dev", "sql",
+        "--pg", "18",
+        "--db", "tqvector_bench",
+        "--socket-dir", "/var/run/postgresql",
+        "--raw",
+        "--sql",
+        "SELECT current_database() AS db, current_setting('server_version') AS server_version; SELECT count(*) AS corpus_rows FROM real_1m_ivf_rabitq1_rerank_corpus; SELECT count(*) AS query_rows FROM real_1m_ivf_rabitq1_rerank_queries; SELECT i.relname, pam.amname, i.reloptions FROM pg_class t JOIN pg_index ix ON ix.indrelid = t.oid JOIN pg_class i ON i.oid = ix.indexrelid JOIN pg_am pam ON pam.oid = i.relam WHERE t.relname = 'real_1m_ivf_rabitq1_rerank_corpus' ORDER BY i.relname;",
+        "--log-output", "benchmarks/task51-aws-ivf-rabitq-current-head-final-gate/artifacts/precheck-preserved-1m-ivf-rabitq.log"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task51-aws-ivf-rabitq-current-head-final-gate/artifacts/precheck-preserved-1m-ivf-rabitq.log"
+      ]
+    },
+    {
+      "kind": "recall",
+      "name": "recall-1m-rabitq1-rerank-q500-p256",
+      "tags": ["aws", "recall", "baseline_sanity", "ec_real_990k", "ivf", "rabitq", "q500"],
+      "prefix": "real_1m_ivf_rabitq1_rerank",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "k": 10,
+      "sweep": [256],
+      "rerank_width": 50,
+      "queries_limit": 500,
+      "force_index": true,
+      "truth_cache_file": "benchmarks/task51-aws-ivf-rabitq-current-head-final-gate/artifacts/truth-aws-real-1m-q500-k10.json",
+      "log_output": "benchmarks/task51-aws-ivf-rabitq-current-head-final-gate/artifacts/recall-1m-rabitq1-rerank-q500-p256.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-1m-rabitq1-rerank-p256",
+      "tags": ["aws", "latency", "baseline_sanity", "ec_real_990k", "ivf", "rabitq"],
+      "prefix": "real_1m_ivf_rabitq1_rerank",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "sweep": [256],
+      "rerank_width": 50,
+      "force_index": true,
+      "iterations": 200,
+      "concurrency": 1,
+      "log_output": "benchmarks/task51-aws-ivf-rabitq-current-head-final-gate/artifacts/latency-1m-rabitq1-rerank-p256.log"
+    },
+    {
+      "kind": "explain",
+      "name": "explain-1m-rabitq1-rerank-p256",
+      "tags": ["aws", "explain", "baseline_sanity", "ec_real_990k", "ivf", "rabitq", "nprobe256"],
+      "prefix": "real_1m_ivf_rabitq1_rerank",
+      "profile": "ec_ivf",
+      "index_name": "real_1m_ivf_rabitq1_rerank_rabitq_idx",
+      "nprobe": 256,
+      "rerank_width": 50,
+      "sql_file": "benchmarks/task51-aws-ivf-rabitq-current-head-final-gate/artifacts/explain-1m-rabitq1-rerank-p256.sql",
+      "log_output": "benchmarks/task51-aws-ivf-rabitq-current-head-final-gate/artifacts/explain-1m-rabitq1-rerank-p256.log"
+    },
+    {
+      "kind": "sidecar-rerank",
+      "name": "sidecar-1m-rabitq1-k50-q200-c1",
+      "tags": ["aws", "sidecar", "real_io", "ec_real_990k", "ivf", "rabitq", "concurrency1"],
+      "prefix": "real_1m_ivf_rabitq1_rerank",
+      "profile": "ec_ivf",
+      "k": 10,
+      "candidate_k": 50,
+      "concurrency": 1,
+      "sweep": [128],
+      "queries_limit": 200,
+      "variants": ["f16", "rabitq8"],
+      "read_modes": ["random-id", "tid-sorted"],
+      "rebuild_sidecar_table": true,
+      "force_index": true,
+      "allow_unsafe_index_shape": true,
+      "log_output": "benchmarks/task51-aws-ivf-rabitq-current-head-final-gate/artifacts/sidecar-1m-rabitq1-k50-q200-c1.log"
+    },
+    {
+      "kind": "sidecar-rerank",
+      "name": "sidecar-1m-rabitq1-k50-q200-c4-rabitq8-tid-sorted",
+      "tags": ["aws", "sidecar", "real_io", "ec_real_990k", "ivf", "rabitq", "concurrency4"],
+      "prefix": "real_1m_ivf_rabitq1_rerank",
+      "profile": "ec_ivf",
+      "k": 10,
+      "candidate_k": 50,
+      "concurrency": 4,
+      "sweep": [128],
+      "queries_limit": 200,
+      "variants": ["rabitq8"],
+      "read_modes": ["tid-sorted"],
+      "rebuild_sidecar_table": false,
+      "force_index": true,
+      "allow_unsafe_index_shape": true,
+      "log_output": "benchmarks/task51-aws-ivf-rabitq-current-head-final-gate/artifacts/sidecar-1m-rabitq1-k50-q200-c4-rabitq8-tid-sorted.log"
+    }
+  ]
+}

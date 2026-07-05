@@ -1,0 +1,6 @@
+SET
+SET
+ERROR:  function ec_spire_index_scan_routing_snapshot(regclass, real[]) does not exist
+LINE 1: ...daptive_nprobe_decision, deduped_route_count FROM ec_spire_i...
+                                                             ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.

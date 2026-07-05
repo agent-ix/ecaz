@@ -1,0 +1,79 @@
+{
+  "name": "task67-diskann-1m",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-67/036-scale-benchmark-100k-1m/artifacts/1m-diskann",
+  "defaults": {
+    "pg": 18,
+    "socket_dir": "/var/run/postgresql",
+    "profile": "ec_diskann",
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 100,
+    "iterations": 50,
+    "force_index": true,
+    "sample_backend_memory": true,
+    "memory_sample_interval_ms": 25
+  },
+  "steps": [
+    {
+      "kind": "corpus-fetch",
+      "name": "fetch-dbpedia-openai3-1m",
+      "tags": ["aws", "fetch", "diskann", "real1m"],
+      "dataset": "qdrant-dbpedia-openai3-large-1536-1m",
+      "output_dir": "/var/lib/pgsql/18/datasets/task67-dbpedia-openai3-1m"
+    },
+    {
+      "kind": "corpus-prepare",
+      "name": "prepare-ann-benchmarks-anchor",
+      "tags": ["aws", "prepare", "diskann", "real1m"],
+      "profile": "ec_real_ann_benchmarks_anchor",
+      "parquet": "/var/lib/pgsql/18/datasets/task67-dbpedia-openai3-1m/data",
+      "output_dir": "/var/lib/pgsql/18/datasets/staged-task67-1m",
+      "chunk_rows": 25000
+    },
+    {
+      "kind": "load",
+      "name": "load-diskann-real1m-default",
+      "tags": ["aws", "load", "diskann", "real1m", "default"],
+      "prefix": "task67_1m_diskann_default",
+      "profile": "ec_diskann",
+      "manifest_file": "/var/lib/pgsql/18/datasets/staged-task67-1m/ec_real_ann_benchmarks_anchor_manifest.json",
+      "chunked": true,
+      "log_file": "reviews/task-67/036-scale-benchmark-100k-1m/artifacts/1m-diskann/load-diskann-real1m-default.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-diskann-real1m-list-size-sweep",
+      "tags": ["aws", "recall", "diskann", "real1m", "default"],
+      "prefix": "task67_1m_diskann_default",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [64, 128, 200, 400, 800],
+      "queries_limit": 100,
+      "truth_cache_file": "reviews/task-67/036-scale-benchmark-100k-1m/artifacts/1m-diskann/truth-diskann-real1m-k10.json",
+      "log_output": "reviews/task-67/036-scale-benchmark-100k-1m/artifacts/1m-diskann/recall-diskann-real1m-list-size-sweep.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-diskann-real1m-list-size-sweep",
+      "tags": ["aws", "latency", "diskann", "real1m", "default"],
+      "prefix": "task67_1m_diskann_default",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [64, 128, 200, 400, 800],
+      "iterations": 50,
+      "concurrency": 1,
+      "force_index": true,
+      "sample_backend_memory": true,
+      "memory_sample_interval_ms": 25,
+      "log_output": "reviews/task-67/036-scale-benchmark-100k-1m/artifacts/1m-diskann/latency-diskann-real1m-list-size-sweep.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-diskann-real1m-default",
+      "tags": ["aws", "storage", "diskann", "real1m", "default"],
+      "prefix": "task67_1m_diskann_default",
+      "log_file": "reviews/task-67/036-scale-benchmark-100k-1m/artifacts/1m-diskann/storage-diskann-real1m-default.log"
+    }
+  ]
+}

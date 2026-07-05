@@ -1,0 +1,27 @@
+hardening/careful/src/../../../src/quant/rabitq.rs:409:32: replace > with >= in <impl crate::quant::Quantizer for RaBitQQuantizer>::encode_code
+hardening/careful/src/../../../src/quant/rabitq.rs:409:44: replace / with % in <impl crate::quant::Quantizer for RaBitQQuantizer>::encode_code
+hardening/careful/src/../../../src/quant/rabitq.rs:419:28: replace << with >> in <impl crate::quant::Quantizer for RaBitQQuantizer>::encode_code
+hardening/careful/src/../../../src/quant/rabitq.rs:422:61: replace * with + in <impl crate::quant::Quantizer for RaBitQQuantizer>::encode_code
+hardening/careful/src/../../../src/quant/rabitq.rs:425:40: replace * with / in <impl crate::quant::Quantizer for RaBitQQuantizer>::encode_code
+hardening/careful/src/../../../src/quant/rabitq.rs:430:30: replace > with >= in <impl crate::quant::Quantizer for RaBitQQuantizer>::encode_code
+hardening/careful/src/../../../src/quant/rabitq.rs:590:50: replace * with / in RaBitQQuantizer::encode_code_centered
+hardening/careful/src/../../../src/quant/rabitq.rs:593:41: replace > with >= in RaBitQQuantizer::encode_code_centered
+hardening/careful/src/../../../src/quant/rabitq.rs:733:49: replace * with / in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:755:24: replace < with <= in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:757:35: replace < with == in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:757:35: replace < with <= in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:772:54: replace / with % in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:772:54: replace / with * in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:772:80: replace * with + in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:772:80: replace * with / in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:998:38: replace * with + in quantize_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1056:23: replace / with % in read_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1135:9: replace || with && in estimate_ip_impl
+hardening/careful/src/../../../src/quant/rabitq.rs:1134:9: replace || with && in estimate_ip_impl
+hardening/careful/src/../../../src/quant/rabitq.rs:1133:9: replace || with && in estimate_ip_impl
+hardening/careful/src/../../../src/quant/rabitq.rs:1132:30: replace < with == in estimate_ip_impl
+hardening/careful/src/../../../src/quant/rabitq.rs:1132:30: replace < with <= in estimate_ip_impl
+hardening/careful/src/../../../src/quant/rabitq.rs:1155:50: replace / with % in estimate_ip_impl
+hardening/careful/src/../../../src/quant/rabitq.rs:1155:50: replace / with * in estimate_ip_impl
+hardening/careful/src/../../../src/quant/rabitq.rs:1155:71: replace * with + in estimate_ip_impl
+hardening/careful/src/../../../src/quant/rabitq.rs:1155:71: replace * with / in estimate_ip_impl

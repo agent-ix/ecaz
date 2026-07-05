@@ -1,0 +1,23 @@
+[loader] inspecting /home/peter/dev/datasets/tqhnsw_real_10k/tqhnsw_real_10k_corpus.tsv
+[loader] inspecting /home/peter/dev/datasets/tqhnsw_real_10k/tqhnsw_real_10k_queries.tsv
+[loader] corpus: 10000 rows, sha256=c67c5810b66d982d705974e48d4775479adfbd92a988f694091266e049a35e75  queries: 200 rows, sha256=a2c191bb742017d849e73f6e6866e8e0f0bac1579ba212f7fc76b8eb09904ae8
+[loader] warning: manifest verification failed for /home/peter/dev/datasets/tqhnsw_real_10k/tqhnsw_real_10k_manifest.json: prefix="tqhnsw_real_10k" (expected "t106_10k_ivf_auto_tq")
+[loader] copied corpus table t106_10k_ivf_auto_tq_corpus in 4.14s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table t106_10k_ivf_auto_tq_corpus in 2.80s
+[loader] copied queries table t106_10k_ivf_auto_tq_queries in 97.45ms
+[loader] building t106_10k_ivf_auto_tq_idx using ec_ivf (reloptions=[nlists=64, training_sample_rows=10000, rerank=heap_f32, rerank_width=25]) ...
+[loader] built t106_10k_ivf_auto_tq_idx in 1.17s
+[loader] warning: ec_ivf build timing unavailable: db error
+┌─────────┬────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                                              │
+╞═════════╪════════════════════════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_ivf                                                                                             │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ t106_10k_ivf_auto_tq_corpus (10000 rows)                                                           │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ t106_10k_ivf_auto_tq_queries (200 rows)                                                            │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ t106_10k_ivf_auto_tq_idx [nlists=64, training_sample_rows=10000, rerank=heap_f32, rerank_width=25] │
+└─────────┴────────────────────────────────────────────────────────────────────────────────────────────────────┘
+[loader] completed prefix t106_10k_ivf_auto_tq in 9.34s

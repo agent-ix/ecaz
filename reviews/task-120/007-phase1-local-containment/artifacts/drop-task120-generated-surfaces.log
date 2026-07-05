@@ -1,0 +1,7 @@
+DROP TABLE
+DROP TABLE
+DROP TABLE
+DROP TABLE
+DROP TABLE
+DROP TABLE
+NOTICE:  table "task120_phase1_real100k_spire_queries" does not exist, skipping

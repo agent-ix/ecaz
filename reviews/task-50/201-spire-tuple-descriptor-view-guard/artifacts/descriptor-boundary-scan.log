@@ -1,0 +1,7 @@
+Script started on 2026-05-21 02:11:03-07:00 [<not executed on terminal>]
+src/am/common/heap_slot.rs
+165:            let attr = pg_sys::TupleDescAttr(self.as_ptr(), attr_index);
+173:            let name = CStr::from_ptr(attr.attname.data.as_ptr())
+204:            let tuple_desc = slot.as_ref().tts_tupleDescriptor;
+
+Script done on 2026-05-21 02:11:03-07:00 [COMMAND_EXIT_CODE="0"]

@@ -1,0 +1,821 @@
+Script started on 2026-05-19 05:06:36-07:00 [<not executed on terminal>]
+[1mdiff --git a/scripts/unsafe_comment_baseline.txt b/scripts/unsafe_comment_baseline.txt[m
+[1mindex e0d951eb..f60560de 100644[m
+[1m--- a/scripts/unsafe_comment_baseline.txt[m
+[1m+++ b/scripts/unsafe_comment_baseline.txt[m
+[36m@@ -55,97 +55,6 @@[m [msrc/am/ec_diskann/ambuild.rs:834[m
+ src/am/ec_diskann/ambuild.rs:840[m
+ src/am/ec_diskann/ambuild.rs:848[m
+ src/am/ec_diskann/ambuild.rs:892[m
+[31m-src/am/ec_diskann/routine.rs:1008[m
+[31m-src/am/ec_diskann/routine.rs:1012[m
+[31m-src/am/ec_diskann/routine.rs:1042[m
+[31m-src/am/ec_diskann/routine.rs:1086[m
+[31m-src/am/ec_diskann/routine.rs:1087[m
+[31m-src/am/ec_diskann/routine.rs:1123[m
+[31m-src/am/ec_diskann/routine.rs:1149[m
+[31m-src/am/ec_diskann/routine.rs:1169[m
+[31m-src/am/ec_diskann/routine.rs:1188[m
+[31m-src/am/ec_diskann/routine.rs:1365[m
+[31m-src/am/ec_diskann/routine.rs:1399[m
+[31m-src/am/ec_diskann/routine.rs:1468[m
+[31m-src/am/ec_diskann/routine.rs:148[m
+[31m-src/am/ec_diskann/routine.rs:1510[m
+[31m-src/am/ec_diskann/routine.rs:1648[m
+[31m-src/am/ec_diskann/routine.rs:1657[m
+[31m-src/am/ec_diskann/routine.rs:1672[m
+[31m-src/am/ec_diskann/routine.rs:1682[m
+[31m-src/am/ec_diskann/routine.rs:1683[m
+[31m-src/am/ec_diskann/routine.rs:1687[m
+[31m-src/am/ec_diskann/routine.rs:1708[m
+[31m-src/am/ec_diskann/routine.rs:1727[m
+[31m-src/am/ec_diskann/routine.rs:1744[m
+[31m-src/am/ec_diskann/routine.rs:1745[m
+[31m-src/am/ec_diskann/routine.rs:1748[m
+[31m-src/am/ec_diskann/routine.rs:1763[m
+[31m-src/am/ec_diskann/routine.rs:1775[m
+[31m-src/am/ec_diskann/routine.rs:1790[m
+[31m-src/am/ec_diskann/routine.rs:1798[m
+[31m-src/am/ec_diskann/routine.rs:1805[m
+[31m-src/am/ec_diskann/routine.rs:1822[m
+[31m-src/am/ec_diskann/routine.rs:1835[m
+[31m-src/am/ec_diskann/routine.rs:1836[m
+[31m-src/am/ec_diskann/routine.rs:1849[m
+[31m-src/am/ec_diskann/routine.rs:1850[m
+[31m-src/am/ec_diskann/routine.rs:1893[m
+[31m-src/am/ec_diskann/routine.rs:1906[m
+[31m-src/am/ec_diskann/routine.rs:1910[m
+[31m-src/am/ec_diskann/routine.rs:1913[m
+[31m-src/am/ec_diskann/routine.rs:1919[m
+[31m-src/am/ec_diskann/routine.rs:1937[m
+[31m-src/am/ec_diskann/routine.rs:1968[m
+[31m-src/am/ec_diskann/routine.rs:1969[m
+[31m-src/am/ec_diskann/routine.rs:1970[m
+[31m-src/am/ec_diskann/routine.rs:1971[m
+[31m-src/am/ec_diskann/routine.rs:1983[m
+[31m-src/am/ec_diskann/routine.rs:2083[m
+[31m-src/am/ec_diskann/routine.rs:2092[m
+[31m-src/am/ec_diskann/routine.rs:2123[m
+[31m-src/am/ec_diskann/routine.rs:2125[m
+[31m-src/am/ec_diskann/routine.rs:2137[m
+[31m-src/am/ec_diskann/routine.rs:230[m
+[31m-src/am/ec_diskann/routine.rs:2354[m
+[31m-src/am/ec_diskann/routine.rs:2359[m
+[31m-src/am/ec_diskann/routine.rs:2493[m
+[31m-src/am/ec_diskann/routine.rs:2529[m
+[31m-src/am/ec_diskann/routine.rs:2547[m
+[31m-src/am/ec_diskann/routine.rs:2550[m
+[31m-src/am/ec_diskann/routine.rs:2551[m
+[31m-src/am/ec_diskann/routine.rs:2566[m
+[31m-src/am/ec_diskann/routine.rs:2582[m
+[31m-src/am/ec_diskann/routine.rs:2590[m
+[31m-src/am/ec_diskann/routine.rs:2591[m
+[31m-src/am/ec_diskann/routine.rs:3579[m
+[31m-src/am/ec_diskann/routine.rs:3612[m
+[31m-src/am/ec_diskann/routine.rs:3730[m
+[31m-src/am/ec_diskann/routine.rs:3870[m
+[31m-src/am/ec_diskann/routine.rs:3885[m
+[31m-src/am/ec_diskann/routine.rs:4004[m
+[31m-src/am/ec_diskann/routine.rs:4044[m
+[31m-src/am/ec_diskann/routine.rs:4104[m
+[31m-src/am/ec_diskann/routine.rs:496[m
+[31m-src/am/ec_diskann/routine.rs:518[m
+[31m-src/am/ec_diskann/routine.rs:531[m
+[31m-src/am/ec_diskann/routine.rs:562[m
+[31m-src/am/ec_diskann/routine.rs:722[m
+[31m-src/am/ec_diskann/routine.rs:753[m
+[31m-src/am/ec_diskann/routine.rs:770[m
+[31m-src/am/ec_diskann/routine.rs:774[m
+[31m-src/am/ec_diskann/routine.rs:785[m
+[31m-src/am/ec_diskann/routine.rs:805[m
+[31m-src/am/ec_diskann/routine.rs:819[m
+[31m-src/am/ec_diskann/routine.rs:843[m
+[31m-src/am/ec_diskann/routine.rs:864[m
+[31m-src/am/ec_diskann/routine.rs:893[m
+[31m-src/am/ec_diskann/routine.rs:938[m
+[31m-src/am/ec_diskann/routine.rs:943[m
+[31m-src/am/ec_diskann/routine.rs:964[m
+[31m-src/am/ec_diskann/routine.rs:970[m
+[31m-src/am/ec_diskann/routine.rs:977[m
+[31m-src/am/ec_diskann/routine.rs:985[m
+ src/am/ec_hnsw/shared.rs:100[m
+ src/am/ec_hnsw/shared.rs:105[m
+ src/am/ec_hnsw/shared.rs:107[m
+[1mdiff --git a/src/am/ec_diskann/routine.rs b/src/am/ec_diskann/routine.rs[m
+[1mindex 3cb37298..51ede2b6 100644[m
+[1m--- a/src/am/ec_diskann/routine.rs[m
+[1m+++ b/src/am/ec_diskann/routine.rs[m
+[36m@@ -145,6 +145,8 @@[m [munsafe fn maybe_apply_vacuum_rewrite_test_injection([m
+     let Some(injection) = take_vacuum_rewrite_test_injection() else {[m
+         return Ok(());[m
+     };[m
+[32m+[m[32m    // SAFETY: Test injection targets a tuple in this index and the helper locks[m
+[32m+[m[32m    // the target page before overwriting bytes.[m
+     unsafe {[m
+         write_raw_tuple_bytes([m
+             index_relation,[m
+[36m@@ -227,6 +229,8 @@[m [munsafe extern "C-unwind" fn ec_diskann_aminsert([m
+     _index_unchanged: bool,[m
+     _index_info: *mut pg_sys::IndexInfo,[m
+ ) -> bool {[m
+[32m+[m[32m    // SAFETY: PostgreSQL calls aminsert with callback-duration relation[m
+[32m+[m[32m    // pointers, Datum/null arrays, and heap TID pointers.[m
+     unsafe {[m
+         pgrx::pgrx_extern_c_guard(|| {[m
+             crate::fault::maybe_fail_palloc("ec_diskann aminsert entry");[m
+[36m@@ -493,6 +497,8 @@[m [munsafe extern "C-unwind" fn ec_diskann_ambulkdelete([m
+     callback: pg_sys::IndexBulkDeleteCallback,[m
+     callback_state: *mut c_void,[m
+ ) -> *mut pg_sys::IndexBulkDeleteResult {[m
+[32m+[m[32m    // SAFETY: PostgreSQL invokes ambulkdelete with callback-duration relation,[m
+[32m+[m[32m    // stats, callback, and callback-state pointers.[m
+     unsafe {[m
+         pgrx::pgrx_extern_c_guard(|| {[m
+             let Some(callback) = callback else {[m
+[36m@@ -515,6 +521,8 @@[m [munsafe extern "C-unwind" fn ec_diskann_amvacuumcleanup([m
+     info: *mut pg_sys::IndexVacuumInfo,[m
+     stats: *mut pg_sys::IndexBulkDeleteResult,[m
+ ) -> *mut pg_sys::IndexBulkDeleteResult {[m
+[32m+[m[32m    // SAFETY: PostgreSQL invokes amvacuumcleanup with callback-duration relation[m
+[32m+[m[32m    // and stats pointers.[m
+     unsafe {[m
+         pgrx::pgrx_extern_c_guard(|| {[m
+             ec_diskann_noop_vacuum_stats((*info).index, stats)[m
+[36m@@ -528,6 +536,8 @@[m [munsafe extern "C-unwind" fn ec_diskann_ambeginscan([m
+     nkeys: std::ffi::c_int,[m
+     norderbys: std::ffi::c_int,[m
+ ) -> pg_sys::IndexScanDesc {[m
+[32m+[m[32m    // SAFETY: PostgreSQL invokes ambeginscan with a live index relation and scan[m
+[32m+[m[32m    // key counts; all raw descriptor writes stay inside the guard.[m
+     unsafe {[m
+         pgrx::pgrx_extern_c_guard(|| {[m
+             let scan = pg_sys::RelationGetIndexScan(index_relation, nkeys, norderbys);[m
+[36m@@ -559,6 +569,8 @@[m [munsafe extern "C-unwind" fn ec_diskann_amrescan([m
+     orderbys: pg_sys::ScanKey,[m
+     norderbys: std::ffi::c_int,[m
+ ) {[m
+[32m+[m[32m    // SAFETY: PostgreSQL invokes amrescan with a live scan descriptor and[m
+[32m+[m[32m    // callback-duration scan key arrays.[m
+     unsafe {[m
+         pgrx::pgrx_extern_c_guard(|| {[m
+             if scan.is_null() {[m
+[36m@@ -719,6 +731,8 @@[m [munsafe extern "C-unwind" fn ec_diskann_amgettuple([m
+     scan: pg_sys::IndexScanDesc,[m
+     direction: pg_sys::ScanDirection::Type,[m
+ ) -> bool {[m
+[32m+[m[32m    // SAFETY: PostgreSQL invokes amgettuple with a live scan descriptor; opaque[m
+[32m+[m[32m    // access and heap TID writes are guarded and null-checked.[m
+     unsafe {[m
+         pgrx::pgrx_extern_c_guard(|| {[m
+             if scan.is_null() {[m
+[36m@@ -750,6 +764,8 @@[m [munsafe extern "C-unwind" fn ec_diskann_amgettuple([m
+ }[m
+ [m
+ unsafe extern "C-unwind" fn ec_diskann_amendscan(scan: pg_sys::IndexScanDesc) {[m
+[32m+[m[32m    // SAFETY: PostgreSQL owns the scan descriptor and this AM owns the opaque[m
+[32m+[m[32m    // pointer it allocated in ambeginscan.[m
+     unsafe {[m
+         pgrx::pgrx_extern_c_guard(|| {[m
+             if scan.is_null() {[m
+[36m@@ -767,10 +783,13 @@[m [munsafe extern "C-unwind" fn ec_diskann_amendscan(scan: pg_sys::IndexScanDesc) {[m
+ }[m
+ [m
+ unsafe fn indexed_ecvector_attnum(index_relation: pg_sys::Relation) -> Result<i32, String> {[m
+[32m+[m[32m    // SAFETY: The index relation is live; BuildIndexInfo returns palloc'd[m
+[32m+[m[32m    // metadata for this relation.[m
+     let index_info = unsafe { pg_sys::BuildIndexInfo(index_relation) };[m
+     if index_info.is_null() {[m
+         return Err("ec_diskann scan could not build index metadata".into());[m
+     }[m
+[32m+[m[32m    // SAFETY: `index_info` was checked non-null and remains valid until pfree.[m
+     let info = unsafe { &*index_info };[m
+     let result = if info.ii_NumIndexAttrs != 1 || info.ii_NumIndexKeyAttrs != 1 {[m
+         Err("ec_diskann scan currently supports single-column indexes only".into())[m
+[36m@@ -782,6 +801,7 @@[m [munsafe fn indexed_ecvector_attnum(index_relation: pg_sys::Relation) -> Result<i3[m
+             Ok(attnum)[m
+         }[m
+     };[m
+[32m+[m[32m    // SAFETY: `index_info` was allocated by PostgreSQL BuildIndexInfo above.[m
+     unsafe { pg_sys::pfree(index_info.cast()) };[m
+     result[m
+ }[m
+[36m@@ -802,6 +822,8 @@[m [munsafe fn install_backlinks_with_replan([m
+             return Ok(());[m
+         }[m
+ [m
+[32m+[m[32m        // SAFETY: Pending target TIDs were selected from this index and planning[m
+[32m+[m[32m        // only reads heap/index state with callback-duration relations.[m
+         let (metadata, mutations) = unsafe {[m
+             plan_backlink_mutations([m
+                 index_relation,[m
+[36m@@ -816,6 +838,8 @@[m [munsafe fn install_backlinks_with_replan([m
+             return Ok(());[m
+         }[m
+ [m
+[32m+[m[32m        // SAFETY: Mutations were planned against the metadata snapshot returned[m
+[32m+[m[32m        // above and are applied under page locks by the insert helper.[m
+         pending = unsafe {[m
+             insert::apply_backlink_mutations(index_relation, &metadata, &mutations, new_tid)?[m
+         };[m
+[36m@@ -840,6 +864,8 @@[m [munsafe fn plan_backlink_mutations([m
+     new_tid: ItemPointer,[m
+     new_source_vector: &[f32],[m
+ ) -> Result<(VamanaMetadataPage, Vec<insert::BacklinkMutation>), String> {[m
+[32m+[m[32m    // SAFETY: The index relation is live and materialization only reads the[m
+[32m+[m[32m    // persisted DiskANN page chain.[m
+     let (metadata, chain) = unsafe { scan_state::materialize_chain_from_index(index_relation)? };[m
+     let reader = PersistedGraphReader::new([m
+         &chain,[m
+[36m@@ -861,6 +887,8 @@[m [munsafe fn plan_backlink_mutations([m
+                 continue;[m
+             }[m
+ [m
+[32m+[m[32m            // SAFETY: Target heap TID belongs to a live node from this index and[m
+[32m+[m[32m            // the slot/snapshot are owned by this planning scope.[m
+             let target_source_vector = unsafe {[m
+                 fetch_heap_source_vector([m
+                     heap_relation,[m
+[36m@@ -890,6 +918,8 @@[m [munsafe fn plan_backlink_mutations([m
+                 {[m
+                     continue;[m
+                 }[m
+[32m+[m[32m                // SAFETY: Neighbor heap TID belongs to a live node from this[m
+[32m+[m[32m                // index and is read through the same slot/snapshot.[m
+                 let neighbor_source_vector = unsafe {[m
+                     fetch_heap_source_vector([m
+                         heap_relation,[m
+[36m@@ -935,11 +965,15 @@[m [munsafe fn ec_diskann_noop_vacuum_stats([m
+ ) -> Result<*mut pg_sys::IndexBulkDeleteResult, String> {[m
+     let stats = if stats.is_null() {[m
+         crate::fault::maybe_fail_palloc("ec_diskann noop vacuum stats");[m
+[32m+[m[32m        // SAFETY: PostgreSQL memory-context allocation creates a zeroed stats[m
+[32m+[m[32m        // struct owned by the current vacuum callback.[m
+         unsafe { PgBox::<pg_sys::IndexBulkDeleteResult>::alloc0().into_pg() }[m
+     } else {[m
+         stats[m
+     };[m
+ [m
+[32m+[m[32m    // SAFETY: `stats` is either PostgreSQL-supplied or allocated above; the[m
+[32m+[m[32m    // index relation is live while page count/live tuple stats are computed.[m
+     unsafe {[m
+         (*stats).num_pages = pg_sys::RelationGetNumberOfBlocksInFork([m
+             index_relation,[m
+[36m@@ -961,12 +995,16 @@[m [munsafe fn run_diskann_bulkdelete([m
+ ) -> Result<*mut pg_sys::IndexBulkDeleteResult, String> {[m
+     let stats = if stats.is_null() {[m
+         crate::fault::maybe_fail_palloc("ec_diskann bulkdelete stats");[m
+[32m+[m[32m        // SAFETY: PostgreSQL memory-context allocation creates a zeroed stats[m
+[32m+[m[32m        // struct owned by the current vacuum callback.[m
+         unsafe { PgBox::<pg_sys::IndexBulkDeleteResult>::alloc0().into_pg() }[m
+     } else {[m
+         stats[m
+     };[m
+     let mut max_removed_heap_tids = 0usize;[m
+     for _ in 0..MAX_REPAIR_REPLAN_PASSES {[m
+[32m+[m[32m        // SAFETY: The index/heap relations and callback state are valid for the[m
+[32m+[m[32m        // surrounding ambulkdelete callback.[m
+         let pass = unsafe {[m
+             run_diskann_bulkdelete_pass(index_relation, heap_relation, callback, callback_state)?[m
+         };[m
+[36m@@ -974,6 +1012,8 @@[m [munsafe fn run_diskann_bulkdelete([m
+         match pass.rewrite_outcome {[m
+             VacuumRewriteApplyOutcome::Applied => {[m
+                 if pass.entry_point_needs_medoid_refresh {[m
+[32m+[m[32m                    // SAFETY: Metadata is locked before marking the medoid[m
+[32m+[m[32m                    // refresh flag after a successful vacuum rewrite pass.[m
+                     unsafe {[m
+                         insert::with_locked_metadata_page(index_relation, |metadata| {[m
+                             metadata.needs_medoid_refresh = true;[m
+[36m@@ -982,6 +1022,8 @@[m [munsafe fn run_diskann_bulkdelete([m
+                     };[m
+                 }[m
+ [m
+[32m+[m[32m                // SAFETY: `stats` is valid for this vacuum callback and updated[m
+[32m+[m[32m                // only after the rewrite pass has applied.[m
+                 unsafe {[m
+                     (*stats).num_pages = pass.block_count;[m
+                     (*stats).estimated_count = false;[m
+[36m@@ -1005,9 +1047,13 @@[m [munsafe fn run_diskann_bulkdelete_pass([m
+     callback: BulkDeleteCallback,[m
+     callback_state: *mut c_void,[m
+ ) -> Result<VacuumBulkDeletePassResult, String> {[m
+[32m+[m[32m    // SAFETY: The index relation is live; this reads the current main-fork block[m
+[32m+[m[32m    // count for the vacuum pass.[m
+     let block_count = unsafe {[m
+         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)[m
+     };[m
+[32m+[m[32m    // SAFETY: The index relation is live and materialization only reads the[m
+[32m+[m[32m    // persisted DiskANN page chain.[m
+     let (metadata, original_chain) =[m
+         unsafe { scan_state::materialize_chain_from_index(index_relation)? };[m
+     let graph_degree_r = metadata.graph_degree_r;[m
+[36m@@ -1039,6 +1085,8 @@[m [munsafe fn run_diskann_bulkdelete_pass([m
+             &mut mutated_chain,[m
+             tid,[m
+             &mut tuple,[m
+[32m+[m[32m            // SAFETY: The callback and state were supplied by PostgreSQL for[m
+[32m+[m[32m            // this ambulkdelete pass and are invoked synchronously.[m
+             |heap_tid| unsafe { callback_marks_heap_tid_dead(callback, callback_state, heap_tid) },[m
+         )?;[m
+         if tuple != original_tuple {[m
+[36m@@ -1083,7 +1131,11 @@[m [munsafe fn run_diskann_bulkdelete_pass([m
+                 )?;[m
+             }[m
+         }[m
+[32m+[m[32m        // SAFETY: The heap relation is either supplied by PostgreSQL or opened[m
+[32m+[m[32m        // from the index relation and remains alive through repair filling.[m
+         let heap_relation = unsafe { resolve_vacuum_heap_relation(index_relation, heap_relation)? };[m
+[32m+[m[32m        // SAFETY: Repair targets/dead set were derived from this pass and the[m
+[32m+[m[32m        // mutable chain is the pass-local rewrite plan.[m
+         let fill_result = unsafe {[m
+             fill_vacuum_neighbor_slots([m
+                 index_relation,[m
+[36m@@ -1120,6 +1172,8 @@[m [munsafe fn run_diskann_bulkdelete_pass([m
+     }[m
+ [m
+     let rewrites = collect_tuple_rewrites(&original_chain, &mutated_chain)?;[m
+[32m+[m[32m    // SAFETY: Rewrites were diffed from the original and mutated chains for this[m
+[32m+[m[32m    // index and are validated against current page bytes before applying.[m
+     let rewrite_outcome = unsafe { apply_tuple_rewrites(index_relation, &rewrites)? };[m
+     Ok(VacuumBulkDeletePassResult {[m
+         rewrite_outcome,[m
+[36m@@ -1146,6 +1200,8 @@[m [munsafe fn resolve_vacuum_heap_relation([m
+         return Ok(ResolvedVacuumHeapRelation::borrowed(heap_relation));[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: The index relation is live and IndexGetRelation resolves its heap[m
+[32m+[m[32m    // relation OID without mutating state.[m
+     let heap_oid = unsafe { pg_sys::IndexGetRelation((*index_relation).rd_id, false) };[m
+     if heap_oid == pg_sys::InvalidOid {[m
+         return Err("ec_diskann vacuum could not resolve heap relation".into());[m
+[36m@@ -1166,6 +1222,8 @@[m [munsafe fn fill_vacuum_neighbor_slots([m
+     if repair_target_tids.is_empty() {[m
+         return Ok(());[m
+     }[m
+[32m+[m[32m    // SAFETY: The index relation is live and the helper only reads index[m
+[32m+[m[32m    // metadata to resolve the indexed ecvector attribute.[m
+     let source_attnum = unsafe { indexed_ecvector_attnum(index_relation)? };[m
+     let slot = crate::storage::slot_guard::TupleTableSlotGuard::single_for_heap(heap_relation)[m
+         .ok_or_else(|| "ec_diskann vacuum fill failed to allocate heap slot".to_owned())?;[m
+[36m@@ -1185,6 +1243,8 @@[m [munsafe fn fill_vacuum_neighbor_slots([m
+                 chain,[m
+                 dead_set,[m
+             };[m
+[32m+[m[32m            // SAFETY: The planner owns heap slot/snapshot state and points at[m
+[32m+[m[32m            // the pass-local mutated chain.[m
+             let fill_candidates = unsafe {[m
+                 plan_vacuum_fill_candidates_for_target(&planner, target_tid, &mut visited)?[m
+             };[m
+[36m@@ -1362,6 +1422,8 @@[m [munsafe fn plan_vacuum_fill_candidates_for_target([m
+         return Ok(Vec::new());[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: Target tuple is live and has a valid heap TID; the planner owns[m
+[32m+[m[32m    // the heap relation/snapshot/slot used for source lookup.[m
+     let target_source_vector = unsafe {[m
+         fetch_heap_source_vector([m
+             planner.heap_relation,[m
+[36m@@ -1396,6 +1458,8 @@[m [munsafe fn plan_vacuum_fill_candidates_for_target([m
+         if !neighbor_tuple.is_live() || neighbor_tuple.primary_heaptid == ItemPointer::INVALID {[m
+             continue;[m
+         }[m
+[32m+[m[32m        // SAFETY: Existing neighbor tuple is live and its primary heap TID can[m
+[32m+[m[32m        // be read through the planner-owned heap slot.[m
+         let neighbor_source_vector = unsafe {[m
+             fetch_heap_source_vector([m
+                 planner.heap_relation,[m
+[36m@@ -1465,6 +1529,8 @@[m [munsafe fn plan_vacuum_fill_candidates_for_target([m
+         if !candidate_tuple.is_live() || candidate_tuple.primary_heaptid == ItemPointer::INVALID {[m
+             continue;[m
+         }[m
+[32m+[m[32m        // SAFETY: Frontier candidate tuple is live and its primary heap TID can[m
+[32m+[m[32m        // be read through the planner-owned heap slot.[m
+         let candidate_source_vector = unsafe {[m
+             fetch_heap_source_vector([m
+                 planner.heap_relation,[m
+[36m@@ -1507,6 +1573,8 @@[m [mfn vacuum_repair_scan_budget(build_list_size: usize, graph_degree_r: usize) -> u[m
+ }[m
+ [m
+ fn count_live_node_tuples(index_relation: pg_sys::Relation) -> Result<usize, String> {[m
+[32m+[m[32m    // SAFETY: The index relation is live and materialization only reads the[m
+[32m+[m[32m    // persisted DiskANN page chain.[m
+     let (metadata, chain) = unsafe { scan_state::materialize_chain_from_index(index_relation)? };[m
+     count_live_tuples_in_chain([m
+         &chain,[m
+[36m@@ -1645,6 +1713,8 @@[m [munsafe fn apply_tuple_rewrites([m
+         return Ok(VacuumRewriteApplyOutcome::Applied);[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: Test-only injection, when enabled, locks and rewrites the target[m
+[32m+[m[32m    // page before the normal expected-byte validation below.[m
+     unsafe { maybe_apply_vacuum_rewrite_test_injection(index_relation)? };[m
+     let mut cursor = 0usize;[m
+     while cursor < rewrites.len() {[m
+[36m@@ -1654,6 +1724,8 @@[m [munsafe fn apply_tuple_rewrites([m
+             cursor += 1;[m
+         }[m
+         let block_rewrites = &rewrites[block_start..cursor];[m
+[32m+[m[32m        // SAFETY: Rewrites are grouped by block and each target page is locked[m
+[32m+[m[32m        // exclusively before expected bytes are checked or modified.[m
+         let buffer = unsafe {[m
+             LockedBufferGuard::read_main([m
+                 index_relation,[m
+[36m@@ -1669,6 +1741,8 @@[m [munsafe fn apply_tuple_rewrites([m
+             let page = buffer.page();[m
+             let page_size = buffer.page_size();[m
+             for rewrite in block_rewrites {[m
+[32m+[m[32m                // SAFETY: The page is pinned/locked and the helper validates the[m
+[32m+[m[32m                // tuple location before exposing immutable bytes.[m
+                 let matches_expected = unsafe {[m
+                     with_vacuum_page_tuple_bytes(page, page_size, rewrite.tid, |current_raw| {[m
+                         Ok(current_raw == rewrite.expected_raw.as_slice())[m
+[36m@@ -1679,11 +1753,17 @@[m [munsafe fn apply_tuple_rewrites([m
+                 }[m
+             }[m
+ [m
+[32m+[m[32m            // SAFETY: The relation is live and the exclusive buffer belongs to[m
+[32m+[m[32m            // the target rewrite block.[m
+             let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };[m
+[32m+[m[32m            // SAFETY: The locked buffer is registered before any tuple bytes are[m
+[32m+[m[32m            // rewritten.[m
+             let writable_page = unsafe {[m
+                 wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32)[m
+             };[m
+             for rewrite in block_rewrites {[m
+[32m+[m[32m                // SAFETY: Expected bytes were verified above and the replacement[m
+[32m+[m[32m                // preserves the raw tuple length.[m
+                 unsafe {[m
+                     with_vacuum_page_tuple_bytes_mut([m
+                         writable_page,[m
+[36m@@ -1705,6 +1785,8 @@[m [munsafe fn apply_tuple_rewrites([m
+                     )[m
+                 }?;[m
+             }[m
+[32m+[m[32m            // SAFETY: All planned rewrites for this block have been applied to[m
+[32m+[m[32m            // the registered page.[m
+             unsafe { wal_txn.finish() };[m
+             Ok(VacuumRewriteApplyOutcome::Applied)[m
+         })();[m
+[36m@@ -1724,6 +1806,8 @@[m [munsafe fn write_raw_tuple_bytes([m
+     tid: ItemPointer,[m
+     replacement_raw: &[u8],[m
+ ) -> Result<(), String> {[m
+[32m+[m[32m    // SAFETY: Test helper locks the target block exclusively before overwriting[m
+[32m+[m[32m    // tuple bytes.[m
+     let buffer = unsafe {[m
+         LockedBufferGuard::read_main([m
+             index_relation,[m
+[36m@@ -1741,10 +1825,15 @@[m [munsafe fn write_raw_tuple_bytes([m
+ [m
+     let page_result = (|| -> Result<(), String> {[m
+         let page_size = buffer.page_size();[m
+[32m+[m[32m        // SAFETY: The relation is live and the exclusive buffer belongs to it.[m
+         let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };[m
+[32m+[m[32m        // SAFETY: The locked buffer is registered before tuple bytes are[m
+[32m+[m[32m        // overwritten by the test helper.[m
+         let writable_page = unsafe {[m
+             wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32)[m
+         };[m
+[32m+[m[32m        // SAFETY: The helper validates the tuple location and `replacement_raw`[m
+[32m+[m[32m        // must match the existing tuple length.[m
+         unsafe {[m
+             with_vacuum_page_tuple_bytes_mut(writable_page, page_size, tid, |tuple_bytes| {[m
+                 if tuple_bytes.len() != replacement_raw.len() {[m
+[36m@@ -1760,6 +1849,7 @@[m [munsafe fn write_raw_tuple_bytes([m
+                 Ok(())[m
+             })[m
+         }?;[m
+[32m+[m[32m        // SAFETY: The test rewrite has been applied to the registered page.[m
+         unsafe { wal_txn.finish() };[m
+         Ok(())[m
+     })();[m
+[36m@@ -1772,6 +1862,8 @@[m [munsafe fn callback_marks_heap_tid_dead([m
+     heap_tid: ItemPointer,[m
+ ) -> bool {[m
+     let mut raw_tid = pg_sys::ItemPointerData::default();[m
+[32m+[m[32m    // SAFETY: The callback and state were supplied by PostgreSQL for this[m
+[32m+[m[32m    // ambulkdelete invocation, and `raw_tid` lives for the callback call.[m
+     unsafe {[m
+         pgrx::itemptr::item_pointer_set_all([m
+             &mut raw_tid,[m
+[36m@@ -1787,6 +1879,8 @@[m [munsafe fn vacuum_page_tuple_location([m
+     page_size: usize,[m
+     tid: ItemPointer,[m
+ ) -> Result<(*mut u8, usize), String> {[m
+[32m+[m[32m    // SAFETY: The caller supplies a pinned PostgreSQL page; this reads its max[m
+[32m+[m[32m    // line pointer offset.[m
+     let max_offset = unsafe { pg_sys::PageGetMaxOffsetNumber(page) };[m
+     if tid.offset_number == pg_sys::InvalidOffsetNumber || tid.offset_number > max_offset {[m
+         return Err(format!([m
+[36m@@ -1795,6 +1889,7 @@[m [munsafe fn vacuum_page_tuple_location([m
+         ));[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: `tid.offset_number` was checked against the page max offset.[m
+     let item_id = unsafe { pg_sys::PageGetItemId(page, tid.offset_number) };[m
+     if item_id.is_null() {[m
+         return Err(format!([m
+[36m@@ -1802,6 +1897,8 @@[m [munsafe fn vacuum_page_tuple_location([m
+             tid.block_number, tid.offset_number[m
+         ));[m
+     }[m
+[32m+[m[32m    // SAFETY: `item_id` was checked non-null and points into the page line[m
+[32m+[m[32m    // pointer array.[m
+     let item_id_ref = unsafe { &*item_id };[m
+     if item_id_ref.lp_flags() == 0 {[m
+         return Err(format!([m
+[36m@@ -1819,6 +1916,7 @@[m [munsafe fn vacuum_page_tuple_location([m
+         ));[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: Tuple bounds were validated against `page_size` above.[m
+     let tuple_ptr = unsafe { (page as *mut u8).add(tuple_offset) };[m
+     Ok((tuple_ptr, tuple_len))[m
+ }[m
+[36m@@ -1832,7 +1930,11 @@[m [munsafe fn with_vacuum_page_tuple_bytes<R, F>([m
+ where[m
+     F: for<'a> FnOnce(&'a [u8]) -> Result<R, String>,[m
+ {[m
+[32m+[m[32m    // SAFETY: The caller owns the page pin/lock and tuple bounds are validated[m
+[32m+[m[32m    // by `vacuum_page_tuple_location`.[m
+     let (tuple_ptr, tuple_len) = unsafe { vacuum_page_tuple_location(page, page_size, tid)? };[m
+[32m+[m[32m    // SAFETY: The tuple byte range was validated and is immutable for this[m
+[32m+[m[32m    // visitor.[m
+     let tuple_bytes = unsafe { slice::from_raw_parts(tuple_ptr.cast_const(), tuple_len) };[m
+     visit(tuple_bytes)[m
+ }[m
+[36m@@ -1846,7 +1948,11 @@[m [munsafe fn with_vacuum_page_tuple_bytes_mut<R, F>([m
+ where[m
+     F: for<'a> FnOnce(&'a mut [u8]) -> Result<R, String>,[m
+ {[m
+[32m+[m[32m    // SAFETY: The caller owns an exclusive page lock and tuple bounds are[m
+[32m+[m[32m    // validated by `vacuum_page_tuple_location`.[m
+     let (tuple_ptr, tuple_len) = unsafe { vacuum_page_tuple_location(page, page_size, tid)? };[m
+[32m+[m[32m    // SAFETY: The tuple byte range was validated and the exclusive page lock[m
+[32m+[m[32m    // permits mutable access for this visitor.[m
+     let tuple_bytes = unsafe { slice::from_raw_parts_mut(tuple_ptr, tuple_len) };[m
+     visit(tuple_bytes)[m
+ }[m
+[36m@@ -1890,6 +1996,8 @@[m [munsafe fn prefetch_heap_rerank_blocks(heap_relation: pg_sys::Relation, heap_tids[m
+     }[m
+     let block_numbers = heap_tids.iter().map(|tid| tid.block_number).collect();[m
+     let mut state = crate::am::stream::BlockSequencePrefetchState::new(block_numbers);[m
+[32m+[m[32m    // SAFETY: The heap relation is live and the callback state lives until[m
+[32m+[m[32m    // `read_stream_end`.[m
+     let stream = unsafe {[m
+         pg_sys::read_stream_begin_relation([m
+             pg_sys::READ_STREAM_DEFAULT as i32,[m
+[36m@@ -1903,19 +2011,25 @@[m [munsafe fn prefetch_heap_rerank_blocks(heap_relation: pg_sys::Relation, heap_tids[m
+     };[m
+     loop {[m
+         let mut per_buffer_data = ptr::null_mut();[m
+[32m+[m[32m        // SAFETY: `stream` is valid until `read_stream_end` below.[m
+         let buffer = unsafe { pg_sys::read_stream_next_buffer(stream, &mut per_buffer_data) };[m
+         if buffer == pg_sys::InvalidBuffer as pg_sys::Buffer {[m
+             break;[m
+         }[m
+[32m+[m[32m        // SAFETY: read_stream_next_buffer returns a pinned buffer that the guard[m
+[32m+[m[32m        // takes ownership of for this loop iteration.[m
+         let _buffer = unsafe { PinnedBufferGuard::from_pinned(buffer) }[m
+             .unwrap_or_else(|| pgrx::error!("ec_diskann prefetch returned invalid buffer"));[m
+     }[m
+[32m+[m[32m    // SAFETY: Ends the stream opened above after all buffers have been consumed.[m
+     unsafe { pg_sys::read_stream_end(stream) };[m
+ }[m
+ [m
+ #[cfg(not(feature = "pg18"))][m
+ unsafe fn prefetch_heap_rerank_blocks(heap_relation: pg_sys::Relation, heap_tids: &[ItemPointer]) {[m
+     for heap_tid in heap_tids {[m
+[32m+[m[32m        // SAFETY: The heap relation is live and the block number comes from a[m
+[32m+[m[32m        // bound heap TID in the scan result set.[m
+         unsafe {[m
+             pg_sys::PrefetchBuffer([m
+                 heap_relation,[m
+[36m@@ -1934,6 +2048,8 @@[m [munsafe fn exact_heap_rerank_distance([m
+     raw_query: &[f32],[m
+     heap_tid: ItemPointer,[m
+ ) -> Result<f32, String> {[m
+[32m+[m[32m    // SAFETY: The heap relation/snapshot/slot are owned by the scan or planning[m
+[32m+[m[32m    // scope and `heap_tid` is a candidate heap row from the index.[m
+     unsafe {[m
+         with_heap_source_vector([m
+             heap_relation,[m
+[36m@@ -1965,9 +2081,17 @@[m [munsafe fn with_heap_source_vector<T>([m
+     context: &str,[m
+     f: impl for<'a> FnOnce(&'a [f32]) -> Result<T, String>,[m
+ ) -> Result<T, String> {[m
+[32m+[m[32m    // SAFETY: The heap relation/snapshot/slot are caller-owned and valid for[m
+[32m+[m[32m    // this row-version fetch.[m
+     unsafe { scan_state::fetch_heap_row_version(heap_relation, heap_tid, snapshot, slot)? };[m
+[32m+[m[32m    // SAFETY: The slot now contains the fetched row version and the attribute[m
+[32m+[m[32m    // number was resolved from the heap/index metadata.[m
+     let datum = unsafe { scan_state::required_slot_datum(slot, source_attnum, context)? };[m
+[32m+[m[32m    // SAFETY: The datum is an ecvector value from the required source attribute[m
+[32m+[m[32m    // and the slice is only borrowed for the visitor call.[m
+     let result = unsafe { ambuild::with_ecvector_datum_slice(datum, f) };[m
+[32m+[m[32m    // SAFETY: The slot is caller-owned and can be cleared after copying or using[m
+[32m+[m[32m    // the source vector.[m
+     unsafe { pg_sys::ExecClearTuple(slot) };[m
+     result[m
+ }[m
+[36m@@ -1980,6 +2104,8 @@[m [munsafe fn fetch_heap_source_vector([m
+     heap_tid: ItemPointer,[m
+     context: &str,[m
+ ) -> Result<Vec<f32>, String> {[m
+[32m+[m[32m    // SAFETY: Delegates to `with_heap_source_vector` using caller-owned[m
+[32m+[m[32m    // heap/snapshot/slot state and copies the borrowed source vector out.[m
+     unsafe {[m
+         with_heap_source_vector([m
+             heap_relation,[m
+[36m@@ -2079,6 +2205,8 @@[m [mmod tests {[m
+     fn index_metadata(index_name: &str) -> VamanaMetadataPage {[m
+         let index_relation =[m
+             IndexRelationGuard::access_share(index_oid(index_name), "index_metadata");[m
+[32m+[m[32m        // SAFETY: The guard keeps the index relation open while the persisted[m
+[32m+[m[32m        // chain is materialized for test inspection.[m
+         let (metadata, _) =[m
+             unsafe { scan_state::materialize_chain_from_index(index_relation.as_ptr()) }[m
+                 .expect("materialize_chain_from_index should succeed");[m
+[36m@@ -2088,6 +2216,8 @@[m [mmod tests {[m
+     fn index_materialized_chain(index_name: &str) -> (VamanaMetadataPage, DataPageChain) {[m
+         let index_relation =[m
+             IndexRelationGuard::access_share(index_oid(index_name), "index_materialized_chain");[m
+[32m+[m[32m        // SAFETY: The guard keeps the index relation open while the persisted[m
+[32m+[m[32m        // chain is materialized for test inspection.[m
+         let materialized =[m
+             unsafe { scan_state::materialize_chain_from_index(index_relation.as_ptr()) }[m
+                 .expect("materialize_chain_from_index should succeed");[m
+[36m@@ -2120,7 +2250,11 @@[m [mmod tests {[m
+         );[m
+         let index_relation_ptr = index_relation.as_ptr();[m
+ [m
+[32m+[m[32m        // SAFETY: The guard keeps the index relation open while relation[m
+[32m+[m[32m        // options are read for test scan-state construction.[m
+         let relation_options = unsafe { super::options::relation_options(index_relation_ptr) };[m
+[32m+[m[32m        // SAFETY: The guard keeps the index relation open while the persisted[m
+[32m+[m[32m        // chain is materialized for test scan-state construction.[m
+         let (metadata, chain) =[m
+             unsafe { scan_state::materialize_chain_from_index(index_relation_ptr) }[m
+                 .expect("materialize_chain_from_index should succeed");[m
+[36m@@ -2133,6 +2267,8 @@[m [mmod tests {[m
+         );[m
+ [m
+         Spi::run("SET ec_diskann.list_size = 7").expect("session override should succeed");[m
+[32m+[m[32m        // SAFETY: The guard still owns the index relation during the second[m
+[32m+[m[32m        // materialization under the session override.[m
+         let (metadata, chain) =[m
+             unsafe { scan_state::materialize_chain_from_index(index_relation_ptr) }[m
+                 .expect("materialize_chain_from_index should succeed");[m
+[36m@@ -2351,11 +2487,15 @@[m [mmod tests {[m
+         let search_index_relation =[m
+             IndexRelationGuard::access_share(index_oid(index_name), "find_vacuum_refill_fixture");[m
+         let index_relation = search_index_relation.as_ptr();[m
+[32m+[m[32m        // SAFETY: The index relation guard is live and IndexGetRelation only[m
+[32m+[m[32m        // resolves the heap OID for this test fixture.[m
+         let heap_oid = unsafe { pg_sys::IndexGetRelation((*index_relation).rd_id, false) };[m
+         assert_ne!(heap_oid, pg_sys::InvalidOid, "heap relation should resolve");[m
+         let heap_relation = HeapRelationGuard::try_access_share(heap_oid)[m
+             .expect("heap relation should open for fixture search");[m
+         let heap_relation_ptr = heap_relation.as_ptr();[m
+[32m+[m[32m        // SAFETY: The index relation is open and the helper only reads index[m
+[32m+[m[32m        // metadata to resolve the indexed ecvector attribute.[m
+         let source_attnum = unsafe { super::indexed_ecvector_attnum(index_relation) }[m
+             .expect("indexed source attnum should resolve");[m
+         let slot = TupleTableSlotGuard::single_for_heap(heap_relation_ptr)[m
+[36m@@ -2490,6 +2630,8 @@[m [mmod tests {[m
+                             chain: &working_chain,[m
+                             dead_set: &dead_set,[m
+                         };[m
+[32m+[m[32m                        // SAFETY: The fixture planner uses live guard-owned[m
+[32m+[m[32m                        // heap state and a cloned in-memory chain.[m
+                         let fill_candidates = unsafe {[m
+                             super::plan_vacuum_fill_candidates_for_target([m
+                                 &planner,[m
+[36m@@ -2526,6 +2668,8 @@[m [mmod tests {[m
+         itemptr: pg_sys::ItemPointer,[m
+         state: *mut c_void,[m
+     ) -> bool {[m
+[32m+[m[32m        // SAFETY: Debug vacuum passes a `DebugVacuumCallbackState` pointer as[m
+[32m+[m[32m        // callback state for the duration of this guarded callback.[m
+         unsafe {[m
+             pgrx::pgrx_extern_c_guard(|| {[m
+                 let state = &*(state.cast::<DebugVacuumCallbackState>());[m
+[36m@@ -2544,10 +2688,15 @@[m [mmod tests {[m
+         info.index = index_relation.as_ptr();[m
+         let info_ptr = (&mut *info) as *mut pg_sys::IndexVacuumInfo;[m
+ [m
+[32m+[m[32m        // SAFETY: The test constructs callback-duration vacuum info and invokes[m
+[32m+[m[32m        // the AM bulkdelete entry with no delete callback for stats.[m
+         let stats = unsafe {[m
+             super::ec_diskann_ambulkdelete(info_ptr, ptr::null_mut(), None, ptr::null_mut())[m
+         };[m
+[32m+[m[32m        // SAFETY: The same vacuum info and stats pointer are valid for cleanup.[m
+         let stats = unsafe { super::ec_diskann_amvacuumcleanup(info_ptr, stats) };[m
+[32m+[m[32m        // SAFETY: The AM returned a valid stats pointer; copy it before guards[m
+[32m+[m[32m        // leave scope.[m
+         let result = unsafe { *stats };[m
+ [m
+         result[m
+[36m@@ -2563,6 +2712,8 @@[m [mmod tests {[m
+             "debug_vacuum_remove_heap_tids",[m
+         );[m
+         let index_relation_ptr = index_relation.as_ptr();[m
+[32m+[m[32m        // SAFETY: The index relation guard is live and IndexGetRelation only[m
+[32m+[m[32m        // resolves the heap OID for this test helper.[m
+         let heap_oid = unsafe { pg_sys::IndexGetRelation((*index_relation_ptr).rd_id, false) };[m
+         let heap_relation = if heap_oid == pg_sys::InvalidOid {[m
+             None[m
+[36m@@ -2579,6 +2730,8 @@[m [mmod tests {[m
+             dead_tids: dead_tids.iter().copied().collect(),[m
+         };[m
+ [m
+[32m+[m[32m        // SAFETY: The test constructs callback-duration vacuum info and callback[m
+[32m+[m[32m        // state and invokes the AM bulkdelete entry directly.[m
+         let stats = unsafe {[m
+             super::ec_diskann_ambulkdelete([m
+                 info_ptr,[m
+[36m@@ -2587,7 +2740,10 @@[m [mmod tests {[m
+                 (&mut callback_state as *mut DebugVacuumCallbackState).cast(),[m
+             )[m
+         };[m
+[32m+[m[32m        // SAFETY: The same vacuum info and stats pointer are valid for cleanup.[m
+         let stats = unsafe { super::ec_diskann_amvacuumcleanup(info_ptr, stats) };[m
+[32m+[m[32m        // SAFETY: The AM returned a valid stats pointer; copy it before guards[m
+[32m+[m[32m        // leave scope.[m
+         let result = unsafe { *stats };[m
+ [m
+         result[m
+[36m@@ -3576,6 +3732,8 @@[m [mmod tests {[m
+         )[m
+         .expect("index creation should succeed");[m
+ [m
+[32m+[m[32m        // SAFETY: Test helper opens the index and invokes vacuum callbacks with[m
+[32m+[m[32m        // no delete callback to inspect noop stats.[m
+         let stats = unsafe { debug_vacuum_stats(index_oid("ec_diskann_vacuum_noop_empty_idx")) };[m
+         assert_eq!(stats.num_index_tuples, 0.0);[m
+         assert_eq!(stats.tuples_removed, 0.0);[m
+[36m@@ -3609,6 +3767,8 @@[m [mmod tests {[m
+         Spi::run("DELETE FROM ec_diskann_vacuum_duplicate_promote WHERE id = 1")[m
+             .expect("delete should succeed");[m
+ [m
+[32m+[m[32m        // SAFETY: Test helper invokes vacuum callbacks with a callback state[m
+[32m+[m[32m        // that marks only `row1_heap_tid` dead.[m
+         let stats = unsafe {[m
+             debug_vacuum_remove_heap_tids([m
+                 index_oid("ec_diskann_vacuum_duplicate_promote_idx"),[m
+[36m@@ -3727,6 +3887,8 @@[m [mmod tests {[m
+ [m
+         Spi::run("DELETE FROM ec_diskann_vacuum_unlink_dead WHERE id = 2")[m
+             .expect("delete should succeed");[m
+[32m+[m[32m        // SAFETY: Test helper invokes vacuum callbacks with a callback state[m
+[32m+[m[32m        // that marks only `row2_heap_tid` dead.[m
+         let stats = unsafe {[m
+             debug_vacuum_remove_heap_tids([m
+                 index_oid("ec_diskann_vacuum_unlink_dead_idx"),[m
+[36m@@ -3867,6 +4029,8 @@[m [mmod tests {[m
+             "test_ec_diskann_vacuum_refills_dead_neighbor_slot",[m
+         );[m
+         assert_eq!([m
+[32m+[m[32m            // SAFETY: The test holds the index relation open with row-exclusive[m
+[32m+[m[32m            // lock while applying a fixture rewrite.[m
+             unsafe { super::apply_tuple_rewrites(index_relation.as_ptr(), &rewrites) }[m
+                 .expect("fixture rewrite should apply"),[m
+             super::VacuumRewriteApplyOutcome::Applied,[m
+[36m@@ -3882,6 +4046,8 @@[m [mmod tests {[m
+             "DELETE FROM ec_diskann_vacuum_refill_slot WHERE id = {deleted_row_id}"[m
+         ))[m
+         .expect("delete should succeed");[m
+[32m+[m[32m        // SAFETY: Test helper invokes vacuum callbacks with a callback state[m
+[32m+[m[32m        // that marks only `deleted_heap_tid` dead.[m
+         let stats = unsafe {[m
+             debug_vacuum_remove_heap_tids([m
+                 index_oid("ec_diskann_vacuum_refill_slot_idx"),[m
+[36m@@ -4001,6 +4167,8 @@[m [mmod tests {[m
+             "test_ec_diskann_vacuum_replans_on_stale_repair_tuple",[m
+         );[m
+         assert_eq!([m
+[32m+[m[32m            // SAFETY: The test holds the index relation open with row-exclusive[m
+[32m+[m[32m            // lock while applying a fixture rewrite.[m
+             unsafe { super::apply_tuple_rewrites(index_relation.as_ptr(), &rewrites) }[m
+                 .expect("fixture rewrite should apply"),[m
+             super::VacuumRewriteApplyOutcome::Applied,[m
+[36m@@ -4041,6 +4209,8 @@[m [mmod tests {[m
+             "DELETE FROM ec_diskann_vacuum_retry_replan WHERE id = {deleted_row_id}"[m
+         ))[m
+         .expect("delete should succeed");[m
+[32m+[m[32m        // SAFETY: Test helper invokes vacuum callbacks with a callback state[m
+[32m+[m[32m        // that marks only `deleted_heap_tid` dead.[m
+         let stats = unsafe {[m
+             debug_vacuum_remove_heap_tids([m
+                 index_oid("ec_diskann_vacuum_retry_replan_idx"),[m
+[36m@@ -4101,6 +4271,8 @@[m [mmod tests {[m
+         let row1_heap_tid = heap_tid_for_row("ec_diskann_vacuum_medoid_refresh", 1);[m
+         Spi::run("DELETE FROM ec_diskann_vacuum_medoid_refresh WHERE id = 1")[m
+             .expect("delete should succeed");[m
+[32m+[m[32m        // SAFETY: Test helper invokes vacuum callbacks with a callback state[m
+[32m+[m[32m        // that marks only `row1_heap_tid` dead.[m
+         let stats = unsafe {[m
+             debug_vacuum_remove_heap_tids([m
+                 index_oid("ec_diskann_vacuum_medoid_refresh_idx"),[m
+
+Script done on 2026-05-19 05:06:36-07:00 [COMMAND_EXIT_CODE="0"]

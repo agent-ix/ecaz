@@ -1,0 +1,415 @@
+{
+  "suite": "spire-aws-representative",
+  "schema_version": 1,
+  "config": "reviews/task-30/973-spire-phase13e-suite-read-matrix/artifacts/suite-representative.json",
+  "config_sha256": "12506b6af7f6c4321ec3cd3901cf064c142f01c58647ec5624bcb4ecfa336080",
+  "dry_run": true,
+  "generated_at_unix_ms": 1779735503262,
+  "connection": {
+    "database": "postgres",
+    "host": null,
+    "port": null,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "13a3a-recall-k10",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "postgres",
+        "bench",
+        "recall",
+        "--prefix",
+        "ec_spire_aws_repr_1m",
+        "--profile",
+        "ec_spire",
+        "--k",
+        "10",
+        "--sweep",
+        "8,16,24,32",
+        "--queries-limit",
+        "1000",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--log-output",
+        "reviews/task-30/973-spire-phase13e-suite-read-matrix/artifacts/representative/13a3a-recall-k10.log"
+      ],
+      "selected": true,
+      "expected_artifacts": [
+        "reviews/task-30/973-spire-phase13e-suite-read-matrix/artifacts/representative/13a3a-recall-k10.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "13a3a-recall-k100",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "postgres",
+        "bench",
+        "recall",
+        "--prefix",
+        "ec_spire_aws_repr_1m",
+        "--profile",
+        "ec_spire",
+        "--k",
+        "100",
+        "--sweep",
+        "8,16,24,32",
+        "--queries-limit",
+        "1000",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--log-output",
+        "reviews/task-30/973-spire-phase13e-suite-read-matrix/artifacts/representative/13a3a-recall-k100.log"
+      ],
+      "selected": true,
+      "expected_artifacts": [
+        "reviews/task-30/973-spire-phase13e-suite-read-matrix/artifacts/representative/13a3a-recall-k100.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "13a3a-latency-k10-c1",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "postgres",
+        "bench",
+        "latency",
+        "--prefix",
+        "ec_spire_aws_repr_1m",
+        "--profile",
+        "ec_spire",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "1000",
+        "--sweep",
+        "8,16,24,32",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "reviews/task-30/973-spire-phase13e-suite-read-matrix/artifacts/representative/13a3a-latency-k10-c1.log"
+      ],
+      "selected": true,
+      "expected_artifacts": [
+        "reviews/task-30/973-spire-phase13e-suite-read-matrix/artifacts/representative/13a3a-latency-k10-c1.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "13a3a-latency-k10-c4",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "postgres",
+        "bench",
+        "latency",
+        "--prefix",
+        "ec_spire_aws_repr_1m",
+        "--profile",
+        "ec_spire",
+        "--k",
+        "10",
+        "--concurrency",
+        "4",
+        "--iterations",
+        "1000",
+        "--sweep",
+        "8,16,24,32",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "reviews/task-30/973-spire-phase13e-suite-read-matrix/artifacts/representative/13a3a-latency-k10-c4.log"
+      ],
+      "selected": true,
+      "expected_artifacts": [
+        "reviews/task-30/973-spire-phase13e-suite-read-matrix/artifacts/representative/13a3a-latency-k10-c4.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "13a3a-latency-k10-c8",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "postgres",
+        "bench",
+        "latency",
+        "--prefix",
+        "ec_spire_aws_repr_1m",
+        "--profile",
+        "ec_spire",
+        "--k",
+        "10",
+        "--concurrency",
+        "8",
+        "--iterations",
+        "1000",
+        "--sweep",
+        "8,16,24,32",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "reviews/task-30/973-spire-phase13e-suite-read-matrix/artifacts/representative/13a3a-latency-k10-c8.log"
+      ],
+      "selected": true,
+      "expected_artifacts": [
+        "reviews/task-30/973-spire-phase13e-suite-read-matrix/artifacts/representative/13a3a-latency-k10-c8.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "13a3f-pk-c32",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "postgres",
+        "bench",
+        "latency",
+        "--prefix",
+        "ec_spire_aws_repr_1m",
+        "--profile",
+        "ec_spire",
+        "--k",
+        "1",
+        "--concurrency",
+        "32",
+        "--iterations",
+        "5000",
+        "--sweep",
+        "32",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "reviews/task-30/973-spire-phase13e-suite-read-matrix/artifacts/representative/13a3f-pk-c32.log"
+      ],
+      "selected": true,
+      "expected_artifacts": [
+        "reviews/task-30/973-spire-phase13e-suite-read-matrix/artifacts/representative/13a3f-pk-c32.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "13e3-production-read-profile-k10",
+      "kind": "spire-pipeline",
+      "command": [
+        "--database",
+        "postgres",
+        "bench",
+        "spire-pipeline",
+        "--prefix",
+        "ec_spire_aws_repr_1m",
+        "--queries-limit",
+        "1000",
+        "--sweep",
+        "8,16,24,32",
+        "--include-remote",
+        "--require-remote-placements",
+        "--top-k",
+        "10",
+        "--include-query-metrics",
+        "--include-recall",
+        "--include-production-read-profile",
+        "--query-metric-k",
+        "10",
+        "--query-metric-projection-columns",
+        "id",
+        "--log-output",
+        "reviews/task-30/973-spire-phase13e-suite-read-matrix/artifacts/representative/13e3-production-read-profile-k10.log"
+      ],
+      "selected": true,
+      "tags": [
+        "phase13e",
+        "production-read-profile"
+      ],
+      "expected_artifacts": [
+        "reviews/task-30/973-spire-phase13e-suite-read-matrix/artifacts/representative/13e3-production-read-profile-k10.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "13e3-production-read-profile-k100",
+      "kind": "spire-pipeline",
+      "command": [
+        "--database",
+        "postgres",
+        "bench",
+        "spire-pipeline",
+        "--prefix",
+        "ec_spire_aws_repr_1m",
+        "--queries-limit",
+        "1000",
+        "--sweep",
+        "8,16,24,32",
+        "--include-remote",
+        "--require-remote-placements",
+        "--top-k",
+        "100",
+        "--include-query-metrics",
+        "--include-recall",
+        "--include-production-read-profile",
+        "--query-metric-k",
+        "100",
+        "--query-metric-projection-columns",
+        "id",
+        "--log-output",
+        "reviews/task-30/973-spire-phase13e-suite-read-matrix/artifacts/representative/13e3-production-read-profile-k100.log"
+      ],
+      "selected": true,
+      "tags": [
+        "phase13e",
+        "production-read-profile"
+      ],
+      "expected_artifacts": [
+        "reviews/task-30/973-spire-phase13e-suite-read-matrix/artifacts/representative/13e3-production-read-profile-k100.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "13a3b-transport-auto",
+      "kind": "spire-pipeline",
+      "command": [
+        "--database",
+        "postgres",
+        "bench",
+        "spire-pipeline",
+        "--prefix",
+        "ec_spire_aws_repr_1m",
+        "--queries-limit",
+        "100",
+        "--sweep",
+        "32",
+        "--include-remote",
+        "--require-remote-placements",
+        "--top-k",
+        "10",
+        "--remote-tuple-transport",
+        "auto",
+        "--include-query-metrics",
+        "--include-recall",
+        "--include-production-read-profile",
+        "--query-metric-k",
+        "10",
+        "--query-metric-projection-columns",
+        "id",
+        "--log-output",
+        "reviews/task-30/973-spire-phase13e-suite-read-matrix/artifacts/representative/13a3b-transport-auto.log"
+      ],
+      "selected": true,
+      "tags": [
+        "phase13e",
+        "transport-sweep"
+      ],
+      "expected_artifacts": [
+        "reviews/task-30/973-spire-phase13e-suite-read-matrix/artifacts/representative/13a3b-transport-auto.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "13a3b-transport-json-tuple",
+      "kind": "spire-pipeline",
+      "command": [
+        "--database",
+        "postgres",
+        "bench",
+        "spire-pipeline",
+        "--prefix",
+        "ec_spire_aws_repr_1m",
+        "--queries-limit",
+        "100",
+        "--sweep",
+        "32",
+        "--include-remote",
+        "--require-remote-placements",
+        "--top-k",
+        "10",
+        "--remote-tuple-transport",
+        "json_tuple_payload_v1",
+        "--include-query-metrics",
+        "--include-recall",
+        "--include-production-read-profile",
+        "--query-metric-k",
+        "10",
+        "--query-metric-projection-columns",
+        "id",
+        "--log-output",
+        "reviews/task-30/973-spire-phase13e-suite-read-matrix/artifacts/representative/13a3b-transport-json-tuple.log"
+      ],
+      "selected": true,
+      "tags": [
+        "phase13e",
+        "transport-sweep"
+      ],
+      "expected_artifacts": [
+        "reviews/task-30/973-spire-phase13e-suite-read-matrix/artifacts/representative/13a3b-transport-json-tuple.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "13a3b-transport-pg-binary",
+      "kind": "spire-pipeline",
+      "command": [
+        "--database",
+        "postgres",
+        "bench",
+        "spire-pipeline",
+        "--prefix",
+        "ec_spire_aws_repr_1m",
+        "--queries-limit",
+        "100",
+        "--sweep",
+        "32",
+        "--include-remote",
+        "--require-remote-placements",
+        "--top-k",
+        "10",
+        "--remote-tuple-transport",
+        "pg_binary_attr_v1",
+        "--include-query-metrics",
+        "--include-recall",
+        "--include-production-read-profile",
+        "--query-metric-k",
+        "10",
+        "--query-metric-projection-columns",
+        "id",
+        "--log-output",
+        "reviews/task-30/973-spire-phase13e-suite-read-matrix/artifacts/representative/13a3b-transport-pg-binary.log"
+      ],
+      "selected": true,
+      "tags": [
+        "phase13e",
+        "transport-sweep"
+      ],
+      "expected_artifacts": [
+        "reviews/task-30/973-spire-phase13e-suite-read-matrix/artifacts/representative/13a3b-transport-pg-binary.log"
+      ],
+      "status": "dry-run"
+    }
+  ]
+}

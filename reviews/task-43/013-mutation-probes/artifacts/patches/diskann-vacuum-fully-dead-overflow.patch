@@ -1,0 +1,13 @@
+diff --git a/src/am/ec_diskann/vacuum.rs b/src/am/ec_diskann/vacuum.rs
+index dd7c4ec3..f71e7f7a 100644
+--- a/src/am/ec_diskann/vacuum.rs
++++ b/src/am/ec_diskann/vacuum.rs
+@@ -75,7 +75,7 @@ where
+ /// confirm full death. For V1 builds the flag is always false and
+ /// the helper is exact.
+ pub fn is_fully_dead(tuple: &VamanaNodeTuple) -> bool {
+-    tuple.primary_heaptid == ItemPointer::INVALID && !tuple.has_overflow_heaptids
++    tuple.primary_heaptid == ItemPointer::INVALID || !tuple.has_overflow_heaptids
+ }
+ 
+ /// Repair a node's neighbor list by removing TIDs that point at

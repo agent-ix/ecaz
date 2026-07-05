@@ -1,0 +1,16 @@
+Script started on 2026-05-18 18:12:56-07:00 [<not executed on terminal>]
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.03s
+     Running unittests src/lib.rs (hardening/loom/target/debug/deps/ecaz_loom_hardening-687f2c9dbc58c659)
+
+running 6 tests
+test tests::stale_epoch_release_and_publish_do_not_mutate_slot ... ok
+test tests::worker_slot_claim_is_exclusive_for_two_workers ... ok
+test tests::release_racing_publish_leaves_free_slot_idle ... ok
+test tests::hnsw_concurrent_dsm_ready_is_published_after_neighbor_slots ... ok
+test tests::hnsw_concurrent_dsm_node_insert_is_exclusive ... ok
+test tests::worker_slot_claim_count_matches_live_claimed_slots ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 9.38s
+
+
+Script done on 2026-05-18 18:13:04-07:00 [COMMAND_EXIT_CODE="0"]

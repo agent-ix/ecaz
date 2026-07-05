@@ -1,0 +1,8 @@
+DROP TABLE
+DROP TABLE
+DROP TABLE
+DROP TABLE
+NOTICE:  table "task74_intel_spire_highrecall_tg128_b0_queries" does not exist, skipping
+NOTICE:  table "task74_intel_spire_highrecall_tg128_b0_corpus" does not exist, skipping
+NOTICE:  table "task74_intel_ivf_control_queries" does not exist, skipping
+NOTICE:  table "task74_intel_ivf_control_corpus" does not exist, skipping

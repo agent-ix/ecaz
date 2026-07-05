@@ -1,0 +1,28 @@
+--- hardening/careful/src/../../../src/quant/rabitq.rs
++++ replace <impl crate::quant::Quantizer for RaBitQQuantizer>::prepare_scorer -> Box<dyn crate::quant::QueryScorer +Send +Sync +'_> with Box::new(Default::default())
+@@ -449,24 +449,17 @@
+ 
+         out.into_boxed_slice()
+     }
+ 
+     fn prepare_scorer(
+         &self,
+         query: &[f32],
+     ) -> Box<dyn crate::quant::QueryScorer + Send + Sync + '_> {
+-        let rotated = self.rotated(query);
+-        let norm = l2_norm(&rotated);
+-        Box::new(RaBitQScorer {
+-            query_rotated: rotated,
+-            query_norm: norm,
+-            dimensions: self.dimensions,
+-            bits_per_dim: self.bits_per_dim,
+-        })
++        Box::new(Default::default()) /* ~ changed by cargo-mutants ~ */
+     }
+ 
+     fn code_len(&self) -> usize {
+         self.packed_bytes() + RABITQ_SCALAR_LEN
+     }
+ 
+     fn wire_format_version(&self) -> u32 {
+         0

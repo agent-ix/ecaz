@@ -1,0 +1,31 @@
+--- hardening/careful/src/../../../src/am/common/cost.rs
++++ replace PlannerCompareType::as_str -> &'static str with ""
+@@ -60,27 +60,17 @@
+     Gt,
+     Ne,
+     Overlap,
+     ContainedBy,
+ }
+ 
+ impl PlannerCompareType {
+     pub(crate) fn as_str(self) -> &'static str {
+-        match self {
+-            Self::Invalid => "COMPARE_INVALID",
+-            Self::Lt => "COMPARE_LT",
+-            Self::Le => "COMPARE_LE",
+-            Self::Eq => "COMPARE_EQ",
+-            Self::Ge => "COMPARE_GE",
+-            Self::Gt => "COMPARE_GT",
+-            Self::Ne => "COMPARE_NE",
+-            Self::Overlap => "COMPARE_OVERLAP",
+-            Self::ContainedBy => "COMPARE_CONTAINED_BY",
+-        }
++        "" /* ~ changed by cargo-mutants ~ */
+     }
+ }
+ 
+ #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+ pub(crate) struct StrategyTranslationSnapshot {
+     pub ordering_strategy: i32,
+     pub ordering_compare_type: PlannerCompareType,
+     pub pg18_callback_ready: bool,

@@ -1,0 +1,22 @@
+--- hardening/careful/src/../../../src/storage/page.rs
++++ replace DataPageChain::get_page_mut -> Option<&mut DataPage> with Some(Box::leak(Box::new(Default::default())))
+@@ -185,18 +185,17 @@
+     }
+ 
+     pub fn get_page(&self, block_number: u32) -> Option<&DataPage> {
+         let index = block_number.checked_sub(FIRST_DATA_BLOCK_NUMBER)? as usize;
+         self.pages.get(index)
+     }
+ 
+     pub fn get_page_mut(&mut self, block_number: u32) -> Option<&mut DataPage> {
+-        let index = block_number.checked_sub(FIRST_DATA_BLOCK_NUMBER)? as usize;
+-        self.pages.get_mut(index)
++        Some(Box::leak(Box::new(Default::default()))) /* ~ changed by cargo-mutants ~ */
+     }
+ 
+     pub fn start_new_page_if_current_has_tuples(&mut self) {
+         if self
+             .pages
+             .last()
+             .map_or(true, |page| page.tuple_count() == 0)
+         {

@@ -1,0 +1,12 @@
+Script started on 2026-05-12 21:35:04-07:00 [<not executed on terminal>]
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.14s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-81ab2156a921a9a9)
+
+running 2 tests
+test am::ec_spire::remote_tuple_transport_tests::remote_tuple_transport_session_override_keeps_capability_gate ... [32mok[m
+test am::ec_spire::remote_tuple_transport_tests::remote_tuple_transport_auto_uses_endpoint_default ... [32mok[m
+
+test result: [32mok[m. 2 passed; 0 failed; 0 ignored; 0 measured; 1694 filtered out; finished in 0.00s
+
+
+Script done on 2026-05-12 21:35:05-07:00 [COMMAND_EXIT_CODE="0"]

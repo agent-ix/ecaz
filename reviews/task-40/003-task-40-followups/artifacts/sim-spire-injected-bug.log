@@ -1,0 +1,32 @@
+Script started on 2026-05-18 19:31:21-07:00 [<not executed on terminal>]
+   Compiling ecaz-sim-spire-hardening v0.1.0 (/home/peter/dev/ecaz/hardening/sim-spire)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.53s
+     Running unittests src/lib.rs (hardening/sim-spire/target/debug/deps/ecaz_sim_spire_hardening-5101f2b05099022b)
+
+running 5 tests
+test tests::transport_consistency_parser_keeps_governance_names_stable ... ok
+test tests::scripted_adapter_uses_extracted_transport_state ... ok
+test tests::turmoil_strict_rejects_stale_served_epoch_response ... FAILED
+test tests::turmoil_candidate_receive_merges_async_remote_responses ... ok
+test tests::turmoil_partition_degraded_skips_unreachable_remote ... ok
+
+failures:
+
+---- tests::turmoil_strict_rejects_stale_served_epoch_response stdout ----
+
+thread 'tests::turmoil_strict_rejects_stale_served_epoch_response' (889835) panicked at src/lib.rs:347:17:
+assertion `left == right` failed: seed 0
+  left: 1
+ right: 0
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+Error: JoinError::Panic(Id(6), "assertion `left == right` failed: seed 0\n  left: 1\n right: 0", ...)
+
+
+failures:
+    tests::turmoil_strict_rejects_stale_served_epoch_response
+
+test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+error: test failed, to rerun pass `--lib`
+
+Script done on 2026-05-18 19:31:22-07:00 [COMMAND_EXIT_CODE="101"]

@@ -1,0 +1,30 @@
+[loader] inspecting /home/peter/dev/ecaz/target/real-corpus/staged-task50/ec_real_50k_corpus.tsv
+[loader] inspecting /home/peter/dev/ecaz/target/real-corpus/staged-task50/ec_real_50k_queries.tsv
+[loader] corpus: 50000 rows, sha256=56ca9efe174709116ca8919f85d40043c525fc68377e23d6b824adec3c1de923  queries: 1000 rows, sha256=95ac7992578aa80bb193657f10fbcbf1ea3867e559739244bf5a467f7a5a9fa3
+[loader] warning: manifest verification failed for /home/peter/dev/ecaz/target/real-corpus/staged-task50/ec_real_50k_manifest.json: prefix="ec_real_50k" (expected "ec_real_50k_spirerabitq")
+[loader] copied corpus table ec_real_50k_spirerabitq_corpus in 23.43s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table ec_real_50k_spirerabitq_corpus in 7.82s
+[loader] copied queries table ec_real_50k_spirerabitq_queries in 499.13ms
+[loader] building ec_real_50k_spirerabitq_rabitq_idx using ec_spire (reloptions=[storage_format=rabitq]) ...
+
+   0: [91mbuilding index ec_real_50k_spirerabitq_rabitq_idx[0m
+   1: [91mdb error[0m
+   2: [91mERROR: ec_spire populated ambuild failed: ec_spire object tuple payload 11270 exceeds page size 8192[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/corpus/load.rs[0m:[35m1176[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.
+
+   0: [91mbuilding index ec_real_50k_spirerabitq_rabitq_idx[0m
+   1: [91mdb error[0m
+   2: [91mERROR: ec_spire populated ambuild failed: ec_spire object tuple payload 11270 exceeds page size 8192[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/corpus/load.rs[0m:[35m1176[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.
+__ecaz_exit__=1

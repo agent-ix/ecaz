@@ -1,0 +1,33 @@
+commit b8dab0bfff97df1304134fa7b0a0a5f785fb8fad
+Author: Codex <codex@openai.com>
+Date:   Fri May 22 17:42:16 2026 -0700
+
+    Task 50/444: HNSW vacuum.rs finalize_fully_dead chain safe-fn lifts
+    
+    Two more vacuum-side lifts cascading from slice 424's
+    with_page_line_tuple_bytes and slice 428's
+    apply_page_pass1_updates lifts:
+    
+      - finalize_fully_dead_elements_with_storage (body composes safe
+        ops only after the per-page chain lift)
+      - finalize_fully_dead_elements_on_page_with_storage (body uses
+        VacuumIndexRelation::read_main_locked + begin_page_rewrite
+        safe RAII methods, with_page_line_tuple_bytes,
+        apply_page_pass1_updates — all safe)
+    
+    Three caller-side unsafe wraps stripped:
+      - finalize_fully_dead_elements_with_storage internal call to
+        finalize_fully_dead_elements_on_page_with_storage
+      - finalize_fully_dead_elements_on_page_with_storage internal call
+        to with_page_line_tuple_bytes
+      - VacuumFormatAdapter::finalize_fully_dead_elements method wrap
+    
+    Per-file delta:
+      vacuum.rs   23 -> 21  (-2)
+    
+    Cumulative HNSW rotation delta: -217 (549 -> 332, -39.5%).
+    
+    Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
+
+ src/am/ec_hnsw/vacuum.rs | 28 +++++++++-------------------
+ 1 file changed, 9 insertions(+), 19 deletions(-)

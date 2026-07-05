@@ -1,0 +1,2 @@
+psql:/var/tmp/ecaz-spire-aws-load/representative/coordinator/reset-index.sql:1: NOTICE:  index "task107_rabitq_100k_l4_idx" does not exist, skipping
+DROP INDEX

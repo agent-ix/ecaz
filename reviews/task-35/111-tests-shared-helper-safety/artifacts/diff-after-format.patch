@@ -1,0 +1,345 @@
+diff --git a/scripts/unsafe_comment_baseline.txt b/scripts/unsafe_comment_baseline.txt
+index f81a5e52..de2e9e0a 100644
+--- a/scripts/unsafe_comment_baseline.txt
++++ b/scripts/unsafe_comment_baseline.txt
+@@ -205,46 +205,6 @@ src/tests/insert.rs:465
+ src/tests/insert.rs:474
+ src/tests/insert.rs:685
+ src/tests/insert.rs:850
+-src/tests/mod.rs:103
+-src/tests/mod.rs:135
+-src/tests/mod.rs:137
+-src/tests/mod.rs:1406
+-src/tests/mod.rs:144
+-src/tests/mod.rs:1460
+-src/tests/mod.rs:151
+-src/tests/mod.rs:152
+-src/tests/mod.rs:167
+-src/tests/mod.rs:169
+-src/tests/mod.rs:171
+-src/tests/mod.rs:172
+-src/tests/mod.rs:173
+-src/tests/mod.rs:1804
+-src/tests/mod.rs:183
+-src/tests/mod.rs:1831
+-src/tests/mod.rs:197
+-src/tests/mod.rs:203
+-src/tests/mod.rs:2134
+-src/tests/mod.rs:2152
+-src/tests/mod.rs:2216
+-src/tests/mod.rs:239
+-src/tests/mod.rs:2393
+-src/tests/mod.rs:2474
+-src/tests/mod.rs:2479
+-src/tests/mod.rs:2480
+-src/tests/mod.rs:2490
+-src/tests/mod.rs:265
+-src/tests/mod.rs:271
+-src/tests/mod.rs:44
+-src/tests/mod.rs:46
+-src/tests/mod.rs:56
+-src/tests/mod.rs:57
+-src/tests/mod.rs:58
+-src/tests/mod.rs:715
+-src/tests/mod.rs:772
+-src/tests/mod.rs:79
+-src/tests/mod.rs:81
+-src/tests/mod.rs:89
+-src/tests/mod.rs:94
+ src/tests/placement.rs:372
+ src/tests/remote_search/catalog_cleanup_policy.rs:525
+ src/tests/remote_search/catalog_cleanup_policy.rs:576
+diff --git a/src/tests/mod.rs b/src/tests/mod.rs
+index 0f544044..ec819857 100644
+--- a/src/tests/mod.rs
++++ b/src/tests/mod.rs
+@@ -40,9 +40,13 @@
+                 ) -> *mut std::ffi::c_void;
+             }
+ 
++            // SAFETY: pg_test runs inside PostgreSQL, so backend-global
++            // symbols can be resolved with `dlsym(NULL, ...)`.
+             let interrupt_pending_ptr =
+                 unsafe { dlsym(std::ptr::null_mut(), b"InterruptPending\0".as_ptr().cast()) }
+                     .cast::<std::ffi::c_int>();
++            // SAFETY: Same backend-symbol lookup as above for the query-cancel
++            // flag exported by PostgreSQL.
+             let query_cancel_pending_ptr = unsafe {
+                 dlsym(
+                     std::ptr::null_mut(),
+@@ -53,8 +57,12 @@
+             if interrupt_pending_ptr.is_null() || query_cancel_pending_ptr.is_null() {
+                 return None;
+             }
++            // SAFETY: Both symbol pointers were checked non-null and point to
++            // PostgreSQL backend `int` globals.
+             let previous_interrupt_pending = unsafe { *interrupt_pending_ptr };
+             let previous_query_cancel_pending = unsafe { *query_cancel_pending_ptr };
++            // SAFETY: Both pointers reference writable PostgreSQL backend
++            // cancel flags, and this guard restores their previous values.
+             unsafe {
+                 *interrupt_pending_ptr = 1;
+                 *query_cancel_pending_ptr = 1;
+@@ -75,9 +83,13 @@
+                 ) -> *mut std::ffi::c_void;
+             }
+ 
++            // SAFETY: pg_test runs inside PostgreSQL, so backend-global
++            // symbols can be resolved with `dlsym(NULL, ...)`.
+             let interrupt_pending_ptr =
+                 unsafe { dlsym(std::ptr::null_mut(), b"InterruptPending\0".as_ptr().cast()) }
+                     .cast::<std::ffi::c_int>();
++            // SAFETY: Same backend-symbol lookup as above for the query-cancel
++            // flag exported by PostgreSQL.
+             let query_cancel_pending_ptr = unsafe {
+                 dlsym(
+                     std::ptr::null_mut(),
+@@ -86,11 +98,15 @@
+             }
+             .cast::<std::ffi::c_int>();
+             if !interrupt_pending_ptr.is_null() {
++                // SAFETY: The pointer was checked non-null and references the
++                // PostgreSQL backend interrupt flag.
+                 unsafe {
+                     *interrupt_pending_ptr = 0;
+                 }
+             }
+             if !query_cancel_pending_ptr.is_null() {
++                // SAFETY: The pointer was checked non-null and references the
++                // PostgreSQL backend query-cancel flag.
+                 unsafe {
+                     *query_cancel_pending_ptr = 0;
+                 }
+@@ -100,6 +116,8 @@
+ 
+     impl Drop for ScopedPgQueryCancelFlags {
+         fn drop(&mut self) {
++            // SAFETY: Instances are constructed only after resolving non-null
++            // backend flag pointers and store the values to restore here.
+             unsafe {
+                 *self.interrupt_pending_ptr = self.previous_interrupt_pending;
+                 *self.query_cancel_pending_ptr = self.previous_query_cancel_pending;
+@@ -131,9 +149,13 @@
+                 ) -> *mut std::ffi::c_void;
+             }
+ 
++            // SAFETY: pg_test runs inside PostgreSQL, so backend-global
++            // symbols can be resolved with `dlsym(NULL, ...)`.
+             let interrupt_pending_ptr =
+                 unsafe { dlsym(std::ptr::null_mut(), b"InterruptPending\0".as_ptr().cast()) }
+                     .cast::<std::ffi::c_int>();
++            // SAFETY: Same backend-symbol lookup as above for the query-cancel
++            // flag exported by PostgreSQL.
+             let query_cancel_pending_ptr = unsafe {
+                 dlsym(
+                     std::ptr::null_mut(),
+@@ -141,14 +163,18 @@
+                 )
+             }
+             .cast::<std::ffi::c_int>();
++            // SAFETY: Timeout functions are exported by PostgreSQL in the
++            // current backend process during pg_test execution.
+             let enable_timeout_after_ptr = unsafe {
+                 dlsym(
+                     std::ptr::null_mut(),
+                     b"enable_timeout_after\0".as_ptr().cast(),
+                 )
+             };
++            // SAFETY: Same PostgreSQL backend symbol lookup as above.
+             let disable_timeout_ptr =
+                 unsafe { dlsym(std::ptr::null_mut(), b"disable_timeout\0".as_ptr().cast()) };
++            // SAFETY: Same PostgreSQL backend symbol lookup as above.
+             let get_timeout_indicator_ptr = unsafe {
+                 dlsym(
+                     std::ptr::null_mut(),
+@@ -163,12 +189,20 @@
+             {
+                 return None;
+             }
++            // SAFETY: The symbol was checked non-null and has PostgreSQL's
++            // `enable_timeout_after` C signature.
+             let enable_timeout_after: PgTestEnableTimeoutAfter =
+                 unsafe { std::mem::transmute(enable_timeout_after_ptr) };
++            // SAFETY: The symbol was checked non-null and has PostgreSQL's
++            // `disable_timeout` C signature.
+             let disable_timeout: PgTestDisableTimeout =
+                 unsafe { std::mem::transmute(disable_timeout_ptr) };
++            // SAFETY: The symbol was checked non-null and has PostgreSQL's
++            // `get_timeout_indicator` C signature.
+             let get_timeout_indicator: PgTestGetTimeoutIndicator =
+                 unsafe { std::mem::transmute(get_timeout_indicator_ptr) };
++            // SAFETY: Both symbol pointers were checked non-null and point to
++            // PostgreSQL backend `int` globals.
+             let previous_interrupt_pending = unsafe { *interrupt_pending_ptr };
+             let previous_query_cancel_pending = unsafe { *query_cancel_pending_ptr };
+             let guard = Self {
+@@ -180,6 +214,8 @@
+                 get_timeout_indicator,
+             };
+ 
++            // SAFETY: The function pointers were resolved from PostgreSQL
++            // symbols and the timeout id is PostgreSQL's statement timeout.
+             unsafe {
+                 (guard.get_timeout_indicator)(PG_TEST_STATEMENT_TIMEOUT_ID, true);
+                 enable_timeout_after(PG_TEST_STATEMENT_TIMEOUT_ID, delay_ms.max(1));
+@@ -194,12 +230,16 @@
+         }
+ 
+         fn statement_timeout_pending(&self) -> bool {
++            // SAFETY: The function pointer is resolved during construction and
++            // remains valid for the backend process lifetime.
+             unsafe { (self.get_timeout_indicator)(PG_TEST_STATEMENT_TIMEOUT_ID, false) }
+         }
+     }
+ 
+     impl Drop for ScopedPgStatementTimeoutSignal {
+         fn drop(&mut self) {
++            // SAFETY: All function and flag pointers are resolved during guard
++            // construction and are restored before the guard is dropped.
+             unsafe {
+                 (self.disable_timeout)(PG_TEST_STATEMENT_TIMEOUT_ID, false);
+                 (self.get_timeout_indicator)(PG_TEST_STATEMENT_TIMEOUT_ID, true);
+@@ -236,6 +276,8 @@
+         let node_id = u32::try_from(node_id).unwrap_or_else(|_| {
+             pgrx::error!("test placement rewrite node_id must be non-negative")
+         });
++        // SAFETY: This test-only SQL wrapper validates argument domains before
++        // delegating to the SPIRE placement debug rewrite helper.
+         unsafe { am::debug_spire_rewrite_placement_node(index_oid, pid, node_id) };
+         true
+     }
+@@ -262,12 +304,16 @@
+                 (pid, node_id)
+             })
+             .collect::<Vec<_>>();
++        // SAFETY: This test-only SQL wrapper validates paired rewrite inputs
++        // before delegating to the SPIRE placement debug rewrite helper.
+         unsafe { am::debug_spire_rewrite_placement_nodes(index_oid, &rewrites) };
+         true
+     }
+ 
+     #[pg_extern]
+     fn ec_spire_test_rewrite_consistency_mode(index_oid: pg_sys::Oid, mode: String) -> bool {
++        // SAFETY: The test-only SQL wrapper passes a bounded Rust string to
++        // the SPIRE debug helper for the supplied test index OID.
+         unsafe { am::debug_spire_rewrite_consistency_mode(index_oid, &mode) };
+         true
+     }
+@@ -711,6 +757,8 @@
+         ),
+     > {
+         let _interrupt_lock = env_var_test_lock();
++        // SAFETY: The guard resolves PostgreSQL timeout symbols and restores
++        // process-global interrupt state when dropped.
+         let timeout_signal =
+             unsafe { ScopedPgStatementTimeoutSignal::trigger_after_ms(statement_timeout_after_ms) }
+                 .unwrap_or_else(|| {
+@@ -769,6 +817,8 @@
+         ),
+     > {
+         let _interrupt_lock = env_var_test_lock();
++        // SAFETY: The guard resolves PostgreSQL timeout symbols and restores
++        // process-global interrupt state when dropped.
+         let timeout_signal = unsafe {
+             ScopedPgStatementTimeoutSignal::trigger_after_ms(statement_timeout_after_ms)
+         }
+@@ -1403,6 +1453,8 @@
+         let served_epoch_u64 = u64::try_from(served_epoch).expect("served_epoch should fit u64");
+         let index_relation =
+             open_valid_ec_spire_index_guard(index_oid, "test_prepare_coordinator_insert_remote_sql");
++        // SAFETY: The relation guard keeps the SPIRE index open while the
++        // coordinator prepare helper reads relation metadata for this test.
+         let row = unsafe {
+             am::spire_coordinator_insert_prepare_remote_sql(
+                 index_relation.as_ptr(),
+@@ -1457,6 +1509,8 @@
+             index_oid,
+             "test_prepare_coordinator_insert_remote_tuple_payload",
+         );
++        // SAFETY: The relation guard keeps the SPIRE index open while the
++        // coordinator prepare helper reads relation metadata for this test.
+         let row = unsafe {
+             am::spire_coordinator_insert_prepare_remote_tuple_payload(
+                 index_relation.as_ptr(),
+@@ -1801,6 +1855,8 @@
+         index_oid: pg_sys::Oid,
+         code_len: usize,
+     ) -> ScalarElementsAndNeighbors {
++        // SAFETY: Test callers create the referenced HNSW index before asking
++        // the debug helper to decode its page image.
+         let (_block_count, metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
+         let mut neighbors = HashMap::new();
+ 
+@@ -1828,6 +1884,8 @@
+     fn decode_grouped_index_elements_and_neighbors(
+         index_oid: pg_sys::Oid,
+     ) -> GroupedElementsAndNeighbors {
++        // SAFETY: Test callers create the referenced HNSW index before asking
++        // the debug helper to decode its page image.
+         let (_block_count, metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
+         let layout = match am::graph::GraphStorageDescriptor::from_metadata(&metadata).unwrap() {
+             am::graph::GraphStorageDescriptor::PqFastScan(layout) => layout,
+@@ -2130,6 +2188,8 @@
+         ctid_to_id: &HashMap<(u32, u16), usize>,
+         k: usize,
+     ) -> Vec<usize> {
++        // SAFETY: Test callers create the referenced IVF index before asking
++        // the debug helper to run a gettuple scan for the supplied query.
+         let (outputs, _orderby_cleared) =
+             unsafe { am::debug_ec_ivf_gettuple_outputs(index_oid, query) };
+         outputs
+@@ -2149,6 +2209,8 @@
+         ctid_to_id: &HashMap<(u32, u16), usize>,
+         k: usize,
+     ) -> Vec<usize> {
++        // SAFETY: Test callers create the referenced HNSW index before asking
++        // the debug helper to run a gettuple scan for the supplied query.
+         unsafe { am::debug_gettuple_scan_heap_tids(index_oid, query) }
+             .into_iter()
+             .take(k)
+@@ -2213,6 +2275,8 @@
+ 
+     fn recall_index_block_count(index_oid: pg_sys::Oid, caller_name: &'static str) -> i32 {
+         let index_relation = open_valid_ec_hnsw_index_guard(index_oid, caller_name);
++        // SAFETY: The relation guard keeps the HNSW index open while reading
++        // its main-fork block count from PostgreSQL.
+         let index_block_count = unsafe {
+             i32::try_from(pg_sys::RelationGetNumberOfBlocksInFork(
+                 index_relation.as_ptr(),
+@@ -2389,6 +2453,8 @@
+             .iter()
+             .zip(ground_truth.iter())
+             .map(|(query, true_top_k)| {
++                // SAFETY: Recall fixtures create the HNSW index before
++                // measuring debug gettuple results for each query vector.
+                 let predicted =
+                     unsafe { am::debug_gettuple_scan_heap_tids(index_oid, query.clone()) };
+                 let predicted_top_k: HashSet<usize> = predicted
+@@ -2471,12 +2537,18 @@
+ 
+     unsafe fn analyzed_query(sql: &str) -> *mut pg_sys::Query {
+         let sql = CString::new(sql).expect("test SQL should not contain NUL");
++        // SAFETY: The SQL string is NUL-terminated and valid for the duration
++        // of PostgreSQL parsing in this test helper.
+         let raw_parses = unsafe { pg_sys::pg_parse_query(sql.as_ptr()) };
+         assert!(
+             !raw_parses.is_null(),
+             "parse should return a raw statement list"
+         );
++        // SAFETY: The parser returned a non-null list and this helper expects
++        // one statement in its test SQL input.
+         let raw_stmt = unsafe { pg_sys::list_nth(raw_parses, 0) }.cast::<pg_sys::RawStmt>();
++        // SAFETY: `raw_stmt` comes from PostgreSQL's parser output and the SQL
++        // string remains alive throughout analyze/rewrite.
+         let queries = unsafe {
+             pg_sys::pg_analyze_and_rewrite_fixedparams(
+                 raw_stmt,
+@@ -2487,6 +2559,8 @@
+             )
+         };
+         assert!(!queries.is_null(), "analyze should return a query list");
++        // SAFETY: PostgreSQL returned a non-null query list and this helper
++        // expects the first analyzed query for its test SQL input.
+         unsafe { pg_sys::list_nth(queries, 0) }.cast::<pg_sys::Query>()
+     }
+ 

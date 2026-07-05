@@ -1,0 +1,15 @@
+Script started on 2026-05-11 09:20:30-07:00 [<not executed on terminal>]
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.23s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-1903db179d6aa6e7)
+
+running 2 tests
+test am::ec_spire::custom_scan::tests::custom_scan_cost_increases_with_output_rows ... [32mok[m
+test am::ec_spire::custom_scan::tests::custom_scan_cost_increases_with_remote_fanout ... [32mok[m
+
+test result: [32mok[m. 2 passed; 0 failed; 0 ignored; 0 measured; 1624 filtered out; finished in 0.00s
+
+
+Script done on 2026-05-11 09:20:31-07:00 [COMMAND_EXIT_CODE="0"]

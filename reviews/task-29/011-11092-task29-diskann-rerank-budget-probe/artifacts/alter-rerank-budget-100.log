@@ -1,0 +1,6 @@
+ALTER INDEX
+                            reloptions                             
+-------------------------------------------------------------------
+ {graph_degree=32,build_list_size=100,alpha=1.2,rerank_budget=100}
+(1 row)
+

@@ -1,0 +1,70 @@
+{
+  "name": "task47-cost-gate-small",
+  "schema_version": 1,
+  "artifact_dir": "target/gates/cost-small",
+  "defaults": {
+    "pg": 18
+  },
+  "thresholds": [
+    {
+      "name": "ivf-modeled-total-cost-positive",
+      "step": "ivf-small-cost",
+      "metric": "planner_cost",
+      "field": "modeled_total_cost",
+      "op": "gt",
+      "value": 0.0
+    },
+    {
+      "name": "hnsw-modeled-total-cost-positive",
+      "step": "hnsw-small-cost",
+      "metric": "planner_cost",
+      "field": "modeled_total_cost",
+      "op": "gt",
+      "value": 0.0
+    },
+    {
+      "name": "diskann-modeled-total-cost-positive",
+      "step": "diskann-small-cost",
+      "metric": "planner_cost",
+      "field": "modeled_total_cost",
+      "op": "gt",
+      "value": 0.0
+    }
+  ],
+  "steps": [
+    {
+      "kind": "explain",
+      "name": "ivf-small-cost",
+      "tags": ["cost", "small", "pr"],
+      "prefix": "task47_gate_ivf",
+      "profile": "ec_ivf",
+      "nprobe": 48,
+      "rerank_width": 750,
+      "sql_file": "target/gates/cost-small/ivf-real10k-cost.sql",
+      "log_output": "target/gates/cost-small/ivf-real10k-cost.log"
+    },
+    {
+      "kind": "explain",
+      "name": "hnsw-small-cost",
+      "tags": ["cost", "small", "pr"],
+      "prefix": "task47_gate_hnsw",
+      "profile": "ec_hnsw",
+      "index_name": "task47_gate_hnsw_m16_idx",
+      "nprobe": 128,
+      "rerank_width": -1,
+      "sql_file": "target/gates/cost-small/hnsw-real10k-cost.sql",
+      "log_output": "target/gates/cost-small/hnsw-real10k-cost.log"
+    },
+    {
+      "kind": "explain",
+      "name": "diskann-small-cost",
+      "tags": ["cost", "small", "pr"],
+      "prefix": "task47_gate_diskann",
+      "profile": "ec_diskann",
+      "nprobe": 200,
+      "rerank_width": -1,
+      "sql_file": "target/gates/cost-small/diskann-real10k-cost.sql",
+      "log_output": "target/gates/cost-small/diskann-real10k-cost.log"
+    }
+  ]
+}

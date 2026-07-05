@@ -1,0 +1,8 @@
+Script started on 2026-05-12 16:54:14-07:00 [<not executed on terminal>]
+spec/adr/ADR-069-spire-distributed-write-path-scope.md
+658:- **Automated orphaned prepared-transaction recovery helper** (future
+
+src/am/ec_spire/dml_frontdoor.rs
+123:    // ADR-069 v1 DML supports bigint PKs only; widen this when v2 admits UUID
+
+Script done on 2026-05-12 16:54:14-07:00 [COMMAND_EXIT_CODE="0"]

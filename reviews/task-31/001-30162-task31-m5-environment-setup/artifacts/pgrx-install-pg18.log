@@ -1,0 +1,562 @@
+[32m[1m       Using[0m[39m [37m[1mPgConfig("pg18")[0m[39m and `pg_config` from [36m/opt/homebrew/opt/postgresql@18/bin/pg_config[39m
+[32m[1m    Building[0m[39m extension with features [36mpg18[39m
+[32m[1m     Running[0m[39m command [36m"/opt/homebrew/bin/cargo" "build" "--lib" "--features" "pg18" "--no-default-features" "--message-format=json-render-diagnostics"[39m
+   Compiling memchr v2.8.0
+   Compiling icu_properties_data v2.2.0
+   Compiling icu_normalizer_data v2.2.0
+   Compiling cc v1.2.61
+   Compiling bitflags v2.11.1
+   Compiling zerofrom v0.1.7
+   Compiling zerocopy v0.8.48
+   Compiling getrandom v0.4.2
+   Compiling yoke v0.8.2
+   Compiling zerovec v0.11.6
+   Compiling zerotrie v0.2.4
+   Compiling serde_json v1.0.149
+   Compiling aho-corasick v1.1.4
+   Compiling nom v7.1.3
+   Compiling tinystr v0.8.3
+   Compiling potential_utf v0.1.5
+   Compiling icu_collections v2.2.0
+   Compiling cee-scape v0.2.0
+   Compiling icu_locale_core v2.2.0
+   Compiling regex-automata v0.4.14
+   Compiling uuid v1.23.1
+   Compiling icu_provider v2.2.0
+   Compiling cexpr v0.6.0
+   Compiling icu_properties v2.2.0
+   Compiling icu_normalizer v2.2.0
+   Compiling idna_adapter v1.2.2
+   Compiling idna v1.1.0
+   Compiling regex v1.12.3
+   Compiling url v2.5.8
+   Compiling bindgen v0.72.1
+   Compiling pgrx-pg-config v0.17.0
+   Compiling ecaz v0.1.1 (/Users/peter/dev/tqvector)
+   Compiling ppv-lite86 v0.2.21
+   Compiling rand_chacha v0.3.1
+   Compiling rand v0.8.6
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: In file included from /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:19:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:537:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   537 | dlist_next_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:547:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   547 | dlist_prev_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:1054:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:  1054 | slist_next_node(slist_head *head, slist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:58: warning: unused parameter 'size' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                          ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:70: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                                      ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:882:56: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   882 | pgstat_hash_hash_key(const void *d, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                        ^
+warning: ecaz@0.1.1: 6 warnings generated.
+   Compiling pgrx-bindgen v0.17.0
+   Compiling pgrx-pg-sys v0.17.0
+   Compiling pgrx v0.17.0
+error: linking with `cc` failed: exit status: 1
+  |
+  = note:  "cc" "-Wl,-exported_symbols_list" "-Wl,/Users/peter/dev/tqvector/target/debug/deps/rustctfS82l/list" "/Users/peter/dev/tqvector/target/debug/deps/rustctfS82l/symbols.o" "<257 object files omitted>" "-lecaz_pg18_pgstat_shim" "/Users/peter/dev/tqvector/target/debug/deps/{libhex-a0d810fd7056320f,librand-dc65bdc2e649b894,librand_chacha-55d2d0e6dc36835c,libppv_lite86-41129ea67673b0be,libzerocopy-5c293859c1795fff,librand_core-930f49aada72c190,libgetrandom-5f65771c9b8d7ccc,libcfg_if-f369a5cfbf32558a,libpgrx-ed5da6785f5d9a6d,libseahash-0e1bb17c58d2afc4,libserde_cbor-0c81cf800af23134,libhalf-4a41da8f895d068b,libserde_json-385f512cd7229307,libmemchr-60739b845b7c9833,libitoa-3eb41689ee3e6fde,libzmij-2a9fe0b094016736,libenum_map-fd1e4a6f23b60edb,libpgrx_pg_sys-be94b5787178de96,libserde-8a2df870891d6c81,libserde_core-77a445ecaf85ef16,libcee_scape-67cfdee4d0f36266,liblibc-839aee72631fd706,libbitvec-6f1412da4ca895bf,libwyz-dac78abb4e91ae42,libtap-2e7a31fabe7f5f2a,libradium-af07ed5c60cc8c30,libfunty-91209a1abc2e352e,libpgrx_sql_entity_graph-bce111626016ba89,libunescape-83c2ad1b62a87402,libpetgraph-c0124997378d4a95,libhashbrown-b58317a61fa424a8,libfoldhash-d39c9b982d68a8ad,liballocator_api2-71897286207a1aa4,libindexmap-22ab251af0283548,libequivalent-02406c83ca186ae8,libhashbrown-53335c62af126af1,libfixedbitset-917bfc58f97e64e4,libthiserror-b12db60374e3189e,libconvert_case-0536c140480f26a3,libunicode_segmentation-1331bfea3c029d17,libeyre-5ebd3b979d9ceaba,libindenter-a989c04f5737be9c,libonce_cell-8beefaec8a63313d,libsyn-dfa4d6a31ee30c25,libquote-9e458bf603cd45c4,libproc_macro2-b616bb92196c68dd,libunicode_ident-62a13b75d482434a}.rlib" "<sysroot>/lib/rustlib/aarch64-apple-darwin/lib/{libproc_macro-*,librustc_literal_escaper-*}.rlib" "/Users/peter/dev/tqvector/target/debug/deps/libbitflags-0735209f15bc7ef5.rlib" "<sysroot>/lib/rustlib/aarch64-apple-darwin/lib/{libstd-*,libpanic_unwind-*,libobject-*,libmemchr-*,libaddr2line-*,libgimli-*,libcfg_if-*,librustc_demangle-*,libstd_detect-*,libhashbrown-*,librustc_std_workspace_alloc-*,libminiz_oxide-*,libadler2-*,libunwind-*,liblibc-*,librustc_std_workspace_core-*,liballoc-*,libcore-*,libcompiler_builtins-*}.rlib" "-liconv" "-lSystem" "-lc" "-lm" "-arch" "arm64" "-mmacosx-version-min=11.0.0" "-L" "/Users/peter/dev/tqvector/target/debug/build/ecaz-e9ced945a0c90275/out" "-L" "/Users/peter/dev/tqvector/target/debug/build/pgrx-pg-sys-d57e82f73e457121/out" "-L" "/Users/peter/dev/tqvector/target/debug/build/cee-scape-32c8959dfebc10e2/out" "-L" "/opt/homebrew/lib/postgresql@18" "-o" "/Users/peter/dev/tqvector/target/debug/deps/libecaz.dylib" "-Wl,-dead_strip" "-dynamiclib" "-nodefaultlibs"
+  = note: some arguments are omitted. use `--verbose` to show all linker arguments
+  = note: ld: warning: object file (/Users/peter/dev/tqvector/target/debug/build/ecaz-e9ced945a0c90275/out/libecaz_pg18_pgstat_shim.a[2](faea18488176a15d-pg18_pgstat_shim.o)) was built for newer 'macOS' version (26.4.1) than being linked (11.0)
+          ld: warning: object file (/Users/peter/dev/tqvector/target/debug/deps/libpgrx_pg_sys-be94b5787178de96.rlib[8](42f5eaaa15822ca1-pgrx-cshim.o)) was built for newer 'macOS' version (26.4.1) than being linked (11.0)
+          ld: warning: object file (/opt/homebrew/Cellar/rust/1.95.0/lib/rustlib/aarch64-apple-darwin/lib/libproc_macro-004c4e3b31c83232.rlib[3](proc_macro-004c4e3b31c83232.proc_macro.a3d8fbf4ba73eb54-cgu.0.rcgu.o)) was built for newer 'macOS' version (26.0) than being linked (11.0)
+          ld: warning: object file (/opt/homebrew/Cellar/rust/1.95.0/lib/rustlib/aarch64-apple-darwin/lib/libstd-e9a90eca8f96ddd9.rlib[3](std-e9a90eca8f96ddd9.std.4a10610fc1569c16-cgu.0.rcgu.o)) was built for newer 'macOS' version (26.0) than being linked (11.0)
+          ld: warning: object file (/opt/homebrew/Cellar/rust/1.95.0/lib/rustlib/aarch64-apple-darwin/lib/libpanic_unwind-a51c312261557ff3.rlib[3](panic_unwind-a51c312261557ff3.panic_unwind.7d1342f6ec953f56-cgu.0.rcgu.o)) was built for newer 'macOS' version (26.0) than being linked (11.0)
+          ld: warning: object file (/opt/homebrew/Cellar/rust/1.95.0/lib/rustlib/aarch64-apple-darwin/lib/libobject-51bbb3f63719f98c.rlib[3](object-51bbb3f63719f98c.object.11a5ccb7febc3ca8-cgu.0.rcgu.o)) was built for newer 'macOS' version (26.0) than being linked (11.0)
+          ld: warning: object file (/opt/homebrew/Cellar/rust/1.95.0/lib/rustlib/aarch64-apple-darwin/lib/libaddr2line-64d5dbfcb71a8486.rlib[3](addr2line-64d5dbfcb71a8486.addr2line.40053ee1f51bf031-cgu.0.rcgu.o)) was built for newer 'macOS' version (26.0) than being linked (11.0)
+          ld: warning: object file (/opt/homebrew/Cellar/rust/1.95.0/lib/rustlib/aarch64-apple-darwin/lib/libgimli-3228eb3bf6a46eb3.rlib[3](gimli-3228eb3bf6a46eb3.gimli.22c9d93d1b13fba4-cgu.0.rcgu.o)) was built for newer 'macOS' version (26.0) than being linked (11.0)
+          ld: warning: object file (/opt/homebrew/Cellar/rust/1.95.0/lib/rustlib/aarch64-apple-darwin/lib/librustc_demangle-8d5b9c763cb1b307.rlib[3](rustc_demangle-8d5b9c763cb1b307.rustc_demangle.949876e939ce12e9-cgu.0.rcgu.o)) was built for newer 'macOS' version (26.0) than being linked (11.0)
+          ld: warning: object file (/opt/homebrew/Cellar/rust/1.95.0/lib/rustlib/aarch64-apple-darwin/lib/libhashbrown-60deac43e732b912.rlib[3](hashbrown-60deac43e732b912.hashbrown.bca28a4d042915a0-cgu.0.rcgu.o)) was built for newer 'macOS' version (26.0) than being linked (11.0)
+          ld: warning: object file (/opt/homebrew/Cellar/rust/1.95.0/lib/rustlib/aarch64-apple-darwin/lib/libminiz_oxide-95614937e57f79fd.rlib[3](miniz_oxide-95614937e57f79fd.miniz_oxide.403f713d794a7573-cgu.0.rcgu.o)) was built for newer 'macOS' version (26.0) than being linked (11.0)
+          ld: warning: object file (/opt/homebrew/Cellar/rust/1.95.0/lib/rustlib/aarch64-apple-darwin/lib/libadler2-7c33f87d5d2aba80.rlib[3](adler2-7c33f87d5d2aba80.adler2.84d54866b02123e0-cgu.0.rcgu.o)) was built for newer 'macOS' version (26.0) than being linked (11.0)
+          ld: warning: object file (/opt/homebrew/Cellar/rust/1.95.0/lib/rustlib/aarch64-apple-darwin/lib/liballoc-71f04b923f8da5b5.rlib[3](alloc-71f04b923f8da5b5.alloc.a66ee3d32fe6f844-cgu.0.rcgu.o)) was built for newer 'macOS' version (26.0) than being linked (11.0)
+          ld: warning: object file (/opt/homebrew/Cellar/rust/1.95.0/lib/rustlib/aarch64-apple-darwin/lib/libcore-575d130ae1ae32a1.rlib[3](core-575d130ae1ae32a1.core.a385b85ab76da31e-cgu.0.rcgu.o)) was built for newer 'macOS' version (26.0) than being linked (11.0)
+          ld: warning: object file (/opt/homebrew/Cellar/rust/1.95.0/lib/rustlib/aarch64-apple-darwin/lib/libcompiler_builtins-4796c221c6b0025d.rlib[19](compiler_builtins-4796c221c6b0025d.compiler_builtins.435247109ca0c7a6-cgu.016.rcgu.o)) was built for newer 'macOS' version (26.0) than being linked (11.0)
+          ld: warning: object file (/opt/homebrew/Cellar/rust/1.95.0/lib/rustlib/aarch64-apple-darwin/lib/libcompiler_builtins-4796c221c6b0025d.rlib[109](compiler_builtins-4796c221c6b0025d.compiler_builtins.435247109ca0c7a6-cgu.106.rcgu.o)) was built for newer 'macOS' version (26.0) than being linked (11.0)
+          ld: warning: object file (/opt/homebrew/Cellar/rust/1.95.0/lib/rustlib/aarch64-apple-darwin/lib/libcompiler_builtins-4796c221c6b0025d.rlib[114](compiler_builtins-4796c221c6b0025d.compiler_builtins.435247109ca0c7a6-cgu.111.rcgu.o)) was built for newer 'macOS' version (26.0) than being linked (11.0)
+          ld: warning: object file (/opt/homebrew/Cellar/rust/1.95.0/lib/rustlib/aarch64-apple-darwin/lib/libcompiler_builtins-4796c221c6b0025d.rlib[116](compiler_builtins-4796c221c6b0025d.compiler_builtins.435247109ca0c7a6-cgu.113.rcgu.o)) was built for newer 'macOS' version (26.0) than being linked (11.0)
+          ld: warning: object file (/opt/homebrew/Cellar/rust/1.95.0/lib/rustlib/aarch64-apple-darwin/lib/libcompiler_builtins-4796c221c6b0025d.rlib[120](compiler_builtins-4796c221c6b0025d.compiler_builtins.435247109ca0c7a6-cgu.117.rcgu.o)) was built for newer 'macOS' version (26.0) than being linked (11.0)
+          ld: warning: object file (/opt/homebrew/Cellar/rust/1.95.0/lib/rustlib/aarch64-apple-darwin/lib/libcompiler_builtins-4796c221c6b0025d.rlib[183](compiler_builtins-4796c221c6b0025d.compiler_builtins.435247109ca0c7a6-cgu.180.rcgu.o)) was built for newer 'macOS' version (26.0) than being linked (11.0)
+          ld: warning: object file (/opt/homebrew/Cellar/rust/1.95.0/lib/rustlib/aarch64-apple-darwin/lib/libcompiler_builtins-4796c221c6b0025d.rlib[191](compiler_builtins-4796c221c6b0025d.compiler_builtins.435247109ca0c7a6-cgu.188.rcgu.o)) was built for newer 'macOS' version (26.0) than being linked (11.0)
+          ld: warning: object file (/opt/homebrew/Cellar/rust/1.95.0/lib/rustlib/aarch64-apple-darwin/lib/libcompiler_builtins-4796c221c6b0025d.rlib[209](compiler_builtins-4796c221c6b0025d.compiler_builtins.435247109ca0c7a6-cgu.206.rcgu.o)) was built for newer 'macOS' version (26.0) than being linked (11.0)
+          ld: warning: object file (/opt/homebrew/Cellar/rust/1.95.0/lib/rustlib/aarch64-apple-darwin/lib/libcompiler_builtins-4796c221c6b0025d.rlib[217](compiler_builtins-4796c221c6b0025d.compiler_builtins.435247109ca0c7a6-cgu.214.rcgu.o)) was built for newer 'macOS' version (26.0) than being linked (11.0)
+          Undefined symbols for architecture arm64:
+            "_AllocSetContextCreateInternal", referenced from:
+                pgrx_pg_sys::include::pg18::AllocSetContextCreateInternal::_$u7b$$u7b$closure$u7d$$u7d$::h2b3f03d5f32687ee in libpgrx-ed5da6785f5d9a6d.rlib[4](pgrx-ed5da6785f5d9a6d.pgrx.75323078346d803b-cgu.01.rcgu.o)
+            "_ArrayGetIntegerTypmods", referenced from:
+                pgrx_pg_sys::include::pg18::ArrayGetIntegerTypmods::_$u7b$$u7b$closure$u7d$$u7d$::hc48873396586922d in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_ArrayGetNItems", referenced from:
+                pgrx_pg_sys::include::pg18::ArrayGetNItems::_$u7b$$u7b$closure$u7d$$u7d$::h805552c04618bc70 in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_BlessTupleDesc", referenced from:
+                pgrx_pg_sys::include::pg18::BlessTupleDesc::_$u7b$$u7b$closure$u7d$$u7d$::hf1aedcf0b33c4487 in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_BufferBlocks", referenced from:
+                pgrx_pg_sys::port::BufferGetBlock::h32f3dfdbcf7e31c4 in ecaz.24niey7zslapx9f7sw89qtj4r.11jcdve.rcgu.o
+                pgrx_pg_sys::port::BufferGetBlock::h32f3dfdbcf7e31c4 in ecaz.24niey7zslapx9f7sw89qtj4r.11jcdve.rcgu.o
+            "_BufferGetBlockNumber", referenced from:
+                pgrx_pg_sys::include::pg18::BufferGetBlockNumber::_$u7b$$u7b$closure$u7d$$u7d$::h643c52de866feb00 in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_BuildIndexInfo", referenced from:
+                pgrx_pg_sys::include::pg18::BuildIndexInfo::_$u7b$$u7b$closure$u7d$$u7d$::hfec2b96ef6d317ce in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_CacheMemoryContext", referenced from:
+                pgrx::memcxt::PgMemoryContexts::value::hfb418692b20c1da1 in libpgrx-ed5da6785f5d9a6d.rlib[8](pgrx-ed5da6785f5d9a6d.pgrx.75323078346d803b-cgu.05.rcgu.o)
+                pgrx::memcxt::PgMemoryContexts::value::hfb418692b20c1da1 in libpgrx-ed5da6785f5d9a6d.rlib[8](pgrx-ed5da6785f5d9a6d.pgrx.75323078346d803b-cgu.05.rcgu.o)
+            "_CheckXidAlive", referenced from:
+                _table_tuple_fetch_row_version in libpgrx_pg_sys-be94b5787178de96.rlib[8](42f5eaaa15822ca1-pgrx-cshim.o)
+            "_ConditionVariableInit", referenced from:
+                pgrx_pg_sys::include::pg18::ConditionVariableInit::_$u7b$$u7b$closure$u7d$$u7d$::h964f547c71f736c3 in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_ConditionVariableSignal", referenced from:
+                pgrx_pg_sys::include::pg18::ConditionVariableSignal::_$u7b$$u7b$closure$u7d$$u7d$::hb89973890d28287f in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_CopyErrorData", referenced from:
+                pgrx_pg_sys::include::pg18::CopyErrorData::_$u7b$$u7b$closure$u7d$$u7d$::h7c6a31c682202c0c in libpgrx_pg_sys-be94b5787178de96.rlib[3](pgrx_pg_sys-be94b5787178de96.pgrx_pg_sys.56b5deb3d9e24c18-cgu.0.rcgu.o)
+            "_CreateParallelContext", referenced from:
+                pgrx_pg_sys::include::pg18::CreateParallelContext::_$u7b$$u7b$closure$u7d$$u7d$::h3a765d70ff53ee00 in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_CreateTupleDescCopyConstr", referenced from:
+                pgrx_pg_sys::include::pg18::CreateTupleDescCopyConstr::_$u7b$$u7b$closure$u7d$$u7d$::h4048ec79f0acf5a0 in libpgrx-ed5da6785f5d9a6d.rlib[4](pgrx-ed5da6785f5d9a6d.pgrx.75323078346d803b-cgu.01.rcgu.o)
+            "_CritSectionCount", referenced from:
+                _pgstat_begin_changecount_write in libecaz_pg18_pgstat_shim.a[2](faea18488176a15d-pg18_pgstat_shim.o)
+                _pgstat_end_changecount_write in libecaz_pg18_pgstat_shim.a[2](faea18488176a15d-pg18_pgstat_shim.o)
+            "_CurTransactionContext", referenced from:
+                pgrx::memcxt::PgMemoryContexts::value::hfb418692b20c1da1 in libpgrx-ed5da6785f5d9a6d.rlib[8](pgrx-ed5da6785f5d9a6d.pgrx.75323078346d803b-cgu.05.rcgu.o)
+                pgrx::memcxt::PgMemoryContexts::value::hfb418692b20c1da1 in libpgrx-ed5da6785f5d9a6d.rlib[8](pgrx-ed5da6785f5d9a6d.pgrx.75323078346d803b-cgu.05.rcgu.o)
+            "_CurrentMemoryContext", referenced from:
+                pgrx_pg_sys::submodules::panic::pgrx_extern_c_guard::h00bca4514c5c5709 in ecaz.2zaoll2c6a4flbry2f8bki7sm.11jcdve.rcgu.o
+                pgrx_pg_sys::submodules::panic::pgrx_extern_c_guard::h00bca4514c5c5709 in ecaz.2zaoll2c6a4flbry2f8bki7sm.11jcdve.rcgu.o
+                pgrx_pg_sys::submodules::panic::pgrx_extern_c_guard::h070412c5fa3b6bf3 in ecaz.2zaoll2c6a4flbry2f8bki7sm.11jcdve.rcgu.o
+                pgrx_pg_sys::submodules::panic::pgrx_extern_c_guard::h070412c5fa3b6bf3 in ecaz.2zaoll2c6a4flbry2f8bki7sm.11jcdve.rcgu.o
+                pgrx_pg_sys::submodules::panic::pgrx_extern_c_guard::h07a84a06aceaed20 in ecaz.2zaoll2c6a4flbry2f8bki7sm.11jcdve.rcgu.o
+                pgrx_pg_sys::submodules::panic::pgrx_extern_c_guard::h07a84a06aceaed20 in ecaz.2zaoll2c6a4flbry2f8bki7sm.11jcdve.rcgu.o
+                pgrx_pg_sys::submodules::panic::pgrx_extern_c_guard::h0db7c1f1fb836485 in ecaz.2zaoll2c6a4flbry2f8bki7sm.11jcdve.rcgu.o
+                pgrx_pg_sys::submodules::panic::pgrx_extern_c_guard::h0db7c1f1fb836485 in ecaz.2zaoll2c6a4flbry2f8bki7sm.11jcdve.rcgu.o
+                ...
+            "_DecrTupleDescRefCount", referenced from:
+                pgrx_pg_sys::include::pg18::DecrTupleDescRefCount::_$u7b$$u7b$closure$u7d$$u7d$::h0a0558d8afad04e1 in libpgrx-ed5da6785f5d9a6d.rlib[4](pgrx-ed5da6785f5d9a6d.pgrx.75323078346d803b-cgu.01.rcgu.o)
+            "_DefineCustomBoolVariable", referenced from:
+                pgrx_pg_sys::include::pg18::DefineCustomBoolVariable::_$u7b$$u7b$closure$u7d$$u7d$::h37b88db1a74837bf in libpgrx-ed5da6785f5d9a6d.rlib[4](pgrx-ed5da6785f5d9a6d.pgrx.75323078346d803b-cgu.01.rcgu.o)
+            "_DefineCustomEnumVariable", referenced from:
+                pgrx_pg_sys::include::pg18::DefineCustomEnumVariable::_$u7b$$u7b$closure$u7d$$u7d$::hbc836e3daab76d35 in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_DefineCustomIntVariable", referenced from:
+                pgrx_pg_sys::include::pg18::DefineCustomIntVariable::_$u7b$$u7b$closure$u7d$$u7d$::hda2dbc02eef21450 in libpgrx-ed5da6785f5d9a6d.rlib[4](pgrx-ed5da6785f5d9a6d.pgrx.75323078346d803b-cgu.01.rcgu.o)
+            "_DestroyParallelContext", referenced from:
+                pgrx_pg_sys::include::pg18::DestroyParallelContext::_$u7b$$u7b$closure$u7d$$u7d$::h3b46a22df4b98be2 in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_EnterParallelMode", referenced from:
+                pgrx_pg_sys::include::pg18::EnterParallelMode::_$u7b$$u7b$closure$u7d$$u7d$::hd935425909c812cd in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_ErrorContext", referenced from:
+                pgrx_pg_sys::submodules::panic::pgrx_extern_c_guard::h00bca4514c5c5709 in ecaz.2zaoll2c6a4flbry2f8bki7sm.11jcdve.rcgu.o
+                pgrx_pg_sys::submodules::panic::pgrx_extern_c_guard::h00bca4514c5c5709 in ecaz.2zaoll2c6a4flbry2f8bki7sm.11jcdve.rcgu.o
+                pgrx_pg_sys::submodules::panic::pgrx_extern_c_guard::h070412c5fa3b6bf3 in ecaz.2zaoll2c6a4flbry2f8bki7sm.11jcdve.rcgu.o
+                pgrx_pg_sys::submodules::panic::pgrx_extern_c_guard::h070412c5fa3b6bf3 in ecaz.2zaoll2c6a4flbry2f8bki7sm.11jcdve.rcgu.o
+                pgrx_pg_sys::submodules::panic::pgrx_extern_c_guard::h07a84a06aceaed20 in ecaz.2zaoll2c6a4flbry2f8bki7sm.11jcdve.rcgu.o
+                pgrx_pg_sys::submodules::panic::pgrx_extern_c_guard::h07a84a06aceaed20 in ecaz.2zaoll2c6a4flbry2f8bki7sm.11jcdve.rcgu.o
+                pgrx_pg_sys::submodules::panic::pgrx_extern_c_guard::h0db7c1f1fb836485 in ecaz.2zaoll2c6a4flbry2f8bki7sm.11jcdve.rcgu.o
+                pgrx_pg_sys::submodules::panic::pgrx_extern_c_guard::h0db7c1f1fb836485 in ecaz.2zaoll2c6a4flbry2f8bki7sm.11jcdve.rcgu.o
+                ...
+            "_ExecDropSingleTupleTableSlot", referenced from:
+                pgrx_pg_sys::include::pg18::ExecDropSingleTupleTableSlot::_$u7b$$u7b$closure$u7d$$u7d$::hdfc2147fb0b4c8e1 in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_ExitParallelMode", referenced from:
+                pgrx_pg_sys::include::pg18::ExitParallelMode::_$u7b$$u7b$closure$u7d$$u7d$::h49121c14cd668ee9 in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_ExplainCloseGroup", referenced from:
+                pgrx_pg_sys::include::pg18::ExplainCloseGroup::_$u7b$$u7b$closure$u7d$$u7d$::hc6fe76e85a46858d in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_ExplainOpenGroup", referenced from:
+                pgrx_pg_sys::include::pg18::ExplainOpenGroup::_$u7b$$u7b$closure$u7d$$u7d$::hb416dc4fefee3f85 in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_ExplainPropertyBool", referenced from:
+                pgrx_pg_sys::include::pg18::ExplainPropertyBool::_$u7b$$u7b$closure$u7d$$u7d$::hee57a8246e667de8 in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_ExplainPropertyInteger", referenced from:
+                pgrx_pg_sys::include::pg18::ExplainPropertyInteger::_$u7b$$u7b$closure$u7d$$u7d$::h6007806cbc7ee9d3 in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_FreeErrorData", referenced from:
+                pgrx_pg_sys::include::pg18::FreeErrorData::_$u7b$$u7b$closure$u7d$$u7d$::h9f5a4cdc6e1ece83 in libpgrx_pg_sys-be94b5787178de96.rlib[3](pgrx_pg_sys-be94b5787178de96.pgrx_pg_sys.56b5deb3d9e24c18-cgu.0.rcgu.o)
+            "_GenericXLogAbort", referenced from:
+                pgrx_pg_sys::include::pg18::GenericXLogAbort::_$u7b$$u7b$closure$u7d$$u7d$::h1fd85d5c4342d7a7 in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_GenericXLogFinish", referenced from:
+                pgrx_pg_sys::include::pg18::GenericXLogFinish::_$u7b$$u7b$closure$u7d$$u7d$::hf7e8adcb8dc32cac in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_GenericXLogRegisterBuffer", referenced from:
+                pgrx_pg_sys::include::pg18::GenericXLogRegisterBuffer::_$u7b$$u7b$closure$u7d$$u7d$::h26ef4e970861e4f6 in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_GenericXLogStart", referenced from:
+                pgrx_pg_sys::include::pg18::GenericXLogStart::_$u7b$$u7b$closure$u7d$$u7d$::h75120075f140b568 in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_GetActiveSnapshot", referenced from:
+                pgrx_pg_sys::include::pg18::GetActiveSnapshot::_$u7b$$u7b$closure$u7d$$u7d$::h832c886386909c6f in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_GetCurrentTransactionId", referenced from:
+                pgrx_pg_sys::include::pg18::GetCurrentTransactionId::_$u7b$$u7b$closure$u7d$$u7d$::h104290fafa68d9e5 in libpgrx-ed5da6785f5d9a6d.rlib[4](pgrx-ed5da6785f5d9a6d.pgrx.75323078346d803b-cgu.01.rcgu.o)
+            "_GetCurrentTransactionIdIfAny", referenced from:
+                pgrx_pg_sys::include::pg18::GetCurrentTransactionIdIfAny::_$u7b$$u7b$closure$u7d$$u7d$::hcedf4a0ddac68d94 in libpgrx-ed5da6785f5d9a6d.rlib[4](pgrx-ed5da6785f5d9a6d.pgrx.75323078346d803b-cgu.01.rcgu.o)
+            "_GetExplainExtensionId", referenced from:
+                pgrx_pg_sys::include::pg18::GetExplainExtensionId::_$u7b$$u7b$closure$u7d$$u7d$::hc25916acc1dbbe6c in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_GetExplainExtensionState", referenced from:
+                pgrx_pg_sys::include::pg18::GetExplainExtensionState::_$u7b$$u7b$closure$u7d$$u7d$::hf9bb1b4a87dfe07f in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_GetLatestSnapshot", referenced from:
+                pgrx_pg_sys::include::pg18::GetLatestSnapshot::_$u7b$$u7b$closure$u7d$$u7d$::hbac5f4d518a37ab6 in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_GetPageWithFreeSpace", referenced from:
+                pgrx_pg_sys::include::pg18::GetPageWithFreeSpace::_$u7b$$u7b$closure$u7d$$u7d$::h59664c1f97ba581b in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_GetTransactionSnapshot", referenced from:
+                pgrx_pg_sys::include::pg18::GetTransactionSnapshot::_$u7b$$u7b$closure$u7d$$u7d$::hbf258552fc8e51b1 in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_HeapTupleHeaderGetDatum", referenced from:
+                pgrx_pg_sys::include::pg18::HeapTupleHeaderGetDatum::_$u7b$$u7b$closure$u7d$$u7d$::ha1f4c35d8bb9d0cd in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_IndexGetRelation", referenced from:
+                pgrx_pg_sys::include::pg18::IndexGetRelation::_$u7b$$u7b$closure$u7d$$u7d$::he08fc266503f3e8f in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_InitializeParallelDSM", referenced from:
+                pgrx_pg_sys::include::pg18::InitializeParallelDSM::_$u7b$$u7b$closure$u7d$$u7d$::hfc7d5ccdff3ad88d in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_InstrAccumParallelQuery", referenced from:
+                pgrx_pg_sys::include::pg18::InstrAccumParallelQuery::_$u7b$$u7b$closure$u7d$$u7d$::h5a6ae9d07d7ae22c in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_InstrEndParallelQuery", referenced from:
+                pgrx_pg_sys::include::pg18::InstrEndParallelQuery::_$u7b$$u7b$closure$u7d$$u7d$::hbb0ea8e96196fa5e in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_InstrStartParallelQuery", referenced from:
+                pgrx_pg_sys::include::pg18::InstrStartParallelQuery::_$u7b$$u7b$closure$u7d$$u7d$::h0b4dd3256541b6a5 in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_InterruptPending", referenced from:
+                ecaz::am::ec_diskann::maybe_check_for_interrupts::h4f3ed86da1a6d3b9 in ecaz.e5ftnhsooflpglshlrijkmh16.11jcdve.rcgu.o
+                ecaz::am::ec_diskann::maybe_check_for_interrupts::h4f3ed86da1a6d3b9 in ecaz.e5ftnhsooflpglshlrijkmh16.11jcdve.rcgu.o
+                _pgstat_begin_changecount_read in libecaz_pg18_pgstat_shim.a[2](faea18488176a15d-pg18_pgstat_shim.o)
+            "_IsBinaryCoercible", referenced from:
+                pgrx_pg_sys::include::pg18::IsBinaryCoercible::_$u7b$$u7b$closure$u7d$$u7d$::h8eb43dc6e27cd26a in libpgrx-ed5da6785f5d9a6d.rlib[4](pgrx-ed5da6785f5d9a6d.pgrx.75323078346d803b-cgu.01.rcgu.o)
+            "_LWLockAcquire", referenced from:
+                pgrx_pg_sys::include::pg18::LWLockAcquire::_$u7b$$u7b$closure$u7d$$u7d$::hfcc1e97b40041ff9 in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+                _ecaz_pg18_pgstat_record in libecaz_pg18_pgstat_shim.a[2](faea18488176a15d-pg18_pgstat_shim.o)
+                _ecaz_pgstat_reset_all in libecaz_pg18_pgstat_shim.a[2](faea18488176a15d-pg18_pgstat_shim.o)
+                _ecaz_pgstat_snapshot in libecaz_pg18_pgstat_shim.a[2](faea18488176a15d-pg18_pgstat_shim.o)
+            "_LWLockInitialize", referenced from:
+                pgrx_pg_sys::include::pg18::LWLockInitialize::_$u7b$$u7b$closure$u7d$$u7d$::h47cd4481dc808805 in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+                _ecaz_pgstat_init_shmem in libecaz_pg18_pgstat_shim.a[2](faea18488176a15d-pg18_pgstat_shim.o)
+            "_LWLockNewTrancheId", referenced from:
+                pgrx_pg_sys::include::pg18::LWLockNewTrancheId::_$u7b$$u7b$closure$u7d$$u7d$::h369c888cb5014819 in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_LWLockRegisterTranche", referenced from:
+                pgrx_pg_sys::include::pg18::LWLockRegisterTranche::_$u7b$$u7b$closure$u7d$$u7d$::hdec3643655d075ac in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_LWLockRelease", referenced from:
+                _ecaz_pg18_pgstat_record in libecaz_pg18_pgstat_shim.a[2](faea18488176a15d-pg18_pgstat_shim.o)
+                _ecaz_pgstat_reset_all in libecaz_pg18_pgstat_shim.a[2](faea18488176a15d-pg18_pgstat_shim.o)
+                _ecaz_pgstat_snapshot in libecaz_pg18_pgstat_shim.a[2](faea18488176a15d-pg18_pgstat_shim.o)
+                pgrx_pg_sys::include::pg18::LWLockRelease::_$u7b$$u7b$closure$u7d$$u7d$::h44a32c63bd1015cd in libpgrx-ed5da6785f5d9a6d.rlib[4](pgrx-ed5da6785f5d9a6d.pgrx.75323078346d803b-cgu.01.rcgu.o)
+            "_LaunchParallelWorkers", referenced from:
+                pgrx_pg_sys::include::pg18::LaunchParallelWorkers::_$u7b$$u7b$closure$u7d$$u7d$::hb591f64a4316c42a in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_LocalBufferBlockPointers", referenced from:
+                pgrx_pg_sys::port::BufferGetBlock::h32f3dfdbcf7e31c4 in ecaz.24niey7zslapx9f7sw89qtj4r.11jcdve.rcgu.o
+                pgrx_pg_sys::port::BufferGetBlock::h32f3dfdbcf7e31c4 in ecaz.24niey7zslapx9f7sw89qtj4r.11jcdve.rcgu.o
+            "_LockBuffer", referenced from:
+                pgrx_pg_sys::include::pg18::LockBuffer::_$u7b$$u7b$closure$u7d$$u7d$::he5c4529a0b16d47b in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_LockRelationOid", referenced from:
+                pgrx_pg_sys::include::pg18::LockRelationOid::_$u7b$$u7b$closure$u7d$$u7d$::h524588c41496bfd2 in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_MakeSingleTupleTableSlot", referenced from:
+                pgrx_pg_sys::include::pg18::MakeSingleTupleTableSlot::_$u7b$$u7b$closure$u7d$$u7d$::h979dd67a390e54b1 in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_MemoryContextAlloc", referenced from:
+                pgrx_pg_sys::include::pg18::MemoryContextAlloc::_$u7b$$u7b$closure$u7d$$u7d$::h7dd9e330c9e2c20f in libpgrx-ed5da6785f5d9a6d.rlib[4](pgrx-ed5da6785f5d9a6d.pgrx.75323078346d803b-cgu.01.rcgu.o)
+            "_MemoryContextDelete", referenced from:
+                pgrx_pg_sys::include::pg18::MemoryContextDelete::_$u7b$$u7b$closure$u7d$$u7d$::h80afa1bcc801ca61 in libpgrx-ed5da6785f5d9a6d.rlib[4](pgrx-ed5da6785f5d9a6d.pgrx.75323078346d803b-cgu.01.rcgu.o)
+            "_MemoryContextGetParent", referenced from:
+                pgrx_pg_sys::include::pg18::MemoryContextGetParent::_$u7b$$u7b$closure$u7d$$u7d$::h0f9d47fc18fbc555 in libpgrx-ed5da6785f5d9a6d.rlib[4](pgrx-ed5da6785f5d9a6d.pgrx.75323078346d803b-cgu.01.rcgu.o)
+            "_MemoryContextRegisterResetCallback", referenced from:
+                pgrx_pg_sys::include::pg18::MemoryContextRegisterResetCallback::_$u7b$$u7b$closure$u7d$$u7d$::h7e935b736618e780 in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_MessageContext", referenced from:
+                pgrx::memcxt::PgMemoryContexts::value::hfb418692b20c1da1 in libpgrx-ed5da6785f5d9a6d.rlib[8](pgrx-ed5da6785f5d9a6d.pgrx.75323078346d803b-cgu.05.rcgu.o)
+                pgrx::memcxt::PgMemoryContexts::value::hfb418692b20c1da1 in libpgrx-ed5da6785f5d9a6d.rlib[8](pgrx-ed5da6785f5d9a6d.pgrx.75323078346d803b-cgu.05.rcgu.o)
+            "_MyProc", referenced from:
+                ecaz::am::ec_hnsw::build_parallel::EcHnswParallelBuildLeader::begin::ha8c7244b87aef554 in ecaz.e1drguxcsqwc3o7y2jgw6bd2n.11jcdve.rcgu.o
+                ecaz::am::ec_hnsw::build_parallel::EcHnswParallelBuildLeader::begin::ha8c7244b87aef554 in ecaz.e1drguxcsqwc3o7y2jgw6bd2n.11jcdve.rcgu.o
+                ecaz::am::ec_hnsw::build_parallel::parallel_build_worker_main::h70a2f5d950f9aa99 in ecaz.e1drguxcsqwc3o7y2jgw6bd2n.11jcdve.rcgu.o
+                ecaz::am::ec_hnsw::build_parallel::parallel_build_worker_main::h70a2f5d950f9aa99 in ecaz.e1drguxcsqwc3o7y2jgw6bd2n.11jcdve.rcgu.o
+            "_PG_exception_stack", referenced from:
+                pgrx_pg_sys::submodules::ffi::pg_guard_ffi_boundary_impl::_$u7b$$u7b$closure$u7d$$u7d$::h004d6d69512a7d87 in ecaz.8uynjg9qn985rlwtk0bwm2ntr.11jcdve.rcgu.o
+                pgrx_pg_sys::submodules::ffi::pg_guard_ffi_boundary_impl::_$u7b$$u7b$closure$u7d$$u7d$::h004d6d69512a7d87 in ecaz.8uynjg9qn985rlwtk0bwm2ntr.11jcdve.rcgu.o
+                pgrx_pg_sys::submodules::ffi::pg_guard_ffi_boundary_impl::_$u7b$$u7b$closure$u7d$$u7d$::h04a4dbffda417bb7 in ecaz.8uynjg9qn985rlwtk0bwm2ntr.11jcdve.rcgu.o
+                pgrx_pg_sys::submodules::ffi::pg_guard_ffi_boundary_impl::_$u7b$$u7b$closure$u7d$$u7d$::h04a4dbffda417bb7 in ecaz.8uynjg9qn985rlwtk0bwm2ntr.11jcdve.rcgu.o
+                pgrx_pg_sys::submodules::ffi::pg_guard_ffi_boundary_impl::_$u7b$$u7b$closure$u7d$$u7d$::h07299c6b61ff98eb in ecaz.8uynjg9qn985rlwtk0bwm2ntr.11jcdve.rcgu.o
+                pgrx_pg_sys::submodules::ffi::pg_guard_ffi_boundary_impl::_$u7b$$u7b$closure$u7d$$u7d$::h07299c6b61ff98eb in ecaz.8uynjg9qn985rlwtk0bwm2ntr.11jcdve.rcgu.o
+                pgrx_pg_sys::submodules::ffi::pg_guard_ffi_boundary_impl::_$u7b$$u7b$closure$u7d$$u7d$::h085982b6bb12d5b1 in ecaz.8uynjg9qn985rlwtk0bwm2ntr.11jcdve.rcgu.o
+                pgrx_pg_sys::submodules::ffi::pg_guard_ffi_boundary_impl::_$u7b$$u7b$closure$u7d$$u7d$::h085982b6bb12d5b1 in ecaz.8uynjg9qn985rlwtk0bwm2ntr.11jcdve.rcgu.o
+                ...
+            "_PageAddItemExtended", referenced from:
+                pgrx_pg_sys::include::pg18::PageAddItemExtended::_$u7b$$u7b$closure$u7d$$u7d$::h8b33db19142863eb in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_PageGetFreeSpace", referenced from:
+                pgrx_pg_sys::include::pg18::PageGetFreeSpace::_$u7b$$u7b$closure$u7d$$u7d$::h76a89ffd4192c58e in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_PageIndexMultiDelete", referenced from:
+                pgrx_pg_sys::include::pg18::PageIndexMultiDelete::_$u7b$$u7b$closure$u7d$$u7d$::he0909354f7c9f181 in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_PageIndexTupleDeleteNoCompact", referenced from:
+                pgrx_pg_sys::include::pg18::PageIndexTupleDeleteNoCompact::_$u7b$$u7b$closure$u7d$$u7d$::hfa576b65b26edefb in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_PageInit", referenced from:
+                pgrx_pg_sys::include::pg18::PageInit::_$u7b$$u7b$closure$u7d$$u7d$::h6dae8228db42b5a5 in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_ParallelWorkerNumber", referenced from:
+                ecaz::am::ec_hnsw::build_parallel::parallel_build_worker_main::h70a2f5d950f9aa99 in ecaz.e1drguxcsqwc3o7y2jgw6bd2n.11jcdve.rcgu.o
+                ecaz::am::ec_hnsw::build_parallel::parallel_build_worker_main::h70a2f5d950f9aa99 in ecaz.e1drguxcsqwc3o7y2jgw6bd2n.11jcdve.rcgu.o
+                ecaz::am::ec_hnsw::build_parallel::parallel_graph_build_worker_main::hceee70f61ad788cd in ecaz.e1drguxcsqwc3o7y2jgw6bd2n.11jcdve.rcgu.o
+                ecaz::am::ec_hnsw::build_parallel::parallel_graph_build_worker_main::hceee70f61ad788cd in ecaz.e1drguxcsqwc3o7y2jgw6bd2n.11jcdve.rcgu.o
+            "_PopActiveSnapshot", referenced from:
+                pgrx_pg_sys::include::pg18::PopActiveSnapshot::_$u7b$$u7b$closure$u7d$$u7d$::h90b9dc4f0281cd60 in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_PortalContext", referenced from:
+                pgrx::memcxt::PgMemoryContexts::value::hfb418692b20c1da1 in libpgrx-ed5da6785f5d9a6d.rlib[8](pgrx-ed5da6785f5d9a6d.pgrx.75323078346d803b-cgu.05.rcgu.o)
+                pgrx::memcxt::PgMemoryContexts::value::hfb418692b20c1da1 in libpgrx-ed5da6785f5d9a6d.rlib[8](pgrx-ed5da6785f5d9a6d.pgrx.75323078346d803b-cgu.05.rcgu.o)
+            "_PostmasterContext", referenced from:
+                pgrx::memcxt::PgMemoryContexts::value::hfb418692b20c1da1 in libpgrx-ed5da6785f5d9a6d.rlib[8](pgrx-ed5da6785f5d9a6d.pgrx.75323078346d803b-cgu.05.rcgu.o)
+                pgrx::memcxt::PgMemoryContexts::value::hfb418692b20c1da1 in libpgrx-ed5da6785f5d9a6d.rlib[8](pgrx-ed5da6785f5d9a6d.pgrx.75323078346d803b-cgu.05.rcgu.o)
+            "_ProcessInterrupts", referenced from:
+                _pgstat_begin_changecount_read in libecaz_pg18_pgstat_shim.a[2](faea18488176a15d-pg18_pgstat_shim.o)
+                pgrx_pg_sys::include::pg18::ProcessInterrupts::_$u7b$$u7b$closure$u7d$$u7d$::hb2df63dfb9fc9813 in libpgrx-ed5da6785f5d9a6d.rlib[4](pgrx-ed5da6785f5d9a6d.pgrx.75323078346d803b-cgu.01.rcgu.o)
+            "_PushActiveSnapshot", referenced from:
+                pgrx_pg_sys::include::pg18::PushActiveSnapshot::_$u7b$$u7b$closure$u7d$$u7d$::h7499f02966a33052 in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_ReadBufferExtended", referenced from:
+                pgrx_pg_sys::include::pg18::ReadBufferExtended::_$u7b$$u7b$closure$u7d$$u7d$::hcb640773caa800d7 in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_RecordPageWithFreeSpace", referenced from:
+                pgrx_pg_sys::include::pg18::RecordPageWithFreeSpace::_$u7b$$u7b$closure$u7d$$u7d$::hde8c14aa10b37f49 in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_RegisterExtensionExplainOption", referenced from:
+                pgrx_pg_sys::include::pg18::RegisterExtensionExplainOption::_$u7b$$u7b$closure$u7d$$u7d$::ha2f39ea1d73f781b in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_RegisterSnapshot", referenced from:
+                pgrx_pg_sys::include::pg18::RegisterSnapshot::_$u7b$$u7b$closure$u7d$$u7d$::hbafdb9cc00c43c85 in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_RelationGetIndexScan", referenced from:
+                pgrx_pg_sys::include::pg18::RelationGetIndexScan::_$u7b$$u7b$closure$u7d$$u7d$::h7a69e42acec42383 in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_RelationGetNumberOfBlocksInFork", referenced from:
+                pgrx_pg_sys::include::pg18::RelationGetNumberOfBlocksInFork::_$u7b$$u7b$closure$u7d$$u7d$::h77acf8e753ea1710 in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_ReleaseBuffer", referenced from:
+                pgrx_pg_sys::include::pg18::ReleaseBuffer::_$u7b$$u7b$closure$u7d$$u7d$::hdd60cc556f672cbb in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_SPI_connect", referenced from:
+                pgrx_pg_sys::include::pg18::SPI_connect::_$u7b$$u7b$closure$u7d$$u7d$::he38a68996080a0fa in libpgrx-ed5da6785f5d9a6d.rlib[4](pgrx-ed5da6785f5d9a6d.pgrx.75323078346d803b-cgu.01.rcgu.o)
+            "_SPI_execute", referenced from:
+                pgrx_pg_sys::include::pg18::SPI_execute::_$u7b$$u7b$closure$u7d$$u7d$::hb330989f56b8f096 in libpgrx-ed5da6785f5d9a6d.rlib[4](pgrx-ed5da6785f5d9a6d.pgrx.75323078346d803b-cgu.01.rcgu.o)
+            "_SPI_execute_with_args", referenced from:
+                pgrx_pg_sys::include::pg18::SPI_execute_with_args::_$u7b$$u7b$closure$u7d$$u7d$::ha8e24035eaa27d51 in libpgrx-ed5da6785f5d9a6d.rlib[4](pgrx-ed5da6785f5d9a6d.pgrx.75323078346d803b-cgu.01.rcgu.o)
+            "_SPI_finish", referenced from:
+                pgrx_pg_sys::include::pg18::SPI_finish::_$u7b$$u7b$closure$u7d$$u7d$::h14a3dd8a391da025 in libpgrx-ed5da6785f5d9a6d.rlib[4](pgrx-ed5da6785f5d9a6d.pgrx.75323078346d803b-cgu.01.rcgu.o)
+            "_SPI_getbinval", referenced from:
+                pgrx_pg_sys::include::pg18::SPI_getbinval::_$u7b$$u7b$closure$u7d$$u7d$::h6a0bf68dd6cd7034 in libpgrx-ed5da6785f5d9a6d.rlib[4](pgrx-ed5da6785f5d9a6d.pgrx.75323078346d803b-cgu.01.rcgu.o)
+            "_SPI_gettypeid", referenced from:
+                pgrx_pg_sys::include::pg18::SPI_gettypeid::_$u7b$$u7b$closure$u7d$$u7d$::hd1261275ba2514a9 in libpgrx-ed5da6785f5d9a6d.rlib[4](pgrx-ed5da6785f5d9a6d.pgrx.75323078346d803b-cgu.01.rcgu.o)
+            "_SPI_processed", referenced from:
+                pgrx::spi::client::SpiClient::prepare_tuple_table::haba7f4c7424957ca in libpgrx-ed5da6785f5d9a6d.rlib[16](pgrx-ed5da6785f5d9a6d.pgrx.75323078346d803b-cgu.13.rcgu.o)
+                pgrx::spi::client::SpiClient::prepare_tuple_table::haba7f4c7424957ca in libpgrx-ed5da6785f5d9a6d.rlib[16](pgrx-ed5da6785f5d9a6d.pgrx.75323078346d803b-cgu.13.rcgu.o)
+            "_SPI_tuptable", referenced from:
+                pgrx::spi::query::execute::h297d7ed3649f69eb in libpgrx-ed5da6785f5d9a6d.rlib[16](pgrx-ed5da6785f5d9a6d.pgrx.75323078346d803b-cgu.13.rcgu.o)
+                pgrx::spi::query::execute::h297d7ed3649f69eb in libpgrx-ed5da6785f5d9a6d.rlib[16](pgrx-ed5da6785f5d9a6d.pgrx.75323078346d803b-cgu.13.rcgu.o)
+                pgrx::spi::client::SpiClient::prepare_tuple_table::haba7f4c7424957ca in libpgrx-ed5da6785f5d9a6d.rlib[16](pgrx-ed5da6785f5d9a6d.pgrx.75323078346d803b-cgu.13.rcgu.o)
+                pgrx::spi::client::SpiClient::prepare_tuple_table::haba7f4c7424957ca in libpgrx-ed5da6785f5d9a6d.rlib[16](pgrx-ed5da6785f5d9a6d.pgrx.75323078346d803b-cgu.13.rcgu.o)
+                pgrx::spi::client::SpiClient::prepare_tuple_table::haba7f4c7424957ca in libpgrx-ed5da6785f5d9a6d.rlib[16](pgrx-ed5da6785f5d9a6d.pgrx.75323078346d803b-cgu.13.rcgu.o)
+                pgrx::spi::client::SpiClient::prepare_tuple_table::haba7f4c7424957ca in libpgrx-ed5da6785f5d9a6d.rlib[16](pgrx-ed5da6785f5d9a6d.pgrx.75323078346d803b-cgu.13.rcgu.o)
+            "_SetExplainExtensionState", referenced from:
+                pgrx_pg_sys::include::pg18::SetExplainExtensionState::_$u7b$$u7b$closure$u7d$$u7d$::hbce264c363d0c72c in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_SnapshotAnyData", referenced from:
+                ecaz::am::ec_hnsw::build_parallel::EcHnswParallelBuildLeader::begin::ha8c7244b87aef554 in ecaz.e1drguxcsqwc3o7y2jgw6bd2n.11jcdve.rcgu.o
+                ecaz::am::ec_hnsw::vacuum::VacuumHeapSourceScorer::new_with_attribute::h6ffd9513c3cc1ead in ecaz.eyfnnoe89kiz2qx3dwn24h4as.11jcdve.rcgu.o
+            "_SnapshotSelfData", referenced from:
+                ecaz::am::ec_hnsw::insert::InsertHeapSourceScorer::new_with_attribute::hd1adafaf71280660 in ecaz.a0o5wpr344quc5xdw9laxj3tw.11jcdve.rcgu.o
+                ecaz::am::ec_diskann::routine::ec_diskann_aminsert::_$u7b$$u7b$closure$u7d$$u7d$::hc003b401619f316b in ecaz.axn0nvs1q701i1jifqijo6ofq.11jcdve.rcgu.o
+                ecaz::am::ec_diskann::routine::ec_diskann_aminsert::_$u7b$$u7b$closure$u7d$$u7d$::hc003b401619f316b in ecaz.axn0nvs1q701i1jifqijo6ofq.11jcdve.rcgu.o
+                ecaz::am::ec_diskann::routine::plan_backlink_mutations::h575d9e1400c0bd64 in ecaz.b1os3602ff0pjf09zp5eoii0x.11jcdve.rcgu.o
+                ecaz::am::ec_diskann::routine::fill_vacuum_neighbor_slots::h1a1d9b67d791b866 in ecaz.b1os3602ff0pjf09zp5eoii0x.11jcdve.rcgu.o
+            "_TopMemoryContext", referenced from:
+                pgrx::memcxt::PgMemoryContexts::value::hfb418692b20c1da1 in libpgrx-ed5da6785f5d9a6d.rlib[8](pgrx-ed5da6785f5d9a6d.pgrx.75323078346d803b-cgu.05.rcgu.o)
+                pgrx::memcxt::PgMemoryContexts::value::hfb418692b20c1da1 in libpgrx-ed5da6785f5d9a6d.rlib[8](pgrx-ed5da6785f5d9a6d.pgrx.75323078346d803b-cgu.05.rcgu.o)
+            "_TopTransactionContext", referenced from:
+                pgrx::memcxt::PgMemoryContexts::value::hfb418692b20c1da1 in libpgrx-ed5da6785f5d9a6d.rlib[8](pgrx-ed5da6785f5d9a6d.pgrx.75323078346d803b-cgu.05.rcgu.o)
+                pgrx::memcxt::PgMemoryContexts::value::hfb418692b20c1da1 in libpgrx-ed5da6785f5d9a6d.rlib[8](pgrx-ed5da6785f5d9a6d.pgrx.75323078346d803b-cgu.05.rcgu.o)
+            "_UnlockRelationOid", referenced from:
+                pgrx_pg_sys::include::pg18::UnlockRelationOid::_$u7b$$u7b$closure$u7d$$u7d$::h65dcb73bc1eeb6eb in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_UnlockReleaseBuffer", referenced from:
+                pgrx_pg_sys::include::pg18::UnlockReleaseBuffer::_$u7b$$u7b$closure$u7d$$u7d$::h8158ec56ce306e12 in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_UnregisterSnapshot", referenced from:
+                pgrx_pg_sys::include::pg18::UnregisterSnapshot::_$u7b$$u7b$closure$u7d$$u7d$::h70c7dbff05a461be in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_WaitForParallelWorkersToAttach", referenced from:
+                pgrx_pg_sys::include::pg18::WaitForParallelWorkersToAttach::_$u7b$$u7b$closure$u7d$$u7d$::h3c3cc78fea6b6dc0 in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_WaitForParallelWorkersToFinish", referenced from:
+                pgrx_pg_sys::include::pg18::WaitForParallelWorkersToFinish::_$u7b$$u7b$closure$u7d$$u7d$::h0d54453b2f5d7022 in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_accumArrayResult", referenced from:
+                pgrx_pg_sys::include::pg18::accumArrayResult::_$u7b$$u7b$closure$u7d$$u7d$::ha5e9c976fcca471b in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_add_local_int_reloption", referenced from:
+                pgrx_pg_sys::include::pg18::add_local_int_reloption::_$u7b$$u7b$closure$u7d$$u7d$::hd891f002ccdd66a4 in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_add_local_real_reloption", referenced from:
+                pgrx_pg_sys::include::pg18::add_local_real_reloption::_$u7b$$u7b$closure$u7d$$u7d$::h97f3f7a6a9d8d14e in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_add_local_string_reloption", referenced from:
+                pgrx_pg_sys::include::pg18::add_local_string_reloption::_$u7b$$u7b$closure$u7d$$u7d$::h79f6c57aa28cb85a in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_array_contains_nulls", referenced from:
+                pgrx_pg_sys::include::pg18::array_contains_nulls::_$u7b$$u7b$closure$u7d$$u7d$::h5970f2a4bed637e8 in libpgrx-ed5da6785f5d9a6d.rlib[4](pgrx-ed5da6785f5d9a6d.pgrx.75323078346d803b-cgu.01.rcgu.o)
+            "_bsysscan", referenced from:
+                _table_tuple_fetch_row_version in libpgrx_pg_sys-be94b5787178de96.rlib[8](42f5eaaa15822ca1-pgrx-cshim.o)
+            "_build_local_reloptions", referenced from:
+                pgrx_pg_sys::include::pg18::build_local_reloptions::_$u7b$$u7b$closure$u7d$$u7d$::h1e3fa613b49d0e64 in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_cpu_operator_cost", referenced from:
+                ecaz::am::common::cost::current_planner_cost_constants::hc75f48eb4d57256a in ecaz.dcemnvu7q4di98seza9d6e98m.11jcdve.rcgu.o
+                ecaz::am::common::cost::current_planner_cost_constants::hc75f48eb4d57256a in ecaz.dcemnvu7q4di98seza9d6e98m.11jcdve.rcgu.o
+            "_defGetBoolean", referenced from:
+                pgrx_pg_sys::include::pg18::defGetBoolean::_$u7b$$u7b$closure$u7d$$u7d$::hc1a0a87a6be804a2 in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_end_MultiFuncCall", referenced from:
+                pgrx_pg_sys::include::pg18::end_MultiFuncCall::_$u7b$$u7b$closure$u7d$$u7d$::h8c8e3f2336c67349 in libpgrx-ed5da6785f5d9a6d.rlib[4](pgrx-ed5da6785f5d9a6d.pgrx.75323078346d803b-cgu.01.rcgu.o)
+            "_errcode", referenced from:
+                pgrx_pg_sys::submodules::panic::do_ereport::h04cb504ce94919f0 in libpgrx_pg_sys-be94b5787178de96.rlib[7](pgrx_pg_sys-be94b5787178de96.pgrx_pg_sys.56b5deb3d9e24c18-cgu.4.rcgu.o)
+            "_errcontext_msg", referenced from:
+                pgrx_pg_sys::submodules::panic::do_ereport::h04cb504ce94919f0 in libpgrx_pg_sys-be94b5787178de96.rlib[7](pgrx_pg_sys-be94b5787178de96.pgrx_pg_sys.56b5deb3d9e24c18-cgu.4.rcgu.o)
+            "_errdetail", referenced from:
+                pgrx_pg_sys::submodules::panic::do_ereport::h04cb504ce94919f0 in libpgrx_pg_sys-be94b5787178de96.rlib[7](pgrx_pg_sys-be94b5787178de96.pgrx_pg_sys.56b5deb3d9e24c18-cgu.4.rcgu.o)
+            "_errfinish", referenced from:
+                pgrx_pg_sys::submodules::panic::do_ereport::h04cb504ce94919f0 in libpgrx_pg_sys-be94b5787178de96.rlib[7](pgrx_pg_sys-be94b5787178de96.pgrx_pg_sys.56b5deb3d9e24c18-cgu.4.rcgu.o)
+                _table_tuple_fetch_row_version in libpgrx_pg_sys-be94b5787178de96.rlib[8](42f5eaaa15822ca1-pgrx-cshim.o)
+            "_errhint", referenced from:
+                pgrx_pg_sys::submodules::panic::do_ereport::h04cb504ce94919f0 in libpgrx_pg_sys-be94b5787178de96.rlib[7](pgrx_pg_sys-be94b5787178de96.pgrx_pg_sys.56b5deb3d9e24c18-cgu.4.rcgu.o)
+            "_errmsg", referenced from:
+                pgrx_pg_sys::submodules::panic::do_ereport::h04cb504ce94919f0 in libpgrx_pg_sys-be94b5787178de96.rlib[7](pgrx_pg_sys-be94b5787178de96.pgrx_pg_sys.56b5deb3d9e24c18-cgu.4.rcgu.o)
+            "_errmsg_internal", referenced from:
+                _table_tuple_fetch_row_version in libpgrx_pg_sys-be94b5787178de96.rlib[8](42f5eaaa15822ca1-pgrx-cshim.o)
+            "_error_context_stack", referenced from:
+                pgrx_pg_sys::cshim::SpinLockInit::h9f917b1ab1c68275 in ecaz.cnz7hqxq8gsbsir8whcpj70j7.11jcdve.rcgu.o
+                pgrx_pg_sys::cshim::SpinLockInit::h9f917b1ab1c68275 in ecaz.cnz7hqxq8gsbsir8whcpj70j7.11jcdve.rcgu.o
+                pgrx_pg_sys::cshim::SpinLockInit::h9f917b1ab1c68275 in ecaz.cnz7hqxq8gsbsir8whcpj70j7.11jcdve.rcgu.o
+                pgrx_pg_sys::cshim::SpinLockAcquire::h9385b63962d9cce9 in ecaz.cnz7hqxq8gsbsir8whcpj70j7.11jcdve.rcgu.o
+                pgrx_pg_sys::cshim::SpinLockAcquire::h9385b63962d9cce9 in ecaz.cnz7hqxq8gsbsir8whcpj70j7.11jcdve.rcgu.o
+                pgrx_pg_sys::cshim::SpinLockAcquire::h9385b63962d9cce9 in ecaz.cnz7hqxq8gsbsir8whcpj70j7.11jcdve.rcgu.o
+                pgrx_pg_sys::cshim::SpinLockRelease::ha5b97b1417f7b10e in ecaz.cnz7hqxq8gsbsir8whcpj70j7.11jcdve.rcgu.o
+                pgrx_pg_sys::cshim::SpinLockRelease::ha5b97b1417f7b10e in ecaz.cnz7hqxq8gsbsir8whcpj70j7.11jcdve.rcgu.o
+                pgrx_pg_sys::cshim::SpinLockRelease::ha5b97b1417f7b10e in ecaz.cnz7hqxq8gsbsir8whcpj70j7.11jcdve.rcgu.o
+                ...
+            "_errstart", referenced from:
+                pgrx_pg_sys::submodules::panic::do_ereport::h04cb504ce94919f0 in libpgrx_pg_sys-be94b5787178de96.rlib[7](pgrx_pg_sys-be94b5787178de96.pgrx_pg_sys.56b5deb3d9e24c18-cgu.4.rcgu.o)
+                _table_tuple_fetch_row_version in libpgrx_pg_sys-be94b5787178de96.rlib[8](42f5eaaa15822ca1-pgrx-cshim.o)
+            "_errstart_cold", referenced from:
+                _table_tuple_fetch_row_version in libpgrx_pg_sys-be94b5787178de96.rlib[8](42f5eaaa15822ca1-pgrx-cshim.o)
+            "_explain_per_node_hook", referenced from:
+                ecaz::am::common::explain::register_pg18_explain_hooks::h75faea4fe6474ea9 in ecaz.70mby1wszmhgyaqyhtsq2f3yb.11jcdve.rcgu.o
+                ecaz::am::common::explain::register_pg18_explain_hooks::h75faea4fe6474ea9 in ecaz.70mby1wszmhgyaqyhtsq2f3yb.11jcdve.rcgu.o
+                ecaz::am::common::explain::register_pg18_explain_hooks::h75faea4fe6474ea9 in ecaz.70mby1wszmhgyaqyhtsq2f3yb.11jcdve.rcgu.o
+            "_format_type_be", referenced from:
+                pgrx_pg_sys::include::pg18::format_type_be::_$u7b$$u7b$closure$u7d$$u7d$::h4896155f4b4bfca6 in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_format_type_extended", referenced from:
+                pgrx_pg_sys::include::pg18::format_type_extended::_$u7b$$u7b$closure$u7d$$u7d$::ha1b25a2ec6065f6f in libpgrx-ed5da6785f5d9a6d.rlib[4](pgrx-ed5da6785f5d9a6d.pgrx.75323078346d803b-cgu.01.rcgu.o)
+            "_getBaseType", referenced from:
+                pgrx_pg_sys::include::pg18::getBaseType::_$u7b$$u7b$closure$u7d$$u7d$::h18f8ec9c092a9cdc in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_get_am_name", referenced from:
+                pgrx_pg_sys::include::pg18::get_am_name::_$u7b$$u7b$closure$u7d$$u7d$::h4c35633e5e617c6d in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_get_attnum", referenced from:
+                pgrx_pg_sys::include::pg18::get_attnum::_$u7b$$u7b$closure$u7d$$u7d$::hdf534656072f36c3 in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_get_call_result_type", referenced from:
+                pgrx_pg_sys::include::pg18::get_call_result_type::_$u7b$$u7b$closure$u7d$$u7d$::hcb16e9ddad42e06c in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_get_typlenbyvalalign", referenced from:
+                pgrx_pg_sys::include::pg18::get_typlenbyvalalign::_$u7b$$u7b$closure$u7d$$u7d$::h40ef1e75e7e0cc14 in libpgrx-ed5da6785f5d9a6d.rlib[4](pgrx-ed5da6785f5d9a6d.pgrx.75323078346d803b-cgu.01.rcgu.o)
+            "_heap_beginscan", referenced from:
+                pgrx_pg_sys::include::pg18::heap_beginscan::_$u7b$$u7b$closure$u7d$$u7d$::heaed7fb5c687220c in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_heap_endscan", referenced from:
+                pgrx_pg_sys::include::pg18::heap_endscan::_$u7b$$u7b$closure$u7d$$u7d$::h68137e076351cdf7 in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_heap_form_tuple", referenced from:
+                pgrx_pg_sys::include::pg18::heap_form_tuple::_$u7b$$u7b$closure$u7d$$u7d$::h1d9a413286cbb989 in libpgrx-ed5da6785f5d9a6d.rlib[4](pgrx-ed5da6785f5d9a6d.pgrx.75323078346d803b-cgu.01.rcgu.o)
+            "_heap_getnextslot", referenced from:
+                pgrx_pg_sys::include::pg18::heap_getnextslot::_$u7b$$u7b$closure$u7d$$u7d$::h877126c8b42fcc73 in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_index_close", referenced from:
+                pgrx_pg_sys::include::pg18::index_close::_$u7b$$u7b$closure$u7d$$u7d$::hd87bf0d313c54416 in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_index_open", referenced from:
+                pgrx_pg_sys::include::pg18::index_open::_$u7b$$u7b$closure$u7d$$u7d$::h0c20069bca9d8534 in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_initArrayResult", referenced from:
+                pgrx_pg_sys::include::pg18::initArrayResult::_$u7b$$u7b$closure$u7d$$u7d$::h293068395f1dab39 in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_init_MultiFuncCall", referenced from:
+                pgrx_pg_sys::include::pg18::init_MultiFuncCall::_$u7b$$u7b$closure$u7d$$u7d$::h0668cef562882689 in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_init_local_reloptions", referenced from:
+                pgrx_pg_sys::include::pg18::init_local_reloptions::_$u7b$$u7b$closure$u7d$$u7d$::h2706e188d9fea72a in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_makeArrayResult", referenced from:
+                pgrx_pg_sys::include::pg18::makeArrayResult::_$u7b$$u7b$closure$u7d$$u7d$::h08fd5c5cf3391c1d in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_max_parallel_workers_per_gather", referenced from:
+                ecaz::am::common::parallel::ec_parallel_scan_worker_slot_capacity::hb0c5cd5eb8a08ba1 in ecaz.beixn32q58xo8o5di3oxgxl62.11jcdve.rcgu.o
+                ecaz::am::common::parallel::ec_parallel_scan_worker_slot_capacity::hb0c5cd5eb8a08ba1 in ecaz.beixn32q58xo8o5di3oxgxl62.11jcdve.rcgu.o
+            "_palloc", referenced from:
+                pgrx_pg_sys::include::pg18::palloc::_$u7b$$u7b$closure$u7d$$u7d$::ha6348614976a3332 in libpgrx-ed5da6785f5d9a6d.rlib[4](pgrx-ed5da6785f5d9a6d.pgrx.75323078346d803b-cgu.01.rcgu.o)
+            "_palloc0", referenced from:
+                pgrx_pg_sys::include::pg18::palloc0::_$u7b$$u7b$closure$u7d$$u7d$::hdf8ca00a2c6af3fa in libpgrx_pg_sys-be94b5787178de96.rlib[3](pgrx_pg_sys-be94b5787178de96.pgrx_pg_sys.56b5deb3d9e24c18-cgu.0.rcgu.o)
+            "_pfree", referenced from:
+                pgrx_pg_sys::include::pg18::pfree::_$u7b$$u7b$closure$u7d$$u7d$::h2cb913d8af5c2197 in libpgrx_pg_sys-be94b5787178de96.rlib[3](pgrx_pg_sys-be94b5787178de96.pgrx_pg_sys.56b5deb3d9e24c18-cgu.0.rcgu.o)
+            "_pgStatLocal", referenced from:
+                _pgstat_get_custom_snapshot_data in libecaz_pg18_pgstat_shim.a[2](faea18488176a15d-pg18_pgstat_shim.o)
+                _pgstat_get_custom_shmem_data in libecaz_pg18_pgstat_shim.a[2](faea18488176a15d-pg18_pgstat_shim.o)
+            "_pg_detoast_datum", referenced from:
+                pgrx_pg_sys::include::pg18::pg_detoast_datum::_$u7b$$u7b$closure$u7d$$u7d$::heaef8f462a992aad in libpgrx-ed5da6785f5d9a6d.rlib[4](pgrx-ed5da6785f5d9a6d.pgrx.75323078346d803b-cgu.01.rcgu.o)
+            "_pg_detoast_datum_packed", referenced from:
+                pgrx_pg_sys::include::pg18::pg_detoast_datum_packed::_$u7b$$u7b$closure$u7d$$u7d$::h364518ff899130a1 in libpgrx-ed5da6785f5d9a6d.rlib[4](pgrx-ed5da6785f5d9a6d.pgrx.75323078346d803b-cgu.01.rcgu.o)
+            "_pg_re_throw", referenced from:
+                pgrx_pg_sys::submodules::panic::pgrx_extern_c_guard::h00bca4514c5c5709 in ecaz.2zaoll2c6a4flbry2f8bki7sm.11jcdve.rcgu.o
+                pgrx_pg_sys::submodules::panic::pgrx_extern_c_guard::h070412c5fa3b6bf3 in ecaz.2zaoll2c6a4flbry2f8bki7sm.11jcdve.rcgu.o
+                pgrx_pg_sys::submodules::panic::pgrx_extern_c_guard::h07a84a06aceaed20 in ecaz.2zaoll2c6a4flbry2f8bki7sm.11jcdve.rcgu.o
+                pgrx_pg_sys::submodules::panic::pgrx_extern_c_guard::h0db7c1f1fb836485 in ecaz.2zaoll2c6a4flbry2f8bki7sm.11jcdve.rcgu.o
+                pgrx_pg_sys::submodules::panic::pgrx_extern_c_guard::h0f3e2c9ccd979e2a in ecaz.2zaoll2c6a4flbry2f8bki7sm.11jcdve.rcgu.o
+                pgrx_pg_sys::submodules::panic::pgrx_extern_c_guard::h103a8d090a30a7f7 in ecaz.2zaoll2c6a4flbry2f8bki7sm.11jcdve.rcgu.o
+                pgrx_pg_sys::submodules::panic::pgrx_extern_c_guard::h11719bbbfd4f1a74 in ecaz.2zaoll2c6a4flbry2f8bki7sm.11jcdve.rcgu.o
+                ...
+            "_pg_usleep", referenced from:
+                pgrx_pg_sys::include::pg18::pg_usleep::_$u7b$$u7b$closure$u7d$$u7d$::hacc8366776fd93ae in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_pgstat_register_kind", referenced from:
+                _ecaz_pg18_pgstat_register_kind in libecaz_pg18_pgstat_shim.a[2](faea18488176a15d-pg18_pgstat_shim.o)
+            "_pgstat_snapshot_fixed", referenced from:
+                _ecaz_pg18_pgstat_snapshot in libecaz_pg18_pgstat_shim.a[2](faea18488176a15d-pg18_pgstat_shim.o)
+            "_pq_getmsgbytes", referenced from:
+                pgrx_pg_sys::include::pg18::pq_getmsgbytes::_$u7b$$u7b$closure$u7d$$u7d$::h2f45899b3086eb90 in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_pq_getmsgend", referenced from:
+                pgrx_pg_sys::include::pg18::pq_getmsgend::_$u7b$$u7b$closure$u7d$$u7d$::h08a49c509b477ea9 in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_process_shared_preload_libraries_in_progress", referenced from:
+                _ecaz_pg18_pgstat_register_kind in libecaz_pg18_pgstat_shim.a[2](faea18488176a15d-pg18_pgstat_shim.o)
+            "_random_page_cost", referenced from:
+                ecaz::am::common::cost::current_planner_cost_constants::hc75f48eb4d57256a in ecaz.dcemnvu7q4di98seza9d6e98m.11jcdve.rcgu.o
+                ecaz::am::common::cost::current_planner_cost_constants::hc75f48eb4d57256a in ecaz.dcemnvu7q4di98seza9d6e98m.11jcdve.rcgu.o
+            "_read_stream_begin_relation", referenced from:
+                pgrx_pg_sys::include::pg18::read_stream_begin_relation::_$u7b$$u7b$closure$u7d$$u7d$::h904376b6ebf7cdf7 in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_read_stream_end", referenced from:
+                pgrx_pg_sys::include::pg18::read_stream_end::_$u7b$$u7b$closure$u7d$$u7d$::h139b0c3e64336843 in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_read_stream_next_buffer", referenced from:
+                pgrx_pg_sys::include::pg18::read_stream_next_buffer::_$u7b$$u7b$closure$u7d$$u7d$::h97950c066cfd6f21 in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_read_stream_reset", referenced from:
+                pgrx_pg_sys::include::pg18::read_stream_reset::_$u7b$$u7b$closure$u7d$$u7d$::hd93179a3bac87824 in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_s_lock", referenced from:
+                _SpinLockAcquire__pgrx_cshim in libpgrx_pg_sys-be94b5787178de96.rlib[8](42f5eaaa15822ca1-pgrx-cshim.o)
+            "_seq_page_cost", referenced from:
+                ecaz::am::common::cost::current_planner_cost_constants::hc75f48eb4d57256a in ecaz.dcemnvu7q4di98seza9d6e98m.11jcdve.rcgu.o
+                ecaz::am::common::cost::current_planner_cost_constants::hc75f48eb4d57256a in ecaz.dcemnvu7q4di98seza9d6e98m.11jcdve.rcgu.o
+            "_shm_mq_attach", referenced from:
+                pgrx_pg_sys::include::pg18::shm_mq_attach::_$u7b$$u7b$closure$u7d$$u7d$::h754d84358cbe76c6 in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_shm_mq_create", referenced from:
+                pgrx_pg_sys::include::pg18::shm_mq_create::_$u7b$$u7b$closure$u7d$$u7d$::h108e2bb59a4fdefd in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_shm_mq_receive", referenced from:
+                pgrx_pg_sys::include::pg18::shm_mq_receive::_$u7b$$u7b$closure$u7d$$u7d$::h9cd318af551e4661 in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_shm_mq_send", referenced from:
+                pgrx_pg_sys::include::pg18::shm_mq_send::_$u7b$$u7b$closure$u7d$$u7d$::h57a10094ee3eac68 in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_shm_mq_set_receiver", referenced from:
+                pgrx_pg_sys::include::pg18::shm_mq_set_receiver::_$u7b$$u7b$closure$u7d$$u7d$::h2c5770f16a01a199 in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_shm_mq_set_sender", referenced from:
+                pgrx_pg_sys::include::pg18::shm_mq_set_sender::_$u7b$$u7b$closure$u7d$$u7d$::h5e96ce427bfe5d5b in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_shm_toc_allocate", referenced from:
+                pgrx_pg_sys::include::pg18::shm_toc_allocate::_$u7b$$u7b$closure$u7d$$u7d$::h39f3418e7993792c in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_shm_toc_insert", referenced from:
+                pgrx_pg_sys::include::pg18::shm_toc_insert::_$u7b$$u7b$closure$u7d$$u7d$::h9acf441a626a5e8d in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_shm_toc_lookup", referenced from:
+                pgrx_pg_sys::include::pg18::shm_toc_lookup::_$u7b$$u7b$closure$u7d$$u7d$::hdbaf576397e01f70 in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_slot_getsomeattrs_int", referenced from:
+                pgrx_pg_sys::include::pg18::slot_getsomeattrs_int::_$u7b$$u7b$closure$u7d$$u7d$::hc80ad25b0b3dc44a in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_table_beginscan_parallel", referenced from:
+                pgrx_pg_sys::include::pg18::table_beginscan_parallel::_$u7b$$u7b$closure$u7d$$u7d$::hc5d5ea0dcefff6bf in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_table_close", referenced from:
+                pgrx_pg_sys::include::pg18::table_close::_$u7b$$u7b$closure$u7d$$u7d$::hca0999fe35b11157 in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_table_open", referenced from:
+                pgrx_pg_sys::include::pg18::table_open::_$u7b$$u7b$closure$u7d$$u7d$::h4f20627249f49342 in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_table_parallelscan_estimate", referenced from:
+                pgrx_pg_sys::include::pg18::table_parallelscan_estimate::_$u7b$$u7b$closure$u7d$$u7d$::h9a445357f172b05b in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_table_parallelscan_initialize", referenced from:
+                pgrx_pg_sys::include::pg18::table_parallelscan_initialize::_$u7b$$u7b$closure$u7d$$u7d$::hecdd17d22464034b in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+            "_table_slot_callbacks", referenced from:
+                pgrx_pg_sys::include::pg18::table_slot_callbacks::_$u7b$$u7b$closure$u7d$$u7d$::h53ba703e4666bb72 in ecaz.7s68jjvnyvvqnl3fqzz3yfv06.11jcdve.rcgu.o
+          ld: symbol(s) not found for architecture arm64
+          clang: error: linker command failed with exit code 1 (use -v to see invocation)
+          
+
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: In file included from /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:19:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:537:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   537 | dlist_next_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:547:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   547 | dlist_prev_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:1054:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:  1054 | slist_next_node(slist_head *head, slist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:58: warning: unused parameter 'size' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                          ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:70: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                                      ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:882:56: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   882 | pgstat_hash_hash_key(const void *d, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                        ^
+warning: ecaz@0.1.1: 6 warnings generated.
+error: could not compile `ecaz` (lib) due to 1 previous error

@@ -1,0 +1,23 @@
+                  table_name                   |                     index_name                     |  amname  |                                                                                                    reloptions                                                                                                     
+-----------------------------------------------+----------------------------------------------------+----------+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ task28_ivf_postopt10k_n128w25_corpus          | task28_ivf_postopt10k_n128w25_corpus_pkey          | btree    | {}
+ task28_ivf_postopt10k_n128w25_corpus          | task28_ivf_postopt10k_n128w25_hnsw_idx             | ec_hnsw  | {m=16,ef_construction=128}
+ task28_ivf_postopt10k_n128w25_corpus          | task28_ivf_postopt10k_n128w25_idx                  | ec_ivf   | {nlists=128,nprobe=128,training_sample_rows=2000,storage_format=turboquant,rerank=heap_f32,rerank_width=25}
+ task28_ivf_qcmp10k_turboquant_corpus          | task28_ivf_qcmp10k_turboquant_corpus_pkey          | btree    | {}
+ task28_ivf_qcmp10k_turboquant_corpus          | task28_ivf_qcmp10k_turboquant_idx                  | ec_ivf   | {nlists=64,nprobe=64,training_sample_rows=2000,storage_format=turboquant,rerank=heap_f32,rerank_width=25}
+ task28_ivf_tq100k_n64w25_corpus               | task28_ivf_tq100k_n64w25_corpus_pkey               | btree    | {}
+ task28_ivf_tq100k_n64w25_corpus               | task28_ivf_tq100k_n64w25_idx                       | ec_ivf   | {nlists=64,nprobe=64,training_sample_rows=2000,storage_format=turboquant,rerank=heap_f32,rerank_width=25}
+ task30_spire_real10k_tq_corpus                | task30_spire_real10k_tq_corpus_pkey                | btree    | {}
+ task30_spire_real10k_tq_corpus                | task30_spire_real10k_tq_turboquant_idx             | ec_spire | {nlists=32,nprobe=24,rerank_width=25,local_store_count=1,storage_format=turboquant}
+ task67_local_50k_ivfrabitq_corpus             | task67_local_50k_ivfrabitq_corpus_pkey             | btree    | {}
+ task67_local_50k_ivfrabitq_corpus             | task67_local_50k_ivfrabitq_rabitq_idx              | ec_ivf   | {storage_format=rabitq}
+ task67_local_fullq_100k_hnsw_corpus           | task67_local_fullq_100k_hnsw_corpus_pkey           | btree    | {}
+ task67_local_fullq_100k_hnsw_corpus           | task67_local_fullq_100k_hnsw_m16_idx               | ec_hnsw  | {m=16,ef_construction=128,build_source_column=source}
+ task67_local_fullq_100k_hnsw_corpus           | task67_local_fullq_100k_hnsw_m8_idx                | ec_hnsw  | {m=8,ef_construction=128,build_source_column=source}
+ task67_local_fullq_50k_hnsw_corpus            | task67_local_fullq_50k_hnsw_corpus_pkey            | btree    | {}
+ task67_local_fullq_50k_hnsw_corpus            | task67_local_fullq_50k_hnsw_m16_idx                | ec_hnsw  | {m=16,ef_construction=128,build_source_column=source}
+ task67_local_fullq_50k_hnsw_corpus            | task67_local_fullq_50k_hnsw_m8_idx                 | ec_hnsw  | {m=8,ef_construction=128,build_source_column=source}
+ task74_intel_spire_highrecall_tg128_b0_corpus | task74_intel_spire_highrecall_tg128_b0_corpus_pkey | btree    | {}
+ task74_intel_spire_highrecall_tg128_b0_corpus | task74_intel_spire_highrecall_tg128_b0_idx         | ec_spire | {nlists=128,recursive_fanout=8,nprobe=24,rerank_width=25,storage_format=turboquant,boundary_replica_count=0,top_graph_enabled=1,top_graph_degree=32,top_graph_build_list_size=100,top_graph_search_list_size=128}
+(19 rows)
+

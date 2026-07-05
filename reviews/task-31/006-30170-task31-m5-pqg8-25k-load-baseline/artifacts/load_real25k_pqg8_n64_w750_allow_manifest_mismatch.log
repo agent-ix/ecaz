@@ -1,0 +1,22 @@
+[loader] inspecting data/task31_m5_dbpedia_staged/ec_hnsw_real_25k_corpus.tsv
+[loader] inspecting data/task31_m5_dbpedia_staged/ec_hnsw_real_25k_queries.tsv
+[loader] corpus: 25000 rows, sha256=234739ca91125db9d68052fe65380c32b9f41b42aa339320d77915680197a405  queries: 500 rows, sha256=80548c67c965dc8f22e793d0ec7af78c96d23e60793fd5c41311a5543b64d2f8
+[loader] warning: manifest verification failed for data/task31_m5_dbpedia_staged/ec_hnsw_real_25k_manifest.json: prefix="ec_hnsw_real_25k" (expected "task31_m5_real25k_pqg8_n64")
+[loader] copied corpus table task31_m5_real25k_pqg8_n64_corpus in 3.79s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table task31_m5_real25k_pqg8_n64_corpus in 765.04ms
+[loader] copied queries table task31_m5_real25k_pqg8_n64_queries in 74.30ms
+[loader] building task31_m5_real25k_pqg8_n64_idx using ec_ivf (reloptions=[storage_format=pq_fastscan, pq_group_size=8, nlists=64, nprobe=48, rerank=heap_f32, rerank_width=750]) ...
+[loader] built task31_m5_real25k_pqg8_n64_idx in 5.16s
+┌─────────┬───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                                                                                 │
+╞═════════╪═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_ivf                                                                                                                                │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ task31_m5_real25k_pqg8_n64_corpus (25000 rows)                                                                                        │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ task31_m5_real25k_pqg8_n64_queries (500 rows)                                                                                         │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ task31_m5_real25k_pqg8_n64_idx [storage_format=pq_fastscan, pq_group_size=8, nlists=64, nprobe=48, rerank=heap_f32, rerank_width=750] │
+└─────────┴───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+[loader] completed prefix task31_m5_real25k_pqg8_n64 in 11.33s

@@ -1,0 +1,623 @@
+diff --git a/scripts/unsafe_comment_baseline.txt b/scripts/unsafe_comment_baseline.txt
+index 93fcb57c..0c6de7fd 100644
+--- a/scripts/unsafe_comment_baseline.txt
++++ b/scripts/unsafe_comment_baseline.txt
+@@ -282,89 +282,6 @@ src/tests/ec_hnsw_storage_lifecycle.rs:856
+ src/tests/ec_hnsw_storage_lifecycle.rs:873
+ src/tests/ec_hnsw_storage_lifecycle.rs:979
+ src/tests/ec_hnsw_storage_lifecycle.rs:995
+-src/tests/ec_ivf.rs:1012
+-src/tests/ec_ivf.rs:1014
+-src/tests/ec_ivf.rs:1067
+-src/tests/ec_ivf.rs:1068
+-src/tests/ec_ivf.rs:1123
+-src/tests/ec_ivf.rs:1124
+-src/tests/ec_ivf.rs:1195
+-src/tests/ec_ivf.rs:1196
+-src/tests/ec_ivf.rs:1198
+-src/tests/ec_ivf.rs:1200
+-src/tests/ec_ivf.rs:1293
+-src/tests/ec_ivf.rs:1295
+-src/tests/ec_ivf.rs:1296
+-src/tests/ec_ivf.rs:137
+-src/tests/ec_ivf.rs:1380
+-src/tests/ec_ivf.rs:1382
+-src/tests/ec_ivf.rs:1384
+-src/tests/ec_ivf.rs:1386
+-src/tests/ec_ivf.rs:139
+-src/tests/ec_ivf.rs:1432
+-src/tests/ec_ivf.rs:1459
+-src/tests/ec_ivf.rs:1461
+-src/tests/ec_ivf.rs:1513
+-src/tests/ec_ivf.rs:1542
+-src/tests/ec_ivf.rs:1544
+-src/tests/ec_ivf.rs:1545
+-src/tests/ec_ivf.rs:1579
+-src/tests/ec_ivf.rs:1581
+-src/tests/ec_ivf.rs:1582
+-src/tests/ec_ivf.rs:1584
+-src/tests/ec_ivf.rs:1617
+-src/tests/ec_ivf.rs:1627
+-src/tests/ec_ivf.rs:1628
+-src/tests/ec_ivf.rs:1666
+-src/tests/ec_ivf.rs:1668
+-src/tests/ec_ivf.rs:1670
+-src/tests/ec_ivf.rs:1671
+-src/tests/ec_ivf.rs:1673
+-src/tests/ec_ivf.rs:1693
+-src/tests/ec_ivf.rs:177
+-src/tests/ec_ivf.rs:179
+-src/tests/ec_ivf.rs:21
+-src/tests/ec_ivf.rs:210
+-src/tests/ec_ivf.rs:2223
+-src/tests/ec_ivf.rs:2287
+-src/tests/ec_ivf.rs:2289
+-src/tests/ec_ivf.rs:2291
+-src/tests/ec_ivf.rs:2292
+-src/tests/ec_ivf.rs:23
+-src/tests/ec_ivf.rs:232
+-src/tests/ec_ivf.rs:2320
+-src/tests/ec_ivf.rs:2333
+-src/tests/ec_ivf.rs:2335
+-src/tests/ec_ivf.rs:2337
+-src/tests/ec_ivf.rs:2338
+-src/tests/ec_ivf.rs:267
+-src/tests/ec_ivf.rs:312
+-src/tests/ec_ivf.rs:313
+-src/tests/ec_ivf.rs:315
+-src/tests/ec_ivf.rs:316
+-src/tests/ec_ivf.rs:345
+-src/tests/ec_ivf.rs:373
+-src/tests/ec_ivf.rs:390
+-src/tests/ec_ivf.rs:429
+-src/tests/ec_ivf.rs:443
+-src/tests/ec_ivf.rs:445
+-src/tests/ec_ivf.rs:510
+-src/tests/ec_ivf.rs:543
+-src/tests/ec_ivf.rs:55
+-src/tests/ec_ivf.rs:57
+-src/tests/ec_ivf.rs:639
+-src/tests/ec_ivf.rs:700
+-src/tests/ec_ivf.rs:713
+-src/tests/ec_ivf.rs:715
+-src/tests/ec_ivf.rs:819
+-src/tests/ec_ivf.rs:877
+-src/tests/ec_ivf.rs:888
+-src/tests/ec_ivf.rs:899
+-src/tests/ec_ivf.rs:905
+-src/tests/ec_ivf.rs:92
+-src/tests/ec_ivf.rs:94
+-src/tests/ec_ivf.rs:940
+-src/tests/ec_ivf.rs:949
+ src/tests/hnsw_misc.rs:30
+ src/tests/hnsw_misc.rs:36
+ src/tests/insert.rs:1603
+diff --git a/src/tests/ec_ivf.rs b/src/tests/ec_ivf.rs
+index d21406a0..a6b0bb4e 100644
+--- a/src/tests/ec_ivf.rs
++++ b/src/tests/ec_ivf.rs
+@@ -1,3 +1,12 @@
++    macro_rules! ec_ivf_debug {
++        ($call:expr) => {{
++            // SAFETY: These pg_test fixtures create the referenced IVF index
++            // before calling the extension's test-only debug helper. The
++            // helper owns the PostgreSQL relation access for the supplied OID.
++            unsafe { $call }
++        }};
++    }
++
+     fn ec_ivf_insert_values(start_id: i64, count: usize, vector: &str) -> String {
+         (0..count)
+             .map(|offset| format!("({}, '{}'::ecvector)", start_id + offset as i64, vector))
+@@ -18,9 +27,9 @@
+ 
+         let index_oid = ec_ivf_index_oid("ec_ivf_empty_build_idx");
+         let (format_version, nlists, nprobe, training_sample_rows, seed) =
+-            unsafe { am::debug_ec_ivf_metadata(index_oid) };
++            ec_ivf_debug!(am::debug_ec_ivf_metadata(index_oid));
+         let (summary_nlists, empty_lists, directory_live, directory_dead, inserted_since_build) =
+-            unsafe { am::debug_ec_ivf_directory_summary(index_oid) };
++            ec_ivf_debug!(am::debug_ec_ivf_directory_summary(index_oid));
+ 
+         assert_eq!(format_version, 1);
+         assert_eq!(nlists, 16);
+@@ -52,9 +61,9 @@
+ 
+         let index_oid = ec_ivf_index_oid("ec_ivf_singleton_build_idx");
+         let (dimensions, nlists, training_version, total_live, has_centroids, has_directory) =
+-            unsafe { am::debug_ec_ivf_build_metadata(index_oid) };
++            ec_ivf_debug!(am::debug_ec_ivf_build_metadata(index_oid));
+         let (summary_nlists, empty_lists, directory_live, directory_dead, inserted_since_build) =
+-            unsafe { am::debug_ec_ivf_directory_summary(index_oid) };
++            ec_ivf_debug!(am::debug_ec_ivf_directory_summary(index_oid));
+ 
+         assert_eq!(dimensions, 2);
+         assert_eq!(nlists, 1);
+@@ -89,9 +98,9 @@
+ 
+         let index_oid = ec_ivf_index_oid("ec_ivf_non_empty_build_idx");
+         let (dimensions, nlists, training_version, total_live, has_centroids, has_directory) =
+-            unsafe { am::debug_ec_ivf_build_metadata(index_oid) };
++            ec_ivf_debug!(am::debug_ec_ivf_build_metadata(index_oid));
+         let (summary_nlists, empty_lists, directory_live, directory_dead, inserted_since_build) =
+-            unsafe { am::debug_ec_ivf_directory_summary(index_oid) };
++            ec_ivf_debug!(am::debug_ec_ivf_directory_summary(index_oid));
+         let index_blocks = ec_ivf_index_blocks("ec_ivf_non_empty_build_idx");
+ 
+         assert_eq!(dimensions, 2);
+@@ -134,9 +143,9 @@
+ 
+         let index_oid = ec_ivf_index_oid("ec_ivf_duplicate_heavy_build_idx");
+         let (dimensions, nlists, training_version, total_live, has_centroids, has_directory) =
+-            unsafe { am::debug_ec_ivf_build_metadata(index_oid) };
++            ec_ivf_debug!(am::debug_ec_ivf_build_metadata(index_oid));
+         let (summary_nlists, empty_lists, directory_live, directory_dead, inserted_since_build) =
+-            unsafe { am::debug_ec_ivf_directory_summary(index_oid) };
++            ec_ivf_debug!(am::debug_ec_ivf_directory_summary(index_oid));
+ 
+         assert_eq!(dimensions, 2);
+         assert_eq!(nlists, 3);
+@@ -174,9 +183,9 @@
+ 
+         let index_oid = ec_ivf_index_oid("ec_ivf_multi_page_build_idx");
+         let (dimensions, nlists, training_version, total_live, has_centroids, has_directory) =
+-            unsafe { am::debug_ec_ivf_build_metadata(index_oid) };
++            ec_ivf_debug!(am::debug_ec_ivf_build_metadata(index_oid));
+         let (summary_nlists, empty_lists, directory_live, directory_dead, inserted_since_build) =
+-            unsafe { am::debug_ec_ivf_directory_summary(index_oid) };
++            ec_ivf_debug!(am::debug_ec_ivf_directory_summary(index_oid));
+         let index_blocks = ec_ivf_index_blocks("ec_ivf_multi_page_build_idx");
+ 
+         assert_eq!(dimensions, 512);
+@@ -207,7 +216,7 @@
+         .expect("index creation should succeed");
+ 
+         let index_oid = ec_ivf_index_oid("ec_ivf_empty_scan_idx");
+-        let found_tuple = unsafe { am::debug_ec_ivf_gettuple_after_rescan_result(index_oid) };
++        let found_tuple = ec_ivf_debug!(am::debug_ec_ivf_gettuple_after_rescan_result(index_oid));
+ 
+         assert!(
+             !found_tuple,
+@@ -229,7 +238,7 @@
+         .expect("index creation should succeed");
+ 
+         let index_oid = ec_ivf_index_oid("ec_ivf_empty_query_prep_idx");
+-        let snapshot = unsafe { am::debug_ec_ivf_rescan_query_prep(index_oid, vec![1.0, 0.0]) };
++        let snapshot = ec_ivf_debug!(am::debug_ec_ivf_rescan_query_prep(index_oid, vec![1.0, 0.0]));
+ 
+         assert!(snapshot.rescan_called);
+         assert_eq!(snapshot.query_dimensions, 2);
+@@ -264,7 +273,7 @@
+         .expect("index creation should succeed");
+ 
+         let index_oid = ec_ivf_index_oid("ec_ivf_query_prep_idx");
+-        let snapshot = unsafe { am::debug_ec_ivf_rescan_query_prep(index_oid, vec![1.0, 0.0]) };
++        let snapshot = ec_ivf_debug!(am::debug_ec_ivf_rescan_query_prep(index_oid, vec![1.0, 0.0]));
+         let unique_lists = snapshot
+             .selected_lists
+             .iter()
+@@ -309,11 +318,11 @@
+         .expect("index creation should succeed");
+ 
+         let index_oid = ec_ivf_index_oid("ec_ivf_quantizer_cache_idx");
+-        let _first_scan = unsafe { am::debug_ec_ivf_rescan_query_prep(index_oid, vec![1.0, 0.0]) };
+-        let first_ptr = unsafe { am::debug_ec_ivf_quantizer_cache_ptr(index_oid) }
++        let _first_scan = ec_ivf_debug!(am::debug_ec_ivf_rescan_query_prep(index_oid, vec![1.0, 0.0]));
++        let first_ptr = ec_ivf_debug!(am::debug_ec_ivf_quantizer_cache_ptr(index_oid))
+             .expect("first IVF scan should populate the ProdQuantizer cache");
+-        let _second_scan = unsafe { am::debug_ec_ivf_rescan_query_prep(index_oid, vec![0.0, 1.0]) };
+-        let second_ptr = unsafe { am::debug_ec_ivf_quantizer_cache_ptr(index_oid) }
++        let _second_scan = ec_ivf_debug!(am::debug_ec_ivf_rescan_query_prep(index_oid, vec![0.0, 1.0]));
++        let second_ptr = ec_ivf_debug!(am::debug_ec_ivf_quantizer_cache_ptr(index_oid))
+             .expect("second IVF scan should find the cached ProdQuantizer");
+ 
+         assert_eq!(
+@@ -342,7 +351,7 @@
+ 
+         let index_oid = ec_ivf_index_oid("ec_ivf_gettuple_emit_idx");
+         let (outputs, orderby_cleared) =
+-            unsafe { am::debug_ec_ivf_gettuple_outputs(index_oid, vec![1.0, 0.0]) };
++            ec_ivf_debug!(am::debug_ec_ivf_gettuple_outputs(index_oid, vec![1.0, 0.0]));
+         let unique_heap_tids = outputs
+             .iter()
+             .map(|(block_number, offset_number, _score)| (*block_number, *offset_number))
+@@ -370,7 +379,7 @@
+         .expect("index creation should succeed");
+ 
+         let index_oid = ec_ivf_index_oid("ec_ivf_auto_rerank_idx");
+-        let rerank_mode = unsafe { am::debug_ec_ivf_rerank_mode(index_oid) };
++        let rerank_mode = ec_ivf_debug!(am::debug_ec_ivf_rerank_mode(index_oid));
+ 
+         assert_eq!(rerank_mode, "off");
+     }
+@@ -387,7 +396,7 @@
+         .expect("index creation should succeed");
+ 
+         let index_oid = ec_ivf_index_oid("ec_ivf_heap_f32_rerank_idx");
+-        let rerank_mode = unsafe { am::debug_ec_ivf_rerank_mode(index_oid) };
++        let rerank_mode = ec_ivf_debug!(am::debug_ec_ivf_rerank_mode(index_oid));
+ 
+         assert_eq!(rerank_mode, "heap_f32");
+     }
+@@ -426,7 +435,7 @@
+             .expect("live insert should succeed");
+         let inserted_tid = heap_tid_for_row("ec_ivf_pq_fastscan_storage", 4);
+         let before_vacuum =
+-            unsafe { am::debug_ec_ivf_gettuple_outputs(index_oid, vec![1.0, 0.1]) }.0;
++            ec_ivf_debug!(am::debug_ec_ivf_gettuple_outputs(index_oid, vec![1.0, 0.1])).0;
+ 
+         assert!(
+             before_vacuum
+@@ -440,9 +449,9 @@
+ 
+         Spi::run("DELETE FROM ec_ivf_pq_fastscan_storage WHERE id = 4")
+             .expect("delete should succeed");
+-        let stats = unsafe { am::debug_ec_ivf_vacuum_remove_heap_tids(index_oid, &[inserted_tid]) };
++        let stats = ec_ivf_debug!(am::debug_ec_ivf_vacuum_remove_heap_tids(index_oid, &[inserted_tid]));
+         let after_vacuum =
+-            unsafe { am::debug_ec_ivf_gettuple_outputs(index_oid, vec![1.0, 0.1]) }.0;
++            ec_ivf_debug!(am::debug_ec_ivf_gettuple_outputs(index_oid, vec![1.0, 0.1])).0;
+ 
+         assert_eq!(stats.tuples_removed, 1.0);
+         assert!(
+@@ -507,7 +516,7 @@
+         )
+         .expect("reloptions query should succeed")
+         .expect("reloptions should exist");
+-        let outputs = unsafe { am::debug_ec_ivf_gettuple_outputs(index_oid, base) }.0;
++        let outputs = ec_ivf_debug!(am::debug_ec_ivf_gettuple_outputs(index_oid, base)).0;
+ 
+         assert!(reloptions.contains(&"pq_group_size=8".to_string()));
+         assert!(
+@@ -540,7 +549,7 @@
+         let index_oid = ec_ivf_index_oid("ec_ivf_pq_fastscan_model_cache_idx");
+ 
+         assert!(
+-            unsafe { am::debug_ec_ivf_pq_fastscan_model_cache_reused(index_oid) },
++            ec_ivf_debug!(am::debug_ec_ivf_pq_fastscan_model_cache_reused(index_oid)),
+             "PqFastScan IVF scans should reuse one loaded grouped-codebook model across rescans"
+         );
+     }
+@@ -636,7 +645,7 @@
+ 
+         let index_oid = ec_ivf_index_oid("ec_ivf_posting_slack_build_idx");
+         let (head_block, tail_block, live_count, dead_count, inserted_since_build) =
+-            unsafe { am::debug_ec_ivf_directory_entry(index_oid, 0) };
++            ec_ivf_debug!(am::debug_ec_ivf_directory_entry(index_oid, 0));
+         let ctid_to_id = ctid_id_map("ec_ivf_posting_slack_build");
+         let build_ids = ivf_debug_output_ids(index_oid, vec![1.0, 0.0], &ctid_to_id, 4);
+ 
+@@ -697,7 +706,7 @@
+             .expect("live insert should succeed");
+         let inserted_tid = heap_tid_for_row("ec_ivf_rabitq_storage", 4);
+         let before_vacuum =
+-            unsafe { am::debug_ec_ivf_gettuple_outputs(index_oid, vec![1.0, 0.1]) }.0;
++            ec_ivf_debug!(am::debug_ec_ivf_gettuple_outputs(index_oid, vec![1.0, 0.1])).0;
+ 
+         assert!(
+             before_vacuum
+@@ -710,9 +719,9 @@
+         );
+ 
+         Spi::run("DELETE FROM ec_ivf_rabitq_storage WHERE id = 4").expect("delete should succeed");
+-        let stats = unsafe { am::debug_ec_ivf_vacuum_remove_heap_tids(index_oid, &[inserted_tid]) };
++        let stats = ec_ivf_debug!(am::debug_ec_ivf_vacuum_remove_heap_tids(index_oid, &[inserted_tid]));
+         let after_vacuum =
+-            unsafe { am::debug_ec_ivf_gettuple_outputs(index_oid, vec![1.0, 0.1]) }.0;
++            ec_ivf_debug!(am::debug_ec_ivf_gettuple_outputs(index_oid, vec![1.0, 0.1])).0;
+ 
+         assert_eq!(stats.tuples_removed, 1.0);
+         assert!(
+@@ -816,7 +825,7 @@
+         let ctid_to_id = ctid_id_map("ec_ivf_heap_f32_exact");
+         let index_oid = ec_ivf_index_oid("ec_ivf_heap_f32_exact_idx");
+         let (outputs, orderby_cleared) =
+-            unsafe { am::debug_ec_ivf_gettuple_outputs(index_oid, query) };
++            ec_ivf_debug!(am::debug_ec_ivf_gettuple_outputs(index_oid, query));
+         let observed = outputs
+             .into_iter()
+             .map(|(block_number, offset_number, score)| {
+@@ -874,7 +883,7 @@
+ 
+         let index_oid = ec_ivf_index_oid("ec_ivf_heap_f32_width_idx");
+         let (outputs, _orderby_cleared) =
+-            unsafe { am::debug_ec_ivf_gettuple_outputs(index_oid, vec![1.0, 0.0]) };
++            ec_ivf_debug!(am::debug_ec_ivf_gettuple_outputs(index_oid, vec![1.0, 0.0]));
+ 
+         assert_eq!(outputs.len(), 2);
+         let exact_scores = outputs
+@@ -885,7 +894,7 @@
+ 
+         Spi::run("SET LOCAL ec_ivf.rerank_width = 3").expect("session rerank_width should set");
+         let (outputs, _orderby_cleared) =
+-            unsafe { am::debug_ec_ivf_gettuple_outputs(index_oid, vec![1.0, 0.0]) };
++            ec_ivf_debug!(am::debug_ec_ivf_gettuple_outputs(index_oid, vec![1.0, 0.0]));
+         assert_eq!(outputs.len(), 3);
+         let exact_scores = outputs
+             .iter()
+@@ -896,13 +905,13 @@
+         Spi::run("SET LOCAL ec_ivf.rerank_width = 0")
+             .expect("session rerank_width should accept full-frontier override");
+         let (outputs, _orderby_cleared) =
+-            unsafe { am::debug_ec_ivf_gettuple_outputs(index_oid, vec![1.0, 0.0]) };
++            ec_ivf_debug!(am::debug_ec_ivf_gettuple_outputs(index_oid, vec![1.0, 0.0]));
+         assert_eq!(outputs.len(), 4);
+ 
+         Spi::run("SET LOCAL ec_ivf.rerank_width = -1")
+             .expect("session rerank_width should return to relation default");
+         let (outputs, _orderby_cleared) =
+-            unsafe { am::debug_ec_ivf_gettuple_outputs(index_oid, vec![1.0, 0.0]) };
++            ec_ivf_debug!(am::debug_ec_ivf_gettuple_outputs(index_oid, vec![1.0, 0.0]));
+         assert_eq!(outputs.len(), 2);
+     }
+ 
+@@ -937,7 +946,7 @@
+         .expect("index creation should succeed");
+ 
+         let index_oid = ec_ivf_index_oid("ec_ivf_altered_rerank_idx");
+-        let metadata_rerank_mode = unsafe { am::debug_ec_ivf_rerank_mode(index_oid) };
++        let metadata_rerank_mode = ec_ivf_debug!(am::debug_ec_ivf_rerank_mode(index_oid));
+         assert_eq!(metadata_rerank_mode, "off");
+ 
+         Spi::run(
+@@ -946,7 +955,7 @@
+         .expect("ALTER INDEX should update relation options");
+ 
+         let (outputs, _orderby_cleared) =
+-            unsafe { am::debug_ec_ivf_gettuple_outputs(index_oid, vec![1.0, 0.0]) };
++            ec_ivf_debug!(am::debug_ec_ivf_gettuple_outputs(index_oid, vec![1.0, 0.0]));
+ 
+         assert_eq!(outputs.len(), 2);
+         let exact_scores = outputs
+@@ -1009,9 +1018,9 @@
+             .expect("live insert should succeed");
+ 
+         let (summary_nlists, empty_lists, directory_live, directory_dead, inserted_since_build) =
+-            unsafe { am::debug_ec_ivf_directory_summary(index_oid) };
++            ec_ivf_debug!(am::debug_ec_ivf_directory_summary(index_oid));
+         let (dimensions, nlists, training_version, total_live, has_centroids, has_directory) =
+-            unsafe { am::debug_ec_ivf_build_metadata(index_oid) };
++            ec_ivf_debug!(am::debug_ec_ivf_build_metadata(index_oid));
+         let ctid_to_id = ctid_id_map("ec_ivf_live_insert");
+         let ivf_ids = ivf_debug_output_ids(index_oid, vec![1.0, 0.1], &ctid_to_id, 3);
+         let unique_ivf_ids = ivf_ids.iter().copied().collect::<HashSet<_>>();
+@@ -1064,8 +1073,8 @@
+ 
+         let blocks_after = ec_ivf_index_blocks("ec_ivf_same_list_live_insert_idx");
+         let (summary_nlists, empty_lists, directory_live, directory_dead, inserted_since_build) =
+-            unsafe { am::debug_ec_ivf_directory_summary(index_oid) };
+-        let (_, _, _, total_live, _, _) = unsafe { am::debug_ec_ivf_build_metadata(index_oid) };
++            ec_ivf_debug!(am::debug_ec_ivf_directory_summary(index_oid));
++        let (_, _, _, total_live, _, _) = ec_ivf_debug!(am::debug_ec_ivf_build_metadata(index_oid));
+         let ctid_to_id = ctid_id_map("ec_ivf_same_list_live_insert");
+         let ivf_ids = ivf_debug_output_ids(index_oid, vec![1.0, 0.2], &ctid_to_id, 3);
+         let unique_ivf_ids = ivf_ids.iter().copied().collect::<HashSet<_>>();
+@@ -1120,8 +1129,8 @@
+ 
+         let index_oid = ec_ivf_index_oid(INDEX_NAME);
+         let (_, _, directory_live, _, inserted_since_build) =
+-            unsafe { am::debug_ec_ivf_directory_summary(index_oid) };
+-        let (_, _, _, total_live, _, _) = unsafe { am::debug_ec_ivf_build_metadata(index_oid) };
++            ec_ivf_debug!(am::debug_ec_ivf_directory_summary(index_oid));
++        let (_, _, _, total_live, _, _) = ec_ivf_debug!(am::debug_ec_ivf_build_metadata(index_oid));
+ 
+         assert_eq!(directory_live, 1001);
+         assert_eq!(inserted_since_build, 1);
+@@ -1192,12 +1201,12 @@
+             .expect("heap count should exist");
+         let index_oid = ec_ivf_index_oid(INDEX_NAME);
+         let (summary_nlists, empty_lists, directory_live, directory_dead, inserted_since_build) =
+-            unsafe { am::debug_ec_ivf_directory_summary(index_oid) };
+-        let (_, _, _, total_live, _, _) = unsafe { am::debug_ec_ivf_build_metadata(index_oid) };
++            ec_ivf_debug!(am::debug_ec_ivf_directory_summary(index_oid));
++        let (_, _, _, total_live, _, _) = ec_ivf_debug!(am::debug_ec_ivf_build_metadata(index_oid));
+         let (_, _, list0_live, _, list0_inserted) =
+-            unsafe { am::debug_ec_ivf_directory_entry(index_oid, 0) };
++            ec_ivf_debug!(am::debug_ec_ivf_directory_entry(index_oid, 0));
+         let (_, _, list1_live, _, list1_inserted) =
+-            unsafe { am::debug_ec_ivf_directory_entry(index_oid, 1) };
++            ec_ivf_debug!(am::debug_ec_ivf_directory_entry(index_oid, 1));
+         let ctid_to_id = ctid_id_map(TABLE_NAME);
+         let ivf_ids = ivf_debug_output_ids(
+             index_oid,
+@@ -1290,10 +1299,10 @@
+             .expect("heap count should exist");
+         let index_oid = ec_ivf_index_oid(INDEX_NAME);
+         let (_, _, directory_live, directory_dead, inserted_since_build) =
+-            unsafe { am::debug_ec_ivf_directory_summary(index_oid) };
++            ec_ivf_debug!(am::debug_ec_ivf_directory_summary(index_oid));
+         let (_, _, list_live, list_dead, list_inserted) =
+-            unsafe { am::debug_ec_ivf_directory_entry(index_oid, 0) };
+-        let (_, _, _, total_live, _, _) = unsafe { am::debug_ec_ivf_build_metadata(index_oid) };
++            ec_ivf_debug!(am::debug_ec_ivf_directory_entry(index_oid, 0));
++        let (_, _, _, total_live, _, _) = ec_ivf_debug!(am::debug_ec_ivf_build_metadata(index_oid));
+         let ctid_to_id = ctid_id_map(TABLE_NAME);
+         let ivf_ids = ivf_debug_output_ids(index_oid, vec![1.0, 0.2], &ctid_to_id, 3);
+         let unique_ivf_ids = ivf_ids.iter().copied().collect::<HashSet<_>>();
+@@ -1377,13 +1386,13 @@
+             .expect("heap count should exist");
+         let index_oid = ec_ivf_index_oid(INDEX_NAME);
+         let (dimensions, nlists, training_version, total_live, has_centroids, has_directory) =
+-            unsafe { am::debug_ec_ivf_build_metadata(index_oid) };
++            ec_ivf_debug!(am::debug_ec_ivf_build_metadata(index_oid));
+         let (summary_nlists, _, directory_live, directory_dead, inserted_since_build) =
+-            unsafe { am::debug_ec_ivf_directory_summary(index_oid) };
++            ec_ivf_debug!(am::debug_ec_ivf_directory_summary(index_oid));
+         let (_, _, list0_live, _, list0_inserted) =
+-            unsafe { am::debug_ec_ivf_directory_entry(index_oid, 0) };
++            ec_ivf_debug!(am::debug_ec_ivf_directory_entry(index_oid, 0));
+         let (_, _, list1_live, _, list1_inserted) =
+-            unsafe { am::debug_ec_ivf_directory_entry(index_oid, 1) };
++            ec_ivf_debug!(am::debug_ec_ivf_directory_entry(index_oid, 1));
+         let ctid_to_id = ctid_id_map(TABLE_NAME);
+         let ivf_ids = ivf_debug_output_ids(index_oid, vec![1.0, 0.0], &ctid_to_id, 2);
+         let unique_ivf_ids = ivf_ids.iter().copied().collect::<HashSet<_>>();
+@@ -1429,13 +1438,11 @@
+         );
+         let heap_tid = heap_tid_for_row("ec_ivf_duplicate_heap_tid", 0);
+ 
+-        unsafe {
+-            am::debug_ec_ivf_validate_no_duplicate_heap_tid(
++        ec_ivf_debug!(am::debug_ec_ivf_validate_no_duplicate_heap_tid(
+                 index_oid,
+                 heap_tid.block_number,
+                 heap_tid.offset_number,
+-            )
+-        };
++            ));
+     }
+ 
+     #[pg_test]
+@@ -1456,9 +1463,9 @@
+             .expect("first live insert should bootstrap the empty index");
+ 
+         let (dimensions, nlists, training_version, total_live, has_centroids, has_directory) =
+-            unsafe { am::debug_ec_ivf_build_metadata(index_oid) };
++            ec_ivf_debug!(am::debug_ec_ivf_build_metadata(index_oid));
+         let (summary_nlists, empty_lists, directory_live, directory_dead, inserted_since_build) =
+-            unsafe { am::debug_ec_ivf_directory_summary(index_oid) };
++            ec_ivf_debug!(am::debug_ec_ivf_directory_summary(index_oid));
+         let ctid_to_id = ctid_id_map("ec_ivf_empty_live_insert");
+         let ivf_ids = ivf_debug_output_ids(index_oid, vec![0.25, 1.0], &ctid_to_id, 1);
+ 
+@@ -1510,7 +1517,7 @@
+ 
+         let index_oid = ec_ivf_index_oid("ec_ivf_vacuum_empty_idx");
+         let index_blocks = ec_ivf_index_blocks("ec_ivf_vacuum_empty_idx");
+-        let stats = unsafe { am::debug_ec_ivf_vacuum_stats(index_oid) };
++        let stats = ec_ivf_debug!(am::debug_ec_ivf_vacuum_stats(index_oid));
+ 
+         assert_eq!(stats.num_pages as i64, index_blocks);
+         assert!(
+@@ -1539,10 +1546,10 @@
+         Spi::run("DELETE FROM ec_ivf_vacuum_noop WHERE id = 1").expect("delete should succeed");
+ 
+         let index_blocks = ec_ivf_index_blocks("ec_ivf_vacuum_noop_idx");
+-        let stats = unsafe { am::debug_ec_ivf_vacuum_stats(index_oid) };
++        let stats = ec_ivf_debug!(am::debug_ec_ivf_vacuum_stats(index_oid));
+         let (_, _, directory_live, directory_dead, inserted_since_build) =
+-            unsafe { am::debug_ec_ivf_directory_summary(index_oid) };
+-        let (_, _, _, total_live, _, _) = unsafe { am::debug_ec_ivf_build_metadata(index_oid) };
++            ec_ivf_debug!(am::debug_ec_ivf_directory_summary(index_oid));
++        let (_, _, _, total_live, _, _) = ec_ivf_debug!(am::debug_ec_ivf_build_metadata(index_oid));
+ 
+         assert_eq!(stats.num_pages as i64, index_blocks);
+         assert!(
+@@ -1576,12 +1583,12 @@
+         let deleted_tid = heap_tid_for_row("ec_ivf_vacuum_delete", 1);
+ 
+         Spi::run("DELETE FROM ec_ivf_vacuum_delete WHERE id = 1").expect("delete should succeed");
+-        let stats = unsafe { am::debug_ec_ivf_vacuum_remove_heap_tids(index_oid, &[deleted_tid]) };
++        let stats = ec_ivf_debug!(am::debug_ec_ivf_vacuum_remove_heap_tids(index_oid, &[deleted_tid]));
+         let (_, _, directory_live, directory_dead, inserted_since_build) =
+-            unsafe { am::debug_ec_ivf_directory_summary(index_oid) };
+-        let (_, _, _, total_live, _, _) = unsafe { am::debug_ec_ivf_build_metadata(index_oid) };
++            ec_ivf_debug!(am::debug_ec_ivf_directory_summary(index_oid));
++        let (_, _, _, total_live, _, _) = ec_ivf_debug!(am::debug_ec_ivf_build_metadata(index_oid));
+         let (outputs, _orderby_cleared) =
+-            unsafe { am::debug_ec_ivf_gettuple_outputs(index_oid, vec![0.0, 1.0]) };
++            ec_ivf_debug!(am::debug_ec_ivf_gettuple_outputs(index_oid, vec![0.0, 1.0]));
+ 
+         assert_eq!(stats.tuples_removed, 1.0);
+         assert_eq!(stats.num_index_tuples, 2.0);
+@@ -1614,7 +1621,7 @@
+         let blocks_before_delete = ec_ivf_index_blocks("ec_ivf_vacuum_reuse_idx");
+ 
+         Spi::run("DELETE FROM ec_ivf_vacuum_reuse WHERE id = 1").expect("delete should succeed");
+-        let stats = unsafe { am::debug_ec_ivf_vacuum_remove_heap_tids(index_oid, &[deleted_tid]) };
++        let stats = ec_ivf_debug!(am::debug_ec_ivf_vacuum_remove_heap_tids(index_oid, &[deleted_tid]));
+         let blocks_after_vacuum = ec_ivf_index_blocks("ec_ivf_vacuum_reuse_idx");
+ 
+         assert_eq!(stats.tuples_removed, 1.0);
+@@ -1624,8 +1631,8 @@
+             .expect("insert should reuse compacted posting page space");
+         let blocks_after_reinsert = ec_ivf_index_blocks("ec_ivf_vacuum_reuse_idx");
+         let (_, _, directory_live, directory_dead, inserted_since_build) =
+-            unsafe { am::debug_ec_ivf_directory_summary(index_oid) };
+-        let (_, _, _, total_live, _, _) = unsafe { am::debug_ec_ivf_build_metadata(index_oid) };
++            ec_ivf_debug!(am::debug_ec_ivf_directory_summary(index_oid));
++        let (_, _, _, total_live, _, _) = ec_ivf_debug!(am::debug_ec_ivf_build_metadata(index_oid));
+ 
+         assert_eq!(
+             blocks_after_reinsert, blocks_after_vacuum,
+@@ -1663,14 +1670,14 @@
+         let blocks_before_vacuum = ec_ivf_index_blocks("ec_ivf_vacuum_empty_list_idx");
+ 
+         Spi::run("DELETE FROM ec_ivf_vacuum_empty_list").expect("delete should succeed");
+-        let stats = unsafe { am::debug_ec_ivf_vacuum_remove_heap_tids(index_oid, &dead_tids) };
++        let stats = ec_ivf_debug!(am::debug_ec_ivf_vacuum_remove_heap_tids(index_oid, &dead_tids));
+         let (head_block, tail_block, live_count, dead_count, inserted_since_build) =
+-            unsafe { am::debug_ec_ivf_directory_entry(index_oid, 0) };
++            ec_ivf_debug!(am::debug_ec_ivf_directory_entry(index_oid, 0));
+         let (summary_nlists, empty_lists, directory_live, directory_dead, _) =
+-            unsafe { am::debug_ec_ivf_directory_summary(index_oid) };
+-        let (_, _, _, total_live, _, _) = unsafe { am::debug_ec_ivf_build_metadata(index_oid) };
++            ec_ivf_debug!(am::debug_ec_ivf_directory_summary(index_oid));
++        let (_, _, _, total_live, _, _) = ec_ivf_debug!(am::debug_ec_ivf_build_metadata(index_oid));
+         let (outputs, _orderby_cleared) =
+-            unsafe { am::debug_ec_ivf_gettuple_outputs(index_oid, vec![1.0, 0.0]) };
++            ec_ivf_debug!(am::debug_ec_ivf_gettuple_outputs(index_oid, vec![1.0, 0.0]));
+ 
+         assert_eq!(stats.tuples_removed, 2.0);
+         assert_eq!(stats.num_index_tuples, 0.0);
+@@ -1690,7 +1697,7 @@
+             .expect("insert should reuse preserved empty-list range");
+         let blocks_after_reinsert = ec_ivf_index_blocks("ec_ivf_vacuum_empty_list_idx");
+         let (head_after_reinsert, tail_after_reinsert, live_after_reinsert, _, inserted_after) =
+-            unsafe { am::debug_ec_ivf_directory_entry(index_oid, 0) };
++            ec_ivf_debug!(am::debug_ec_ivf_directory_entry(index_oid, 0));
+ 
+         assert_eq!(
+             blocks_after_reinsert, blocks_before_vacuum,
+@@ -2220,7 +2227,7 @@
+ 
+         let dead_tid = heap_tid_for_row("ec_ivf_drift_churn", 0);
+         Spi::run("DELETE FROM ec_ivf_drift_churn WHERE id = 0").expect("delete should succeed");
+-        unsafe { am::debug_ec_ivf_vacuum_remove_heap_tids(index_oid, &[dead_tid]) };
++        ec_ivf_debug!(am::debug_ec_ivf_vacuum_remove_heap_tids(index_oid, &[dead_tid]));
+ 
+         assert_eq!(
+             Spi::get_one::<i64>(
+@@ -2284,12 +2291,12 @@
+ 
+         Spi::run("DELETE FROM ec_ivf_vacuum_repeat WHERE id = 1").expect("delete should succeed");
+         let first_stats =
+-            unsafe { am::debug_ec_ivf_vacuum_remove_heap_tids(index_oid, &[dead_tid]) };
++            ec_ivf_debug!(am::debug_ec_ivf_vacuum_remove_heap_tids(index_oid, &[dead_tid]));
+         let second_stats =
+-            unsafe { am::debug_ec_ivf_vacuum_remove_heap_tids(index_oid, &[dead_tid]) };
++            ec_ivf_debug!(am::debug_ec_ivf_vacuum_remove_heap_tids(index_oid, &[dead_tid]));
+         let (_, _, directory_live, directory_dead, inserted_since_build) =
+-            unsafe { am::debug_ec_ivf_directory_summary(index_oid) };
+-        let (_, _, _, total_live, _, _) = unsafe { am::debug_ec_ivf_build_metadata(index_oid) };
++            ec_ivf_debug!(am::debug_ec_ivf_directory_summary(index_oid));
++        let (_, _, _, total_live, _, _) = ec_ivf_debug!(am::debug_ec_ivf_build_metadata(index_oid));
+ 
+         assert_eq!(first_stats.tuples_removed, 1.0);
+         assert_eq!(first_stats.num_index_tuples, 2.0);
+@@ -2317,7 +2324,7 @@
+             .expect("live insert should succeed");
+         let inserted_tid = heap_tid_for_row("ec_ivf_vacuum_insert", 2);
+         let before_outputs =
+-            unsafe { am::debug_ec_ivf_gettuple_outputs(index_oid, vec![1.0, 0.1]) }.0;
++            ec_ivf_debug!(am::debug_ec_ivf_gettuple_outputs(index_oid, vec![1.0, 0.1])).0;
+ 
+         assert!(
+             before_outputs
+@@ -2330,12 +2337,12 @@
+         );
+ 
+         Spi::run("DELETE FROM ec_ivf_vacuum_insert WHERE id = 2").expect("delete should succeed");
+-        let stats = unsafe { am::debug_ec_ivf_vacuum_remove_heap_tids(index_oid, &[inserted_tid]) };
++        let stats = ec_ivf_debug!(am::debug_ec_ivf_vacuum_remove_heap_tids(index_oid, &[inserted_tid]));
+         let after_outputs =
+-            unsafe { am::debug_ec_ivf_gettuple_outputs(index_oid, vec![1.0, 0.1]) }.0;
++            ec_ivf_debug!(am::debug_ec_ivf_gettuple_outputs(index_oid, vec![1.0, 0.1])).0;
+         let (_, _, directory_live, directory_dead, inserted_since_build) =
+-            unsafe { am::debug_ec_ivf_directory_summary(index_oid) };
+-        let (_, _, _, total_live, _, _) = unsafe { am::debug_ec_ivf_build_metadata(index_oid) };
++            ec_ivf_debug!(am::debug_ec_ivf_directory_summary(index_oid));
++        let (_, _, _, total_live, _, _) = ec_ivf_debug!(am::debug_ec_ivf_build_metadata(index_oid));
+ 
+         assert_eq!(stats.tuples_removed, 1.0);
+         assert_eq!(stats.num_index_tuples, 2.0);

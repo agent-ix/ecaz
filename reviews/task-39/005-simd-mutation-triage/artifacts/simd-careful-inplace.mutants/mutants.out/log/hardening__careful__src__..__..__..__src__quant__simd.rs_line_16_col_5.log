@@ -1,0 +1,94 @@
+
+*** hardening/careful/src/../../../src/quant/simd.rs:16:5: replace backend -> SimdBackend with Default::default()
+
+*** mutation diff:
+--- hardening/careful/src/../../../src/quant/simd.rs
++++ replace backend -> SimdBackend with Default::default()
+@@ -8,18 +8,17 @@
+     Scalar,
+     #[cfg(target_arch = "x86_64")]
+     Avx2Fma,
+     #[cfg(target_arch = "aarch64")]
+     Neon,
+ }
+ 
+ pub(crate) fn backend() -> SimdBackend {
+-    static BACKEND: OnceLock<SimdBackend> = OnceLock::new();
+-    *BACKEND.get_or_init(detect_backend)
++    Default::default() /* ~ changed by cargo-mutants ~ */
+ }
+ 
+ fn detect_backend() -> SimdBackend {
+     if let Some(forced) = forced_backend_from_env() {
+         return forced;
+     }
+ 
+     #[cfg(target_arch = "x86_64")]
+
+
+*** /opt/homebrew/bin/cargo test --no-run --verbose --package=ecaz-careful-hardening@0.1.0
+warning: failed to save last-use data
+This may prevent cargo from accurately tracking what is being used in its global cache. This information is used for automatically removing unused data in the cache.
+
+attempt to write a readonly database
+
+Caused by:
+  Error code 8: attempt to write a readonly database
+       Fresh cfg-if v1.0.4
+       Fresh libc v0.2.186
+       Fresh zerocopy v0.8.48
+       Fresh getrandom v0.2.17
+       Fresh ppv-lite86 v0.2.21
+       Fresh rand_core v0.6.4
+       Fresh rand_chacha v0.3.1
+       Fresh rand v0.8.6
+       Dirty ecaz-careful-hardening v0.1.0 (/Users/peter/dev/tqvector/hardening/careful): the file `hardening/careful/src/../../../src/quant/simd.rs` has changed (1779140075.632827927s, 2s after last build at 1779140073.706468470s)
+   Compiling ecaz-careful-hardening v0.1.0 (/Users/peter/dev/tqvector/hardening/careful)
+     Running `rustc --crate-name ecaz_careful_hardening --edition=2021 hardening/careful/src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --emit=dep-info,link -C lto=thin -C debuginfo=2 -C split-debuginfo=unpacked --test --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values("bench", "pg_test"))' -C metadata=0c4d85f949e93727 -C extra-filename=-c6d0dcfc6cd7dc04 --out-dir /Users/peter/dev/tqvector/target/debug/deps -C incremental=/Users/peter/dev/tqvector/target/debug/incremental -L dependency=/Users/peter/dev/tqvector/target/debug/deps --extern rand=/Users/peter/dev/tqvector/target/debug/deps/librand-d3f4ad8ecd072b17.rlib --extern rand_chacha=/Users/peter/dev/tqvector/target/debug/deps/librand_chacha-3b2dcfba3561f35f.rlib -C target-cpu=native -C link-arg=-undefined -C link-arg=dynamic_lookup`
+     Running `rustc --crate-name ecaz_careful_hardening --edition=2021 hardening/careful/src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type lib --emit=dep-info,metadata,link -C linker-plugin-lto -C debuginfo=2 -C split-debuginfo=unpacked --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values("bench", "pg_test"))' -C metadata=8cbfd78d2bbd6440 -C extra-filename=-f40d7c2651b9e0a3 --out-dir /Users/peter/dev/tqvector/target/debug/deps -C incremental=/Users/peter/dev/tqvector/target/debug/incremental -L dependency=/Users/peter/dev/tqvector/target/debug/deps --extern rand=/Users/peter/dev/tqvector/target/debug/deps/librand-d3f4ad8ecd072b17.rmeta --extern rand_chacha=/Users/peter/dev/tqvector/target/debug/deps/librand_chacha-3b2dcfba3561f35f.rmeta -C target-cpu=native -C link-arg=-undefined -C link-arg=dynamic_lookup`
+warning: unused import: `std::sync::OnceLock`
+ --> hardening/careful/src/../../../src/quant/simd.rs:4:5
+  |
+4 | use std::sync::OnceLock;
+  |     ^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+error[E0277]: the trait bound `SimdBackend: Default` is not satisfied
+  --> hardening/careful/src/../../../src/quant/simd.rs:16:5
+   |
+16 |     Default::default() /* ~ changed by cargo-mutants ~ */
+   |     ^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
+   |
+help: the trait `Default` is not implemented for `SimdBackend`
+  --> hardening/careful/src/../../../src/quant/simd.rs:7:1
+   |
+ 7 | pub(crate) enum SimdBackend {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+For more information about this error, try `rustc --explain E0277`.
+warning: `ecaz-careful-hardening` (lib) generated 1 warning
+error: could not compile `ecaz-careful-hardening` (lib) due to 1 previous error; 1 warning emitted
+
+Caused by:
+  process didn't exit successfully: `rustc --crate-name ecaz_careful_hardening --edition=2021 hardening/careful/src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type lib --emit=dep-info,metadata,link -C linker-plugin-lto -C debuginfo=2 -C split-debuginfo=unpacked --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values("bench", "pg_test"))' -C metadata=8cbfd78d2bbd6440 -C extra-filename=-f40d7c2651b9e0a3 --out-dir /Users/peter/dev/tqvector/target/debug/deps -C incremental=/Users/peter/dev/tqvector/target/debug/incremental -L dependency=/Users/peter/dev/tqvector/target/debug/deps --extern rand=/Users/peter/dev/tqvector/target/debug/deps/librand-d3f4ad8ecd072b17.rmeta --extern rand_chacha=/Users/peter/dev/tqvector/target/debug/deps/librand_chacha-3b2dcfba3561f35f.rmeta -C target-cpu=native -C link-arg=-undefined -C link-arg=dynamic_lookup` (exit status: 1)
+warning: build failed, waiting for other jobs to finish...
+error[E0277]: the trait bound `quant::simd::SimdBackend: Default` is not satisfied
+  --> hardening/careful/src/../../../src/quant/simd.rs:16:5
+   |
+16 |     Default::default() /* ~ changed by cargo-mutants ~ */
+   |     ^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
+   |
+help: the trait `Default` is not implemented for `quant::simd::SimdBackend`
+  --> hardening/careful/src/../../../src/quant/simd.rs:7:1
+   |
+ 7 | pub(crate) enum SimdBackend {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `ecaz-careful-hardening` (lib test) generated 1 warning (1 duplicate)
+error: could not compile `ecaz-careful-hardening` (lib test) due to 1 previous error; 1 warning emitted
+
+Caused by:
+  process didn't exit successfully: `rustc --crate-name ecaz_careful_hardening --edition=2021 hardening/careful/src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --emit=dep-info,link -C lto=thin -C debuginfo=2 -C split-debuginfo=unpacked --test --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values("bench", "pg_test"))' -C metadata=0c4d85f949e93727 -C extra-filename=-c6d0dcfc6cd7dc04 --out-dir /Users/peter/dev/tqvector/target/debug/deps -C incremental=/Users/peter/dev/tqvector/target/debug/incremental -L dependency=/Users/peter/dev/tqvector/target/debug/deps --extern rand=/Users/peter/dev/tqvector/target/debug/deps/librand-d3f4ad8ecd072b17.rlib --extern rand_chacha=/Users/peter/dev/tqvector/target/debug/deps/librand_chacha-3b2dcfba3561f35f.rlib -C target-cpu=native -C link-arg=-undefined -C link-arg=dynamic_lookup` (exit status: 1)
+
+*** result: Failure(101)

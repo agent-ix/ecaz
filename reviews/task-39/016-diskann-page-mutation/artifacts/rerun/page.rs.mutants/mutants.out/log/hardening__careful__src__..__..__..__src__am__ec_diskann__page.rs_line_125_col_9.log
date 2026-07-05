@@ -1,0 +1,134 @@
+
+*** hardening/careful/src/../../../src/am/ec_diskann/page.rs:125:9: replace VamanaMetadataPage::decode -> Result<Self, String> with Ok(Default::default())
+
+*** mutation diff:
+--- hardening/careful/src/../../../src/am/ec_diskann/page.rs
++++ replace VamanaMetadataPage::decode -> Result<Self, String> with Ok(Default::default())
+@@ -117,64 +117,17 @@
+         out.extend_from_slice(&self.search_subvector_count.to_le_bytes());
+         out.extend_from_slice(&self.search_subvector_dim.to_le_bytes());
+         self.grouped_codebook_head.encode_into(&mut out);
+         debug_assert_eq!(out.len(), VAMANA_METADATA_BYTES);
+         out
+     }
+ 
+     pub fn decode(input: &[u8]) -> Result<Self, String> {
+-        if input.len() != VAMANA_METADATA_BYTES {
+-            return Err(format!(
+-                "vamana metadata length mismatch: got {}, expected {VAMANA_METADATA_BYTES}",
+-                input.len()
+-            ));
+-        }
+-
+-        let format_version =
+-            u16::from_le_bytes(input[0..2].try_into().expect("format version bytes"));
+-        if format_version != INDEX_FORMAT_V3_DISKANN {
+-            return Err(format!(
+-                "invalid vamana metadata format version: got {format_version}, expected {INDEX_FORMAT_V3_DISKANN}"
+-            ));
+-        }
+-
+-        Ok(Self {
+-            format_version,
+-            entry_point: ItemPointer::decode(&input[2..8])?,
+-            graph_degree_r: u16::from_le_bytes(
+-                input[8..10].try_into().expect("graph_degree_r bytes"),
+-            ),
+-            build_list_size_l: u16::from_le_bytes(
+-                input[10..12].try_into().expect("build_list_size_l bytes"),
+-            ),
+-            alpha: f32::from_le_bytes(input[12..16].try_into().expect("alpha bytes")),
+-            dimensions: u16::from_le_bytes(input[16..18].try_into().expect("dimensions bytes")),
+-            seed: u64::from_le_bytes(input[18..26].try_into().expect("seed bytes")),
+-            inserted_since_rebuild: u64::from_le_bytes(
+-                input[26..34]
+-                    .try_into()
+-                    .expect("inserted-since-rebuild bytes"),
+-            ),
+-            needs_medoid_refresh: input[34] != 0,
+-            transform_kind: input[35],
+-            search_codec_kind: input[36],
+-            payload_flags: input[37],
+-            search_subvector_count: u16::from_le_bytes(
+-                input[38..40]
+-                    .try_into()
+-                    .expect("search_subvector_count bytes"),
+-            ),
+-            search_subvector_dim: u16::from_le_bytes(
+-                input[40..42]
+-                    .try_into()
+-                    .expect("search_subvector_dim bytes"),
+-            ),
+-            grouped_codebook_head: ItemPointer::decode(&input[42..48])?,
+-        })
++        Ok(Default::default()) /* ~ changed by cargo-mutants ~ */
+     }
+ }
+ 
+ #[cfg(test)]
+ mod tests {
+     use super::*;
+ 
+     // LA-001: fresh metadata round-trips losslessly.
+
+
+*** /opt/homebrew/bin/cargo test --no-run --verbose --package=ecaz-careful-hardening@0.1.0
+warning: failed to save last-use data
+This may prevent cargo from accurately tracking what is being used in its global cache. This information is used for automatically removing unused data in the cache.
+
+attempt to write a readonly database
+
+Caused by:
+  Error code 8: attempt to write a readonly database
+       Fresh cfg-if v1.0.4
+       Fresh equivalent v1.0.2
+       Fresh foldhash v0.1.5
+       Fresh allocator-api2 v0.2.21
+       Fresh libc v0.2.186
+       Fresh hashbrown v0.15.5
+       Fresh zerocopy v0.8.48
+       Fresh getrandom v0.2.17
+       Fresh ppv-lite86 v0.2.21
+       Fresh rand_core v0.6.4
+       Fresh rand_chacha v0.3.1
+       Fresh rand v0.8.6
+       Dirty ecaz-careful-hardening v0.1.0 (/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-dG6B6Z.tmp/hardening/careful): the file `hardening/careful/src/../../../src/am/ec_diskann/page.rs` has changed (1779155125.028078546s, 3s after last build at 1779155122.346188189s)
+   Compiling ecaz-careful-hardening v0.1.0 (/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-dG6B6Z.tmp/hardening/careful)
+     Running `rustc --crate-name ecaz_careful_hardening --edition=2021 hardening/careful/src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --emit=dep-info,link -C lto=thin -C debuginfo=2 -C split-debuginfo=unpacked --test --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values("bench", "pg17", "pg18", "pg_test"))' -C metadata=fea95cb08e562e2e -C extra-filename=-3bca8b65b65b7ce7 --out-dir /private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-dG6B6Z.tmp/target/debug/deps -C incremental=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-dG6B6Z.tmp/target/debug/incremental -L dependency=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-dG6B6Z.tmp/target/debug/deps --extern hashbrown=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-dG6B6Z.tmp/target/debug/deps/libhashbrown-a11478429b79192f.rlib --extern rand=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-dG6B6Z.tmp/target/debug/deps/librand-d3f4ad8ecd072b17.rlib --extern rand_chacha=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-dG6B6Z.tmp/target/debug/deps/librand_chacha-3b2dcfba3561f35f.rlib -C target-cpu=native -C link-arg=-undefined -C link-arg=dynamic_lookup`
+     Running `rustc --crate-name ecaz_careful_hardening --edition=2021 hardening/careful/src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type lib --emit=dep-info,metadata,link -C linker-plugin-lto -C debuginfo=2 -C split-debuginfo=unpacked --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values("bench", "pg17", "pg18", "pg_test"))' -C metadata=f055a7a7910e821f -C extra-filename=-48cfc8e37a0985df --out-dir /private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-dG6B6Z.tmp/target/debug/deps -C incremental=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-dG6B6Z.tmp/target/debug/incremental -L dependency=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-dG6B6Z.tmp/target/debug/deps --extern hashbrown=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-dG6B6Z.tmp/target/debug/deps/libhashbrown-a11478429b79192f.rmeta --extern rand=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-dG6B6Z.tmp/target/debug/deps/librand-d3f4ad8ecd072b17.rmeta --extern rand_chacha=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-dG6B6Z.tmp/target/debug/deps/librand_chacha-3b2dcfba3561f35f.rmeta -C target-cpu=native -C link-arg=-undefined -C link-arg=dynamic_lookup`
+error[E0277]: the trait bound `VamanaMetadataPage: Default` is not satisfied
+   --> hardening/careful/src/../../../src/am/ec_diskann/page.rs:125:12
+    |
+125 |         Ok(Default::default()) /* ~ changed by cargo-mutants ~ */
+    |            ^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
+    |
+help: the trait `Default` is not implemented for `VamanaMetadataPage`
+   --> hardening/careful/src/../../../src/am/ec_diskann/page.rs:53:1
+    |
+ 53 | pub struct VamanaMetadataPage {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+For more information about this error, try `rustc --explain E0277`.
+error: could not compile `ecaz-careful-hardening` (lib) due to 1 previous error
+
+Caused by:
+  process didn't exit successfully: `rustc --crate-name ecaz_careful_hardening --edition=2021 hardening/careful/src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type lib --emit=dep-info,metadata,link -C linker-plugin-lto -C debuginfo=2 -C split-debuginfo=unpacked --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values("bench", "pg17", "pg18", "pg_test"))' -C metadata=f055a7a7910e821f -C extra-filename=-48cfc8e37a0985df --out-dir /private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-dG6B6Z.tmp/target/debug/deps -C incremental=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-dG6B6Z.tmp/target/debug/incremental -L dependency=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-dG6B6Z.tmp/target/debug/deps --extern hashbrown=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-dG6B6Z.tmp/target/debug/deps/libhashbrown-a11478429b79192f.rmeta --extern rand=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-dG6B6Z.tmp/target/debug/deps/librand-d3f4ad8ecd072b17.rmeta --extern rand_chacha=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-dG6B6Z.tmp/target/debug/deps/librand_chacha-3b2dcfba3561f35f.rmeta -C target-cpu=native -C link-arg=-undefined -C link-arg=dynamic_lookup` (exit status: 1)
+warning: build failed, waiting for other jobs to finish...
+error[E0277]: the trait bound `careful_diskann_page::VamanaMetadataPage: Default` is not satisfied
+   --> hardening/careful/src/../../../src/am/ec_diskann/page.rs:125:12
+    |
+125 |         Ok(Default::default()) /* ~ changed by cargo-mutants ~ */
+    |            ^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
+    |
+help: the trait `Default` is not implemented for `careful_diskann_page::VamanaMetadataPage`
+   --> hardening/careful/src/../../../src/am/ec_diskann/page.rs:53:1
+    |
+ 53 | pub struct VamanaMetadataPage {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: could not compile `ecaz-careful-hardening` (lib test) due to 1 previous error
+
+Caused by:
+  process didn't exit successfully: `rustc --crate-name ecaz_careful_hardening --edition=2021 hardening/careful/src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --emit=dep-info,link -C lto=thin -C debuginfo=2 -C split-debuginfo=unpacked --test --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values("bench", "pg17", "pg18", "pg_test"))' -C metadata=fea95cb08e562e2e -C extra-filename=-3bca8b65b65b7ce7 --out-dir /private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-dG6B6Z.tmp/target/debug/deps -C incremental=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-dG6B6Z.tmp/target/debug/incremental -L dependency=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-dG6B6Z.tmp/target/debug/deps --extern hashbrown=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-dG6B6Z.tmp/target/debug/deps/libhashbrown-a11478429b79192f.rlib --extern rand=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-dG6B6Z.tmp/target/debug/deps/librand-d3f4ad8ecd072b17.rlib --extern rand_chacha=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-dG6B6Z.tmp/target/debug/deps/librand_chacha-3b2dcfba3561f35f.rlib -C target-cpu=native -C link-arg=-undefined -C link-arg=dynamic_lookup` (exit status: 1)
+
+*** result: Failure(101)

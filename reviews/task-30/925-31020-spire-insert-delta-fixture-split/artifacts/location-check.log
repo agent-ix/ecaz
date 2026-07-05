@@ -1,0 +1,10 @@
+Script started on 2026-05-13 17:57:52-07:00 [<not executed on terminal>]
+src/tests/insert.rs
+2229:    fn test_ec_spire_insert_after_build_delta_epoch() {
+2271:    fn test_ec_spire_insert_after_build_multiple_same_leaf_deltas() {
+2374:    fn test_pg18_ec_spire_concurrent_same_leaf_inserts() {
+
+src/tests/mod.rs
+12372:    fn test_pg18_ec_spire_placement_write_contention_distinct_pk_dml() {
+
+Script done on 2026-05-13 17:57:52-07:00 [COMMAND_EXIT_CODE="0"]

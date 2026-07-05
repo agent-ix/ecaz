@@ -1,0 +1,7 @@
+  amname  | amtype 
+----------+--------
+ ec_hnsw  | i
+ ec_ivf   | i
+ ec_spire | i
+(3 rows)
+

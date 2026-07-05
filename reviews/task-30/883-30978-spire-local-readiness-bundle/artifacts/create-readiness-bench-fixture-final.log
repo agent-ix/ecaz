@@ -1,0 +1,9 @@
+CREATE EXTENSION
+CREATE TABLE
+INSERT 0 600
+CREATE TABLE
+INSERT 0 12
+CREATE INDEX
+corpus_rows	600
+query_rows	12
+index_reloptions	{nlists=1,nprobe=1,rerank_width=0,storage_format=rabitq}

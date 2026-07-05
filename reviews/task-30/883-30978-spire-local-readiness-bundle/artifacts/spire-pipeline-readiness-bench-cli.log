@@ -1,0 +1,12 @@
+
+   0: [91mfetching exact-truth corpus from phase12_ready_corpus[0m
+   1: [91mfetching phase12_ready_corpus[0m
+   2: [91mdb error[0m
+   3: [91mERROR: ec_spire_distributed: DML requires a bigint primary-key equality predicate in v1
+      HINT: See ADR-069 for the v1 SPIRE distributed DML shape.[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/bench/recall.rs[0m:[35m592[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.

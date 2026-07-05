@@ -1,0 +1,315 @@
+[
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/ec_diskann/page.rs\n+++ replace << with >>\n@@ -18,17 +18,17 @@\n /// `INDEX_FORMAT_V1_SCALAR` (1) and `INDEX_FORMAT_V2_GROUPED` (2)\n /// used by `tqhnsw`.\n pub const INDEX_FORMAT_V3_DISKANN: u16 = 3;\n \n /// Vamana metadata page uses SRHT + grouped-PQ search codes, same as\n /// the `tqhnsw` V2 layout. These flags are kept compatible so that\n /// shared hot/cold page walkers can treat payload-flag bits\n /// identically across AMs.\n-pub const PAYLOAD_FLAG_BINARY_SIDECAR: u8 = 1 << 0;\n+pub const PAYLOAD_FLAG_BINARY_SIDECAR: u8 = 1 >> /* ~ changed by cargo-mutants ~ */ 0;\n pub const PAYLOAD_FLAG_GROUPED_SEARCH_CODE: u8 = 1 << 1;\n pub const PAYLOAD_FLAG_COLD_RERANK_PAYLOAD: u8 = 1 << 2;\n \n pub const VAMANA_TRANSFORM_KIND_SRHT: u8 = 1;\n pub const VAMANA_SEARCH_CODEC_GROUPED_PQ: u8 = 2;\n \n /// Size of the encoded metadata page payload. Locked at 48 bytes for\n /// the v0 layout; any field additions must bump the format tag.\n",
+    "file": "hardening/careful/src/../../../src/am/ec_diskann/page.rs",
+    "function": null,
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/am/ec_diskann/page.rs:26:47: replace << with >>",
+    "package": "ecaz-careful-hardening",
+    "replacement": ">>",
+    "span": {
+      "end": {
+        "column": 49,
+        "line": 26
+      },
+      "start": {
+        "column": 47,
+        "line": 26
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/ec_diskann/page.rs\n+++ replace << with >>\n@@ -19,17 +19,17 @@\n /// used by `tqhnsw`.\n pub const INDEX_FORMAT_V3_DISKANN: u16 = 3;\n \n /// Vamana metadata page uses SRHT + grouped-PQ search codes, same as\n /// the `tqhnsw` V2 layout. These flags are kept compatible so that\n /// shared hot/cold page walkers can treat payload-flag bits\n /// identically across AMs.\n pub const PAYLOAD_FLAG_BINARY_SIDECAR: u8 = 1 << 0;\n-pub const PAYLOAD_FLAG_GROUPED_SEARCH_CODE: u8 = 1 << 1;\n+pub const PAYLOAD_FLAG_GROUPED_SEARCH_CODE: u8 = 1 >> /* ~ changed by cargo-mutants ~ */ 1;\n pub const PAYLOAD_FLAG_COLD_RERANK_PAYLOAD: u8 = 1 << 2;\n \n pub const VAMANA_TRANSFORM_KIND_SRHT: u8 = 1;\n pub const VAMANA_SEARCH_CODEC_GROUPED_PQ: u8 = 2;\n \n /// Size of the encoded metadata page payload. Locked at 48 bytes for\n /// the v0 layout; any field additions must bump the format tag.\n pub const VAMANA_METADATA_BYTES: usize = 48;\n",
+    "file": "hardening/careful/src/../../../src/am/ec_diskann/page.rs",
+    "function": null,
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/am/ec_diskann/page.rs:27:52: replace << with >>",
+    "package": "ecaz-careful-hardening",
+    "replacement": ">>",
+    "span": {
+      "end": {
+        "column": 54,
+        "line": 27
+      },
+      "start": {
+        "column": 52,
+        "line": 27
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/ec_diskann/page.rs\n+++ replace << with >>\n@@ -20,17 +20,17 @@\n pub const INDEX_FORMAT_V3_DISKANN: u16 = 3;\n \n /// Vamana metadata page uses SRHT + grouped-PQ search codes, same as\n /// the `tqhnsw` V2 layout. These flags are kept compatible so that\n /// shared hot/cold page walkers can treat payload-flag bits\n /// identically across AMs.\n pub const PAYLOAD_FLAG_BINARY_SIDECAR: u8 = 1 << 0;\n pub const PAYLOAD_FLAG_GROUPED_SEARCH_CODE: u8 = 1 << 1;\n-pub const PAYLOAD_FLAG_COLD_RERANK_PAYLOAD: u8 = 1 << 2;\n+pub const PAYLOAD_FLAG_COLD_RERANK_PAYLOAD: u8 = 1 >> /* ~ changed by cargo-mutants ~ */ 2;\n \n pub const VAMANA_TRANSFORM_KIND_SRHT: u8 = 1;\n pub const VAMANA_SEARCH_CODEC_GROUPED_PQ: u8 = 2;\n \n /// Size of the encoded metadata page payload. Locked at 48 bytes for\n /// the v0 layout; any field additions must bump the format tag.\n pub const VAMANA_METADATA_BYTES: usize = 48;\n pub const VAMANA_METADATA_FORMAT_VERSION_OFFSET: usize = 0;\n",
+    "file": "hardening/careful/src/../../../src/am/ec_diskann/page.rs",
+    "function": null,
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/am/ec_diskann/page.rs:28:52: replace << with >>",
+    "package": "ecaz-careful-hardening",
+    "replacement": ">>",
+    "span": {
+      "end": {
+        "column": 54,
+        "line": 28
+      },
+      "start": {
+        "column": 52,
+        "line": 28
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/ec_diskann/page.rs\n+++ replace VamanaMetadataPage::empty -> Self with Default::default()\n@@ -71,38 +71,17 @@\n impl VamanaMetadataPage {\n     pub fn empty(\n         graph_degree_r: u16,\n         build_list_size_l: u16,\n         alpha: f32,\n         dimensions: u16,\n         seed: u64,\n     ) -> Self {\n-        Self {\n-            format_version: INDEX_FORMAT_V3_DISKANN,\n-            entry_point: ItemPointer::INVALID,\n-            graph_degree_r,\n-            build_list_size_l,\n-            alpha,\n-            dimensions,\n-            seed,\n-            inserted_since_rebuild: 0,\n-            needs_medoid_refresh: false,\n-            transform_kind: VAMANA_TRANSFORM_KIND_SRHT,\n-            search_codec_kind: VAMANA_SEARCH_CODEC_GROUPED_PQ,\n-            // V0 reranks from the heap `ecvector` row (ADR-044\n-            // default); there is no index-side cold payload chain.\n-            // `PAYLOAD_FLAG_COLD_RERANK_PAYLOAD` stays clear per\n-            // ADR-046 frozen rule 1 / ADR-047 frozen rule 4\n-            // (packet 11018).\n-            payload_flags: PAYLOAD_FLAG_GROUPED_SEARCH_CODE,\n-            search_subvector_count: 0,\n-            search_subvector_dim: 0,\n-            grouped_codebook_head: ItemPointer::INVALID,\n-        }\n+        Default::default() /* ~ changed by cargo-mutants ~ */\n     }\n \n     pub fn encode(&self) -> Vec<u8> {\n         let mut out = Vec::with_capacity(VAMANA_METADATA_BYTES);\n         out.extend_from_slice(&self.format_version.to_le_bytes());\n         self.entry_point.encode_into(&mut out);\n         out.extend_from_slice(&self.graph_degree_r.to_le_bytes());\n         out.extend_from_slice(&self.build_list_size_l.to_le_bytes());\n",
+    "file": "hardening/careful/src/../../../src/am/ec_diskann/page.rs",
+    "function": {
+      "function_name": "VamanaMetadataPage::empty",
+      "return_type": "-> Self",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 101
+        },
+        "start": {
+          "column": 5,
+          "line": 72
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/am/ec_diskann/page.rs:79:9: replace VamanaMetadataPage::empty -> Self with Default::default()",
+    "package": "ecaz-careful-hardening",
+    "replacement": "Default::default()",
+    "span": {
+      "end": {
+        "column": 10,
+        "line": 100
+      },
+      "start": {
+        "column": 9,
+        "line": 79
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/ec_diskann/page.rs\n+++ replace VamanaMetadataPage::encode -> Vec<u8> with vec![]\n@@ -96,34 +96,17 @@\n             payload_flags: PAYLOAD_FLAG_GROUPED_SEARCH_CODE,\n             search_subvector_count: 0,\n             search_subvector_dim: 0,\n             grouped_codebook_head: ItemPointer::INVALID,\n         }\n     }\n \n     pub fn encode(&self) -> Vec<u8> {\n-        let mut out = Vec::with_capacity(VAMANA_METADATA_BYTES);\n-        out.extend_from_slice(&self.format_version.to_le_bytes());\n-        self.entry_point.encode_into(&mut out);\n-        out.extend_from_slice(&self.graph_degree_r.to_le_bytes());\n-        out.extend_from_slice(&self.build_list_size_l.to_le_bytes());\n-        out.extend_from_slice(&self.alpha.to_le_bytes());\n-        out.extend_from_slice(&self.dimensions.to_le_bytes());\n-        out.extend_from_slice(&self.seed.to_le_bytes());\n-        out.extend_from_slice(&self.inserted_since_rebuild.to_le_bytes());\n-        out.push(self.needs_medoid_refresh as u8);\n-        out.push(self.transform_kind);\n-        out.push(self.search_codec_kind);\n-        out.push(self.payload_flags);\n-        out.extend_from_slice(&self.search_subvector_count.to_le_bytes());\n-        out.extend_from_slice(&self.search_subvector_dim.to_le_bytes());\n-        self.grouped_codebook_head.encode_into(&mut out);\n-        debug_assert_eq!(out.len(), VAMANA_METADATA_BYTES);\n-        out\n+        vec![] /* ~ changed by cargo-mutants ~ */\n     }\n \n     pub fn decode(input: &[u8]) -> Result<Self, String> {\n         if input.len() != VAMANA_METADATA_BYTES {\n             return Err(format!(\n                 \"vamana metadata length mismatch: got {}, expected {VAMANA_METADATA_BYTES}\",\n                 input.len()\n             ));\n",
+    "file": "hardening/careful/src/../../../src/am/ec_diskann/page.rs",
+    "function": {
+      "function_name": "VamanaMetadataPage::encode",
+      "return_type": "-> Vec<u8>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 122
+        },
+        "start": {
+          "column": 5,
+          "line": 103
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/am/ec_diskann/page.rs:104:9: replace VamanaMetadataPage::encode -> Vec<u8> with vec![]",
+    "package": "ecaz-careful-hardening",
+    "replacement": "vec![]",
+    "span": {
+      "end": {
+        "column": 12,
+        "line": 121
+      },
+      "start": {
+        "column": 9,
+        "line": 104
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/ec_diskann/page.rs\n+++ replace VamanaMetadataPage::encode -> Vec<u8> with vec![0]\n@@ -96,34 +96,17 @@\n             payload_flags: PAYLOAD_FLAG_GROUPED_SEARCH_CODE,\n             search_subvector_count: 0,\n             search_subvector_dim: 0,\n             grouped_codebook_head: ItemPointer::INVALID,\n         }\n     }\n \n     pub fn encode(&self) -> Vec<u8> {\n-        let mut out = Vec::with_capacity(VAMANA_METADATA_BYTES);\n-        out.extend_from_slice(&self.format_version.to_le_bytes());\n-        self.entry_point.encode_into(&mut out);\n-        out.extend_from_slice(&self.graph_degree_r.to_le_bytes());\n-        out.extend_from_slice(&self.build_list_size_l.to_le_bytes());\n-        out.extend_from_slice(&self.alpha.to_le_bytes());\n-        out.extend_from_slice(&self.dimensions.to_le_bytes());\n-        out.extend_from_slice(&self.seed.to_le_bytes());\n-        out.extend_from_slice(&self.inserted_since_rebuild.to_le_bytes());\n-        out.push(self.needs_medoid_refresh as u8);\n-        out.push(self.transform_kind);\n-        out.push(self.search_codec_kind);\n-        out.push(self.payload_flags);\n-        out.extend_from_slice(&self.search_subvector_count.to_le_bytes());\n-        out.extend_from_slice(&self.search_subvector_dim.to_le_bytes());\n-        self.grouped_codebook_head.encode_into(&mut out);\n-        debug_assert_eq!(out.len(), VAMANA_METADATA_BYTES);\n-        out\n+        vec![0] /* ~ changed by cargo-mutants ~ */\n     }\n \n     pub fn decode(input: &[u8]) -> Result<Self, String> {\n         if input.len() != VAMANA_METADATA_BYTES {\n             return Err(format!(\n                 \"vamana metadata length mismatch: got {}, expected {VAMANA_METADATA_BYTES}\",\n                 input.len()\n             ));\n",
+    "file": "hardening/careful/src/../../../src/am/ec_diskann/page.rs",
+    "function": {
+      "function_name": "VamanaMetadataPage::encode",
+      "return_type": "-> Vec<u8>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 122
+        },
+        "start": {
+          "column": 5,
+          "line": 103
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/am/ec_diskann/page.rs:104:9: replace VamanaMetadataPage::encode -> Vec<u8> with vec![0]",
+    "package": "ecaz-careful-hardening",
+    "replacement": "vec![0]",
+    "span": {
+      "end": {
+        "column": 12,
+        "line": 121
+      },
+      "start": {
+        "column": 9,
+        "line": 104
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/ec_diskann/page.rs\n+++ replace VamanaMetadataPage::encode -> Vec<u8> with vec![1]\n@@ -96,34 +96,17 @@\n             payload_flags: PAYLOAD_FLAG_GROUPED_SEARCH_CODE,\n             search_subvector_count: 0,\n             search_subvector_dim: 0,\n             grouped_codebook_head: ItemPointer::INVALID,\n         }\n     }\n \n     pub fn encode(&self) -> Vec<u8> {\n-        let mut out = Vec::with_capacity(VAMANA_METADATA_BYTES);\n-        out.extend_from_slice(&self.format_version.to_le_bytes());\n-        self.entry_point.encode_into(&mut out);\n-        out.extend_from_slice(&self.graph_degree_r.to_le_bytes());\n-        out.extend_from_slice(&self.build_list_size_l.to_le_bytes());\n-        out.extend_from_slice(&self.alpha.to_le_bytes());\n-        out.extend_from_slice(&self.dimensions.to_le_bytes());\n-        out.extend_from_slice(&self.seed.to_le_bytes());\n-        out.extend_from_slice(&self.inserted_since_rebuild.to_le_bytes());\n-        out.push(self.needs_medoid_refresh as u8);\n-        out.push(self.transform_kind);\n-        out.push(self.search_codec_kind);\n-        out.push(self.payload_flags);\n-        out.extend_from_slice(&self.search_subvector_count.to_le_bytes());\n-        out.extend_from_slice(&self.search_subvector_dim.to_le_bytes());\n-        self.grouped_codebook_head.encode_into(&mut out);\n-        debug_assert_eq!(out.len(), VAMANA_METADATA_BYTES);\n-        out\n+        vec![1] /* ~ changed by cargo-mutants ~ */\n     }\n \n     pub fn decode(input: &[u8]) -> Result<Self, String> {\n         if input.len() != VAMANA_METADATA_BYTES {\n             return Err(format!(\n                 \"vamana metadata length mismatch: got {}, expected {VAMANA_METADATA_BYTES}\",\n                 input.len()\n             ));\n",
+    "file": "hardening/careful/src/../../../src/am/ec_diskann/page.rs",
+    "function": {
+      "function_name": "VamanaMetadataPage::encode",
+      "return_type": "-> Vec<u8>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 122
+        },
+        "start": {
+          "column": 5,
+          "line": 103
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/am/ec_diskann/page.rs:104:9: replace VamanaMetadataPage::encode -> Vec<u8> with vec![1]",
+    "package": "ecaz-careful-hardening",
+    "replacement": "vec![1]",
+    "span": {
+      "end": {
+        "column": 12,
+        "line": 121
+      },
+      "start": {
+        "column": 9,
+        "line": 104
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/ec_diskann/page.rs\n+++ replace VamanaMetadataPage::decode -> Result<Self, String> with Ok(Default::default())\n@@ -117,64 +117,17 @@\n         out.extend_from_slice(&self.search_subvector_count.to_le_bytes());\n         out.extend_from_slice(&self.search_subvector_dim.to_le_bytes());\n         self.grouped_codebook_head.encode_into(&mut out);\n         debug_assert_eq!(out.len(), VAMANA_METADATA_BYTES);\n         out\n     }\n \n     pub fn decode(input: &[u8]) -> Result<Self, String> {\n-        if input.len() != VAMANA_METADATA_BYTES {\n-            return Err(format!(\n-                \"vamana metadata length mismatch: got {}, expected {VAMANA_METADATA_BYTES}\",\n-                input.len()\n-            ));\n-        }\n-\n-        let format_version =\n-            u16::from_le_bytes(input[0..2].try_into().expect(\"format version bytes\"));\n-        if format_version != INDEX_FORMAT_V3_DISKANN {\n-            return Err(format!(\n-                \"invalid vamana metadata format version: got {format_version}, expected {INDEX_FORMAT_V3_DISKANN}\"\n-            ));\n-        }\n-\n-        Ok(Self {\n-            format_version,\n-            entry_point: ItemPointer::decode(&input[2..8])?,\n-            graph_degree_r: u16::from_le_bytes(\n-                input[8..10].try_into().expect(\"graph_degree_r bytes\"),\n-            ),\n-            build_list_size_l: u16::from_le_bytes(\n-                input[10..12].try_into().expect(\"build_list_size_l bytes\"),\n-            ),\n-            alpha: f32::from_le_bytes(input[12..16].try_into().expect(\"alpha bytes\")),\n-            dimensions: u16::from_le_bytes(input[16..18].try_into().expect(\"dimensions bytes\")),\n-            seed: u64::from_le_bytes(input[18..26].try_into().expect(\"seed bytes\")),\n-            inserted_since_rebuild: u64::from_le_bytes(\n-                input[26..34]\n-                    .try_into()\n-                    .expect(\"inserted-since-rebuild bytes\"),\n-            ),\n-            needs_medoid_refresh: input[34] != 0,\n-            transform_kind: input[35],\n-            search_codec_kind: input[36],\n-            payload_flags: input[37],\n-            search_subvector_count: u16::from_le_bytes(\n-                input[38..40]\n-                    .try_into()\n-                    .expect(\"search_subvector_count bytes\"),\n-            ),\n-            search_subvector_dim: u16::from_le_bytes(\n-                input[40..42]\n-                    .try_into()\n-                    .expect(\"search_subvector_dim bytes\"),\n-            ),\n-            grouped_codebook_head: ItemPointer::decode(&input[42..48])?,\n-        })\n+        Ok(Default::default()) /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n #[cfg(test)]\n mod tests {\n     use super::*;\n \n     // LA-001: fresh metadata round-trips losslessly.\n",
+    "file": "hardening/careful/src/../../../src/am/ec_diskann/page.rs",
+    "function": {
+      "function_name": "VamanaMetadataPage::decode",
+      "return_type": "-> Result<Self, String>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 173
+        },
+        "start": {
+          "column": 5,
+          "line": 124
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/am/ec_diskann/page.rs:125:9: replace VamanaMetadataPage::decode -> Result<Self, String> with Ok(Default::default())",
+    "package": "ecaz-careful-hardening",
+    "replacement": "Ok(Default::default())",
+    "span": {
+      "end": {
+        "column": 11,
+        "line": 172
+      },
+      "start": {
+        "column": 9,
+        "line": 125
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/ec_diskann/page.rs\n+++ replace != with == in VamanaMetadataPage::decode\n@@ -117,17 +117,17 @@\n         out.extend_from_slice(&self.search_subvector_count.to_le_bytes());\n         out.extend_from_slice(&self.search_subvector_dim.to_le_bytes());\n         self.grouped_codebook_head.encode_into(&mut out);\n         debug_assert_eq!(out.len(), VAMANA_METADATA_BYTES);\n         out\n     }\n \n     pub fn decode(input: &[u8]) -> Result<Self, String> {\n-        if input.len() != VAMANA_METADATA_BYTES {\n+        if input.len() == /* ~ changed by cargo-mutants ~ */ VAMANA_METADATA_BYTES {\n             return Err(format!(\n                 \"vamana metadata length mismatch: got {}, expected {VAMANA_METADATA_BYTES}\",\n                 input.len()\n             ));\n         }\n \n         let format_version =\n             u16::from_le_bytes(input[0..2].try_into().expect(\"format version bytes\"));\n",
+    "file": "hardening/careful/src/../../../src/am/ec_diskann/page.rs",
+    "function": {
+      "function_name": "VamanaMetadataPage::decode",
+      "return_type": "-> Result<Self, String>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 173
+        },
+        "start": {
+          "column": 5,
+          "line": 124
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/am/ec_diskann/page.rs:125:24: replace != with == in VamanaMetadataPage::decode",
+    "package": "ecaz-careful-hardening",
+    "replacement": "==",
+    "span": {
+      "end": {
+        "column": 26,
+        "line": 125
+      },
+      "start": {
+        "column": 24,
+        "line": 125
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/ec_diskann/page.rs\n+++ replace != with == in VamanaMetadataPage::decode\n@@ -126,17 +126,17 @@\n             return Err(format!(\n                 \"vamana metadata length mismatch: got {}, expected {VAMANA_METADATA_BYTES}\",\n                 input.len()\n             ));\n         }\n \n         let format_version =\n             u16::from_le_bytes(input[0..2].try_into().expect(\"format version bytes\"));\n-        if format_version != INDEX_FORMAT_V3_DISKANN {\n+        if format_version == /* ~ changed by cargo-mutants ~ */ INDEX_FORMAT_V3_DISKANN {\n             return Err(format!(\n                 \"invalid vamana metadata format version: got {format_version}, expected {INDEX_FORMAT_V3_DISKANN}\"\n             ));\n         }\n \n         Ok(Self {\n             format_version,\n             entry_point: ItemPointer::decode(&input[2..8])?,\n",
+    "file": "hardening/careful/src/../../../src/am/ec_diskann/page.rs",
+    "function": {
+      "function_name": "VamanaMetadataPage::decode",
+      "return_type": "-> Result<Self, String>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 173
+        },
+        "start": {
+          "column": 5,
+          "line": 124
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/am/ec_diskann/page.rs:134:27: replace != with == in VamanaMetadataPage::decode",
+    "package": "ecaz-careful-hardening",
+    "replacement": "==",
+    "span": {
+      "end": {
+        "column": 29,
+        "line": 134
+      },
+      "start": {
+        "column": 27,
+        "line": 134
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/ec_diskann/page.rs\n+++ replace != with == in VamanaMetadataPage::decode\n@@ -149,17 +149,17 @@\n             alpha: f32::from_le_bytes(input[12..16].try_into().expect(\"alpha bytes\")),\n             dimensions: u16::from_le_bytes(input[16..18].try_into().expect(\"dimensions bytes\")),\n             seed: u64::from_le_bytes(input[18..26].try_into().expect(\"seed bytes\")),\n             inserted_since_rebuild: u64::from_le_bytes(\n                 input[26..34]\n                     .try_into()\n                     .expect(\"inserted-since-rebuild bytes\"),\n             ),\n-            needs_medoid_refresh: input[34] != 0,\n+            needs_medoid_refresh: input[34] == /* ~ changed by cargo-mutants ~ */ 0,\n             transform_kind: input[35],\n             search_codec_kind: input[36],\n             payload_flags: input[37],\n             search_subvector_count: u16::from_le_bytes(\n                 input[38..40]\n                     .try_into()\n                     .expect(\"search_subvector_count bytes\"),\n             ),\n",
+    "file": "hardening/careful/src/../../../src/am/ec_diskann/page.rs",
+    "function": {
+      "function_name": "VamanaMetadataPage::decode",
+      "return_type": "-> Result<Self, String>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 173
+        },
+        "start": {
+          "column": 5,
+          "line": 124
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/am/ec_diskann/page.rs:157:45: replace != with == in VamanaMetadataPage::decode",
+    "package": "ecaz-careful-hardening",
+    "replacement": "==",
+    "span": {
+      "end": {
+        "column": 47,
+        "line": 157
+      },
+      "start": {
+        "column": 45,
+        "line": 157
+      }
+    }
+  }
+]

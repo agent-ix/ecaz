@@ -1,0 +1,211 @@
+{
+  "suite": "task33-hnsw-m5-reference-refresh",
+  "schema_version": 1,
+  "config": "reviews/task-33/001-30212-task33-hnsw-m5-reference-refresh/task33-hnsw-m5-reference-refresh.packet.json",
+  "config_sha256": "7bac21528ac5672e5a85503e1e09a562c06ebc3a62da7019852ac316c47b12ad",
+  "dry_run": true,
+  "generated_at_unix_ms": 1780156438471,
+  "connection": {
+    "database": "postgres",
+    "host": "/Users/peter/.pgrx",
+    "port": 28818,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "load-hnsw-real50k-setup",
+      "kind": "load",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-33/001-30212-task33-hnsw-m5-reference-refresh/artifacts/load-hnsw-real50k-setup.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "task33_m5_hnsw_real50k",
+        "--profile",
+        "ec_hnsw",
+        "--corpus-file",
+        "data/task31_m5_dbpedia_staged/ec_hnsw_real_50k_corpus.tsv",
+        "--queries-file",
+        "data/task31_m5_dbpedia_staged/ec_hnsw_real_50k_queries.tsv",
+        "--manifest-file",
+        "data/task31_m5_dbpedia_staged/ec_hnsw_real_50k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--m",
+        "16",
+        "--ef-construction",
+        "128"
+      ],
+      "selected": true,
+      "tags": [
+        "load",
+        "hnsw",
+        "real50k",
+        "setup"
+      ],
+      "expected_artifacts": [
+        "reviews/task-33/001-30212-task33-hnsw-m5-reference-refresh/artifacts/load-hnsw-real50k-setup.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "worker-sweep-hnsw-real50k",
+      "kind": "raw",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--raw",
+        "--file",
+        "reviews/task-33/001-30212-task33-hnsw-m5-reference-refresh/artifacts/task33_hnsw_m5_worker_sweep.sql",
+        "--log-output",
+        "reviews/task-33/001-30212-task33-hnsw-m5-reference-refresh/artifacts/task33_hnsw_m5_worker_sweep.log"
+      ],
+      "selected": true,
+      "tags": [
+        "worker-sweep",
+        "hnsw",
+        "real50k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-33/001-30212-task33-hnsw-m5-reference-refresh/artifacts/task33_hnsw_m5_worker_sweep.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "recall-hnsw-real50k-best-worker-index",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "recall",
+        "--prefix",
+        "task33_m5_hnsw_real50k",
+        "--profile",
+        "ec_hnsw",
+        "--k",
+        "10",
+        "--sweep",
+        "64,128,200,400",
+        "--queries-limit",
+        "200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--truth-cache-file",
+        "reviews/task-33/001-30212-task33-hnsw-m5-reference-refresh/artifacts/truth-real50k-k10.json",
+        "--log-output",
+        "reviews/task-33/001-30212-task33-hnsw-m5-reference-refresh/artifacts/recall-hnsw-real50k-best-worker-index.log"
+      ],
+      "selected": true,
+      "tags": [
+        "recall",
+        "hnsw",
+        "real50k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-33/001-30212-task33-hnsw-m5-reference-refresh/artifacts/recall-hnsw-real50k-best-worker-index.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "latency-hnsw-real50k-best-worker-index",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "latency",
+        "--prefix",
+        "task33_m5_hnsw_real50k",
+        "--profile",
+        "ec_hnsw",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "200",
+        "--sweep",
+        "64,128,200,400",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--sample-backend-memory",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "reviews/task-33/001-30212-task33-hnsw-m5-reference-refresh/artifacts/latency-hnsw-real50k-best-worker-index.log"
+      ],
+      "selected": true,
+      "tags": [
+        "latency",
+        "hnsw",
+        "real50k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-33/001-30212-task33-hnsw-m5-reference-refresh/artifacts/latency-hnsw-real50k-best-worker-index.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "storage-hnsw-real50k-best-worker-index",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-33/001-30212-task33-hnsw-m5-reference-refresh/artifacts/storage-hnsw-real50k-best-worker-index.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "task33_m5_hnsw_real50k"
+      ],
+      "selected": true,
+      "tags": [
+        "storage",
+        "hnsw",
+        "real50k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-33/001-30212-task33-hnsw-m5-reference-refresh/artifacts/storage-hnsw-real50k-best-worker-index.log"
+      ],
+      "status": "dry-run"
+    }
+  ]
+}

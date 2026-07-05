@@ -1,0 +1,17 @@
+Script started on 2026-05-11 22:54:14-07:00 [<not executed on terminal>]
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.14s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-1903db179d6aa6e7)
+
+running 7 tests
+test am::ec_spire::tests::production_scan_am_delivery_preserves_upstream_blocker ... [32mok[m
+test am::ec_spire::tests::production_scan_am_delivery_blocks_mixed_remote_origin_outputs ... [32mok[m
+test am::ec_spire::tests::production_scan_am_delivery_allows_only_local_heap_tid_outputs ... [32mok[m
+test am::ec_spire::tests::production_scan_am_tuple_path_preserves_stale_locator_blocker ... [32mok[m
+test am::ec_spire::tests::production_scan_am_tuple_path_blocks_remote_global_dedupe_winner ... [32mok[m
+test am::ec_spire::tests::production_scan_am_tuple_path_keeps_node_scoped_local_vec_ids_distinct ... [32mok[m
+test am::ec_spire::tests::production_scan_am_tuple_path_dedupes_global_vec_ids_before_delivery ... [32mok[m
+
+test result: [32mok[m. 7 passed; 0 failed; 0 ignored; 0 measured; 1669 filtered out; finished in 0.00s
+
+
+Script done on 2026-05-11 22:54:14-07:00 [COMMAND_EXIT_CODE="0"]

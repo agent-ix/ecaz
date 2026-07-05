@@ -1,0 +1,22 @@
+{
+    "CommandId": "a927124e-ede2-4dfb-950c-dd1826592122",
+    "InstanceId": "i-0056e46b981edbb17",
+    "Comment": "",
+    "DocumentName": "AWS-RunShellScript",
+    "DocumentVersion": "$DEFAULT",
+    "PluginName": "aws:runShellScript",
+    "ResponseCode": 0,
+    "ExecutionStartDateTime": "2026-05-31T02:22:13.103Z",
+    "ExecutionElapsedTime": "PT0.129S",
+    "ExecutionEndDateTime": "2026-05-31T02:22:13.103Z",
+    "Status": "Success",
+    "StatusDetails": "Success",
+    "StandardOutputContent": "          captured_at          | state  | wait_event_type |  wait_event  |    query_age    |                                query                                \n-------------------------------+--------+-----------------+--------------+-----------------+---------------------------------------------------------------------\n 2026-05-31 02:22:13.226795+00 | active | IO              | DataFileRead | 00:03:03.216888 | SELECT id, source FROM task67_1m_hnsw_m7g2xlarge_corpus ORDER BY id\n(1 row)\n\n",
+    "StandardOutputUrl": "",
+    "StandardErrorContent": "++ sudo -u postgres psql -h /var/run/postgresql -d postgres -c 'SELECT now() AS captured_at, state, wait_event_type, wait_event, now() - query_start AS query_age, left(query, 180) AS query FROM pg_stat_activity WHERE datname = '\\''postgres'\\'' AND usename = '\\''postgres'\\'' AND pid <> pg_backend_pid() ORDER BY backend_start;'\n",
+    "StandardErrorUrl": "",
+    "CloudWatchOutputConfig": {
+        "CloudWatchLogGroupName": "",
+        "CloudWatchOutputEnabled": false
+    }
+}

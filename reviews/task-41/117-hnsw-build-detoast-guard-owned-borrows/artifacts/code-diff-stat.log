@@ -1,0 +1,3 @@
+98380d5c Keep HNSW build detoast borrows guard-owned
+ src/am/ec_hnsw/build.rs | 46 +++++++++++++++++++++++++++++++++++++---------
+ 1 file changed, 37 insertions(+), 9 deletions(-)

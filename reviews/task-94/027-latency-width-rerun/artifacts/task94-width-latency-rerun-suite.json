@@ -1,0 +1,46 @@
+{
+  "name": "task94-width-latency-rerun",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-94/027-latency-width-rerun/artifacts",
+  "defaults": {
+    "pg": 18,
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 100,
+    "iterations": 500,
+    "force_index": true,
+    "sample_backend_memory": false
+  },
+  "steps": [
+    {
+      "kind": "latency",
+      "name": "latency-ivf-pqfastscan-10k-batch-on",
+      "tags": ["task94", "task101", "local", "ivf", "pq_fastscan", "real10k", "kernel_on", "quant=grouped_pq", "isa=avx2", "width_histogram"],
+      "prefix": "task94_local_pqfs10k_roff",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [32, 64],
+      "iterations": 500,
+      "concurrency": 1,
+      "ivf_scratch_soa_batch_decode": true,
+      "cache_state": "task94_width_rerun_10k_batch_on",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-ivf-pqfastscan-10k-batch-on.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-diskann-pqfastscan-50k-grouped-pq",
+      "tags": ["task94", "task101", "local", "diskann", "pq_fastscan", "real50k", "kernel_on", "quant=grouped_pq", "isa=avx2", "width_histogram"],
+      "prefix": "task67_local_fullq_50k_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [64, 128],
+      "iterations": 120,
+      "concurrency": 1,
+      "session_gucs": ["ec_diskann.prefilter_kind=grouped_pq"],
+      "cache_state": "task94_width_rerun_diskann_50k_grouped_pq",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-diskann-pqfastscan-50k-grouped-pq.log"
+    }
+  ]
+}

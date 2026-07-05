@@ -1,0 +1,9 @@
+CREATE TABLE
+COPY 240
+SELECT 240
+DO
+ active_epoch | leaf_count | assignment_count | next_pid | next_local_vec_seq |    status    
+--------------+------------+------------------+----------+--------------------+--------------
+            1 |          1 |              240 |        5 |                479 | materialized
+(1 row)
+

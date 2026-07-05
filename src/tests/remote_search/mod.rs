@@ -1,0 +1,10 @@
+    include!("contracts.rs");
+    include!("tuple_heap.rs");
+    include!("coordinator_catalog.rs");
+    include!("production_summary.rs");
+    include!("transport_faults.rs");
+    include!("receive_faults.rs");
+    include!("libpq_executor.rs");
+    include!("node_catalog.rs");
+    include!("epoch_manifest.rs");
+    include!("catalog_cleanup_policy.rs");

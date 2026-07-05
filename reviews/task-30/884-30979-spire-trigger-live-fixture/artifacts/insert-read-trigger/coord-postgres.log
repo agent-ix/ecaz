@@ -1,0 +1,13 @@
+2026-05-13 01:27:58.802 PDT [1810372] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-05-13 01:27:58.804 PDT [1810372] LOG:  listening on Unix socket "/home/peter/dev/ecaz/target/spire-insert-read-after-cscan-pg18-p12trig/s/.s.PGSQL.39200"
+2026-05-13 01:27:58.810 PDT [1810378] LOG:  database system was shut down at 2026-05-13 01:27:58 PDT
+2026-05-13 01:27:58.817 PDT [1810372] LOG:  database system is ready to accept connections
+2026-05-13 01:27:59.477 PDT [1810410] FATAL:  unrecognized configuration parameter "enable_customscan"
+2026-05-13 01:27:59.479 PDT [1810411] FATAL:  unrecognized configuration parameter "enable_customscan"
+2026-05-13 01:27:59.481 PDT [1810372] LOG:  received fast shutdown request
+2026-05-13 01:27:59.484 PDT [1810372] LOG:  aborting any active transactions
+2026-05-13 01:27:59.485 PDT [1810372] LOG:  background worker "logical replication launcher" (PID 1810381) exited with exit code 1
+2026-05-13 01:27:59.486 PDT [1810376] LOG:  shutting down
+2026-05-13 01:27:59.488 PDT [1810376] LOG:  checkpoint starting: shutdown immediate
+2026-05-13 01:27:59.587 PDT [1810376] LOG:  checkpoint complete: wrote 305 buffers (1.9%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.010 s, sync=0.077 s, total=0.101 s; sync files=126, longest=0.005 s, average=0.001 s; distance=2313 kB, estimate=2313 kB; lsn=0/1996BE8, redo lsn=0/1996BE8
+2026-05-13 01:27:59.598 PDT [1810372] LOG:  database system is shut down

@@ -1,0 +1,4 @@
+DROP TABLE
+DROP TABLE
+NOTICE:  table "task65head_w0_real100k_corpus" does not exist, skipping
+NOTICE:  table "task65head_w0_real100k_queries" does not exist, skipping

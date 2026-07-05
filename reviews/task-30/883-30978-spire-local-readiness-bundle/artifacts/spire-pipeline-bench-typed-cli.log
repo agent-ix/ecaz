@@ -1,0 +1,11 @@
+
+   0: [91mfetching exact-truth corpus from phase12_tuple_measure_corpus[0m
+   1: [91mfetching phase12_tuple_measure_corpus[0m
+   2: [91mdb error[0m
+   3: [91mERROR: column "source" does not exist[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/bench/recall.rs[0m:[35m592[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.

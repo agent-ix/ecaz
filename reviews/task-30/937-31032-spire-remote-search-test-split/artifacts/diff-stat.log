@@ -1,0 +1,17 @@
+Script started on 2026-05-13 20:34:56-07:00 [<not executed on terminal>]
+ src/tests/mod.rs                                  |     2 [32m+[m[31m-[m
+ src/tests/remote_search.rs                        | 12246 [31m--------------------[m
+ src/tests/remote_search/catalog_cleanup_policy.rs |   904 [32m++[m
+ src/tests/remote_search/contracts.rs              |  2864 [32m+++++[m
+ src/tests/remote_search/coordinator_catalog.rs    |  1562 [32m+++[m
+ src/tests/remote_search/epoch_manifest.rs         |  1752 [32m+++[m
+ src/tests/remote_search/libpq_executor.rs         |  1266 [32m++[m
+ src/tests/remote_search/mod.rs                    |    10 [32m+[m
+ src/tests/remote_search/node_catalog.rs           |  1140 [32m++[m
+ src/tests/remote_search/production_summary.rs     |   853 [32m++[m
+ src/tests/remote_search/receive_faults.rs         |   937 [32m++[m
+ src/tests/remote_search/transport_faults.rs       |   238 [32m+[m
+ src/tests/remote_search/tuple_heap.rs             |   721 [32m++[m
+ 13 files changed, 12248 insertions(+), 12247 deletions(-)
+
+Script done on 2026-05-13 20:34:56-07:00 [COMMAND_EXIT_CODE="0"]

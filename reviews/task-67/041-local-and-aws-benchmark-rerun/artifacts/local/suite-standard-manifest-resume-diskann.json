@@ -1,0 +1,851 @@
+{
+  "suite": "task67-local-50k-100k-standard",
+  "schema_version": 1,
+  "config": "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/task67-local-50k-100k-standard-suite.json",
+  "config_sha256": "42df3625bd33e7a143f72999cf119fa54371936a2744c0c3685efcf6c3bae061",
+  "dry_run": false,
+  "generated_at_unix_ms": 1780198463173,
+  "connection": {
+    "database": "postgres",
+    "host": "/home/peter/.pgrx",
+    "port": 28818,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "prepare-ec-real-50k",
+      "kind": "corpus-prepare",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "prepare",
+        "ec_real_50k"
+      ],
+      "expected_artifacts": [
+        "target/real-corpus/staged-task67-local/ec_real_50k_corpus.tsv",
+        "target/real-corpus/staged-task67-local/ec_real_50k_queries.tsv",
+        "target/real-corpus/staged-task67-local/ec_real_50k_manifest.json"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-50k-ivfrabitq",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "ec_real_50k",
+        "ivfrabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/load-50k-ivfrabitq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-50k-ivfrabitq",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "recall",
+        "ec_real_50k",
+        "ivfrabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/recall-50k-ivfrabitq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-50k-ivfrabitq",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "latency",
+        "ec_real_50k",
+        "ivfrabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/latency-50k-ivfrabitq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-50k-ivfrabitq",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "ec_real_50k",
+        "ivfrabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/storage-50k-ivfrabitq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-50k-hnsw",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "ec_real_50k",
+        "hnsw"
+      ],
+      "expected_artifacts": [
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/load-50k-hnsw.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-50k-hnsw",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "recall",
+        "ec_real_50k",
+        "hnsw"
+      ],
+      "expected_artifacts": [
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/recall-50k-hnsw.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-50k-hnsw",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "latency",
+        "ec_real_50k",
+        "hnsw"
+      ],
+      "expected_artifacts": [
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/latency-50k-hnsw.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-50k-hnsw",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "ec_real_50k",
+        "hnsw"
+      ],
+      "expected_artifacts": [
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/storage-50k-hnsw.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-50k-diskann",
+      "kind": "load",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/load-50k-diskann.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "task67_local_fullq_50k_diskann",
+        "--profile",
+        "ec_diskann",
+        "--corpus-file",
+        "target/real-corpus/staged-task67-local/ec_real_50k_corpus.tsv",
+        "--queries-file",
+        "target/real-corpus/staged-task67-local/ec_real_50k_queries.tsv",
+        "--manifest-file",
+        "target/real-corpus/staged-task67-local/ec_real_50k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--bits",
+        "4",
+        "--seed",
+        "42"
+      ],
+      "selected": true,
+      "tags": [
+        "load",
+        "ec_real_50k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/load-50k-diskann.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1780198463175,
+      "finished_at_unix_ms": 1780198698879,
+      "duration_ms": 236290,
+      "exit_code": 0
+    },
+    {
+      "name": "recall-50k-diskann",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "recall",
+        "--prefix",
+        "task67_local_fullq_50k_diskann",
+        "--profile",
+        "ec_diskann",
+        "--k",
+        "10",
+        "--sweep",
+        "64,128,200,400,800",
+        "--queries-limit",
+        "200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--truth-cache-file",
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/truth-50k-k10.json",
+        "--log-output",
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/recall-50k-diskann.log"
+      ],
+      "selected": true,
+      "tags": [
+        "recall",
+        "ec_real_50k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/recall-50k-diskann.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1780198698880,
+      "finished_at_unix_ms": 1780198716735,
+      "duration_ms": 17854,
+      "exit_code": 0
+    },
+    {
+      "name": "latency-50k-diskann",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "latency",
+        "--prefix",
+        "task67_local_fullq_50k_diskann",
+        "--profile",
+        "ec_diskann",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "200",
+        "--sweep",
+        "64,128,200,400,800",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/latency-50k-diskann.log"
+      ],
+      "selected": true,
+      "tags": [
+        "latency",
+        "ec_real_50k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/latency-50k-diskann.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1780198716736,
+      "finished_at_unix_ms": 1780198724244,
+      "duration_ms": 7581,
+      "exit_code": 0
+    },
+    {
+      "name": "storage-50k-diskann",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/storage-50k-diskann.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "task67_local_fullq_50k_diskann"
+      ],
+      "selected": true,
+      "tags": [
+        "storage",
+        "ec_real_50k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/storage-50k-diskann.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1780198724245,
+      "finished_at_unix_ms": 1780198724277,
+      "duration_ms": 30,
+      "exit_code": 0
+    },
+    {
+      "name": "load-100k-ivfrabitq",
+      "kind": "load",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/load-100k-ivfrabitq.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "task67_local_fullq_100k_ivfrabitq",
+        "--profile",
+        "ec_ivf",
+        "--corpus-file",
+        "target/real-corpus/staged-task50/ec_real_100k_corpus.tsv",
+        "--queries-file",
+        "target/real-corpus/staged-task50/ec_real_100k_queries.tsv",
+        "--manifest-file",
+        "target/real-corpus/staged-task50/ec_real_100k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--storage-format",
+        "rabitq"
+      ],
+      "selected": true,
+      "tags": [
+        "load",
+        "ec_real_100k",
+        "ivfrabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/load-100k-ivfrabitq.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1780198724278,
+      "finished_at_unix_ms": 1780199011453,
+      "duration_ms": 287823,
+      "exit_code": 0
+    },
+    {
+      "name": "recall-100k-ivfrabitq",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "recall",
+        "--prefix",
+        "task67_local_fullq_100k_ivfrabitq",
+        "--profile",
+        "ec_ivf",
+        "--k",
+        "10",
+        "--sweep",
+        "8,16,24,32,48,64",
+        "--queries-limit",
+        "200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--truth-cache-file",
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/truth-100k-k10.json",
+        "--log-output",
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/recall-100k-ivfrabitq.log"
+      ],
+      "selected": true,
+      "tags": [
+        "recall",
+        "ec_real_100k",
+        "ivfrabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/recall-100k-ivfrabitq.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1780199011455,
+      "finished_at_unix_ms": 1780199238143,
+      "duration_ms": 227278,
+      "exit_code": 0
+    },
+    {
+      "name": "latency-100k-ivfrabitq",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "latency",
+        "--prefix",
+        "task67_local_fullq_100k_ivfrabitq",
+        "--profile",
+        "ec_ivf",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "200",
+        "--sweep",
+        "8,16,24,32,48,64",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/latency-100k-ivfrabitq.log"
+      ],
+      "selected": true,
+      "tags": [
+        "latency",
+        "ec_real_100k",
+        "ivfrabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/latency-100k-ivfrabitq.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1780199238144,
+      "finished_at_unix_ms": 1780199250322,
+      "duration_ms": 12175,
+      "exit_code": 0
+    },
+    {
+      "name": "storage-100k-ivfrabitq",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/storage-100k-ivfrabitq.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "task67_local_fullq_100k_ivfrabitq"
+      ],
+      "selected": true,
+      "tags": [
+        "storage",
+        "ec_real_100k",
+        "ivfrabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/storage-100k-ivfrabitq.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1780199250323,
+      "finished_at_unix_ms": 1780199250360,
+      "duration_ms": 35,
+      "exit_code": 0
+    },
+    {
+      "name": "load-100k-hnsw",
+      "kind": "load",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/load-100k-hnsw.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "task67_local_fullq_100k_hnsw",
+        "--profile",
+        "ec_hnsw",
+        "--corpus-file",
+        "target/real-corpus/staged-task50/ec_real_100k_corpus.tsv",
+        "--queries-file",
+        "target/real-corpus/staged-task50/ec_real_100k_queries.tsv",
+        "--manifest-file",
+        "target/real-corpus/staged-task50/ec_real_100k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--m",
+        "8,16",
+        "--ef-construction",
+        "128"
+      ],
+      "selected": true,
+      "tags": [
+        "load",
+        "ec_real_100k",
+        "hnsw"
+      ],
+      "expected_artifacts": [
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/load-100k-hnsw.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1780199250361,
+      "finished_at_unix_ms": 1780199799759,
+      "duration_ms": 550821,
+      "exit_code": 0
+    },
+    {
+      "name": "recall-100k-hnsw",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "recall",
+        "--prefix",
+        "task67_local_fullq_100k_hnsw",
+        "--profile",
+        "ec_hnsw",
+        "--k",
+        "10",
+        "--sweep",
+        "40,80,120,200,400",
+        "--queries-limit",
+        "200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--truth-cache-file",
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/truth-100k-k10.json",
+        "--log-output",
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/recall-100k-hnsw.log"
+      ],
+      "selected": true,
+      "tags": [
+        "recall",
+        "ec_real_100k",
+        "hnsw"
+      ],
+      "expected_artifacts": [
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/recall-100k-hnsw.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1780199799760,
+      "finished_at_unix_ms": 1780199816895,
+      "duration_ms": 17133,
+      "exit_code": 0
+    },
+    {
+      "name": "latency-100k-hnsw",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "latency",
+        "--prefix",
+        "task67_local_fullq_100k_hnsw",
+        "--profile",
+        "ec_hnsw",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "200",
+        "--sweep",
+        "40,80,120,200,400",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/latency-100k-hnsw.log"
+      ],
+      "selected": true,
+      "tags": [
+        "latency",
+        "ec_real_100k",
+        "hnsw"
+      ],
+      "expected_artifacts": [
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/latency-100k-hnsw.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1780199816896,
+      "finished_at_unix_ms": 1780199824972,
+      "duration_ms": 8074,
+      "exit_code": 0
+    },
+    {
+      "name": "storage-100k-hnsw",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/storage-100k-hnsw.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "task67_local_fullq_100k_hnsw"
+      ],
+      "selected": true,
+      "tags": [
+        "storage",
+        "ec_real_100k",
+        "hnsw"
+      ],
+      "expected_artifacts": [
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/storage-100k-hnsw.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1780199824973,
+      "finished_at_unix_ms": 1780199825014,
+      "duration_ms": 39,
+      "exit_code": 0
+    },
+    {
+      "name": "load-100k-diskann",
+      "kind": "load",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/load-100k-diskann.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "task67_local_fullq_100k_diskann",
+        "--profile",
+        "ec_diskann",
+        "--corpus-file",
+        "target/real-corpus/staged-task50/ec_real_100k_corpus.tsv",
+        "--queries-file",
+        "target/real-corpus/staged-task50/ec_real_100k_queries.tsv",
+        "--manifest-file",
+        "target/real-corpus/staged-task50/ec_real_100k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--bits",
+        "4",
+        "--seed",
+        "42"
+      ],
+      "selected": true,
+      "tags": [
+        "load",
+        "ec_real_100k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/load-100k-diskann.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1780199825015,
+      "finished_at_unix_ms": 1780200482927,
+      "duration_ms": 659564,
+      "exit_code": 0
+    },
+    {
+      "name": "recall-100k-diskann",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "recall",
+        "--prefix",
+        "task67_local_fullq_100k_diskann",
+        "--profile",
+        "ec_diskann",
+        "--k",
+        "10",
+        "--sweep",
+        "64,128,200,400,800",
+        "--queries-limit",
+        "200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--truth-cache-file",
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/truth-100k-k10.json",
+        "--log-output",
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/recall-100k-diskann.log"
+      ],
+      "selected": true,
+      "tags": [
+        "recall",
+        "ec_real_100k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/recall-100k-diskann.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1780200482928,
+      "finished_at_unix_ms": 1780200499790,
+      "duration_ms": 16937,
+      "exit_code": 0
+    },
+    {
+      "name": "latency-100k-diskann",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "latency",
+        "--prefix",
+        "task67_local_fullq_100k_diskann",
+        "--profile",
+        "ec_diskann",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "200",
+        "--sweep",
+        "64,128,200,400,800",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/latency-100k-diskann.log"
+      ],
+      "selected": true,
+      "tags": [
+        "latency",
+        "ec_real_100k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/latency-100k-diskann.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1780200499791,
+      "finished_at_unix_ms": 1780200508867,
+      "duration_ms": 9075,
+      "exit_code": 0
+    },
+    {
+      "name": "storage-100k-diskann",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/storage-100k-diskann.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "task67_local_fullq_100k_diskann"
+      ],
+      "selected": true,
+      "tags": [
+        "storage",
+        "ec_real_100k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/storage-100k-diskann.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1780200508869,
+      "finished_at_unix_ms": 1780200508905,
+      "duration_ms": 34,
+      "exit_code": 0
+    }
+  ]
+}

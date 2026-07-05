@@ -1,0 +1,92 @@
+diff --git a/src/am/ec_ivf/page.rs b/src/am/ec_ivf/page.rs
+index a1581c6a..ec89cce2 100644
+--- a/src/am/ec_ivf/page.rs
++++ b/src/am/ec_ivf/page.rs
+@@ -1749,6 +1749,8 @@ unsafe fn try_append_ivf_posting_to_block(
+     block_number: pg_sys::BlockNumber,
+     payload: &[u8],
+ ) -> Result<Option<ItemPointer>, String> {
++    // SAFETY: `block_number` is selected by validated append-range logic, and
++    // an exclusive buffer lock is required before mutating the posting page.
+     let buffer = unsafe {
+         LockedBufferGuard::read_main(
+             index_relation,
+@@ -1759,16 +1761,25 @@ unsafe fn try_append_ivf_posting_to_block(
+     }
+     .ok_or_else(|| format!("ec_ivf failed to open posting-list block {block_number}"))?;
+ 
++    // SAFETY: starts a generic WAL transaction for the live index relation;
++    // registered buffers below remain exclusive-locked by `buffer`.
+     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
++    // SAFETY: the buffer is exclusive-locked and registered as a full-page
++    // image, yielding a mutable page pointer for the transaction scope.
+     let page =
+         unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
++    // SAFETY: `page` is the registered page image returned above.
+     let free_space = unsafe { pg_sys::PageGetFreeSpace(page) as usize };
+     if free_space < raw_tuple_storage_bytes(payload.len()) {
++        // SAFETY: records the measured free space for this live relation and
++        // block after the page proved too small for the encoded posting.
+         unsafe { pg_sys::RecordPageWithFreeSpace(index_relation, block_number, free_space) };
+         std::mem::drop(wal_txn);
+         return Ok(None);
+     }
+ 
++    // SAFETY: `page` is an exclusive registered page image and `payload`
++    // points to an encoded posting whose length was checked against the page.
+     let offset = unsafe {
+         pg_sys::PageAddItemExtended(
+             page,
+@@ -1785,8 +1796,11 @@ unsafe fn try_append_ivf_posting_to_block(
+         ));
+     }
+ 
++    // SAFETY: finishes the WAL transaction after the registered page mutation.
+     unsafe { wal_txn.finish() };
++    // SAFETY: the buffer remains held and `page` is the registered page image.
+     let free_space = unsafe { pg_sys::PageGetFreeSpace(page) as usize };
++    // SAFETY: records the post-insert free space for the live relation block.
+     unsafe { pg_sys::RecordPageWithFreeSpace(index_relation, block_number, free_space) };
+     Ok(Some(ItemPointer {
+         block_number,
+@@ -1799,6 +1813,8 @@ unsafe fn append_ivf_posting_to_new_block(
+     index_relation: pg_sys::Relation,
+     payload: &[u8],
+ ) -> Result<ItemPointer, String> {
++    // SAFETY: `P_NEW` with zero-and-lock allocates a new main-fork block and
++    // returns it already locked for initialization.
+     let buffer = unsafe {
+         LockedBufferGuard::read_main_locked(
+             index_relation,
+@@ -1809,11 +1825,18 @@ unsafe fn append_ivf_posting_to_new_block(
+     .ok_or_else(|| "ec_ivf failed to allocate posting-list block".to_owned())?;
+ 
+     let page_size = buffer.page_size();
++    // SAFETY: starts a generic WAL transaction for the live index relation;
++    // the newly allocated buffer remains locked by `buffer`.
+     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
++    // SAFETY: the new buffer is locked and registered as a full-page image,
++    // yielding a mutable page pointer for initialization and insertion.
+     let page =
+         unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
++    // SAFETY: `page` is a freshly allocated registered page image.
+     unsafe { pg_sys::PageInit(page, page_size, 0) };
+ 
++    // SAFETY: `page` is initialized and registered, and `payload` points to an
++    // encoded posting whose length was checked against page capacity.
+     let offset = unsafe {
+         pg_sys::PageAddItemExtended(
+             page,
+@@ -1829,8 +1852,12 @@ unsafe fn append_ivf_posting_to_new_block(
+     }
+     let block_number = buffer.block_number();
+ 
++    // SAFETY: finishes the WAL transaction after initializing and mutating the
++    // registered new page.
+     unsafe { wal_txn.finish() };
++    // SAFETY: the buffer remains held and `page` is the registered page image.
+     let free_space = unsafe { pg_sys::PageGetFreeSpace(page) as usize };
++    // SAFETY: records the post-insert free space for the newly allocated block.
+     unsafe { pg_sys::RecordPageWithFreeSpace(index_relation, block_number, free_space) };
+     Ok(ItemPointer {
+         block_number,

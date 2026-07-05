@@ -1,0 +1,5 @@
+bash scripts/hardening.sh rudra
+missing optional hardening tool: cargo-rudra
+install/setup:
+  Install Rudra from https://github.com/sslab-gatech/Rudra and ensure cargo-rudra is on PATH
+make: *** [rudra] Error 127

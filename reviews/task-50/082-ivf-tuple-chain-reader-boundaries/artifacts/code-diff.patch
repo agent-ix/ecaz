@@ -1,0 +1,171 @@
+diff --git a/src/am/ec_ivf/admin.rs b/src/am/ec_ivf/admin.rs
+index 20976959..6df05e88 100644
+--- a/src/am/ec_ivf/admin.rs
++++ b/src/am/ec_ivf/admin.rs
+@@ -250,9 +250,11 @@ unsafe fn directory_drift_summary(
+     for expected_list_id in 0..metadata.nlists {
+         // SAFETY: `next_tid` starts at the metadata directory head and advances
+         // through decoded directory tuples in the same live index relation.
+-        let (directory, following_tid) =
+-            unsafe { page::read_ivf_list_directory_and_next(index_relation, next_tid) }
+-                .unwrap_or_else(|e| pgrx::error!("{e}"));
++        let (directory, following_tid) = page::read_ivf_list_directory_and_next(
++            index_relation,
++            next_tid,
++        )
++        .unwrap_or_else(|e| pgrx::error!("{e}"));
+         if directory.list_id != expected_list_id {
+             pgrx::error!(
+                 "ec_ivf directory order mismatch: got list {}, expected {}",
+diff --git a/src/am/ec_ivf/insert.rs b/src/am/ec_ivf/insert.rs
+index 37c6182e..172797fa 100644
+--- a/src/am/ec_ivf/insert.rs
++++ b/src/am/ec_ivf/insert.rs
+@@ -191,9 +191,7 @@ fn ensure_heap_tid_absent(
+     let mut next_tid = metadata.directory_head;
+     for expected_list_id in 0..metadata.nlists {
+         let (directory, following_tid) =
+-            // SAFETY: relation is live and `next_tid` follows the metadata
+-            // directory chain.
+-            unsafe { page::read_ivf_list_directory_and_next(index_relation, next_tid)? };
++            page::read_ivf_list_directory_and_next(index_relation, next_tid)?;
+         if directory.list_id != expected_list_id {
+             return Err(format!(
+                 "ec_ivf directory order mismatch: got list {}, expected {}",
+@@ -324,13 +322,11 @@ fn load_centroid_model(
+     for expected_list_id in 0..metadata.nlists {
+         // SAFETY: relation is live, `next_tid` follows the centroid chain, and
+         // metadata dimensions define the centroid payload width.
+-        let (centroid, following_tid) = unsafe {
+-            page::read_ivf_centroid_and_next(
+-                index_relation,
+-                next_tid,
+-                usize::from(metadata.dimensions),
+-            )?
+-        };
++        let (centroid, following_tid) = page::read_ivf_centroid_and_next(
++            index_relation,
++            next_tid,
++            usize::from(metadata.dimensions),
++        )?;
+         if centroid.list_id != expected_list_id {
+             return Err(format!(
+                 "ec_ivf centroid order mismatch: got list {}, expected {}",
+@@ -360,9 +356,7 @@ fn load_directory_entry(
+     for expected_list_id in 0..metadata.nlists {
+         let current_tid = next_tid;
+         let (directory, following_tid) =
+-            // SAFETY: relation is live and `current_tid` follows the metadata
+-            // directory chain.
+-            unsafe { page::read_ivf_list_directory_and_next(index_relation, current_tid)? };
++            page::read_ivf_list_directory_and_next(index_relation, current_tid)?;
+         if directory.list_id != expected_list_id {
+             return Err(format!(
+                 "ec_ivf directory order mismatch: got list {}, expected {}",
+diff --git a/src/am/ec_ivf/page.rs b/src/am/ec_ivf/page.rs
+index 9d2e2609..b6fd38bc 100644
+--- a/src/am/ec_ivf/page.rs
++++ b/src/am/ec_ivf/page.rs
+@@ -1263,7 +1263,7 @@ impl DataPageChain {
+ }
+ 
+ #[cfg(any(feature = "pg17", feature = "pg18"))]
+-pub(super) unsafe fn read_ivf_centroid_and_next(
++pub(super) fn read_ivf_centroid_and_next(
+     index_relation: pg_sys::Relation,
+     tid: ItemPointer,
+     dimensions: usize,
+@@ -1276,7 +1276,7 @@ pub(super) unsafe fn read_ivf_centroid_and_next(
+ }
+ 
+ #[cfg(any(feature = "pg17", feature = "pg18"))]
+-pub(super) unsafe fn read_ivf_list_directory_and_next(
++pub(super) fn read_ivf_list_directory_and_next(
+     index_relation: pg_sys::Relation,
+     tid: ItemPointer,
+ ) -> Result<(IvfListDirectoryTuple, ItemPointer), String> {
+@@ -1295,7 +1295,7 @@ pub(super) unsafe fn read_ivf_list_directory_and_next(
+ }
+ 
+ #[cfg(any(feature = "pg17", feature = "pg18"))]
+-pub(super) unsafe fn read_ivf_pq_codebook(
++pub(super) fn read_ivf_pq_codebook(
+     index_relation: pg_sys::Relation,
+     tid: ItemPointer,
+     centroid_count: usize,
+diff --git a/src/am/ec_ivf/quantizer.rs b/src/am/ec_ivf/quantizer.rs
+index fc456a58..249177f3 100644
+--- a/src/am/ec_ivf/quantizer.rs
++++ b/src/am/ec_ivf/quantizer.rs
+@@ -419,11 +419,7 @@ pub(super) unsafe fn load_pq_fastscan_model(
+                 "ec_ivf pq_fastscan codebook chain ended at group {expected_group_index}"
+             ));
+         }
+-        // The caller provides a live IVF index relation.
+-        // SAFETY: `next_tid` comes from the metadata/codebook chain and is
+-        // checked against `ItemPointer::INVALID` before each read.
+-        let tuple =
+-            unsafe { page::read_ivf_pq_codebook(index_relation, next_tid, centroid_count)? };
++        let tuple = page::read_ivf_pq_codebook(index_relation, next_tid, centroid_count)?;
+         if usize::from(tuple.group_index) != expected_group_index {
+             return Err(format!(
+                 "ec_ivf pq_fastscan codebook order mismatch: got {}, expected {expected_group_index}",
+diff --git a/src/am/ec_ivf/scan.rs b/src/am/ec_ivf/scan.rs
+index fb4bfec4..ae9d5320 100644
+--- a/src/am/ec_ivf/scan.rs
++++ b/src/am/ec_ivf/scan.rs
+@@ -847,11 +847,8 @@ unsafe fn load_centroid_scores(
+     let mut next_tid = metadata.centroid_head;
+     let mut scores = Vec::with_capacity(metadata.nlists as usize);
+     for expected_list_id in 0..metadata.nlists {
+-        // SAFETY: `index_relation` is live and `next_tid` follows the centroid
+-        // chain from IVF metadata; page helper validates tuple layout.
+-        let (centroid, following_tid) = unsafe {
+-            super::page::read_ivf_centroid_and_next(index_relation, next_tid, dimensions)?
+-        };
++        let (centroid, following_tid) =
++            super::page::read_ivf_centroid_and_next(index_relation, next_tid, dimensions)?;
+         if centroid.list_id != expected_list_id {
+             return Err(format!(
+                 "ec_ivf centroid order mismatch: got list {}, expected {}",
+@@ -1433,9 +1430,7 @@ fn load_directory_entries(
+     let mut directories = Vec::with_capacity(metadata.nlists as usize);
+     for expected_list_id in 0..metadata.nlists {
+         let (directory, following_tid) =
+-            // SAFETY: `index_relation` is the live IVF index relation and
+-            // `next_tid` follows the metadata directory chain.
+-            unsafe { super::page::read_ivf_list_directory_and_next(index_relation, next_tid)? };
++            super::page::read_ivf_list_directory_and_next(index_relation, next_tid)?;
+         if directory.list_id != expected_list_id {
+             return Err(format!(
+                 "ec_ivf directory order mismatch: got list {}, expected {}",
+@@ -1876,12 +1871,9 @@ pub(crate) unsafe fn debug_ec_ivf_directory_summary(
+     let mut dead_sum = 0_u64;
+     let mut inserted_sum = 0_u64;
+     for expected_list_id in 0..metadata.nlists {
+-        let (directory, following_tid) = unsafe {
+-            // SAFETY: `index_relation_ptr` is live for the loop and `next_tid`
+-            // follows the directory chain read from metadata.
++        let (directory, following_tid) =
+             super::page::read_ivf_list_directory_and_next(index_relation_ptr, next_tid)
+-                .unwrap_or_else(|e| pgrx::error!("{e}"))
+-        };
++                .unwrap_or_else(|e| pgrx::error!("{e}"));
+         if directory.list_id != expected_list_id {
+             pgrx::error!(
+                 "ec_ivf directory order mismatch: got list {}, expected {}",
+diff --git a/src/am/ec_ivf/vacuum.rs b/src/am/ec_ivf/vacuum.rs
+index 4939bbdb..81282055 100644
+--- a/src/am/ec_ivf/vacuum.rs
++++ b/src/am/ec_ivf/vacuum.rs
+@@ -99,9 +99,7 @@ unsafe fn run_bulkdelete(
+     for expected_list_id in 0..metadata.nlists {
+         let directory_tid = next_tid;
+         let (mut directory, following_tid) =
+-            // SAFETY: `index_relation` is live and `next_tid` follows the
+-            // metadata directory chain.
+-            unsafe { page::read_ivf_list_directory_and_next(index_relation, directory_tid) }
++            page::read_ivf_list_directory_and_next(index_relation, directory_tid)
+                 .unwrap_or_else(|e| pgrx::error!("{e}"));
+         if directory.list_id != expected_list_id {
+             pgrx::error!(

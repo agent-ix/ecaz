@@ -1,0 +1,21 @@
+--- hardening/careful/src/../../../src/am/common/cost.rs
++++ replace + with * in estimate_planner_cost
+@@ -255,17 +255,17 @@
+         let linear_fraction = if inputs.index_pages > 0.0 {
+             linear_pages / inputs.index_pages
+         } else {
+             0.0
+         };
+         let linear_cpu =
+             tuple_estimate * constants.cpu_operator_cost * scoring_dimensions * linear_fraction;
+         let startup_cost = graph_cost + graph_cpu;
+-        (startup_cost, startup_cost + linear_cost + linear_cpu)
++        (startup_cost, startup_cost + linear_cost * /* ~ changed by cargo-mutants ~ */ linear_cpu)
+     };
+ 
+     PlannerCostEstimate {
+         startup_cost,
+         total_cost,
+         selectivity: 1.0,
+         correlation: 0.0,
+         index_pages: inputs.index_pages,

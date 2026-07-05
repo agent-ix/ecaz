@@ -1,0 +1,142 @@
+{
+  "name": "task65b-worker-zero-fallback",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-65b/008-worker-zero-fallback/artifacts",
+  "defaults": {
+    "pg": 18,
+    "socket_dir": "/Users/peter/.pgrx",
+    "profile": "ec_diskann",
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 200,
+    "iterations": 200,
+    "force_index": true,
+    "sample_backend_memory": true,
+    "memory_sample_interval_ms": 25
+  },
+  "steps": [
+    {
+      "kind": "raw",
+      "name": "precheck-host",
+      "tags": ["setup", "precheck", "worker-zero"],
+      "args": [
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "tqvector_bench",
+        "--socket-dir",
+        "/Users/peter/.pgrx",
+        "--raw",
+        "--sql",
+        "SELECT now() AS captured_at, version() AS postgres_version, current_setting('shared_buffers') AS shared_buffers, current_setting('maintenance_work_mem') AS maintenance_work_mem, current_setting('max_parallel_workers') AS max_parallel_workers, current_setting('max_parallel_maintenance_workers') AS max_parallel_maintenance_workers; SELECT extversion FROM pg_extension WHERE extname = 'ecaz';",
+        "--log-output",
+        "${artifact_dir}/precheck-host.log"
+      ],
+      "expected_artifacts": ["${artifact_dir}/precheck-host.log"]
+    },
+    {
+      "kind": "load",
+      "name": "load-real10k-w0",
+      "tags": ["load", "diskann", "real10k", "worker-zero", "pq_fastscan", "r32", "l100"],
+      "pgoptions": "-c max_parallel_maintenance_workers=0 -c max_parallel_workers=0",
+      "table_reloptions": ["parallel_workers=0"],
+      "prefix": "task65b_w0_real10k_r32_l100",
+      "storage_format": "pq_fastscan",
+      "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_corpus.tsv",
+      "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_queries.tsv",
+      "manifest_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "graph_degree=32",
+        "build_list_size=100",
+        "alpha=1.2"
+      ],
+      "log_file": "${artifact_dir}/load-real10k-w0.log"
+    },
+    {
+      "kind": "raw",
+      "name": "graph-real10k-w0",
+      "tags": ["graph", "digest", "real10k", "worker-zero"],
+      "args": [
+        "bench",
+        "diskann-graph",
+        "--prefix",
+        "task65b_w0_real10k_r32_l100",
+        "--log-output",
+        "${artifact_dir}/graph-real10k-w0.log"
+      ],
+      "expected_artifacts": ["${artifact_dir}/graph-real10k-w0.log"]
+    },
+    {
+      "kind": "recall",
+      "name": "recall-real10k-w0",
+      "tags": ["recall", "diskann", "real10k", "worker-zero", "r32", "l100"],
+      "prefix": "task65b_w0_real10k_r32_l100",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [64, 128, 200],
+      "truth_cache_file": "${artifact_dir}/truth-real10k-k10.json",
+      "log_output": "${artifact_dir}/recall-real10k-w0.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-real10k-w0",
+      "tags": ["storage", "diskann", "real10k", "worker-zero", "r32", "l100"],
+      "prefix": "task65b_w0_real10k_r32_l100",
+      "log_file": "${artifact_dir}/storage-real10k-w0.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-real100k-w0",
+      "tags": ["load", "diskann", "real100k", "worker-zero", "pq_fastscan", "r32", "l100"],
+      "pgoptions": "-c max_parallel_maintenance_workers=0 -c max_parallel_workers=0",
+      "table_reloptions": ["parallel_workers=0"],
+      "prefix": "task65b_w0_real100k_r32_l100",
+      "storage_format": "pq_fastscan",
+      "corpus_file": "data/task60_m5_dbpedia_staged/ec_real_100k_corpus.tsv",
+      "queries_file": "data/task60_m5_dbpedia_staged/ec_real_100k_queries.tsv",
+      "manifest_file": "data/task60_m5_dbpedia_staged/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "graph_degree=32",
+        "build_list_size=100",
+        "alpha=1.2"
+      ],
+      "log_file": "${artifact_dir}/load-real100k-w0.log"
+    },
+    {
+      "kind": "raw",
+      "name": "graph-real100k-w0",
+      "tags": ["graph", "digest", "real100k", "worker-zero"],
+      "args": [
+        "bench",
+        "diskann-graph",
+        "--prefix",
+        "task65b_w0_real100k_r32_l100",
+        "--log-output",
+        "${artifact_dir}/graph-real100k-w0.log"
+      ],
+      "expected_artifacts": ["${artifact_dir}/graph-real100k-w0.log"]
+    },
+    {
+      "kind": "recall",
+      "name": "recall-real100k-w0",
+      "tags": ["recall", "diskann", "real100k", "worker-zero", "r32", "l100"],
+      "prefix": "task65b_w0_real100k_r32_l100",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [64, 128, 200],
+      "truth_cache_file": "${artifact_dir}/truth-real100k-k10.json",
+      "log_output": "${artifact_dir}/recall-real100k-w0.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-real100k-w0",
+      "tags": ["storage", "diskann", "real100k", "worker-zero", "r32", "l100"],
+      "prefix": "task65b_w0_real100k_r32_l100",
+      "log_file": "${artifact_dir}/storage-real100k-w0.log"
+    }
+  ]
+}

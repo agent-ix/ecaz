@@ -1,0 +1,89 @@
+use pgrx::{pg_guard, pg_sys};
+
+use super::{build, cost, insert, options, scan, vacuum};
+use crate::am::common::parallel;
+use crate::am::common::routine::{alloc_index_am_routine, IndexAmRoutineBox};
+
+fn build_ec_ivf_routine() -> IndexAmRoutineBox {
+    let mut amroutine = alloc_index_am_routine();
+
+    amroutine.amstrategies = 1;
+    amroutine.amsupport = 1;
+    amroutine.amoptsprocnum = 0;
+
+    amroutine.amcanorder = false;
+    amroutine.amcanorderbyop = true;
+    #[cfg(feature = "pg18")]
+    {
+        amroutine.amconsistentordering = true;
+    }
+    amroutine.amcanbackward = false;
+    amroutine.amcanunique = false;
+    amroutine.amcanmulticol = false;
+    amroutine.amoptionalkey = true;
+    amroutine.amsearcharray = false;
+    amroutine.amsearchnulls = false;
+    amroutine.amstorage = false;
+    amroutine.amclusterable = false;
+    amroutine.ampredlocks = false;
+    amroutine.amcanparallel = false;
+    amroutine.amcanbuildparallel = true;
+    amroutine.amcaninclude = false;
+    amroutine.amusemaintenanceworkmem = true;
+    amroutine.amsummarizing = false;
+    amroutine.amparallelvacuumoptions = 0;
+    amroutine.amkeytype = pg_sys::InvalidOid;
+
+    amroutine.ambuild = Some(build::ec_ivf_ambuild);
+    amroutine.ambuildempty = Some(build::ec_ivf_ambuildempty);
+    amroutine.aminsert = Some(insert::ec_ivf_aminsert);
+    amroutine.aminsertcleanup = None;
+    amroutine.ambulkdelete = Some(vacuum::ec_ivf_ambulkdelete);
+    amroutine.amvacuumcleanup = Some(vacuum::ec_ivf_amvacuumcleanup);
+    amroutine.amcanreturn = None;
+    amroutine.amcostestimate = Some(cost::ec_ivf_amcostestimate);
+    #[cfg(feature = "pg18")]
+    {
+        amroutine.amgettreeheight = Some(cost::ec_ivf_amgettreeheight);
+    }
+    amroutine.amoptions = Some(options::ec_ivf_amoptions);
+    amroutine.amproperty = None;
+    amroutine.ambuildphasename = None;
+    amroutine.amvalidate = Some(ec_ivf_amvalidate);
+    amroutine.amadjustmembers = None;
+    amroutine.ambeginscan = Some(scan::ec_ivf_ambeginscan);
+    amroutine.amrescan = Some(scan::ec_ivf_amrescan);
+    amroutine.amgettuple = Some(scan::ec_ivf_amgettuple);
+    amroutine.amgetbitmap = None;
+    amroutine.amendscan = Some(scan::ec_ivf_amendscan);
+    amroutine.ammarkpos = None;
+    amroutine.amrestrpos = None;
+    amroutine.amestimateparallelscan = Some(parallel::ec_amestimateparallelscan);
+    amroutine.aminitparallelscan = Some(parallel::ec_aminitparallelscan);
+    amroutine.amparallelrescan = Some(parallel::ec_amparallelrescan);
+    #[cfg(feature = "pg18")]
+    {
+        amroutine.amtranslatestrategy = Some(cost::ec_ivf_amtranslatestrategy);
+        amroutine.amtranslatecmptype = Some(cost::ec_ivf_amtranslatecmptype);
+    }
+
+    amroutine
+}
+
+#[pg_guard]
+unsafe extern "C-unwind" fn ec_ivf_amvalidate(_opclassoid: pg_sys::Oid) -> bool {
+    true
+}
+
+#[pg_guard]
+#[no_mangle]
+pub unsafe extern "C-unwind" fn ec_ivf_handler(_fcinfo: pg_sys::FunctionCallInfo) -> pg_sys::Datum {
+    // `#[pg_guard]` is the pgrx boundary guard for this PostgreSQL callback.
+    pg_sys::Datum::from(build_ec_ivf_routine().into_pg())
+}
+
+#[no_mangle]
+pub extern "C-unwind" fn pg_finfo_ec_ivf_handler() -> *const pg_sys::Pg_finfo_record {
+    static API_V1: pg_sys::Pg_finfo_record = pg_sys::Pg_finfo_record { api_version: 1 };
+    &API_V1
+}

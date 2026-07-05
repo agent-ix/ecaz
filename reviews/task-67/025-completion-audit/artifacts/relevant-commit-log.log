@@ -1,0 +1,33 @@
+Script started on 2026-05-30 00:29:27-07:00 [<not executed on terminal>]
+[33mdb821441e[m Revert ec_ivf scratch score ordering
+[33m34da0492b[m Order ec_ivf scratch batch candidates by score
+[33mc72003b7b[m Measure RaBitQ8 least-squares kernel path
+[33ma0cb83cb3[m Skip ec_ivf candidates below full top-k frontier
+[33m5df1308d4[m Measure RaBitQ dispatch and bits4 batch kernels
+[33m39b201160[m Allow RaBitQ kernel bench SIMD override
+[33m2edbb887c[m Add RaBitQ kernel bench command
+[33m12ed902df[m Restore AVX512 bits1 byte LUT scoring
+[33m5c51abfc8[m Revert "Use sign flips for AVX512 bits1 scoring"
+[33m47fed5ba2[m Use sign flips for AVX512 bits1 scoring
+[33m9989a1d87[m Replace bits1 byte sums with AVX512 mask decode
+[33m810db0230[m Accelerate x86 RaBitQ bits1 scoring
+[33m59e899a41[m Restore RaBitQ runtime test lane
+[33m2a282430b[m Document RaBitQ x86 test scaffold safety
+[33ma22677eb8[m Add RaBitQ x86 differential test scaffold
+[33m9cb453f9d[m Address RaBitQ x86 SIMD review follow-ups
+[33mf909b16de[m Add RaBitQ x86 bf16 scoring kernel
+[33mb4757c347[m Batch RaBitQ x86 bits1 scoring
+[33m664376fd4[m Add RaBitQ x86 bits1 scoring kernels
+[33m9747b5662[m Batch RaBitQ x86 bits4 scoring
+[33m497d2890e[m Add RaBitQ x86 bits4 scoring kernels
+[33me6439ec81[m Batch RaBitQ x86 bits8 scoring
+[33m434a2da56[m Add RaBitQ x86 bits8 scoring kernels
+[33m19715a204[m Add RaBitQ x86 SIMD dispatch slots
+[33mc31859a97[m Stabilize SPIRE merge CI (#7)
+[33m8dba74e5f[m Merge task-60-diskann-rabitq: complete Task 66
+[33mfe1ec5ec9[m Interleave RaBitQ batch scoring pairs
+[33m749a72046[m Keep RaBitQ prefetch helper safe
+[33m91f2e51ec[m Optimize RaBitQ NEON scoring
+[33ma8b2aca41[m Merge branch 'task-60-diskann-rabitq'
+
+Script done on 2026-05-30 00:29:28-07:00 [COMMAND_EXIT_CODE="0"]

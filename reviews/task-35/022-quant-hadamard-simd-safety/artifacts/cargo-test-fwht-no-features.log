@@ -1,0 +1,29 @@
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz)
+   Compiling pgrx-pg-sys v0.17.0
+error: failed to run custom build command for `pgrx-pg-sys v0.17.0`
+
+Caused by:
+  process didn't exit successfully: `/home/peter/dev/ecaz/target/debug/build/pgrx-pg-sys-f85bc370c3751815/build-script-bindgen` (exit status: 1)
+  --- stdout
+  cargo:rerun-if-env-changed=PGRX_BUILD_VERBOSE
+  cargo:rerun-if-env-changed=PGRX_PG_CONFIG_PATH
+  cargo:rerun-if-env-changed=PGRX_PG_CONFIG_AS_ENV
+  cargo:rerun-if-env-changed=LLVM_CONFIG_PATH
+  cargo:rerun-if-env-changed=LIBCLANG_PATH
+  cargo:rerun-if-env-changed=LIBCLANG_STATIC_PATH
+  cargo:rerun-if-env-changed=BINDGEN_EXTRA_CLANG_ARGS
+  cargo:rerun-if-env-changed=BINDGEN_EXTRA_CLANG_ARGS_x86_64-unknown-linux-gnu
+  cargo:rerun-if-env-changed=BINDGEN_EXTRA_CLANG_ARGS_x86_64_unknown_linux_gnu
+  cargo:rerun-if-env-changed=PGRX_PG_SYS_GENERATE_BINDINGS_FOR_RELEASE
+  cargo:rerun-if-changed=include
+  cargo:rerun-if-changed=pgrx-cshim.c
+  cargo:rerun-if-changed=/home/peter/.pgrx/config.toml
+  cargo:rerun-if-env-changed=PGRX_PG_SYS_GENERATE_BINDINGS_FOR_RELEASE
+
+  --- stderr
+  build_paths=BuildPaths { manifest_dir: "/home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pgrx-pg-sys-0.17.0", out_dir: "/home/peter/dev/ecaz/target/debug/build/pgrx-pg-sys-e085bfe3456c0d28/out", src_dir: "/home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pgrx-pg-sys-0.17.0/src/include", shim_src: "/home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pgrx-pg-sys-0.17.0/pgrx-cshim.c", shim_dst: "/home/peter/dev/ecaz/target/debug/build/pgrx-pg-sys-e085bfe3456c0d28/out/pgrx-cshim.c" }
+  Error: Did not find `pg$VERSION` feature. `pgrx-pg-sys` requires one of `pg13`, `pg14`, `pg15`, `pg16`, `pg17`, `pg18` to be set
+
+  Location:
+      /home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pgrx-bindgen-0.17.0/src/lib.rs:54:28
+warning: build failed, waiting for other jobs to finish...

@@ -1,0 +1,63 @@
+{
+  "suite": "task92-quant-axis-smoke",
+  "schema_version": 1,
+  "config": "crates/ecaz-cli/suites/task92-quant-axis-smoke.json",
+  "config_sha256": "ab8c63c7de11d303e24d70150de2c37f906915d146f61bddf061a32322cad9d2",
+  "dry_run": false,
+  "generated_at_unix_ms": 1780980784643,
+  "connection": {
+    "database": "tqvector_bench",
+    "host": null,
+    "port": null,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "latency-spire-turboquant-lut32-scalar-populated",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant",
+      "isa": "scalar",
+      "kernel_status": "valid",
+      "tags": [
+        "task92",
+        "quant-axis",
+        "spire",
+        "turboquant",
+        "lut32",
+        "quant=turboquant",
+        "isa=scalar",
+        "kernel_status=valid"
+      ],
+      "expected_artifacts": [
+        "reviews/task-92/011-quant-axis-smoke-config/artifacts/latency-spire-turboquant-lut32-scalar-populated.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-spire-rabitq-sve2-missing",
+      "kind": "latency",
+      "command": [],
+      "selected": true,
+      "quant": "rabitq",
+      "isa": "sve2",
+      "kernel_status": "missing_kernel",
+      "tags": [
+        "task92",
+        "quant-axis",
+        "spire",
+        "rabitq",
+        "graviton4",
+        "quant=rabitq",
+        "isa=sve2",
+        "kernel_status=missing_kernel"
+      ],
+      "expected_artifacts": [
+        "reviews/task-92/011-quant-axis-smoke-config/artifacts/latency-spire-rabitq-sve2-missing.log"
+      ],
+      "status": "skipped"
+    }
+  ]
+}

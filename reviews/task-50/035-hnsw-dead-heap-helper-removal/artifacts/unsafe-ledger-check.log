@@ -1,0 +1,2 @@
+python3 scripts/unsafe_ledger.py check --ledger reviews/task-50/035-hnsw-dead-heap-helper-removal/artifacts/unsafe-ledger-after.jsonl src
+ledger covers 2426 current unsafe rows

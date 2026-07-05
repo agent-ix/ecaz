@@ -1,0 +1,11 @@
+                  table_name                   | column_name |  data_type   | udt_name 
+-----------------------------------------------+-------------+--------------+----------
+ ec_hnsw_parallel_concurrent_dsm_recall_corpus | id          | bigint       | int8
+ ec_hnsw_parallel_concurrent_dsm_recall_corpus | source      | ARRAY        | _float4
+ ec_hnsw_real_ann_benchmarks_anchor_corpus     | id          | bigint       | int8
+ ec_hnsw_real_ann_benchmarks_anchor_corpus     | source      | ARRAY        | _float4
+ ec_hnsw_real_ann_benchmarks_anchor_corpus     | embedding   | USER-DEFINED | ecvector
+ tqhnsw_real_50k_corpus                        | id          | bigint       | int8
+ tqhnsw_real_50k_corpus                        | source      | ARRAY        | _float4
+(7 rows)
+

@@ -1,0 +1,6 @@
+[suite:task67-rabitq-kernel-auto] wrote reviews/task-67/020-rabitq-kernel-bench/artifacts/auto/suite-manifest.json
+[suite:task67-rabitq-kernel-auto] rabitq-kernel-auto -> --database postgres --host /var/run/postgresql --user postgres bench rabitq-kernel --dim 1536 --candidates 1000 --iterations 1000 --simd-mode auto --log-output reviews/task-67/020-rabitq-kernel-bench/artifacts/auto/rabitq-kernel-auto.log
+[suite:task67-rabitq-kernel-auto] wrote reviews/task-67/020-rabitq-kernel-bench/artifacts/auto/suite-manifest.json
+[suite:task67-rabitq-kernel-auto] wrote reviews/task-67/020-rabitq-kernel-bench/artifacts/auto/suite-manifest.json
+[suite:task67-rabitq-kernel-auto] wrote reviews/task-67/020-rabitq-kernel-bench/artifacts/auto/results.jsonl
+[suite:task67-rabitq-kernel-auto] wrote reviews/task-67/020-rabitq-kernel-bench/artifacts/auto/suite-manifest.json

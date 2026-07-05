@@ -1,0 +1,8 @@
+Script started on 2026-06-09 06:31:43-07:00 [<not executed on terminal>]
+coverage ok: quant/isa.rs actual=90.48 baseline=90.48
+coverage ok: quant/mod.rs actual=94.74 baseline=94.74
+coverage ok: am/ec_diskann/page.rs actual=96.46 baseline=97.35
+coverage ok: am/ec_diskann/build.rs actual=95.09 baseline=96.69
+coverage ok: am/ec_diskann/routine.rs actual=0.00 baseline=0.00
+
+Script done on 2026-06-09 06:31:43-07:00 [COMMAND_EXIT_CODE="0"]

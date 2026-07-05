@@ -1,0 +1,6 @@
+phase12_tuple_measure_corpus	id	bigint	int8
+phase12_tuple_measure_corpus	embedding	USER-DEFINED	ecvector
+phase12_tuple_measure_corpus	title	text	text
+phase12_tuple_measure_corpus	body	text	text
+phase12_tuple_measure_queries	id	integer	int4
+phase12_tuple_measure_queries	source	ARRAY	_float4

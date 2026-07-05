@@ -1,0 +1,22 @@
+{
+    "CommandId": "9709f0fc-807d-44f6-ac25-d589739d1769",
+    "InstanceId": "i-0056e46b981edbb17",
+    "Comment": "",
+    "DocumentName": "AWS-RunShellScript",
+    "DocumentVersion": "$DEFAULT",
+    "PluginName": "aws:runShellScript",
+    "ResponseCode": 0,
+    "ExecutionStartDateTime": "2026-05-30T20:01:41.997Z",
+    "ExecutionElapsedTime": "PT0.361S",
+    "ExecutionEndDateTime": "2026-05-30T20:01:41.997Z",
+    "Status": "Success",
+    "StatusDetails": "Success",
+    "StandardOutputContent": "       metric       | value  \n--------------------+--------\n corpus_rows        | 990000\n corpus_state_rows  | 40\n queries_state_rows | 1\n query_rows         | 10000\n(4 rows)\n\n",
+    "StandardOutputUrl": "",
+    "StandardErrorContent": "++ sudo -u postgres psql -h /var/run/postgresql -d postgres -c 'SELECT '\\''corpus_rows'\\'' AS metric, count(*)::text AS value FROM task67_1m_diskann_default_rerun2_corpus UNION ALL SELECT '\\''query_rows'\\'', count(*)::text FROM task67_1m_diskann_default_rerun2_queries UNION ALL SELECT chunk_kind || '\\''_state_rows'\\'', count(*)::text FROM ecaz_corpus_load_state WHERE prefix = '\\''task67_1m_diskann_default_rerun2'\\'' GROUP BY chunk_kind ORDER BY metric;'\n",
+    "StandardErrorUrl": "",
+    "CloudWatchOutputConfig": {
+        "CloudWatchLogGroupName": "",
+        "CloudWatchOutputEnabled": false
+    }
+}

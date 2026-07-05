@@ -1,0 +1,13 @@
+diff --git a/src/am/ec_spire/coordinator/remote_candidates/payload_limits.rs b/src/am/ec_spire/coordinator/remote_candidates/payload_limits.rs
+index 6b7bf94f..18e868f8 100644
+--- a/src/am/ec_spire/coordinator/remote_candidates/payload_limits.rs
++++ b/src/am/ec_spire/coordinator/remote_candidates/payload_limits.rs
+@@ -143,7 +143,7 @@ fn decode_remote_typed_tuple_payload_fields_with_limit(
+         .collect::<Result<Vec<_>, _>>()?;
+     validate_remote_payload_row_bytes_with_limit(
+         typed_payload_hex_decoded_bytes(&fields.payload_values_hex)?,
+-        row_byte_limit,
++        usize::MAX,
+         "remote typed tuple payload",
+     )?;
+     let payload_values = fields

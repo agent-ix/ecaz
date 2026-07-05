@@ -1,0 +1,567 @@
+Script started on 2026-05-19 03:28:53-07:00 [<not executed on terminal>]
+[1mdiff --git a/scripts/unsafe_comment_baseline.txt b/scripts/unsafe_comment_baseline.txt[m
+[1mindex 6e7962de..1bc5c7eb 100644[m
+[1m--- a/scripts/unsafe_comment_baseline.txt[m
+[1m+++ b/scripts/unsafe_comment_baseline.txt[m
+[36m@@ -471,41 +471,6 @@[m [msrc/am/ec_hnsw/build_parallel.rs:957[m
+ src/am/ec_hnsw/build_parallel.rs:968[m
+ src/am/ec_hnsw/build_parallel.rs:998[m
+ src/am/ec_hnsw/build_parallel.rs:999[m
+[31m-src/am/ec_hnsw/graph.rs:1003[m
+[31m-src/am/ec_hnsw/graph.rs:1029[m
+[31m-src/am/ec_hnsw/graph.rs:1056[m
+[31m-src/am/ec_hnsw/graph.rs:1084[m
+[31m-src/am/ec_hnsw/graph.rs:1115[m
+[31m-src/am/ec_hnsw/graph.rs:1158[m
+[31m-src/am/ec_hnsw/graph.rs:1187[m
+[31m-src/am/ec_hnsw/graph.rs:1213[m
+[31m-src/am/ec_hnsw/graph.rs:1239[m
+[31m-src/am/ec_hnsw/graph.rs:1549[m
+[31m-src/am/ec_hnsw/graph.rs:1565[m
+[31m-src/am/ec_hnsw/graph.rs:1596[m
+[31m-src/am/ec_hnsw/graph.rs:1606[m
+[31m-src/am/ec_hnsw/graph.rs:1651[m
+[31m-src/am/ec_hnsw/graph.rs:1676[m
+[31m-src/am/ec_hnsw/graph.rs:1700[m
+[31m-src/am/ec_hnsw/graph.rs:1713[m
+[31m-src/am/ec_hnsw/graph.rs:1727[m
+[31m-src/am/ec_hnsw/graph.rs:704[m
+[31m-src/am/ec_hnsw/graph.rs:776[m
+[31m-src/am/ec_hnsw/graph.rs:805[m
+[31m-src/am/ec_hnsw/graph.rs:806[m
+[31m-src/am/ec_hnsw/graph.rs:815[m
+[31m-src/am/ec_hnsw/graph.rs:816[m
+[31m-src/am/ec_hnsw/graph.rs:826[m
+[31m-src/am/ec_hnsw/graph.rs:827[m
+[31m-src/am/ec_hnsw/graph.rs:838[m
+[31m-src/am/ec_hnsw/graph.rs:850[m
+[31m-src/am/ec_hnsw/graph.rs:866[m
+[31m-src/am/ec_hnsw/graph.rs:891[m
+[31m-src/am/ec_hnsw/graph.rs:915[m
+[31m-src/am/ec_hnsw/graph.rs:919[m
+[31m-src/am/ec_hnsw/graph.rs:944[m
+[31m-src/am/ec_hnsw/graph.rs:949[m
+[31m-src/am/ec_hnsw/graph.rs:977[m
+ src/am/ec_hnsw/insert.rs:1026[m
+ src/am/ec_hnsw/insert.rs:1032[m
+ src/am/ec_hnsw/insert.rs:1045[m
+[1mdiff --git a/src/am/ec_hnsw/graph.rs b/src/am/ec_hnsw/graph.rs[m
+[1mindex 2f095fe3..7edd1f8a 100644[m
+[1m--- a/src/am/ec_hnsw/graph.rs[m
+[1m+++ b/src/am/ec_hnsw/graph.rs[m
+[36m@@ -701,6 +701,9 @@[m [mpub(crate) unsafe fn load_grouped_codebook_model([m
+                 group_count[m
+             );[m
+         }[m
+[32m+[m[32m        // SAFETY: `next_tid` is a non-INVALID link from metadata or the[m
+[32m+[m[32m        // previous decoded tuple, and the live index relation remains valid[m
+[32m+[m[32m        // for the synchronous tuple callback.[m
+         let codebook = unsafe {[m
+             with_grouped_codebook_tuple(index_relation, next_tid, centroid_count, |tuple| {[m
+                 page::TqGroupedCodebookTuple {[m
+[36m@@ -773,6 +776,8 @@[m [mpub(crate) unsafe fn load_graph_neighbors([m
+         };[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: `neighbor_tid` is non-INVALID and names a neighbor tuple in the[m
+[32m+[m[32m    // live index relation; `read_page_tuple` holds the page lock while decoding.[m
+     let neighbor = unsafe {[m
+         read_page_tuple([m
+             index_relation,[m
+[36m@@ -802,7 +807,11 @@[m [mpub(crate) unsafe fn load_graph_adjacency([m
+     element_tid: page::ItemPointer,[m
+     code_len: usize,[m
+ ) -> (GraphElement, GraphNeighbors) {[m
+[32m+[m[32m    // SAFETY: `element_tid` is a graph element TID supplied by graph metadata[m
+[32m+[m[32m    // or traversal, and `index_relation` remains live for the tuple load.[m
+     let element = unsafe { load_graph_element(index_relation, element_tid, code_len) };[m
+[32m+[m[32m    // SAFETY: The element decoder produced `neighbortid`; the neighbor loader[m
+[32m+[m[32m    // validates INVALID and tuple shape before exposing the TID list.[m
+     let neighbors = unsafe { load_graph_neighbors(index_relation, element.neighbortid) };[m
+     (element, neighbors)[m
+ }[m
+[36m@@ -812,7 +821,11 @@[m [mpub(crate) unsafe fn load_exact_graph_adjacency([m
+     element_tid: page::ItemPointer,[m
+     storage: GraphStorageDescriptor,[m
+ ) -> (GraphElement, GraphNeighbors) {[m
+[32m+[m[32m    // SAFETY: `element_tid` is a graph element TID supplied by graph metadata[m
+[32m+[m[32m    // or traversal, and `storage` matches the exact element tuple payload.[m
+     let element = unsafe { load_exact_graph_element(index_relation, element_tid, storage) };[m
+[32m+[m[32m    // SAFETY: The decoded element owns the neighbor-list TID; the neighbor[m
+[32m+[m[32m    // loader handles INVALID and validates the tuple payload before use.[m
+     let neighbors = unsafe { load_graph_neighbors(index_relation, element.neighbortid) };[m
+     (element, neighbors)[m
+ }[m
+[36m@@ -823,7 +836,11 @@[m [mpub(crate) unsafe fn load_grouped_graph_adjacency([m
+     element_tid: page::ItemPointer,[m
+     layout: PqFastScanLayout,[m
+ ) -> (GroupedGraphElement, GraphNeighbors) {[m
+[32m+[m[32m    // SAFETY: `element_tid` is a graph element TID supplied by graph metadata[m
+[32m+[m[32m    // or traversal, and `layout` is the grouped element payload layout.[m
+     let element = unsafe { load_grouped_graph_element(index_relation, element_tid, layout) };[m
+[32m+[m[32m    // SAFETY: The grouped element decoder produced `neighbortid`; neighbor[m
+[32m+[m[32m    // loading performs INVALID and tuple-shape validation before returning.[m
+     let neighbors = unsafe { load_graph_neighbors(index_relation, element.neighbortid) };[m
+     (element, neighbors)[m
+ }[m
+[36m@@ -834,6 +851,8 @@[m [mpub(crate) unsafe fn load_layer0_neighbor_tids([m
+     code_len: usize,[m
+     m: usize,[m
+ ) -> Vec<page::ItemPointer> {[m
+[32m+[m[32m    // SAFETY: `element_tid` identifies a layer-0 graph node in the live index;[m
+[32m+[m[32m    // adjacency loading validates the element and neighbor tuple payloads.[m
+     let (element, neighbors) =[m
+         unsafe { load_graph_adjacency(index_relation, element_tid, code_len) };[m
+     valid_neighbor_tids_for_layer(&neighbors.tids, element.level, m, 0)[m
+[36m@@ -846,6 +865,8 @@[m [mpub(crate) unsafe fn load_neighbor_tids_for_layer([m
+     m: usize,[m
+     layer: u8,[m
+ ) -> Vec<page::ItemPointer> {[m
+[32m+[m[32m    // SAFETY: `element_tid` identifies a graph node in the live index;[m
+[32m+[m[32m    // adjacency loading validates element and neighbor tuple payloads.[m
+     let (element, neighbors) =[m
+         unsafe { load_graph_adjacency(index_relation, element_tid, code_len) };[m
+     valid_neighbor_tids_for_layer(&neighbors.tids, element.level, m, layer)[m
+[36m@@ -863,6 +884,9 @@[m [mwhere[m
+     KeepFn: FnMut(page::ItemPointer) -> bool,[m
+     ScoreFn: FnMut(&GraphElement) -> Option<f32>,[m
+ {[m
+[32m+[m[32m    // SAFETY: `source_tid` is a graph node reached by search traversal, layer[m
+[32m+[m[32m    // zero is always present, and the keep/score callbacks are live for this[m
+[32m+[m[32m    // synchronous successor expansion.[m
+     unsafe {[m
+         load_successor_candidates_for_layer([m
+             index_relation,[m
+[36m@@ -888,6 +912,8 @@[m [mwhere[m
+     KeepFn: FnMut(page::ItemPointer) -> bool,[m
+     ScoreFn: FnMut(&GraphElement) -> Option<f32>,[m
+ {[m
+[32m+[m[32m    // SAFETY: `source_tid` is a graph node reached by search traversal, layer[m
+[32m+[m[32m    // zero is always present, and `storage` matches exact element payloads.[m
+     unsafe {[m
+         load_successor_candidates_for_layer_with_storage([m
+             index_relation,[m
+[36m@@ -911,12 +937,15 @@[m [mpub(crate) unsafe fn greedy_descend_from_entry<ScoreFn>([m
+ where[m
+     ScoreFn: FnMut(&GraphElement) -> Option<f32>,[m
+ {[m
+[32m+[m[32m    // SAFETY: `entry_candidate.node` is the current graph entry point for the[m
+[32m+[m[32m    // live index relation; the element load validates its tuple payload.[m
+     let entry_element =[m
+         unsafe { load_graph_element(index_relation, entry_candidate.node, code_len) };[m
+[31m-    greedy_descend_with_successors([m
+[31m-        entry_candidate,[m
+[31m-        entry_element.level,[m
+[31m-        |source_tid, layer| unsafe {[m
+[32m+[m[32m    greedy_descend_with_successors(entry_candidate, entry_element.level, |source_tid, layer| {[m
+[32m+[m[32m        // SAFETY: Greedy descent invokes this callback synchronously for graph[m
+[32m+[m[32m        // nodes it just selected; `score_candidate` remains borrowed for the[m
+[32m+[m[32m        // duration of the successor expansion.[m
+[32m+[m[32m        unsafe {[m
+             load_successor_candidates_for_layer([m
+                 index_relation,[m
+                 source_tid,[m
+[36m@@ -926,8 +955,8 @@[m [mwhere[m
+                 |_| true,[m
+                 &mut score_candidate,[m
+             )[m
+[31m-        },[m
+[31m-    )[m
+[32m+[m[32m        }[m
+[32m+[m[32m    })[m
+ }[m
+ [m
+ pub(crate) unsafe fn greedy_descend_from_entry_with_storage<ScoreFn>([m
+[36m@@ -940,13 +969,16 @@[m [mpub(crate) unsafe fn greedy_descend_from_entry_with_storage<ScoreFn>([m
+ where[m
+     ScoreFn: FnMut(&GraphElement) -> Option<f32>,[m
+ {[m
+[32m+[m[32m    // SAFETY: `entry_candidate.node` is the current graph entry point for the[m
+[32m+[m[32m    // live index relation, and `storage` matches exact element tuple payloads.[m
+     let entry_element =[m
+         unsafe { load_exact_graph_element(index_relation, entry_candidate.node, storage) };[m
+     let mut keep_all = |_| true;[m
+[31m-    greedy_descend_with_successors([m
+[31m-        entry_candidate,[m
+[31m-        entry_element.level,[m
+[31m-        |source_tid, layer| unsafe {[m
+[32m+[m[32m    greedy_descend_with_successors(entry_candidate, entry_element.level, |source_tid, layer| {[m
+[32m+[m[32m        // SAFETY: Greedy descent invokes this callback synchronously for graph[m
+[32m+[m[32m        // nodes it just selected; the keep/score callbacks remain live during[m
+[32m+[m[32m        // the exact-storage successor expansion.[m
+[32m+[m[32m        unsafe {[m
+             load_successor_candidates_for_layer_with_storage([m
+                 index_relation,[m
+                 source_tid,[m
+[36m@@ -956,8 +988,8 @@[m [mwhere[m
+                 &mut keep_all,[m
+                 &mut score_candidate,[m
+             )[m
+[31m-        },[m
+[31m-    )[m
+[32m+[m[32m        }[m
+[32m+[m[32m    })[m
+ }[m
+ [m
+ pub(crate) unsafe fn run_layer0_beam_search<SeedIter, KeepFn, ScoreFn>([m
+[36m@@ -974,15 +1006,20 @@[m [mwhere[m
+     KeepFn: FnMut(page::ItemPointer) -> bool,[m
+     ScoreFn: FnMut(&GraphElement) -> Option<f32>,[m
+ {[m
+[31m-    run_layer0_beam_search_with_successors(ef_search, seeds, |source_tid| unsafe {[m
+[31m-        load_layer0_successor_candidates([m
+[31m-            index_relation,[m
+[31m-            source_tid,[m
+[31m-            code_len,[m
+[31m-            m,[m
+[31m-            &mut keep_neighbor_tid,[m
+[31m-            &mut score_candidate,[m
+[31m-        )[m
+[32m+[m[32m    run_layer0_beam_search_with_successors(ef_search, seeds, |source_tid| {[m
+[32m+[m[32m        // SAFETY: Beam search calls the successor closure synchronously for[m
+[32m+[m[32m        // seeded or discovered graph nodes; the keep/score callbacks remain[m
+[32m+[m[32m        // live for this layer-0 expansion.[m
+[32m+[m[32m        unsafe {[m
+[32m+[m[32m            load_layer0_successor_candidates([m
+[32m+[m[32m                index_relation,[m
+[32m+[m[32m                source_tid,[m
+[32m+[m[32m                code_len,[m
+[32m+[m[32m                m,[m
+[32m+[m[32m                &mut keep_neighbor_tid,[m
+[32m+[m[32m                &mut score_candidate,[m
+[32m+[m[32m            )[m
+[32m+[m[32m        }[m
+     })[m
+ }[m
+ [m
+[36m@@ -1000,15 +1037,19 @@[m [mwhere[m
+     KeepFn: FnMut(page::ItemPointer) -> bool,[m
+     ScoreFn: FnMut(&GraphElement) -> Option<f32>,[m
+ {[m
+[31m-    search_layer0_result_candidates_with_successors(ef_search, seeds, |source_tid| unsafe {[m
+[31m-        load_layer0_successor_candidates([m
+[31m-            index_relation,[m
+[31m-            source_tid,[m
+[31m-            code_len,[m
+[31m-            m,[m
+[31m-            &mut keep_neighbor_tid,[m
+[31m-            &mut score_candidate,[m
+[31m-        )[m
+[32m+[m[32m    search_layer0_result_candidates_with_successors(ef_search, seeds, |source_tid| {[m
+[32m+[m[32m        // SAFETY: Result collection expands only graph nodes provided by the[m
+[32m+[m[32m        // beam-search frontier, and the borrowed callbacks outlive this call.[m
+[32m+[m[32m        unsafe {[m
+[32m+[m[32m            load_layer0_successor_candidates([m
+[32m+[m[32m                index_relation,[m
+[32m+[m[32m                source_tid,[m
+[32m+[m[32m                code_len,[m
+[32m+[m[32m                m,[m
+[32m+[m[32m                &mut keep_neighbor_tid,[m
+[32m+[m[32m                &mut score_candidate,[m
+[32m+[m[32m            )[m
+[32m+[m[32m        }[m
+     })[m
+ }[m
+ [m
+[36m@@ -1026,15 +1067,19 @@[m [mwhere[m
+     KeepFn: FnMut(page::ItemPointer) -> bool,[m
+     ScoreFn: FnMut(&GraphElement) -> Option<f32>,[m
+ {[m
+[31m-    search_layer0_result_candidates_with_successors(ef_search, seeds, |source_tid| unsafe {[m
+[31m-        load_layer0_successor_candidates_with_storage([m
+[31m-            index_relation,[m
+[31m-            source_tid,[m
+[31m-            storage,[m
+[31m-            m,[m
+[31m-            &mut keep_neighbor_tid,[m
+[31m-            &mut score_candidate,[m
+[31m-        )[m
+[32m+[m[32m    search_layer0_result_candidates_with_successors(ef_search, seeds, |source_tid| {[m
+[32m+[m[32m        // SAFETY: Result collection expands only graph nodes provided by the[m
+[32m+[m[32m        // beam-search frontier, and `storage` matches exact tuple payloads.[m
+[32m+[m[32m        unsafe {[m
+[32m+[m[32m            load_layer0_successor_candidates_with_storage([m
+[32m+[m[32m                index_relation,[m
+[32m+[m[32m                source_tid,[m
+[32m+[m[32m                storage,[m
+[32m+[m[32m                m,[m
+[32m+[m[32m                &mut keep_neighbor_tid,[m
+[32m+[m[32m                &mut score_candidate,[m
+[32m+[m[32m            )[m
+[32m+[m[32m        }[m
+     })[m
+ }[m
+ [m
+[36m@@ -1053,16 +1098,20 @@[m [mwhere[m
+     KeepFn: FnMut(page::ItemPointer) -> bool,[m
+     ScoreFn: FnMut(&GraphElement) -> Option<f32>,[m
+ {[m
+[31m-    search_layer0_result_candidates_with_successors(ef_search, seeds, |source_tid| unsafe {[m
+[31m-        load_successor_candidates_for_layer([m
+[31m-            index_relation,[m
+[31m-            source_tid,[m
+[31m-            code_len,[m
+[31m-            m,[m
+[31m-            layer,[m
+[31m-            &mut keep_neighbor_tid,[m
+[31m-            &mut score_candidate,[m
+[31m-        )[m
+[32m+[m[32m    search_layer0_result_candidates_with_successors(ef_search, seeds, |source_tid| {[m
+[32m+[m[32m        // SAFETY: Layer search expands graph nodes from the current frontier;[m
+[32m+[m[32m        // the layer bounds are enforced while filtering neighbor slots.[m
+[32m+[m[32m        unsafe {[m
+[32m+[m[32m            load_successor_candidates_for_layer([m
+[32m+[m[32m                index_relation,[m
+[32m+[m[32m                source_tid,[m
+[32m+[m[32m                code_len,[m
+[32m+[m[32m                m,[m
+[32m+[m[32m                layer,[m
+[32m+[m[32m                &mut keep_neighbor_tid,[m
+[32m+[m[32m                &mut score_candidate,[m
+[32m+[m[32m            )[m
+[32m+[m[32m        }[m
+     })[m
+ }[m
+ [m
+[36m@@ -1081,16 +1130,21 @@[m [mwhere[m
+     KeepFn: FnMut(page::ItemPointer) -> bool,[m
+     ScoreFn: FnMut(&GraphElement) -> Option<f32>,[m
+ {[m
+[31m-    search_layer0_result_candidates_with_successors(ef_search, seeds, |source_tid| unsafe {[m
+[31m-        load_successor_candidates_for_layer_with_storage([m
+[31m-            index_relation,[m
+[31m-            source_tid,[m
+[31m-            storage,[m
+[31m-            m,[m
+[31m-            layer,[m
+[31m-            &mut keep_neighbor_tid,[m
+[31m-            &mut score_candidate,[m
+[31m-        )[m
+[32m+[m[32m    search_layer0_result_candidates_with_successors(ef_search, seeds, |source_tid| {[m
+[32m+[m[32m        // SAFETY: Layer search expands graph nodes from the current frontier;[m
+[32m+[m[32m        // `storage` matches exact payloads and layer bounds are enforced while[m
+[32m+[m[32m        // filtering neighbor slots.[m
+[32m+[m[32m        unsafe {[m
+[32m+[m[32m            load_successor_candidates_for_layer_with_storage([m
+[32m+[m[32m                index_relation,[m
+[32m+[m[32m                source_tid,[m
+[32m+[m[32m                storage,[m
+[32m+[m[32m                m,[m
+[32m+[m[32m                layer,[m
+[32m+[m[32m                &mut keep_neighbor_tid,[m
+[32m+[m[32m                &mut score_candidate,[m
+[32m+[m[32m            )[m
+[32m+[m[32m        }[m
+     })[m
+ }[m
+ [m
+[36m@@ -1112,6 +1166,8 @@[m [mwhere[m
+ [m
+     let mut seeds = vec![entry_candidate];[m
+     for layer in (1..=entry_level).rev() {[m
+[32m+[m[32m        // SAFETY: `seeds` contain the entry candidate or candidates produced[m
+[32m+[m[32m        // by prior upper-layer traversal, and `layer` is within entry level.[m
+         seeds = unsafe {[m
+             search_layer_result_candidates([m
+                 index_relation,[m
+[36m@@ -1155,15 +1211,19 @@[m [mwhere[m
+         return Vec::new();[m
+     }[m
+ [m
+[31m-    refill_successors_with_successors(source_tid, max_successor_candidates, |source_tid| unsafe {[m
+[31m-        load_layer0_successor_candidates([m
+[31m-            index_relation,[m
+[31m-            source_tid,[m
+[31m-            code_len,[m
+[31m-            m,[m
+[31m-            &mut keep_neighbor_tid,[m
+[31m-            &mut score_candidate,[m
+[31m-        )[m
+[32m+[m[32m    refill_successors_with_successors(source_tid, max_successor_candidates, |source_tid| {[m
+[32m+[m[32m        // SAFETY: Refill expands the validated source or its discovered graph[m
+[32m+[m[32m        // successors synchronously while the keep/score callbacks are live.[m
+[32m+[m[32m        unsafe {[m
+[32m+[m[32m            load_layer0_successor_candidates([m
+[32m+[m[32m                index_relation,[m
+[32m+[m[32m                source_tid,[m
+[32m+[m[32m                code_len,[m
+[32m+[m[32m                m,[m
+[32m+[m[32m                &mut keep_neighbor_tid,[m
+[32m+[m[32m                &mut score_candidate,[m
+[32m+[m[32m            )[m
+[32m+[m[32m        }[m
+     })[m
+ }[m
+ [m
+[36m@@ -1184,15 +1244,19 @@[m [mwhere[m
+         return Vec::new();[m
+     }[m
+ [m
+[31m-    refill_successors_with_successors(source_tid, max_successor_candidates, |source_tid| unsafe {[m
+[31m-        load_layer0_successor_candidates_with_storage([m
+[31m-            index_relation,[m
+[31m-            source_tid,[m
+[31m-            storage,[m
+[31m-            m,[m
+[31m-            &mut keep_neighbor_tid,[m
+[31m-            &mut score_candidate,[m
+[31m-        )[m
+[32m+[m[32m    refill_successors_with_successors(source_tid, max_successor_candidates, |source_tid| {[m
+[32m+[m[32m        // SAFETY: Refill expands the validated source or its discovered graph[m
+[32m+[m[32m        // successors synchronously; `storage` matches exact tuple payloads.[m
+[32m+[m[32m        unsafe {[m
+[32m+[m[32m            load_layer0_successor_candidates_with_storage([m
+[32m+[m[32m                index_relation,[m
+[32m+[m[32m                source_tid,[m
+[32m+[m[32m                storage,[m
+[32m+[m[32m                m,[m
+[32m+[m[32m                &mut keep_neighbor_tid,[m
+[32m+[m[32m                &mut score_candidate,[m
+[32m+[m[32m            )[m
+[32m+[m[32m        }[m
+     })[m
+ }[m
+ [m
+[36m@@ -1210,15 +1274,19 @@[m [mwhere[m
+     KeepFn: FnMut(page::ItemPointer) -> bool,[m
+     ScoreFn: FnMut(&GraphElement) -> Option<f32>,[m
+ {[m
+[31m-    expand_visible_seeds_with_successors(max_successor_candidates, seeds, |source_tid| unsafe {[m
+[31m-        load_layer0_successor_candidates([m
+[31m-            index_relation,[m
+[31m-            source_tid,[m
+[31m-            code_len,[m
+[31m-            m,[m
+[31m-            &mut keep_neighbor_tid,[m
+[31m-            &mut score_candidate,[m
+[31m-        )[m
+[32m+[m[32m    expand_visible_seeds_with_successors(max_successor_candidates, seeds, |source_tid| {[m
+[32m+[m[32m        // SAFETY: Visible-seed expansion invokes this closure synchronously[m
+[32m+[m[32m        // for seed or discovered graph nodes while callbacks remain live.[m
+[32m+[m[32m        unsafe {[m
+[32m+[m[32m            load_layer0_successor_candidates([m
+[32m+[m[32m                index_relation,[m
+[32m+[m[32m                source_tid,[m
+[32m+[m[32m                code_len,[m
+[32m+[m[32m                m,[m
+[32m+[m[32m                &mut keep_neighbor_tid,[m
+[32m+[m[32m                &mut score_candidate,[m
+[32m+[m[32m            )[m
+[32m+[m[32m        }[m
+     })[m
+ }[m
+ [m
+[36m@@ -1236,15 +1304,20 @@[m [mwhere[m
+     KeepFn: FnMut(page::ItemPointer) -> bool,[m
+     ScoreFn: FnMut(&GraphElement) -> Option<f32>,[m
+ {[m
+[31m-    expand_visible_seeds_with_successors(max_successor_candidates, seeds, |source_tid| unsafe {[m
+[31m-        load_layer0_successor_candidates_with_storage([m
+[31m-            index_relation,[m
+[31m-            source_tid,[m
+[31m-            storage,[m
+[31m-            m,[m
+[31m-            &mut keep_neighbor_tid,[m
+[31m-            &mut score_candidate,[m
+[31m-        )[m
+[32m+[m[32m    expand_visible_seeds_with_successors(max_successor_candidates, seeds, |source_tid| {[m
+[32m+[m[32m        // SAFETY: Visible-seed expansion invokes this closure synchronously[m
+[32m+[m[32m        // for seed or discovered graph nodes, and `storage` matches exact[m
+[32m+[m[32m        // tuple payloads during successor loading.[m
+[32m+[m[32m        unsafe {[m
+[32m+[m[32m            load_layer0_successor_candidates_with_storage([m
+[32m+[m[32m                index_relation,[m
+[32m+[m[32m                source_tid,[m
+[32m+[m[32m                storage,[m
+[32m+[m[32m                m,[m
+[32m+[m[32m                &mut keep_neighbor_tid,[m
+[32m+[m[32m                &mut score_candidate,[m
+[32m+[m[32m            )[m
+[32m+[m[32m        }[m
+     })[m
+ }[m
+ [m
+[36m@@ -1545,6 +1618,8 @@[m [mwhere[m
+     KeepFn: FnMut(page::ItemPointer) -> bool,[m
+     ScoreFn: FnMut(&GraphElement) -> Option<f32>,[m
+ {[m
+[32m+[m[32m    // SAFETY: `source_tid` is provided by graph traversal, and adjacency[m
+[32m+[m[32m    // loading validates both the element tuple and its neighbor-list tuple.[m
+     let (element, neighbors) =[m
+         unsafe { load_graph_adjacency(index_relation, source_tid, code_len) };[m
+     let mut candidates = Vec::with_capacity(layer_neighbor_slot_capacity([m
+[36m@@ -1561,6 +1636,8 @@[m [mwhere[m
+         layer,[m
+         |neighbor_tid| {[m
+             if keep_neighbor_tid(neighbor_tid) {[m
+[32m+[m[32m                // SAFETY: `neighbor_tid` was taken from a validated neighbor[m
+[32m+[m[32m                // tuple slot for this layer and is loaded synchronously.[m
+                 let neighbor =[m
+                     unsafe { load_graph_element(index_relation, neighbor_tid, code_len) };[m
+                 if !neighbor.deleted && !neighbor.heaptids.is_empty() {[m
+[36m@@ -1592,6 +1669,8 @@[m [mwhere[m
+     KeepFn: FnMut(page::ItemPointer) -> bool,[m
+     ScoreFn: FnMut(&GraphElement) -> Option<f32>,[m
+ {[m
+[32m+[m[32m    // SAFETY: `source_tid` is provided by graph traversal, and exact adjacency[m
+[32m+[m[32m    // loading validates the element payload and neighbor-list tuple.[m
+     let (element, neighbors) =[m
+         unsafe { load_exact_graph_adjacency(index_relation, source_tid, storage) };[m
+     let valid_neighbor_tids =[m
+[36m@@ -1603,6 +1682,8 @@[m [mwhere[m
+             continue;[m
+         }[m
+ [m
+[32m+[m[32m        // SAFETY: `neighbor_tid` comes from a validated layer-specific neighbor[m
+[32m+[m[32m        // slot, and `storage` matches the exact graph element payload.[m
+         let neighbor = unsafe { load_exact_graph_element(index_relation, neighbor_tid, storage) };[m
+         let Some(score) = score_candidate(&neighbor) else {[m
+             continue;[m
+[36m@@ -1648,6 +1729,9 @@[m [munsafe fn read_page_tuple<T, DecodeFn>([m
+ where[m
+     DecodeFn: FnOnce(&[u8]) -> Result<T, String>,[m
+ {[m
+[32m+[m[32m    // SAFETY: `index_relation` is live for the duration of the read, the block[m
+[32m+[m[32m    // number comes from an index tuple TID, and the guard pins and share-locks[m
+[32m+[m[32m    // the page before any tuple bytes are inspected.[m
+     let buffer = unsafe {[m
+         LockedBufferGuard::read_main([m
+             index_relation,[m
+[36m@@ -1673,6 +1757,8 @@[m [mwhere[m
+         );[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: The page pointer and size come from the locked buffer, and the[m
+[32m+[m[32m    // offset was checked against the page line-pointer count above.[m
+     unsafe { with_page_tuple_bytes(page_ptr, page_size, tuple_tid, tuple_kind, decode) }[m
+ }[m
+ [m
+[36m@@ -1697,6 +1783,8 @@[m [mwhere[m
+         );[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: The page pointer and size come from the caller-provided pinned[m
+[32m+[m[32m    // buffer lock, and the offset was checked against the line-pointer count.[m
+     unsafe { with_page_tuple_bytes(page_ptr, page_size, tuple_tid, tuple_kind, decode) }[m
+ }[m
+ [m
+[36m@@ -1710,6 +1798,8 @@[m [munsafe fn with_page_tuple_bytes<T, DecodeFn>([m
+ where[m
+     DecodeFn: FnOnce(&[u8]) -> Result<T, String>,[m
+ {[m
+[32m+[m[32m    // SAFETY: Callers validated `offset_number` against the page's line-pointer[m
+[32m+[m[32m    // count before requesting the item id for this tuple.[m
+     let item_id = unsafe { &*super::shared::page_item_id(page_ptr, tuple_tid.offset_number) };[m
+     if item_id.lp_flags() == 0 {[m
+         pgrx::error!("ec_hnsw graph read found unused {tuple_kind} tuple slot");[m
+[36m@@ -1724,6 +1814,8 @@[m [mwhere[m
+         );[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: `tuple_offset` and `tuple_len` were checked to fit within the[m
+[32m+[m[32m    // locked page before constructing this read-only byte slice.[m
+     let tuple_bytes = unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };[m
+     decode(tuple_bytes)[m
+ }[m
+
+Script done on 2026-05-19 03:28:53-07:00 [COMMAND_EXIT_CODE="0"]

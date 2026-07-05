@@ -1,0 +1,6 @@
+DROP INDEX
+DROP TABLE
+DROP TABLE
+NOTICE:  index "task29b_vacuum_real10k_idx" does not exist, skipping
+NOTICE:  table "task29b_vacuum_real10k_corpus" does not exist, skipping
+NOTICE:  table "task29b_vacuum_real10k_queries" does not exist, skipping

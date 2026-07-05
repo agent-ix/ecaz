@@ -1,0 +1,125 @@
+{
+  "suite": "task47-cost-gate-small",
+  "schema_version": 1,
+  "config": "fixtures/gates/cost-gate-small.json",
+  "config_sha256": "846a4ced6ea19f057b969df9b7d9b52909f3faec16915fd01b8bed25244cc981",
+  "dry_run": false,
+  "generated_at_unix_ms": 1779129451178,
+  "connection": {
+    "database": "postgres",
+    "host": "/Users/peter/.pgrx",
+    "port": 28818,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "ivf-small-cost",
+      "kind": "explain",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "postgres",
+        "--socket-dir",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "--raw",
+        "--file",
+        "target/gates/cost-small/ivf-real10k-cost.sql",
+        "--log-output",
+        "target/gates/cost-small/ivf-real10k-cost.log"
+      ],
+      "selected": true,
+      "tags": [
+        "cost",
+        "small",
+        "pr"
+      ],
+      "expected_artifacts": [
+        "target/gates/cost-small/ivf-real10k-cost.sql",
+        "target/gates/cost-small/ivf-real10k-cost.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1779129451179,
+      "finished_at_unix_ms": 1779129451208,
+      "duration_ms": 28,
+      "exit_code": 0
+    },
+    {
+      "name": "hnsw-small-cost",
+      "kind": "explain",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "postgres",
+        "--socket-dir",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "--raw",
+        "--file",
+        "target/gates/cost-small/hnsw-real10k-cost.sql",
+        "--log-output",
+        "target/gates/cost-small/hnsw-real10k-cost.log"
+      ],
+      "selected": true,
+      "tags": [
+        "cost",
+        "small",
+        "pr"
+      ],
+      "expected_artifacts": [
+        "target/gates/cost-small/hnsw-real10k-cost.sql",
+        "target/gates/cost-small/hnsw-real10k-cost.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1779129451208,
+      "finished_at_unix_ms": 1779129451231,
+      "duration_ms": 22,
+      "exit_code": 0
+    }
+  ],
+  "threshold_results": [
+    {
+      "name": "ivf-modeled-total-cost-positive",
+      "step": "ivf-small-cost",
+      "metric": "planner_cost",
+      "field": "modeled_total_cost",
+      "op": "gt",
+      "expected": 0.0,
+      "actual": 22.4224,
+      "passed": true,
+      "message": "modeled_total_cost 22.4224 Gt 0 -> true"
+    },
+    {
+      "name": "hnsw-modeled-total-cost-positive",
+      "step": "hnsw-small-cost",
+      "metric": "planner_cost",
+      "field": "modeled_total_cost",
+      "op": "gt",
+      "expected": 0.0,
+      "actual": 527.8,
+      "passed": true,
+      "message": "modeled_total_cost 527.8 Gt 0 -> true"
+    }
+  ]
+}

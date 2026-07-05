@@ -1,0 +1,12 @@
+[suite:task123-multi-instance-phase-a-baseline] wrote reviews/task-123/009-multi-instance-phase-a-baseline/artifacts/suite-manifest.json
+[suite:task123-multi-instance-phase-a-baseline] mi-100k-n128-b4-tr50-f8 -> --database postgres --host /tmp --port 28818 dev spire-multicluster local-multinode-pg18 --pg 18 --artifact-dir reviews/task-123/009-multi-instance-phase-a-baseline/artifacts/n128-b4 --smoke-log reviews/task-123/009-multi-instance-phase-a-baseline/artifacts/n128-b4/local-multinode.log --coord-port 40200 --remote1-port 40201 --remote2-port 40202 --remote3-port 40203 --run-id task123-p9-mi-n128-b4 --tier representative --prefix t123_p9_mi_100k_n128_b4 --prepared-prefix ec_real_100k --prepared-dir /home/peter/dev/ecaz/data/staged-current --storage-format rabitq --coord-index t123_p9_mi_100k_n128_b4_coord_idx --remote-index t123_p9_mi_100k_n128_b4_remote_idx --reloption nlists=128 --reloption recursive_fanout=8 --reloption top_graph_enabled=1 --reloption top_graph_degree=32 --reloption top_graph_build_list_size=100 --reloption top_graph_search_list_size=96 --reloption boundary_replica_count=4 --reloption training_sample_rows=50000 --bench-top-k 10 --bench-queries-limit 32 --bench-sweep "8,96" --bench-rowcap-sweep "8,96" --skip-fault-drills --skip-install
+[suite:task123-multi-instance-phase-a-baseline] wrote reviews/task-123/009-multi-instance-phase-a-baseline/artifacts/suite-manifest.json
+[suite:task123-multi-instance-phase-a-baseline] wrote reviews/task-123/009-multi-instance-phase-a-baseline/artifacts/suite-manifest.json
+
+   0: [91msuite step "mi-100k-n128-b4-tr50-f8" failed with exit code 1; rerun with --continue-on-error to keep going[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/bench/suite.rs[0m:[35m951[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.

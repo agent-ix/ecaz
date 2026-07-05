@@ -1,0 +1,384 @@
+Script started on 2026-04-30 16:13:15-07:00 [<not executed on terminal>]
+[32m[1m       Using[0m[39m [37m[1mPgConfig("pg18")[0m[39m and `pg_config` from [36m/home/peter/.pgrx/18.3/pgrx-install/bin/pg_config[39m
+[32m[1m    Building[0m[39m extension with features [36mbuild_parallel pg18[39m
+[32m[1m     Running[0m[39m command [36m"cargo" "build" "--lib" "--release" "--features" "build_parallel pg18" "--no-default-features" "--message-format=json-render-diagnostics"[39m
+   Compiling proc-macro2 v1.0.106
+   Compiling quote v1.0.45
+   Compiling unicode-ident v1.0.24
+   Compiling libc v0.2.186
+   Compiling stable_deref_trait v1.2.1
+   Compiling serde_core v1.0.228
+   Compiling litemap v0.8.2
+   Compiling eyre v0.6.12
+   Compiling thiserror v2.0.18
+   Compiling memchr v2.8.0
+   Compiling cfg-if v1.0.4
+   Compiling writeable v0.6.3
+   Compiling serde v1.0.228
+   Compiling zmij v1.0.21
+   Compiling icu_normalizer_data v2.2.0
+   Compiling icu_properties_data v2.2.0
+   Compiling utf8_iter v1.0.4
+   Compiling serde_json v1.0.149
+   Compiling syn v1.0.109
+   Compiling shlex v1.3.0
+   Compiling smallvec v1.15.1
+   Compiling glob v0.3.3
+   Compiling indenter v0.3.4
+   Compiling once_cell v1.21.4
+   Compiling winnow v1.0.2
+   Compiling find-msvc-tools v0.1.9
+   Compiling anyhow v1.0.102
+   Compiling percent-encoding v2.3.2
+   Compiling toml_writer v1.1.1+spec-1.1.0
+   Compiling cc v1.2.61
+   Compiling is_ci v1.2.0
+   Compiling winnow v0.7.15
+   Compiling minimal-lexical v0.2.1
+   Compiling regex-syntax v0.8.10
+   Compiling owo-colors v4.3.0
+   Compiling clang-sys v1.8.1
+   Compiling supports-color v3.0.2
+   Compiling form_urlencoded v1.2.2
+   Compiling libloading v0.8.9
+   Compiling equivalent v1.0.2
+   Compiling toml_parser v1.1.2+spec-1.1.0
+   Compiling aho-corasick v1.1.4
+   Compiling either v1.15.0
+   Compiling nom v7.1.3
+   Compiling anstyle v1.0.14
+   Compiling unicode-width v0.2.2
+   Compiling bindgen v0.71.1
+   Compiling itoa v1.0.18
+   Compiling itertools v0.13.0
+   Compiling hashbrown v0.17.0
+   Compiling annotate-snippets v0.11.5
+   Compiling bitflags v2.11.1
+   Compiling allocator-api2 v0.2.21
+   Compiling rustc-hash v2.1.2
+   Compiling foldhash v0.1.5
+   Compiling same-file v1.0.6
+   Compiling syn v2.0.117
+   Compiling walkdir v2.5.0
+   Compiling hashbrown v0.15.5
+   Compiling version_check v0.9.5
+   Compiling indexmap v2.14.0
+   Compiling proc-macro-hack v0.5.20+deprecated
+   Compiling unicode-segmentation v1.13.2
+   Compiling pathsearch v0.2.0
+   Compiling getrandom v0.2.17
+   Compiling fixedbitset v0.5.7
+   Compiling zerocopy v0.8.48
+   Compiling cee-scape v0.2.0
+   Compiling ahash v0.7.8
+   Compiling convert_case v0.8.0
+   Compiling unescape v0.1.0
+   Compiling petgraph v0.8.3
+   Compiling radium v0.7.0
+   Compiling parking_lot_core v0.9.12
+   Compiling bytecheck v0.6.12
+   Compiling getrandom v0.4.2
+   Compiling cexpr v0.6.0
+   Compiling regex-automata v0.4.14
+   Compiling scopeguard v1.2.0
+   Compiling slab v0.4.12
+   Compiling pin-project-lite v0.2.17
+   Compiling futures-core v0.3.32
+   Compiling autocfg v1.5.0
+   Compiling simdutf8 v0.1.5
+   Compiling rend v0.4.2
+   Compiling futures-task v0.3.32
+   Compiling toml_datetime v0.7.5+spec-1.1.0
+   Compiling serde_spanned v1.1.1
+   Compiling toml v0.9.12+spec-1.1.0
+   Compiling tap v1.0.1
+   Compiling futures-util v0.3.32
+   Compiling memoffset v0.9.1
+   Compiling wyz v0.5.1
+   Compiling lock_api v0.4.14
+   Compiling paste-impl v0.1.18
+   Compiling rand_core v0.6.4
+   Compiling seahash v4.1.0
+   Compiling half v1.8.3
+   Compiling funty v2.0.0
+   Compiling rkyv v0.7.46
+   Compiling sdd v3.0.10
+   Compiling hashbrown v0.12.3
+   Compiling paste v0.1.18
+   Compiling uuid v1.23.1
+   Compiling parking_lot v0.12.5
+   Compiling scc v2.4.0
+   Compiling cfg-if v0.1.10
+   Compiling log v0.4.29
+   Compiling bitvec v1.0.1
+   Compiling simdeez v1.0.8
+   Compiling lru v0.14.0
+   Compiling semver v1.0.28
+   Compiling regex v1.12.3
+   Compiling ptr_meta_derive v0.1.4
+   Compiling bytecheck_derive v0.6.12
+   Compiling rkyv_derive v0.7.46
+   Compiling pgvectorscale_derive v0.1.0 (/home/peter/dev_bak/pgvectorscale/pgvectorscale/pgvectorscale_derive)
+   Compiling ptr_meta v0.1.4
+   Compiling synstructure v0.13.2
+   Compiling futures-executor v0.3.32
+   Compiling zerofrom-derive v0.1.7
+   Compiling yoke-derive v0.8.2
+   Compiling zerovec-derive v0.11.3
+   Compiling displaydoc v0.2.5
+   Compiling thiserror-impl v2.0.18
+   Compiling serde_derive v1.0.228
+   Compiling enum-map-derive v0.17.0
+   Compiling serial_test_derive v3.4.0
+   Compiling enum-map v2.7.3
+   Compiling serial_test v3.4.0
+   Compiling zerofrom v0.1.7
+   Compiling yoke v0.8.2
+   Compiling pgrx-sql-entity-graph v0.16.1
+   Compiling zerovec v0.11.6
+   Compiling zerotrie v0.2.4
+   Compiling ppv-lite86 v0.2.21
+   Compiling rand_chacha v0.3.1
+   Compiling tinystr v0.8.3
+   Compiling potential_utf v0.1.5
+   Compiling rand v0.8.6
+   Compiling icu_collections v2.2.0
+   Compiling icu_locale_core v2.2.0
+   Compiling icu_provider v2.2.0
+   Compiling icu_properties v2.2.0
+   Compiling icu_normalizer v2.2.0
+   Compiling cargo_toml v0.22.3
+   Compiling serde_cbor v0.11.2
+   Compiling idna_adapter v1.2.2
+   Compiling pgrx-macros v0.16.1
+   Compiling idna v1.1.0
+   Compiling url v2.5.8
+   Compiling pgrx-pg-config v0.16.1
+   Compiling pgrx-bindgen v0.16.1
+   Compiling pgrx-pg-sys v0.16.1
+   Compiling pgrx v0.16.1
+   Compiling vectorscale v0.9.0 (/home/peter/dev_bak/pgvectorscale/pgvectorscale)
+    Finished `release` profile [optimized] target(s) in 54.98s
+[32m[1m  Installing[0m[39m extension
+[32m[1m     Copying[0m[39m control file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/vectorscale.control[39m
+[32m[1m     Copying[0m[39m shared library to [36m/home/peter/.pgrx/18.3/pgrx-install/lib/postgresql/vectorscale-0.9.0.so[39m
+[32m[1m  Discovered[0m[39m [36m[1m6[0m[39m SQL entities: [36m[1m0[0m[39m schemas ([36m[1m0[0m[39m unique), [36m[1m5[0m[39m functions, [36m[1m0[0m[39m types, [36m[1m0[0m[39m enums, [36m[1m1[0m[39m sqls, [36m[1m0[0m[39m ords, [36m[1m0[0m[39m hashes, [36m[1m0[0m[39m aggregates, [36m[1m0[0m[39m triggers
+[32m[1m  Rebuilding[0m[39m [36mpgrx_embed[39m, in debug mode, for SQL generation with features [36mbuild_parallel pg18[39m
+   Compiling proc-macro2 v1.0.106
+   Compiling quote v1.0.45
+   Compiling unicode-ident v1.0.24
+   Compiling libc v0.2.186
+   Compiling cfg-if v1.0.4
+   Compiling stable_deref_trait v1.2.1
+   Compiling memchr v2.8.0
+   Compiling serde_core v1.0.228
+   Compiling once_cell v1.21.4
+   Compiling writeable v0.6.3
+   Compiling litemap v0.8.2
+   Compiling utf8_iter v1.0.4
+   Compiling icu_properties_data v2.2.0
+   Compiling icu_normalizer_data v2.2.0
+   Compiling eyre v0.6.12
+   Compiling thiserror v2.0.18
+   Compiling serde v1.0.228
+   Compiling smallvec v1.15.1
+   Compiling syn v1.0.109
+   Compiling shlex v1.3.0
+   Compiling glob v0.3.3
+   Compiling foldhash v0.1.5
+   Compiling equivalent v1.0.2
+   Compiling indenter v0.3.4
+   Compiling zmij v1.0.21
+   Compiling find-msvc-tools v0.1.9
+   Compiling serde_json v1.0.149
+   Compiling winnow v1.0.2
+   Compiling anyhow v1.0.102
+   Compiling toml_writer v1.1.1+spec-1.1.0
+   Compiling itoa v1.0.18
+   Compiling percent-encoding v2.3.2
+   Compiling cc v1.2.61
+   Compiling regex-syntax v0.8.10
+   Compiling owo-colors v4.3.0
+   Compiling minimal-lexical v0.2.1
+   Compiling is_ci v1.2.0
+   Compiling winnow v0.7.15
+   Compiling hashbrown v0.17.0
+   Compiling clang-sys v1.8.1
+   Compiling form_urlencoded v1.2.2
+   Compiling libloading v0.8.9
+   Compiling supports-color v3.0.2
+   Compiling either v1.15.0
+   Compiling toml_parser v1.1.2+spec-1.1.0
+   Compiling aho-corasick v1.1.4
+   Compiling bindgen v0.71.1
+   Compiling nom v7.1.3
+   Compiling fixedbitset v0.5.7
+   Compiling unicode-width v0.2.2
+   Compiling anstyle v1.0.14
+   Compiling itertools v0.13.0
+   Compiling same-file v1.0.6
+   Compiling unicode-segmentation v1.13.2
+   Compiling allocator-api2 v0.2.21
+   Compiling annotate-snippets v0.11.5
+   Compiling rustc-hash v2.1.2
+   Compiling bitflags v2.11.1
+   Compiling walkdir v2.5.0
+   Compiling hashbrown v0.15.5
+   Compiling proc-macro-hack v0.5.20+deprecated
+   Compiling indexmap v2.14.0
+   Compiling syn v2.0.117
+   Compiling convert_case v0.8.0
+   Compiling zerocopy v0.8.48
+   Compiling unescape v0.1.0
+   Compiling version_check v0.9.5
+   Compiling getrandom v0.2.17
+   Compiling pathsearch v0.2.0
+   Compiling getrandom v0.4.2
+   Compiling bytecheck v0.6.12
+   Compiling radium v0.7.0
+   Compiling parking_lot_core v0.9.12
+   Compiling ahash v0.7.8
+   Compiling petgraph v0.8.3
+   Compiling cee-scape v0.2.0
+   Compiling autocfg v1.5.0
+   Compiling pin-project-lite v0.2.17
+   Compiling futures-task v0.3.32
+   Compiling tap v1.0.1
+   Compiling rend v0.4.2
+   Compiling slab v0.4.12
+   Compiling scopeguard v1.2.0
+   Compiling simdutf8 v0.1.5
+   Compiling futures-core v0.3.32
+   Compiling lock_api v0.4.14
+   Compiling cexpr v0.6.0
+   Compiling regex-automata v0.4.14
+   Compiling futures-util v0.3.32
+   Compiling memoffset v0.9.1
+   Compiling wyz v0.5.1
+   Compiling rand_core v0.6.4
+   Compiling paste-impl v0.1.18
+   Compiling rkyv v0.7.46
+   Compiling half v1.8.3
+   Compiling seahash v4.1.0
+   Compiling funty v2.0.0
+   Compiling sdd v3.0.10
+   Compiling uuid v1.23.1
+   Compiling hashbrown v0.12.3
+   Compiling scc v2.4.0
+   Compiling parking_lot v0.12.5
+   Compiling serde_spanned v1.1.1
+   Compiling toml_datetime v0.7.5+spec-1.1.0
+   Compiling cfg-if v0.1.10
+   Compiling bitvec v1.0.1
+   Compiling log v0.4.29
+   Compiling paste v0.1.18
+   Compiling simdeez v1.0.8
+   Compiling toml v0.9.12+spec-1.1.0
+   Compiling lru v0.14.0
+   Compiling semver v1.0.28
+   Compiling ptr_meta_derive v0.1.4
+   Compiling bytecheck_derive v0.6.12
+   Compiling rkyv_derive v0.7.46
+   Compiling pgvectorscale_derive v0.1.0 (/home/peter/dev_bak/pgvectorscale/pgvectorscale/pgvectorscale_derive)
+   Compiling futures-executor v0.3.32
+   Compiling ptr_meta v0.1.4
+   Compiling regex v1.12.3
+   Compiling synstructure v0.13.2
+   Compiling zerofrom-derive v0.1.7
+   Compiling yoke-derive v0.8.2
+   Compiling zerovec-derive v0.11.3
+   Compiling displaydoc v0.2.5
+   Compiling serde_derive v1.0.228
+   Compiling thiserror-impl v2.0.18
+   Compiling enum-map-derive v0.17.0
+   Compiling serial_test_derive v3.4.0
+   Compiling ppv-lite86 v0.2.21
+   Compiling enum-map v2.7.3
+   Compiling serial_test v3.4.0
+   Compiling rand_chacha v0.3.1
+   Compiling rand v0.8.6
+   Compiling zerofrom v0.1.7
+   Compiling yoke v0.8.2
+   Compiling zerovec v0.11.6
+   Compiling zerotrie v0.2.4
+   Compiling pgrx-sql-entity-graph v0.16.1
+   Compiling tinystr v0.8.3
+   Compiling potential_utf v0.1.5
+   Compiling icu_collections v2.2.0
+   Compiling icu_locale_core v2.2.0
+   Compiling icu_provider v2.2.0
+   Compiling icu_properties v2.2.0
+   Compiling icu_normalizer v2.2.0
+   Compiling cargo_toml v0.22.3
+   Compiling serde_cbor v0.11.2
+   Compiling idna_adapter v1.2.2
+   Compiling idna v1.1.0
+   Compiling url v2.5.8
+   Compiling pgrx-pg-config v0.16.1
+   Compiling pgrx-macros v0.16.1
+   Compiling pgrx-bindgen v0.16.1
+   Compiling pgrx-pg-sys v0.16.1
+   Compiling pgrx v0.16.1
+   Compiling vectorscale v0.9.0 (/home/peter/dev_bak/pgvectorscale/pgvectorscale)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 37.88s
+[32m[1m     Writing[0m[39m SQL entities to /home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/vectorscale--0.9.0.sql
+[32m[1m     Copying[0m[39m extension schema upgrade file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/vectorscale--0.2.0--0.3.0.sql[39m
+[32m[1m     Copying[0m[39m extension schema upgrade file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/vectorscale--0.4.0--0.8.0.sql[39m
+[32m[1m     Copying[0m[39m extension schema upgrade file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/vectorscale--0.4.0--0.9.0.sql[39m
+[32m[1m     Copying[0m[39m extension schema upgrade file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/vectorscale--0.0.2--0.8.0.sql[39m
+[32m[1m     Copying[0m[39m extension schema upgrade file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/vectorscale--0.2.0--0.7.1.sql[39m
+[32m[1m     Copying[0m[39m extension schema upgrade file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/vectorscale--0.0.2--0.5.1.sql[39m
+[32m[1m     Copying[0m[39m extension schema upgrade file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/vectorscale--0.8.0--0.9.0.sql[39m
+[32m[1m     Copying[0m[39m extension schema upgrade file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/vectorscale--0.7.1--0.8.0.sql[39m
+[32m[1m     Copying[0m[39m extension schema upgrade file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/vectorscale--0.6.0--0.9.0.sql[39m
+[32m[1m     Copying[0m[39m extension schema upgrade file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/vectorscale--0.7.0--0.7.1.sql[39m
+[32m[1m     Copying[0m[39m extension schema upgrade file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/vectorscale--0.0.2--0.6.0.sql[39m
+[32m[1m     Copying[0m[39m extension schema upgrade file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/vectorscale--0.0.2--0.2.0.sql[39m
+[32m[1m     Copying[0m[39m extension schema upgrade file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/vectorscale--0.5.1--0.7.1.sql[39m
+[32m[1m     Copying[0m[39m extension schema upgrade file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/vectorscale--0.4.0--0.5.0.sql[39m
+[32m[1m     Copying[0m[39m extension schema upgrade file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/vectorscale--0.4.0--0.6.0.sql[39m
+[32m[1m     Copying[0m[39m extension schema upgrade file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/vectorscale--0.1.0--0.9.0.sql[39m
+[32m[1m     Copying[0m[39m extension schema upgrade file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/vectorscale--0.3.0--0.8.0.sql[39m
+[32m[1m     Copying[0m[39m extension schema upgrade file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/vectorscale--0.6.0--0.8.0.sql[39m
+[32m[1m     Copying[0m[39m extension schema upgrade file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/vectorscale--0.0.2--0.9.0.sql[39m
+[32m[1m     Copying[0m[39m extension schema upgrade file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/vectorscale--0.5.0--0.9.0.sql[39m
+[32m[1m     Copying[0m[39m extension schema upgrade file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/vectorscale--0.5.0--0.6.0.sql[39m
+[32m[1m     Copying[0m[39m extension schema upgrade file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/vectorscale--0.4.0--0.7.0.sql[39m
+[32m[1m     Copying[0m[39m extension schema upgrade file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/vectorscale--0.0.2--0.4.0.sql[39m
+[32m[1m     Copying[0m[39m extension schema upgrade file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/vectorscale--0.0.2--0.3.0.sql[39m
+[32m[1m     Copying[0m[39m extension schema upgrade file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/vectorscale--0.5.0--0.8.0.sql[39m
+[32m[1m     Copying[0m[39m extension schema upgrade file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/vectorscale--0.7.0--0.8.0.sql[39m
+[32m[1m     Copying[0m[39m extension schema upgrade file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/vectorscale--0.2.0--0.5.1.sql[39m
+[32m[1m     Copying[0m[39m extension schema upgrade file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/vectorscale--0.3.0--0.5.0.sql[39m
+[32m[1m     Copying[0m[39m extension schema upgrade file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/vectorscale--0.3.0--0.5.1.sql[39m
+[32m[1m     Copying[0m[39m extension schema upgrade file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/vectorscale--0.2.0--0.9.0.sql[39m
+[32m[1m     Copying[0m[39m extension schema upgrade file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/vectorscale--0.0.2--0.7.0.sql[39m
+[32m[1m     Copying[0m[39m extension schema upgrade file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/vectorscale--0.0.2--0.5.0.sql[39m
+[32m[1m     Copying[0m[39m extension schema upgrade file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/vectorscale--0.0.2--0.7.1.sql[39m
+[32m[1m     Copying[0m[39m extension schema upgrade file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/vectorscale--0.6.0--0.7.0.sql[39m
+[32m[1m     Copying[0m[39m extension schema upgrade file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/vectorscale--0.5.1--0.8.0.sql[39m
+[32m[1m     Copying[0m[39m extension schema upgrade file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/vectorscale--0.5.0--0.7.1.sql[39m
+[32m[1m     Copying[0m[39m extension schema upgrade file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/vectorscale--0.7.1--0.9.0.sql[39m
+[32m[1m     Copying[0m[39m extension schema upgrade file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/vectorscale--0.6.0--0.7.1.sql[39m
+[32m[1m     Copying[0m[39m extension schema upgrade file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/vectorscale--0.5.1--0.9.0.sql[39m
+[32m[1m     Copying[0m[39m extension schema upgrade file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/vectorscale--0.3.0--0.4.0.sql[39m
+[32m[1m     Copying[0m[39m extension schema upgrade file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/vectorscale--0.2.0--0.4.0.sql[39m
+[32m[1m     Copying[0m[39m extension schema upgrade file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/vectorscale--0.5.1--0.7.0.sql[39m
+[32m[1m     Copying[0m[39m extension schema upgrade file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/vectorscale--0.3.0--0.7.1.sql[39m
+[32m[1m     Copying[0m[39m extension schema upgrade file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/vectorscale--0.4.0--0.5.1.sql[39m
+[32m[1m     Copying[0m[39m extension schema upgrade file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/vectorscale--0.2.0--0.8.0.sql[39m
+[32m[1m     Copying[0m[39m extension schema upgrade file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/vectorscale--0.7.0--0.9.0.sql[39m
+[32m[1m     Copying[0m[39m extension schema upgrade file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/vectorscale--0.4.0--0.7.1.sql[39m
+[32m[1m     Copying[0m[39m extension schema upgrade file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/vectorscale--0.5.0--0.5.1.sql[39m
+[32m[1m     Copying[0m[39m extension schema upgrade file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/vectorscale--0.2.0--0.6.0.sql[39m
+[32m[1m     Copying[0m[39m extension schema upgrade file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/vectorscale--0.5.1--0.6.0.sql[39m
+[32m[1m     Copying[0m[39m extension schema upgrade file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/vectorscale--0.2.0--0.5.0.sql[39m
+[32m[1m     Copying[0m[39m extension schema upgrade file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/vectorscale--0.3.0--0.9.0.sql[39m
+[32m[1m     Copying[0m[39m extension schema upgrade file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/vectorscale--0.5.0--0.7.0.sql[39m
+[32m[1m     Copying[0m[39m extension schema upgrade file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/vectorscale--0.2.0--0.7.0.sql[39m
+[32m[1m     Copying[0m[39m extension schema upgrade file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/vectorscale--0.3.0--0.7.0.sql[39m
+[32m[1m     Copying[0m[39m extension schema upgrade file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/vectorscale--0.1.0--0.7.1.sql[39m
+[32m[1m     Copying[0m[39m extension schema upgrade file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/vectorscale--0.3.0--0.6.0.sql[39m
+[32m[1m    Finished[0m[39m installing vectorscale
+
+Script done on 2026-04-30 16:14:49-07:00 [COMMAND_EXIT_CODE="0"]

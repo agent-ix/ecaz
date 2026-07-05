@@ -1,0 +1,12 @@
+Script started on 2026-05-12 16:49:51-07:00 [<not executed on terminal>]
+plan/tasks/task30-phase12-spire-production-hardening.md
+185:  `ec_spire_recover_orphaned_prepared_xacts(node_id)` for operator recovery.
+186:  - [x] Decision: defer the helper for v1. ADR-069 and
+
+spec/adr/ADR-069-spire-distributed-write-path-scope.md
+361:`ec_spire_recover_orphaned_prepared_xacts(node_id)` helper. Remote
+
+docs/SPIRE_DIAGNOSTICS.md
+292:`ec_spire_recover_orphaned_prepared_xacts(node_id)` helper. The helper cannot
+
+Script done on 2026-05-12 16:49:51-07:00 [COMMAND_EXIT_CODE="0"]

@@ -1,0 +1,112 @@
+Script started on 2026-05-18 13:53:54-07:00 [<not executed on terminal>]
+bash scripts/hardening.sh miri-expanded
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.24s
+     Running unittests src/lib.rs (target/miri/x86_64-unknown-linux-gnu/debug/deps/ecaz-76140ec678fb61eb)
+warning: function `fwht_in_place_scalar_reference` is never used
+  --> src/quant/hadamard.rs:42:8
+   |
+42 | pub fn fwht_in_place_scalar_reference(values: &mut [f32]) {
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `fwht_in_place_avx2_for_test` is never used
+  --> src/quant/hadamard.rs:47:8
+   |
+47 | pub fn fwht_in_place_avx2_for_test(values: &mut [f32]) -> bool {
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+
+running 87 tests
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... ok
+test am::common::parallel::tests::miri_publish_parallel_scan_worker_slot_runtime_snapshot_rejects_stale_epoch ... ok
+test am::ec_diskann::page::tests::miri_vamana_metadata_roundtrip_with_codebook_head ... ok
+test am::ec_diskann::tuple::tests::miri_la_011_filled_node_roundtrip ... ok
+test am::ec_diskann::tuple::tests::miri_la_030_codebook_tuple_roundtrip ... ok
+test am::ec_diskann::vacuum::tests::miri_vc_001_mark_deleted_is_idempotent ... ok
+test am::ec_diskann::vacuum::tests::miri_vc_002_mark_deleted_preserves_payload ... ok
+test am::ec_diskann::vacuum::tests::miri_vc_003_strip_dead_primary_heaptid_predicate ... ok
+test am::ec_diskann::vacuum::tests::miri_vc_004_strip_skips_already_invalid ... ok
+test am::ec_diskann::vacuum::tests::miri_vc_005_is_fully_dead_semantics ... ok
+test am::ec_diskann::vacuum::tests::miri_vc_006_repair_neighbors_compacts_and_pads ... ok
+test am::ec_diskann::vacuum::tests::miri_vc_009_repair_preserves_encoded_length ... ok
+test am::ec_diskann::vacuum::tests::miri_vc_010_full_deletion_state_machine ... ok
+test am::ec_diskann::vamana::tests::miri_build_small_graph_is_connected ... ok
+test am::ec_diskann::vamana::tests::miri_build_stats_include_pass1_extra_candidates ... ok
+test am::ec_diskann::vamana::tests::miri_greedy_search_finds_nearest ... ok
+test am::ec_diskann::vamana::tests::miri_robust_prune_excludes_alpha_dominated ... ok
+test am::ec_hnsw::page::tests::miri_element_tuple_roundtrip ... ok
+test am::ec_hnsw::page::tests::miri_grouped_hot_tuple_roundtrip ... ok
+test am::ec_hnsw::page::tests::miri_metadata_roundtrip ... ok
+test am::ec_hnsw::page::tests::miri_neighbor_tuple_roundtrip ... ok
+test am::ec_hnsw::page::tests::miri_rerank_tuple_roundtrip ... ok
+test am::ec_hnsw::page::tests::miri_turbo_hot_tuple_roundtrip ... ok
+test am::ec_hnsw::scan::tests::miri_score_scan_element_result_via_raw_opaque_ptr_updates_stats_delta ... ok
+test am::ec_hnsw::search::tests::miri_beam_search_deduplicates_self_loops_and_parallel_edges ... ok
+test am::ec_hnsw::search::tests::miri_beam_search_forget_queued_removes_frontier_node_and_allows_reseed ... ok
+test am::ec_hnsw::search::tests::miri_beam_search_peek_best_matching_returns_none_after_dropping_fully_stale_frontier ... ok
+test am::ec_hnsw::search::tests::miri_beam_search_peek_best_matching_skips_stale_leaders ... ok
+test am::ec_hnsw::search::tests::miri_visible_frontier_best_candidate_prefers_live_scheduler_node ... ok
+test am::ec_hnsw::search::tests::miri_visible_frontier_select_next_with_refill_skips_until_selected_then_advances ... ok
+test am::ec_spire::production_executor_state_tests::miri_prepared_transaction_intent_transitions_cannot_bypass_prepare_ack ... ok
+test am::ec_spire::production_executor_state_tests::miri_production_executor_state_moves_ready_transport_to_candidate_receive ... ok
+test am::ec_spire::production_executor_state_tests::miri_remote_payload_caps_reject_oversized_rows_and_batches ... ok
+test am::ec_spire::production_executor_state_tests::miri_remote_typed_payload_fields_accept_valid_row_independent_payload ... ok
+test am::ec_spire::production_executor_state_tests::miri_remote_typed_payload_fields_reject_adversarial_shapes ... ok
+test am::ec_spire::scan::tests::miri_adaptive_nprobe_reduces_routing_width_when_boundary_gap_is_large ... ok
+test am::ec_spire::scan::tests::miri_rank_routed_leaf_rows_by_ip_keeps_bounded_best_deduped_candidates ... ok
+test am::ec_spire::scan::tests::miri_rank_routed_leaf_rows_by_ip_keeps_primary_tie_break_under_bounded_dedupe ... ok
+test am::ec_spire::scan::tests::miri_rerank_scored_candidates_by_ip_drops_invisible_candidates ... ok
+test am::ec_spire::scan::tests::miri_rerank_scored_candidates_by_ip_rejects_non_finite_scores ... ok
+test am::ec_spire::scan::tests::miri_rerank_scored_candidates_by_ip_rescores_prefix_and_truncates ... ok
+test am::ec_spire::scan::tests::miri_route_recursive_routing_objects_to_leaf_pids_descends_to_leaf_level ... ok
+test am::ec_spire::scan::tests::miri_route_recursive_routing_objects_to_leaf_pids_rejects_missing_internal_child ... ok
+test am::ec_spire::scan::tests::miri_route_recursive_routing_objects_to_leaf_pids_rejects_wrong_child_level ... ok
+test am::ec_spire::scan::tests::miri_route_recursive_routing_objects_to_leaf_pids_uses_conservative_upper_level_nprobe ... ok
+test am::ec_spire::scan::tests::miri_route_root_object_to_leaf_pids_keeps_bounded_best_routes ... ok
+test am::ec_spire::scan::tests::miri_route_root_object_to_leaf_pids_still_rejects_internal_parent ... ok
+test am::ec_spire::scan::tests::miri_route_routing_object_to_child_pids_routes_internal_level ... ok
+test am::ec_spire::scan::tests::miri_route_top_graph_to_child_pids_rejects_root_mismatch ... ok
+test am::ec_spire::scan::tests::miri_route_top_graph_to_child_pids_uses_graph_frontier_with_deterministic_routes ... ok
+test am::ec_spire::scan::tests::miri_scan_candidate_cursor_emits_ranked_candidates_once ... ok
+test am::ec_spire::scan::tests::miri_scored_candidate_tie_break_prefers_newer_epoch_then_primary_role ... ok
+test am::ec_spire::storage::tests::miri_assignment_row_prefix_decoder_returns_tail ... ok
+test am::ec_spire::storage::tests::miri_assignment_row_ref_prefix_decoder_borrows_payload ... ok
+test am::ec_spire::storage::tests::miri_assignment_row_rejects_length_mismatch ... ok
+test am::ec_spire::storage::tests::miri_assignment_row_rejects_unknown_flags_and_invalid_locator ... ok
+test am::ec_spire::storage::tests::miri_assignment_row_rejects_unknown_payload_format ... ok
+test am::ec_spire::storage::tests::miri_assignment_row_round_trips ... ok
+test am::ec_spire::storage::tests::miri_assignment_visibility_helpers_match_primary_and_delta_semantics ... ok
+test am::ec_spire::storage::tests::miri_delta_partition_object_rejects_delete_payloads ... ok
+test am::ec_spire::storage::tests::miri_delta_partition_object_rejects_duplicate_vec_ids ... ok
+test am::ec_spire::storage::tests::miri_delta_partition_object_rejects_invalid_delta_flags ... ok
+test am::ec_spire::storage::tests::miri_delta_partition_object_rejects_invalid_header_shape ... ok
+test am::ec_spire::storage::tests::miri_delta_partition_object_round_trips_insert_and_delete_rows ... ok
+test am::ec_spire::storage::tests::miri_global_vec_id_preserves_payload ... ok
+test am::ec_spire::storage::tests::miri_leaf_v2_empty_meta_rejects_segment_locator ... ok
+test am::ec_spire::storage::tests::miri_leaf_v2_segment_rows_roundtrip_through_columns ... ok
+test am::ec_spire::storage::tests::miri_local_vec_id_round_trips_sequence ... ok
+test am::ec_spire::storage::tests::miri_top_graph_partition_object_round_trips_nodes ... ok
+test am::ec_spire::storage::tests::miri_vec_id_rejects_invalid_shapes ... ok
+test am::ec_spire::update::tests::miri_delta_epoch_draft_from_snapshot_carries_base_entries ... ok
+test am::ec_spire::update::tests::miri_delta_epoch_draft_from_snapshot_rejects_already_deleted_vec_id ... ok
+test am::ec_spire::update::tests::miri_delta_epoch_draft_from_snapshot_rejects_duplicate_delete_vec_id ... ok
+test am::ec_spire::update::tests::miri_delta_epoch_draft_from_snapshot_rejects_mismatched_delete_heap_tid ... ok
+test am::ec_spire::update::tests::miri_delta_epoch_draft_from_snapshot_rejects_stale_delete_target ... ok
+test am::ec_spire::update::tests::miri_delta_epoch_draft_from_snapshot_rejects_unknown_delete_vec_id ... ok
+test am::ec_spire::update::tests::miri_replacement_leaf_rows_fold_active_deltas_into_base_leaf_rows ... ok
+test am::ec_spire::vacuum::tests::miri_collect_visible_assignments_excludes_delete_delta_targets ... ok
+test quant::hadamard::tests::miri_fwht_small ... ok
+test quant::hadamard::tests::miri_orthonormal_fwht_small ... ok
+test quant::prod::tests::miri_encode_decode_roundtrip ... ok
+test quant::prod::tests::miri_pack_unpack_mse ... ok
+test quant::prod::tests::miri_pack_unpack_qjl ... ok
+test quant::prod::tests::miri_score_ip_codes_lite ... ok
+test quant::prod::tests::miri_score_ip_encoded ... ok
+test storage::page::tests::miri_data_page_chain_preserves_tuple_lookup_across_pages ... ok
+test storage::page::tests::miri_item_pointer_roundtrip ... ok
+
+test result: ok. 87 passed; 0 failed; 0 ignored; 0 measured; 1710 filtered out; finished in 51.23s
+
+
+Script done on 2026-05-18 13:55:27-07:00 [COMMAND_EXIT_CODE="0"]

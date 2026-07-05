@@ -1,0 +1,22 @@
+ec_hnsw-resource-tiny-work-mem	resource	ec_hnsw	tiny-work-mem	clean ERROR or successful bounded execution; no negative counters
+ec_hnsw-resource-temp-file-limit	resource	ec_hnsw	temp-file-limit	clean ERROR; backend remains usable and temp state is released
+ec_hnsw-resource-wal-rotation-accounting	resource	ec_hnsw	wal-rotation-accounting	WAL LSN advances and pg_stat_wal counters remain readable and non-decreasing
+postcondition probes:
+SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND application_name LIKE 'ecaz-fault-%' AND pid <> pg_backend_pid()
+SELECT count(*) FROM pg_locks l JOIN pg_stat_activity a USING (pid) WHERE a.datname = current_database() AND a.application_name LIKE 'ecaz-fault-%' AND a.pid <> pg_backend_pid()
+SELECT count(*) FROM pg_prepared_xacts WHERE database = current_database()
+pg_buffercache fixture pin count
+pg_stat_io non-decreasing total operation count
+pg_stat_wal non-decreasing record and byte counters
+pg_stat_database temp_bytes before/after resource temp-spill accounting
+[fault] resource_accumulator_prepare rows=4096 limit=1000 work_mem=64kB
+ec_hnsw	table=ecaz_fault_hnsw	table_path=base/8052051/8661463	index=ecaz_fault_hnsw_idx	index_path=base/8052051/8661473
+[fault] resource_temp_spill_provider=enospc-write match=pgsql_tmp
+[fault] resource_accumulator_pressure am=ec_hnsw rows=4096 limit=1000 returned=1000 work_mem=64kB effective_cache_size=1MB
+[fault] resource_temp_spill_accounting am=ec_hnsw mode=provider_enospc temp_bytes_before=0 after=0 delta=0
+[fault] wal_rotation_accounting am=ec_hnsw lsn_before=1F/511BF7E0 lsn_after=1F/52000120 records_before=27102 records_after=27911 bytes_before=9546039 bytes_after=13755407
+[fault] provider_fault_events label=resource provider temp spill mode=enospc-write match=pgsql_tmp count=2
+[fault] pg_buffercache_fixture_pins=0
+[fault] pg_buffercache_fixture_pins_ok=true pins=0
+[fault] pg_stat_io_ops_before=1242 after=1699
+[fault] pg_stat_wal_records_before=18366 after=27911 bytes_before=7826860 after=13755407

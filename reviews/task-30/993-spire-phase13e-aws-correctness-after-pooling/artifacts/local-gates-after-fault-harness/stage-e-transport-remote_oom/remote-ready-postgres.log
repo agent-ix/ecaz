@@ -1,0 +1,24 @@
+2026-05-26 13:40:10.541 PDT [2557207] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-05-26 13:40:10.543 PDT [2557207] LOG:  listening on Unix socket "/home/peter/dev/ecaz/target/s-4255941299/.s.PGSQL.39647"
+2026-05-26 13:40:10.549 PDT [2557213] LOG:  database system was shut down at 2026-05-26 13:40:09 PDT
+2026-05-26 13:40:10.552 PDT [2557207] LOG:  database system is ready to accept connections
+2026-05-26 13:40:10.971 PDT [2557238] ERROR:  simulated remote out of memory
+2026-05-26 13:40:10.971 PDT [2557238] CONTEXT:  PL/pgSQL function inline_code_block line 1 at RAISE
+2026-05-26 13:40:10.971 PDT [2557238] STATEMENT:  DO $$ BEGIN RAISE EXCEPTION 'simulated remote out of memory' USING ERRCODE = '53200'; END $$
+2026-05-26 13:40:10.984 PDT [2557242] ERROR:  simulated remote out of memory
+2026-05-26 13:40:10.984 PDT [2557242] CONTEXT:  PL/pgSQL function inline_code_block line 1 at RAISE
+2026-05-26 13:40:10.984 PDT [2557242] STATEMENT:  DO $$ BEGIN RAISE EXCEPTION 'simulated remote out of memory' USING ERRCODE = '53200'; END $$
+2026-05-26 13:40:10.984 PDT [2557242] LOG:  could not receive data from client: Connection reset by peer
+2026-05-26 13:40:10.998 PDT [2557248] ERROR:  simulated remote out of memory
+2026-05-26 13:40:10.998 PDT [2557248] CONTEXT:  PL/pgSQL function inline_code_block line 1 at RAISE
+2026-05-26 13:40:10.998 PDT [2557248] STATEMENT:  DO $$ BEGIN RAISE EXCEPTION 'simulated remote out of memory' USING ERRCODE = '53200'; END $$
+2026-05-26 13:40:11.010 PDT [2557252] ERROR:  simulated remote out of memory
+2026-05-26 13:40:11.010 PDT [2557252] CONTEXT:  PL/pgSQL function inline_code_block line 1 at RAISE
+2026-05-26 13:40:11.010 PDT [2557252] STATEMENT:  DO $$ BEGIN RAISE EXCEPTION 'simulated remote out of memory' USING ERRCODE = '53200'; END $$
+2026-05-26 13:40:11.116 PDT [2557207] LOG:  received fast shutdown request
+2026-05-26 13:40:11.118 PDT [2557207] LOG:  aborting any active transactions
+2026-05-26 13:40:11.118 PDT [2557207] LOG:  background worker "logical replication launcher" (PID 2557216) exited with exit code 1
+2026-05-26 13:40:11.118 PDT [2557211] LOG:  shutting down
+2026-05-26 13:40:11.120 PDT [2557211] LOG:  checkpoint starting: shutdown immediate
+2026-05-26 13:40:11.131 PDT [2557211] LOG:  checkpoint complete: wrote 0 buffers (0.0%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.004 s, sync=0.002 s, total=0.013 s; sync files=2, longest=0.001 s, average=0.001 s; distance=0 kB, estimate=0 kB; lsn=0/1754600, redo lsn=0/1754600
+2026-05-26 13:40:11.139 PDT [2557207] LOG:  database system is shut down

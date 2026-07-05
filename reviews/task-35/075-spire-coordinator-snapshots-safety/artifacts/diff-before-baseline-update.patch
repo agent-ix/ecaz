@@ -1,0 +1,512 @@
+Script started on 2026-05-19 02:28:24-07:00 [<not executed on terminal>]
+[1mdiff --git a/src/am/ec_spire/coordinator/snapshots.rs b/src/am/ec_spire/coordinator/snapshots.rs[m
+[1mindex 72b37659..9dadbc56 100644[m
+[1m--- a/src/am/ec_spire/coordinator/snapshots.rs[m
+[1m+++ b/src/am/ec_spire/coordinator/snapshots.rs[m
+[36m@@ -2,11 +2,15 @@[m [mpub(crate) unsafe fn active_snapshot_diagnostics([m
+     index_relation: pg_sys::Relation,[m
+ ) -> SpireActiveSnapshotDiagnostics {[m
+     let result = (|| -> Result<SpireActiveSnapshotDiagnostics, String> {[m
+[32m+[m[32m        // SAFETY: reads root/control state through the live SPIRE index[m
+[32m+[m[32m        // relation supplied by the SQL diagnostic wrapper.[m
+         let root_control = unsafe { page::read_root_control_page(index_relation) };[m
+         if root_control.active_epoch == 0 {[m
+             return Ok(SpireActiveSnapshotDiagnostics::empty(root_control));[m
+         }[m
+ [m
+[32m+[m[32m        // SAFETY: root_control came from the same live index relation and names[m
+[32m+[m[32m        // the active manifests used by snapshot diagnostics.[m
+         let (epoch_manifest, object_manifest, placement_directory) = unsafe {[m
+             load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control)?[m
+         };[m
+[36m@@ -15,6 +19,8 @@[m [mpub(crate) unsafe fn active_snapshot_diagnostics([m
+             &object_manifest,[m
+             &placement_directory,[m
+         )?;[m
+[32m+[m[32m        // SAFETY: opens relation-backed object stores for placements in the[m
+[32m+[m[32m        // active snapshot while holding AccessShareLock.[m
+         let object_store =[m
+             unsafe {[m
+                 storage::SpireRelationObjectStoreSet::for_index_relation_and_placements([m
+[36m@@ -82,6 +88,8 @@[m [mfn open_storage_relation_or_index([m
+ }[m
+ [m
+ pub(crate) unsafe fn active_epoch(index_relation: pg_sys::Relation) -> u64 {[m
+[32m+[m[32m    // SAFETY: reads root/control state through the live index relation and[m
+[32m+[m[32m    // returns only the copied active epoch value.[m
+     unsafe { page::read_root_control_page(index_relation).active_epoch }[m
+ }[m
+ [m
+[36m@@ -90,6 +98,8 @@[m [mpub(crate) unsafe fn index_allocator_snapshot([m
+     warn_within: u64,[m
+ ) -> SpireIndexAllocatorSnapshot {[m
+     let result = (|| -> Result<SpireIndexAllocatorSnapshot, String> {[m
+[32m+[m[32m        // SAFETY: reads root/control state through the live index relation for[m
+[32m+[m[32m        // allocator diagnostics.[m
+         let root_control = unsafe { page::read_root_control_page(index_relation) };[m
+         let diagnostics = diagnostics::collect_allocator_diagnostics(&root_control, warn_within)?;[m
+         Ok(SpireIndexAllocatorSnapshot {[m
+[36m@@ -110,13 +120,19 @@[m [mpub(crate) unsafe fn index_options_snapshot([m
+     index_relation: pg_sys::Relation,[m
+ ) -> SpireIndexOptionsSnapshot {[m
+     let result = (|| -> Result<SpireIndexOptionsSnapshot, String> {[m
+[32m+[m[32m        // SAFETY: reads PostgreSQL reloptions from the live index relation for[m
+[32m+[m[32m        // options diagnostics only.[m
+         let relation_options = unsafe { options::relation_options(index_relation) };[m
+         let recursive_build_enabled = relation_options.recursive_fanout().is_some();[m
+[32m+[m[32m        // SAFETY: reads root/control state through the live index relation for[m
+[32m+[m[32m        // active options diagnostics.[m
+         let root_control = unsafe { page::read_root_control_page(index_relation) };[m
+         let mut recursive_level_parameters = Vec::new();[m
+         let active_leaf_count = if root_control.active_epoch == 0 {[m
+             0[m
+         } else {[m
+[32m+[m[32m            // SAFETY: root_control came from the same live index relation and[m
+[32m+[m[32m            // names the active manifests used by options diagnostics.[m
+             let (epoch_manifest, object_manifest, placement_directory) =[m
+                 unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };[m
+             let snapshot = meta::SpirePublishedEpochSnapshot::new([m
+[36m@@ -124,6 +140,8 @@[m [mpub(crate) unsafe fn index_options_snapshot([m
+                 &object_manifest,[m
+                 &placement_directory,[m
+             )?;[m
+[32m+[m[32m            // SAFETY: opens relation-backed object stores for placements in the[m
+[32m+[m[32m            // active options snapshot while holding AccessShareLock.[m
+             let object_store = unsafe {[m
+                 storage::SpireRelationObjectStoreSet::for_index_relation_and_placements([m
+                     index_relation,[m
+[36m@@ -233,7 +251,11 @@[m [mpub(crate) unsafe fn index_options_snapshot([m
+ pub(crate) unsafe fn index_writer_identity_snapshot([m
+     index_relation: pg_sys::Relation,[m
+ ) -> SpireIndexWriterIdentitySnapshot {[m
+[32m+[m[32m    // SAFETY: reads PostgreSQL reloptions from the live index relation for[m
+[32m+[m[32m    // writer identity diagnostics only.[m
+     let relation_options = unsafe { options::relation_options(index_relation) };[m
+[32m+[m[32m    // SAFETY: reads root/control state through the live index relation for the[m
+[32m+[m[32m    // active writer identity status.[m
+     let root_control = unsafe { page::read_root_control_page(index_relation) };[m
+     let (writer_identity_status, writer_identity_recommendation) =[m
+         writer_identity_snapshot_status(relation_options.source_identity, root_control.active_epoch);[m
+[36m@@ -275,12 +297,18 @@[m [mpub(crate) unsafe fn index_level_parameter_snapshot([m
+     index_relation: pg_sys::Relation,[m
+ ) -> Vec<SpireIndexLevelParameterSnapshotRow> {[m
+     let result = (|| -> Result<Vec<SpireIndexLevelParameterSnapshotRow>, String> {[m
+[32m+[m[32m        // SAFETY: reads PostgreSQL reloptions from the live index relation for[m
+[32m+[m[32m        // level-parameter diagnostics only.[m
+         let relation_options = unsafe { options::relation_options(index_relation) };[m
+[32m+[m[32m        // SAFETY: reads root/control state through the live index relation for[m
+[32m+[m[32m        // the active level-parameter snapshot epoch.[m
+         let root_control = unsafe { page::read_root_control_page(index_relation) };[m
+         if root_control.active_epoch == 0 {[m
+             return Ok(Vec::new());[m
+         }[m
+ [m
+[32m+[m[32m        // SAFETY: root_control came from the same live index relation and names[m
+[32m+[m[32m        // the active manifests used by level-parameter diagnostics.[m
+         let (epoch_manifest, object_manifest, placement_directory) =[m
+             unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };[m
+         let snapshot = meta::SpireValidatedEpochSnapshot::new([m
+[36m@@ -288,6 +316,8 @@[m [mpub(crate) unsafe fn index_level_parameter_snapshot([m
+             &object_manifest,[m
+             &placement_directory,[m
+         )?;[m
+[32m+[m[32m        // SAFETY: opens relation-backed object stores for placements in the[m
+[32m+[m[32m        // active level-parameter snapshot while holding AccessShareLock.[m
+         let object_store = unsafe {[m
+             storage::SpireRelationObjectStoreSet::for_index_relation_and_placements([m
+                 index_relation,[m
+[36m@@ -386,12 +416,18 @@[m [mpub(crate) unsafe fn index_scan_sanity_snapshot([m
+     index_relation: pg_sys::Relation,[m
+ ) -> SpireIndexScanSanitySnapshot {[m
+     let result = (|| -> Result<SpireIndexScanSanitySnapshot, String> {[m
+[32m+[m[32m        // SAFETY: reads PostgreSQL reloptions from the live index relation for[m
+[32m+[m[32m        // scan-sanity diagnostics only.[m
+         let relation_options = unsafe { options::relation_options(index_relation) };[m
+         let recursive_build_enabled = relation_options.recursive_fanout().is_some();[m
+[32m+[m[32m        // SAFETY: reads root/control state through the live index relation for[m
+[32m+[m[32m        // active scan-sanity diagnostics.[m
+         let root_control = unsafe { page::read_root_control_page(index_relation) };[m
+         let active_leaf_count = if root_control.active_epoch == 0 {[m
+             0[m
+         } else {[m
+[32m+[m[32m            // SAFETY: root_control came from the same live index relation and[m
+[32m+[m[32m            // names the active manifests used by scan-sanity diagnostics.[m
+             let (epoch_manifest, object_manifest, placement_directory) =[m
+                 unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };[m
+             let snapshot = meta::SpirePublishedEpochSnapshot::new([m
+[36m@@ -399,6 +435,8 @@[m [mpub(crate) unsafe fn index_scan_sanity_snapshot([m
+                 &object_manifest,[m
+                 &placement_directory,[m
+             )?;[m
+[32m+[m[32m            // SAFETY: opens relation-backed object stores for placements in the[m
+[32m+[m[32m            // active scan-sanity snapshot while holding AccessShareLock.[m
+             let object_store = unsafe {[m
+                 storage::SpireRelationObjectStoreSet::for_index_relation_and_placements([m
+                     index_relation,[m
+[36m@@ -442,6 +480,8 @@[m [mpub(crate) unsafe fn index_scan_sanity_snapshot([m
+ pub(crate) unsafe fn index_health_snapshot([m
+     index_relation: pg_sys::Relation,[m
+ ) -> SpireIndexHealthSnapshot {[m
+[32m+[m[32m    // SAFETY: forwards the live index relation to the active snapshot[m
+[32m+[m[32m    // diagnostic wrapper before converting diagnostics to a health row.[m
+     let diagnostics = unsafe { active_snapshot_diagnostics(index_relation) };[m
+     health_snapshot_from_diagnostics(&diagnostics)[m
+ }[m
+[36m@@ -450,7 +490,11 @@[m [mpub(crate) unsafe fn index_relation_storage_snapshot([m
+     index_relation: pg_sys::Relation,[m
+ ) -> SpireIndexRelationStorageSnapshot {[m
+     let result = (|| -> Result<SpireIndexRelationStorageSnapshot, String> {[m
+[32m+[m[32m        // SAFETY: rd_id is stable while index_relation is open; it is copied as[m
+[32m+[m[32m        // the index OID for storage relation accounting.[m
+         let index_relid: u32 = unsafe { (*index_relation).rd_id }.into();[m
+[32m+[m[32m        // SAFETY: reads root/control state through the live index relation for[m
+[32m+[m[32m        // relation-storage diagnostics.[m
+         let root_control = unsafe { page::read_root_control_page(index_relation) };[m
+         let mut active_tids = HashSet::<(u32, crate::storage::page::ItemPointer)>::new();[m
+         let mut storage_relids = HashSet::from([index_relid]);[m
+[36m@@ -460,6 +504,8 @@[m [mpub(crate) unsafe fn index_relation_storage_snapshot([m
+             active_tids.insert((index_relid, root_control.placement_directory_tid));[m
+             active_tids.insert((index_relid, root_control.local_store_config_tid));[m
+ [m
+[32m+[m[32m            // SAFETY: root_control came from the same live index relation and[m
+[32m+[m[32m            // names the active manifests used to mark referenced tuples.[m
+             let (_epoch_manifest, object_manifest, placement_directory) =[m
+                 unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };[m
+             for entry in &object_manifest.entries {[m
+[36m@@ -469,6 +515,8 @@[m [mpub(crate) unsafe fn index_relation_storage_snapshot([m
+                 storage_relids.insert(placement.store_relid);[m
+             }[m
+ [m
+[32m+[m[32m            // SAFETY: opens relation-backed object stores for active placements[m
+[32m+[m[32m            // while holding AccessShareLock before enumerating object tuples.[m
+             let object_store = unsafe {[m
+                 storage::SpireRelationObjectStoreSet::for_index_relation_and_placements([m
+                     index_relation,[m
+[36m@@ -477,6 +525,8 @@[m [mpub(crate) unsafe fn index_relation_storage_snapshot([m
+                 )?[m
+             };[m
+             for placement in &placement_directory.entries {[m
+[32m+[m[32m                // SAFETY: placement belongs to the active placement directory[m
+[32m+[m[32m                // and object_store was opened for that directory.[m
+                 for tid in unsafe { object_store.active_object_tuple_locators(placement)? } {[m
+                     active_tids.insert((placement.store_relid, tid));[m
+                 }[m
+[36m@@ -498,6 +548,8 @@[m [mpub(crate) unsafe fn index_relation_storage_snapshot([m
+                 pg_sys::AccessShareLock as pg_sys::LOCKMODE,[m
+             )?;[m
+ [m
+[32m+[m[32m            // SAFETY: storage_relation is open in AccessShareLock mode and is[m
+[32m+[m[32m            // only queried for its main-fork block count.[m
+             let storage_block_count = unsafe {[m
+                 pg_sys::RelationGetNumberOfBlocksInFork([m
+                     storage_relation,[m
+[36m@@ -508,6 +560,8 @@[m [mpub(crate) unsafe fn index_relation_storage_snapshot([m
+                 .checked_add(u64::from(storage_block_count))[m
+                 .ok_or_else(|| "ec_spire relation block count overflow".to_owned())?;[m
+ [m
+[32m+[m[32m            // SAFETY: storage_relation is open for object tuple scanning; the[m
+[32m+[m[32m            // callback only records tuple sizes and active-reference matches.[m
+             let scan_result = unsafe { page::scan_object_tuples(storage_relation, |tid, tuple| {[m
+                 relation_object_tuple_count = relation_object_tuple_count[m
+                     .checked_add(1)[m
+[36m@@ -564,8 +618,12 @@[m [mpub(crate) unsafe fn index_epoch_snapshot([m
+     index_relation: pg_sys::Relation,[m
+ ) -> Vec<SpireIndexEpochSnapshotRow> {[m
+     let result = (|| -> Result<Vec<SpireIndexEpochSnapshotRow>, String> {[m
+[32m+[m[32m        // SAFETY: reads root/control state through the live index relation for[m
+[32m+[m[32m        // epoch snapshot diagnostics.[m
+         let root_control = unsafe { page::read_root_control_page(index_relation) };[m
+         let mut manifests = Vec::new();[m
+[32m+[m[32m        // SAFETY: scans object tuples in the live index relation and decodes[m
+[32m+[m[32m        // only tuples matching the epoch-manifest encoded length.[m
+         unsafe {[m
+             page::scan_object_tuples(index_relation, |tid, tuple| {[m
+                 if tuple.len() != meta::SpireEpochManifest::encoded_len() {[m
+[36m@@ -577,6 +635,8 @@[m [mpub(crate) unsafe fn index_epoch_snapshot([m
+                 Ok(())[m
+             })?[m
+         };[m
+[32m+[m[32m        // SAFETY: reads PostgreSQL's current backend timestamp for cleanup-age[m
+[32m+[m[32m        // diagnostics; no pointer is retained.[m
+         let now_micros = unsafe { pg_sys::GetCurrentTimestamp() };[m
+         epoch_snapshot_rows_from_manifests(root_control, manifests, now_micros)[m
+     })();[m
+[36m@@ -587,6 +647,8 @@[m [mfn collect_epoch_manifests_for_cleanup([m
+     index_relation: pg_sys::Relation,[m
+ ) -> Result<Vec<(crate::storage::page::ItemPointer, meta::SpireEpochManifest)>, String> {[m
+     let mut manifests = Vec::new();[m
+[32m+[m[32m    // SAFETY: scans object tuples in the live index relation and records only[m
+[32m+[m[32m    // successfully decoded epoch manifests.[m
+     unsafe {[m
+         page::scan_object_tuples(index_relation, |tid, tuple| {[m
+             if tuple.len() != meta::SpireEpochManifest::encoded_len() {[m
+[36m@@ -647,6 +709,8 @@[m [mfn collect_physical_cleanup_candidates([m
+     HashSet<(u32, crate::storage::page::ItemPointer)>,[m
+     BTreeMap<u32, Vec<crate::storage::page::ItemPointer>>,[m
+ ), String> {[m
+[32m+[m[32m    // SAFETY: rd_id is stable while index_relation is open; it is copied as the[m
+[32m+[m[32m    // index OID for cleanup protection/candidate accounting.[m
+     let index_relid: u32 = unsafe { (*index_relation).rd_id }.into();[m
+     let manifests = collect_epoch_manifests_for_cleanup(index_relation)?;[m
+     let latest_manifests = latest_epoch_manifests(&manifests);[m
+[36m@@ -672,6 +736,8 @@[m [mfn collect_physical_cleanup_candidates([m
+         root_control.local_store_config_tid,[m
+     );[m
+ [m
+[32m+[m[32m    // SAFETY: scans object tuples in the live index relation to classify[m
+[32m+[m[32m    // manifests/directories and protect non-cleanup epochs.[m
+     unsafe {[m
+         page::scan_object_tuples(index_relation, |tid, tuple| {[m
+             if let Ok(manifest) = meta::SpireEpochManifest::decode(tuple) {[m
+[36m@@ -704,6 +770,8 @@[m [mfn collect_physical_cleanup_candidates([m
+     };[m
+ [m
+     for directory in &protected_directories {[m
+[32m+[m[32m        // SAFETY: directory was decoded from the live index relation and is[m
+[32m+[m[32m        // protected from cleanup; open its relation-backed object stores.[m
+         let object_store = unsafe {[m
+             storage::SpireRelationObjectStoreSet::for_index_relation_and_placements([m
+                 index_relation,[m
+[36m@@ -713,6 +781,8 @@[m [mfn collect_physical_cleanup_candidates([m
+         };[m
+         for placement in &directory.entries {[m
+             protect_tuple(&mut protected, placement.store_relid, placement.object_tid);[m
+[32m+[m[32m            // SAFETY: placement belongs to the protected directory and the[m
+[32m+[m[32m            // object_store was opened for that directory.[m
+             for tid in unsafe { object_store.active_object_tuple_locators(placement)? } {[m
+                 protect_tuple(&mut protected, placement.store_relid, tid);[m
+             }[m
+[36m@@ -730,6 +800,8 @@[m [mfn collect_physical_cleanup_candidates([m
+             pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,[m
+         )?;[m
+         let mut candidates = Vec::new();[m
+[32m+[m[32m        // SAFETY: storage_relation is open with RowExclusiveLock for cleanup[m
+[32m+[m[32m        // planning; this pass only records unprotected tuple IDs.[m
+         let scan_result = unsafe {[m
+             page::scan_object_tuples(storage_relation, |tid, _tuple| {[m
+                 if !protected.contains(&(storage_relid, tid)) {[m
+[36m@@ -750,8 +822,12 @@[m [mfn collect_physical_cleanup_candidates([m
+ pub(crate) unsafe fn index_epoch_cleanup_run([m
+     index_relation: pg_sys::Relation,[m
+ ) -> SpireIndexEpochCleanupRunResult {[m
+[32m+[m[32m    // SAFETY: acquires the publish relation lock for the live index relation[m
+[32m+[m[32m    // before physical cleanup inspects and deletes object tuples.[m
+     let _guard = unsafe { lock_publish_relation(index_relation) };[m
+     let result = (|| -> Result<SpireIndexEpochCleanupRunResult, String> {[m
+[32m+[m[32m        // SAFETY: reads root/control state through the live locked index[m
+[32m+[m[32m        // relation for cleanup planning.[m
+         let root_control = unsafe { page::read_root_control_page(index_relation) };[m
+         if root_control.active_epoch == 0 {[m
+             return Ok(SpireIndexEpochCleanupRunResult {[m
+[36m@@ -765,6 +841,8 @@[m [mpub(crate) unsafe fn index_epoch_cleanup_run([m
+             });[m
+         }[m
+ [m
+[32m+[m[32m        // SAFETY: reads PostgreSQL's current backend timestamp for epoch[m
+[32m+[m[32m        // retention planning; no pointer is retained.[m
+         let now_micros = unsafe { pg_sys::GetCurrentTimestamp() };[m
+         let (cleanup_epochs, protected, candidates_by_relid) =[m
+             collect_physical_cleanup_candidates(index_relation, root_control, now_micros)?;[m
+[36m@@ -783,6 +861,8 @@[m [mpub(crate) unsafe fn index_epoch_cleanup_run([m
+             });[m
+         }[m
+ [m
+[32m+[m[32m        // SAFETY: rd_id is stable while index_relation is open and locked; it[m
+[32m+[m[32m        // is copied as the index OID for cleanup deletion accounting.[m
+         let index_relid: u32 = unsafe { (*index_relation).rd_id }.into();[m
+         let mut removed_tuple_count = 0_u64;[m
+         let mut removed_tuple_bytes = 0_u64;[m
+[36m@@ -794,6 +874,8 @@[m [mpub(crate) unsafe fn index_epoch_cleanup_run([m
+                 pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,[m
+             )?;[m
+             let delete_result =[m
+[32m+[m[32m                // SAFETY: storage_relation is open with RowExclusiveLock and[m
+[32m+[m[32m                // tids were selected by the protected/candidate cleanup plan.[m
+                 unsafe { page::delete_object_tuples_no_compact(storage_relation, &tids) };[m
+             let (deleted_count, deleted_bytes) = delete_result?;[m
+             removed_tuple_count = removed_tuple_count[m
+[36m@@ -827,11 +909,15 @@[m [mpub(crate) unsafe fn index_placement_snapshot([m
+     index_relation: pg_sys::Relation,[m
+ ) -> Vec<SpireIndexPlacementSnapshotRow> {[m
+     let result = (|| -> Result<Vec<SpireIndexPlacementSnapshotRow>, String> {[m
+[32m+[m[32m        // SAFETY: reads root/control state through the live index relation for[m
+[32m+[m[32m        // placement diagnostics.[m
+         let root_control = unsafe { page::read_root_control_page(index_relation) };[m
+         if root_control.active_epoch == 0 {[m
+             return Ok(Vec::new());[m
+         }[m
+ [m
+[32m+[m[32m        // SAFETY: root_control came from the same live index relation and names[m
+[32m+[m[32m        // the active manifests used by placement diagnostics.[m
+         let (epoch_manifest, object_manifest, placement_directory) =[m
+             unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };[m
+         let snapshot = meta::SpirePublishedEpochSnapshot::new([m
+[36m@@ -839,6 +925,8 @@[m [mpub(crate) unsafe fn index_placement_snapshot([m
+             &object_manifest,[m
+             &placement_directory,[m
+         )?;[m
+[32m+[m[32m        // SAFETY: opens relation-backed object stores for placements in the[m
+[32m+[m[32m        // active placement snapshot while holding AccessShareLock.[m
+         let object_store = unsafe {[m
+             storage::SpireRelationObjectStoreSet::for_index_relation_and_placements([m
+                 index_relation,[m
+[36m@@ -881,11 +969,15 @@[m [mpub(crate) unsafe fn remote_node_snapshot([m
+     index_relation: pg_sys::Relation,[m
+ ) -> Vec<SpireRemoteNodeSnapshotRow> {[m
+     let result = (|| -> Result<Vec<SpireRemoteNodeSnapshotRow>, String> {[m
+[32m+[m[32m        // SAFETY: reads root/control state through the live index relation for[m
+[32m+[m[32m        // remote-node diagnostics.[m
+         let root_control = unsafe { page::read_root_control_page(index_relation) };[m
+         if root_control.active_epoch == 0 {[m
+             return Ok(Vec::new());[m
+         }[m
+ [m
+[32m+[m[32m        // SAFETY: root_control came from the same live index relation and names[m
+[32m+[m[32m        // the active placement directory used by remote-node diagnostics.[m
+         let (_epoch_manifest, _object_manifest, placement_directory) = unsafe {[m
+             load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control)?[m
+         };[m
+[36m@@ -954,6 +1046,8 @@[m [mpub(crate) unsafe fn remote_node_snapshot([m
+             .copied()[m
+             .filter(|node_id| *node_id != meta::SPIRE_LOCAL_NODE_ID)[m
+             .collect::<Vec<_>>();[m
+[32m+[m[32m        // SAFETY: rd_id is stable while index_relation is open; it is copied as[m
+[32m+[m[32m        // the coordinator index OID for descriptor lookup.[m
+         let descriptors =[m
+             load_remote_node_descriptor_rows(unsafe { (*index_relation).rd_id }, &remote_node_ids)?;[m
+         for descriptor in descriptors {[m
+[36m@@ -1419,6 +1513,8 @@[m [mpub(crate) unsafe fn remote_node_descriptor_readiness([m
+ ) -> Vec<SpireRemoteNodeDescriptorReadinessRow> {[m
+     let mut rows = Vec::new();[m
+     let contract_rows = remote_node_descriptor_contract_rows();[m
+[32m+[m[32m    // SAFETY: forwards the live index relation to remote-node snapshot[m
+[32m+[m[32m    // diagnostics before expanding descriptor contract rows.[m
+     for node in unsafe { remote_node_snapshot(index_relation) } {[m
+         if node.node_id == meta::SPIRE_LOCAL_NODE_ID {[m
+             continue;[m
+[36m@@ -1465,6 +1561,8 @@[m [mpub(crate) unsafe fn remote_node_descriptor_readiness([m
+ pub(crate) unsafe fn remote_node_descriptor_readiness_summary([m
+     index_relation: pg_sys::Relation,[m
+ ) -> SpireRemoteNodeDescriptorReadinessSummaryRow {[m
+[32m+[m[32m    // SAFETY: reads root/control state through the live index relation for the[m
+[32m+[m[32m    // descriptor-readiness summary epoch.[m
+     let root_control = unsafe { page::read_root_control_page(index_relation) };[m
+     let mut summary = SpireRemoteNodeDescriptorReadinessSummaryRow {[m
+         active_epoch: root_control.active_epoch,[m
+[36m@@ -1482,6 +1580,8 @@[m [mpub(crate) unsafe fn remote_node_descriptor_readiness_summary([m
+     }[m
+ [m
+     let mut seen_nodes = HashSet::new();[m
+[32m+[m[32m    // SAFETY: forwards the live index relation to descriptor-readiness rows[m
+[32m+[m[32m    // before reducing them into a summary.[m
+     for row in unsafe { remote_node_descriptor_readiness(index_relation) } {[m
+         if seen_nodes.insert(row.node_id) {[m
+             summary.remote_node_count =[m
+[36m@@ -1541,6 +1641,8 @@[m [mpub(crate) unsafe fn remote_node_descriptor_readiness_summary([m
+ pub(crate) unsafe fn remote_node_capability_plan([m
+     index_relation: pg_sys::Relation,[m
+ ) -> Vec<SpireRemoteNodeCapabilityPlanRow> {[m
+[32m+[m[32m    // SAFETY: forwards the live index relation to remote-node snapshot[m
+[32m+[m[32m    // diagnostics before mapping rows to capability plan entries.[m
+     unsafe { remote_node_snapshot(index_relation) }[m
+         .into_iter()[m
+         .map(remote_node_capability_plan_row)[m
+[36m@@ -1550,6 +1652,8 @@[m [mpub(crate) unsafe fn remote_node_capability_plan([m
+ pub(crate) unsafe fn remote_node_capability_summary([m
+     index_relation: pg_sys::Relation,[m
+ ) -> SpireRemoteNodeCapabilitySummaryRow {[m
+[32m+[m[32m    // SAFETY: reads root/control state through the live index relation for the[m
+[32m+[m[32m    // remote-node capability summary epoch.[m
+     let root_control = unsafe { page::read_root_control_page(index_relation) };[m
+     let mut summary = SpireRemoteNodeCapabilitySummaryRow {[m
+         active_epoch: root_control.active_epoch,[m
+[36m@@ -1568,6 +1672,8 @@[m [mpub(crate) unsafe fn remote_node_capability_summary([m
+         return summary;[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: forwards the live index relation to capability-plan diagnostics[m
+[32m+[m[32m    // before reducing plan rows into a summary.[m
+     for row in unsafe { remote_node_capability_plan(index_relation) } {[m
+         summary.node_count = summary.node_count.checked_add(1).unwrap_or_else(|| {[m
+             pgrx::error!("ec_spire remote node capability summary node count overflow")[m
+[36m@@ -1631,6 +1737,8 @@[m [mpub(crate) unsafe fn remote_node_capability_summary([m
+ pub(crate) unsafe fn remote_epoch_publish_plan([m
+     index_relation: pg_sys::Relation,[m
+ ) -> Vec<SpireRemoteEpochPublishPlanRow> {[m
+[32m+[m[32m    // SAFETY: forwards the live index relation to remote-node snapshot[m
+[32m+[m[32m    // diagnostics before filtering remote publish plan rows.[m
+     unsafe { remote_node_snapshot(index_relation) }[m
+         .into_iter()[m
+         .filter(|node| node.node_id != meta::SPIRE_LOCAL_NODE_ID)[m
+[36m@@ -1641,6 +1749,8 @@[m [mpub(crate) unsafe fn remote_epoch_publish_plan([m
+ pub(crate) unsafe fn remote_epoch_publish_readiness([m
+     index_relation: pg_sys::Relation,[m
+ ) -> SpireRemoteEpochPublishReadinessRow {[m
+[32m+[m[32m    // SAFETY: reads root/control state through the live index relation for the[m
+[32m+[m[32m    // remote epoch publish readiness epoch.[m
+     let root_control = unsafe { page::read_root_control_page(index_relation) };[m
+     let mut summary = SpireRemoteEpochPublishReadinessRow {[m
+         active_epoch: root_control.active_epoch,[m
+[36m@@ -1659,6 +1769,8 @@[m [mpub(crate) unsafe fn remote_epoch_publish_readiness([m
+         return summary;[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: forwards the live index relation to publish-plan diagnostics[m
+[32m+[m[32m    // before reducing remote rows into readiness counters.[m
+     for row in unsafe { remote_epoch_publish_plan(index_relation) } {[m
+         summary.remote_node_count =[m
+             summary.remote_node_count.checked_add(1).unwrap_or_else(|| {[m
+[36m@@ -1748,6 +1860,8 @@[m [mpub(crate) unsafe fn remote_epoch_publish_readiness([m
+ pub(crate) unsafe fn remote_epoch_publish_gate_summary([m
+     index_relation: pg_sys::Relation,[m
+ ) -> SpireRemoteEpochPublishGateSummaryRow {[m
+[32m+[m[32m    // SAFETY: forwards the live index relation to the publish-readiness summary[m
+[32m+[m[32m    // before deriving the publish gate decision.[m
+     let readiness = unsafe { remote_epoch_publish_readiness(index_relation) };[m
+     let (publish_scope, publish_decision, next_blocker, recommendation) =[m
+         if readiness.active_epoch == 0 {[m
+[36m@@ -1804,6 +1918,8 @@[m [mpub(crate) unsafe fn remote_epoch_publish_gate_summary([m
+ pub(crate) unsafe fn remote_epoch_manifest_plan([m
+     index_relation: pg_sys::Relation,[m
+ ) -> Vec<SpireRemoteEpochManifestPlanRow> {[m
+[32m+[m[32m    // SAFETY: forwards the live index relation to remote publish planning[m
+[32m+[m[32m    // before mapping rows to manifest-plan entries.[m
+     unsafe { remote_epoch_publish_plan(index_relation) }[m
+         .into_iter()[m
+         .map(remote_epoch_manifest_plan_row)[m
+[36m@@ -1813,6 +1929,8 @@[m [mpub(crate) unsafe fn remote_epoch_manifest_plan([m
+ pub(crate) unsafe fn remote_epoch_manifest_summary([m
+     index_relation: pg_sys::Relation,[m
+ ) -> SpireRemoteEpochManifestSummaryRow {[m
+[32m+[m[32m    // SAFETY: forwards the live index relation to the publish gate summary[m
+[32m+[m[32m    // before deriving the manifest decision.[m
+     let gate = unsafe { remote_epoch_publish_gate_summary(index_relation) };[m
+     let (manifest_decision, recommendation) = if gate.active_epoch == 0 {[m
+         ("build_required", gate.recommendation)[m
+[36m@@ -2174,11 +2292,15 @@[m [mpub(crate) unsafe fn index_leaf_snapshot([m
+     index_relation: pg_sys::Relation,[m
+ ) -> Vec<SpireIndexLeafSnapshotRow> {[m
+     let result = (|| -> Result<Vec<SpireIndexLeafSnapshotRow>, String> {[m
+[32m+[m[32m        // SAFETY: reads root/control state through the live index relation for[m
+[32m+[m[32m        // leaf snapshot diagnostics.[m
+         let root_control = unsafe { page::read_root_control_page(index_relation) };[m
+         if root_control.active_epoch == 0 {[m
+             return Ok(Vec::new());[m
+         }[m
+ [m
+[32m+[m[32m        // SAFETY: root_control came from the same live index relation and names[m
+[32m+[m[32m        // the active manifests used by leaf diagnostics.[m
+         let (epoch_manifest, object_manifest, placement_directory) =[m
+             unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };[m
+         let snapshot = meta::SpireValidatedEpochSnapshot::new([m
+[36m@@ -2186,6 +2308,8 @@[m [mpub(crate) unsafe fn index_leaf_snapshot([m
+             &object_manifest,[m
+             &placement_directory,[m
+         )?;[m
+[32m+[m[32m        // SAFETY: opens the SPIRE relation object store for the live index[m
+[32m+[m[32m        // relation before reading local leaf objects.[m
+         let object_store =[m
+             unsafe { storage::SpireRelationObjectStore::for_index_relation(index_relation)? };[m
+         collect_leaf_snapshot_rows(root_control, &snapshot, &object_store)[m
+
+Script done on 2026-05-19 02:28:24-07:00 [COMMAND_EXIT_CODE="0"]

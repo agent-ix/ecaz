@@ -1,0 +1,2 @@
+python3 scripts/unsafe_ledger.py generate --output reviews/task-50/122-spire-local-heap-wrapper-boundary/artifacts/unsafe-ledger-after.jsonl --packet reviews/task-50/122-spire-local-heap-wrapper-boundary src
+wrote 1638 unsafe ledger rows to reviews/task-50/122-spire-local-heap-wrapper-boundary/artifacts/unsafe-ledger-after.jsonl

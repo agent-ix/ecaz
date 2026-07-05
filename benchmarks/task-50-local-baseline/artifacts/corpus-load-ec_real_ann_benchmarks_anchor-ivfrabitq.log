@@ -1,0 +1,35 @@
+[loader] inspecting /home/peter/dev/ecaz/target/real-corpus/staged-task50/ec_real_ann_benchmarks_anchor_corpus.tsv
+[loader] inspecting /home/peter/dev/ecaz/target/real-corpus/staged-task50/ec_real_ann_benchmarks_anchor_queries.tsv
+[loader] corpus: 990000 rows, sha256=00d96d7665edc31cd8e4e62712c0ef2679fb714682f3ce4d522305e59faec687  queries: 10000 rows, sha256=34c4874e0e35734574f4ee9e1dd10753fcec2d295955061a407c258df163f5a0
+[loader] warning: manifest verification failed for /home/peter/dev/ecaz/target/real-corpus/staged-task50/ec_real_ann_benchmarks_anchor_manifest.json: prefix="ec_real_ann_benchmarks_anchor" (expected "ec_real_ann_benchmarks_anchor_ivfrabitq")
+[loader] copied corpus table ec_real_ann_benchmarks_anchor_ivfrabitq_corpus in 448.05s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table ec_real_ann_benchmarks_anchor_ivfrabitq_corpus in 145.61s
+[loader] copied queries table ec_real_ann_benchmarks_anchor_ivfrabitq_queries in 4.38s
+[loader] building ec_real_ann_benchmarks_anchor_ivfrabitq_rabitq_idx using ec_ivf (reloptions=[storage_format=rabitq]) ...
+[loader] built ec_real_ann_benchmarks_anchor_ivfrabitq_rabitq_idx in 1675.91s
+┌─────────┬────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                      │
+╞═════════╪════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_ivf                                                                     │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ ec_real_ann_benchmarks_anchor_ivfrabitq_corpus (990000 rows)               │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ ec_real_ann_benchmarks_anchor_ivfrabitq_queries (10000 rows)               │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ ec_real_ann_benchmarks_anchor_ivfrabitq_rabitq_idx [storage_format=rabitq] │
+└─────────┴────────────────────────────────────────────────────────────────────────────┘
+[loader] completed prefix ec_real_ann_benchmarks_anchor_ivfrabitq in 2444.69s
+┌─────────┬────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                      │
+╞═════════╪════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_ivf                                                                     │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ ec_real_ann_benchmarks_anchor_ivfrabitq_corpus (990000 rows)               │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ ec_real_ann_benchmarks_anchor_ivfrabitq_queries (10000 rows)               │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ ec_real_ann_benchmarks_anchor_ivfrabitq_rabitq_idx [storage_format=rabitq] │
+└─────────┴────────────────────────────────────────────────────────────────────────────┘
+[loader] completed prefix ec_real_ann_benchmarks_anchor_ivfrabitq in 2444.69s
+__ecaz_exit__=0

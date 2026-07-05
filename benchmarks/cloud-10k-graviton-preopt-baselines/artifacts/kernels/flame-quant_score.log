@@ -1,0 +1,222 @@
+# command: cargo flamegraph --features bench --output /tmp/artifacts/kernels-v2/flame-quant_score.svg --bench quant_score -- --bench
+# date:    2026-05-17T03:23:15+00:00
+# host:    Linux ip-10-42-1-159.us-west-2.compute.internal 6.1.170-213.321.amzn2023.aarch64 #1 SMP Thu May 14 12:18:13 UTC 2026 aarch64 aarch64 aarch64 GNU/Linux
+# profile: medium
+# crit_flags: --sample-size 50 --warm-up-time 2 --measurement-time 3
+# ---
+warning: ecaz@0.1.1: In file included from /usr/include/pgsql/server/utils/pgstat_internal.h:19,
+warning: ecaz@0.1.1:                  from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: /usr/include/pgsql/server/lib/ilist.h: In function 'dlist_next_node':
+warning: ecaz@0.1.1: /usr/include/pgsql/server/lib/ilist.h:537:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   537 | dlist_next_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                 ~~~~~~~~~~~~^~~~
+warning: ecaz@0.1.1: /usr/include/pgsql/server/lib/ilist.h: In function 'dlist_prev_node':
+warning: ecaz@0.1.1: /usr/include/pgsql/server/lib/ilist.h:547:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   547 | dlist_prev_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                 ~~~~~~~~~~~~^~~~
+warning: ecaz@0.1.1: /usr/include/pgsql/server/lib/ilist.h: In function 'slist_next_node':
+warning: ecaz@0.1.1: /usr/include/pgsql/server/lib/ilist.h:1054:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:  1054 | slist_next_node(slist_head *head, slist_node *node)
+warning: ecaz@0.1.1:       |                 ~~~~~~~~~~~~^~~~
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: /usr/include/pgsql/server/utils/pgstat_internal.h: In function 'pgstat_cmp_hash_key':
+warning: ecaz@0.1.1: /usr/include/pgsql/server/utils/pgstat_internal.h:875:58: warning: unused parameter 'size' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                   ~~~~~~~^~~~
+warning: ecaz@0.1.1: /usr/include/pgsql/server/utils/pgstat_internal.h:875:70: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                                ~~~~~~^~~
+warning: ecaz@0.1.1: /usr/include/pgsql/server/utils/pgstat_internal.h: In function 'pgstat_hash_hash_key':
+warning: ecaz@0.1.1: /usr/include/pgsql/server/utils/pgstat_internal.h:882:56: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   882 | pgstat_hash_hash_key(const void *d, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                  ~~~~~~^~~
+warning: unused imports: `SpireDmlFrontdoorCustomScanMode`, `SpireDmlFrontdoorPkValuePlan`, `coordinator_insert_prepare_remote_sql as spire_coordinator_insert_prepare_remote_sql`, `dml_frontdoor_bigint_pk_value_bytes as spire_dml_frontdoor_bigint_pk_value_bytes`, `dml_frontdoor_pk_argument_from_replacement_decision as spire_dml_frontdoor_pk_argument_from_replacement_decision`, `dml_frontdoor_primitive_invocation_from_plan as spire_dml_frontdoor_primitive_invocation_from_plan`, `dml_frontdoor_primitive_plan_expr_catalog_row as spire_dml_frontdoor_primitive_plan_expr_catalog_row`, and `dml_frontdoor_primitive_plan_pk_value_bytes as spire_dml_frontdoor_primitive_plan_pk_value_bytes`
+   --> src/am/mod.rs:49:5
+    |
+ 49 |     coordinator_insert_prepare_remote_sql as spire_coordinator_insert_prepare_remote_sql,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+ 56 |     dml_frontdoor_bigint_pk_value_bytes as spire_dml_frontdoor_bigint_pk_value_bytes,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ 57 |     dml_frontdoor_hook_status_row as spire_dml_frontdoor_hook_status_row,
+ 58 |     dml_frontdoor_pk_argument_from_replacement_decision as spire_dml_frontdoor_pk_argument_from_replacement_decision,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ 59 |     dml_frontdoor_primitive_invocation_from_plan as spire_dml_frontdoor_primitive_invocation_from_plan,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ 60 |     dml_frontdoor_primitive_plan_const_pk_value_bytes as spire_dml_frontdoor_primitive_plan_const_pk_value_bytes,
+ 61 |     dml_frontdoor_primitive_plan_expr_catalog_row as spire_dml_frontdoor_primitive_plan_expr_catalog_row,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ 62 |     dml_frontdoor_primitive_plan_from_replacement_decision as spire_dml_frontdoor_primitive_plan_from_replacement_decision,
+ 63 |     dml_frontdoor_primitive_plan_pk_value_bytes as spire_dml_frontdoor_primitive_plan_pk_value_bytes,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+183 |     SpireDmlFrontdoorCustomScanMode, SpireDmlFrontdoorPkValuePlan, SpireDmlFrontdoorQueryContext,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: inline asm clobber list contains reserved registers: FFR
+  --> /var/lib/pgsql/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cee-scape-0.2.0/src/asm_based.rs:98:14
+   |
+98 |             "mov x0, x21", // move saved jbuf_ptr to sigsetjmp param position. (savemask is already in position)
+   |              ^^^^^^^^^^^
+
+note: Reserved registers on the clobber list may not be preserved across the asm statement, and clobbering them may lead to undefined behaviour.
+  --> /var/lib/pgsql/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cee-scape-0.2.0/src/asm_based.rs:98:14
+   |
+98 |             "mov x0, x21", // move saved jbuf_ptr to sigsetjmp param position. (savemask is already in position)
+   |              ^^^^^^^^^^^
+
+warning: `ecaz` (lib) generated 2 warnings (run `cargo fix --lib -p ecaz` to apply 1 suggestion)
+warning: inline asm clobber list contains reserved registers: FFR
+
+note: Reserved registers on the clobber list may not be preserved across the asm statement, and clobbering them may lead to undefined behaviour.
+
+warning: `ecaz` (bin "approx_score_study") generated 1 warning
+warning: `ecaz` (bin "simd_bench") generated 1 warning (1 duplicate)
+warning: `ecaz` (bench "quant_score") generated 1 warning (1 duplicate)
+    Finished `bench` profile [optimized + debuginfo] target(s) in 0.13s
+Gnuplot not found, using plotters backend
+Benchmarking quant/score_ip_encoded/d256_b4/256
+Benchmarking quant/score_ip_encoded/d256_b4/256: Warming up for 3.0000 s
+Benchmarking quant/score_ip_encoded/d256_b4/256: Collecting 100 samples in estimated 5.0001 s (36M iterations)
+Benchmarking quant/score_ip_encoded/d256_b4/256: Analyzing
+quant/score_ip_encoded/d256_b4/256
+                        time:   [139.97 ns 139.98 ns 139.99 ns]
+                        thrpt:  [7.1435 Melem/s 7.1439 Melem/s 7.1442 Melem/s]
+                 change:
+                        time:   [+1.5420% +1.5716% +1.6014%] (p = 0.00 < 0.05)
+                        thrpt:  [-1.5762% -1.5473% -1.5186%]
+                        Performance has regressed.
+Found 14 outliers among 100 measurements (14.00%)
+  5 (5.00%) low severe
+  2 (2.00%) low mild
+  5 (5.00%) high mild
+  2 (2.00%) high severe
+Benchmarking quant/score_ip_encoded/d768_b4/768
+Benchmarking quant/score_ip_encoded/d768_b4/768: Warming up for 3.0000 s
+Benchmarking quant/score_ip_encoded/d768_b4/768: Collecting 100 samples in estimated 5.0000 s (13M iterations)
+Benchmarking quant/score_ip_encoded/d768_b4/768: Analyzing
+quant/score_ip_encoded/d768_b4/768
+                        time:   [396.38 ns 396.42 ns 396.47 ns]
+                        thrpt:  [2.5223 Melem/s 2.5225 Melem/s 2.5228 Melem/s]
+                 change:
+                        time:   [+1.0475% +1.0768% +1.1044%] (p = 0.00 < 0.05)
+                        thrpt:  [-1.0924% -1.0654% -1.0366%]
+                        Performance has regressed.
+Found 4 outliers among 100 measurements (4.00%)
+  1 (1.00%) low severe
+  2 (2.00%) low mild
+  1 (1.00%) high severe
+Benchmarking quant/score_ip_encoded/d1536_b3/1536
+Benchmarking quant/score_ip_encoded/d1536_b3/1536: Warming up for 3.0000 s
+Benchmarking quant/score_ip_encoded/d1536_b3/1536: Collecting 100 samples in estimated 5.0131 s (970k iterations)
+Benchmarking quant/score_ip_encoded/d1536_b3/1536: Analyzing
+quant/score_ip_encoded/d1536_b3/1536
+                        time:   [5.1665 µs 5.1671 µs 5.1678 µs]
+                        thrpt:  [193.51 Kelem/s 193.53 Kelem/s 193.55 Kelem/s]
+                 change:
+                        time:   [+1.0447% +1.0726% +1.1019%] (p = 0.00 < 0.05)
+                        thrpt:  [-1.0899% -1.0612% -1.0339%]
+                        Performance has regressed.
+Found 14 outliers among 100 measurements (14.00%)
+  3 (3.00%) low severe
+  1 (1.00%) low mild
+  3 (3.00%) high mild
+  7 (7.00%) high severe
+Benchmarking quant/score_ip_encoded/d1536_b4/1536
+Benchmarking quant/score_ip_encoded/d1536_b4/1536: Warming up for 3.0000 s
+Benchmarking quant/score_ip_encoded/d1536_b4/1536: Collecting 100 samples in estimated 5.0030 s (4.4M iterations)
+Benchmarking quant/score_ip_encoded/d1536_b4/1536: Analyzing
+quant/score_ip_encoded/d1536_b4/1536
+                        time:   [1.1234 µs 1.1234 µs 1.1235 µs]
+                        thrpt:  [890.08 Kelem/s 890.12 Kelem/s 890.16 Kelem/s]
+                 change:
+                        time:   [+1.3323% +1.3790% +1.4195%] (p = 0.00 < 0.05)
+                        thrpt:  [-1.3996% -1.3603% -1.3148%]
+                        Performance has regressed.
+Found 13 outliers among 100 measurements (13.00%)
+  5 (5.00%) low severe
+  2 (2.00%) low mild
+  2 (2.00%) high mild
+  4 (4.00%) high severe
+Benchmarking quant/score_ip_encoded/d1536_b6/1536
+Benchmarking quant/score_ip_encoded/d1536_b6/1536: Warming up for 3.0000 s
+Benchmarking quant/score_ip_encoded/d1536_b6/1536: Collecting 100 samples in estimated 5.0118 s (828k iterations)
+Benchmarking quant/score_ip_encoded/d1536_b6/1536: Analyzing
+quant/score_ip_encoded/d1536_b6/1536
+                        time:   [6.0137 µs 6.0157 µs 6.0177 µs]
+                        thrpt:  [166.18 Kelem/s 166.23 Kelem/s 166.29 Kelem/s]
+                 change:
+                        time:   [+1.9388% +2.0075% +2.0717%] (p = 0.00 < 0.05)
+                        thrpt:  [-2.0296% -1.9680% -1.9019%]
+                        Performance has regressed.
+Found 7 outliers among 100 measurements (7.00%)
+  4 (4.00%) low mild
+  3 (3.00%) high severe
+Benchmarking quant/score_ip_encoded/d3072_b4/3072
+Benchmarking quant/score_ip_encoded/d3072_b4/3072: Warming up for 3.0000 s
+Benchmarking quant/score_ip_encoded/d3072_b4/3072: Collecting 100 samples in estimated 5.0027 s (3.2M iterations)
+Benchmarking quant/score_ip_encoded/d3072_b4/3072: Analyzing
+quant/score_ip_encoded/d3072_b4/3072
+                        time:   [1.5786 µs 1.5792 µs 1.5799 µs]
+                        thrpt:  [632.97 Kelem/s 633.23 Kelem/s 633.47 Kelem/s]
+                 change:
+                        time:   [+2.0855% +2.1590% +2.2440%] (p = 0.00 < 0.05)
+                        thrpt:  [-2.1948% -2.1134% -2.0429%]
+                        Performance has regressed.
+Found 4 outliers among 100 measurements (4.00%)
+  1 (1.00%) high mild
+  3 (3.00%) high severe
+
+Benchmarking quant/score_ip_codes_lite/d256_b4/256
+Benchmarking quant/score_ip_codes_lite/d256_b4/256: Warming up for 3.0000 s
+Benchmarking quant/score_ip_codes_lite/d256_b4/256: Collecting 100 samples in estimated 5.0003 s (22M iterations)
+Benchmarking quant/score_ip_codes_lite/d256_b4/256: Analyzing
+quant/score_ip_codes_lite/d256_b4/256
+                        time:   [229.16 ns 229.18 ns 229.21 ns]
+                        thrpt:  [4.3629 Melem/s 4.3633 Melem/s 4.3637 Melem/s]
+                 change:
+                        time:   [+1.3884% +1.4224% +1.4620%] (p = 0.00 < 0.05)
+                        thrpt:  [-1.4409% -1.4024% -1.3694%]
+                        Performance has regressed.
+Found 11 outliers among 100 measurements (11.00%)
+  4 (4.00%) low mild
+  4 (4.00%) high mild
+  3 (3.00%) high severe
+Benchmarking quant/score_ip_codes_lite/d1536_b4/1536
+Benchmarking quant/score_ip_codes_lite/d1536_b4/1536: Warming up for 3.0000 s
+Benchmarking quant/score_ip_codes_lite/d1536_b4/1536: Collecting 100 samples in estimated 5.0280 s (788k iterations)
+Benchmarking quant/score_ip_codes_lite/d1536_b4/1536: Analyzing
+quant/score_ip_codes_lite/d1536_b4/1536
+                        time:   [6.3662 µs 6.3673 µs 6.3684 µs]
+                        thrpt:  [157.02 Kelem/s 157.05 Kelem/s 157.08 Kelem/s]
+                 change:
+                        time:   [+1.5799% +1.6362% +1.6917%] (p = 0.00 < 0.05)
+                        thrpt:  [-1.6635% -1.6099% -1.5554%]
+                        Performance has regressed.
+Found 11 outliers among 100 measurements (11.00%)
+  3 (3.00%) low mild
+  4 (4.00%) high mild
+  4 (4.00%) high severe
+Benchmarking quant/score_ip_codes_lite/d3072_b4/3072
+Benchmarking quant/score_ip_codes_lite/d3072_b4/3072: Warming up for 3.0000 s
+Benchmarking quant/score_ip_codes_lite/d3072_b4/3072: Collecting 100 samples in estimated 5.0002 s (1.9M iterations)
+Benchmarking quant/score_ip_codes_lite/d3072_b4/3072: Analyzing
+quant/score_ip_codes_lite/d3072_b4/3072
+                        time:   [2.6591 µs 2.6600 µs 2.6612 µs]
+                        thrpt:  [375.77 Kelem/s 375.94 Kelem/s 376.07 Kelem/s]
+                 change:
+                        time:   [+1.8217% +1.9772% +2.1406%] (p = 0.00 < 0.05)
+                        thrpt:  [-2.0958% -1.9388% -1.7891%]
+                        Performance has regressed.
+Found 13 outliers among 100 measurements (13.00%)
+  3 (3.00%) low mild
+  5 (5.00%) high mild
+  5 (5.00%) high severe
+
+Benchmarking quant/score_ip_from_parts/d256_b4/256
+Benchmarking quant/score_ip_from_parts/d256_b4/256: Warming up for 3.0000 s
+failed to write perf data, error: No space left on device
+failed to write perf data, error: No space left on device
+failed to sample program, exited with code: Some(255)

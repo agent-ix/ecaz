@@ -1,0 +1,20 @@
+    careful_spire::storage::tests::relation_store_insert_and_read_leaf_v2_multi_segment_round_trip
+    careful_spire::storage::tests::relation_store_insert_and_read_leaf_v2_round_trip
+    careful_spire::storage::tests::relation_store_insert_and_read_routing_object_round_trip
+    careful_spire::storage::tests::relation_store_insert_and_read_top_graph_round_trip
+    careful_spire::storage::tests::relation_store_object_reader_trait_dispatch_covers_all_methods
+    careful_spire::storage::tests::relation_store_prefetch_drains_read_stream_with_buffered_blocks
+    careful_spire::storage::tests::relation_store_prefetch_object_tuple_and_tuples_dispatch_through_trait
+    careful_spire::storage::tests::relation_store_read_object_bytes_returns_single_tuple_payload
+    careful_spire::storage::tests::relation_store_routing_object_chain_round_trip_through_large_payload
+    careful_spire::storage::tests::relation_store_top_graph_object_chain_round_trip_through_large_payload
+    careful_spire::storage::tests::relation_store_validate_placement_rejects_non_local_node_id
+    careful_spire::storage::tests::relation_store_validate_placement_rejects_wrong_node_id_and_state
+    careful_spire::storage::tests::relation_store_with_single_tuple_object_bytes_rejects_length_mismatch
+    careful_spire::storage::tests::routing_partition_object_rejects_corrupt_header_and_body
+    careful_spire::storage::tests::routing_partition_object_round_trips_internal_children
+    careful_spire::storage::tests::routing_partition_object_round_trips_root_children
+
+test result: FAILED. 518 passed; 32 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.54s
+
+error: test failed, to rerun pass `--lib`

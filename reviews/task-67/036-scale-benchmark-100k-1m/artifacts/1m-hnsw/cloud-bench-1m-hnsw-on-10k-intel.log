@@ -1,0 +1,8 @@
+
+   0: [91mssm command 1cf22ca6-13ca-4167-a1fa-30b3100a8a80 on i-02811174cc6ded75c ended in Failed (rc=1): + cd /var/lib/pgsql/build/ecaz / ++ dirname reviews/task-67/036-scale-benchmark-100k-1m/artifacts/task67-hnsw-1m-suite.json / + mkdir -p reviews/task-67/036-scale-benchmark-100k-1m/artifacts reviews/task-67/036-scale-benchmark-100k-1m/artifacts/1m-hnsw / + trap 'status=$?; set +e; aws s3 sync reviews/task-67/036-scale-benchmark-100k-1m/artifacts/1m-hnsw s3://ecaz-cloud-10k-intel-f85c5b34/bench-artifacts/task67-hnsw-1m-on-10k-intel/20260530T160555Z/ --region us-west-2 --only-show-errors || true; exit $status' EXIT / + cat[0m
+
+Location:
+   [35mcrates/ecaz-cloud/src/ssm.rs[0m:[35m111[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.

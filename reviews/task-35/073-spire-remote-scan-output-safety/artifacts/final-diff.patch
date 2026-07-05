@@ -1,0 +1,253 @@
+Script started on 2026-05-19 02:17:31-07:00 [<not executed on terminal>]
+[1mdiff --git a/scripts/unsafe_comment_baseline.txt b/scripts/unsafe_comment_baseline.txt[m
+[1mindex c6d83f24..b943f4ad 100644[m
+[1m--- a/scripts/unsafe_comment_baseline.txt[m
+[1m+++ b/scripts/unsafe_comment_baseline.txt[m
+[36m@@ -1360,30 +1360,6 @@[m [msrc/am/ec_spire/coordinator/hierarchy_snapshots.rs:799[m
+ src/am/ec_spire/coordinator/hierarchy_snapshots.rs:809[m
+ src/am/ec_spire/coordinator/hierarchy_snapshots.rs:834[m
+ src/am/ec_spire/coordinator/hierarchy_snapshots.rs:985[m
+[31m-src/am/ec_spire/coordinator/remote_candidates/scan_output.rs:10[m
+[31m-src/am/ec_spire/coordinator/remote_candidates/scan_output.rs:123[m
+[31m-src/am/ec_spire/coordinator/remote_candidates/scan_output.rs:131[m
+[31m-src/am/ec_spire/coordinator/remote_candidates/scan_output.rs:138[m
+[31m-src/am/ec_spire/coordinator/remote_candidates/scan_output.rs:152[m
+[31m-src/am/ec_spire/coordinator/remote_candidates/scan_output.rs:187[m
+[31m-src/am/ec_spire/coordinator/remote_candidates/scan_output.rs:39[m
+[31m-src/am/ec_spire/coordinator/remote_candidates/scan_output.rs:480[m
+[31m-src/am/ec_spire/coordinator/remote_candidates/scan_output.rs:512[m
+[31m-src/am/ec_spire/coordinator/remote_candidates/scan_output.rs:520[m
+[31m-src/am/ec_spire/coordinator/remote_candidates/scan_output.rs:527[m
+[31m-src/am/ec_spire/coordinator/remote_candidates/scan_output.rs:546[m
+[31m-src/am/ec_spire/coordinator/remote_candidates/scan_output.rs:589[m
+[31m-src/am/ec_spire/coordinator/remote_candidates/scan_output.rs:611[m
+[31m-src/am/ec_spire/coordinator/remote_candidates/scan_output.rs:66[m
+[31m-src/am/ec_spire/coordinator/remote_candidates/scan_output.rs:746[m
+[31m-src/am/ec_spire/coordinator/remote_candidates/scan_output.rs:763[m
+[31m-src/am/ec_spire/coordinator/remote_candidates/scan_output.rs:781[m
+[31m-src/am/ec_spire/coordinator/remote_candidates/scan_output.rs:801[m
+[31m-src/am/ec_spire/coordinator/remote_candidates/scan_output.rs:812[m
+[31m-src/am/ec_spire/coordinator/remote_candidates/scan_output.rs:830[m
+[31m-src/am/ec_spire/coordinator/remote_candidates/scan_output.rs:831[m
+[31m-src/am/ec_spire/coordinator/remote_candidates/scan_output.rs:857[m
+[31m-src/am/ec_spire/coordinator/remote_candidates/scan_output.rs:97[m
+ src/am/ec_spire/coordinator/snapshots.rs:10[m
+ src/am/ec_spire/coordinator/snapshots.rs:113[m
+ src/am/ec_spire/coordinator/snapshots.rs:115[m
+[1mdiff --git a/src/am/ec_spire/coordinator/remote_candidates/scan_output.rs b/src/am/ec_spire/coordinator/remote_candidates/scan_output.rs[m
+[1mindex b38f99d4..7b61ae22 100644[m
+[1m--- a/src/am/ec_spire/coordinator/remote_candidates/scan_output.rs[m
+[1m+++ b/src/am/ec_spire/coordinator/remote_candidates/scan_output.rs[m
+[36m@@ -7,6 +7,8 @@[m [mpub(crate) unsafe fn remote_search_production_executor_state_summary_row([m
+     consistency_mode: &str,[m
+ ) -> SpireRemoteProductionExecutorStateSummaryRow {[m
+     let result = (|| -> Result<SpireRemoteProductionExecutorStateSummaryRow, String> {[m
+[32m+[m[32m        // SAFETY: forwards the live index relation and checked request fields[m
+[32m+[m[32m        // to the libpq dispatch planner that owns relation/page reads.[m
+         let dispatch_rows = unsafe {[m
+             remote_search_libpq_dispatch_plan_rows([m
+                 index_relation,[m
+[36m@@ -36,6 +38,8 @@[m [mpub(crate) unsafe fn remote_search_production_degraded_skip_report_rows([m
+     consistency_mode: &str,[m
+ ) -> Vec<SpireRemoteProductionDegradedSkipReportRow> {[m
+     let result = (|| -> Result<Vec<SpireRemoteProductionDegradedSkipReportRow>, String> {[m
+[32m+[m[32m        // SAFETY: forwards the live index relation and checked request fields[m
+[32m+[m[32m        // to dispatch planning before reducing rows to degraded-skip output.[m
+         let dispatch_rows = unsafe {[m
+             remote_search_libpq_dispatch_plan_rows([m
+                 index_relation,[m
+[36m@@ -63,6 +67,8 @@[m [mpub(crate) unsafe fn remote_search_production_executor_session_summary_row([m
+     top_k: usize,[m
+ ) -> SpireRemoteProductionExecutorSessionSummaryRow {[m
+     let consistency_mode = options::current_session_remote_search_consistency_mode_name();[m
+[32m+[m[32m    // SAFETY: forwards the live index relation and checked request fields to[m
+[32m+[m[32m    // the executor-state summary wrapper for this backend session.[m
+     let summary = unsafe {[m
+         remote_search_production_executor_state_summary_row([m
+             index_relation,[m
+[36m@@ -94,6 +100,8 @@[m [mpub(crate) unsafe fn remote_search_production_scan_handoff_summary_row([m
+     let result = (|| -> Result<SpireRemoteProductionScanHandoffSummaryRow, String> {[m
+         let query_for_scan = scan::SpireScanQuery::new(query.clone())?;[m
+         let consistency_mode = options::current_session_remote_search_consistency_mode_name();[m
+[32m+[m[32m        // SAFETY: reads the SPIRE root control page through the live index[m
+[32m+[m[32m        // relation supplied by the SQL diagnostic caller.[m
+         let root_control = unsafe { page::read_root_control_page(index_relation) };[m
+         if root_control.active_epoch == 0 {[m
+             return Ok(SpireRemoteProductionScanHandoffSummaryRow {[m
+[36m@@ -120,6 +128,8 @@[m [mpub(crate) unsafe fn remote_search_production_scan_handoff_summary_row([m
+             });[m
+         }[m
+ [m
+[32m+[m[32m        // SAFETY: root_control came from the same live index relation and names[m
+[32m+[m[32m        // the active epoch whose manifests are loaded for coordinator fanout.[m
+         let (epoch_manifest, object_manifest, placement_directory) = unsafe {[m
+             load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control)?[m
+         };[m
+[36m@@ -128,6 +138,8 @@[m [mpub(crate) unsafe fn remote_search_production_scan_handoff_summary_row([m
+             &object_manifest,[m
+             &placement_directory,[m
+         )?;[m
+[32m+[m[32m        // SAFETY: opens relation-backed object stores for placements from the[m
+[32m+[m[32m        // published epoch snapshot while holding AccessShareLock.[m
+         let object_store = unsafe {[m
+             storage::SpireRelationObjectStoreSet::for_index_relation_and_placements([m
+                 index_relation,[m
+[36m@@ -135,6 +147,8 @@[m [mpub(crate) unsafe fn remote_search_production_scan_handoff_summary_row([m
+                 pg_sys::AccessShareLock as pg_sys::LOCKMODE,[m
+             )?[m
+         };[m
+[32m+[m[32m        // SAFETY: reads PostgreSQL reloptions from the live index relation for[m
+[32m+[m[32m        // scan planning only.[m
+         let relation_options = unsafe { options::relation_options(index_relation) };[m
+         let top_graph_plan = relation_options.top_graph_plan()?;[m
+         let leaf_count = scan::count_scan_plan_routable_leaf_pids(&snapshot, &object_store)?;[m
+[36m@@ -149,6 +163,8 @@[m [mpub(crate) unsafe fn remote_search_production_scan_handoff_summary_row([m
+         let selected_pid_count = u64::try_from(selected_leaf_pids.len())[m
+             .map_err(|_| "ec_spire production scan handoff selected PID count exceeds u64")?;[m
+ [m
+[32m+[m[32m        // SAFETY: forwards the live index relation and selected PIDs from the[m
+[32m+[m[32m        // same active epoch into the execution-summary planner.[m
+         let execution_summary = unsafe {[m
+             remote_search_execution_summary_row([m
+                 index_relation,[m
+[36m@@ -184,6 +200,8 @@[m [mpub(crate) unsafe fn remote_search_production_scan_handoff_summary_row([m
+             });[m
+         }[m
+ [m
+[32m+[m[32m        // SAFETY: forwards the live index relation and selected PIDs from the[m
+[32m+[m[32m        // active epoch into the libpq dispatch planner.[m
+         let dispatch_rows = unsafe {[m
+             remote_search_libpq_dispatch_plan_rows([m
+                 index_relation,[m
+[36m@@ -477,6 +495,8 @@[m [munsafe fn remote_search_production_scan_heap_resolution_result_stream_impl([m
+         let mut metrics = SpireRemoteProductionReadMetrics::default();[m
+         let query_for_scan = scan::SpireScanQuery::new(query.clone())?;[m
+         let consistency_mode = options::current_session_remote_search_consistency_mode_name();[m
+[32m+[m[32m        // SAFETY: reads the SPIRE root control page through the live index[m
+[32m+[m[32m        // relation supplied by the production scan wrapper.[m
+         let root_control = unsafe { page::read_root_control_page(index_relation) };[m
+         if root_control.active_epoch == 0 {[m
+             add_profile_elapsed(&mut metrics.planning_elapsed_ms, planning_start);[m
+[36m@@ -509,6 +529,8 @@[m [munsafe fn remote_search_production_scan_heap_resolution_result_stream_impl([m
+             );[m
+         }[m
+ [m
+[32m+[m[32m        // SAFETY: root_control came from the same live index relation and names[m
+[32m+[m[32m        // the active epoch whose manifests are loaded for heap resolution.[m
+         let (epoch_manifest, object_manifest, placement_directory) = unsafe {[m
+             load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control)?[m
+         };[m
+[36m@@ -517,6 +539,8 @@[m [munsafe fn remote_search_production_scan_heap_resolution_result_stream_impl([m
+             &object_manifest,[m
+             &placement_directory,[m
+         )?;[m
+[32m+[m[32m        // SAFETY: opens relation-backed object stores for placements from the[m
+[32m+[m[32m        // active published epoch while holding AccessShareLock.[m
+         let object_store = unsafe {[m
+             storage::SpireRelationObjectStoreSet::for_index_relation_and_placements([m
+                 index_relation,[m
+[36m@@ -524,6 +548,8 @@[m [munsafe fn remote_search_production_scan_heap_resolution_result_stream_impl([m
+                 pg_sys::AccessShareLock as pg_sys::LOCKMODE,[m
+             )?[m
+         };[m
+[32m+[m[32m        // SAFETY: reads PostgreSQL reloptions from the live index relation for[m
+[32m+[m[32m        // scan-plan and candidate-limit resolution only.[m
+         let relation_options = unsafe { options::relation_options(index_relation) };[m
+         let top_graph_plan = relation_options.top_graph_plan()?;[m
+         let leaf_count = scan::count_scan_plan_routable_leaf_pids(&snapshot, &object_store)?;[m
+[36m@@ -543,6 +569,8 @@[m [munsafe fn remote_search_production_scan_heap_resolution_result_stream_impl([m
+         )?;[m
+         let selected_pid_count = u64::try_from(selected_leaf_pids.len())[m
+             .map_err(|_| "ec_spire production scan heap selected PID count exceeds u64")?;[m
+[32m+[m[32m        // SAFETY: forwards the live index relation and selected PIDs from the[m
+[32m+[m[32m        // same active epoch into the execution-summary planner.[m
+         let execution_summary = unsafe {[m
+             remote_search_execution_summary_row([m
+                 index_relation,[m
+[36m@@ -586,6 +614,8 @@[m [munsafe fn remote_search_production_scan_heap_resolution_result_stream_impl([m
+         }[m
+ [m
+         let local_heap_rows = if execution_summary.local_pid_count > 0 {[m
+[32m+[m[32m            // SAFETY: selected_leaf_pids were planned from the live index[m
+[32m+[m[32m            // relation and active epoch before local heap candidate reads.[m
+             unsafe {[m
+                 remote_search_local_heap_candidate_rows_for_result_summary([m
+                     index_relation,[m
+[36m@@ -608,6 +638,8 @@[m [munsafe fn remote_search_production_scan_heap_resolution_result_stream_impl([m
+         .map_err(|_| "ec_spire production scan heap local candidate count exceeds u64")?;[m
+ [m
+         let fingerprint_start = std::time::Instant::now();[m
+[32m+[m[32m        // SAFETY: forwards the live index relation and selected PIDs from the[m
+[32m+[m[32m        // active epoch into libpq dispatch planning for remote reads.[m
+         let dispatch_rows = unsafe {[m
+             remote_search_libpq_dispatch_plan_rows([m
+                 index_relation,[m
+[36m@@ -743,6 +775,8 @@[m [mpub(crate) unsafe fn remote_search_production_scan_heap_resolution_result_stream[m
+     query: Vec<f32>,[m
+     top_k: usize,[m
+ ) -> SpireRemoteProductionScanResultStream {[m
+[32m+[m[32m    // SAFETY: forwards the live index relation and SQL top_k override to the[m
+[32m+[m[32m    // shared production heap-resolution implementation.[m
+     let result = unsafe {[m
+         remote_search_production_scan_heap_resolution_result_stream_impl([m
+             index_relation,[m
+[36m@@ -760,6 +794,8 @@[m [mpub(crate) unsafe fn remote_search_production_scan_tuple_payload_result_stream([m
+     top_k: usize,[m
+     tuple_payload_columns: &[String],[m
+ ) -> SpireRemoteProductionScanResultStream {[m
+[32m+[m[32m    // SAFETY: forwards the live index relation, SQL top_k override, and[m
+[32m+[m[32m    // caller-owned payload column names to the shared scan implementation.[m
+     let result = unsafe {[m
+         remote_search_production_scan_heap_resolution_result_stream_impl([m
+             index_relation,[m
+[36m@@ -778,6 +814,9 @@[m [mpub(crate) unsafe fn remote_search_production_scan_heap_resolution_am_result_str[m
+     query: Vec<f32>,[m
+ ) -> SpireRemoteProductionScanResultStream {[m
+     let result = (|| -> Result<SpireRemoteProductionScanResultStream, String> {[m
+[32m+[m[32m        // SAFETY: forwards the live index relation from the AM callback into[m
+[32m+[m[32m        // the shared heap-resolution implementation; heap_relation and snapshot[m
+[32m+[m[32m        // are accepted by the callback contract but not dereferenced here.[m
+         let stream = unsafe {[m
+             remote_search_production_scan_heap_resolution_result_stream_impl([m
+                 index_relation,[m
+[36m@@ -798,6 +837,8 @@[m [mpub(crate) unsafe fn remote_search_production_scan_heap_resolution_summary_row([m
+     query: Vec<f32>,[m
+     top_k: usize,[m
+ ) -> SpireRemoteProductionScanHeapResolutionSummaryRow {[m
+[32m+[m[32m    // SAFETY: forwards the live index relation and checked SQL arguments to the[m
+[32m+[m[32m    // result-stream wrapper, then reads the Rust-owned summary field.[m
+     unsafe {[m
+         remote_search_production_scan_heap_resolution_result_stream(index_relation, query, top_k)[m
+             .summary[m
+[36m@@ -809,6 +850,8 @@[m [mpub(crate) unsafe fn remote_search_production_read_profile_row([m
+     query: Vec<f32>,[m
+     top_k: usize,[m
+ ) -> SpireRemoteProductionReadProfileRow {[m
+[32m+[m[32m    // SAFETY: forwards the live index relation and checked SQL arguments to the[m
+[32m+[m[32m    // shared profiled scan implementation.[m
+     let result = unsafe {[m
+         remote_search_production_scan_heap_resolution_result_stream_impl([m
+             index_relation,[m
+[36m@@ -827,7 +870,11 @@[m [mpub(crate) unsafe fn remote_search_operator_diagnostics_row([m
+     top_k: usize,[m
+ ) -> SpireRemoteSearchOperatorDiagnosticsRow {[m
+     let result = (|| -> Result<SpireRemoteSearchOperatorDiagnosticsRow, String> {[m
+[32m+[m[32m        // SAFETY: reads remote-node capability diagnostics through the live[m
+[32m+[m[32m        // index relation supplied by the SQL diagnostic wrapper.[m
+         let capability = unsafe { remote_node_capability_summary(index_relation) };[m
+[32m+[m[32m        // SAFETY: reads remote-node snapshot diagnostics through the same live[m
+[32m+[m[32m        // index relation before filtering to non-local nodes.[m
+         let remote_snapshots = unsafe { remote_node_snapshot(index_relation) }[m
+             .into_iter()[m
+             .filter(|row| row.node_id != meta::SPIRE_LOCAL_NODE_ID)[m
+[36m@@ -853,6 +900,8 @@[m [mpub(crate) unsafe fn remote_search_operator_diagnostics_row([m
+             .map_err(|_| "ec_spire operator diagnostics remote node count exceeds u64")?[m
+             .checked_sub(ready_remote_node_count)[m
+             .ok_or_else(|| "ec_spire operator diagnostics remote node count underflow".to_owned())?;[m
+[32m+[m[32m        // SAFETY: forwards the live index relation and checked request fields[m
+[32m+[m[32m        // to the scan handoff summary used by operator diagnostics.[m
+         let summary =[m
+             unsafe { remote_search_production_scan_handoff_summary_row(index_relation, query, top_k) };[m
+ [m
+
+Script done on 2026-05-19 02:17:31-07:00 [COMMAND_EXIT_CODE="0"]

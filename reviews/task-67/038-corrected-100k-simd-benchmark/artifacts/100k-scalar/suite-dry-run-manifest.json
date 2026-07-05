@@ -1,0 +1,181 @@
+{
+  "suite": "task67-rabitq8-100k-scalar-envfix",
+  "schema_version": 1,
+  "config": "reviews/task-67/038-corrected-100k-simd-benchmark/artifacts/task67-rabitq8-100k-scalar-envfix-suite.json",
+  "config_sha256": "8e484e82a6fb186b08f908a915ebba4cac5942d840616d37b22c21e2fc80197c",
+  "dry_run": true,
+  "generated_at_unix_ms": 1780158943696,
+  "connection": {
+    "database": "tqvector_bench",
+    "host": null,
+    "port": null,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "fetch-dbpedia-openai3-1m",
+      "kind": "corpus-fetch",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "corpus",
+        "fetch",
+        "--dataset",
+        "qdrant-dbpedia-openai3-large-1536-1m",
+        "--output-dir",
+        "/var/lib/pgsql/18/datasets/task67-dbpedia-openai3-1m"
+      ],
+      "selected": true,
+      "tags": [
+        "aws",
+        "fetch",
+        "dbpedia",
+        "real100k"
+      ],
+      "expected_artifacts": [
+        "/var/lib/pgsql/18/datasets/task67-dbpedia-openai3-1m/ecaz_fetch_manifest.json"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "prepare-ec-real-100k",
+      "kind": "corpus-prepare",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "corpus",
+        "prepare",
+        "--profile",
+        "ec_real_100k",
+        "--parquet",
+        "/var/lib/pgsql/18/datasets/task67-dbpedia-openai3-1m/data",
+        "--output-dir",
+        "/var/lib/pgsql/18/datasets/staged-task67-scale"
+      ],
+      "selected": true,
+      "tags": [
+        "aws",
+        "prepare",
+        "ec_real_100k"
+      ],
+      "expected_artifacts": [
+        "/var/lib/pgsql/18/datasets/staged-task67-scale/ec_real_100k_corpus.tsv",
+        "/var/lib/pgsql/18/datasets/staged-task67-scale/ec_real_100k_queries.tsv",
+        "/var/lib/pgsql/18/datasets/staged-task67-scale/ec_real_100k_manifest.json"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "load-100k-rabitq8-headline-scalar-envfix",
+      "kind": "load",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "reviews/task-67/038-corrected-100k-simd-benchmark/artifacts/100k-scalar/load-100k-rabitq8-headline-scalar-envfix.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "task67_r8head_100k_scalar_envfix",
+        "--profile",
+        "ec_ivf",
+        "--corpus-file",
+        "/var/lib/pgsql/18/datasets/staged-task67-scale/ec_real_100k_corpus.tsv",
+        "--queries-file",
+        "/var/lib/pgsql/18/datasets/staged-task67-scale/ec_real_100k_queries.tsv",
+        "--manifest-file",
+        "/var/lib/pgsql/18/datasets/staged-task67-scale/ec_real_100k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--reloption",
+        "storage_format=rabitq",
+        "--reloption",
+        "nlists=128",
+        "--reloption",
+        "nprobe=96",
+        "--reloption",
+        "training_sample_rows=5000",
+        "--reloption",
+        "quant_bits=1",
+        "--reloption",
+        "rerank=off"
+      ],
+      "selected": true,
+      "tags": [
+        "aws",
+        "load",
+        "scalar",
+        "ec_real_100k",
+        "ivf",
+        "rabitq8",
+        "headline"
+      ],
+      "expected_artifacts": [
+        "reviews/task-67/038-corrected-100k-simd-benchmark/artifacts/100k-scalar/load-100k-rabitq8-headline-scalar-envfix.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "sidecar-100k-rabitq8-headline-scalar-envfix",
+      "kind": "sidecar-rerank",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "sidecar-rerank",
+        "--prefix",
+        "task67_r8head_100k_scalar_envfix",
+        "--profile",
+        "ec_ivf",
+        "--k",
+        "10",
+        "--candidate-k",
+        "100",
+        "--concurrency",
+        "1",
+        "--sweep",
+        "64,96,128",
+        "--queries-limit",
+        "100",
+        "--warmup-queries",
+        "25",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--variant",
+        "rabitq8",
+        "--variant",
+        "rabitq8ls",
+        "--variant",
+        "rabitq8c3",
+        "--variant",
+        "rabitq8c4",
+        "--read-mode",
+        "tid-sorted",
+        "--rebuild-sidecar-table",
+        "--force-index",
+        "--log-output",
+        "reviews/task-67/038-corrected-100k-simd-benchmark/artifacts/100k-scalar/sidecar-100k-rabitq8-headline-scalar-envfix.log"
+      ],
+      "selected": true,
+      "tags": [
+        "aws",
+        "sidecar",
+        "scalar",
+        "ec_real_100k",
+        "ivf",
+        "rabitq8",
+        "headline"
+      ],
+      "expected_artifacts": [
+        "reviews/task-67/038-corrected-100k-simd-benchmark/artifacts/100k-scalar/sidecar-100k-rabitq8-headline-scalar-envfix.log"
+      ],
+      "status": "dry-run"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+Script started on 2026-05-13 20:34:56-07:00 [<not executed on terminal>]
+  24517 src/tests/mod.rs
+    904 src/tests/remote_search/catalog_cleanup_policy.rs
+   2864 src/tests/remote_search/contracts.rs
+   1562 src/tests/remote_search/coordinator_catalog.rs
+   1752 src/tests/remote_search/epoch_manifest.rs
+   1266 src/tests/remote_search/libpq_executor.rs
+     10 src/tests/remote_search/mod.rs
+   1140 src/tests/remote_search/node_catalog.rs
+    853 src/tests/remote_search/production_summary.rs
+    937 src/tests/remote_search/receive_faults.rs
+    238 src/tests/remote_search/transport_faults.rs
+    721 src/tests/remote_search/tuple_heap.rs
+  36764 total
+
+Script done on 2026-05-13 20:34:56-07:00 [COMMAND_EXIT_CODE="0"]

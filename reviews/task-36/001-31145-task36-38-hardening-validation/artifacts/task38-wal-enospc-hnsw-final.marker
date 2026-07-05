@@ -1,0 +1,5 @@
+pid=3737345 mode=enospc-write match=pg_wal
+pid=3737346 mode=enospc-write match=pg_wal
+pid=3737347 mode=enospc-write match=pg_wal
+pid=3737348 mode=enospc-write match=pg_wal
+pid=3737348 mode=enospc-write match=pg_wal

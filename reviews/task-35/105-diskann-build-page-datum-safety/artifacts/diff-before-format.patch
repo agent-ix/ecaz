@@ -1,0 +1,294 @@
+Script started on 2026-05-19 05:27:38-07:00 [<not executed on terminal>]
+[1mdiff --git a/scripts/unsafe_comment_baseline.txt b/scripts/unsafe_comment_baseline.txt[m
+[1mindex 5a9fb4e4..cbf21cf0 100644[m
+[1m--- a/scripts/unsafe_comment_baseline.txt[m
+[1m+++ b/scripts/unsafe_comment_baseline.txt[m
+[36m@@ -1,60 +1,30 @@[m
+[31m-src/am/ec_diskann/ambuild.rs:105[m
+[31m-src/am/ec_diskann/ambuild.rs:162[m
+[31m-src/am/ec_diskann/ambuild.rs:225[m
+[31m-src/am/ec_diskann/ambuild.rs:241[m
+[31m-src/am/ec_diskann/ambuild.rs:425[m
+[31m-src/am/ec_diskann/ambuild.rs:428[m
+[31m-src/am/ec_diskann/ambuild.rs:439[m
+[31m-src/am/ec_diskann/ambuild.rs:441[m
+[31m-src/am/ec_diskann/ambuild.rs:533[m
+[31m-src/am/ec_diskann/ambuild.rs:542[m
+[31m-src/am/ec_diskann/ambuild.rs:571[m
+[31m-src/am/ec_diskann/ambuild.rs:579[m
+[31m-src/am/ec_diskann/ambuild.rs:597[m
+[31m-src/am/ec_diskann/ambuild.rs:598[m
+[31m-src/am/ec_diskann/ambuild.rs:599[m
+[31m-src/am/ec_diskann/ambuild.rs:600[m
+[31m-src/am/ec_diskann/ambuild.rs:601[m
+[31m-src/am/ec_diskann/ambuild.rs:602[m
+[31m-src/am/ec_diskann/ambuild.rs:603[m
+[31m-src/am/ec_diskann/ambuild.rs:604[m
+[32m+[m[32msrc/am/ec_diskann/ambuild.rs:548[m
+[32m+[m[32msrc/am/ec_diskann/ambuild.rs:557[m
+[32m+[m[32msrc/am/ec_diskann/ambuild.rs:586[m
+[32m+[m[32msrc/am/ec_diskann/ambuild.rs:594[m
+[32m+[m[32msrc/am/ec_diskann/ambuild.rs:612[m
+[32m+[m[32msrc/am/ec_diskann/ambuild.rs:613[m
+[32m+[m[32msrc/am/ec_diskann/ambuild.rs:614[m
+ src/am/ec_diskann/ambuild.rs:615[m
+[32m+[m[32msrc/am/ec_diskann/ambuild.rs:616[m
+[32m+[m[32msrc/am/ec_diskann/ambuild.rs:617[m
+[32m+[m[32msrc/am/ec_diskann/ambuild.rs:618[m
+ src/am/ec_diskann/ambuild.rs:619[m
+[31m-src/am/ec_diskann/ambuild.rs:641[m
+[31m-src/am/ec_diskann/ambuild.rs:642[m
+[31m-src/am/ec_diskann/ambuild.rs:643[m
+[31m-src/am/ec_diskann/ambuild.rs:644[m
+[31m-src/am/ec_diskann/ambuild.rs:645[m
+[31m-src/am/ec_diskann/ambuild.rs:646[m
+[31m-src/am/ec_diskann/ambuild.rs:647[m
+[31m-src/am/ec_diskann/ambuild.rs:648[m
+[32m+[m[32msrc/am/ec_diskann/ambuild.rs:630[m
+[32m+[m[32msrc/am/ec_diskann/ambuild.rs:634[m
+[32m+[m[32msrc/am/ec_diskann/ambuild.rs:656[m
+ src/am/ec_diskann/ambuild.rs:657[m
+ src/am/ec_diskann/ambuild.rs:658[m
+[31m-src/am/ec_diskann/ambuild.rs:665[m
+[31m-src/am/ec_diskann/ambuild.rs:669[m
+[31m-src/am/ec_diskann/ambuild.rs:677[m
+[31m-src/am/ec_diskann/ambuild.rs:720[m
+[31m-src/am/ec_diskann/ambuild.rs:722[m
+[31m-src/am/ec_diskann/ambuild.rs:725[m
+[31m-src/am/ec_diskann/ambuild.rs:726[m
+[31m-src/am/ec_diskann/ambuild.rs:727[m
+[31m-src/am/ec_diskann/ambuild.rs:730[m
+[31m-src/am/ec_diskann/ambuild.rs:747[m
+[31m-src/am/ec_diskann/ambuild.rs:748[m
+[31m-src/am/ec_diskann/ambuild.rs:751[m
+[31m-src/am/ec_diskann/ambuild.rs:754[m
+[31m-src/am/ec_diskann/ambuild.rs:771[m
+[31m-src/am/ec_diskann/ambuild.rs:779[m
+[31m-src/am/ec_diskann/ambuild.rs:793[m
+[31m-src/am/ec_diskann/ambuild.rs:808[m
+[31m-src/am/ec_diskann/ambuild.rs:815[m
+[31m-src/am/ec_diskann/ambuild.rs:816[m
+[31m-src/am/ec_diskann/ambuild.rs:820[m
+[31m-src/am/ec_diskann/ambuild.rs:823[m
+[31m-src/am/ec_diskann/ambuild.rs:834[m
+[31m-src/am/ec_diskann/ambuild.rs:840[m
+[31m-src/am/ec_diskann/ambuild.rs:848[m
+[31m-src/am/ec_diskann/ambuild.rs:892[m
+[32m+[m[32msrc/am/ec_diskann/ambuild.rs:659[m
+[32m+[m[32msrc/am/ec_diskann/ambuild.rs:660[m
+[32m+[m[32msrc/am/ec_diskann/ambuild.rs:661[m
+[32m+[m[32msrc/am/ec_diskann/ambuild.rs:662[m
+[32m+[m[32msrc/am/ec_diskann/ambuild.rs:663[m
+[32m+[m[32msrc/am/ec_diskann/ambuild.rs:672[m
+[32m+[m[32msrc/am/ec_diskann/ambuild.rs:673[m
+[32m+[m[32msrc/am/ec_diskann/ambuild.rs:680[m
+[32m+[m[32msrc/am/ec_diskann/ambuild.rs:684[m
+[32m+[m[32msrc/am/ec_diskann/ambuild.rs:943[m
+ src/tests/build.rs:251[m
+ src/tests/build.rs:252[m
+ src/tests/build.rs:510[m
+[1mdiff --git a/src/am/ec_diskann/ambuild.rs b/src/am/ec_diskann/ambuild.rs[m
+[1mindex 4fc0e480..daa030a3 100644[m
+[1m--- a/src/am/ec_diskann/ambuild.rs[m
+[1m+++ b/src/am/ec_diskann/ambuild.rs[m
+[36m@@ -102,6 +102,8 @@[m [mstruct BuildPassTimingSummary {[m
+ [m
+ impl BuildState {[m
+     unsafe fn new(index_relation: pg_sys::Relation) -> Self {[m
+[32m+[m[32m        // SAFETY: The index relation is live while ambuild reads its reloptions[m
+[32m+[m[32m        // for this build state.[m
+         let options = unsafe { options::relation_options(index_relation) };[m
+         Self {[m
+             options,[m
+[36m@@ -159,6 +161,8 @@[m [mpub(super) unsafe extern "C-unwind" fn ec_diskann_ambuild([m
+     index_relation: pg_sys::Relation,[m
+     index_info: *mut pg_sys::IndexInfo,[m
+ ) -> *mut pg_sys::IndexBuildResult {[m
+[32m+[m[32m    // SAFETY: PostgreSQL invokes ambuild with callback-duration relation and[m
+[32m+[m[32m    // IndexInfo pointers; all raw pointer work is contained inside the guard.[m
+     unsafe {[m
+         pgrx::pgrx_extern_c_guard(|| {[m
+             let mut state = BuildState::new(index_relation);[m
+[36m@@ -222,6 +226,8 @@[m [mpub(super) unsafe extern "C-unwind" fn ec_diskann_ambuild([m
+ }[m
+ [m
+ pub(super) unsafe extern "C-unwind" fn ec_diskann_ambuildempty(index_relation: pg_sys::Relation) {[m
+[32m+[m[32m    // SAFETY: PostgreSQL invokes ambuildempty with a live index relation; the[m
+[32m+[m[32m    // metadata initialization stays inside the guard.[m
+     unsafe {[m
+         pgrx::pgrx_extern_c_guard(|| {[m
+             let state = BuildState::new(index_relation);[m
+[36m@@ -238,6 +244,8 @@[m [munsafe extern "C-unwind" fn ec_diskann_build_callback([m
+     _tuple_is_alive: bool,[m
+     state: *mut c_void,[m
+ ) {[m
+[32m+[m[32m    // SAFETY: PostgreSQL invokes the build callback with callback-duration[m
+[32m+[m[32m    // Datum/null arrays, heap TID, and opaque state pointer from ambuild.[m
+     unsafe {[m
+         pgrx::pgrx_extern_c_guard(|| {[m
+             let state = &mut *state.cast::<BuildState>();[m
+[36m@@ -422,9 +430,13 @@[m [munsafe fn flush_build_state([m
+     metadata.grouped_codebook_head = codebook_head;[m
+ [m
+     let write_pages_started = Instant::now();[m
+[32m+[m[32m    // SAFETY: `chain` was staged from this build output and the index relation[m
+[32m+[m[32m    // is live for the ambuild callback.[m
+     unsafe { write_data_pages(index_relation, &chain) };[m
+     timing.write_pages_ms = elapsed_ms(write_pages_started.elapsed());[m
+     let metadata_started = Instant::now();[m
+[32m+[m[32m    // SAFETY: Metadata was produced for this staged chain and is rewritten under[m
+[32m+[m[32m    // the metadata page's exclusive buffer lock.[m
+     unsafe { overwrite_metadata_page(index_relation, &metadata) };[m
+     timing.metadata_ms = elapsed_ms(metadata_started.elapsed());[m
+     timing.total_ms = elapsed_ms(total_started.elapsed());[m
+[36m@@ -436,8 +448,11 @@[m [mfn elapsed_ms(duration: Duration) -> u128 {[m
+ }[m
+ [m
+ unsafe fn relation_name(relation: pg_sys::Relation) -> String {[m
+[32m+[m[32m    // SAFETY: The relation is live and PostgreSQL keeps `rd_rel` valid for the[m
+[32m+[m[32m    // opened relation lifetime.[m
+     let rd_rel = unsafe { (*relation).rd_rel.as_ref() }[m
+         .expect("opened relation should expose pg_class metadata");[m
+[32m+[m[32m    // SAFETY: `relname.data` is PostgreSQL's fixed NUL-terminated name buffer.[m
+     unsafe { CStr::from_ptr(rd_rel.relname.data.as_ptr()) }[m
+         .to_string_lossy()[m
+         .into_owned()[m
+[36m@@ -674,6 +689,8 @@[m [munsafe fn source_inner_product_neon(left: &[f32], right: &[f32]) -> f32 {[m
+ }[m
+ [m
+ unsafe fn initialize_metadata_page(index_relation: pg_sys::Relation, metadata: VamanaMetadataPage) {[m
+[32m+[m[32m    // SAFETY: The index relation is live while initializing its main fork and[m
+[32m+[m[32m    // PostgreSQL returns the current block count for that fork.[m
+     let existing_blocks = unsafe {[m
+         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)[m
+     };[m
+[36m@@ -717,16 +734,26 @@[m [mfn write_metadata_to_buffer([m
+     metadata: &VamanaMetadataPage,[m
+ ) {[m
+     let page_size = buffer.page_size();[m
+[32m+[m[32m    // SAFETY: The WAL transaction is scoped to this live index relation.[m
+     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };[m
+[32m+[m[32m    // SAFETY: The metadata buffer is locked exclusively by the caller and is[m
+[32m+[m[32m    // registered for a full image rewrite.[m
+     let page_ptr =[m
+         unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };[m
+     let metadata_bytes = metadata.encode();[m
+     let special_size = (metadata_bytes.len() + 7) & !7;[m
+[32m+[m[32m    // SAFETY: `page_ptr` is the WAL-registered metadata page and `page_size`[m
+[32m+[m[32m    // comes from the locked buffer guard.[m
+     unsafe { pg_sys::PageInit(page_ptr, page_size, special_size) };[m
+[32m+[m[32m    // SAFETY: The page was initialized with a special area large enough for the[m
+[32m+[m[32m    // encoded metadata bytes.[m
+     let dst = unsafe { pg_sys::PageGetSpecialPointer(page_ptr) }.cast::<u8>();[m
+[32m+[m[32m    // SAFETY: Source and destination are non-overlapping and the destination[m
+[32m+[m[32m    // special area was sized by PageInit above.[m
+     unsafe {[m
+         ptr::copy_nonoverlapping(metadata_bytes.as_ptr(), dst, metadata_bytes.len());[m
+     }[m
+[32m+[m[32m    // SAFETY: All metadata page writes were made through the registered page.[m
+     unsafe { wal_txn.finish() };[m
+ }[m
+ [m
+[36m@@ -744,13 +771,20 @@[m [mpub(super) unsafe fn write_data_pages(index_relation: pg_sys::Relation, chain: &[m
+             )[m
+         });[m
+         let page_size = buffer.page_size();[m
+[32m+[m[32m        // SAFETY: The WAL transaction is scoped to this live index relation.[m
+         let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };[m
+[32m+[m[32m        // SAFETY: The newly allocated data buffer is locked exclusively and is[m
+[32m+[m[32m        // registered for a full image write.[m
+         let page_ptr = unsafe {[m
+             wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32)[m
+         };[m
+[32m+[m[32m        // SAFETY: `page_ptr` is the WAL-registered data page and `page_size`[m
+[32m+[m[32m        // comes from the locked buffer guard.[m
+         unsafe { pg_sys::PageInit(page_ptr, page_size, 0) };[m
+ [m
+         for tuple in staged_page.tuples() {[m
+[32m+[m[32m            // SAFETY: `tuple` bytes are immutable staged page bytes and[m
+[32m+[m[32m            // PageAddItemExtended copies them into the initialized page.[m
+             let offset = unsafe {[m
+                 pg_sys::PageAddItemExtended([m
+                     page_ptr,[m
+[36m@@ -768,6 +802,7 @@[m [mpub(super) unsafe fn write_data_pages(index_relation: pg_sys::Relation, chain: &[m
+             }[m
+         }[m
+ [m
+[32m+[m[32m        // SAFETY: All data page writes were made through the registered page.[m
+         unsafe { wal_txn.finish() };[m
+     }[m
+ }[m
+[36m@@ -776,6 +811,8 @@[m [mpub(super) unsafe fn decode_heap_tid(tid: pg_sys::ItemPointer) -> ItemPointer {[m
+     if tid.is_null() {[m
+         pgrx::error!("ec_diskann ambuild received a null heap tid");[m
+     }[m
+[32m+[m[32m    // SAFETY: Null was checked above and PostgreSQL supplied this heap TID for[m
+[32m+[m[32m    // the ambuild callback currently decoding it.[m
+     let (block_number, offset_number) = item_pointer_get_both(unsafe { *tid });[m
+     ItemPointer {[m
+         block_number,[m
+[36m@@ -790,6 +827,8 @@[m [munsafe fn validate_single_ecvector_attribute([m
+     if index_info.is_null() {[m
+         pgrx::error!("ec_diskann ambuild received a null IndexInfo");[m
+     }[m
+[32m+[m[32m    // SAFETY: Null was checked above and PostgreSQL owns IndexInfo for the[m
+[32m+[m[32m    // duration of the ambuild callback.[m
+     let info = unsafe { &*index_info };[m
+     if info.ii_NumIndexAttrs != 1 || info.ii_NumIndexKeyAttrs != 1 {[m
+         pgrx::error!("ec_diskann currently supports single-column indexes only");[m
+[36m@@ -805,6 +844,8 @@[m [munsafe fn validate_single_ecvector_attribute([m
+         pgrx::error!("ec_diskann ambuild requires a base heap column index key");[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: The heap relation is live for ambuild and `from_pg_copy` copies[m
+[32m+[m[32m    // tuple descriptor metadata before inspection.[m
+     let tuple_desc = unsafe { PgTupleDesc::from_pg_copy((*heap_relation).rd_att) };[m
+     let att = tuple_desc[m
+         .get(attnum as usize - 1)[m
+[36m@@ -812,14 +853,18 @@[m [munsafe fn validate_single_ecvector_attribute([m
+     if att.attisdropped {[m
+         pgrx::error!("ec_diskann indexed column references a dropped column");[m
+     }[m
+[32m+[m[32m    // SAFETY: `att.atttypid` comes from copied tuple descriptor metadata.[m
+     let base_type_oid = unsafe { pg_sys::getBaseType(att.atttypid) };[m
+[32m+[m[32m    // SAFETY: `base_type_oid` is the normalized type OID returned by PostgreSQL.[m
+     let formatted = unsafe { pg_sys::format_type_be(base_type_oid) };[m
+     if formatted.is_null() {[m
+         pgrx::error!("ec_diskann indexed column has no resolvable type name");[m
+     }[m
+[32m+[m[32m    // SAFETY: `format_type_be` returned a non-null NUL-terminated C string.[m
+     let name = unsafe { CStr::from_ptr(formatted) }[m
+         .to_string_lossy()[m
+         .into_owned();[m
+[32m+[m[32m    // SAFETY: The formatted type name was palloc'd by PostgreSQL.[m
+     unsafe { pg_sys::pfree(formatted.cast()) };[m
+     let type_name = name.rsplit('.').next().unwrap_or(&name).trim_matches('"');[m
+     if type_name != "ecvector" {[m
+[36m@@ -831,12 +876,16 @@[m [mpub(super) unsafe fn with_ecvector_datum_slice<T>([m
+     datum: pg_sys::Datum,[m
+     f: impl for<'a> FnOnce(&'a [f32]) -> T,[m
+ ) -> T {[m
+[32m+[m[32m    // SAFETY: The datum is expected to be a non-null ecvector varlena selected[m
+[32m+[m[32m    // by ambuild type validation or caller metadata checks.[m
+     let detoasted = unsafe { DetoastedVarlena::plain_from_datum(datum) }[m
+         .unwrap_or_else(|| pgrx::error!("ec_diskann could not detoast indexed ecvector"));[m
+     let bytes = detoasted.as_bytes();[m
+     if bytes.len() % std::mem::size_of::<f32>() != 0 {[m
+         pgrx::error!("ec_diskann indexed ecvector payload length must be a multiple of 4 bytes");[m
+     }[m
+[32m+[m[32m    // SAFETY: `align_to` is used only to validate exact f32 alignment; any[m
+[32m+[m[32m    // non-empty prefix/suffix is rejected before exposing the body.[m
+     let (prefix, body, suffix) = unsafe { bytes.align_to::<f32>() };[m
+     if !prefix.is_empty() || !suffix.is_empty() {[m
+         pgrx::error!("ec_diskann indexed ecvector payload is not aligned for float4 access");[m
+[36m@@ -845,6 +894,8 @@[m [mpub(super) unsafe fn with_ecvector_datum_slice<T>([m
+ }[m
+ [m
+ pub(super) unsafe fn ecvector_datum_to_vec(datum: pg_sys::Datum) -> Vec<f32> {[m
+[32m+[m[32m    // SAFETY: Delegates to the scoped ecvector datum visitor and copies the[m
+[32m+[m[32m    // borrowed f32 body before returning.[m
+     unsafe { with_ecvector_datum_slice(datum, |body| body.to_vec()) }[m
+ }[m
+ [m
+
+Script done on 2026-05-19 05:27:38-07:00 [COMMAND_EXIT_CODE="0"]

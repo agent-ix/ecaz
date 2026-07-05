@@ -1,0 +1,4 @@
+SET
+DROP INDEX
+CREATE INDEX
+NOTICE:  ec_spire_ambuild_timing index=task75_spire_100k_idx phase=complete heap_tuples=100000 scanned_tuples=100000 index_tuples=100000 recursive_fanout=8 setup_ms=0 heap_scan_ms=5014 sample_collect_ms=0 kmeans_ms=1022 kmeans_calls=1 assignment_ms=1090 recursive_kmeans_ms=12 recursive_kmeans_calls=1 recursive_kmeans_max_level=1 recursive_assignment_ms=2 recursive_routing_initial_children=128 recursive_routing_final_children=8 recursive_routing_iterations=1 draft_ms=599 draft_total_ms=613 draft_input_clone_ms=484 draft_pid_alloc_ms=0 draft_recursive_routing_ms=16 draft_route_map_ms=0 draft_leaf_rows_ms=56 draft_leaf_inputs_ms=30 draft_validation_ms=0 top_graph_ms=1299 pq4_training_ms=0 object_store_ms=0 object_store_total_ms=1299 publish_ms=7 total_ms=9050

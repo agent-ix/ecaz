@@ -1,0 +1,28 @@
+Script started on 2026-05-18 08:56:02-07:00 [<not executed on terminal>]
+bash scripts/hardening.sh miri-tree
+bash scripts/hardening.sh miri-many-seeds
+bash scripts/hardening.sh miri-full
+cargo fmt --all -- --check
+cargo clippy --all-targets --no-default-features --features pg18,bench -- -D warnings -A unknown-lints -A unused-imports -A clippy::clone-on-copy -A clippy::derivable-impls -A clippy::enum-variant-names -A clippy::field-reassign-with-default -A clippy::if-same-then-else -A clippy::int-plus-one -A clippy::manual-contains -A clippy::manual-range-contains -A clippy::needless-lifetimes -A clippy::needless-return -A clippy::op-ref -A clippy::question-mark -A clippy::redundant-closure-call -A clippy::too-many-arguments -A clippy::type-complexity -A clippy::unnecessary-cast -A clippy::unnecessary-sort-by -A clippy::useless-conversion -A clippy::useless-format -A clippy::useless-vec -A clippy::vec-init-then-push
+cargo test -p ecaz-cli
+cargo test --manifest-path hardening/careful/Cargo.toml --lib
+cargo test --features bench --test proptest_quant --test proptest_page -- --test-threads=1
+cargo test --features bench --test simd_diff -- --test-threads=1
+cargo test --features bench --test size_of_assertions
+bash scripts/check_unsafe_comments.sh
+bash scripts/hardening.sh cargo-deny-full
+bash scripts/hardening.sh cargo-audit
+bash scripts/hardening.sh cargo-careful
+bash scripts/hardening.sh fuzz-all-short --seconds 30
+cargo run -p ecaz-cli -- dev fault smoke --lane io --dry-run
+cargo run -p ecaz-cli -- dev fault smoke --lane memory --dry-run
+cargo run -p ecaz-cli -- dev fault smoke --lane cancel --dry-run
+cargo run -p ecaz-cli -- dev fault smoke --lane timeout --dry-run
+cargo run -p ecaz-cli -- dev fault smoke --lane lock-timeout --dry-run
+cargo run -p ecaz-cli -- dev fault smoke --lane resource --dry-run
+cargo run -p ecaz-cli -- dev fault smoke --lane slow-disk --dry-run
+bash scripts/hardening.sh kani
+bash scripts/hardening.sh sanitizer-asan
+bash scripts/hardening.sh sanitizer-lsan
+
+Script done on 2026-05-18 08:56:02-07:00 [COMMAND_EXIT_CODE="0"]

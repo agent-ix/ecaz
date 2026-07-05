@@ -1,0 +1,2 @@
+ERROR:  canceling statement due to user request
+CONTEXT:  while vacuuming index "ec_hnsw_real_10k_idx" of relation "public.ec_hnsw_real_10k_corpus"

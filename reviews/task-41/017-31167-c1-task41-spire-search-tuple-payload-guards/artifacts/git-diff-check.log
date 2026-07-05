@@ -1,0 +1,5 @@
+command: git diff --check 8886896f^ 8886896f
+exit status: 0
+
+output:
+<no output>

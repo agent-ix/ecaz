@@ -1,0 +1,915 @@
+Script started on 2026-05-18 12:18:37-07:00 [<not executed on terminal>]
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.20s
+     Running unittests src/lib.rs (target/miri/x86_64-unknown-linux-gnu/debug/deps/ecaz-76140ec678fb61eb)
+warning: function `fwht_in_place_scalar_reference` is never used
+  --> src/quant/hadamard.rs:42:8
+   |
+42 | pub fn fwht_in_place_scalar_reference(values: &mut [f32]) {
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `fwht_in_place_avx2_for_test` is never used
+  --> src/quant/hadamard.rs:47:8
+   |
+47 | pub fn fwht_in_place_avx2_for_test(values: &mut [f32]) -> bool {
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Trying seed: 124
+Trying seed: 118
+Trying seed: 121
+Trying seed: 125
+Trying seed: 119
+Trying seed: 0
+Trying seed: 115
+Trying seed: 109
+Trying seed: 127
+Trying seed: 114
+Trying seed: 126
+Trying seed: 110
+Trying seed: 122
+Trying seed: 116
+Trying seed: 117
+Trying seed: 113
+Trying seed: 112
+Trying seed: 123
+Trying seed: 111
+Trying seed: 120
+
+running 1 test
+
+running 1 test
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ...
+running 1 test
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ...
+running 1 test
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ...
+running 1 test
+
+running 1 test
+
+running 1 test
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ...
+running 1 test
+
+running 1 test
+
+running 1 test
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ...
+running 1 test
+
+running 1 test
+
+running 1 test
+
+running 1 test
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ...
+running 1 test
+
+running 1 test
+
+running 1 test
+
+running 1 test
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ...
+running 1 test
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ...
+running 1 test
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... okok
+
+ok
+ok
+
+
+test result: test result: ok
+oktest result:
+test result: okok. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered outok
+. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out; finished in 34.28s
+ok; finished in 34.27s; finished in 34.30stest result:
+
+
+
+
+
+
+; finished in 34.31sokok
+
+
+
+test result: Trying seed: 108
+Trying seed: 107
+Trying seed: 106
+okokokokTrying seed: 105
+
+
+
+ok
+. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered outtest result: okok
+okok
+
+okok
+
+okok
+
+
+
+
+
+test result: test result: test result: . 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out
+ok
+
+; finished in 34.28stest result: okoktest result:
+
+test result: ok
+test result:
+
+
+test result: oktest result: okok
+
+. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered outokoktest result: oktest result: ok
+; finished in 34.28sokokTrying seed: 104
+
+test result:
+
+. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered outok. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out; finished in 34.27s
+. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered outtest result:
+
+. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered outTrying seed: 103
+. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered outok. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out; finished in 34.30s. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out; finished in 34.27s
+
+; finished in 34.27s
+
+; finished in 34.27s; finished in 34.30s. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out; finished in 34.28sTrying seed: 102
+
+
+; finished in 34.27s; finished in 34.31s
+
+; finished in 34.27s
+
+
+
+
+
+
+
+
+
+; finished in 34.27s; finished in 34.27sTrying seed: 101
+. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out
+
+
+
+Trying seed: 100
+; finished in 34.30s
+
+Trying seed: 99
+Trying seed: 1
+Trying seed: 98
+Trying seed: 97
+Trying seed: 96
+; finished in 34.32sTrying seed: 95
+Trying seed: 94
+Trying seed: 93
+
+
+Trying seed: 92
+Trying seed: 91
+Trying seed: 90
+
+running 1 test
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ...
+running 1 test
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ...
+running 1 test
+
+running 1 test
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ...
+running 1 test
+ok
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ...
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out; finished in 34.27s
+
+
+running 1 test
+Trying seed: 89
+ok
+
+running 1 test
+
+test result: test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... okokok
+running 1 test
+
+
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... . 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out
+
+test result: test result: oktest am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ...
+running 1 test
+ok; finished in 34.29s
+
+
+running 1 test
+
+running 1 test
+. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out
+running 1 test
+
+running 1 test
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... Trying seed: 88
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... ; finished in 34.30s; finished in 34.30s
+
+
+running 1 test
+
+
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ...
+running 1 test
+
+running 1 test
+Trying seed: 87
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... Trying seed: 86
+
+running 1 test
+
+running 1 test
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ...
+running 1 test
+
+running 1 test
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out; finished in 34.28s
+
+Trying seed: 85
+ok
+ok
+ok
+ok
+
+test result: ok
+
+test result:
+test result: test result: okokokokokokok
+
+
+
+. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out
+
+
+oktest result: test result: test result:
+. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out
+test result: . 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered outokokokok
+okok; finished in 34.27sok
+
+
+
+
+test result: ; finished in 34.32sok; finished in 34.35s; finished in 34.27s
+ok
+ok
+
+test result:
+
+
+
+. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out
+Trying seed: 84
+
+ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered outtest result:
+test result: okTrying seed: 83
+
+okokTrying seed: 82
+test result: Trying seed: 81
+
+; finished in 34.27stest result: ; finished in 34.28s
+; finished in 34.27s. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered outok
+
+
+
+ok; finished in 34.27s. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out
+
+
+
+
+. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered outtest result: ; finished in 34.27s. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered outok. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered outTrying seed: 80
+
+
+. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered outTrying seed: 79
+Trying seed: 78
+Trying seed: 77
+; finished in 34.30s; finished in 34.28s
+
+
+
+; finished in 34.40s; finished in 34.27s. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out
+
+Trying seed: 76
+
+
+; finished in 34.31s
+
+Trying seed: 75
+Trying seed: 2
+; finished in 34.35sTrying seed: 74
+
+
+Trying seed: 73
+Trying seed: 72
+Trying seed: 71
+
+running 1 test
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ...
+running 1 test
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ...
+running 1 test
+
+running 1 test
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered outok
+; finished in 34.30s
+
+
+test result: okTrying seed: 70
+
+running 1 test
+. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered outtest am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... ok
+ok
+
+test result: ; finished in 34.30sok
+
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered outTrying seed: 69
+; finished in 34.28s. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out
+
+; finished in 34.28s
+
+Trying seed: 68
+Trying seed: 67
+
+running 1 test
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ...
+running 1 test
+ok
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ...
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out; finished in 34.26s
+
+
+running 1 test
+
+running 1 test
+Trying seed: 66
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ...
+running 1 test
+
+running 1 test
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ...
+running 1 test
+
+running 1 test
+
+running 1 test
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ...
+running 1 test
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ...
+running 1 test
+
+running 1 test
+ok
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ...
+test result: test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... ok
+running 1 test
+
+running 1 test
+
+running 1 test
+. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered outtest am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... ; finished in 34.27s
+
+ok
+
+test result: Trying seed: 65
+ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out; finished in 34.28s
+
+ok
+Trying seed: 64
+
+test result: okok
+ok
+
+test result: okok
+
+. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered outtest result: ok
+ok
+test result: ; finished in 34.27s
+
+ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out
+test result: . 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered outok
+ok; finished in 34.33sTrying seed: 63
+
+
+. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out
+test result: ; finished in 34.28sok. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered outok; finished in 34.27s
+
+
+Trying seed: 62
+
+
+ok
+; finished in 34.28s. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered outTrying seed: 61
+
+
+
+okok
+
+test result: Trying seed: 60
+test result:
+okok
+Trying seed: 59
+test result:
+test result: okok. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered outok
+. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out
+test result: . 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out; finished in 34.32s; finished in 34.28s. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered outok
+
+
+
+ok; finished in 34.28s; finished in 34.28s
+
+
+Trying seed: 58
+; finished in 34.29sok
+
+. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out
+
+
+Trying seed: 57
+
+test result: Trying seed: 56
+ok; finished in 34.27s
+Trying seed: 55
+test result: Trying seed: 54
+
+
+ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered outTrying seed: 53
+. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out; finished in 34.34s
+
+; finished in 34.37s
+
+Trying seed: 52
+Trying seed: 3
+
+running 1 test
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ...
+running 1 test
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... ok
+
+running 1 test
+
+test result: oktest am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... . 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out; finished in 34.27s
+
+Trying seed: 51
+
+running 1 test
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out; finished in 34.27s
+
+Trying seed: 50
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out; finished in 34.34s
+
+Trying seed: 49
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out; finished in 34.29s
+
+Trying seed: 48
+
+running 1 test
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ...
+running 1 test
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ...
+running 1 test
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out; finished in 34.29s
+
+
+running 1 test
+Trying seed: 47
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... ok
+
+running 1 test
+
+test result: oktest am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... . 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out; finished in 34.34s
+
+ok
+
+test result: Trying seed: 46
+
+running 1 test
+oktest am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ...
+running 1 test
+. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out; finished in 34.30s
+
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ...
+running 1 test
+
+running 1 test
+Trying seed: 45
+
+running 1 test
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ...
+running 1 test
+
+running 1 test
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ...
+running 1 test
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ...
+running 1 test
+
+running 1 test
+oktest am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ...
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ...
+test result: test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out
+running 1 test
+; finished in 34.27s
+
+Trying seed: 44
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out; finished in 34.27s
+
+ok
+Trying seed: 43
+ok
+
+test result: ok
+test result: okok
+. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered outok
+
+test result: . 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered outok; finished in 34.29s
+test result:
+
+okokok; finished in 34.34s
+
+
+
+. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered outokTrying seed: 42
+
+
+
+test result: test result: ; finished in 34.26sTrying seed: 41
+. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered outokokokok
+
+
+
+
+test result: ; finished in 34.27s
+
+okok
+. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out
+
+test result: . 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered outTrying seed: 40
+test result: okok; finished in 34.27sTrying seed: 39
+
+
+
+. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered outtest result: ; finished in 34.27s
+
+. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered outok. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out; finished in 34.28sTrying seed: 4
+; finished in 34.34s
+
+
+
+. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered outTrying seed: 38
+; finished in 34.29s
+
+Trying seed: 37
+Trying seed: 36
+; finished in 34.29s
+
+okTrying seed: 35
+
+
+Trying seed: 34
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out; finished in 34.32s
+
+Trying seed: 33
+
+running 1 test
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ...
+running 1 test
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ...
+running 1 test
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ...
+running 1 test
+ok
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ...
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out; finished in 34.27s
+
+Trying seed: 32
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out; finished in 34.27sok
+
+
+
+test result: Trying seed: 31
+ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out; finished in 34.27s
+
+ok
+
+test result: Trying seed: 30
+ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out; finished in 34.28s
+
+Trying seed: 29
+
+running 1 test
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ...
+running 1 test
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ...
+running 1 test
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out; finished in 34.32s
+
+
+running 1 test
+Trying seed: 28
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered outok
+; finished in 34.26s
+
+
+test result: okTrying seed: 27
+
+running 1 test
+. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out; finished in 34.28stest am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ...
+
+Trying seed: 26
+
+running 1 test
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out; finished in 34.37s
+
+
+running 1 test
+
+running 1 test
+Trying seed: 25
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ...
+running 1 test
+ok
+
+running 1 test
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ...
+test result: oktest am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... . 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out; finished in 34.34s
+
+okTrying seed: 24
+
+
+running 1 test
+
+running 1 test
+
+test result: test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... ok
+running 1 test
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... . 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out
+running 1 test
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... ; finished in 34.28s
+
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ...
+running 1 test
+
+running 1 test
+Trying seed: 23
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... ok
+ok
+
+test result:
+test result: okokok
+. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out
+test result: ok; finished in 34.27s
+
+; finished in 34.31s. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out
+
+Trying seed: 22
+ok
+; finished in 34.27s
+
+Trying seed: 21
+
+test result: okTrying seed: 20
+ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out
+
+test result: ok; finished in 34.33s
+ok
+
+
+test result: Trying seed: 19
+okok. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out
+; finished in 34.27s
+
+. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out
+test result: okok
+ok; finished in 34.28s
+Trying seed: 5
+
+
+ok
+test result:
+. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out
+oktest result: okTrying seed: 18
+
+test result: ; finished in 34.30s
+
+ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered outTrying seed: 17
+. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out; finished in 34.30s
+
+; finished in 34.27s
+
+; finished in 34.28s
+
+Trying seed: 16
+Trying seed: 15
+Trying seed: 14
+
+running 1 test
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ...
+running 1 test
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ...
+running 1 test
+ok
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ...
+test result: ok
+running 1 test
+. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered outtest am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... ; finished in 34.32s
+
+Trying seed: 13
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out; finished in 34.28s
+
+Trying seed: 12
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered outok
+
+; finished in 34.31stest result:
+
+okTrying seed: 11
+. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out; finished in 34.28s
+
+Trying seed: 10
+
+running 1 test
+
+running 1 test
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ...
+running 1 test
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... ok
+ok
+
+test result:
+oktest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out; finished in 34.27s; finished in 34.27s
+
+
+
+Trying seed: 9
+Trying seed: 8
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out; finished in 34.27s
+
+Trying seed: 7
+
+running 1 test
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ...
+running 1 test
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ...
+running 1 test
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out; finished in 34.27s
+
+Trying seed: 6
+ok
+
+
+running 1 test
+test result: oktest am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... . 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out
+running 1 test
+; finished in 34.32s
+
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ...
+running 1 test
+oktest am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ...
+
+test result:
+running 1 test
+oktest am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... . 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out; finished in 34.27s
+
+
+running 1 test
+
+running 1 test
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... oktest am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ...
+running 1 test
+
+
+test result: test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... okok
+
+running 1 test
+. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out
+test result: oktest am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... ; finished in 34.29s
+running 1 test
+
+
+. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered outok
+running 1 test
+
+; finished in 34.27stest am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ...
+
+
+test result: oktest am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... . 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered outok
+; finished in 34.28s
+
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out; finished in 34.32s
+
+okok
+
+
+
+oktest result: test result:
+okok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered outok
+; finished in 34.27s; finished in 34.28s
+
+. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out
+
+
+test result: ok; finished in 34.27s
+
+ok
+ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out
+
+test result:
+; finished in 34.27stest result: ok
+
+ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out; finished in 34.27s
+
+; finished in 34.27s
+
+
+running 1 test
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ...
+running 1 test
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ...
+running 1 test
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out; finished in 34.27s
+
+
+running 1 test
+ok
+
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out; finished in 34.27s
+
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out; finished in 34.27s
+
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out; finished in 34.27s
+
+
+running 1 test
+
+running 1 test
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ...
+running 1 test
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... okok
+
+
+
+test result: test result: okok. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out; finished in 34.27s
+
+; finished in 34.29s
+
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out; finished in 34.31s
+
+
+running 1 test
+test am::common::parallel::tests::miri_parallel_worker_slots_are_unique_under_threaded_contention ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1791 filtered out; finished in 34.27s
+
+
+Script done on 2026-05-18 12:28:31-07:00 [COMMAND_EXIT_CODE="0"]

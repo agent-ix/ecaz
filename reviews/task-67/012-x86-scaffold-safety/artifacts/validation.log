@@ -1,0 +1,43 @@
+Task 67 packet 012 validation
+Timestamp: 2026-05-30T02:20:50Z
+Head: 2a282430b7b22303b0566edfe532668d28e2c5e2
+
+Command:
+  cargo fmt
+
+Result:
+  PASS
+
+Notes:
+  rustfmt completed. It emitted the repository's existing stable-rustfmt
+  warnings about nightly-only options being ignored.
+
+Command:
+  cargo test -p ecaz task67_sum_query_dequant_for_test_scaffold_registers_expected_kernels --no-run
+
+Result:
+  PASS
+
+Key output:
+  Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 50s
+
+Command:
+  cargo test -p ecaz task67_sum_query_dequant_for_test_scaffold_matches_scalar_when_available --no-run
+
+Result:
+  PASS
+
+Key output:
+  Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 50s
+
+Command:
+  git diff --check
+
+Result:
+  PASS
+
+Runtime note:
+  This packet only tightens the test-only unsafe scaffold safety contracts.
+  Runtime execution is not claimed. Prior Task 67 packets document that the
+  local test runtime path exits before test bodies due to the PostgreSQL
+  `LockBuffer` symbol issue, and this host still lacks AVX-512 features.

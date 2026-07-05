@@ -1,0 +1,31 @@
+Script started on 2026-05-13 20:05:37-07:00 [<not executed on terminal>]
+     11 src/am/ec_spire/storage/top_graph.rs
+     11 src/am/ec_spire/storage/leaf_v2_parts.rs
+     10 src/am/ec_spire/storage/header.rs
+      8 src/am/ec_spire/meta/object_manifest.rs
+      7 src/am/ec_spire/meta/placement.rs
+      7 src/am/ec_spire/meta/local_store.rs
+      6 src/am/ec_spire/storage/relation_store.rs
+      6 src/am/ec_spire/storage/assignment.rs
+      5 src/am/ec_spire/storage/routing_delta.rs
+      5 src/am/ec_spire/meta/root_control.rs
+      5 src/am/ec_spire/meta/epoch.rs
+      4 src/am/ec_spire/meta/placement_directory.rs
+      3 src/am/ec_spire/custom_scan/planner.rs
+      3 src/am/ec_spire/coordinator/snapshots.rs
+      3 src/am/ec_spire/coordinator/remote_candidates/contracts.rs
+      3 src/am/ec_spire/build/recursive.rs
+      2 src/am/ec_spire/update/types.rs
+      2 src/am/ec_spire/storage/vec_id.rs
+      2 src/am/ec_spire/storage/helpers.rs
+      2 src/am/ec_spire/scan/routing.rs
+      2 src/am/ec_spire/scan/relation.rs
+      2 src/am/ec_spire/scan/candidates.rs
+      2 src/am/ec_spire/build/tuples.rs
+      1 src/am/ec_spire/quantizer/mod.rs
+      1 src/am/ec_spire/meta/snapshot.rs
+      1 src/am/ec_spire/coordinator/remote_candidates/pipeline.rs
+      1 src/am/ec_spire/coordinator/remote_candidates/libpq_plan.rs
+      1 src/am/ec_spire/coordinator/diagnostics.rs
+
+Script done on 2026-05-13 20:05:38-07:00 [COMMAND_EXIT_CODE="0"]

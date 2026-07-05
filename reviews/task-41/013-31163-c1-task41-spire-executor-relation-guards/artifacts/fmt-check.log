@@ -1,0 +1,9 @@
+command: make fmt-check
+exit status: 0
+
+key output:
+cargo fmt --all -- --check
+
+notes:
+rustfmt emitted existing warnings that stable Rust cannot apply the unstable
+`imports_granularity` and `group_imports` settings.

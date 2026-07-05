@@ -1,0 +1,118 @@
+diff --git a/src/am/ec_ivf/page.rs b/src/am/ec_ivf/page.rs
+index edfaf1f5..c9b41ffb 100644
+--- a/src/am/ec_ivf/page.rs
++++ b/src/am/ec_ivf/page.rs
+@@ -2710,6 +2710,8 @@ pub(super) unsafe fn initialize_metadata_page(
+     index_relation: pg_sys::Relation,
+     metadata: MetadataPage,
+ ) {
++    // SAFETY: `index_relation` is live; this only reads the current main-fork
++    // block count to decide whether metadata must be allocated or rewritten.
+     let existing_blocks = unsafe {
+         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
+     };
+@@ -2724,8 +2726,12 @@ pub(super) unsafe fn initialize_metadata_page(
+         pg_sys::ReadBufferMode::RBM_NORMAL
+     };
+     let buffer = if target_block == P_NEW {
++        // SAFETY: `P_NEW` plus zero-and-lock allocates a new metadata block and
++        // returns it locked for initialization.
+         unsafe { LockedBufferGuard::read_main_locked(index_relation, target_block, read_mode) }
+     } else {
++        // SAFETY: metadata block zero already exists and must be locked
++        // exclusively before rewriting its special area.
+         unsafe {
+             LockedBufferGuard::read_main(
+                 index_relation,
+@@ -2738,22 +2744,33 @@ pub(super) unsafe fn initialize_metadata_page(
+     .unwrap_or_else(|| pgrx::error!("ec_ivf failed to allocate metadata buffer"));
+ 
+     let page_size = buffer.page_size();
++    // SAFETY: starts a generic WAL transaction for the live index relation;
++    // the metadata buffer remains locked by `buffer`.
+     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
++    // SAFETY: the locked metadata buffer is registered as a full-page image for
++    // initialization and special-area writes.
+     let page =
+         unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+     let metadata_bytes = metadata.encode();
+     let special_size = align_up(metadata_bytes.len(), ALIGNMENT_BYTES);
++    // SAFETY: `page` is the registered metadata page image, and `special_size`
++    // reserves enough aligned special space for the encoded metadata.
+     unsafe { pg_sys::PageInit(page, page_size, special_size) };
++    // SAFETY: the page was initialized with sufficient special space above.
+     let page_contents = unsafe { pg_sys::PageGetSpecialPointer(page) }.cast::<u8>();
++    // SAFETY: `page_contents` points to the reserved special area, which is at
++    // least `metadata_bytes.len()` bytes.
+     unsafe {
+         ptr::copy_nonoverlapping(metadata_bytes.as_ptr(), page_contents, metadata_bytes.len());
+     }
+ 
++    // SAFETY: finishes the WAL transaction after initializing metadata.
+     unsafe { wal_txn.finish() };
+ }
+ 
+ #[cfg(any(feature = "pg17", feature = "pg18"))]
+ pub(super) unsafe fn read_metadata_page(index_relation: pg_sys::Relation) -> MetadataPage {
++    // SAFETY: metadata lives at block zero and is read under a share lock.
+     let buffer = unsafe {
+         LockedBufferGuard::read_main(
+             index_relation,
+@@ -2765,7 +2782,10 @@ pub(super) unsafe fn read_metadata_page(index_relation: pg_sys::Relation) -> Met
+     let buffer = buffer.unwrap_or_else(|| pgrx::error!("ec_ivf failed to open metadata buffer"));
+ 
+     let page = buffer.page();
++    // SAFETY: metadata pages reserve their encoded metadata in page special
++    // space during initialization.
+     let metadata_ptr = unsafe { pg_sys::PageGetSpecialPointer(page) }.cast::<u8>();
++    // SAFETY: the special area contains exactly `METADATA_BYTES` encoded bytes.
+     let metadata_bytes = unsafe { std::slice::from_raw_parts(metadata_ptr, METADATA_BYTES) };
+     MetadataPage::decode(metadata_bytes).unwrap_or_else(|e| pgrx::error!("{e}"))
+ }
+@@ -2778,6 +2798,8 @@ pub(super) unsafe fn update_metadata_page<F>(
+ where
+     F: FnOnce(&mut MetadataPage) -> Result<(), String>,
+ {
++    // SAFETY: metadata lives at block zero and must be exclusively locked
++    // before updating its encoded special-area bytes.
+     let buffer = unsafe {
+         LockedBufferGuard::read_main(
+             index_relation,
+@@ -2788,10 +2810,17 @@ where
+     };
+     let buffer = buffer.ok_or_else(|| "ec_ivf failed to open metadata buffer".to_owned())?;
+ 
++    // SAFETY: starts a generic WAL transaction for the live index relation;
++    // the metadata buffer remains exclusive-locked by `buffer`.
+     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
++    // SAFETY: the exclusive-locked metadata buffer is registered as a full-page
++    // image for in-place special-area updates.
+     let page =
+         unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
++    // SAFETY: metadata pages reserve their encoded metadata in page special
++    // space during initialization.
+     let metadata_ptr = unsafe { pg_sys::PageGetSpecialPointer(page) }.cast::<u8>();
++    // SAFETY: the special area contains exactly `METADATA_BYTES` encoded bytes.
+     let metadata_bytes = unsafe { std::slice::from_raw_parts(metadata_ptr, METADATA_BYTES) };
+     let mut metadata = match MetadataPage::decode(metadata_bytes) {
+         Ok(metadata) => metadata,
+@@ -2806,7 +2835,10 @@ where
+     }
+ 
+     let encoded = metadata.encode();
++    // SAFETY: `metadata_ptr` points to the fixed-size metadata special area,
++    // and encoded metadata has the same fixed length.
+     unsafe { ptr::copy_nonoverlapping(encoded.as_ptr(), metadata_ptr, encoded.len()) };
++    // SAFETY: finishes the WAL transaction after rewriting metadata bytes.
+     unsafe { wal_txn.finish() };
+     Ok(metadata)
+ }
+@@ -3306,6 +3338,8 @@ mod tests {
+         let mut bytes =
+             vec![0_u8; size_of::<pg_sys::PageHeaderData>() + 4 * size_of::<pg_sys::ItemIdData>()];
+         let header = bytes.as_mut_ptr().cast::<pg_sys::PageHeaderData>();
++        // SAFETY: `bytes` is large enough for `PageHeaderData`, and this test
++        // writes only the synthetic `pd_lower` field before reading it back.
+         unsafe {
+             (*header).pd_lower =
+                 (size_of::<pg_sys::PageHeaderData>() + 3 * size_of::<pg_sys::ItemIdData>()) as u16;

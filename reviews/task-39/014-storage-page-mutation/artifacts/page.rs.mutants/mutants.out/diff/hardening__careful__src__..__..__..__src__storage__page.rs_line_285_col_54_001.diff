@@ -1,0 +1,21 @@
+--- hardening/careful/src/../../../src/storage/page.rs
++++ replace + with * in aligned_tuple_bytes
+@@ -277,17 +277,17 @@
+     page_size.saturating_sub(PAGE_HEADER_BYTES)
+ }
+ 
+ pub(crate) fn element_or_neighbor_tuple_fits(payload_len: usize, page_size: usize) -> bool {
+     aligned_tuple_bytes(payload_len) <= usable_page_bytes(page_size)
+ }
+ 
+ pub(crate) fn aligned_tuple_bytes(payload_len: usize) -> usize {
+-    let tuple_len = TUPLE_HEADER_BYTES + payload_len + LINE_POINTER_BYTES;
++    let tuple_len = TUPLE_HEADER_BYTES + payload_len * /* ~ changed by cargo-mutants ~ */ LINE_POINTER_BYTES;
+     let remainder = tuple_len % ALIGNMENT_BYTES;
+     if remainder == 0 {
+         tuple_len
+     } else {
+         tuple_len + (ALIGNMENT_BYTES - remainder)
+     }
+ }
+ 

@@ -1,0 +1,79 @@
+name: Build Matrix — aarch64-unknown-linux-gnu
+
+# Task 48 §Exit Criteria #1: manual compile lane
+# for the Graviton production target.
+#
+# Manual: cargo check + clippy only.
+#
+# Status: manual.
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: build-matrix-aarch64-linux-gnu-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+jobs:
+  compile:
+    name: pg18 / stable / compile
+    runs-on: ubuntu-24.04-arm
+    if: github.event_name != 'schedule'
+    env:
+      PGRX_HOME: /tmp/tqvector_pgrx_home
+      PGRX_PG_CONFIG_PATH: /usr/lib/postgresql/18/bin/pg_config
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.95.0
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: aarch64-linux-gnu-pg18-compile
+
+      - name: Install PG headers
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          mkdir -p "$PGRX_HOME"
+          sudo curl --fail --show-error --location \
+            --output /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt noble-pgdg main" | \
+            sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update
+          sudo apt-get install -y postgresql-server-dev-18 clang llvm pkg-config libssl-dev
+
+      - name: cargo check
+        run: cargo check --all-targets --no-default-features --features pg18
+
+      - name: cargo clippy
+        run: cargo clippy --all-targets --no-default-features --features pg18 -- -D warnings
+
+  full:
+    name: pg18 / stable / full
+    runs-on: ubuntu-24.04-arm
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    env:
+      PGRX_HOME: /tmp/tqvector_pgrx_home
+      PGRX_PG_CONFIG_PATH: /usr/lib/postgresql/18/bin/pg_config
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.95.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: aarch64-linux-gnu-pg18-full
+
+      - name: Install PG18
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          mkdir -p "$PGRX_HOME"
+          sudo curl --fail --show-error --location \
+            --output /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt noble-pgdg main" | \
+            sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update
+          sudo apt-get install -y postgresql-server-dev-18 postgresql-18 clang llvm pkg-config libssl-dev
+
+      - name: cargo test
+        run: cargo test --no-default-features --features pg18

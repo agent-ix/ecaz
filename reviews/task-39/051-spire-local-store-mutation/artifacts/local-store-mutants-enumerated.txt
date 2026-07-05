@@ -1,0 +1,87 @@
+local_store.rs:10:9: replace SpireLocalObjectStore::with_default_page_size -> Result<Self, String> with Ok(Default::default())
+local_store.rs:21:9: replace SpireLocalObjectStore::for_store_descriptor -> Result<Self, String> with Ok(Default::default())
+local_store.rs:21:24: replace != with == in SpireLocalObjectStore::for_store_descriptor
+local_store.rs:35:9: replace SpireLocalObjectStore::new_for_store -> Result<Self, String> with Ok(Default::default())
+local_store.rs:35:24: replace == with != in SpireLocalObjectStore::new_for_store
+local_store.rs:38:22: replace == with != in SpireLocalObjectStore::new_for_store
+local_store.rs:49:9: replace SpireLocalObjectStore::page_count -> usize with 0
+local_store.rs:49:9: replace SpireLocalObjectStore::page_count -> usize with 1
+local_store.rs:57:9: replace SpireLocalObjectStore::insert_leaf_object -> Result<SpirePlacementEntry, String> with Ok(Default::default())
+local_store.rs:57:18: replace == with != in SpireLocalObjectStore::insert_leaf_object
+local_store.rs:87:9: replace SpireLocalObjectStore::insert_leaf_object_v2_from_rows -> Result<SpirePlacementEntry, String> with Ok(Default::default())
+local_store.rs:87:18: replace == with != in SpireLocalObjectStore::insert_leaf_object_v2_from_rows
+local_store.rs:104:47: replace - with + in SpireLocalObjectStore::insert_leaf_object_v2_from_rows
+local_store.rs:104:47: replace - with / in SpireLocalObjectStore::insert_leaf_object_v2_from_rows
+local_store.rs:142:59: replace + with - in SpireLocalObjectStore::insert_leaf_object_v2_from_rows
+local_store.rs:142:59: replace + with * in SpireLocalObjectStore::insert_leaf_object_v2_from_rows
+local_store.rs:214:9: replace SpireLocalObjectStore::insert_delta_object -> Result<SpirePlacementEntry, String> with Ok(Default::default())
+local_store.rs:214:18: replace == with != in SpireLocalObjectStore::insert_delta_object
+local_store.rs:241:9: replace SpireLocalObjectStore::insert_routing_object -> Result<SpirePlacementEntry, String> with Ok(Default::default())
+local_store.rs:241:18: replace == with != in SpireLocalObjectStore::insert_routing_object
+local_store.rs:268:9: replace SpireLocalObjectStore::insert_top_graph_object -> Result<SpirePlacementEntry, String> with Ok(Default::default())
+local_store.rs:268:18: replace == with != in SpireLocalObjectStore::insert_top_graph_object
+local_store.rs:294:9: replace SpireLocalObjectStore::read_leaf_object -> Result<SpireLeafPartitionObject, String> with Ok(Default::default())
+local_store.rs:296:30: replace != with == in SpireLocalObjectStore::read_leaf_object
+local_store.rs:302:41: replace != with == in SpireLocalObjectStore::read_leaf_object
+local_store.rs:309:13: replace || with && in SpireLocalObjectStore::read_leaf_object
+local_store.rs:308:50: replace == with != in SpireLocalObjectStore::read_leaf_object
+local_store.rs:309:54: replace > with == in SpireLocalObjectStore::read_leaf_object
+local_store.rs:309:54: replace > with < in SpireLocalObjectStore::read_leaf_object
+local_store.rs:309:54: replace > with >= in SpireLocalObjectStore::read_leaf_object
+local_store.rs:323:9: replace SpireLocalObjectStore::read_leaf_object_v2 -> Result<SpireLeafPartitionObjectV2, String> with Ok(Default::default())
+local_store.rs:326:28: replace != with == in SpireLocalObjectStore::read_leaf_object_v2
+local_store.rs:332:39: replace != with == in SpireLocalObjectStore::read_leaf_object_v2
+local_store.rs:339:13: replace || with && in SpireLocalObjectStore::read_leaf_object_v2
+local_store.rs:338:48: replace == with != in SpireLocalObjectStore::read_leaf_object_v2
+local_store.rs:339:52: replace > with == in SpireLocalObjectStore::read_leaf_object_v2
+local_store.rs:339:52: replace > with < in SpireLocalObjectStore::read_leaf_object_v2
+local_store.rs:339:52: replace > with >= in SpireLocalObjectStore::read_leaf_object_v2
+local_store.rs:346:46: replace != with == in SpireLocalObjectStore::read_leaf_object_v2
+local_store.rs:358:29: replace == with != in SpireLocalObjectStore::read_leaf_object_v2
+local_store.rs:366:25: replace != with == in SpireLocalObjectStore::read_leaf_object_v2
+local_store.rs:376:9: replace SpireLocalObjectStore::read_object_header -> Result<SpirePartitionObjectHeader, String> with Ok(Default::default())
+local_store.rs:384:30: replace != with == in SpireLocalObjectStore::read_object_header
+local_store.rs:394:54: replace != with == in SpireLocalObjectStore::read_object_header
+local_store.rs:408:23: replace != with == in SpireLocalObjectStore::read_object_header
+local_store.rs:414:34: replace != with == in SpireLocalObjectStore::read_object_header
+local_store.rs:420:48: replace || with && in SpireLocalObjectStore::read_object_header
+local_store.rs:420:43: replace == with != in SpireLocalObjectStore::read_object_header
+local_store.rs:420:82: replace > with == in SpireLocalObjectStore::read_object_header
+local_store.rs:420:82: replace > with < in SpireLocalObjectStore::read_object_header
+local_store.rs:420:82: replace > with >= in SpireLocalObjectStore::read_object_header
+local_store.rs:433:9: replace SpireLocalObjectStore::read_routing_object -> Result<SpireRoutingPartitionObject, String> with Ok(Default::default())
+local_store.rs:435:30: replace != with == in SpireLocalObjectStore::read_routing_object
+local_store.rs:441:41: replace != with == in SpireLocalObjectStore::read_routing_object
+local_store.rs:448:13: replace || with && in SpireLocalObjectStore::read_routing_object
+local_store.rs:447:50: replace == with != in SpireLocalObjectStore::read_routing_object
+local_store.rs:448:54: replace > with == in SpireLocalObjectStore::read_routing_object
+local_store.rs:448:54: replace > with < in SpireLocalObjectStore::read_routing_object
+local_store.rs:448:54: replace > with >= in SpireLocalObjectStore::read_routing_object
+local_store.rs:462:9: replace SpireLocalObjectStore::read_delta_object -> Result<SpireDeltaPartitionObject, String> with Ok(Default::default())
+local_store.rs:464:30: replace != with == in SpireLocalObjectStore::read_delta_object
+local_store.rs:470:41: replace != with == in SpireLocalObjectStore::read_delta_object
+local_store.rs:477:13: replace || with && in SpireLocalObjectStore::read_delta_object
+local_store.rs:476:50: replace == with != in SpireLocalObjectStore::read_delta_object
+local_store.rs:477:54: replace > with == in SpireLocalObjectStore::read_delta_object
+local_store.rs:477:54: replace > with < in SpireLocalObjectStore::read_delta_object
+local_store.rs:477:54: replace > with >= in SpireLocalObjectStore::read_delta_object
+local_store.rs:491:9: replace SpireLocalObjectStore::read_top_graph_object -> Result<SpireTopGraphPartitionObject, String> with Ok(Default::default())
+local_store.rs:493:30: replace != with == in SpireLocalObjectStore::read_top_graph_object
+local_store.rs:499:41: replace != with == in SpireLocalObjectStore::read_top_graph_object
+local_store.rs:506:13: replace || with && in SpireLocalObjectStore::read_top_graph_object
+local_store.rs:505:50: replace == with != in SpireLocalObjectStore::read_top_graph_object
+local_store.rs:506:54: replace > with == in SpireLocalObjectStore::read_top_graph_object
+local_store.rs:506:54: replace > with < in SpireLocalObjectStore::read_top_graph_object
+local_store.rs:506:54: replace > with >= in SpireLocalObjectStore::read_top_graph_object
+local_store.rs:517:9: replace SpireLocalObjectStore::read_object_bytes -> Result<&[u8], String> with Ok(Vec::leak(Vec::new()))
+local_store.rs:517:9: replace SpireLocalObjectStore::read_object_bytes -> Result<&[u8], String> with Ok(Vec::leak(vec![0]))
+local_store.rs:517:9: replace SpireLocalObjectStore::read_object_bytes -> Result<&[u8], String> with Ok(Vec::leak(vec![1]))
+local_store.rs:521:22: replace != with == in SpireLocalObjectStore::read_object_bytes
+local_store.rs:532:9: replace SpireLocalObjectStore::read_raw_tuple -> Result<&[u8], String> with Ok(Vec::leak(Vec::new()))
+local_store.rs:532:9: replace SpireLocalObjectStore::read_raw_tuple -> Result<&[u8], String> with Ok(Vec::leak(vec![0]))
+local_store.rs:532:9: replace SpireLocalObjectStore::read_raw_tuple -> Result<&[u8], String> with Ok(Vec::leak(vec![1]))
+local_store.rs:543:9: replace SpireLocalObjectStore::validate_local_available_placement -> Result<(), String> with Ok(())
+local_store.rs:543:30: replace != with == in SpireLocalObjectStore::validate_local_available_placement
+local_store.rs:549:37: replace != with == in SpireLocalObjectStore::validate_local_available_placement
+local_store.rs:555:34: replace != with == in SpireLocalObjectStore::validate_local_available_placement
+local_store.rs:561:28: replace != with == in SpireLocalObjectStore::validate_local_available_placement

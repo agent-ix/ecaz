@@ -1,0 +1,4 @@
+3582fd27 Wrap SPIRE scan heap tuple slot
+ scripts/unsafe_comment_baseline.txt | 60 ++++++++++++++++++-------------------
+ src/am/ec_spire/scan/relation.rs    | 27 ++++++++++++++---
+ 2 files changed, 52 insertions(+), 35 deletions(-)

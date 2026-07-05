@@ -1,0 +1,23 @@
+2026-05-26 07:47:59.703 PDT [2303564] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-05-26 07:47:59.705 PDT [2303564] LOG:  listening on Unix socket "/home/peter/dev/ecaz/target/s-2020049941/.s.PGSQL.39647"
+2026-05-26 07:47:59.712 PDT [2303570] LOG:  database system was shut down at 2026-05-26 07:47:58 PDT
+2026-05-26 07:47:59.716 PDT [2303564] LOG:  database system is ready to accept connections
+2026-05-26 07:48:00.172 PDT [2303595] ERROR:  canceling statement due to statement timeout
+2026-05-26 07:48:00.172 PDT [2303595] STATEMENT:  SELECT pg_sleep(0.30)
+2026-05-26 07:48:00.172 PDT [2303595] LOG:  could not receive data from client: Connection reset by peer
+2026-05-26 07:48:00.210 PDT [2303599] ERROR:  canceling statement due to statement timeout
+2026-05-26 07:48:00.210 PDT [2303599] STATEMENT:  SELECT pg_sleep(0.30)
+2026-05-26 07:48:00.210 PDT [2303599] LOG:  could not receive data from client: Connection reset by peer
+2026-05-26 07:48:00.250 PDT [2303605] ERROR:  canceling statement due to statement timeout
+2026-05-26 07:48:00.250 PDT [2303605] STATEMENT:  SELECT pg_sleep(0.30)
+2026-05-26 07:48:00.250 PDT [2303605] LOG:  could not receive data from client: Connection reset by peer
+2026-05-26 07:48:00.287 PDT [2303609] ERROR:  canceling statement due to statement timeout
+2026-05-26 07:48:00.287 PDT [2303609] STATEMENT:  SELECT pg_sleep(0.30)
+2026-05-26 07:48:00.287 PDT [2303609] LOG:  could not receive data from client: Connection reset by peer
+2026-05-26 07:48:00.392 PDT [2303564] LOG:  received fast shutdown request
+2026-05-26 07:48:00.394 PDT [2303564] LOG:  aborting any active transactions
+2026-05-26 07:48:00.395 PDT [2303564] LOG:  background worker "logical replication launcher" (PID 2303573) exited with exit code 1
+2026-05-26 07:48:00.395 PDT [2303568] LOG:  shutting down
+2026-05-26 07:48:00.397 PDT [2303568] LOG:  checkpoint starting: shutdown immediate
+2026-05-26 07:48:00.409 PDT [2303568] LOG:  checkpoint complete: wrote 0 buffers (0.0%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.004 s, sync=0.002 s, total=0.014 s; sync files=2, longest=0.001 s, average=0.001 s; distance=0 kB, estimate=0 kB; lsn=0/1754600, redo lsn=0/1754600
+2026-05-26 07:48:00.416 PDT [2303564] LOG:  database system is shut down

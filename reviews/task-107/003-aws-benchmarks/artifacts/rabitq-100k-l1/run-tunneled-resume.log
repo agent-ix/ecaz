@@ -1,0 +1,114 @@
+Script started on 2026-06-14 14:16:44-07:00 [<not executed on terminal>]
+tunnel coordinator ready on port 15432
+tunnel remote-2 ready on port 15433
+tunnel remote-3 ready on port 15434
+make: Entering directory '/home/peter/dev/ecaz/infra/spire-aws'
+cd /home/peter/dev/ecaz && /home/peter/dev/ecaz/scripts/spire-aws/load.sh representative /home/peter/dev/ecaz/reviews/task-107/003-aws-benchmarks/artifacts/rabitq-100k-l1/aws-topology.tunneled.json /home/peter/dev/ecaz/reviews/task-107/003-aws-benchmarks/artifacts/rabitq-100k-l1
+[fetch] [1/26] skipping existing /home/peter/dev/ecaz/reviews/task-107/003-aws-benchmarks/work/qdrant-dbpedia/data/train-00000-of-00026.parquet
+[fetch] [2/26] skipping existing /home/peter/dev/ecaz/reviews/task-107/003-aws-benchmarks/work/qdrant-dbpedia/data/train-00001-of-00026.parquet
+[fetch] [3/26] skipping existing /home/peter/dev/ecaz/reviews/task-107/003-aws-benchmarks/work/qdrant-dbpedia/data/train-00002-of-00026.parquet
+[fetch] [4/26] skipping existing /home/peter/dev/ecaz/reviews/task-107/003-aws-benchmarks/work/qdrant-dbpedia/data/train-00003-of-00026.parquet
+[fetch] [5/26] skipping existing /home/peter/dev/ecaz/reviews/task-107/003-aws-benchmarks/work/qdrant-dbpedia/data/train-00004-of-00026.parquet
+[fetch] [6/26] skipping existing /home/peter/dev/ecaz/reviews/task-107/003-aws-benchmarks/work/qdrant-dbpedia/data/train-00005-of-00026.parquet
+[fetch] [7/26] skipping existing /home/peter/dev/ecaz/reviews/task-107/003-aws-benchmarks/work/qdrant-dbpedia/data/train-00006-of-00026.parquet
+[fetch] [8/26] skipping existing /home/peter/dev/ecaz/reviews/task-107/003-aws-benchmarks/work/qdrant-dbpedia/data/train-00007-of-00026.parquet
+[fetch] [9/26] skipping existing /home/peter/dev/ecaz/reviews/task-107/003-aws-benchmarks/work/qdrant-dbpedia/data/train-00008-of-00026.parquet
+[fetch] [10/26] skipping existing /home/peter/dev/ecaz/reviews/task-107/003-aws-benchmarks/work/qdrant-dbpedia/data/train-00009-of-00026.parquet
+[fetch] [11/26] skipping existing /home/peter/dev/ecaz/reviews/task-107/003-aws-benchmarks/work/qdrant-dbpedia/data/train-00010-of-00026.parquet
+[fetch] [12/26] skipping existing /home/peter/dev/ecaz/reviews/task-107/003-aws-benchmarks/work/qdrant-dbpedia/data/train-00011-of-00026.parquet
+[fetch] [13/26] skipping existing /home/peter/dev/ecaz/reviews/task-107/003-aws-benchmarks/work/qdrant-dbpedia/data/train-00012-of-00026.parquet
+[fetch] [14/26] skipping existing /home/peter/dev/ecaz/reviews/task-107/003-aws-benchmarks/work/qdrant-dbpedia/data/train-00013-of-00026.parquet
+[fetch] [15/26] skipping existing /home/peter/dev/ecaz/reviews/task-107/003-aws-benchmarks/work/qdrant-dbpedia/data/train-00014-of-00026.parquet
+[fetch] [16/26] skipping existing /home/peter/dev/ecaz/reviews/task-107/003-aws-benchmarks/work/qdrant-dbpedia/data/train-00015-of-00026.parquet
+[fetch] [17/26] skipping existing /home/peter/dev/ecaz/reviews/task-107/003-aws-benchmarks/work/qdrant-dbpedia/data/train-00016-of-00026.parquet
+[fetch] [18/26] skipping existing /home/peter/dev/ecaz/reviews/task-107/003-aws-benchmarks/work/qdrant-dbpedia/data/train-00017-of-00026.parquet
+[fetch] [19/26] skipping existing /home/peter/dev/ecaz/reviews/task-107/003-aws-benchmarks/work/qdrant-dbpedia/data/train-00018-of-00026.parquet
+[fetch] [20/26] skipping existing /home/peter/dev/ecaz/reviews/task-107/003-aws-benchmarks/work/qdrant-dbpedia/data/train-00019-of-00026.parquet
+[fetch] [21/26] skipping existing /home/peter/dev/ecaz/reviews/task-107/003-aws-benchmarks/work/qdrant-dbpedia/data/train-00020-of-00026.parquet
+[fetch] [22/26] skipping existing /home/peter/dev/ecaz/reviews/task-107/003-aws-benchmarks/work/qdrant-dbpedia/data/train-00021-of-00026.parquet
+[fetch] [23/26] skipping existing /home/peter/dev/ecaz/reviews/task-107/003-aws-benchmarks/work/qdrant-dbpedia/data/train-00022-of-00026.parquet
+[fetch] [24/26] skipping existing /home/peter/dev/ecaz/reviews/task-107/003-aws-benchmarks/work/qdrant-dbpedia/data/train-00023-of-00026.parquet
+[fetch] [25/26] skipping existing /home/peter/dev/ecaz/reviews/task-107/003-aws-benchmarks/work/qdrant-dbpedia/data/train-00024-of-00026.parquet
+[fetch] [26/26] skipping existing /home/peter/dev/ecaz/reviews/task-107/003-aws-benchmarks/work/qdrant-dbpedia/data/train-00025-of-00026.parquet
+[fetch] done. downloaded=0 skipped=26 parquet_dir=/home/peter/dev/ecaz/reviews/task-107/003-aws-benchmarks/work/qdrant-dbpedia/data
+[fetch] next: ecaz corpus prepare --profile ec_real_10k --parquet /home/peter/dev/ecaz/reviews/task-107/003-aws-benchmarks/work/qdrant-dbpedia/data --output-dir /path/to/staged
+[prepare] pass 1: scanning 26 shard(s) for sorted-id prefix (K=101000)
+[prepare] pass 2: materializing 101000 selected vectors
+[prepare] wrote /home/peter/dev/ecaz/reviews/task-107/003-aws-benchmarks/work/qdrant-dbpedia/prepared/ec_real_100k_corpus.tsv
+[prepare] wrote /home/peter/dev/ecaz/reviews/task-107/003-aws-benchmarks/work/qdrant-dbpedia/prepared/ec_real_100k_queries.tsv
+[prepare] wrote /home/peter/dev/ecaz/reviews/task-107/003-aws-benchmarks/work/qdrant-dbpedia/prepared/ec_real_100k_manifest.json
+[prepare] profile=ec_real_100k corpus_rows=100000 query_rows=1000 sort_key='_id ascending lexicographic'
+coordinator load skipped for representative tier (SPIRE_AWS_SKIP_COORDINATOR_LOAD=1)
+ecaz Phase 13e node-local remote load representative node 2 ssm command id: 1c64a919-9086-410d-bb99-413eb6c7fbaf
+ecaz Phase 13e node-local remote load representative node 3 ssm command id: 0e4c5ec8-493e-44fb-ad65-7989b35de097
+cd /home/peter/dev/ecaz && /home/peter/dev/ecaz/scripts/spire-aws/register.sh /home/peter/dev/ecaz/reviews/task-107/003-aws-benchmarks/artifacts/rabitq-100k-l1/aws-topology.tunneled.json /home/peter/dev/ecaz/reviews/task-107/003-aws-benchmarks/artifacts/rabitq-100k-l1 /home/peter/dev/ecaz/reviews/task-107/003-aws-benchmarks/artifacts/rabitq-100k-l1/distributed-representative/distributed-placement-plan.json
+=== PostgreSQL version ===
+18.3
+=== Prepared-xact capacity (must be >= 64 per Phase 13a.1.b) ===
+64
+=== SPIRE GUCs (consistency / transport / payload caps) ===
+ec_spire.adaptive_nprobe	off	
+ec_spire.adaptive_nprobe_score_gap_micros	1000	
+ec_spire.candidate_batch_scoring	on	
+ec_spire.cost_index_page_scale	1	
+ec_spire.cost_leaf_dimension_scale	0.01	
+ec_spire.cost_local_store_page_fanout_scale	0.05	
+ec_spire.cost_rerank_multiplier	1.35	
+ec_spire.cost_routing_dimension_scale	0.01	
+ec_spire.cost_storage_scoring_multiplier	1	
+ec_spire.leaf_block_pruning_global_probe_blocks	0	
+ec_spire.leaf_block_pruning_max_blocks_per_leaf	0	
+ec_spire.leaf_block_pruning_max_global_blocks	0	
+ec_spire.leaf_block_pruning_route_prior_weight	0	
+ec_spire.leaf_block_pruning_sample_rows_per_block	0	
+ec_spire.leaf_block_pruning_sample_summary_prior_weight	0.8	
+ec_spire.leaf_block_pruning_summary_radius_weight	1	
+ec_spire.leaf_block_rows	0	
+ec_spire.leaf_block_summary_representatives	2	
+ec_spire.max_candidate_rows	-1	
+ec_spire.max_remote_payload_bytes_per_row	1024	
+ec_spire.max_remote_payload_rows_per_batch	128	
+ec_spire.max_routed_candidate_rows	0	
+ec_spire.nprobe	-1	
+ec_spire.remote_search_connect_timeout_ms	0	
+ec_spire.remote_search_connection_pool_size	16	
+ec_spire.remote_search_consistency_mode	strict	
+ec_spire.remote_search_max_concurrent_dispatches	0	
+ec_spire.remote_search_max_concurrent_dispatches_per_node	0	
+ec_spire.remote_search_max_nodes	0	
+ec_spire.remote_search_max_pids	0	
+ec_spire.remote_search_max_pids_per_node	0	
+ec_spire.remote_search_statement_timeout_ms	0	
+ec_spire.remote_tuple_transport	auto	
+ec_spire.rerank_width	-1	
+=== Buffer / work memory (Phase 13a.1.b) ===
+maintenance_work_mem	2097152	kB
+shared_buffers	4194304	8kB
+work_mem	65536	kB
+=== ecaz extension version ===
+ecaz	0.1.1
+1	317	2	published_static_remote_placements
+[corpus] wrote SPIRE descriptor registration SQL to /home/peter/dev/ecaz/reviews/task-107/003-aws-benchmarks/artifacts/rabitq-100k-l1/register-remotes-rendered.sql
+t
+t
+1	0	local	0	active	1	1	0	0	0	1	0	1	1	0.1.1	none	ready	none
+1	2	remote	1	active	159	159	0	0	0	1	1781473096057447	1	1	0.1.1	none	ready	none
+1	3	remote	1	active	158	158	0	0	0	1	1781473096100134	1	1	0.1.1	none	ready	none
+cd /home/peter/dev/ecaz && PREFIX=ec_spire_aws_repr_1m /home/peter/dev/ecaz/scripts/spire-aws/smoke.sh /home/peter/dev/ecaz/reviews/task-107/003-aws-benchmarks/artifacts/rabitq-100k-l1/aws-topology.tunneled.json /home/peter/dev/ecaz/reviews/task-107/003-aws-benchmarks/artifacts/rabitq-100k-l1
+SET
+SET
+psql:scripts/spire-aws/smoke-customscan-read.sql:22: ERROR:  relation "ec_spire_aws_repr_1m_queries" does not exist
+LINE 2: FROM ec_spire_aws_repr_1m_queries
+             ^
+
+   0: [91mCommand { std: "/home/peter/.pgrx/18.3/pgrx-install/bin/psql" "-h" "127.0.0.1" "-p" "15432" "-U" "ecaz_coord" "-d" "postgres" "-v" "ON_ERROR_STOP=1" "-v" "prefix=ec_spire_aws_repr_1m" "-A" "-t" "-F" "\t" "-f" "scripts/spire-aws/smoke-customscan-read.sql", kill_on_drop: false } failed with status exit status: 3[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/dev/sql.rs[0m:[35m193[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.
+make: *** [Makefile:156: smoke] Error 1
+make: Leaving directory '/home/peter/dev/ecaz/infra/spire-aws'
+
+Script done on 2026-06-14 14:38:17-07:00 [COMMAND_EXIT_CODE="2"]

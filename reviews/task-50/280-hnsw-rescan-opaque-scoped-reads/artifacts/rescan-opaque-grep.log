@@ -1,0 +1,15 @@
+Script started on 2026-05-21 10:52:18-07:00 [<not executed on terminal>]
+579:    let opaque = unsafe { debug_scan_opaque(scan) };
+755:    let result = debug_with_scan_opaque(scan, |opaque| {
+808:    let result = debug_with_scan_opaque(scan, |opaque| {
+888:    let result = debug_with_scan_opaque(scan, |opaque| {
+3007:    let opaque = unsafe { debug_scan_opaque(scan) };
+3019:    let opaque = unsafe { debug_scan_opaque(scan) };
+3110:    let opaque = unsafe { debug_scan_opaque(scan) };
+3120:    let opaque = unsafe { debug_scan_opaque(scan) };
+3130:    let opaque = unsafe { debug_scan_opaque(scan) };
+3206:    let opaque = unsafe { debug_scan_opaque(scan) };
+3224:    let opaque = unsafe { debug_scan_opaque(scan) };
+3279:    let opaque = unsafe { debug_scan_opaque(scan) };
+
+Script done on 2026-05-21 10:52:18-07:00 [COMMAND_EXIT_CODE="0"]

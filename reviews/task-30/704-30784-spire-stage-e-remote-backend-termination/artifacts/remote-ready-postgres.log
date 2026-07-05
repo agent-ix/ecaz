@@ -1,0 +1,19 @@
+2026-05-10 17:05:52.870 PDT [1948192] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-05-10 17:05:52.872 PDT [1948192] LOG:  listening on Unix socket "/home/peter/dev/ecaz/target/spire-stage-e-transport-fault-pg18-30784/sockets/.s.PGSQL.39324"
+2026-05-10 17:05:52.879 PDT [1948198] LOG:  database system was shut down at 2026-05-10 17:05:51 PDT
+2026-05-10 17:05:52.883 PDT [1948192] LOG:  database system is ready to accept connections
+2026-05-10 17:05:53.289 PDT [1948223] FATAL:  terminating connection due to administrator command
+2026-05-10 17:05:53.289 PDT [1948223] STATEMENT:  SELECT pg_terminate_backend(pg_backend_pid())
+2026-05-10 17:05:53.303 PDT [1948227] FATAL:  terminating connection due to administrator command
+2026-05-10 17:05:53.303 PDT [1948227] STATEMENT:  SELECT pg_terminate_backend(pg_backend_pid())
+2026-05-10 17:05:53.319 PDT [1948233] FATAL:  terminating connection due to administrator command
+2026-05-10 17:05:53.319 PDT [1948233] STATEMENT:  SELECT pg_terminate_backend(pg_backend_pid())
+2026-05-10 17:05:53.335 PDT [1948237] FATAL:  terminating connection due to administrator command
+2026-05-10 17:05:53.335 PDT [1948237] STATEMENT:  SELECT pg_terminate_backend(pg_backend_pid())
+2026-05-10 17:05:53.541 PDT [1948192] LOG:  received fast shutdown request
+2026-05-10 17:05:53.630 PDT [1948192] LOG:  aborting any active transactions
+2026-05-10 17:05:53.631 PDT [1948192] LOG:  background worker "logical replication launcher" (PID 1948201) exited with exit code 1
+2026-05-10 17:05:53.631 PDT [1948196] LOG:  shutting down
+2026-05-10 17:05:53.633 PDT [1948196] LOG:  checkpoint starting: shutdown immediate
+2026-05-10 17:05:53.646 PDT [1948196] LOG:  checkpoint complete: wrote 0 buffers (0.0%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.004 s, sync=0.002 s, total=0.016 s; sync files=2, longest=0.001 s, average=0.001 s; distance=0 kB, estimate=0 kB; lsn=0/1754600, redo lsn=0/1754600
+2026-05-10 17:05:53.654 PDT [1948192] LOG:  database system is shut down

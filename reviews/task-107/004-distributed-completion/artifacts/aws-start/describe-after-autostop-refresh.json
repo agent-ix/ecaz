@@ -1,0 +1,26 @@
+[
+    {
+        "InstanceId": "i-00c2f2aca9dbdd6bd",
+        "State": "running",
+        "Type": "r7g.2xlarge",
+        "AZ": "us-west-2a",
+        "AutoStop": "2026-06-15T10:55:40Z",
+        "Name": "ecaz-spire-aws-remote-2"
+    },
+    {
+        "InstanceId": "i-07bcc98c3d5d027ee",
+        "State": "running",
+        "Type": "r7g.2xlarge",
+        "AZ": "us-west-2a",
+        "AutoStop": "2026-06-15T10:55:40Z",
+        "Name": "ecaz-spire-aws-remote-1"
+    },
+    {
+        "InstanceId": "i-0b4386fa5017f1363",
+        "State": "running",
+        "Type": "r7g.4xlarge",
+        "AZ": "us-west-2a",
+        "AutoStop": "2026-06-15T10:55:40Z",
+        "Name": "ecaz-spire-aws-coord"
+    }
+]

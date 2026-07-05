@@ -1,0 +1,19 @@
+Script started on 2026-06-08 21:32:04-07:00 [<not executed on terminal>]
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on artifact directory
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 55.22s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-52f8c7085962b346)
+
+running 5 tests
+test am::common::candidate_batch::tests::candidate_batch_preserves_ids_and_payloads ... [32mok[m
+test am::common::candidate_batch::tests::block_kernel_counter_api_records_scalar_tail_under_scalar_isa ... [32mok[m
+test am::common::candidate_batch::tests::candidate_batch_rejects_capacity_overflow ... [32mok[m
+test am::common::candidate_batch::tests::turboquant_lut_batch_matches_scalar_tail ... [32mok[m
+test am::common::candidate_batch::tests::turboquant_lut_batch_records_surface_counters ... [32mok[m
+
+test result: [32mok[m. 5 passed; 0 failed; 0 ignored; 0 measured; 2017 filtered out; finished in 0.06s
+
+
+Script done on 2026-06-08 21:32:56-07:00 [COMMAND_EXIT_CODE="0"]

@@ -1,0 +1,165 @@
+diff --git a/src/am/ec_ivf/admin.rs b/src/am/ec_ivf/admin.rs
+index f1e5f32b..45a77552 100644
+--- a/src/am/ec_ivf/admin.rs
++++ b/src/am/ec_ivf/admin.rs
+@@ -80,8 +80,12 @@ struct DirectoryDriftSummary {
+ }
+ 
+ pub(crate) unsafe fn index_drift_snapshot(index_relation: pg_sys::Relation) -> IndexDriftSnapshot {
++    // SAFETY: `index_relation` is a live IVF index relation supplied by a SQL
++    // diagnostic wrapper; page readers validate the metadata/directory layout.
+     let metadata = unsafe { page::read_metadata_page(index_relation) };
+     let directory = unsafe { directory_drift_summary(index_relation, &metadata) };
++    // SAFETY: PostgreSQL owns the relation; querying the main fork block count
++    // is valid for the opened index relation.
+     let block_count = unsafe {
+         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
+     };
+@@ -134,10 +138,14 @@ pub(crate) unsafe fn index_drift_snapshot(index_relation: pg_sys::Relation) -> I
+ }
+ 
+ pub(crate) unsafe fn index_admin_snapshot(index_relation: pg_sys::Relation) -> IndexAdminSnapshot {
++    // SAFETY: `index_relation` is a live IVF index relation supplied by a SQL
++    // diagnostic wrapper; metadata and reloptions are read without ownership.
+     let metadata = unsafe { page::read_metadata_page(index_relation) };
+     let index_options = unsafe { options::relation_options(index_relation) };
+     let nprobe = options::resolve_scan_nprobe(metadata.nlists, metadata.nprobe);
+     let rerank_width = options::resolve_scan_rerank_width(index_options.rerank_width);
++    // SAFETY: the same live index relation is reused for the nested diagnostic
++    // snapshot, and PostgreSQL keeps relcache metadata valid for the call.
+     let drift = unsafe { index_drift_snapshot(index_relation) };
+     let reltuples = unsafe { (*(*index_relation).rd_rel).reltuples } as f64;
+ 
+@@ -176,6 +184,8 @@ pub(crate) unsafe fn index_admin_snapshot(index_relation: pg_sys::Relation) -> I
+ pub(crate) unsafe fn index_page_ownership(
+     index_relation: pg_sys::Relation,
+ ) -> Vec<IndexPageOwnershipSnapshot> {
++    // SAFETY: `index_relation` is a live IVF index relation supplied by a SQL
++    // diagnostic wrapper; metadata drives payload length selection.
+     let metadata = unsafe { page::read_metadata_page(index_relation) };
+     let quantizer = IvfQuantizer::resolve_with_pq_group_size(
+         metadata.storage_format,
+@@ -183,6 +193,8 @@ pub(crate) unsafe fn index_page_ownership(
+         metadata_pq_group_size(&metadata),
+     )
+     .unwrap_or_else(|err| pgrx::error!("{err}"));
++    // SAFETY: the page debug reader walks posting tuples for the live relation
++    // using the payload length implied by the validated metadata.
+     let summaries = unsafe {
+         page::debug_ivf_posting_block_summaries(index_relation, quantizer.payload_len())
+             .unwrap_or_else(|err| pgrx::error!("{err}"))
+@@ -236,6 +248,8 @@ unsafe fn directory_drift_summary(
+     let mut next_tid = metadata.directory_head;
+     let mut summary = DirectoryDriftSummary::default();
+     for expected_list_id in 0..metadata.nlists {
++        // SAFETY: `next_tid` starts at the metadata directory head and advances
++        // through decoded directory tuples in the same live index relation.
+         let (directory, following_tid) =
+             unsafe { page::read_ivf_list_directory_and_next(index_relation, next_tid) }
+                 .unwrap_or_else(|e| pgrx::error!("{e}"));
+diff --git a/src/am/ec_ivf/cost.rs b/src/am/ec_ivf/cost.rs
+index 2f0244e9..f7455ead 100644
+--- a/src/am/ec_ivf/cost.rs
++++ b/src/am/ec_ivf/cost.rs
+@@ -67,6 +67,9 @@ pub(crate) unsafe extern "C-unwind" fn ec_ivf_amcostestimate(
+     index_correlation: *mut f64,
+     index_pages: *mut f64,
+ ) {
++    // SAFETY: PostgreSQL invokes this as the IVF `amcostestimate` callback with
++    // planner-owned pointers; the body null-checks every pointer before use and
++    // `pgrx_extern_c_guard` prevents Rust unwinding across the C ABI boundary.
+     unsafe {
+         pgrx::pgrx_extern_c_guard(|| {
+             if path.is_null()
+@@ -121,6 +124,8 @@ pub(crate) fn ivf_strategy_translation_snapshot() -> StrategyTranslationSnapshot
+ 
+ #[cfg(feature = "pg18")]
+ pub(crate) unsafe extern "C-unwind" fn ec_ivf_amgettreeheight(_rel: pg_sys::Relation) -> i32 {
++    // SAFETY: PG18 calls this AM callback from C; the implementation returns a
++    // constant and `pgrx_extern_c_guard` traps panics before they cross the ABI.
+     unsafe { pgrx::pgrx_extern_c_guard(ivf_tree_height_callback_value) }
+ }
+ 
+@@ -129,6 +134,8 @@ pub(crate) unsafe extern "C-unwind" fn ec_ivf_amtranslatestrategy(
+     strategy: pg_sys::StrategyNumber,
+     _opfamily: pg_sys::Oid,
+ ) -> pg_sys::CompareType::Type {
++    // SAFETY: PG18 invokes this AM strategy-translation callback from C. The
++    // closure only maps integer strategy values and is guarded against unwinding.
+     unsafe {
+         pgrx::pgrx_extern_c_guard(|| {
+             match crate::am::common::cost::amtranslatestrategy_callback(i32::from(strategy)) {
+@@ -157,6 +164,8 @@ pub(crate) unsafe extern "C-unwind" fn ec_ivf_amtranslatecmptype(
+     compare_type: pg_sys::CompareType::Type,
+     _opfamily: pg_sys::Oid,
+ ) -> pg_sys::StrategyNumber {
++    // SAFETY: PG18 invokes this AM compare-type translation callback from C. The
++    // closure only maps enum values and is guarded against unwinding.
+     unsafe {
+         pgrx::pgrx_extern_c_guard(|| {
+             crate::am::common::cost::amtranslatecmptype_callback(match compare_type {
+diff --git a/src/am/ec_ivf/options.rs b/src/am/ec_ivf/options.rs
+index 38a1648f..c9189ca3 100644
+--- a/src/am/ec_ivf/options.rs
++++ b/src/am/ec_ivf/options.rs
+@@ -262,6 +262,9 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amoptions(
+     reloptions: pg_sys::Datum,
+     validate: bool,
+ ) -> *mut pg_sys::bytea {
++    // SAFETY: PostgreSQL calls this relation-options callback with a reloptions
++    // Datum and validation flag. All registration uses `EcIvfReloptions`
++    // offsets, and `pgrx_extern_c_guard` prevents unwinding across C.
+     unsafe {
+         pgrx::pgrx_extern_c_guard(|| {
+             let mut relopts = pg_sys::local_relopts::default();
+@@ -378,12 +381,16 @@ unsafe fn read_string_reloption(
+         return None;
+     }
+ 
++    // SAFETY: `rd_options` points at PostgreSQL's relation options allocation
++    // and `offset` is an option offset produced by the reloptions parser.
+     let value_ptr = unsafe {
+         rd_options
+             .cast::<u8>()
+             .add(offset as usize)
+             .cast::<std::ffi::c_char>()
+     };
++    // SAFETY: string reloptions are stored as NUL-terminated C strings at the
++    // parsed offset inside `rd_options`.
+     let value = unsafe { std::ffi::CStr::from_ptr(value_ptr) }
+         .to_str()
+         .unwrap_or_else(|e| pgrx::error!("invalid ec_ivf {name} reloption: {e}"));
+@@ -394,12 +401,17 @@ unsafe fn read_string_reloption(
+ }
+ 
+ pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> EcIvfOptions {
++    // SAFETY: callers pass a live PostgreSQL relation; reading `rd_options` does
++    // not take ownership and PostgreSQL keeps the relcache entry valid here.
+     let rd_options = unsafe { (*index_relation).rd_options };
+     if rd_options.is_null() {
+         return EcIvfOptions::DEFAULT;
+     }
+ 
++    // SAFETY: `rd_options` was allocated using the `EcIvfReloptions` layout
++    // registered by `ec_ivf_amoptions`.
+     let reloptions = unsafe { &*rd_options.cast::<EcIvfReloptions>() };
++    // SAFETY: `storage_format_offset` comes from the parsed reloptions struct.
+     let storage_format_reloption = unsafe {
+         read_string_reloption(
+             rd_options,
+@@ -407,6 +419,7 @@ pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> EcIvf
+             "storage_format",
+         )
+     };
++    // SAFETY: `quantizer_offset` comes from the parsed reloptions struct.
+     let quantizer_reloption =
+         unsafe { read_string_reloption(rd_options, reloptions.quantizer_offset, "quantizer") };
+     if let (Some(storage_format), Some(quantizer)) =
+@@ -424,6 +437,7 @@ pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> EcIvf
+         .or(quantizer_reloption)
+         .map(|value| StorageFormat::parse_reloption(&value).unwrap_or_else(|e| pgrx::error!("{e}")))
+         .unwrap_or(StorageFormat::Auto);
++    // SAFETY: `rerank_offset` comes from the parsed reloptions struct.
+     let rerank = match unsafe {
+         read_string_reloption(rd_options, reloptions.rerank_offset, "rerank")
+     } {

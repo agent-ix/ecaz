@@ -1,0 +1,12 @@
+ rows  | embedding_rows | null_embeddings 
+-------+----------------+-----------------
+ 10000 |          10000 |               0
+(1 row)
+
+  attname  | attnotnull | atttypid 
+-----------+------------+----------
+ id        | t          | bigint
+ source    | t          | real[]
+ embedding | f          | ecvector
+(3 rows)
+

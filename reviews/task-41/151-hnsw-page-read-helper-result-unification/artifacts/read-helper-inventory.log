@@ -1,0 +1,38 @@
+src/am/ec_hnsw/scan.rs:908:                .unwrap_or_else(|e| pgrx::error!("{e}"));
+src/am/ec_hnsw/scan.rs:4746:            super::shared::with_page_line_tuple_bytes(
+src/am/ec_hnsw/scan.rs:4765:        .unwrap_or_else(|e| pgrx::error!("{e}"))
+src/am/ec_hnsw/vacuum.rs:327:                .unwrap_or_else(|e| pgrx::error!("{e}"));
+src/am/ec_hnsw/vacuum.rs:351:                .unwrap_or_else(|e| pgrx::error!("{e}"));
+src/am/ec_hnsw/vacuum.rs:554:            shared::with_page_line_tuple_bytes(
+src/am/ec_hnsw/vacuum.rs:660:            .unwrap_or_else(|e| pgrx::error!("{e}"))
+src/am/ec_hnsw/vacuum.rs:815:            shared::with_page_line_tuple_bytes(
+src/am/ec_hnsw/vacuum.rs:881:        .unwrap_or_else(|e| pgrx::error!("{e}"))
+src/am/ec_hnsw/vacuum.rs:1327:            shared::with_page_line_tuple_bytes(
+src/am/ec_hnsw/vacuum.rs:1415:        let Some(candidate) = candidate.unwrap_or_else(|e| pgrx::error!("{e}")).flatten() else {
+src/am/ec_hnsw/vacuum.rs:1447:        shared::with_page_line_tuple_bytes(
+src/am/ec_hnsw/vacuum.rs:1466:    .unwrap_or_else(|e| pgrx::error!("{e}"))
+src/am/ec_hnsw/vacuum.rs:1675:            shared::with_page_line_tuple_bytes(
+src/am/ec_hnsw/vacuum.rs:1711:        .unwrap_or_else(|e| pgrx::error!("{e}"))
+src/am/ec_hnsw/vacuum.rs:1825:            shared::with_page_line_tuple_bytes(
+src/am/ec_hnsw/vacuum.rs:1887:        .unwrap_or_else(|e| pgrx::error!("{e}"))
+src/am/ec_hnsw/insert.rs:399:                .unwrap_or_else(|e| pgrx::error!("{e}"));
+src/am/ec_hnsw/insert.rs:575:                .unwrap_or_else(|e| pgrx::error!("{e}"));
+src/am/ec_hnsw/insert.rs:2245:                shared::with_page_line_tuple_bytes(
+src/am/ec_hnsw/insert.rs:2273:            .unwrap_or_else(|e| pgrx::error!("{e}"))
+src/am/ec_hnsw/insert.rs:2318:                shared::with_page_line_tuple_bytes(
+src/am/ec_hnsw/insert.rs:2353:            .unwrap_or_else(|e| pgrx::error!("{e}"))
+src/am/ec_hnsw/insert.rs:2396:                shared::with_page_line_tuple_bytes(
+src/am/ec_hnsw/insert.rs:2434:            .unwrap_or_else(|e| pgrx::error!("{e}"))
+src/am/ec_hnsw/scan_debug.rs:109:unsafe fn debug_with_page_line_tuple_bytes<R, F>(
+src/am/ec_hnsw/scan_debug.rs:119:        super::shared::with_page_line_tuple_bytes(
+src/am/ec_hnsw/scan_debug.rs:1200:                debug_with_page_line_tuple_bytes(
+src/am/ec_hnsw/scan_debug.rs:1266:                debug_with_page_line_tuple_bytes(
+src/am/ec_hnsw/scan_debug.rs:1331:                debug_with_page_line_tuple_bytes(
+src/am/ec_hnsw/shared.rs:142:            .unwrap_or_else(|e| pgrx::error!("{e}"));
+src/am/ec_hnsw/shared.rs:227:            with_page_line_tuple_bytes(
+src/am/ec_hnsw/shared.rs:282:            .unwrap_or_else(|e| pgrx::error!("{e}"))
+src/am/ec_hnsw/shared.rs:321:                with_page_line_tuple_bytes(
+src/am/ec_hnsw/shared.rs:393:            .unwrap_or_else(|e| pgrx::error!("{e}"))
+src/am/ec_hnsw/shared.rs:442:pub(super) unsafe fn with_page_line_tuple_bytes<R, F>(
+src/am/ec_hnsw/shared.rs:449:) -> Result<Option<R>, String>
+src/am/ec_hnsw/shared.rs:902:            with_page_line_tuple_bytes(

@@ -1,0 +1,22 @@
+{
+    "CommandId": "85a335cc-5018-4110-ad18-c29088179389",
+    "InstanceId": "i-0056e46b981edbb17",
+    "Comment": "",
+    "DocumentName": "AWS-RunShellScript",
+    "DocumentVersion": "$DEFAULT",
+    "PluginName": "aws:runShellScript",
+    "ResponseCode": 5,
+    "ExecutionStartDateTime": "2026-05-30T19:09:49.245Z",
+    "ExecutionElapsedTime": "PT0.281S",
+    "ExecutionEndDateTime": "2026-05-30T19:09:49.245Z",
+    "Status": "Failed",
+    "StatusDetails": "Failed",
+    "StandardOutputContent": "",
+    "StandardOutputUrl": "",
+    "StandardErrorContent": "++ sudo systemctl status postgresql-18 --no-pager\nUnit postgresql-18.service could not be found.\n++ true\n++ sudo systemctl restart postgresql-18\nFailed to restart postgresql-18.service: Unit postgresql-18.service not found.\nfailed to run commands: exit status 5",
+    "StandardErrorUrl": "",
+    "CloudWatchOutputConfig": {
+        "CloudWatchLogGroupName": "",
+        "CloudWatchOutputEnabled": false
+    }
+}

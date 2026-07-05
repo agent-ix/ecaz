@@ -1,0 +1,29 @@
+2026-05-25 19:10:02.896 PDT [1860261] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-05-25 19:10:02.899 PDT [1860261] LOG:  listening on Unix socket "/home/peter/dev/ecaz/target/spire-insert-read-after-cscan-pg18-20260526T021000Z/s/.s.PGSQL.39552"
+2026-05-25 19:10:02.905 PDT [1860267] LOG:  database system was shut down at 2026-05-25 19:10:02 PDT
+2026-05-25 19:10:02.911 PDT [1860261] LOG:  database system is ready to accept connections
+2026-05-25 19:10:03.557 PDT [1860333] ERROR:  ec_spire local heap tuple delivery requires custom_scan_tuple_delivery before consuming 2 remote placement(s); first remote pid 2 is on node_id 2
+2026-05-25 19:10:03.557 PDT [1860333] STATEMENT:  SELECT node_id::text,
+	       status,
+	       next_step,
+	       placement_staged::text,
+	       remote_prepared::text
+	  FROM ec_spire_prepare_coordinator_insert_tuple_payload(
+	       'ec_spire_insert_read_coord_idx'::regclass,
+	       decode('0303', 'hex'),
+	       ARRAY[1.0, 0.0]::real[],
+	       decode('303132333435363738393a3b3c3d3e3f', 'hex'),
+	       jsonb_build_object(
+	           'id', 303,
+	           'title', 'remote inserted via coordinator',
+	           'embedding', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)::text
+	       ),
+	       ARRAY['id','title','embedding']::text[]
+	  );
+2026-05-25 19:10:03.559 PDT [1860261] LOG:  received fast shutdown request
+2026-05-25 19:10:03.563 PDT [1860261] LOG:  aborting any active transactions
+2026-05-25 19:10:03.563 PDT [1860261] LOG:  background worker "logical replication launcher" (PID 1860270) exited with exit code 1
+2026-05-25 19:10:03.564 PDT [1860265] LOG:  shutting down
+2026-05-25 19:10:03.566 PDT [1860265] LOG:  checkpoint starting: shutdown immediate
+2026-05-25 19:10:03.645 PDT [1860265] LOG:  checkpoint complete: wrote 298 buffers (1.8%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.007 s, sync=0.064 s, total=0.082 s; sync files=130, longest=0.003 s, average=0.001 s; distance=2388 kB, estimate=2388 kB; lsn=0/19A9698, redo lsn=0/19A9698
+2026-05-25 19:10:03.653 PDT [1860261] LOG:  database system is shut down

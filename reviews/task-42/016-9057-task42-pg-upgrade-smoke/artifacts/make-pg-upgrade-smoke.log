@@ -1,0 +1,68 @@
+run_dir=target/pg-upgrade-smoke-task42-local-3
+socket_dir=/home/peter/dev/ecaz/target/s-pg-upgrade-1213380290
+old_port=39420
+new_port=39421
+pgbin=/home/peter/.pgrx/18.3/pgrx-install/bin
+pre_top2=1,2
+pre_index_count=1
+pre_heap_count=4
+Performing Consistency Checks
+-----------------------------
+Checking cluster versions                                     ok
+Checking database connection settings                         ok
+Checking database user is the install user                    ok
+Checking for prepared transactions                            ok
+Checking for contrib/isn with bigint-passing mismatch         ok
+Checking for valid logical replication slots                  ok
+Checking for subscription state                               ok
+Checking data type usage                                      ok
+Checking for objects affected by Unicode update               ok
+Checking for not-null constraint inconsistencies              ok
+Creating dump of global objects                               ok
+Creating dump of database schemas                             ok
+Checking for presence of required libraries                   ok
+Checking database user is the install user                    ok
+Checking for prepared transactions                            ok
+Checking for new cluster tablespace directories               ok
+
+If pg_upgrade fails after this point, you must re-initdb the
+new cluster before continuing.
+
+Performing Upgrade
+------------------
+Setting locale and encoding for new cluster                   ok
+Analyzing all rows in the new cluster                         ok
+Freezing all rows in the new cluster                          ok
+Deleting files from new pg_xact                               ok
+Copying old pg_xact to new server                             ok
+Setting oldest XID for new cluster                            ok
+Setting next transaction ID and epoch for new cluster         ok
+Deleting files from new pg_multixact/offsets                  ok
+Copying old pg_multixact/offsets to new server                ok
+Deleting files from new pg_multixact/members                  ok
+Copying old pg_multixact/members to new server                ok
+Setting next multixact ID and offset for new cluster          ok
+Resetting WAL archives                                        ok
+Setting frozenxid and minmxid counters in new cluster         ok
+Restoring global objects in the new cluster                   ok
+Restoring database schemas in the new cluster                 ok
+Copying user relation files                                   ok
+Setting next OID for new cluster                              ok
+Sync data directory to disk                                   ok
+Creating script to delete old cluster                         ok
+Checking for extension updates                                ok
+
+Upgrade Complete
+----------------
+Some statistics are not transferred by pg_upgrade.
+Once you start the new server, consider running these two commands:
+    /home/peter/.pgrx/18.3/pgrx-install/bin/vacuumdb -U postgres --all --analyze-in-stages --missing-stats-only
+    /home/peter/.pgrx/18.3/pgrx-install/bin/vacuumdb -U postgres --all --analyze-only
+Running this script will delete the old cluster's data files:
+    ./delete_old_cluster.sh
+post_top2=1,2
+post_index_count=1
+post_heap_count=4
+extension_version=0.1.1
+pg_amcheck=passed
+PG18 pg_upgrade smoke passed

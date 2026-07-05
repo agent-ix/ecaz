@@ -1,0 +1,34 @@
+{
+  "name": "task59-diagnose-db-space",
+  "schema_version": 1,
+  "artifact_dir": "benchmarks/task59-aws-diskann-final-graviton-suite/artifacts/diagnose-db-space",
+  "defaults": {
+    "pg": 18,
+    "socket_dir": "/var/run/postgresql"
+  },
+  "steps": [
+    {
+      "kind": "raw",
+      "name": "db-space-top-relations",
+      "tags": ["diagnostic", "space", "graviton", "task59"],
+      "args": [
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "postgres",
+        "--socket-dir",
+        "/var/run/postgresql",
+        "--raw",
+        "--sql",
+        "SELECT pg_size_pretty(pg_database_size(current_database())) AS database_size; SELECT n.nspname, c.relname, c.relkind, pg_size_pretty(pg_total_relation_size(c.oid)) AS total_size, pg_total_relation_size(c.oid) AS total_bytes FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname NOT IN ('pg_catalog','information_schema') ORDER BY pg_total_relation_size(c.oid) DESC LIMIT 80;",
+        "--log-output",
+        "benchmarks/task59-aws-diskann-final-graviton-suite/artifacts/diagnose-db-space/db-space-top-relations.log"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task59-aws-diskann-final-graviton-suite/artifacts/diagnose-db-space/db-space-top-relations.log"
+      ]
+    }
+  ]
+}

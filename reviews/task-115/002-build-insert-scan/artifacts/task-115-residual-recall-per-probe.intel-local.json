@@ -1,0 +1,119 @@
+{
+  "name": "task-115-residual-recall-per-probe-intel-local",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-115/002-build-insert-scan/artifacts/bench-residual",
+  "comment": "Task 115 recall-per-probe A/B: PLAIN RaBitQ vs RESIDUAL RaBitQ on the SAME corpus/nlists/q-set/nprobe-sweep/rerank. NON-STANDARD config (justified): plain vs residual is a BUILD-TIME reloption (rabitq_residual=0|1), NOT a session GUC, so the two arms need separate indexes built from the same data — the canonical lane sweep has no plain-vs-residual arm. Both arms: quantizer=rabitq, bits=4, rerank=heap_f32, identical nlists (load default), identical q-set (queries_limit=200), identical nprobe default_sweep [8,16,24,32,48,64] verbatim (profiles.rs ec_ivf default_sweep). The whole point of Task 115 is recall-per-probe: residual is PROMOTABLE only if it improves recall@10 materially at the same nprobe OR reaches the same recall@10 at lower nprobe, with index-size increase small/zero (it is ZERO by construction — residual code length == plain code length) and any latency win shown at MATCHED recall (see the matched-recall latency confirmation config). ENV-BLOCKED on this dev/review box (no staged corpora at data/staged-current/, no ecaz binary); run on the Intel bench desktop after staging ec_real_100k. NFR-007: no fabricated numbers. Evidence Requirements per cell (read off results.jsonl): recall@10, NDCG@10, p50/p95/p99/mean, index size + build time, postings_visited/scored, candidates_retained; build a matched-recall comparison table from the two arms.",
+  "defaults": {
+    "pg": 18,
+    "socket_dir": "/home/peter/.pgrx",
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 200,
+    "iterations": 200,
+    "force_index": true,
+    "sample_backend_memory": true,
+    "memory_sample_interval_ms": 25
+  },
+  "thresholds": [],
+  "steps": [
+    {
+      "kind": "raw",
+      "name": "precheck-host",
+      "tags": ["setup", "precheck", "task-115", "intel-local"],
+      "args": [
+        "dev", "sql", "--pg", "18", "--db", "postgres",
+        "--socket-dir", "/home/peter/.pgrx", "--raw",
+        "--sql", "SELECT now() AS captured_at, version() AS postgres_version, current_setting('shared_buffers') AS shared_buffers;",
+        "--log-output", "${artifact_dir}/precheck-host.log"
+      ],
+      "expected_artifacts": ["${artifact_dir}/precheck-host.log"]
+    },
+
+    {
+      "kind": "load",
+      "name": "load-100k-ivf-rabitq-plain",
+      "tags": ["load", "task-115", "intel-local", "ec_real_100k", "ivf", "rabitq", "plain"],
+      "prefix": "task115_real100k_ivf_rabitq_plain",
+      "profile": "ec_ivf",
+      "corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_100k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "quantizer=rabitq",
+        "bits=4",
+        "rerank=heap_f32"
+      ]
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-ivf-rabitq-plain",
+      "tags": ["recall", "task-115", "intel-local", "ec_real_100k", "ivf", "rabitq", "plain"],
+      "prefix": "task115_real100k_ivf_rabitq_plain",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [8, 16, 24, 32, 48, 64]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-ivf-rabitq-plain",
+      "tags": ["latency", "task-115", "intel-local", "ec_real_100k", "ivf", "rabitq", "plain"],
+      "prefix": "task115_real100k_ivf_rabitq_plain",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [8, 16, 24, 32, 48, 64],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k-ivf-rabitq-plain",
+      "tags": ["storage", "task-115", "intel-local", "ec_real_100k", "ivf", "rabitq", "plain"],
+      "prefix": "task115_real100k_ivf_rabitq_plain"
+    },
+
+    {
+      "kind": "load",
+      "name": "load-100k-ivf-rabitq-residual",
+      "tags": ["load", "task-115", "intel-local", "ec_real_100k", "ivf", "rabitq", "residual"],
+      "prefix": "task115_real100k_ivf_rabitq_residual",
+      "profile": "ec_ivf",
+      "corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_100k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "quantizer=rabitq",
+        "bits=4",
+        "rerank=heap_f32",
+        "rabitq_residual=1"
+      ]
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-ivf-rabitq-residual",
+      "tags": ["recall", "task-115", "intel-local", "ec_real_100k", "ivf", "rabitq", "residual"],
+      "prefix": "task115_real100k_ivf_rabitq_residual",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [8, 16, 24, 32, 48, 64]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-ivf-rabitq-residual",
+      "tags": ["latency", "task-115", "intel-local", "ec_real_100k", "ivf", "rabitq", "residual"],
+      "prefix": "task115_real100k_ivf_rabitq_residual",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [8, 16, 24, 32, 48, 64],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k-ivf-rabitq-residual",
+      "tags": ["storage", "task-115", "intel-local", "ec_real_100k", "ivf", "rabitq", "residual"],
+      "prefix": "task115_real100k_ivf_rabitq_residual"
+    }
+  ]
+}

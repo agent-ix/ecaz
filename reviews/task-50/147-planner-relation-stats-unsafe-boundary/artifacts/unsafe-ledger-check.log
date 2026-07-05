@@ -1,0 +1,2 @@
+python3 scripts/unsafe_ledger.py check --ledger reviews/task-50/147-planner-relation-stats-unsafe-boundary/artifacts/unsafe-ledger-after.jsonl src
+ledger covers 1613 current unsafe rows

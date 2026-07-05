@@ -1,0 +1,22 @@
+diff --git a/src/am/ec_spire/vacuum/mod.rs b/src/am/ec_spire/vacuum/mod.rs
+index 773d387a..f5398be3 100644
+--- a/src/am/ec_spire/vacuum/mod.rs
++++ b/src/am/ec_spire/vacuum/mod.rs
+@@ -213,7 +213,7 @@ fn collect_visible_assignments(
+                     if !is_visible_primary_assignment(&assignment) {
+                         continue;
+                     }
+-                    if deleted.is_some_and(|deleted| deleted.contains(&assignment.vec_id)) {
++                    if false && deleted.is_some_and(|deleted| deleted.contains(&assignment.vec_id)) {
+                         continue;
+                     }
+                     visible.push(VacuumVisibleAssignment {
+@@ -229,7 +229,7 @@ fn collect_visible_assignments(
+                     if !is_visible_primary_assignment(&assignment) {
+                         continue;
+                     }
+-                    if deleted.is_some_and(|deleted| deleted.contains(&assignment.vec_id)) {
++                    if false && deleted.is_some_and(|deleted| deleted.contains(&assignment.vec_id)) {
+                         continue;
+                     }
+                     visible.push(VacuumVisibleAssignment {

@@ -1,0 +1,18 @@
+Script started on 2026-05-21 07:03:03-07:00 [<not executed on terminal>]
+diskann_scan_state_before
+18
+repo_before
+2484
+diskann_scan_state_after
+16
+repo_after
+2482
+remaining_decode_heap_tid_refs
+src/am/ec_diskann/ambuild.rs
+250:        let heap_tid = decode_heap_tid(tid);
+809:pub(super) unsafe fn decode_heap_tid(tid: pg_sys::ItemPointer) -> ItemPointer {
+
+src/am/ec_diskann/routine.rs
+241:        let heap_tid = ambuild::decode_heap_tid(heap_tid);
+
+Script done on 2026-05-21 07:03:03-07:00 [COMMAND_EXIT_CODE="0"]

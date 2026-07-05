@@ -1,0 +1,282 @@
+diff --git a/scripts/unsafe_comment_baseline.txt b/scripts/unsafe_comment_baseline.txt
+index 2dcf6861..a41e13e4 100644
+--- a/scripts/unsafe_comment_baseline.txt
++++ b/scripts/unsafe_comment_baseline.txt
+@@ -1307,106 +1307,97 @@ src/am/ec_ivf/insert.rs:81
+ src/am/ec_ivf/insert.rs:84
+ src/am/ec_ivf/insert.rs:87
+ src/am/ec_ivf/insert.rs:98
+-src/am/ec_ivf/page.rs:1419
+-src/am/ec_ivf/page.rs:1429
+-src/am/ec_ivf/page.rs:1445
+-src/am/ec_ivf/page.rs:1456
+-src/am/ec_ivf/page.rs:1470
+-src/am/ec_ivf/page.rs:1480
+-src/am/ec_ivf/page.rs:1497
+-src/am/ec_ivf/page.rs:1526
+-src/am/ec_ivf/page.rs:1567
+-src/am/ec_ivf/page.rs:1616
+-src/am/ec_ivf/page.rs:1622
+-src/am/ec_ivf/page.rs:1641
+-src/am/ec_ivf/page.rs:1649
+-src/am/ec_ivf/page.rs:1652
+-src/am/ec_ivf/page.rs:1664
+-src/am/ec_ivf/page.rs:1676
+-src/am/ec_ivf/page.rs:1685
+-src/am/ec_ivf/page.rs:1693
+-src/am/ec_ivf/page.rs:1703
+-src/am/ec_ivf/page.rs:1712
+-src/am/ec_ivf/page.rs:1722
+-src/am/ec_ivf/page.rs:1724
+-src/am/ec_ivf/page.rs:1725
+-src/am/ec_ivf/page.rs:1727
++src/am/ec_ivf/page.rs:1636
++src/am/ec_ivf/page.rs:1642
++src/am/ec_ivf/page.rs:1661
++src/am/ec_ivf/page.rs:1669
++src/am/ec_ivf/page.rs:1672
++src/am/ec_ivf/page.rs:1684
++src/am/ec_ivf/page.rs:1696
++src/am/ec_ivf/page.rs:1705
++src/am/ec_ivf/page.rs:1713
++src/am/ec_ivf/page.rs:1723
+ src/am/ec_ivf/page.rs:1732
+-src/am/ec_ivf/page.rs:1748
+-src/am/ec_ivf/page.rs:1749
+-src/am/ec_ivf/page.rs:1750
+-src/am/ec_ivf/page.rs:1762
+-src/am/ec_ivf/page.rs:1772
+-src/am/ec_ivf/page.rs:1774
+-src/am/ec_ivf/page.rs:1775
+-src/am/ec_ivf/page.rs:1777
++src/am/ec_ivf/page.rs:1742
++src/am/ec_ivf/page.rs:1744
++src/am/ec_ivf/page.rs:1745
++src/am/ec_ivf/page.rs:1747
++src/am/ec_ivf/page.rs:1752
++src/am/ec_ivf/page.rs:1768
++src/am/ec_ivf/page.rs:1769
++src/am/ec_ivf/page.rs:1770
++src/am/ec_ivf/page.rs:1782
+ src/am/ec_ivf/page.rs:1792
+-src/am/ec_ivf/page.rs:1793
+ src/am/ec_ivf/page.rs:1794
+-src/am/ec_ivf/page.rs:1808
+-src/am/ec_ivf/page.rs:1823
+-src/am/ec_ivf/page.rs:1825
+-src/am/ec_ivf/page.rs:1837
+-src/am/ec_ivf/page.rs:1860
+-src/am/ec_ivf/page.rs:1863
+-src/am/ec_ivf/page.rs:1876
+-src/am/ec_ivf/page.rs:1891
+-src/am/ec_ivf/page.rs:1893
+-src/am/ec_ivf/page.rs:1905
+-src/am/ec_ivf/page.rs:1936
+-src/am/ec_ivf/page.rs:1938
+-src/am/ec_ivf/page.rs:1941
+-src/am/ec_ivf/page.rs:1952
+-src/am/ec_ivf/page.rs:1967
+-src/am/ec_ivf/page.rs:1969
+-src/am/ec_ivf/page.rs:1981
+-src/am/ec_ivf/page.rs:2004
+-src/am/ec_ivf/page.rs:2007
+-src/am/ec_ivf/page.rs:2038
+-src/am/ec_ivf/page.rs:2044
+-src/am/ec_ivf/page.rs:2068
+-src/am/ec_ivf/page.rs:2078
++src/am/ec_ivf/page.rs:1795
++src/am/ec_ivf/page.rs:1797
++src/am/ec_ivf/page.rs:1812
++src/am/ec_ivf/page.rs:1813
++src/am/ec_ivf/page.rs:1814
++src/am/ec_ivf/page.rs:1828
++src/am/ec_ivf/page.rs:1843
++src/am/ec_ivf/page.rs:1845
++src/am/ec_ivf/page.rs:1857
++src/am/ec_ivf/page.rs:1880
++src/am/ec_ivf/page.rs:1883
++src/am/ec_ivf/page.rs:1896
++src/am/ec_ivf/page.rs:1911
++src/am/ec_ivf/page.rs:1913
++src/am/ec_ivf/page.rs:1925
++src/am/ec_ivf/page.rs:1956
++src/am/ec_ivf/page.rs:1958
++src/am/ec_ivf/page.rs:1961
++src/am/ec_ivf/page.rs:1972
++src/am/ec_ivf/page.rs:1987
++src/am/ec_ivf/page.rs:1989
++src/am/ec_ivf/page.rs:2001
++src/am/ec_ivf/page.rs:2024
++src/am/ec_ivf/page.rs:2027
++src/am/ec_ivf/page.rs:2058
++src/am/ec_ivf/page.rs:2064
++src/am/ec_ivf/page.rs:2088
+ src/am/ec_ivf/page.rs:2098
+-src/am/ec_ivf/page.rs:2121
+-src/am/ec_ivf/page.rs:2127
+-src/am/ec_ivf/page.rs:2192
+-src/am/ec_ivf/page.rs:2194
+-src/am/ec_ivf/page.rs:2203
+-src/am/ec_ivf/page.rs:2266
+-src/am/ec_ivf/page.rs:2278
+-src/am/ec_ivf/page.rs:2283
+-src/am/ec_ivf/page.rs:2285
++src/am/ec_ivf/page.rs:2118
++src/am/ec_ivf/page.rs:2141
++src/am/ec_ivf/page.rs:2147
++src/am/ec_ivf/page.rs:2212
++src/am/ec_ivf/page.rs:2214
++src/am/ec_ivf/page.rs:2223
+ src/am/ec_ivf/page.rs:2286
+-src/am/ec_ivf/page.rs:2345
+-src/am/ec_ivf/page.rs:2370
+-src/am/ec_ivf/page.rs:2383
+-src/am/ec_ivf/page.rs:2389
+-src/am/ec_ivf/page.rs:2406
+-src/am/ec_ivf/page.rs:2463
+-src/am/ec_ivf/page.rs:2488
+-src/am/ec_ivf/page.rs:2500
+-src/am/ec_ivf/page.rs:2515
+-src/am/ec_ivf/page.rs:2532
+-src/am/ec_ivf/page.rs:2561
+-src/am/ec_ivf/page.rs:2575
+-src/am/ec_ivf/page.rs:2577
+-src/am/ec_ivf/page.rs:2589
+-src/am/ec_ivf/page.rs:2591
+-src/am/ec_ivf/page.rs:2594
++src/am/ec_ivf/page.rs:2298
++src/am/ec_ivf/page.rs:2303
++src/am/ec_ivf/page.rs:2305
++src/am/ec_ivf/page.rs:2306
++src/am/ec_ivf/page.rs:2365
++src/am/ec_ivf/page.rs:2390
++src/am/ec_ivf/page.rs:2403
++src/am/ec_ivf/page.rs:2409
++src/am/ec_ivf/page.rs:2426
++src/am/ec_ivf/page.rs:2483
++src/am/ec_ivf/page.rs:2508
++src/am/ec_ivf/page.rs:2520
++src/am/ec_ivf/page.rs:2535
++src/am/ec_ivf/page.rs:2552
++src/am/ec_ivf/page.rs:2581
+ src/am/ec_ivf/page.rs:2595
+-src/am/ec_ivf/page.rs:2596
+-src/am/ec_ivf/page.rs:2600
+-src/am/ec_ivf/page.rs:2605
++src/am/ec_ivf/page.rs:2597
++src/am/ec_ivf/page.rs:2609
++src/am/ec_ivf/page.rs:2611
++src/am/ec_ivf/page.rs:2614
++src/am/ec_ivf/page.rs:2615
+ src/am/ec_ivf/page.rs:2616
+-src/am/ec_ivf/page.rs:2617
+-src/am/ec_ivf/page.rs:2629
+-src/am/ec_ivf/page.rs:2639
+-src/am/ec_ivf/page.rs:2641
+-src/am/ec_ivf/page.rs:2642
+-src/am/ec_ivf/page.rs:2643
+-src/am/ec_ivf/page.rs:2657
+-src/am/ec_ivf/page.rs:2658
+-src/am/ec_ivf/page.rs:3157
++src/am/ec_ivf/page.rs:2620
++src/am/ec_ivf/page.rs:2625
++src/am/ec_ivf/page.rs:2636
++src/am/ec_ivf/page.rs:2637
++src/am/ec_ivf/page.rs:2649
++src/am/ec_ivf/page.rs:2659
++src/am/ec_ivf/page.rs:2661
++src/am/ec_ivf/page.rs:2662
++src/am/ec_ivf/page.rs:2663
++src/am/ec_ivf/page.rs:2677
++src/am/ec_ivf/page.rs:2678
++src/am/ec_ivf/page.rs:3177
+ src/am/ec_ivf/scan.rs:1028
+ src/am/ec_ivf/scan.rs:1033
+ src/am/ec_ivf/scan.rs:1101
+diff --git a/src/am/ec_ivf/page.rs b/src/am/ec_ivf/page.rs
+index ddfd758a..266a824d 100644
+--- a/src/am/ec_ivf/page.rs
++++ b/src/am/ec_ivf/page.rs
+@@ -1416,6 +1416,8 @@ unsafe fn visit_ivf_postings_for_list_block<F>(
+ where
+     F: FnMut(ItemPointer, IvfPostingTuple) -> Result<(), String>,
+ {
++    // SAFETY: the caller supplies a live index relation and a posting-list
++    // block number from IVF list metadata; the guard pins and share-locks it.
+     let buffer = unsafe {
+         LockedBufferGuard::read_main(
+             index_relation,
+@@ -1426,6 +1428,8 @@ where
+     }
+     .ok_or_else(|| format!("ec_ivf failed to open posting-list block {block_number}"))?;
+ 
++    // SAFETY: `buffer` is share-locked for `block_number`, and the shared
++    // visitor helper validates tuple line pointers before decoding postings.
+     let result = unsafe {
+         visit_ivf_postings_from_buffer(&buffer, list_id, block_number, payload_len, visitor)
+     };
+@@ -1442,6 +1446,8 @@ unsafe fn visit_all_ivf_postings_for_block<F>(
+ where
+     F: FnMut(ItemPointer, IvfPostingTuple) -> Result<(), String>,
+ {
++    // SAFETY: the caller supplies a live index relation and a posting block
++    // from an IVF block sequence; the guard pins and share-locks it.
+     let buffer = unsafe {
+         LockedBufferGuard::read_main(
+             index_relation,
+@@ -1452,6 +1458,8 @@ where
+     }
+     .ok_or_else(|| format!("ec_ivf failed to open posting-list block {block_number}"))?;
+ 
++    // SAFETY: `buffer` is share-locked for `block_number`, and the shared
++    // visitor helper validates tuple line pointers before decoding postings.
+     let result =
+         unsafe { visit_all_ivf_postings_from_buffer(&buffer, block_number, payload_len, visitor) };
+     result
+@@ -1467,6 +1475,8 @@ unsafe fn visit_all_ivf_posting_refs_for_block<F>(
+ where
+     F: for<'a> FnMut(ItemPointer, IvfPostingTupleRef<'a>) -> Result<(), String>,
+ {
++    // SAFETY: the caller supplies a live index relation and a posting block
++    // from an IVF block sequence; the guard pins and share-locks it.
+     let buffer = unsafe {
+         LockedBufferGuard::read_main(
+             index_relation,
+@@ -1477,6 +1487,8 @@ where
+     }
+     .ok_or_else(|| format!("ec_ivf failed to open posting-list block {block_number}"))?;
+ 
++    // SAFETY: `buffer` is share-locked for `block_number`, and the shared
++    // visitor helper validates tuple line pointers before borrowing postings.
+     let result = unsafe {
+         visit_all_ivf_posting_refs_from_buffer(&buffer, block_number, payload_len, visitor)
+     };
+@@ -1494,6 +1506,8 @@ unsafe fn visit_ivf_postings_from_buffer<F>(
+ where
+     F: FnMut(ItemPointer, IvfPostingTuple) -> Result<(), String>,
+ {
++    // SAFETY: forwards the same share-locked page to the all-postings visitor;
++    // the closure only filters decoded postings by list id.
+     unsafe {
+         visit_all_ivf_postings_from_buffer(
+             buffer,
+@@ -1523,6 +1537,9 @@ where
+     let page_size = buffer.page_size();
+     let line_pointer_count = page_line_pointer_count(page_ptr);
+     for offset in 1..=line_pointer_count {
++        // SAFETY: `page_ptr` and `page_size` come from a share-locked buffer,
++        // and `offset` is within the current line-pointer range; the helper
++        // checks item-id bounds before exposing tuple bytes to the decoder.
+         unsafe {
+             with_page_line_tuple_bytes(
+                 page_ptr,
+@@ -1564,6 +1581,9 @@ where
+     let page_size = buffer.page_size();
+     let line_pointer_count = page_line_pointer_count(page_ptr);
+     for offset in 1..=line_pointer_count {
++        // SAFETY: `page_ptr` and `page_size` come from a share-locked buffer,
++        // and `offset` is within the current line-pointer range; the helper
++        // checks item-id bounds before exposing tuple bytes to the decoder.
+         unsafe {
+             with_page_line_tuple_bytes(
+                 page_ptr,

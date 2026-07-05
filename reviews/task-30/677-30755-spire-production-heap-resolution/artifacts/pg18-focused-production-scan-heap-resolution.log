@@ -1,0 +1,9 @@
+Script started on 2026-05-10 11:44:35-07:00 [<not executed on terminal>]
+CREATE EXTENSION
+ test_ec_spire_prod_scan_heap_resolution
+-----------------------------------------
+
+(1 row)
+
+
+Script done on 2026-05-10 11:44:36-07:00 [COMMAND_EXIT_CODE="0"]

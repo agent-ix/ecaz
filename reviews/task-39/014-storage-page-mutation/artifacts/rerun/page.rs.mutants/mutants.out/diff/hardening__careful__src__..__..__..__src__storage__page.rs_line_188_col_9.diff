@@ -1,0 +1,22 @@
+--- hardening/careful/src/../../../src/storage/page.rs
++++ replace DataPageChain::get_page -> Option<&DataPage> with None
+@@ -180,18 +180,17 @@
+         self.page_size
+     }
+ 
+     pub fn pages(&self) -> &[DataPage] {
+         &self.pages
+     }
+ 
+     pub fn get_page(&self, block_number: u32) -> Option<&DataPage> {
+-        let index = block_number.checked_sub(FIRST_DATA_BLOCK_NUMBER)? as usize;
+-        self.pages.get(index)
++        None /* ~ changed by cargo-mutants ~ */
+     }
+ 
+     pub fn get_page_mut(&mut self, block_number: u32) -> Option<&mut DataPage> {
+         let index = block_number.checked_sub(FIRST_DATA_BLOCK_NUMBER)? as usize;
+         self.pages.get_mut(index)
+     }
+ 
+     pub fn start_new_page_if_current_has_tuples(&mut self) {

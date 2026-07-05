@@ -1,0 +1,12 @@
+Script started on 2026-05-10 05:16:55-07:00 [<not executed on terminal>]
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 39.80s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-b7ac0d45da51225d)
+
+running 1 test
+test am::ec_spire::production_executor_state_tests::production_executor_compact_receive_requests_use_dispatch_state ... [32mok[m
+
+test result: [32mok[m. 1 passed; 0 failed; 0 ignored; 0 measured; 1556 filtered out; finished in 0.00s
+
+
+Script done on 2026-05-10 05:17:35-07:00 [COMMAND_EXIT_CODE="0"]

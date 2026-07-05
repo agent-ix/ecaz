@@ -1,0 +1,22 @@
+{
+    "CommandId": "36ab2234-5380-48c6-a7d7-1f32d29b93cf",
+    "InstanceId": "i-0056e46b981edbb17",
+    "Comment": "",
+    "DocumentName": "AWS-RunShellScript",
+    "DocumentVersion": "$DEFAULT",
+    "PluginName": "aws:runShellScript",
+    "ResponseCode": 0,
+    "ExecutionStartDateTime": "2026-05-30T20:09:22.108Z",
+    "ExecutionElapsedTime": "PT0.123S",
+    "ExecutionEndDateTime": "2026-05-30T20:09:22.108Z",
+    "Status": "Success",
+    "StatusDetails": "Success",
+    "StandardOutputContent": "          captured_at          | state  | wait_event_type | wait_event |                                            query                                             \n-------------------------------+--------+-----------------+------------+----------------------------------------------------------------------------------------------\n 2026-05-30 20:09:22.217097+00 | active |                 |            | CREATE INDEX task67_1m_diskann_default_rerun2_idx ON task67_1m_diskann_default_rerun2_corpus+\n                               |        |                 |            |         USING ec_diskann (e\n(1 row)\n\n",
+    "StandardOutputUrl": "",
+    "StandardErrorContent": "++ sudo -u postgres psql -h /var/run/postgresql -d postgres -c 'SELECT now() AS captured_at, state, wait_event_type, wait_event, left(query, 120) AS query FROM pg_stat_activity WHERE datname = '\\''postgres'\\'' AND usename = '\\''postgres'\\'' AND pid <> pg_backend_pid() ORDER BY backend_start;'\n",
+    "StandardErrorUrl": "",
+    "CloudWatchOutputConfig": {
+        "CloudWatchLogGroupName": "",
+        "CloudWatchOutputEnabled": false
+    }
+}

@@ -1,0 +1,193 @@
+Script started on 2026-05-19 05:20:47-07:00 [<not executed on terminal>]
+[1mdiff --git a/scripts/unsafe_comment_baseline.txt b/scripts/unsafe_comment_baseline.txt[m
+[1mindex 28f9db84..5a9fb4e4 100644[m
+[1m--- a/scripts/unsafe_comment_baseline.txt[m
+[1m+++ b/scripts/unsafe_comment_baseline.txt[m
+[36m@@ -55,30 +55,6 @@[m [msrc/am/ec_diskann/ambuild.rs:834[m
+ src/am/ec_diskann/ambuild.rs:840[m
+ src/am/ec_diskann/ambuild.rs:848[m
+ src/am/ec_diskann/ambuild.rs:892[m
+[31m-src/am/ec_hnsw/shared.rs:1014[m
+[31m-src/am/ec_hnsw/shared.rs:1015[m
+[31m-src/am/ec_hnsw/shared.rs:1021[m
+[31m-src/am/ec_hnsw/shared.rs:1032[m
+[31m-src/am/ec_hnsw/shared.rs:1042[m
+[31m-src/am/ec_hnsw/shared.rs:1045[m
+[31m-src/am/ec_hnsw/shared.rs:1046[m
+[31m-src/am/ec_hnsw/shared.rs:743[m
+[31m-src/am/ec_hnsw/shared.rs:745[m
+[31m-src/am/ec_hnsw/shared.rs:746[m
+[31m-src/am/ec_hnsw/shared.rs:755[m
+[31m-src/am/ec_hnsw/shared.rs:785[m
+[31m-src/am/ec_hnsw/shared.rs:806[m
+[31m-src/am/ec_hnsw/shared.rs:808[m
+[31m-src/am/ec_hnsw/shared.rs:809[m
+[31m-src/am/ec_hnsw/shared.rs:813[m
+[31m-src/am/ec_hnsw/shared.rs:815[m
+[31m-src/am/ec_hnsw/shared.rs:898[m
+[31m-src/am/ec_hnsw/shared.rs:899[m
+[31m-src/am/ec_hnsw/shared.rs:900[m
+[31m-src/am/ec_hnsw/shared.rs:945[m
+[31m-src/am/ec_hnsw/shared.rs:969[m
+[31m-src/am/ec_hnsw/shared.rs:981[m
+[31m-src/am/ec_hnsw/shared.rs:987[m
+ src/tests/build.rs:251[m
+ src/tests/build.rs:252[m
+ src/tests/build.rs:510[m
+[1mdiff --git a/src/am/ec_hnsw/shared.rs b/src/am/ec_hnsw/shared.rs[m
+[1mindex b4b6c067..25ffdafb 100644[m
+[1m--- a/src/am/ec_hnsw/shared.rs[m
+[1m+++ b/src/am/ec_hnsw/shared.rs[m
+[36m@@ -740,9 +740,15 @@[m [mpub(crate) struct PlannerIntegrationSnapshot {[m
+ }[m
+ [m
+ pub(crate) unsafe fn index_admin_snapshot(index_relation: pg_sys::Relation) -> IndexAdminSnapshot {[m
+[32m+[m[32m    // SAFETY: The index relation is live while its reloptions are decoded for[m
+[32m+[m[32m    // admin diagnostics.[m
+     let relation_options = unsafe { options::relation_options(index_relation) };[m
+     let tuning = options::resolve_scan_tuning(&relation_options);[m
+[32m+[m[32m    // SAFETY: The index relation is live and metadata is read under a shared[m
+[32m+[m[32m    // buffer lock.[m
+     let metadata = unsafe { read_metadata_page(index_relation) };[m
+[32m+[m[32m    // SAFETY: The index relation is live while shared page traversal counts[m
+[32m+[m[32m    // live HNSW element tuples.[m
+     let total_live_nodes = unsafe { count_element_tuples(index_relation) };[m
+     let inserted_since_rebuild =[m
+         usize::try_from(metadata.inserted_since_rebuild).unwrap_or_else(|_| {[m
+[36m@@ -752,6 +758,8 @@[m [mpub(crate) unsafe fn index_admin_snapshot(index_relation: pg_sys::Relation) -> I[m
+             )[m
+         });[m
+     IndexAdminSnapshot {[m
+[32m+[m[32m        // SAFETY: The index relation is live while its main-fork block count is[m
+[32m+[m[32m        // copied into the snapshot.[m
+         block_count: unsafe {[m
+             pg_sys::RelationGetNumberOfBlocksInFork([m
+                 index_relation,[m
+[36m@@ -782,6 +790,8 @@[m [mfn insert_drift_fraction(total_live_nodes: usize, inserted_since_rebuild: usize)[m
+ pub(crate) unsafe fn index_explain_snapshot([m
+     index_relation: pg_sys::Relation,[m
+ ) -> IndexExplainSnapshot {[m
+[32m+[m[32m    // SAFETY: The index relation is live for the duration of this diagnostic[m
+[32m+[m[32m    // snapshot and admin snapshot reads only relation metadata.[m
+     let admin = unsafe { index_admin_snapshot(index_relation) };[m
+     let translation = super::cost::strategy_translation_snapshot();[m
+     let explain = super::explain::explain_option_snapshot();[m
+[36m@@ -803,15 +813,24 @@[m [mpub(crate) unsafe fn index_explain_snapshot([m
+ }[m
+ [m
+ pub(crate) unsafe fn index_cost_snapshot(index_relation: pg_sys::Relation) -> IndexCostSnapshot {[m
+[32m+[m[32m    // SAFETY: The index relation is live while its reloptions are decoded for[m
+[32m+[m[32m    // cost diagnostics.[m
+     let relation_options = unsafe { options::relation_options(index_relation) };[m
+     let tuning = options::resolve_scan_tuning(&relation_options);[m
+[32m+[m[32m    // SAFETY: The index relation is live and metadata is read under a shared[m
+[32m+[m[32m    // buffer lock.[m
+     let metadata = unsafe { read_metadata_page(index_relation) };[m
+[32m+[m[32m    // SAFETY: The index relation is live while its main-fork block count is read.[m
+     let block_count = unsafe {[m
+         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)[m
+     };[m
+     let index_pages = f64::from(block_count);[m
+[32m+[m[32m    // SAFETY: `index_relation` is a live Relation and `rd_rel` points at[m
+[32m+[m[32m    // PostgreSQL's relation catalog tuple for the relation lifetime.[m
+     let reltuples = unsafe { (*(*index_relation).rd_rel).reltuples } as f64;[m
+     let tree_height = super::cost::resolved_tree_height_input(metadata.max_level);[m
+[32m+[m[32m    // SAFETY: Planner cost constants are read from PostgreSQL GUC state for this[m
+[32m+[m[32m    // backend without retaining raw pointers.[m
+     let constants = unsafe { super::cost::current_planner_cost_constants() };[m
+     // Block 0 is always the metadata page; an empty index has block_count == 1.[m
+     // FR-020's "Empty index (0 data pages)" gate must trip on[m
+[36m@@ -895,8 +914,12 @@[m [mpub(crate) fn read_stream_snapshot() -> ReadStreamSnapshot {[m
+ pub(crate) unsafe fn planner_integration_snapshot([m
+     index_relation: pg_sys::Relation,[m
+ ) -> PlannerIntegrationSnapshot {[m
+[32m+[m[32m    // SAFETY: The index relation is live for the duration of this diagnostic[m
+[32m+[m[32m    // snapshot and admin snapshot reads only relation metadata.[m
+     let admin = unsafe { index_admin_snapshot(index_relation) };[m
+[32m+[m[32m    // SAFETY: Delegates to snapshot helpers using the same live index relation.[m
+     let explain = unsafe { index_explain_snapshot(index_relation) };[m
+[32m+[m[32m    // SAFETY: Delegates to snapshot helpers using the same live index relation.[m
+     let cost = unsafe { index_cost_snapshot(index_relation) };[m
+     let diagnostics = pg18_diagnostics_snapshot();[m
+     let stream = read_stream_snapshot();[m
+[36m@@ -942,6 +965,8 @@[m [mpub(crate) struct DebugPlannerTuningSnapshot {[m
+ [m
+ #[cfg(any(test, feature = "pg_test"))][m
+ fn planner_tuning_snapshot(index_relation: pg_sys::Relation) -> DebugPlannerTuningSnapshot {[m
+[32m+[m[32m    // SAFETY: Test/debug callers hold the index relation open while the admin[m
+[32m+[m[32m    // snapshot reads metadata and reloptions.[m
+     let snapshot = unsafe { index_admin_snapshot(index_relation) };[m
+     DebugPlannerTuningSnapshot {[m
+         relation_ef_search: snapshot.relation_ef_search,[m
+[36m@@ -966,6 +991,8 @@[m [munsafe fn read_data_page([m
+     index_relation: pg_sys::Relation,[m
+     block_number: u32,[m
+ ) -> DebugIndexDataPage {[m
+[32m+[m[32m    // SAFETY: The index relation is live and `block_number` was selected from[m
+[32m+[m[32m    // the current main-fork block range.[m
+     let buffer = unsafe {[m
+         LockedBufferGuard::read_main([m
+             index_relation,[m
+[36m@@ -978,12 +1005,16 @@[m [munsafe fn read_data_page([m
+     let raw_page = buffer.page().cast::<u8>();[m
+     let page_size = buffer.page_size();[m
+     let page_header = raw_page.cast::<pg_sys::PageHeaderData>();[m
+[32m+[m[32m    // SAFETY: The buffer guard pins the page while the line pointer count is[m
+[32m+[m[32m    // read from the page header.[m
+     let line_pointer_count = ((unsafe { (*page_header).pd_lower } as usize[m
+         - size_of::<pg_sys::PageHeaderData>())[m
+         / size_of::<pg_sys::ItemIdData>()) as u16;[m
+ [m
+     let mut tuples = Vec::with_capacity(line_pointer_count as usize);[m
+     for offset in 1..=line_pointer_count {[m
+[32m+[m[32m        // SAFETY: The page is shared-locked and `offset` is bounded by the page[m
+[32m+[m[32m        // line pointer count before tuple bytes are copied.[m
+         if let Some(tuple) = unsafe {[m
+             with_page_line_tuple_bytes([m
+                 raw_page,[m
+[36m@@ -1011,13 +1042,18 @@[m [mpub(crate) unsafe fn debug_index_metadata([m
+     index_oid: pg_sys::Oid,[m
+ ) -> (u32, i32, i32, page::MetadataPage) {[m
+     let index_relation = IndexRelationGuard::access_share(index_oid, "debug_index_metadata");[m
+[32m+[m[32m    // SAFETY: The index relation guard keeps the relation open while reloptions[m
+[32m+[m[32m    // are decoded.[m
+     let options = unsafe { super::options::relation_options(index_relation.as_ptr()) };[m
+[32m+[m[32m    // SAFETY: The index relation guard keeps the relation open while the[m
+[32m+[m[32m    // main-fork block count is read.[m
+     let block_count = unsafe {[m
+         pg_sys::RelationGetNumberOfBlocksInFork([m
+             index_relation.as_ptr(),[m
+             pg_sys::ForkNumber::MAIN_FORKNUM,[m
+         )[m
+     };[m
+[32m+[m[32m    // SAFETY: The index relation guard keeps the metadata page readable.[m
+     let metadata = unsafe { read_metadata_page(index_relation.as_ptr()) };[m
+ [m
+     (block_count, options.m, options.ef_construction, metadata)[m
+[36m@@ -1029,6 +1065,8 @@[m [mpub(crate) unsafe fn debug_update_index_metadata([m
+     metadata: page::MetadataPage,[m
+ ) {[m
+     let index_relation = IndexRelationGuard::access_share(index_oid, "debug_update_index_metadata");[m
+[32m+[m[32m    // SAFETY: The index relation guard keeps the relation open while the[m
+[32m+[m[32m    // metadata page is rewritten under exclusive lock.[m
+     unsafe { update_metadata_page(index_relation.as_ptr(), metadata) };[m
+ }[m
+ [m
+[36m@@ -1039,10 +1077,15 @@[m [mpub(crate) unsafe fn debug_vacuum_stats(index_oid: pg_sys::Oid) -> pg_sys::Index[m
+     info.index = index_relation.as_ptr();[m
+     let info_ptr = (&mut *info) as *mut pg_sys::IndexVacuumInfo;[m
+ [m
+[32m+[m[32m    // SAFETY: The test constructs callback-duration vacuum info and invokes the[m
+[32m+[m[32m    // AM bulkdelete entry with no delete callback for stats.[m
+     let stats = unsafe {[m
+         super::vacuum::ec_hnsw_ambulkdelete(info_ptr, ptr::null_mut(), None, ptr::null_mut())[m
+     };[m
+[32m+[m[32m    // SAFETY: The same vacuum info and stats pointer are valid for cleanup.[m
+     let stats = unsafe { super::vacuum::ec_hnsw_amvacuumcleanup(info_ptr, stats) };[m
+[32m+[m[32m    // SAFETY: The AM returned a valid stats pointer; copy it before guards leave[m
+[32m+[m[32m    // scope.[m
+     let result = unsafe { *stats };[m
+ [m
+     result[m
+
+Script done on 2026-05-19 05:20:47-07:00 [COMMAND_EXIT_CODE="0"]

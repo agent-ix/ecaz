@@ -1,0 +1,37 @@
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:80:36: replace + with -
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:88:40: replace + with -
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:123:9: replace RerankMode::v1_effective -> Self with Default::default()
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:173:9: replace MetadataPage::empty -> Self with Default::default()
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:217:9: replace MetadataPage::decode -> Result<Self, String> with Ok(Default::default())
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:323:9: replace BlockRef::decode -> Result<Self, String> with Ok(Default::default())
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:354:9: replace IvfCentroidTupleRef<'a>::decode -> Result<Self, String> with Ok(Default::default())
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:420:9: replace IvfCentroidTuple::decode -> Result<Self, String> with Ok(Default::default())
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:428:11: replace + with - in IvfCentroidTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:444:9: replace IvfListDirectoryTuple::empty -> Self with Default::default()
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:467:9: replace IvfListDirectoryTuple::decode -> Result<Self, String> with Ok(Default::default())
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:508:11: replace + with - in IvfListDirectoryTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:535:9: replace IvfPostingTupleRef<'a>::decode -> Result<Self, String> with Ok(Default::default())
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:559:41: replace + with - in IvfPostingTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:588:9: replace IvfPostingTupleRef<'a>::heaptids -> impl Iterator<Item = ItemPointer>+'_ with ::std::iter::once(Default::default())
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:598:9: replace IvfPostingTupleRef<'a>::collect_heaptids -> Vec<ItemPointer> with vec![Default::default()]
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:637:9: replace IvfPostingTuple::decode -> Result<Self, String> with Ok(Default::default())
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:669:9: replace IvfPqCodebookTupleRef<'a>::decode -> Result<Self, String> with Ok(Default::default())
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:722:9: replace IvfPqCodebookTuple::decode -> Result<Self, String> with Ok(Default::default())
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:731:15: replace + with - in IvfPqCodebookTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:731:11: replace + with - in IvfPqCodebookTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:757:9: replace DataPage::insert_ivf_centroid -> Result<ItemPointer, String> with Ok(Default::default())
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:765:9: replace DataPage::read_ivf_centroid -> Result<IvfCentroidTuple, String> with Ok(Default::default())
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:779:9: replace DataPage::read_ivf_list_directory -> Result<IvfListDirectoryTuple, String> with Ok(Default::default())
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:772:9: replace DataPage::insert_ivf_list_directory -> Result<ItemPointer, String> with Ok(Default::default())
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:793:9: replace DataPage::insert_ivf_pq_codebook -> Result<ItemPointer, String> with Ok(Default::default())
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:786:9: replace DataPage::insert_ivf_posting -> Result<ItemPointer, String> with Ok(Default::default())
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:809:9: replace DataPage::read_ivf_posting -> Result<IvfPostingTuple, String> with Ok(Default::default())
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:818:9: replace DataPageChain::insert_ivf_centroid -> Result<ItemPointer, String> with Ok(Default::default())
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:826:9: replace DataPageChain::read_ivf_centroid -> Result<IvfCentroidTuple, String> with Ok(Default::default())
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:836:9: replace DataPageChain::insert_ivf_list_directory -> Result<ItemPointer, String> with Ok(Default::default())
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:843:9: replace DataPageChain::read_ivf_list_directory -> Result<IvfListDirectoryTuple, String> with Ok(Default::default())
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:853:9: replace DataPageChain::insert_ivf_posting -> Result<ItemPointer, String> with Ok(Default::default())
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:860:9: replace DataPageChain::insert_ivf_pq_codebook -> Result<ItemPointer, String> with Ok(Default::default())
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:878:9: replace DataPageChain::read_ivf_posting -> Result<IvfPostingTuple, String> with Ok(Default::default())
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2466:5: replace decode_storage_format -> Result<StorageFormat, String> with Ok(Default::default())
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2476:5: replace decode_rerank -> Result<RerankMode, String> with Ok(Default::default())

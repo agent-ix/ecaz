@@ -1,0 +1,7 @@
+# Artifact Manifest
+
+No raw measurement artifacts are attached to this packet. The slice adds a
+diagnostic SQL rollup and does not make a latency, recall, fanout-overlap, or
+throughput claim.
+
+Validation command outcomes are summarized in `request.md`.

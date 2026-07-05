@@ -1,0 +1,3 @@
+hnsw-rs code graph timings: m=8 ef_search=128 build=228.746164235s search=39.286430847s
+hnsw-rs code graph probe: queries=20 m=8 ef_search=128 hnsw=0.2900 build_code=0.8050 exact=0.8400
+test tests::test_hnsw_rs_code_graph_recall_uniform_10k ... ok

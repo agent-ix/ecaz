@@ -1,0 +1,29 @@
+timestamp_utc=2026-05-02T22:49:32Z
+rustc 1.95.0 (59807616e 2026-04-14) (Homebrew)
+binary: rustc
+commit-hash: 59807616e1fa2540724bfbac14d7976d7e4a3860
+commit-date: 2026-04-14
+host: aarch64-apple-darwin
+release: 1.95.0
+LLVM version: 22.1.3
+cargo 1.95.0 (f2d3ce0bd 2026-03-21) (Homebrew)
+release: 1.95.0
+commit-hash: f2d3ce0bd7f24a49f8f72d9000448f8838c4e850
+commit-date: 2026-03-21
+host: aarch64-apple-darwin
+libgit2: 1.9.2 (sys:0.20.4 system)
+libcurl: 8.7.1 (sys:0.4.83+curl-8.15.0 system ssl:(SecureTransport) LibreSSL/3.3.6)
+os: Mac OS 26.4.1 [64-bit]
+cargo-pgrx 0.17.0
+PostgreSQL 18.3 (Homebrew)
+/opt/homebrew/Cellar/postgresql@18/18.3/bin
+/opt/homebrew/lib/postgresql@18
+/opt/homebrew/share/postgresql@18
+psql (PostgreSQL) 18.3 (Homebrew)
+postgres (PostgreSQL) 18.3 (Homebrew)
+Apple clang version 21.0.0 (clang-2100.0.123.102)
+Target: arm64-apple-darwin25.4.0
+Thread model: posix
+InstalledDir: /Library/Developer/CommandLineTools/usr/bin
+postgresql@18 18.3
+rust 1.95.0

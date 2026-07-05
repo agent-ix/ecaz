@@ -1,0 +1,9 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.18s
+     Running unittests src/main.rs (target/debug/deps/ecaz-86235046212dbd2d)
+
+running 2 tests
+test commands::bench::tests::adaptive_nprobe_bench_options_are_spire_only ... ok
+test commands::bench::tests::adaptive_nprobe_threshold_requires_enabled_switch ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 285 filtered out; finished in 0.00s
+

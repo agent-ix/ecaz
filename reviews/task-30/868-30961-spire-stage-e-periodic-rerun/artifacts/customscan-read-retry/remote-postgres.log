@@ -1,0 +1,5 @@
+2026-05-12 19:40:56.124 PDT [47] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-05-12 19:40:56.127 PDT [47] LOG:  could not bind Unix address "/home/peter/dev/ecaz/target/se30961-customscan-read-retry/s/.s.PGSQL.39228": Operation not permitted
+2026-05-12 19:40:56.127 PDT [47] WARNING:  could not create Unix-domain socket in directory "/home/peter/dev/ecaz/target/se30961-customscan-read-retry/s"
+2026-05-12 19:40:56.127 PDT [47] FATAL:  could not create any Unix-domain sockets
+2026-05-12 19:40:56.130 PDT [47] LOG:  database system is shut down

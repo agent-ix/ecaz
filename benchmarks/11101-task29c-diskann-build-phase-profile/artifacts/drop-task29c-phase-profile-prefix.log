@@ -1,0 +1,6 @@
+DROP INDEX
+DROP TABLE
+DROP TABLE
+NOTICE:  index "task29c_phase_profile_idx" does not exist, skipping
+NOTICE:  table "task29c_phase_profile_corpus" does not exist, skipping
+NOTICE:  table "task29c_phase_profile_queries" does not exist, skipping

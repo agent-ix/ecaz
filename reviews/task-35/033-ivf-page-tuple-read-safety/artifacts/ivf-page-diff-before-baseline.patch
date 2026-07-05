@@ -1,0 +1,57 @@
+diff --git a/src/am/ec_ivf/page.rs b/src/am/ec_ivf/page.rs
+index aa077709..99176640 100644
+--- a/src/am/ec_ivf/page.rs
++++ b/src/am/ec_ivf/page.rs
+@@ -2321,6 +2321,7 @@ where
+         // registered page; the helper validates item-id bounds before exposing
+         // tuple bytes. In-place rewrites preserve tuple length and use the
+         // validated line pointer's tuple offset.
++        // SAFETY: this unsafe block is the validated tuple visit/rewrite.
+         let tuple_visit = unsafe {
+             with_page_line_tuple_bytes(
+                 page_ptr,
+@@ -2472,6 +2473,8 @@ unsafe fn read_page_tuple<T, DecodeFn>(
+ where
+     DecodeFn: for<'a> FnOnce(&'a [u8]) -> Result<T, String>,
+ {
++    // SAFETY: `tuple_tid` identifies a tuple on the live index relation; a
++    // share lock is sufficient because this helper only reads and decodes.
+     let buffer = unsafe {
+         LockedBufferGuard::read_main(
+             index_relation,
+@@ -2497,6 +2500,8 @@ where
+         ));
+     }
+ 
++    // SAFETY: `page_ptr` and `page_size` come from the share-locked buffer;
++    // the helper validates the required tuple slot before decoding.
+     let decoded = unsafe {
+         with_required_page_tuple_bytes(page_ptr, page_size, tuple_tid, tuple_kind, decode)
+     };
+@@ -2510,12 +2515,16 @@ unsafe fn find_next_tuple_with_tag(
+     tag: u8,
+     tuple_kind: &str,
+ ) -> Result<ItemPointer, String> {
++    // SAFETY: `index_relation` is live; this only reads the main-fork block
++    // count to bound the forward scan.
+     let block_count = unsafe {
+         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
+     };
+     let mut block_number = start_tid.block_number;
+     let mut offset_number = start_tid.offset_number;
+     while block_number < block_count {
++        // SAFETY: `block_number` is bounded by the relation block count above,
++        // and a share lock is sufficient for scanning tuple tags.
+         let buffer = unsafe {
+             LockedBufferGuard::read_main(
+                 index_relation,
+@@ -2533,6 +2542,9 @@ unsafe fn find_next_tuple_with_tag(
+         let line_pointer_count = page_line_pointer_count(page_ptr);
+         let result = (|| -> Result<Option<ItemPointer>, String> {
+             for offset in offset_number..=line_pointer_count {
++                // SAFETY: `page_ptr` and `page_size` come from the share-locked
++                // buffer, and the helper validates item-id bounds before tag
++                // inspection.
+                 let visit = unsafe {
+                     with_page_line_tuple_bytes(
+                         page_ptr,

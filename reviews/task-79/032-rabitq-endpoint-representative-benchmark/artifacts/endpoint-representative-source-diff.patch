@@ -1,0 +1,33 @@
+diff --git a/src/am/ec_spire/build/recursive.rs b/src/am/ec_spire/build/recursive.rs
+--- a/src/am/ec_spire/build/recursive.rs
++++ b/src/am/ec_spire/build/recursive.rs
+@@
+     if leaf_block_l2_squared(first, second) == 0.0 {
+         return vec![mean.clone(), mean];
+     }
+ 
+-    let mut accumulators = vec![vec![0.0_f32; dimensions], vec![0.0_f32; dimensions]];
+-    let mut counts = [0_usize; 2];
+-    for source_vector in block_vectors {
+-        let first_dist = leaf_block_l2_squared(source_vector, first);
+-        let second_dist = leaf_block_l2_squared(source_vector, second);
+-        let bucket = usize::from(second_dist < first_dist);
+-        counts[bucket] += 1;
+-        for (accum, value) in accumulators[bucket].iter_mut().zip(source_vector.iter()) {
+-            *accum += *value;
+-        }
+-    }
+-
+-    if counts[0] == 0 || counts[1] == 0 {
+-        return vec![mean, first.to_vec()];
+-    }
+-
+-    for (representative, count) in accumulators.iter_mut().zip(counts) {
+-        let inv = 1.0_f32 / count as f32;
+-        for value in representative {
+-            *value *= inv;
+-        }
+-    }
+-    accumulators
++    vec![first.to_vec(), second.to_vec()]
+ }

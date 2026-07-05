@@ -1,0 +1,21 @@
+--- hardening/careful/src/../../../src/storage/page.rs
++++ replace += with -= in DataPage::insert_raw_tuple
+@@ -103,17 +103,17 @@
+             return Err(format!(
+                 "tuple payload {} does not fit on block {} with {} bytes free",
+                 payload.len(),
+                 self.block_number,
+                 self.free_bytes()
+             ));
+         }
+ 
+-        self.used_bytes += aligned_tuple_bytes(payload.len());
++        self.used_bytes -= /* ~ changed by cargo-mutants ~ */ aligned_tuple_bytes(payload.len());
+         self.tuples.push(payload);
+         Ok(ItemPointer {
+             block_number: self.block_number,
+             offset_number: u16::try_from(self.tuples.len()).expect("tuple count should fit in u16"),
+         })
+     }
+ 
+     pub fn raw_tuple(&self, tid: ItemPointer) -> Result<&[u8], String> {

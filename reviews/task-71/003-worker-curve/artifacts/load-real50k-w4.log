@@ -1,0 +1,23 @@
+[loader] inspecting data/task31_m5_dbpedia_staged/ec_hnsw_real_50k_corpus.tsv
+[loader] inspecting data/task31_m5_dbpedia_staged/ec_hnsw_real_50k_queries.tsv
+[loader] corpus: 50000 rows, sha256=56023baaa7bc42f758272e8617603d538808e6290a8a70a3a84e057571240133  queries: 1000 rows, sha256=95ac7992578aa80bb193657f10fbcbf1ea3867e559739244bf5a467f7a5a9fa3
+[loader] warning: manifest verification failed for data/task31_m5_dbpedia_staged/ec_hnsw_real_50k_manifest.json: prefix="ec_hnsw_real_50k" (expected "task71_real50k_w4")
+[loader] copied corpus table task71_real50k_w4_corpus in 28.41s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table task71_real50k_w4_corpus in 4.05s
+[loader] copied queries table task71_real50k_w4_queries in 570.02ms
+[loader] building task71_real50k_w4_idx using ec_ivf (reloptions=[storage_format=pq_fastscan, pq_group_size=8, nlists=64, nprobe=48, rerank=heap_f32, rerank_width=750]) ...
+[loader] built task71_real50k_w4_idx in 937.10ms
+[loader] ec_ivf build timing: requested_workers=4 workers_launched=4 heap_tuples=50000 index_tuples=50000 heap_ingest_us=176726 parallel_begin_us=1623 parallel_drain_us=117721 parallel_sort_push_us=57381 parallel_worker_tuple_buffer_capacity=65536 parallel_worker_tuple_buffer_struct_bytes=4194304
+┌─────────┬──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                                                                        │
+╞═════════╪══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_ivf                                                                                                                       │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ task71_real50k_w4_corpus (50000 rows)                                                                                        │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ task71_real50k_w4_queries (1000 rows)                                                                                        │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ task71_real50k_w4_idx [storage_format=pq_fastscan, pq_group_size=8, nlists=64, nprobe=48, rerank=heap_f32, rerank_width=750] │
+└─────────┴──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+[loader] completed prefix task71_real50k_w4 in 83.31s

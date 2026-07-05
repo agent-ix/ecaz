@@ -1,0 +1,98 @@
+{
+  "name": "task94-local-ivf-pqfastscan-smoke",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-94/024-local-bench-smoke/artifacts",
+  "defaults": {
+    "pg": 18,
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 40,
+    "iterations": 120,
+    "force_index": true,
+    "sample_backend_memory": false
+  },
+  "steps": [
+    {
+      "kind": "recall",
+      "name": "recall-ivf-pqfastscan-batch-off",
+      "tags": [
+        "task94",
+        "local",
+        "ivf",
+        "pq_fastscan",
+        "quant=grouped_pq",
+        "kernel_off"
+      ],
+      "prefix": "task94_local_pqfs10k_roff",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [32, 64],
+      "queries_limit": 40,
+      "log_output": "${artifact_dir}/suite-recall-ivf-pqfastscan-batch-off.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-ivf-pqfastscan-batch-on",
+      "tags": [
+        "task94",
+        "local",
+        "ivf",
+        "pq_fastscan",
+        "quant=grouped_pq",
+        "kernel_on"
+      ],
+      "prefix": "task94_local_pqfs10k_roff",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [32, 64],
+      "queries_limit": 40,
+      "ivf_scratch_soa_batch_decode": true,
+      "log_output": "${artifact_dir}/suite-recall-ivf-pqfastscan-batch-on.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-ivf-pqfastscan-batch-off",
+      "tags": [
+        "task94",
+        "local",
+        "ivf",
+        "pq_fastscan",
+        "quant=grouped_pq",
+        "isa=avx2",
+        "kernel_off"
+      ],
+      "prefix": "task94_local_pqfs10k_roff",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [32, 64],
+      "iterations": 120,
+      "concurrency": 1,
+      "cache_state": "task94_local_batch_off",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/suite-latency-ivf-pqfastscan-batch-off.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-ivf-pqfastscan-batch-on",
+      "tags": [
+        "task94",
+        "local",
+        "ivf",
+        "pq_fastscan",
+        "quant=grouped_pq",
+        "isa=avx2",
+        "kernel_on"
+      ],
+      "prefix": "task94_local_pqfs10k_roff",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [32, 64],
+      "iterations": 120,
+      "concurrency": 1,
+      "ivf_scratch_soa_batch_decode": true,
+      "cache_state": "task94_local_batch_on",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/suite-latency-ivf-pqfastscan-batch-on.log"
+    }
+  ]
+}

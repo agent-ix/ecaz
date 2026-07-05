@@ -1,0 +1,370 @@
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:50:32: replace + with *
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:50:58: replace * with +
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:51:76: replace + with -
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:50:58: replace * with /
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:51:76: replace + with *
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:52:74: replace + with -
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:52:74: replace + with *
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:53:73: replace + with -
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:53:73: replace + with *
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:60:36: replace + with *
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:60:62: replace * with +
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:60:62: replace * with /
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:61:90: replace + with -
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:61:90: replace + with *
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:63:39: replace + with -
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:63:39: replace + with *
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:65:37: replace + with -
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:65:37: replace + with *
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:72:34: replace + with *
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:72:60: replace * with +
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:72:60: replace * with /
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:73:86: replace + with -
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:73:86: replace + with *
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:75:37: replace + with -
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:75:37: replace + with *
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:77:35: replace + with -
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:77:35: replace + with *
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:81:65: replace + with *
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:87:40: replace + with *
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:102:52: replace << with >>
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:103:52: replace << with >>
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:216:27: replace |= with &= in MetadataPage::current_v1_scalar
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:229:51: replace == with != in MetadataPage::current_v1_scalar
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:234:59: replace || with && in MetadataPage::current_v1_scalar
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:234:54: replace == with != in MetadataPage::current_v1_scalar
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:234:75: replace == with != in MetadataPage::current_v1_scalar
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:251:27: replace |= with &= in MetadataPage::current_v3_turbo_hot_cold
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:264:51: replace == with != in MetadataPage::current_v3_turbo_hot_cold
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:269:59: replace || with && in MetadataPage::current_v3_turbo_hot_cold
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:269:54: replace == with != in MetadataPage::current_v3_turbo_hot_cold
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:269:75: replace == with != in MetadataPage::current_v3_turbo_hot_cold
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:276:59: replace || with && in MetadataPage::current_v3_turbo_hot_cold
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:276:54: replace == with != in MetadataPage::current_v3_turbo_hot_cold
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:276:75: replace == with != in MetadataPage::current_v3_turbo_hot_cold
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:288:9: replace MetadataPage::encode -> Vec<u8> with vec![]
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:288:9: replace MetadataPage::encode -> Vec<u8> with vec![0]
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:288:9: replace MetadataPage::encode -> Vec<u8> with vec![1]
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:310:24: replace == with != in MetadataPage::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:313:24: replace != with == in MetadataPage::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:322:12: delete ! in MetadataPage::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:385:9: replace MetadataPage::encode_page -> Result<Vec<u8>, String> with Ok(vec![])
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:385:9: replace MetadataPage::encode_page -> Result<Vec<u8>, String> with Ok(vec![0])
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:385:9: replace MetadataPage::encode_page -> Result<Vec<u8>, String> with Ok(vec![1])
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:385:22: replace < with == in MetadataPage::encode_page
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:385:22: replace < with > in MetadataPage::encode_page
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:385:22: replace < with <= in MetadataPage::encode_page
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:385:42: replace + with * in MetadataPage::encode_page
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:394:40: replace - with + in MetadataPage::encode_page
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:394:40: replace - with / in MetadataPage::encode_page
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:395:45: replace + with - in MetadataPage::encode_page
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:395:45: replace + with * in MetadataPage::encode_page
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:400:23: replace < with == in MetadataPage::decode_page
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:400:23: replace < with > in MetadataPage::decode_page
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:400:23: replace < with <= in MetadataPage::decode_page
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:400:43: replace + with * in MetadataPage::decode_page
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:408:23: replace >= with < in MetadataPage::decode_page
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:408:44: replace + with * in MetadataPage::decode_page
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:409:45: replace - with + in MetadataPage::decode_page
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:409:45: replace - with / in MetadataPage::decode_page
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:410:66: replace + with - in MetadataPage::decode_page
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:410:66: replace + with * in MetadataPage::decode_page
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:416:40: replace - with + in MetadataPage::decode_page
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:416:40: replace - with / in MetadataPage::decode_page
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:417:57: replace + with - in MetadataPage::decode_page
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:417:57: replace + with * in MetadataPage::decode_page
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:421:27: replace < with == in MetadataPage::decode_contents
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:421:27: replace < with > in MetadataPage::decode_contents
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:421:27: replace < with <= in MetadataPage::decode_contents
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:428:27: replace >= with < in MetadataPage::decode_contents
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:534:24: replace < with == in TqElementTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:534:24: replace < with > in TqElementTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:534:24: replace < with <= in TqElementTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:540:21: replace != with == in TqElementTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:545:57: replace * with + in TqElementTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:545:57: replace * with / in TqElementTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:546:77: replace + with * in TqElementTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:547:46: replace + with * in TqElementTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:550:16: replace += with -= in TqElementTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:550:16: replace += with *= in TqElementTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:551:26: replace > with == in TqElementTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:551:26: replace > with < in TqElementTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:551:26: replace > with >= in TqElementTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:558:61: replace + with - in TqElementTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:558:61: replace + with * in TqElementTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:559:16: replace += with -= in TqElementTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:559:16: replace += with *= in TqElementTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:560:69: replace + with - in TqElementTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:560:69: replace + with * in TqElementTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:561:16: replace += with -= in TqElementTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:561:16: replace += with *= in TqElementTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:562:31: replace + with - in TqElementTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:562:31: replace + with * in TqElementTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:565:55: replace != with == in TqElementTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:565:36: replace % with / in TqElementTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:565:36: replace % with + in TqElementTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:575:31: replace != with == in TqElementTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:586:9: replace TqElementTupleRef<'a>::heaptid_count -> usize with 0
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:586:9: replace TqElementTupleRef<'a>::heaptid_count -> usize with 1
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:590:9: replace TqElementTupleRef<'a>::heaptids -> impl Iterator<Item = ItemPointer>+'_ with ::std::iter::empty()
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:600:9: replace TqElementTupleRef<'a>::collect_heaptids -> Vec<ItemPointer> with vec![]
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:604:9: replace TqElementTupleRef<'a>::binary_word_count -> usize with 0
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:604:9: replace TqElementTupleRef<'a>::binary_word_count -> usize with 1
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:604:38: replace / with % in TqElementTupleRef<'a>::binary_word_count
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:604:38: replace / with * in TqElementTupleRef<'a>::binary_word_count
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:608:9: replace TqElementTupleRef<'a>::binary_words -> impl Iterator<Item = u64>+'_ with ::std::iter::empty()
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:608:9: replace TqElementTupleRef<'a>::binary_words -> impl Iterator<Item = u64>+'_ with ::std::iter::once(0)
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:608:9: replace TqElementTupleRef<'a>::binary_words -> impl Iterator<Item = u64>+'_ with ::std::iter::once(1)
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:614:9: replace TqElementTupleRef<'a>::collect_binary_words -> Vec<u64> with vec![]
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:614:9: replace TqElementTupleRef<'a>::collect_binary_words -> Vec<u64> with vec![0]
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:614:9: replace TqElementTupleRef<'a>::collect_binary_words -> Vec<u64> with vec![1]
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:620:9: replace TqElementTuple::encode -> Result<Vec<u8>, String> with Ok(vec![])
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:620:9: replace TqElementTuple::encode -> Result<Vec<u8>, String> with Ok(vec![0])
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:620:9: replace TqElementTuple::encode -> Result<Vec<u8>, String> with Ok(vec![1])
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:620:32: replace > with == in TqElementTuple::encode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:620:32: replace > with < in TqElementTuple::encode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:620:32: replace > with >= in TqElementTuple::encode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:673:9: replace TqElementTuple::encoded_len -> usize with 0
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:673:9: replace TqElementTuple::encoded_len -> usize with 1
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:677:9: replace TqElementTuple::encoded_len_with_binary -> usize with 0
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:677:9: replace TqElementTuple::encoded_len_with_binary -> usize with 1
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:684:13: replace + with - in TqElementTuple::encoded_len_with_binary
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:684:13: replace + with * in TqElementTuple::encoded_len_with_binary
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:683:13: replace + with - in TqElementTuple::encoded_len_with_binary
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:683:13: replace + with * in TqElementTuple::encoded_len_with_binary
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:682:13: replace + with - in TqElementTuple::encoded_len_with_binary
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:682:13: replace + with * in TqElementTuple::encoded_len_with_binary
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:681:13: replace + with - in TqElementTuple::encoded_len_with_binary
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:681:13: replace + with * in TqElementTuple::encoded_len_with_binary
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:680:13: replace + with - in TqElementTuple::encoded_len_with_binary
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:680:13: replace + with * in TqElementTuple::encoded_len_with_binary
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:679:13: replace + with * in TqElementTuple::encoded_len_with_binary
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:678:13: replace + with - in TqElementTuple::encoded_len_with_binary
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:678:13: replace + with * in TqElementTuple::encoded_len_with_binary
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:677:11: replace + with - in TqElementTuple::encoded_len_with_binary
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:677:11: replace + with * in TqElementTuple::encoded_len_with_binary
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:679:39: replace * with + in TqElementTuple::encoded_len_with_binary
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:679:39: replace * with / in TqElementTuple::encoded_len_with_binary
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:684:33: replace * with + in TqElementTuple::encoded_len_with_binary
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:684:33: replace * with / in TqElementTuple::encoded_len_with_binary
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:695:24: replace != with == in TqGroupedHotTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:701:21: replace != with == in TqGroupedHotTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:706:57: replace * with + in TqGroupedHotTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:706:57: replace * with / in TqGroupedHotTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:707:77: replace + with * in TqGroupedHotTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:708:46: replace + with * in TqGroupedHotTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:711:16: replace += with -= in TqGroupedHotTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:711:16: replace += with *= in TqGroupedHotTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:712:26: replace > with == in TqGroupedHotTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:712:26: replace > with < in TqGroupedHotTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:712:26: replace > with >= in TqGroupedHotTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:719:69: replace + with - in TqGroupedHotTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:719:69: replace + with * in TqGroupedHotTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:720:16: replace += with -= in TqGroupedHotTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:720:16: replace += with *= in TqGroupedHotTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:721:67: replace + with - in TqGroupedHotTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:721:67: replace + with * in TqGroupedHotTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:722:16: replace += with -= in TqGroupedHotTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:722:16: replace += with *= in TqGroupedHotTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:723:55: replace * with + in TqGroupedHotTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:723:55: replace * with / in TqGroupedHotTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:724:55: replace + with - in TqGroupedHotTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:724:55: replace + with * in TqGroupedHotTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:725:16: replace += with -= in TqGroupedHotTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:725:16: replace += with *= in TqGroupedHotTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:726:49: replace + with - in TqGroupedHotTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:726:49: replace + with * in TqGroupedHotTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:730:31: replace != with == in TqGroupedHotTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:741:9: replace TqGroupedHotTupleRef<'a>::heaptid_count -> usize with 0
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:741:9: replace TqGroupedHotTupleRef<'a>::heaptid_count -> usize with 1
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:745:9: replace TqGroupedHotTupleRef<'a>::heaptids -> impl Iterator<Item = ItemPointer>+'_ with ::std::iter::empty()
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:755:9: replace TqGroupedHotTupleRef<'a>::collect_heaptids -> Vec<ItemPointer> with vec![]
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:759:9: replace TqGroupedHotTupleRef<'a>::binary_words -> impl Iterator<Item = u64>+'_ with ::std::iter::empty()
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:759:9: replace TqGroupedHotTupleRef<'a>::binary_words -> impl Iterator<Item = u64>+'_ with ::std::iter::once(0)
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:759:9: replace TqGroupedHotTupleRef<'a>::binary_words -> impl Iterator<Item = u64>+'_ with ::std::iter::once(1)
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:765:9: replace TqGroupedHotTupleRef<'a>::binary_word_count -> usize with 0
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:765:9: replace TqGroupedHotTupleRef<'a>::binary_word_count -> usize with 1
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:765:38: replace / with % in TqGroupedHotTupleRef<'a>::binary_word_count
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:765:38: replace / with * in TqGroupedHotTupleRef<'a>::binary_word_count
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:769:9: replace TqGroupedHotTupleRef<'a>::collect_binary_words -> Vec<u64> with vec![]
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:769:9: replace TqGroupedHotTupleRef<'a>::collect_binary_words -> Vec<u64> with vec![0]
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:769:9: replace TqGroupedHotTupleRef<'a>::collect_binary_words -> Vec<u64> with vec![1]
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:775:9: replace TqGroupedHotTuple::encode -> Result<Vec<u8>, String> with Ok(vec![])
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:775:9: replace TqGroupedHotTuple::encode -> Result<Vec<u8>, String> with Ok(vec![0])
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:775:9: replace TqGroupedHotTuple::encode -> Result<Vec<u8>, String> with Ok(vec![1])
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:775:32: replace > with == in TqGroupedHotTuple::encode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:775:32: replace > with < in TqGroupedHotTuple::encode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:775:32: replace > with >= in TqGroupedHotTuple::encode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:826:9: replace TqGroupedHotTuple::encoded_len -> usize with 0
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:826:9: replace TqGroupedHotTuple::encoded_len -> usize with 1
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:833:13: replace + with - in TqGroupedHotTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:833:13: replace + with * in TqGroupedHotTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:832:13: replace + with - in TqGroupedHotTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:832:13: replace + with * in TqGroupedHotTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:831:13: replace + with - in TqGroupedHotTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:831:13: replace + with * in TqGroupedHotTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:830:13: replace + with - in TqGroupedHotTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:830:13: replace + with * in TqGroupedHotTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:829:13: replace + with - in TqGroupedHotTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:829:13: replace + with * in TqGroupedHotTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:828:13: replace + with * in TqGroupedHotTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:827:13: replace + with - in TqGroupedHotTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:827:13: replace + with * in TqGroupedHotTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:826:11: replace + with - in TqGroupedHotTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:826:11: replace + with * in TqGroupedHotTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:828:39: replace * with + in TqGroupedHotTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:828:39: replace * with / in TqGroupedHotTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:832:33: replace * with + in TqGroupedHotTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:832:33: replace * with / in TqGroupedHotTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:840:24: replace != with == in TqTurboHotTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:846:21: replace != with == in TqTurboHotTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:851:57: replace * with + in TqTurboHotTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:851:57: replace * with / in TqTurboHotTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:852:77: replace + with * in TqTurboHotTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:853:46: replace + with * in TqTurboHotTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:856:16: replace += with -= in TqTurboHotTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:856:16: replace += with *= in TqTurboHotTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:857:26: replace > with == in TqTurboHotTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:857:26: replace > with < in TqTurboHotTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:857:26: replace > with >= in TqTurboHotTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:864:69: replace + with - in TqTurboHotTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:864:69: replace + with * in TqTurboHotTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:865:16: replace += with -= in TqTurboHotTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:865:16: replace += with *= in TqTurboHotTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:866:67: replace + with - in TqTurboHotTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:866:67: replace + with * in TqTurboHotTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:867:16: replace += with -= in TqTurboHotTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:867:16: replace += with *= in TqTurboHotTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:868:55: replace * with + in TqTurboHotTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:868:55: replace * with / in TqTurboHotTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:869:55: replace + with - in TqTurboHotTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:869:55: replace + with * in TqTurboHotTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:873:31: replace != with == in TqTurboHotTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:883:9: replace TqTurboHotTupleRef<'a>::heaptid_count -> usize with 0
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:883:9: replace TqTurboHotTupleRef<'a>::heaptid_count -> usize with 1
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:887:9: replace TqTurboHotTupleRef<'a>::heaptids -> impl Iterator<Item = ItemPointer>+'_ with ::std::iter::empty()
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:897:9: replace TqTurboHotTupleRef<'a>::collect_heaptids -> Vec<ItemPointer> with vec![]
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:901:9: replace TqTurboHotTupleRef<'a>::binary_words -> impl Iterator<Item = u64>+'_ with ::std::iter::empty()
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:901:9: replace TqTurboHotTupleRef<'a>::binary_words -> impl Iterator<Item = u64>+'_ with ::std::iter::once(0)
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:901:9: replace TqTurboHotTupleRef<'a>::binary_words -> impl Iterator<Item = u64>+'_ with ::std::iter::once(1)
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:907:9: replace TqTurboHotTupleRef<'a>::binary_word_count -> usize with 0
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:907:9: replace TqTurboHotTupleRef<'a>::binary_word_count -> usize with 1
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:907:38: replace / with % in TqTurboHotTupleRef<'a>::binary_word_count
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:907:38: replace / with * in TqTurboHotTupleRef<'a>::binary_word_count
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:911:9: replace TqTurboHotTupleRef<'a>::collect_binary_words -> Vec<u64> with vec![]
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:911:9: replace TqTurboHotTupleRef<'a>::collect_binary_words -> Vec<u64> with vec![0]
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:911:9: replace TqTurboHotTupleRef<'a>::collect_binary_words -> Vec<u64> with vec![1]
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:917:9: replace TqTurboHotTuple::encode -> Result<Vec<u8>, String> with Ok(vec![])
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:917:9: replace TqTurboHotTuple::encode -> Result<Vec<u8>, String> with Ok(vec![0])
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:917:9: replace TqTurboHotTuple::encode -> Result<Vec<u8>, String> with Ok(vec![1])
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:917:32: replace > with == in TqTurboHotTuple::encode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:917:32: replace > with < in TqTurboHotTuple::encode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:917:32: replace > with >= in TqTurboHotTuple::encode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:959:9: replace TqTurboHotTuple::encoded_len -> usize with 0
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:959:9: replace TqTurboHotTuple::encoded_len -> usize with 1
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:965:13: replace + with - in TqTurboHotTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:965:13: replace + with * in TqTurboHotTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:964:13: replace + with - in TqTurboHotTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:964:13: replace + with * in TqTurboHotTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:963:13: replace + with - in TqTurboHotTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:963:13: replace + with * in TqTurboHotTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:962:13: replace + with - in TqTurboHotTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:962:13: replace + with * in TqTurboHotTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:961:13: replace + with * in TqTurboHotTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:960:13: replace + with - in TqTurboHotTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:960:13: replace + with * in TqTurboHotTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:959:11: replace + with - in TqTurboHotTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:959:11: replace + with * in TqTurboHotTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:961:39: replace * with + in TqTurboHotTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:961:39: replace * with / in TqTurboHotTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:965:33: replace * with + in TqTurboHotTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:965:33: replace * with / in TqTurboHotTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:972:24: replace != with == in TqRerankTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:978:21: replace != with == in TqRerankTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:984:31: replace + with - in TqRerankTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:984:31: replace + with * in TqRerankTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:991:9: replace TqRerankTuple::encode -> Vec<u8> with vec![]
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:991:9: replace TqRerankTuple::encode -> Vec<u8> with vec![0]
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:991:9: replace TqRerankTuple::encode -> Vec<u8> with vec![1]
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1007:9: replace TqRerankTuple::encoded_len -> usize with 0
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1007:9: replace TqRerankTuple::encoded_len -> usize with 1
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1007:15: replace + with - in TqRerankTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1007:15: replace + with * in TqRerankTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1007:11: replace + with * in TqRerankTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1014:24: replace != with == in TqGroupedCodebookTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1020:21: replace != with == in TqGroupedCodebookTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1026:54: replace + with * in TqGroupedCodebookTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1027:38: replace + with * in TqGroupedCodebookTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1032:9: replace TqGroupedCodebookTupleRef<'a>::centroids -> impl Iterator<Item = f32>+'_ with ::std::iter::empty()
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1032:9: replace TqGroupedCodebookTupleRef<'a>::centroids -> impl Iterator<Item = f32>+'_ with ::std::iter::once(0.0)
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1032:9: replace TqGroupedCodebookTupleRef<'a>::centroids -> impl Iterator<Item = f32>+'_ with ::std::iter::once(1.0)
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1032:9: replace TqGroupedCodebookTupleRef<'a>::centroids -> impl Iterator<Item = f32>+'_ with ::std::iter::once(-1.0)
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1038:9: replace TqGroupedCodebookTupleRef<'a>::collect_centroids -> Vec<f32> with vec![]
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1038:9: replace TqGroupedCodebookTupleRef<'a>::collect_centroids -> Vec<f32> with vec![0.0]
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1038:9: replace TqGroupedCodebookTupleRef<'a>::collect_centroids -> Vec<f32> with vec![1.0]
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1038:9: replace TqGroupedCodebookTupleRef<'a>::collect_centroids -> Vec<f32> with vec![-1.0]
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1044:9: replace TqGroupedCodebookTuple::encode -> Vec<u8> with vec![]
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1044:9: replace TqGroupedCodebookTuple::encode -> Vec<u8> with vec![0]
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1044:9: replace TqGroupedCodebookTuple::encode -> Vec<u8> with vec![1]
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1064:9: replace TqGroupedCodebookTuple::encoded_len -> usize with 0
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1064:9: replace TqGroupedCodebookTuple::encoded_len -> usize with 1
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1064:36: replace + with - in TqGroupedCodebookTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1064:36: replace + with * in TqGroupedCodebookTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1064:15: replace + with * in TqGroupedCodebookTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1064:11: replace + with * in TqGroupedCodebookTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1064:53: replace * with + in TqGroupedCodebookTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1064:53: replace * with / in TqGroupedCodebookTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1076:9: replace TqNeighborTuple::encode -> Result<Vec<u8>, String> with Ok(vec![])
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1076:9: replace TqNeighborTuple::encode -> Result<Vec<u8>, String> with Ok(vec![0])
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1076:9: replace TqNeighborTuple::encode -> Result<Vec<u8>, String> with Ok(vec![1])
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1076:28: replace > with == in TqNeighborTuple::encode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1076:28: replace > with < in TqNeighborTuple::encode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1076:28: replace > with >= in TqNeighborTuple::encode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1094:24: replace < with == in TqNeighborTuple::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1094:24: replace < with > in TqNeighborTuple::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1094:24: replace < with <= in TqNeighborTuple::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1097:21: replace != with == in TqNeighborTuple::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1102:49: replace != with == in TqNeighborTuple::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1102:28: replace % with / in TqNeighborTuple::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1102:28: replace % with + in TqNeighborTuple::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1116:5: replace neighbor_slots -> usize with 0
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1116:5: replace neighbor_slots -> usize with 1
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1116:22: replace + with - in neighbor_slots
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1116:22: replace + with * in neighbor_slots
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1116:8: replace * with + in neighbor_slots
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1116:8: replace * with / in neighbor_slots
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1116:40: replace * with + in neighbor_slots
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1116:40: replace * with / in neighbor_slots
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1120:5: replace neighbor_tuple_encoded_len -> usize with 0
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1120:5: replace neighbor_tuple_encoded_len -> usize with 1
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1120:11: replace + with - in neighbor_tuple_encoded_len
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1120:11: replace + with * in neighbor_tuple_encoded_len
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1120:7: replace + with * in neighbor_tuple_encoded_len
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1120:38: replace * with + in neighbor_tuple_encoded_len
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1120:38: replace * with / in neighbor_tuple_encoded_len
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1124:5: replace max_level_that_fits -> u8 with 0
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1124:5: replace max_level_that_fits -> u8 with 1
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1128:24: replace > with == in max_level_that_fits
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1128:24: replace > with < in max_level_that_fits
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1128:24: replace > with >= in max_level_that_fits
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1131:18: replace == with != in max_level_that_fits
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1139:5: replace element_tuple_fits_on_page -> bool with true
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1139:5: replace element_tuple_fits_on_page -> bool with false
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1139:64: replace <= with > in element_tuple_fits_on_page
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1143:5: replace neighbor_tuple_fits_on_page -> bool with true
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1143:5: replace neighbor_tuple_fits_on_page -> bool with false
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1143:63: replace <= with > in neighbor_tuple_fits_on_page
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1147:5: replace default_max_level_cap -> u8 with 0
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1147:5: replace default_max_level_cap -> u8 with 1
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1224:9: replace DataPage::update_element -> Result<(), String> with Ok(())
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1232:9: replace DataPage::update_neighbor -> Result<(), String> with Ok(())
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1240:9: replace DataPage::update_grouped_hot -> Result<(), String> with Ok(())
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1248:9: replace DataPage::update_turbo_hot -> Result<(), String> with Ok(())
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1252:9: replace DataPage::update_rerank -> Result<(), String> with Ok(())
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1260:9: replace DataPage::update_grouped_codebook -> Result<(), String> with Ok(())
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1350:9: replace DataPageChain::update_element -> Result<(), String> with Ok(())
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1360:9: replace DataPageChain::update_neighbor -> Result<(), String> with Ok(())
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1370:9: replace DataPageChain::update_grouped_hot -> Result<(), String> with Ok(())
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1380:9: replace DataPageChain::update_turbo_hot -> Result<(), String> with Ok(())
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1386:9: replace DataPageChain::update_rerank -> Result<(), String> with Ok(())
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1396:9: replace DataPageChain::update_grouped_codebook -> Result<(), String> with Ok(())

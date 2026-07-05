@@ -1,0 +1,9 @@
+
+   0: [91minvalid prefix "t106_1m_ivf-auto-tq"[0m
+   1: [91m"t106_1m_ivf-auto-tq" must match [a-zA-Z_][a-zA-Z0-9_]*[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/profiles.rs[0m:[35m230[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.

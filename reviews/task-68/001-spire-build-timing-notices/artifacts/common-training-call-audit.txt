@@ -1,0 +1,12 @@
+src/am/ec_spire/update/materialization.rs:392:    let model = common_training::train_spherical_kmeans(
+src/am/ec_spire/update/routing.rs:163:    let centroid = common_training::normalize_vector(
+src/am/ec_spire/build/training.rs:10:    let nlists = common_training::resolve_auto_nlists(requested_nlists, source_vectors.len());
+src/am/ec_spire/build/training.rs:12:    let model = common_training::train_spherical_kmeans(
+src/am/ec_spire/build/training.rs:20:    let assignments = common_training::assign_vectors_to_centroids(
+src/am/ec_spire/build/training.rs:75:        common_training::normalize_vector(
+src/am/ec_spire/build/training.rs:102:        let indices = common_training::deterministic_sample_indices(
+src/am/ec_spire/build/training.rs:151:        let nlists = common_training::resolve_auto_nlists(requested_nlists, self.tuples.len());
+src/am/ec_spire/build/training.rs:156:        let model = common_training::train_spherical_kmeans(
+src/am/ec_spire/build/training.rs:172:            common_training::assign_vectors_to_centroids("ec_spire", &source_refs, &model)?;
+src/am/ec_spire/build/recursive.rs:40:        let model = common_training::train_spherical_kmeans(
+src/am/ec_spire/build/recursive.rs:54:        let centroid_indexes = common_training::assign_vectors_to_centroids(

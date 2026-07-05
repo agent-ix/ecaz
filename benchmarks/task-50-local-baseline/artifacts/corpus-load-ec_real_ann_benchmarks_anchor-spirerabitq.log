@@ -1,0 +1,30 @@
+[loader] inspecting /home/peter/dev/ecaz/target/real-corpus/staged-task50/ec_real_ann_benchmarks_anchor_corpus.tsv
+[loader] inspecting /home/peter/dev/ecaz/target/real-corpus/staged-task50/ec_real_ann_benchmarks_anchor_queries.tsv
+[loader] corpus: 990000 rows, sha256=00d96d7665edc31cd8e4e62712c0ef2679fb714682f3ce4d522305e59faec687  queries: 10000 rows, sha256=34c4874e0e35734574f4ee9e1dd10753fcec2d295955061a407c258df163f5a0
+[loader] warning: manifest verification failed for /home/peter/dev/ecaz/target/real-corpus/staged-task50/ec_real_ann_benchmarks_anchor_manifest.json: prefix="ec_real_ann_benchmarks_anchor" (expected "ec_real_ann_benchmarks_anchor_spirerabitq")
+[loader] copied corpus table ec_real_ann_benchmarks_anchor_spirerabitq_corpus in 447.32s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table ec_real_ann_benchmarks_anchor_spirerabitq_corpus in 183.18s
+[loader] copied queries table ec_real_ann_benchmarks_anchor_spirerabitq_queries in 4.46s
+[loader] building ec_real_ann_benchmarks_anchor_spirerabitq_rabitq_idx using ec_spire (reloptions=[storage_format=rabitq]) ...
+
+   0: [91mbuilding index ec_real_ann_benchmarks_anchor_spirerabitq_rabitq_idx[0m
+   1: [91mdb error[0m
+   2: [91mERROR: ec_spire populated ambuild failed: ec_spire object tuple payload 33884 exceeds page size 8192[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/corpus/load.rs[0m:[35m1176[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.
+
+   0: [91mbuilding index ec_real_ann_benchmarks_anchor_spirerabitq_rabitq_idx[0m
+   1: [91mdb error[0m
+   2: [91mERROR: ec_spire populated ambuild failed: ec_spire object tuple payload 33884 exceeds page size 8192[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/corpus/load.rs[0m:[35m1176[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.
+__ecaz_exit__=1

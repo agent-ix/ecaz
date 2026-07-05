@@ -1,0 +1,67 @@
+name: Resource Exhaustion
+
+# Task 48 §Exit Criteria #3: manual run of `make resource-exhaustion`
+# against a pre-configured PG18 cluster (low max_locks_per_transaction,
+# low max_connections, low shared_buffers). The cluster prep step
+# below applies the low GUCs; the run step invokes `ecaz dev
+# resource-test` to sweep all six scenarios.
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: resource-exhaustion-nightly
+  cancel-in-progress: true
+
+jobs:
+  resource-test:
+    name: 6-scenario sweep
+    runs-on: ubuntu-24.04
+    env:
+      PGRX_HOME: /tmp/tqvector_pgrx_home
+      PGRX_PG_CONFIG_PATH: /usr/lib/postgresql/18/bin/pg_config
+      DATABASE: postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.95.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: resource-exhaustion-pg18
+
+      - name: Install PG18
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          mkdir -p "$PGRX_HOME"
+          sudo curl --fail --show-error --location \
+            --output /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt noble-pgdg main" | \
+            sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update
+          sudo apt-get install -y postgresql-server-dev-18 postgresql-18 clang llvm pkg-config libssl-dev
+
+      - name: Configure low resource limits + start cluster
+        run: |
+          sudo systemctl stop postgresql || true
+          PGDATA=$(sudo -u postgres /usr/lib/postgresql/18/bin/pg_config --sharedir | xargs -I {} sudo -u postgres bash -c 'echo /var/lib/postgresql/18/main')
+          sudo sed -i "s/^#\?max_locks_per_transaction.*/max_locks_per_transaction = 8/" "$PGDATA/postgresql.conf"
+          sudo sed -i "s/^#\?max_connections.*/max_connections = 12/" "$PGDATA/postgresql.conf"
+          sudo sed -i "s/^#\?shared_buffers.*/shared_buffers = 16MB/" "$PGDATA/postgresql.conf"
+          sudo systemctl start postgresql
+          sleep 3
+
+      - name: cargo build ecaz-cli
+        run: cargo build -p ecaz-cli --bin ecaz
+
+      - name: make resource-exhaustion
+        run: |
+          DATABASE="postgresql://postgres@localhost/postgres" \
+          ./target/debug/ecaz dev resource-test \
+            --log-output target/resource-exhaustion-summary.json
+
+      - name: Upload summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: resource-exhaustion-nightly
+          path: target/resource-exhaustion-summary.json

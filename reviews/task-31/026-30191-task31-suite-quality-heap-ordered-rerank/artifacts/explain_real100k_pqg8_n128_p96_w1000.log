@@ -1,0 +1,163 @@
+Pager usage is off.
+Timing is on.
+SET
+Time: 0.055 ms
+SET
+Time: 0.028 ms
+SET
+Time: 0.023 ms
+ server_version  | nprobe | rerank_width 
+-----------------+--------+--------------
+ 18.3 (Homebrew) | 96     | 1000
+(1 row)
+
+Time: 0.241 ms
+            index_name            | index_bytes | index_size 
+----------------------------------+-------------+------------
+ task31_m5_real100k_pqg8_n128_idx |    20291584 | 19 MB
+(1 row)
+
+Time: 0.865 ms
+                                QUERY PLAN                                
+--------------------------------------------------------------------------
+ [                                                                       +
+   {                                                                     +
+     "Plan": {                                                           +
+       "Node Type": "Limit",                                             +
+       "Parallel Aware": false,                                          +
+       "Async Capable": false,                                           +
+       "Actual Startup Time": 16.249,                                    +
+       "Actual Total Time": 16.306,                                      +
+       "Actual Rows": 10.00,                                             +
+       "Actual Loops": 1,                                                +
+       "Disabled": false,                                                +
+       "Shared Hit Blocks": 8155,                                        +
+       "Shared Read Blocks": 377,                                        +
+       "Shared Dirtied Blocks": 0,                                       +
+       "Shared Written Blocks": 0,                                       +
+       "Local Hit Blocks": 0,                                            +
+       "Local Read Blocks": 0,                                           +
+       "Local Dirtied Blocks": 0,                                        +
+       "Local Written Blocks": 0,                                        +
+       "Temp Read Blocks": 0,                                            +
+       "Temp Written Blocks": 0,                                         +
+       "Plans": [                                                        +
+         {                                                               +
+           "Node Type": "Limit",                                         +
+           "Parent Relationship": "InitPlan",                            +
+           "Subplan Name": "InitPlan 1",                                 +
+           "Parallel Aware": false,                                      +
+           "Async Capable": false,                                       +
+           "Actual Startup Time": 0.010,                                 +
+           "Actual Total Time": 0.011,                                   +
+           "Actual Rows": 1.00,                                          +
+           "Actual Loops": 1,                                            +
+           "Disabled": false,                                            +
+           "Shared Hit Blocks": 0,                                       +
+           "Shared Read Blocks": 3,                                      +
+           "Shared Dirtied Blocks": 0,                                   +
+           "Shared Written Blocks": 0,                                   +
+           "Local Hit Blocks": 0,                                        +
+           "Local Read Blocks": 0,                                       +
+           "Local Dirtied Blocks": 0,                                    +
+           "Local Written Blocks": 0,                                    +
+           "Temp Read Blocks": 0,                                        +
+           "Temp Written Blocks": 0,                                     +
+           "Plans": [                                                    +
+             {                                                           +
+               "Node Type": "Index Scan",                                +
+               "Parent Relationship": "Outer",                           +
+               "Parallel Aware": false,                                  +
+               "Async Capable": false,                                   +
+               "Scan Direction": "Forward",                              +
+               "Index Name": "task31_m5_real100k_pqg8_n128_queries_pkey",+
+               "Relation Name": "task31_m5_real100k_pqg8_n128_queries",  +
+               "Alias": "task31_m5_real100k_pqg8_n128_queries",          +
+               "Actual Startup Time": 0.010,                             +
+               "Actual Total Time": 0.010,                               +
+               "Actual Rows": 1.00,                                      +
+               "Actual Loops": 1,                                        +
+               "Disabled": false,                                        +
+               "Index Searches": 1,                                      +
+               "Shared Hit Blocks": 0,                                   +
+               "Shared Read Blocks": 3,                                  +
+               "Shared Dirtied Blocks": 0,                               +
+               "Shared Written Blocks": 0,                               +
+               "Local Hit Blocks": 0,                                    +
+               "Local Read Blocks": 0,                                   +
+               "Local Dirtied Blocks": 0,                                +
+               "Local Written Blocks": 0,                                +
+               "Temp Read Blocks": 0,                                    +
+               "Temp Written Blocks": 0                                  +
+             }                                                           +
+           ]                                                             +
+         },                                                              +
+         {                                                               +
+           "Node Type": "Index Scan",                                    +
+           "Parent Relationship": "Outer",                               +
+           "Parallel Aware": false,                                      +
+           "Async Capable": false,                                       +
+           "Scan Direction": "Forward",                                  +
+           "Index Name": "task31_m5_real100k_pqg8_n128_idx",             +
+           "Relation Name": "task31_m5_real100k_pqg8_n128_corpus",       +
+           "Alias": "task31_m5_real100k_pqg8_n128_corpus",               +
+           "Actual Startup Time": 16.249,                                +
+           "Actual Total Time": 16.305,                                  +
+           "Actual Rows": 10.00,                                         +
+           "Actual Loops": 1,                                            +
+           "Disabled": false,                                            +
+           "Order By": "(embedding <#> (InitPlan 1).col1)",              +
+           "Index Searches": 0,                                          +
+           "Shared Hit Blocks": 8155,                                    +
+           "Shared Read Blocks": 377,                                    +
+           "Shared Dirtied Blocks": 0,                                   +
+           "Shared Written Blocks": 0,                                   +
+           "Local Hit Blocks": 0,                                        +
+           "Local Read Blocks": 0,                                       +
+           "Local Dirtied Blocks": 0,                                    +
+           "Local Written Blocks": 0,                                    +
+           "Temp Read Blocks": 0,                                        +
+           "Temp Written Blocks": 0,                                     +
+           "Ecaz Stats": {                                               +
+             "Centroid Scores": 128,                                     +
+             "Selected Lists": 96,                                       +
+             "Posting Pages Read": 1815,                                 +
+             "Postings Visited": 77760,                                  +
+             "Postings Scored": 2420,                                    +
+             "Postings Pruned By Bound": 75340,                          +
+             "Heap TIDs Scored": 2420,                                   +
+             "Candidates Scored": 2420,                                  +
+             "Candidates Inserted": 2420,                                +
+             "Rerank Rows": 1000,                                        +
+             "Filtered Duplicates": 0                                    +
+           }                                                             +
+         }                                                               +
+       ]                                                                 +
+     },                                                                  +
+     "Planning": {                                                       +
+       "Shared Hit Blocks": 85,                                          +
+       "Shared Read Blocks": 23,                                         +
+       "Shared Dirtied Blocks": 0,                                       +
+       "Shared Written Blocks": 0,                                       +
+       "Local Hit Blocks": 0,                                            +
+       "Local Read Blocks": 0,                                           +
+       "Local Dirtied Blocks": 0,                                        +
+       "Local Written Blocks": 0,                                        +
+       "Temp Read Blocks": 0,                                            +
+       "Temp Written Blocks": 0                                          +
+     },                                                                  +
+     "Planning Time": 0.269,                                             +
+     "Triggers": [                                                       +
+     ],                                                                  +
+     "Execution Time": 16.330                                            +
+   }                                                                     +
+ ]
+(1 row)
+
+Time: 16.982 ms
+RESET
+Time: 0.029 ms
+RESET
+Time: 0.021 ms
+RESET
+Time: 0.017 ms

@@ -1,0 +1,6 @@
+  34 src/am/ec_spire/vacuum/mod.rs
+  22 src/am/ec_spire/cost/mod.rs
+  21 src/am/ec_spire/insert.rs
+   4 src/am/ec_spire/scan/callbacks.rs
+   2 src/am/common/callback.rs
+   0 src/am/ec_spire/scan.rs

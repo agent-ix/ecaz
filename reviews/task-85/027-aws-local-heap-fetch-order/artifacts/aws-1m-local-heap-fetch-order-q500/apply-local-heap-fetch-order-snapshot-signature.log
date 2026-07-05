@@ -1,0 +1,3 @@
+BEGIN
+ERROR:  cannot drop function ec_spire_index_scan_rerank_locality_snapshot(oid,real[]) because extension ecaz requires it
+HINT:  You can drop extension ecaz instead.

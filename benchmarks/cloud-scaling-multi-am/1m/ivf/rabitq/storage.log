@@ -1,0 +1,10 @@
+
+   0: [91mcounting rows in "real_1m_ivf_corpus"[0m
+   1: [91mdb error[0m
+   2: [91mERROR: ec_ivf scan currently requires exactly one ORDER BY query[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/psql.rs[0m:[35m135[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.

@@ -1,0 +1,21 @@
+--- hardening/careful/src/../../../src/quant/rabitq.rs
++++ replace + with * in RaBitQQuantizer::encode_code_centered
+@@ -602,17 +602,17 @@
+         };
+         let o_dot = sum_abs * inv_denom;
+         // ⟨x̄, c_tilde⟩ = (1/√D) · Σ c_tilde_i · sign(r_i), since
+         // x̄ has elements ±1/√D and we accumulated with ±1 weights.
+         let center_dot = sum_center_sign / sqrt_d;
+ 
+         let s = packed_bytes;
+         out[s..s + RABITQ_NORM_LEN].copy_from_slice(&residual_mag.to_le_bytes());
+-        out[s + RABITQ_NORM_LEN..s + RABITQ_NORM_LEN + RABITQ_UNIT_DOT_LEN]
++        out[s * /* ~ changed by cargo-mutants ~ */ RABITQ_NORM_LEN..s + RABITQ_NORM_LEN + RABITQ_UNIT_DOT_LEN]
+             .copy_from_slice(&o_dot.to_le_bytes());
+         out[s + RABITQ_NORM_LEN + RABITQ_UNIT_DOT_LEN..s + RABITQ_SCALAR_LEN]
+             .copy_from_slice(&center_dot.to_le_bytes());
+         out.into_boxed_slice()
+     }
+ 
+     /// Prepare a query-side scorer for the centered path. The
+     /// returned `CenteredScorer` can score codes encoded against

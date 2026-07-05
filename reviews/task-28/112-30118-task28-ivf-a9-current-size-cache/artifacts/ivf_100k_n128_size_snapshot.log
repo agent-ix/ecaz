@@ -1,0 +1,10 @@
+            relname             | amname |                                                          reloptions                                                           | index_bytes | index_pretty 
+--------------------------------+--------+-------------------------------------------------------------------------------------------------------------------------------+-------------+--------------
+ task28_ivf_pqg100k_g8_n128_idx | ec_ivf | {nlists=128,nprobe=128,training_sample_rows=2000,storage_format=pq_fastscan,pq_group_size=8,rerank=heap_f32,rerank_width=500} |    19791872 | 19 MB
+(1 row)
+
+              relname              | heap_bytes | heap_pretty | total_bytes | total_pretty 
+-----------------------------------+------------+-------------+-------------+--------------
+ task28_ivf_pqg100k_g8_n128_corpus |    7675904 | 7496 kB     |  1686732800 | 1609 MB
+(1 row)
+

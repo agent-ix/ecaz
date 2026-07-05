@@ -1,0 +1,11 @@
+Script started on 2026-04-26 10:28:47-07:00 [<not executed on terminal>]
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.15s
+     Running `target/debug/ecaz corpus prepare --profile ec_hnsw_real_ann_benchmarks_anchor --parquet /home/peter/dev/datasets/qdrant-dbpedia-entities-openai3-text-embedding-3-large-1536-1M/data --output-dir /home/peter/dev/datasets/tqhnsw_real_ann_benchmarks_anchor`
+[prepare] pass 1: scanning 26 shard(s) for sorted-id prefix (K=1000000)
+[prepare] pass 2: materializing 1000000 selected vectors
+[prepare] wrote /home/peter/dev/datasets/tqhnsw_real_ann_benchmarks_anchor/ec_hnsw_real_ann_benchmarks_anchor_corpus.tsv
+[prepare] wrote /home/peter/dev/datasets/tqhnsw_real_ann_benchmarks_anchor/ec_hnsw_real_ann_benchmarks_anchor_queries.tsv
+[prepare] wrote /home/peter/dev/datasets/tqhnsw_real_ann_benchmarks_anchor/ec_hnsw_real_ann_benchmarks_anchor_manifest.json
+[prepare] profile=ec_hnsw_real_ann_benchmarks_anchor corpus_rows=990000 query_rows=10000 sort_key='_id ascending lexicographic'
+
+Script done on 2026-04-26 11:08:53-07:00 [COMMAND_EXIT_CODE="0"]

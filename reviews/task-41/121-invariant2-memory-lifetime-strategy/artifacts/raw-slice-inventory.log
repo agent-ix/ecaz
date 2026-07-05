@@ -1,0 +1,74 @@
+src/lib.rs:614:    let prefix = unsafe { std::slice::from_raw_parts(prefix, MIN_BINARY_BYTES) };
+src/lib.rs:631:        let codes = unsafe { std::slice::from_raw_parts(codes, code_bytes_len) };
+src/lib.rs:753:        let payload = unsafe { std::slice::from_raw_parts(payload, remaining) };
+src/am/ec_diskann/insert.rs:708:                    unsafe { slice::from_raw_parts(tuple_ptr.cast_const(), tuple_len) };
+src/am/ec_diskann/insert.rs:1154:    let metadata_bytes = unsafe { slice::from_raw_parts(special, VAMANA_METADATA_BYTES) };
+src/am/ec_diskann/insert.rs:1175:    let metadata_bytes = unsafe { slice::from_raw_parts(special, VAMANA_METADATA_BYTES) };
+src/am/ec_diskann/insert.rs:1443:                    unsafe { slice::from_raw_parts(tuple_ptr.cast_const(), tuple_len) };
+src/am/ec_diskann/insert.rs:1542:                    unsafe { slice::from_raw_parts(tuple_ptr.cast_const(), tuple_len) };
+src/am/ec_diskann/routine.rs:1675:                    unsafe { slice::from_raw_parts(tuple_ptr.cast_const(), tuple_len) };
+src/am/ec_diskann/scan_state.rs:162:            unsafe { slice::from_raw_parts(metadata_ptr.cast_const(), VAMANA_METADATA_BYTES) };
+src/am/ec_diskann/scan_state.rs:211:                    unsafe { slice::from_raw_parts(tuple_ptr.cast_const(), tuple_len) }.to_vec();
+src/am/ec_ivf/page.rs:1388:            unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
+src/am/ec_ivf/page.rs:1432:            unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
+src/am/ec_ivf/page.rs:1778:    let tuple_bytes = unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
+src/am/ec_ivf/page.rs:1982:                unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
+src/am/ec_ivf/page.rs:2055:            unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
+src/am/ec_ivf/page.rs:2219:    let tuple_bytes = unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
+src/am/ec_ivf/page.rs:2270:                    unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
+src/am/ec_ivf/page.rs:2409:    let metadata_bytes = unsafe { std::slice::from_raw_parts(metadata_ptr, METADATA_BYTES) };
+src/am/ec_ivf/page.rs:2434:    let metadata_bytes = unsafe { std::slice::from_raw_parts(metadata_ptr, METADATA_BYTES) };
+src/am/ec_ivf/scan.rs:830:    unsafe { std::slice::from_raw_parts(opaque.query_values, opaque.query_dimensions as usize) }
+src/am/ec_ivf/scan.rs:1123:        std::slice::from_raw_parts(opaque.query_values, opaque.query_dimensions as usize)
+src/am/ec_ivf/scan.rs:1424:    unsafe { std::slice::from_raw_parts(opaque.query_values, opaque.query_dimensions as usize) }
+src/am/ec_ivf/scan.rs:1434:        std::slice::from_raw_parts(opaque.selected_lists, opaque.selected_list_count as usize)
+src/am/ec_hnsw/scan_debug.rs:172:        std::slice::from_raw_parts(opaque.query_values, opaque.query_dimensions as usize)
+src/am/ec_hnsw/scan_debug.rs:1195:                unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
+src/am/ec_hnsw/scan_debug.rs:1265:                unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
+src/am/ec_hnsw/scan_debug.rs:1334:                unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
+src/am/ec_hnsw/vacuum.rs:561:            unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
+src/am/ec_hnsw/vacuum.rs:831:            unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
+src/am/ec_hnsw/vacuum.rs:1327:            unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
+src/am/ec_hnsw/vacuum.rs:1464:    let tuple_bytes = unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
+src/am/ec_hnsw/vacuum.rs:1557:            unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
+src/am/ec_hnsw/vacuum.rs:1688:            unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
+src/am/ec_hnsw/vacuum.rs:1845:            unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
+src/am/ec_hnsw/scan.rs:1908:    unsafe { std::slice::from_raw_parts(opaque.query_values, opaque.query_dimensions as usize) }
+src/am/ec_hnsw/scan.rs:4766:            unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
+src/am/ec_hnsw/graph.rs:1646:    let tuple_bytes = unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
+src/am/ec_hnsw/graph.rs:1685:    let tuple_bytes = unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
+src/am/ec_spire/build/drafts.rs:537:        std::slice::from_raw_parts(
+src/am/ec_hnsw/shared.rs:100:    let page_bytes = unsafe { std::slice::from_raw_parts(raw_page, page_size) };
+src/am/ec_hnsw/shared.rs:240:            unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
+src/am/ec_hnsw/shared.rs:333:                unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
+src/am/ec_hnsw/shared.rs:497:    let page_bytes = unsafe { std::slice::from_raw_parts(raw_page, page_size) };
+src/am/ec_hnsw/shared.rs:862:            unsafe { std::slice::from_raw_parts(raw_page.add(tuple_offset), tuple_len) }.to_vec(),
+src/am/ec_hnsw/source.rs:584:        unsafe { std::slice::from_raw_parts(self.data_ptr, self.len) }
+src/am/ec_hnsw/source.rs:623:        unsafe { std::slice::from_raw_parts(self.data_ptr, self.len) }
+src/am/ec_hnsw/insert.rs:1157:            unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
+src/am/ec_hnsw/insert.rs:2258:                unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
+src/am/ec_hnsw/insert.rs:2328:                unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
+src/am/ec_hnsw/insert.rs:2405:                unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
+src/am/ec_hnsw/insert.rs:2476:    let tuple_bytes = unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
+src/am/ec_hnsw/insert.rs:2546:    let tuple_bytes = unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
+src/am/ec_hnsw/insert.rs:2618:    let tuple_bytes = unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
+src/am/ec_spire/page.rs:98:        std::slice::from_raw_parts(root_control_ptr, SpireRootControlState::encoded_len())
+src/am/ec_spire/page.rs:515:    let tuple = unsafe { std::slice::from_raw_parts(tuple_ptr, tuple_len) };
+src/am/ec_spire/page.rs:556:    let tuple = unsafe { std::slice::from_raw_parts(tuple_ptr, tuple_len) };
+src/am/ec_hnsw/build_parallel.rs:1056:        slice::from_raw_parts_mut(parts.neighbor_slots, layout.total_neighbor_slots as usize)
+src/am/ec_hnsw/build_parallel.rs:1064:        slice::from_raw_parts_mut(parts.codes, code_bytes).copy_from_slice(&plan.code_corpus.bytes);
+src/am/ec_hnsw/build_parallel.rs:1071:            slice::from_raw_parts_mut(parts.sources, source_values)
+src/am/ec_hnsw/build_parallel.rs:1085:    let nodes = unsafe { slice::from_raw_parts(parts.nodes, layout.node_count as usize) };
+src/am/ec_hnsw/build_parallel.rs:1094:            slice::from_raw_parts(
+src/am/ec_hnsw/build_parallel.rs:1734:    unsafe { slice::from_raw_parts(parts.codes.add(start), code_len) }
+src/am/ec_hnsw/build_parallel.rs:1752:    unsafe { slice::from_raw_parts(parts.sources.add(start), source_dim) }
+src/am/ec_hnsw/build_parallel.rs:1764:        slice::from_raw_parts(
+src/am/ec_hnsw/build_parallel.rs:1778:        slice::from_raw_parts_mut(
+src/am/ec_hnsw/build_parallel.rs:2402:                            let bytes = unsafe { slice::from_raw_parts(data.cast::<u8>(), nbytes) };
+src/am/ec_hnsw/build_parallel.rs:3399:            let nodes = slice::from_raw_parts(parts.nodes, plan.graph_layout.node_count as usize);
+src/am/ec_hnsw/build_parallel.rs:3418:            let neighbor_slots = slice::from_raw_parts(
+src/am/ec_hnsw/build_parallel.rs:3426:            let codes = slice::from_raw_parts(parts.codes, plan.code_corpus.bytes.len());
+src/am/ec_hnsw/build_parallel.rs:3548:                slice::from_raw_parts_mut(parts.nodes, plan.graph_layout.node_count as usize);
+src/am/ec_hnsw/build_parallel.rs:3549:            let slots = slice::from_raw_parts_mut(
+src/am/ec_hnsw/build_parallel.rs:3623:                    slice::from_raw_parts_mut(parts.nodes, plan.graph_layout.node_count as usize);
+src/am/ec_hnsw/build_parallel.rs:3624:                let slots = slice::from_raw_parts_mut(

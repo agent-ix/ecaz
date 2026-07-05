@@ -1,0 +1,125 @@
+Pager usage is off.
+Timing is on.
+                                            postgres_version                                             
+---------------------------------------------------------------------------------------------------------
+ PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+(1 row)
+
+Time: 0.580 ms
+ server_version 
+----------------
+ 18.3
+(1 row)
+
+Time: 0.317 ms
+DROP TABLE
+Time: 10.271 ms
+DROP TABLE
+Time: 3.660 ms
+SELECT 10000
+Time: 210.457 ms
+SELECT 20
+Time: 44.650 ms
+ALTER TABLE
+Time: 9.224 ms
+ALTER TABLE
+Time: 2.776 ms
+ANALYZE
+Time: 159.897 ms
+ANALYZE
+Time: 2.520 ms
+ corpus_rows | query_rows | dimensions 
+-------------+------------+------------
+       10000 |         20 |         64
+(1 row)
+
+Time: 2.114 ms
+CREATE INDEX
+Time: 5822.967 ms (00:05.823)
+ANALYZE
+Time: 118.391 ms
+ index_bytes | index_pretty | heap_bytes | heap_pretty 
+-------------+--------------+------------+-------------
+     1236992 | 1208 kB      |    6291456 | 6144 kB
+(1 row)
+
+Time: 1.045 ms
+                                                        QUERY PLAN                                                         
+---------------------------------------------------------------------------------------------------------------------------
+ Limit (actual rows=10.00 loops=1)
+   Buffers: shared hit=288 read=1
+   InitPlan 1
+     ->  Limit (actual rows=1.00 loops=1)
+           Buffers: shared hit=1 read=1
+           ->  Index Scan using task28_ivf_smoke10k_queries_pkey on task28_ivf_smoke10k_queries (actual rows=1.00 loops=1)
+                 Index Searches: 1
+                 Buffers: shared hit=1 read=1
+   ->  Index Scan using task28_ivf_smoke10k_n64_idx on task28_ivf_smoke10k_corpus (actual rows=10.00 loops=1)
+         Order By: (embedding <#> (InitPlan 1).col1)
+         Index Searches: 0
+         Buffers: shared hit=288 read=1
+         Centroid Scores: 64
+         Selected Lists: 64
+         Posting Pages Read: 148
+         Candidates Scored: 10000
+         Rerank Rows: 0
+         Filtered Duplicates: 0
+ Planning:
+   Buffers: shared hit=36 read=1
+ Planning Time: 0.859 ms
+ Execution Time: 38.212 ms
+(22 rows)
+
+Time: 40.605 ms
+SET
+Time: 0.347 ms
+SET
+Time: 0.212 ms
+SET
+Time: 0.292 ms
+SELECT 200
+Time: 3749.679 ms (00:03.750)
+RESET
+Time: 0.243 ms
+RESET
+Time: 0.111 ms
+RESET
+Time: 0.104 ms
+CREATE TABLE
+Time: 2.345 ms
+SET
+Time: 0.171 ms
+SET
+Time: 0.109 ms
+INSERT 0 200
+Time: 29.755 ms
+SET
+Time: 0.182 ms
+INSERT 0 200
+Time: 79.148 ms
+SET
+Time: 0.303 ms
+INSERT 0 200
+Time: 215.032 ms
+SET
+Time: 0.204 ms
+INSERT 0 200
+Time: 768.782 ms
+RESET
+Time: 0.234 ms
+RESET
+Time: 0.157 ms
+ nprobe | returned | exact_hits | recall_at_10 
+--------+----------+------------+--------------
+      1 |      200 |        142 |       0.7100
+      4 |      200 |        142 |       0.7100
+     16 |      200 |        142 |       0.7100
+     64 |      200 |        142 |       0.7100
+(4 rows)
+
+Time: 6.408 ms
+ nprobe | query_id | returned_per_query 
+--------+----------+--------------------
+(0 rows)
+
+Time: 0.684 ms

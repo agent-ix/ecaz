@@ -1,0 +1,83 @@
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: In file included from /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:19:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:537:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   537 | dlist_next_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:547:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   547 | dlist_prev_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:1054:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:  1054 | slist_next_node(slist_head *head, slist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:58: warning: unused parameter 'size' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                          ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:70: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                                      ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:882:56: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   882 | pgstat_hash_hash_key(const void *d, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                        ^
+warning: ecaz@0.1.1: 6 warnings generated.
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.11s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-2a353c79cfeacc22)
+
+running 54 tests
+test am::ec_spire::build::tests::partitioned_single_level_draft_rejects_bad_plan_without_advancing_allocators ... ok
+test am::ec_spire::build::tests::local_recursive_routing_epoch_from_leaf_inputs_rejects_parent_drift ... ok
+test am::ec_spire::build::tests::partitioned_single_level_draft_rejects_late_bad_assignment_without_store_write ... ok
+test am::ec_spire::build::tests::local_recursive_routing_epoch_draft_rejects_leaf_parent_drift ... ok
+test am::ec_spire::build::tests::local_recursive_routing_epoch_draft_rejects_missing_leaf_placement ... ok
+test am::ec_spire::build::tests::partitioned_single_level_draft_preserves_empty_centroid_leaf ... ok
+test am::ec_spire::build::tests::object_manifest_from_placement_writes_uses_durable_placement_tids ... ok
+test am::ec_spire::build::tests::object_manifest_from_placement_writes_rejects_missing_or_duplicate_evidence ... ok
+test am::ec_spire::build::tests::local_recursive_routing_epoch_from_leaf_inputs_writes_leaf_objects ... ok
+test am::ec_spire::build::tests::publish_coordinator_rejects_missing_object_write_evidence ... ok
+test am::ec_spire::build::tests::publish_coordinator_rejects_mismatched_placement_write_evidence ... ok
+test am::ec_spire::build::tests::publish_coordinator_validates_before_active_epoch_publish ... ok
+test am::ec_spire::build::tests::recursive_build_coordinator_rejects_assignment_count_mismatch ... ok
+test am::ec_spire::build::tests::local_recursive_top_graph_epoch_draft_publishes_graph_object ... ok
+test am::ec_spire::build::tests::recursive_routing_build_keeps_single_level_shape_when_under_fanout ... ok
+test am::ec_spire::build::tests::recursive_routing_build_rejects_mixed_child_levels ... ok
+test am::ec_spire::build::tests::recursive_epoch_draft_encodes_publish_bundle_with_allocator_cursor ... ok
+test am::ec_spire::build::tests::recursive_routing_build_validation_rejects_sparse_centroid_ordinals ... ok
+test am::ec_spire::build::tests::recursive_epoch_relation_publish_input_uses_durable_placement_manifest ... ok
+test am::ec_spire::build::tests::retired_epoch_manifest_requires_published_input ... ok
+test am::ec_spire::build::tests::partitioned_single_level_draft_writes_leaf_objects_per_centroid ... ok
+test am::ec_spire::build::tests::single_level_draft_builds_leaf_object_and_published_snapshot ... ok
+test am::ec_spire::build::tests::single_level_draft_builds_root_control_state_from_manifest_locators ... ok
+test am::ec_spire::build::tests::recursive_top_graph_epoch_from_leaf_inputs_writes_leaves_and_graph ... ok
+test am::ec_spire::build::tests::partitioned_single_level_draft_hash_routes_object_writes_by_pid ... ok
+test am::ec_spire::build::tests::recursive_build_coordinator_fans_out_boundary_leaf_rows ... ok
+test am::ec_spire::build::tests::single_level_draft_rejects_invalid_assignment_without_advancing_allocators ... ok
+test am::ec_spire::build::tests::single_level_draft_encodes_publish_bundle ... ok
+test am::ec_spire::build::tests::single_level_centroid_plan_routes_vectors_with_common_training ... ok
+test am::ec_spire::build::tests::single_level_draft_rejects_invalid_manifest_locator_without_advancing_allocators ... ok
+test am::ec_spire::build::tests::single_level_draft_encodes_manifest_bundle ... ok
+test am::ec_spire::build::tests::single_level_centroid_plan_resolves_auto_nlists_and_rejects_bad_vectors ... ok
+test am::ec_spire::build::tests::single_level_draft_rejects_invalid_publish_timestamp_without_advancing_allocators ... ok
+test am::ec_spire::build::tests::local_recursive_routing_epoch_draft_combines_routing_and_leaf_placements ... ok
+test am::ec_spire::build::tests::single_level_route_map_dedupes_duplicate_replica_pids ... ok
+test am::ec_spire::build::tests::single_level_draft_rejects_invalid_root_control_manifest_locator ... ok
+test am::ec_spire::build::tests::single_level_route_map_plans_bounded_boundary_replica_pids ... ok
+test am::ec_spire::build::tests::single_level_route_map_rejects_pid_count_mismatch ... ok
+test am::ec_spire::build::tests::single_level_route_map_routes_query_to_centroid_pid ... ok
+test am::ec_spire::build::tests::recursive_routing_build_materializes_internal_level ... ok
+test am::ec_spire::build::tests::recursive_build_coordinator_assembles_epoch_input_from_centroid_plan ... ok
+test am::ec_spire::build::tests::top_graph_build_rejects_bad_centroid_dimension ... ok
+test am::ec_spire::build::tests::top_graph_build_draft_materializes_partition_object ... ok
+test am::ec_spire::build::tests::top_graph_build_draft_partition_object_rejects_node_count_drift ... ok
+test am::ec_spire::build::tests::top_graph_build_rejects_duplicate_child_pid ... ok
+test am::ec_spire::build::tests::top_graph_builds_from_root_routing_object ... ok
+test am::ec_spire::build::tests::top_graph_distance_matrix_matches_direct_distance ... ok
+test am::ec_spire::build::tests::top_graph_rejects_internal_routing_object_adapter_input ... ok
+test am::ec_spire::build::tests::top_graph_builds_vamana_neighbors_for_routing_children ... ok
+test am::ec_spire::build::tests::build_state_rejects_zero_vectors ... ok
+test am::ec_spire::build::tests::build_state_rejects_payload_format_mismatch ... ok
+test am::ec_spire::build::tests::build_state_collects_assignments_and_training_sample ... ok
+test am::ec_spire::build::tests::build_state_rejects_invalid_tuple_without_advancing ... ok
+test am::ec_spire::build::tests::build_state_trains_centroid_plan_for_all_collected_rows ... ok
+
+test result: ok. 54 passed; 0 failed; 0 ignored; 0 measured; 1875 filtered out; finished in 0.05s
+

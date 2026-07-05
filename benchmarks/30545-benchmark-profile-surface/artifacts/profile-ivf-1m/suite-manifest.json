@@ -1,0 +1,338 @@
+{
+  "suite": "profile-ivf-1m",
+  "schema_version": 1,
+  "config": "crates/ecaz-cli/suites/profile-ivf-1m.json",
+  "config_sha256": "04896d75ce3763bc8aab90a96e8857f9a06c518c0f31f38926571f09ec9c5a0a",
+  "dry_run": false,
+  "generated_at_unix_ms": 1778382972622,
+  "connection": {
+    "database": "postgres",
+    "host": "/Users/peter/.pgrx",
+    "port": 28818,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "fetch-dbpedia-openai3-1m",
+      "kind": "corpus-fetch",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "setup",
+        "fetch",
+        "ivf",
+        "real1m"
+      ],
+      "expected_artifacts": [
+        "data/benchmark-profile-inputs/dbpedia-openai3-1m-fetch/ecaz_fetch_manifest.json"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "prepare-ann-benchmarks-anchor",
+      "kind": "corpus-prepare",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "setup",
+        "prepare",
+        "ivf",
+        "real1m"
+      ],
+      "expected_artifacts": [
+        "data/benchmark-profile-inputs/dbpedia-openai3-1m-staged/ec_hnsw_real_ann_benchmarks_anchor_manifest.json"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-real1m-n1024-w1000",
+      "kind": "load",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "artifacts/benchmark-profiles/profile-ivf-1m/load-real1m-n1024-w1000.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "ec_hnsw_real_ann_benchmarks_anchor",
+        "--profile",
+        "ec_ivf",
+        "--manifest-file",
+        "data/benchmark-profile-inputs/dbpedia-openai3-1m-staged/ec_hnsw_real_ann_benchmarks_anchor_manifest.json",
+        "--chunked",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--reloption",
+        "storage_format=pq_fastscan",
+        "--reloption",
+        "pq_group_size=8",
+        "--reloption",
+        "nlists=1024",
+        "--reloption",
+        "nprobe=64",
+        "--reloption",
+        "rerank=heap_f32",
+        "--reloption",
+        "rerank_width=1000"
+      ],
+      "selected": true,
+      "tags": [
+        "load",
+        "ivf",
+        "real1m",
+        "n1024",
+        "w1000"
+      ],
+      "expected_artifacts": [
+        "artifacts/benchmark-profiles/profile-ivf-1m/load-real1m-n1024-w1000.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1778382972623,
+      "finished_at_unix_ms": 1778387016715,
+      "duration_ms": 2438747,
+      "exit_code": 0
+    },
+    {
+      "name": "recall10-real1m-nprobe-sweep",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "recall",
+        "--prefix",
+        "ec_hnsw_real_ann_benchmarks_anchor",
+        "--profile",
+        "ec_ivf",
+        "--k",
+        "10",
+        "--sweep",
+        "48,64,80,96,128",
+        "--rerank-width",
+        "1000",
+        "--queries-limit",
+        "100",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--truth-cache-file",
+        "artifacts/benchmark-profiles/profile-ivf-1m/truth-real1m-k10.json",
+        "--log-output",
+        "artifacts/benchmark-profiles/profile-ivf-1m/recall10-real1m-nprobe-sweep.log"
+      ],
+      "selected": true,
+      "tags": [
+        "recall",
+        "ivf",
+        "real1m",
+        "n1024",
+        "w1000"
+      ],
+      "expected_artifacts": [
+        "artifacts/benchmark-profiles/profile-ivf-1m/recall10-real1m-nprobe-sweep.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1778387016716,
+      "finished_at_unix_ms": 1778387955077,
+      "duration_ms": 810022,
+      "exit_code": 0
+    },
+    {
+      "name": "latency-real1m-nprobe-sweep",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "latency",
+        "--prefix",
+        "ec_hnsw_real_ann_benchmarks_anchor",
+        "--profile",
+        "ec_ivf",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "50",
+        "--sweep",
+        "48,64,80,96,128",
+        "--rerank-width",
+        "1000",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--sample-backend-memory",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "artifacts/benchmark-profiles/profile-ivf-1m/latency-real1m-nprobe-sweep.log"
+      ],
+      "selected": true,
+      "tags": [
+        "latency",
+        "ivf",
+        "real1m",
+        "n1024",
+        "w1000"
+      ],
+      "expected_artifacts": [
+        "artifacts/benchmark-profiles/profile-ivf-1m/latency-real1m-nprobe-sweep.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1778387955077,
+      "finished_at_unix_ms": 1778387962140,
+      "duration_ms": 7061,
+      "exit_code": 0
+    },
+    {
+      "name": "recall100-real1m-candidates",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "recall",
+        "--prefix",
+        "ec_hnsw_real_ann_benchmarks_anchor",
+        "--profile",
+        "ec_ivf",
+        "--k",
+        "100",
+        "--sweep",
+        "96,128",
+        "--rerank-width",
+        "1000",
+        "--queries-limit",
+        "100",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--truth-cache-file",
+        "artifacts/benchmark-profiles/profile-ivf-1m/truth-real1m-k100.json",
+        "--log-output",
+        "artifacts/benchmark-profiles/profile-ivf-1m/recall100-real1m-candidates.log"
+      ],
+      "selected": true,
+      "tags": [
+        "recall",
+        "ivf",
+        "real1m",
+        "n1024",
+        "w1000",
+        "k100"
+      ],
+      "expected_artifacts": [
+        "artifacts/benchmark-profiles/profile-ivf-1m/recall100-real1m-candidates.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1778387962140,
+      "finished_at_unix_ms": 1778388795028,
+      "duration_ms": 801288,
+      "exit_code": 0
+    },
+    {
+      "name": "storage-real1m-n1024",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "artifacts/benchmark-profiles/profile-ivf-1m/storage-real1m-n1024.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "ec_hnsw_real_ann_benchmarks_anchor"
+      ],
+      "selected": true,
+      "tags": [
+        "storage",
+        "ivf",
+        "real1m",
+        "n1024"
+      ],
+      "expected_artifacts": [
+        "artifacts/benchmark-profiles/profile-ivf-1m/storage-real1m-n1024.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1778388795028,
+      "finished_at_unix_ms": 1778388795059,
+      "duration_ms": 30,
+      "exit_code": 0
+    },
+    {
+      "name": "explain-real1m-quality-candidate",
+      "kind": "explain",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "postgres",
+        "--socket-dir",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "--raw",
+        "--file",
+        "artifacts/benchmark-profiles/profile-ivf-1m/explain-real1m-quality-candidate.sql",
+        "--log-output",
+        "artifacts/benchmark-profiles/profile-ivf-1m/explain-real1m-quality-candidate.log"
+      ],
+      "selected": true,
+      "tags": [
+        "explain",
+        "ivf",
+        "real1m",
+        "n1024",
+        "w1000"
+      ],
+      "expected_artifacts": [
+        "artifacts/benchmark-profiles/profile-ivf-1m/explain-real1m-quality-candidate.sql",
+        "artifacts/benchmark-profiles/profile-ivf-1m/explain-real1m-quality-candidate.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1778388795059,
+      "finished_at_unix_ms": 1778388795111,
+      "duration_ms": 51,
+      "exit_code": 0
+    }
+  ]
+}

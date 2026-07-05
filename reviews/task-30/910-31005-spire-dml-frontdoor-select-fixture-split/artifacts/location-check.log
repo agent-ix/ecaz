@@ -1,0 +1,9 @@
+Script started on 2026-05-13 16:12:46-07:00 [<not executed on terminal>]
+src/tests/dml_frontdoor.rs
+1365:    fn test_ec_spire_dml_frontdoor_pk_select_customscan_local_sql() {
+1437:    fn test_ec_spire_custom_scan_dml_plan_private_copyobject_sql() {
+1447:    fn test_ec_spire_forward_coordinator_select_rejects_multirow_sql() {
+1496:    fn test_ec_spire_coordinator_dml_frontdoor_plan_sql() {
+1536:    fn test_ec_spire_dml_frontdoor_replacement_decision_sql() {
+
+Script done on 2026-05-13 16:12:46-07:00 [COMMAND_EXIT_CODE="0"]

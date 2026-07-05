@@ -1,0 +1,1 @@
+{"suite":"task92-quant-axis-smoke","step":"latency-spire-rabitq-sve2-missing","kind":"latency","metric":"kernel_cell","artifact":"suite-manifest","values":{"isa":"sve2","kernel_status":"missing_kernel","quant":"rabitq","storage_format":"rabitq","suite_database":"tqvector_bench","suite_host":"local_socket"}}

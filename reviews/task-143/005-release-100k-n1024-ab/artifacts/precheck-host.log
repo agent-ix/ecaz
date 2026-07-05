@@ -1,0 +1,5 @@
+LOAD
+          captured_at          |                                            postgres_version                                             | ecaz_build_profile | leaf_score_only_routing | route_overfetch_multiplier
+-------------------------------+---------------------------------------------------------------------------------------------------------+--------------------+-------------------------+----------------------------
+ 2026-07-05 07:29:45.337248-07 | PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit | release            | off                     | 1
+(1 row)

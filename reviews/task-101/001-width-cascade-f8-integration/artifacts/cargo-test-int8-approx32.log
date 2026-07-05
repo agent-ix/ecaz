@@ -1,0 +1,16 @@
+Script started on 2026-06-10 13:03:32-07:00 [<not executed on terminal>]
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.46s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-c2925dc8ee61e76b)
+
+running 2 tests
+test quant::int8_approx32::tests::scalar_reference_matches_production_scorer_bits ... [32mok[m
+test quant::int8_approx32::tests::block32_and_partial_are_bit_equal_with_scalar_reference ... [32mok[m
+
+test result: [32mok[m. 2 passed; 0 failed; 0 ignored; 0 measured; 2083 filtered out; finished in 0.05s
+
+
+Script done on 2026-06-10 13:03:33-07:00 [COMMAND_EXIT_CODE="0"]

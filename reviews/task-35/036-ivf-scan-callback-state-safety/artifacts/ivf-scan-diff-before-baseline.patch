@@ -1,0 +1,103 @@
+diff --git a/src/am/ec_ivf/scan.rs b/src/am/ec_ivf/scan.rs
+index e8473ccf..8c69bb13 100644
+--- a/src/am/ec_ivf/scan.rs
++++ b/src/am/ec_ivf/scan.rs
+@@ -50,6 +50,8 @@ impl EcIvfScanOpaque {
+         if self.query_values.is_null() || self.query_dimensions == 0 {
+             pgrx::error!("ec_ivf scan query state is missing");
+         }
++        // SAFETY: `store_scan_query` allocates `query_dimensions` contiguous
++        // f32 values and this method rejects null or zero-length state above.
+         unsafe { std::slice::from_raw_parts(self.query_values, self.query_dimensions as usize) }
+     }
+ 
+@@ -60,6 +62,8 @@ impl EcIvfScanOpaque {
+             return None;
+         }
+ 
++        // SAFETY: `posting_candidates` points to `posting_candidate_count`
++        // contiguous candidates and the index bound is checked above.
+         let candidate = unsafe {
+             *self
+                 .posting_candidates
+@@ -74,6 +78,8 @@ impl EcIvfScanOpaque {
+         if self.query_values.is_null() || self.query_dimensions == 0 {
+             return &[];
+         }
++        // SAFETY: test-only accessor mirrors `query_values`; non-null storage
++        // contains `query_dimensions` contiguous f32 values.
+         unsafe { std::slice::from_raw_parts(self.query_values, self.query_dimensions as usize) }
+     }
+ 
+@@ -82,6 +88,8 @@ impl EcIvfScanOpaque {
+         if self.selected_lists.is_null() || self.selected_list_count == 0 {
+             return &[];
+         }
++        // SAFETY: `store_selected_lists` allocates `selected_list_count`
++        // contiguous u32 list ids and this accessor rejects null/empty state.
+         unsafe {
+             std::slice::from_raw_parts(self.selected_lists, self.selected_list_count as usize)
+         }
+@@ -306,6 +314,8 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_ambeginscan(
+     nkeys: std::ffi::c_int,
+     norderbys: std::ffi::c_int,
+ ) -> pg_sys::IndexScanDesc {
++    // SAFETY: PostgreSQL invokes this AM callback with a live index relation;
++    // `pgrx_extern_c_guard` prevents Rust unwinds from crossing the C ABI.
+     unsafe {
+         pgrx::pgrx_extern_c_guard(|| {
+             let scan = pg_sys::RelationGetIndexScan(index_relation, nkeys, norderbys);
+@@ -328,6 +338,8 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amrescan(
+     orderbys: pg_sys::ScanKey,
+     norderbys: std::ffi::c_int,
+ ) {
++    // SAFETY: PostgreSQL invokes this AM callback with a scan descriptor and
++    // scan keys; the guard prevents Rust unwinds from crossing the C ABI.
+     unsafe {
+         pgrx::pgrx_extern_c_guard(|| {
+             if scan.is_null() {
+@@ -450,6 +462,8 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amgettuple(
+     scan: pg_sys::IndexScanDesc,
+     direction: pg_sys::ScanDirection::Type,
+ ) -> bool {
++    // SAFETY: PostgreSQL invokes this AM callback with a scan descriptor; the
++    // guard prevents Rust unwinds from crossing the C ABI.
+     unsafe {
+         pgrx::pgrx_extern_c_guard(|| {
+             if scan.is_null() {
+@@ -487,6 +501,8 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amgettuple(
+ }
+ 
+ pub(super) unsafe extern "C-unwind" fn ec_ivf_amendscan(scan: pg_sys::IndexScanDesc) {
++    // SAFETY: PostgreSQL invokes this AM callback with a scan descriptor to
++    // release scan-local allocations; the guard contains Rust unwinds.
+     unsafe {
+         pgrx::pgrx_extern_c_guard(|| {
+             if scan.is_null() {
+@@ -508,6 +524,8 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amendscan(scan: pg_sys::IndexScanD
+ }
+ 
+ fn set_scan_heap_tid(scan: pg_sys::IndexScanDesc, heap_tid: ItemPointer) {
++    // SAFETY: callers pass a live scan descriptor from the AM callback path;
++    // `xs_heaptid` is PostgreSQL-owned output storage for the current tuple.
+     unsafe {
+         pgrx::itemptr::item_pointer_set_all(
+             &mut (*scan).xs_heaptid,
+@@ -518,6 +536,8 @@ fn set_scan_heap_tid(scan: pg_sys::IndexScanDesc, heap_tid: ItemPointer) {
+ }
+ 
+ fn set_scan_orderby_score(scan: pg_sys::IndexScanDesc, score: f32) {
++    // SAFETY: callers pass a live scan descriptor. The IVF AM has exactly one
++    // order-by output slot and allocates the value/null arrays before writing.
+     unsafe {
+         if (*scan).xs_orderbyvals.is_null() {
+             crate::fault::maybe_fail_palloc("ec_ivf scan orderby values");
+@@ -535,6 +555,8 @@ fn set_scan_orderby_score(scan: pg_sys::IndexScanDesc, score: f32) {
+ }
+ 
+ fn clear_scan_orderby_output(scan: pg_sys::IndexScanDesc) {
++    // SAFETY: callers pass a live scan descriptor; if the nulls array has been
++    // allocated, setting its first slot marks the single ORDER BY result NULL.
+     unsafe {
+         if !(*scan).xs_orderbynulls.is_null() {
+             *(*scan).xs_orderbynulls = true;

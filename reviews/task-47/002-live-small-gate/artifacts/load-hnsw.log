@@ -1,0 +1,22 @@
+[loader] inspecting target/gates/fixtures/gate_corpus.tsv
+[loader] inspecting target/gates/fixtures/gate_queries.tsv
+[loader] corpus: 512 rows, sha256=2407f0b3fcd57f5708850821ef5fbc18d0ac6c83d20bbd0ad5d3d286a5aef0bf  queries: 64 rows, sha256=803a3a05c6457676ace98faedff6b1635892425ba7c2b654be004d513516310d
+[loader] no sibling manifest at target/gates/fixtures/gate_manifest.json; continuing without verification
+[loader] copied corpus table task47_gate_hnsw_corpus in 408.46ms
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table task47_gate_hnsw_corpus in 3.81ms
+[loader] copied queries table task47_gate_hnsw_queries in 2.38ms
+[loader] building task47_gate_hnsw_m16_idx using ec_hnsw (reloptions=[m=16, ef_construction=128, build_source_column=source]) ...
+[loader] built task47_gate_hnsw_m16_idx in 27.48ms
+┌─────────┬──────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                            │
+╞═════════╪══════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_hnsw                                                                          │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ task47_gate_hnsw_corpus (512 rows)                                               │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ task47_gate_hnsw_queries (64 rows)                                               │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ task47_gate_hnsw_m16_idx [m=16, ef_construction=128, build_source_column=source] │
+└─────────┴──────────────────────────────────────────────────────────────────────────────────┘
+[loader] completed prefix task47_gate_hnsw in 479.35ms

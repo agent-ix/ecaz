@@ -1,0 +1,9 @@
+[suite:task47-cost-gate-small] wrote target/gates/cost-small/suite-manifest.json
+[suite:task47-cost-gate-small] ivf-small-cost -> --database postgres --host /Users/peter/.pgrx --port 28818 dev sql --pg 18 --db postgres --socket-dir /Users/peter/.pgrx --port 28818 --raw --file target/gates/cost-small/ivf-real10k-cost.sql --log-output target/gates/cost-small/ivf-real10k-cost.log
+[suite:task47-cost-gate-small] wrote target/gates/cost-small/suite-manifest.json
+[suite:task47-cost-gate-small] wrote target/gates/cost-small/suite-manifest.json
+[suite:task47-cost-gate-small] hnsw-small-cost -> --database postgres --host /Users/peter/.pgrx --port 28818 dev sql --pg 18 --db postgres --socket-dir /Users/peter/.pgrx --port 28818 --raw --file target/gates/cost-small/hnsw-real10k-cost.sql --log-output target/gates/cost-small/hnsw-real10k-cost.log
+[suite:task47-cost-gate-small] wrote target/gates/cost-small/suite-manifest.json
+[suite:task47-cost-gate-small] wrote target/gates/cost-small/suite-manifest.json
+[suite:task47-cost-gate-small] wrote target/gates/cost-small/results.jsonl
+[suite:task47-cost-gate-small] wrote target/gates/cost-small/suite-manifest.json

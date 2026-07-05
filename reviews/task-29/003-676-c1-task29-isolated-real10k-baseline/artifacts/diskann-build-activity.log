@@ -1,0 +1,6 @@
+              now              | state  | wait_event_type | wait_event |                                                                              query
+-------------------------------+--------+-----------------+------------+------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ 2026-04-29 14:55:31.536873-07 | active |                 |            | CREATE INDEX task29_diskann_real10k_idx ON task29_diskann_real10k_corpus                                                                                        +
+                               |        |                 |            |         USING ec_diskann (embedding ecvector_diskann_ip_ops) WITH (graph_degree = 32, b
+ 2026-04-29 14:55:31.536873-07 | active |                 |            | SELECT now(), state, wait_event_type, wait_event, left(query, 160) AS query FROM pg_stat_activity WHERE datname = 'task29_diskann_baseline' ORDER BY backend_sta
+(2 rows)

@@ -1,0 +1,3194 @@
+{
+  "name": "task111a-all-dense-options-benchmark-gate",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-111a/004-all-dense-options-benchmark/artifacts/suite",
+  "defaults": {
+    "profile": "ec_ivf",
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 100,
+    "iterations": 100,
+    "force_index": true,
+    "sample_backend_memory": false,
+    "pg": 18,
+    "socket_dir": "/home/peter/.pgrx"
+  },
+  "steps": [
+    {
+      "kind": "load",
+      "name": "load-50k-tq-row",
+      "tags": [
+        "task111a",
+        "load",
+        "real50k",
+        "turboquant",
+        "row"
+      ],
+      "prefix": "task111a_004_50k_tq_row",
+      "storage_format": "turboquant",
+      "corpus_file": "data/task111a_real50k/ec_real_50k_corpus.tsv",
+      "queries_file": "data/task111a_real50k/ec_real_50k_queries.tsv",
+      "manifest_file": "data/task111a_real50k/ec_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=64",
+        "nprobe=32",
+        "training_sample_rows=10000",
+        "dense_posting_blocks=0"
+      ],
+      "log_file": "${artifact_dir}/load-50k-tq-row.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-50k-tq-dense-old",
+      "tags": [
+        "task111a",
+        "load",
+        "real50k",
+        "turboquant",
+        "dense",
+        "per-block",
+        "original-layout",
+        "coalescing-off",
+        "typed-views-off"
+      ],
+      "prefix": "task111a_004_50k_tq_dense_old",
+      "storage_format": "turboquant",
+      "corpus_file": "data/task111a_real50k/ec_real_50k_corpus.tsv",
+      "queries_file": "data/task111a_real50k/ec_real_50k_queries.tsv",
+      "manifest_file": "data/task111a_real50k/ec_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=64",
+        "nprobe=32",
+        "training_sample_rows=10000",
+        "dense_posting_blocks=1",
+        "dense_posting_pack_pages=1",
+        "dense_posting_typed_layout=0"
+      ],
+      "log_file": "${artifact_dir}/load-50k-tq-dense-old.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-50k-tq-dense-a",
+      "tags": [
+        "task111a",
+        "load",
+        "real50k",
+        "turboquant",
+        "dense",
+        "approach-a",
+        "coalescing-on",
+        "typed-views-off"
+      ],
+      "prefix": "task111a_004_50k_tq_dense_a",
+      "storage_format": "turboquant",
+      "corpus_file": "data/task111a_real50k/ec_real_50k_corpus.tsv",
+      "queries_file": "data/task111a_real50k/ec_real_50k_queries.tsv",
+      "manifest_file": "data/task111a_real50k/ec_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=64",
+        "nprobe=32",
+        "training_sample_rows=10000",
+        "dense_posting_blocks=1",
+        "dense_posting_pack_pages=1",
+        "dense_posting_typed_layout=0"
+      ],
+      "log_file": "${artifact_dir}/load-50k-tq-dense-a.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-50k-tq-dense-typed",
+      "tags": [
+        "task111a",
+        "load",
+        "real50k",
+        "turboquant",
+        "dense",
+        "typed-per-block",
+        "aligned-layout",
+        "coalescing-off",
+        "typed-views-on"
+      ],
+      "prefix": "task111a_004_50k_tq_dense_typed",
+      "storage_format": "turboquant",
+      "corpus_file": "data/task111a_real50k/ec_real_50k_corpus.tsv",
+      "queries_file": "data/task111a_real50k/ec_real_50k_queries.tsv",
+      "manifest_file": "data/task111a_real50k/ec_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=64",
+        "nprobe=32",
+        "training_sample_rows=10000",
+        "dense_posting_blocks=1",
+        "dense_posting_pack_pages=1",
+        "dense_posting_typed_layout=1"
+      ],
+      "log_file": "${artifact_dir}/load-50k-tq-dense-typed.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-50k-tq-dense-b",
+      "tags": [
+        "task111a",
+        "load",
+        "real50k",
+        "turboquant",
+        "dense",
+        "approach-b",
+        "packed",
+        "typed-views-off"
+      ],
+      "prefix": "task111a_004_50k_tq_dense_b",
+      "storage_format": "turboquant",
+      "corpus_file": "data/task111a_real50k/ec_real_50k_corpus.tsv",
+      "queries_file": "data/task111a_real50k/ec_real_50k_queries.tsv",
+      "manifest_file": "data/task111a_real50k/ec_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=64",
+        "nprobe=32",
+        "training_sample_rows=10000",
+        "dense_posting_blocks=1",
+        "dense_posting_pack_pages=4",
+        "dense_posting_typed_layout=0"
+      ],
+      "log_file": "${artifact_dir}/load-50k-tq-dense-b.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-50k-tq-dense-b-typed",
+      "tags": [
+        "task111a",
+        "load",
+        "real50k",
+        "turboquant",
+        "dense",
+        "approach-b",
+        "packed",
+        "typed-views-on"
+      ],
+      "prefix": "task111a_004_50k_tq_dense_b_typed",
+      "storage_format": "turboquant",
+      "corpus_file": "data/task111a_real50k/ec_real_50k_corpus.tsv",
+      "queries_file": "data/task111a_real50k/ec_real_50k_queries.tsv",
+      "manifest_file": "data/task111a_real50k/ec_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=64",
+        "nprobe=32",
+        "training_sample_rows=10000",
+        "dense_posting_blocks=1",
+        "dense_posting_pack_pages=4",
+        "dense_posting_typed_layout=0"
+      ],
+      "log_file": "${artifact_dir}/load-50k-tq-dense-b-typed.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-50k-rb1-row",
+      "tags": [
+        "task111a",
+        "load",
+        "real50k",
+        "rabitq",
+        "bits1",
+        "row"
+      ],
+      "prefix": "task111a_004_50k_rb1_row",
+      "storage_format": "rabitq",
+      "corpus_file": "data/task111a_real50k/ec_real_50k_corpus.tsv",
+      "queries_file": "data/task111a_real50k/ec_real_50k_queries.tsv",
+      "manifest_file": "data/task111a_real50k/ec_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=64",
+        "nprobe=32",
+        "quant_bits=1",
+        "training_sample_rows=10000",
+        "dense_posting_blocks=0"
+      ],
+      "log_file": "${artifact_dir}/load-50k-rb1-row.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-50k-rb1-dense-old",
+      "tags": [
+        "task111a",
+        "load",
+        "real50k",
+        "rabitq",
+        "bits1",
+        "dense",
+        "per-block",
+        "original-layout",
+        "coalescing-off",
+        "typed-views-off"
+      ],
+      "prefix": "task111a_004_50k_rb1_dense_old",
+      "storage_format": "rabitq",
+      "corpus_file": "data/task111a_real50k/ec_real_50k_corpus.tsv",
+      "queries_file": "data/task111a_real50k/ec_real_50k_queries.tsv",
+      "manifest_file": "data/task111a_real50k/ec_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=64",
+        "nprobe=32",
+        "quant_bits=1",
+        "training_sample_rows=10000",
+        "dense_posting_blocks=1",
+        "dense_posting_pack_pages=1",
+        "dense_posting_typed_layout=0"
+      ],
+      "log_file": "${artifact_dir}/load-50k-rb1-dense-old.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-50k-rb1-dense-a",
+      "tags": [
+        "task111a",
+        "load",
+        "real50k",
+        "rabitq",
+        "bits1",
+        "dense",
+        "approach-a",
+        "coalescing-on",
+        "typed-views-off"
+      ],
+      "prefix": "task111a_004_50k_rb1_dense_a",
+      "storage_format": "rabitq",
+      "corpus_file": "data/task111a_real50k/ec_real_50k_corpus.tsv",
+      "queries_file": "data/task111a_real50k/ec_real_50k_queries.tsv",
+      "manifest_file": "data/task111a_real50k/ec_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=64",
+        "nprobe=32",
+        "quant_bits=1",
+        "training_sample_rows=10000",
+        "dense_posting_blocks=1",
+        "dense_posting_pack_pages=1",
+        "dense_posting_typed_layout=0"
+      ],
+      "log_file": "${artifact_dir}/load-50k-rb1-dense-a.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-50k-rb1-dense-typed",
+      "tags": [
+        "task111a",
+        "load",
+        "real50k",
+        "rabitq",
+        "bits1",
+        "dense",
+        "typed-per-block",
+        "aligned-layout",
+        "coalescing-off",
+        "typed-views-on"
+      ],
+      "prefix": "task111a_004_50k_rb1_dense_typed",
+      "storage_format": "rabitq",
+      "corpus_file": "data/task111a_real50k/ec_real_50k_corpus.tsv",
+      "queries_file": "data/task111a_real50k/ec_real_50k_queries.tsv",
+      "manifest_file": "data/task111a_real50k/ec_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=64",
+        "nprobe=32",
+        "quant_bits=1",
+        "training_sample_rows=10000",
+        "dense_posting_blocks=1",
+        "dense_posting_pack_pages=1",
+        "dense_posting_typed_layout=1"
+      ],
+      "log_file": "${artifact_dir}/load-50k-rb1-dense-typed.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-50k-rb1-dense-b",
+      "tags": [
+        "task111a",
+        "load",
+        "real50k",
+        "rabitq",
+        "bits1",
+        "dense",
+        "approach-b",
+        "packed",
+        "typed-views-off"
+      ],
+      "prefix": "task111a_004_50k_rb1_dense_b",
+      "storage_format": "rabitq",
+      "corpus_file": "data/task111a_real50k/ec_real_50k_corpus.tsv",
+      "queries_file": "data/task111a_real50k/ec_real_50k_queries.tsv",
+      "manifest_file": "data/task111a_real50k/ec_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=64",
+        "nprobe=32",
+        "quant_bits=1",
+        "training_sample_rows=10000",
+        "dense_posting_blocks=1",
+        "dense_posting_pack_pages=4",
+        "dense_posting_typed_layout=0"
+      ],
+      "log_file": "${artifact_dir}/load-50k-rb1-dense-b.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-50k-rb1-dense-b-typed",
+      "tags": [
+        "task111a",
+        "load",
+        "real50k",
+        "rabitq",
+        "bits1",
+        "dense",
+        "approach-b",
+        "packed",
+        "typed-views-on"
+      ],
+      "prefix": "task111a_004_50k_rb1_dense_b_typed",
+      "storage_format": "rabitq",
+      "corpus_file": "data/task111a_real50k/ec_real_50k_corpus.tsv",
+      "queries_file": "data/task111a_real50k/ec_real_50k_queries.tsv",
+      "manifest_file": "data/task111a_real50k/ec_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=64",
+        "nprobe=32",
+        "quant_bits=1",
+        "training_sample_rows=10000",
+        "dense_posting_blocks=1",
+        "dense_posting_pack_pages=4",
+        "dense_posting_typed_layout=0"
+      ],
+      "log_file": "${artifact_dir}/load-50k-rb1-dense-b-typed.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-tq-row",
+      "tags": [
+        "task111a",
+        "load",
+        "real100k",
+        "turboquant",
+        "row"
+      ],
+      "prefix": "task111a_004_100k_tq_row",
+      "storage_format": "turboquant",
+      "corpus_file": "data/task106_full_sweep_100k/ec_real_100k_corpus.tsv",
+      "queries_file": "data/task106_full_sweep_100k/ec_real_100k_queries.tsv",
+      "manifest_file": "data/task106_full_sweep_100k/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=64",
+        "nprobe=32",
+        "training_sample_rows=10000",
+        "dense_posting_blocks=0"
+      ],
+      "log_file": "${artifact_dir}/load-100k-tq-row.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-tq-dense-old",
+      "tags": [
+        "task111a",
+        "load",
+        "real100k",
+        "turboquant",
+        "dense",
+        "per-block",
+        "original-layout",
+        "coalescing-off",
+        "typed-views-off"
+      ],
+      "prefix": "task111a_004_100k_tq_dense_old",
+      "storage_format": "turboquant",
+      "corpus_file": "data/task106_full_sweep_100k/ec_real_100k_corpus.tsv",
+      "queries_file": "data/task106_full_sweep_100k/ec_real_100k_queries.tsv",
+      "manifest_file": "data/task106_full_sweep_100k/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=64",
+        "nprobe=32",
+        "training_sample_rows=10000",
+        "dense_posting_blocks=1",
+        "dense_posting_pack_pages=1",
+        "dense_posting_typed_layout=0"
+      ],
+      "log_file": "${artifact_dir}/load-100k-tq-dense-old.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-tq-dense-a",
+      "tags": [
+        "task111a",
+        "load",
+        "real100k",
+        "turboquant",
+        "dense",
+        "approach-a",
+        "coalescing-on",
+        "typed-views-off"
+      ],
+      "prefix": "task111a_004_100k_tq_dense_a",
+      "storage_format": "turboquant",
+      "corpus_file": "data/task106_full_sweep_100k/ec_real_100k_corpus.tsv",
+      "queries_file": "data/task106_full_sweep_100k/ec_real_100k_queries.tsv",
+      "manifest_file": "data/task106_full_sweep_100k/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=64",
+        "nprobe=32",
+        "training_sample_rows=10000",
+        "dense_posting_blocks=1",
+        "dense_posting_pack_pages=1",
+        "dense_posting_typed_layout=0"
+      ],
+      "log_file": "${artifact_dir}/load-100k-tq-dense-a.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-tq-dense-typed",
+      "tags": [
+        "task111a",
+        "load",
+        "real100k",
+        "turboquant",
+        "dense",
+        "typed-per-block",
+        "aligned-layout",
+        "coalescing-off",
+        "typed-views-on"
+      ],
+      "prefix": "task111a_004_100k_tq_dense_typed",
+      "storage_format": "turboquant",
+      "corpus_file": "data/task106_full_sweep_100k/ec_real_100k_corpus.tsv",
+      "queries_file": "data/task106_full_sweep_100k/ec_real_100k_queries.tsv",
+      "manifest_file": "data/task106_full_sweep_100k/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=64",
+        "nprobe=32",
+        "training_sample_rows=10000",
+        "dense_posting_blocks=1",
+        "dense_posting_pack_pages=1",
+        "dense_posting_typed_layout=1"
+      ],
+      "log_file": "${artifact_dir}/load-100k-tq-dense-typed.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-tq-dense-b",
+      "tags": [
+        "task111a",
+        "load",
+        "real100k",
+        "turboquant",
+        "dense",
+        "approach-b",
+        "packed",
+        "typed-views-off"
+      ],
+      "prefix": "task111a_004_100k_tq_dense_b",
+      "storage_format": "turboquant",
+      "corpus_file": "data/task106_full_sweep_100k/ec_real_100k_corpus.tsv",
+      "queries_file": "data/task106_full_sweep_100k/ec_real_100k_queries.tsv",
+      "manifest_file": "data/task106_full_sweep_100k/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=64",
+        "nprobe=32",
+        "training_sample_rows=10000",
+        "dense_posting_blocks=1",
+        "dense_posting_pack_pages=4",
+        "dense_posting_typed_layout=0"
+      ],
+      "log_file": "${artifact_dir}/load-100k-tq-dense-b.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-tq-dense-b-typed",
+      "tags": [
+        "task111a",
+        "load",
+        "real100k",
+        "turboquant",
+        "dense",
+        "approach-b",
+        "packed",
+        "typed-views-on"
+      ],
+      "prefix": "task111a_004_100k_tq_dense_b_typed",
+      "storage_format": "turboquant",
+      "corpus_file": "data/task106_full_sweep_100k/ec_real_100k_corpus.tsv",
+      "queries_file": "data/task106_full_sweep_100k/ec_real_100k_queries.tsv",
+      "manifest_file": "data/task106_full_sweep_100k/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=64",
+        "nprobe=32",
+        "training_sample_rows=10000",
+        "dense_posting_blocks=1",
+        "dense_posting_pack_pages=4",
+        "dense_posting_typed_layout=0"
+      ],
+      "log_file": "${artifact_dir}/load-100k-tq-dense-b-typed.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-rb1-row",
+      "tags": [
+        "task111a",
+        "load",
+        "real100k",
+        "rabitq",
+        "bits1",
+        "row"
+      ],
+      "prefix": "task111a_004_100k_rb1_row",
+      "storage_format": "rabitq",
+      "corpus_file": "data/task106_full_sweep_100k/ec_real_100k_corpus.tsv",
+      "queries_file": "data/task106_full_sweep_100k/ec_real_100k_queries.tsv",
+      "manifest_file": "data/task106_full_sweep_100k/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=64",
+        "nprobe=32",
+        "quant_bits=1",
+        "training_sample_rows=10000",
+        "dense_posting_blocks=0"
+      ],
+      "log_file": "${artifact_dir}/load-100k-rb1-row.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-rb1-dense-old",
+      "tags": [
+        "task111a",
+        "load",
+        "real100k",
+        "rabitq",
+        "bits1",
+        "dense",
+        "per-block",
+        "original-layout",
+        "coalescing-off",
+        "typed-views-off"
+      ],
+      "prefix": "task111a_004_100k_rb1_dense_old",
+      "storage_format": "rabitq",
+      "corpus_file": "data/task106_full_sweep_100k/ec_real_100k_corpus.tsv",
+      "queries_file": "data/task106_full_sweep_100k/ec_real_100k_queries.tsv",
+      "manifest_file": "data/task106_full_sweep_100k/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=64",
+        "nprobe=32",
+        "quant_bits=1",
+        "training_sample_rows=10000",
+        "dense_posting_blocks=1",
+        "dense_posting_pack_pages=1",
+        "dense_posting_typed_layout=0"
+      ],
+      "log_file": "${artifact_dir}/load-100k-rb1-dense-old.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-rb1-dense-a",
+      "tags": [
+        "task111a",
+        "load",
+        "real100k",
+        "rabitq",
+        "bits1",
+        "dense",
+        "approach-a",
+        "coalescing-on",
+        "typed-views-off"
+      ],
+      "prefix": "task111a_004_100k_rb1_dense_a",
+      "storage_format": "rabitq",
+      "corpus_file": "data/task106_full_sweep_100k/ec_real_100k_corpus.tsv",
+      "queries_file": "data/task106_full_sweep_100k/ec_real_100k_queries.tsv",
+      "manifest_file": "data/task106_full_sweep_100k/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=64",
+        "nprobe=32",
+        "quant_bits=1",
+        "training_sample_rows=10000",
+        "dense_posting_blocks=1",
+        "dense_posting_pack_pages=1",
+        "dense_posting_typed_layout=0"
+      ],
+      "log_file": "${artifact_dir}/load-100k-rb1-dense-a.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-rb1-dense-typed",
+      "tags": [
+        "task111a",
+        "load",
+        "real100k",
+        "rabitq",
+        "bits1",
+        "dense",
+        "typed-per-block",
+        "aligned-layout",
+        "coalescing-off",
+        "typed-views-on"
+      ],
+      "prefix": "task111a_004_100k_rb1_dense_typed",
+      "storage_format": "rabitq",
+      "corpus_file": "data/task106_full_sweep_100k/ec_real_100k_corpus.tsv",
+      "queries_file": "data/task106_full_sweep_100k/ec_real_100k_queries.tsv",
+      "manifest_file": "data/task106_full_sweep_100k/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=64",
+        "nprobe=32",
+        "quant_bits=1",
+        "training_sample_rows=10000",
+        "dense_posting_blocks=1",
+        "dense_posting_pack_pages=1",
+        "dense_posting_typed_layout=1"
+      ],
+      "log_file": "${artifact_dir}/load-100k-rb1-dense-typed.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-rb1-dense-b",
+      "tags": [
+        "task111a",
+        "load",
+        "real100k",
+        "rabitq",
+        "bits1",
+        "dense",
+        "approach-b",
+        "packed",
+        "typed-views-off"
+      ],
+      "prefix": "task111a_004_100k_rb1_dense_b",
+      "storage_format": "rabitq",
+      "corpus_file": "data/task106_full_sweep_100k/ec_real_100k_corpus.tsv",
+      "queries_file": "data/task106_full_sweep_100k/ec_real_100k_queries.tsv",
+      "manifest_file": "data/task106_full_sweep_100k/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=64",
+        "nprobe=32",
+        "quant_bits=1",
+        "training_sample_rows=10000",
+        "dense_posting_blocks=1",
+        "dense_posting_pack_pages=4",
+        "dense_posting_typed_layout=0"
+      ],
+      "log_file": "${artifact_dir}/load-100k-rb1-dense-b.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-rb1-dense-b-typed",
+      "tags": [
+        "task111a",
+        "load",
+        "real100k",
+        "rabitq",
+        "bits1",
+        "dense",
+        "approach-b",
+        "packed",
+        "typed-views-on"
+      ],
+      "prefix": "task111a_004_100k_rb1_dense_b_typed",
+      "storage_format": "rabitq",
+      "corpus_file": "data/task106_full_sweep_100k/ec_real_100k_corpus.tsv",
+      "queries_file": "data/task106_full_sweep_100k/ec_real_100k_queries.tsv",
+      "manifest_file": "data/task106_full_sweep_100k/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=64",
+        "nprobe=32",
+        "quant_bits=1",
+        "training_sample_rows=10000",
+        "dense_posting_blocks=1",
+        "dense_posting_pack_pages=4",
+        "dense_posting_typed_layout=0"
+      ],
+      "log_file": "${artifact_dir}/load-100k-rb1-dense-b-typed.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-50k-tq-row",
+      "tags": [
+        "task111a",
+        "recall",
+        "real50k",
+        "turboquant",
+        "row"
+      ],
+      "prefix": "task111a_004_50k_tq_row",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ],
+      "session_gucs": [],
+      "log_output": "${artifact_dir}/recall-50k-tq-row.log",
+      "truth_cache_file": "${artifact_dir}/truth-50k-k10.json"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-50k-tq-dense-old",
+      "tags": [
+        "task111a",
+        "recall",
+        "real50k",
+        "turboquant",
+        "dense",
+        "per-block",
+        "original-layout",
+        "coalescing-off",
+        "typed-views-off"
+      ],
+      "prefix": "task111a_004_50k_tq_dense_old",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ],
+      "session_gucs": [
+        "ec_ivf.dense_posting_coalescing=off",
+        "ec_ivf.dense_posting_typed_views=off"
+      ],
+      "log_output": "${artifact_dir}/recall-50k-tq-dense-old.log",
+      "truth_cache_file": "${artifact_dir}/truth-50k-k10.json"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-50k-tq-dense-a",
+      "tags": [
+        "task111a",
+        "recall",
+        "real50k",
+        "turboquant",
+        "dense",
+        "approach-a",
+        "coalescing-on",
+        "typed-views-off"
+      ],
+      "prefix": "task111a_004_50k_tq_dense_a",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ],
+      "session_gucs": [
+        "ec_ivf.dense_posting_coalescing=on",
+        "ec_ivf.dense_posting_typed_views=off"
+      ],
+      "log_output": "${artifact_dir}/recall-50k-tq-dense-a.log",
+      "truth_cache_file": "${artifact_dir}/truth-50k-k10.json"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-50k-tq-dense-typed",
+      "tags": [
+        "task111a",
+        "recall",
+        "real50k",
+        "turboquant",
+        "dense",
+        "typed-per-block",
+        "aligned-layout",
+        "coalescing-off",
+        "typed-views-on"
+      ],
+      "prefix": "task111a_004_50k_tq_dense_typed",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ],
+      "session_gucs": [
+        "ec_ivf.dense_posting_coalescing=off",
+        "ec_ivf.dense_posting_typed_views=on"
+      ],
+      "log_output": "${artifact_dir}/recall-50k-tq-dense-typed.log",
+      "truth_cache_file": "${artifact_dir}/truth-50k-k10.json"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-50k-tq-dense-b",
+      "tags": [
+        "task111a",
+        "recall",
+        "real50k",
+        "turboquant",
+        "dense",
+        "approach-b",
+        "packed",
+        "typed-views-off"
+      ],
+      "prefix": "task111a_004_50k_tq_dense_b",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ],
+      "session_gucs": [
+        "ec_ivf.dense_posting_coalescing=off",
+        "ec_ivf.dense_posting_typed_views=off"
+      ],
+      "log_output": "${artifact_dir}/recall-50k-tq-dense-b.log",
+      "truth_cache_file": "${artifact_dir}/truth-50k-k10.json"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-50k-tq-dense-b-typed",
+      "tags": [
+        "task111a",
+        "recall",
+        "real50k",
+        "turboquant",
+        "dense",
+        "approach-b",
+        "packed",
+        "typed-views-on"
+      ],
+      "prefix": "task111a_004_50k_tq_dense_b_typed",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ],
+      "session_gucs": [
+        "ec_ivf.dense_posting_coalescing=off",
+        "ec_ivf.dense_posting_typed_views=on"
+      ],
+      "log_output": "${artifact_dir}/recall-50k-tq-dense-b-typed.log",
+      "truth_cache_file": "${artifact_dir}/truth-50k-k10.json"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-50k-rb1-row",
+      "tags": [
+        "task111a",
+        "recall",
+        "real50k",
+        "rabitq",
+        "bits1",
+        "row"
+      ],
+      "prefix": "task111a_004_50k_rb1_row",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ],
+      "session_gucs": [],
+      "log_output": "${artifact_dir}/recall-50k-rb1-row.log",
+      "truth_cache_file": "${artifact_dir}/truth-50k-k10.json"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-50k-rb1-dense-old",
+      "tags": [
+        "task111a",
+        "recall",
+        "real50k",
+        "rabitq",
+        "bits1",
+        "dense",
+        "per-block",
+        "original-layout",
+        "coalescing-off",
+        "typed-views-off"
+      ],
+      "prefix": "task111a_004_50k_rb1_dense_old",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ],
+      "session_gucs": [
+        "ec_ivf.dense_posting_coalescing=off",
+        "ec_ivf.dense_posting_typed_views=off"
+      ],
+      "log_output": "${artifact_dir}/recall-50k-rb1-dense-old.log",
+      "truth_cache_file": "${artifact_dir}/truth-50k-k10.json"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-50k-rb1-dense-a",
+      "tags": [
+        "task111a",
+        "recall",
+        "real50k",
+        "rabitq",
+        "bits1",
+        "dense",
+        "approach-a",
+        "coalescing-on",
+        "typed-views-off"
+      ],
+      "prefix": "task111a_004_50k_rb1_dense_a",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ],
+      "session_gucs": [
+        "ec_ivf.dense_posting_coalescing=on",
+        "ec_ivf.dense_posting_typed_views=off"
+      ],
+      "log_output": "${artifact_dir}/recall-50k-rb1-dense-a.log",
+      "truth_cache_file": "${artifact_dir}/truth-50k-k10.json"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-50k-rb1-dense-typed",
+      "tags": [
+        "task111a",
+        "recall",
+        "real50k",
+        "rabitq",
+        "bits1",
+        "dense",
+        "typed-per-block",
+        "aligned-layout",
+        "coalescing-off",
+        "typed-views-on"
+      ],
+      "prefix": "task111a_004_50k_rb1_dense_typed",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ],
+      "session_gucs": [
+        "ec_ivf.dense_posting_coalescing=off",
+        "ec_ivf.dense_posting_typed_views=on"
+      ],
+      "log_output": "${artifact_dir}/recall-50k-rb1-dense-typed.log",
+      "truth_cache_file": "${artifact_dir}/truth-50k-k10.json"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-50k-rb1-dense-b",
+      "tags": [
+        "task111a",
+        "recall",
+        "real50k",
+        "rabitq",
+        "bits1",
+        "dense",
+        "approach-b",
+        "packed",
+        "typed-views-off"
+      ],
+      "prefix": "task111a_004_50k_rb1_dense_b",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ],
+      "session_gucs": [
+        "ec_ivf.dense_posting_coalescing=off",
+        "ec_ivf.dense_posting_typed_views=off"
+      ],
+      "log_output": "${artifact_dir}/recall-50k-rb1-dense-b.log",
+      "truth_cache_file": "${artifact_dir}/truth-50k-k10.json"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-50k-rb1-dense-b-typed",
+      "tags": [
+        "task111a",
+        "recall",
+        "real50k",
+        "rabitq",
+        "bits1",
+        "dense",
+        "approach-b",
+        "packed",
+        "typed-views-on"
+      ],
+      "prefix": "task111a_004_50k_rb1_dense_b_typed",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ],
+      "session_gucs": [
+        "ec_ivf.dense_posting_coalescing=off",
+        "ec_ivf.dense_posting_typed_views=on"
+      ],
+      "log_output": "${artifact_dir}/recall-50k-rb1-dense-b-typed.log",
+      "truth_cache_file": "${artifact_dir}/truth-50k-k10.json"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-tq-row",
+      "tags": [
+        "task111a",
+        "recall",
+        "real100k",
+        "turboquant",
+        "row"
+      ],
+      "prefix": "task111a_004_100k_tq_row",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ],
+      "session_gucs": [],
+      "log_output": "${artifact_dir}/recall-100k-tq-row.log",
+      "truth_cache_file": "${artifact_dir}/truth-100k-k10.json"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-tq-dense-old",
+      "tags": [
+        "task111a",
+        "recall",
+        "real100k",
+        "turboquant",
+        "dense",
+        "per-block",
+        "original-layout",
+        "coalescing-off",
+        "typed-views-off"
+      ],
+      "prefix": "task111a_004_100k_tq_dense_old",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ],
+      "session_gucs": [
+        "ec_ivf.dense_posting_coalescing=off",
+        "ec_ivf.dense_posting_typed_views=off"
+      ],
+      "log_output": "${artifact_dir}/recall-100k-tq-dense-old.log",
+      "truth_cache_file": "${artifact_dir}/truth-100k-k10.json"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-tq-dense-a",
+      "tags": [
+        "task111a",
+        "recall",
+        "real100k",
+        "turboquant",
+        "dense",
+        "approach-a",
+        "coalescing-on",
+        "typed-views-off"
+      ],
+      "prefix": "task111a_004_100k_tq_dense_a",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ],
+      "session_gucs": [
+        "ec_ivf.dense_posting_coalescing=on",
+        "ec_ivf.dense_posting_typed_views=off"
+      ],
+      "log_output": "${artifact_dir}/recall-100k-tq-dense-a.log",
+      "truth_cache_file": "${artifact_dir}/truth-100k-k10.json"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-tq-dense-typed",
+      "tags": [
+        "task111a",
+        "recall",
+        "real100k",
+        "turboquant",
+        "dense",
+        "typed-per-block",
+        "aligned-layout",
+        "coalescing-off",
+        "typed-views-on"
+      ],
+      "prefix": "task111a_004_100k_tq_dense_typed",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ],
+      "session_gucs": [
+        "ec_ivf.dense_posting_coalescing=off",
+        "ec_ivf.dense_posting_typed_views=on"
+      ],
+      "log_output": "${artifact_dir}/recall-100k-tq-dense-typed.log",
+      "truth_cache_file": "${artifact_dir}/truth-100k-k10.json"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-tq-dense-b",
+      "tags": [
+        "task111a",
+        "recall",
+        "real100k",
+        "turboquant",
+        "dense",
+        "approach-b",
+        "packed",
+        "typed-views-off"
+      ],
+      "prefix": "task111a_004_100k_tq_dense_b",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ],
+      "session_gucs": [
+        "ec_ivf.dense_posting_coalescing=off",
+        "ec_ivf.dense_posting_typed_views=off"
+      ],
+      "log_output": "${artifact_dir}/recall-100k-tq-dense-b.log",
+      "truth_cache_file": "${artifact_dir}/truth-100k-k10.json"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-tq-dense-b-typed",
+      "tags": [
+        "task111a",
+        "recall",
+        "real100k",
+        "turboquant",
+        "dense",
+        "approach-b",
+        "packed",
+        "typed-views-on"
+      ],
+      "prefix": "task111a_004_100k_tq_dense_b_typed",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ],
+      "session_gucs": [
+        "ec_ivf.dense_posting_coalescing=off",
+        "ec_ivf.dense_posting_typed_views=on"
+      ],
+      "log_output": "${artifact_dir}/recall-100k-tq-dense-b-typed.log",
+      "truth_cache_file": "${artifact_dir}/truth-100k-k10.json"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-rb1-row",
+      "tags": [
+        "task111a",
+        "recall",
+        "real100k",
+        "rabitq",
+        "bits1",
+        "row"
+      ],
+      "prefix": "task111a_004_100k_rb1_row",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ],
+      "session_gucs": [],
+      "log_output": "${artifact_dir}/recall-100k-rb1-row.log",
+      "truth_cache_file": "${artifact_dir}/truth-100k-k10.json"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-rb1-dense-old",
+      "tags": [
+        "task111a",
+        "recall",
+        "real100k",
+        "rabitq",
+        "bits1",
+        "dense",
+        "per-block",
+        "original-layout",
+        "coalescing-off",
+        "typed-views-off"
+      ],
+      "prefix": "task111a_004_100k_rb1_dense_old",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ],
+      "session_gucs": [
+        "ec_ivf.dense_posting_coalescing=off",
+        "ec_ivf.dense_posting_typed_views=off"
+      ],
+      "log_output": "${artifact_dir}/recall-100k-rb1-dense-old.log",
+      "truth_cache_file": "${artifact_dir}/truth-100k-k10.json"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-rb1-dense-a",
+      "tags": [
+        "task111a",
+        "recall",
+        "real100k",
+        "rabitq",
+        "bits1",
+        "dense",
+        "approach-a",
+        "coalescing-on",
+        "typed-views-off"
+      ],
+      "prefix": "task111a_004_100k_rb1_dense_a",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ],
+      "session_gucs": [
+        "ec_ivf.dense_posting_coalescing=on",
+        "ec_ivf.dense_posting_typed_views=off"
+      ],
+      "log_output": "${artifact_dir}/recall-100k-rb1-dense-a.log",
+      "truth_cache_file": "${artifact_dir}/truth-100k-k10.json"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-rb1-dense-typed",
+      "tags": [
+        "task111a",
+        "recall",
+        "real100k",
+        "rabitq",
+        "bits1",
+        "dense",
+        "typed-per-block",
+        "aligned-layout",
+        "coalescing-off",
+        "typed-views-on"
+      ],
+      "prefix": "task111a_004_100k_rb1_dense_typed",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ],
+      "session_gucs": [
+        "ec_ivf.dense_posting_coalescing=off",
+        "ec_ivf.dense_posting_typed_views=on"
+      ],
+      "log_output": "${artifact_dir}/recall-100k-rb1-dense-typed.log",
+      "truth_cache_file": "${artifact_dir}/truth-100k-k10.json"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-rb1-dense-b",
+      "tags": [
+        "task111a",
+        "recall",
+        "real100k",
+        "rabitq",
+        "bits1",
+        "dense",
+        "approach-b",
+        "packed",
+        "typed-views-off"
+      ],
+      "prefix": "task111a_004_100k_rb1_dense_b",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ],
+      "session_gucs": [
+        "ec_ivf.dense_posting_coalescing=off",
+        "ec_ivf.dense_posting_typed_views=off"
+      ],
+      "log_output": "${artifact_dir}/recall-100k-rb1-dense-b.log",
+      "truth_cache_file": "${artifact_dir}/truth-100k-k10.json"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-rb1-dense-b-typed",
+      "tags": [
+        "task111a",
+        "recall",
+        "real100k",
+        "rabitq",
+        "bits1",
+        "dense",
+        "approach-b",
+        "packed",
+        "typed-views-on"
+      ],
+      "prefix": "task111a_004_100k_rb1_dense_b_typed",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ],
+      "session_gucs": [
+        "ec_ivf.dense_posting_coalescing=off",
+        "ec_ivf.dense_posting_typed_views=on"
+      ],
+      "log_output": "${artifact_dir}/recall-100k-rb1-dense-b-typed.log",
+      "truth_cache_file": "${artifact_dir}/truth-100k-k10.json"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-50k-tq-row",
+      "tags": [
+        "task111a",
+        "latency",
+        "real50k",
+        "turboquant",
+        "row"
+      ],
+      "prefix": "task111a_004_50k_tq_row",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ],
+      "session_gucs": [],
+      "log_output": "${artifact_dir}/latency-50k-tq-row.log",
+      "task87_candidate_batch_counters": true,
+      "ivf_scratch_soa_batch_decode": true,
+      "cache_state": "warm"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-50k-tq-dense-old",
+      "tags": [
+        "task111a",
+        "latency",
+        "real50k",
+        "turboquant",
+        "dense",
+        "per-block",
+        "original-layout",
+        "coalescing-off",
+        "typed-views-off"
+      ],
+      "prefix": "task111a_004_50k_tq_dense_old",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ],
+      "session_gucs": [
+        "ec_ivf.dense_posting_coalescing=off",
+        "ec_ivf.dense_posting_typed_views=off"
+      ],
+      "log_output": "${artifact_dir}/latency-50k-tq-dense-old.log",
+      "task87_candidate_batch_counters": true,
+      "ivf_scratch_soa_batch_decode": true,
+      "cache_state": "warm"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-50k-tq-dense-a",
+      "tags": [
+        "task111a",
+        "latency",
+        "real50k",
+        "turboquant",
+        "dense",
+        "approach-a",
+        "coalescing-on",
+        "typed-views-off"
+      ],
+      "prefix": "task111a_004_50k_tq_dense_a",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ],
+      "session_gucs": [
+        "ec_ivf.dense_posting_coalescing=on",
+        "ec_ivf.dense_posting_typed_views=off"
+      ],
+      "log_output": "${artifact_dir}/latency-50k-tq-dense-a.log",
+      "task87_candidate_batch_counters": true,
+      "ivf_scratch_soa_batch_decode": true,
+      "cache_state": "warm"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-50k-tq-dense-typed",
+      "tags": [
+        "task111a",
+        "latency",
+        "real50k",
+        "turboquant",
+        "dense",
+        "typed-per-block",
+        "aligned-layout",
+        "coalescing-off",
+        "typed-views-on"
+      ],
+      "prefix": "task111a_004_50k_tq_dense_typed",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ],
+      "session_gucs": [
+        "ec_ivf.dense_posting_coalescing=off",
+        "ec_ivf.dense_posting_typed_views=on"
+      ],
+      "log_output": "${artifact_dir}/latency-50k-tq-dense-typed.log",
+      "task87_candidate_batch_counters": true,
+      "ivf_scratch_soa_batch_decode": true,
+      "cache_state": "warm"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-50k-tq-dense-b",
+      "tags": [
+        "task111a",
+        "latency",
+        "real50k",
+        "turboquant",
+        "dense",
+        "approach-b",
+        "packed",
+        "typed-views-off"
+      ],
+      "prefix": "task111a_004_50k_tq_dense_b",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ],
+      "session_gucs": [
+        "ec_ivf.dense_posting_coalescing=off",
+        "ec_ivf.dense_posting_typed_views=off"
+      ],
+      "log_output": "${artifact_dir}/latency-50k-tq-dense-b.log",
+      "task87_candidate_batch_counters": true,
+      "ivf_scratch_soa_batch_decode": true,
+      "cache_state": "warm"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-50k-tq-dense-b-typed",
+      "tags": [
+        "task111a",
+        "latency",
+        "real50k",
+        "turboquant",
+        "dense",
+        "approach-b",
+        "packed",
+        "typed-views-on"
+      ],
+      "prefix": "task111a_004_50k_tq_dense_b_typed",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ],
+      "session_gucs": [
+        "ec_ivf.dense_posting_coalescing=off",
+        "ec_ivf.dense_posting_typed_views=on"
+      ],
+      "log_output": "${artifact_dir}/latency-50k-tq-dense-b-typed.log",
+      "task87_candidate_batch_counters": true,
+      "ivf_scratch_soa_batch_decode": true,
+      "cache_state": "warm"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-50k-rb1-row",
+      "tags": [
+        "task111a",
+        "latency",
+        "real50k",
+        "rabitq",
+        "bits1",
+        "row"
+      ],
+      "prefix": "task111a_004_50k_rb1_row",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ],
+      "session_gucs": [],
+      "log_output": "${artifact_dir}/latency-50k-rb1-row.log",
+      "task87_candidate_batch_counters": true,
+      "ivf_scratch_soa_batch_decode": true,
+      "cache_state": "warm"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-50k-rb1-dense-old",
+      "tags": [
+        "task111a",
+        "latency",
+        "real50k",
+        "rabitq",
+        "bits1",
+        "dense",
+        "per-block",
+        "original-layout",
+        "coalescing-off",
+        "typed-views-off"
+      ],
+      "prefix": "task111a_004_50k_rb1_dense_old",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ],
+      "session_gucs": [
+        "ec_ivf.dense_posting_coalescing=off",
+        "ec_ivf.dense_posting_typed_views=off"
+      ],
+      "log_output": "${artifact_dir}/latency-50k-rb1-dense-old.log",
+      "task87_candidate_batch_counters": true,
+      "ivf_scratch_soa_batch_decode": true,
+      "cache_state": "warm"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-50k-rb1-dense-a",
+      "tags": [
+        "task111a",
+        "latency",
+        "real50k",
+        "rabitq",
+        "bits1",
+        "dense",
+        "approach-a",
+        "coalescing-on",
+        "typed-views-off"
+      ],
+      "prefix": "task111a_004_50k_rb1_dense_a",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ],
+      "session_gucs": [
+        "ec_ivf.dense_posting_coalescing=on",
+        "ec_ivf.dense_posting_typed_views=off"
+      ],
+      "log_output": "${artifact_dir}/latency-50k-rb1-dense-a.log",
+      "task87_candidate_batch_counters": true,
+      "ivf_scratch_soa_batch_decode": true,
+      "cache_state": "warm"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-50k-rb1-dense-typed",
+      "tags": [
+        "task111a",
+        "latency",
+        "real50k",
+        "rabitq",
+        "bits1",
+        "dense",
+        "typed-per-block",
+        "aligned-layout",
+        "coalescing-off",
+        "typed-views-on"
+      ],
+      "prefix": "task111a_004_50k_rb1_dense_typed",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ],
+      "session_gucs": [
+        "ec_ivf.dense_posting_coalescing=off",
+        "ec_ivf.dense_posting_typed_views=on"
+      ],
+      "log_output": "${artifact_dir}/latency-50k-rb1-dense-typed.log",
+      "task87_candidate_batch_counters": true,
+      "ivf_scratch_soa_batch_decode": true,
+      "cache_state": "warm"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-50k-rb1-dense-b",
+      "tags": [
+        "task111a",
+        "latency",
+        "real50k",
+        "rabitq",
+        "bits1",
+        "dense",
+        "approach-b",
+        "packed",
+        "typed-views-off"
+      ],
+      "prefix": "task111a_004_50k_rb1_dense_b",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ],
+      "session_gucs": [
+        "ec_ivf.dense_posting_coalescing=off",
+        "ec_ivf.dense_posting_typed_views=off"
+      ],
+      "log_output": "${artifact_dir}/latency-50k-rb1-dense-b.log",
+      "task87_candidate_batch_counters": true,
+      "ivf_scratch_soa_batch_decode": true,
+      "cache_state": "warm"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-50k-rb1-dense-b-typed",
+      "tags": [
+        "task111a",
+        "latency",
+        "real50k",
+        "rabitq",
+        "bits1",
+        "dense",
+        "approach-b",
+        "packed",
+        "typed-views-on"
+      ],
+      "prefix": "task111a_004_50k_rb1_dense_b_typed",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ],
+      "session_gucs": [
+        "ec_ivf.dense_posting_coalescing=off",
+        "ec_ivf.dense_posting_typed_views=on"
+      ],
+      "log_output": "${artifact_dir}/latency-50k-rb1-dense-b-typed.log",
+      "task87_candidate_batch_counters": true,
+      "ivf_scratch_soa_batch_decode": true,
+      "cache_state": "warm"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-tq-row",
+      "tags": [
+        "task111a",
+        "latency",
+        "real100k",
+        "turboquant",
+        "row"
+      ],
+      "prefix": "task111a_004_100k_tq_row",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ],
+      "session_gucs": [],
+      "log_output": "${artifact_dir}/latency-100k-tq-row.log",
+      "task87_candidate_batch_counters": true,
+      "ivf_scratch_soa_batch_decode": true,
+      "cache_state": "warm"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-tq-dense-old",
+      "tags": [
+        "task111a",
+        "latency",
+        "real100k",
+        "turboquant",
+        "dense",
+        "per-block",
+        "original-layout",
+        "coalescing-off",
+        "typed-views-off"
+      ],
+      "prefix": "task111a_004_100k_tq_dense_old",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ],
+      "session_gucs": [
+        "ec_ivf.dense_posting_coalescing=off",
+        "ec_ivf.dense_posting_typed_views=off"
+      ],
+      "log_output": "${artifact_dir}/latency-100k-tq-dense-old.log",
+      "task87_candidate_batch_counters": true,
+      "ivf_scratch_soa_batch_decode": true,
+      "cache_state": "warm"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-tq-dense-a",
+      "tags": [
+        "task111a",
+        "latency",
+        "real100k",
+        "turboquant",
+        "dense",
+        "approach-a",
+        "coalescing-on",
+        "typed-views-off"
+      ],
+      "prefix": "task111a_004_100k_tq_dense_a",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ],
+      "session_gucs": [
+        "ec_ivf.dense_posting_coalescing=on",
+        "ec_ivf.dense_posting_typed_views=off"
+      ],
+      "log_output": "${artifact_dir}/latency-100k-tq-dense-a.log",
+      "task87_candidate_batch_counters": true,
+      "ivf_scratch_soa_batch_decode": true,
+      "cache_state": "warm"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-tq-dense-typed",
+      "tags": [
+        "task111a",
+        "latency",
+        "real100k",
+        "turboquant",
+        "dense",
+        "typed-per-block",
+        "aligned-layout",
+        "coalescing-off",
+        "typed-views-on"
+      ],
+      "prefix": "task111a_004_100k_tq_dense_typed",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ],
+      "session_gucs": [
+        "ec_ivf.dense_posting_coalescing=off",
+        "ec_ivf.dense_posting_typed_views=on"
+      ],
+      "log_output": "${artifact_dir}/latency-100k-tq-dense-typed.log",
+      "task87_candidate_batch_counters": true,
+      "ivf_scratch_soa_batch_decode": true,
+      "cache_state": "warm"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-tq-dense-b",
+      "tags": [
+        "task111a",
+        "latency",
+        "real100k",
+        "turboquant",
+        "dense",
+        "approach-b",
+        "packed",
+        "typed-views-off"
+      ],
+      "prefix": "task111a_004_100k_tq_dense_b",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ],
+      "session_gucs": [
+        "ec_ivf.dense_posting_coalescing=off",
+        "ec_ivf.dense_posting_typed_views=off"
+      ],
+      "log_output": "${artifact_dir}/latency-100k-tq-dense-b.log",
+      "task87_candidate_batch_counters": true,
+      "ivf_scratch_soa_batch_decode": true,
+      "cache_state": "warm"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-tq-dense-b-typed",
+      "tags": [
+        "task111a",
+        "latency",
+        "real100k",
+        "turboquant",
+        "dense",
+        "approach-b",
+        "packed",
+        "typed-views-on"
+      ],
+      "prefix": "task111a_004_100k_tq_dense_b_typed",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ],
+      "session_gucs": [
+        "ec_ivf.dense_posting_coalescing=off",
+        "ec_ivf.dense_posting_typed_views=on"
+      ],
+      "log_output": "${artifact_dir}/latency-100k-tq-dense-b-typed.log",
+      "task87_candidate_batch_counters": true,
+      "ivf_scratch_soa_batch_decode": true,
+      "cache_state": "warm"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-rb1-row",
+      "tags": [
+        "task111a",
+        "latency",
+        "real100k",
+        "rabitq",
+        "bits1",
+        "row"
+      ],
+      "prefix": "task111a_004_100k_rb1_row",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ],
+      "session_gucs": [],
+      "log_output": "${artifact_dir}/latency-100k-rb1-row.log",
+      "task87_candidate_batch_counters": true,
+      "ivf_scratch_soa_batch_decode": true,
+      "cache_state": "warm"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-rb1-dense-old",
+      "tags": [
+        "task111a",
+        "latency",
+        "real100k",
+        "rabitq",
+        "bits1",
+        "dense",
+        "per-block",
+        "original-layout",
+        "coalescing-off",
+        "typed-views-off"
+      ],
+      "prefix": "task111a_004_100k_rb1_dense_old",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ],
+      "session_gucs": [
+        "ec_ivf.dense_posting_coalescing=off",
+        "ec_ivf.dense_posting_typed_views=off"
+      ],
+      "log_output": "${artifact_dir}/latency-100k-rb1-dense-old.log",
+      "task87_candidate_batch_counters": true,
+      "ivf_scratch_soa_batch_decode": true,
+      "cache_state": "warm"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-rb1-dense-a",
+      "tags": [
+        "task111a",
+        "latency",
+        "real100k",
+        "rabitq",
+        "bits1",
+        "dense",
+        "approach-a",
+        "coalescing-on",
+        "typed-views-off"
+      ],
+      "prefix": "task111a_004_100k_rb1_dense_a",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ],
+      "session_gucs": [
+        "ec_ivf.dense_posting_coalescing=on",
+        "ec_ivf.dense_posting_typed_views=off"
+      ],
+      "log_output": "${artifact_dir}/latency-100k-rb1-dense-a.log",
+      "task87_candidate_batch_counters": true,
+      "ivf_scratch_soa_batch_decode": true,
+      "cache_state": "warm"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-rb1-dense-typed",
+      "tags": [
+        "task111a",
+        "latency",
+        "real100k",
+        "rabitq",
+        "bits1",
+        "dense",
+        "typed-per-block",
+        "aligned-layout",
+        "coalescing-off",
+        "typed-views-on"
+      ],
+      "prefix": "task111a_004_100k_rb1_dense_typed",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ],
+      "session_gucs": [
+        "ec_ivf.dense_posting_coalescing=off",
+        "ec_ivf.dense_posting_typed_views=on"
+      ],
+      "log_output": "${artifact_dir}/latency-100k-rb1-dense-typed.log",
+      "task87_candidate_batch_counters": true,
+      "ivf_scratch_soa_batch_decode": true,
+      "cache_state": "warm"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-rb1-dense-b",
+      "tags": [
+        "task111a",
+        "latency",
+        "real100k",
+        "rabitq",
+        "bits1",
+        "dense",
+        "approach-b",
+        "packed",
+        "typed-views-off"
+      ],
+      "prefix": "task111a_004_100k_rb1_dense_b",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ],
+      "session_gucs": [
+        "ec_ivf.dense_posting_coalescing=off",
+        "ec_ivf.dense_posting_typed_views=off"
+      ],
+      "log_output": "${artifact_dir}/latency-100k-rb1-dense-b.log",
+      "task87_candidate_batch_counters": true,
+      "ivf_scratch_soa_batch_decode": true,
+      "cache_state": "warm"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-rb1-dense-b-typed",
+      "tags": [
+        "task111a",
+        "latency",
+        "real100k",
+        "rabitq",
+        "bits1",
+        "dense",
+        "approach-b",
+        "packed",
+        "typed-views-on"
+      ],
+      "prefix": "task111a_004_100k_rb1_dense_b_typed",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ],
+      "session_gucs": [
+        "ec_ivf.dense_posting_coalescing=off",
+        "ec_ivf.dense_posting_typed_views=on"
+      ],
+      "log_output": "${artifact_dir}/latency-100k-rb1-dense-b-typed.log",
+      "task87_candidate_batch_counters": true,
+      "ivf_scratch_soa_batch_decode": true,
+      "cache_state": "warm"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-50k-tq-row",
+      "tags": [
+        "task111a",
+        "storage",
+        "real50k",
+        "turboquant",
+        "row"
+      ],
+      "prefix": "task111a_004_50k_tq_row",
+      "log_file": "${artifact_dir}/storage-50k-tq-row.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-50k-tq-dense-old",
+      "tags": [
+        "task111a",
+        "storage",
+        "real50k",
+        "turboquant",
+        "dense",
+        "per-block",
+        "original-layout",
+        "coalescing-off",
+        "typed-views-off"
+      ],
+      "prefix": "task111a_004_50k_tq_dense_old",
+      "log_file": "${artifact_dir}/storage-50k-tq-dense-old.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-50k-tq-dense-a",
+      "tags": [
+        "task111a",
+        "storage",
+        "real50k",
+        "turboquant",
+        "dense",
+        "approach-a",
+        "coalescing-on",
+        "typed-views-off"
+      ],
+      "prefix": "task111a_004_50k_tq_dense_a",
+      "log_file": "${artifact_dir}/storage-50k-tq-dense-a.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-50k-tq-dense-typed",
+      "tags": [
+        "task111a",
+        "storage",
+        "real50k",
+        "turboquant",
+        "dense",
+        "typed-per-block",
+        "aligned-layout",
+        "coalescing-off",
+        "typed-views-on"
+      ],
+      "prefix": "task111a_004_50k_tq_dense_typed",
+      "log_file": "${artifact_dir}/storage-50k-tq-dense-typed.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-50k-tq-dense-b",
+      "tags": [
+        "task111a",
+        "storage",
+        "real50k",
+        "turboquant",
+        "dense",
+        "approach-b",
+        "packed",
+        "typed-views-off"
+      ],
+      "prefix": "task111a_004_50k_tq_dense_b",
+      "log_file": "${artifact_dir}/storage-50k-tq-dense-b.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-50k-tq-dense-b-typed",
+      "tags": [
+        "task111a",
+        "storage",
+        "real50k",
+        "turboquant",
+        "dense",
+        "approach-b",
+        "packed",
+        "typed-views-on"
+      ],
+      "prefix": "task111a_004_50k_tq_dense_b_typed",
+      "log_file": "${artifact_dir}/storage-50k-tq-dense-b-typed.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-50k-rb1-row",
+      "tags": [
+        "task111a",
+        "storage",
+        "real50k",
+        "rabitq",
+        "bits1",
+        "row"
+      ],
+      "prefix": "task111a_004_50k_rb1_row",
+      "log_file": "${artifact_dir}/storage-50k-rb1-row.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-50k-rb1-dense-old",
+      "tags": [
+        "task111a",
+        "storage",
+        "real50k",
+        "rabitq",
+        "bits1",
+        "dense",
+        "per-block",
+        "original-layout",
+        "coalescing-off",
+        "typed-views-off"
+      ],
+      "prefix": "task111a_004_50k_rb1_dense_old",
+      "log_file": "${artifact_dir}/storage-50k-rb1-dense-old.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-50k-rb1-dense-a",
+      "tags": [
+        "task111a",
+        "storage",
+        "real50k",
+        "rabitq",
+        "bits1",
+        "dense",
+        "approach-a",
+        "coalescing-on",
+        "typed-views-off"
+      ],
+      "prefix": "task111a_004_50k_rb1_dense_a",
+      "log_file": "${artifact_dir}/storage-50k-rb1-dense-a.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-50k-rb1-dense-typed",
+      "tags": [
+        "task111a",
+        "storage",
+        "real50k",
+        "rabitq",
+        "bits1",
+        "dense",
+        "typed-per-block",
+        "aligned-layout",
+        "coalescing-off",
+        "typed-views-on"
+      ],
+      "prefix": "task111a_004_50k_rb1_dense_typed",
+      "log_file": "${artifact_dir}/storage-50k-rb1-dense-typed.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-50k-rb1-dense-b",
+      "tags": [
+        "task111a",
+        "storage",
+        "real50k",
+        "rabitq",
+        "bits1",
+        "dense",
+        "approach-b",
+        "packed",
+        "typed-views-off"
+      ],
+      "prefix": "task111a_004_50k_rb1_dense_b",
+      "log_file": "${artifact_dir}/storage-50k-rb1-dense-b.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-50k-rb1-dense-b-typed",
+      "tags": [
+        "task111a",
+        "storage",
+        "real50k",
+        "rabitq",
+        "bits1",
+        "dense",
+        "approach-b",
+        "packed",
+        "typed-views-on"
+      ],
+      "prefix": "task111a_004_50k_rb1_dense_b_typed",
+      "log_file": "${artifact_dir}/storage-50k-rb1-dense-b-typed.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k-tq-row",
+      "tags": [
+        "task111a",
+        "storage",
+        "real100k",
+        "turboquant",
+        "row"
+      ],
+      "prefix": "task111a_004_100k_tq_row",
+      "log_file": "${artifact_dir}/storage-100k-tq-row.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k-tq-dense-old",
+      "tags": [
+        "task111a",
+        "storage",
+        "real100k",
+        "turboquant",
+        "dense",
+        "per-block",
+        "original-layout",
+        "coalescing-off",
+        "typed-views-off"
+      ],
+      "prefix": "task111a_004_100k_tq_dense_old",
+      "log_file": "${artifact_dir}/storage-100k-tq-dense-old.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k-tq-dense-a",
+      "tags": [
+        "task111a",
+        "storage",
+        "real100k",
+        "turboquant",
+        "dense",
+        "approach-a",
+        "coalescing-on",
+        "typed-views-off"
+      ],
+      "prefix": "task111a_004_100k_tq_dense_a",
+      "log_file": "${artifact_dir}/storage-100k-tq-dense-a.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k-tq-dense-typed",
+      "tags": [
+        "task111a",
+        "storage",
+        "real100k",
+        "turboquant",
+        "dense",
+        "typed-per-block",
+        "aligned-layout",
+        "coalescing-off",
+        "typed-views-on"
+      ],
+      "prefix": "task111a_004_100k_tq_dense_typed",
+      "log_file": "${artifact_dir}/storage-100k-tq-dense-typed.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k-tq-dense-b",
+      "tags": [
+        "task111a",
+        "storage",
+        "real100k",
+        "turboquant",
+        "dense",
+        "approach-b",
+        "packed",
+        "typed-views-off"
+      ],
+      "prefix": "task111a_004_100k_tq_dense_b",
+      "log_file": "${artifact_dir}/storage-100k-tq-dense-b.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k-tq-dense-b-typed",
+      "tags": [
+        "task111a",
+        "storage",
+        "real100k",
+        "turboquant",
+        "dense",
+        "approach-b",
+        "packed",
+        "typed-views-on"
+      ],
+      "prefix": "task111a_004_100k_tq_dense_b_typed",
+      "log_file": "${artifact_dir}/storage-100k-tq-dense-b-typed.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k-rb1-row",
+      "tags": [
+        "task111a",
+        "storage",
+        "real100k",
+        "rabitq",
+        "bits1",
+        "row"
+      ],
+      "prefix": "task111a_004_100k_rb1_row",
+      "log_file": "${artifact_dir}/storage-100k-rb1-row.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k-rb1-dense-old",
+      "tags": [
+        "task111a",
+        "storage",
+        "real100k",
+        "rabitq",
+        "bits1",
+        "dense",
+        "per-block",
+        "original-layout",
+        "coalescing-off",
+        "typed-views-off"
+      ],
+      "prefix": "task111a_004_100k_rb1_dense_old",
+      "log_file": "${artifact_dir}/storage-100k-rb1-dense-old.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k-rb1-dense-a",
+      "tags": [
+        "task111a",
+        "storage",
+        "real100k",
+        "rabitq",
+        "bits1",
+        "dense",
+        "approach-a",
+        "coalescing-on",
+        "typed-views-off"
+      ],
+      "prefix": "task111a_004_100k_rb1_dense_a",
+      "log_file": "${artifact_dir}/storage-100k-rb1-dense-a.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k-rb1-dense-typed",
+      "tags": [
+        "task111a",
+        "storage",
+        "real100k",
+        "rabitq",
+        "bits1",
+        "dense",
+        "typed-per-block",
+        "aligned-layout",
+        "coalescing-off",
+        "typed-views-on"
+      ],
+      "prefix": "task111a_004_100k_rb1_dense_typed",
+      "log_file": "${artifact_dir}/storage-100k-rb1-dense-typed.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k-rb1-dense-b",
+      "tags": [
+        "task111a",
+        "storage",
+        "real100k",
+        "rabitq",
+        "bits1",
+        "dense",
+        "approach-b",
+        "packed",
+        "typed-views-off"
+      ],
+      "prefix": "task111a_004_100k_rb1_dense_b",
+      "log_file": "${artifact_dir}/storage-100k-rb1-dense-b.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k-rb1-dense-b-typed",
+      "tags": [
+        "task111a",
+        "storage",
+        "real100k",
+        "rabitq",
+        "bits1",
+        "dense",
+        "approach-b",
+        "packed",
+        "typed-views-on"
+      ],
+      "prefix": "task111a_004_100k_rb1_dense_b_typed",
+      "log_file": "${artifact_dir}/storage-100k-rb1-dense-b-typed.log"
+    },
+    {
+      "kind": "explain",
+      "name": "explain-50k-tq-row",
+      "tags": [
+        "task111a",
+        "explain",
+        "real50k",
+        "turboquant",
+        "row"
+      ],
+      "prefix": "task111a_004_50k_tq_row",
+      "index_name": "task111a_004_50k_tq_row_turboquant_idx",
+      "nprobe": 32,
+      "rerank_width": 0,
+      "ivf_scratch_soa_batch_decode": true,
+      "session_gucs": [],
+      "sql_file": "${artifact_dir}/explain-50k-tq-row.sql",
+      "log_output": "${artifact_dir}/explain-50k-tq-row.log"
+    },
+    {
+      "kind": "explain",
+      "name": "explain-50k-tq-dense-old",
+      "tags": [
+        "task111a",
+        "explain",
+        "real50k",
+        "turboquant",
+        "dense",
+        "per-block",
+        "original-layout",
+        "coalescing-off",
+        "typed-views-off"
+      ],
+      "prefix": "task111a_004_50k_tq_dense_old",
+      "index_name": "task111a_004_50k_tq_dense_old_turboquant_idx",
+      "nprobe": 32,
+      "rerank_width": 0,
+      "ivf_scratch_soa_batch_decode": true,
+      "session_gucs": [
+        "ec_ivf.dense_posting_coalescing=off",
+        "ec_ivf.dense_posting_typed_views=off"
+      ],
+      "sql_file": "${artifact_dir}/explain-50k-tq-dense-old.sql",
+      "log_output": "${artifact_dir}/explain-50k-tq-dense-old.log"
+    },
+    {
+      "kind": "explain",
+      "name": "explain-50k-tq-dense-a",
+      "tags": [
+        "task111a",
+        "explain",
+        "real50k",
+        "turboquant",
+        "dense",
+        "approach-a",
+        "coalescing-on",
+        "typed-views-off"
+      ],
+      "prefix": "task111a_004_50k_tq_dense_a",
+      "index_name": "task111a_004_50k_tq_dense_a_turboquant_idx",
+      "nprobe": 32,
+      "rerank_width": 0,
+      "ivf_scratch_soa_batch_decode": true,
+      "session_gucs": [
+        "ec_ivf.dense_posting_coalescing=on",
+        "ec_ivf.dense_posting_typed_views=off"
+      ],
+      "sql_file": "${artifact_dir}/explain-50k-tq-dense-a.sql",
+      "log_output": "${artifact_dir}/explain-50k-tq-dense-a.log"
+    },
+    {
+      "kind": "explain",
+      "name": "explain-50k-tq-dense-typed",
+      "tags": [
+        "task111a",
+        "explain",
+        "real50k",
+        "turboquant",
+        "dense",
+        "typed-per-block",
+        "aligned-layout",
+        "coalescing-off",
+        "typed-views-on"
+      ],
+      "prefix": "task111a_004_50k_tq_dense_typed",
+      "index_name": "task111a_004_50k_tq_dense_typed_turboquant_idx",
+      "nprobe": 32,
+      "rerank_width": 0,
+      "ivf_scratch_soa_batch_decode": true,
+      "session_gucs": [
+        "ec_ivf.dense_posting_coalescing=off",
+        "ec_ivf.dense_posting_typed_views=on"
+      ],
+      "sql_file": "${artifact_dir}/explain-50k-tq-dense-typed.sql",
+      "log_output": "${artifact_dir}/explain-50k-tq-dense-typed.log"
+    },
+    {
+      "kind": "explain",
+      "name": "explain-50k-tq-dense-b",
+      "tags": [
+        "task111a",
+        "explain",
+        "real50k",
+        "turboquant",
+        "dense",
+        "approach-b",
+        "packed",
+        "typed-views-off"
+      ],
+      "prefix": "task111a_004_50k_tq_dense_b",
+      "index_name": "task111a_004_50k_tq_dense_b_turboquant_idx",
+      "nprobe": 32,
+      "rerank_width": 0,
+      "ivf_scratch_soa_batch_decode": true,
+      "session_gucs": [
+        "ec_ivf.dense_posting_coalescing=off",
+        "ec_ivf.dense_posting_typed_views=off"
+      ],
+      "sql_file": "${artifact_dir}/explain-50k-tq-dense-b.sql",
+      "log_output": "${artifact_dir}/explain-50k-tq-dense-b.log"
+    },
+    {
+      "kind": "explain",
+      "name": "explain-50k-tq-dense-b-typed",
+      "tags": [
+        "task111a",
+        "explain",
+        "real50k",
+        "turboquant",
+        "dense",
+        "approach-b",
+        "packed",
+        "typed-views-on"
+      ],
+      "prefix": "task111a_004_50k_tq_dense_b_typed",
+      "index_name": "task111a_004_50k_tq_dense_b_typed_turboquant_idx",
+      "nprobe": 32,
+      "rerank_width": 0,
+      "ivf_scratch_soa_batch_decode": true,
+      "session_gucs": [
+        "ec_ivf.dense_posting_coalescing=off",
+        "ec_ivf.dense_posting_typed_views=on"
+      ],
+      "sql_file": "${artifact_dir}/explain-50k-tq-dense-b-typed.sql",
+      "log_output": "${artifact_dir}/explain-50k-tq-dense-b-typed.log"
+    },
+    {
+      "kind": "explain",
+      "name": "explain-50k-rb1-row",
+      "tags": [
+        "task111a",
+        "explain",
+        "real50k",
+        "rabitq",
+        "bits1",
+        "row"
+      ],
+      "prefix": "task111a_004_50k_rb1_row",
+      "index_name": "task111a_004_50k_rb1_row_rabitq_idx",
+      "nprobe": 32,
+      "rerank_width": 0,
+      "ivf_scratch_soa_batch_decode": true,
+      "session_gucs": [],
+      "sql_file": "${artifact_dir}/explain-50k-rb1-row.sql",
+      "log_output": "${artifact_dir}/explain-50k-rb1-row.log"
+    },
+    {
+      "kind": "explain",
+      "name": "explain-50k-rb1-dense-old",
+      "tags": [
+        "task111a",
+        "explain",
+        "real50k",
+        "rabitq",
+        "bits1",
+        "dense",
+        "per-block",
+        "original-layout",
+        "coalescing-off",
+        "typed-views-off"
+      ],
+      "prefix": "task111a_004_50k_rb1_dense_old",
+      "index_name": "task111a_004_50k_rb1_dense_old_rabitq_idx",
+      "nprobe": 32,
+      "rerank_width": 0,
+      "ivf_scratch_soa_batch_decode": true,
+      "session_gucs": [
+        "ec_ivf.dense_posting_coalescing=off",
+        "ec_ivf.dense_posting_typed_views=off"
+      ],
+      "sql_file": "${artifact_dir}/explain-50k-rb1-dense-old.sql",
+      "log_output": "${artifact_dir}/explain-50k-rb1-dense-old.log"
+    },
+    {
+      "kind": "explain",
+      "name": "explain-50k-rb1-dense-a",
+      "tags": [
+        "task111a",
+        "explain",
+        "real50k",
+        "rabitq",
+        "bits1",
+        "dense",
+        "approach-a",
+        "coalescing-on",
+        "typed-views-off"
+      ],
+      "prefix": "task111a_004_50k_rb1_dense_a",
+      "index_name": "task111a_004_50k_rb1_dense_a_rabitq_idx",
+      "nprobe": 32,
+      "rerank_width": 0,
+      "ivf_scratch_soa_batch_decode": true,
+      "session_gucs": [
+        "ec_ivf.dense_posting_coalescing=on",
+        "ec_ivf.dense_posting_typed_views=off"
+      ],
+      "sql_file": "${artifact_dir}/explain-50k-rb1-dense-a.sql",
+      "log_output": "${artifact_dir}/explain-50k-rb1-dense-a.log"
+    },
+    {
+      "kind": "explain",
+      "name": "explain-50k-rb1-dense-typed",
+      "tags": [
+        "task111a",
+        "explain",
+        "real50k",
+        "rabitq",
+        "bits1",
+        "dense",
+        "typed-per-block",
+        "aligned-layout",
+        "coalescing-off",
+        "typed-views-on"
+      ],
+      "prefix": "task111a_004_50k_rb1_dense_typed",
+      "index_name": "task111a_004_50k_rb1_dense_typed_rabitq_idx",
+      "nprobe": 32,
+      "rerank_width": 0,
+      "ivf_scratch_soa_batch_decode": true,
+      "session_gucs": [
+        "ec_ivf.dense_posting_coalescing=off",
+        "ec_ivf.dense_posting_typed_views=on"
+      ],
+      "sql_file": "${artifact_dir}/explain-50k-rb1-dense-typed.sql",
+      "log_output": "${artifact_dir}/explain-50k-rb1-dense-typed.log"
+    },
+    {
+      "kind": "explain",
+      "name": "explain-50k-rb1-dense-b",
+      "tags": [
+        "task111a",
+        "explain",
+        "real50k",
+        "rabitq",
+        "bits1",
+        "dense",
+        "approach-b",
+        "packed",
+        "typed-views-off"
+      ],
+      "prefix": "task111a_004_50k_rb1_dense_b",
+      "index_name": "task111a_004_50k_rb1_dense_b_rabitq_idx",
+      "nprobe": 32,
+      "rerank_width": 0,
+      "ivf_scratch_soa_batch_decode": true,
+      "session_gucs": [
+        "ec_ivf.dense_posting_coalescing=off",
+        "ec_ivf.dense_posting_typed_views=off"
+      ],
+      "sql_file": "${artifact_dir}/explain-50k-rb1-dense-b.sql",
+      "log_output": "${artifact_dir}/explain-50k-rb1-dense-b.log"
+    },
+    {
+      "kind": "explain",
+      "name": "explain-50k-rb1-dense-b-typed",
+      "tags": [
+        "task111a",
+        "explain",
+        "real50k",
+        "rabitq",
+        "bits1",
+        "dense",
+        "approach-b",
+        "packed",
+        "typed-views-on"
+      ],
+      "prefix": "task111a_004_50k_rb1_dense_b_typed",
+      "index_name": "task111a_004_50k_rb1_dense_b_typed_rabitq_idx",
+      "nprobe": 32,
+      "rerank_width": 0,
+      "ivf_scratch_soa_batch_decode": true,
+      "session_gucs": [
+        "ec_ivf.dense_posting_coalescing=off",
+        "ec_ivf.dense_posting_typed_views=on"
+      ],
+      "sql_file": "${artifact_dir}/explain-50k-rb1-dense-b-typed.sql",
+      "log_output": "${artifact_dir}/explain-50k-rb1-dense-b-typed.log"
+    },
+    {
+      "kind": "explain",
+      "name": "explain-100k-tq-row",
+      "tags": [
+        "task111a",
+        "explain",
+        "real100k",
+        "turboquant",
+        "row"
+      ],
+      "prefix": "task111a_004_100k_tq_row",
+      "index_name": "task111a_004_100k_tq_row_turboquant_idx",
+      "nprobe": 32,
+      "rerank_width": 0,
+      "ivf_scratch_soa_batch_decode": true,
+      "session_gucs": [],
+      "sql_file": "${artifact_dir}/explain-100k-tq-row.sql",
+      "log_output": "${artifact_dir}/explain-100k-tq-row.log"
+    },
+    {
+      "kind": "explain",
+      "name": "explain-100k-tq-dense-old",
+      "tags": [
+        "task111a",
+        "explain",
+        "real100k",
+        "turboquant",
+        "dense",
+        "per-block",
+        "original-layout",
+        "coalescing-off",
+        "typed-views-off"
+      ],
+      "prefix": "task111a_004_100k_tq_dense_old",
+      "index_name": "task111a_004_100k_tq_dense_old_turboquant_idx",
+      "nprobe": 32,
+      "rerank_width": 0,
+      "ivf_scratch_soa_batch_decode": true,
+      "session_gucs": [
+        "ec_ivf.dense_posting_coalescing=off",
+        "ec_ivf.dense_posting_typed_views=off"
+      ],
+      "sql_file": "${artifact_dir}/explain-100k-tq-dense-old.sql",
+      "log_output": "${artifact_dir}/explain-100k-tq-dense-old.log"
+    },
+    {
+      "kind": "explain",
+      "name": "explain-100k-tq-dense-a",
+      "tags": [
+        "task111a",
+        "explain",
+        "real100k",
+        "turboquant",
+        "dense",
+        "approach-a",
+        "coalescing-on",
+        "typed-views-off"
+      ],
+      "prefix": "task111a_004_100k_tq_dense_a",
+      "index_name": "task111a_004_100k_tq_dense_a_turboquant_idx",
+      "nprobe": 32,
+      "rerank_width": 0,
+      "ivf_scratch_soa_batch_decode": true,
+      "session_gucs": [
+        "ec_ivf.dense_posting_coalescing=on",
+        "ec_ivf.dense_posting_typed_views=off"
+      ],
+      "sql_file": "${artifact_dir}/explain-100k-tq-dense-a.sql",
+      "log_output": "${artifact_dir}/explain-100k-tq-dense-a.log"
+    },
+    {
+      "kind": "explain",
+      "name": "explain-100k-tq-dense-typed",
+      "tags": [
+        "task111a",
+        "explain",
+        "real100k",
+        "turboquant",
+        "dense",
+        "typed-per-block",
+        "aligned-layout",
+        "coalescing-off",
+        "typed-views-on"
+      ],
+      "prefix": "task111a_004_100k_tq_dense_typed",
+      "index_name": "task111a_004_100k_tq_dense_typed_turboquant_idx",
+      "nprobe": 32,
+      "rerank_width": 0,
+      "ivf_scratch_soa_batch_decode": true,
+      "session_gucs": [
+        "ec_ivf.dense_posting_coalescing=off",
+        "ec_ivf.dense_posting_typed_views=on"
+      ],
+      "sql_file": "${artifact_dir}/explain-100k-tq-dense-typed.sql",
+      "log_output": "${artifact_dir}/explain-100k-tq-dense-typed.log"
+    },
+    {
+      "kind": "explain",
+      "name": "explain-100k-tq-dense-b",
+      "tags": [
+        "task111a",
+        "explain",
+        "real100k",
+        "turboquant",
+        "dense",
+        "approach-b",
+        "packed",
+        "typed-views-off"
+      ],
+      "prefix": "task111a_004_100k_tq_dense_b",
+      "index_name": "task111a_004_100k_tq_dense_b_turboquant_idx",
+      "nprobe": 32,
+      "rerank_width": 0,
+      "ivf_scratch_soa_batch_decode": true,
+      "session_gucs": [
+        "ec_ivf.dense_posting_coalescing=off",
+        "ec_ivf.dense_posting_typed_views=off"
+      ],
+      "sql_file": "${artifact_dir}/explain-100k-tq-dense-b.sql",
+      "log_output": "${artifact_dir}/explain-100k-tq-dense-b.log"
+    },
+    {
+      "kind": "explain",
+      "name": "explain-100k-tq-dense-b-typed",
+      "tags": [
+        "task111a",
+        "explain",
+        "real100k",
+        "turboquant",
+        "dense",
+        "approach-b",
+        "packed",
+        "typed-views-on"
+      ],
+      "prefix": "task111a_004_100k_tq_dense_b_typed",
+      "index_name": "task111a_004_100k_tq_dense_b_typed_turboquant_idx",
+      "nprobe": 32,
+      "rerank_width": 0,
+      "ivf_scratch_soa_batch_decode": true,
+      "session_gucs": [
+        "ec_ivf.dense_posting_coalescing=off",
+        "ec_ivf.dense_posting_typed_views=on"
+      ],
+      "sql_file": "${artifact_dir}/explain-100k-tq-dense-b-typed.sql",
+      "log_output": "${artifact_dir}/explain-100k-tq-dense-b-typed.log"
+    },
+    {
+      "kind": "explain",
+      "name": "explain-100k-rb1-row",
+      "tags": [
+        "task111a",
+        "explain",
+        "real100k",
+        "rabitq",
+        "bits1",
+        "row"
+      ],
+      "prefix": "task111a_004_100k_rb1_row",
+      "index_name": "task111a_004_100k_rb1_row_rabitq_idx",
+      "nprobe": 32,
+      "rerank_width": 0,
+      "ivf_scratch_soa_batch_decode": true,
+      "session_gucs": [],
+      "sql_file": "${artifact_dir}/explain-100k-rb1-row.sql",
+      "log_output": "${artifact_dir}/explain-100k-rb1-row.log"
+    },
+    {
+      "kind": "explain",
+      "name": "explain-100k-rb1-dense-old",
+      "tags": [
+        "task111a",
+        "explain",
+        "real100k",
+        "rabitq",
+        "bits1",
+        "dense",
+        "per-block",
+        "original-layout",
+        "coalescing-off",
+        "typed-views-off"
+      ],
+      "prefix": "task111a_004_100k_rb1_dense_old",
+      "index_name": "task111a_004_100k_rb1_dense_old_rabitq_idx",
+      "nprobe": 32,
+      "rerank_width": 0,
+      "ivf_scratch_soa_batch_decode": true,
+      "session_gucs": [
+        "ec_ivf.dense_posting_coalescing=off",
+        "ec_ivf.dense_posting_typed_views=off"
+      ],
+      "sql_file": "${artifact_dir}/explain-100k-rb1-dense-old.sql",
+      "log_output": "${artifact_dir}/explain-100k-rb1-dense-old.log"
+    },
+    {
+      "kind": "explain",
+      "name": "explain-100k-rb1-dense-a",
+      "tags": [
+        "task111a",
+        "explain",
+        "real100k",
+        "rabitq",
+        "bits1",
+        "dense",
+        "approach-a",
+        "coalescing-on",
+        "typed-views-off"
+      ],
+      "prefix": "task111a_004_100k_rb1_dense_a",
+      "index_name": "task111a_004_100k_rb1_dense_a_rabitq_idx",
+      "nprobe": 32,
+      "rerank_width": 0,
+      "ivf_scratch_soa_batch_decode": true,
+      "session_gucs": [
+        "ec_ivf.dense_posting_coalescing=on",
+        "ec_ivf.dense_posting_typed_views=off"
+      ],
+      "sql_file": "${artifact_dir}/explain-100k-rb1-dense-a.sql",
+      "log_output": "${artifact_dir}/explain-100k-rb1-dense-a.log"
+    },
+    {
+      "kind": "explain",
+      "name": "explain-100k-rb1-dense-typed",
+      "tags": [
+        "task111a",
+        "explain",
+        "real100k",
+        "rabitq",
+        "bits1",
+        "dense",
+        "typed-per-block",
+        "aligned-layout",
+        "coalescing-off",
+        "typed-views-on"
+      ],
+      "prefix": "task111a_004_100k_rb1_dense_typed",
+      "index_name": "task111a_004_100k_rb1_dense_typed_rabitq_idx",
+      "nprobe": 32,
+      "rerank_width": 0,
+      "ivf_scratch_soa_batch_decode": true,
+      "session_gucs": [
+        "ec_ivf.dense_posting_coalescing=off",
+        "ec_ivf.dense_posting_typed_views=on"
+      ],
+      "sql_file": "${artifact_dir}/explain-100k-rb1-dense-typed.sql",
+      "log_output": "${artifact_dir}/explain-100k-rb1-dense-typed.log"
+    },
+    {
+      "kind": "explain",
+      "name": "explain-100k-rb1-dense-b",
+      "tags": [
+        "task111a",
+        "explain",
+        "real100k",
+        "rabitq",
+        "bits1",
+        "dense",
+        "approach-b",
+        "packed",
+        "typed-views-off"
+      ],
+      "prefix": "task111a_004_100k_rb1_dense_b",
+      "index_name": "task111a_004_100k_rb1_dense_b_rabitq_idx",
+      "nprobe": 32,
+      "rerank_width": 0,
+      "ivf_scratch_soa_batch_decode": true,
+      "session_gucs": [
+        "ec_ivf.dense_posting_coalescing=off",
+        "ec_ivf.dense_posting_typed_views=off"
+      ],
+      "sql_file": "${artifact_dir}/explain-100k-rb1-dense-b.sql",
+      "log_output": "${artifact_dir}/explain-100k-rb1-dense-b.log"
+    },
+    {
+      "kind": "explain",
+      "name": "explain-100k-rb1-dense-b-typed",
+      "tags": [
+        "task111a",
+        "explain",
+        "real100k",
+        "rabitq",
+        "bits1",
+        "dense",
+        "approach-b",
+        "packed",
+        "typed-views-on"
+      ],
+      "prefix": "task111a_004_100k_rb1_dense_b_typed",
+      "index_name": "task111a_004_100k_rb1_dense_b_typed_rabitq_idx",
+      "nprobe": 32,
+      "rerank_width": 0,
+      "ivf_scratch_soa_batch_decode": true,
+      "session_gucs": [
+        "ec_ivf.dense_posting_coalescing=off",
+        "ec_ivf.dense_posting_typed_views=on"
+      ],
+      "sql_file": "${artifact_dir}/explain-100k-rb1-dense-b-typed.sql",
+      "log_output": "${artifact_dir}/explain-100k-rb1-dense-b-typed.log"
+    }
+  ]
+}

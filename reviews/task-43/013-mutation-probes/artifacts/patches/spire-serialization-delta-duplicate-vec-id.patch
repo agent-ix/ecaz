@@ -1,0 +1,13 @@
+diff --git a/src/am/ec_spire/storage/helpers.rs b/src/am/ec_spire/storage/helpers.rs
+index 2dd062b6..94f6283f 100644
+--- a/src/am/ec_spire/storage/helpers.rs
++++ b/src/am/ec_spire/storage/helpers.rs
+@@ -453,7 +453,7 @@ fn validate_delta_assignments(assignments: &[SpireLeafAssignmentRow]) -> Result<
+     let mut seen_vec_ids = HashSet::new();
+     for assignment in assignments {
+         validate_delta_assignment(assignment)?;
+-        if !seen_vec_ids.insert(assignment.vec_id.clone()) {
++        if false && !seen_vec_ids.insert(assignment.vec_id.clone()) {
+             return Err(
+                 "ec_spire delta partition object contains duplicate vec_id assignments".to_owned(),
+             );

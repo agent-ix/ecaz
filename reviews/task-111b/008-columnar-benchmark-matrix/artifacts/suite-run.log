@@ -1,0 +1,13 @@
+[suite:task111b-columnar-benchmark-matrix] wrote reviews/task-111b/008-columnar-benchmark-matrix/artifacts/suite/suite-manifest.json
+[suite:task111b-columnar-benchmark-matrix] wrote reviews/task-111b/008-columnar-benchmark-matrix/artifacts/suite/suite-manifest.json
+[suite:task111b-columnar-benchmark-matrix] load-50k-tq-columnar -> --database task111b_columnar_bench --host /home/peter/.pgrx --port 28818 --log-file reviews/task-111b/008-columnar-benchmark-matrix/artifacts/suite/load-50k-tq-columnar.log corpus load --prefix task111b_008_50k_tq_columnar --profile ec_ivf --corpus-file data/task111a_real50k/ec_real_50k_corpus.tsv --queries-file data/task111a_real50k/ec_real_50k_queries.tsv --manifest-file data/task111a_real50k/ec_real_50k_manifest.json --allow-manifest-mismatch --bits 4 --seed 42 --storage-format turboquant --reloption nlists=64 --reloption nprobe=32 --reloption training_sample_rows=10000 --reloption dense_posting_blocks=0 --reloption columnar_frozen_lists=1
+[suite:task111b-columnar-benchmark-matrix] wrote reviews/task-111b/008-columnar-benchmark-matrix/artifacts/suite/suite-manifest.json
+[suite:task111b-columnar-benchmark-matrix] wrote reviews/task-111b/008-columnar-benchmark-matrix/artifacts/suite/suite-manifest.json
+
+   0: [91msuite step "load-50k-tq-columnar" failed with exit code 1; rerun with --continue-on-error to keep going[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/bench/suite.rs[0m:[35m881[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.

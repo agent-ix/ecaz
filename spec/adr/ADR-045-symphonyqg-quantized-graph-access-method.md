@@ -1,0 +1,338 @@
+---
+type: ADR
+id: ADR-045
+title: "SymphonyQG: Quantized-Graph Access Method with No-Rerank Query Path"
+status: SHELVED
+impact: Affects ADR-018, ADR-022, ADR-030, ADR-031, ADR-032, ADR-033, ADR-034, ADR-036, ADR-041
+date: 2026-04-19
+---
+# ADR-045: SymphonyQG Quantized-Graph Access Method
+
+## 2026-05-01 Status Update: Shelved
+
+SymphonyQG is shelved indefinitely and is not active roadmap work.
+
+The reusable part of the ADR landed through Task 25: RaBitQ is implemented as
+a first-class quantizer, wired into IVF as `storage_format = 'rabitq'` /
+`quantizer = 'rabitq'`, and exposed through `ecaz quant feasibility` for
+offline recall/error-bound studies.
+
+The proposed `symphony` access method, quantization-aware graph build,
+out-degree padding, and no-rerank query path did not land. Reopening this
+direction requires a new accepted ADR. Until then, keep RaBitQ as an IVF
+quantizer and optional future component for other AMs, not as a commitment to
+build Symphony.
+
+## Context
+
+SymphonyQG (Gou, Gao, Xu — SIGMOD 2025, "Towards Symphonious
+Integration of Quantization and Graph for Approximate Nearest
+Neighbor Search") is a quantized-graph ANN method that co-designs
+three things that ecaz currently treats as separate layers:
+
+1. **A graph index** (HNSW/Vamana-style) whose neighbor-list layout
+   is aligned to the SIMD batch size used by the scoring kernel.
+2. **A quantizer** (RaBitQ) used as the *primary* distance, not a
+   prefilter — the graph traversal never reads fp32 vectors.
+3. **A quantization-aware edge-selection rule** at build time that
+   prunes against the same quantized distance the scan will use.
+
+Reported results: 1.5–4.5× QPS over competitive baselines at 95%
+recall, 8× faster build than NGT-QG. The authors are the RaBitQ /
+FastScan lineage, so the paper composes cleanly with the techniques
+already proposed in ADR-030 (FastScan) and ADR-031 (RaBitQ).
+
+At proposal time, ecaz's state left this on the table:
+
+- ADR-031 treats RaBitQ as a **prefilter**, with exact rerank as
+  the final stage. SymphonyQG eliminates rerank.
+- ADR-030 aligns *flat scan* to FastScan batch width. SymphonyQG
+  applies the same alignment to *per-node adjacency lists* during
+  graph traversal.
+- ADR-018 notes that HNSW edge selection against quantized
+  distances leaves recall on the table. SymphonyQG's
+  quantization-aware pruning is the principled fix.
+- ADR-032 and ADR-033 already establish the "coexisting formats
+  with a shared graph lifecycle" pattern that a third AM variant
+  would slot into.
+
+## Historical Proposal
+
+Adopt SymphonyQG as a **third access-method variant** alongside
+`ec_hnsw` (ADR-032) and DiskANN (ADR-034), named `symphony` and
+housed under `src/am/symphony/` per ADR-041. Land in three stages,
+each independently shippable.
+
+### Stage 1 — RaBitQ as a first-class quantizer
+
+Implement RaBitQ as a standalone quantizer module alongside
+`prod.rs` and `grouped_pq.rs`. Includes:
+
+- Random rotation (or reuse existing SRHT / future OPQ rotation).
+- 1-bit-per-dim encoding with scalar normalization factor.
+- Unbiased distance estimator with usable error bound API.
+- SIMD-accelerated Hamming / signed-popcount scoring.
+
+Validation gate: on the 50k and 1M real seams, RaBitQ recall@10
+within **1pp of exact** at the bit budget required to match PQ4
+storage. This is the only research risk that can kill the effort;
+ship Stage 1 alone and publish a recall study before committing
+to Stages 2–3.
+
+This stage supersedes ADR-031: RaBitQ stops being a prefilter of
+fp32 and becomes a standalone distance.
+
+### Stage 2 — Quantized-graph build, rerank still on
+
+New AM variant `symphony` reusing the `ec_hnsw` page, build, and
+insert skeletons, with two structural changes:
+
+1. **Out-degree padding.** Each node's neighbor list is padded to
+   a multiple of the FastScan SIMD batch size by selecting
+   additional real edges (not dummies). Storage grows modestly;
+   traversal issues only full-width kernels with no tail path.
+
+2. **Quantization-aware edge selection.** The RNG / α-pruning
+   rule evaluates candidate edges using the RaBitQ distance, not
+   fp32. The built graph is self-consistent with the scoring path.
+
+Query path in Stage 2 still reranks with exact fp32 as a safety
+net. This isolates graph-layout risk from quantizer-accuracy risk.
+
+### Stage 3 — No-rerank query path
+
+Flip off rerank. Top-k returned directly from RaBitQ estimates,
+using the error bound to size the candidate pool conservatively.
+Gated by recall@10 holding at the Stage 1 baseline on full
+benches.
+
+### Relationship to other ADRs
+
+- **ADR-031 (RaBitQ prefilter):** superseded. RaBitQ graduates
+  from prefilter to primary distance. The prefilter design stays
+  available as a fallback for `ec_hnsw`-format indexes that do
+  not migrate.
+- **ADR-030 (FastScan):** the per-node out-degree padding is a
+  graph-scoped extension of the same batching principle. No
+  conflict; the two layouts can share kernels.
+- **ADR-018 (HNSW quantized graph quality):** the
+  quantization-aware pruning rule is the principled response to
+  the quality gap described there. `ec_hnsw` may adopt the same
+  rule independently.
+- **ADR-022 (drop scoring LUT for direct multiply):** converges
+  on the same philosophy — stop translating between kernel
+  representations. SymphonyQG is the graph-level embodiment.
+- **ADR-032, ADR-033:** `symphony` slots in as a third coexisting
+  format with the shared lifecycle already designed.
+- **ADR-034 (DiskANN):** orthogonal. DiskANN targets scale;
+  SymphonyQG targets latency-per-recall at moderate scale.
+  DiskANN could eventually adopt SymphonyQG-style pruning against
+  RaBitQ for its in-memory tier.
+- **ADR-036 (OPQ):** compatible. OPQ's learned rotation can
+  replace the random rotation in RaBitQ's front-end.
+- **ADR-041:** `am/symphony/` is the third top-level AM module.
+
+## Consequences
+
+### Build-time cost
+
+Per-node out-degree padding and RaBitQ-aware pruning together
+inflate build time relative to `ec_hnsw` by an estimated 1.3–2×,
+dominated by evaluating RaBitQ distances during neighbor
+selection (cheaper than fp32, but evaluated more often because
+the pruning rule is stricter). This is offset by the paper's
+reported **8× build speedup vs NGT-QG** once the kernel is SIMD-tuned.
+
+Large-corpus builds are a candidate for GPU acceleration — see
+ADR-046 for the offline-trainer push model. CAGRA (cuVS) can
+produce an initial k-NN graph that the CPU pipeline then refines
+with out-degree padding and RaBitQ-aware pruning. GPU is
+optional; the CPU path remains authoritative.
+
+### Runtime cost
+
+Scoring kernel reduces to XOR + POPCNT at ~8 ns/candidate
+(ADR-031 measurement), issued in full-width SIMD batches because
+adjacency is padded. Rerank elimination (Stage 3) removes the
+~14 μs/candidate fp32 tail entirely. Expected end-to-end: 2–4×
+QPS over current `ec_hnsw` at equal recall, consistent with the
+paper's reported range.
+
+### Storage
+
+- RaBitQ codes: ~`D/8` bytes per vector (192 B at 1536d), vs
+  768 B for PQ4 and 6144 B for raw f32.
+- Adjacency padding: typically 5–15% increase in edges stored,
+  depending on degree distribution.
+- Net: Stage-2 `symphony` indexes are **smaller** than `ec_hnsw`
+  despite the padding, because the code shrinks more than the
+  graph grows.
+
+### Wire format
+
+New `INDEX_FORMAT_V5_SYMPHONY` (or equivalent reloption under
+ADR-032's coexistence scheme). Not auto-migratable from
+`ec_hnsw` — REINDEX only, consistent with ADR-030 and ADR-032.
+
+### Query-path simplicity
+
+Stage 3 collapses the three-stage pipeline sketched in ADR-031
+(RaBitQ → FastScan → exact) into a single stage. The composition
+in ADR-031's "if both succeed" section becomes moot once
+SymphonyQG lands: the graph *is* the filter.
+
+## Historical Alternatives Considered
+
+### Keep ADR-031 as prefilter, never graduate
+
+Preserves `ec_hnsw`'s rerank path as the safety net. Leaves the
+graph-layout win (out-degree padding) on the table. Reasonable if
+Stage 1's recall study fails.
+
+### Adopt only out-degree padding in `ec_hnsw`
+
+A minimal subset: keep PQ4 + rerank, but pad the neighbor lists
+to FastScan batch width. Captures the SIMD-saturation half of
+the paper without the quantizer swap. Worth considering as a
+fallback if the RaBitQ accuracy gate fails, though the gain is
+modest (~1.2–1.5× QPS estimated) without the rerank elimination.
+
+### Full SymphonyQG as a replacement for `ec_hnsw`
+
+Rejected. ADR-032's coexistence posture is load-bearing; forcing
+a migration is both unnecessary and incompatible with the
+no-auto-upgrade discipline.
+
+### Wait for a later paper
+
+Rejected. SymphonyQG is the direct successor to the techniques
+already accepted or proposed (RaBitQ, FastScan, HNSW). Deferring
+it leaves ecaz with a three-stage pipeline that SymphonyQG's
+authors have already demonstrated is unnecessary.
+
+## Open follow-ups
+
+### Rotation front-end alternatives (post-Stage 1)
+
+The Stage 1 implementation uses SRHT (sign flips + Fast
+Walsh–Hadamard) with power-of-2 padding and trim — the same
+construction the RaBitQ paper's reference implementation uses.
+For `D = 1536` this pads to 2048, applies the transform, and
+returns the first 1536 coordinates; the trimmed coords are linear
+combinations of the 1536 inputs plus 512 zeros, so per-coordinate
+variance scales by `1536 / 2048 = 0.75` relative to a true
+1536-dim rotation. This costs concentration and can leak into the
+ε-bound tail.
+
+Alternatives worth studying if/when someone re-opens the recall
+gate:
+
+1. **Block-diagonal SRHT.** Three 512-dim SRHT blocks stacked
+   (or two 768-dim blocks if we drop the power-of-2 constraint
+   via a different FWHT variant). No padding waste; concentration
+   should be comparable per-block.
+2. **Composed SRHTs** (`SRHT₁ ∘ SRHT₂`). Two passes, tighter
+   concentration, ~2× encode/prepare cost.
+3. **Full random orthogonal matrix.** One-time `O(D²)` build,
+   `O(D²)` apply. Strongest concentration, highest runtime cost.
+   Viable only if Stage 3's hot loop proves SRHT's padding cost
+   is material.
+4. **Gaussian random projection.** Approximately orthogonal, any
+   `D` without padding. Weaker theoretical guarantees than SRHT;
+   mainly interesting if `D` is far from a power of 2 and block
+   SRHT is awkward.
+
+Criteria for picking one: (a) ε-bound tail tightness on the
+real-corpus slices (50k / 1M), (b) encode + prepare_scorer
+latency, (c) AM build-time cost if the rotation changes per
+index. None are Stage 1 blockers — SRHT-with-padding is good
+enough to publish the recall-gate verdict on. Record as
+`review/` packet when investigated.
+
+### Higher-bit quantization (Extended RaBitQ)
+
+Stage 1 lands 1-bit-per-dim RaBitQ, matching what Symphony uses
+(confirmed from the Symphony paper §2.2 eq. 3). Task-25 slice 12
+added a pragmatic q ∈ {1, 2, 4, 8} extension to `RaBitQQuantizer`
+so non-Symphony consumers (DiskANN in-memory tier, general
+prefilter, offline eval) can dial the recall/storage tradeoff.
+The slice-12 q-bit implementation is not paper-faithful to
+**Extended RaBitQ** (Gao et al., SIGMOD 2025, arXiv:2409.09913 —
+`~/dev_bak/papers/extended-rabitq-2025-sigmod-arxiv-2409.09913.pdf`):
+
+1. **Scalar quantizer.** Slice 12 uses uniform binning on
+   `±2σ`; Extended RaBitQ uses a Lloyd-Max-like codebook
+   optimized for the rotated-to-Gaussian distribution. Lloyd-Max
+   closes part of the gap but is not bit-identical to the paper's
+   construction.
+2. **Error bound.** Slice 12 carries the q=1 bound formula at
+   q>1 — correct as an upper envelope but looser than the paper's
+   q-aware bound.
+3. **Bit-level scoring.** Extended RaBitQ designs its codebook
+   so scoring can still reduce to bit-level POPCNT-family kernels.
+   Slice 12 scores via per-dim f32 multiply + add; correct, not
+   as fast.
+
+Criteria for re-opening: a consumer (not Symphony) demands PASS-
+grade recall at PQ4-parity storage and the slice-12 `q=4` result
+(FAIL at 2.1 pp) proves insufficient. Not on Symphony's critical
+path.
+
+### Per-center RaBitQ API (Symphony Stage 2 prerequisite)
+
+Symphony's §3.1.1 quantizes **per-vertex residuals** rather than
+absolute embeddings — this is what closes the 1-bit recall gap
+from ~0.90 (absolute encoding, slice-10 verdict) to ~0.99 (per-
+vertex centering, Symphony's published recall). The §3.1
+decomposition (equations 5–6) is the reference construction:
+
+```
+⟨x̄, P⁻¹q⟩ = (1/||q_r − c||) · (⟨x̄, P⁻¹q_r⟩ − ⟨x̄, P⁻¹c⟩)
+```
+
+**Status:** landed as task-25 slice 15. `RaBitQQuantizer` exposes
+four inherent methods that task 27 / Symphony Stage 2 consume:
+
+- `prepare_center(center) -> CenterContext` — one-time per-vertex
+  rotation, cached in memory.
+- `encode_code_centered(v, center) -> Box<[u8]>` — encodes `v`
+  as the unit-normalized rotated residual against `center`. Code
+  layout at q=1 (Symphony's config): `[signs][||v−c||][o_dot][⟨x̄, c_tilde⟩]`,
+  same byte length as absolute. Asserts `bits_per_dim = 1`.
+- `prepare_scorer_centered(query) -> CenteredScorer` — one-time
+  per-query rotation; the returned scorer is center-agnostic.
+- `CenteredScorer::score_at(code, center) -> DistanceEstimate` —
+  per-vertex-visit; returns estimate + ε-bound on the unit-
+  residual inner product. AM combines with `||q − c||` (computed
+  inside score_at) and the stored `||v − c||` via paper eq (2)
+  to recover L2 distance.
+
+The existing `Quantizer::encode_code` / `QueryScorer::score` trait
+path (c = 0 implicit) is unchanged and remains the primary API
+for DiskANN in-memory tier, ADR-031 prefilter successor, and
+offline evaluation. The centered path lives as inherent methods
+because its three-argument scoring shape does not fit a unary
+trait.
+
+Out-of-scope follow-ups (separate slices if needed):
+- FastScan / signed-POPCNT kernel for the per-neighbor
+  `⟨x̄, q_tilde⟩` hot loop. Slice 15 ships a scalar reference.
+- `bits_per_dim > 1` centered path. Symphony does not need it;
+  add when a non-Symphony consumer requests centered q>1.
+
+## References
+
+- Gou, Gao, Xu, "SymphonyQG: Towards Symphonious Integration of
+  Quantization and Graph for Approximate Nearest Neighbor
+  Search" (SIGMOD 2025) — [arXiv:2411.12229](https://arxiv.org/abs/2411.12229)
+- NTU Vector DB Group — [SymphonyQG announcement](https://vectordb-ntu.github.io/news/symqg/)
+- ADR-018: HNSW quantized graph quality
+- ADR-022: Drop scoring LUT for direct multiply
+- ADR-030: FastScan grouped subvector scoring
+- ADR-031: RaBitQ binary prefilter (superseded in scope by this ADR)
+- ADR-032: Coexisting index formats
+- ADR-033: Shared graph lifecycle format adapters
+- ADR-034: DiskANN as second access method
+- ADR-036: OPQ rotation successor to SRHT
+- ADR-041: Module structure for multi-AM multi-quantizer growth
+- ADR-046: GPU-accelerated offline build trainer

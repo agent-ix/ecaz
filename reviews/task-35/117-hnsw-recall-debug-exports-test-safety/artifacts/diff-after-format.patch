@@ -1,0 +1,218 @@
+diff --git a/scripts/unsafe_comment_baseline.txt b/scripts/unsafe_comment_baseline.txt
+index a4490b34..81217879 100644
+--- a/scripts/unsafe_comment_baseline.txt
++++ b/scripts/unsafe_comment_baseline.txt
+@@ -27,24 +27,6 @@ src/tests/diagnostics.rs:1712
+ src/tests/diagnostics.rs:1745
+ src/tests/diagnostics.rs:317
+ src/tests/diagnostics.rs:947
+-src/tests/ec_hnsw_recall_debug_exports.rs:1048
+-src/tests/ec_hnsw_recall_debug_exports.rs:1125
+-src/tests/ec_hnsw_recall_debug_exports.rs:1233
+-src/tests/ec_hnsw_recall_debug_exports.rs:1234
+-src/tests/ec_hnsw_recall_debug_exports.rs:1253
+-src/tests/ec_hnsw_recall_debug_exports.rs:1489
+-src/tests/ec_hnsw_recall_debug_exports.rs:1497
+-src/tests/ec_hnsw_recall_debug_exports.rs:1531
+-src/tests/ec_hnsw_recall_debug_exports.rs:1538
+-src/tests/ec_hnsw_recall_debug_exports.rs:1567
+-src/tests/ec_hnsw_recall_debug_exports.rs:1629
+-src/tests/ec_hnsw_recall_debug_exports.rs:1670
+-src/tests/ec_hnsw_recall_debug_exports.rs:1677
+-src/tests/ec_hnsw_recall_debug_exports.rs:2084
+-src/tests/ec_hnsw_recall_debug_exports.rs:2098
+-src/tests/ec_hnsw_recall_debug_exports.rs:2553
+-src/tests/ec_hnsw_recall_debug_exports.rs:724
+-src/tests/ec_hnsw_recall_debug_exports.rs:919
+ src/tests/ec_hnsw_runtime_comparisons.rs:111
+ src/tests/ec_hnsw_runtime_comparisons.rs:1223
+ src/tests/ec_hnsw_runtime_comparisons.rs:126
+diff --git a/src/tests/ec_hnsw_recall_debug_exports.rs b/src/tests/ec_hnsw_recall_debug_exports.rs
+index cbc7c658..b47b76db 100644
+--- a/src/tests/ec_hnsw_recall_debug_exports.rs
++++ b/src/tests/ec_hnsw_recall_debug_exports.rs
+@@ -1,3 +1,11 @@
++    macro_rules! hnsw_recall_export_debug {
++        ($call:expr) => {{
++            // SAFETY: These SQL-visible test helpers validate the HNSW index OID
++            // before calling test-only debug/profile routines or relation-backed probes.
++            unsafe { $call }
++        }};
++    }
++
+     #[pg_extern]
+     #[allow(clippy::type_complexity)]
+     fn ec_hnsw_graph_scan_recall_gate_report() -> TableIterator<
+@@ -721,7 +729,7 @@
+             "ec_hnsw_graph_hierarchy_summary",
+         ));
+ 
+-        let (_block_count, metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
++        let (_block_count, metadata, data_pages) = hnsw_recall_export_debug!(am::debug_index_pages(index_oid));
+         let m = metadata.m as usize;
+         let code_len = code_len(metadata.dimensions as usize, metadata.bits);
+ 
+@@ -916,7 +924,7 @@
+             _grouped_traversal_budgeted_expansions,
+             _grouped_traversal_budgeted_candidates,
+             _grouped_traversal_budgeted_exact_candidates,
+-        ) = unsafe { am::debug_profile_ordered_scan(index_oid, query) };
++        ) = hnsw_recall_export_debug!(am::debug_profile_ordered_scan(index_oid, query));
+ 
+         TableIterator::once((
+             rescan_elapsed_us,
+@@ -1045,13 +1053,11 @@
+             _grouped_traversal_budgeted_expansions,
+             _grouped_traversal_budgeted_candidates,
+             _grouped_traversal_budgeted_exact_candidates,
+-        ) = unsafe {
+-            am::debug_profile_ordered_scan_with_limit(
++        ) = hnsw_recall_export_debug!(am::debug_profile_ordered_scan_with_limit(
+                 index_oid,
+                 query,
+                 Some(usize::try_from(limit_count).expect("limit count should fit in usize")),
+-            )
+-        };
++            ));
+ 
+         TableIterator::once((
+             rescan_elapsed_us,
+@@ -1122,14 +1128,12 @@
+             result_count,
+             slot_fetch_count,
+             projected_count,
+-        ) = unsafe {
+-            am::debug_profile_ordered_scan_with_heap_fetch(
++        ) = hnsw_recall_export_debug!(am::debug_profile_ordered_scan_with_heap_fetch(
+                 index_oid,
+                 query,
+                 usize::try_from(limit_count).expect("limit count should fit in usize"),
+                 (project_attnum > 0).then_some(project_attnum),
+-            )
+-        };
++            ));
+ 
+         TableIterator::once((
+             rescan_elapsed_us,
+@@ -1230,13 +1234,13 @@
+             "tests.ec_hnsw_debug_pq_fastscan_runtime_settings_for_index",
+         );
+         let (_block_count, _m, _ef_construction, metadata) =
+-            unsafe { am::debug_index_metadata(index_oid) };
+-        let storage = unsafe {
++            hnsw_recall_export_debug!(am::debug_index_metadata(index_oid));
++        let storage = hnsw_recall_export_debug!(
+             am::graph::GraphStorageDescriptor::from_index_relation(
+                 index_relation.as_ptr(),
+                 &metadata,
+             )
+-        }
++        )
+         .unwrap_or_else(|e| pgrx::error!("{e}"));
+         let layout = match storage {
+             am::graph::GraphStorageDescriptor::PqFastScan(layout) => layout,
+@@ -1250,7 +1254,7 @@
+         };
+         let traversal = am::resolve_pq_fastscan_traversal_score_mode_decision(storage);
+         let rerank =
+-            unsafe { am::resolve_pq_fastscan_rerank_mode_decision(index_relation.as_ptr(), storage) };
++            hnsw_recall_export_debug!(am::resolve_pq_fastscan_rerank_mode_decision(index_relation.as_ptr(), storage));
+         drop(index_relation);
+         let mut base = current_pq_fastscan_runtime_settings();
+         base.traversal_score_mode = Some(traversal.mode_name().to_owned());
+@@ -1486,7 +1490,7 @@
+         index_oid: pg_sys::Oid,
+         query: Vec<f32>,
+     ) -> PqFastScanScanOrderDriftSummaryValues {
+-        unsafe { am::debug_grouped_scan_order_drift_summary(index_oid, query) }
++        hnsw_recall_export_debug!(am::debug_grouped_scan_order_drift_summary(index_oid, query))
+     }
+ 
+     fn pq_fastscan_scan_windowed_rows_values(
+@@ -1494,7 +1498,7 @@
+         query: Vec<f32>,
+         window_size: i32,
+     ) -> Vec<PqFastScanScanWindowedRowValues> {
+-        unsafe { am::debug_grouped_scan_windowed_rows(index_oid, query, window_size) }
++        hnsw_recall_export_debug!(am::debug_grouped_scan_windowed_rows(index_oid, query, window_size))
+             .into_iter()
+             .map(
+                 |(
+@@ -1528,14 +1532,14 @@
+         query: Vec<f32>,
+         window_size: i32,
+     ) -> PqFastScanScanWindowedSummaryValues {
+-        unsafe { am::debug_grouped_scan_windowed_summary(index_oid, query, window_size) }
++        hnsw_recall_export_debug!(am::debug_grouped_scan_windowed_summary(index_oid, query, window_size))
+     }
+ 
+     fn pq_fastscan_scan_comparison_rows_values(
+         index_oid: pg_sys::Oid,
+         query: Vec<f32>,
+     ) -> Vec<PqFastScanScanComparisonRowValues> {
+-        unsafe { am::debug_grouped_scan_comparison_rows(index_oid, query) }
++        hnsw_recall_export_debug!(am::debug_grouped_scan_comparison_rows(index_oid, query))
+             .into_iter()
+             .map(
+                 |(
+@@ -1564,7 +1568,7 @@
+         index_oid: pg_sys::Oid,
+         query: Vec<f32>,
+     ) -> PqFastScanScanComparisonSummaryValues {
+-        unsafe { am::debug_grouped_scan_comparison_summary(index_oid, query) }
++        hnsw_recall_export_debug!(am::debug_grouped_scan_comparison_summary(index_oid, query))
+     }
+ 
+     fn debug_scan_hot_path_profile_values(
+@@ -1626,7 +1630,7 @@
+             grouped_traversal_budgeted_expansions,
+             grouped_traversal_budgeted_candidates,
+             grouped_traversal_budgeted_exact_candidates,
+-        ) = unsafe { am::debug_profile_ordered_scan(index_oid, query) };
++        ) = hnsw_recall_export_debug!(am::debug_profile_ordered_scan(index_oid, query));
+ 
+         (
+             rescan_amrescan_total_elapsed_us,
+@@ -1667,14 +1671,14 @@
+         query: Vec<f32>,
+         limit_count: i32,
+     ) -> PqFastScanRerankProfileValues {
+-        unsafe { am::debug_grouped_rerank_profile(index_oid, query, limit_count) }
++        hnsw_recall_export_debug!(am::debug_grouped_rerank_profile(index_oid, query, limit_count))
+     }
+ 
+     fn turboquant_scan_stage_profile_values(
+         index_oid: pg_sys::Oid,
+         query: Vec<f32>,
+     ) -> TurboQuantScanStageProfileValues {
+-        unsafe { am::debug_turboquant_scan_stage_profile(index_oid, query) }
++        hnsw_recall_export_debug!(am::debug_turboquant_scan_stage_profile(index_oid, query))
+     }
+ 
+     #[pg_extern]
+@@ -2081,7 +2085,7 @@
+             "tests.ec_hnsw_debug_scan_result_count",
+         ));
+ 
+-        i32::try_from(unsafe { am::debug_gettuple_scan_heap_tids(index_oid, query) }.len())
++        i32::try_from(hnsw_recall_export_debug!(am::debug_gettuple_scan_heap_tids(index_oid, query)).len())
+             .expect("debug scan result count should fit in i32")
+     }
+ 
+@@ -2095,7 +2099,7 @@
+             "tests.ec_hnsw_debug_scan_heap_tids",
+         ));
+ 
+-        let rows = unsafe { am::debug_gettuple_scan_heap_tids(index_oid, query) }
++        let rows = hnsw_recall_export_debug!(am::debug_gettuple_scan_heap_tids(index_oid, query))
+             .into_iter()
+             .map(|(block_number, offset_number)| {
+                 (i64::from(block_number), i32::from(offset_number))
+@@ -2550,6 +2554,6 @@
+             "tests.ec_hnsw_debug_reachable_live_element_count",
+         ));
+ 
+-        i32::try_from(unsafe { am::debug_layer0_reachable_live_element_tids(index_oid) }.len())
++        i32::try_from(hnsw_recall_export_debug!(am::debug_layer0_reachable_live_element_tids(index_oid)).len())
+             .expect("debug reachable live element count should fit in i32")
+     }

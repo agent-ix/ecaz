@@ -1,0 +1,60 @@
+Script started on 2026-05-17 21:24:33-07:00 [<not executed on terminal>]
+src/am/ec_diskann/routine.rs
+1965:    unsafe { pg_sys::ExecClearTuple(slot) };
+
+src/am/ec_hnsw/scan_debug.rs
+1026:            pg_sys::ExecClearTuple(slot);
+
+src/am/ec_hnsw/vacuum.rs
+96:            unsafe { pg_sys::ExecClearTuple(self.slot.as_ptr()) };
+
+src/am/ec_diskann/scan_state.rs
+293:        pg_sys::ExecClearTuple(slot);
+315:    if unsafe { *(*slot).tts_isnull.add(attr_index) } {
+318:    Ok(unsafe { *(*slot).tts_values.add(attr_index) })
+
+src/am/ec_hnsw/source.rs
+464:    unsafe { pg_sys::ExecClearTuple(slot) };
+485:    if unsafe { *(*slot).tts_isnull.add(attr_index) } {
+488:    unsafe { *(*slot).tts_values.add(attr_index) }
+
+src/am/ec_hnsw/scan.rs
+2617:    unsafe { pg_sys::ExecClearTuple(heap_rerank_state.slot()) };
+
+src/am/ec_hnsw/insert.rs
+69:        unsafe { pg_sys::ExecClearTuple(self.slot.as_ptr()) };
+107:            unsafe { pg_sys::ExecClearTuple(self.slot.as_ptr()) };
+
+src/am/ec_spire/custom_scan/begin_exec.rs
+403:                return pg_sys::ExecClearTuple((*scan_state).ss_ScanTupleSlot);
+415:            pg_sys::ExecClearTuple((*scan_state).ss_ScanTupleSlot);
+440:            return pg_sys::ExecClearTuple((*scan_state).ss_ScanTupleSlot);
+444:            return pg_sys::ExecClearTuple((*scan_state).ss_ScanTupleSlot);
+467:        pg_sys::ExecClearTuple((*scan_state).ss_ScanTupleSlot)
+484:        pg_sys::ExecClearTuple((*scan_state).ss_ScanTupleSlot)
+
+src/am/ec_spire/custom_scan/tuple_payload.rs
+59:        pg_sys::ExecClearTuple(slot);
+64:                *(*slot).tts_isnull.add(attr_index as usize) = true;
+65:                *(*slot).tts_values.add(attr_index as usize) = pg_sys::Datum::from(0);
+75:                    *(*slot).tts_isnull.add(attr_index as usize) = true;
+76:                    *(*slot).tts_values.add(attr_index as usize) = pg_sys::Datum::from(0);
+79:                    *(*slot).tts_isnull.add(attr_index as usize) = false;
+89:                    *(*slot).tts_values.add(attr_index as usize) =
+186:        pg_sys::ExecClearTuple(slot);
+191:                *(*slot).tts_isnull.add(attr_index as usize) = true;
+192:                *(*slot).tts_values.add(attr_index as usize) = pg_sys::Datum::from(0);
+206:                *(*slot).tts_isnull.add(attr_index as usize) = true;
+207:                *(*slot).tts_values.add(attr_index as usize) = pg_sys::Datum::from(0);
+212:                *(*slot).tts_isnull.add(attr_index as usize) = true;
+213:                *(*slot).tts_values.add(attr_index as usize) = pg_sys::Datum::from(0);
+225:            *(*slot).tts_isnull.add(attr_index as usize) = false;
+226:            *(*slot).tts_values.add(attr_index as usize) = custom_scan_binary_value_to_datum(
+
+src/am/ec_spire/scan/relation.rs
+358:    unsafe { pg_sys::ExecClearTuple(slot) };
+370:    unsafe { pg_sys::ExecClearTuple(slot) };
+389:    if unsafe { *(*slot).tts_isnull.add(attr_index) } {
+392:    Ok(unsafe { *(*slot).tts_values.add(attr_index) })
+
+Script done on 2026-05-17 21:24:33-07:00 [COMMAND_EXIT_CODE="0"]

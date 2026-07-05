@@ -1,0 +1,11 @@
+Command: cargo run -p ecaz-cli -- --host /home/peter/.pgrx --port 28818 --database postgres bench latency --prefix task28_ivf_postopt10k_n64w25 --profile ec_ivf --k 10 --concurrency 1 --iterations 100 --sweep 32,48 --force-index
+
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.15s
+     Running `target/debug/ecaz --host /home/peter/.pgrx --port 28818 --database postgres bench latency --prefix task28_ivf_postopt10k_n64w25 --profile ec_ivf --k 10 --concurrency 1 --iterations 100 --sweep 32,48 --force-index`
+┌───────┬───────┬──────────┬─────────┬──────────┬──────────┬──────────┬──────────┬──────────┐
+│ sweep ┆ count ┆ mean     ┆ stddev  ┆ min      ┆ p50      ┆ p95      ┆ p99      ┆ max      │
+╞═══════╪═══════╪══════════╪═════════╪══════════╪══════════╪══════════╪══════════╪══════════╡
+│ 32    ┆ 100   ┆ 94.6 ms  ┆ 7.12 ms ┆ 80.6 ms  ┆ 93.7 ms  ┆ 102.4 ms ┆ 108.4 ms ┆ 146.5 ms │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ 48    ┆ 100   ┆ 135.8 ms ┆ 6.98 ms ┆ 125.6 ms ┆ 135.5 ms ┆ 143.0 ms ┆ 148.0 ms ┆ 187.9 ms │
+└───────┴───────┴──────────┴─────────┴──────────┴──────────┴──────────┴──────────┴──────────┘

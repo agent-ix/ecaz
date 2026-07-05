@@ -1,0 +1,187 @@
+{
+  "name": "task51-local-ivf-rabitq-geometry",
+  "schema_version": 1,
+  "artifact_dir": "benchmarks/task51-local-ivf-rabitq-geometry/artifacts",
+  "defaults": {
+    "pg": 18,
+    "socket_dir": "/home/peter/.pgrx",
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 200
+  },
+  "steps": [
+    {
+      "kind": "load",
+      "name": "load-10k-rabitq1-n32-w50",
+      "tags": ["load", "ec_real_10k", "ivf", "rabitq", "nlists32"],
+      "prefix": "task51_local_10k_ivf_rabitq1_n32_w50",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "storage_format": "rabitq",
+      "corpus_file": "target/real-corpus/staged-task50/ec_real_10k_corpus.tsv",
+      "queries_file": "target/real-corpus/staged-task50/ec_real_10k_queries.tsv",
+      "manifest_file": "target/real-corpus/staged-task50/ec_real_10k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=32",
+        "nprobe=32",
+        "training_sample_rows=10000",
+        "quant_bits=1",
+        "rerank=heap_f32",
+        "rerank_width=50"
+      ],
+      "log_file": "benchmarks/task51-local-ivf-rabitq-geometry/artifacts/load-10k-rabitq1-n32-w50.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-10k-rabitq1-n32-w50",
+      "tags": ["recall", "ec_real_10k", "ivf", "rabitq", "nlists32"],
+      "prefix": "task51_local_10k_ivf_rabitq1_n32_w50",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "k": 10,
+      "sweep": [8, 16, 24, 32],
+      "rerank_width": 50,
+      "force_index": true,
+      "truth_cache_file": "benchmarks/task51-local-ivf-rabitq-geometry/artifacts/truth-ec-real-10k-q200-k10.json",
+      "log_output": "benchmarks/task51-local-ivf-rabitq-geometry/artifacts/recall-10k-rabitq1-n32-w50.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-10k-rabitq1-n32-w50",
+      "tags": ["latency", "ec_real_10k", "ivf", "rabitq", "nlists32"],
+      "prefix": "task51_local_10k_ivf_rabitq1_n32_w50",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "sweep": [8, 16, 24, 32],
+      "rerank_width": 50,
+      "force_index": true,
+      "iterations": 200,
+      "concurrency": 1,
+      "log_output": "benchmarks/task51-local-ivf-rabitq-geometry/artifacts/latency-10k-rabitq1-n32-w50.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-10k-rabitq1-n32-w50",
+      "tags": ["storage", "ec_real_10k", "ivf", "rabitq", "nlists32"],
+      "prefix": "task51_local_10k_ivf_rabitq1_n32_w50",
+      "log_file": "benchmarks/task51-local-ivf-rabitq-geometry/artifacts/storage-10k-rabitq1-n32-w50.log"
+    },
+
+    {
+      "kind": "load",
+      "name": "load-10k-rabitq1-n64-w50",
+      "tags": ["load", "ec_real_10k", "ivf", "rabitq", "nlists64"],
+      "prefix": "task51_local_10k_ivf_rabitq1_n64_w50",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "storage_format": "rabitq",
+      "corpus_file": "target/real-corpus/staged-task50/ec_real_10k_corpus.tsv",
+      "queries_file": "target/real-corpus/staged-task50/ec_real_10k_queries.tsv",
+      "manifest_file": "target/real-corpus/staged-task50/ec_real_10k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=64",
+        "nprobe=64",
+        "training_sample_rows=10000",
+        "quant_bits=1",
+        "rerank=heap_f32",
+        "rerank_width=50"
+      ],
+      "log_file": "benchmarks/task51-local-ivf-rabitq-geometry/artifacts/load-10k-rabitq1-n64-w50.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-10k-rabitq1-n64-w50",
+      "tags": ["recall", "ec_real_10k", "ivf", "rabitq", "nlists64"],
+      "prefix": "task51_local_10k_ivf_rabitq1_n64_w50",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "k": 10,
+      "sweep": [8, 16, 24, 32, 48, 64],
+      "rerank_width": 50,
+      "force_index": true,
+      "truth_cache_file": "benchmarks/task51-local-ivf-rabitq-geometry/artifacts/truth-ec-real-10k-q200-k10.json",
+      "log_output": "benchmarks/task51-local-ivf-rabitq-geometry/artifacts/recall-10k-rabitq1-n64-w50.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-10k-rabitq1-n64-w50",
+      "tags": ["latency", "ec_real_10k", "ivf", "rabitq", "nlists64"],
+      "prefix": "task51_local_10k_ivf_rabitq1_n64_w50",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "sweep": [8, 16, 24, 32, 48, 64],
+      "rerank_width": 50,
+      "force_index": true,
+      "iterations": 200,
+      "concurrency": 1,
+      "log_output": "benchmarks/task51-local-ivf-rabitq-geometry/artifacts/latency-10k-rabitq1-n64-w50.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-10k-rabitq1-n64-w50",
+      "tags": ["storage", "ec_real_10k", "ivf", "rabitq", "nlists64"],
+      "prefix": "task51_local_10k_ivf_rabitq1_n64_w50",
+      "log_file": "benchmarks/task51-local-ivf-rabitq-geometry/artifacts/storage-10k-rabitq1-n64-w50.log"
+    },
+
+    {
+      "kind": "load",
+      "name": "load-10k-rabitq1-n128-w50",
+      "tags": ["load", "ec_real_10k", "ivf", "rabitq", "nlists128"],
+      "prefix": "task51_local_10k_ivf_rabitq1_n128_w50",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "storage_format": "rabitq",
+      "corpus_file": "target/real-corpus/staged-task50/ec_real_10k_corpus.tsv",
+      "queries_file": "target/real-corpus/staged-task50/ec_real_10k_queries.tsv",
+      "manifest_file": "target/real-corpus/staged-task50/ec_real_10k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=128",
+        "nprobe=128",
+        "training_sample_rows=10000",
+        "quant_bits=1",
+        "rerank=heap_f32",
+        "rerank_width=50"
+      ],
+      "log_file": "benchmarks/task51-local-ivf-rabitq-geometry/artifacts/load-10k-rabitq1-n128-w50.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-10k-rabitq1-n128-w50",
+      "tags": ["recall", "ec_real_10k", "ivf", "rabitq", "nlists128"],
+      "prefix": "task51_local_10k_ivf_rabitq1_n128_w50",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "k": 10,
+      "sweep": [8, 16, 32, 48, 64, 96, 128],
+      "rerank_width": 50,
+      "force_index": true,
+      "truth_cache_file": "benchmarks/task51-local-ivf-rabitq-geometry/artifacts/truth-ec-real-10k-q200-k10.json",
+      "log_output": "benchmarks/task51-local-ivf-rabitq-geometry/artifacts/recall-10k-rabitq1-n128-w50.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-10k-rabitq1-n128-w50",
+      "tags": ["latency", "ec_real_10k", "ivf", "rabitq", "nlists128"],
+      "prefix": "task51_local_10k_ivf_rabitq1_n128_w50",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "sweep": [8, 16, 32, 48, 64, 96, 128],
+      "rerank_width": 50,
+      "force_index": true,
+      "iterations": 200,
+      "concurrency": 1,
+      "log_output": "benchmarks/task51-local-ivf-rabitq-geometry/artifacts/latency-10k-rabitq1-n128-w50.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-10k-rabitq1-n128-w50",
+      "tags": ["storage", "ec_real_10k", "ivf", "rabitq", "nlists128"],
+      "prefix": "task51_local_10k_ivf_rabitq1_n128_w50",
+      "log_file": "benchmarks/task51-local-ivf-rabitq-geometry/artifacts/storage-10k-rabitq1-n128-w50.log"
+    }
+  ]
+}

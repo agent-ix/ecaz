@@ -1,0 +1,326 @@
+diff --git a/scripts/unsafe_comment_baseline.txt b/scripts/unsafe_comment_baseline.txt
+index 7d4a0e10..e7220069 100644
+--- a/scripts/unsafe_comment_baseline.txt
++++ b/scripts/unsafe_comment_baseline.txt
+@@ -1307,96 +1307,75 @@ src/am/ec_ivf/insert.rs:81
+ src/am/ec_ivf/insert.rs:84
+ src/am/ec_ivf/insert.rs:87
+ src/am/ec_ivf/insert.rs:98
+-src/am/ec_ivf/scan.rs:1050
+-src/am/ec_ivf/scan.rs:1055
+-src/am/ec_ivf/scan.rs:1123
+-src/am/ec_ivf/scan.rs:1152
+-src/am/ec_ivf/scan.rs:1165
+-src/am/ec_ivf/scan.rs:1171
+-src/am/ec_ivf/scan.rs:1180
++src/am/ec_ivf/scan.rs:1006
++src/am/ec_ivf/scan.rs:1014
++src/am/ec_ivf/scan.rs:1027
++src/am/ec_ivf/scan.rs:1091
++src/am/ec_ivf/scan.rs:1096
++src/am/ec_ivf/scan.rs:1164
++src/am/ec_ivf/scan.rs:1193
++src/am/ec_ivf/scan.rs:1206
+ src/am/ec_ivf/scan.rs:1212
+-src/am/ec_ivf/scan.rs:1226
+-src/am/ec_ivf/scan.rs:1236
+-src/am/ec_ivf/scan.rs:1245
+-src/am/ec_ivf/scan.rs:1256
+-src/am/ec_ivf/scan.rs:1257
+-src/am/ec_ivf/scan.rs:1260
+-src/am/ec_ivf/scan.rs:1270
+-src/am/ec_ivf/scan.rs:1271
+-src/am/ec_ivf/scan.rs:1274
+-src/am/ec_ivf/scan.rs:1371
+-src/am/ec_ivf/scan.rs:1425
+-src/am/ec_ivf/scan.rs:1430
+-src/am/ec_ivf/scan.rs:1435
+-src/am/ec_ivf/scan.rs:1453
+-src/am/ec_ivf/scan.rs:1489
+-src/am/ec_ivf/scan.rs:1518
+-src/am/ec_ivf/scan.rs:1524
+-src/am/ec_ivf/scan.rs:1525
+-src/am/ec_ivf/scan.rs:1533
+-src/am/ec_ivf/scan.rs:1562
+-src/am/ec_ivf/scan.rs:1568
+-src/am/ec_ivf/scan.rs:1570
+-src/am/ec_ivf/scan.rs:1582
+-src/am/ec_ivf/scan.rs:1587
+-src/am/ec_ivf/scan.rs:1594
+-src/am/ec_ivf/scan.rs:1595
+-src/am/ec_ivf/scan.rs:1605
+-src/am/ec_ivf/scan.rs:1612
+-src/am/ec_ivf/scan.rs:1614
++src/am/ec_ivf/scan.rs:1221
++src/am/ec_ivf/scan.rs:1253
++src/am/ec_ivf/scan.rs:1267
++src/am/ec_ivf/scan.rs:1277
++src/am/ec_ivf/scan.rs:1286
++src/am/ec_ivf/scan.rs:1297
++src/am/ec_ivf/scan.rs:1298
++src/am/ec_ivf/scan.rs:1301
++src/am/ec_ivf/scan.rs:1311
++src/am/ec_ivf/scan.rs:1312
++src/am/ec_ivf/scan.rs:1315
++src/am/ec_ivf/scan.rs:1412
++src/am/ec_ivf/scan.rs:1466
++src/am/ec_ivf/scan.rs:1471
++src/am/ec_ivf/scan.rs:1476
++src/am/ec_ivf/scan.rs:1494
++src/am/ec_ivf/scan.rs:1530
++src/am/ec_ivf/scan.rs:1559
++src/am/ec_ivf/scan.rs:1565
++src/am/ec_ivf/scan.rs:1566
++src/am/ec_ivf/scan.rs:1574
++src/am/ec_ivf/scan.rs:1603
++src/am/ec_ivf/scan.rs:1609
++src/am/ec_ivf/scan.rs:1611
+ src/am/ec_ivf/scan.rs:1623
+-src/am/ec_ivf/scan.rs:1625
+-src/am/ec_ivf/scan.rs:1629
+-src/am/ec_ivf/scan.rs:1630
+-src/am/ec_ivf/scan.rs:1640
++src/am/ec_ivf/scan.rs:1628
++src/am/ec_ivf/scan.rs:1635
++src/am/ec_ivf/scan.rs:1636
+ src/am/ec_ivf/scan.rs:1646
+-src/am/ec_ivf/scan.rs:1649
+-src/am/ec_ivf/scan.rs:1651
+-src/am/ec_ivf/scan.rs:1652
+ src/am/ec_ivf/scan.rs:1653
+-src/am/ec_ivf/scan.rs:1654
+-src/am/ec_ivf/scan.rs:1658
+-src/am/ec_ivf/scan.rs:1663
++src/am/ec_ivf/scan.rs:1655
++src/am/ec_ivf/scan.rs:1664
+ src/am/ec_ivf/scan.rs:1666
+-src/am/ec_ivf/scan.rs:1669
+-src/am/ec_ivf/scan.rs:1679
++src/am/ec_ivf/scan.rs:1670
++src/am/ec_ivf/scan.rs:1671
++src/am/ec_ivf/scan.rs:1681
++src/am/ec_ivf/scan.rs:1687
++src/am/ec_ivf/scan.rs:1690
++src/am/ec_ivf/scan.rs:1692
++src/am/ec_ivf/scan.rs:1693
++src/am/ec_ivf/scan.rs:1694
+ src/am/ec_ivf/scan.rs:1695
+-src/am/ec_ivf/scan.rs:1712
+-src/am/ec_ivf/scan.rs:1724
+-src/am/ec_ivf/scan.rs:1744
+-src/am/ec_ivf/scan.rs:1759
+-src/am/ec_ivf/scan.rs:1797
+-src/am/ec_ivf/scan.rs:1798
+-src/am/ec_ivf/scan.rs:594
+-src/am/ec_ivf/scan.rs:598
+-src/am/ec_ivf/scan.rs:605
+-src/am/ec_ivf/scan.rs:644
+-src/am/ec_ivf/scan.rs:655
+-src/am/ec_ivf/scan.rs:658
+-src/am/ec_ivf/scan.rs:663
+-src/am/ec_ivf/scan.rs:676
+-src/am/ec_ivf/scan.rs:680
+-src/am/ec_ivf/scan.rs:688
+-src/am/ec_ivf/scan.rs:702
+-src/am/ec_ivf/scan.rs:706
+-src/am/ec_ivf/scan.rs:714
+-src/am/ec_ivf/scan.rs:731
+-src/am/ec_ivf/scan.rs:735
+-src/am/ec_ivf/scan.rs:744
+-src/am/ec_ivf/scan.rs:752
+-src/am/ec_ivf/scan.rs:754
+-src/am/ec_ivf/scan.rs:755
+-src/am/ec_ivf/scan.rs:774
+-src/am/ec_ivf/scan.rs:784
+-src/am/ec_ivf/scan.rs:791
+-src/am/ec_ivf/scan.rs:801
+-src/am/ec_ivf/scan.rs:807
+-src/am/ec_ivf/scan.rs:809
+-src/am/ec_ivf/scan.rs:810
++src/am/ec_ivf/scan.rs:1699
++src/am/ec_ivf/scan.rs:1704
++src/am/ec_ivf/scan.rs:1707
++src/am/ec_ivf/scan.rs:1710
++src/am/ec_ivf/scan.rs:1720
++src/am/ec_ivf/scan.rs:1736
++src/am/ec_ivf/scan.rs:1753
++src/am/ec_ivf/scan.rs:1765
++src/am/ec_ivf/scan.rs:1785
++src/am/ec_ivf/scan.rs:1800
++src/am/ec_ivf/scan.rs:1838
++src/am/ec_ivf/scan.rs:1839
++src/am/ec_ivf/scan.rs:832
++src/am/ec_ivf/scan.rs:842
++src/am/ec_ivf/scan.rs:848
+ src/am/ec_ivf/scan.rs:850
+-src/am/ec_ivf/scan.rs:965
+-src/am/ec_ivf/scan.rs:973
+-src/am/ec_ivf/scan.rs:986
++src/am/ec_ivf/scan.rs:851
++src/am/ec_ivf/scan.rs:891
+ src/am/ec_ivf/vacuum.rs:101
+ src/am/ec_ivf/vacuum.rs:111
+ src/am/ec_ivf/vacuum.rs:144
+diff --git a/src/am/ec_ivf/scan.rs b/src/am/ec_ivf/scan.rs
+index 8c69bb13..8d89da09 100644
+--- a/src/am/ec_ivf/scan.rs
++++ b/src/am/ec_ivf/scan.rs
+@@ -591,10 +591,14 @@ unsafe fn store_scan_query(opaque: &mut EcIvfScanOpaque, query: &[f32]) {
+ 
+     let query_bytes = std::mem::size_of_val(query);
+     crate::fault::maybe_fail_palloc("ec_ivf scan query values");
++    // SAFETY: allocates `query_bytes` in PostgreSQL memory for scan-local
++    // query storage; the result is checked before use.
+     let query_values = unsafe { pg_sys::palloc(query_bytes) }.cast::<f32>();
+     if query_values.is_null() {
+         pgrx::error!("ec_ivf failed to allocate scan query state");
+     }
++    // SAFETY: `query_values` points to space for exactly `query.len()` f32
++    // values, and source/destination do not overlap.
+     unsafe { ptr::copy_nonoverlapping(query.as_ptr(), query_values, query.len()) };
+     opaque.query_dimensions = u16::try_from(query.len()).expect("query length should fit in u16");
+     opaque.query_values = query_values;
+@@ -602,6 +606,8 @@ unsafe fn store_scan_query(opaque: &mut EcIvfScanOpaque, query: &[f32]) {
+ 
+ unsafe fn free_scan_query(opaque: &mut EcIvfScanOpaque) {
+     if !opaque.query_values.is_null() {
++        // SAFETY: `query_values` was allocated by `palloc` in
++        // `store_scan_query` and is owned by this scan opaque.
+         unsafe { pg_sys::pfree(opaque.query_values.cast()) };
+         opaque.query_values = ptr::null_mut();
+     }
+@@ -641,6 +647,8 @@ fn store_scan_prepared_query(
+ 
+ fn free_scan_prepared_query(opaque: &mut EcIvfScanOpaque) {
+     if !opaque.prepared_query.is_null() {
++        // SAFETY: `prepared_query` was created with `Box::into_raw` by this
++        // scan opaque and has not been freed while the pointer is non-null.
+         drop(unsafe { Box::from_raw(opaque.prepared_query) });
+         opaque.prepared_query = ptr::null_mut();
+     }
+@@ -652,14 +660,20 @@ fn pq_fastscan_model_for_scan<'a>(
+     metadata: &super::page::MetadataPage,
+ ) -> Result<&'a IvfPqFastScanModel, String> {
+     if opaque.pq_fastscan_model.is_null() {
++        // SAFETY: `index_relation` and metadata describe the live IVF index;
++        // the quantizer loader validates the on-disk PQ model.
+         let model = unsafe { quantizer::load_pq_fastscan_model(index_relation, metadata) }?;
+         opaque.pq_fastscan_model = Box::into_raw(Box::new(model));
+     }
++    // SAFETY: the pointer is initialized above and remains owned by `opaque`
++    // until `free_pq_fastscan_model` clears it.
+     Ok(unsafe { &*opaque.pq_fastscan_model })
+ }
+ 
+ fn free_pq_fastscan_model(opaque: &mut EcIvfScanOpaque) {
+     if !opaque.pq_fastscan_model.is_null() {
++        // SAFETY: `pq_fastscan_model` was created with `Box::into_raw` by this
++        // scan opaque and has not been freed while the pointer is non-null.
+         drop(unsafe { Box::from_raw(opaque.pq_fastscan_model) });
+         opaque.pq_fastscan_model = ptr::null_mut();
+     }
+@@ -673,10 +687,14 @@ unsafe fn store_centroid_scores(opaque: &mut EcIvfScanOpaque, scores: &[EcIvfCen
+ 
+     let bytes = std::mem::size_of_val(scores);
+     crate::fault::maybe_fail_palloc("ec_ivf scan centroid scores");
++    // SAFETY: allocates enough PostgreSQL memory for all centroid score
++    // entries; the result is checked before use.
+     let score_ptr = unsafe { pg_sys::palloc(bytes) }.cast::<EcIvfCentroidScore>();
+     if score_ptr.is_null() {
+         pgrx::error!("ec_ivf failed to allocate centroid score state");
+     }
++    // SAFETY: `score_ptr` points to space for exactly `scores.len()` entries,
++    // and source/destination do not overlap.
+     unsafe { ptr::copy_nonoverlapping(scores.as_ptr(), score_ptr, scores.len()) };
+     opaque.centroid_score_count =
+         u32::try_from(scores.len()).expect("centroid score count should fit in u32");
+@@ -685,6 +703,8 @@ unsafe fn store_centroid_scores(opaque: &mut EcIvfScanOpaque, scores: &[EcIvfCen
+ 
+ unsafe fn free_centroid_scores(opaque: &mut EcIvfScanOpaque) {
+     if !opaque.centroid_scores.is_null() {
++        // SAFETY: `centroid_scores` was allocated by `palloc` in
++        // `store_centroid_scores` and is owned by this scan opaque.
+         unsafe { pg_sys::pfree(opaque.centroid_scores.cast()) };
+         opaque.centroid_scores = ptr::null_mut();
+     }
+@@ -699,10 +719,14 @@ unsafe fn store_selected_lists(opaque: &mut EcIvfScanOpaque, selected_lists: &[u
+ 
+     let bytes = std::mem::size_of_val(selected_lists);
+     crate::fault::maybe_fail_palloc("ec_ivf scan selected lists");
++    // SAFETY: allocates enough PostgreSQL memory for all selected list ids;
++    // the result is checked before use.
+     let list_ptr = unsafe { pg_sys::palloc(bytes) }.cast::<u32>();
+     if list_ptr.is_null() {
+         pgrx::error!("ec_ivf failed to allocate selected-list state");
+     }
++    // SAFETY: `list_ptr` points to space for exactly `selected_lists.len()`
++    // entries, and source/destination do not overlap.
+     unsafe { ptr::copy_nonoverlapping(selected_lists.as_ptr(), list_ptr, selected_lists.len()) };
+     opaque.selected_list_count =
+         u32::try_from(selected_lists.len()).expect("selected list count should fit in u32");
+@@ -711,6 +735,8 @@ unsafe fn store_selected_lists(opaque: &mut EcIvfScanOpaque, selected_lists: &[u
+ 
+ unsafe fn free_selected_lists(opaque: &mut EcIvfScanOpaque) {
+     if !opaque.selected_lists.is_null() {
++        // SAFETY: `selected_lists` was allocated by `palloc` in
++        // `store_selected_lists` and is owned by this scan opaque.
+         unsafe { pg_sys::pfree(opaque.selected_lists.cast()) };
+         opaque.selected_lists = ptr::null_mut();
+     }
+@@ -728,10 +754,14 @@ unsafe fn store_posting_candidates(
+ 
+     let bytes = std::mem::size_of_val(candidates);
+     crate::fault::maybe_fail_palloc("ec_ivf scan posting candidates");
++    // SAFETY: allocates enough PostgreSQL memory for all scored candidates;
++    // the result is checked before use.
+     let candidate_ptr = unsafe { pg_sys::palloc(bytes) }.cast::<EcIvfScoredCandidate>();
+     if candidate_ptr.is_null() {
+         pgrx::error!("ec_ivf failed to allocate posting candidate state");
+     }
++    // SAFETY: `candidate_ptr` points to space for exactly `candidates.len()`
++    // entries, and source/destination do not overlap.
+     unsafe { ptr::copy_nonoverlapping(candidates.as_ptr(), candidate_ptr, candidates.len()) };
+     opaque.posting_candidate_count =
+         u32::try_from(candidates.len()).expect("posting candidate count should fit in u32");
+@@ -741,6 +771,8 @@ unsafe fn store_posting_candidates(
+ 
+ unsafe fn free_posting_candidates(opaque: &mut EcIvfScanOpaque) {
+     if !opaque.posting_candidates.is_null() {
++        // SAFETY: `posting_candidates` was allocated by `palloc` in
++        // `store_posting_candidates` and is owned by this scan opaque.
+         unsafe { pg_sys::pfree(opaque.posting_candidates.cast()) };
+         opaque.posting_candidates = ptr::null_mut();
+     }
+@@ -749,9 +781,14 @@ unsafe fn free_posting_candidates(opaque: &mut EcIvfScanOpaque) {
+ }
+ 
+ unsafe fn free_scan_query_prep(opaque: &mut EcIvfScanOpaque) {
++    // SAFETY: all freed pointers are scan-opaque owned and each helper clears
++    // its pointer after releasing storage.
+     unsafe { free_scan_query(opaque) };
+     free_scan_prepared_query(opaque);
++    // SAFETY: heap rerank state is scan-opaque owned and cleared by helper.
+     unsafe { free_heap_rerank_state(opaque) };
++    // SAFETY: all remaining palloc-backed buffers are scan-opaque owned and
++    // cleared by their respective helpers.
+     unsafe {
+         free_centroid_scores(opaque);
+         free_selected_lists(opaque);
+@@ -771,6 +808,8 @@ fn candidate_dedup_map(
+         return opaque.candidate_dedup;
+     }
+ 
++    // SAFETY: `candidate_dedup` was created with `Box::into_raw` by this scan
++    // opaque and remains valid while the pointer is non-null.
+     let map = unsafe { &mut *opaque.candidate_dedup };
+     map.clear();
+     if map.capacity() < capacity {
+@@ -781,6 +820,8 @@ fn candidate_dedup_map(
+ 
+ fn free_candidate_dedup(opaque: &mut EcIvfScanOpaque) {
+     if !opaque.candidate_dedup.is_null() {
++        // SAFETY: `candidate_dedup` was created with `Box::into_raw` by this
++        // scan opaque and has not been freed while the pointer is non-null.
+         drop(unsafe { Box::from_raw(opaque.candidate_dedup) });
+         opaque.candidate_dedup = ptr::null_mut();
+     }

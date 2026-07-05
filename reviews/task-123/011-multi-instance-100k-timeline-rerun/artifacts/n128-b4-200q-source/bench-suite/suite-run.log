@@ -1,0 +1,15 @@
+[suite:local-multinode-production-read-n128-200q-source] wrote reviews/task-123/011-multi-instance-100k-timeline-rerun/artifacts/n128-b4-200q-source/bench-suite/suite-manifest.json
+[suite:local-multinode-production-read-n128-200q-source] storage-local-coordinator -> --database postgres --host /tmp/ecaz-task123/target/spire-local-multinode-sockets-task123-p11-mi-n128-b4-200q-source --port 40320 --user ecaz_coord --log-file reviews/task-123/011-multi-instance-100k-timeline-rerun/artifacts/n128-b4-200q-source/bench-suite/storage.log bench storage --prefix ec_real_100k
+[suite:local-multinode-production-read-n128-200q-source] wrote reviews/task-123/011-multi-instance-100k-timeline-rerun/artifacts/n128-b4-200q-source/bench-suite/suite-manifest.json
+[suite:local-multinode-production-read-n128-200q-source] wrote reviews/task-123/011-multi-instance-100k-timeline-rerun/artifacts/n128-b4-200q-source/bench-suite/suite-manifest.json
+[suite:local-multinode-production-read-n128-200q-source] production-read-k10-default -> --database postgres --host /tmp/ecaz-task123/target/spire-local-multinode-sockets-task123-p11-mi-n128-b4-200q-source --port 40320 --user ecaz_coord bench spire-pipeline --prefix ec_real_100k --index t123_p11_mi_100k_n128_b4_200q_source_coord_idx --queries-limit 200 --sweep "8,96" --include-remote --require-remote-placements --top-k 10 --include-cost-snapshot --include-query-metrics --include-recall --truth-corpus-file /home/peter/dev/ecaz/data/staged-current/ec_real_100k_corpus.tsv --include-production-read-profile --production-read-only --query-metric-k 10 --query-metric-projection-columns "id,source" --log-output reviews/task-123/011-multi-instance-100k-timeline-rerun/artifacts/n128-b4-200q-source/bench-suite/production-read-k10-default.log
+[suite:local-multinode-production-read-n128-200q-source] wrote reviews/task-123/011-multi-instance-100k-timeline-rerun/artifacts/n128-b4-200q-source/bench-suite/suite-manifest.json
+[suite:local-multinode-production-read-n128-200q-source] wrote reviews/task-123/011-multi-instance-100k-timeline-rerun/artifacts/n128-b4-200q-source/bench-suite/suite-manifest.json
+
+   0: [91msuite step "production-read-k10-default" failed with exit code 1; rerun with --continue-on-error to keep going[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/bench/suite.rs[0m:[35m953[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.

@@ -1,0 +1,124 @@
+{
+  "name": "task65b-diskann-measurement-floor",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-65b/001-measurement-floor/artifacts",
+  "defaults": {
+    "pg": 18,
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 200,
+    "iterations": 200,
+    "force_index": true,
+    "sample_backend_memory": true,
+    "memory_sample_interval_ms": 25
+  },
+  "steps": [
+    {
+      "kind": "raw",
+      "name": "precheck-host",
+      "tags": ["setup", "precheck", "m5-local"],
+      "args": [
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--raw",
+        "--sql",
+        "SELECT now() AS captured_at, version() AS postgres_version, current_setting('shared_buffers') AS shared_buffers, current_setting('work_mem') AS work_mem, current_setting('maintenance_work_mem') AS maintenance_work_mem, current_setting('max_parallel_maintenance_workers') AS max_parallel_maintenance_workers; SELECT current_setting('server_version_num') AS server_version_num;",
+        "--log-output",
+        "${artifact_dir}/precheck-host.log"
+      ],
+      "expected_artifacts": ["${artifact_dir}/precheck-host.log"]
+    },
+    {
+      "kind": "load",
+      "name": "load-real10k-r32-l100",
+      "tags": ["load", "diskann", "real10k", "pq_fastscan", "r32", "l100"],
+      "prefix": "task65b_floor_final_real10k_r32_l100",
+      "profile": "ec_diskann",
+      "storage_format": "pq_fastscan",
+      "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_corpus.tsv",
+      "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_queries.tsv",
+      "manifest_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "graph_degree=32",
+        "build_list_size=100",
+        "alpha=1.2"
+      ]
+    },
+    {
+      "kind": "raw",
+      "name": "build-probe-real10k-r32-l100",
+      "tags": ["probe", "diskann", "real10k", "r32", "l100"],
+      "args": [
+        "bench",
+        "diskann-build-probe",
+        "--prefix",
+        "task65b_floor_final_real10k_r32_l100",
+        "--graph-degree",
+        "32",
+        "--build-list-size",
+        "100",
+        "--alpha",
+        "1.2",
+        "--queries-limit",
+        "200",
+        "--scan-list-size",
+        "200",
+        "--log-output",
+        "${artifact_dir}/build-probe-real10k-r32-l100.log"
+      ],
+      "expected_artifacts": ["${artifact_dir}/build-probe-real10k-r32-l100.log"]
+    },
+    {
+      "kind": "recall",
+      "name": "recall-real10k-r32-l100",
+      "tags": ["recall", "diskann", "real10k", "r32", "l100"],
+      "prefix": "task65b_floor_final_real10k_r32_l100",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [64, 128, 200],
+      "truth_cache_file": "${artifact_dir}/truth-real10k-k10.json"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-real10k-r32-l100",
+      "tags": ["storage", "diskann", "real10k", "r32", "l100"],
+      "prefix": "task65b_floor_final_real10k_r32_l100"
+    },
+    {
+      "kind": "load",
+      "name": "load-real100k-r32-l100",
+      "tags": ["load", "diskann", "real100k", "pq_fastscan", "r32", "l100"],
+      "prefix": "task65b_floor_final_real100k_r32_l100",
+      "profile": "ec_diskann",
+      "storage_format": "pq_fastscan",
+      "corpus_file": "data/task60_m5_dbpedia_staged/ec_real_100k_corpus.tsv",
+      "queries_file": "data/task60_m5_dbpedia_staged/ec_real_100k_queries.tsv",
+      "manifest_file": "data/task60_m5_dbpedia_staged/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "graph_degree=32",
+        "build_list_size=100",
+        "alpha=1.2"
+      ]
+    },
+    {
+      "kind": "recall",
+      "name": "recall-real100k-r32-l100",
+      "tags": ["recall", "diskann", "real100k", "r32", "l100"],
+      "prefix": "task65b_floor_final_real100k_r32_l100",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [64, 128, 200],
+      "truth_cache_file": "${artifact_dir}/truth-real100k-k10.json"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-real100k-r32-l100",
+      "tags": ["storage", "diskann", "real100k", "r32", "l100"],
+      "prefix": "task65b_floor_final_real100k_r32_l100"
+    }
+  ]
+}

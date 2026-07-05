@@ -1,0 +1,9 @@
+SET
+SET
+SET
+DO
+                     status                      | turboquant_index_bytes | pq_index_bytes 
+-------------------------------------------------+------------------------+----------------
+ task64_hnsw_existing_formats_post_vacuum_passed |                  16384 |          16384
+(1 row)
+

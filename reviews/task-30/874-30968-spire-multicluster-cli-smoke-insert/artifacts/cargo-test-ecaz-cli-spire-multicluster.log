@@ -1,0 +1,57 @@
+Script started on 2026-05-12 21:57:24-07:00 [<not executed on terminal>]
+warning: unused imports: `SpireDmlFrontdoorCustomScanMode`, `SpireDmlFrontdoorPkValuePlan`, `coordinator_insert_prepare_remote_sql as spire_coordinator_insert_prepare_remote_sql`, `dml_frontdoor_bigint_pk_value_bytes as spire_dml_frontdoor_bigint_pk_value_bytes`, `dml_frontdoor_pk_argument_from_replacement_decision as spire_dml_frontdoor_pk_argument_from_replacement_decision`, `dml_frontdoor_primitive_invocation_from_plan as spire_dml_frontdoor_primitive_invocation_from_plan`, `dml_frontdoor_primitive_plan_expr_catalog_row as spire_dml_frontdoor_primitive_plan_expr_catalog_row`, and `dml_frontdoor_primitive_plan_pk_value_bytes as spire_dml_frontdoor_primitive_plan_pk_value_bytes`
+   --> src/am/mod.rs:36:5
+    |
+ 36 |     coordinator_insert_prepare_remote_sql as spire_coordinator_insert_prepare_remote_sql,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+ 42 |     dml_frontdoor_bigint_pk_value_bytes as spire_dml_frontdoor_bigint_pk_value_bytes,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ 43 |     dml_frontdoor_hook_status_row as spire_dml_frontdoor_hook_status_row,
+ 44 |     dml_frontdoor_pk_argument_from_replacement_decision as spire_dml_frontdoor_pk_argument_from_replacement_decision,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ 45 |     dml_frontdoor_primitive_invocation_from_plan as spire_dml_frontdoor_primitive_invocation_from_plan,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ 46 |     dml_frontdoor_primitive_plan_const_pk_value_bytes as spire_dml_frontdoor_primitive_plan_const_pk_value_bytes,
+ 47 |     dml_frontdoor_primitive_plan_expr_catalog_row as spire_dml_frontdoor_primitive_plan_expr_catalog_row,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ 48 |     dml_frontdoor_primitive_plan_from_replacement_decision as spire_dml_frontdoor_primitive_plan_from_replacement_decision,
+ 49 |     dml_frontdoor_primitive_plan_pk_value_bytes as spire_dml_frontdoor_primitive_plan_pk_value_bytes,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+164 |     SpireDmlFrontdoorCustomScanMode, SpireDmlFrontdoorPkValuePlan, SpireDmlFrontdoorQueryContext,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `ecaz` (lib) generated 1 warning (run `cargo fix --lib -p ecaz` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.17s
+     Running unittests src/main.rs (target/debug/deps/ecaz-5e71cce66697821b)
+
+running 21 tests
+test cli::tests::cli_parses_spire_multicluster_epoch_mismatch_fault_command ... [32mok[m
+test cli::tests::cli_parses_spire_multicluster_lifecycle_create_new_descriptor_command ... [32mok[m
+test cli::tests::cli_parses_spire_multicluster_customscan_read_command ... [32mok[m
+test cli::tests::cli_parses_spire_multicluster_lifecycle_drop_in_flight_command ... [32mok[m
+test cli::tests::cli_parses_spire_multicluster_lifecycle_drop_before_fanout_command ... [32mok[m
+test cli::tests::cli_parses_spire_multicluster_missing_remote_index_fault_command ... [32mok[m
+test cli::tests::cli_parses_spire_multicluster_remote_statement_timeout_fault_command ... [32mok[m
+test cli::tests::cli_parses_spire_multicluster_remote_oom_fault_command ... [32mok[m
+test cli::tests::cli_parses_spire_multicluster_fingerprint_mismatch_fault_command ... [32mok[m
+test cli::tests::cli_parses_spire_multicluster_smoke_command ... [32mok[m
+test cli::tests::cli_parses_spire_multicluster_lifecycle_create_missing_descriptor_command ... [32mok[m
+test cli::tests::cli_parses_spire_multicluster_fault_command ... [32mok[m
+test cli::tests::cli_parses_spire_multicluster_local_cancel_fault_command ... [32mok[m
+test cli::tests::cli_parses_spire_multicluster_lifecycle_reindex_in_flight_command ... [32mok[m
+test cli::tests::cli_parses_spire_multicluster_connection_reset_mid_batch_fault_command ... [32mok[m
+test cli::tests::cli_parses_spire_multicluster_lifecycle_reindex_before_fanout_command ... [32mok[m
+test cli::tests::cli_parses_spire_multicluster_insert_read_after_customscan_command ... [32mok[m
+test cli::tests::cli_parses_spire_multicluster_local_statement_timeout_fault_command ... [32mok[m
+test cli::tests::cli_parses_spire_multicluster_transport_overlap_command ... [32mok[m
+test cli::tests::cli_parses_spire_multicluster_version_skew_fault_command ... [32mok[m
+test cli::tests::cli_parses_spire_multicluster_remote_backend_termination_fault_command ... [32mok[m
+
+test result: [32mok[m. 21 passed; 0 failed; 0 ignored; 0 measured; 301 filtered out; finished in 0.01s
+
+
+Script done on 2026-05-12 21:57:25-07:00 [COMMAND_EXIT_CODE="0"]

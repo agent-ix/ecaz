@@ -1,0 +1,78 @@
+Script started on 2026-05-19 02:11:29-07:00 [<not executed on terminal>]
+[1mdiff --git a/scripts/unsafe_comment_baseline.txt b/scripts/unsafe_comment_baseline.txt[m
+[1mindex 3aabf890..33f3d5c0 100644[m
+[1m--- a/scripts/unsafe_comment_baseline.txt[m
+[1m+++ b/scripts/unsafe_comment_baseline.txt[m
+[36m@@ -1360,13 +1360,7 @@[m [msrc/am/ec_spire/coordinator/hierarchy_snapshots.rs:799[m
+ src/am/ec_spire/coordinator/hierarchy_snapshots.rs:809[m
+ src/am/ec_spire/coordinator/hierarchy_snapshots.rs:834[m
+ src/am/ec_spire/coordinator/hierarchy_snapshots.rs:985[m
+[31m-src/am/ec_spire/coordinator/remote_candidates/dispatch.rs:127[m
+[31m-src/am/ec_spire/coordinator/remote_candidates/dispatch.rs:1993[m
+[31m-src/am/ec_spire/coordinator/remote_candidates/dispatch.rs:1997[m
+[31m-src/am/ec_spire/coordinator/remote_candidates/dispatch.rs:2011[m
+[31m-src/am/ec_spire/coordinator/remote_candidates/dispatch.rs:2015[m
+[31m-src/am/ec_spire/coordinator/remote_candidates/dispatch.rs:2016[m
+[31m-src/am/ec_spire/coordinator/remote_candidates/dispatch.rs:34[m
+[32m+[m[32msrc/am/ec_spire/coordinator/remote_candidates/dispatch.rs:2029[m
+ src/am/ec_spire/coordinator/remote_candidates/scan_output.rs:10[m
+ src/am/ec_spire/coordinator/remote_candidates/scan_output.rs:123[m
+ src/am/ec_spire/coordinator/remote_candidates/scan_output.rs:131[m
+[1mdiff --git a/src/am/ec_spire/coordinator/remote_candidates/dispatch.rs b/src/am/ec_spire/coordinator/remote_candidates/dispatch.rs[m
+[1mindex 041cca21..b1cfbf43 100644[m
+[1m--- a/src/am/ec_spire/coordinator/remote_candidates/dispatch.rs[m
+[1m+++ b/src/am/ec_spire/coordinator/remote_candidates/dispatch.rs[m
+[36m@@ -31,6 +31,8 @@[m [mpub(crate) unsafe fn remote_search_libpq_dispatch_summary_row([m
+         let query_for_empty_plan = query.clone();[m
+         let top_k_for_empty_plan = u64::try_from(top_k)[m
+             .map_err(|_| "ec_spire remote search libpq dispatch summary top_k exceeds u64")?;[m
+[32m+[m[32m        // SAFETY: forwards the live index relation and checked request fields[m
+[32m+[m[32m        // into the libpq dispatch planner, which owns relation/page reads.[m
+         let rows = unsafe {[m
+             remote_search_libpq_dispatch_plan_rows([m
+                 index_relation,[m
+[36m@@ -124,6 +126,8 @@[m [mpub(crate) unsafe fn remote_search_libpq_executor_budget_summary_row([m
+     consistency_mode: &str,[m
+ ) -> SpireRemoteSearchLibpqExecutorBudgetSummaryRow {[m
+     let result = (|| -> Result<SpireRemoteSearchLibpqExecutorBudgetSummaryRow, String> {[m
+[32m+[m[32m        // SAFETY: forwards the live index relation and checked request fields[m
+[32m+[m[32m        // into the dispatch planner before reducing rows to budget counters.[m
+         let rows = unsafe {[m
+             remote_search_libpq_dispatch_plan_rows([m
+                 index_relation,[m
+[36m@@ -1990,10 +1994,14 @@[m [munsafe extern "C" {[m
+ }[m
+ [m
+ fn postgres_sig_atomic_flag(symbol_name: &'static [u8]) -> i32 {[m
+[32m+[m[32m    // SAFETY: symbol_name is a static NUL-terminated PostgreSQL global name and[m
+[32m+[m[32m    // dlsym with a null handle searches the current backend process image.[m
+     let ptr = unsafe { dlsym(std::ptr::null_mut(), symbol_name.as_ptr().cast()) };[m
+     if ptr.is_null() {[m
+         return 0;[m
+     }[m
+[32m+[m[32m    // SAFETY: callers pass names of PostgreSQL sig_atomic_t-compatible globals;[m
+[32m+[m[32m    // a null lookup was rejected above and this only performs a single read.[m
+     unsafe { *(ptr.cast::<std::ffi::c_int>()) }[m
+ }[m
+ [m
+[36m@@ -2008,11 +2016,18 @@[m [mtype PostgresGetTimeoutIndicator =[m
+     unsafe extern "C" fn(std::ffi::c_int, bool) -> bool;[m
+ [m
+ fn postgres_statement_timeout_pending() -> bool {[m
+[32m+[m[32m    // SAFETY: the symbol name is static and NUL-terminated, and dlsym only[m
+[32m+[m[32m    // returns a raw address that is checked for null before use.[m
+     let ptr = unsafe { dlsym(std::ptr::null_mut(), b"get_timeout_indicator\0".as_ptr().cast()) };[m
+     if ptr.is_null() {[m
+         return false;[m
+     }[m
+[32m+[m[32m    // SAFETY: PostgreSQL exports get_timeout_indicator with this backend-local[m
+[32m+[m[32m    // ABI; the resolved address is non-null and is invoked read-only for the[m
+[32m+[m[32m    // statement-timeout indicator.[m
+     let get_timeout_indicator: PostgresGetTimeoutIndicator = unsafe { std::mem::transmute(ptr) };[m
+[32m+[m[32m    // SAFETY: the function pointer was resolved and typed above, and this call[m
+[32m+[m[32m    // only reads PostgreSQL's statement-timeout indicator for the current backend.[m
+     unsafe { get_timeout_indicator(POSTGRES_STATEMENT_TIMEOUT_ID, false) }[m
+ }[m
+ [m
+
+Script done on 2026-05-19 02:11:29-07:00 [COMMAND_EXIT_CODE="0"]

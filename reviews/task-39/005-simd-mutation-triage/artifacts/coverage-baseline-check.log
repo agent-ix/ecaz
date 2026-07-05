@@ -1,0 +1,2 @@
+bash scripts/check_coverage_baseline_complete.sh fixtures/quality/coverage-baseline.tsv
+coverage baseline complete for 40 critical paths

@@ -1,0 +1,11 @@
+   pid   | state  | wait_event_type | wait_event |       age       |                                                                              query                                                                               
+---------+--------+-----------------+------------+-----------------+------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ 1698674 | active |                 |            | 00:06:07.085936 | CREATE INDEX task28_ivf_anchor50k_n128_idx                                                                                                                      +
+         |        |                 |            |                 | ON task28_ivf_anchor50k_corpus USING ec_ivf (embedding ecvector_ip_ops)                                                                                         +
+         |        |                 |            |                 | WITH (                                                                                                                                                          +
+         |        |                 |            |                 |   nlists = 128,                                                                                                                                                 +
+         |        |                 |            |                 |   nprobe = 128,                                                                                                                                                 +
+         |        |                 |            |                 |   trai
+ 1700688 | active |                 |            | 00:00:00        | select pid, state, wait_event_type, wait_event, now() - query_start as age, left(query, 160) as query from pg_stat_activity where datname='postgres' and state <
+(2 rows)
+

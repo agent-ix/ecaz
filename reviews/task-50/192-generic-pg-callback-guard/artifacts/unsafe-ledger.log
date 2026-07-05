@@ -1,0 +1,15 @@
+Script started on 2026-05-21 01:12:21-07:00 [<not executed on terminal>]
+2
+3
+52
+48
+75
+74
+2657
+2653
+ src/am/common/callback.rs            | 11 [32m++++++++++[m
+ src/am/common/parallel.rs            | 39 [32m+++++++++++++[m[31m-----------------------[m
+ src/am/ec_spire/dml_frontdoor/mod.rs | 39 [32m+++++++++++++++++[m[31m-------------------[m
+ 3 files changed, 43 insertions(+), 46 deletions(-)
+
+Script done on 2026-05-21 01:12:21-07:00 [COMMAND_EXIT_CODE="0"]

@@ -1,0 +1,250 @@
+Script started on 2026-05-13 20:22:34-07:00 [<not executed on terminal>]
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m198[36m:[m    Option<[1;31munsafe[m extern "C-unwind" fn(arg: pg_sys::Datum, relid: pg_sys::Oid)>;
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m200[36m:[m[1;31munsafe[m extern "C" {
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m208[36m:[mpub(crate) [1;31munsafe[m fn register_dml_frontdoor_planner_hook() {
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m209[36m:[m    [1;31munsafe[m {
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m219[36m:[m[1;31munsafe[m fn dml_frontdoor_register_relcache_callback() {
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m220[36m:[m    [1;31munsafe[m {
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m231[36m:[m[1;31munsafe[m extern "C-unwind" fn dml_frontdoor_relation_context_relcache_callback(
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m263[36m:[m    let callback_registered = [1;31munsafe[m { RELATION_CONTEXT_RELCACHE_CALLBACK_REGISTERED };
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m284[36m:[m    let (installed, classifier_invoked, last_supported, last_kind, last_status, last_action) = [1;31munsafe[m {
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m370[36m:[mpub(crate) [1;31munsafe[m fn dml_frontdoor_relation_context_catalog_row(
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m373[36m:[m    [1;31munsafe[m { dml_frontdoor_register_relcache_callback() };
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m391[36m:[m    let heap_relation = [1;31munsafe[m {
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m401[36m:[m    let result = [1;31munsafe[m {
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m421[36m:[m    [1;31munsafe[m { pg_sys::table_close(heap_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m426[36m:[m[1;31munsafe[m extern "C-unwind" fn ec_spire_dml_frontdoor_planner_hook(
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m434[36m:[m    let decision = [1;31munsafe[m { dml_frontdoor_observe_planner_query(parse) };
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m435[36m:[m    let plan_expr = [1;31munsafe[m { dml_frontdoor_plan_tree_replacement_expr(parse, decision.as_ref()) };
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m436[36m:[m    let planned_stmt = if let Some(previous_hook) = [1;31munsafe[m { PREVIOUS_PLANNER_HOOK } {
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m437[36m:[m        [1;31munsafe[m { previous_hook(parse, query_string, cursor_options, bound_params) }
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m439[36m:[m        [1;31munsafe[m { pg_sys::standard_planner(parse, query_string, cursor_options, bound_params) }
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m441[36m:[m    [1;31munsafe[m { dml_frontdoor_maybe_replace_plan_tree(planned_stmt, plan_expr) }
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m444[36m:[m[1;31munsafe[m fn dml_frontdoor_plan_tree_replacement_expr(
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m448[36m:[m    [1;31munsafe[m {
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m463[36m:[m[1;31munsafe[m fn dml_frontdoor_maybe_replace_plan_tree(
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m467[36m:[m    [1;31munsafe[m {
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m493[36m:[m[1;31munsafe[m fn dml_frontdoor_observe_planner_query(
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m496[36m:[m    let Some(decision) = ([1;31munsafe[m { dml_frontdoor_replacement_decision_catalog_row(query) }) else {
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m500[36m:[m    [1;31munsafe[m {
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m556[36m:[mpub(crate) [1;31munsafe[m fn dml_frontdoor_replacement_decision_catalog_row(
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m559[36m:[m    let target_relation_oid = [1;31munsafe[m { dml_frontdoor_target_relation_oid(query)? };
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m560[36m:[m    let relation = match [1;31munsafe[m { dml_frontdoor_relation_context_catalog_row(target_relation_oid) }
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m585[36m:[m    let detail = [1;31munsafe[m { dml_frontdoor_query_detail_with_relation(query, &relation)? };
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m593[36m:[mpub(crate) [1;31munsafe[m fn dml_frontdoor_primitive_plan_expr_catalog_row(
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m596[36m:[m    let target_relation_oid = [1;31munsafe[m { dml_frontdoor_target_relation_oid(query)? };
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m597[36m:[m    let relation = match [1;31munsafe[m { dml_frontdoor_relation_context_catalog_row(target_relation_oid) }
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m607[36m:[m    let detail = [1;31munsafe[m { dml_frontdoor_query_detail_with_relation(query, &relation)? };
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m628[36m:[mpub(crate) [1;31munsafe[m fn dml_frontdoor_primitive_plan_expr_from_baserel(
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m632[36m:[m    [1;31munsafe[m {
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m689[36m:[mpub(crate) [1;31munsafe[m fn dml_frontdoor_pk_select_primitive_plan_expr_from_baserel(
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m693[36m:[m    [1;31munsafe[m {
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m705[36m:[mpub(crate) [1;31munsafe[m fn dml_frontdoor_update_primitive_plan_expr_from_baserel(
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m709[36m:[m    [1;31munsafe[m {
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m721[36m:[mpub(crate) [1;31munsafe[m fn dml_frontdoor_delete_primitive_plan_expr_from_baserel(
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m725[36m:[m    [1;31munsafe[m {
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m873[36m:[mpub(crate) [1;31munsafe[m fn dml_frontdoor_primitive_plan_pk_value_bytes(
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m882[36m:[m            let value = [1;31munsafe[m { dml_frontdoor_bound_param_bigint_value(params, param_id)? };
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m888[36m:[mpub(crate) [1;31munsafe[m fn dml_frontdoor_primitive_invocation_from_plan(
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m892[36m:[m    let pk_value = [1;31munsafe[m { dml_frontdoor_primitive_plan_pk_value_bytes(plan, params)? };
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m907[36m:[m[1;31munsafe[m fn dml_frontdoor_bound_param_bigint_value(
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m921[36m:[m    let params_ref = [1;31munsafe[m { &*params };
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m932[36m:[m        [1;31munsafe[m { fetch(params, param_id, false, &mut workspace) }
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m934[36m:[m        [1;31munsafe[m { params_ref.params.as_ptr().add((param_id - 1) as usize) }
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m941[36m:[m    let param_ref = [1;31munsafe[m { &*param };
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m947[36m:[m    [1;31munsafe[m { dml_frontdoor_param_datum_to_bigint(param_id, param_ref.value, param_ref.ptype) }
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m950[36m:[m[1;31munsafe[m fn dml_frontdoor_param_datum_to_bigint(
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m956[36m:[m        pg_sys::INT2OID => Ok(i64::from([1;31munsafe[m { pg_sys::DatumGetInt16(datum) })),
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m957[36m:[m        pg_sys::INT4OID => Ok(i64::from([1;31munsafe[m { pg_sys::DatumGetInt32(datum) })),
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m958[36m:[m        pg_sys::INT8OID => Ok([1;31munsafe[m { pg_sys::DatumGetInt64(datum) }),
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m999[36m:[m[1;31munsafe[m fn dml_frontdoor_classify_query_with_catalog_context(
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1002[36m:[m    let target_relation_oid = [1;31munsafe[m { dml_frontdoor_target_relation_oid(query)? };
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1003[36m:[m    let relation = match [1;31munsafe[m { dml_frontdoor_relation_context_catalog_row(target_relation_oid) }
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1017[36m:[m    [1;31munsafe[m { dml_frontdoor_classify_query_with_relation(query, &relation) }
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1020[36m:[m[1;31munsafe[m fn dml_frontdoor_classify_query_with_relation(
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1024[36m:[m    let detail = [1;31munsafe[m { dml_frontdoor_query_detail_with_relation(query, relation)? };
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1045[36m:[m[1;31munsafe[m fn dml_frontdoor_query_detail_with_relation(
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1049[36m:[m    let query_ref = [1;31munsafe[m { query.as_ref()? };
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1068[36m:[m    let shape = [1;31munsafe[m { classify_dml_frontdoor_query(query, query_context)? };
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1073[36m:[m        SpireDmlFrontdoorOperation::PkSelect => [1;31munsafe[m {
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1078[36m:[m        [1;31munsafe[m { dml_frontdoor_pk_predicate(query_ref, target_rtindex, &query_context) };
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1080[36m:[m        [1;31munsafe[m { dml_frontdoor_target_column_exprs(query_ref.targetList, &query_context) }
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1093[36m:[m        [1;31munsafe[m { dml_frontdoor_target_columns(query_ref.targetList, &query_context) }
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1129[36m:[m[1;31munsafe[m fn dml_frontdoor_query_detail_from_baserel(
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1136[36m:[m    let query_ref = [1;31munsafe[m { query.as_ref()? };
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1159[36m:[m    let predicate = [1;31munsafe[m {
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1168[36m:[m        [1;31munsafe[m { dml_frontdoor_target_column_exprs(query_ref.targetList, &query_context) }
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1181[36m:[m        [1;31munsafe[m { dml_frontdoor_target_columns(query_ref.targetList, &query_context) }
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1193[36m:[m    let has_join = [1;31munsafe[m { dml_frontdoor_query_has_join_shape(query_ref, operation) };
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1282[36m:[m[1;31munsafe[m fn dml_frontdoor_relation_context_catalog_for_open_heap(
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1285[36m:[m    let heap_relation_oid = [1;31munsafe[m { (*heap_relation).rd_id };
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1286[36m:[m    let column_names = [1;31munsafe[m { dml_frontdoor_relation_column_names_from_rel(heap_relation)? };
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1288[36m:[m        [1;31munsafe[m { dml_frontdoor_catalog_index_and_pk(heap_relation)? };
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1293[36m:[m        [1;31munsafe[m { dml_frontdoor_index_key_column_names_from_rel(index_oid, heap_relation)? }
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1335[36m:[m[1;31munsafe[m fn dml_frontdoor_catalog_index_and_pk(
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1345[36m:[m    let ec_spire_am_oid = [1;31munsafe[m { pg_sys::get_index_am_oid(EC_SPIRE_AM_NAME.as_ptr(), true) };
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1349[36m:[m        [1;31munsafe[m { PgList::<pg_sys::Oid>::from_pg(pg_sys::RelationGetIndexList(heap_relation)) };
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1358[36m:[m            [1;31munsafe[m { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1362[36m:[m        let index_form = [1;31munsafe[m { (*index_relation).rd_index.as_ref() };
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1363[36m:[m        let class_form = [1;31munsafe[m { (*index_relation).rd_rel.as_ref() };
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1376[36m:[m                primary_key = [1;31munsafe[m {
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1381[36m:[m        [1;31munsafe[m { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1393[36m:[m[1;31munsafe[m fn dml_frontdoor_primary_key_column_from_index(
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1400[36m:[m    let attnum = [1;31munsafe[m { *index_form.indkey.values.as_ptr() };
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1405[36m:[m        ([1;31munsafe[m { dml_frontdoor_relation_attr_name_and_form(heap_relation, attnum)? })
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1414[36m:[m        column_type: [1;31munsafe[m { dml_frontdoor_format_type_name(attr.atttypid)? },
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1418[36m:[m[1;31munsafe[m fn dml_frontdoor_relation_column_names_from_rel(
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1421[36m:[m    let tuple_desc = [1;31munsafe[m { (*heap_relation).rd_att };
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1425[36m:[m    let natts = [1;31munsafe[m { (*tuple_desc).natts };
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1428[36m:[m        let attr = [1;31munsafe[m { pg_sys::TupleDescAttr(tuple_desc, attr_index) };
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1429[36m:[m        if attr.is_null() || [1;31munsafe[m { (*attr).attisdropped } {
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1432[36m:[m        let attnum = [1;31munsafe[m { (*attr).attnum };
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1436[36m:[m        let name = [1;31munsafe[m { dml_frontdoor_attr_name(attr)? };
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1442[36m:[m[1;31munsafe[m fn dml_frontdoor_index_key_column_names_from_rel(
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1447[36m:[m        [1;31munsafe[m { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1451[36m:[m    let result = [1;31munsafe[m {
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1474[36m:[m    [1;31munsafe[m { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1478[36m:[m[1;31munsafe[m fn dml_frontdoor_relation_attr_name_and_form(
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1482[36m:[m    let tuple_desc = [1;31munsafe[m { (*heap_relation).rd_att };
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1483[36m:[m    if tuple_desc.is_null() || attnum <= 0 || i32::from(attnum) > [1;31munsafe[m { (*tuple_desc).natts } {
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1486[36m:[m    let attr = [1;31munsafe[m { pg_sys::TupleDescAttr(tuple_desc, i32::from(attnum - 1)) };
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1487[36m:[m    if attr.is_null() || [1;31munsafe[m { (*attr).attisdropped } {
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1490[36m:[m    Ok(Some(([1;31munsafe[m { dml_frontdoor_attr_name(attr)? }, [1;31munsafe[m {
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1495[36m:[m[1;31munsafe[m fn dml_frontdoor_attr_name(
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1498[36m:[m    [1;31munsafe[m { CStr::from_ptr((*attr).attname.data.as_ptr()) }
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1504[36m:[m[1;31munsafe[m fn dml_frontdoor_format_type_name(type_oid: pg_sys::Oid) -> Result<String, String> {
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1505[36m:[m    let type_name = [1;31munsafe[m { pg_sys::format_type_be(type_oid) };
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1509[36m:[m    let decoded = [1;31munsafe[m { CStr::from_ptr(type_name) }
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1513[36m:[m    [1;31munsafe[m { pg_sys::pfree(type_name.cast()) };
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1777[36m:[mpub(crate) [1;31munsafe[m fn classify_dml_frontdoor_query(
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1784[36m:[m    let query_ref = [1;31munsafe[m { query.as_ref()? };
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1793[36m:[m            [1;31munsafe[m { single_range_table_ref(query_ref) }.unwrap_or_default()
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1796[36m:[m    let has_join = [1;31munsafe[m { dml_frontdoor_query_has_join_shape(query_ref, operation) };
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1797[36m:[m    let predicate = [1;31munsafe[m { dml_frontdoor_pk_predicate(query_ref, target_rtindex, &context) };
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1799[36m:[m        [1;31munsafe[m { dml_frontdoor_target_columns(query_ref.targetList, &context) }
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1804[36m:[m        [1;31munsafe[m { dml_frontdoor_target_columns(query_ref.targetList, &context) }
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1834[36m:[mpub(crate) [1;31munsafe[m fn dml_frontdoor_target_relation_oid(
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1840[36m:[m    let query_ref = [1;31munsafe[m { query.as_ref()? };
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1846[36m:[m        SpireDmlFrontdoorOperation::PkSelect => [1;31munsafe[m { single_range_table_ref(query_ref)? },
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1848[36m:[m    [1;31munsafe[m { dml_frontdoor_relation_oid_from_rtable(query_ref, target_rtindex) }
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1860[36m:[m[1;31munsafe[m fn dml_frontdoor_query_has_join_shape(
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1868[36m:[m        SpireDmlFrontdoorOperation::PkSelect => [1;31munsafe[m { single_range_table_ref(query).is_none() },
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1869[36m:[m        SpireDmlFrontdoorOperation::Update | SpireDmlFrontdoorOperation::Delete => [1;31munsafe[m {
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1875[36m:[m[1;31munsafe[m fn dml_frontdoor_dml_has_extra_from_shape(query: &pg_sys::Query) -> bool {
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1876[36m:[m    let Some(jointree) = ([1;31munsafe[m { query.jointree.as_ref() }) else {
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1882[36m:[m    let fromlist = [1;31munsafe[m { PgList::<pg_sys::Node>::from_pg(jointree.fromlist) };
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1892[36m:[m    if from_node.is_null() || [1;31munsafe[m { (*from_node).type_ } != pg_sys::NodeTag::T_RangeTblRef {
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1896[36m:[m    [1;31munsafe[m { (*range_table_ref).rtindex != query.resultRelation }
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1907[36m:[m[1;31munsafe[m fn single_range_table_ref(query: &pg_sys::Query) -> Option<i32> {
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1908[36m:[m    let jointree = [1;31munsafe[m { query.jointree.as_ref()? };
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1912[36m:[m    let fromlist = [1;31munsafe[m { PgList::<pg_sys::Node>::from_pg(jointree.fromlist) };
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1917[36m:[m    if from_node.is_null() || [1;31munsafe[m { (*from_node).type_ } != pg_sys::NodeTag::T_RangeTblRef {
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1921[36m:[m    Some([1;31munsafe[m { (*range_table_ref).rtindex })
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1924[36m:[m[1;31munsafe[m fn dml_frontdoor_relation_oid_from_rtable(
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1931[36m:[m    let rtable = [1;31munsafe[m { PgList::<pg_sys::RangeTblEntry>::from_pg(query.rtable) };
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1933[36m:[m    let rte = [1;31munsafe[m { rte.as_ref()? };
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1940[36m:[m[1;31munsafe[m fn dml_frontdoor_pk_predicate(
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1945[36m:[m    let Some(jointree) = ([1;31munsafe[m { query.jointree.as_ref() }) else {
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1949[36m:[m    [1;31munsafe[m { dml_frontdoor_pk_predicate_from_clause(qual.cast(), target_rtindex, context) }
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1953[36m:[m[1;31munsafe[m fn dml_frontdoor_pk_predicate_from_baserestrictinfo(
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1961[36m:[m    let restrict_infos = [1;31munsafe[m { PgList::<pg_sys::RestrictInfo>::from_pg(baserestrictinfo) };
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1963[36m:[m        let Some(restrict_info) = ([1;31munsafe[m { restrict_info.as_ref() }) else {
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1966[36m:[m        if let Some(predicate) = [1;31munsafe[m {
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1975[36m:[m[1;31munsafe[m fn dml_frontdoor_pk_predicate_from_clause(
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1983[36m:[m    if [1;31munsafe[m { (*clause.cast::<pg_sys::Node>()).type_ } != pg_sys::NodeTag::T_OpExpr {
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1984[36m:[m        if [1;31munsafe[m {
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m1998[36m:[m        if dml_frontdoor_bigint_equality_opcode([1;31munsafe[m { pg_sys::get_opcode((*op_expr).opno) }) {
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m2003[36m:[m    let args = [1;31munsafe[m { PgList::<pg_sys::Expr>::from_pg((*op_expr).args) };
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m2017[36m:[m                [1;31munsafe[m { dml_frontdoor_predicate_var_column(left, target_rtindex, context) }
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m2022[36m:[m                    value: [1;31munsafe[m { dml_frontdoor_predicate_value(right) },
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m2027[36m:[m                [1;31munsafe[m { dml_frontdoor_predicate_var_column(right, target_rtindex, context) }
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m2032[36m:[m                    value: [1;31munsafe[m { dml_frontdoor_predicate_value(left) },
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m2052[36m:[m[1;31munsafe[m fn dml_frontdoor_predicate_var_column(
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m2057[36m:[m    if let Some(column) = [1;31munsafe[m { dml_frontdoor_var_column(expr, target_rtindex, context) } {
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m2063[36m:[m    match [1;31munsafe[m { (*expr.cast::<pg_sys::Node>()).type_ } {
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m2066[36m:[m            [1;31munsafe[m { dml_frontdoor_predicate_var_column((*relabel).arg, target_rtindex, context) }
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m2070[36m:[m            [1;31munsafe[m { dml_frontdoor_predicate_var_column((*coerce).arg, target_rtindex, context) }
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m2074[36m:[m            [1;31munsafe[m {
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m2086[36m:[m[1;31munsafe[m fn dml_frontdoor_single_predicate_var_column(
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m2094[36m:[m    let exprs = [1;31munsafe[m { PgList::<pg_sys::Expr>::from_pg(exprs) };
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m2099[36m:[m    [1;31munsafe[m { dml_frontdoor_predicate_var_column(expr, target_rtindex, context) }
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m2102[36m:[m[1;31munsafe[m fn dml_frontdoor_expr_references_column(
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m2111[36m:[m    match [1;31munsafe[m { (*expr.cast::<pg_sys::Node>()).type_ } {
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m2112[36m:[m        pg_sys::NodeTag::T_Var => [1;31munsafe[m {
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m2117[36m:[m            [1;31munsafe[m {
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m2128[36m:[m            [1;31munsafe[m {
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m2139[36m:[m            [1;31munsafe[m {
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m2150[36m:[m            [1;31munsafe[m {
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m2161[36m:[m            [1;31munsafe[m {
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m2172[36m:[m            [1;31munsafe[m {
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m2185[36m:[m[1;31munsafe[m fn dml_frontdoor_expr_list_references_column(
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m2194[36m:[m    let exprs = [1;31munsafe[m { PgList::<pg_sys::Expr>::from_pg(exprs) };
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m2195[36m:[m    let references_column = exprs.iter_ptr().any(|expr| [1;31munsafe[m {
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m2217[36m:[m[1;31munsafe[m fn dml_frontdoor_var_column(
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m2222[36m:[m    if expr.is_null() || [1;31munsafe[m { (*expr.cast::<pg_sys::Node>()).type_ } != pg_sys::NodeTag::T_Var {
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m2225[36m:[m    let var = [1;31munsafe[m { &*expr.cast::<pg_sys::Var>() };
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m2235[36m:[m[1;31munsafe[m fn dml_frontdoor_value_kind(expr: *mut pg_sys::Expr) -> SpireDmlFrontdoorValueKind {
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m2236[36m:[m    [1;31munsafe[m { dml_frontdoor_predicate_value(expr).kind }
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m2239[36m:[m[1;31munsafe[m fn dml_frontdoor_predicate_value(
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m2242[36m:[m    [1;31munsafe[m { dml_frontdoor_predicate_value_inner(expr, 0) }
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m2245[36m:[m[1;31munsafe[m fn dml_frontdoor_predicate_value_inner(
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m2255[36m:[m    match [1;31munsafe[m { (*expr.cast::<pg_sys::Node>()).type_ } {
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m2257[36m:[m            let const_expr = [1;31munsafe[m { &*expr.cast::<pg_sys::Const>() };
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m2263[36m:[m                    const_bigint: [1;31munsafe[m { dml_frontdoor_const_bigint_value(const_expr) },
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m2271[36m:[m            let param = [1;31munsafe[m { &*expr.cast::<pg_sys::Param>() };
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m2283[36m:[m            let func_expr = [1;31munsafe[m { &*expr.cast::<pg_sys::FuncExpr>() };
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m2287[36m:[m            [1;31munsafe[m { dml_frontdoor_single_coerced_arg_value(func_expr.args, wrapper_depth) }
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m2290[36m:[m            let relabel = [1;31munsafe[m { &*expr.cast::<pg_sys::RelabelType>() };
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m2294[36m:[m            [1;31munsafe[m { dml_frontdoor_coercible_integer_value(relabel.arg, wrapper_depth) }
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m2297[36m:[m            let coerce = [1;31munsafe[m { &*expr.cast::<pg_sys::CoerceViaIO>() };
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m2301[36m:[m            [1;31munsafe[m { dml_frontdoor_coercible_integer_value(coerce.arg, wrapper_depth) }
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m2307[36m:[m[1;31munsafe[m fn dml_frontdoor_single_coerced_arg_value(
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m2311[36m:[m    let Some(arg) = ([1;31munsafe[m { dml_frontdoor_single_list_expr_arg(args) }) else {
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m2314[36m:[m    [1;31munsafe[m { dml_frontdoor_coercible_integer_value(arg, wrapper_depth) }
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m2317[36m:[m[1;31munsafe[m fn dml_frontdoor_single_list_expr_arg(args: *mut pg_sys::List) -> Option<*mut pg_sys::Expr> {
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m2318[36m:[m    let args = [1;31munsafe[m { args.as_ref()? };
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m2324[36m:[m    Some([1;31munsafe[m { (*args.elements).ptr_value }.cast::<pg_sys::Expr>())
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m2327[36m:[m[1;31munsafe[m fn dml_frontdoor_coercible_integer_value(
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m2334[36m:[m    match [1;31munsafe[m { (*expr.cast::<pg_sys::Node>()).type_ } {
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m2336[36m:[m            let const_expr = [1;31munsafe[m { &*expr.cast::<pg_sys::Const>() };
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m2342[36m:[m                    const_bigint: [1;31munsafe[m { dml_frontdoor_const_bigint_value(const_expr) },
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m2350[36m:[m            let param = [1;31munsafe[m { &*expr.cast::<pg_sys::Param>() };
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m2361[36m:[m        _ => [1;31munsafe[m { dml_frontdoor_predicate_value_inner(expr, wrapper_depth + 1) },
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m2373[36m:[m[1;31munsafe[m fn dml_frontdoor_const_bigint_value(const_expr: &pg_sys::Const) -> Option<i64> {
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m2374[36m:[m    [1;31munsafe[m {
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m2410[36m:[m[1;31munsafe[m fn dml_frontdoor_target_columns(
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m2414[36m:[m    [1;31munsafe[m {
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m2422[36m:[m[1;31munsafe[m fn dml_frontdoor_target_column_exprs(
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m2429[36m:[m    let targets = [1;31munsafe[m { PgList::<pg_sys::TargetEntry>::from_pg(target_list) };
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m2432[36m:[m        let Some(target_entry) = ([1;31munsafe[m { target_entry.as_ref() }) else {
+b9a028cd:src/am/ec_spire/dml_frontdoor/mod.rs[36m:[m2447[36m:[m            if let Ok(column) = [1;31munsafe[m { CStr::from_ptr(target_entry.resname) }.to_str() {
+b9a028cd:src/am/ec_spire/dml_frontdoor/tests.rs[36m:[m209[36m:[m            [1;31munsafe[m {
+b9a028cd:src/am/ec_spire/dml_frontdoor/tests.rs[36m:[m219[36m:[m            [1;31munsafe[m {
+b9a028cd:src/am/ec_spire/dml_frontdoor/tests.rs[36m:[m231[36m:[m            [1;31munsafe[m {
+b9a028cd:src/am/ec_spire/dml_frontdoor/tests.rs[36m:[m257[36m:[m            [1;31munsafe[m {
+b9a028cd:src/am/ec_spire/dml_frontdoor/tests.rs[36m:[m267[36m:[m            [1;31munsafe[m {
+b9a028cd:src/am/ec_spire/dml_frontdoor/tests.rs[36m:[m308[36m:[m            [1;31munsafe[m {
+b9a028cd:src/am/ec_spire/dml_frontdoor/tests.rs[36m:[m320[36m:[m            [1;31munsafe[m {
+b9a028cd:src/am/ec_spire/update/materialization.rs[36m:[m275[36m:[mpub(super) [1;31munsafe[m fn fetch_split_replacement_source_vectors(
+b9a028cd:src/am/ec_spire/update/materialization.rs[36m:[m289[36m:[m            let Some(source_vector) = [1;31munsafe[m {
+b9a028cd:src/am/ec_spire/update/publish/relation.rs[36m:[m1[36m:[mpub(super) [1;31munsafe[m fn publish_relation_scheduled_replacement_epoch(
+b9a028cd:src/am/ec_spire/update/publish/relation.rs[36m:[m24[36m:[m    let replacement_object_placements = [1;31munsafe[m {
+b9a028cd:src/am/ec_spire/update/publish/relation.rs[36m:[m50[36m:[m        [1;31munsafe[m { write_placement_entries_to_relation(index_relation, &placement_directory)? };
+b9a028cd:src/am/ec_spire/update/publish/relation.rs[36m:[m66[36m:[m    let root_control = [1;31munsafe[m { page::read_root_control_page(index_relation) };
+b9a028cd:src/am/ec_spire/update/publish/relation.rs[36m:[m74[36m:[m        [1;31munsafe[m { load_relation_local_store_config(index_relation, root_control)? };
+b9a028cd:src/am/ec_spire/update/publish/relation.rs[36m:[m75[36m:[m    [1;31munsafe[m {
+b9a028cd:src/am/ec_spire/update/publish/relation.rs[36m:[m85[36m:[mpub(super) [1;31munsafe[m fn publish_relation_selected_scheduled_replacement_epoch(
+b9a028cd:src/am/ec_spire/update/publish/relation.rs[36m:[m99[36m:[m    [1;31munsafe[m {
+b9a028cd:src/am/ec_spire/update/publish/relation.rs[36m:[m113[36m:[mpub(super) [1;31munsafe[m fn publish_relation_replacement_epoch_from_object_placements(
+b9a028cd:src/am/ec_spire/update/publish/relation.rs[36m:[m135[36m:[m        [1;31munsafe[m { write_placement_entries_to_relation(index_relation, &placement_directory)? };
+b9a028cd:src/am/ec_spire/update/publish/relation.rs[36m:[m146[36m:[m    let root_control = [1;31munsafe[m { page::read_root_control_page(index_relation) };
+b9a028cd:src/am/ec_spire/update/publish/relation.rs[36m:[m154[36m:[m        [1;31munsafe[m { load_relation_local_store_config(index_relation, root_control)? };
+b9a028cd:src/am/ec_spire/update/publish/relation.rs[36m:[m155[36m:[m    [1;31munsafe[m {
+b9a028cd:src/am/ec_spire/update/publish/relation.rs[36m:[m298[36m:[mpub(super) [1;31munsafe[m fn write_relation_replacement_objects(
+b9a028cd:src/am/ec_spire/update/publish/relation.rs[36m:[m336[36m:[mpub(super) [1;31munsafe[m fn write_relation_scheduled_replacement_objects(
+b9a028cd:src/am/ec_spire/update/routing.rs[36m:[m538[36m:[mpub(super) [1;31munsafe[m fn build_relation_selected_scheduled_split_replacement_execution_input_from_heap_sources(
+b9a028cd:src/am/ec_spire/update/routing.rs[36m:[m557[36m:[m    let fetched_sources = [1;31munsafe[m {
+b9a028cd:src/am/ec_spire/update/types.rs[36m:[m363[36m:[m        [1;31munsafe[m { self.insert_routing_object(epoch, object) }
+b9a028cd:src/am/ec_spire/update/types.rs[36m:[m374[36m:[m        [1;31munsafe[m {
+
+Script done on 2026-05-13 20:22:34-07:00 [COMMAND_EXIT_CODE="0"]

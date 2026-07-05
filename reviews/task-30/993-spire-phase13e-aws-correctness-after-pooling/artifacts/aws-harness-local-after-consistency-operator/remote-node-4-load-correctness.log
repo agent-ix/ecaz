@@ -1,0 +1,19 @@
+[loader] inspecting reviews/task-30/993-spire-phase13e-aws-correctness-after-pooling/artifacts/aws-harness-local-after-consistency-operator/distributed-correctness/node-4/ec_spire_aws_synth_10k_node_4_corpus.tsv
+[loader] corpus: 3388 rows, sha256=bb948b6af7ae50ed7418ea52746c07a6bbac56080d6e97bbc377d65ce1f2658e  queries: skipped (--corpus-only)
+[loader] copied corpus table ec_spire_aws_synth_10k_node_4_corpus in 1.38s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table ec_spire_aws_synth_10k_node_4_corpus in 1.42s
+[loader] building ec_spire_aws_synth_10k_remote_idx using ec_spire (reloptions=[storage_format=rabitq]) ...
+[loader] built ec_spire_aws_synth_10k_remote_idx in 25.58s
+┌─────────┬───────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                     │
+╞═════════╪═══════════════════════════════════════════════════════════╡
+│ profile ┆ ec_spire                                                  │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ ec_spire_aws_synth_10k_node_4_corpus (3388 rows)          │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ skipped (--corpus-only)                                   │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ ec_spire_aws_synth_10k_remote_idx [storage_format=rabitq] │
+└─────────┴───────────────────────────────────────────────────────────┘
+[loader] completed prefix ec_spire_aws_synth_10k_node_4 in 28.65s

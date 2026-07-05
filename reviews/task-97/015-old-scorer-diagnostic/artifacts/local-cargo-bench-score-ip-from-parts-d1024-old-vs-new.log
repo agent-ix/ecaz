@@ -1,0 +1,48 @@
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz)
+    Finished `bench` profile [optimized + debuginfo] target(s) in 3m 58s
+     Running benches/criterion/quant_score.rs (target/release/deps/quant_score-aaf99c26a8049f61)
+Gnuplot not found, using plotters backend
+Benchmarking quant/score_ip_from_parts/d1024_b4/1024
+Benchmarking quant/score_ip_from_parts/d1024_b4/1024: Warming up for 1.0000 s
+Benchmarking quant/score_ip_from_parts/d1024_b4/1024: Collecting 10 samples in estimated 2.0000 s (2.2M iterations)
+Benchmarking quant/score_ip_from_parts/d1024_b4/1024: Analyzing
+quant/score_ip_from_parts/d1024_b4/1024
+                        time:   [872.98 ns 877.79 ns 884.19 ns]
+                        thrpt:  [1.1310 Melem/s 1.1392 Melem/s 1.1455 Melem/s]
+                 change:
+                        time:   [-3.0144% +0.3470% +3.9418%] (p = 0.86 > 0.05)
+                        thrpt:  [-3.7923% -0.3458% +3.1081%]
+                        No change in performance detected.
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) high mild
+  1 (10.00%) high severe
+Benchmarking quant/score_ip_from_parts/pre_b0efa19d9_multi_accum/d1024_b4
+Benchmarking quant/score_ip_from_parts/pre_b0efa19d9_multi_accum/d1024_b4: Warming up for 1.0000 s
+Benchmarking quant/score_ip_from_parts/pre_b0efa19d9_multi_accum/d1024_b4: Collecting 10 samples in estimated 2.0000 s (7.2M iterations)
+Benchmarking quant/score_ip_from_parts/pre_b0efa19d9_multi_accum/d1024_b4: Analyzing
+quant/score_ip_from_parts/pre_b0efa19d9_multi_accum/d1024_b4
+                        time:   [257.62 ns 267.76 ns 276.49 ns]
+                        thrpt:  [3.6167 Melem/s 3.7347 Melem/s 3.8817 Melem/s]
+
+Benchmarking quant/qjl32_block32/scalar/d1024_b4
+Benchmarking quant/qjl32_block32/scalar/d1024_b4: Warming up for 1.0000 s
+Benchmarking quant/qjl32_block32/scalar/d1024_b4: Collecting 10 samples in estimated 2.0014 s (58k iterations)
+Benchmarking quant/qjl32_block32/scalar/d1024_b4: Analyzing
+quant/qjl32_block32/scalar/d1024_b4
+                        time:   [34.906 µs 36.034 µs 37.182 µs]
+                        thrpt:  [860.64 Kelem/s 888.04 Kelem/s 916.74 Kelem/s]
+                 change:
+                        time:   [-3.2642% +1.0949% +5.1088%] (p = 0.64 > 0.05)
+                        thrpt:  [-4.8605% -1.0830% +3.3743%]
+                        No change in performance detected.
+Benchmarking quant/qjl32_block32/dispatch/d1024_b4
+Benchmarking quant/qjl32_block32/dispatch/d1024_b4: Warming up for 1.0000 s
+Benchmarking quant/qjl32_block32/dispatch/d1024_b4: Collecting 10 samples in estimated 2.0003 s (70k iterations)
+Benchmarking quant/qjl32_block32/dispatch/d1024_b4: Analyzing
+quant/qjl32_block32/dispatch/d1024_b4
+                        time:   [28.187 µs 28.587 µs 29.065 µs]
+                        thrpt:  [1.1010 Melem/s 1.1194 Melem/s 1.1353 Melem/s]
+                 change:
+                        time:   [-4.1294% -1.3743% +1.4124%] (p = 0.39 > 0.05)
+                        thrpt:  [-1.3927% +1.3935% +4.3073%]
+                        No change in performance detected.

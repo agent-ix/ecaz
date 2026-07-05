@@ -1,0 +1,73 @@
+{
+  "suite": "phase13e-local-spire-pipeline",
+  "schema_version": 1,
+  "config": "reviews/task-30/1057-spire-phase13e-local-core-gates-after-k100-cap/artifacts/phase13e-static-remote-placement/bench-suite/phase13e-local-spire-pipeline-suite.json",
+  "config_sha256": "062e3e29f936ca64ce9a97a9937dc819be1d600aa2b847cfaff163cb1ec54ba0",
+  "dry_run": false,
+  "generated_at_unix_ms": 1780000502635,
+  "connection": {
+    "database": "postgres",
+    "host": "/home/peter/dev/ecaz/target/spire-phase13e-sockets-20260528T203455Z",
+    "port": 39600,
+    "user": "postgres",
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "phase13e-local-spire-pipeline-read",
+      "kind": "spire-pipeline",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/home/peter/dev/ecaz/target/spire-phase13e-sockets-20260528T203455Z",
+        "--port",
+        "39600",
+        "--user",
+        "postgres",
+        "bench",
+        "spire-pipeline",
+        "--prefix",
+        "ec_spire_phase13e_coord",
+        "--index",
+        "ec_spire_phase13e_coord_idx",
+        "--queries-limit",
+        "1",
+        "--sweep",
+        "3",
+        "--include-remote",
+        "--require-remote-placements",
+        "--remote-selected-pids",
+        "2,3,4",
+        "--top-k",
+        "6",
+        "--consistency-mode",
+        "strict",
+        "--remote-tuple-transport",
+        "pg_binary_attr_v1",
+        "--include-query-metrics",
+        "--include-recall",
+        "--include-production-read-profile",
+        "--production-read-only",
+        "--query-metric-k",
+        "6",
+        "--log-output",
+        "reviews/task-30/1057-spire-phase13e-local-core-gates-after-k100-cap/artifacts/phase13e-static-remote-placement/bench-suite/spire-pipeline.log"
+      ],
+      "selected": true,
+      "tags": [
+        "phase13e",
+        "local",
+        "production-read"
+      ],
+      "expected_artifacts": [
+        "reviews/task-30/1057-spire-phase13e-local-core-gates-after-k100-cap/artifacts/phase13e-static-remote-placement/bench-suite/spire-pipeline.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1780000502635,
+      "finished_at_unix_ms": 1780000502767,
+      "duration_ms": 131,
+      "exit_code": 0
+    }
+  ]
+}

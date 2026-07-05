@@ -1,0 +1,412 @@
+{
+  "suite": "task67-local-50k-100k-standard",
+  "schema_version": 1,
+  "config": "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/task67-local-50k-100k-standard-suite.json",
+  "config_sha256": "d08d8d23690de0ccfd6dfbd4db0e7598096738d18456c92cf0f05e1b881c106b",
+  "dry_run": false,
+  "generated_at_unix_ms": 1780166451662,
+  "connection": {
+    "database": "postgres",
+    "host": "/home/peter/.pgrx",
+    "port": 28818,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "prepare-ec-real-50k",
+      "kind": "corpus-prepare",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "corpus",
+        "prepare",
+        "--profile",
+        "ec_real_50k",
+        "--parquet",
+        "target/real-corpus/data",
+        "--output-dir",
+        "target/real-corpus/staged-task67-local"
+      ],
+      "selected": true,
+      "tags": [
+        "prepare",
+        "ec_real_50k"
+      ],
+      "expected_artifacts": [
+        "target/real-corpus/staged-task67-local/ec_real_50k_corpus.tsv",
+        "target/real-corpus/staged-task67-local/ec_real_50k_queries.tsv",
+        "target/real-corpus/staged-task67-local/ec_real_50k_manifest.json"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1780166451663,
+      "finished_at_unix_ms": 1780166976074,
+      "duration_ms": 524857,
+      "exit_code": 0
+    },
+    {
+      "name": "load-50k-ivfrabitq",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "ec_real_50k",
+        "ivfrabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/load-50k-ivfrabitq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-50k-ivfrabitq",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "recall",
+        "ec_real_50k",
+        "ivfrabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/recall-50k-ivfrabitq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-50k-ivfrabitq",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "latency",
+        "ec_real_50k",
+        "ivfrabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/latency-50k-ivfrabitq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-50k-ivfrabitq",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "ec_real_50k",
+        "ivfrabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/storage-50k-ivfrabitq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-50k-hnsw",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "ec_real_50k",
+        "hnsw"
+      ],
+      "expected_artifacts": [
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/load-50k-hnsw.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-50k-hnsw",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "recall",
+        "ec_real_50k",
+        "hnsw"
+      ],
+      "expected_artifacts": [
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/recall-50k-hnsw.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-50k-hnsw",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "latency",
+        "ec_real_50k",
+        "hnsw"
+      ],
+      "expected_artifacts": [
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/latency-50k-hnsw.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-50k-hnsw",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "ec_real_50k",
+        "hnsw"
+      ],
+      "expected_artifacts": [
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/storage-50k-hnsw.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-50k-diskann",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "ec_real_50k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/load-50k-diskann.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-50k-diskann",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "recall",
+        "ec_real_50k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/recall-50k-diskann.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-50k-diskann",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "latency",
+        "ec_real_50k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/latency-50k-diskann.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-50k-diskann",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "ec_real_50k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/storage-50k-diskann.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-100k-ivfrabitq",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "ec_real_100k",
+        "ivfrabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/load-100k-ivfrabitq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-100k-ivfrabitq",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "recall",
+        "ec_real_100k",
+        "ivfrabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/recall-100k-ivfrabitq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-100k-ivfrabitq",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "latency",
+        "ec_real_100k",
+        "ivfrabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/latency-100k-ivfrabitq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-100k-ivfrabitq",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "ec_real_100k",
+        "ivfrabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/storage-100k-ivfrabitq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-100k-hnsw",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "ec_real_100k",
+        "hnsw"
+      ],
+      "expected_artifacts": [
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/load-100k-hnsw.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-100k-hnsw",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "recall",
+        "ec_real_100k",
+        "hnsw"
+      ],
+      "expected_artifacts": [
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/recall-100k-hnsw.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-100k-hnsw",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "latency",
+        "ec_real_100k",
+        "hnsw"
+      ],
+      "expected_artifacts": [
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/latency-100k-hnsw.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-100k-hnsw",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "ec_real_100k",
+        "hnsw"
+      ],
+      "expected_artifacts": [
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/storage-100k-hnsw.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-100k-diskann",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "ec_real_100k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/load-100k-diskann.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-100k-diskann",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "recall",
+        "ec_real_100k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/recall-100k-diskann.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-100k-diskann",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "latency",
+        "ec_real_100k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/latency-100k-diskann.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-100k-diskann",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "ec_real_100k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/storage-100k-diskann.log"
+      ],
+      "status": "skipped"
+    }
+  ]
+}

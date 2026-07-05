@@ -1,0 +1,12 @@
+Script started on 2026-05-13 18:17:22-07:00 [<not executed on terminal>]
+src/tests/vacuum.rs
+923:    fn test_ec_spire_vacuum_delete_delta_suppresses_visible_row() {
+1014:    fn test_ec_spire_vacuum_cleanup_compacts_insert_delta() {
+1142:    fn test_pg18_ec_spire_sql_vacuum_mixed_delta() {
+1228:    fn test_pg18_ec_spire_multistore_sql_vacuum_routes_local_stores() {
+1344:    fn test_pg18_ec_spire_concurrent_insert_vacuum_scan() {
+
+src/tests/mod.rs
+12539:    fn test_ec_spire_relation_object_tuple_roundtrip() {
+
+Script done on 2026-05-13 18:17:22-07:00 [COMMAND_EXIT_CODE="0"]

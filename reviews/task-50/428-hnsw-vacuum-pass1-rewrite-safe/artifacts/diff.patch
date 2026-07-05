@@ -1,0 +1,71 @@
+diff --git a/src/am/ec_hnsw/vacuum.rs b/src/am/ec_hnsw/vacuum.rs
+index 2c15b3811..7b7dd04d8 100644
+--- a/src/am/ec_hnsw/vacuum.rs
++++ b/src/am/ec_hnsw/vacuum.rs
+@@ -529,18 +529,14 @@ unsafe fn run_bulkdelete_with_adapter(
+         let exclusive_buffer =
+             index.read_main_locked(block_number, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32, "vacuum");
+ 
+-        // SAFETY: `exclusive_buffer` is locked for this block and the callback
+-        // state is the same state PostgreSQL supplied to ambulkdelete.
+-        let final_plan = unsafe {
+-            rewrite_page_pass1(
+-                index,
+-                exclusive_buffer,
+-                block_number,
+-                storage,
+-                callback,
+-                callback_state,
+-            )
+-        };
++        let final_plan = rewrite_page_pass1(
++            index,
++            exclusive_buffer,
++            block_number,
++            storage,
++            callback,
++            callback_state,
++        );
+         live_elements += final_plan.live_elements;
+         removed_heap_tids += final_plan.removed_heap_tids;
+         finalize_tids.extend(final_plan.finalize_tids);
+@@ -598,7 +594,7 @@ unsafe fn repair_metadata_entry_point_after_vacuum(
+     };
+ }
+ 
+-unsafe fn rewrite_page_pass1(
++fn rewrite_page_pass1(
+     index: VacuumIndexRelation,
+     buffer: LockedBufferGuard,
+     block_number: u32,
+@@ -622,9 +618,7 @@ unsafe fn rewrite_page_pass1(
+ 
+     let rewrite = index.begin_page_rewrite(&buffer);
+     let wal_page_ptr = rewrite.page_ptr();
+-    // SAFETY: Updates were planned from this same page/block and preserve tuple
+-    // lengths when rewritten.
+-    unsafe { apply_page_pass1_updates(wal_page_ptr, page_size, block_number, &plan.updates) };
++    apply_page_pass1_updates(wal_page_ptr, page_size, block_number, &plan.updates);
+     rewrite.finish();
+     plan
+ }
+@@ -757,7 +751,7 @@ fn plan_page_pass1(
+     plan
+ }
+ 
+-unsafe fn apply_page_pass1_updates(
++fn apply_page_pass1_updates(
+     page_ptr: *mut u8,
+     page_size: usize,
+     block_number: u32,
+@@ -1980,9 +1974,7 @@ unsafe fn finalize_fully_dead_elements_on_page_with_storage(
+ 
+     let rewrite = index.begin_page_rewrite(&buffer);
+     let wal_page_ptr = rewrite.page_ptr();
+-    // SAFETY: Updates were planned from this same page/block and preserve tuple
+-    // lengths when rewritten.
+-    unsafe { apply_page_pass1_updates(wal_page_ptr, page_size, block_number, &updates) };
++    apply_page_pass1_updates(wal_page_ptr, page_size, block_number, &updates);
+     rewrite.finish();
+ }
+ 

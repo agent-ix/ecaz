@@ -1,0 +1,17 @@
+Script started on 2026-05-13 12:02:07-07:00 [<not executed on terminal>]
+src/am/ec_spire/assign/mod.rs
+src/am/ec_spire/assign/tests.rs
+src/am/ec_spire/cost/mod.rs
+src/am/ec_spire/cost/tests.rs
+src/am/ec_spire/diagnostics/mod.rs
+src/am/ec_spire/diagnostics/tests.rs
+src/am/ec_spire/dml_frontdoor/mod.rs
+src/am/ec_spire/dml_frontdoor/tests.rs
+src/am/ec_spire/options/mod.rs
+src/am/ec_spire/options/tests.rs
+src/am/ec_spire/quantizer/mod.rs
+src/am/ec_spire/quantizer/tests.rs
+src/am/ec_spire/vacuum/mod.rs
+src/am/ec_spire/vacuum/tests.rs
+
+Script done on 2026-05-13 12:02:07-07:00 [COMMAND_EXIT_CODE="0"]

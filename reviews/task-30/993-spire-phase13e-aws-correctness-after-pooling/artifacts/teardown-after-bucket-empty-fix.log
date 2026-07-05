@@ -1,0 +1,16 @@
+Script started on 2026-05-26 13:36:14-07:00 [<not executed on terminal>]
+make: Entering directory '/home/peter/dev/ecaz/infra/spire-aws'
+cd /home/peter/dev/ecaz && /home/peter/dev/ecaz/scripts/spire-aws/empty-artifact-bucket.sh /home/peter/dev/ecaz/infra/spire-aws
+cd /home/peter/dev/ecaz/infra/spire-aws && terraform destroy -auto-approve
+[0m[1maws_s3_bucket.artifacts: Refreshing state... [id=ecaz-spire-aws-20260526193539243400000007][0m
+
+Changes to Outputs:
+  [31m-[0m[0m availability_zone = "us-west-2a" [90m-> null[0m[0m
+  [31m-[0m[0m region            = "us-west-2" [90m-> null[0m[0m
+
+You can apply this plan to save these new output values to the Terraform state, without changing any real infrastructure.
+[0m[1m[32m
+Destroy complete! Resources: 0 destroyed.[0m
+make: Leaving directory '/home/peter/dev/ecaz/infra/spire-aws'
+
+Script done on 2026-05-26 13:36:18-07:00 [COMMAND_EXIT_CODE="0"]

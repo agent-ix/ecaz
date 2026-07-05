@@ -1,0 +1,57 @@
+Script started on 2026-05-29 13:24:09-07:00 [<not executed on terminal>]
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.18s
+     Running tests/on_disk_fixtures.rs (target/debug/deps/on_disk_fixtures-44c7a1fc2eb7f554)
+
+running 47 tests
+test diskann_metadata_v3_byteswapped_version_is_rejected ... [32mok[m
+test diskann_metadata_v3_fixture_decodes ... [32mok[m
+test diskann_vamana_codebook_tuple_v3_fixture_decodes ... [32mok[m
+test diskann_vamana_node_tuple_v3_byteswapped_neighbor_count_is_rejected ... [32mok[m
+test diskann_vamana_node_tuple_v3_fixture_decodes ... [32mok[m
+test diskann_vamana_overflow_tuple_v3_byteswapped_count_is_rejected ... [32mok[m
+test diskann_vamana_overflow_tuple_v3_fixture_decodes ... [32mok[m
+test hnsw_element_tuple_v3_fixture_decodes ... [32mok[m
+test hnsw_grouped_codebook_tuple_v3_fixture_decodes ... [32mok[m
+test hnsw_grouped_hot_tuple_v2_fixture_decodes ... [32mok[m
+test hnsw_metadata_v3_byteswapped_version_is_rejected ... [32mok[m
+test hnsw_metadata_v3_fixture_decodes ... [32mok[m
+test hnsw_metadata_v4_rabitq_byteswapped_version_is_rejected ... [32mok[m
+test hnsw_metadata_v4_rabitq_fixture_decodes ... [32mok[m
+test hnsw_neighbor_tuple_v3_fixture_decodes ... [32mok[m
+test hnsw_rerank_tuple_v3_fixture_decodes ... [32mok[m
+test hnsw_turbo_hot_tuple_v3_fixture_decodes ... [32mok[m
+test ivf_centroid_tuple_v1_byteswapped_dimensions_is_rejected ... [32mok[m
+test ivf_centroid_tuple_v1_fixture_decodes ... [32mok[m
+test ivf_list_directory_tuple_v1_fixture_decodes ... [32mok[m
+test ivf_metadata_v1_byteswapped_version_is_rejected ... [32mok[m
+test ivf_metadata_v1_fixture_decodes ... [32mok[m
+test ivf_posting_tuple_v1_fixture_decodes ... [32mok[m
+test ivf_pq_codebook_tuple_v1_fixture_decodes ... [32mok[m
+test spire_delta_partition_object_v1_fixture_decodes ... [32mok[m
+test spire_epoch_manifest_v1_byteswapped_version_is_rejected ... [32mok[m
+test spire_epoch_manifest_v1_fixture_decodes ... [32mok[m
+test spire_leaf_partition_object_v1_byteswapped_version_is_rejected ... [32mok[m
+test spire_leaf_partition_object_v1_fixture_decodes ... [32mok[m
+test spire_leaf_v2_meta_byteswapped_version_is_rejected ... [32mok[m
+test spire_leaf_v2_meta_fixture_decodes ... [32mok[m
+test spire_local_store_config_v1_byteswapped_version_is_rejected ... [32mok[m
+test spire_leaf_v2_segment_fixture_decodes ... [32mok[m
+test spire_local_store_config_v1_fixture_decodes ... [32mok[m
+test spire_manifest_entry_v1_byteswapped_version_is_rejected ... [32mok[m
+test spire_manifest_entry_v1_fixture_decodes ... [32mok[m
+test spire_object_manifest_v1_byteswapped_version_is_rejected ... [32mok[m
+test spire_object_manifest_v1_fixture_decodes ... [32mok[m
+test spire_partition_object_v2_chain_meta_byteswapped_version_is_rejected ... [32mok[m
+test spire_partition_object_v2_chain_meta_fixture_decodes ... [32mok[m
+test spire_partition_object_v2_chain_segment_fixture_decodes ... [32mok[m
+test spire_placement_directory_v1_byteswapped_version_is_rejected ... [32mok[m
+test spire_placement_directory_v1_fixture_decodes ... [32mok[m
+test spire_placement_entry_v1_byteswapped_version_is_rejected ... [32mok[m
+test spire_placement_entry_v1_fixture_decodes ... [32mok[m
+test spire_routing_root_partition_object_v1_fixture_decodes ... [32mok[m
+test spire_top_graph_partition_object_v1_fixture_decodes ... [32mok[m
+
+test result: [32mok[m. 47 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+Script done on 2026-05-29 13:24:10-07:00 [COMMAND_EXIT_CODE="0"]

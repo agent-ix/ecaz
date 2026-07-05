@@ -1,0 +1,76 @@
+Script started on 2026-05-19 02:07:19-07:00 [<not executed on terminal>]
+[1mdiff --git a/src/am/ec_spire/coordinator/remote_candidates/libpq_plan.rs b/src/am/ec_spire/coordinator/remote_candidates/libpq_plan.rs[m
+[1mindex d06a1981..f123c4cf 100644[m
+[1m--- a/src/am/ec_spire/coordinator/remote_candidates/libpq_plan.rs[m
+[1m+++ b/src/am/ec_spire/coordinator/remote_candidates/libpq_plan.rs[m
+[36m@@ -32,6 +32,9 @@[m [mpub(crate) unsafe fn remote_search_libpq_request_plan_rows([m
+     top_k: usize,[m
+     consistency_mode: &str,[m
+ ) -> Vec<SpireRemoteSearchLibpqRequestPlanRow> {[m
+[32m+[m[32m    // SAFETY: forwards the live index relation and caller-validated remote[m
+[32m+[m[32m    // search request fields into the execution planner that owns relation[m
+[32m+[m[32m    // page/catalog reads.[m
+     let rows = unsafe {[m
+         remote_search_execution_plan_rows([m
+             index_relation,[m
+[36m@@ -82,6 +85,8 @@[m [mpub(crate) unsafe fn remote_search_libpq_request_summary_row([m
+         let query_for_empty_plan = query.clone();[m
+         let top_k_for_empty_plan = u64::try_from(top_k)[m
+             .map_err(|_| "ec_spire remote search libpq request summary top_k exceeds u64")?;[m
+[32m+[m[32m        // SAFETY: this SQL diagnostic wrapper forwards the live index relation[m
+[32m+[m[32m        // and checked request fields to the request-plan builder.[m
+         let rows = unsafe {[m
+             remote_search_libpq_request_plan_rows([m
+                 index_relation,[m
+[36m@@ -318,6 +323,8 @@[m [mpub(crate) unsafe fn remote_search_libpq_connection_plan_rows([m
+     consistency_mode: &str,[m
+ ) -> Vec<SpireRemoteSearchLibpqConnectionPlanRow> {[m
+     let result = (|| -> Result<Vec<SpireRemoteSearchLibpqConnectionPlanRow>, String> {[m
+[32m+[m[32m        // SAFETY: forwards the live index relation and checked request fields[m
+[32m+[m[32m        // through the request-plan wrapper before local connection enrichment.[m
+         let request_rows = unsafe {[m
+             remote_search_libpq_request_plan_rows([m
+                 index_relation,[m
+[36m@@ -328,8 +335,12 @@[m [mpub(crate) unsafe fn remote_search_libpq_connection_plan_rows([m
+                 consistency_mode,[m
+             )[m
+         };[m
+[32m+[m[32m        // SAFETY: rd_id is stable while the caller keeps index_relation open;[m
+[32m+[m[32m        // it is copied as an OID for descriptor lookups and not dereferenced[m
+[32m+[m[32m        // after the relation lifetime ends.[m
+[32m+[m[32m        let index_oid = unsafe { (*index_relation).rd_id };[m
+         remote_search_libpq_connection_plan_rows_from_requests([m
+[31m-            unsafe { (*index_relation).rd_id },[m
+[32m+[m[32m            index_oid,[m
+             &request_rows,[m
+         )[m
+     })();[m
+[36m@@ -441,6 +452,8 @@[m [mpub(crate) unsafe fn remote_search_libpq_connection_summary_row([m
+         let query_for_empty_plan = query.clone();[m
+         let top_k_for_empty_plan = u64::try_from(top_k)[m
+             .map_err(|_| "ec_spire remote search libpq connection summary top_k exceeds u64")?;[m
+[32m+[m[32m        // SAFETY: forwards the live index relation and checked request fields[m
+[32m+[m[32m        // to the connection-plan builder that performs descriptor enrichment.[m
+         let rows = unsafe {[m
+             remote_search_libpq_connection_plan_rows([m
+                 index_relation,[m
+[36m@@ -533,6 +546,8 @@[m [mpub(crate) unsafe fn remote_search_libpq_dispatch_plan_rows([m
+     top_k: usize,[m
+     consistency_mode: &str,[m
+ ) -> Vec<SpireRemoteSearchLibpqDispatchPlanRow> {[m
+[32m+[m[32m    // SAFETY: forwards the live index relation and checked request fields into[m
+[32m+[m[32m    // connection planning before deriving pure Rust dispatch rows.[m
+     let connection_rows = unsafe {[m
+         remote_search_libpq_connection_plan_rows([m
+             index_relation,[m
+[36m@@ -613,6 +628,8 @@[m [mpub(crate) unsafe fn coordinator_insert_dispatch_plan_row([m
+     node_id: u32,[m
+     served_epoch: u64,[m
+ ) -> SpireCoordinatorInsertDispatchPlanRow {[m
+[32m+[m[32m    // SAFETY: rd_id is stable while the caller keeps index_relation open; this[m
+[32m+[m[32m    // copies the OID for descriptor lookup and result reporting only.[m
+     let index_oid = unsafe { (*index_relation).rd_id };[m
+     let result = (|| -> Result<SpireCoordinatorInsertDispatchPlanRow, String> {[m
+         let descriptors = load_remote_libpq_connection_descriptors(index_oid, &[node_id])?;[m
+
+Script done on 2026-05-19 02:07:19-07:00 [COMMAND_EXIT_CODE="0"]

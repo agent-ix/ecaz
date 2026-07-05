@@ -1,0 +1,57 @@
+Script started on 2026-05-15 17:17:26-07:00 [<not executed on terminal>]
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+warning: unused imports: `SpireDmlFrontdoorCustomScanMode`, `SpireDmlFrontdoorPkValuePlan`, `coordinator_insert_prepare_remote_sql as spire_coordinator_insert_prepare_remote_sql`, `dml_frontdoor_bigint_pk_value_bytes as spire_dml_frontdoor_bigint_pk_value_bytes`, `dml_frontdoor_pk_argument_from_replacement_decision as spire_dml_frontdoor_pk_argument_from_replacement_decision`, `dml_frontdoor_primitive_invocation_from_plan as spire_dml_frontdoor_primitive_invocation_from_plan`, `dml_frontdoor_primitive_plan_expr_catalog_row as spire_dml_frontdoor_primitive_plan_expr_catalog_row`, and `dml_frontdoor_primitive_plan_pk_value_bytes as spire_dml_frontdoor_primitive_plan_pk_value_bytes`
+   --> src/am/mod.rs:46:5
+    |
+ 46 |     coordinator_insert_prepare_remote_sql as spire_coordinator_insert_prepare_remote_sql,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+ 53 |     dml_frontdoor_bigint_pk_value_bytes as spire_dml_frontdoor_bigint_pk_value_bytes,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ 54 |     dml_frontdoor_hook_status_row as spire_dml_frontdoor_hook_status_row,
+ 55 |     dml_frontdoor_pk_argument_from_replacement_decision as spire_dml_frontdoor_pk_argument_from_replacement_decision,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ 56 |     dml_frontdoor_primitive_invocation_from_plan as spire_dml_frontdoor_primitive_invocation_from_plan,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ 57 |     dml_frontdoor_primitive_plan_const_pk_value_bytes as spire_dml_frontdoor_primitive_plan_const_pk_value_bytes,
+ 58 |     dml_frontdoor_primitive_plan_expr_catalog_row as spire_dml_frontdoor_primitive_plan_expr_catalog_row,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ 59 |     dml_frontdoor_primitive_plan_from_replacement_decision as spire_dml_frontdoor_primitive_plan_from_replacement_decision,
+ 60 |     dml_frontdoor_primitive_plan_pk_value_bytes as spire_dml_frontdoor_primitive_plan_pk_value_bytes,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+180 |     SpireDmlFrontdoorCustomScanMode, SpireDmlFrontdoorPkValuePlan, SpireDmlFrontdoorQueryContext,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `ecaz` (lib) generated 1 warning (run `cargo fix --lib -p ecaz` to apply 1 suggestion)
+   Compiling ecaz-cli v0.1.0 (/home/peter/dev/ecaz/crates/ecaz-cli)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 29.64s
+     Running `target/debug/ecaz dev sql --help`
+Run SQL against local pgrx PostgreSQL or a global connection target
+
+Usage: ecaz dev sql [OPTIONS]
+
+Options:
+      --pg <PG>                  PostgreSQL major version from the local pgrx install [default: 18]
+      --db <DB>                  Target database. Defaults to the global `--database`
+      --socket-dir <SOCKET_DIR>  Explicit socket directory or host
+      --port <PORT>              PostgreSQL port. Defaults to the pgrx convention, e.g. 28818 for PG18
+      --raw                      Emit raw psql output instead of aligned-off, tuples-only TSV
+      --sql <SQL>                SQL to run
+      --database <DATABASE>      PostgreSQL database name. Defaults to $PGDATABASE or 'tqvector_bench' [env: PGDATABASE=] [default: tqvector_bench]
+      --file <FILE>              SQL file to run
+      --host <HOST>              PostgreSQL host name or Unix socket directory [env: PGHOST=]
+      --log-output <LOG_OUTPUT>  Write combined stdout/stderr to this file while also echoing it
+      --env <ENV>                Extra environment assignment for psql. Repeatable `NAME=VALUE`
+      --set <SET>                Extra psql variable assignment. Repeatable `NAME=VALUE`
+      --user <USER>              PostgreSQL user name [env: PGUSER=]
+      --password <PASSWORD>      PostgreSQL password. Prefer `.pgpass` for non-local use [env: PGPASSWORD]
+      --pgrx-home <PGRX_HOME>    Override PGRX_HOME
+      --log-file <LOG_FILE>      Mirror CLI stdout/stderr into a file for packet-local artifact capture. Progress bars are suppressed so the file stays stable and diffable
+  -h, --help                     Print help
+
+Script done on 2026-05-15 17:17:55-07:00 [COMMAND_EXIT_CODE="0"]

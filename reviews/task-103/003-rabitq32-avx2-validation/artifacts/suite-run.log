@@ -1,0 +1,100 @@
+[suite:task103-diskann-rabitq] wrote reviews/task-103/003-rabitq32-avx2-validation/artifacts/suite-manifest.json
+[suite:task103-diskann-rabitq] wrote reviews/task-103/003-rabitq32-avx2-validation/artifacts/suite-manifest.json
+[suite:task103-diskann-rabitq] generate-diskann-rabitq-2k-corpus -> --database postgres --host /home/peter/.pgrx --port 28818 corpus generate --output reviews/task-103/003-rabitq32-avx2-validation/artifacts/task103_diskann_rabitq_2k_corpus.tsv --n 2000 --dim 1536 --seed 10301 --kind corpus
+[suite:task103-diskann-rabitq] wrote reviews/task-103/003-rabitq32-avx2-validation/artifacts/suite-manifest.json
+[generate] wrote 2000 × dim 1536 rows to reviews/task-103/003-rabitq32-avx2-validation/artifacts/task103_diskann_rabitq_2k_corpus.tsv (kind=Corpus, seed=10301)
+[suite:task103-diskann-rabitq] wrote reviews/task-103/003-rabitq32-avx2-validation/artifacts/suite-manifest.json
+[suite:task103-diskann-rabitq] generate-diskann-rabitq-2k-queries -> --database postgres --host /home/peter/.pgrx --port 28818 corpus generate --output reviews/task-103/003-rabitq32-avx2-validation/artifacts/task103_diskann_rabitq_2k_queries.tsv --n 64 --dim 1536 --seed 10302 --kind queries
+[suite:task103-diskann-rabitq] wrote reviews/task-103/003-rabitq32-avx2-validation/artifacts/suite-manifest.json
+[generate] wrote 64 × dim 1536 rows to reviews/task-103/003-rabitq32-avx2-validation/artifacts/task103_diskann_rabitq_2k_queries.tsv (kind=Queries, seed=10302)
+[suite:task103-diskann-rabitq] wrote reviews/task-103/003-rabitq32-avx2-validation/artifacts/suite-manifest.json
+[suite:task103-diskann-rabitq] load-diskann-rabitq-2k -> --database postgres --host /home/peter/.pgrx --port 28818 --log-file reviews/task-103/003-rabitq32-avx2-validation/artifacts/load-diskann-rabitq-2k.log corpus load --prefix task103_diskann_rabitq_2k --profile ec_diskann --corpus-file reviews/task-103/003-rabitq32-avx2-validation/artifacts/task103_diskann_rabitq_2k_corpus.tsv --queries-file reviews/task-103/003-rabitq32-avx2-validation/artifacts/task103_diskann_rabitq_2k_queries.tsv --dim 1536 --bits 4 --seed 42 --storage-format rabitq
+[suite:task103-diskann-rabitq] wrote reviews/task-103/003-rabitq32-avx2-validation/artifacts/suite-manifest.json
+┌─────────┬──────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                        │
+╞═════════╪══════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_diskann                                                   │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ task103_diskann_rabitq_2k_corpus (2000 rows)                 │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ task103_diskann_rabitq_2k_queries (64 rows)                  │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ task103_diskann_rabitq_2k_rabitq_idx [storage_format=rabitq] │
+└─────────┴──────────────────────────────────────────────────────────────┘
+[loader] inspecting reviews/task-103/003-rabitq32-avx2-validation/artifacts/task103_diskann_rabitq_2k_corpus.tsv
+[loader] inspecting reviews/task-103/003-rabitq32-avx2-validation/artifacts/task103_diskann_rabitq_2k_queries.tsv
+[loader] corpus: 2000 rows, sha256=518f87b003b04e582b12201c1d22c5cb4342889ec3ebe6ba5e033ca5079409e0  queries: 64 rows, sha256=cbaddd1961dc2bdf4cce0c23fafb52fb7cb2e709f8f85f3724089f71145d76a0
+[loader] no sibling manifest at reviews/task-103/003-rabitq32-avx2-validation/artifacts/task103_diskann_rabitq_2k_manifest.json; continuing without verification
+[loader] copied corpus table task103_diskann_rabitq_2k_corpus in 1.61s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table task103_diskann_rabitq_2k_corpus in 512.36ms
+[loader] copied queries table task103_diskann_rabitq_2k_queries in 80.93ms
+[loader] building task103_diskann_rabitq_2k_rabitq_idx using ec_diskann (reloptions=[storage_format=rabitq]) ...
+[loader] built task103_diskann_rabitq_2k_rabitq_idx in 6.69s
+[loader] warning: ec_diskann build timing unavailable: db error
+[loader] completed prefix task103_diskann_rabitq_2k in 11.10s
+[suite:task103-diskann-rabitq] wrote reviews/task-103/003-rabitq32-avx2-validation/artifacts/suite-manifest.json
+[suite:task103-diskann-rabitq] recall-diskann-rabitq-2k-kernel-on -> --database postgres --host /home/peter/.pgrx --port 28818 bench recall --prefix task103_diskann_rabitq_2k --profile ec_diskann --k 10 --sweep 64 --queries-limit 64 --bits 4 --seed 42 --force-index --truth-cache-dir reviews/task-103/003-rabitq32-avx2-validation/artifacts/truth-cache --log-output reviews/task-103/003-rabitq32-avx2-validation/artifacts/recall-diskann-rabitq-2k-kernel-on.log
+[suite:task103-diskann-rabitq] wrote reviews/task-103/003-rabitq32-avx2-validation/artifacts/suite-manifest.json
+┌───────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ list_size ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞═══════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 64        ┆ 64      ┆ 640           ┆ 0.5984   ┆ 0.5600          ┆ 0.6357           ┆ 0.4000     ┆ 0.6000     ┆ 0.7000     ┆ 0.3000       ┆ 0.9541 ┆ 3.88 ms     │
+└───────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from task103_diskann_rabitq_2k_queries ...
+[recall] fetching corpus from task103_diskann_rabitq_2k_corpus ...
+[recall] computing ground truth: 64 queries vs 2000 corpus rows (dim=1536) ...
+[recall] ground truth in 244.77ms
+[recall] wrote ground truth cache reviews/task-103/003-rabitq32-avx2-validation/artifacts/truth-cache/truth-v1-rows2000-queries64-dim1536-k10-132917932dfa1ef1.json
+[suite:task103-diskann-rabitq] wrote reviews/task-103/003-rabitq32-avx2-validation/artifacts/suite-manifest.json
+[suite:task103-diskann-rabitq] recall-diskann-rabitq-2k-kernel-off -> --database postgres --host /home/peter/.pgrx --port 28818 bench recall --prefix task103_diskann_rabitq_2k --profile ec_diskann --k 10 --sweep 64 --queries-limit 64 --bits 4 --seed 42 --force-index --session-guc ec_diskann.candidate_batch_scoring=off --truth-cache-dir reviews/task-103/003-rabitq32-avx2-validation/artifacts/truth-cache --log-output reviews/task-103/003-rabitq32-avx2-validation/artifacts/recall-diskann-rabitq-2k-kernel-off.log
+[suite:task103-diskann-rabitq] wrote reviews/task-103/003-rabitq32-avx2-validation/artifacts/suite-manifest.json
+┌───────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ list_size ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞═══════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 64        ┆ 64      ┆ 640           ┆ 0.5984   ┆ 0.5600          ┆ 0.6357           ┆ 0.4000     ┆ 0.6000     ┆ 0.7000     ┆ 0.3000       ┆ 0.9541 ┆ 3.89 ms     │
+└───────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from task103_diskann_rabitq_2k_queries ...
+[recall] fetching corpus from task103_diskann_rabitq_2k_corpus ...
+[recall] loaded ground truth cache reviews/task-103/003-rabitq32-avx2-validation/artifacts/truth-cache/truth-v1-rows2000-queries64-dim1536-k10-132917932dfa1ef1.json
+[suite:task103-diskann-rabitq] wrote reviews/task-103/003-rabitq32-avx2-validation/artifacts/suite-manifest.json
+[suite:task103-diskann-rabitq] latency-diskann-rabitq-2k-kernel-off -> --database postgres --host /home/peter/.pgrx --port 28818 bench latency --prefix task103_diskann_rabitq_2k --profile ec_diskann --k 10 --concurrency 1 --iterations 200 --sweep "64,128" --bits 4 --seed 42 --force-index --cache-state task103_diskann_rabitq_2k_off --session-guc ec_diskann.candidate_batch_scoring=off --task87-candidate-batch-counters --memory-sample-interval-ms 25 --log-output reviews/task-103/003-rabitq32-avx2-validation/artifacts/latency-diskann-rabitq-2k-kernel-off.log
+[suite:task103-diskann-rabitq] wrote reviews/task-103/003-rabitq32-avx2-validation/artifacts/suite-manifest.json
+┌───────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬───────────────────────────────┐
+│ list_size ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state                   │
+╞═══════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═══════════════════════════════╡
+│ 64        ┆ 200   ┆ 3.86 ms ┆ 0.21 ms ┆ 3.60 ms ┆ 3.83 ms ┆ 4.08 ms ┆ 4.23 ms ┆ 6.25 ms ┆ task103_diskann_rabitq_2k_off │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 128       ┆ 200   ┆ 4.13 ms ┆ 0.23 ms ┆ 3.83 ms ┆ 4.09 ms ┆ 4.45 ms ┆ 4.67 ms ┆ 6.48 ms ┆ task103_diskann_rabitq_2k_off │
+└───────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴───────────────────────────────┘
+[task87-counters] command=latency label=list_size=64 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=64 surface=ivf flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=64 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=64 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=128 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=128 surface=ivf flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=128 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=128 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[suite:task103-diskann-rabitq] wrote reviews/task-103/003-rabitq32-avx2-validation/artifacts/suite-manifest.json
+[suite:task103-diskann-rabitq] latency-diskann-rabitq-2k-kernel-on -> --database postgres --host /home/peter/.pgrx --port 28818 bench latency --prefix task103_diskann_rabitq_2k --profile ec_diskann --k 10 --concurrency 1 --iterations 200 --sweep "64,128" --bits 4 --seed 42 --force-index --cache-state task103_diskann_rabitq_2k_on --task87-candidate-batch-counters --memory-sample-interval-ms 25 --log-output reviews/task-103/003-rabitq32-avx2-validation/artifacts/latency-diskann-rabitq-2k-kernel-on.log
+[suite:task103-diskann-rabitq] wrote reviews/task-103/003-rabitq32-avx2-validation/artifacts/suite-manifest.json
+┌───────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬──────────────────────────────┐
+│ list_size ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state                  │
+╞═══════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪══════════════════════════════╡
+│ 64        ┆ 200   ┆ 3.88 ms ┆ 0.24 ms ┆ 3.57 ms ┆ 3.84 ms ┆ 4.20 ms ┆ 4.59 ms ┆ 6.01 ms ┆ task103_diskann_rabitq_2k_on │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 128       ┆ 200   ┆ 4.12 ms ┆ 0.23 ms ┆ 3.84 ms ┆ 4.07 ms ┆ 4.43 ms ┆ 4.73 ms ┆ 6.44 ms ┆ task103_diskann_rabitq_2k_on │
+└───────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴──────────────────────────────┘
+[block-kernel-counters] command=latency label=list_size=64 surface=diskann quant=rabitq isa=avx2 flushes=13392 candidates=261126 elapsed_nanos=21180015 elapsed_ms=21.180015 kernel_flushes=13392 kernel_candidates=261126 kernel_elapsed_nanos=21180015 kernel_elapsed_ms=21.180015 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=143 width_8_15=3975 width_16_31=9065 width_ge32=209
+[task87-counters] command=latency label=list_size=64 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=64 surface=ivf flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=64 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=64 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[block-kernel-counters] command=latency label=list_size=128 surface=diskann quant=rabitq isa=avx2 flushes=25832 candidates=348227 elapsed_nanos=27997613 elapsed_ms=27.997613 kernel_flushes=25832 kernel_candidates=348227 kernel_elapsed_nanos=27997613 kernel_elapsed_ms=27.997613 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=7526 width_8_15=8964 width_16_31=9133 width_ge32=209
+[task87-counters] command=latency label=list_size=128 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=128 surface=ivf flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=128 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=128 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[suite:task103-diskann-rabitq] wrote reviews/task-103/003-rabitq32-avx2-validation/artifacts/suite-manifest.json
+[suite:task103-diskann-rabitq] wrote reviews/task-103/003-rabitq32-avx2-validation/artifacts/results.jsonl
+[suite:task103-diskann-rabitq] wrote reviews/task-103/003-rabitq32-avx2-validation/artifacts/suite-manifest.json

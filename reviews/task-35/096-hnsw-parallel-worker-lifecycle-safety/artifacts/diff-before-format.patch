@@ -1,0 +1,900 @@
+Script started on 2026-05-19 04:32:33-07:00 [<not executed on terminal>]
+diff --git a/scripts/unsafe_comment_baseline.txt b/scripts/unsafe_comment_baseline.txt
+index f94c3217..562d1c9a 100644
+--- a/scripts/unsafe_comment_baseline.txt
++++ b/scripts/unsafe_comment_baseline.txt
+@@ -146,147 +146,45 @@ src/am/ec_diskann/routine.rs:964
+ src/am/ec_diskann/routine.rs:970
+ src/am/ec_diskann/routine.rs:977
+ src/am/ec_diskann/routine.rs:985
+-src/am/ec_hnsw/build_parallel.rs:1852
+-src/am/ec_hnsw/build_parallel.rs:1865
+-src/am/ec_hnsw/build_parallel.rs:1896
+-src/am/ec_hnsw/build_parallel.rs:1916
+-src/am/ec_hnsw/build_parallel.rs:1929
+-src/am/ec_hnsw/build_parallel.rs:1945
+-src/am/ec_hnsw/build_parallel.rs:1961
+-src/am/ec_hnsw/build_parallel.rs:1972
+-src/am/ec_hnsw/build_parallel.rs:1981
+-src/am/ec_hnsw/build_parallel.rs:2084
+-src/am/ec_hnsw/build_parallel.rs:2091
+-src/am/ec_hnsw/build_parallel.rs:2092
+-src/am/ec_hnsw/build_parallel.rs:2138
+-src/am/ec_hnsw/build_parallel.rs:2140
+-src/am/ec_hnsw/build_parallel.rs:2144
+-src/am/ec_hnsw/build_parallel.rs:2145
+-src/am/ec_hnsw/build_parallel.rs:2150
+-src/am/ec_hnsw/build_parallel.rs:2152
+-src/am/ec_hnsw/build_parallel.rs:2177
+-src/am/ec_hnsw/build_parallel.rs:2179
+-src/am/ec_hnsw/build_parallel.rs:2187
+-src/am/ec_hnsw/build_parallel.rs:2200
+-src/am/ec_hnsw/build_parallel.rs:2228
+-src/am/ec_hnsw/build_parallel.rs:2229
+-src/am/ec_hnsw/build_parallel.rs:2230
+-src/am/ec_hnsw/build_parallel.rs:2237
+-src/am/ec_hnsw/build_parallel.rs:2245
+-src/am/ec_hnsw/build_parallel.rs:2246
+-src/am/ec_hnsw/build_parallel.rs:2247
+-src/am/ec_hnsw/build_parallel.rs:2278
+-src/am/ec_hnsw/build_parallel.rs:2289
+-src/am/ec_hnsw/build_parallel.rs:2300
+-src/am/ec_hnsw/build_parallel.rs:2309
+-src/am/ec_hnsw/build_parallel.rs:2313
+-src/am/ec_hnsw/build_parallel.rs:2328
+-src/am/ec_hnsw/build_parallel.rs:2340
+-src/am/ec_hnsw/build_parallel.rs:2359
+-src/am/ec_hnsw/build_parallel.rs:2361
+-src/am/ec_hnsw/build_parallel.rs:2363
+-src/am/ec_hnsw/build_parallel.rs:2374
+-src/am/ec_hnsw/build_parallel.rs:2375
+-src/am/ec_hnsw/build_parallel.rs:2398
+-src/am/ec_hnsw/build_parallel.rs:2400
+-src/am/ec_hnsw/build_parallel.rs:2408
+-src/am/ec_hnsw/build_parallel.rs:2412
+-src/am/ec_hnsw/build_parallel.rs:2426
+-src/am/ec_hnsw/build_parallel.rs:2427
+-src/am/ec_hnsw/build_parallel.rs:2454
+-src/am/ec_hnsw/build_parallel.rs:2455
+-src/am/ec_hnsw/build_parallel.rs:2456
+-src/am/ec_hnsw/build_parallel.rs:2463
+-src/am/ec_hnsw/build_parallel.rs:2467
+-src/am/ec_hnsw/build_parallel.rs:2491
+-src/am/ec_hnsw/build_parallel.rs:2502
+-src/am/ec_hnsw/build_parallel.rs:2513
+-src/am/ec_hnsw/build_parallel.rs:2524
+-src/am/ec_hnsw/build_parallel.rs:2533
+-src/am/ec_hnsw/build_parallel.rs:2534
+-src/am/ec_hnsw/build_parallel.rs:2546
+-src/am/ec_hnsw/build_parallel.rs:2550
+-src/am/ec_hnsw/build_parallel.rs:2579
+-src/am/ec_hnsw/build_parallel.rs:2589
+-src/am/ec_hnsw/build_parallel.rs:2613
+-src/am/ec_hnsw/build_parallel.rs:2622
+-src/am/ec_hnsw/build_parallel.rs:2624
+-src/am/ec_hnsw/build_parallel.rs:2626
+-src/am/ec_hnsw/build_parallel.rs:2636
+-src/am/ec_hnsw/build_parallel.rs:2657
+-src/am/ec_hnsw/build_parallel.rs:2675
+-src/am/ec_hnsw/build_parallel.rs:2688
+-src/am/ec_hnsw/build_parallel.rs:2696
+-src/am/ec_hnsw/build_parallel.rs:2700
+-src/am/ec_hnsw/build_parallel.rs:2702
+-src/am/ec_hnsw/build_parallel.rs:2707
+-src/am/ec_hnsw/build_parallel.rs:2710
+-src/am/ec_hnsw/build_parallel.rs:2711
+-src/am/ec_hnsw/build_parallel.rs:2713
+-src/am/ec_hnsw/build_parallel.rs:2726
+-src/am/ec_hnsw/build_parallel.rs:2729
+-src/am/ec_hnsw/build_parallel.rs:2734
+-src/am/ec_hnsw/build_parallel.rs:2742
+-src/am/ec_hnsw/build_parallel.rs:2743
+-src/am/ec_hnsw/build_parallel.rs:2746
+-src/am/ec_hnsw/build_parallel.rs:2749
+-src/am/ec_hnsw/build_parallel.rs:2764
+-src/am/ec_hnsw/build_parallel.rs:2771
+-src/am/ec_hnsw/build_parallel.rs:2775
+-src/am/ec_hnsw/build_parallel.rs:2779
+-src/am/ec_hnsw/build_parallel.rs:2790
+-src/am/ec_hnsw/build_parallel.rs:2794
+-src/am/ec_hnsw/build_parallel.rs:2796
+-src/am/ec_hnsw/build_parallel.rs:2802
+-src/am/ec_hnsw/build_parallel.rs:2803
+-src/am/ec_hnsw/build_parallel.rs:2811
+-src/am/ec_hnsw/build_parallel.rs:2812
+-src/am/ec_hnsw/build_parallel.rs:2824
+-src/am/ec_hnsw/build_parallel.rs:2831
+-src/am/ec_hnsw/build_parallel.rs:2835
+-src/am/ec_hnsw/build_parallel.rs:2839
+-src/am/ec_hnsw/build_parallel.rs:2854
+-src/am/ec_hnsw/build_parallel.rs:2859
+-src/am/ec_hnsw/build_parallel.rs:2863
+-src/am/ec_hnsw/build_parallel.rs:3044
+-src/am/ec_hnsw/build_parallel.rs:3052
+-src/am/ec_hnsw/build_parallel.rs:3063
+-src/am/ec_hnsw/build_parallel.rs:3073
+-src/am/ec_hnsw/build_parallel.rs:3540
+-src/am/ec_hnsw/build_parallel.rs:3548
+-src/am/ec_hnsw/build_parallel.rs:3623
+-src/am/ec_hnsw/build_parallel.rs:3631
+-src/am/ec_hnsw/build_parallel.rs:3659
+-src/am/ec_hnsw/build_parallel.rs:3680
+-src/am/ec_hnsw/build_parallel.rs:3689
+-src/am/ec_hnsw/build_parallel.rs:3697
+-src/am/ec_hnsw/build_parallel.rs:3723
+-src/am/ec_hnsw/build_parallel.rs:3731
+-src/am/ec_hnsw/build_parallel.rs:3755
+-src/am/ec_hnsw/build_parallel.rs:3778
+-src/am/ec_hnsw/build_parallel.rs:3786
+-src/am/ec_hnsw/build_parallel.rs:3797
+-src/am/ec_hnsw/build_parallel.rs:3805
+-src/am/ec_hnsw/build_parallel.rs:3834
+-src/am/ec_hnsw/build_parallel.rs:3848
+-src/am/ec_hnsw/build_parallel.rs:3858
+-src/am/ec_hnsw/build_parallel.rs:3872
+-src/am/ec_hnsw/build_parallel.rs:3886
+-src/am/ec_hnsw/build_parallel.rs:3900
+-src/am/ec_hnsw/build_parallel.rs:3912
+-src/am/ec_hnsw/build_parallel.rs:3934
+-src/am/ec_hnsw/build_parallel.rs:3949
+-src/am/ec_hnsw/build_parallel.rs:3959
+-src/am/ec_hnsw/build_parallel.rs:3969
+-src/am/ec_hnsw/build_parallel.rs:3984
+-src/am/ec_hnsw/build_parallel.rs:4002
+-src/am/ec_hnsw/build_parallel.rs:4016
+-src/am/ec_hnsw/build_parallel.rs:4029
+-src/am/ec_hnsw/build_parallel.rs:4032
+-src/am/ec_hnsw/build_parallel.rs:4051
+-src/am/ec_hnsw/build_parallel.rs:4063
+-src/am/ec_hnsw/build_parallel.rs:4070
++src/am/ec_hnsw/build_parallel.rs:3230
++src/am/ec_hnsw/build_parallel.rs:3238
++src/am/ec_hnsw/build_parallel.rs:3249
++src/am/ec_hnsw/build_parallel.rs:3259
++src/am/ec_hnsw/build_parallel.rs:3726
++src/am/ec_hnsw/build_parallel.rs:3734
++src/am/ec_hnsw/build_parallel.rs:3809
++src/am/ec_hnsw/build_parallel.rs:3817
++src/am/ec_hnsw/build_parallel.rs:3845
++src/am/ec_hnsw/build_parallel.rs:3866
++src/am/ec_hnsw/build_parallel.rs:3875
++src/am/ec_hnsw/build_parallel.rs:3883
++src/am/ec_hnsw/build_parallel.rs:3909
++src/am/ec_hnsw/build_parallel.rs:3917
++src/am/ec_hnsw/build_parallel.rs:3941
++src/am/ec_hnsw/build_parallel.rs:3964
++src/am/ec_hnsw/build_parallel.rs:3972
++src/am/ec_hnsw/build_parallel.rs:3983
++src/am/ec_hnsw/build_parallel.rs:3991
++src/am/ec_hnsw/build_parallel.rs:4020
++src/am/ec_hnsw/build_parallel.rs:4034
++src/am/ec_hnsw/build_parallel.rs:4044
++src/am/ec_hnsw/build_parallel.rs:4058
++src/am/ec_hnsw/build_parallel.rs:4072
+ src/am/ec_hnsw/build_parallel.rs:4086
++src/am/ec_hnsw/build_parallel.rs:4098
++src/am/ec_hnsw/build_parallel.rs:4120
++src/am/ec_hnsw/build_parallel.rs:4135
++src/am/ec_hnsw/build_parallel.rs:4145
++src/am/ec_hnsw/build_parallel.rs:4155
++src/am/ec_hnsw/build_parallel.rs:4170
++src/am/ec_hnsw/build_parallel.rs:4188
++src/am/ec_hnsw/build_parallel.rs:4202
++src/am/ec_hnsw/build_parallel.rs:4215
++src/am/ec_hnsw/build_parallel.rs:4218
++src/am/ec_hnsw/build_parallel.rs:4237
++src/am/ec_hnsw/build_parallel.rs:4249
++src/am/ec_hnsw/build_parallel.rs:4256
++src/am/ec_hnsw/build_parallel.rs:4272
+ src/am/ec_hnsw/insert.rs:1026
+ src/am/ec_hnsw/insert.rs:1032
+ src/am/ec_hnsw/insert.rs:1045
+diff --git a/src/am/ec_hnsw/build_parallel.rs b/src/am/ec_hnsw/build_parallel.rs
+index 5c6bc60d..364470c0 100644
+--- a/src/am/ec_hnsw/build_parallel.rs
++++ b/src/am/ec_hnsw/build_parallel.rs
+@@ -1824,6 +1824,8 @@ unsafe fn score_concurrent_dsm_code(
+     candidate_idx: u32,
+     scratch: &mut EcHnswConcurrentDsmInsertScratch,
+ ) -> f32 {
++    // SAFETY: The caller supplies bounded query/candidate indexes or the cache
++    // helper will reject them before deriving corpus slices.
+     score_concurrent_dsm_code_with_cache(
+         parts,
+         layout,
+@@ -1849,6 +1851,8 @@ unsafe fn score_concurrent_dsm_code_with_cache(
+         return score;
+     }
+     let score = if layout.source_dim > 0 {
++        // SAFETY: Both node indexes were bounds-checked above; source slices
++        // are derived from the same validated DSM graph layout.
+         unsafe {
+             with_concurrent_dsm_source_for_node(parts, layout, query_idx, |query_source| {
+                 with_concurrent_dsm_source_for_node(
+@@ -1862,6 +1866,8 @@ unsafe fn score_concurrent_dsm_code_with_cache(
+             })
+         }
+     } else {
++        // SAFETY: Both node indexes were bounds-checked above; code slices are
++        // derived from the same validated DSM graph layout.
+         unsafe {
+             with_concurrent_dsm_code_for_node(parts, layout, query_idx, |query_code| {
+                 with_concurrent_dsm_code_for_node(parts, layout, candidate_idx, |candidate_code| {
+@@ -1893,6 +1899,8 @@ unsafe fn with_concurrent_dsm_code_for_node<R>(
+     let start = (node_idx as usize)
+         .checked_mul(code_len)
+         .unwrap_or_else(|| pgrx::error!("concurrent DSM code offset overflow"));
++    // SAFETY: `node_idx` is bounded and `start..start + code_len` is inside
++    // the code corpus region sized by the graph layout.
+     let code = unsafe { slice::from_raw_parts(parts.codes.add(start), code_len) };
+     f(code)
+ }
+@@ -1913,6 +1921,8 @@ unsafe fn with_concurrent_dsm_source_for_node<R>(
+     let start = (node_idx as usize)
+         .checked_mul(source_dim)
+         .unwrap_or_else(|| pgrx::error!("concurrent DSM source offset overflow"));
++    // SAFETY: `node_idx` is bounded and `start..start + source_dim` is inside
++    // the source corpus region sized by the graph layout.
+     let source = unsafe { slice::from_raw_parts(parts.sources.add(start), source_dim) };
+     f(source)
+ }
+@@ -1926,6 +1936,8 @@ unsafe fn with_concurrent_dsm_node_slots<R>(
+     node: *const EcHnswConcurrentDsmNode,
+     f: impl for<'a> FnOnce(&'a [u32]) -> R,
+ ) -> R {
++    // SAFETY: Callers pass a node pointer from `parts.nodes`; its slot offset
++    // and count were initialized from the validated graph layout.
+     let slots = unsafe {
+         slice::from_raw_parts(
+             parts
+@@ -1942,6 +1954,8 @@ unsafe fn with_concurrent_dsm_node_slots_mut<R>(
+     node: *mut EcHnswConcurrentDsmNode,
+     f: impl for<'a> FnOnce(&'a mut [u32]) -> R,
+ ) -> R {
++    // SAFETY: Callers hold the target node's exclusive lock; the node slot
++    // offset/count identify that node's initialized mutable slot region.
+     let slots = unsafe {
+         slice::from_raw_parts_mut(
+             parts
+@@ -1958,6 +1972,8 @@ unsafe fn with_concurrent_dsm_neighbor_slots_init<R>(
+     layout: EcHnswConcurrentDsmGraphLayout,
+     f: impl for<'a> FnOnce(&'a mut [u32]) -> R,
+ ) -> R {
++    // SAFETY: The DSM graph image was allocated using `layout.total_bytes`, and
++    // the neighbor slot region contains `layout.total_neighbor_slots` entries.
+     let slots = unsafe {
+         slice::from_raw_parts_mut(parts.neighbor_slots, layout.total_neighbor_slots as usize)
+     };
+@@ -1969,6 +1985,8 @@ unsafe fn with_concurrent_dsm_codes_init<R>(
+     code_bytes: usize,
+     f: impl for<'a> FnOnce(&'a mut [u8]) -> R,
+ ) -> R {
++    // SAFETY: `code_bytes` was computed from the graph layout before image
++    // initialization and fits in the allocated code corpus region.
+     let codes = unsafe { slice::from_raw_parts_mut(parts.codes, code_bytes) };
+     f(codes)
+ }
+@@ -1978,6 +1996,8 @@ unsafe fn with_concurrent_dsm_sources_init<R>(
+     source_values: usize,
+     f: impl for<'a> FnOnce(&'a mut [f32]) -> R,
+ ) -> R {
++    // SAFETY: `source_values` was computed from the graph layout before image
++    // initialization and fits in the allocated source corpus region.
+     let sources = unsafe { slice::from_raw_parts_mut(parts.sources, source_values) };
+     f(sources)
+ }
+@@ -2081,6 +2101,8 @@ pub(super) unsafe fn try_parallel_build(
+     }
+ 
+     let begin_start = Instant::now();
++    // SAFETY: The build callback receives live PostgreSQL relation pointers and
++    // IndexInfo for the duration of the AM build, and `plan` selected parallel.
+     let mut leader = unsafe {
+         EcHnswParallelBuildLeader::begin(heap_relation, index_relation, index_info, plan)
+     }?;
+@@ -2088,7 +2110,10 @@ pub(super) unsafe fn try_parallel_build(
+ 
+     let drain_start = Instant::now();
+     let mut worker_tuples = Vec::new();
++    // SAFETY: `leader` owns the worker queue handles until `finish` destroys
++    // the parallel context.
+     unsafe { leader.drain_worker_messages(&mut worker_tuples) };
++    // SAFETY: `leader` owns a live PostgreSQL ParallelContext created by begin.
+     unsafe { leader.finish() };
+     let drain_us = elapsed_us(drain_start);
+ 
+@@ -2135,20 +2160,30 @@ pub(super) unsafe fn try_parallel_concurrent_dsm_graph_build(
+ 
+     let graph_start = Instant::now();
+     let preassembly = EcHnswConcurrentDsmPreassemblyPlan::for_state(state);
++    // SAFETY: The preassembly plan owns the graph image inputs used to size and
++    // initialize the parallel DSM graph before workers are launched.
+     let mut leader = unsafe { EcHnswParallelGraphBuildLeader::begin(plan, &preassembly) }?;
+     if leader.workers_launched == 0 {
++        // SAFETY: `leader` owns a live ParallelContext even when no workers
++        // launched, so finish performs the paired cleanup.
+         unsafe { leader.finish() };
+         return None;
+     }
+ 
++    // SAFETY: The graph leader owns the DSM graph image and inserts the leader
++    // participant partitions before readback.
+     let attachment = unsafe { leader.insert_leader_partitions() };
++    // SAFETY: The graph leader owns the ParallelContext and worker accounting.
+     unsafe { leader.wait_for_workers() };
+     let graph_us = elapsed_us(graph_start);
+ 
+     let stage_start = Instant::now();
++    // SAFETY: Worker completion has been observed, and the attached DSM graph
++    // can be read back into current-format build output.
+     let output =
+         unsafe { current_format_flush_output_from_concurrent_dsm_graph(state, attachment) };
+     let stage_us = elapsed_us(stage_start);
++    // SAFETY: `leader` owns the ParallelContext and graph DSM lifetime.
+     unsafe { leader.finish() };
+ 
+     Some(EcHnswParallelGraphBuildResult {
+@@ -2174,8 +2209,12 @@ impl EcHnswParallelGraphBuildLeader {
+         preassembly: &EcHnswConcurrentDsmPreassemblyPlan,
+     ) -> Option<Self> {
+         debug_assert!(plan.requested_workers > 0);
++        // SAFETY: This begins the PostgreSQL parallel-mode region paired with
++        // `ExitParallelMode` on every exit path below.
+         unsafe { pg_sys::EnterParallelMode() };
+ 
++        // SAFETY: The entrypoint/library names are static NUL-terminated C
++        // strings and requested_workers was validated by the build plan.
+         let pcxt = unsafe {
+             pg_sys::CreateParallelContext(
+                 EC_HNSW_PARALLEL_BUILD_LIBRARY.as_ptr().cast(),
+@@ -2184,6 +2223,8 @@ impl EcHnswParallelGraphBuildLeader {
+             )
+         };
+         if pcxt.is_null() {
++            // SAFETY: This is the matching cleanup for the successful
++            // `EnterParallelMode` call when context creation fails.
+             unsafe { pg_sys::ExitParallelMode() };
+             return None;
+         }
+@@ -2197,6 +2238,8 @@ impl EcHnswParallelGraphBuildLeader {
+         graph_plan.participant_count = graph_participant_count;
+         graph_plan.graph_assembly = EcHnswBuildGraphAssembly::ConcurrentDsm;
+ 
++        // SAFETY: `pcxt` is a live ParallelContext; estimator calls happen
++        // before `InitializeParallelDSM` as PostgreSQL requires.
+         unsafe {
+             estimate_chunk(
+                 &mut (*pcxt).estimator,
+@@ -2225,8 +2268,12 @@ impl EcHnswParallelGraphBuildLeader {
+             estimate_keys(&mut (*pcxt).estimator, 1);
+         }
+ 
++        // SAFETY: `pcxt` is a live ParallelContext with all chunks/keys
++        // estimated above.
+         unsafe { pg_sys::InitializeParallelDSM(pcxt) };
+         if unsafe { (*pcxt).seg.is_null() } {
++            // SAFETY: `pcxt` was created and parallel mode was entered; both
++            // must be torn down if DSM initialization fails.
+             unsafe {
+                 pg_sys::DestroyParallelContext(pcxt);
+                 pg_sys::ExitParallelMode();
+@@ -2234,6 +2281,8 @@ impl EcHnswParallelGraphBuildLeader {
+             return None;
+         }
+ 
++        // SAFETY: The DSM segment and TOC exist after InitializeParallelDSM;
++        // the allocation size is aligned for the shared header type.
+         let shared = unsafe {
+             pg_sys::shm_toc_allocate(
+                 (*pcxt).toc,
+@@ -2241,9 +2290,15 @@ impl EcHnswParallelGraphBuildLeader {
+             )
+             .cast::<EcHnswParallelBuildSharedHeader>()
+         };
++        // SAFETY: The DSM segment and TOC exist, and the graph layout computed
++        // the byte size for the graph image allocation.
+         let graph_base =
+             unsafe { pg_sys::shm_toc_allocate((*pcxt).toc, preassembly.graph_layout.total_bytes) };
++        // SAFETY: PostgreSQL returns a tranche id for this backend's LWLock
++        // tranche registration before lock initialization.
+         let tranche_id = unsafe { pg_sys::LWLockNewTrancheId() };
++        // SAFETY: All pointers are DSM allocations from this TOC; the shared
++        // header and graph image are initialized before insertion/worker launch.
+         unsafe {
+             pg_sys::LWLockRegisterTranche(
+                 tranche_id,
+@@ -2275,6 +2330,8 @@ impl EcHnswParallelGraphBuildLeader {
+             );
+         }
+ 
++        // SAFETY: The WAL usage array allocation is sized for launched worker
++        // accounting and stored in this ParallelContext's DSM TOC.
+         let walusage = unsafe {
+             pg_sys::shm_toc_allocate(
+                 (*pcxt).toc,
+@@ -2286,6 +2343,8 @@ impl EcHnswParallelGraphBuildLeader {
+             )
+             .cast::<pg_sys::WalUsage>()
+         };
++        // SAFETY: The buffer usage array allocation is sized for launched
++        // worker accounting and stored in this ParallelContext's DSM TOC.
+         let bufferusage = unsafe {
+             pg_sys::shm_toc_allocate(
+                 (*pcxt).toc,
+@@ -2297,6 +2356,9 @@ impl EcHnswParallelGraphBuildLeader {
+             )
+             .cast::<pg_sys::BufferUsage>()
+         };
++        // SAFETY: All TOC entries point at allocations in this DSM; workers are
++        // launched only after shared state, graph image, and accounting arrays
++        // are inserted.
+         unsafe {
+             pg_sys::shm_toc_insert((*pcxt).toc, PARALLEL_KEY_EC_HNSW_WAL_USAGE, walusage.cast());
+             pg_sys::shm_toc_insert(
+@@ -2306,10 +2368,13 @@ impl EcHnswParallelGraphBuildLeader {
+             );
+             pg_sys::LaunchParallelWorkers(pcxt);
+         }
++        // SAFETY: `pcxt` remains live after worker launch and records the
++        // number of launched workers.
+         let workers_launched = unsafe { (*pcxt).nworkers_launched };
+         record_debug_parallel_graph_build_workers_launched(workers_launched);
+ 
+         if workers_launched > 0 {
++            // SAFETY: Workers were launched from this live ParallelContext.
+             unsafe { pg_sys::WaitForParallelWorkersToAttach(pcxt) };
+         }
+ 
+@@ -2325,6 +2390,8 @@ impl EcHnswParallelGraphBuildLeader {
+     }
+ 
+     unsafe fn insert_leader_partitions(&mut self) -> EcHnswConcurrentDsmGraphAttachment {
++        // SAFETY: `self.graph_base` is the graph DSM allocation inserted during
++        // leader begin and remains owned by this leader.
+         let attachment = unsafe { attach_concurrent_dsm_graph_image(self.graph_base) };
+         let config = attachment.require_insert_config();
+         let mut scratch = EcHnswConcurrentDsmInsertScratch::new(
+@@ -2337,6 +2404,8 @@ impl EcHnswParallelGraphBuildLeader {
+             "graph leader participant index",
+         );
+         for participant_index in first_leader_partition..self.participant_count {
++            // SAFETY: Participant indexes are bounded by participant_count, and
++            // the attached graph/config came from this leader's DSM image.
+             unsafe {
+                 insert_concurrent_dsm_graph_participant(
+                     attachment.parts,
+@@ -2356,10 +2425,15 @@ impl EcHnswParallelGraphBuildLeader {
+         if self.workers_finished {
+             return;
+         }
++        // SAFETY: `self.pcxt` is the live ParallelContext owned by this leader.
+         unsafe { pg_sys::WaitForParallelWorkersToFinish(self.pcxt) };
+ 
++        // SAFETY: Worker count and accounting arrays belong to this live
++        // ParallelContext and were allocated for requested workers.
+         let launched = unsafe { (*self.pcxt).nworkers_launched.max(0) as usize };
+         for worker_index in 0..launched {
++            // SAFETY: `worker_index < launched`, so the usage array offsets are
++            // inside the arrays allocated in `begin`.
+             unsafe {
+                 pg_sys::InstrAccumParallelQuery(
+                     self.bufferusage.add(worker_index),
+@@ -2371,7 +2445,11 @@ impl EcHnswParallelGraphBuildLeader {
+     }
+ 
+     unsafe fn finish(mut self) {
++        // SAFETY: `self` still owns the live ParallelContext and can wait once
++        // before destruction.
+         unsafe { self.wait_for_workers() };
++        // SAFETY: This is the paired cleanup for the ParallelContext and
++        // parallel mode entered by `begin`.
+         unsafe {
+             pg_sys::DestroyParallelContext(self.pcxt);
+             pg_sys::ExitParallelMode();
+@@ -2395,8 +2473,12 @@ impl EcHnswParallelBuildLeader {
+         plan: EcHnswParallelBuildPlan,
+     ) -> Option<Self> {
+         debug_assert!(plan.requested_workers > 0);
++        // SAFETY: This begins the PostgreSQL parallel-mode region paired with
++        // `ExitParallelMode` on all cleanup paths.
+         unsafe { pg_sys::EnterParallelMode() };
+ 
++        // SAFETY: The library and function names are static NUL-terminated C
++        // strings, and requested_workers was selected by the build plan.
+         let pcxt = unsafe {
+             pg_sys::CreateParallelContext(
+                 EC_HNSW_PARALLEL_BUILD_LIBRARY.as_ptr().cast(),
+@@ -2405,10 +2487,14 @@ impl EcHnswParallelBuildLeader {
+             )
+         };
+         if pcxt.is_null() {
++            // SAFETY: Paired cleanup for the successful `EnterParallelMode`
++            // when ParallelContext creation fails.
+             unsafe { pg_sys::ExitParallelMode() };
+             return None;
+         }
+ 
++        // SAFETY: A non-null IndexInfo is supplied by PostgreSQL build setup;
++        // concurrent builds carry the ii_Concurrent flag for snapshot choice.
+         let is_concurrent = unsafe { !index_info.is_null() && (*index_info).ii_Concurrent };
+         let snapshot_guard = if is_concurrent {
+             Some(RegisteredSnapshotGuard::transaction().unwrap_or_else(|| {
+@@ -2423,7 +2509,11 @@ impl EcHnswParallelBuildLeader {
+                 guard.as_ptr()
+             });
+ 
++        // SAFETY: `heap_relation` is live for this AM build, and `snapshot`
++        // points either to SnapshotAnyData or a registered transaction snapshot.
+         let shared_bytes = unsafe { parallel_build_shared_workspace_size(heap_relation, snapshot) };
++        // SAFETY: `pcxt` is a live ParallelContext; estimator calls happen
++        // before `InitializeParallelDSM` as PostgreSQL requires.
+         unsafe {
+             estimate_chunk(&mut (*pcxt).estimator, shared_bytes);
+             estimate_keys(&mut (*pcxt).estimator, 1);
+@@ -2451,8 +2541,11 @@ impl EcHnswParallelBuildLeader {
+             estimate_keys(&mut (*pcxt).estimator, 1);
+         }
+ 
++        // SAFETY: `pcxt` is live and fully estimated.
+         unsafe { pg_sys::InitializeParallelDSM(pcxt) };
+         if unsafe { (*pcxt).seg.is_null() } {
++            // SAFETY: `pcxt` was created and parallel mode entered; both are
++            // cleaned up if DSM initialization fails.
+             unsafe {
+                 pg_sys::DestroyParallelContext(pcxt);
+                 pg_sys::ExitParallelMode();
+@@ -2460,10 +2553,15 @@ impl EcHnswParallelBuildLeader {
+             return None;
+         }
+ 
++        // SAFETY: The DSM segment and TOC exist after InitializeParallelDSM;
++        // `shared_bytes` was computed by PostgreSQL's parallel scan sizing.
+         let shared = unsafe {
+             pg_sys::shm_toc_allocate((*pcxt).toc, shared_bytes)
+                 .cast::<EcHnswParallelBuildSharedHeader>()
+         };
++        // SAFETY: The shared header allocation is large enough for the header,
++        // relation OIDs come from live relation pointers, and the parallel scan
++        // object is initialized before workers can attach.
+         unsafe {
+             ptr::write(
+                 shared,
+@@ -2488,6 +2586,8 @@ impl EcHnswParallelBuildLeader {
+             );
+         }
+ 
++        // SAFETY: Queue chunks were estimated above; each queue allocation is
++        // inserted into this ParallelContext's DSM TOC before worker launch.
+         unsafe {
+             for worker_index in 0..plan.requested_workers {
+                 let mq = pg_sys::shm_mq_create(
+@@ -2499,6 +2599,8 @@ impl EcHnswParallelBuildLeader {
+             }
+         }
+ 
++        // SAFETY: The WAL usage array is sized for requested worker accounting
++        // and belongs to this ParallelContext DSM.
+         let walusage = unsafe {
+             pg_sys::shm_toc_allocate(
+                 (*pcxt).toc,
+@@ -2510,6 +2612,8 @@ impl EcHnswParallelBuildLeader {
+             )
+             .cast::<pg_sys::WalUsage>()
+         };
++        // SAFETY: The buffer usage array is sized for requested worker
++        // accounting and belongs to this ParallelContext DSM.
+         let bufferusage = unsafe {
+             pg_sys::shm_toc_allocate(
+                 (*pcxt).toc,
+@@ -2521,6 +2625,8 @@ impl EcHnswParallelBuildLeader {
+             )
+             .cast::<pg_sys::BufferUsage>()
+         };
++        // SAFETY: The accounting arrays are DSM allocations in this TOC and are
++        // inserted before workers are launched.
+         unsafe {
+             pg_sys::shm_toc_insert((*pcxt).toc, PARALLEL_KEY_EC_HNSW_WAL_USAGE, walusage.cast());
+             pg_sys::shm_toc_insert(
+@@ -2530,7 +2636,11 @@ impl EcHnswParallelBuildLeader {
+             );
+         }
+ 
++        // SAFETY: Shared state, worker queues, and accounting arrays have all
++        // been initialized in the ParallelContext DSM.
+         unsafe { pg_sys::LaunchParallelWorkers(pcxt) };
++        // SAFETY: `pcxt` remains live after launch and records the launched
++        // worker count.
+         let workers_launched = unsafe { (*pcxt).nworkers_launched };
+         record_debug_parallel_heap_build_workers_launched(workers_launched);
+ 
+@@ -2543,10 +2653,14 @@ impl EcHnswParallelBuildLeader {
+         };
+ 
+         if workers_launched == 0 {
++            // SAFETY: `leader` owns the live ParallelContext and performs the
++            // paired cleanup when no workers launch.
+             unsafe { leader.finish() };
+             return None;
+         }
+ 
++        // SAFETY: Worker queues were inserted by key before launch; worker
++        // metadata belongs to `pcxt` for each launched worker.
+         unsafe {
+             for worker_index in 0..workers_launched {
+                 let mq = pg_sys::shm_toc_lookup((*pcxt).toc, queue_key(worker_index), false)
+@@ -2576,6 +2690,8 @@ impl EcHnswParallelBuildLeader {
+                 loop {
+                     let mut nbytes = 0_usize;
+                     let mut data = ptr::null_mut::<c_void>();
++                    // SAFETY: `queue_handle` is attached to a worker queue owned
++                    // by this leader; PostgreSQL fills `data/nbytes` on success.
+                     let result = unsafe {
+                         pg_sys::shm_mq_receive(queue_handle, &mut nbytes, &mut data, true)
+                     };
+@@ -2586,6 +2702,8 @@ impl EcHnswParallelBuildLeader {
+                             if data.is_null() || nbytes == 0 {
+                                 pgrx::error!("ec_hnsw parallel build worker sent an empty message");
+                             }
++                            // SAFETY: PostgreSQL returned `nbytes` bytes at a
++                            // non-null message pointer valid until next receive.
+                             let bytes = unsafe { slice::from_raw_parts(data.cast::<u8>(), nbytes) };
+                             match decode_worker_message(bytes) {
+                                 EcHnswParallelBuildWorkerMessage::Tuple(tuple) => {
+@@ -2610,6 +2728,8 @@ impl EcHnswParallelBuildLeader {
+             }
+ 
+             if done_count < self.queue_handles.len() && !made_progress {
++                // SAFETY: This leader is waiting inside PostgreSQL parallel
++                // mode; processing interrupts and sleeping are backend-safe.
+                 unsafe {
+                     pg_sys::ProcessInterrupts();
+                     pg_sys::pg_usleep(1000);
+@@ -2619,10 +2739,15 @@ impl EcHnswParallelBuildLeader {
+     }
+ 
+     unsafe fn finish(mut self) {
++        // SAFETY: `self.pcxt` is the live ParallelContext owned by this leader.
+         unsafe { pg_sys::WaitForParallelWorkersToFinish(self.pcxt) };
+ 
++        // SAFETY: Worker count and accounting arrays belong to this live
++        // ParallelContext and were allocated for requested workers.
+         let launched = unsafe { (*self.pcxt).nworkers_launched.max(0) as usize };
+         for worker_index in 0..launched {
++            // SAFETY: `worker_index < launched`, so usage array offsets are
++            // within the arrays allocated during begin.
+             unsafe {
+                 pg_sys::InstrAccumParallelQuery(
+                     self.bufferusage.add(worker_index),
+@@ -2633,6 +2758,8 @@ impl EcHnswParallelBuildLeader {
+ 
+         drop(self.snapshot_guard.take());
+ 
++        // SAFETY: Paired cleanup for the ParallelContext and parallel mode
++        // entered by begin.
+         unsafe {
+             pg_sys::DestroyParallelContext(self.pcxt);
+             pg_sys::ExitParallelMode();
+@@ -2654,6 +2781,9 @@ unsafe extern "C-unwind" fn ec_hnsw_parallel_build_callback(
+     _tuple_is_alive: bool,
+     state: *mut c_void,
+ ) {
++    // SAFETY: PostgreSQL invokes this callback with a valid callback state
++    // pointer supplied to table_index_build_scan and tuple value/null arrays
++    // live for the callback duration.
+     unsafe {
+         pgrx::pgrx_extern_c_guard(|| {
+             let state = &mut *state.cast::<EcHnswParallelBuildWorkerScanState>();
+@@ -2672,6 +2802,8 @@ pub unsafe extern "C-unwind" fn ec_hnsw_parallel_build_main(
+     seg: *mut pg_sys::dsm_segment,
+     toc: *mut pg_sys::shm_toc,
+ ) {
++    // SAFETY: PostgreSQL enters this background-worker function with the DSM
++    // segment and TOC pointers for the launched parallel worker.
+     unsafe {
+         pgrx::pgrx_extern_c_guard(|| {
+             parallel_build_worker_main(seg, toc);
+@@ -2685,6 +2817,8 @@ pub unsafe extern "C-unwind" fn ec_hnsw_parallel_graph_build_main(
+     _seg: *mut pg_sys::dsm_segment,
+     toc: *mut pg_sys::shm_toc,
+ ) {
++    // SAFETY: PostgreSQL enters this background-worker function with the TOC
++    // pointer for the launched graph-build worker.
+     unsafe {
+         pgrx::pgrx_extern_c_guard(|| {
+             parallel_graph_build_worker_main(toc);
+@@ -2693,23 +2827,34 @@ pub unsafe extern "C-unwind" fn ec_hnsw_parallel_graph_build_main(
+ }
+ 
+ unsafe fn parallel_build_worker_main(seg: *mut pg_sys::dsm_segment, toc: *mut pg_sys::shm_toc) {
++    // SAFETY: The leader inserted this shared header in the worker TOC before
++    // launch, and the key is required for all workers.
+     let shared = unsafe {
+         pg_sys::shm_toc_lookup(toc, PARALLEL_KEY_EC_HNSW_BUILD_SHARED, false)
+             .cast::<EcHnswParallelBuildSharedHeader>()
+     };
++    // SAFETY: `shared` points at an initialized shared header.
+     unsafe { (*shared).validate() };
+ 
++    // SAFETY: PostgreSQL assigns ParallelWorkerNumber before invoking the
++    // parallel worker entrypoint.
+     let worker_number = unsafe { pg_sys::ParallelWorkerNumber };
+     if worker_number < 0 {
+         pgrx::error!("ec_hnsw parallel build worker started without a worker number");
+     }
+ 
++    // SAFETY: The leader inserted this worker's queue under `queue_key`, and
++    // the worker number was validated above.
+     let queue = unsafe {
+         pg_sys::shm_toc_lookup(toc, queue_key(worker_number), false).cast::<pg_sys::shm_mq>()
+     };
++    // SAFETY: The queue is this worker's shm_mq; the worker backend is the
++    // sender and attaches using the inherited DSM segment.
+     unsafe { pg_sys::shm_mq_set_sender(queue, pg_sys::MyProc) };
+     let queue_handle = unsafe { pg_sys::shm_mq_attach(queue, seg, ptr::null_mut()) };
+ 
++    // SAFETY: `shared` points at the initialized shared header whose
++    // concurrency flag was written by the leader.
+     let (heap_lockmode, index_lockmode) = if unsafe { (*shared).is_concurrent } {
+         (
+             pg_sys::ShareUpdateExclusiveLock as pg_sys::LOCKMODE,
+@@ -2722,15 +2867,21 @@ unsafe fn parallel_build_worker_main(seg: *mut pg_sys::dsm_segment, toc: *mut pg
+         )
+     };
+ 
++    // SAFETY: The shared header stores the heap relation OID written by the
++    // leader; the lock mode matches the build flavor.
+     let heap_relation_guard =
+         HeapRelationGuard::try_open(unsafe { (*shared).heaprelid }, heap_lockmode)
+             .unwrap_or_else(|| pgrx::error!("ec_hnsw parallel build worker could not open heap"));
++    // SAFETY: The shared header stores the index relation OID written by the
++    // leader; the lock mode matches the build flavor.
+     let index_relation_guard =
+         IndexRelationGuard::try_open(unsafe { (*shared).indexrelid }, index_lockmode)
+             .unwrap_or_else(|| pgrx::error!("ec_hnsw parallel build worker could not open index"));
+     let heap_relation = heap_relation_guard.as_ptr();
+     let index_relation = index_relation_guard.as_ptr();
+ 
++    // SAFETY: The worker is running inside PostgreSQL parallel query
++    // instrumentation scope.
+     unsafe { pg_sys::InstrStartParallelQuery() };
+ 
+     let mut worker_state = EcHnswParallelBuildWorkerScanState {
+@@ -2739,13 +2890,20 @@ unsafe fn parallel_build_worker_main(seg: *mut pg_sys::dsm_segment, toc: *mut pg
+         encoded_tuples: 0,
+     };
+ 
++    // SAFETY: `index_relation` is open for this worker.
+     let index_info = unsafe { pg_sys::BuildIndexInfo(index_relation) };
++    // SAFETY: `index_info` is newly allocated by PostgreSQL and `shared`
++    // contains the build concurrency flag.
+     unsafe {
+         (*index_info).ii_Concurrent = (*shared).is_concurrent;
+     }
++    // SAFETY: `shared` contains the table_parallelscan_initialize state and
++    // `heap_relation` is open in this worker.
+     let scan = unsafe {
+         pg_sys::table_beginscan_parallel(heap_relation, parallel_table_scan_from_shared(shared))
+     };
++    // SAFETY: All relation, IndexInfo, callback state, and scan pointers are
++    // live for the duration of this worker table build scan.
+     let scanned_tuples = unsafe {
+         pg_sys::table_index_build_scan(
+             heap_relation,
+@@ -2761,6 +2919,8 @@ unsafe fn parallel_build_worker_main(seg: *mut pg_sys::dsm_segment, toc: *mut pg
+ 
+     send_done_message(queue_handle);
+ 
++    // SAFETY: `shared` is the initialized shared header; the spinlock protects
++    // worker aggregate counters and the condition variable wakes the leader.
+     unsafe {
+         pg_sys::SpinLockAcquire(&mut (*shared).mutex);
+         (*shared).record_worker_counts(scanned_tuples, worker_state.encoded_tuples as f64);
+@@ -2768,14 +2928,18 @@ unsafe fn parallel_build_worker_main(seg: *mut pg_sys::dsm_segment, toc: *mut pg
+         pg_sys::ConditionVariableSignal(&mut (*shared).workersdonecv);
+     }
+ 
++    // SAFETY: The leader inserted the buffer usage array in the worker TOC.
+     let bufferusage = unsafe {
+         pg_sys::shm_toc_lookup(toc, PARALLEL_KEY_EC_HNSW_BUFFER_USAGE, false)
+             .cast::<pg_sys::BufferUsage>()
+     };
++    // SAFETY: The leader inserted the WAL usage array in the worker TOC.
+     let walusage = unsafe {
+         pg_sys::shm_toc_lookup(toc, PARALLEL_KEY_EC_HNSW_WAL_USAGE, false)
+             .cast::<pg_sys::WalUsage>()
+     };
++    // SAFETY: `worker_number` is non-negative and indexes this worker's
++    // accounting slot in arrays allocated by the leader.
+     unsafe {
+         pg_sys::InstrEndParallelQuery(
+             bufferusage.add(worker_number as usize),
+@@ -2787,19 +2951,25 @@ unsafe fn parallel_build_worker_main(seg: *mut pg_sys::dsm_segment, toc: *mut pg
+ }
+ 
+ unsafe fn parallel_graph_build_worker_main(toc: *mut pg_sys::shm_toc) {
++    // SAFETY: The graph leader inserted this shared header before worker launch.
+     let shared = unsafe {
+         pg_sys::shm_toc_lookup(toc, PARALLEL_KEY_EC_HNSW_BUILD_SHARED, false)
+             .cast::<EcHnswParallelBuildSharedHeader>()
+     };
++    // SAFETY: `shared` points at an initialized shared header.
+     unsafe { (*shared).validate() };
+ 
++    // SAFETY: PostgreSQL assigns ParallelWorkerNumber before invoking the
++    // graph-build worker entrypoint.
+     let worker_number = unsafe { pg_sys::ParallelWorkerNumber };
+     if worker_number < 0 {
+         pgrx::error!("ec_hnsw parallel graph build worker started without a worker number");
+     }
+ 
++    // SAFETY: The graph leader inserted the graph image base in the worker TOC.
+     let graph_base =
+         unsafe { pg_sys::shm_toc_lookup(toc, PARALLEL_KEY_EC_HNSW_CONCURRENT_DSM_GRAPH, false) };
++    // SAFETY: `graph_base` points at the initialized concurrent DSM graph image.
+     let attachment = unsafe { attach_concurrent_dsm_graph_image(graph_base) };
+     let config = attachment.require_insert_config();
+     let mut scratch = EcHnswConcurrentDsmInsertScratch::new(
+@@ -2808,7 +2978,11 @@ unsafe fn parallel_graph_build_worker_main(toc: *mut pg_sys::shm_toc) {
+         config.m,
+     );
+ 
++    // SAFETY: The worker is running inside PostgreSQL parallel query
++    // instrumentation scope.
+     unsafe { pg_sys::InstrStartParallelQuery() };
++    // SAFETY: The worker number and participant count bound this worker's
++    // partition assignment, and the attachment/config came from the DSM image.
+     let inserted = unsafe {
+         insert_concurrent_dsm_graph_participant(
+             attachment.parts,
+@@ -2821,6 +2995,8 @@ unsafe fn parallel_graph_build_worker_main(toc: *mut pg_sys::shm_toc) {
+         )
+     };
+ 
++    // SAFETY: `shared` is the initialized shared header; the spinlock protects
++    // aggregate counters and the condition variable wakes the leader.
+     unsafe {
+         pg_sys::SpinLockAcquire(&mut (*shared).mutex);
+         (*shared).record_worker_counts(0.0, inserted as f64);
+@@ -2828,14 +3004,18 @@ unsafe fn parallel_graph_build_worker_main(toc: *mut pg_sys::shm_toc) {
+         pg_sys::ConditionVariableSignal(&mut (*shared).workersdonecv);
+     }
+ 
++    // SAFETY: The graph leader inserted the buffer usage array in the worker TOC.
+     let bufferusage = unsafe {
+         pg_sys::shm_toc_lookup(toc, PARALLEL_KEY_EC_HNSW_BUFFER_USAGE, false)
+             .cast::<pg_sys::BufferUsage>()
+     };
++    // SAFETY: The graph leader inserted the WAL usage array in the worker TOC.
+     let walusage = unsafe {
+         pg_sys::shm_toc_lookup(toc, PARALLEL_KEY_EC_HNSW_WAL_USAGE, false)
+             .cast::<pg_sys::WalUsage>()
+     };
++    // SAFETY: `worker_number` is non-negative and indexes this worker's
++    // accounting slot in arrays allocated by the leader.
+     unsafe {
+         pg_sys::InstrEndParallelQuery(
+             bufferusage.add(worker_number as usize),
+@@ -2851,15 +3031,21 @@ enum EcHnswParallelBuildWorkerMessage {
+ 
+ fn send_build_tuple_message(queue_handle: *mut pg_sys::shm_mq_handle, tuple: &build::BuildTuple) {
+     let message = encode_build_tuple_message(tuple);
++    // SAFETY: `queue_handle` is this worker's attached queue handle and
++    // `message` remains live for the duration of the send call.
+     unsafe { send_worker_message(queue_handle, &message) };
+ }
+ 
+ fn send_done_message(queue_handle: *mut pg_sys::shm_mq_handle) {
+     let message = [BUILD_DONE_MESSAGE];
++    // SAFETY: `queue_handle` is this worker's attached queue handle and the
++    // done marker remains live for the duration of the send call.
+     unsafe { send_worker_message(queue_handle, &message) };
+ }
+ 
+ unsafe fn send_worker_message(queue_handle: *mut pg_sys::shm_mq_handle, message: &[u8]) {
++    // SAFETY: `queue_handle` is an attached shm_mq handle, and `message` points
++    // at contiguous bytes valid for the synchronous send duration.
+     let result = unsafe {
+         pg_sys::shm_mq_send(
+             queue_handle,
+
+Script done on 2026-05-19 04:32:33-07:00 [COMMAND_EXIT_CODE="0"]

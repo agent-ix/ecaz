@@ -1,0 +1,34 @@
+=== PostgreSQL version ===
+18.3
+=== Prepared-xact capacity (must be >= 64 per Phase 13a.1.b) ===
+64
+=== SPIRE GUCs (consistency / transport / payload caps) ===
+ec_spire.adaptive_nprobe	off	
+ec_spire.adaptive_nprobe_score_gap_micros	1000	
+ec_spire.cost_index_page_scale	1	
+ec_spire.cost_leaf_dimension_scale	0.01	
+ec_spire.cost_local_store_page_fanout_scale	0.05	
+ec_spire.cost_rerank_multiplier	1.35	
+ec_spire.cost_routing_dimension_scale	0.01	
+ec_spire.cost_storage_scoring_multiplier	1	
+ec_spire.max_candidate_rows	-1	
+ec_spire.max_remote_payload_bytes_per_row	1024	
+ec_spire.max_remote_payload_rows_per_batch	128	
+ec_spire.nprobe	-1	
+ec_spire.remote_search_connect_timeout_ms	0	
+ec_spire.remote_search_connection_pool_size	16	
+ec_spire.remote_search_consistency_mode	strict	
+ec_spire.remote_search_max_concurrent_dispatches	0	
+ec_spire.remote_search_max_concurrent_dispatches_per_node	0	
+ec_spire.remote_search_max_nodes	0	
+ec_spire.remote_search_max_pids	0	
+ec_spire.remote_search_max_pids_per_node	0	
+ec_spire.remote_search_statement_timeout_ms	0	
+ec_spire.remote_tuple_transport	auto	
+ec_spire.rerank_width	-1	
+=== Buffer / work memory (Phase 13a.1.b) ===
+maintenance_work_mem	524288	kB
+shared_buffers	262144	8kB
+work_mem	65536	kB
+=== ecaz extension version ===
+ecaz	0.1.1

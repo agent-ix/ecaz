@@ -1,0 +1,35 @@
+commit cc3e9abbabef30ce6e5ec4481b4c6651defc2108
+Author: Codex <codex@openai.com>
+Date:   Fri May 22 17:37:16 2026 -0700
+
+    Task 50/442: HNSW insert.rs backlink-mutation apply chain safe-fn lifts
+    
+    Lift the backlink-mutation apply chain to safe fn after slice 437
+    flipped plan_backlink_mutation + select_backlink_rewrite_slice:
+    
+      - apply_backlink_mutations (body composes safe ops; only narrow
+        internal unsafe blocks remain inside add_backlinks_on_page)
+      - add_backlinks_on_page (page-mutation primitive scaffolding kept
+        as internal narrow unsafe blocks: LockedBufferGuard::read_main +
+        wal::GenericXLogTxn::start + with_writable_page_tuple_bytes)
+      - plan_backlink_mutations (body composes safe ops:
+        load_exact_graph_element, load_graph_neighbors, plan_backlink_mutation
+        are all now safe)
+      - add_backlinks_to_forward_neighbors (body composes safe ops)
+    
+    Four caller-side unsafe wraps stripped:
+      - apply_backlink_mutations internal call to add_backlinks_on_page
+      - add_backlinks_to_forward_neighbors internal call to apply_backlink_mutations
+      - add_backlinks_to_forward_neighbors internal call to plan_backlink_mutations
+      - HnswInsertAdapter::add_backlinks_to_forward_neighbors method wrap
+    
+    Per-file delta:
+    
+      insert.rs   30 -> 26  (-4)
+    
+    Cumulative HNSW rotation delta: -210 (549 -> 339, -38.3%).
+    
+    Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
+
+ src/am/ec_hnsw/insert.rs | 55 +++++++++++++++++++-----------------------------
+ 1 file changed, 22 insertions(+), 33 deletions(-)

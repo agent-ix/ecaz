@@ -1,0 +1,15 @@
+^DFound 455 mutants to test
+ok       Unmutated baseline in 1s build + 2s test
+ INFO Auto-set test timeout to 20s
+MISSED   hardening/careful/src/../../../src/quant/rabitq.rs:409:32: replace > with >= in <impl crate::quant::Quantizer for RaBitQQuantizer>::encode_code in 2s build + 4s test
+MISSED   hardening/careful/src/../../../src/quant/rabitq.rs:429:30: replace > with >= in <impl crate::quant::Quantizer for RaBitQQuantizer>::encode_code in 2s build + 4s test
+MISSED   hardening/careful/src/../../../src/quant/rabitq.rs:585:50: replace * with / in RaBitQQuantizer::encode_code_centered in 2s build + 4s test
+MISSED   hardening/careful/src/../../../src/quant/rabitq.rs:588:41: replace > with >= in RaBitQQuantizer::encode_code_centered in 2s build + 4s test
+MISSED   hardening/careful/src/../../../src/quant/rabitq.rs:728:49: replace * with / in CenteredScorer::score_at in 2s build + 4s test
+MISSED   hardening/careful/src/../../../src/quant/rabitq.rs:750:24: replace < with <= in CenteredScorer::score_at in 2s build + 4s test
+MISSED   hardening/careful/src/../../../src/quant/rabitq.rs:752:35: replace < with == in CenteredScorer::score_at in 2s build + 4s test
+MISSED   hardening/careful/src/../../../src/quant/rabitq.rs:752:35: replace < with <= in CenteredScorer::score_at in 2s build + 4s test
+MISSED   hardening/careful/src/../../../src/quant/rabitq.rs:993:38: replace * with + in quantize_level in 2s build + 5s test
+TIMEOUT  hardening/careful/src/../../../src/quant/rabitq.rs:1127:30: replace < with == in estimate_ip_impl in 5s build + 20s test
+TIMEOUT  hardening/careful/src/../../../src/quant/rabitq.rs:1127:30: replace < with <= in estimate_ip_impl in 5s build + 20s test
+455 mutants tested in 74m: 9 missed, 423 caught, 21 unviable, 2 timeouts

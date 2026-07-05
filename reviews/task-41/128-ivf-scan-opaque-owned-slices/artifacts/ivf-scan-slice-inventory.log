@@ -1,0 +1,70 @@
+29:    query_values: *mut f32,
+37:    selected_lists: *mut u32,
+40:    posting_candidates: *mut EcIvfScoredCandidate,
+49:    fn query_values(&self) -> &[f32] {
+50:        if self.query_values.is_null() || self.query_dimensions == 0 {
+53:        unsafe { std::slice::from_raw_parts(self.query_values, self.query_dimensions as usize) }
+56:    fn next_posting_candidate(&mut self) -> Option<EcIvfScoredCandidate> {
+57:        if self.posting_candidates.is_null()
+65:                .posting_candidates
+73:    fn query_values_or_empty(&self) -> &[f32] {
+74:        if self.query_values.is_null() || self.query_dimensions == 0 {
+77:        unsafe { std::slice::from_raw_parts(self.query_values, self.query_dimensions as usize) }
+81:    fn selected_lists(&self) -> &[u32] {
+82:        if self.selected_lists.is_null() || self.selected_list_count == 0 {
+86:            std::slice::from_raw_parts(self.selected_lists, self.selected_list_count as usize)
+258:    selected_lists: Vec<u32>,
+424:                let selected_lists = select_probe_lists(&centroid_scores, opaque.scan_nprobe);
+431:                    .record_selected_lists(selected_lists.len());
+432:                let posting_candidates = materialize_probe_candidates(
+438:                    &selected_lists,
+442:                store_selected_lists(opaque, &selected_lists);
+443:                store_posting_candidates(opaque, &posting_candidates);
+474:            match opaque.next_posting_candidate() {
+572:    let query_values = unsafe { pg_sys::palloc(query_bytes) }.cast::<f32>();
+573:    if query_values.is_null() {
+576:    unsafe { ptr::copy_nonoverlapping(query.as_ptr(), query_values, query.len()) };
+578:    opaque.query_values = query_values;
+582:    if !opaque.query_values.is_null() {
+583:        unsafe { pg_sys::pfree(opaque.query_values.cast()) };
+584:        opaque.query_values = ptr::null_mut();
+672:unsafe fn store_selected_lists(opaque: &mut EcIvfScanOpaque, selected_lists: &[u32]) {
+673:    free_selected_lists(opaque);
+674:    if selected_lists.is_empty() {
+678:    let bytes = std::mem::size_of_val(selected_lists);
+684:    unsafe { ptr::copy_nonoverlapping(selected_lists.as_ptr(), list_ptr, selected_lists.len()) };
+686:        u32::try_from(selected_lists.len()).expect("selected list count should fit in u32");
+687:    opaque.selected_lists = list_ptr;
+690:unsafe fn free_selected_lists(opaque: &mut EcIvfScanOpaque) {
+691:    if !opaque.selected_lists.is_null() {
+692:        unsafe { pg_sys::pfree(opaque.selected_lists.cast()) };
+693:        opaque.selected_lists = ptr::null_mut();
+698:unsafe fn store_posting_candidates(
+702:    free_posting_candidates(opaque);
+716:    opaque.posting_candidates = candidate_ptr;
+720:unsafe fn free_posting_candidates(opaque: &mut EcIvfScanOpaque) {
+721:    if !opaque.posting_candidates.is_null() {
+722:        unsafe { pg_sys::pfree(opaque.posting_candidates.cast()) };
+723:        opaque.posting_candidates = ptr::null_mut();
+735:        free_selected_lists(opaque);
+736:        free_posting_candidates(opaque);
+934:    selected_lists: &[u32],
+936:    if selected_lists.is_empty() {
+951:        unsafe { build_selected_probe_plan(index_relation, metadata, selected_lists)? };
+1146:        let query_values = opaque.query_values();
+1165:                            query_values,
+1331:    selected_lists: &[u32],
+1333:    if selected_lists.is_empty() {
+1335:            selected_lists: Vec::new(),
+1350:    let mut ordered_selected_lists = Vec::with_capacity(selected_lists.len());
+1353:    for &list_id in selected_lists {
+1362:        ordered_selected_lists.push(list_id);
+1367:    for &list_id in &ordered_selected_lists {
+1388:        selected_lists: ordered_selected_lists,
+1446:    opaque.query_values_or_empty().to_vec()
+1450:fn debug_selected_lists(opaque: &EcIvfScanOpaque) -> Vec<u32> {
+1451:    opaque.selected_lists().to_vec()
+1519:    pub(crate) query_values: Vec<f32>,
+1528:    pub(crate) selected_lists: Vec<u32>,
+1552:        query_values: debug_scan_query(opaque),
+1569:        selected_lists: debug_selected_lists(opaque),

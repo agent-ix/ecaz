@@ -1,0 +1,54 @@
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0
+ 34 17.4M   34 6143k    0     0  9141k      0  0:00:01 --:--:--  0:00:01 9141k100 17.4M  100 17.4M    0     0  16.8M      0  0:00:01  0:00:01 --:--:-- 31.5M
+Note: switching to 'FETCH_HEAD'.
+
+You are in 'detached HEAD' state. You can look around, make experimental
+changes and commit them, and you can discard any commits you make in this
+state without impacting any branches by switching back to a branch.
+
+If you want to create a new branch to retain commits you create, you may
+do so (now or later) by using -c with the switch command. Example:
+
+  git switch -c <new-branch-name>
+
+Or undo this operation with:
+
+  git switch -
+
+Turn off this advice by setting config variable advice.detachedHead to false
+
+HEAD is now at 0cc1c5a Allow abstract refinements inside composite sort constructors (#1603)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.02s
+     Running `target/debug/xtask install`
+$ cargo build --bin flux-driver --profile release --message-format=json-render-diagnostics
+    Finished `release` profile [optimized] target(s) in 0.05s
+$ cp /Users/peter/.ecaz/hardening-tools/flux/target/release/flux-driver /Users/peter/.flux
+$ cargo build --bin cargo-flux --profile release --message-format=json-render-diagnostics
+    Finished `release` profile [optimized] target(s) in 0.03s
+$ export FLUX_SYSROOT=/Users/peter/.flux
+$ /Users/peter/.ecaz/hardening-tools/flux/target/release/cargo-flux flux -p flux-alloc -p flux-attrs -p flux-core -p flux-rs --message-format=json-render-diagnostics
+summary. 1 functions processed: 1 checked; 0 trusted; 0 ignored. 0 constraints solved. Finished in 66.19ms
+summary. 1 functions processed: 1 checked; 0 trusted; 0 ignored. 0 constraints solved. Finished in 63.60ms
+summary. 0 functions processed: 0 checked; 0 trusted; 0 ignored. 0 constraints solved. Finished in 366.42ms
+summary. 60 functions processed: 2 checked; 58 trusted; 0 ignored. 0 constraints solved. Finished in 287.51ms
+summary. 1 functions processed: 0 checked; 1 trusted; 0 ignored. 0 constraints solved. Finished in 17.30ms
+    Finished `flux` profile [unoptimized + debuginfo] target(s) in 0.36s
+$ cp /Users/peter/.ecaz/hardening-tools/flux/target/flux/deps/libflux_attrs-da5823f4972ca4c7.dylib /Users/peter/.flux
+$ cp /Users/peter/.ecaz/hardening-tools/flux/target/flux/deps/libflux_core-ba55f63a0cb44361.rmeta /Users/peter/.flux
+$ cp /Users/peter/.ecaz/hardening-tools/flux/target/flux/deps/libflux_core-ba55f63a0cb44361.fluxmeta /Users/peter/.flux
+$ cp /Users/peter/.ecaz/hardening-tools/flux/target/flux/deps/libflux_rs-cd930b3250e95670.rmeta /Users/peter/.flux
+$ cp /Users/peter/.ecaz/hardening-tools/flux/target/flux/deps/libflux_rs-cd930b3250e95670.fluxmeta /Users/peter/.flux
+$ cp /Users/peter/.ecaz/hardening-tools/flux/target/flux/deps/libflux_alloc-87a57d220e2db17f.rmeta /Users/peter/.flux
+$ cp /Users/peter/.ecaz/hardening-tools/flux/target/flux/deps/libflux_alloc-87a57d220e2db17f.fluxmeta /Users/peter/.flux
+$ cargo install --path crates/flux-bin --force
+  Installing flux-bin v0.1.0 (/Users/peter/.ecaz/hardening-tools/flux/crates/flux-bin)
+    Updating crates.io index
+     Locking 91 packages to latest compatible versions
+      Adding toml v0.9.12+spec-1.1.0 (available: v1.1.2+spec-1.1.0)
+    Finished `release` profile [optimized] target(s) in 0.57s
+   Replacing /Users/peter/.cargo/bin/cargo-flux
+   Replacing /Users/peter/.cargo/bin/flux
+    Replaced package `flux-bin v0.1.0 (/Users/peter/.ecaz/hardening-tools/flux/crates/flux-bin)` with `flux-bin v0.1.0 (/Users/peter/.ecaz/hardening-tools/flux/crates/flux-bin)` (executables `cargo-flux`, `flux`)
+cargo-flux 0cc1c5a (2026-05-15)

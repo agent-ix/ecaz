@@ -1,0 +1,908 @@
+{
+  "name": "task99-g4-neon-cap",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-99/002-profile-suiteconfig/artifacts",
+  "defaults": {
+    "pg": 18,
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 100,
+    "iterations": 300,
+    "force_index": true,
+    "sample_backend_memory": false
+  },
+  "steps": [
+    {
+      "kind": "recall",
+      "name": "recall-hnsw-tq-full_lut-on-neoncap",
+      "tags": [
+        "task99",
+        "hnsw",
+        "turboquant",
+        "real100k",
+        "mode=full_lut",
+        "kernel_on",
+        "isa_cap=neon",
+        "g4_only"
+      ],
+      "prefix": "t99_hnsw_tq_100k",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80,
+        160
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-hnsw-tq-full_lut-on-neoncap.log",
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on",
+        "ec_hnsw.turboquant_exact_score_mode=full_lut",
+        "ecaz.isa_cap=neon"
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-hnsw-tq-full_lut-on-neoncap",
+      "tags": [
+        "task99",
+        "hnsw",
+        "turboquant",
+        "real100k",
+        "mode=full_lut",
+        "kernel_on",
+        "isa_cap=neon",
+        "g4_only"
+      ],
+      "prefix": "t99_hnsw_tq_100k",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80,
+        160
+      ],
+      "iterations": 300,
+      "concurrency": 1,
+      "cache_state": "t99_hnsw_tq_full_lut_on_neoncap",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-hnsw-tq-full_lut-on-neoncap.log",
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on",
+        "ec_hnsw.turboquant_exact_score_mode=full_lut",
+        "ecaz.isa_cap=neon"
+      ]
+    },
+    {
+      "kind": "recall",
+      "name": "recall-hnsw-tq-int8_approx-on-neoncap",
+      "tags": [
+        "task99",
+        "hnsw",
+        "turboquant",
+        "real100k",
+        "mode=int8_approx",
+        "kernel_on",
+        "isa_cap=neon",
+        "g4_only"
+      ],
+      "prefix": "t99_hnsw_tq_100k",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80,
+        160
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-hnsw-tq-int8_approx-on-neoncap.log",
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on",
+        "ec_hnsw.turboquant_exact_score_mode=int8_approx",
+        "ecaz.isa_cap=neon"
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-hnsw-tq-int8_approx-on-neoncap",
+      "tags": [
+        "task99",
+        "hnsw",
+        "turboquant",
+        "real100k",
+        "mode=int8_approx",
+        "kernel_on",
+        "isa_cap=neon",
+        "g4_only"
+      ],
+      "prefix": "t99_hnsw_tq_100k",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80,
+        160
+      ],
+      "iterations": 300,
+      "concurrency": 1,
+      "cache_state": "t99_hnsw_tq_int8_approx_on_neoncap",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-hnsw-tq-int8_approx-on-neoncap.log",
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on",
+        "ec_hnsw.turboquant_exact_score_mode=int8_approx",
+        "ecaz.isa_cap=neon"
+      ]
+    },
+    {
+      "kind": "recall",
+      "name": "recall-hnsw-tq-default-on-neoncap",
+      "tags": [
+        "task99",
+        "hnsw",
+        "turboquant",
+        "real100k",
+        "default_path",
+        "kernel_on",
+        "isa_cap=neon",
+        "g4_only"
+      ],
+      "prefix": "t99_hnsw_tq_100k",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80,
+        160
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-hnsw-tq-default-on-neoncap.log",
+      "session_gucs": [
+        "ecaz.isa_cap=neon"
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-hnsw-tq-default-on-neoncap",
+      "tags": [
+        "task99",
+        "hnsw",
+        "turboquant",
+        "real100k",
+        "default_path",
+        "kernel_on",
+        "isa_cap=neon",
+        "g4_only"
+      ],
+      "prefix": "t99_hnsw_tq_100k",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80,
+        160
+      ],
+      "iterations": 300,
+      "concurrency": 1,
+      "cache_state": "t99_hnsw_tq_default_on_neoncap",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-hnsw-tq-default-on-neoncap.log",
+      "session_gucs": [
+        "ecaz.isa_cap=neon"
+      ]
+    },
+    {
+      "kind": "recall",
+      "name": "recall-hnsw-rabitq-on-neoncap",
+      "tags": [
+        "task99",
+        "hnsw",
+        "rabitq",
+        "real100k",
+        "kernel_on",
+        "isa_cap=neon",
+        "g4_only"
+      ],
+      "prefix": "t99_hnsw_rabitq_100k",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80,
+        160
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-hnsw-rabitq-on-neoncap.log",
+      "session_gucs": [
+        "ecaz.isa_cap=neon"
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-hnsw-rabitq-on-neoncap",
+      "tags": [
+        "task99",
+        "hnsw",
+        "rabitq",
+        "real100k",
+        "kernel_on",
+        "isa_cap=neon",
+        "g4_only"
+      ],
+      "prefix": "t99_hnsw_rabitq_100k",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80,
+        160
+      ],
+      "iterations": 300,
+      "concurrency": 1,
+      "cache_state": "t99_hnsw_rabitq_on_neoncap",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-hnsw-rabitq-on-neoncap.log",
+      "session_gucs": [
+        "ecaz.isa_cap=neon"
+      ]
+    },
+    {
+      "kind": "recall",
+      "name": "recall-hnsw-qjl-1024-on-neoncap",
+      "tags": [
+        "task99",
+        "hnsw",
+        "turboquant_qjl",
+        "dim1024",
+        "kernel_on",
+        "isa_cap=neon",
+        "g4_only"
+      ],
+      "prefix": "t99_qjl_hnsw_1024",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        32,
+        80
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-hnsw-qjl-1024-on-neoncap.log",
+      "session_gucs": [
+        "ecaz.isa_cap=neon"
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-hnsw-qjl-1024-on-neoncap",
+      "tags": [
+        "task99",
+        "hnsw",
+        "turboquant_qjl",
+        "dim1024",
+        "kernel_on",
+        "isa_cap=neon",
+        "g4_only"
+      ],
+      "prefix": "t99_qjl_hnsw_1024",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        32,
+        80
+      ],
+      "iterations": 300,
+      "concurrency": 1,
+      "cache_state": "t99_hnsw_qjl_1024_on_neoncap",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-hnsw-qjl-1024-on-neoncap.log",
+      "session_gucs": [
+        "ecaz.isa_cap=neon"
+      ]
+    },
+    {
+      "kind": "recall",
+      "name": "recall-ivf-turboquant-on-neoncap",
+      "tags": [
+        "task99",
+        "ivf",
+        "turboquant",
+        "real100k",
+        "kernel_on",
+        "isa_cap=neon",
+        "g4_only"
+      ],
+      "prefix": "t99_ivf_tq_100k",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        64
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-ivf-turboquant-on-neoncap.log",
+      "ivf_scratch_soa_batch_decode": true,
+      "session_gucs": [
+        "ecaz.isa_cap=neon"
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-ivf-turboquant-on-neoncap",
+      "tags": [
+        "task99",
+        "ivf",
+        "turboquant",
+        "real100k",
+        "kernel_on",
+        "isa_cap=neon",
+        "g4_only"
+      ],
+      "prefix": "t99_ivf_tq_100k",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        64
+      ],
+      "iterations": 300,
+      "concurrency": 1,
+      "cache_state": "t99_ivf_turboquant_on_neoncap",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-ivf-turboquant-on-neoncap.log",
+      "ivf_scratch_soa_batch_decode": true,
+      "session_gucs": [
+        "ecaz.isa_cap=neon"
+      ]
+    },
+    {
+      "kind": "recall",
+      "name": "recall-ivf-rabitq1-on-neoncap",
+      "tags": [
+        "task99",
+        "ivf",
+        "rabitq1",
+        "real100k",
+        "kernel_on",
+        "isa_cap=neon",
+        "g4_only"
+      ],
+      "prefix": "t99_ivf_rabitq1_100k",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        64
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-ivf-rabitq1-on-neoncap.log",
+      "ivf_scratch_soa_batch_decode": true,
+      "session_gucs": [
+        "ecaz.isa_cap=neon"
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-ivf-rabitq1-on-neoncap",
+      "tags": [
+        "task99",
+        "ivf",
+        "rabitq1",
+        "real100k",
+        "kernel_on",
+        "isa_cap=neon",
+        "g4_only"
+      ],
+      "prefix": "t99_ivf_rabitq1_100k",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        64
+      ],
+      "iterations": 300,
+      "concurrency": 1,
+      "cache_state": "t99_ivf_rabitq1_on_neoncap",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-ivf-rabitq1-on-neoncap.log",
+      "ivf_scratch_soa_batch_decode": true,
+      "session_gucs": [
+        "ecaz.isa_cap=neon"
+      ]
+    },
+    {
+      "kind": "recall",
+      "name": "recall-ivf-pq_fastscan-on-neoncap",
+      "tags": [
+        "task99",
+        "ivf",
+        "pq_fastscan",
+        "real100k",
+        "kernel_on",
+        "isa_cap=neon",
+        "g4_only"
+      ],
+      "prefix": "t99_ivf_pqfs_100k",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        64
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-ivf-pq_fastscan-on-neoncap.log",
+      "ivf_scratch_soa_batch_decode": true,
+      "session_gucs": [
+        "ecaz.isa_cap=neon"
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-ivf-pq_fastscan-on-neoncap",
+      "tags": [
+        "task99",
+        "ivf",
+        "pq_fastscan",
+        "real100k",
+        "kernel_on",
+        "isa_cap=neon",
+        "g4_only"
+      ],
+      "prefix": "t99_ivf_pqfs_100k",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        64
+      ],
+      "iterations": 300,
+      "concurrency": 1,
+      "cache_state": "t99_ivf_pq_fastscan_on_neoncap",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-ivf-pq_fastscan-on-neoncap.log",
+      "ivf_scratch_soa_batch_decode": true,
+      "session_gucs": [
+        "ecaz.isa_cap=neon"
+      ]
+    },
+    {
+      "kind": "recall",
+      "name": "recall-ivf-qjl-1024-on-neoncap",
+      "tags": [
+        "task99",
+        "ivf",
+        "turboquant_qjl",
+        "dim1024",
+        "kernel_on",
+        "isa_cap=neon",
+        "g4_only"
+      ],
+      "prefix": "t99_qjl_ivf_1024",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        8,
+        16
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-ivf-qjl-1024-on-neoncap.log",
+      "ivf_scratch_soa_batch_decode": true,
+      "session_gucs": [
+        "ecaz.isa_cap=neon"
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-ivf-qjl-1024-on-neoncap",
+      "tags": [
+        "task99",
+        "ivf",
+        "turboquant_qjl",
+        "dim1024",
+        "kernel_on",
+        "isa_cap=neon",
+        "g4_only"
+      ],
+      "prefix": "t99_qjl_ivf_1024",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        8,
+        16
+      ],
+      "iterations": 300,
+      "concurrency": 1,
+      "cache_state": "t99_ivf_qjl_1024_on_neoncap",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-ivf-qjl-1024-on-neoncap.log",
+      "ivf_scratch_soa_batch_decode": true,
+      "session_gucs": [
+        "ecaz.isa_cap=neon"
+      ]
+    },
+    {
+      "kind": "recall",
+      "name": "recall-spire-turboquant-on-neoncap",
+      "tags": [
+        "task99",
+        "spire",
+        "turboquant",
+        "real100k",
+        "kernel_on",
+        "isa_cap=neon",
+        "g4_only"
+      ],
+      "prefix": "t99_spire_tq_100k",
+      "profile": "ec_spire",
+      "k": 10,
+      "sweep": [
+        16,
+        64
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-spire-turboquant-on-neoncap.log",
+      "session_gucs": [
+        "ecaz.isa_cap=neon"
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-spire-turboquant-on-neoncap",
+      "tags": [
+        "task99",
+        "spire",
+        "turboquant",
+        "real100k",
+        "kernel_on",
+        "isa_cap=neon",
+        "g4_only"
+      ],
+      "prefix": "t99_spire_tq_100k",
+      "profile": "ec_spire",
+      "k": 10,
+      "sweep": [
+        16,
+        64
+      ],
+      "iterations": 300,
+      "concurrency": 1,
+      "cache_state": "t99_spire_turboquant_on_neoncap",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-spire-turboquant-on-neoncap.log",
+      "session_gucs": [
+        "ecaz.isa_cap=neon"
+      ]
+    },
+    {
+      "kind": "recall",
+      "name": "recall-spire-rabitq-on-neoncap",
+      "tags": [
+        "task99",
+        "spire",
+        "rabitq",
+        "real100k",
+        "kernel_on",
+        "attribution_check",
+        "isa_cap=neon",
+        "g4_only"
+      ],
+      "prefix": "t99_spire_rabitq_100k",
+      "profile": "ec_spire",
+      "k": 10,
+      "sweep": [
+        16,
+        64
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-spire-rabitq-on-neoncap.log",
+      "session_gucs": [
+        "ecaz.isa_cap=neon"
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-spire-rabitq-on-neoncap",
+      "tags": [
+        "task99",
+        "spire",
+        "rabitq",
+        "real100k",
+        "kernel_on",
+        "attribution_check",
+        "isa_cap=neon",
+        "g4_only"
+      ],
+      "prefix": "t99_spire_rabitq_100k",
+      "profile": "ec_spire",
+      "k": 10,
+      "sweep": [
+        16,
+        64
+      ],
+      "iterations": 300,
+      "concurrency": 1,
+      "cache_state": "t99_spire_rabitq_on_neoncap",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-spire-rabitq-on-neoncap.log",
+      "session_gucs": [
+        "ecaz.isa_cap=neon"
+      ]
+    },
+    {
+      "kind": "recall",
+      "name": "recall-spire-qjl-1024-on-neoncap",
+      "tags": [
+        "task99",
+        "spire",
+        "turboquant_qjl",
+        "dim1024",
+        "kernel_on",
+        "isa_cap=neon",
+        "g4_only"
+      ],
+      "prefix": "t99_qjl_spire_1024",
+      "profile": "ec_spire",
+      "k": 10,
+      "sweep": [
+        8,
+        16
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-spire-qjl-1024-on-neoncap.log",
+      "session_gucs": [
+        "ecaz.isa_cap=neon"
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-spire-qjl-1024-on-neoncap",
+      "tags": [
+        "task99",
+        "spire",
+        "turboquant_qjl",
+        "dim1024",
+        "kernel_on",
+        "isa_cap=neon",
+        "g4_only"
+      ],
+      "prefix": "t99_qjl_spire_1024",
+      "profile": "ec_spire",
+      "k": 10,
+      "sweep": [
+        8,
+        16
+      ],
+      "iterations": 300,
+      "concurrency": 1,
+      "cache_state": "t99_spire_qjl_1024_on_neoncap",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-spire-qjl-1024-on-neoncap.log",
+      "session_gucs": [
+        "ecaz.isa_cap=neon"
+      ]
+    },
+    {
+      "kind": "recall",
+      "name": "recall-diskann-pqfs-binary-on-neoncap",
+      "tags": [
+        "task99",
+        "diskann",
+        "binary",
+        "real100k",
+        "kernel_on",
+        "isa_cap=neon",
+        "g4_only"
+      ],
+      "prefix": "t99_diskann_pqfs_100k",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-diskann-pqfs-binary-on-neoncap.log",
+      "session_gucs": [
+        "ec_diskann.prefilter_kind=binary_sidecar",
+        "ecaz.isa_cap=neon"
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-diskann-pqfs-binary-on-neoncap",
+      "tags": [
+        "task99",
+        "diskann",
+        "binary",
+        "real100k",
+        "kernel_on",
+        "isa_cap=neon",
+        "g4_only"
+      ],
+      "prefix": "t99_diskann_pqfs_100k",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128
+      ],
+      "iterations": 300,
+      "concurrency": 1,
+      "cache_state": "t99_diskann_pqfs_binary_on_neoncap",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-diskann-pqfs-binary-on-neoncap.log",
+      "session_gucs": [
+        "ec_diskann.prefilter_kind=binary_sidecar",
+        "ecaz.isa_cap=neon"
+      ]
+    },
+    {
+      "kind": "recall",
+      "name": "recall-diskann-pqfs-grouped-pq-on-neoncap",
+      "tags": [
+        "task99",
+        "diskann",
+        "grouped_pq",
+        "real100k",
+        "kernel_on",
+        "isa_cap=neon",
+        "g4_only"
+      ],
+      "prefix": "t99_diskann_pqfs_100k",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-diskann-pqfs-grouped-pq-on-neoncap.log",
+      "session_gucs": [
+        "ec_diskann.prefilter_kind=grouped_pq",
+        "ecaz.isa_cap=neon"
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-diskann-pqfs-grouped-pq-on-neoncap",
+      "tags": [
+        "task99",
+        "diskann",
+        "grouped_pq",
+        "real100k",
+        "kernel_on",
+        "isa_cap=neon",
+        "g4_only"
+      ],
+      "prefix": "t99_diskann_pqfs_100k",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128
+      ],
+      "iterations": 300,
+      "concurrency": 1,
+      "cache_state": "t99_diskann_pqfs_grouped_pq_on_neoncap",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-diskann-pqfs-grouped-pq-on-neoncap.log",
+      "session_gucs": [
+        "ec_diskann.prefilter_kind=grouped_pq",
+        "ecaz.isa_cap=neon"
+      ]
+    },
+    {
+      "kind": "recall",
+      "name": "recall-diskann-rabitq-on-neoncap",
+      "tags": [
+        "task99",
+        "diskann",
+        "rabitq",
+        "real100k",
+        "kernel_on",
+        "isa_cap=neon",
+        "g4_only"
+      ],
+      "prefix": "t99_diskann_rabitq_100k",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-diskann-rabitq-on-neoncap.log",
+      "session_gucs": [
+        "ecaz.isa_cap=neon"
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-diskann-rabitq-on-neoncap",
+      "tags": [
+        "task99",
+        "diskann",
+        "rabitq",
+        "real100k",
+        "kernel_on",
+        "isa_cap=neon",
+        "g4_only"
+      ],
+      "prefix": "t99_diskann_rabitq_100k",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128
+      ],
+      "iterations": 300,
+      "concurrency": 1,
+      "cache_state": "t99_diskann_rabitq_on_neoncap",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-diskann-rabitq-on-neoncap.log",
+      "session_gucs": [
+        "ecaz.isa_cap=neon"
+      ]
+    },
+    {
+      "kind": "recall",
+      "name": "recall-diskann-tq-on-neoncap",
+      "tags": [
+        "task99",
+        "diskann",
+        "turboquant",
+        "real100k",
+        "kernel_on",
+        "isa_cap=neon",
+        "g4_only"
+      ],
+      "prefix": "t99_diskann_tq_100k",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-diskann-tq-on-neoncap.log",
+      "session_gucs": [
+        "ecaz.isa_cap=neon"
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-diskann-tq-on-neoncap",
+      "tags": [
+        "task99",
+        "diskann",
+        "turboquant",
+        "real100k",
+        "kernel_on",
+        "isa_cap=neon",
+        "g4_only"
+      ],
+      "prefix": "t99_diskann_tq_100k",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128
+      ],
+      "iterations": 300,
+      "concurrency": 1,
+      "cache_state": "t99_diskann_tq_on_neoncap",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-diskann-tq-on-neoncap.log",
+      "session_gucs": [
+        "ecaz.isa_cap=neon"
+      ]
+    }
+  ]
+}

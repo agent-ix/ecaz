@@ -1,0 +1,28 @@
+SET
+DROP INDEX
+DROP INDEX
+DROP INDEX
+DROP INDEX
+DROP INDEX
+DROP INDEX
+DROP INDEX
+CREATE INDEX
+CREATE INDEX
+    check_name     | equal |              hash_a              |              hash_b              
+-------------------+-------+----------------------------------+----------------------------------
+ hierarchy         | t     | e9269bc8d6b1cbfce2db37b7d07137db | e9269bc8d6b1cbfce2db37b7d07137db
+ leaf_assignments  | t     | bde0c9bf085684773c02ce6d1d7e9095 | bde0c9bf085684773c02ce6d1d7e9095
+ leaf_summary      | t     | 5407bcfb2a1376e953314d1a736cd5a6 | 5407bcfb2a1376e953314d1a736cd5a6
+ root_routing      | t     | d6859b5199fc479851d1c3952741023c | d6859b5199fc479851d1c3952741023c
+ routing_centroids | t     | 9375d6f733433675f5528c5da91c8cc3 | 9375d6f733433675f5528c5da91c8cc3
+(5 rows)
+
+DROP INDEX
+NOTICE:  index "task68_spire_10k_load_turboquant_idx" does not exist, skipping
+NOTICE:  index "task68_spire_10k_profile_idx" does not exist, skipping
+NOTICE:  index "task68_spire_10k_drilldown_idx" does not exist, skipping
+NOTICE:  index "task68_spire_10k_fastpath_idx" does not exist, skipping
+NOTICE:  index "task68_spire_10k_topgraph_cache_idx" does not exist, skipping
+NOTICE:  index "task68_spire_10k_closeout_det_b_idx" does not exist, skipping
+NOTICE:  ec_spire_ambuild_timing index=task68_spire_10k_closeout_idx phase=complete heap_tuples=10000 scanned_tuples=10000 index_tuples=10000 recursive_fanout=8 setup_ms=0 heap_scan_ms=138 sample_collect_ms=0 kmeans_ms=148 kmeans_calls=1 assignment_ms=15 recursive_kmeans_ms=0 recursive_kmeans_calls=1 recursive_kmeans_max_level=1 recursive_assignment_ms=0 recursive_routing_initial_children=32 recursive_routing_final_children=8 recursive_routing_iterations=1 draft_ms=11 draft_total_ms=11 draft_input_clone_ms=5 draft_pid_alloc_ms=0 draft_recursive_routing_ms=1 draft_route_map_ms=0 draft_leaf_rows_ms=1 draft_leaf_inputs_ms=1 draft_validation_ms=0 top_graph_ms=24 pq4_training_ms=0 object_store_ms=0 object_store_total_ms=24 publish_ms=0 total_ms=338
+NOTICE:  ec_spire_ambuild_timing index=task68_spire_10k_closeout_det_b_idx phase=complete heap_tuples=10000 scanned_tuples=10000 index_tuples=10000 recursive_fanout=8 setup_ms=0 heap_scan_ms=112 sample_collect_ms=0 kmeans_ms=147 kmeans_calls=1 assignment_ms=15 recursive_kmeans_ms=0 recursive_kmeans_calls=1 recursive_kmeans_max_level=1 recursive_assignment_ms=0 recursive_routing_initial_children=32 recursive_routing_final_children=8 recursive_routing_iterations=1 draft_ms=8 draft_total_ms=8 draft_input_clone_ms=4 draft_pid_alloc_ms=0 draft_recursive_routing_ms=0 draft_route_map_ms=0 draft_leaf_rows_ms=1 draft_leaf_inputs_ms=0 draft_validation_ms=0 top_graph_ms=24 pq4_training_ms=0 object_store_ms=0 object_store_total_ms=24 publish_ms=0 total_ms=308

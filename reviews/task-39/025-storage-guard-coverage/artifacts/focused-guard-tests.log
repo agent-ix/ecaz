@@ -1,0 +1,18 @@
+^D   Compiling ecaz-careful-hardening v0.1.0 (/Users/peter/dev/tqvector/hardening/careful)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.34s
+     Running unittests src/lib.rs (target/debug/deps/ecaz_careful_hardening-3bca8b65b65b7ce7)
+
+running 10 tests
+test careful_pg_guards::tests::scan_guards_end_index_and_heap_scans_once ... ok
+test careful_pg_guards::tests::snapshot_guards_unregister_and_active_guard_pops ... ok
+test careful_pg_guards::tests::locked_buffer_read_main_variants_wrap_read_buffer ... ok
+test careful_pg_guards::tests::pinned_buffer_read_main_wraps_read_buffer_and_rejects_invalid_reads ... ok
+test careful_pg_guards::tests::lock_guard_releases_adopted_lwlock_once ... ok
+test careful_pg_guards::tests::pinned_buffer_guard_rejects_invalid_and_releases_pin ... ok
+test careful_pg_guards::tests::locked_buffer_guard_rejects_invalid_and_unlocks_release ... ok
+test careful_pg_guards::tests::slot_guard_drops_created_slots_once ... ok
+test careful_pg_guards::tests::spi_tuple_table_guard_rejects_null_and_frees_owned_table ... ok
+test careful_pg_guards::tests::relation_guards_reject_null_and_close_matching_relation_kind ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 425 filtered out; finished in 0.00s
+

@@ -1,0 +1,20 @@
+backend=avx2+fma
+dim=256
+candidates=16
+iterations=10
+variant	mode	bits	clip	iterations	scores	total_ns	ns_per_score	checksum
+bits1	single-dispatch	1	2.0	10	10	17786	1778.60	3.747468
+bits1	single-scalar	1	2.0	10	10	17680	1768.00	3.747468
+bits1	batch	1	2.0	10	160	223454	1396.59	-0.433242
+bits4	single-dispatch	4	2.0	10	10	23858	2385.80	3.765099
+bits4	single-scalar	4	2.0	10	10	23538	2353.80	3.765099
+bits4	batch	4	2.0	10	160	319098	1994.36	0.221699
+bits8	single-dispatch	8	2.0	10	10	24497	2449.70	3.763798
+bits8	single-scalar	8	2.0	10	10	23539	2353.90	3.763798
+bits8	batch	8	2.0	10	160	267974	1674.84	0.278008
+bits8c3	single-dispatch	8	3.0	10	10	23538	2353.80	3.716264
+bits8c3	single-scalar	8	3.0	10	10	23538	2353.80	3.716264
+bits8c3	batch	8	3.0	10	160	267974	1674.84	0.212796
+bits8c4	single-dispatch	8	4.0	10	10	23645	2364.50	3.711038
+bits8c4	single-scalar	8	4.0	10	10	23538	2353.80	3.711038
+bits8c4	batch	8	4.0	10	160	268827	1680.17	0.203587

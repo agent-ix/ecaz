@@ -1,0 +1,3 @@
+coverage ok: am/ec_spire/storage/leaf_v2.rs actual=95.29 baseline=95.29
+coverage ok: am/ec_spire/storage/local_store_set.rs actual=88.89 baseline=88.89
+coverage ok: am/ec_spire/storage/vec_id.rs actual=94.64 baseline=94.64

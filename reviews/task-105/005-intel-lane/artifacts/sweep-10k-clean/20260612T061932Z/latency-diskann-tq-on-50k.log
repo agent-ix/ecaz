@@ -1,0 +1,19 @@
+┌───────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬────────────────────────┐
+│ list_size ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state            │
+╞═══════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪════════════════════════╡
+│ 64        ┆ 300   ┆ 11.2 ms ┆ 12.5 ms ┆ 1.08 ms ┆ 5.63 ms ┆ 37.8 ms ┆ 51.9 ms ┆ 59.0 ms ┆ t105_diskann_tq_on_50k │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 128       ┆ 300   ┆ 2.99 ms ┆ 1.16 ms ┆ 1.59 ms ┆ 2.68 ms ┆ 5.26 ms ┆ 7.32 ms ┆ 9.80 ms ┆ t105_diskann_tq_on_50k │
+└───────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴────────────────────────┘
+[block-kernel-counters] command=latency label=list_size=64 surface=diskann quant=turboquant isa=avx2 flushes=21455 candidates=364173 elapsed_nanos=79478821 elapsed_ms=79.478821 kernel_flushes=21455 kernel_candidates=364173 kernel_elapsed_nanos=79478821 kernel_elapsed_ms=79.478821 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=2798 width_8_15=6931 width_16_31=11222 width_ge32=504
+[block-kernel-counters] command=latency label=list_size=64 surface=diskann quant=turboquant isa=scalar flushes=167 candidates=167 elapsed_nanos=161829 elapsed_ms=0.161829 kernel_flushes=0 kernel_candidates=0 kernel_elapsed_nanos=0 kernel_elapsed_ms=0.000000 scalar_flushes=167 scalar_candidates=167 scalar_elapsed_nanos=161829 scalar_elapsed_ms=0.161829 width_lt8=167 width_8_15=0 width_16_31=0 width_ge32=0
+[task87-counters] command=latency label=list_size=64 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=64 surface=ivf flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=64 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=64 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[block-kernel-counters] command=latency label=list_size=128 surface=diskann quant=turboquant isa=avx2 flushes=39641 candidates=584638 elapsed_nanos=134699941 elapsed_ms=134.699941 kernel_flushes=39641 kernel_candidates=584638 kernel_elapsed_nanos=134699941 kernel_elapsed_ms=134.699941 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=8344 width_8_15=14072 width_16_31=16706 width_ge32=519
+[block-kernel-counters] command=latency label=list_size=128 surface=diskann quant=turboquant isa=scalar flushes=698 candidates=698 elapsed_nanos=686848 elapsed_ms=0.686848 kernel_flushes=0 kernel_candidates=0 kernel_elapsed_nanos=0 kernel_elapsed_ms=0.000000 scalar_flushes=698 scalar_candidates=698 scalar_elapsed_nanos=686848 scalar_elapsed_ms=0.686848 width_lt8=698 width_8_15=0 width_16_31=0 width_ge32=0
+[task87-counters] command=latency label=list_size=128 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=128 surface=ivf flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=128 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=128 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0

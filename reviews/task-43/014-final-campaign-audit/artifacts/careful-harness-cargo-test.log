@@ -1,0 +1,89 @@
+Script started on 2026-05-18 13:53:18-07:00 [<not executed on terminal>]
+   Compiling ecaz-careful-hardening v0.1.0 (/home/peter/dev/ecaz/hardening/careful)
+warning: function `align_up` is never used
+  --> src/../../../src/storage/page.rs:22:21
+   |
+22 | pub(crate) const fn align_up(value: usize, alignment: usize) -> usize {
+   |                     ^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `ecaz-careful-hardening` (lib test) generated 1 warning
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.86s
+     Running unittests src/lib.rs (hardening/careful/target/debug/deps/ecaz_careful_hardening-2a804361acec1851)
+
+running 69 tests
+test careful_diskann_tuple::tests::la_012_encoded_len_matches_computation ... ok
+test careful_diskann_tuple::tests::la_010_empty_node_roundtrip ... ok
+test careful_diskann_tuple::tests::la_014_validate_neighbor_capacity ... ok
+test careful_diskann_tuple::tests::la_013_foreign_tag_rejected ... ok
+test careful_diskann_tuple::tests::la_015_validate_neighbor_count_bounded_by_r ... ok
+test careful_diskann_tuple::tests::la_016_empty_slots_are_invalid_pointer ... ok
+test careful_diskann_tuple::tests::la_017_deleted_flag_roundtrips ... ok
+test careful_diskann_tuple::tests::la_018_overflow_heaptids_flag_independent ... ok
+test careful_diskann_tuple::tests::la_019_fixed_length_invariant ... ok
+test careful_diskann_tuple::tests::la_020_header_size_locked ... ok
+test careful_diskann_tuple::tests::la_021_decode_rejects_wrong_length ... ok
+test careful_diskann_tuple::tests::la_022_validate_body_sizes_against_metadata ... ok
+test careful_diskann_tuple::tests::la_032_codebook_foreign_tag_rejected ... ok
+test careful_diskann_tuple::tests::la_031_codebook_placeholder_patched_same_length ... ok
+test careful_diskann_tuple::tests::la_033_codebook_wrong_length_rejected ... ok
+test careful_diskann_tuple::tests::miri_la_011_filled_node_roundtrip ... ok
+test careful_diskann_tuple::tests::miri_la_030_codebook_tuple_roundtrip ... ok
+test careful_diskann_vacuum::tests::miri_vc_001_mark_deleted_is_idempotent ... ok
+test careful_diskann_vacuum::tests::miri_vc_003_strip_dead_primary_heaptid_predicate ... ok
+test careful_diskann_vacuum::tests::miri_vc_002_mark_deleted_preserves_payload ... ok
+test careful_diskann_vacuum::tests::miri_vc_004_strip_skips_already_invalid ... ok
+test careful_diskann_vacuum::tests::miri_vc_005_is_fully_dead_semantics ... ok
+test careful_diskann_vacuum::tests::miri_vc_006_repair_neighbors_compacts_and_pads ... ok
+test careful_diskann_vacuum::tests::miri_vc_009_repair_preserves_encoded_length ... ok
+test careful_diskann_vacuum::tests::miri_vc_010_full_deletion_state_machine ... ok
+test careful_diskann_vacuum::tests::vc_007_repair_with_empty_dead_set_noop ... ok
+test careful_diskann_vacuum::tests::vc_008_repair_is_stable ... ok
+test careful_diskann_vamana::tests::append_candidates_for_prune_deduplicates_extra_nodes ... ok
+test careful_diskann_vamana::tests::candidate_pool_includes_existing_out_neighbors ... ok
+test careful_diskann_vamana::tests::miri_greedy_search_finds_nearest ... ok
+test careful_diskann_vamana::tests::miri_build_stats_include_pass1_extra_candidates ... ok
+test careful_diskann_vamana::tests::miri_build_small_graph_is_connected ... ok
+test careful_diskann_vamana::tests::miri_robust_prune_excludes_alpha_dominated ... ok
+test careful_diskann_vamana::tests::robust_prune_respects_max_degree ... ok
+test careful_hnsw_search::tests::beam_search_expand_one_matches_incremental_best_first_progress ... ok
+test careful_hnsw_search::tests::beam_search_expands_best_first_from_seeds ... ok
+test careful_hnsw_search::tests::beam_search_run_matches_repeated_expand_one ... ok
+test careful_hnsw_search::tests::beam_search_forget_queued_ignores_expanded_or_unknown_nodes ... ok
+test careful_hnsw_search::tests::beam_search_take_best_matching_consumes_first_live_candidate ... ok
+test careful_hnsw_search::tests::miri_beam_search_peek_best_matching_returns_none_after_dropping_fully_stale_frontier ... ok
+test careful_hnsw_search::tests::miri_beam_search_peek_best_matching_skips_stale_leaders ... ok
+test careful_hnsw_search::tests::beam_search_respects_expansion_budget ... ok
+test careful_hnsw_search::tests::miri_visible_frontier_best_candidate_prefers_live_scheduler_node ... ok
+test careful_hnsw_search::tests::beam_search_seed_many_accepts_unique_candidates_only ... ok
+test careful_diskann_vamana::tests::approximate_medoid_within_10pct_of_exact ... ok
+test careful_hnsw_search::tests::miri_beam_search_forget_queued_removes_frontier_node_and_allows_reseed ... ok
+test careful_hnsw_search::tests::visible_frontier_best_candidate_falls_back_after_scheduler_drains ... ok
+test careful_hnsw_search::tests::visible_frontier_consume_best_prefers_live_scheduler_node ... ok
+test careful_hnsw_search::tests::visible_frontier_seed_bootstrap_trace_seeds_and_marks_entry_source ... ok
+test careful_hnsw_search::tests::miri_beam_search_deduplicates_self_loops_and_parallel_edges ... ok
+test careful_hnsw_search::tests::visible_frontier_seed_discovered_marks_nodes_and_seeds_scheduler ... ok
+test careful_hnsw_search::tests::visible_frontier_advance_after_consume_marks_refills_and_tops_up_unexpanded_source ... ok
+test careful_hnsw_search::tests::visible_frontier_advance_after_consume_skips_refill_for_expanded_source ... ok
+test careful_hnsw_search::tests::visible_frontier_top_up_from_visible_seeds_filters_marks_and_seeds ... ok
+test careful_storage_page::tests::data_page_chain_appends_empty_pages_contiguously ... ok
+test careful_hnsw_search::tests::visible_frontier_refill_from_source_uses_remaining_capacity_and_seeds ... ok
+test careful_hnsw_search::tests::miri_visible_frontier_select_next_with_refill_skips_until_selected_then_advances ... ok
+test careful_storage_page::tests::data_page_raw_round_trip ... ok
+test careful_storage_page::tests::miri_item_pointer_roundtrip ... ok
+test careful_storage_page::tests::data_page_chain_overflow_creates_new_block ... ok
+test careful_storage_page::tests::data_page_chain_can_start_next_tuple_on_fresh_page ... ok
+test tests::diskann_vacuum_repair_neighbors_compacts_and_pads ... ok
+test tests::page_chain_preserves_payloads_across_overflow ... ok
+test careful_storage_page::tests::miri_data_page_chain_preserves_tuple_lookup_across_pages ... ok
+test tests::item_pointer_decode_rejects_short_payloads ... ok
+test careful_diskann_vamana::tests::build_stats_include_pass1_extra_candidates ... ok
+test tests::diskann_tuple_codebook_roundtrip ... ok
+test careful_diskann_vamana::tests::build_small_graph_is_connected ... ok
+test careful_diskann_vamana::tests::build_recall_at_10_meets_baseline ... ok
+
+test result: ok. 69 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.20s
+
+
+Script done on 2026-05-18 13:53:18-07:00 [COMMAND_EXIT_CODE="0"]

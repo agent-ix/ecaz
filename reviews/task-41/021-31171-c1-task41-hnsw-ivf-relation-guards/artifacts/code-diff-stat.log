@@ -1,0 +1,8 @@
+ scripts/unsafe_comment_baseline.txt       | 471 ++++++++++++++----------------
+ src/lib.rs                                |  47 +--
+ src/tests/ec_hnsw_build.rs                |  60 ++--
+ src/tests/ec_hnsw_recall_debug_exports.rs |  98 +++----
+ src/tests/ec_hnsw_recall_helpers.rs       |   7 +-
+ src/tests/ec_hnsw_storage_lifecycle.rs    |  22 +-
+ src/tests/mod.rs                          |   6 +-
+ 7 files changed, 322 insertions(+), 389 deletions(-)

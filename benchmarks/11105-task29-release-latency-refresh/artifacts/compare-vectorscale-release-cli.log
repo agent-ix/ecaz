@@ -1,0 +1,11 @@
+
+   0: [91mensuring pgvector extension[0m
+   1: [91mdb error[0m
+   2: [91mERROR: incompatible library "/home/peter/.pgrx/18.3/pgrx-install/lib/postgresql/vector.so": version mismatch
+      DETAIL: Server is version 18, library is version 17.[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/compare/vectorscale.rs[0m:[35m119[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.

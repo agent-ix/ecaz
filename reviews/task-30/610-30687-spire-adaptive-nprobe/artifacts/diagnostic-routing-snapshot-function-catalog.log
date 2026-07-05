@@ -1,0 +1,6 @@
+ nspname |                 proname                  |     args      
+---------+------------------------------------------+---------------
+ public  | ec_spire_index_root_routing_snapshot     | index_oid oid
+ public  | ec_spire_index_routing_centroid_snapshot | index_oid oid
+(2 rows)
+

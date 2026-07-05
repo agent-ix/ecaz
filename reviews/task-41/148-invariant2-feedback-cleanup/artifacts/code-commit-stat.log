@@ -1,0 +1,14 @@
+268d4f63 Tighten invariant2 detoast lifetime helpers
+ src/am/common/detoast.rs         | 58 ++++++++++++++++++++++++++++++++++++++++
+ src/am/common/mod.rs             |  1 +
+ src/am/ec_diskann/ambuild.rs     | 41 +++-------------------------
+ src/am/ec_diskann/routine.rs     |  2 +-
+ src/am/ec_hnsw/build.rs          | 47 +++++---------------------------
+ src/am/ec_hnsw/source.rs         | 35 +++++++-----------------
+ src/am/ec_ivf/build.rs           | 44 +++---------------------------
+ src/am/ec_spire/build.rs         |  2 +-
+ src/am/ec_spire/build/tuples.rs  | 42 +++--------------------------
+ src/am/ec_spire/scan.rs          |  2 +-
+ src/am/ec_spire/scan/relation.rs | 46 ++++---------------------------
+ src/lib.rs                       | 51 +++++++++++++++--------------------
+ 12 files changed, 116 insertions(+), 255 deletions(-)

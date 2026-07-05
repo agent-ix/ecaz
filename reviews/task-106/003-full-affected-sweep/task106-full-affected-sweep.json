@@ -1,0 +1,5431 @@
+{
+  "name": "task106-full-affected-sweep",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-106/003-full-affected-sweep/artifacts/suite",
+  "defaults": {
+    "pg": 18,
+    "socket_dir": "/home/peter/.pgrx",
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 200,
+    "iterations": 200,
+    "force_index": true,
+    "sample_backend_memory": true,
+    "memory_sample_interval_ms": 25
+  },
+  "steps": [
+    {
+      "kind": "raw",
+      "name": "precheck-host",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "precheck"
+      ],
+      "args": [
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "postgres",
+        "--socket-dir",
+        "/home/peter/.pgrx",
+        "--raw",
+        "--sql",
+        "SELECT now() AS captured_at, version() AS postgres_version, current_setting('server_version') AS server_version, current_setting('shared_buffers') AS shared_buffers, current_setting('work_mem') AS work_mem, current_setting('maintenance_work_mem') AS maintenance_work_mem;",
+        "--log-output",
+        "${artifact_dir}/precheck-host.log"
+      ],
+      "expected_artifacts": [
+        "${artifact_dir}/precheck-host.log"
+      ]
+    },
+    {
+      "kind": "corpus-prepare",
+      "name": "prepare-real100k",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "setup",
+        "real100k"
+      ],
+      "profile": "ec_real_100k",
+      "parquet": "/home/peter/dev/datasets/qdrant-dbpedia-entities-openai3-text-embedding-3-large-1536-1M/data",
+      "output_dir": "data/task106_full_sweep_100k",
+      "source_dataset": "qdrant-dbpedia-openai3-large-1536-1m"
+    },
+    {
+      "kind": "load",
+      "name": "load-10k-ivf-rabitq-b1",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real10k",
+        "ivf",
+        "ivf-rabitq-b1"
+      ],
+      "prefix": "t106_10k_ivf_rabitq_b1",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "dim": 1536,
+      "corpus_file": "/home/peter/dev/datasets/tqhnsw_real_10k/tqhnsw_real_10k_corpus.tsv",
+      "queries_file": "/home/peter/dev/datasets/tqhnsw_real_10k/tqhnsw_real_10k_queries.tsv",
+      "manifest_file": "/home/peter/dev/datasets/tqhnsw_real_10k/tqhnsw_real_10k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=64",
+        "quant_bits=1",
+        "training_sample_rows=10000",
+        "rerank=heap_f32",
+        "rerank_width=50"
+      ],
+      "log_file": "${artifact_dir}/load-10k-ivf-rabitq-b1.log",
+      "storage_format": "rabitq"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-10k-ivf-rabitq-b1-scratch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real10k",
+        "ivf",
+        "ivf-rabitq-b1",
+        "storage_format=rabitq",
+        "quant_bits=1",
+        "candidate_batch",
+        "option=scratch-on",
+        "recall"
+      ],
+      "prefix": "t106_10k_ivf_rabitq_b1",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "rerank_width": 50,
+      "log_output": "${artifact_dir}/recall-10k-ivf-rabitq-b1-scratch-on.log",
+      "ivf_scratch_soa_batch_decode": true
+    },
+    {
+      "kind": "latency",
+      "name": "latency-10k-ivf-rabitq-b1-scratch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real10k",
+        "ivf",
+        "ivf-rabitq-b1",
+        "storage_format=rabitq",
+        "quant_bits=1",
+        "candidate_batch",
+        "option=scratch-on",
+        "latency"
+      ],
+      "prefix": "t106_10k_ivf_rabitq_b1",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "rerank_width": 50,
+      "iterations": 200,
+      "concurrency": 1,
+      "cache_state": "task106_10k_ivf-rabitq-b1_scratch-on",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-10k-ivf-rabitq-b1-scratch-on.log",
+      "ivf_scratch_soa_batch_decode": true
+    },
+    {
+      "kind": "recall",
+      "name": "recall-10k-ivf-rabitq-b1-scratch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real10k",
+        "ivf",
+        "ivf-rabitq-b1",
+        "storage_format=rabitq",
+        "quant_bits=1",
+        "scalar-ab",
+        "option=scratch-off",
+        "recall"
+      ],
+      "prefix": "t106_10k_ivf_rabitq_b1",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "session_gucs": [
+        "ec_ivf.scratch_soa_batch_decode=off"
+      ],
+      "rerank_width": 50,
+      "log_output": "${artifact_dir}/recall-10k-ivf-rabitq-b1-scratch-off.log",
+      "ivf_scratch_soa_batch_decode": false
+    },
+    {
+      "kind": "latency",
+      "name": "latency-10k-ivf-rabitq-b1-scratch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real10k",
+        "ivf",
+        "ivf-rabitq-b1",
+        "storage_format=rabitq",
+        "quant_bits=1",
+        "scalar-ab",
+        "option=scratch-off",
+        "latency"
+      ],
+      "prefix": "t106_10k_ivf_rabitq_b1",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "session_gucs": [
+        "ec_ivf.scratch_soa_batch_decode=off"
+      ],
+      "rerank_width": 50,
+      "iterations": 200,
+      "concurrency": 1,
+      "cache_state": "task106_10k_ivf-rabitq-b1_scratch-off",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-10k-ivf-rabitq-b1-scratch-off.log",
+      "ivf_scratch_soa_batch_decode": false
+    },
+    {
+      "kind": "load",
+      "name": "load-10k-ivf-rabitq-b2",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real10k",
+        "ivf",
+        "ivf-rabitq-b2"
+      ],
+      "prefix": "t106_10k_ivf_rabitq_b2",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "dim": 1536,
+      "corpus_file": "/home/peter/dev/datasets/tqhnsw_real_10k/tqhnsw_real_10k_corpus.tsv",
+      "queries_file": "/home/peter/dev/datasets/tqhnsw_real_10k/tqhnsw_real_10k_queries.tsv",
+      "manifest_file": "/home/peter/dev/datasets/tqhnsw_real_10k/tqhnsw_real_10k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=64",
+        "quant_bits=2",
+        "training_sample_rows=10000",
+        "rerank=heap_f32",
+        "rerank_width=50"
+      ],
+      "log_file": "${artifact_dir}/load-10k-ivf-rabitq-b2.log",
+      "storage_format": "rabitq"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-10k-ivf-rabitq-b2-scratch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real10k",
+        "ivf",
+        "ivf-rabitq-b2",
+        "storage_format=rabitq",
+        "quant_bits=2",
+        "candidate_batch",
+        "option=scratch-on",
+        "recall"
+      ],
+      "prefix": "t106_10k_ivf_rabitq_b2",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "rerank_width": 50,
+      "log_output": "${artifact_dir}/recall-10k-ivf-rabitq-b2-scratch-on.log",
+      "ivf_scratch_soa_batch_decode": true
+    },
+    {
+      "kind": "latency",
+      "name": "latency-10k-ivf-rabitq-b2-scratch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real10k",
+        "ivf",
+        "ivf-rabitq-b2",
+        "storage_format=rabitq",
+        "quant_bits=2",
+        "candidate_batch",
+        "option=scratch-on",
+        "latency"
+      ],
+      "prefix": "t106_10k_ivf_rabitq_b2",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "rerank_width": 50,
+      "iterations": 200,
+      "concurrency": 1,
+      "cache_state": "task106_10k_ivf-rabitq-b2_scratch-on",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-10k-ivf-rabitq-b2-scratch-on.log",
+      "ivf_scratch_soa_batch_decode": true
+    },
+    {
+      "kind": "recall",
+      "name": "recall-10k-ivf-rabitq-b2-scratch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real10k",
+        "ivf",
+        "ivf-rabitq-b2",
+        "storage_format=rabitq",
+        "quant_bits=2",
+        "scalar-ab",
+        "option=scratch-off",
+        "recall"
+      ],
+      "prefix": "t106_10k_ivf_rabitq_b2",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "session_gucs": [
+        "ec_ivf.scratch_soa_batch_decode=off"
+      ],
+      "rerank_width": 50,
+      "log_output": "${artifact_dir}/recall-10k-ivf-rabitq-b2-scratch-off.log",
+      "ivf_scratch_soa_batch_decode": false
+    },
+    {
+      "kind": "latency",
+      "name": "latency-10k-ivf-rabitq-b2-scratch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real10k",
+        "ivf",
+        "ivf-rabitq-b2",
+        "storage_format=rabitq",
+        "quant_bits=2",
+        "scalar-ab",
+        "option=scratch-off",
+        "latency"
+      ],
+      "prefix": "t106_10k_ivf_rabitq_b2",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "session_gucs": [
+        "ec_ivf.scratch_soa_batch_decode=off"
+      ],
+      "rerank_width": 50,
+      "iterations": 200,
+      "concurrency": 1,
+      "cache_state": "task106_10k_ivf-rabitq-b2_scratch-off",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-10k-ivf-rabitq-b2-scratch-off.log",
+      "ivf_scratch_soa_batch_decode": false
+    },
+    {
+      "kind": "load",
+      "name": "load-10k-ivf-rabitq-b4",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real10k",
+        "ivf",
+        "ivf-rabitq-b4"
+      ],
+      "prefix": "t106_10k_ivf_rabitq_b4",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "dim": 1536,
+      "corpus_file": "/home/peter/dev/datasets/tqhnsw_real_10k/tqhnsw_real_10k_corpus.tsv",
+      "queries_file": "/home/peter/dev/datasets/tqhnsw_real_10k/tqhnsw_real_10k_queries.tsv",
+      "manifest_file": "/home/peter/dev/datasets/tqhnsw_real_10k/tqhnsw_real_10k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=64",
+        "quant_bits=4",
+        "training_sample_rows=10000",
+        "rerank=heap_f32",
+        "rerank_width=50"
+      ],
+      "log_file": "${artifact_dir}/load-10k-ivf-rabitq-b4.log",
+      "storage_format": "rabitq"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-10k-ivf-rabitq-b4-scratch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real10k",
+        "ivf",
+        "ivf-rabitq-b4",
+        "storage_format=rabitq",
+        "quant_bits=4",
+        "candidate_batch",
+        "option=scratch-on",
+        "recall"
+      ],
+      "prefix": "t106_10k_ivf_rabitq_b4",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "rerank_width": 50,
+      "log_output": "${artifact_dir}/recall-10k-ivf-rabitq-b4-scratch-on.log",
+      "ivf_scratch_soa_batch_decode": true
+    },
+    {
+      "kind": "latency",
+      "name": "latency-10k-ivf-rabitq-b4-scratch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real10k",
+        "ivf",
+        "ivf-rabitq-b4",
+        "storage_format=rabitq",
+        "quant_bits=4",
+        "candidate_batch",
+        "option=scratch-on",
+        "latency"
+      ],
+      "prefix": "t106_10k_ivf_rabitq_b4",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "rerank_width": 50,
+      "iterations": 200,
+      "concurrency": 1,
+      "cache_state": "task106_10k_ivf-rabitq-b4_scratch-on",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-10k-ivf-rabitq-b4-scratch-on.log",
+      "ivf_scratch_soa_batch_decode": true
+    },
+    {
+      "kind": "recall",
+      "name": "recall-10k-ivf-rabitq-b4-scratch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real10k",
+        "ivf",
+        "ivf-rabitq-b4",
+        "storage_format=rabitq",
+        "quant_bits=4",
+        "scalar-ab",
+        "option=scratch-off",
+        "recall"
+      ],
+      "prefix": "t106_10k_ivf_rabitq_b4",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "session_gucs": [
+        "ec_ivf.scratch_soa_batch_decode=off"
+      ],
+      "rerank_width": 50,
+      "log_output": "${artifact_dir}/recall-10k-ivf-rabitq-b4-scratch-off.log",
+      "ivf_scratch_soa_batch_decode": false
+    },
+    {
+      "kind": "latency",
+      "name": "latency-10k-ivf-rabitq-b4-scratch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real10k",
+        "ivf",
+        "ivf-rabitq-b4",
+        "storage_format=rabitq",
+        "quant_bits=4",
+        "scalar-ab",
+        "option=scratch-off",
+        "latency"
+      ],
+      "prefix": "t106_10k_ivf_rabitq_b4",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "session_gucs": [
+        "ec_ivf.scratch_soa_batch_decode=off"
+      ],
+      "rerank_width": 50,
+      "iterations": 200,
+      "concurrency": 1,
+      "cache_state": "task106_10k_ivf-rabitq-b4_scratch-off",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-10k-ivf-rabitq-b4-scratch-off.log",
+      "ivf_scratch_soa_batch_decode": false
+    },
+    {
+      "kind": "load",
+      "name": "load-10k-ivf-rabitq-b8",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real10k",
+        "ivf",
+        "ivf-rabitq-b8"
+      ],
+      "prefix": "t106_10k_ivf_rabitq_b8",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "dim": 1536,
+      "corpus_file": "/home/peter/dev/datasets/tqhnsw_real_10k/tqhnsw_real_10k_corpus.tsv",
+      "queries_file": "/home/peter/dev/datasets/tqhnsw_real_10k/tqhnsw_real_10k_queries.tsv",
+      "manifest_file": "/home/peter/dev/datasets/tqhnsw_real_10k/tqhnsw_real_10k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=64",
+        "quant_bits=8",
+        "training_sample_rows=10000",
+        "rerank=heap_f32",
+        "rerank_width=50"
+      ],
+      "log_file": "${artifact_dir}/load-10k-ivf-rabitq-b8.log",
+      "storage_format": "rabitq"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-10k-ivf-rabitq-b8-scratch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real10k",
+        "ivf",
+        "ivf-rabitq-b8",
+        "storage_format=rabitq",
+        "quant_bits=8",
+        "candidate_batch",
+        "option=scratch-on",
+        "recall"
+      ],
+      "prefix": "t106_10k_ivf_rabitq_b8",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "rerank_width": 50,
+      "log_output": "${artifact_dir}/recall-10k-ivf-rabitq-b8-scratch-on.log",
+      "ivf_scratch_soa_batch_decode": true
+    },
+    {
+      "kind": "latency",
+      "name": "latency-10k-ivf-rabitq-b8-scratch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real10k",
+        "ivf",
+        "ivf-rabitq-b8",
+        "storage_format=rabitq",
+        "quant_bits=8",
+        "candidate_batch",
+        "option=scratch-on",
+        "latency"
+      ],
+      "prefix": "t106_10k_ivf_rabitq_b8",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "rerank_width": 50,
+      "iterations": 200,
+      "concurrency": 1,
+      "cache_state": "task106_10k_ivf-rabitq-b8_scratch-on",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-10k-ivf-rabitq-b8-scratch-on.log",
+      "ivf_scratch_soa_batch_decode": true
+    },
+    {
+      "kind": "recall",
+      "name": "recall-10k-ivf-rabitq-b8-scratch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real10k",
+        "ivf",
+        "ivf-rabitq-b8",
+        "storage_format=rabitq",
+        "quant_bits=8",
+        "scalar-ab",
+        "option=scratch-off",
+        "recall"
+      ],
+      "prefix": "t106_10k_ivf_rabitq_b8",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "session_gucs": [
+        "ec_ivf.scratch_soa_batch_decode=off"
+      ],
+      "rerank_width": 50,
+      "log_output": "${artifact_dir}/recall-10k-ivf-rabitq-b8-scratch-off.log",
+      "ivf_scratch_soa_batch_decode": false
+    },
+    {
+      "kind": "latency",
+      "name": "latency-10k-ivf-rabitq-b8-scratch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real10k",
+        "ivf",
+        "ivf-rabitq-b8",
+        "storage_format=rabitq",
+        "quant_bits=8",
+        "scalar-ab",
+        "option=scratch-off",
+        "latency"
+      ],
+      "prefix": "t106_10k_ivf_rabitq_b8",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "session_gucs": [
+        "ec_ivf.scratch_soa_batch_decode=off"
+      ],
+      "rerank_width": 50,
+      "iterations": 200,
+      "concurrency": 1,
+      "cache_state": "task106_10k_ivf-rabitq-b8_scratch-off",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-10k-ivf-rabitq-b8-scratch-off.log",
+      "ivf_scratch_soa_batch_decode": false
+    },
+    {
+      "kind": "load",
+      "name": "load-10k-ivf-auto-tq",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real10k",
+        "ivf",
+        "ivf-auto-tq"
+      ],
+      "prefix": "t106_10k_ivf_auto_tq",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "dim": 1536,
+      "corpus_file": "/home/peter/dev/datasets/tqhnsw_real_10k/tqhnsw_real_10k_corpus.tsv",
+      "queries_file": "/home/peter/dev/datasets/tqhnsw_real_10k/tqhnsw_real_10k_queries.tsv",
+      "manifest_file": "/home/peter/dev/datasets/tqhnsw_real_10k/tqhnsw_real_10k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=64",
+        "training_sample_rows=10000",
+        "rerank=heap_f32",
+        "rerank_width=25"
+      ],
+      "log_file": "${artifact_dir}/load-10k-ivf-auto-tq.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-10k-ivf-auto-tq-scratch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real10k",
+        "ivf",
+        "ivf-auto-tq",
+        "storage_format=auto",
+        "tq-qjl-auto-gate",
+        "option=scratch-on",
+        "recall"
+      ],
+      "prefix": "t106_10k_ivf_auto_tq",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "rerank_width": 25,
+      "log_output": "${artifact_dir}/recall-10k-ivf-auto-tq-scratch-on.log",
+      "ivf_scratch_soa_batch_decode": true
+    },
+    {
+      "kind": "latency",
+      "name": "latency-10k-ivf-auto-tq-scratch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real10k",
+        "ivf",
+        "ivf-auto-tq",
+        "storage_format=auto",
+        "tq-qjl-auto-gate",
+        "option=scratch-on",
+        "latency"
+      ],
+      "prefix": "t106_10k_ivf_auto_tq",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "rerank_width": 25,
+      "iterations": 200,
+      "concurrency": 1,
+      "cache_state": "task106_10k_ivf-auto-tq_scratch-on",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-10k-ivf-auto-tq-scratch-on.log",
+      "ivf_scratch_soa_batch_decode": true
+    },
+    {
+      "kind": "recall",
+      "name": "recall-10k-ivf-auto-tq-scratch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real10k",
+        "ivf",
+        "ivf-auto-tq",
+        "storage_format=auto",
+        "tq-qjl-auto-gate",
+        "option=scratch-off",
+        "recall"
+      ],
+      "prefix": "t106_10k_ivf_auto_tq",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "session_gucs": [
+        "ec_ivf.scratch_soa_batch_decode=off"
+      ],
+      "rerank_width": 25,
+      "log_output": "${artifact_dir}/recall-10k-ivf-auto-tq-scratch-off.log",
+      "ivf_scratch_soa_batch_decode": false
+    },
+    {
+      "kind": "latency",
+      "name": "latency-10k-ivf-auto-tq-scratch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real10k",
+        "ivf",
+        "ivf-auto-tq",
+        "storage_format=auto",
+        "tq-qjl-auto-gate",
+        "option=scratch-off",
+        "latency"
+      ],
+      "prefix": "t106_10k_ivf_auto_tq",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "session_gucs": [
+        "ec_ivf.scratch_soa_batch_decode=off"
+      ],
+      "rerank_width": 25,
+      "iterations": 200,
+      "concurrency": 1,
+      "cache_state": "task106_10k_ivf-auto-tq_scratch-off",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-10k-ivf-auto-tq-scratch-off.log",
+      "ivf_scratch_soa_batch_decode": false
+    },
+    {
+      "kind": "load",
+      "name": "load-10k-ivf-explicit-tq",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real10k",
+        "ivf",
+        "ivf-explicit-tq"
+      ],
+      "prefix": "t106_10k_ivf_explicit_tq",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "dim": 1536,
+      "corpus_file": "/home/peter/dev/datasets/tqhnsw_real_10k/tqhnsw_real_10k_corpus.tsv",
+      "queries_file": "/home/peter/dev/datasets/tqhnsw_real_10k/tqhnsw_real_10k_queries.tsv",
+      "manifest_file": "/home/peter/dev/datasets/tqhnsw_real_10k/tqhnsw_real_10k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=64",
+        "training_sample_rows=10000",
+        "rerank=heap_f32",
+        "rerank_width=25"
+      ],
+      "log_file": "${artifact_dir}/load-10k-ivf-explicit-tq.log",
+      "storage_format": "turboquant"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-10k-ivf-explicit-tq-scratch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real10k",
+        "ivf",
+        "ivf-explicit-tq",
+        "storage_format=turboquant",
+        "tq-qjl-auto-gate",
+        "option=scratch-on",
+        "recall"
+      ],
+      "prefix": "t106_10k_ivf_explicit_tq",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "rerank_width": 25,
+      "log_output": "${artifact_dir}/recall-10k-ivf-explicit-tq-scratch-on.log",
+      "ivf_scratch_soa_batch_decode": true
+    },
+    {
+      "kind": "latency",
+      "name": "latency-10k-ivf-explicit-tq-scratch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real10k",
+        "ivf",
+        "ivf-explicit-tq",
+        "storage_format=turboquant",
+        "tq-qjl-auto-gate",
+        "option=scratch-on",
+        "latency"
+      ],
+      "prefix": "t106_10k_ivf_explicit_tq",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "rerank_width": 25,
+      "iterations": 200,
+      "concurrency": 1,
+      "cache_state": "task106_10k_ivf-explicit-tq_scratch-on",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-10k-ivf-explicit-tq-scratch-on.log",
+      "ivf_scratch_soa_batch_decode": true
+    },
+    {
+      "kind": "recall",
+      "name": "recall-10k-ivf-explicit-tq-scratch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real10k",
+        "ivf",
+        "ivf-explicit-tq",
+        "storage_format=turboquant",
+        "tq-qjl-auto-gate",
+        "option=scratch-off",
+        "recall"
+      ],
+      "prefix": "t106_10k_ivf_explicit_tq",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "session_gucs": [
+        "ec_ivf.scratch_soa_batch_decode=off"
+      ],
+      "rerank_width": 25,
+      "log_output": "${artifact_dir}/recall-10k-ivf-explicit-tq-scratch-off.log",
+      "ivf_scratch_soa_batch_decode": false
+    },
+    {
+      "kind": "latency",
+      "name": "latency-10k-ivf-explicit-tq-scratch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real10k",
+        "ivf",
+        "ivf-explicit-tq",
+        "storage_format=turboquant",
+        "tq-qjl-auto-gate",
+        "option=scratch-off",
+        "latency"
+      ],
+      "prefix": "t106_10k_ivf_explicit_tq",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "session_gucs": [
+        "ec_ivf.scratch_soa_batch_decode=off"
+      ],
+      "rerank_width": 25,
+      "iterations": 200,
+      "concurrency": 1,
+      "cache_state": "task106_10k_ivf-explicit-tq_scratch-off",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-10k-ivf-explicit-tq-scratch-off.log",
+      "ivf_scratch_soa_batch_decode": false
+    },
+    {
+      "kind": "load",
+      "name": "load-10k-spire-rabitq",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real10k",
+        "spire",
+        "spire-rabitq"
+      ],
+      "prefix": "t106_10k_spire_rabitq",
+      "profile": "ec_spire",
+      "bits": 4,
+      "dim": 1536,
+      "corpus_file": "/home/peter/dev/datasets/tqhnsw_real_10k/tqhnsw_real_10k_corpus.tsv",
+      "queries_file": "/home/peter/dev/datasets/tqhnsw_real_10k/tqhnsw_real_10k_queries.tsv",
+      "manifest_file": "/home/peter/dev/datasets/tqhnsw_real_10k/tqhnsw_real_10k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=32",
+        "nprobe=24",
+        "rerank_width=25",
+        "local_store_count=1",
+        "training_sample_rows=10000"
+      ],
+      "log_file": "${artifact_dir}/load-10k-spire-rabitq.log",
+      "storage_format": "rabitq"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-10k-spire-rabitq-batch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real10k",
+        "spire",
+        "spire-rabitq",
+        "storage_format=rabitq",
+        "candidate_batch",
+        "option=batch-on",
+        "recall"
+      ],
+      "prefix": "t106_10k_spire_rabitq",
+      "profile": "ec_spire",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "rerank_width": 25,
+      "log_output": "${artifact_dir}/recall-10k-spire-rabitq-batch-on.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-10k-spire-rabitq-batch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real10k",
+        "spire",
+        "spire-rabitq",
+        "storage_format=rabitq",
+        "candidate_batch",
+        "option=batch-on",
+        "latency"
+      ],
+      "prefix": "t106_10k_spire_rabitq",
+      "profile": "ec_spire",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "rerank_width": 25,
+      "iterations": 200,
+      "concurrency": 1,
+      "cache_state": "task106_10k_spire-rabitq_batch-on",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-10k-spire-rabitq-batch-on.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-10k-spire-rabitq-batch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real10k",
+        "spire",
+        "spire-rabitq",
+        "storage_format=rabitq",
+        "scalar-ab",
+        "option=batch-off",
+        "recall"
+      ],
+      "prefix": "t106_10k_spire_rabitq",
+      "profile": "ec_spire",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "session_gucs": [
+        "ec_spire.candidate_batch_scoring=off"
+      ],
+      "rerank_width": 25,
+      "log_output": "${artifact_dir}/recall-10k-spire-rabitq-batch-off.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-10k-spire-rabitq-batch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real10k",
+        "spire",
+        "spire-rabitq",
+        "storage_format=rabitq",
+        "scalar-ab",
+        "option=batch-off",
+        "latency"
+      ],
+      "prefix": "t106_10k_spire_rabitq",
+      "profile": "ec_spire",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "session_gucs": [
+        "ec_spire.candidate_batch_scoring=off"
+      ],
+      "rerank_width": 25,
+      "iterations": 200,
+      "concurrency": 1,
+      "cache_state": "task106_10k_spire-rabitq_batch-off",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-10k-spire-rabitq-batch-off.log"
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "spire-pipeline-10k-spire-rabitq-batch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real10k",
+        "spire",
+        "spire-rabitq",
+        "storage_format=rabitq",
+        "candidate_batch",
+        "option=batch-on"
+      ],
+      "prefix": "t106_10k_spire_rabitq",
+      "queries_limit": 200,
+      "sweep": [
+        8,
+        16,
+        24
+      ],
+      "rerank_width": 25,
+      "top_k": 10,
+      "include_query_metrics": true,
+      "include_recall": true,
+      "truth_corpus_file": "/home/peter/dev/datasets/tqhnsw_real_10k/tqhnsw_real_10k_corpus.tsv",
+      "truth_cache_file": "reviews/task-106/003-full-affected-sweep/artifacts/suite/truth-cache/spire-10k-spire-rabitq-batch-on.json",
+      "task87_candidate_batch_counters": true,
+      "log_output": "reviews/task-106/003-full-affected-sweep/artifacts/suite/spire-pipeline-10k-spire-rabitq-batch-on.log",
+      "funnel_output": "reviews/task-106/003-full-affected-sweep/artifacts/suite/spire-pipeline-10k-spire-rabitq-batch-on.jsonl"
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "spire-pipeline-10k-spire-rabitq-batch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real10k",
+        "spire",
+        "spire-rabitq",
+        "storage_format=rabitq",
+        "scalar-ab",
+        "option=batch-off"
+      ],
+      "prefix": "t106_10k_spire_rabitq",
+      "queries_limit": 200,
+      "sweep": [
+        8,
+        16,
+        24
+      ],
+      "rerank_width": 25,
+      "top_k": 10,
+      "include_query_metrics": true,
+      "include_recall": true,
+      "truth_corpus_file": "/home/peter/dev/datasets/tqhnsw_real_10k/tqhnsw_real_10k_corpus.tsv",
+      "truth_cache_file": "reviews/task-106/003-full-affected-sweep/artifacts/suite/truth-cache/spire-10k-spire-rabitq-batch-off.json",
+      "task87_candidate_batch_counters": true,
+      "log_output": "reviews/task-106/003-full-affected-sweep/artifacts/suite/spire-pipeline-10k-spire-rabitq-batch-off.log",
+      "funnel_output": "reviews/task-106/003-full-affected-sweep/artifacts/suite/spire-pipeline-10k-spire-rabitq-batch-off.jsonl",
+      "session_gucs": [
+        "ec_spire.candidate_batch_scoring=off"
+      ]
+    },
+    {
+      "kind": "load",
+      "name": "load-10k-hnsw-pqfastscan-groupedpq",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real10k",
+        "hnsw",
+        "hnsw-pqfastscan-groupedpq"
+      ],
+      "prefix": "t106_10k_hnsw_pqfastscan_groupedpq",
+      "profile": "ec_hnsw",
+      "bits": 4,
+      "dim": 1536,
+      "corpus_file": "/home/peter/dev/datasets/tqhnsw_real_10k/tqhnsw_real_10k_corpus.tsv",
+      "queries_file": "/home/peter/dev/datasets/tqhnsw_real_10k/tqhnsw_real_10k_queries.tsv",
+      "manifest_file": "/home/peter/dev/datasets/tqhnsw_real_10k/tqhnsw_real_10k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [],
+      "log_file": "${artifact_dir}/load-10k-hnsw-pqfastscan-groupedpq.log",
+      "storage_format": "pq_fastscan",
+      "m": [
+        16
+      ],
+      "ef_construction": 128
+    },
+    {
+      "kind": "recall",
+      "name": "recall-10k-hnsw-pqfastscan-groupedpq-batch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real10k",
+        "hnsw",
+        "hnsw-pqfastscan-groupedpq",
+        "storage_format=pq_fastscan",
+        "traversal_score_mode=pq",
+        "candidate_batch",
+        "option=batch-on",
+        "recall"
+      ],
+      "prefix": "t106_10k_hnsw_pqfastscan_groupedpq",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        40,
+        80,
+        120
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-10k-hnsw-pqfastscan-groupedpq-batch-on.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-10k-hnsw-pqfastscan-groupedpq-batch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real10k",
+        "hnsw",
+        "hnsw-pqfastscan-groupedpq",
+        "storage_format=pq_fastscan",
+        "traversal_score_mode=pq",
+        "candidate_batch",
+        "option=batch-on",
+        "latency"
+      ],
+      "prefix": "t106_10k_hnsw_pqfastscan_groupedpq",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        40,
+        80,
+        120
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "iterations": 200,
+      "concurrency": 1,
+      "cache_state": "task106_10k_hnsw-pqfastscan-groupedpq_batch-on",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-10k-hnsw-pqfastscan-groupedpq-batch-on.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-10k-hnsw-pqfastscan-groupedpq-batch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real10k",
+        "hnsw",
+        "hnsw-pqfastscan-groupedpq",
+        "storage_format=pq_fastscan",
+        "traversal_score_mode=pq",
+        "scalar-ab",
+        "option=batch-off",
+        "recall"
+      ],
+      "prefix": "t106_10k_hnsw_pqfastscan_groupedpq",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        40,
+        80,
+        120
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "session_gucs": [
+        "ec_hnsw.candidate_batch_scoring=off"
+      ],
+      "log_output": "${artifact_dir}/recall-10k-hnsw-pqfastscan-groupedpq-batch-off.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-10k-hnsw-pqfastscan-groupedpq-batch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real10k",
+        "hnsw",
+        "hnsw-pqfastscan-groupedpq",
+        "storage_format=pq_fastscan",
+        "traversal_score_mode=pq",
+        "scalar-ab",
+        "option=batch-off",
+        "latency"
+      ],
+      "prefix": "t106_10k_hnsw_pqfastscan_groupedpq",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        40,
+        80,
+        120
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "session_gucs": [
+        "ec_hnsw.candidate_batch_scoring=off"
+      ],
+      "iterations": 200,
+      "concurrency": 1,
+      "cache_state": "task106_10k_hnsw-pqfastscan-groupedpq_batch-off",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-10k-hnsw-pqfastscan-groupedpq-batch-off.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-10k-spire-pqfastscan-gap",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real10k",
+        "spire",
+        "spire-pqfastscan-gap"
+      ],
+      "prefix": "t106_10k_spire_pqfastscan_gap",
+      "profile": "ec_spire",
+      "bits": 4,
+      "dim": 1536,
+      "corpus_file": "/home/peter/dev/datasets/tqhnsw_real_10k/tqhnsw_real_10k_corpus.tsv",
+      "queries_file": "/home/peter/dev/datasets/tqhnsw_real_10k/tqhnsw_real_10k_queries.tsv",
+      "manifest_file": "/home/peter/dev/datasets/tqhnsw_real_10k/tqhnsw_real_10k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=32",
+        "nprobe=24",
+        "rerank_width=25",
+        "local_store_count=1",
+        "training_sample_rows=10000"
+      ],
+      "log_file": "${artifact_dir}/load-10k-spire-pqfastscan-gap.log",
+      "storage_format": "pq_fastscan"
+    },
+    {
+      "kind": "load",
+      "name": "load-50k-ivf-rabitq-b1",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real50k",
+        "ivf",
+        "ivf-rabitq-b1"
+      ],
+      "prefix": "t106_50k_ivf_rabitq_b1",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "dim": 1536,
+      "corpus_file": "/home/peter/dev/datasets/tqhnsw_real_50k/tqhnsw_real_50k_corpus.tsv",
+      "queries_file": "/home/peter/dev/datasets/tqhnsw_real_50k/tqhnsw_real_50k_queries.tsv",
+      "manifest_file": "/home/peter/dev/datasets/tqhnsw_real_50k/tqhnsw_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=64",
+        "quant_bits=1",
+        "training_sample_rows=20000",
+        "rerank=heap_f32",
+        "rerank_width=50"
+      ],
+      "log_file": "${artifact_dir}/load-50k-ivf-rabitq-b1.log",
+      "storage_format": "rabitq"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-50k-ivf-rabitq-b1-scratch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real50k",
+        "ivf",
+        "ivf-rabitq-b1",
+        "storage_format=rabitq",
+        "quant_bits=1",
+        "candidate_batch",
+        "option=scratch-on",
+        "recall"
+      ],
+      "prefix": "t106_50k_ivf_rabitq_b1",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "rerank_width": 50,
+      "log_output": "${artifact_dir}/recall-50k-ivf-rabitq-b1-scratch-on.log",
+      "ivf_scratch_soa_batch_decode": true
+    },
+    {
+      "kind": "latency",
+      "name": "latency-50k-ivf-rabitq-b1-scratch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real50k",
+        "ivf",
+        "ivf-rabitq-b1",
+        "storage_format=rabitq",
+        "quant_bits=1",
+        "candidate_batch",
+        "option=scratch-on",
+        "latency"
+      ],
+      "prefix": "t106_50k_ivf_rabitq_b1",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "rerank_width": 50,
+      "iterations": 200,
+      "concurrency": 1,
+      "cache_state": "task106_50k_ivf-rabitq-b1_scratch-on",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-50k-ivf-rabitq-b1-scratch-on.log",
+      "ivf_scratch_soa_batch_decode": true
+    },
+    {
+      "kind": "recall",
+      "name": "recall-50k-ivf-rabitq-b1-scratch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real50k",
+        "ivf",
+        "ivf-rabitq-b1",
+        "storage_format=rabitq",
+        "quant_bits=1",
+        "scalar-ab",
+        "option=scratch-off",
+        "recall"
+      ],
+      "prefix": "t106_50k_ivf_rabitq_b1",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "session_gucs": [
+        "ec_ivf.scratch_soa_batch_decode=off"
+      ],
+      "rerank_width": 50,
+      "log_output": "${artifact_dir}/recall-50k-ivf-rabitq-b1-scratch-off.log",
+      "ivf_scratch_soa_batch_decode": false
+    },
+    {
+      "kind": "latency",
+      "name": "latency-50k-ivf-rabitq-b1-scratch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real50k",
+        "ivf",
+        "ivf-rabitq-b1",
+        "storage_format=rabitq",
+        "quant_bits=1",
+        "scalar-ab",
+        "option=scratch-off",
+        "latency"
+      ],
+      "prefix": "t106_50k_ivf_rabitq_b1",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "session_gucs": [
+        "ec_ivf.scratch_soa_batch_decode=off"
+      ],
+      "rerank_width": 50,
+      "iterations": 200,
+      "concurrency": 1,
+      "cache_state": "task106_50k_ivf-rabitq-b1_scratch-off",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-50k-ivf-rabitq-b1-scratch-off.log",
+      "ivf_scratch_soa_batch_decode": false
+    },
+    {
+      "kind": "load",
+      "name": "load-50k-ivf-rabitq-b2",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real50k",
+        "ivf",
+        "ivf-rabitq-b2"
+      ],
+      "prefix": "t106_50k_ivf_rabitq_b2",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "dim": 1536,
+      "corpus_file": "/home/peter/dev/datasets/tqhnsw_real_50k/tqhnsw_real_50k_corpus.tsv",
+      "queries_file": "/home/peter/dev/datasets/tqhnsw_real_50k/tqhnsw_real_50k_queries.tsv",
+      "manifest_file": "/home/peter/dev/datasets/tqhnsw_real_50k/tqhnsw_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=64",
+        "quant_bits=2",
+        "training_sample_rows=20000",
+        "rerank=heap_f32",
+        "rerank_width=50"
+      ],
+      "log_file": "${artifact_dir}/load-50k-ivf-rabitq-b2.log",
+      "storage_format": "rabitq"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-50k-ivf-rabitq-b2-scratch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real50k",
+        "ivf",
+        "ivf-rabitq-b2",
+        "storage_format=rabitq",
+        "quant_bits=2",
+        "candidate_batch",
+        "option=scratch-on",
+        "recall"
+      ],
+      "prefix": "t106_50k_ivf_rabitq_b2",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "rerank_width": 50,
+      "log_output": "${artifact_dir}/recall-50k-ivf-rabitq-b2-scratch-on.log",
+      "ivf_scratch_soa_batch_decode": true
+    },
+    {
+      "kind": "latency",
+      "name": "latency-50k-ivf-rabitq-b2-scratch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real50k",
+        "ivf",
+        "ivf-rabitq-b2",
+        "storage_format=rabitq",
+        "quant_bits=2",
+        "candidate_batch",
+        "option=scratch-on",
+        "latency"
+      ],
+      "prefix": "t106_50k_ivf_rabitq_b2",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "rerank_width": 50,
+      "iterations": 200,
+      "concurrency": 1,
+      "cache_state": "task106_50k_ivf-rabitq-b2_scratch-on",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-50k-ivf-rabitq-b2-scratch-on.log",
+      "ivf_scratch_soa_batch_decode": true
+    },
+    {
+      "kind": "recall",
+      "name": "recall-50k-ivf-rabitq-b2-scratch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real50k",
+        "ivf",
+        "ivf-rabitq-b2",
+        "storage_format=rabitq",
+        "quant_bits=2",
+        "scalar-ab",
+        "option=scratch-off",
+        "recall"
+      ],
+      "prefix": "t106_50k_ivf_rabitq_b2",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "session_gucs": [
+        "ec_ivf.scratch_soa_batch_decode=off"
+      ],
+      "rerank_width": 50,
+      "log_output": "${artifact_dir}/recall-50k-ivf-rabitq-b2-scratch-off.log",
+      "ivf_scratch_soa_batch_decode": false
+    },
+    {
+      "kind": "latency",
+      "name": "latency-50k-ivf-rabitq-b2-scratch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real50k",
+        "ivf",
+        "ivf-rabitq-b2",
+        "storage_format=rabitq",
+        "quant_bits=2",
+        "scalar-ab",
+        "option=scratch-off",
+        "latency"
+      ],
+      "prefix": "t106_50k_ivf_rabitq_b2",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "session_gucs": [
+        "ec_ivf.scratch_soa_batch_decode=off"
+      ],
+      "rerank_width": 50,
+      "iterations": 200,
+      "concurrency": 1,
+      "cache_state": "task106_50k_ivf-rabitq-b2_scratch-off",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-50k-ivf-rabitq-b2-scratch-off.log",
+      "ivf_scratch_soa_batch_decode": false
+    },
+    {
+      "kind": "load",
+      "name": "load-50k-ivf-rabitq-b4",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real50k",
+        "ivf",
+        "ivf-rabitq-b4"
+      ],
+      "prefix": "t106_50k_ivf_rabitq_b4",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "dim": 1536,
+      "corpus_file": "/home/peter/dev/datasets/tqhnsw_real_50k/tqhnsw_real_50k_corpus.tsv",
+      "queries_file": "/home/peter/dev/datasets/tqhnsw_real_50k/tqhnsw_real_50k_queries.tsv",
+      "manifest_file": "/home/peter/dev/datasets/tqhnsw_real_50k/tqhnsw_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=64",
+        "quant_bits=4",
+        "training_sample_rows=20000",
+        "rerank=heap_f32",
+        "rerank_width=50"
+      ],
+      "log_file": "${artifact_dir}/load-50k-ivf-rabitq-b4.log",
+      "storage_format": "rabitq"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-50k-ivf-rabitq-b4-scratch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real50k",
+        "ivf",
+        "ivf-rabitq-b4",
+        "storage_format=rabitq",
+        "quant_bits=4",
+        "candidate_batch",
+        "option=scratch-on",
+        "recall"
+      ],
+      "prefix": "t106_50k_ivf_rabitq_b4",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "rerank_width": 50,
+      "log_output": "${artifact_dir}/recall-50k-ivf-rabitq-b4-scratch-on.log",
+      "ivf_scratch_soa_batch_decode": true
+    },
+    {
+      "kind": "latency",
+      "name": "latency-50k-ivf-rabitq-b4-scratch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real50k",
+        "ivf",
+        "ivf-rabitq-b4",
+        "storage_format=rabitq",
+        "quant_bits=4",
+        "candidate_batch",
+        "option=scratch-on",
+        "latency"
+      ],
+      "prefix": "t106_50k_ivf_rabitq_b4",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "rerank_width": 50,
+      "iterations": 200,
+      "concurrency": 1,
+      "cache_state": "task106_50k_ivf-rabitq-b4_scratch-on",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-50k-ivf-rabitq-b4-scratch-on.log",
+      "ivf_scratch_soa_batch_decode": true
+    },
+    {
+      "kind": "recall",
+      "name": "recall-50k-ivf-rabitq-b4-scratch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real50k",
+        "ivf",
+        "ivf-rabitq-b4",
+        "storage_format=rabitq",
+        "quant_bits=4",
+        "scalar-ab",
+        "option=scratch-off",
+        "recall"
+      ],
+      "prefix": "t106_50k_ivf_rabitq_b4",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "session_gucs": [
+        "ec_ivf.scratch_soa_batch_decode=off"
+      ],
+      "rerank_width": 50,
+      "log_output": "${artifact_dir}/recall-50k-ivf-rabitq-b4-scratch-off.log",
+      "ivf_scratch_soa_batch_decode": false
+    },
+    {
+      "kind": "latency",
+      "name": "latency-50k-ivf-rabitq-b4-scratch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real50k",
+        "ivf",
+        "ivf-rabitq-b4",
+        "storage_format=rabitq",
+        "quant_bits=4",
+        "scalar-ab",
+        "option=scratch-off",
+        "latency"
+      ],
+      "prefix": "t106_50k_ivf_rabitq_b4",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "session_gucs": [
+        "ec_ivf.scratch_soa_batch_decode=off"
+      ],
+      "rerank_width": 50,
+      "iterations": 200,
+      "concurrency": 1,
+      "cache_state": "task106_50k_ivf-rabitq-b4_scratch-off",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-50k-ivf-rabitq-b4-scratch-off.log",
+      "ivf_scratch_soa_batch_decode": false
+    },
+    {
+      "kind": "load",
+      "name": "load-50k-ivf-rabitq-b8",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real50k",
+        "ivf",
+        "ivf-rabitq-b8"
+      ],
+      "prefix": "t106_50k_ivf_rabitq_b8",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "dim": 1536,
+      "corpus_file": "/home/peter/dev/datasets/tqhnsw_real_50k/tqhnsw_real_50k_corpus.tsv",
+      "queries_file": "/home/peter/dev/datasets/tqhnsw_real_50k/tqhnsw_real_50k_queries.tsv",
+      "manifest_file": "/home/peter/dev/datasets/tqhnsw_real_50k/tqhnsw_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=64",
+        "quant_bits=8",
+        "training_sample_rows=20000",
+        "rerank=heap_f32",
+        "rerank_width=50"
+      ],
+      "log_file": "${artifact_dir}/load-50k-ivf-rabitq-b8.log",
+      "storage_format": "rabitq"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-50k-ivf-rabitq-b8-scratch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real50k",
+        "ivf",
+        "ivf-rabitq-b8",
+        "storage_format=rabitq",
+        "quant_bits=8",
+        "candidate_batch",
+        "option=scratch-on",
+        "recall"
+      ],
+      "prefix": "t106_50k_ivf_rabitq_b8",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "rerank_width": 50,
+      "log_output": "${artifact_dir}/recall-50k-ivf-rabitq-b8-scratch-on.log",
+      "ivf_scratch_soa_batch_decode": true
+    },
+    {
+      "kind": "latency",
+      "name": "latency-50k-ivf-rabitq-b8-scratch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real50k",
+        "ivf",
+        "ivf-rabitq-b8",
+        "storage_format=rabitq",
+        "quant_bits=8",
+        "candidate_batch",
+        "option=scratch-on",
+        "latency"
+      ],
+      "prefix": "t106_50k_ivf_rabitq_b8",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "rerank_width": 50,
+      "iterations": 200,
+      "concurrency": 1,
+      "cache_state": "task106_50k_ivf-rabitq-b8_scratch-on",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-50k-ivf-rabitq-b8-scratch-on.log",
+      "ivf_scratch_soa_batch_decode": true
+    },
+    {
+      "kind": "recall",
+      "name": "recall-50k-ivf-rabitq-b8-scratch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real50k",
+        "ivf",
+        "ivf-rabitq-b8",
+        "storage_format=rabitq",
+        "quant_bits=8",
+        "scalar-ab",
+        "option=scratch-off",
+        "recall"
+      ],
+      "prefix": "t106_50k_ivf_rabitq_b8",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "session_gucs": [
+        "ec_ivf.scratch_soa_batch_decode=off"
+      ],
+      "rerank_width": 50,
+      "log_output": "${artifact_dir}/recall-50k-ivf-rabitq-b8-scratch-off.log",
+      "ivf_scratch_soa_batch_decode": false
+    },
+    {
+      "kind": "latency",
+      "name": "latency-50k-ivf-rabitq-b8-scratch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real50k",
+        "ivf",
+        "ivf-rabitq-b8",
+        "storage_format=rabitq",
+        "quant_bits=8",
+        "scalar-ab",
+        "option=scratch-off",
+        "latency"
+      ],
+      "prefix": "t106_50k_ivf_rabitq_b8",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "session_gucs": [
+        "ec_ivf.scratch_soa_batch_decode=off"
+      ],
+      "rerank_width": 50,
+      "iterations": 200,
+      "concurrency": 1,
+      "cache_state": "task106_50k_ivf-rabitq-b8_scratch-off",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-50k-ivf-rabitq-b8-scratch-off.log",
+      "ivf_scratch_soa_batch_decode": false
+    },
+    {
+      "kind": "load",
+      "name": "load-50k-ivf-auto-tq",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real50k",
+        "ivf",
+        "ivf-auto-tq"
+      ],
+      "prefix": "t106_50k_ivf_auto_tq",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "dim": 1536,
+      "corpus_file": "/home/peter/dev/datasets/tqhnsw_real_50k/tqhnsw_real_50k_corpus.tsv",
+      "queries_file": "/home/peter/dev/datasets/tqhnsw_real_50k/tqhnsw_real_50k_queries.tsv",
+      "manifest_file": "/home/peter/dev/datasets/tqhnsw_real_50k/tqhnsw_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=64",
+        "training_sample_rows=20000",
+        "rerank=heap_f32",
+        "rerank_width=25"
+      ],
+      "log_file": "${artifact_dir}/load-50k-ivf-auto-tq.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-50k-ivf-auto-tq-scratch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real50k",
+        "ivf",
+        "ivf-auto-tq",
+        "storage_format=auto",
+        "tq-qjl-auto-gate",
+        "option=scratch-on",
+        "recall"
+      ],
+      "prefix": "t106_50k_ivf_auto_tq",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "rerank_width": 25,
+      "log_output": "${artifact_dir}/recall-50k-ivf-auto-tq-scratch-on.log",
+      "ivf_scratch_soa_batch_decode": true
+    },
+    {
+      "kind": "latency",
+      "name": "latency-50k-ivf-auto-tq-scratch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real50k",
+        "ivf",
+        "ivf-auto-tq",
+        "storage_format=auto",
+        "tq-qjl-auto-gate",
+        "option=scratch-on",
+        "latency"
+      ],
+      "prefix": "t106_50k_ivf_auto_tq",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "rerank_width": 25,
+      "iterations": 200,
+      "concurrency": 1,
+      "cache_state": "task106_50k_ivf-auto-tq_scratch-on",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-50k-ivf-auto-tq-scratch-on.log",
+      "ivf_scratch_soa_batch_decode": true
+    },
+    {
+      "kind": "recall",
+      "name": "recall-50k-ivf-auto-tq-scratch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real50k",
+        "ivf",
+        "ivf-auto-tq",
+        "storage_format=auto",
+        "tq-qjl-auto-gate",
+        "option=scratch-off",
+        "recall"
+      ],
+      "prefix": "t106_50k_ivf_auto_tq",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "session_gucs": [
+        "ec_ivf.scratch_soa_batch_decode=off"
+      ],
+      "rerank_width": 25,
+      "log_output": "${artifact_dir}/recall-50k-ivf-auto-tq-scratch-off.log",
+      "ivf_scratch_soa_batch_decode": false
+    },
+    {
+      "kind": "latency",
+      "name": "latency-50k-ivf-auto-tq-scratch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real50k",
+        "ivf",
+        "ivf-auto-tq",
+        "storage_format=auto",
+        "tq-qjl-auto-gate",
+        "option=scratch-off",
+        "latency"
+      ],
+      "prefix": "t106_50k_ivf_auto_tq",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "session_gucs": [
+        "ec_ivf.scratch_soa_batch_decode=off"
+      ],
+      "rerank_width": 25,
+      "iterations": 200,
+      "concurrency": 1,
+      "cache_state": "task106_50k_ivf-auto-tq_scratch-off",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-50k-ivf-auto-tq-scratch-off.log",
+      "ivf_scratch_soa_batch_decode": false
+    },
+    {
+      "kind": "load",
+      "name": "load-50k-ivf-explicit-tq",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real50k",
+        "ivf",
+        "ivf-explicit-tq"
+      ],
+      "prefix": "t106_50k_ivf_explicit_tq",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "dim": 1536,
+      "corpus_file": "/home/peter/dev/datasets/tqhnsw_real_50k/tqhnsw_real_50k_corpus.tsv",
+      "queries_file": "/home/peter/dev/datasets/tqhnsw_real_50k/tqhnsw_real_50k_queries.tsv",
+      "manifest_file": "/home/peter/dev/datasets/tqhnsw_real_50k/tqhnsw_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=64",
+        "training_sample_rows=20000",
+        "rerank=heap_f32",
+        "rerank_width=25"
+      ],
+      "log_file": "${artifact_dir}/load-50k-ivf-explicit-tq.log",
+      "storage_format": "turboquant"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-50k-ivf-explicit-tq-scratch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real50k",
+        "ivf",
+        "ivf-explicit-tq",
+        "storage_format=turboquant",
+        "tq-qjl-auto-gate",
+        "option=scratch-on",
+        "recall"
+      ],
+      "prefix": "t106_50k_ivf_explicit_tq",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "rerank_width": 25,
+      "log_output": "${artifact_dir}/recall-50k-ivf-explicit-tq-scratch-on.log",
+      "ivf_scratch_soa_batch_decode": true
+    },
+    {
+      "kind": "latency",
+      "name": "latency-50k-ivf-explicit-tq-scratch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real50k",
+        "ivf",
+        "ivf-explicit-tq",
+        "storage_format=turboquant",
+        "tq-qjl-auto-gate",
+        "option=scratch-on",
+        "latency"
+      ],
+      "prefix": "t106_50k_ivf_explicit_tq",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "rerank_width": 25,
+      "iterations": 200,
+      "concurrency": 1,
+      "cache_state": "task106_50k_ivf-explicit-tq_scratch-on",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-50k-ivf-explicit-tq-scratch-on.log",
+      "ivf_scratch_soa_batch_decode": true
+    },
+    {
+      "kind": "recall",
+      "name": "recall-50k-ivf-explicit-tq-scratch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real50k",
+        "ivf",
+        "ivf-explicit-tq",
+        "storage_format=turboquant",
+        "tq-qjl-auto-gate",
+        "option=scratch-off",
+        "recall"
+      ],
+      "prefix": "t106_50k_ivf_explicit_tq",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "session_gucs": [
+        "ec_ivf.scratch_soa_batch_decode=off"
+      ],
+      "rerank_width": 25,
+      "log_output": "${artifact_dir}/recall-50k-ivf-explicit-tq-scratch-off.log",
+      "ivf_scratch_soa_batch_decode": false
+    },
+    {
+      "kind": "latency",
+      "name": "latency-50k-ivf-explicit-tq-scratch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real50k",
+        "ivf",
+        "ivf-explicit-tq",
+        "storage_format=turboquant",
+        "tq-qjl-auto-gate",
+        "option=scratch-off",
+        "latency"
+      ],
+      "prefix": "t106_50k_ivf_explicit_tq",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "session_gucs": [
+        "ec_ivf.scratch_soa_batch_decode=off"
+      ],
+      "rerank_width": 25,
+      "iterations": 200,
+      "concurrency": 1,
+      "cache_state": "task106_50k_ivf-explicit-tq_scratch-off",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-50k-ivf-explicit-tq-scratch-off.log",
+      "ivf_scratch_soa_batch_decode": false
+    },
+    {
+      "kind": "load",
+      "name": "load-50k-spire-rabitq",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real50k",
+        "spire",
+        "spire-rabitq"
+      ],
+      "prefix": "t106_50k_spire_rabitq",
+      "profile": "ec_spire",
+      "bits": 4,
+      "dim": 1536,
+      "corpus_file": "/home/peter/dev/datasets/tqhnsw_real_50k/tqhnsw_real_50k_corpus.tsv",
+      "queries_file": "/home/peter/dev/datasets/tqhnsw_real_50k/tqhnsw_real_50k_queries.tsv",
+      "manifest_file": "/home/peter/dev/datasets/tqhnsw_real_50k/tqhnsw_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=128",
+        "nprobe=24",
+        "rerank_width=25",
+        "local_store_count=1",
+        "training_sample_rows=20000"
+      ],
+      "log_file": "${artifact_dir}/load-50k-spire-rabitq.log",
+      "storage_format": "rabitq"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-50k-spire-rabitq-batch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real50k",
+        "spire",
+        "spire-rabitq",
+        "storage_format=rabitq",
+        "candidate_batch",
+        "option=batch-on",
+        "recall"
+      ],
+      "prefix": "t106_50k_spire_rabitq",
+      "profile": "ec_spire",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "rerank_width": 25,
+      "log_output": "${artifact_dir}/recall-50k-spire-rabitq-batch-on.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-50k-spire-rabitq-batch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real50k",
+        "spire",
+        "spire-rabitq",
+        "storage_format=rabitq",
+        "candidate_batch",
+        "option=batch-on",
+        "latency"
+      ],
+      "prefix": "t106_50k_spire_rabitq",
+      "profile": "ec_spire",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "rerank_width": 25,
+      "iterations": 200,
+      "concurrency": 1,
+      "cache_state": "task106_50k_spire-rabitq_batch-on",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-50k-spire-rabitq-batch-on.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-50k-spire-rabitq-batch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real50k",
+        "spire",
+        "spire-rabitq",
+        "storage_format=rabitq",
+        "scalar-ab",
+        "option=batch-off",
+        "recall"
+      ],
+      "prefix": "t106_50k_spire_rabitq",
+      "profile": "ec_spire",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "session_gucs": [
+        "ec_spire.candidate_batch_scoring=off"
+      ],
+      "rerank_width": 25,
+      "log_output": "${artifact_dir}/recall-50k-spire-rabitq-batch-off.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-50k-spire-rabitq-batch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real50k",
+        "spire",
+        "spire-rabitq",
+        "storage_format=rabitq",
+        "scalar-ab",
+        "option=batch-off",
+        "latency"
+      ],
+      "prefix": "t106_50k_spire_rabitq",
+      "profile": "ec_spire",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "session_gucs": [
+        "ec_spire.candidate_batch_scoring=off"
+      ],
+      "rerank_width": 25,
+      "iterations": 200,
+      "concurrency": 1,
+      "cache_state": "task106_50k_spire-rabitq_batch-off",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-50k-spire-rabitq-batch-off.log"
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "spire-pipeline-50k-spire-rabitq-batch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real50k",
+        "spire",
+        "spire-rabitq",
+        "storage_format=rabitq",
+        "candidate_batch",
+        "option=batch-on"
+      ],
+      "prefix": "t106_50k_spire_rabitq",
+      "queries_limit": 200,
+      "sweep": [
+        8,
+        16,
+        24
+      ],
+      "rerank_width": 25,
+      "top_k": 10,
+      "include_query_metrics": true,
+      "include_recall": true,
+      "truth_corpus_file": "/home/peter/dev/datasets/tqhnsw_real_50k/tqhnsw_real_50k_corpus.tsv",
+      "truth_cache_file": "reviews/task-106/003-full-affected-sweep/artifacts/suite/truth-cache/spire-50k-spire-rabitq-batch-on.json",
+      "task87_candidate_batch_counters": true,
+      "log_output": "reviews/task-106/003-full-affected-sweep/artifacts/suite/spire-pipeline-50k-spire-rabitq-batch-on.log",
+      "funnel_output": "reviews/task-106/003-full-affected-sweep/artifacts/suite/spire-pipeline-50k-spire-rabitq-batch-on.jsonl"
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "spire-pipeline-50k-spire-rabitq-batch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real50k",
+        "spire",
+        "spire-rabitq",
+        "storage_format=rabitq",
+        "scalar-ab",
+        "option=batch-off"
+      ],
+      "prefix": "t106_50k_spire_rabitq",
+      "queries_limit": 200,
+      "sweep": [
+        8,
+        16,
+        24
+      ],
+      "rerank_width": 25,
+      "top_k": 10,
+      "include_query_metrics": true,
+      "include_recall": true,
+      "truth_corpus_file": "/home/peter/dev/datasets/tqhnsw_real_50k/tqhnsw_real_50k_corpus.tsv",
+      "truth_cache_file": "reviews/task-106/003-full-affected-sweep/artifacts/suite/truth-cache/spire-50k-spire-rabitq-batch-off.json",
+      "task87_candidate_batch_counters": true,
+      "log_output": "reviews/task-106/003-full-affected-sweep/artifacts/suite/spire-pipeline-50k-spire-rabitq-batch-off.log",
+      "funnel_output": "reviews/task-106/003-full-affected-sweep/artifacts/suite/spire-pipeline-50k-spire-rabitq-batch-off.jsonl",
+      "session_gucs": [
+        "ec_spire.candidate_batch_scoring=off"
+      ]
+    },
+    {
+      "kind": "load",
+      "name": "load-50k-hnsw-pqfastscan-groupedpq",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real50k",
+        "hnsw",
+        "hnsw-pqfastscan-groupedpq"
+      ],
+      "prefix": "t106_50k_hnsw_pqfastscan_groupedpq",
+      "profile": "ec_hnsw",
+      "bits": 4,
+      "dim": 1536,
+      "corpus_file": "/home/peter/dev/datasets/tqhnsw_real_50k/tqhnsw_real_50k_corpus.tsv",
+      "queries_file": "/home/peter/dev/datasets/tqhnsw_real_50k/tqhnsw_real_50k_queries.tsv",
+      "manifest_file": "/home/peter/dev/datasets/tqhnsw_real_50k/tqhnsw_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [],
+      "log_file": "${artifact_dir}/load-50k-hnsw-pqfastscan-groupedpq.log",
+      "storage_format": "pq_fastscan",
+      "m": [
+        16
+      ],
+      "ef_construction": 128
+    },
+    {
+      "kind": "recall",
+      "name": "recall-50k-hnsw-pqfastscan-groupedpq-batch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real50k",
+        "hnsw",
+        "hnsw-pqfastscan-groupedpq",
+        "storage_format=pq_fastscan",
+        "traversal_score_mode=pq",
+        "candidate_batch",
+        "option=batch-on",
+        "recall"
+      ],
+      "prefix": "t106_50k_hnsw_pqfastscan_groupedpq",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        40,
+        80,
+        120
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-50k-hnsw-pqfastscan-groupedpq-batch-on.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-50k-hnsw-pqfastscan-groupedpq-batch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real50k",
+        "hnsw",
+        "hnsw-pqfastscan-groupedpq",
+        "storage_format=pq_fastscan",
+        "traversal_score_mode=pq",
+        "candidate_batch",
+        "option=batch-on",
+        "latency"
+      ],
+      "prefix": "t106_50k_hnsw_pqfastscan_groupedpq",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        40,
+        80,
+        120
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "iterations": 200,
+      "concurrency": 1,
+      "cache_state": "task106_50k_hnsw-pqfastscan-groupedpq_batch-on",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-50k-hnsw-pqfastscan-groupedpq-batch-on.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-50k-hnsw-pqfastscan-groupedpq-batch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real50k",
+        "hnsw",
+        "hnsw-pqfastscan-groupedpq",
+        "storage_format=pq_fastscan",
+        "traversal_score_mode=pq",
+        "scalar-ab",
+        "option=batch-off",
+        "recall"
+      ],
+      "prefix": "t106_50k_hnsw_pqfastscan_groupedpq",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        40,
+        80,
+        120
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "session_gucs": [
+        "ec_hnsw.candidate_batch_scoring=off"
+      ],
+      "log_output": "${artifact_dir}/recall-50k-hnsw-pqfastscan-groupedpq-batch-off.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-50k-hnsw-pqfastscan-groupedpq-batch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real50k",
+        "hnsw",
+        "hnsw-pqfastscan-groupedpq",
+        "storage_format=pq_fastscan",
+        "traversal_score_mode=pq",
+        "scalar-ab",
+        "option=batch-off",
+        "latency"
+      ],
+      "prefix": "t106_50k_hnsw_pqfastscan_groupedpq",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        40,
+        80,
+        120
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "session_gucs": [
+        "ec_hnsw.candidate_batch_scoring=off"
+      ],
+      "iterations": 200,
+      "concurrency": 1,
+      "cache_state": "task106_50k_hnsw-pqfastscan-groupedpq_batch-off",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-50k-hnsw-pqfastscan-groupedpq-batch-off.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-50k-spire-pqfastscan-gap",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real50k",
+        "spire",
+        "spire-pqfastscan-gap"
+      ],
+      "prefix": "t106_50k_spire_pqfastscan_gap",
+      "profile": "ec_spire",
+      "bits": 4,
+      "dim": 1536,
+      "corpus_file": "/home/peter/dev/datasets/tqhnsw_real_50k/tqhnsw_real_50k_corpus.tsv",
+      "queries_file": "/home/peter/dev/datasets/tqhnsw_real_50k/tqhnsw_real_50k_queries.tsv",
+      "manifest_file": "/home/peter/dev/datasets/tqhnsw_real_50k/tqhnsw_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=128",
+        "nprobe=24",
+        "rerank_width=25",
+        "local_store_count=1",
+        "training_sample_rows=20000"
+      ],
+      "log_file": "${artifact_dir}/load-50k-spire-pqfastscan-gap.log",
+      "storage_format": "pq_fastscan"
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-ivf-rabitq-b1",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real100k",
+        "ivf",
+        "ivf-rabitq-b1"
+      ],
+      "prefix": "t106_100k_ivf_rabitq_b1",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "dim": 1536,
+      "corpus_file": "data/task106_full_sweep_100k/ec_real_100k_corpus.tsv",
+      "queries_file": "data/task106_full_sweep_100k/ec_real_100k_queries.tsv",
+      "manifest_file": "data/task106_full_sweep_100k/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=128",
+        "quant_bits=1",
+        "training_sample_rows=20000",
+        "rerank=heap_f32",
+        "rerank_width=50"
+      ],
+      "log_file": "${artifact_dir}/load-100k-ivf-rabitq-b1.log",
+      "storage_format": "rabitq"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-ivf-rabitq-b1-scratch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real100k",
+        "ivf",
+        "ivf-rabitq-b1",
+        "storage_format=rabitq",
+        "quant_bits=1",
+        "candidate_batch",
+        "option=scratch-on",
+        "recall"
+      ],
+      "prefix": "t106_100k_ivf_rabitq_b1",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64,
+        96
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "rerank_width": 50,
+      "log_output": "${artifact_dir}/recall-100k-ivf-rabitq-b1-scratch-on.log",
+      "ivf_scratch_soa_batch_decode": true
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-ivf-rabitq-b1-scratch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real100k",
+        "ivf",
+        "ivf-rabitq-b1",
+        "storage_format=rabitq",
+        "quant_bits=1",
+        "candidate_batch",
+        "option=scratch-on",
+        "latency"
+      ],
+      "prefix": "t106_100k_ivf_rabitq_b1",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64,
+        96
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "rerank_width": 50,
+      "iterations": 200,
+      "concurrency": 1,
+      "cache_state": "task106_100k_ivf-rabitq-b1_scratch-on",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-100k-ivf-rabitq-b1-scratch-on.log",
+      "ivf_scratch_soa_batch_decode": true
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-ivf-rabitq-b1-scratch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real100k",
+        "ivf",
+        "ivf-rabitq-b1",
+        "storage_format=rabitq",
+        "quant_bits=1",
+        "scalar-ab",
+        "option=scratch-off",
+        "recall"
+      ],
+      "prefix": "t106_100k_ivf_rabitq_b1",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64,
+        96
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "session_gucs": [
+        "ec_ivf.scratch_soa_batch_decode=off"
+      ],
+      "rerank_width": 50,
+      "log_output": "${artifact_dir}/recall-100k-ivf-rabitq-b1-scratch-off.log",
+      "ivf_scratch_soa_batch_decode": false
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-ivf-rabitq-b1-scratch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real100k",
+        "ivf",
+        "ivf-rabitq-b1",
+        "storage_format=rabitq",
+        "quant_bits=1",
+        "scalar-ab",
+        "option=scratch-off",
+        "latency"
+      ],
+      "prefix": "t106_100k_ivf_rabitq_b1",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64,
+        96
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "session_gucs": [
+        "ec_ivf.scratch_soa_batch_decode=off"
+      ],
+      "rerank_width": 50,
+      "iterations": 200,
+      "concurrency": 1,
+      "cache_state": "task106_100k_ivf-rabitq-b1_scratch-off",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-100k-ivf-rabitq-b1-scratch-off.log",
+      "ivf_scratch_soa_batch_decode": false
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-ivf-rabitq-b2",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real100k",
+        "ivf",
+        "ivf-rabitq-b2"
+      ],
+      "prefix": "t106_100k_ivf_rabitq_b2",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "dim": 1536,
+      "corpus_file": "data/task106_full_sweep_100k/ec_real_100k_corpus.tsv",
+      "queries_file": "data/task106_full_sweep_100k/ec_real_100k_queries.tsv",
+      "manifest_file": "data/task106_full_sweep_100k/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=128",
+        "quant_bits=2",
+        "training_sample_rows=20000",
+        "rerank=heap_f32",
+        "rerank_width=50"
+      ],
+      "log_file": "${artifact_dir}/load-100k-ivf-rabitq-b2.log",
+      "storage_format": "rabitq"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-ivf-rabitq-b2-scratch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real100k",
+        "ivf",
+        "ivf-rabitq-b2",
+        "storage_format=rabitq",
+        "quant_bits=2",
+        "candidate_batch",
+        "option=scratch-on",
+        "recall"
+      ],
+      "prefix": "t106_100k_ivf_rabitq_b2",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64,
+        96
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "rerank_width": 50,
+      "log_output": "${artifact_dir}/recall-100k-ivf-rabitq-b2-scratch-on.log",
+      "ivf_scratch_soa_batch_decode": true
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-ivf-rabitq-b2-scratch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real100k",
+        "ivf",
+        "ivf-rabitq-b2",
+        "storage_format=rabitq",
+        "quant_bits=2",
+        "candidate_batch",
+        "option=scratch-on",
+        "latency"
+      ],
+      "prefix": "t106_100k_ivf_rabitq_b2",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64,
+        96
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "rerank_width": 50,
+      "iterations": 200,
+      "concurrency": 1,
+      "cache_state": "task106_100k_ivf-rabitq-b2_scratch-on",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-100k-ivf-rabitq-b2-scratch-on.log",
+      "ivf_scratch_soa_batch_decode": true
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-ivf-rabitq-b2-scratch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real100k",
+        "ivf",
+        "ivf-rabitq-b2",
+        "storage_format=rabitq",
+        "quant_bits=2",
+        "scalar-ab",
+        "option=scratch-off",
+        "recall"
+      ],
+      "prefix": "t106_100k_ivf_rabitq_b2",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64,
+        96
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "session_gucs": [
+        "ec_ivf.scratch_soa_batch_decode=off"
+      ],
+      "rerank_width": 50,
+      "log_output": "${artifact_dir}/recall-100k-ivf-rabitq-b2-scratch-off.log",
+      "ivf_scratch_soa_batch_decode": false
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-ivf-rabitq-b2-scratch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real100k",
+        "ivf",
+        "ivf-rabitq-b2",
+        "storage_format=rabitq",
+        "quant_bits=2",
+        "scalar-ab",
+        "option=scratch-off",
+        "latency"
+      ],
+      "prefix": "t106_100k_ivf_rabitq_b2",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64,
+        96
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "session_gucs": [
+        "ec_ivf.scratch_soa_batch_decode=off"
+      ],
+      "rerank_width": 50,
+      "iterations": 200,
+      "concurrency": 1,
+      "cache_state": "task106_100k_ivf-rabitq-b2_scratch-off",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-100k-ivf-rabitq-b2-scratch-off.log",
+      "ivf_scratch_soa_batch_decode": false
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-ivf-rabitq-b4",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real100k",
+        "ivf",
+        "ivf-rabitq-b4"
+      ],
+      "prefix": "t106_100k_ivf_rabitq_b4",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "dim": 1536,
+      "corpus_file": "data/task106_full_sweep_100k/ec_real_100k_corpus.tsv",
+      "queries_file": "data/task106_full_sweep_100k/ec_real_100k_queries.tsv",
+      "manifest_file": "data/task106_full_sweep_100k/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=128",
+        "quant_bits=4",
+        "training_sample_rows=20000",
+        "rerank=heap_f32",
+        "rerank_width=50"
+      ],
+      "log_file": "${artifact_dir}/load-100k-ivf-rabitq-b4.log",
+      "storage_format": "rabitq"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-ivf-rabitq-b4-scratch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real100k",
+        "ivf",
+        "ivf-rabitq-b4",
+        "storage_format=rabitq",
+        "quant_bits=4",
+        "candidate_batch",
+        "option=scratch-on",
+        "recall"
+      ],
+      "prefix": "t106_100k_ivf_rabitq_b4",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64,
+        96
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "rerank_width": 50,
+      "log_output": "${artifact_dir}/recall-100k-ivf-rabitq-b4-scratch-on.log",
+      "ivf_scratch_soa_batch_decode": true
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-ivf-rabitq-b4-scratch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real100k",
+        "ivf",
+        "ivf-rabitq-b4",
+        "storage_format=rabitq",
+        "quant_bits=4",
+        "candidate_batch",
+        "option=scratch-on",
+        "latency"
+      ],
+      "prefix": "t106_100k_ivf_rabitq_b4",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64,
+        96
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "rerank_width": 50,
+      "iterations": 200,
+      "concurrency": 1,
+      "cache_state": "task106_100k_ivf-rabitq-b4_scratch-on",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-100k-ivf-rabitq-b4-scratch-on.log",
+      "ivf_scratch_soa_batch_decode": true
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-ivf-rabitq-b4-scratch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real100k",
+        "ivf",
+        "ivf-rabitq-b4",
+        "storage_format=rabitq",
+        "quant_bits=4",
+        "scalar-ab",
+        "option=scratch-off",
+        "recall"
+      ],
+      "prefix": "t106_100k_ivf_rabitq_b4",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64,
+        96
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "session_gucs": [
+        "ec_ivf.scratch_soa_batch_decode=off"
+      ],
+      "rerank_width": 50,
+      "log_output": "${artifact_dir}/recall-100k-ivf-rabitq-b4-scratch-off.log",
+      "ivf_scratch_soa_batch_decode": false
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-ivf-rabitq-b4-scratch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real100k",
+        "ivf",
+        "ivf-rabitq-b4",
+        "storage_format=rabitq",
+        "quant_bits=4",
+        "scalar-ab",
+        "option=scratch-off",
+        "latency"
+      ],
+      "prefix": "t106_100k_ivf_rabitq_b4",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64,
+        96
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "session_gucs": [
+        "ec_ivf.scratch_soa_batch_decode=off"
+      ],
+      "rerank_width": 50,
+      "iterations": 200,
+      "concurrency": 1,
+      "cache_state": "task106_100k_ivf-rabitq-b4_scratch-off",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-100k-ivf-rabitq-b4-scratch-off.log",
+      "ivf_scratch_soa_batch_decode": false
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-ivf-rabitq-b8",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real100k",
+        "ivf",
+        "ivf-rabitq-b8"
+      ],
+      "prefix": "t106_100k_ivf_rabitq_b8",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "dim": 1536,
+      "corpus_file": "data/task106_full_sweep_100k/ec_real_100k_corpus.tsv",
+      "queries_file": "data/task106_full_sweep_100k/ec_real_100k_queries.tsv",
+      "manifest_file": "data/task106_full_sweep_100k/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=128",
+        "quant_bits=8",
+        "training_sample_rows=20000",
+        "rerank=heap_f32",
+        "rerank_width=50"
+      ],
+      "log_file": "${artifact_dir}/load-100k-ivf-rabitq-b8.log",
+      "storage_format": "rabitq"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-ivf-rabitq-b8-scratch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real100k",
+        "ivf",
+        "ivf-rabitq-b8",
+        "storage_format=rabitq",
+        "quant_bits=8",
+        "candidate_batch",
+        "option=scratch-on",
+        "recall"
+      ],
+      "prefix": "t106_100k_ivf_rabitq_b8",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64,
+        96
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "rerank_width": 50,
+      "log_output": "${artifact_dir}/recall-100k-ivf-rabitq-b8-scratch-on.log",
+      "ivf_scratch_soa_batch_decode": true
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-ivf-rabitq-b8-scratch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real100k",
+        "ivf",
+        "ivf-rabitq-b8",
+        "storage_format=rabitq",
+        "quant_bits=8",
+        "candidate_batch",
+        "option=scratch-on",
+        "latency"
+      ],
+      "prefix": "t106_100k_ivf_rabitq_b8",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64,
+        96
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "rerank_width": 50,
+      "iterations": 200,
+      "concurrency": 1,
+      "cache_state": "task106_100k_ivf-rabitq-b8_scratch-on",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-100k-ivf-rabitq-b8-scratch-on.log",
+      "ivf_scratch_soa_batch_decode": true
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-ivf-rabitq-b8-scratch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real100k",
+        "ivf",
+        "ivf-rabitq-b8",
+        "storage_format=rabitq",
+        "quant_bits=8",
+        "scalar-ab",
+        "option=scratch-off",
+        "recall"
+      ],
+      "prefix": "t106_100k_ivf_rabitq_b8",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64,
+        96
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "session_gucs": [
+        "ec_ivf.scratch_soa_batch_decode=off"
+      ],
+      "rerank_width": 50,
+      "log_output": "${artifact_dir}/recall-100k-ivf-rabitq-b8-scratch-off.log",
+      "ivf_scratch_soa_batch_decode": false
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-ivf-rabitq-b8-scratch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real100k",
+        "ivf",
+        "ivf-rabitq-b8",
+        "storage_format=rabitq",
+        "quant_bits=8",
+        "scalar-ab",
+        "option=scratch-off",
+        "latency"
+      ],
+      "prefix": "t106_100k_ivf_rabitq_b8",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64,
+        96
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "session_gucs": [
+        "ec_ivf.scratch_soa_batch_decode=off"
+      ],
+      "rerank_width": 50,
+      "iterations": 200,
+      "concurrency": 1,
+      "cache_state": "task106_100k_ivf-rabitq-b8_scratch-off",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-100k-ivf-rabitq-b8-scratch-off.log",
+      "ivf_scratch_soa_batch_decode": false
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-ivf-auto-tq",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real100k",
+        "ivf",
+        "ivf-auto-tq"
+      ],
+      "prefix": "t106_100k_ivf_auto_tq",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "dim": 1536,
+      "corpus_file": "data/task106_full_sweep_100k/ec_real_100k_corpus.tsv",
+      "queries_file": "data/task106_full_sweep_100k/ec_real_100k_queries.tsv",
+      "manifest_file": "data/task106_full_sweep_100k/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=128",
+        "training_sample_rows=20000",
+        "rerank=heap_f32",
+        "rerank_width=25"
+      ],
+      "log_file": "${artifact_dir}/load-100k-ivf-auto-tq.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-ivf-auto-tq-scratch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real100k",
+        "ivf",
+        "ivf-auto-tq",
+        "storage_format=auto",
+        "tq-qjl-auto-gate",
+        "option=scratch-on",
+        "recall"
+      ],
+      "prefix": "t106_100k_ivf_auto_tq",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64,
+        96
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "rerank_width": 25,
+      "log_output": "${artifact_dir}/recall-100k-ivf-auto-tq-scratch-on.log",
+      "ivf_scratch_soa_batch_decode": true
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-ivf-auto-tq-scratch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real100k",
+        "ivf",
+        "ivf-auto-tq",
+        "storage_format=auto",
+        "tq-qjl-auto-gate",
+        "option=scratch-on",
+        "latency"
+      ],
+      "prefix": "t106_100k_ivf_auto_tq",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64,
+        96
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "rerank_width": 25,
+      "iterations": 200,
+      "concurrency": 1,
+      "cache_state": "task106_100k_ivf-auto-tq_scratch-on",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-100k-ivf-auto-tq-scratch-on.log",
+      "ivf_scratch_soa_batch_decode": true
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-ivf-auto-tq-scratch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real100k",
+        "ivf",
+        "ivf-auto-tq",
+        "storage_format=auto",
+        "tq-qjl-auto-gate",
+        "option=scratch-off",
+        "recall"
+      ],
+      "prefix": "t106_100k_ivf_auto_tq",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64,
+        96
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "session_gucs": [
+        "ec_ivf.scratch_soa_batch_decode=off"
+      ],
+      "rerank_width": 25,
+      "log_output": "${artifact_dir}/recall-100k-ivf-auto-tq-scratch-off.log",
+      "ivf_scratch_soa_batch_decode": false
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-ivf-auto-tq-scratch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real100k",
+        "ivf",
+        "ivf-auto-tq",
+        "storage_format=auto",
+        "tq-qjl-auto-gate",
+        "option=scratch-off",
+        "latency"
+      ],
+      "prefix": "t106_100k_ivf_auto_tq",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64,
+        96
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "session_gucs": [
+        "ec_ivf.scratch_soa_batch_decode=off"
+      ],
+      "rerank_width": 25,
+      "iterations": 200,
+      "concurrency": 1,
+      "cache_state": "task106_100k_ivf-auto-tq_scratch-off",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-100k-ivf-auto-tq-scratch-off.log",
+      "ivf_scratch_soa_batch_decode": false
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-ivf-explicit-tq",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real100k",
+        "ivf",
+        "ivf-explicit-tq"
+      ],
+      "prefix": "t106_100k_ivf_explicit_tq",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "dim": 1536,
+      "corpus_file": "data/task106_full_sweep_100k/ec_real_100k_corpus.tsv",
+      "queries_file": "data/task106_full_sweep_100k/ec_real_100k_queries.tsv",
+      "manifest_file": "data/task106_full_sweep_100k/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=128",
+        "training_sample_rows=20000",
+        "rerank=heap_f32",
+        "rerank_width=25"
+      ],
+      "log_file": "${artifact_dir}/load-100k-ivf-explicit-tq.log",
+      "storage_format": "turboquant"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-ivf-explicit-tq-scratch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real100k",
+        "ivf",
+        "ivf-explicit-tq",
+        "storage_format=turboquant",
+        "tq-qjl-auto-gate",
+        "option=scratch-on",
+        "recall"
+      ],
+      "prefix": "t106_100k_ivf_explicit_tq",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64,
+        96
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "rerank_width": 25,
+      "log_output": "${artifact_dir}/recall-100k-ivf-explicit-tq-scratch-on.log",
+      "ivf_scratch_soa_batch_decode": true
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-ivf-explicit-tq-scratch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real100k",
+        "ivf",
+        "ivf-explicit-tq",
+        "storage_format=turboquant",
+        "tq-qjl-auto-gate",
+        "option=scratch-on",
+        "latency"
+      ],
+      "prefix": "t106_100k_ivf_explicit_tq",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64,
+        96
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "rerank_width": 25,
+      "iterations": 200,
+      "concurrency": 1,
+      "cache_state": "task106_100k_ivf-explicit-tq_scratch-on",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-100k-ivf-explicit-tq-scratch-on.log",
+      "ivf_scratch_soa_batch_decode": true
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-ivf-explicit-tq-scratch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real100k",
+        "ivf",
+        "ivf-explicit-tq",
+        "storage_format=turboquant",
+        "tq-qjl-auto-gate",
+        "option=scratch-off",
+        "recall"
+      ],
+      "prefix": "t106_100k_ivf_explicit_tq",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64,
+        96
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "session_gucs": [
+        "ec_ivf.scratch_soa_batch_decode=off"
+      ],
+      "rerank_width": 25,
+      "log_output": "${artifact_dir}/recall-100k-ivf-explicit-tq-scratch-off.log",
+      "ivf_scratch_soa_batch_decode": false
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-ivf-explicit-tq-scratch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real100k",
+        "ivf",
+        "ivf-explicit-tq",
+        "storage_format=turboquant",
+        "tq-qjl-auto-gate",
+        "option=scratch-off",
+        "latency"
+      ],
+      "prefix": "t106_100k_ivf_explicit_tq",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        16,
+        32,
+        64,
+        96
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "session_gucs": [
+        "ec_ivf.scratch_soa_batch_decode=off"
+      ],
+      "rerank_width": 25,
+      "iterations": 200,
+      "concurrency": 1,
+      "cache_state": "task106_100k_ivf-explicit-tq_scratch-off",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-100k-ivf-explicit-tq-scratch-off.log",
+      "ivf_scratch_soa_batch_decode": false
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-spire-rabitq",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real100k",
+        "spire",
+        "spire-rabitq"
+      ],
+      "prefix": "t106_100k_spire_rabitq",
+      "profile": "ec_spire",
+      "bits": 4,
+      "dim": 1536,
+      "corpus_file": "data/task106_full_sweep_100k/ec_real_100k_corpus.tsv",
+      "queries_file": "data/task106_full_sweep_100k/ec_real_100k_queries.tsv",
+      "manifest_file": "data/task106_full_sweep_100k/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=128",
+        "nprobe=24",
+        "rerank_width=25",
+        "local_store_count=1",
+        "training_sample_rows=20000"
+      ],
+      "log_file": "${artifact_dir}/load-100k-spire-rabitq.log",
+      "storage_format": "rabitq"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-spire-rabitq-batch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real100k",
+        "spire",
+        "spire-rabitq",
+        "storage_format=rabitq",
+        "candidate_batch",
+        "option=batch-on",
+        "recall"
+      ],
+      "prefix": "t106_100k_spire_rabitq",
+      "profile": "ec_spire",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "rerank_width": 25,
+      "log_output": "${artifact_dir}/recall-100k-spire-rabitq-batch-on.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-spire-rabitq-batch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real100k",
+        "spire",
+        "spire-rabitq",
+        "storage_format=rabitq",
+        "candidate_batch",
+        "option=batch-on",
+        "latency"
+      ],
+      "prefix": "t106_100k_spire_rabitq",
+      "profile": "ec_spire",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "rerank_width": 25,
+      "iterations": 200,
+      "concurrency": 1,
+      "cache_state": "task106_100k_spire-rabitq_batch-on",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-100k-spire-rabitq-batch-on.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-spire-rabitq-batch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real100k",
+        "spire",
+        "spire-rabitq",
+        "storage_format=rabitq",
+        "scalar-ab",
+        "option=batch-off",
+        "recall"
+      ],
+      "prefix": "t106_100k_spire_rabitq",
+      "profile": "ec_spire",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "session_gucs": [
+        "ec_spire.candidate_batch_scoring=off"
+      ],
+      "rerank_width": 25,
+      "log_output": "${artifact_dir}/recall-100k-spire-rabitq-batch-off.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-spire-rabitq-batch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real100k",
+        "spire",
+        "spire-rabitq",
+        "storage_format=rabitq",
+        "scalar-ab",
+        "option=batch-off",
+        "latency"
+      ],
+      "prefix": "t106_100k_spire_rabitq",
+      "profile": "ec_spire",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "session_gucs": [
+        "ec_spire.candidate_batch_scoring=off"
+      ],
+      "rerank_width": 25,
+      "iterations": 200,
+      "concurrency": 1,
+      "cache_state": "task106_100k_spire-rabitq_batch-off",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-100k-spire-rabitq-batch-off.log"
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "spire-pipeline-100k-spire-rabitq-batch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real100k",
+        "spire",
+        "spire-rabitq",
+        "storage_format=rabitq",
+        "candidate_batch",
+        "option=batch-on"
+      ],
+      "prefix": "t106_100k_spire_rabitq",
+      "queries_limit": 200,
+      "sweep": [
+        8,
+        16,
+        24,
+        32
+      ],
+      "rerank_width": 25,
+      "top_k": 10,
+      "include_query_metrics": true,
+      "include_recall": true,
+      "truth_corpus_file": "data/task106_full_sweep_100k/ec_real_100k_corpus.tsv",
+      "truth_cache_file": "reviews/task-106/003-full-affected-sweep/artifacts/suite/truth-cache/spire-100k-spire-rabitq-batch-on.json",
+      "task87_candidate_batch_counters": true,
+      "log_output": "reviews/task-106/003-full-affected-sweep/artifacts/suite/spire-pipeline-100k-spire-rabitq-batch-on.log",
+      "funnel_output": "reviews/task-106/003-full-affected-sweep/artifacts/suite/spire-pipeline-100k-spire-rabitq-batch-on.jsonl"
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "spire-pipeline-100k-spire-rabitq-batch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real100k",
+        "spire",
+        "spire-rabitq",
+        "storage_format=rabitq",
+        "scalar-ab",
+        "option=batch-off"
+      ],
+      "prefix": "t106_100k_spire_rabitq",
+      "queries_limit": 200,
+      "sweep": [
+        8,
+        16,
+        24,
+        32
+      ],
+      "rerank_width": 25,
+      "top_k": 10,
+      "include_query_metrics": true,
+      "include_recall": true,
+      "truth_corpus_file": "data/task106_full_sweep_100k/ec_real_100k_corpus.tsv",
+      "truth_cache_file": "reviews/task-106/003-full-affected-sweep/artifacts/suite/truth-cache/spire-100k-spire-rabitq-batch-off.json",
+      "task87_candidate_batch_counters": true,
+      "log_output": "reviews/task-106/003-full-affected-sweep/artifacts/suite/spire-pipeline-100k-spire-rabitq-batch-off.log",
+      "funnel_output": "reviews/task-106/003-full-affected-sweep/artifacts/suite/spire-pipeline-100k-spire-rabitq-batch-off.jsonl",
+      "session_gucs": [
+        "ec_spire.candidate_batch_scoring=off"
+      ]
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-hnsw-pqfastscan-groupedpq",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real100k",
+        "hnsw",
+        "hnsw-pqfastscan-groupedpq"
+      ],
+      "prefix": "t106_100k_hnsw_pqfastscan_groupedpq",
+      "profile": "ec_hnsw",
+      "bits": 4,
+      "dim": 1536,
+      "corpus_file": "data/task106_full_sweep_100k/ec_real_100k_corpus.tsv",
+      "queries_file": "data/task106_full_sweep_100k/ec_real_100k_queries.tsv",
+      "manifest_file": "data/task106_full_sweep_100k/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [],
+      "log_file": "${artifact_dir}/load-100k-hnsw-pqfastscan-groupedpq.log",
+      "storage_format": "pq_fastscan",
+      "m": [
+        16
+      ],
+      "ef_construction": 128
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-hnsw-pqfastscan-groupedpq-batch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real100k",
+        "hnsw",
+        "hnsw-pqfastscan-groupedpq",
+        "storage_format=pq_fastscan",
+        "traversal_score_mode=pq",
+        "candidate_batch",
+        "option=batch-on",
+        "recall"
+      ],
+      "prefix": "t106_100k_hnsw_pqfastscan_groupedpq",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        40,
+        80,
+        120,
+        200
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-100k-hnsw-pqfastscan-groupedpq-batch-on.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-hnsw-pqfastscan-groupedpq-batch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real100k",
+        "hnsw",
+        "hnsw-pqfastscan-groupedpq",
+        "storage_format=pq_fastscan",
+        "traversal_score_mode=pq",
+        "candidate_batch",
+        "option=batch-on",
+        "latency"
+      ],
+      "prefix": "t106_100k_hnsw_pqfastscan_groupedpq",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        40,
+        80,
+        120,
+        200
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "iterations": 200,
+      "concurrency": 1,
+      "cache_state": "task106_100k_hnsw-pqfastscan-groupedpq_batch-on",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-100k-hnsw-pqfastscan-groupedpq-batch-on.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-hnsw-pqfastscan-groupedpq-batch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real100k",
+        "hnsw",
+        "hnsw-pqfastscan-groupedpq",
+        "storage_format=pq_fastscan",
+        "traversal_score_mode=pq",
+        "scalar-ab",
+        "option=batch-off",
+        "recall"
+      ],
+      "prefix": "t106_100k_hnsw_pqfastscan_groupedpq",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        40,
+        80,
+        120,
+        200
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "session_gucs": [
+        "ec_hnsw.candidate_batch_scoring=off"
+      ],
+      "log_output": "${artifact_dir}/recall-100k-hnsw-pqfastscan-groupedpq-batch-off.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-hnsw-pqfastscan-groupedpq-batch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real100k",
+        "hnsw",
+        "hnsw-pqfastscan-groupedpq",
+        "storage_format=pq_fastscan",
+        "traversal_score_mode=pq",
+        "scalar-ab",
+        "option=batch-off",
+        "latency"
+      ],
+      "prefix": "t106_100k_hnsw_pqfastscan_groupedpq",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        40,
+        80,
+        120,
+        200
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "session_gucs": [
+        "ec_hnsw.candidate_batch_scoring=off"
+      ],
+      "iterations": 200,
+      "concurrency": 1,
+      "cache_state": "task106_100k_hnsw-pqfastscan-groupedpq_batch-off",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-100k-hnsw-pqfastscan-groupedpq-batch-off.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-spire-pqfastscan-gap",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real100k",
+        "spire",
+        "spire-pqfastscan-gap"
+      ],
+      "prefix": "t106_100k_spire_pqfastscan_gap",
+      "profile": "ec_spire",
+      "bits": 4,
+      "dim": 1536,
+      "corpus_file": "data/task106_full_sweep_100k/ec_real_100k_corpus.tsv",
+      "queries_file": "data/task106_full_sweep_100k/ec_real_100k_queries.tsv",
+      "manifest_file": "data/task106_full_sweep_100k/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=128",
+        "nprobe=24",
+        "rerank_width=25",
+        "local_store_count=1",
+        "training_sample_rows=20000"
+      ],
+      "log_file": "${artifact_dir}/load-100k-spire-pqfastscan-gap.log",
+      "storage_format": "pq_fastscan"
+    },
+    {
+      "kind": "load",
+      "name": "load-1m-ivf-rabitq-b1",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real1m",
+        "ivf",
+        "ivf-rabitq-b1"
+      ],
+      "prefix": "t106_1m_ivf_rabitq_b1",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "dim": 1536,
+      "corpus_file": "/home/peter/dev/datasets/tqhnsw_real_ann_benchmarks_anchor/ec_hnsw_real_ann_benchmarks_anchor_corpus.tsv",
+      "queries_file": "/home/peter/dev/datasets/tqhnsw_real_ann_benchmarks_anchor/ec_hnsw_real_ann_benchmarks_anchor_queries.tsv",
+      "manifest_file": "/home/peter/dev/datasets/tqhnsw_real_ann_benchmarks_anchor/ec_hnsw_real_ann_benchmarks_anchor_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=256",
+        "quant_bits=1",
+        "training_sample_rows=50000",
+        "rerank=heap_f32",
+        "rerank_width=50"
+      ],
+      "log_file": "${artifact_dir}/load-1m-ivf-rabitq-b1.log",
+      "storage_format": "rabitq"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-1m-ivf-rabitq-b1-scratch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real1m",
+        "ivf",
+        "ivf-rabitq-b1",
+        "storage_format=rabitq",
+        "quant_bits=1",
+        "candidate_batch",
+        "option=scratch-on",
+        "recall"
+      ],
+      "prefix": "t106_1m_ivf_rabitq_b1",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        32,
+        64,
+        96,
+        128
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "rerank_width": 50,
+      "log_output": "${artifact_dir}/recall-1m-ivf-rabitq-b1-scratch-on.log",
+      "ivf_scratch_soa_batch_decode": true
+    },
+    {
+      "kind": "latency",
+      "name": "latency-1m-ivf-rabitq-b1-scratch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real1m",
+        "ivf",
+        "ivf-rabitq-b1",
+        "storage_format=rabitq",
+        "quant_bits=1",
+        "candidate_batch",
+        "option=scratch-on",
+        "latency"
+      ],
+      "prefix": "t106_1m_ivf_rabitq_b1",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        32,
+        64,
+        96,
+        128
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "rerank_width": 50,
+      "iterations": 100,
+      "concurrency": 1,
+      "cache_state": "task106_1m_ivf-rabitq-b1_scratch-on",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-1m-ivf-rabitq-b1-scratch-on.log",
+      "ivf_scratch_soa_batch_decode": true
+    },
+    {
+      "kind": "recall",
+      "name": "recall-1m-ivf-rabitq-b1-scratch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real1m",
+        "ivf",
+        "ivf-rabitq-b1",
+        "storage_format=rabitq",
+        "quant_bits=1",
+        "scalar-ab",
+        "option=scratch-off",
+        "recall"
+      ],
+      "prefix": "t106_1m_ivf_rabitq_b1",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        32,
+        64,
+        96,
+        128
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "session_gucs": [
+        "ec_ivf.scratch_soa_batch_decode=off"
+      ],
+      "rerank_width": 50,
+      "log_output": "${artifact_dir}/recall-1m-ivf-rabitq-b1-scratch-off.log",
+      "ivf_scratch_soa_batch_decode": false
+    },
+    {
+      "kind": "latency",
+      "name": "latency-1m-ivf-rabitq-b1-scratch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real1m",
+        "ivf",
+        "ivf-rabitq-b1",
+        "storage_format=rabitq",
+        "quant_bits=1",
+        "scalar-ab",
+        "option=scratch-off",
+        "latency"
+      ],
+      "prefix": "t106_1m_ivf_rabitq_b1",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        32,
+        64,
+        96,
+        128
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "session_gucs": [
+        "ec_ivf.scratch_soa_batch_decode=off"
+      ],
+      "rerank_width": 50,
+      "iterations": 100,
+      "concurrency": 1,
+      "cache_state": "task106_1m_ivf-rabitq-b1_scratch-off",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-1m-ivf-rabitq-b1-scratch-off.log",
+      "ivf_scratch_soa_batch_decode": false
+    },
+    {
+      "kind": "load",
+      "name": "load-1m-ivf-rabitq-b2",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real1m",
+        "ivf",
+        "ivf-rabitq-b2"
+      ],
+      "prefix": "t106_1m_ivf_rabitq_b2",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "dim": 1536,
+      "corpus_file": "/home/peter/dev/datasets/tqhnsw_real_ann_benchmarks_anchor/ec_hnsw_real_ann_benchmarks_anchor_corpus.tsv",
+      "queries_file": "/home/peter/dev/datasets/tqhnsw_real_ann_benchmarks_anchor/ec_hnsw_real_ann_benchmarks_anchor_queries.tsv",
+      "manifest_file": "/home/peter/dev/datasets/tqhnsw_real_ann_benchmarks_anchor/ec_hnsw_real_ann_benchmarks_anchor_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=256",
+        "quant_bits=2",
+        "training_sample_rows=50000",
+        "rerank=heap_f32",
+        "rerank_width=50"
+      ],
+      "log_file": "${artifact_dir}/load-1m-ivf-rabitq-b2.log",
+      "storage_format": "rabitq"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-1m-ivf-rabitq-b2-scratch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real1m",
+        "ivf",
+        "ivf-rabitq-b2",
+        "storage_format=rabitq",
+        "quant_bits=2",
+        "candidate_batch",
+        "option=scratch-on",
+        "recall"
+      ],
+      "prefix": "t106_1m_ivf_rabitq_b2",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        32,
+        64,
+        96,
+        128
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "rerank_width": 50,
+      "log_output": "${artifact_dir}/recall-1m-ivf-rabitq-b2-scratch-on.log",
+      "ivf_scratch_soa_batch_decode": true
+    },
+    {
+      "kind": "latency",
+      "name": "latency-1m-ivf-rabitq-b2-scratch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real1m",
+        "ivf",
+        "ivf-rabitq-b2",
+        "storage_format=rabitq",
+        "quant_bits=2",
+        "candidate_batch",
+        "option=scratch-on",
+        "latency"
+      ],
+      "prefix": "t106_1m_ivf_rabitq_b2",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        32,
+        64,
+        96,
+        128
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "rerank_width": 50,
+      "iterations": 100,
+      "concurrency": 1,
+      "cache_state": "task106_1m_ivf-rabitq-b2_scratch-on",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-1m-ivf-rabitq-b2-scratch-on.log",
+      "ivf_scratch_soa_batch_decode": true
+    },
+    {
+      "kind": "recall",
+      "name": "recall-1m-ivf-rabitq-b2-scratch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real1m",
+        "ivf",
+        "ivf-rabitq-b2",
+        "storage_format=rabitq",
+        "quant_bits=2",
+        "scalar-ab",
+        "option=scratch-off",
+        "recall"
+      ],
+      "prefix": "t106_1m_ivf_rabitq_b2",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        32,
+        64,
+        96,
+        128
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "session_gucs": [
+        "ec_ivf.scratch_soa_batch_decode=off"
+      ],
+      "rerank_width": 50,
+      "log_output": "${artifact_dir}/recall-1m-ivf-rabitq-b2-scratch-off.log",
+      "ivf_scratch_soa_batch_decode": false
+    },
+    {
+      "kind": "latency",
+      "name": "latency-1m-ivf-rabitq-b2-scratch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real1m",
+        "ivf",
+        "ivf-rabitq-b2",
+        "storage_format=rabitq",
+        "quant_bits=2",
+        "scalar-ab",
+        "option=scratch-off",
+        "latency"
+      ],
+      "prefix": "t106_1m_ivf_rabitq_b2",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        32,
+        64,
+        96,
+        128
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "session_gucs": [
+        "ec_ivf.scratch_soa_batch_decode=off"
+      ],
+      "rerank_width": 50,
+      "iterations": 100,
+      "concurrency": 1,
+      "cache_state": "task106_1m_ivf-rabitq-b2_scratch-off",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-1m-ivf-rabitq-b2-scratch-off.log",
+      "ivf_scratch_soa_batch_decode": false
+    },
+    {
+      "kind": "load",
+      "name": "load-1m-ivf-rabitq-b4",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real1m",
+        "ivf",
+        "ivf-rabitq-b4"
+      ],
+      "prefix": "t106_1m_ivf_rabitq_b4",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "dim": 1536,
+      "corpus_file": "/home/peter/dev/datasets/tqhnsw_real_ann_benchmarks_anchor/ec_hnsw_real_ann_benchmarks_anchor_corpus.tsv",
+      "queries_file": "/home/peter/dev/datasets/tqhnsw_real_ann_benchmarks_anchor/ec_hnsw_real_ann_benchmarks_anchor_queries.tsv",
+      "manifest_file": "/home/peter/dev/datasets/tqhnsw_real_ann_benchmarks_anchor/ec_hnsw_real_ann_benchmarks_anchor_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=256",
+        "quant_bits=4",
+        "training_sample_rows=50000",
+        "rerank=heap_f32",
+        "rerank_width=50"
+      ],
+      "log_file": "${artifact_dir}/load-1m-ivf-rabitq-b4.log",
+      "storage_format": "rabitq"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-1m-ivf-rabitq-b4-scratch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real1m",
+        "ivf",
+        "ivf-rabitq-b4",
+        "storage_format=rabitq",
+        "quant_bits=4",
+        "candidate_batch",
+        "option=scratch-on",
+        "recall"
+      ],
+      "prefix": "t106_1m_ivf_rabitq_b4",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        32,
+        64,
+        96,
+        128
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "rerank_width": 50,
+      "log_output": "${artifact_dir}/recall-1m-ivf-rabitq-b4-scratch-on.log",
+      "ivf_scratch_soa_batch_decode": true
+    },
+    {
+      "kind": "latency",
+      "name": "latency-1m-ivf-rabitq-b4-scratch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real1m",
+        "ivf",
+        "ivf-rabitq-b4",
+        "storage_format=rabitq",
+        "quant_bits=4",
+        "candidate_batch",
+        "option=scratch-on",
+        "latency"
+      ],
+      "prefix": "t106_1m_ivf_rabitq_b4",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        32,
+        64,
+        96,
+        128
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "rerank_width": 50,
+      "iterations": 100,
+      "concurrency": 1,
+      "cache_state": "task106_1m_ivf-rabitq-b4_scratch-on",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-1m-ivf-rabitq-b4-scratch-on.log",
+      "ivf_scratch_soa_batch_decode": true
+    },
+    {
+      "kind": "recall",
+      "name": "recall-1m-ivf-rabitq-b4-scratch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real1m",
+        "ivf",
+        "ivf-rabitq-b4",
+        "storage_format=rabitq",
+        "quant_bits=4",
+        "scalar-ab",
+        "option=scratch-off",
+        "recall"
+      ],
+      "prefix": "t106_1m_ivf_rabitq_b4",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        32,
+        64,
+        96,
+        128
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "session_gucs": [
+        "ec_ivf.scratch_soa_batch_decode=off"
+      ],
+      "rerank_width": 50,
+      "log_output": "${artifact_dir}/recall-1m-ivf-rabitq-b4-scratch-off.log",
+      "ivf_scratch_soa_batch_decode": false
+    },
+    {
+      "kind": "latency",
+      "name": "latency-1m-ivf-rabitq-b4-scratch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real1m",
+        "ivf",
+        "ivf-rabitq-b4",
+        "storage_format=rabitq",
+        "quant_bits=4",
+        "scalar-ab",
+        "option=scratch-off",
+        "latency"
+      ],
+      "prefix": "t106_1m_ivf_rabitq_b4",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        32,
+        64,
+        96,
+        128
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "session_gucs": [
+        "ec_ivf.scratch_soa_batch_decode=off"
+      ],
+      "rerank_width": 50,
+      "iterations": 100,
+      "concurrency": 1,
+      "cache_state": "task106_1m_ivf-rabitq-b4_scratch-off",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-1m-ivf-rabitq-b4-scratch-off.log",
+      "ivf_scratch_soa_batch_decode": false
+    },
+    {
+      "kind": "load",
+      "name": "load-1m-ivf-rabitq-b8",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real1m",
+        "ivf",
+        "ivf-rabitq-b8"
+      ],
+      "prefix": "t106_1m_ivf_rabitq_b8",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "dim": 1536,
+      "corpus_file": "/home/peter/dev/datasets/tqhnsw_real_ann_benchmarks_anchor/ec_hnsw_real_ann_benchmarks_anchor_corpus.tsv",
+      "queries_file": "/home/peter/dev/datasets/tqhnsw_real_ann_benchmarks_anchor/ec_hnsw_real_ann_benchmarks_anchor_queries.tsv",
+      "manifest_file": "/home/peter/dev/datasets/tqhnsw_real_ann_benchmarks_anchor/ec_hnsw_real_ann_benchmarks_anchor_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=256",
+        "quant_bits=8",
+        "training_sample_rows=50000",
+        "rerank=heap_f32",
+        "rerank_width=50"
+      ],
+      "log_file": "${artifact_dir}/load-1m-ivf-rabitq-b8.log",
+      "storage_format": "rabitq"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-1m-ivf-rabitq-b8-scratch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real1m",
+        "ivf",
+        "ivf-rabitq-b8",
+        "storage_format=rabitq",
+        "quant_bits=8",
+        "candidate_batch",
+        "option=scratch-on",
+        "recall"
+      ],
+      "prefix": "t106_1m_ivf_rabitq_b8",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        32,
+        64,
+        96,
+        128
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "rerank_width": 50,
+      "log_output": "${artifact_dir}/recall-1m-ivf-rabitq-b8-scratch-on.log",
+      "ivf_scratch_soa_batch_decode": true
+    },
+    {
+      "kind": "latency",
+      "name": "latency-1m-ivf-rabitq-b8-scratch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real1m",
+        "ivf",
+        "ivf-rabitq-b8",
+        "storage_format=rabitq",
+        "quant_bits=8",
+        "candidate_batch",
+        "option=scratch-on",
+        "latency"
+      ],
+      "prefix": "t106_1m_ivf_rabitq_b8",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        32,
+        64,
+        96,
+        128
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "rerank_width": 50,
+      "iterations": 100,
+      "concurrency": 1,
+      "cache_state": "task106_1m_ivf-rabitq-b8_scratch-on",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-1m-ivf-rabitq-b8-scratch-on.log",
+      "ivf_scratch_soa_batch_decode": true
+    },
+    {
+      "kind": "recall",
+      "name": "recall-1m-ivf-rabitq-b8-scratch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real1m",
+        "ivf",
+        "ivf-rabitq-b8",
+        "storage_format=rabitq",
+        "quant_bits=8",
+        "scalar-ab",
+        "option=scratch-off",
+        "recall"
+      ],
+      "prefix": "t106_1m_ivf_rabitq_b8",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        32,
+        64,
+        96,
+        128
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "session_gucs": [
+        "ec_ivf.scratch_soa_batch_decode=off"
+      ],
+      "rerank_width": 50,
+      "log_output": "${artifact_dir}/recall-1m-ivf-rabitq-b8-scratch-off.log",
+      "ivf_scratch_soa_batch_decode": false
+    },
+    {
+      "kind": "latency",
+      "name": "latency-1m-ivf-rabitq-b8-scratch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real1m",
+        "ivf",
+        "ivf-rabitq-b8",
+        "storage_format=rabitq",
+        "quant_bits=8",
+        "scalar-ab",
+        "option=scratch-off",
+        "latency"
+      ],
+      "prefix": "t106_1m_ivf_rabitq_b8",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        32,
+        64,
+        96,
+        128
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "session_gucs": [
+        "ec_ivf.scratch_soa_batch_decode=off"
+      ],
+      "rerank_width": 50,
+      "iterations": 100,
+      "concurrency": 1,
+      "cache_state": "task106_1m_ivf-rabitq-b8_scratch-off",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-1m-ivf-rabitq-b8-scratch-off.log",
+      "ivf_scratch_soa_batch_decode": false
+    },
+    {
+      "kind": "load",
+      "name": "load-1m-ivf-auto-tq",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real1m",
+        "ivf",
+        "ivf-auto-tq"
+      ],
+      "prefix": "t106_1m_ivf_auto_tq",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "dim": 1536,
+      "corpus_file": "/home/peter/dev/datasets/tqhnsw_real_ann_benchmarks_anchor/ec_hnsw_real_ann_benchmarks_anchor_corpus.tsv",
+      "queries_file": "/home/peter/dev/datasets/tqhnsw_real_ann_benchmarks_anchor/ec_hnsw_real_ann_benchmarks_anchor_queries.tsv",
+      "manifest_file": "/home/peter/dev/datasets/tqhnsw_real_ann_benchmarks_anchor/ec_hnsw_real_ann_benchmarks_anchor_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=256",
+        "training_sample_rows=50000",
+        "rerank=heap_f32",
+        "rerank_width=25"
+      ],
+      "log_file": "${artifact_dir}/load-1m-ivf-auto-tq.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-1m-ivf-auto-tq-scratch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real1m",
+        "ivf",
+        "ivf-auto-tq",
+        "storage_format=auto",
+        "tq-qjl-auto-gate",
+        "option=scratch-on",
+        "recall"
+      ],
+      "prefix": "t106_1m_ivf_auto_tq",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        32,
+        64,
+        96,
+        128
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "rerank_width": 25,
+      "log_output": "${artifact_dir}/recall-1m-ivf-auto-tq-scratch-on.log",
+      "ivf_scratch_soa_batch_decode": true
+    },
+    {
+      "kind": "latency",
+      "name": "latency-1m-ivf-auto-tq-scratch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real1m",
+        "ivf",
+        "ivf-auto-tq",
+        "storage_format=auto",
+        "tq-qjl-auto-gate",
+        "option=scratch-on",
+        "latency"
+      ],
+      "prefix": "t106_1m_ivf_auto_tq",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        32,
+        64,
+        96,
+        128
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "rerank_width": 25,
+      "iterations": 100,
+      "concurrency": 1,
+      "cache_state": "task106_1m_ivf-auto-tq_scratch-on",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-1m-ivf-auto-tq-scratch-on.log",
+      "ivf_scratch_soa_batch_decode": true
+    },
+    {
+      "kind": "recall",
+      "name": "recall-1m-ivf-auto-tq-scratch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real1m",
+        "ivf",
+        "ivf-auto-tq",
+        "storage_format=auto",
+        "tq-qjl-auto-gate",
+        "option=scratch-off",
+        "recall"
+      ],
+      "prefix": "t106_1m_ivf_auto_tq",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        32,
+        64,
+        96,
+        128
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "session_gucs": [
+        "ec_ivf.scratch_soa_batch_decode=off"
+      ],
+      "rerank_width": 25,
+      "log_output": "${artifact_dir}/recall-1m-ivf-auto-tq-scratch-off.log",
+      "ivf_scratch_soa_batch_decode": false
+    },
+    {
+      "kind": "latency",
+      "name": "latency-1m-ivf-auto-tq-scratch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real1m",
+        "ivf",
+        "ivf-auto-tq",
+        "storage_format=auto",
+        "tq-qjl-auto-gate",
+        "option=scratch-off",
+        "latency"
+      ],
+      "prefix": "t106_1m_ivf_auto_tq",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        32,
+        64,
+        96,
+        128
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "session_gucs": [
+        "ec_ivf.scratch_soa_batch_decode=off"
+      ],
+      "rerank_width": 25,
+      "iterations": 100,
+      "concurrency": 1,
+      "cache_state": "task106_1m_ivf-auto-tq_scratch-off",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-1m-ivf-auto-tq-scratch-off.log",
+      "ivf_scratch_soa_batch_decode": false
+    },
+    {
+      "kind": "load",
+      "name": "load-1m-ivf-explicit-tq",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real1m",
+        "ivf",
+        "ivf-explicit-tq"
+      ],
+      "prefix": "t106_1m_ivf_explicit_tq",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "dim": 1536,
+      "corpus_file": "/home/peter/dev/datasets/tqhnsw_real_ann_benchmarks_anchor/ec_hnsw_real_ann_benchmarks_anchor_corpus.tsv",
+      "queries_file": "/home/peter/dev/datasets/tqhnsw_real_ann_benchmarks_anchor/ec_hnsw_real_ann_benchmarks_anchor_queries.tsv",
+      "manifest_file": "/home/peter/dev/datasets/tqhnsw_real_ann_benchmarks_anchor/ec_hnsw_real_ann_benchmarks_anchor_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=256",
+        "training_sample_rows=50000",
+        "rerank=heap_f32",
+        "rerank_width=25"
+      ],
+      "log_file": "${artifact_dir}/load-1m-ivf-explicit-tq.log",
+      "storage_format": "turboquant"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-1m-ivf-explicit-tq-scratch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real1m",
+        "ivf",
+        "ivf-explicit-tq",
+        "storage_format=turboquant",
+        "tq-qjl-auto-gate",
+        "option=scratch-on",
+        "recall"
+      ],
+      "prefix": "t106_1m_ivf_explicit_tq",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        32,
+        64,
+        96,
+        128
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "rerank_width": 25,
+      "log_output": "${artifact_dir}/recall-1m-ivf-explicit-tq-scratch-on.log",
+      "ivf_scratch_soa_batch_decode": true
+    },
+    {
+      "kind": "latency",
+      "name": "latency-1m-ivf-explicit-tq-scratch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real1m",
+        "ivf",
+        "ivf-explicit-tq",
+        "storage_format=turboquant",
+        "tq-qjl-auto-gate",
+        "option=scratch-on",
+        "latency"
+      ],
+      "prefix": "t106_1m_ivf_explicit_tq",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        32,
+        64,
+        96,
+        128
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "rerank_width": 25,
+      "iterations": 100,
+      "concurrency": 1,
+      "cache_state": "task106_1m_ivf-explicit-tq_scratch-on",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-1m-ivf-explicit-tq-scratch-on.log",
+      "ivf_scratch_soa_batch_decode": true
+    },
+    {
+      "kind": "recall",
+      "name": "recall-1m-ivf-explicit-tq-scratch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real1m",
+        "ivf",
+        "ivf-explicit-tq",
+        "storage_format=turboquant",
+        "tq-qjl-auto-gate",
+        "option=scratch-off",
+        "recall"
+      ],
+      "prefix": "t106_1m_ivf_explicit_tq",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        32,
+        64,
+        96,
+        128
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "session_gucs": [
+        "ec_ivf.scratch_soa_batch_decode=off"
+      ],
+      "rerank_width": 25,
+      "log_output": "${artifact_dir}/recall-1m-ivf-explicit-tq-scratch-off.log",
+      "ivf_scratch_soa_batch_decode": false
+    },
+    {
+      "kind": "latency",
+      "name": "latency-1m-ivf-explicit-tq-scratch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real1m",
+        "ivf",
+        "ivf-explicit-tq",
+        "storage_format=turboquant",
+        "tq-qjl-auto-gate",
+        "option=scratch-off",
+        "latency"
+      ],
+      "prefix": "t106_1m_ivf_explicit_tq",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        32,
+        64,
+        96,
+        128
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "session_gucs": [
+        "ec_ivf.scratch_soa_batch_decode=off"
+      ],
+      "rerank_width": 25,
+      "iterations": 100,
+      "concurrency": 1,
+      "cache_state": "task106_1m_ivf-explicit-tq_scratch-off",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-1m-ivf-explicit-tq-scratch-off.log",
+      "ivf_scratch_soa_batch_decode": false
+    },
+    {
+      "kind": "load",
+      "name": "load-1m-spire-rabitq",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real1m",
+        "spire",
+        "spire-rabitq"
+      ],
+      "prefix": "t106_1m_spire_rabitq",
+      "profile": "ec_spire",
+      "bits": 4,
+      "dim": 1536,
+      "corpus_file": "/home/peter/dev/datasets/tqhnsw_real_ann_benchmarks_anchor/ec_hnsw_real_ann_benchmarks_anchor_corpus.tsv",
+      "queries_file": "/home/peter/dev/datasets/tqhnsw_real_ann_benchmarks_anchor/ec_hnsw_real_ann_benchmarks_anchor_queries.tsv",
+      "manifest_file": "/home/peter/dev/datasets/tqhnsw_real_ann_benchmarks_anchor/ec_hnsw_real_ann_benchmarks_anchor_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=512",
+        "nprobe=24",
+        "rerank_width=25",
+        "local_store_count=1",
+        "training_sample_rows=50000"
+      ],
+      "log_file": "${artifact_dir}/load-1m-spire-rabitq.log",
+      "storage_format": "rabitq"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-1m-spire-rabitq-batch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real1m",
+        "spire",
+        "spire-rabitq",
+        "storage_format=rabitq",
+        "candidate_batch",
+        "option=batch-on",
+        "recall"
+      ],
+      "prefix": "t106_1m_spire_rabitq",
+      "profile": "ec_spire",
+      "k": 10,
+      "sweep": [
+        16,
+        24,
+        32,
+        48
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "rerank_width": 25,
+      "log_output": "${artifact_dir}/recall-1m-spire-rabitq-batch-on.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-1m-spire-rabitq-batch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real1m",
+        "spire",
+        "spire-rabitq",
+        "storage_format=rabitq",
+        "candidate_batch",
+        "option=batch-on",
+        "latency"
+      ],
+      "prefix": "t106_1m_spire_rabitq",
+      "profile": "ec_spire",
+      "k": 10,
+      "sweep": [
+        16,
+        24,
+        32,
+        48
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "rerank_width": 25,
+      "iterations": 100,
+      "concurrency": 1,
+      "cache_state": "task106_1m_spire-rabitq_batch-on",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-1m-spire-rabitq-batch-on.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-1m-spire-rabitq-batch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real1m",
+        "spire",
+        "spire-rabitq",
+        "storage_format=rabitq",
+        "scalar-ab",
+        "option=batch-off",
+        "recall"
+      ],
+      "prefix": "t106_1m_spire_rabitq",
+      "profile": "ec_spire",
+      "k": 10,
+      "sweep": [
+        16,
+        24,
+        32,
+        48
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "session_gucs": [
+        "ec_spire.candidate_batch_scoring=off"
+      ],
+      "rerank_width": 25,
+      "log_output": "${artifact_dir}/recall-1m-spire-rabitq-batch-off.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-1m-spire-rabitq-batch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real1m",
+        "spire",
+        "spire-rabitq",
+        "storage_format=rabitq",
+        "scalar-ab",
+        "option=batch-off",
+        "latency"
+      ],
+      "prefix": "t106_1m_spire_rabitq",
+      "profile": "ec_spire",
+      "k": 10,
+      "sweep": [
+        16,
+        24,
+        32,
+        48
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "session_gucs": [
+        "ec_spire.candidate_batch_scoring=off"
+      ],
+      "rerank_width": 25,
+      "iterations": 100,
+      "concurrency": 1,
+      "cache_state": "task106_1m_spire-rabitq_batch-off",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-1m-spire-rabitq-batch-off.log"
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "spire-pipeline-1m-spire-rabitq-batch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real1m",
+        "spire",
+        "spire-rabitq",
+        "storage_format=rabitq",
+        "candidate_batch",
+        "option=batch-on"
+      ],
+      "prefix": "t106_1m_spire_rabitq",
+      "queries_limit": 100,
+      "sweep": [
+        16,
+        24,
+        32,
+        48
+      ],
+      "rerank_width": 25,
+      "top_k": 10,
+      "include_query_metrics": true,
+      "include_recall": true,
+      "truth_corpus_file": "/home/peter/dev/datasets/tqhnsw_real_ann_benchmarks_anchor/ec_hnsw_real_ann_benchmarks_anchor_corpus.tsv",
+      "truth_cache_file": "reviews/task-106/003-full-affected-sweep/artifacts/suite/truth-cache/spire-1m-spire-rabitq-batch-on.json",
+      "task87_candidate_batch_counters": true,
+      "log_output": "reviews/task-106/003-full-affected-sweep/artifacts/suite/spire-pipeline-1m-spire-rabitq-batch-on.log",
+      "funnel_output": "reviews/task-106/003-full-affected-sweep/artifacts/suite/spire-pipeline-1m-spire-rabitq-batch-on.jsonl"
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "spire-pipeline-1m-spire-rabitq-batch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real1m",
+        "spire",
+        "spire-rabitq",
+        "storage_format=rabitq",
+        "scalar-ab",
+        "option=batch-off"
+      ],
+      "prefix": "t106_1m_spire_rabitq",
+      "queries_limit": 100,
+      "sweep": [
+        16,
+        24,
+        32,
+        48
+      ],
+      "rerank_width": 25,
+      "top_k": 10,
+      "include_query_metrics": true,
+      "include_recall": true,
+      "truth_corpus_file": "/home/peter/dev/datasets/tqhnsw_real_ann_benchmarks_anchor/ec_hnsw_real_ann_benchmarks_anchor_corpus.tsv",
+      "truth_cache_file": "reviews/task-106/003-full-affected-sweep/artifacts/suite/truth-cache/spire-1m-spire-rabitq-batch-off.json",
+      "task87_candidate_batch_counters": true,
+      "log_output": "reviews/task-106/003-full-affected-sweep/artifacts/suite/spire-pipeline-1m-spire-rabitq-batch-off.log",
+      "funnel_output": "reviews/task-106/003-full-affected-sweep/artifacts/suite/spire-pipeline-1m-spire-rabitq-batch-off.jsonl",
+      "session_gucs": [
+        "ec_spire.candidate_batch_scoring=off"
+      ]
+    },
+    {
+      "kind": "load",
+      "name": "load-1m-hnsw-pqfastscan-groupedpq",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real1m",
+        "hnsw",
+        "hnsw-pqfastscan-groupedpq"
+      ],
+      "prefix": "t106_1m_hnsw_pqfastscan_groupedpq",
+      "profile": "ec_hnsw",
+      "bits": 4,
+      "dim": 1536,
+      "corpus_file": "/home/peter/dev/datasets/tqhnsw_real_ann_benchmarks_anchor/ec_hnsw_real_ann_benchmarks_anchor_corpus.tsv",
+      "queries_file": "/home/peter/dev/datasets/tqhnsw_real_ann_benchmarks_anchor/ec_hnsw_real_ann_benchmarks_anchor_queries.tsv",
+      "manifest_file": "/home/peter/dev/datasets/tqhnsw_real_ann_benchmarks_anchor/ec_hnsw_real_ann_benchmarks_anchor_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [],
+      "log_file": "${artifact_dir}/load-1m-hnsw-pqfastscan-groupedpq.log",
+      "storage_format": "pq_fastscan",
+      "m": [
+        16
+      ],
+      "ef_construction": 128
+    },
+    {
+      "kind": "recall",
+      "name": "recall-1m-hnsw-pqfastscan-groupedpq-batch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real1m",
+        "hnsw",
+        "hnsw-pqfastscan-groupedpq",
+        "storage_format=pq_fastscan",
+        "traversal_score_mode=pq",
+        "candidate_batch",
+        "option=batch-on",
+        "recall"
+      ],
+      "prefix": "t106_1m_hnsw_pqfastscan_groupedpq",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80,
+        120,
+        200,
+        400
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-1m-hnsw-pqfastscan-groupedpq-batch-on.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-1m-hnsw-pqfastscan-groupedpq-batch-on",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real1m",
+        "hnsw",
+        "hnsw-pqfastscan-groupedpq",
+        "storage_format=pq_fastscan",
+        "traversal_score_mode=pq",
+        "candidate_batch",
+        "option=batch-on",
+        "latency"
+      ],
+      "prefix": "t106_1m_hnsw_pqfastscan_groupedpq",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80,
+        120,
+        200,
+        400
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "iterations": 100,
+      "concurrency": 1,
+      "cache_state": "task106_1m_hnsw-pqfastscan-groupedpq_batch-on",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-1m-hnsw-pqfastscan-groupedpq-batch-on.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-1m-hnsw-pqfastscan-groupedpq-batch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real1m",
+        "hnsw",
+        "hnsw-pqfastscan-groupedpq",
+        "storage_format=pq_fastscan",
+        "traversal_score_mode=pq",
+        "scalar-ab",
+        "option=batch-off",
+        "recall"
+      ],
+      "prefix": "t106_1m_hnsw_pqfastscan_groupedpq",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80,
+        120,
+        200,
+        400
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "session_gucs": [
+        "ec_hnsw.candidate_batch_scoring=off"
+      ],
+      "log_output": "${artifact_dir}/recall-1m-hnsw-pqfastscan-groupedpq-batch-off.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-1m-hnsw-pqfastscan-groupedpq-batch-off",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real1m",
+        "hnsw",
+        "hnsw-pqfastscan-groupedpq",
+        "storage_format=pq_fastscan",
+        "traversal_score_mode=pq",
+        "scalar-ab",
+        "option=batch-off",
+        "latency"
+      ],
+      "prefix": "t106_1m_hnsw_pqfastscan_groupedpq",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80,
+        120,
+        200,
+        400
+      ],
+      "queries_limit": 100,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "session_gucs": [
+        "ec_hnsw.candidate_batch_scoring=off"
+      ],
+      "iterations": 100,
+      "concurrency": 1,
+      "cache_state": "task106_1m_hnsw-pqfastscan-groupedpq_batch-off",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-1m-hnsw-pqfastscan-groupedpq-batch-off.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-1m-spire-pqfastscan-gap",
+      "tags": [
+        "task106",
+        "full-sweep",
+        "real1m",
+        "spire",
+        "spire-pqfastscan-gap"
+      ],
+      "prefix": "t106_1m_spire_pqfastscan_gap",
+      "profile": "ec_spire",
+      "bits": 4,
+      "dim": 1536,
+      "corpus_file": "/home/peter/dev/datasets/tqhnsw_real_ann_benchmarks_anchor/ec_hnsw_real_ann_benchmarks_anchor_corpus.tsv",
+      "queries_file": "/home/peter/dev/datasets/tqhnsw_real_ann_benchmarks_anchor/ec_hnsw_real_ann_benchmarks_anchor_queries.tsv",
+      "manifest_file": "/home/peter/dev/datasets/tqhnsw_real_ann_benchmarks_anchor/ec_hnsw_real_ann_benchmarks_anchor_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=512",
+        "nprobe=24",
+        "rerank_width=25",
+        "local_store_count=1",
+        "training_sample_rows=50000"
+      ],
+      "log_file": "${artifact_dir}/load-1m-spire-pqfastscan-gap.log",
+      "storage_format": "pq_fastscan"
+    }
+  ]
+}

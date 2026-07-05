@@ -1,0 +1,136 @@
+{
+  "name": "task70-diskann-frontier-subtiming-real10k",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-70/008-frontier-subtiming-profile/artifacts",
+  "defaults": {
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 200,
+    "iterations": 500,
+    "force_index": true,
+    "sample_backend_memory": true,
+    "memory_sample_interval_ms": 25,
+    "pg": 18
+  },
+  "steps": [
+    {
+      "kind": "load",
+      "name": "load-diskann-real10k",
+      "tags": ["load", "diskann", "real10k", "phase2", "frontier", "subtiming"],
+      "prefix": "task70_008_diskann",
+      "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_corpus.tsv",
+      "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_queries.tsv",
+      "manifest_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "profile": "ec_diskann",
+      "reloptions": [
+        "graph_degree=32",
+        "build_list_size=100",
+        "alpha=1.2",
+        "rerank_budget=64",
+        "top_k=10"
+      ],
+      "log_file": "reviews/task-70/008-frontier-subtiming-profile/artifacts/load-diskann-real10k.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-diskann-real10k-l64-l200",
+      "tags": ["recall", "diskann", "real10k", "phase2", "frontier", "subtiming"],
+      "prefix": "task70_008_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [64, 200],
+      "truth_cache_file": "reviews/task-70/008-frontier-subtiming-profile/artifacts/truth-real10k-k10.json",
+      "log_output": "reviews/task-70/008-frontier-subtiming-profile/artifacts/recall-diskann-real10k-l64-l200.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-diskann-real10k-l64-l200-profiled",
+      "tags": ["latency", "diskann", "real10k", "phase2", "frontier", "subtiming", "scan-profile"],
+      "prefix": "task70_008_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [64, 200],
+      "session_gucs": ["ec_diskann.scan_profile_notice=on"],
+      "log_output": "reviews/task-70/008-frontier-subtiming-profile/artifacts/latency-diskann-real10k-l64-l200-profiled.log"
+    },
+    {
+      "kind": "raw",
+      "name": "profile-notices-diskann-real10k-l64",
+      "tags": ["profile", "diskann", "real10k", "phase2", "frontier", "subtiming", "l64", "scan-profile"],
+      "args": [
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "tqvector_bench",
+        "--raw",
+        "--file",
+        "reviews/task-70/008-frontier-subtiming-profile/artifacts/profile-notices-diskann-real10k-l64.sql",
+        "--log-output",
+        "reviews/task-70/008-frontier-subtiming-profile/artifacts/profile-notices-diskann-real10k-l64.log"
+      ],
+      "expected_artifacts": [
+        "reviews/task-70/008-frontier-subtiming-profile/artifacts/profile-notices-diskann-real10k-l64.log"
+      ]
+    },
+    {
+      "kind": "raw",
+      "name": "profile-notices-diskann-real10k-l200",
+      "tags": ["profile", "diskann", "real10k", "phase2", "frontier", "subtiming", "l200", "scan-profile"],
+      "args": [
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "tqvector_bench",
+        "--raw",
+        "--file",
+        "reviews/task-70/008-frontier-subtiming-profile/artifacts/profile-notices-diskann-real10k-l200.sql",
+        "--log-output",
+        "reviews/task-70/008-frontier-subtiming-profile/artifacts/profile-notices-diskann-real10k-l200.log"
+      ],
+      "expected_artifacts": [
+        "reviews/task-70/008-frontier-subtiming-profile/artifacts/profile-notices-diskann-real10k-l200.log"
+      ]
+    },
+    {
+      "kind": "explain",
+      "name": "explain-diskann-real10k-l64",
+      "tags": ["explain", "diskann", "real10k", "phase2", "frontier", "subtiming", "l64"],
+      "prefix": "task70_008_diskann",
+      "profile": "ec_diskann",
+      "nprobe": 64,
+      "rerank_width": -1,
+      "sql_file": "reviews/task-70/008-frontier-subtiming-profile/artifacts/explain-diskann-real10k-l64.sql",
+      "log_output": "reviews/task-70/008-frontier-subtiming-profile/artifacts/explain-diskann-real10k-l64.log"
+    },
+    {
+      "kind": "explain",
+      "name": "explain-diskann-real10k-l200",
+      "tags": ["explain", "diskann", "real10k", "phase2", "frontier", "subtiming", "l200"],
+      "prefix": "task70_008_diskann",
+      "profile": "ec_diskann",
+      "nprobe": 200,
+      "rerank_width": -1,
+      "sql_file": "reviews/task-70/008-frontier-subtiming-profile/artifacts/explain-diskann-real10k-l200.sql",
+      "log_output": "reviews/task-70/008-frontier-subtiming-profile/artifacts/explain-diskann-real10k-l200.log"
+    },
+    {
+      "kind": "compare-vectorscale",
+      "name": "compare-vectorscale-real10k-l64-l200",
+      "tags": ["compare", "vectorscale", "diskann", "real10k", "phase2", "frontier", "subtiming"],
+      "prefix": "task70_008_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [64, 200],
+      "vectorscale_num_neighbors": 32,
+      "vectorscale_build_search_list_size": 100,
+      "vectorscale_max_alpha": 1.2,
+      "rebuild": true,
+      "log_file": "reviews/task-70/008-frontier-subtiming-profile/artifacts/compare-vectorscale-real10k-l64-l200.log"
+    }
+  ]
+}

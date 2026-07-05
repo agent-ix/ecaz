@@ -1,0 +1,153 @@
+warning: unnecessary `unsafe` block
+   --> src/am/ec_hnsw/shared.rs:883:20
+    |
+883 |     let snapshot = unsafe { index_admin_snapshot(index_relation) };
+    |                    ^^^^^^ unnecessary `unsafe` block
+    |
+    = note: `#[warn(unused_unsafe)]` (part of `#[warn(unused)]`) on by default
+
+warning: unnecessary `unsafe` block
+   --> src/am/ec_hnsw/shared.rs:925:30
+    |
+925 |         if let Some(tuple) = unsafe {
+    |                              ^^^^^^ unnecessary `unsafe` block
+
+warning: unnecessary `unsafe` block
+    --> src/tests/ec_hnsw_build.rs:5:13
+     |
+   5 |               unsafe { $call }
+     |               ^^^^^^ unnecessary `unsafe` block
+...
+1968 | /         hnsw_build_debug!(am::graph::with_graph_storage_tuple(
+1969 | |             index_relation.as_ptr(),
+1970 | |             metadata.entry_point,
+1971 | |             am::graph::GraphStorageDescriptor::PqFastScan(layout),
+...    |
+1981 | |             },
+1982 | |         ));
+     | |__________- in this macro invocation
+     |
+     = note: this warning originates in the macro `hnsw_build_debug` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unnecessary `unsafe` block
+    --> src/tests/ec_hnsw_build.rs:5:13
+     |
+   5 |               unsafe { $call }
+     |               ^^^^^^ unnecessary `unsafe` block
+...
+1984 |           let (entry, neighbors) = hnsw_build_debug!(am::graph::load_grouped_graph_adjacency(
+     |  __________________________________-
+1985 | |             index_relation.as_ptr(),
+1986 | |             metadata.entry_point,
+1987 | |             layout,
+1988 | |         ));
+     | |__________- in this macro invocation
+     |
+     = note: this warning originates in the macro `hnsw_build_debug` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unnecessary `unsafe` block
+    --> src/tests/ec_hnsw_build.rs:5:13
+     |
+   5 |               unsafe { $call }
+     |               ^^^^^^ unnecessary `unsafe` block
+...
+2012 |           let neighbor = hnsw_build_debug!(am::graph::load_grouped_graph_element(
+     |  ________________________-
+2013 | |             index_relation.as_ptr(),
+2014 | |             first_neighbor_tid,
+2015 | |             layout,
+2016 | |         ));
+     | |__________- in this macro invocation
+     |
+     = note: this warning originates in the macro `hnsw_build_debug` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unnecessary `unsafe` block
+    --> src/tests/ec_hnsw_build.rs:5:13
+     |
+   5 |               unsafe { $call }
+     |               ^^^^^^ unnecessary `unsafe` block
+...
+2080 |           let entry = hnsw_build_debug!(am::graph::load_grouped_graph_element(
+     |  _____________________-
+2081 | |             index_relation.as_ptr(),
+2082 | |             metadata.entry_point,
+2083 | |             layout,
+2084 | |         ));
+     | |__________- in this macro invocation
+     |
+     = note: this warning originates in the macro `hnsw_build_debug` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unnecessary `unsafe` block
+    --> src/tests/ec_hnsw_build.rs:5:13
+     |
+   5 |               unsafe { $call }
+     |               ^^^^^^ unnecessary `unsafe` block
+...
+2085 |           let rerank = hnsw_build_debug!(am::graph::load_grouped_rerank_payload(
+     |  ______________________-
+2086 | |             index_relation.as_ptr(),
+2087 | |             entry.reranktid,
+2088 | |             layout,
+2089 | |         ));
+     | |__________- in this macro invocation
+     |
+     = note: this warning originates in the macro `hnsw_build_debug` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unnecessary `unsafe` block
+    --> src/tests/ec_hnsw_build.rs:5:13
+     |
+   5 |             unsafe { $call }
+     |             ^^^^^^ unnecessary `unsafe` block
+...
+2154 |             hnsw_build_debug!(am::graph::load_grouped_codebook_model(index_relation.as_ptr(), &metadata));
+     |             --------------------------------------------------------------------------------------------- in this macro invocation
+     |
+     = note: this warning originates in the macro `hnsw_build_debug` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unnecessary `unsafe` block
+    --> src/tests/ec_hnsw_build.rs:5:13
+     |
+   5 |               unsafe { $call }
+     |               ^^^^^^ unnecessary `unsafe` block
+...
+2168 |           let head = hnsw_build_debug!(am::graph::with_grouped_codebook_tuple(
+     |  ____________________-
+2169 | |             index_relation.as_ptr(),
+2170 | |             model.head_tid,
+2171 | |             model.group_size * crate::quant::grouped_pq::GROUPED_PQ_CENTROIDS,
+2172 | |             |tuple| (tuple.group_index, tuple.nexttid),
+2173 | |         ));
+     | |__________- in this macro invocation
+     |
+     = note: this warning originates in the macro `hnsw_build_debug` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unnecessary `unsafe` block
+    --> src/tests/ec_hnsw_recall_debug_exports.rs:5:13
+     |
+   5 |               unsafe { $call }
+     |               ^^^^^^ unnecessary `unsafe` block
+...
+1238 |           let storage = hnsw_recall_export_debug!(
+     |  _______________________-
+1239 | |             am::graph::GraphStorageDescriptor::from_index_relation(
+1240 | |                 index_relation.as_ptr(),
+1241 | |                 &metadata,
+1242 | |             )
+1243 | |         )
+     | |_________- in this macro invocation
+     |
+     = note: this warning originates in the macro `hnsw_recall_export_debug` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unnecessary `unsafe` block
+    --> src/tests/ec_hnsw_recall_debug_exports.rs:5:13
+     |
+   5 |             unsafe { $call }
+     |             ^^^^^^ unnecessary `unsafe` block
+...
+1257 |             hnsw_recall_export_debug!(am::resolve_pq_fastscan_rerank_mode_decision(index_relation.as_ptr(), storage));
+     |             --------------------------------------------------------------------------------------------------------- in this macro invocation
+     |
+     = note: this warning originates in the macro `hnsw_recall_export_debug` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: `ecaz` (lib) generated 11 warnings
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.15s

@@ -1,0 +1,3828 @@
+{
+  "suite": "task144-release-matrix-r2",
+  "schema_version": 1,
+  "config": "reviews/task-144/008-release-matrix-config-r2/artifacts/suite-task144-release-matrix-r2.json",
+  "config_sha256": "cb694f58f00a2311d2103ad5c22297c279f7682c1acf183bf772db2bdd0498ad",
+  "dry_run": false,
+  "generated_at_unix_ms": 1783277208038,
+  "connection": {
+    "database": "tqvector_bench_task144",
+    "host": "/home/peter/dev/ecaz/target/task144-pg18-socket",
+    "port": 28818,
+    "user": null,
+    "password_configured": false
+  },
+  "backend": {
+    "build_profile": "release",
+    "sha256": "a821e3ee67501cc7489dcc9380e2bfab867b33388f600ef1f8109d19751a5bf8",
+    "path": "/home/peter/.pgrx/18.3/pgrx-install/lib/postgresql/ecaz.so"
+  },
+  "backend_nodes": [
+    {
+      "node": "coordinator",
+      "database": "tqvector_bench_task144",
+      "host": "/home/peter/dev/ecaz/target/task144-pg18-socket",
+      "port": 28818,
+      "build_profile": "release",
+      "sha256": "a821e3ee67501cc7489dcc9380e2bfab867b33388f600ef1f8109d19751a5bf8",
+      "path": "/home/peter/.pgrx/18.3/pgrx-install/lib/postgresql/ecaz.so"
+    }
+  ],
+  "steps": [
+    {
+      "name": "precheck-release-profile",
+      "kind": "raw",
+      "command": [
+        "--database",
+        "tqvector_bench_task144",
+        "--host",
+        "/home/peter/dev/ecaz/target/task144-pg18-socket",
+        "--port",
+        "28818",
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "tqvector_bench_task144",
+        "--socket-dir",
+        "/home/peter/dev/ecaz/target/task144-pg18-socket",
+        "--raw",
+        "--sql",
+        "LOAD 'ecaz'; SELECT now() AS captured_at, version() AS postgres_version, ecaz_build_profile() AS ecaz_build_profile;",
+        "--log-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/precheck-release-profile.log"
+      ],
+      "selected": true,
+      "tags": [
+        "setup",
+        "precheck",
+        "task144",
+        "release"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/precheck-release-profile.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783277208289,
+      "finished_at_unix_ms": 1783277208304,
+      "duration_ms": 13,
+      "exit_code": 0
+    },
+    {
+      "name": "load-10k-single",
+      "kind": "load",
+      "command": [
+        "--database",
+        "tqvector_bench_task144",
+        "--host",
+        "/home/peter/dev/ecaz/target/task144-pg18-socket",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/load-10k-single.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "t144_10k_single",
+        "--profile",
+        "ec_spire",
+        "--corpus-file",
+        "data/staged-current/ec_real_10k_corpus.tsv",
+        "--queries-file",
+        "data/staged-current/ec_real_10k_queries.tsv",
+        "--manifest-file",
+        "data/staged-current/ec_real_10k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--dim",
+        "1536",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--storage-format",
+        "rabitq",
+        "--index-name",
+        "t144_10k_single_idx",
+        "--reloption",
+        "nlists=1024",
+        "--reloption",
+        "recursive_fanout=8",
+        "--reloption",
+        "top_graph_enabled=1",
+        "--reloption",
+        "top_graph_degree=32",
+        "--reloption",
+        "top_graph_build_list_size=100",
+        "--reloption",
+        "top_graph_search_list_size=96",
+        "--reloption",
+        "boundary_replica_count=0",
+        "--reloption",
+        "closure_epsilon=0",
+        "--reloption",
+        "training_sample_rows=10000"
+      ],
+      "selected": true,
+      "tags": [
+        "load",
+        "task144",
+        "10k",
+        "variant=single"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/load-10k-single.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783277208305,
+      "finished_at_unix_ms": 1783277210322,
+      "duration_ms": 2016,
+      "exit_code": 0
+    },
+    {
+      "name": "load-10k-fixed_b2",
+      "kind": "load",
+      "command": [
+        "--database",
+        "tqvector_bench_task144",
+        "--host",
+        "/home/peter/dev/ecaz/target/task144-pg18-socket",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/load-10k-fixed_b2.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "t144_10k_fixed_b2",
+        "--profile",
+        "ec_spire",
+        "--corpus-file",
+        "data/staged-current/ec_real_10k_corpus.tsv",
+        "--queries-file",
+        "data/staged-current/ec_real_10k_queries.tsv",
+        "--manifest-file",
+        "data/staged-current/ec_real_10k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--dim",
+        "1536",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--storage-format",
+        "rabitq",
+        "--index-name",
+        "t144_10k_fixed_b2_idx",
+        "--reloption",
+        "nlists=1024",
+        "--reloption",
+        "recursive_fanout=8",
+        "--reloption",
+        "top_graph_enabled=1",
+        "--reloption",
+        "top_graph_degree=32",
+        "--reloption",
+        "top_graph_build_list_size=100",
+        "--reloption",
+        "top_graph_search_list_size=96",
+        "--reloption",
+        "boundary_replica_count=2",
+        "--reloption",
+        "closure_epsilon=0",
+        "--reloption",
+        "training_sample_rows=10000"
+      ],
+      "selected": true,
+      "tags": [
+        "load",
+        "task144",
+        "10k",
+        "variant=fixed_b2"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/load-10k-fixed_b2.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783277210323,
+      "finished_at_unix_ms": 1783277211499,
+      "duration_ms": 1174,
+      "exit_code": 0
+    },
+    {
+      "name": "load-10k-closure_e010_b8",
+      "kind": "load",
+      "command": [
+        "--database",
+        "tqvector_bench_task144",
+        "--host",
+        "/home/peter/dev/ecaz/target/task144-pg18-socket",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/load-10k-closure_e010_b8.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "t144_10k_closure_e010_b8",
+        "--profile",
+        "ec_spire",
+        "--corpus-file",
+        "data/staged-current/ec_real_10k_corpus.tsv",
+        "--queries-file",
+        "data/staged-current/ec_real_10k_queries.tsv",
+        "--manifest-file",
+        "data/staged-current/ec_real_10k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--dim",
+        "1536",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--storage-format",
+        "rabitq",
+        "--index-name",
+        "t144_10k_closure_e010_b8_idx",
+        "--reloption",
+        "nlists=1024",
+        "--reloption",
+        "recursive_fanout=8",
+        "--reloption",
+        "top_graph_enabled=1",
+        "--reloption",
+        "top_graph_degree=32",
+        "--reloption",
+        "top_graph_build_list_size=100",
+        "--reloption",
+        "top_graph_search_list_size=96",
+        "--reloption",
+        "boundary_replica_count=8",
+        "--reloption",
+        "closure_epsilon=0.10",
+        "--reloption",
+        "training_sample_rows=10000"
+      ],
+      "selected": true,
+      "tags": [
+        "load",
+        "task144",
+        "10k",
+        "variant=closure_e010_b8"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/load-10k-closure_e010_b8.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783277211499,
+      "finished_at_unix_ms": 1783277212580,
+      "duration_ms": 1079,
+      "exit_code": 0
+    },
+    {
+      "name": "load-10k-closure_e025_b8",
+      "kind": "load",
+      "command": [
+        "--database",
+        "tqvector_bench_task144",
+        "--host",
+        "/home/peter/dev/ecaz/target/task144-pg18-socket",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/load-10k-closure_e025_b8.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "t144_10k_closure_e025_b8",
+        "--profile",
+        "ec_spire",
+        "--corpus-file",
+        "data/staged-current/ec_real_10k_corpus.tsv",
+        "--queries-file",
+        "data/staged-current/ec_real_10k_queries.tsv",
+        "--manifest-file",
+        "data/staged-current/ec_real_10k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--dim",
+        "1536",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--storage-format",
+        "rabitq",
+        "--index-name",
+        "t144_10k_closure_e025_b8_idx",
+        "--reloption",
+        "nlists=1024",
+        "--reloption",
+        "recursive_fanout=8",
+        "--reloption",
+        "top_graph_enabled=1",
+        "--reloption",
+        "top_graph_degree=32",
+        "--reloption",
+        "top_graph_build_list_size=100",
+        "--reloption",
+        "top_graph_search_list_size=96",
+        "--reloption",
+        "boundary_replica_count=8",
+        "--reloption",
+        "closure_epsilon=0.25",
+        "--reloption",
+        "training_sample_rows=10000"
+      ],
+      "selected": true,
+      "tags": [
+        "load",
+        "task144",
+        "10k",
+        "variant=closure_e025_b8"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/load-10k-closure_e025_b8.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783277212580,
+      "finished_at_unix_ms": 1783277254722,
+      "duration_ms": 42286,
+      "exit_code": 0
+    },
+    {
+      "name": "load-10k-closure_e050_b8",
+      "kind": "load",
+      "command": [
+        "--database",
+        "tqvector_bench_task144",
+        "--host",
+        "/home/peter/dev/ecaz/target/task144-pg18-socket",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/load-10k-closure_e050_b8.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "t144_10k_closure_e050_b8",
+        "--profile",
+        "ec_spire",
+        "--corpus-file",
+        "data/staged-current/ec_real_10k_corpus.tsv",
+        "--queries-file",
+        "data/staged-current/ec_real_10k_queries.tsv",
+        "--manifest-file",
+        "data/staged-current/ec_real_10k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--dim",
+        "1536",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--storage-format",
+        "rabitq",
+        "--index-name",
+        "t144_10k_closure_e050_b8_idx",
+        "--reloption",
+        "nlists=1024",
+        "--reloption",
+        "recursive_fanout=8",
+        "--reloption",
+        "top_graph_enabled=1",
+        "--reloption",
+        "top_graph_degree=32",
+        "--reloption",
+        "top_graph_build_list_size=100",
+        "--reloption",
+        "top_graph_search_list_size=96",
+        "--reloption",
+        "boundary_replica_count=8",
+        "--reloption",
+        "closure_epsilon=0.50",
+        "--reloption",
+        "training_sample_rows=10000"
+      ],
+      "selected": true,
+      "tags": [
+        "load",
+        "task144",
+        "10k",
+        "variant=closure_e050_b8"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/load-10k-closure_e050_b8.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783277254723,
+      "finished_at_unix_ms": 1783277298562,
+      "duration_ms": 44133,
+      "exit_code": 0
+    },
+    {
+      "name": "truth-cache-10k-k10",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "tqvector_bench_task144",
+        "--host",
+        "/home/peter/dev/ecaz/target/task144-pg18-socket",
+        "--port",
+        "28818",
+        "bench",
+        "recall",
+        "--prefix",
+        "t144_10k_single",
+        "--profile",
+        "ec_spire",
+        "--k",
+        "10",
+        "--sweep",
+        "8",
+        "--queries-limit",
+        "200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--truth-cache-file",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/truth-10k-k10.json",
+        "--truth-corpus-file",
+        "data/staged-current/ec_real_10k_corpus.tsv",
+        "--log-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/truth-cache-10k-k10.log"
+      ],
+      "selected": true,
+      "tags": [
+        "truth-cache",
+        "recall",
+        "task144",
+        "10k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/truth-cache-10k-k10.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/truth-10k-k10.json"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783277298562,
+      "finished_at_unix_ms": 1783277302369,
+      "duration_ms": 3806,
+      "exit_code": 0
+    },
+    {
+      "name": "storage-10k-single",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "tqvector_bench_task144",
+        "--host",
+        "/home/peter/dev/ecaz/target/task144-pg18-socket",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/storage-10k-single.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "t144_10k_single"
+      ],
+      "selected": true,
+      "tags": [
+        "storage",
+        "task144",
+        "10k",
+        "variant=single"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/storage-10k-single.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783277302369,
+      "finished_at_unix_ms": 1783277302416,
+      "duration_ms": 46,
+      "exit_code": 0
+    },
+    {
+      "name": "storage-10k-fixed_b2",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "tqvector_bench_task144",
+        "--host",
+        "/home/peter/dev/ecaz/target/task144-pg18-socket",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/storage-10k-fixed_b2.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "t144_10k_fixed_b2"
+      ],
+      "selected": true,
+      "tags": [
+        "storage",
+        "task144",
+        "10k",
+        "variant=fixed_b2"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/storage-10k-fixed_b2.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783277302417,
+      "finished_at_unix_ms": 1783277302477,
+      "duration_ms": 59,
+      "exit_code": 0
+    },
+    {
+      "name": "storage-10k-closure_e010_b8",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "tqvector_bench_task144",
+        "--host",
+        "/home/peter/dev/ecaz/target/task144-pg18-socket",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/storage-10k-closure_e010_b8.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "t144_10k_closure_e010_b8"
+      ],
+      "selected": true,
+      "tags": [
+        "storage",
+        "task144",
+        "10k",
+        "variant=closure_e010_b8"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/storage-10k-closure_e010_b8.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783277302477,
+      "finished_at_unix_ms": 1783277302576,
+      "duration_ms": 98,
+      "exit_code": 0
+    },
+    {
+      "name": "storage-10k-closure_e025_b8",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "tqvector_bench_task144",
+        "--host",
+        "/home/peter/dev/ecaz/target/task144-pg18-socket",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/storage-10k-closure_e025_b8.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "t144_10k_closure_e025_b8"
+      ],
+      "selected": true,
+      "tags": [
+        "storage",
+        "task144",
+        "10k",
+        "variant=closure_e025_b8"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/storage-10k-closure_e025_b8.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783277302577,
+      "finished_at_unix_ms": 1783277302643,
+      "duration_ms": 53,
+      "exit_code": 0
+    },
+    {
+      "name": "storage-10k-closure_e050_b8",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "tqvector_bench_task144",
+        "--host",
+        "/home/peter/dev/ecaz/target/task144-pg18-socket",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/storage-10k-closure_e050_b8.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "t144_10k_closure_e050_b8"
+      ],
+      "selected": true,
+      "tags": [
+        "storage",
+        "task144",
+        "10k",
+        "variant=closure_e050_b8"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/storage-10k-closure_e050_b8.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783277302643,
+      "finished_at_unix_ms": 1783277302705,
+      "duration_ms": 55,
+      "exit_code": 0
+    },
+    {
+      "name": "pipeline-10k-single-fixed",
+      "kind": "spire-pipeline",
+      "command": [
+        "--database",
+        "tqvector_bench_task144",
+        "--host",
+        "/home/peter/dev/ecaz/target/task144-pg18-socket",
+        "--port",
+        "28818",
+        "bench",
+        "spire-pipeline",
+        "--prefix",
+        "t144_10k_single",
+        "--queries-limit",
+        "200",
+        "--sweep",
+        "8,16,32,64,96",
+        "--top-k",
+        "10",
+        "--include-query-metrics",
+        "--include-recall",
+        "--truth-corpus-file",
+        "data/staged-current/ec_real_10k_corpus.tsv",
+        "--truth-cache-file",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/truth-10k-k10.json",
+        "--include-production-read-profile",
+        "--query-metric-k",
+        "10",
+        "--log-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-10k-single-fixed.log",
+        "--stage-containment-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-10k-single-fixed.jsonl",
+        "--result-identity-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-10k-single-fixed.jsonl"
+      ],
+      "selected": true,
+      "tags": [
+        "pipeline",
+        "task144",
+        "10k",
+        "variant=single",
+        "query=fixed"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-10k-single-fixed.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-10k-single-fixed.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-10k-single-fixed.jsonl"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783277302706,
+      "finished_at_unix_ms": 1783277478331,
+      "duration_ms": 176511,
+      "exit_code": 0
+    },
+    {
+      "name": "pipeline-10k-single-ratio125",
+      "kind": "spire-pipeline",
+      "command": [
+        "--database",
+        "tqvector_bench_task144",
+        "--host",
+        "/home/peter/dev/ecaz/target/task144-pg18-socket",
+        "--port",
+        "28818",
+        "bench",
+        "spire-pipeline",
+        "--prefix",
+        "t144_10k_single",
+        "--queries-limit",
+        "200",
+        "--sweep",
+        "8,16,32,64,96",
+        "--top-k",
+        "10",
+        "--include-query-metrics",
+        "--include-recall",
+        "--truth-corpus-file",
+        "data/staged-current/ec_real_10k_corpus.tsv",
+        "--truth-cache-file",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/truth-10k-k10.json",
+        "--include-production-read-profile",
+        "--query-metric-k",
+        "10",
+        "--session-guc",
+        "ec_spire.probe_distance_ratio=1.25",
+        "--log-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-10k-single-ratio125.log",
+        "--stage-containment-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-10k-single-ratio125.jsonl",
+        "--result-identity-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-10k-single-ratio125.jsonl"
+      ],
+      "selected": true,
+      "tags": [
+        "pipeline",
+        "task144",
+        "10k",
+        "variant=single",
+        "query=ratio125"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-10k-single-ratio125.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-10k-single-ratio125.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-10k-single-ratio125.jsonl"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783277478332,
+      "finished_at_unix_ms": 1783277620763,
+      "duration_ms": 143168,
+      "exit_code": 0
+    },
+    {
+      "name": "pipeline-10k-single-ratio200",
+      "kind": "spire-pipeline",
+      "command": [
+        "--database",
+        "tqvector_bench_task144",
+        "--host",
+        "/home/peter/dev/ecaz/target/task144-pg18-socket",
+        "--port",
+        "28818",
+        "bench",
+        "spire-pipeline",
+        "--prefix",
+        "t144_10k_single",
+        "--queries-limit",
+        "200",
+        "--sweep",
+        "8,16,32,64,96",
+        "--top-k",
+        "10",
+        "--include-query-metrics",
+        "--include-recall",
+        "--truth-corpus-file",
+        "data/staged-current/ec_real_10k_corpus.tsv",
+        "--truth-cache-file",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/truth-10k-k10.json",
+        "--include-production-read-profile",
+        "--query-metric-k",
+        "10",
+        "--session-guc",
+        "ec_spire.probe_distance_ratio=2.0",
+        "--log-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-10k-single-ratio200.log",
+        "--stage-containment-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-10k-single-ratio200.jsonl",
+        "--result-identity-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-10k-single-ratio200.jsonl"
+      ],
+      "selected": true,
+      "tags": [
+        "pipeline",
+        "task144",
+        "10k",
+        "variant=single",
+        "query=ratio200"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-10k-single-ratio200.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-10k-single-ratio200.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-10k-single-ratio200.jsonl"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783277620764,
+      "finished_at_unix_ms": 1783277776784,
+      "duration_ms": 156765,
+      "exit_code": 0
+    },
+    {
+      "name": "pipeline-10k-single-ratio400",
+      "kind": "spire-pipeline",
+      "command": [
+        "--database",
+        "tqvector_bench_task144",
+        "--host",
+        "/home/peter/dev/ecaz/target/task144-pg18-socket",
+        "--port",
+        "28818",
+        "bench",
+        "spire-pipeline",
+        "--prefix",
+        "t144_10k_single",
+        "--queries-limit",
+        "200",
+        "--sweep",
+        "8,16,32,64,96",
+        "--top-k",
+        "10",
+        "--include-query-metrics",
+        "--include-recall",
+        "--truth-corpus-file",
+        "data/staged-current/ec_real_10k_corpus.tsv",
+        "--truth-cache-file",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/truth-10k-k10.json",
+        "--include-production-read-profile",
+        "--query-metric-k",
+        "10",
+        "--session-guc",
+        "ec_spire.probe_distance_ratio=4.0",
+        "--log-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-10k-single-ratio400.log",
+        "--stage-containment-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-10k-single-ratio400.jsonl",
+        "--result-identity-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-10k-single-ratio400.jsonl"
+      ],
+      "selected": true,
+      "tags": [
+        "pipeline",
+        "task144",
+        "10k",
+        "variant=single",
+        "query=ratio400"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-10k-single-ratio400.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-10k-single-ratio400.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-10k-single-ratio400.jsonl"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783277776784,
+      "finished_at_unix_ms": 1783277937299,
+      "duration_ms": 161244,
+      "exit_code": 0
+    },
+    {
+      "name": "pipeline-10k-single-ratio800",
+      "kind": "spire-pipeline",
+      "command": [
+        "--database",
+        "tqvector_bench_task144",
+        "--host",
+        "/home/peter/dev/ecaz/target/task144-pg18-socket",
+        "--port",
+        "28818",
+        "bench",
+        "spire-pipeline",
+        "--prefix",
+        "t144_10k_single",
+        "--queries-limit",
+        "200",
+        "--sweep",
+        "8,16,32,64,96",
+        "--top-k",
+        "10",
+        "--include-query-metrics",
+        "--include-recall",
+        "--truth-corpus-file",
+        "data/staged-current/ec_real_10k_corpus.tsv",
+        "--truth-cache-file",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/truth-10k-k10.json",
+        "--include-production-read-profile",
+        "--query-metric-k",
+        "10",
+        "--session-guc",
+        "ec_spire.probe_distance_ratio=8.0",
+        "--log-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-10k-single-ratio800.log",
+        "--stage-containment-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-10k-single-ratio800.jsonl",
+        "--result-identity-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-10k-single-ratio800.jsonl"
+      ],
+      "selected": true,
+      "tags": [
+        "pipeline",
+        "task144",
+        "10k",
+        "variant=single",
+        "query=ratio800"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-10k-single-ratio800.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-10k-single-ratio800.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-10k-single-ratio800.jsonl"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783277937300,
+      "finished_at_unix_ms": 1783278103667,
+      "duration_ms": 167260,
+      "exit_code": 0
+    },
+    {
+      "name": "pipeline-10k-single-adaptive",
+      "kind": "spire-pipeline",
+      "command": [
+        "--database",
+        "tqvector_bench_task144",
+        "--host",
+        "/home/peter/dev/ecaz/target/task144-pg18-socket",
+        "--port",
+        "28818",
+        "bench",
+        "spire-pipeline",
+        "--prefix",
+        "t144_10k_single",
+        "--queries-limit",
+        "200",
+        "--sweep",
+        "8,16,32,64,96",
+        "--adaptive-nprobe",
+        "--top-k",
+        "10",
+        "--include-query-metrics",
+        "--include-recall",
+        "--truth-corpus-file",
+        "data/staged-current/ec_real_10k_corpus.tsv",
+        "--truth-cache-file",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/truth-10k-k10.json",
+        "--include-production-read-profile",
+        "--query-metric-k",
+        "10",
+        "--log-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-10k-single-adaptive.log",
+        "--stage-containment-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-10k-single-adaptive.jsonl",
+        "--result-identity-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-10k-single-adaptive.jsonl"
+      ],
+      "selected": true,
+      "tags": [
+        "pipeline",
+        "task144",
+        "10k",
+        "variant=single",
+        "query=adaptive"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-10k-single-adaptive.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-10k-single-adaptive.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-10k-single-adaptive.jsonl"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783278103667,
+      "finished_at_unix_ms": 1783278272275,
+      "duration_ms": 169490,
+      "exit_code": 0
+    },
+    {
+      "name": "pipeline-10k-fixed_b2-fixed",
+      "kind": "spire-pipeline",
+      "command": [
+        "--database",
+        "tqvector_bench_task144",
+        "--host",
+        "/home/peter/dev/ecaz/target/task144-pg18-socket",
+        "--port",
+        "28818",
+        "bench",
+        "spire-pipeline",
+        "--prefix",
+        "t144_10k_fixed_b2",
+        "--queries-limit",
+        "200",
+        "--sweep",
+        "8,16,32,64,96",
+        "--top-k",
+        "10",
+        "--include-query-metrics",
+        "--include-recall",
+        "--truth-corpus-file",
+        "data/staged-current/ec_real_10k_corpus.tsv",
+        "--truth-cache-file",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/truth-10k-k10.json",
+        "--include-production-read-profile",
+        "--query-metric-k",
+        "10",
+        "--log-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-10k-fixed_b2-fixed.log",
+        "--stage-containment-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-10k-fixed_b2-fixed.jsonl",
+        "--result-identity-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-10k-fixed_b2-fixed.jsonl"
+      ],
+      "selected": true,
+      "tags": [
+        "pipeline",
+        "task144",
+        "10k",
+        "variant=fixed_b2",
+        "query=fixed"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-10k-fixed_b2-fixed.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-10k-fixed_b2-fixed.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-10k-fixed_b2-fixed.jsonl"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783278272276,
+      "finished_at_unix_ms": 1783278459037,
+      "duration_ms": 187651,
+      "exit_code": 0
+    },
+    {
+      "name": "pipeline-10k-fixed_b2-ratio125",
+      "kind": "spire-pipeline",
+      "command": [
+        "--database",
+        "tqvector_bench_task144",
+        "--host",
+        "/home/peter/dev/ecaz/target/task144-pg18-socket",
+        "--port",
+        "28818",
+        "bench",
+        "spire-pipeline",
+        "--prefix",
+        "t144_10k_fixed_b2",
+        "--queries-limit",
+        "200",
+        "--sweep",
+        "8,16,32,64,96",
+        "--top-k",
+        "10",
+        "--include-query-metrics",
+        "--include-recall",
+        "--truth-corpus-file",
+        "data/staged-current/ec_real_10k_corpus.tsv",
+        "--truth-cache-file",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/truth-10k-k10.json",
+        "--include-production-read-profile",
+        "--query-metric-k",
+        "10",
+        "--session-guc",
+        "ec_spire.probe_distance_ratio=1.25",
+        "--log-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-10k-fixed_b2-ratio125.log",
+        "--stage-containment-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-10k-fixed_b2-ratio125.jsonl",
+        "--result-identity-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-10k-fixed_b2-ratio125.jsonl"
+      ],
+      "selected": true,
+      "tags": [
+        "pipeline",
+        "task144",
+        "10k",
+        "variant=fixed_b2",
+        "query=ratio125"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-10k-fixed_b2-ratio125.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-10k-fixed_b2-ratio125.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-10k-fixed_b2-ratio125.jsonl"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783278459037,
+      "finished_at_unix_ms": 1783278614057,
+      "duration_ms": 155977,
+      "exit_code": 0
+    },
+    {
+      "name": "pipeline-10k-fixed_b2-ratio200",
+      "kind": "spire-pipeline",
+      "command": [
+        "--database",
+        "tqvector_bench_task144",
+        "--host",
+        "/home/peter/dev/ecaz/target/task144-pg18-socket",
+        "--port",
+        "28818",
+        "bench",
+        "spire-pipeline",
+        "--prefix",
+        "t144_10k_fixed_b2",
+        "--queries-limit",
+        "200",
+        "--sweep",
+        "8,16,32,64,96",
+        "--top-k",
+        "10",
+        "--include-query-metrics",
+        "--include-recall",
+        "--truth-corpus-file",
+        "data/staged-current/ec_real_10k_corpus.tsv",
+        "--truth-cache-file",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/truth-10k-k10.json",
+        "--include-production-read-profile",
+        "--query-metric-k",
+        "10",
+        "--session-guc",
+        "ec_spire.probe_distance_ratio=2.0",
+        "--log-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-10k-fixed_b2-ratio200.log",
+        "--stage-containment-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-10k-fixed_b2-ratio200.jsonl",
+        "--result-identity-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-10k-fixed_b2-ratio200.jsonl"
+      ],
+      "selected": true,
+      "tags": [
+        "pipeline",
+        "task144",
+        "10k",
+        "variant=fixed_b2",
+        "query=ratio200"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-10k-fixed_b2-ratio200.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-10k-fixed_b2-ratio200.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-10k-fixed_b2-ratio200.jsonl"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783278614057,
+      "finished_at_unix_ms": 1783278770526,
+      "duration_ms": 157181,
+      "exit_code": 0
+    },
+    {
+      "name": "pipeline-10k-fixed_b2-ratio400",
+      "kind": "spire-pipeline",
+      "command": [
+        "--database",
+        "tqvector_bench_task144",
+        "--host",
+        "/home/peter/dev/ecaz/target/task144-pg18-socket",
+        "--port",
+        "28818",
+        "bench",
+        "spire-pipeline",
+        "--prefix",
+        "t144_10k_fixed_b2",
+        "--queries-limit",
+        "200",
+        "--sweep",
+        "8,16,32,64,96",
+        "--top-k",
+        "10",
+        "--include-query-metrics",
+        "--include-recall",
+        "--truth-corpus-file",
+        "data/staged-current/ec_real_10k_corpus.tsv",
+        "--truth-cache-file",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/truth-10k-k10.json",
+        "--include-production-read-profile",
+        "--query-metric-k",
+        "10",
+        "--session-guc",
+        "ec_spire.probe_distance_ratio=4.0",
+        "--log-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-10k-fixed_b2-ratio400.log",
+        "--stage-containment-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-10k-fixed_b2-ratio400.jsonl",
+        "--result-identity-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-10k-fixed_b2-ratio400.jsonl"
+      ],
+      "selected": true,
+      "tags": [
+        "pipeline",
+        "task144",
+        "10k",
+        "variant=fixed_b2",
+        "query=ratio400"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-10k-fixed_b2-ratio400.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-10k-fixed_b2-ratio400.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-10k-fixed_b2-ratio400.jsonl"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783278770527,
+      "finished_at_unix_ms": 1783278957189,
+      "duration_ms": 187533,
+      "exit_code": 0
+    },
+    {
+      "name": "pipeline-10k-fixed_b2-ratio800",
+      "kind": "spire-pipeline",
+      "command": [
+        "--database",
+        "tqvector_bench_task144",
+        "--host",
+        "/home/peter/dev/ecaz/target/task144-pg18-socket",
+        "--port",
+        "28818",
+        "bench",
+        "spire-pipeline",
+        "--prefix",
+        "t144_10k_fixed_b2",
+        "--queries-limit",
+        "200",
+        "--sweep",
+        "8,16,32,64,96",
+        "--top-k",
+        "10",
+        "--include-query-metrics",
+        "--include-recall",
+        "--truth-corpus-file",
+        "data/staged-current/ec_real_10k_corpus.tsv",
+        "--truth-cache-file",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/truth-10k-k10.json",
+        "--include-production-read-profile",
+        "--query-metric-k",
+        "10",
+        "--session-guc",
+        "ec_spire.probe_distance_ratio=8.0",
+        "--log-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-10k-fixed_b2-ratio800.log",
+        "--stage-containment-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-10k-fixed_b2-ratio800.jsonl",
+        "--result-identity-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-10k-fixed_b2-ratio800.jsonl"
+      ],
+      "selected": true,
+      "tags": [
+        "pipeline",
+        "task144",
+        "10k",
+        "variant=fixed_b2",
+        "query=ratio800"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-10k-fixed_b2-ratio800.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-10k-fixed_b2-ratio800.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-10k-fixed_b2-ratio800.jsonl"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783278957190,
+      "finished_at_unix_ms": 1783279142456,
+      "duration_ms": 186288,
+      "exit_code": 0
+    },
+    {
+      "name": "pipeline-10k-fixed_b2-adaptive",
+      "kind": "spire-pipeline",
+      "command": [
+        "--database",
+        "tqvector_bench_task144",
+        "--host",
+        "/home/peter/dev/ecaz/target/task144-pg18-socket",
+        "--port",
+        "28818",
+        "bench",
+        "spire-pipeline",
+        "--prefix",
+        "t144_10k_fixed_b2",
+        "--queries-limit",
+        "200",
+        "--sweep",
+        "8,16,32,64,96",
+        "--adaptive-nprobe",
+        "--top-k",
+        "10",
+        "--include-query-metrics",
+        "--include-recall",
+        "--truth-corpus-file",
+        "data/staged-current/ec_real_10k_corpus.tsv",
+        "--truth-cache-file",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/truth-10k-k10.json",
+        "--include-production-read-profile",
+        "--query-metric-k",
+        "10",
+        "--log-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-10k-fixed_b2-adaptive.log",
+        "--stage-containment-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-10k-fixed_b2-adaptive.jsonl",
+        "--result-identity-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-10k-fixed_b2-adaptive.jsonl"
+      ],
+      "selected": true,
+      "tags": [
+        "pipeline",
+        "task144",
+        "10k",
+        "variant=fixed_b2",
+        "query=adaptive"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-10k-fixed_b2-adaptive.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-10k-fixed_b2-adaptive.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-10k-fixed_b2-adaptive.jsonl"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783279142457,
+      "finished_at_unix_ms": 1783279330626,
+      "duration_ms": 189044,
+      "exit_code": 0
+    },
+    {
+      "name": "pipeline-10k-closure_e010_b8-fixed",
+      "kind": "spire-pipeline",
+      "command": [
+        "--database",
+        "tqvector_bench_task144",
+        "--host",
+        "/home/peter/dev/ecaz/target/task144-pg18-socket",
+        "--port",
+        "28818",
+        "bench",
+        "spire-pipeline",
+        "--prefix",
+        "t144_10k_closure_e010_b8",
+        "--queries-limit",
+        "200",
+        "--sweep",
+        "8,16,32,64,96",
+        "--top-k",
+        "10",
+        "--include-query-metrics",
+        "--include-recall",
+        "--truth-corpus-file",
+        "data/staged-current/ec_real_10k_corpus.tsv",
+        "--truth-cache-file",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/truth-10k-k10.json",
+        "--include-production-read-profile",
+        "--query-metric-k",
+        "10",
+        "--log-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-10k-closure_e010_b8-fixed.log",
+        "--stage-containment-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-10k-closure_e010_b8-fixed.jsonl",
+        "--result-identity-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-10k-closure_e010_b8-fixed.jsonl"
+      ],
+      "selected": true,
+      "tags": [
+        "pipeline",
+        "task144",
+        "10k",
+        "variant=closure_e010_b8",
+        "query=fixed"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-10k-closure_e010_b8-fixed.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-10k-closure_e010_b8-fixed.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-10k-closure_e010_b8-fixed.jsonl"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783279330627,
+      "finished_at_unix_ms": 1783279500808,
+      "duration_ms": 171329,
+      "exit_code": 0
+    },
+    {
+      "name": "pipeline-10k-closure_e010_b8-ratio125",
+      "kind": "spire-pipeline",
+      "command": [
+        "--database",
+        "tqvector_bench_task144",
+        "--host",
+        "/home/peter/dev/ecaz/target/task144-pg18-socket",
+        "--port",
+        "28818",
+        "bench",
+        "spire-pipeline",
+        "--prefix",
+        "t144_10k_closure_e010_b8",
+        "--queries-limit",
+        "200",
+        "--sweep",
+        "8,16,32,64,96",
+        "--top-k",
+        "10",
+        "--include-query-metrics",
+        "--include-recall",
+        "--truth-corpus-file",
+        "data/staged-current/ec_real_10k_corpus.tsv",
+        "--truth-cache-file",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/truth-10k-k10.json",
+        "--include-production-read-profile",
+        "--query-metric-k",
+        "10",
+        "--session-guc",
+        "ec_spire.probe_distance_ratio=1.25",
+        "--log-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-10k-closure_e010_b8-ratio125.log",
+        "--stage-containment-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-10k-closure_e010_b8-ratio125.jsonl",
+        "--result-identity-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-10k-closure_e010_b8-ratio125.jsonl"
+      ],
+      "selected": true,
+      "tags": [
+        "pipeline",
+        "task144",
+        "10k",
+        "variant=closure_e010_b8",
+        "query=ratio125"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-10k-closure_e010_b8-ratio125.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-10k-closure_e010_b8-ratio125.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-10k-closure_e010_b8-ratio125.jsonl"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783279500809,
+      "finished_at_unix_ms": 1783279651727,
+      "duration_ms": 151969,
+      "exit_code": 0
+    },
+    {
+      "name": "pipeline-10k-closure_e010_b8-ratio200",
+      "kind": "spire-pipeline",
+      "command": [
+        "--database",
+        "tqvector_bench_task144",
+        "--host",
+        "/home/peter/dev/ecaz/target/task144-pg18-socket",
+        "--port",
+        "28818",
+        "bench",
+        "spire-pipeline",
+        "--prefix",
+        "t144_10k_closure_e010_b8",
+        "--queries-limit",
+        "200",
+        "--sweep",
+        "8,16,32,64,96",
+        "--top-k",
+        "10",
+        "--include-query-metrics",
+        "--include-recall",
+        "--truth-corpus-file",
+        "data/staged-current/ec_real_10k_corpus.tsv",
+        "--truth-cache-file",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/truth-10k-k10.json",
+        "--include-production-read-profile",
+        "--query-metric-k",
+        "10",
+        "--session-guc",
+        "ec_spire.probe_distance_ratio=2.0",
+        "--log-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-10k-closure_e010_b8-ratio200.log",
+        "--stage-containment-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-10k-closure_e010_b8-ratio200.jsonl",
+        "--result-identity-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-10k-closure_e010_b8-ratio200.jsonl"
+      ],
+      "selected": true,
+      "tags": [
+        "pipeline",
+        "task144",
+        "10k",
+        "variant=closure_e010_b8",
+        "query=ratio200"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-10k-closure_e010_b8-ratio200.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-10k-closure_e010_b8-ratio200.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-10k-closure_e010_b8-ratio200.jsonl"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783279651727,
+      "finished_at_unix_ms": 1783279807351,
+      "duration_ms": 156360,
+      "exit_code": 0
+    },
+    {
+      "name": "pipeline-10k-closure_e010_b8-ratio400",
+      "kind": "spire-pipeline",
+      "command": [
+        "--database",
+        "tqvector_bench_task144",
+        "--host",
+        "/home/peter/dev/ecaz/target/task144-pg18-socket",
+        "--port",
+        "28818",
+        "bench",
+        "spire-pipeline",
+        "--prefix",
+        "t144_10k_closure_e010_b8",
+        "--queries-limit",
+        "200",
+        "--sweep",
+        "8,16,32,64,96",
+        "--top-k",
+        "10",
+        "--include-query-metrics",
+        "--include-recall",
+        "--truth-corpus-file",
+        "data/staged-current/ec_real_10k_corpus.tsv",
+        "--truth-cache-file",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/truth-10k-k10.json",
+        "--include-production-read-profile",
+        "--query-metric-k",
+        "10",
+        "--session-guc",
+        "ec_spire.probe_distance_ratio=4.0",
+        "--log-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-10k-closure_e010_b8-ratio400.log",
+        "--stage-containment-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-10k-closure_e010_b8-ratio400.jsonl",
+        "--result-identity-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-10k-closure_e010_b8-ratio400.jsonl"
+      ],
+      "selected": true,
+      "tags": [
+        "pipeline",
+        "task144",
+        "10k",
+        "variant=closure_e010_b8",
+        "query=ratio400"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-10k-closure_e010_b8-ratio400.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-10k-closure_e010_b8-ratio400.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-10k-closure_e010_b8-ratio400.jsonl"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783279807352,
+      "finished_at_unix_ms": 1783279972763,
+      "duration_ms": 166308,
+      "exit_code": 0
+    },
+    {
+      "name": "pipeline-10k-closure_e010_b8-ratio800",
+      "kind": "spire-pipeline",
+      "command": [
+        "--database",
+        "tqvector_bench_task144",
+        "--host",
+        "/home/peter/dev/ecaz/target/task144-pg18-socket",
+        "--port",
+        "28818",
+        "bench",
+        "spire-pipeline",
+        "--prefix",
+        "t144_10k_closure_e010_b8",
+        "--queries-limit",
+        "200",
+        "--sweep",
+        "8,16,32,64,96",
+        "--top-k",
+        "10",
+        "--include-query-metrics",
+        "--include-recall",
+        "--truth-corpus-file",
+        "data/staged-current/ec_real_10k_corpus.tsv",
+        "--truth-cache-file",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/truth-10k-k10.json",
+        "--include-production-read-profile",
+        "--query-metric-k",
+        "10",
+        "--session-guc",
+        "ec_spire.probe_distance_ratio=8.0",
+        "--log-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-10k-closure_e010_b8-ratio800.log",
+        "--stage-containment-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-10k-closure_e010_b8-ratio800.jsonl",
+        "--result-identity-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-10k-closure_e010_b8-ratio800.jsonl"
+      ],
+      "selected": true,
+      "tags": [
+        "pipeline",
+        "task144",
+        "10k",
+        "variant=closure_e010_b8",
+        "query=ratio800"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-10k-closure_e010_b8-ratio800.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-10k-closure_e010_b8-ratio800.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-10k-closure_e010_b8-ratio800.jsonl"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783279972764,
+      "finished_at_unix_ms": 1783280149670,
+      "duration_ms": 177952,
+      "exit_code": 0
+    },
+    {
+      "name": "pipeline-10k-closure_e010_b8-adaptive",
+      "kind": "spire-pipeline",
+      "command": [
+        "--database",
+        "tqvector_bench_task144",
+        "--host",
+        "/home/peter/dev/ecaz/target/task144-pg18-socket",
+        "--port",
+        "28818",
+        "bench",
+        "spire-pipeline",
+        "--prefix",
+        "t144_10k_closure_e010_b8",
+        "--queries-limit",
+        "200",
+        "--sweep",
+        "8,16,32,64,96",
+        "--adaptive-nprobe",
+        "--top-k",
+        "10",
+        "--include-query-metrics",
+        "--include-recall",
+        "--truth-corpus-file",
+        "data/staged-current/ec_real_10k_corpus.tsv",
+        "--truth-cache-file",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/truth-10k-k10.json",
+        "--include-production-read-profile",
+        "--query-metric-k",
+        "10",
+        "--log-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-10k-closure_e010_b8-adaptive.log",
+        "--stage-containment-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-10k-closure_e010_b8-adaptive.jsonl",
+        "--result-identity-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-10k-closure_e010_b8-adaptive.jsonl"
+      ],
+      "selected": true,
+      "tags": [
+        "pipeline",
+        "task144",
+        "10k",
+        "variant=closure_e010_b8",
+        "query=adaptive"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-10k-closure_e010_b8-adaptive.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-10k-closure_e010_b8-adaptive.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-10k-closure_e010_b8-adaptive.jsonl"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783280149671,
+      "finished_at_unix_ms": 1783280311480,
+      "duration_ms": 162704,
+      "exit_code": 0
+    },
+    {
+      "name": "pipeline-10k-closure_e025_b8-fixed",
+      "kind": "spire-pipeline",
+      "command": [
+        "--database",
+        "tqvector_bench_task144",
+        "--host",
+        "/home/peter/dev/ecaz/target/task144-pg18-socket",
+        "--port",
+        "28818",
+        "bench",
+        "spire-pipeline",
+        "--prefix",
+        "t144_10k_closure_e025_b8",
+        "--queries-limit",
+        "200",
+        "--sweep",
+        "8,16,32,64,96",
+        "--top-k",
+        "10",
+        "--include-query-metrics",
+        "--include-recall",
+        "--truth-corpus-file",
+        "data/staged-current/ec_real_10k_corpus.tsv",
+        "--truth-cache-file",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/truth-10k-k10.json",
+        "--include-production-read-profile",
+        "--query-metric-k",
+        "10",
+        "--log-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-10k-closure_e025_b8-fixed.log",
+        "--stage-containment-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-10k-closure_e025_b8-fixed.jsonl",
+        "--result-identity-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-10k-closure_e025_b8-fixed.jsonl"
+      ],
+      "selected": true,
+      "tags": [
+        "pipeline",
+        "task144",
+        "10k",
+        "variant=closure_e025_b8",
+        "query=fixed"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-10k-closure_e025_b8-fixed.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-10k-closure_e025_b8-fixed.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-10k-closure_e025_b8-fixed.jsonl"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783280311481,
+      "finished_at_unix_ms": 1783280485866,
+      "duration_ms": 175569,
+      "exit_code": 0
+    },
+    {
+      "name": "pipeline-10k-closure_e025_b8-ratio125",
+      "kind": "spire-pipeline",
+      "command": [
+        "--database",
+        "tqvector_bench_task144",
+        "--host",
+        "/home/peter/dev/ecaz/target/task144-pg18-socket",
+        "--port",
+        "28818",
+        "bench",
+        "spire-pipeline",
+        "--prefix",
+        "t144_10k_closure_e025_b8",
+        "--queries-limit",
+        "200",
+        "--sweep",
+        "8,16,32,64,96",
+        "--top-k",
+        "10",
+        "--include-query-metrics",
+        "--include-recall",
+        "--truth-corpus-file",
+        "data/staged-current/ec_real_10k_corpus.tsv",
+        "--truth-cache-file",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/truth-10k-k10.json",
+        "--include-production-read-profile",
+        "--query-metric-k",
+        "10",
+        "--session-guc",
+        "ec_spire.probe_distance_ratio=1.25",
+        "--log-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-10k-closure_e025_b8-ratio125.log",
+        "--stage-containment-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-10k-closure_e025_b8-ratio125.jsonl",
+        "--result-identity-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-10k-closure_e025_b8-ratio125.jsonl"
+      ],
+      "selected": true,
+      "tags": [
+        "pipeline",
+        "task144",
+        "10k",
+        "variant=closure_e025_b8",
+        "query=ratio125"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-10k-closure_e025_b8-ratio125.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-10k-closure_e025_b8-ratio125.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-10k-closure_e025_b8-ratio125.jsonl"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783280485867,
+      "finished_at_unix_ms": 1783280629932,
+      "duration_ms": 144814,
+      "exit_code": 0
+    },
+    {
+      "name": "pipeline-10k-closure_e025_b8-ratio200",
+      "kind": "spire-pipeline",
+      "command": [
+        "--database",
+        "tqvector_bench_task144",
+        "--host",
+        "/home/peter/dev/ecaz/target/task144-pg18-socket",
+        "--port",
+        "28818",
+        "bench",
+        "spire-pipeline",
+        "--prefix",
+        "t144_10k_closure_e025_b8",
+        "--queries-limit",
+        "200",
+        "--sweep",
+        "8,16,32,64,96",
+        "--top-k",
+        "10",
+        "--include-query-metrics",
+        "--include-recall",
+        "--truth-corpus-file",
+        "data/staged-current/ec_real_10k_corpus.tsv",
+        "--truth-cache-file",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/truth-10k-k10.json",
+        "--include-production-read-profile",
+        "--query-metric-k",
+        "10",
+        "--session-guc",
+        "ec_spire.probe_distance_ratio=2.0",
+        "--log-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-10k-closure_e025_b8-ratio200.log",
+        "--stage-containment-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-10k-closure_e025_b8-ratio200.jsonl",
+        "--result-identity-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-10k-closure_e025_b8-ratio200.jsonl"
+      ],
+      "selected": true,
+      "tags": [
+        "pipeline",
+        "task144",
+        "10k",
+        "variant=closure_e025_b8",
+        "query=ratio200"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-10k-closure_e025_b8-ratio200.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-10k-closure_e025_b8-ratio200.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-10k-closure_e025_b8-ratio200.jsonl"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783280629933,
+      "finished_at_unix_ms": 1783280777093,
+      "duration_ms": 148215,
+      "exit_code": 0
+    },
+    {
+      "name": "pipeline-10k-closure_e025_b8-ratio400",
+      "kind": "spire-pipeline",
+      "command": [
+        "--database",
+        "tqvector_bench_task144",
+        "--host",
+        "/home/peter/dev/ecaz/target/task144-pg18-socket",
+        "--port",
+        "28818",
+        "bench",
+        "spire-pipeline",
+        "--prefix",
+        "t144_10k_closure_e025_b8",
+        "--queries-limit",
+        "200",
+        "--sweep",
+        "8,16,32,64,96",
+        "--top-k",
+        "10",
+        "--include-query-metrics",
+        "--include-recall",
+        "--truth-corpus-file",
+        "data/staged-current/ec_real_10k_corpus.tsv",
+        "--truth-cache-file",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/truth-10k-k10.json",
+        "--include-production-read-profile",
+        "--query-metric-k",
+        "10",
+        "--session-guc",
+        "ec_spire.probe_distance_ratio=4.0",
+        "--log-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-10k-closure_e025_b8-ratio400.log",
+        "--stage-containment-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-10k-closure_e025_b8-ratio400.jsonl",
+        "--result-identity-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-10k-closure_e025_b8-ratio400.jsonl"
+      ],
+      "selected": true,
+      "tags": [
+        "pipeline",
+        "task144",
+        "10k",
+        "variant=closure_e025_b8",
+        "query=ratio400"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-10k-closure_e025_b8-ratio400.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-10k-closure_e025_b8-ratio400.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-10k-closure_e025_b8-ratio400.jsonl"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783280777094,
+      "finished_at_unix_ms": 1783280937121,
+      "duration_ms": 161107,
+      "exit_code": 0
+    },
+    {
+      "name": "pipeline-10k-closure_e025_b8-ratio800",
+      "kind": "spire-pipeline",
+      "command": [
+        "--database",
+        "tqvector_bench_task144",
+        "--host",
+        "/home/peter/dev/ecaz/target/task144-pg18-socket",
+        "--port",
+        "28818",
+        "bench",
+        "spire-pipeline",
+        "--prefix",
+        "t144_10k_closure_e025_b8",
+        "--queries-limit",
+        "200",
+        "--sweep",
+        "8,16,32,64,96",
+        "--top-k",
+        "10",
+        "--include-query-metrics",
+        "--include-recall",
+        "--truth-corpus-file",
+        "data/staged-current/ec_real_10k_corpus.tsv",
+        "--truth-cache-file",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/truth-10k-k10.json",
+        "--include-production-read-profile",
+        "--query-metric-k",
+        "10",
+        "--session-guc",
+        "ec_spire.probe_distance_ratio=8.0",
+        "--log-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-10k-closure_e025_b8-ratio800.log",
+        "--stage-containment-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-10k-closure_e025_b8-ratio800.jsonl",
+        "--result-identity-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-10k-closure_e025_b8-ratio800.jsonl"
+      ],
+      "selected": true,
+      "tags": [
+        "pipeline",
+        "task144",
+        "10k",
+        "variant=closure_e025_b8",
+        "query=ratio800"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-10k-closure_e025_b8-ratio800.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-10k-closure_e025_b8-ratio800.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-10k-closure_e025_b8-ratio800.jsonl"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783280937122,
+      "finished_at_unix_ms": 1783281097806,
+      "duration_ms": 161703,
+      "exit_code": 0
+    },
+    {
+      "name": "pipeline-10k-closure_e025_b8-adaptive",
+      "kind": "spire-pipeline",
+      "command": [
+        "--database",
+        "tqvector_bench_task144",
+        "--host",
+        "/home/peter/dev/ecaz/target/task144-pg18-socket",
+        "--port",
+        "28818",
+        "bench",
+        "spire-pipeline",
+        "--prefix",
+        "t144_10k_closure_e025_b8",
+        "--queries-limit",
+        "200",
+        "--sweep",
+        "8,16,32,64,96",
+        "--adaptive-nprobe",
+        "--top-k",
+        "10",
+        "--include-query-metrics",
+        "--include-recall",
+        "--truth-corpus-file",
+        "data/staged-current/ec_real_10k_corpus.tsv",
+        "--truth-cache-file",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/truth-10k-k10.json",
+        "--include-production-read-profile",
+        "--query-metric-k",
+        "10",
+        "--log-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-10k-closure_e025_b8-adaptive.log",
+        "--stage-containment-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-10k-closure_e025_b8-adaptive.jsonl",
+        "--result-identity-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-10k-closure_e025_b8-adaptive.jsonl"
+      ],
+      "selected": true,
+      "tags": [
+        "pipeline",
+        "task144",
+        "10k",
+        "variant=closure_e025_b8",
+        "query=adaptive"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-10k-closure_e025_b8-adaptive.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-10k-closure_e025_b8-adaptive.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-10k-closure_e025_b8-adaptive.jsonl"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783281097806,
+      "finished_at_unix_ms": 1783281257541,
+      "duration_ms": 160635,
+      "exit_code": 0
+    },
+    {
+      "name": "pipeline-10k-closure_e050_b8-fixed",
+      "kind": "spire-pipeline",
+      "command": [
+        "--database",
+        "tqvector_bench_task144",
+        "--host",
+        "/home/peter/dev/ecaz/target/task144-pg18-socket",
+        "--port",
+        "28818",
+        "bench",
+        "spire-pipeline",
+        "--prefix",
+        "t144_10k_closure_e050_b8",
+        "--queries-limit",
+        "200",
+        "--sweep",
+        "8,16,32,64,96",
+        "--top-k",
+        "10",
+        "--include-query-metrics",
+        "--include-recall",
+        "--truth-corpus-file",
+        "data/staged-current/ec_real_10k_corpus.tsv",
+        "--truth-cache-file",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/truth-10k-k10.json",
+        "--include-production-read-profile",
+        "--query-metric-k",
+        "10",
+        "--log-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-10k-closure_e050_b8-fixed.log",
+        "--stage-containment-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-10k-closure_e050_b8-fixed.jsonl",
+        "--result-identity-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-10k-closure_e050_b8-fixed.jsonl"
+      ],
+      "selected": true,
+      "tags": [
+        "pipeline",
+        "task144",
+        "10k",
+        "variant=closure_e050_b8",
+        "query=fixed"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-10k-closure_e050_b8-fixed.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-10k-closure_e050_b8-fixed.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-10k-closure_e050_b8-fixed.jsonl"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783281257542,
+      "finished_at_unix_ms": 1783281429018,
+      "duration_ms": 172513,
+      "exit_code": 0
+    },
+    {
+      "name": "pipeline-10k-closure_e050_b8-ratio125",
+      "kind": "spire-pipeline",
+      "command": [
+        "--database",
+        "tqvector_bench_task144",
+        "--host",
+        "/home/peter/dev/ecaz/target/task144-pg18-socket",
+        "--port",
+        "28818",
+        "bench",
+        "spire-pipeline",
+        "--prefix",
+        "t144_10k_closure_e050_b8",
+        "--queries-limit",
+        "200",
+        "--sweep",
+        "8,16,32,64,96",
+        "--top-k",
+        "10",
+        "--include-query-metrics",
+        "--include-recall",
+        "--truth-corpus-file",
+        "data/staged-current/ec_real_10k_corpus.tsv",
+        "--truth-cache-file",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/truth-10k-k10.json",
+        "--include-production-read-profile",
+        "--query-metric-k",
+        "10",
+        "--session-guc",
+        "ec_spire.probe_distance_ratio=1.25",
+        "--log-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-10k-closure_e050_b8-ratio125.log",
+        "--stage-containment-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-10k-closure_e050_b8-ratio125.jsonl",
+        "--result-identity-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-10k-closure_e050_b8-ratio125.jsonl"
+      ],
+      "selected": true,
+      "tags": [
+        "pipeline",
+        "task144",
+        "10k",
+        "variant=closure_e050_b8",
+        "query=ratio125"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-10k-closure_e050_b8-ratio125.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-10k-closure_e050_b8-ratio125.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-10k-closure_e050_b8-ratio125.jsonl"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783281429018,
+      "finished_at_unix_ms": 1783281575809,
+      "duration_ms": 147566,
+      "exit_code": 0
+    },
+    {
+      "name": "pipeline-10k-closure_e050_b8-ratio200",
+      "kind": "spire-pipeline",
+      "command": [
+        "--database",
+        "tqvector_bench_task144",
+        "--host",
+        "/home/peter/dev/ecaz/target/task144-pg18-socket",
+        "--port",
+        "28818",
+        "bench",
+        "spire-pipeline",
+        "--prefix",
+        "t144_10k_closure_e050_b8",
+        "--queries-limit",
+        "200",
+        "--sweep",
+        "8,16,32,64,96",
+        "--top-k",
+        "10",
+        "--include-query-metrics",
+        "--include-recall",
+        "--truth-corpus-file",
+        "data/staged-current/ec_real_10k_corpus.tsv",
+        "--truth-cache-file",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/truth-10k-k10.json",
+        "--include-production-read-profile",
+        "--query-metric-k",
+        "10",
+        "--session-guc",
+        "ec_spire.probe_distance_ratio=2.0",
+        "--log-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-10k-closure_e050_b8-ratio200.log",
+        "--stage-containment-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-10k-closure_e050_b8-ratio200.jsonl",
+        "--result-identity-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-10k-closure_e050_b8-ratio200.jsonl"
+      ],
+      "selected": true,
+      "tags": [
+        "pipeline",
+        "task144",
+        "10k",
+        "variant=closure_e050_b8",
+        "query=ratio200"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-10k-closure_e050_b8-ratio200.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-10k-closure_e050_b8-ratio200.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-10k-closure_e050_b8-ratio200.jsonl"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783281575810,
+      "finished_at_unix_ms": 1783281730744,
+      "duration_ms": 155677,
+      "exit_code": 0
+    },
+    {
+      "name": "pipeline-10k-closure_e050_b8-ratio400",
+      "kind": "spire-pipeline",
+      "command": [
+        "--database",
+        "tqvector_bench_task144",
+        "--host",
+        "/home/peter/dev/ecaz/target/task144-pg18-socket",
+        "--port",
+        "28818",
+        "bench",
+        "spire-pipeline",
+        "--prefix",
+        "t144_10k_closure_e050_b8",
+        "--queries-limit",
+        "200",
+        "--sweep",
+        "8,16,32,64,96",
+        "--top-k",
+        "10",
+        "--include-query-metrics",
+        "--include-recall",
+        "--truth-corpus-file",
+        "data/staged-current/ec_real_10k_corpus.tsv",
+        "--truth-cache-file",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/truth-10k-k10.json",
+        "--include-production-read-profile",
+        "--query-metric-k",
+        "10",
+        "--session-guc",
+        "ec_spire.probe_distance_ratio=4.0",
+        "--log-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-10k-closure_e050_b8-ratio400.log",
+        "--stage-containment-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-10k-closure_e050_b8-ratio400.jsonl",
+        "--result-identity-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-10k-closure_e050_b8-ratio400.jsonl"
+      ],
+      "selected": true,
+      "tags": [
+        "pipeline",
+        "task144",
+        "10k",
+        "variant=closure_e050_b8",
+        "query=ratio400"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-10k-closure_e050_b8-ratio400.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-10k-closure_e050_b8-ratio400.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-10k-closure_e050_b8-ratio400.jsonl"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783281730744,
+      "finished_at_unix_ms": 1783281890719,
+      "duration_ms": 160887,
+      "exit_code": 0
+    },
+    {
+      "name": "pipeline-10k-closure_e050_b8-ratio800",
+      "kind": "spire-pipeline",
+      "command": [
+        "--database",
+        "tqvector_bench_task144",
+        "--host",
+        "/home/peter/dev/ecaz/target/task144-pg18-socket",
+        "--port",
+        "28818",
+        "bench",
+        "spire-pipeline",
+        "--prefix",
+        "t144_10k_closure_e050_b8",
+        "--queries-limit",
+        "200",
+        "--sweep",
+        "8,16,32,64,96",
+        "--top-k",
+        "10",
+        "--include-query-metrics",
+        "--include-recall",
+        "--truth-corpus-file",
+        "data/staged-current/ec_real_10k_corpus.tsv",
+        "--truth-cache-file",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/truth-10k-k10.json",
+        "--include-production-read-profile",
+        "--query-metric-k",
+        "10",
+        "--session-guc",
+        "ec_spire.probe_distance_ratio=8.0",
+        "--log-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-10k-closure_e050_b8-ratio800.log",
+        "--stage-containment-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-10k-closure_e050_b8-ratio800.jsonl",
+        "--result-identity-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-10k-closure_e050_b8-ratio800.jsonl"
+      ],
+      "selected": true,
+      "tags": [
+        "pipeline",
+        "task144",
+        "10k",
+        "variant=closure_e050_b8",
+        "query=ratio800"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-10k-closure_e050_b8-ratio800.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-10k-closure_e050_b8-ratio800.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-10k-closure_e050_b8-ratio800.jsonl"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783281890720,
+      "finished_at_unix_ms": 1783282063129,
+      "duration_ms": 173312,
+      "exit_code": 0
+    },
+    {
+      "name": "pipeline-10k-closure_e050_b8-adaptive",
+      "kind": "spire-pipeline",
+      "command": [
+        "--database",
+        "tqvector_bench_task144",
+        "--host",
+        "/home/peter/dev/ecaz/target/task144-pg18-socket",
+        "--port",
+        "28818",
+        "bench",
+        "spire-pipeline",
+        "--prefix",
+        "t144_10k_closure_e050_b8",
+        "--queries-limit",
+        "200",
+        "--sweep",
+        "8,16,32,64,96",
+        "--adaptive-nprobe",
+        "--top-k",
+        "10",
+        "--include-query-metrics",
+        "--include-recall",
+        "--truth-corpus-file",
+        "data/staged-current/ec_real_10k_corpus.tsv",
+        "--truth-cache-file",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/truth-10k-k10.json",
+        "--include-production-read-profile",
+        "--query-metric-k",
+        "10",
+        "--log-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-10k-closure_e050_b8-adaptive.log",
+        "--stage-containment-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-10k-closure_e050_b8-adaptive.jsonl",
+        "--result-identity-output",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-10k-closure_e050_b8-adaptive.jsonl"
+      ],
+      "selected": true,
+      "tags": [
+        "pipeline",
+        "task144",
+        "10k",
+        "variant=closure_e050_b8",
+        "query=adaptive"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-10k-closure_e050_b8-adaptive.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-10k-closure_e050_b8-adaptive.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-10k-closure_e050_b8-adaptive.jsonl"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783282063130,
+      "finished_at_unix_ms": 1783282221734,
+      "duration_ms": 159369,
+      "exit_code": 0
+    },
+    {
+      "name": "load-50k-single",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "task144",
+        "50k",
+        "variant=single"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/load-50k-single.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-50k-fixed_b2",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "task144",
+        "50k",
+        "variant=fixed_b2"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/load-50k-fixed_b2.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-50k-closure_e010_b8",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "task144",
+        "50k",
+        "variant=closure_e010_b8"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/load-50k-closure_e010_b8.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-50k-closure_e025_b8",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "task144",
+        "50k",
+        "variant=closure_e025_b8"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/load-50k-closure_e025_b8.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-50k-closure_e050_b8",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "task144",
+        "50k",
+        "variant=closure_e050_b8"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/load-50k-closure_e050_b8.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "truth-cache-50k-k10",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "truth-cache",
+        "recall",
+        "task144",
+        "50k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/truth-cache-50k-k10.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/truth-50k-k10.json"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-50k-single",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "task144",
+        "50k",
+        "variant=single"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/storage-50k-single.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-50k-fixed_b2",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "task144",
+        "50k",
+        "variant=fixed_b2"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/storage-50k-fixed_b2.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-50k-closure_e010_b8",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "task144",
+        "50k",
+        "variant=closure_e010_b8"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/storage-50k-closure_e010_b8.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-50k-closure_e025_b8",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "task144",
+        "50k",
+        "variant=closure_e025_b8"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/storage-50k-closure_e025_b8.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-50k-closure_e050_b8",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "task144",
+        "50k",
+        "variant=closure_e050_b8"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/storage-50k-closure_e050_b8.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-50k-single-fixed",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task144",
+        "50k",
+        "variant=single",
+        "query=fixed"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-50k-single-fixed.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-50k-single-fixed.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-50k-single-fixed.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-50k-single-ratio125",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task144",
+        "50k",
+        "variant=single",
+        "query=ratio125"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-50k-single-ratio125.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-50k-single-ratio125.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-50k-single-ratio125.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-50k-single-ratio200",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task144",
+        "50k",
+        "variant=single",
+        "query=ratio200"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-50k-single-ratio200.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-50k-single-ratio200.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-50k-single-ratio200.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-50k-single-ratio400",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task144",
+        "50k",
+        "variant=single",
+        "query=ratio400"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-50k-single-ratio400.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-50k-single-ratio400.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-50k-single-ratio400.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-50k-single-ratio800",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task144",
+        "50k",
+        "variant=single",
+        "query=ratio800"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-50k-single-ratio800.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-50k-single-ratio800.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-50k-single-ratio800.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-50k-single-adaptive",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task144",
+        "50k",
+        "variant=single",
+        "query=adaptive"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-50k-single-adaptive.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-50k-single-adaptive.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-50k-single-adaptive.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-50k-fixed_b2-fixed",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task144",
+        "50k",
+        "variant=fixed_b2",
+        "query=fixed"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-50k-fixed_b2-fixed.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-50k-fixed_b2-fixed.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-50k-fixed_b2-fixed.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-50k-fixed_b2-ratio125",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task144",
+        "50k",
+        "variant=fixed_b2",
+        "query=ratio125"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-50k-fixed_b2-ratio125.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-50k-fixed_b2-ratio125.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-50k-fixed_b2-ratio125.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-50k-fixed_b2-ratio200",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task144",
+        "50k",
+        "variant=fixed_b2",
+        "query=ratio200"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-50k-fixed_b2-ratio200.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-50k-fixed_b2-ratio200.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-50k-fixed_b2-ratio200.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-50k-fixed_b2-ratio400",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task144",
+        "50k",
+        "variant=fixed_b2",
+        "query=ratio400"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-50k-fixed_b2-ratio400.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-50k-fixed_b2-ratio400.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-50k-fixed_b2-ratio400.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-50k-fixed_b2-ratio800",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task144",
+        "50k",
+        "variant=fixed_b2",
+        "query=ratio800"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-50k-fixed_b2-ratio800.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-50k-fixed_b2-ratio800.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-50k-fixed_b2-ratio800.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-50k-fixed_b2-adaptive",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task144",
+        "50k",
+        "variant=fixed_b2",
+        "query=adaptive"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-50k-fixed_b2-adaptive.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-50k-fixed_b2-adaptive.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-50k-fixed_b2-adaptive.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-50k-closure_e010_b8-fixed",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task144",
+        "50k",
+        "variant=closure_e010_b8",
+        "query=fixed"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-50k-closure_e010_b8-fixed.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-50k-closure_e010_b8-fixed.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-50k-closure_e010_b8-fixed.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-50k-closure_e010_b8-ratio125",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task144",
+        "50k",
+        "variant=closure_e010_b8",
+        "query=ratio125"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-50k-closure_e010_b8-ratio125.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-50k-closure_e010_b8-ratio125.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-50k-closure_e010_b8-ratio125.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-50k-closure_e010_b8-ratio200",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task144",
+        "50k",
+        "variant=closure_e010_b8",
+        "query=ratio200"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-50k-closure_e010_b8-ratio200.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-50k-closure_e010_b8-ratio200.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-50k-closure_e010_b8-ratio200.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-50k-closure_e010_b8-ratio400",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task144",
+        "50k",
+        "variant=closure_e010_b8",
+        "query=ratio400"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-50k-closure_e010_b8-ratio400.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-50k-closure_e010_b8-ratio400.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-50k-closure_e010_b8-ratio400.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-50k-closure_e010_b8-ratio800",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task144",
+        "50k",
+        "variant=closure_e010_b8",
+        "query=ratio800"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-50k-closure_e010_b8-ratio800.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-50k-closure_e010_b8-ratio800.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-50k-closure_e010_b8-ratio800.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-50k-closure_e010_b8-adaptive",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task144",
+        "50k",
+        "variant=closure_e010_b8",
+        "query=adaptive"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-50k-closure_e010_b8-adaptive.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-50k-closure_e010_b8-adaptive.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-50k-closure_e010_b8-adaptive.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-50k-closure_e025_b8-fixed",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task144",
+        "50k",
+        "variant=closure_e025_b8",
+        "query=fixed"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-50k-closure_e025_b8-fixed.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-50k-closure_e025_b8-fixed.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-50k-closure_e025_b8-fixed.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-50k-closure_e025_b8-ratio125",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task144",
+        "50k",
+        "variant=closure_e025_b8",
+        "query=ratio125"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-50k-closure_e025_b8-ratio125.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-50k-closure_e025_b8-ratio125.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-50k-closure_e025_b8-ratio125.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-50k-closure_e025_b8-ratio200",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task144",
+        "50k",
+        "variant=closure_e025_b8",
+        "query=ratio200"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-50k-closure_e025_b8-ratio200.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-50k-closure_e025_b8-ratio200.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-50k-closure_e025_b8-ratio200.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-50k-closure_e025_b8-ratio400",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task144",
+        "50k",
+        "variant=closure_e025_b8",
+        "query=ratio400"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-50k-closure_e025_b8-ratio400.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-50k-closure_e025_b8-ratio400.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-50k-closure_e025_b8-ratio400.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-50k-closure_e025_b8-ratio800",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task144",
+        "50k",
+        "variant=closure_e025_b8",
+        "query=ratio800"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-50k-closure_e025_b8-ratio800.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-50k-closure_e025_b8-ratio800.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-50k-closure_e025_b8-ratio800.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-50k-closure_e025_b8-adaptive",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task144",
+        "50k",
+        "variant=closure_e025_b8",
+        "query=adaptive"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-50k-closure_e025_b8-adaptive.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-50k-closure_e025_b8-adaptive.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-50k-closure_e025_b8-adaptive.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-50k-closure_e050_b8-fixed",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task144",
+        "50k",
+        "variant=closure_e050_b8",
+        "query=fixed"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-50k-closure_e050_b8-fixed.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-50k-closure_e050_b8-fixed.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-50k-closure_e050_b8-fixed.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-50k-closure_e050_b8-ratio125",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task144",
+        "50k",
+        "variant=closure_e050_b8",
+        "query=ratio125"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-50k-closure_e050_b8-ratio125.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-50k-closure_e050_b8-ratio125.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-50k-closure_e050_b8-ratio125.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-50k-closure_e050_b8-ratio200",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task144",
+        "50k",
+        "variant=closure_e050_b8",
+        "query=ratio200"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-50k-closure_e050_b8-ratio200.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-50k-closure_e050_b8-ratio200.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-50k-closure_e050_b8-ratio200.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-50k-closure_e050_b8-ratio400",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task144",
+        "50k",
+        "variant=closure_e050_b8",
+        "query=ratio400"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-50k-closure_e050_b8-ratio400.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-50k-closure_e050_b8-ratio400.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-50k-closure_e050_b8-ratio400.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-50k-closure_e050_b8-ratio800",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task144",
+        "50k",
+        "variant=closure_e050_b8",
+        "query=ratio800"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-50k-closure_e050_b8-ratio800.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-50k-closure_e050_b8-ratio800.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-50k-closure_e050_b8-ratio800.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-50k-closure_e050_b8-adaptive",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task144",
+        "50k",
+        "variant=closure_e050_b8",
+        "query=adaptive"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-50k-closure_e050_b8-adaptive.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-50k-closure_e050_b8-adaptive.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-50k-closure_e050_b8-adaptive.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-100k-single",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "task144",
+        "100k",
+        "variant=single"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/load-100k-single.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-100k-fixed_b2",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "task144",
+        "100k",
+        "variant=fixed_b2"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/load-100k-fixed_b2.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-100k-closure_e010_b8",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "task144",
+        "100k",
+        "variant=closure_e010_b8"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/load-100k-closure_e010_b8.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-100k-closure_e025_b8",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "task144",
+        "100k",
+        "variant=closure_e025_b8"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/load-100k-closure_e025_b8.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-100k-closure_e050_b8",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "task144",
+        "100k",
+        "variant=closure_e050_b8"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/load-100k-closure_e050_b8.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "truth-cache-100k-k10",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "truth-cache",
+        "recall",
+        "task144",
+        "100k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/truth-cache-100k-k10.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/truth-100k-k10.json"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-100k-single",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "task144",
+        "100k",
+        "variant=single"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/storage-100k-single.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-100k-fixed_b2",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "task144",
+        "100k",
+        "variant=fixed_b2"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/storage-100k-fixed_b2.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-100k-closure_e010_b8",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "task144",
+        "100k",
+        "variant=closure_e010_b8"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/storage-100k-closure_e010_b8.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-100k-closure_e025_b8",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "task144",
+        "100k",
+        "variant=closure_e025_b8"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/storage-100k-closure_e025_b8.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-100k-closure_e050_b8",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "task144",
+        "100k",
+        "variant=closure_e050_b8"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/storage-100k-closure_e050_b8.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-100k-single-fixed",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task144",
+        "100k",
+        "variant=single",
+        "query=fixed"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-100k-single-fixed.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-100k-single-fixed.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-100k-single-fixed.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-100k-single-ratio125",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task144",
+        "100k",
+        "variant=single",
+        "query=ratio125"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-100k-single-ratio125.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-100k-single-ratio125.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-100k-single-ratio125.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-100k-single-ratio200",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task144",
+        "100k",
+        "variant=single",
+        "query=ratio200"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-100k-single-ratio200.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-100k-single-ratio200.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-100k-single-ratio200.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-100k-single-ratio400",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task144",
+        "100k",
+        "variant=single",
+        "query=ratio400"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-100k-single-ratio400.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-100k-single-ratio400.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-100k-single-ratio400.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-100k-single-ratio800",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task144",
+        "100k",
+        "variant=single",
+        "query=ratio800"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-100k-single-ratio800.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-100k-single-ratio800.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-100k-single-ratio800.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-100k-single-adaptive",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task144",
+        "100k",
+        "variant=single",
+        "query=adaptive"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-100k-single-adaptive.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-100k-single-adaptive.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-100k-single-adaptive.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-100k-fixed_b2-fixed",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task144",
+        "100k",
+        "variant=fixed_b2",
+        "query=fixed"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-100k-fixed_b2-fixed.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-100k-fixed_b2-fixed.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-100k-fixed_b2-fixed.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-100k-fixed_b2-ratio125",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task144",
+        "100k",
+        "variant=fixed_b2",
+        "query=ratio125"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-100k-fixed_b2-ratio125.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-100k-fixed_b2-ratio125.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-100k-fixed_b2-ratio125.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-100k-fixed_b2-ratio200",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task144",
+        "100k",
+        "variant=fixed_b2",
+        "query=ratio200"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-100k-fixed_b2-ratio200.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-100k-fixed_b2-ratio200.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-100k-fixed_b2-ratio200.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-100k-fixed_b2-ratio400",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task144",
+        "100k",
+        "variant=fixed_b2",
+        "query=ratio400"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-100k-fixed_b2-ratio400.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-100k-fixed_b2-ratio400.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-100k-fixed_b2-ratio400.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-100k-fixed_b2-ratio800",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task144",
+        "100k",
+        "variant=fixed_b2",
+        "query=ratio800"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-100k-fixed_b2-ratio800.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-100k-fixed_b2-ratio800.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-100k-fixed_b2-ratio800.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-100k-fixed_b2-adaptive",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task144",
+        "100k",
+        "variant=fixed_b2",
+        "query=adaptive"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-100k-fixed_b2-adaptive.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-100k-fixed_b2-adaptive.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-100k-fixed_b2-adaptive.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-100k-closure_e010_b8-fixed",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task144",
+        "100k",
+        "variant=closure_e010_b8",
+        "query=fixed"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-100k-closure_e010_b8-fixed.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-100k-closure_e010_b8-fixed.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-100k-closure_e010_b8-fixed.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-100k-closure_e010_b8-ratio125",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task144",
+        "100k",
+        "variant=closure_e010_b8",
+        "query=ratio125"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-100k-closure_e010_b8-ratio125.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-100k-closure_e010_b8-ratio125.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-100k-closure_e010_b8-ratio125.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-100k-closure_e010_b8-ratio200",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task144",
+        "100k",
+        "variant=closure_e010_b8",
+        "query=ratio200"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-100k-closure_e010_b8-ratio200.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-100k-closure_e010_b8-ratio200.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-100k-closure_e010_b8-ratio200.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-100k-closure_e010_b8-ratio400",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task144",
+        "100k",
+        "variant=closure_e010_b8",
+        "query=ratio400"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-100k-closure_e010_b8-ratio400.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-100k-closure_e010_b8-ratio400.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-100k-closure_e010_b8-ratio400.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-100k-closure_e010_b8-ratio800",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task144",
+        "100k",
+        "variant=closure_e010_b8",
+        "query=ratio800"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-100k-closure_e010_b8-ratio800.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-100k-closure_e010_b8-ratio800.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-100k-closure_e010_b8-ratio800.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-100k-closure_e010_b8-adaptive",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task144",
+        "100k",
+        "variant=closure_e010_b8",
+        "query=adaptive"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-100k-closure_e010_b8-adaptive.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-100k-closure_e010_b8-adaptive.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-100k-closure_e010_b8-adaptive.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-100k-closure_e025_b8-fixed",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task144",
+        "100k",
+        "variant=closure_e025_b8",
+        "query=fixed"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-100k-closure_e025_b8-fixed.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-100k-closure_e025_b8-fixed.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-100k-closure_e025_b8-fixed.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-100k-closure_e025_b8-ratio125",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task144",
+        "100k",
+        "variant=closure_e025_b8",
+        "query=ratio125"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-100k-closure_e025_b8-ratio125.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-100k-closure_e025_b8-ratio125.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-100k-closure_e025_b8-ratio125.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-100k-closure_e025_b8-ratio200",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task144",
+        "100k",
+        "variant=closure_e025_b8",
+        "query=ratio200"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-100k-closure_e025_b8-ratio200.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-100k-closure_e025_b8-ratio200.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-100k-closure_e025_b8-ratio200.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-100k-closure_e025_b8-ratio400",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task144",
+        "100k",
+        "variant=closure_e025_b8",
+        "query=ratio400"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-100k-closure_e025_b8-ratio400.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-100k-closure_e025_b8-ratio400.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-100k-closure_e025_b8-ratio400.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-100k-closure_e025_b8-ratio800",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task144",
+        "100k",
+        "variant=closure_e025_b8",
+        "query=ratio800"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-100k-closure_e025_b8-ratio800.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-100k-closure_e025_b8-ratio800.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-100k-closure_e025_b8-ratio800.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-100k-closure_e025_b8-adaptive",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task144",
+        "100k",
+        "variant=closure_e025_b8",
+        "query=adaptive"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-100k-closure_e025_b8-adaptive.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-100k-closure_e025_b8-adaptive.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-100k-closure_e025_b8-adaptive.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-100k-closure_e050_b8-fixed",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task144",
+        "100k",
+        "variant=closure_e050_b8",
+        "query=fixed"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-100k-closure_e050_b8-fixed.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-100k-closure_e050_b8-fixed.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-100k-closure_e050_b8-fixed.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-100k-closure_e050_b8-ratio125",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task144",
+        "100k",
+        "variant=closure_e050_b8",
+        "query=ratio125"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-100k-closure_e050_b8-ratio125.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-100k-closure_e050_b8-ratio125.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-100k-closure_e050_b8-ratio125.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-100k-closure_e050_b8-ratio200",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task144",
+        "100k",
+        "variant=closure_e050_b8",
+        "query=ratio200"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-100k-closure_e050_b8-ratio200.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-100k-closure_e050_b8-ratio200.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-100k-closure_e050_b8-ratio200.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-100k-closure_e050_b8-ratio400",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task144",
+        "100k",
+        "variant=closure_e050_b8",
+        "query=ratio400"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-100k-closure_e050_b8-ratio400.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-100k-closure_e050_b8-ratio400.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-100k-closure_e050_b8-ratio400.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-100k-closure_e050_b8-ratio800",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task144",
+        "100k",
+        "variant=closure_e050_b8",
+        "query=ratio800"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-100k-closure_e050_b8-ratio800.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-100k-closure_e050_b8-ratio800.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-100k-closure_e050_b8-ratio800.jsonl"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pipeline-100k-closure_e050_b8-adaptive",
+      "kind": "spire-pipeline",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "pipeline",
+        "task144",
+        "100k",
+        "variant=closure_e050_b8",
+        "query=adaptive"
+      ],
+      "expected_artifacts": [
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/pipeline-100k-closure_e050_b8-adaptive.log",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/stage-containment-100k-closure_e050_b8-adaptive.jsonl",
+        "reviews/task-144/009-release-matrix-10k-r2/artifacts/result-identity-100k-closure_e050_b8-adaptive.jsonl"
+      ],
+      "status": "skipped"
+    }
+  ]
+}

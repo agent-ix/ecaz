@@ -1,0 +1,15 @@
+2026-07-05 05:30:57.802 PDT [1970194] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-07-05 05:30:57.804 PDT [1970194] LOG:  listening on Unix socket "/home/peter/dev/ecaz/target/spire-local-multinode-sockets-task142-release-50k-n1024-b0/.s.PGSQL.39802"
+2026-07-05 05:30:57.811 PDT [1970200] LOG:  database system was shut down at 2026-07-05 05:30:56 PDT
+2026-07-05 05:30:57.815 PDT [1970194] LOG:  database system is ready to accept connections
+2026-07-05 05:35:57.087 PDT [1970198] LOG:  checkpoint starting: time
+2026-07-05 05:38:33.911 PDT [1970198] LOG:  checkpoint complete: wrote 2189 buffers (13.4%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 14 recycled; write=156.747 s, sync=0.042 s, total=156.825 s; sync files=154, longest=0.003 s, average=0.001 s; distance=226551 kB, estimate=226551 kB; lsn=0/1F9CEEC0, redo lsn=0/F492218
+2026-07-05 05:40:57.424 PDT [1970198] LOG:  checkpoint starting: time
+2026-07-05 05:42:40.095 PDT [1970194] LOG:  received fast shutdown request
+2026-07-05 05:42:40.101 PDT [1970194] LOG:  aborting any active transactions
+2026-07-05 05:42:40.102 PDT [1970194] LOG:  background worker "logical replication launcher" (PID 1970203) exited with exit code 1
+2026-07-05 05:42:40.167 PDT [1970198] LOG:  checkpoint complete: wrote 3430 buffers (20.9%), wrote 5 SLRU buffers; 0 WAL file(s) added, 0 removed, 16 recycled; write=102.684 s, sync=0.018 s, total=102.743 s; sync files=48, longest=0.003 s, average=0.001 s; distance=267739 kB, estimate=267739 kB; lsn=0/1FA2FE78, redo lsn=0/1FA08E68
+2026-07-05 05:42:40.167 PDT [1970198] LOG:  shutting down
+2026-07-05 05:42:40.168 PDT [1970198] LOG:  checkpoint starting: shutdown immediate
+2026-07-05 05:42:40.181 PDT [1970198] LOG:  checkpoint complete: wrote 0 buffers (0.0%), wrote 2 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.004 s, sync=0.001 s, total=0.014 s; sync files=1, longest=0.001 s, average=0.001 s; distance=156 kB, estimate=240980 kB; lsn=0/1FA2FEF0, redo lsn=0/1FA2FEF0
+2026-07-05 05:42:40.199 PDT [1970194] LOG:  database system is shut down

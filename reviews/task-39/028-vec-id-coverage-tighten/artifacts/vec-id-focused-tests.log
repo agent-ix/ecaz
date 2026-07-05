@@ -1,0 +1,25 @@
+
+running 20 tests
+test careful_spire::storage::tests::miri_assignment_row_rejects_unknown_flags_and_invalid_locator ... ok
+test careful_spire::storage::tests::miri_assignment_row_rejects_unknown_payload_format ... ok
+test careful_spire::storage::tests::miri_assignment_row_rejects_length_mismatch ... ok
+test careful_spire::storage::tests::miri_assignment_row_round_trips ... ok
+test careful_spire::storage::tests::miri_assignment_row_ref_prefix_decoder_borrows_payload ... ok
+test careful_spire::storage::tests::miri_assignment_row_prefix_decoder_returns_tail ... ok
+test careful_spire::storage::tests::miri_assignment_visibility_helpers_match_primary_and_delta_semantics ... ok
+test careful_spire::storage::tests::miri_delta_partition_object_rejects_delete_payloads ... ok
+test careful_spire::storage::tests::miri_delta_partition_object_rejects_invalid_delta_flags ... ok
+test careful_spire::storage::tests::miri_delta_partition_object_rejects_invalid_header_shape ... ok
+test careful_spire::storage::tests::miri_delta_partition_object_rejects_duplicate_vec_ids ... ok
+test careful_spire::storage::tests::miri_global_vec_id_max_payload_is_accepted ... ok
+test careful_spire::storage::tests::miri_global_vec_id_preserves_payload ... ok
+test careful_spire::storage::tests::miri_leaf_v2_empty_meta_rejects_segment_locator ... ok
+test careful_spire::storage::tests::miri_delta_partition_object_round_trips_insert_and_delete_rows ... ok
+test careful_spire::storage::tests::miri_local_vec_id_round_trips_sequence ... ok
+test careful_spire::storage::tests::miri_leaf_v2_segment_rows_roundtrip_through_columns ... ok
+test careful_spire::storage::tests::miri_top_graph_partition_object_round_trips_nodes ... ok
+test careful_spire::storage::tests::miri_vec_id_local_sequence_is_none_for_global ... ok
+test careful_spire::storage::tests::miri_vec_id_rejects_invalid_shapes ... ok
+
+test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 433 filtered out; finished in 0.00s
+

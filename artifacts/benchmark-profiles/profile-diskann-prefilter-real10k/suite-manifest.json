@@ -1,0 +1,209 @@
+{
+  "suite": "profile-diskann-prefilter-real10k",
+  "schema_version": 1,
+  "config": "crates/ecaz-cli/suites/profile-diskann-prefilter-real10k.json",
+  "config_sha256": "870b9f785925a2c7004ff92f5bf164fa6f32b53641d8c0b130a9749d1f9d7b65",
+  "dry_run": false,
+  "generated_at_unix_ms": 1778908568517,
+  "connection": {
+    "database": "postgres",
+    "host": "/Users/peter/.pgrx",
+    "port": 28818,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "load-diskann-real10k",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "diskann",
+        "real10k",
+        "prefilter"
+      ],
+      "expected_artifacts": [
+        "artifacts/benchmark-profiles/profile-diskann-prefilter-real10k/load-diskann-real10k.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-diskann-binary-real10k",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "recall",
+        "diskann",
+        "binary-sidecar",
+        "real10k",
+        "prefilter"
+      ],
+      "expected_artifacts": [
+        "artifacts/benchmark-profiles/profile-diskann-prefilter-real10k/recall-diskann-binary-real10k.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-diskann-binary-real10k",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "latency",
+        "--prefix",
+        "profile_r10k_dann_pf",
+        "--profile",
+        "ec_diskann",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "500",
+        "--sweep",
+        "64,128,200,400,800",
+        "--set-guc",
+        "ec_diskann.prefilter_kind=binary_sidecar",
+        "--set-guc-from-sweep",
+        "ec_diskann.rerank_budget",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--sample-backend-memory",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "artifacts/benchmark-profiles/profile-diskann-prefilter-real10k/latency-diskann-binary-real10k.log"
+      ],
+      "selected": true,
+      "tags": [
+        "latency",
+        "diskann",
+        "binary-sidecar",
+        "real10k",
+        "prefilter"
+      ],
+      "expected_artifacts": [
+        "artifacts/benchmark-profiles/profile-diskann-prefilter-real10k/latency-diskann-binary-real10k.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1778908568518,
+      "finished_at_unix_ms": 1778908573392,
+      "duration_ms": 4873,
+      "exit_code": 0
+    },
+    {
+      "name": "cost-split-diskann-binary-real10k",
+      "kind": "sql",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "cost-split",
+        "diskann",
+        "binary-sidecar",
+        "real10k",
+        "prefilter"
+      ],
+      "expected_artifacts": [
+        "artifacts/benchmark-profiles/profile-diskann-prefilter-real10k/cost-split-diskann-binary-real10k.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-diskann-grouped-real10k",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "recall",
+        "diskann",
+        "grouped-pq",
+        "real10k",
+        "prefilter"
+      ],
+      "expected_artifacts": [
+        "artifacts/benchmark-profiles/profile-diskann-prefilter-real10k/recall-diskann-grouped-real10k.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-diskann-grouped-real10k",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "latency",
+        "diskann",
+        "grouped-pq",
+        "real10k",
+        "prefilter"
+      ],
+      "expected_artifacts": [
+        "artifacts/benchmark-profiles/profile-diskann-prefilter-real10k/latency-diskann-grouped-real10k.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "compare-vectorscale-binary-real10k",
+      "kind": "compare-vectorscale",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "compare",
+        "vectorscale",
+        "diskann",
+        "binary-sidecar",
+        "real10k",
+        "prefilter"
+      ],
+      "expected_artifacts": [
+        "artifacts/benchmark-profiles/profile-diskann-prefilter-real10k/compare-vectorscale-binary-real10k.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "compare-vectorscale-grouped-real10k",
+      "kind": "compare-vectorscale",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "compare",
+        "vectorscale",
+        "diskann",
+        "grouped-pq",
+        "real10k",
+        "prefilter"
+      ],
+      "expected_artifacts": [
+        "artifacts/benchmark-profiles/profile-diskann-prefilter-real10k/compare-vectorscale-grouped-real10k.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-diskann-prefilter-real10k",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "diskann",
+        "real10k",
+        "prefilter"
+      ],
+      "expected_artifacts": [
+        "artifacts/benchmark-profiles/profile-diskann-prefilter-real10k/storage-diskann-prefilter-real10k.log"
+      ],
+      "status": "skipped"
+    }
+  ]
+}

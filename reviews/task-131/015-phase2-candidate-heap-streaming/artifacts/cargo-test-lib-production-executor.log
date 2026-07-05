@@ -1,0 +1,70 @@
+Script started on 2026-07-01 09:20:23-07:00 [<not executed on terminal>]
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.17s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-c2925dc8ee61e76b)
+
+running 42 tests
+test am::ec_spire::production_executor_state_tests::degraded_skip_report_lists_each_skipped_node ... ok
+test am::ec_spire::production_executor_state_tests::miri_prepared_transaction_intent_transitions_cannot_bypass_prepare_ack ... ok
+test am::ec_spire::production_executor_state_tests::degraded_skip_report_hints_retired_tuple_transport_upgrade ... ok
+test am::ec_spire::production_executor_state_tests::degraded_skip_report_hints_remote_payload_cap ... ok
+test am::ec_spire::production_executor_state_tests::explicit_heap_candidate_parameters_encode_binary_fields_as_hex ... ok
+test am::ec_spire::production_executor_state_tests::miri_production_executor_state_moves_ready_transport_to_candidate_receive ... ok
+test am::ec_spire::production_executor_state_tests::miri_remote_payload_caps_reject_oversized_rows_and_batches ... ok
+test am::ec_spire::production_executor_state_tests::miri_remote_typed_payload_fields_accept_valid_row_independent_payload ... ok
+test am::ec_spire::production_executor_state_tests::prepare_transaction_capacity_classifier_matches_postgres_errors ... ok
+test am::ec_spire::production_executor_state_tests::miri_remote_typed_payload_fields_reject_adversarial_shapes ... ok
+test am::ec_spire::production_executor_state_tests::prepared_transaction_gid_parser_extracts_reaper_identity ... ok
+test am::ec_spire::production_executor_state_tests::prepared_transaction_intent_state_validator_matches_catalog_contract ... ok
+test am::ec_spire::production_executor_state_tests::prepared_transaction_registration_warning_handles_unresolved_secret ... ok
+test am::ec_spire::production_executor_state_tests::production_executor_compact_merge_rejects_every_non_ready_state ... ok
+test am::ec_spire::production_executor_state_tests::production_executor_compact_merge_rejects_failed_receive ... ok
+test am::ec_spire::production_executor_state_tests::production_executor_compact_receive_request_build_isolates_missing_secret ... ok
+test am::ec_spire::production_executor_state_tests::production_executor_compact_receive_requests_use_dispatch_state ... ok
+test am::ec_spire::production_executor_state_tests::production_executor_compact_merge_uses_ready_candidate_batches ... ok
+test am::ec_spire::production_executor_state_tests::production_executor_degraded_missing_secret_skips_receive_request ... ok
+test am::ec_spire::production_executor_state_tests::production_executor_degraded_pre_dispatch_block_skips_node ... ok
+test am::ec_spire::production_executor_state_tests::production_executor_degraded_receive_failure_allows_ready_merge ... ok
+test am::ec_spire::production_executor_state_tests::production_executor_degraded_transport_failure_skips_node ... ok
+test am::ec_spire::production_executor_state_tests::production_executor_compact_receive_run_applies_adapter_failure ... ok
+test am::ec_spire::production_executor_state_tests::production_executor_heap_receive_requests_carry_tuple_payload_columns ... ok
+test am::ec_spire::production_executor_state_tests::production_executor_heap_tuple_transport_retired_matrix_actions ... ok
+test am::ec_spire::production_executor_state_tests::production_executor_local_cancel_clears_ready_candidate_batches ... ok
+test am::ec_spire::production_executor_state_tests::production_executor_receive_local_cancel_result_cancels_all_dispatches ... ok
+test am::ec_spire::production_executor_state_tests::production_executor_state_moves_ready_receive_to_remote_heap_resolution ... ok
+test am::ec_spire::production_executor_state_tests::production_executor_state_preserves_candidate_receive_failure_category ... ok
+test am::ec_spire::production_executor_state_tests::production_executor_state_preserves_transport_failure_category ... ok
+test am::ec_spire::production_executor_state_tests::production_executor_state_rejects_receive_without_ready_transport ... ok
+test am::ec_spire::production_executor_state_tests::production_executor_state_rejects_unplanned_transport_result ... ok
+test am::ec_spire::production_executor_state_tests::production_executor_strict_candidate_receive_preserves_12a_failure_categories ... ok
+test am::ec_spire::production_executor_state_tests::production_executor_transport_local_cancel_result_cancels_all_dispatches ... ok
+test am::ec_spire::production_executor_state_tests::production_executor_transport_local_statement_timeout_cancels_all_dispatches ... ok
+test am::ec_spire::production_executor_state_tests::production_fault_matrix_covers_required_categories ... ok
+test am::ec_spire::production_executor_state_tests::production_read_profile_row_preserves_metric_rollup ... ok
+test am::ec_spire::production_executor_state_tests::stage_e_fault_matrix_covers_fixture_cases ... ok
+test am::ec_spire::production_executor_state_tests::production_receive_adapters_reject_selected_pid_batches_before_connection ... ok
+test am::ec_spire::tests::production_executor_state_keeps_admitted_dispatches_dry ... ok
+test am::ec_spire::tests::production_executor_state_preserves_pre_dispatch_blocker ... ok
+       Using PgConfig("pg18") and `pg_config` from /home/peter/.pgrx/18.3/pgrx-install/bin/pg_config
+    Building extension with features pg_test pg18
+     Running command "/home/peter/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "build" "--lib" "--features" "pg_test pg18" "--no-default-features" "--message-format=json-render-diagnostics"
+   Compiling ring v0.17.14
+   Compiling rustls v0.23.40
+   Compiling rustls-webpki v0.103.13
+   Compiling tokio-rustls v0.26.4
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 22.92s
+  Installing extension
+     Copying control file to /home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/ecaz.control
+     Copying shared library to /home/peter/.pgrx/18.3/pgrx-install/lib/postgresql/ecaz.so
+  Discovered 952 SQL entities: 2 schemas (1 unique), 949 functions, 0 types, 0 enums, 1 sqls, 0 ords, 0 hashes, 0 aggregates, 0 triggers
+  Rebuilding pgrx_embed, in debug mode, for SQL generation with features pg_test pg18
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 21.20s
+     Writing SQL entities to /home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/ecaz--0.1.1.sql
+    Finished installing ecaz
+test tests::pg_test_ec_spire_production_executor_state_summary_is_dry ... ok
+
+test result: ok. 42 passed; 0 failed; 0 ignored; 0 measured; 2199 filtered out; finished in 45.73s
+
+
+Script done on 2026-07-01 09:21:08-07:00 [COMMAND_EXIT_CODE="0"]

@@ -1,0 +1,132 @@
+diff --git a/src/am/ec_hnsw/scan.rs b/src/am/ec_hnsw/scan.rs
+index 42223adaa..f652f7588 100644
+--- a/src/am/ec_hnsw/scan.rs
++++ b/src/am/ec_hnsw/scan.rs
+@@ -2457,14 +2457,11 @@ fn cached_graph_element(
+ }
+ 
+ #[cfg(feature = "pg18")]
+-unsafe fn cached_graph_element_from_buffer(
+-    opaque: *mut TqScanOpaque,
++fn cached_graph_element_from_buffer(
++    opaque_ref: &mut TqScanOpaque,
+     buffer: &PinnedBufferLockGuard<'_>,
+     element_tid: page::ItemPointer,
+ ) -> (Arc<CachedGraphElement>, LoadedElementState) {
+-    // SAFETY: callers pass the current scan opaque pointer; it remains live for
+-    // the duration of buffered graph tuple loading.
+-    let opaque_ref = scan_opaque_mut(opaque);
+     if !opaque_ref.graph_element_cache.is_null() {
+         if let Some(element) = graph_element_cache_mut(opaque_ref)
+             .get(&element_tid)
+@@ -2981,32 +2978,25 @@ fn score_budgeted_grouped_traversal_candidates(
+         .collect()
+ }
+ 
+-unsafe fn score_grouped_candidate_context(
++fn score_grouped_candidate_context(
+     index_relation: pg_sys::Relation,
+-    opaque: *mut TqScanOpaque,
++    opaque: &mut TqScanOpaque,
+     grouped: GroupedScoreContext<'_>,
+     traversal_layer: u8,
+ ) -> f32 {
+-    // SAFETY: callers pass the current scan opaque pointer; it remains live
+-    // while dispatching grouped traversal scoring.
+-    let opaque_ref = scan_opaque_ref(opaque);
+     let exact_layer =
+-        grouped_exact_traversal_full_candidate_scoring_for_layer(opaque_ref, traversal_layer);
+-    let binary_score = grouped_binary_traversal_score_enabled(opaque_ref);
++        grouped_exact_traversal_full_candidate_scoring_for_layer(opaque, traversal_layer);
++    let binary_score = grouped_binary_traversal_score_enabled(opaque);
+     if exact_layer {
+-        return score_grouped_candidate_context_exact(
+-            index_relation,
+-            scan_opaque_mut(opaque),
+-            grouped,
+-        );
++        return score_grouped_candidate_context_exact(index_relation, opaque, grouped);
+     }
+ 
+     let _ = index_relation;
+     if binary_score {
+-        return score_grouped_candidate_context_binary(opaque_ref, grouped);
++        return score_grouped_candidate_context_binary(opaque, grouped);
+     }
+ 
+-    score_grouped_candidate_context_approx(scan_opaque_mut(opaque), grouped)
++    score_grouped_candidate_context_approx(opaque, grouped)
+ }
+ 
+ unsafe fn score_cached_graph_element_dispatch(
+@@ -3025,11 +3015,12 @@ unsafe fn score_cached_graph_element_dispatch(
+         CandidateScoreDispatch::Exact(loaded_state) => unsafe {
+             exact_score_cached_graph_element(index_relation, opaque, element.tid, loaded_state)
+         },
+-        // SAFETY: grouped scoring uses the live index relation and scan opaque
+-        // pointer for the cached grouped context.
+-        CandidateScoreDispatch::Grouped(grouped) => unsafe {
+-            score_grouped_candidate_context(index_relation, opaque, grouped, traversal_layer)
+-        },
++        CandidateScoreDispatch::Grouped(grouped) => score_grouped_candidate_context(
++            index_relation,
++            scan_opaque_mut(opaque),
++            grouped,
++            traversal_layer,
++        ),
+     }
+ }
+ 
+@@ -3173,9 +3164,8 @@ unsafe fn cached_graph_element_with_prefetch(
+     if let Some(prefetched_buffers) = prefetched_buffers {
+         if let Some(buffer) = prefetched_buffers.get(&element_tid.block_number) {
+             let buffer = buffer.lock(pg_sys::BUFFER_LOCK_SHARE as i32);
+-            // SAFETY: the prefetched buffer is pinned and share-locked for the
+-            // target block while the graph element is decoded.
+-            let loaded = unsafe { cached_graph_element_from_buffer(opaque, &buffer, element_tid) };
++            let loaded =
++                cached_graph_element_from_buffer(scan_opaque_mut(opaque), &buffer, element_tid);
+             return loaded;
+         }
+     }
+@@ -3269,16 +3259,12 @@ where
+                                 approx_score,
+                             });
+                         } else {
+-                            // SAFETY: `grouped` belongs to this candidate and
+-                            // exact scoring uses the live relation/opaque pair.
+-                            let score = unsafe {
+-                                score_grouped_candidate_context(
+-                                    index_relation,
+-                                    opaque,
+-                                    grouped,
+-                                    layer,
+-                                )
+-                            };
++                            let score = score_grouped_candidate_context(
++                                index_relation,
++                                scan_opaque_mut(opaque),
++                                grouped,
++                                layer,
++                            );
+                             candidates.push(search::BeamCandidate::with_source(
+                                 neighbor.tid,
+                                 score,
+@@ -3427,11 +3413,12 @@ where
+                         ) {
+                         candidate.approx_score
+                     } else {
+-                        // SAFETY: `grouped` belongs to this candidate and
+-                        // exact scoring uses the live relation/opaque pair.
+-                        unsafe {
+-                            score_grouped_candidate_context(index_relation, opaque, grouped, layer)
+-                        }
++                        score_grouped_candidate_context(
++                            index_relation,
++                            scan_opaque_mut(opaque),
++                            grouped,
++                            layer,
++                        )
+                     };
+                     candidates.push(search::BeamCandidate::with_source(
+                         candidate.element.tid,

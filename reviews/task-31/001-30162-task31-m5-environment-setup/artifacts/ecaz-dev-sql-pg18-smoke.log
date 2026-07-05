@@ -1,0 +1,10 @@
+ server_version  
+-----------------
+ 18.3 (Homebrew)
+(1 row)
+
+ extname | extversion 
+---------+------------
+ ecaz    | 0.1.1
+(1 row)
+

@@ -1,0 +1,31 @@
+Script started on 2026-05-18 13:24:29-07:00 [<not executed on terminal>]
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.18s
+     Running unittests src/lib.rs (target/miri/x86_64-unknown-linux-gnu/debug/deps/ecaz-76140ec678fb61eb)
+warning: function `fwht_in_place_scalar_reference` is never used
+  --> src/quant/hadamard.rs:42:8
+   |
+42 | pub fn fwht_in_place_scalar_reference(values: &mut [f32]) {
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `fwht_in_place_avx2_for_test` is never used
+  --> src/quant/hadamard.rs:47:8
+   |
+47 | pub fn fwht_in_place_avx2_for_test(values: &mut [f32]) -> bool {
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+
+running 7 tests
+test am::ec_spire::storage::tests::miri_assignment_row_prefix_decoder_returns_tail ... ok
+test am::ec_spire::storage::tests::miri_assignment_row_ref_prefix_decoder_borrows_payload ... ok
+test am::ec_spire::storage::tests::miri_assignment_row_rejects_length_mismatch ... ok
+test am::ec_spire::storage::tests::miri_assignment_row_rejects_unknown_flags_and_invalid_locator ... ok
+test am::ec_spire::storage::tests::miri_assignment_row_rejects_unknown_payload_format ... ok
+test am::ec_spire::storage::tests::miri_assignment_row_round_trips ... ok
+test am::ec_spire::storage::tests::miri_assignment_visibility_helpers_match_primary_and_delta_semantics ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 1790 filtered out; finished in 11.00s
+
+
+Script done on 2026-05-18 13:25:19-07:00 [COMMAND_EXIT_CODE="0"]

@@ -1,0 +1,146 @@
+Script started on 2026-05-19 00:24:46-07:00 [<not executed on terminal>]
+[1mdiff --git a/src/am/ec_spire/build/drafts.rs b/src/am/ec_spire/build/drafts.rs[m
+[1mindex e086540a..b06e46fd 100644[m
+[1m--- a/src/am/ec_spire/build/drafts.rs[m
+[1m+++ b/src/am/ec_spire/build/drafts.rs[m
+[36m@@ -218,6 +218,7 @@[m [munsafe fn publish_relation_partitioned_single_level_build([m
+         return Ok(0);[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: reads PostgreSQL backend-local current timestamp state.[m
+     let (published_at_micros, retain_until_micros) = unsafe { current_epoch_publish_times()? };[m
+     let epoch_manifest = SpireEpochManifest {[m
+         epoch: SPIRE_INITIAL_EPOCH,[m
+[36m@@ -283,6 +284,8 @@[m [munsafe fn publish_relation_partitioned_single_level_build([m
+         leaf_assignments_by_centroid[centroid_index].push(placement.row);[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: index_relation is a live SPIRE index relation and local_store_config[m
+[32m+[m[32m    // was derived for this build publish; the store opens with row-exclusive lock.[m
+     let mut store = unsafe {[m
+         SpireRelationObjectStoreSet::for_index_relation_and_config([m
+             index_relation,[m
+[36m@@ -308,6 +311,8 @@[m [munsafe fn publish_relation_partitioned_single_level_build([m
+     let placement_directory =[m
+         SpirePlacementDirectory::from_entries(SPIRE_INITIAL_EPOCH, placements)?;[m
+     let placement_evidence =[m
+[32m+[m[32m        // SAFETY: placement entries were just written for this live index[m
+[32m+[m[32m        // relation and are valid to append to the relation-backed directory.[m
+         unsafe { write_placement_entries_to_relation(index_relation, &placement_directory)? };[m
+     let object_manifest = object_manifest_from_placement_writes([m
+         SPIRE_INITIAL_EPOCH,[m
+[36m@@ -324,8 +329,12 @@[m [munsafe fn publish_relation_partitioned_single_level_build([m
+         next_local_vec_seq: local_vec_id_allocator.next_local_vec_seq(),[m
+     };[m
+     let manifests = encode_manifest_bundle_for_publish(input.clone())?;[m
+[32m+[m[32m    // SAFETY: the encoded manifest bundle belongs to this initial publish for[m
+[32m+[m[32m    // the live SPIRE index relation.[m
+     let locators = unsafe { write_manifest_bundle_to_relation(index_relation, &manifests)? };[m
+     let root_control = root_control_state_for_publish(input, locators)?;[m
+[32m+[m[32m    // SAFETY: initial publish owns initialization of the live index relation's[m
+[32m+[m[32m    // root/control page after all manifest locators are written.[m
+     unsafe { page::initialize_root_control_page(index_relation, root_control) };[m
+     Ok(state.scanned_tuples)[m
+ }[m
+[36m@@ -365,6 +374,7 @@[m [munsafe fn publish_relation_recursive_routing_build([m
+         return Ok(0);[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: reads PostgreSQL backend-local current timestamp state.[m
+     let (published_at_micros, retain_until_micros) = unsafe { current_epoch_publish_times()? };[m
+     let centroid_plan = state.train_centroid_plan()?;[m
+     let mut pid_allocator = SpirePidAllocator::default();[m
+[36m@@ -388,6 +398,8 @@[m [munsafe fn publish_relation_recursive_routing_build([m
+         &mut pid_allocator,[m
+         &mut local_vec_id_allocator,[m
+     )?;[m
+[32m+[m[32m    // SAFETY: index_relation is a live SPIRE index relation and local_store_config[m
+[32m+[m[32m    // was derived for this recursive build publish.[m
+     let mut store = unsafe {[m
+         SpireRelationObjectStoreSet::for_index_relation_and_config([m
+             index_relation,[m
+[36m@@ -427,6 +439,8 @@[m [munsafe fn publish_relation_recursive_routing_build([m
+             draft.next_pid, expected_next_pid[m
+         ));[m
+     }[m
+[32m+[m[32m    // SAFETY: draft, local-store config, and sequence state were built from the[m
+[32m+[m[32m    // same live relation build state and are ready for relation-backed publish.[m
+     unsafe {[m
+         publish_relation_recursive_routing_epoch_draft([m
+             index_relation,[m
+[36m@@ -439,6 +453,7 @@[m [munsafe fn publish_relation_recursive_routing_build([m
+ }[m
+ [m
+ pub(super) unsafe fn current_epoch_publish_times() -> Result<(i64, i64), String> {[m
+[32m+[m[32m    // SAFETY: reads PostgreSQL backend-local current timestamp state.[m
+     let published_at_micros = unsafe { pg_sys::GetCurrentTimestamp() };[m
+     let retention_micros = i64::from(SPIRE_MIN_EPOCH_RETENTION_SECS)[m
+         .checked_mul(MICROS_PER_SECOND)[m
+[36m@@ -460,16 +475,22 @@[m [mpub(super) unsafe fn build_spire_index_tuple([m
+     if values.is_null() || isnull.is_null() {[m
+         pgrx::error!("ec_spire {context} received null tuple value arrays");[m
+     }[m
+[32m+[m[32m    // SAFETY: caller supplied non-null PostgreSQL values/isnull arrays and the[m
+[32m+[m[32m    // indexed key column is at offset 0 for SPIRE index tuples.[m
+     if unsafe { *isnull } {[m
+         pgrx::error!("ec_spire does not support NULL indexed values");[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: values is non-null and points at the indexed key datum.[m
+     let datum = unsafe { *values };[m
+     if datum.is_null() {[m
+         pgrx::error!("ec_spire {context} received a null indexed datum");[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: datum is a non-null varlena Datum for the indexed vector column.[m
+     let bytes = unsafe { detoasted_varlena_bytes(datum, "indexed vector column") };[m
+[32m+[m[32m    // SAFETY: values/isnull arrays and tuple_layout come from the same validated[m
+[32m+[m[32m    // index tuple layout for this build or insert callback.[m
+     let vec_id_source_identity = unsafe {[m
+         build_source_identity_from_tuple_values(values, isnull, tuple_layout.source_identity, context)[m
+     };[m
+[36m@@ -505,16 +526,24 @@[m [munsafe fn build_source_identity_from_tuple_values([m
+         return SpireVecIdSourceIdentity::AllocateLocal;[m
+     };[m
+     let offset = source_identity.index_attr_offset;[m
+[32m+[m[32m    // SAFETY: source_identity offset was resolved from IndexInfo and lies within[m
+[32m+[m[32m    // the non-null callback isnull array for the indexed tuple.[m
+     if unsafe { *isnull.add(offset) } {[m
+         pgrx::error!("ec_spire {context} source_identity INCLUDE column must not be NULL");[m
+     }[m
+[32m+[m[32m    // SAFETY: source_identity offset was resolved from IndexInfo and lies within[m
+[32m+[m[32m    // the non-null callback values array for the indexed tuple.[m
+     let datum = unsafe { *values.add(offset) };[m
+     if datum.is_null() {[m
+         pgrx::error!("ec_spire {context} received a null source_identity datum");[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: source_identity datum kind was resolved from the INCLUDE column[m
+[32m+[m[32m    // type; each branch decodes the non-null datum without taking ownership.[m
+     let payload = match source_identity.datum_kind {[m
+         SpireSourceIdentityDatumKind::Uuid => unsafe { uuid_source_identity_payload(datum) },[m
+[32m+[m[32m        // SAFETY: the non-null datum is from a bytea(16)-compatible[m
+[32m+[m[32m        // source_identity INCLUDE column.[m
+         SpireSourceIdentityDatumKind::Bytea16 => unsafe {[m
+             let bytes = detoasted_varlena_bytes(datum, "source_identity INCLUDE column");[m
+             <[u8; SPIRE_STABLE_GLOBAL_SOURCE_ID_PAYLOAD_BYTES]>::try_from(bytes.as_slice())[m
+[36m@@ -533,6 +562,8 @@[m [munsafe fn build_source_identity_from_tuple_values([m
+ unsafe fn uuid_source_identity_payload([m
+     datum: pg_sys::Datum,[m
+ ) -> [u8; SPIRE_STABLE_GLOBAL_SOURCE_ID_PAYLOAD_BYTES] {[m
+[32m+[m[32m    // SAFETY: caller supplies a non-null UUID Datum for the source_identity[m
+[32m+[m[32m    // INCLUDE column.[m
+     unsafe { with_uuid_payload_bytes(datum, |bytes| *bytes) }[m
+ }[m
+ [m
+[36m@@ -540,6 +571,8 @@[m [munsafe fn with_uuid_payload_bytes<R>([m
+     datum: pg_sys::Datum,[m
+     f: impl for<'a> FnOnce(&'a [u8; SPIRE_STABLE_GLOBAL_SOURCE_ID_PAYLOAD_BYTES]) -> R,[m
+ ) -> R {[m
+[32m+[m[32m    // SAFETY: PostgreSQL UUID datums are fixed 16-byte payloads; caller already[m
+[32m+[m[32m    // verified this Datum came from a non-null UUID source_identity column.[m
+     let bytes = unsafe {[m
+         std::slice::from_raw_parts([m
+             datum.cast_mut_ptr::<u8>(),[m
+
+Script done on 2026-05-19 00:24:46-07:00 [COMMAND_EXIT_CODE="0"]

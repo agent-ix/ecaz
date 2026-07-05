@@ -1,0 +1,83 @@
+Script started on 2026-06-09 17:23:16-07:00 [<not executed on terminal>]
+src/am/ec_spire/scan/candidates.rs
+101:        SpirePreparedAssignmentScorer::prepare(payload_format, query_vector.len(), query_vector)?;
+196:    let scorer = SpirePreparedAssignmentScorer::prepare(
+414:    let scorer = SpirePreparedAssignmentScorer::prepare(
+516:    let scorer = SpirePreparedAssignmentScorer::prepare(
+688:    let scorer = SpirePreparedAssignmentScorer::prepare(
+907:    let scorer = SpirePreparedAssignmentScorer::prepare(
+1481:    scorer: &SpirePreparedAssignmentScorer,
+1548:    scorer: &SpirePreparedAssignmentScorer,
+1585:    scorer: &SpirePreparedAssignmentScorer,
+1676:        scorer: &SpirePreparedAssignmentScorer,
+1702:    scorer: &SpirePreparedAssignmentScorer,
+1720:    scorer: &SpirePreparedAssignmentScorer,
+1791:    scorer: &SpirePreparedAssignmentScorer,
+1802:    scorer: &SpirePreparedAssignmentScorer,
+1811:    scorer: &SpirePreparedAssignmentScorer,
+1898:    scorer: &SpirePreparedAssignmentScorer,
+1938:    scorer: &SpirePreparedAssignmentScorer,
+2207:    scorer: &SpirePreparedAssignmentScorer,
+2268:    scorer: &SpirePreparedAssignmentScorer,
+2297:    scorer: &SpirePreparedAssignmentScorer,
+2333:    scorer: &SpirePreparedAssignmentScorer,
+2410:                CandidatePayload::new(payload, CandidateMeta::Gamma(*gamma)),
+2510:    scorer: &SpirePreparedAssignmentScorer,
+2599:    scorer: &SpirePreparedAssignmentScorer,
+2689:    scorer: &SpirePreparedAssignmentScorer,
+2705:        CandidatePayload::new(encoded_payload, CandidateMeta::Gamma(gamma)),
+2710:    scorer: &SpirePreparedAssignmentScorer,
+2749:            CandidatePayload::new(payload, CandidateMeta::Gamma(*gamma)),
+2757:    scorer: &SpirePreparedAssignmentScorer,
+2774:        CandidatePayload::new(encoded_payload, CandidateMeta::Gamma(gamma)),
+2785:    scorer: &SpirePreparedAssignmentScorer,
+2889:    scorer: &SpirePreparedAssignmentScorer,
+3015:    scorer: &SpirePreparedAssignmentScorer,
+
+src/am/ec_spire/quantizer/mod.rs
+10:    record_block_scalar_score_for, score_turboquant_no_qjl_4bit_batch_for, CandidateBatch,
+51:pub(super) enum SpirePreparedAssignmentScorer {
+57:        no_qjl_4bit_lut: Option<PreparedLutNoQjl4BitQuery>,
+81:impl SpirePreparedAssignmentScorer {
+97:                    crate::DEFAULT_QUANT_BITS,
+101:                let no_qjl_4bit_lut = (quantizer.exact_score_mode()
+109:                    no_qjl_4bit_lut,
+116:                    crate::DEFAULT_QUANT_BITS,
+213:                no_qjl_4bit_lut,
+217:                if let Some(prepared_lut) = no_qjl_4bit_lut {
+226:                    Ok(quantizer.score_ip_from_parts(prepared, gamma, encoded_payload))
+260:                no_qjl_4bit_lut,
+265:                    if let Some(prepared_lut) = no_qjl_4bit_lut {
+269:                        quantizer.score_ip_from_parts(prepared, 0.0, payload)
+294:            } => quantizer.score_ip_from_parts(prepared, 0.0, encoded_payload),
+324:    pub(super) fn score_batch_ip(
+355:                no_qjl_4bit_lut,
+359:                    if let Some(prepared_lut) = no_qjl_4bit_lut {
+368:                                CandidatePayload::new(payload, CandidateMeta::Gamma(*gamma)),
+371:                        return score_turboquant_no_qjl_4bit_batch_for(
+387:                    *out_score = quantizer.score_ip_from_parts(prepared, *gamma, payload);
+389:                if no_qjl_4bit_lut.is_some() {
+414:    pub(super) fn score_candidate_batch_ip<Id>(
+432:                no_qjl_4bit_lut,
+443:                    if let Some(prepared_lut) = no_qjl_4bit_lut {
+444:                        return score_turboquant_no_qjl_4bit_batch_for(
+461:                        CandidateMeta::Gamma(gamma) => gamma,
+462:                        CandidateMeta::GammaAndResidualSigns { gamma, .. } => gamma,
+464:                    *out_score = quantizer.score_ip_from_parts(prepared, gamma, payload.code);
+466:                if no_qjl_4bit_lut.is_some() {
+482:                        CandidateMeta::Gamma(gamma) => gamma,
+483:                        CandidateMeta::GammaAndResidualSigns { gamma, .. } => gamma,
+495:    type PreparedQuery = SpirePreparedAssignmentScorer;
+513:                bits: crate::DEFAULT_QUANT_BITS,
+539:        SpirePreparedAssignmentScorer::prepare(self.payload_format, self.dimensions, query)
+552:            CandidateMeta::Gamma(gamma) => gamma,
+553:            CandidateMeta::GammaAndResidualSigns { gamma, .. } => gamma,
+569:            CandidateMeta::Gamma(gamma) => gamma,
+570:            CandidateMeta::GammaAndResidualSigns { gamma, .. } => gamma,
+589:        prepared_query.score_candidate_batch_ip(batch, out_scores)
+609:                crate::DEFAULT_QUANT_BITS,
+621:                crate::DEFAULT_QUANT_BITS,
+706:            payload_len(dimensions, crate::DEFAULT_QUANT_BITS) - size_of::<f32>()
+708:        SpireAssignmentPayloadFormat::RaBitQ => code_len_for(dimensions, crate::DEFAULT_QUANT_BITS)
+
+Script done on 2026-06-09 17:23:16-07:00 [COMMAND_EXIT_CODE="0"]

@@ -1,0 +1,25 @@
+LOAD
+          captured_at          |                                            postgres_version                                             | ecaz_build_profile
+-------------------------------+---------------------------------------------------------------------------------------------------------+--------------------
+ 2026-06-25 15:58:11.698101-07 | PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit | release
+(1 row)
+
+               relname
+-------------------------------------
+ t121_s3_100k_b4_tr50_f8_b64_corpus
+ t121_s3_100k_b4_tr50_f8_b64_idx
+ t121_s3_100k_b4_tr50_f8_b64_queries
+(3 rows)
+
+                          name                           | setting
+---------------------------------------------------------+---------
+ ec_spire.leaf_block_pruning_global_probe_blocks         | 0
+ ec_spire.leaf_block_pruning_max_blocks_per_leaf         | 0
+ ec_spire.leaf_block_pruning_max_global_blocks           | 0
+ ec_spire.leaf_block_pruning_route_prior_weight          | 0
+ ec_spire.leaf_block_pruning_sample_rows_per_block       | 0
+ ec_spire.leaf_block_pruning_sample_summary_prior_weight | 0.8
+ ec_spire.leaf_block_pruning_summary_radius_weight       | 1
+ ec_spire.leaf_block_rows                                | 0
+ ec_spire.leaf_block_summary_representatives             | 2
+(9 rows)

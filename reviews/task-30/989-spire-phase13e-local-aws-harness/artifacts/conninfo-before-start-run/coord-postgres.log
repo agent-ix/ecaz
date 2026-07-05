@@ -1,0 +1,18 @@
+2026-05-26 10:01:27.186 PDT [2396893] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-05-26 10:01:27.188 PDT [2396893] LOG:  listening on Unix socket "/home/peter/dev/ecaz/target/spire-phase13e-aws-local-sockets-20260526T170121Z/.s.PGSQL.39700"
+2026-05-26 10:01:27.196 PDT [2396899] LOG:  database system was shut down at 2026-05-26 10:01:22 PDT
+2026-05-26 10:01:27.205 PDT [2396893] LOG:  database system is ready to accept connections
+2026-05-26 10:02:27.312 PDT [2397628] LOG:  skipping vacuum of "ec_spire_aws_synth_10k_corpus" --- lock not available
+2026-05-26 10:02:57.324 PDT [2397921] LOG:  skipping vacuum of "ec_spire_aws_synth_10k_corpus" --- lock not available
+2026-05-26 10:03:57.415 PDT [2398546] LOG:  skipping vacuum of "ec_spire_aws_synth_10k_corpus" --- lock not available
+2026-05-26 10:06:27.909 PDT [2396897] LOG:  checkpoint starting: time
+2026-05-26 10:06:43.132 PDT [2400990] LOG:  could not send data to client: Broken pipe
+2026-05-26 10:06:43.132 PDT [2400990] FATAL:  connection to client lost
+2026-05-26 10:06:43.152 PDT [2396893] LOG:  received fast shutdown request
+2026-05-26 10:06:43.155 PDT [2396893] LOG:  aborting any active transactions
+2026-05-26 10:06:43.156 PDT [2396893] LOG:  background worker "logical replication launcher" (PID 2396902) exited with exit code 1
+2026-05-26 10:06:43.266 PDT [2396897] LOG:  checkpoint complete: wrote 6016 buffers (36.7%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 9 recycled; write=15.275 s, sync=0.055 s, total=15.358 s; sync files=163, longest=0.007 s, average=0.001 s; distance=148882 kB, estimate=148882 kB; lsn=0/A8BB2E0, redo lsn=0/A8B8E18
+2026-05-26 10:06:43.266 PDT [2396897] LOG:  shutting down
+2026-05-26 10:06:43.268 PDT [2396897] LOG:  checkpoint starting: shutdown immediate
+2026-05-26 10:06:43.281 PDT [2396897] LOG:  checkpoint complete: wrote 1 buffers (0.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.002 s, sync=0.003 s, total=0.015 s; sync files=2, longest=0.002 s, average=0.002 s; distance=9 kB, estimate=133994 kB; lsn=0/A8BB358, redo lsn=0/A8BB358
+2026-05-26 10:06:43.299 PDT [2396893] LOG:  database system is shut down

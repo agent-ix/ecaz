@@ -1,0 +1,5687 @@
+{
+  "outcomes": [
+    {
+      "scenario": "Baseline",
+      "summary": "Success",
+      "log_path": "log/baseline.log",
+      "diff_path": null,
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 3.291055875,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 1.967057417,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:23:5: replace align_up -> usize with 0",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "align_up",
+            "return_type": "-> usize",
+            "span": {
+              "start": {
+                "line": 22,
+                "column": 1
+              },
+              "end": {
+                "line": 29,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 23,
+              "column": 5
+            },
+            "end": {
+              "line": 28,
+              "column": 6
+            }
+          },
+          "replacement": "0",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_23_col_5.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_23_col_5.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.828204041,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 1.942797917,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:23:5: replace align_up -> usize with 1",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "align_up",
+            "return_type": "-> usize",
+            "span": {
+              "start": {
+                "line": 22,
+                "column": 1
+              },
+              "end": {
+                "line": 29,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 23,
+              "column": 5
+            },
+            "end": {
+              "line": 28,
+              "column": 6
+            }
+          },
+          "replacement": "1",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_23_col_5_001.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_23_col_5_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.818347792,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 1.9522065419999999,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:23:27: replace % with + in align_up",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "align_up",
+            "return_type": "-> usize",
+            "span": {
+              "start": {
+                "line": 22,
+                "column": 1
+              },
+              "end": {
+                "line": 29,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 23,
+              "column": 27
+            },
+            "end": {
+              "line": 23,
+              "column": 28
+            }
+          },
+          "replacement": "+",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_23_col_27_001.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_23_col_27_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.421282375,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:24:18: replace == with != in align_up",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "align_up",
+            "return_type": "-> usize",
+            "span": {
+              "start": {
+                "line": 22,
+                "column": 1
+              },
+              "end": {
+                "line": 29,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 24,
+              "column": 18
+            },
+            "end": {
+              "line": 24,
+              "column": 20
+            }
+          },
+          "replacement": "!=",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_24_col_18.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_24_col_18.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.812789833,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 1.9821847080000001,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:23:27: replace % with / in align_up",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "align_up",
+            "return_type": "-> usize",
+            "span": {
+              "start": {
+                "line": 22,
+                "column": 1
+              },
+              "end": {
+                "line": 29,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 23,
+              "column": 27
+            },
+            "end": {
+              "line": 23,
+              "column": 28
+            }
+          },
+          "replacement": "/",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_23_col_27.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_23_col_27.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 3.367378875,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 1.9261490000000001,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:27:15: replace + with - in align_up",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "align_up",
+            "return_type": "-> usize",
+            "span": {
+              "start": {
+                "line": 22,
+                "column": 1
+              },
+              "end": {
+                "line": 29,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 27,
+              "column": 15
+            },
+            "end": {
+              "line": 27,
+              "column": 16
+            }
+          },
+          "replacement": "-",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_27_col_15.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_27_col_15.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.8211465,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.0227775,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:27:15: replace + with * in align_up",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "align_up",
+            "return_type": "-> usize",
+            "span": {
+              "start": {
+                "line": 22,
+                "column": 1
+              },
+              "end": {
+                "line": 29,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 27,
+              "column": 15
+            },
+            "end": {
+              "line": 27,
+              "column": 16
+            }
+          },
+          "replacement": "*",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_27_col_15_001.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_27_col_15_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.80402825,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 1.904356916,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:27:28: replace - with + in align_up",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "align_up",
+            "return_type": "-> usize",
+            "span": {
+              "start": {
+                "line": 22,
+                "column": 1
+              },
+              "end": {
+                "line": 29,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 27,
+              "column": 28
+            },
+            "end": {
+              "line": 27,
+              "column": 29
+            }
+          },
+          "replacement": "+",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_27_col_28.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_27_col_28.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.866082459,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 1.975706042,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:27:28: replace - with / in align_up",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "align_up",
+            "return_type": "-> usize",
+            "span": {
+              "start": {
+                "line": 22,
+                "column": 1
+              },
+              "end": {
+                "line": 29,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 27,
+              "column": 28
+            },
+            "end": {
+              "line": 27,
+              "column": 29
+            }
+          },
+          "replacement": "/",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_27_col_28_001.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_27_col_28_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.883266625,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 1.99319475,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:49:9: replace ItemPointer::decode -> Result<Self, String> with Ok(Default::default())",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "ItemPointer::decode",
+            "return_type": "-> Result<Self, String>",
+            "span": {
+              "start": {
+                "line": 48,
+                "column": 5
+              },
+              "end": {
+                "line": 60,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 49,
+              "column": 9
+            },
+            "end": {
+              "line": 59,
+              "column": 11
+            }
+          },
+          "replacement": "Ok(Default::default())",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_49_col_9.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_49_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.469223875,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:44:9: replace ItemPointer::encode_into with ()",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "ItemPointer::encode_into",
+            "return_type": "",
+            "span": {
+              "start": {
+                "line": 43,
+                "column": 5
+              },
+              "end": {
+                "line": 46,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 44,
+              "column": 9
+            },
+            "end": {
+              "line": 45,
+              "column": 66
+            }
+          },
+          "replacement": "()",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_44_col_9.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_44_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.828447916,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.097733292,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:49:24: replace != with == in ItemPointer::decode",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "ItemPointer::decode",
+            "return_type": "-> Result<Self, String>",
+            "span": {
+              "start": {
+                "line": 48,
+                "column": 5
+              },
+              "end": {
+                "line": 60,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 49,
+              "column": 24
+            },
+            "end": {
+              "line": 49,
+              "column": 26
+            }
+          },
+          "replacement": "==",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_49_col_24.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_49_col_24.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.813554584,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 1.9387370000000002,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:82:9: replace DataPage::block_number -> u32 with 0",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "DataPage::block_number",
+            "return_type": "-> u32",
+            "span": {
+              "start": {
+                "line": 81,
+                "column": 5
+              },
+              "end": {
+                "line": 83,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 82,
+              "column": 9
+            },
+            "end": {
+              "line": 82,
+              "column": 26
+            }
+          },
+          "replacement": "0",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_82_col_9.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_82_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.825960083,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.0468925,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:82:9: replace DataPage::block_number -> u32 with 1",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "DataPage::block_number",
+            "return_type": "-> u32",
+            "span": {
+              "start": {
+                "line": 81,
+                "column": 5
+              },
+              "end": {
+                "line": 83,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 82,
+              "column": 9
+            },
+            "end": {
+              "line": 82,
+              "column": 26
+            }
+          },
+          "replacement": "1",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_82_col_9_001.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_82_col_9_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.946834417,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 1.954272958,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:86:9: replace DataPage::tuple_count -> usize with 0",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "DataPage::tuple_count",
+            "return_type": "-> usize",
+            "span": {
+              "start": {
+                "line": 85,
+                "column": 5
+              },
+              "end": {
+                "line": 87,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 86,
+              "column": 9
+            },
+            "end": {
+              "line": 86,
+              "column": 26
+            }
+          },
+          "replacement": "0",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_86_col_9.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_86_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.774319417,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 1.992804208,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:86:9: replace DataPage::tuple_count -> usize with 1",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "DataPage::tuple_count",
+            "return_type": "-> usize",
+            "span": {
+              "start": {
+                "line": 85,
+                "column": 5
+              },
+              "end": {
+                "line": 87,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 86,
+              "column": 9
+            },
+            "end": {
+              "line": 86,
+              "column": 26
+            }
+          },
+          "replacement": "1",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_86_col_9_001.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_86_col_9_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.94247,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 1.955682542,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:90:9: replace DataPage::tuples -> &[Vec<u8>] with Vec::leak(Vec::new())",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "DataPage::tuples",
+            "return_type": "-> &[Vec<u8>]",
+            "span": {
+              "start": {
+                "line": 89,
+                "column": 5
+              },
+              "end": {
+                "line": 91,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 90,
+              "column": 9
+            },
+            "end": {
+              "line": 90,
+              "column": 21
+            }
+          },
+          "replacement": "Vec::leak(Vec::new())",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_90_col_9.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_90_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.987022292,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.204192125,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:90:9: replace DataPage::tuples -> &[Vec<u8>] with Vec::leak(vec![vec![]])",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "DataPage::tuples",
+            "return_type": "-> &[Vec<u8>]",
+            "span": {
+              "start": {
+                "line": 89,
+                "column": 5
+              },
+              "end": {
+                "line": 91,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 90,
+              "column": 9
+            },
+            "end": {
+              "line": 90,
+              "column": 21
+            }
+          },
+          "replacement": "Vec::leak(vec![vec![]])",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_90_col_9_001.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_90_col_9_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 1.190590917,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 1.949110667,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:90:9: replace DataPage::tuples -> &[Vec<u8>] with Vec::leak(vec![vec![0]])",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "DataPage::tuples",
+            "return_type": "-> &[Vec<u8>]",
+            "span": {
+              "start": {
+                "line": 89,
+                "column": 5
+              },
+              "end": {
+                "line": 91,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 90,
+              "column": 9
+            },
+            "end": {
+              "line": 90,
+              "column": 21
+            }
+          },
+          "replacement": "Vec::leak(vec![vec![0]])",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_90_col_9_002.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_90_col_9_002.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 1.009082208,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 1.955765375,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:90:9: replace DataPage::tuples -> &[Vec<u8>] with Vec::leak(vec![vec![1]])",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "DataPage::tuples",
+            "return_type": "-> &[Vec<u8>]",
+            "span": {
+              "start": {
+                "line": 89,
+                "column": 5
+              },
+              "end": {
+                "line": 91,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 90,
+              "column": 9
+            },
+            "end": {
+              "line": 90,
+              "column": 21
+            }
+          },
+          "replacement": "Vec::leak(vec![vec![1]])",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_90_col_9_003.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_90_col_9_003.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.942231,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 1.938756833,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:94:9: replace DataPage::free_bytes -> usize with 0",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "DataPage::free_bytes",
+            "return_type": "-> usize",
+            "span": {
+              "start": {
+                "line": 93,
+                "column": 5
+              },
+              "end": {
+                "line": 95,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 94,
+              "column": 9
+            },
+            "end": {
+              "line": 94,
+              "column": 55
+            }
+          },
+          "replacement": "0",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_94_col_9.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_94_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 1.056655958,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.231282417,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:94:9: replace DataPage::free_bytes -> usize with 1",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "DataPage::free_bytes",
+            "return_type": "-> usize",
+            "span": {
+              "start": {
+                "line": 93,
+                "column": 5
+              },
+              "end": {
+                "line": 95,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 94,
+              "column": 9
+            },
+            "end": {
+              "line": 94,
+              "column": 55
+            }
+          },
+          "replacement": "1",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_94_col_9_001.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_94_col_9_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 1.347293042,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 1.953998041,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:98:9: replace DataPage::can_fit_raw_tuple -> bool with true",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "DataPage::can_fit_raw_tuple",
+            "return_type": "-> bool",
+            "span": {
+              "start": {
+                "line": 97,
+                "column": 5
+              },
+              "end": {
+                "line": 99,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 98,
+              "column": 9
+            },
+            "end": {
+              "line": 98,
+              "column": 62
+            }
+          },
+          "replacement": "true",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_98_col_9.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_98_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.813919834,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 1.997199916,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:98:9: replace DataPage::can_fit_raw_tuple -> bool with false",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "DataPage::can_fit_raw_tuple",
+            "return_type": "-> bool",
+            "span": {
+              "start": {
+                "line": 97,
+                "column": 5
+              },
+              "end": {
+                "line": 99,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 98,
+              "column": 9
+            },
+            "end": {
+              "line": 98,
+              "column": 62
+            }
+          },
+          "replacement": "false",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_98_col_9_001.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_98_col_9_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.933725458,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 1.972951708,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:102:9: replace DataPage::insert_raw_tuple -> Result<ItemPointer, String> with Ok(Default::default())",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "DataPage::insert_raw_tuple",
+            "return_type": "-> Result<ItemPointer, String>",
+            "span": {
+              "start": {
+                "line": 101,
+                "column": 5
+              },
+              "end": {
+                "line": 117,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 102,
+              "column": 9
+            },
+            "end": {
+              "line": 116,
+              "column": 11
+            }
+          },
+          "replacement": "Ok(Default::default())",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_102_col_9.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_102_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.421329833,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:98:42: replace <= with > in DataPage::can_fit_raw_tuple",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "DataPage::can_fit_raw_tuple",
+            "return_type": "-> bool",
+            "span": {
+              "start": {
+                "line": 97,
+                "column": 5
+              },
+              "end": {
+                "line": 99,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 98,
+              "column": 42
+            },
+            "end": {
+              "line": 98,
+              "column": 44
+            }
+          },
+          "replacement": ">",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_98_col_42.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_98_col_42.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.750602708,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 1.999851083,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:102:12: delete ! in DataPage::insert_raw_tuple",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "DataPage::insert_raw_tuple",
+            "return_type": "-> Result<ItemPointer, String>",
+            "span": {
+              "start": {
+                "line": 101,
+                "column": 5
+              },
+              "end": {
+                "line": 117,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 102,
+              "column": 12
+            },
+            "end": {
+              "line": 102,
+              "column": 13
+            }
+          },
+          "replacement": "",
+          "genre": "UnaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_102_col_12.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_102_col_12.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.824106125,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 1.992592917,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:111:25: replace += with -= in DataPage::insert_raw_tuple",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "DataPage::insert_raw_tuple",
+            "return_type": "-> Result<ItemPointer, String>",
+            "span": {
+              "start": {
+                "line": 101,
+                "column": 5
+              },
+              "end": {
+                "line": 117,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 111,
+              "column": 25
+            },
+            "end": {
+              "line": 111,
+              "column": 27
+            }
+          },
+          "replacement": "-=",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_111_col_25.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_111_col_25.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.774304917,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.032782333,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:111:25: replace += with *= in DataPage::insert_raw_tuple",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "DataPage::insert_raw_tuple",
+            "return_type": "-> Result<ItemPointer, String>",
+            "span": {
+              "start": {
+                "line": 101,
+                "column": 5
+              },
+              "end": {
+                "line": 117,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 111,
+              "column": 25
+            },
+            "end": {
+              "line": 111,
+              "column": 27
+            }
+          },
+          "replacement": "*=",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_111_col_25_001.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_111_col_25_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.797378667,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.1067834579999998,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:120:9: replace DataPage::raw_tuple -> Result<&[u8], String> with Ok(Vec::leak(Vec::new()))",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "DataPage::raw_tuple",
+            "return_type": "-> Result<&[u8], String>",
+            "span": {
+              "start": {
+                "line": 119,
+                "column": 5
+              },
+              "end": {
+                "line": 135,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 120,
+              "column": 9
+            },
+            "end": {
+              "line": 134,
+              "column": 87
+            }
+          },
+          "replacement": "Ok(Vec::leak(Vec::new()))",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_120_col_9.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_120_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 1.015571458,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.1187245,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:120:9: replace DataPage::raw_tuple -> Result<&[u8], String> with Ok(Vec::leak(vec![0]))",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "DataPage::raw_tuple",
+            "return_type": "-> Result<&[u8], String>",
+            "span": {
+              "start": {
+                "line": 119,
+                "column": 5
+              },
+              "end": {
+                "line": 135,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 120,
+              "column": 9
+            },
+            "end": {
+              "line": 134,
+              "column": 87
+            }
+          },
+          "replacement": "Ok(Vec::leak(vec![0]))",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_120_col_9_001.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_120_col_9_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 1.033482834,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 1.951446792,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:120:9: replace DataPage::raw_tuple -> Result<&[u8], String> with Ok(Vec::leak(vec![1]))",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "DataPage::raw_tuple",
+            "return_type": "-> Result<&[u8], String>",
+            "span": {
+              "start": {
+                "line": 119,
+                "column": 5
+              },
+              "end": {
+                "line": 135,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 120,
+              "column": 9
+            },
+            "end": {
+              "line": 134,
+              "column": 87
+            }
+          },
+          "replacement": "Ok(Vec::leak(vec![1]))",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_120_col_9_002.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_120_col_9_002.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.764567833,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.114253917,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:120:29: replace != with == in DataPage::raw_tuple",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "DataPage::raw_tuple",
+            "return_type": "-> Result<&[u8], String>",
+            "span": {
+              "start": {
+                "line": 119,
+                "column": 5
+              },
+              "end": {
+                "line": 135,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 120,
+              "column": 29
+            },
+            "end": {
+              "line": 120,
+              "column": 31
+            }
+          },
+          "replacement": "==",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_120_col_29.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_120_col_29.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 1.054270458,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.050760917,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:126:30: replace == with != in DataPage::raw_tuple",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "DataPage::raw_tuple",
+            "return_type": "-> Result<&[u8], String>",
+            "span": {
+              "start": {
+                "line": 119,
+                "column": 5
+              },
+              "end": {
+                "line": 135,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 126,
+              "column": 30
+            },
+            "end": {
+              "line": 126,
+              "column": 32
+            }
+          },
+          "replacement": "!=",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_126_col_30.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_126_col_30.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 1.003027,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.049942041,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:130:40: replace - with + in DataPage::raw_tuple",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "DataPage::raw_tuple",
+            "return_type": "-> Result<&[u8], String>",
+            "span": {
+              "start": {
+                "line": 119,
+                "column": 5
+              },
+              "end": {
+                "line": 135,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 130,
+              "column": 40
+            },
+            "end": {
+              "line": 130,
+              "column": 41
+            }
+          },
+          "replacement": "+",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_130_col_40.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_130_col_40.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.824093916,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 1.994028375,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:130:40: replace - with / in DataPage::raw_tuple",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "DataPage::raw_tuple",
+            "return_type": "-> Result<&[u8], String>",
+            "span": {
+              "start": {
+                "line": 119,
+                "column": 5
+              },
+              "end": {
+                "line": 135,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 130,
+              "column": 40
+            },
+            "end": {
+              "line": 130,
+              "column": 41
+            }
+          },
+          "replacement": "/",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_130_col_40_001.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_130_col_40_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.805165541,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.106300959,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:138:9: replace DataPage::update_raw_tuple -> Result<(), String> with Ok(())",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "DataPage::update_raw_tuple",
+            "return_type": "-> Result<(), String>",
+            "span": {
+              "start": {
+                "line": 137,
+                "column": 5
+              },
+              "end": {
+                "line": 162,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 138,
+              "column": 9
+            },
+            "end": {
+              "line": 161,
+              "column": 15
+            }
+          },
+          "replacement": "Ok(())",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_138_col_9.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_138_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 1.00034775,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.018507333,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:138:29: replace != with == in DataPage::update_raw_tuple",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "DataPage::update_raw_tuple",
+            "return_type": "-> Result<(), String>",
+            "span": {
+              "start": {
+                "line": 137,
+                "column": 5
+              },
+              "end": {
+                "line": 162,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 138,
+              "column": 29
+            },
+            "end": {
+              "line": 138,
+              "column": 31
+            }
+          },
+          "replacement": "==",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_138_col_29.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_138_col_29.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.829066291,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.154885,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:144:30: replace == with != in DataPage::update_raw_tuple",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "DataPage::update_raw_tuple",
+            "return_type": "-> Result<(), String>",
+            "span": {
+              "start": {
+                "line": 137,
+                "column": 5
+              },
+              "end": {
+                "line": 162,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 144,
+              "column": 30
+            },
+            "end": {
+              "line": 144,
+              "column": 32
+            }
+          },
+          "replacement": "!=",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_144_col_30.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_144_col_30.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.996883292,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.043620542,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:148:40: replace - with + in DataPage::update_raw_tuple",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "DataPage::update_raw_tuple",
+            "return_type": "-> Result<(), String>",
+            "span": {
+              "start": {
+                "line": 137,
+                "column": 5
+              },
+              "end": {
+                "line": 162,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 148,
+              "column": 40
+            },
+            "end": {
+              "line": 148,
+              "column": 41
+            }
+          },
+          "replacement": "+",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_148_col_40.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_148_col_40.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.799243458,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.099298042,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:148:40: replace - with / in DataPage::update_raw_tuple",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "DataPage::update_raw_tuple",
+            "return_type": "-> Result<(), String>",
+            "span": {
+              "start": {
+                "line": 137,
+                "column": 5
+              },
+              "end": {
+                "line": 162,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 148,
+              "column": 40
+            },
+            "end": {
+              "line": 148,
+              "column": 41
+            }
+          },
+          "replacement": "/",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_148_col_40_001.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_148_col_40_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.8169385,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.067403541,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:153:26: replace != with == in DataPage::update_raw_tuple",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "DataPage::update_raw_tuple",
+            "return_type": "-> Result<(), String>",
+            "span": {
+              "start": {
+                "line": 137,
+                "column": 5
+              },
+              "end": {
+                "line": 162,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 153,
+              "column": 26
+            },
+            "end": {
+              "line": 153,
+              "column": 28
+            }
+          },
+          "replacement": "==",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_153_col_26.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_153_col_26.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.813892375,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.134264708,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:180:9: replace DataPageChain::page_size -> usize with 0",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "DataPageChain::page_size",
+            "return_type": "-> usize",
+            "span": {
+              "start": {
+                "line": 179,
+                "column": 5
+              },
+              "end": {
+                "line": 181,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 180,
+              "column": 9
+            },
+            "end": {
+              "line": 180,
+              "column": 23
+            }
+          },
+          "replacement": "0",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_180_col_9.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_180_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.877242,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.05041275,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:180:9: replace DataPageChain::page_size -> usize with 1",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "DataPageChain::page_size",
+            "return_type": "-> usize",
+            "span": {
+              "start": {
+                "line": 179,
+                "column": 5
+              },
+              "end": {
+                "line": 181,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 180,
+              "column": 9
+            },
+            "end": {
+              "line": 180,
+              "column": 23
+            }
+          },
+          "replacement": "1",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_180_col_9_001.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_180_col_9_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.813352,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.118264375,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:184:9: replace DataPageChain::pages -> &[DataPage] with Vec::leak(vec![Default::default()])",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "DataPageChain::pages",
+            "return_type": "-> &[DataPage]",
+            "span": {
+              "start": {
+                "line": 183,
+                "column": 5
+              },
+              "end": {
+                "line": 185,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 184,
+              "column": 9
+            },
+            "end": {
+              "line": 184,
+              "column": 20
+            }
+          },
+          "replacement": "Vec::leak(vec![Default::default()])",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_184_col_9_001.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_184_col_9_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.3549965,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:184:9: replace DataPageChain::pages -> &[DataPage] with Vec::leak(Vec::new())",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "DataPageChain::pages",
+            "return_type": "-> &[DataPage]",
+            "span": {
+              "start": {
+                "line": 183,
+                "column": 5
+              },
+              "end": {
+                "line": 185,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 184,
+              "column": 9
+            },
+            "end": {
+              "line": 184,
+              "column": 20
+            }
+          },
+          "replacement": "Vec::leak(Vec::new())",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_184_col_9.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_184_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.994760666,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.109899917,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:188:9: replace DataPageChain::get_page -> Option<&DataPage> with Some(Box::leak(Box::new(Default::default())))",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "DataPageChain::get_page",
+            "return_type": "-> Option<&DataPage>",
+            "span": {
+              "start": {
+                "line": 187,
+                "column": 5
+              },
+              "end": {
+                "line": 190,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 188,
+              "column": 9
+            },
+            "end": {
+              "line": 189,
+              "column": 30
+            }
+          },
+          "replacement": "Some(Box::leak(Box::new(Default::default())))",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_188_col_9_001.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_188_col_9_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.457856584,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:188:9: replace DataPageChain::get_page -> Option<&DataPage> with None",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "DataPageChain::get_page",
+            "return_type": "-> Option<&DataPage>",
+            "span": {
+              "start": {
+                "line": 187,
+                "column": 5
+              },
+              "end": {
+                "line": 190,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 188,
+              "column": 9
+            },
+            "end": {
+              "line": 189,
+              "column": 30
+            }
+          },
+          "replacement": "None",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_188_col_9.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_188_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.886061042,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.219159083,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:193:9: replace DataPageChain::get_page_mut -> Option<&mut DataPage> with Some(Box::leak(Box::new(Default::default())))",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "DataPageChain::get_page_mut",
+            "return_type": "-> Option<&mut DataPage>",
+            "span": {
+              "start": {
+                "line": 192,
+                "column": 5
+              },
+              "end": {
+                "line": 195,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 193,
+              "column": 9
+            },
+            "end": {
+              "line": 194,
+              "column": 34
+            }
+          },
+          "replacement": "Some(Box::leak(Box::new(Default::default())))",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_193_col_9_001.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_193_col_9_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.390936666,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:193:9: replace DataPageChain::get_page_mut -> Option<&mut DataPage> with None",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "DataPageChain::get_page_mut",
+            "return_type": "-> Option<&mut DataPage>",
+            "span": {
+              "start": {
+                "line": 192,
+                "column": 5
+              },
+              "end": {
+                "line": 195,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 193,
+              "column": 9
+            },
+            "end": {
+              "line": 194,
+              "column": 34
+            }
+          },
+          "replacement": "None",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_193_col_9.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_193_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.937298291,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.066532833,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:198:9: replace DataPageChain::start_new_page_if_current_has_tuples with ()",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "DataPageChain::start_new_page_if_current_has_tuples",
+            "return_type": "",
+            "span": {
+              "start": {
+                "line": 197,
+                "column": 5
+              },
+              "end": {
+                "line": 212,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 198,
+              "column": 9
+            },
+            "end": {
+              "line": 211,
+              "column": 68
+            }
+          },
+          "replacement": "()",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_198_col_9.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_198_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.875828625,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.173955416,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:201:53: replace == with != in DataPageChain::start_new_page_if_current_has_tuples",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "DataPageChain::start_new_page_if_current_has_tuples",
+            "return_type": "",
+            "span": {
+              "start": {
+                "line": 197,
+                "column": 5
+              },
+              "end": {
+                "line": 212,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 201,
+              "column": 53
+            },
+            "end": {
+              "line": 201,
+              "column": 55
+            }
+          },
+          "replacement": "!=",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_201_col_53.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_201_col_53.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.94065825,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.015658542,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:210:13: replace + with - in DataPageChain::start_new_page_if_current_has_tuples",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "DataPageChain::start_new_page_if_current_has_tuples",
+            "return_type": "",
+            "span": {
+              "start": {
+                "line": 197,
+                "column": 5
+              },
+              "end": {
+                "line": 212,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 210,
+              "column": 13
+            },
+            "end": {
+              "line": 210,
+              "column": 14
+            }
+          },
+          "replacement": "-",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_210_col_13.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_210_col_13.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.923779959,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.173307875,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:210:13: replace + with * in DataPageChain::start_new_page_if_current_has_tuples",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "DataPageChain::start_new_page_if_current_has_tuples",
+            "return_type": "",
+            "span": {
+              "start": {
+                "line": 197,
+                "column": 5
+              },
+              "end": {
+                "line": 212,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 210,
+              "column": 13
+            },
+            "end": {
+              "line": 210,
+              "column": 14
+            }
+          },
+          "replacement": "*",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_210_col_13_001.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_210_col_13_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.940828125,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.057876459,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:215:9: replace DataPageChain::append_empty_pages -> Option<(u32, u32)> with None",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "DataPageChain::append_empty_pages",
+            "return_type": "-> Option<(u32, u32)>",
+            "span": {
+              "start": {
+                "line": 214,
+                "column": 5
+              },
+              "end": {
+                "line": 235,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 215,
+              "column": 9
+            },
+            "end": {
+              "line": 234,
+              "column": 40
+            }
+          },
+          "replacement": "None",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_215_col_9.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_215_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.926074833,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.115944875,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:215:9: replace DataPageChain::append_empty_pages -> Option<(u32, u32)> with Some((0, 0))",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "DataPageChain::append_empty_pages",
+            "return_type": "-> Option<(u32, u32)>",
+            "span": {
+              "start": {
+                "line": 214,
+                "column": 5
+              },
+              "end": {
+                "line": 235,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 215,
+              "column": 9
+            },
+            "end": {
+              "line": 234,
+              "column": 40
+            }
+          },
+          "replacement": "Some((0, 0))",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_215_col_9_001.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_215_col_9_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.990136,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.043481833,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:215:9: replace DataPageChain::append_empty_pages -> Option<(u32, u32)> with Some((0, 1))",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "DataPageChain::append_empty_pages",
+            "return_type": "-> Option<(u32, u32)>",
+            "span": {
+              "start": {
+                "line": 214,
+                "column": 5
+              },
+              "end": {
+                "line": 235,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 215,
+              "column": 9
+            },
+            "end": {
+              "line": 234,
+              "column": 40
+            }
+          },
+          "replacement": "Some((0, 1))",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_215_col_9_002.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_215_col_9_002.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.840537625,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.09698675,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:215:9: replace DataPageChain::append_empty_pages -> Option<(u32, u32)> with Some((1, 0))",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "DataPageChain::append_empty_pages",
+            "return_type": "-> Option<(u32, u32)>",
+            "span": {
+              "start": {
+                "line": 214,
+                "column": 5
+              },
+              "end": {
+                "line": 235,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 215,
+              "column": 9
+            },
+            "end": {
+              "line": 234,
+              "column": 40
+            }
+          },
+          "replacement": "Some((1, 0))",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_215_col_9_003.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_215_col_9_003.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.929248666,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.001468,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:215:9: replace DataPageChain::append_empty_pages -> Option<(u32, u32)> with Some((1, 1))",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "DataPageChain::append_empty_pages",
+            "return_type": "-> Option<(u32, u32)>",
+            "span": {
+              "start": {
+                "line": 214,
+                "column": 5
+              },
+              "end": {
+                "line": 235,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 215,
+              "column": 9
+            },
+            "end": {
+              "line": 234,
+              "column": 40
+            }
+          },
+          "replacement": "Some((1, 1))",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_215_col_9_004.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_215_col_9_004.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.765703666,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.129922666,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:215:18: replace == with != in DataPageChain::append_empty_pages",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "DataPageChain::append_empty_pages",
+            "return_type": "-> Option<(u32, u32)>",
+            "span": {
+              "start": {
+                "line": 214,
+                "column": 5
+              },
+              "end": {
+                "line": 235,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 215,
+              "column": 18
+            },
+            "end": {
+              "line": 215,
+              "column": 20
+            }
+          },
+          "replacement": "!=",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_215_col_18.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_215_col_18.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.910343875,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.056156708,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:224:13: replace + with - in DataPageChain::append_empty_pages",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "DataPageChain::append_empty_pages",
+            "return_type": "-> Option<(u32, u32)>",
+            "span": {
+              "start": {
+                "line": 214,
+                "column": 5
+              },
+              "end": {
+                "line": 235,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 224,
+              "column": 13
+            },
+            "end": {
+              "line": 224,
+              "column": 14
+            }
+          },
+          "replacement": "-",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_224_col_13.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_224_col_13.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.856383916,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.1172931249999998,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:224:13: replace + with * in DataPageChain::append_empty_pages",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "DataPageChain::append_empty_pages",
+            "return_type": "-> Option<(u32, u32)>",
+            "span": {
+              "start": {
+                "line": 214,
+                "column": 5
+              },
+              "end": {
+                "line": 235,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 224,
+              "column": 13
+            },
+            "end": {
+              "line": 224,
+              "column": 14
+            }
+          },
+          "replacement": "*",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_224_col_13_001.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_224_col_13_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.869561375,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.050365375,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:227:49: replace + with - in DataPageChain::append_empty_pages",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "DataPageChain::append_empty_pages",
+            "return_type": "-> Option<(u32, u32)>",
+            "span": {
+              "start": {
+                "line": 214,
+                "column": 5
+              },
+              "end": {
+                "line": 235,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 227,
+              "column": 49
+            },
+            "end": {
+              "line": 227,
+              "column": 50
+            }
+          },
+          "replacement": "-",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_227_col_49.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_227_col_49.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.773271667,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.109505166,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:238:9: replace DataPageChain::insert_raw_tuple -> Result<ItemPointer, String> with Ok(Default::default())",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "DataPageChain::insert_raw_tuple",
+            "return_type": "-> Result<ItemPointer, String>",
+            "span": {
+              "start": {
+                "line": 237,
+                "column": 5
+              },
+              "end": {
+                "line": 273,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 238,
+              "column": 9
+            },
+            "end": {
+              "line": 272,
+              "column": 39
+            }
+          },
+          "replacement": "Ok(Default::default())",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_238_col_9.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_238_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.415106459,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:227:49: replace + with * in DataPageChain::append_empty_pages",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "DataPageChain::append_empty_pages",
+            "return_type": "-> Option<(u32, u32)>",
+            "span": {
+              "start": {
+                "line": 214,
+                "column": 5
+              },
+              "end": {
+                "line": 235,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 227,
+              "column": 49
+            },
+            "end": {
+              "line": 227,
+              "column": 50
+            }
+          },
+          "replacement": "*",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_227_col_49_001.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_227_col_49_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.859949833,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 1.966604458,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:238:12: delete ! in DataPageChain::insert_raw_tuple",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "DataPageChain::insert_raw_tuple",
+            "return_type": "-> Result<ItemPointer, String>",
+            "span": {
+              "start": {
+                "line": 237,
+                "column": 5
+              },
+              "end": {
+                "line": 273,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 238,
+              "column": 12
+            },
+            "end": {
+              "line": 238,
+              "column": 13
+            }
+          },
+          "replacement": "",
+          "genre": "UnaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_238_col_12.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_238_col_12.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.8228335,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.327141417,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:260:13: replace + with - in DataPageChain::insert_raw_tuple",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "DataPageChain::insert_raw_tuple",
+            "return_type": "-> Result<ItemPointer, String>",
+            "span": {
+              "start": {
+                "line": 237,
+                "column": 5
+              },
+              "end": {
+                "line": 273,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 260,
+              "column": 13
+            },
+            "end": {
+              "line": 260,
+              "column": 14
+            }
+          },
+          "replacement": "-",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_260_col_13.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_260_col_13.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.916789541,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.584850958,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:260:13: replace + with * in DataPageChain::insert_raw_tuple",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "DataPageChain::insert_raw_tuple",
+            "return_type": "-> Result<ItemPointer, String>",
+            "span": {
+              "start": {
+                "line": 237,
+                "column": 5
+              },
+              "end": {
+                "line": 273,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 260,
+              "column": 13
+            },
+            "end": {
+              "line": 260,
+              "column": 14
+            }
+          },
+          "replacement": "*",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_260_col_13_001.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_260_col_13_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.969816208,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.0604105,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:277:5: replace usable_page_bytes -> usize with 0",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "usable_page_bytes",
+            "return_type": "-> usize",
+            "span": {
+              "start": {
+                "line": 276,
+                "column": 1
+              },
+              "end": {
+                "line": 278,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 277,
+              "column": 5
+            },
+            "end": {
+              "line": 277,
+              "column": 48
+            }
+          },
+          "replacement": "0",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_277_col_5.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_277_col_5.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.92288675,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 1.9726472080000002,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:277:5: replace usable_page_bytes -> usize with 1",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "usable_page_bytes",
+            "return_type": "-> usize",
+            "span": {
+              "start": {
+                "line": 276,
+                "column": 1
+              },
+              "end": {
+                "line": 278,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 277,
+              "column": 5
+            },
+            "end": {
+              "line": 277,
+              "column": 48
+            }
+          },
+          "replacement": "1",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_277_col_5_001.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_277_col_5_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.864353583,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.016819,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:281:5: replace element_or_neighbor_tuple_fits -> bool with true",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "element_or_neighbor_tuple_fits",
+            "return_type": "-> bool",
+            "span": {
+              "start": {
+                "line": 280,
+                "column": 1
+              },
+              "end": {
+                "line": 282,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 281,
+              "column": 5
+            },
+            "end": {
+              "line": 281,
+              "column": 69
+            }
+          },
+          "replacement": "true",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_281_col_5.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_281_col_5.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 1.00098725,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 1.957761333,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:281:5: replace element_or_neighbor_tuple_fits -> bool with false",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "element_or_neighbor_tuple_fits",
+            "return_type": "-> bool",
+            "span": {
+              "start": {
+                "line": 280,
+                "column": 1
+              },
+              "end": {
+                "line": 282,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 281,
+              "column": 5
+            },
+            "end": {
+              "line": 281,
+              "column": 69
+            }
+          },
+          "replacement": "false",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_281_col_5_001.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_281_col_5_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.826745667,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.062677334,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:281:38: replace <= with > in element_or_neighbor_tuple_fits",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "element_or_neighbor_tuple_fits",
+            "return_type": "-> bool",
+            "span": {
+              "start": {
+                "line": 280,
+                "column": 1
+              },
+              "end": {
+                "line": 282,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 281,
+              "column": 38
+            },
+            "end": {
+              "line": 281,
+              "column": 40
+            }
+          },
+          "replacement": ">",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_281_col_38.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_281_col_38.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.868606792,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 1.9209998750000001,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:285:5: replace aligned_tuple_bytes -> usize with 0",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "aligned_tuple_bytes",
+            "return_type": "-> usize",
+            "span": {
+              "start": {
+                "line": 284,
+                "column": 1
+              },
+              "end": {
+                "line": 292,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 285,
+              "column": 5
+            },
+            "end": {
+              "line": 291,
+              "column": 6
+            }
+          },
+          "replacement": "0",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_285_col_5.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_285_col_5.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.8759755,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 1.975415709,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:285:5: replace aligned_tuple_bytes -> usize with 1",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "aligned_tuple_bytes",
+            "return_type": "-> usize",
+            "span": {
+              "start": {
+                "line": 284,
+                "column": 1
+              },
+              "end": {
+                "line": 292,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 285,
+              "column": 5
+            },
+            "end": {
+              "line": 291,
+              "column": 6
+            }
+          },
+          "replacement": "1",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_285_col_5_001.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_285_col_5_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.982434125,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 1.954212209,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:285:54: replace + with - in aligned_tuple_bytes",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "aligned_tuple_bytes",
+            "return_type": "-> usize",
+            "span": {
+              "start": {
+                "line": 284,
+                "column": 1
+              },
+              "end": {
+                "line": 292,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 285,
+              "column": 54
+            },
+            "end": {
+              "line": 285,
+              "column": 55
+            }
+          },
+          "replacement": "-",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_285_col_54.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_285_col_54.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.871208792,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.075415333,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:285:54: replace + with * in aligned_tuple_bytes",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "aligned_tuple_bytes",
+            "return_type": "-> usize",
+            "span": {
+              "start": {
+                "line": 284,
+                "column": 1
+              },
+              "end": {
+                "line": 292,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 285,
+              "column": 54
+            },
+            "end": {
+              "line": 285,
+              "column": 55
+            }
+          },
+          "replacement": "*",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_285_col_54_001.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_285_col_54_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.935589333,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 1.967966375,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:285:40: replace + with - in aligned_tuple_bytes",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "aligned_tuple_bytes",
+            "return_type": "-> usize",
+            "span": {
+              "start": {
+                "line": 284,
+                "column": 1
+              },
+              "end": {
+                "line": 292,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 285,
+              "column": 40
+            },
+            "end": {
+              "line": 285,
+              "column": 41
+            }
+          },
+          "replacement": "-",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_285_col_40.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_285_col_40.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.85480425,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.0664257089999998,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:285:40: replace + with * in aligned_tuple_bytes",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "aligned_tuple_bytes",
+            "return_type": "-> usize",
+            "span": {
+              "start": {
+                "line": 284,
+                "column": 1
+              },
+              "end": {
+                "line": 292,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 285,
+              "column": 40
+            },
+            "end": {
+              "line": 285,
+              "column": 41
+            }
+          },
+          "replacement": "*",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_285_col_40_001.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_285_col_40_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 1.016519625,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 1.952059708,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:286:31: replace % with / in aligned_tuple_bytes",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "aligned_tuple_bytes",
+            "return_type": "-> usize",
+            "span": {
+              "start": {
+                "line": 284,
+                "column": 1
+              },
+              "end": {
+                "line": 292,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 286,
+              "column": 31
+            },
+            "end": {
+              "line": 286,
+              "column": 32
+            }
+          },
+          "replacement": "/",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_286_col_31.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_286_col_31.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.764443917,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.090673833,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:286:31: replace % with + in aligned_tuple_bytes",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "aligned_tuple_bytes",
+            "return_type": "-> usize",
+            "span": {
+              "start": {
+                "line": 284,
+                "column": 1
+              },
+              "end": {
+                "line": 292,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 286,
+              "column": 31
+            },
+            "end": {
+              "line": 286,
+              "column": 32
+            }
+          },
+          "replacement": "+",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_286_col_31_001.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_286_col_31_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.885046042,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 1.962199375,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:287:18: replace == with != in aligned_tuple_bytes",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "aligned_tuple_bytes",
+            "return_type": "-> usize",
+            "span": {
+              "start": {
+                "line": 284,
+                "column": 1
+              },
+              "end": {
+                "line": 292,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 287,
+              "column": 18
+            },
+            "end": {
+              "line": 287,
+              "column": 20
+            }
+          },
+          "replacement": "!=",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_287_col_18.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_287_col_18.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.827105416,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.073510167,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:290:19: replace + with - in aligned_tuple_bytes",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "aligned_tuple_bytes",
+            "return_type": "-> usize",
+            "span": {
+              "start": {
+                "line": 284,
+                "column": 1
+              },
+              "end": {
+                "line": 292,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 290,
+              "column": 19
+            },
+            "end": {
+              "line": 290,
+              "column": 20
+            }
+          },
+          "replacement": "-",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_290_col_19.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_290_col_19.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.870754208,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.01543225,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:290:19: replace + with * in aligned_tuple_bytes",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "aligned_tuple_bytes",
+            "return_type": "-> usize",
+            "span": {
+              "start": {
+                "line": 284,
+                "column": 1
+              },
+              "end": {
+                "line": 292,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 290,
+              "column": 19
+            },
+            "end": {
+              "line": 290,
+              "column": 20
+            }
+          },
+          "replacement": "*",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_290_col_19_001.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_290_col_19_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.818720792,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.087056708,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:290:38: replace - with + in aligned_tuple_bytes",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "aligned_tuple_bytes",
+            "return_type": "-> usize",
+            "span": {
+              "start": {
+                "line": 284,
+                "column": 1
+              },
+              "end": {
+                "line": 292,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 290,
+              "column": 38
+            },
+            "end": {
+              "line": 290,
+              "column": 39
+            }
+          },
+          "replacement": "+",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_290_col_38.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_290_col_38.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.928107666,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 1.971491959,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:290:38: replace - with / in aligned_tuple_bytes",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "aligned_tuple_bytes",
+            "return_type": "-> usize",
+            "span": {
+              "start": {
+                "line": 284,
+                "column": 1
+              },
+              "end": {
+                "line": 292,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 290,
+              "column": 38
+            },
+            "end": {
+              "line": 290,
+              "column": 39
+            }
+          },
+          "replacement": "/",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_290_col_38_001.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_290_col_38_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.824703959,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.073917375,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:295:5: replace raw_tuple_storage_bytes -> usize with 0",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "raw_tuple_storage_bytes",
+            "return_type": "-> usize",
+            "span": {
+              "start": {
+                "line": 294,
+                "column": 1
+              },
+              "end": {
+                "line": 296,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 295,
+              "column": 5
+            },
+            "end": {
+              "line": 295,
+              "column": 37
+            }
+          },
+          "replacement": "0",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_295_col_5.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_295_col_5.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.920013167,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.020394375,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/storage/page.rs:295:5: replace raw_tuple_storage_bytes -> usize with 1",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/storage/page.rs",
+          "function": {
+            "function_name": "raw_tuple_storage_bytes",
+            "return_type": "-> usize",
+            "span": {
+              "start": {
+                "line": 294,
+                "column": 1
+              },
+              "end": {
+                "line": 296,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 295,
+              "column": 5
+            },
+            "end": {
+              "line": 295,
+              "column": 37
+            }
+          },
+          "replacement": "1",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__storage__page.rs_line_295_col_5_001.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__storage__page.rs_line_295_col_5_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.824094292,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.018286625,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    }
+  ],
+  "total_mutants": 88,
+  "missed": 0,
+  "caught": 81,
+  "timeout": 0,
+  "unviable": 7,
+  "success": 0,
+  "start_time": "2026-05-19T01:00:58.575821Z",
+  "end_time": "2026-05-19T01:08:09.256525Z",
+  "cargo_mutants_version": "27.0.0"
+}

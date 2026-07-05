@@ -1,0 +1,4 @@
+Script started on 2026-05-20 00:16:32-07:00 [<not executed on terminal>]
+16:| 2 | `src/am/ec_hnsw/scan.rs` | 226 | >=68 | callback helper consumption; heap scorer; page/graph visitor follow-up | Shared helpers reduce part; likely needs a direct scan-state pointer-lift slice. |
+
+Script done on 2026-05-20 00:16:32-07:00 [COMMAND_EXIT_CODE="0"]

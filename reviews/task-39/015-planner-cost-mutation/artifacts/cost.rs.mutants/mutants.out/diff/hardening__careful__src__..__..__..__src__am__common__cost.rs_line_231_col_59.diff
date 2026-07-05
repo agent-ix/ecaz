@@ -1,0 +1,21 @@
+--- hardening/careful/src/../../../src/am/common/cost.rs
++++ replace * with + in estimate_planner_cost
+@@ -223,17 +223,17 @@
+         return gated_planner_cost_estimate(inputs.index_pages);
+     }
+ 
+     let tuple_estimate = if inputs.reltuples > 0.0 {
+         inputs.reltuples
+     } else {
+         inputs.index_pages * 10.0
+     };
+-    let scoring_dimensions = f64::from(inputs.dimensions) * LUT_CPU_DIMENSION_SCALE;
++    let scoring_dimensions = f64::from(inputs.dimensions) + /* ~ changed by cargo-mutants ~ */ LUT_CPU_DIMENSION_SCALE;
+     let ef_search = f64::from(inputs.ef_search);
+     let tree_height = inputs.tree_height;
+ 
+     let (startup_cost, total_cost) = if tree_height <= 0.0 {
+         let linear_cost = inputs.index_pages * constants.seq_page_cost;
+         let linear_cpu = tuple_estimate * constants.cpu_operator_cost * scoring_dimensions;
+         (0.0, linear_cost + linear_cpu)
+     } else {

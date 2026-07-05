@@ -1,0 +1,536 @@
+Script started on 2026-05-19 04:18:47-07:00 [<not executed on terminal>]
+[1mdiff --git a/scripts/unsafe_comment_baseline.txt b/scripts/unsafe_comment_baseline.txt[m
+[1mindex d2150d92..2565553a 100644[m
+[1m--- a/scripts/unsafe_comment_baseline.txt[m
+[1m+++ b/scripts/unsafe_comment_baseline.txt[m
+[36m@@ -146,209 +146,190 @@[m [msrc/am/ec_diskann/routine.rs:964[m
+ src/am/ec_diskann/routine.rs:970[m
+ src/am/ec_diskann/routine.rs:977[m
+ src/am/ec_diskann/routine.rs:985[m
+[31m-src/am/ec_hnsw/build_parallel.rs:1000[m
+[31m-src/am/ec_hnsw/build_parallel.rs:1020[m
+[31m-src/am/ec_hnsw/build_parallel.rs:1024[m
+[31m-src/am/ec_hnsw/build_parallel.rs:1028[m
+[31m-src/am/ec_hnsw/build_parallel.rs:1029[m
+[31m-src/am/ec_hnsw/build_parallel.rs:1030[m
+[31m-src/am/ec_hnsw/build_parallel.rs:1041[m
+[31m-src/am/ec_hnsw/build_parallel.rs:1052[m
+[31m-src/am/ec_hnsw/build_parallel.rs:1136[m
+[31m-src/am/ec_hnsw/build_parallel.rs:1144[m
+[31m-src/am/ec_hnsw/build_parallel.rs:1179[m
+[31m-src/am/ec_hnsw/build_parallel.rs:1202[m
+[31m-src/am/ec_hnsw/build_parallel.rs:1207[m
+[31m-src/am/ec_hnsw/build_parallel.rs:1212[m
+[31m-src/am/ec_hnsw/build_parallel.rs:1214[m
+[31m-src/am/ec_hnsw/build_parallel.rs:1225[m
+[31m-src/am/ec_hnsw/build_parallel.rs:1230[m
+[31m-src/am/ec_hnsw/build_parallel.rs:1234[m
+[31m-src/am/ec_hnsw/build_parallel.rs:1235[m
+[31m-src/am/ec_hnsw/build_parallel.rs:125[m
+[31m-src/am/ec_hnsw/build_parallel.rs:1250[m
+[31m-src/am/ec_hnsw/build_parallel.rs:1271[m
+[31m-src/am/ec_hnsw/build_parallel.rs:1295[m
+[31m-src/am/ec_hnsw/build_parallel.rs:1328[m
+[31m-src/am/ec_hnsw/build_parallel.rs:1343[m
+[31m-src/am/ec_hnsw/build_parallel.rs:1344[m
+[31m-src/am/ec_hnsw/build_parallel.rs:1345[m
+[31m-src/am/ec_hnsw/build_parallel.rs:1346[m
+[31m-src/am/ec_hnsw/build_parallel.rs:1347[m
+[31m-src/am/ec_hnsw/build_parallel.rs:1364[m
+[31m-src/am/ec_hnsw/build_parallel.rs:1365[m
+[31m-src/am/ec_hnsw/build_parallel.rs:1366[m
+[31m-src/am/ec_hnsw/build_parallel.rs:1367[m
+[31m-src/am/ec_hnsw/build_parallel.rs:1371[m
+[31m-src/am/ec_hnsw/build_parallel.rs:1376[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:1176[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:1184[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:1219[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:1242[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:1247[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:1252[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:1254[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:1265[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:1270[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:1274[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:1275[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:1290[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:1311[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:1335[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:1368[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:1383[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:1384[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:1385[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:1386[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:1387[m
+ src/am/ec_hnsw/build_parallel.rs:1404[m
+[31m-src/am/ec_hnsw/build_parallel.rs:1475[m
+[31m-src/am/ec_hnsw/build_parallel.rs:1543[m
+[31m-src/am/ec_hnsw/build_parallel.rs:1544[m
+[31m-src/am/ec_hnsw/build_parallel.rs:1546[m
+[31m-src/am/ec_hnsw/build_parallel.rs:1547[m
+[31m-src/am/ec_hnsw/build_parallel.rs:1549[m
+[31m-src/am/ec_hnsw/build_parallel.rs:1551[m
+[31m-src/am/ec_hnsw/build_parallel.rs:1572[m
+[31m-src/am/ec_hnsw/build_parallel.rs:1574[m
+[31m-src/am/ec_hnsw/build_parallel.rs:1578[m
+[31m-src/am/ec_hnsw/build_parallel.rs:1645[m
+[31m-src/am/ec_hnsw/build_parallel.rs:1646[m
+[31m-src/am/ec_hnsw/build_parallel.rs:1647[m
+[31m-src/am/ec_hnsw/build_parallel.rs:1648[m
+[31m-src/am/ec_hnsw/build_parallel.rs:1655[m
+[31m-src/am/ec_hnsw/build_parallel.rs:1660[m
+[31m-src/am/ec_hnsw/build_parallel.rs:1749[m
+[31m-src/am/ec_hnsw/build_parallel.rs:1762[m
+[31m-src/am/ec_hnsw/build_parallel.rs:1793[m
+[31m-src/am/ec_hnsw/build_parallel.rs:1813[m
+[31m-src/am/ec_hnsw/build_parallel.rs:1826[m
+[31m-src/am/ec_hnsw/build_parallel.rs:1842[m
+[31m-src/am/ec_hnsw/build_parallel.rs:1858[m
+[31m-src/am/ec_hnsw/build_parallel.rs:1869[m
+[31m-src/am/ec_hnsw/build_parallel.rs:1878[m
+[31m-src/am/ec_hnsw/build_parallel.rs:1981[m
+[31m-src/am/ec_hnsw/build_parallel.rs:1988[m
+[31m-src/am/ec_hnsw/build_parallel.rs:1989[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2035[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2037[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2041[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2042[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2047[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2049[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2074[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2076[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2084[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2097[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2125[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2126[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2127[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2134[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2142[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2143[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2144[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2175[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2186[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2197[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2206[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2210[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2225[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:1405[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:1406[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:1407[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:1411[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:1416[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:1444[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:1515[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:1583[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:1584[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:1586[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:1587[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:1589[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:1591[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:1612[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:1614[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:1618[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:1685[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:1686[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:1687[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:1688[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:1695[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:1700[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:1789[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:1802[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:1833[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:1853[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:1866[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:1882[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:1898[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:1909[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:1918[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2021[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2028[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2029[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2075[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2077[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2081[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2082[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2087[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2089[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2114[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2116[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2124[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2137[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2165[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2166[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2167[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2174[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2182[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2183[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2184[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2215[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2226[m
+ src/am/ec_hnsw/build_parallel.rs:2237[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2256[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2258[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2260[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2271[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2272[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2295[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2297[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2305[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2309[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2323[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2324[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2351[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2352[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2353[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2360[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2246[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2250[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2265[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2277[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2296[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2298[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2300[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2311[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2312[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2335[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2337[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2345[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2349[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2363[m
+ src/am/ec_hnsw/build_parallel.rs:2364[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2388[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2399[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2410[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2421[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2430[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2431[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2443[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2447[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2476[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2486[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2510[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2519[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2521[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2523[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2533[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2554[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2572[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2585[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2593[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2597[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2599[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2604[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2607[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2608[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2610[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2623[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2626[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2631[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2391[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2392[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2393[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2400[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2404[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2428[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2439[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2450[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2461[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2470[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2471[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2483[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2487[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2516[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2526[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2550[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2559[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2561[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2563[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2573[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2594[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2612[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2625[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2633[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2637[m
+ src/am/ec_hnsw/build_parallel.rs:2639[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2640[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2643[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2646[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2661[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2668[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2672[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2676[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2687[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2691[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2693[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2699[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2700[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2644[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2647[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2648[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2650[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2663[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2666[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2671[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2679[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2680[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2683[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2686[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2701[m
+ src/am/ec_hnsw/build_parallel.rs:2708[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2709[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2721[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2728[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2732[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2736[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2751[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2756[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2760[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2941[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2949[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2960[m
+[31m-src/am/ec_hnsw/build_parallel.rs:2970[m
+[31m-src/am/ec_hnsw/build_parallel.rs:3437[m
+[31m-src/am/ec_hnsw/build_parallel.rs:3445[m
+[31m-src/am/ec_hnsw/build_parallel.rs:3520[m
+[31m-src/am/ec_hnsw/build_parallel.rs:3528[m
+[31m-src/am/ec_hnsw/build_parallel.rs:3556[m
+[31m-src/am/ec_hnsw/build_parallel.rs:3577[m
+[31m-src/am/ec_hnsw/build_parallel.rs:3586[m
+[31m-src/am/ec_hnsw/build_parallel.rs:3594[m
+[31m-src/am/ec_hnsw/build_parallel.rs:3620[m
+[31m-src/am/ec_hnsw/build_parallel.rs:3628[m
+[31m-src/am/ec_hnsw/build_parallel.rs:3652[m
+[31m-src/am/ec_hnsw/build_parallel.rs:3675[m
+[31m-src/am/ec_hnsw/build_parallel.rs:3683[m
+[31m-src/am/ec_hnsw/build_parallel.rs:3694[m
+[31m-src/am/ec_hnsw/build_parallel.rs:3702[m
+[31m-src/am/ec_hnsw/build_parallel.rs:3731[m
+[31m-src/am/ec_hnsw/build_parallel.rs:3745[m
+[31m-src/am/ec_hnsw/build_parallel.rs:3755[m
+[31m-src/am/ec_hnsw/build_parallel.rs:3769[m
+[31m-src/am/ec_hnsw/build_parallel.rs:3783[m
+[31m-src/am/ec_hnsw/build_parallel.rs:3797[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2712[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2716[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2727[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2731[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2733[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2739[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2740[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2748[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2749[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2761[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2768[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2772[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2776[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2791[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2796[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2800[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2981[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:2989[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:3000[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:3010[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:3477[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:3485[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:3560[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:3568[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:3596[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:3617[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:3626[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:3634[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:3660[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:3668[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:3692[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:3715[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:3723[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:3734[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:3742[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:3771[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:3785[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:3795[m
+ src/am/ec_hnsw/build_parallel.rs:3809[m
+[31m-src/am/ec_hnsw/build_parallel.rs:3831[m
+[31m-src/am/ec_hnsw/build_parallel.rs:3846[m
+[31m-src/am/ec_hnsw/build_parallel.rs:3856[m
+[31m-src/am/ec_hnsw/build_parallel.rs:3866[m
+[31m-src/am/ec_hnsw/build_parallel.rs:3881[m
+[31m-src/am/ec_hnsw/build_parallel.rs:3899[m
+[31m-src/am/ec_hnsw/build_parallel.rs:3913[m
+[31m-src/am/ec_hnsw/build_parallel.rs:3926[m
+[31m-src/am/ec_hnsw/build_parallel.rs:3929[m
+[31m-src/am/ec_hnsw/build_parallel.rs:3948[m
+[31m-src/am/ec_hnsw/build_parallel.rs:3960[m
+[31m-src/am/ec_hnsw/build_parallel.rs:3967[m
+[31m-src/am/ec_hnsw/build_parallel.rs:3983[m
+[31m-src/am/ec_hnsw/build_parallel.rs:480[m
+[31m-src/am/ec_hnsw/build_parallel.rs:484[m
+[31m-src/am/ec_hnsw/build_parallel.rs:53[m
+[31m-src/am/ec_hnsw/build_parallel.rs:57[m
+[31m-src/am/ec_hnsw/build_parallel.rs:66[m
+[31m-src/am/ec_hnsw/build_parallel.rs:789[m
+[31m-src/am/ec_hnsw/build_parallel.rs:957[m
+[31m-src/am/ec_hnsw/build_parallel.rs:968[m
+[31m-src/am/ec_hnsw/build_parallel.rs:998[m
+[31m-src/am/ec_hnsw/build_parallel.rs:999[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:3823[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:3837[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:3849[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:3871[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:3886[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:3896[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:3906[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:3921[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:3939[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:3953[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:3966[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:3969[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:3988[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:4000[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:4007[m
+[32m+[m[32msrc/am/ec_hnsw/build_parallel.rs:4023[m
+ src/am/ec_hnsw/insert.rs:1026[m
+ src/am/ec_hnsw/insert.rs:1032[m
+ src/am/ec_hnsw/insert.rs:1045[m
+[1mdiff --git a/src/am/ec_hnsw/build_parallel.rs b/src/am/ec_hnsw/build_parallel.rs[m
+[1mindex 403c0885..062aea1f 100644[m
+[1m--- a/src/am/ec_hnsw/build_parallel.rs[m
+[1m+++ b/src/am/ec_hnsw/build_parallel.rs[m
+[36m@@ -50,10 +50,15 @@[m [mstruct PgLockedDsmInsertStateCell(*mut pg_sys::pg_atomic_uint32);[m
+ [m
+ impl EcHnswConcurrentDsmInsertStateCell for PgLockedDsmInsertStateCell {[m
+     fn load_acquire(&self) -> u32 {[m
+[32m+[m[32m        // SAFETY: The cell wraps a PostgreSQL atomic field inside a DSM node;[m
+[32m+[m[32m        // callers hold the appropriate node lock or are using the atomic[m
+[32m+[m[32m        // protocol's acquire load.[m
+         unsafe { pg_sys::pg_atomic_read_u32(self.0) }[m
+     }[m
+ [m
+     fn store_release(&self, value: u32) {[m
+[32m+[m[32m        // SAFETY: The cell points at a PostgreSQL atomic field inside a DSM[m
+[32m+[m[32m        // node, and the release barrier publishes node insert-state changes.[m
+         unsafe {[m
+             pg_sys::pg_atomic_write_membarrier_u32(self.0, value);[m
+         }[m
+[36m@@ -63,6 +68,8 @@[m [mimpl EcHnswConcurrentDsmInsertStateCell for PgLockedDsmInsertStateCell {[m
+         let mut expected = current;[m
+         // The lifted concurrent DSM insert protocol requires real CAS semantics.[m
+         // PostgreSQL's pg_atomic_compare_exchange_u32 is the production contract.[m
+[32m+[m[32m        // SAFETY: The cell points at a PostgreSQL atomic insert-state field, and[m
+[32m+[m[32m        // the compare-exchange uses PostgreSQL's acquire/release primitive.[m
+         unsafe { pg_sys::pg_atomic_compare_exchange_u32(self.0, &mut expected, new) }[m
+     }[m
+ }[m
+[36m@@ -122,6 +129,8 @@[m [mimpl EcHnswParallelBuildPlan {[m
+         let requested_workers = if index_info.is_null() {[m
+             0[m
+         } else {[m
+[32m+[m[32m            // SAFETY: Non-null `IndexInfo` is supplied by PostgreSQL build[m
+[32m+[m[32m            // callback setup and remains live while planning this build.[m
+             unsafe { (*index_info).ii_ParallelWorkers }[m
+         };[m
+         let graph_assembly = if options::enable_parallel_build_concurrent_dsm() {[m
+[36m@@ -477,10 +486,14 @@[m [mimpl EcHnswConcurrentDsmLockOps {[m
+     }[m
+ [m
+     unsafe fn shared(self, lock: *mut pg_sys::LWLock) -> LwLockGuard {[m
+[32m+[m[32m        // SAFETY: Callers pass an initialized LWLock pointer from the DSM graph;[m
+[32m+[m[32m        // the selected lock operation returns a guard that releases it.[m
+         unsafe { (self.acquire_shared)(lock) }[m
+     }[m
+ [m
+     unsafe fn exclusive(self, lock: *mut pg_sys::LWLock) -> LwLockGuard {[m
+[32m+[m[32m        // SAFETY: Callers pass an initialized LWLock pointer from the DSM graph;[m
+[32m+[m[32m        // the selected lock operation returns a guard that releases it.[m
+         unsafe { (self.acquire_exclusive)(lock) }[m
+     }[m
+ }[m
+[36m@@ -786,6 +799,8 @@[m [mimpl EcHnswConcurrentDsmGraphLayout {[m
+             pgrx::error!("concurrent DSM graph header pointer is null");[m
+         }[m
+ [m
+[32m+[m[32m        // SAFETY: Null was rejected above; the caller points at the header bytes[m
+[32m+[m[32m        // at the beginning of a DSM graph image.[m
+         let header = unsafe { &*header };[m
+         let entry_idx = match header.entry_idx {[m
+             EC_HNSW_CONCURRENT_DSM_INVALID_NODE_IDX => None,[m
+[36m@@ -954,6 +969,8 @@[m [mpub(super) unsafe fn concurrent_dsm_graph_layout_from_image([m
+         pgrx::error!("concurrent DSM graph base pointer is null");[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: Null was rejected above; the graph layout is encoded in the image[m
+[32m+[m[32m    // header and validated while deriving offsets.[m
+     unsafe { EcHnswConcurrentDsmGraphLayout::from_header(base.cast()) }[m
+ }[m
+ [m
+[36m@@ -965,6 +982,8 @@[m [mpub(super) unsafe fn concurrent_dsm_insert_config_from_image([m
+         pgrx::error!("concurrent DSM graph base pointer is null");[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: Null was rejected above; the DSM graph image begins with the[m
+[32m+[m[32m    // header written by `initialize_concurrent_dsm_graph_image`.[m
+     let header = unsafe { &*base.cast::<EcHnswConcurrentDsmGraphHeader>() };[m
+     if header.node_count == 0 {[m
+         return None;[m
+[36m@@ -995,8 +1014,14 @@[m [mpub(super) unsafe fn concurrent_dsm_insert_config_from_image([m
+ pub(super) unsafe fn attach_concurrent_dsm_graph_image([m
+     base: *mut c_void,[m
+ ) -> EcHnswConcurrentDsmGraphAttachment {[m
+[32m+[m[32m    // SAFETY: The caller passes the DSM graph base pointer; the layout helper[m
+[32m+[m[32m    // validates the image header and derives bounded offsets.[m
+     let layout = unsafe { concurrent_dsm_graph_layout_from_image(base) };[m
+[32m+[m[32m    // SAFETY: The same DSM graph header stores insert configuration for[m
+[32m+[m[32m    // non-empty images and is validated by the helper.[m
+     let insert_config = unsafe { concurrent_dsm_insert_config_from_image(base) };[m
+[32m+[m[32m    // SAFETY: `layout` was derived from the image header, so offsets refer to[m
+[32m+[m[32m    // regions inside this DSM graph image.[m
+     let parts = unsafe { concurrent_dsm_graph_parts(base, layout) };[m
+ [m
+     EcHnswConcurrentDsmGraphAttachment {[m
+[36m@@ -1017,16 +1042,26 @@[m [mpub(super) unsafe fn concurrent_dsm_graph_parts([m
+ [m
+     let base = base.cast::<u8>();[m
+     EcHnswConcurrentDsmGraphParts {[m
+[32m+[m[32m        // SAFETY: `layout` was computed from this image and header_offset is[m
+[32m+[m[32m        // the beginning of the allocation.[m
+         header: unsafe {[m
+             base.add(layout.header_offset)[m
+                 .cast::<EcHnswConcurrentDsmGraphHeader>()[m
+         },[m
+[32m+[m[32m        // SAFETY: `layout.nodes_offset` is aligned and bounds-checked while the[m
+[32m+[m[32m        // layout is constructed from header values.[m
+         nodes: unsafe {[m
+             base.add(layout.nodes_offset)[m
+                 .cast::<EcHnswConcurrentDsmNode>()[m
+         },[m
+[32m+[m[32m        // SAFETY: The neighbor slot offset is aligned and within the DSM image[m
+[32m+[m[32m        // described by `layout`.[m
+         neighbor_slots: unsafe { base.add(layout.neighbor_slots_offset).cast::<u32>() },[m
+[32m+[m[32m        // SAFETY: The code corpus offset is aligned and within the DSM image[m
+[32m+[m[32m        // described by `layout`.[m
+         codes: unsafe { base.add(layout.codes_offset) },[m
+[32m+[m[32m        // SAFETY: The source corpus offset is aligned and within the DSM image[m
+[32m+[m[32m        // described by `layout`.[m
+         sources: unsafe { base.add(layout.sources_offset).cast::<f32>() },[m
+     }[m
+ }[m
+[36m@@ -1038,6 +1073,8 @@[m [mpub(super) unsafe fn initialize_concurrent_dsm_graph_image([m
+     mut initialize_node_lock: impl FnMut(*mut pg_sys::LWLock),[m
+ ) -> EcHnswConcurrentDsmGraphParts {[m
+     let layout = plan.graph_layout;[m
+[32m+[m[32m    // SAFETY: `base` points at a DSM allocation sized from `plan.graph_layout`;[m
+[32m+[m[32m    // the helper turns its checked offsets into typed region pointers.[m
+     let parts = unsafe { concurrent_dsm_graph_parts(base, layout) };[m
+     let insert_config = plan[m
+         .insert_config[m
+[36m@@ -1049,6 +1086,9 @@[m [mpub(super) unsafe fn initialize_concurrent_dsm_graph_image([m
+             ef_construction: 0,[m
+         });[m
+ [m
+[32m+[m[32m    // SAFETY: `parts` points into an allocated DSM image sized by `layout`; this[m
+[32m+[m[32m    // block writes the header, nodes, neighbor slots, and corpora exactly once[m
+[32m+[m[32m    // during image initialization.[m
+     unsafe {[m
+         ptr::write([m
+             parts.header,[m
+
+Script done on 2026-05-19 04:18:47-07:00 [COMMAND_EXIT_CODE="0"]

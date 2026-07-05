@@ -1,0 +1,12 @@
+Command:
+cargo run -p ecaz-cli -- --host /home/peter/.pgrx --port 28818 --database postgres bench latency --prefix task28_ivf_postopt25k_n32w25 --profile ec_ivf --k 10 --concurrency 1 --iterations 100 --sweep 16,24,32
+
+Output:
+Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.16s
+Running `target/debug/ecaz --host /home/peter/.pgrx --port 28818 --database postgres bench latency --prefix task28_ivf_postopt25k_n32w25 --profile ec_ivf --k 10 --concurrency 1 --iterations 100 --sweep 16,24,32`
+
+| sweep | count | mean | stddev | min | p50 | p95 | p99 | max |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 16 | 100 | 233.6 ms | 19.2 ms | 198.1 ms | 231.7 ms | 266.7 ms | 278.8 ms | 318.6 ms |
+| 24 | 100 | 344.1 ms | 29.9 ms | 307.4 ms | 336.8 ms | 385.9 ms | 473.9 ms | 496.5 ms |
+| 32 | 100 | 447.0 ms | 6.97 ms | 436.3 ms | 445.7 ms | 457.3 ms | 465.4 ms | 497.3 ms |

@@ -1,0 +1,16 @@
+Script started on 2026-05-13 17:35:04-07:00 [<not executed on terminal>]
+plan/tasks/task30-phase12b-spire-cleanup.md
+30:  - `src/lib.rs` = 66,054 lines (247 `test_ec_spire_*` PG18 fixtures in
+106:## Phase 12b.2: Split `src/lib.rs` PG18 fixture sink
+112:- Midphase audit decision in packet `31017`: the hard 2,500-line cap in
+119:- Midphase audit decision in packet `31017`: the original
+121:  requires `src/lib.rs` to contain no `test_ec_spire_*` fixture bodies
+278:  `tuple_transport_status`, `nprobe`, `rerank_width`. Add a fixture
+371:3. `12b.2` `src/lib.rs` fixture split — large mechanical change,
+390:- `src/lib.rs` contains no `test_ec_spire_*` fixture bodies. It may
+
+src/am/ec_spire/custom_scan/explain.rs
+33:        // Minimal Phase 12b contract: this is a stable shape marker, not a
+35:        pg_sys::ExplainPropertyText(c"tuple_transport_status".as_ptr(), c"ready".as_ptr(), es);
+
+Script done on 2026-05-13 17:35:04-07:00 [COMMAND_EXIT_CODE="0"]

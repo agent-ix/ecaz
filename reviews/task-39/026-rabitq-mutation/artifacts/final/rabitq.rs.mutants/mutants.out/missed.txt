@@ -1,0 +1,9 @@
+hardening/careful/src/../../../src/quant/rabitq.rs:409:32: replace > with >= in <impl crate::quant::Quantizer for RaBitQQuantizer>::encode_code
+hardening/careful/src/../../../src/quant/rabitq.rs:429:30: replace > with >= in <impl crate::quant::Quantizer for RaBitQQuantizer>::encode_code
+hardening/careful/src/../../../src/quant/rabitq.rs:585:50: replace * with / in RaBitQQuantizer::encode_code_centered
+hardening/careful/src/../../../src/quant/rabitq.rs:588:41: replace > with >= in RaBitQQuantizer::encode_code_centered
+hardening/careful/src/../../../src/quant/rabitq.rs:728:49: replace * with / in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:750:24: replace < with <= in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:752:35: replace < with == in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:752:35: replace < with <= in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:993:38: replace * with + in quantize_level

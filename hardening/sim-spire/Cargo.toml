@@ -1,0 +1,14 @@
+[package]
+name = "ecaz-sim-spire-hardening"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+tokio = { version = "1", features = ["time"] }
+turmoil = "0.7.2"

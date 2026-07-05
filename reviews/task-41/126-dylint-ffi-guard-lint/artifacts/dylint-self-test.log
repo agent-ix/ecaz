@@ -1,0 +1,19 @@
+Building workspace metadata entry `ecaz_lints`
+    Finished `release` profile [optimized] target(s) in 0.04s
+Checking with toolchain `nightly-2026-04-16-aarch64-apple-darwin`
+    Checking panic_across_ffi_fixture v0.0.0 (/Users/peter/dev/tqvector/crates/ecaz-lints/fixtures/panic_across_ffi)
+error: direct C ABI function body needs #[pg_guard], pgrx::pgrx_extern_c_guard, or catch_unwind
+ --> src/lib.rs:3:1
+  |
+3 | / unsafe extern "C-unwind" fn unguarded_callback() {
+4 | |     panic!("boom");
+5 | | }
+  | |_^
+  |
+  = note: requested on the command line with `-D ecaz-panic-across-ffi`
+
+error: could not compile `panic_across_ffi_fixture` (lib) due to 1 previous error
+Error: Error: Compilation failed with toolchain `nightly-2026-04-16-aarch64-apple-darwin`
+
+Caused by:
+    command failed: env -u CARGO -u RUSTC CLIPPY_DISABLE_DOCS_LINKS="null" DYLINT_LIBS="[\"/Users/peter/dev/tqvector/crates/ecaz-lints/fixtures/panic_across_ffi/target/dylint/libraries/nightly-2026-04-16-aarch64-apple-darwin/release/libecaz_lints@nightly-2026-04-16-aarch64-apple-darwin.dylib\"]" DYLINT_METADATA="null" DYLINT_NO_DEPS="1" RUSTC_WORKSPACE_WRAPPER="/Users/peter/dev/tqvector/crates/ecaz-lints/target/dylint-drivers/nightly-2026-04-16-aarch64-apple-darwin/dylint-driver" RUSTUP_TOOLCHAIN="nightly-2026-04-16-aarch64-apple-darwin" "cargo" "check" "--target-dir" "/Users/peter/dev/tqvector/crates/ecaz-lints/fixtures/panic_across_ffi/target/dylint/target/nightly-2026-04-16-aarch64-apple-darwin" "--manifest-path" "/Users/peter/dev/tqvector/crates/ecaz-lints/fixtures/panic_across_ffi/Cargo.toml"

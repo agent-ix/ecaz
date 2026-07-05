@@ -1,0 +1,12 @@
+run_dir=/home/peter/dev/ecaz/target/spire-multicluster-pg18-30654
+remote_port=39218
+coord_port=39219
+connection_status=libpq_connection_opened,secret_provider
+candidate_count=1
+heap_summary=remote_heap_candidates,ready,1
+heap_row=2,origin_node_row_locator,true
+coordinator_result=remote_heap_candidates,ready,remote_ready,1
+manifest_executor=libpq_connection_opened,ready,ready
+remote_manifest_applied=1,1
+remote_manifest_entries=1,1
+SPIRE multicluster PG18 smoke passed

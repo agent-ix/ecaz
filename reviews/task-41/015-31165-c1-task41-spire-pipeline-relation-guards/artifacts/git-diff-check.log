@@ -1,0 +1,5 @@
+command: git diff --check ed39f5d3^ ed39f5d3
+exit status: 0
+
+output:
+<no output>

@@ -1,0 +1,21 @@
+--- hardening/careful/src/../../../src/storage/page.rs
++++ replace == with != in DataPageChain::start_new_page_if_current_has_tuples
+@@ -193,17 +193,17 @@
+         let index = block_number.checked_sub(FIRST_DATA_BLOCK_NUMBER)? as usize;
+         self.pages.get_mut(index)
+     }
+ 
+     pub fn start_new_page_if_current_has_tuples(&mut self) {
+         if self
+             .pages
+             .last()
+-            .map_or(true, |page| page.tuple_count() == 0)
++            .map_or(true, |page| page.tuple_count() != /* ~ changed by cargo-mutants ~ */ 0)
+         {
+             return;
+         }
+         let next_block = self
+             .pages
+             .last()
+             .expect("page chain is non-empty")
+             .block_number

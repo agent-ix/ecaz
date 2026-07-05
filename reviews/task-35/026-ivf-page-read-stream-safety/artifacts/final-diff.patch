@@ -1,0 +1,375 @@
+diff --git a/scripts/unsafe_comment_baseline.txt b/scripts/unsafe_comment_baseline.txt
+index c9b35ef5..2dcf6861 100644
+--- a/scripts/unsafe_comment_baseline.txt
++++ b/scripts/unsafe_comment_baseline.txt
+@@ -1307,127 +1307,106 @@ src/am/ec_ivf/insert.rs:81
+ src/am/ec_ivf/insert.rs:84
+ src/am/ec_ivf/insert.rs:87
+ src/am/ec_ivf/insert.rs:98
+-src/am/ec_ivf/page.rs:1227
+-src/am/ec_ivf/page.rs:1241
+-src/am/ec_ivf/page.rs:1247
+-src/am/ec_ivf/page.rs:1252
+-src/am/ec_ivf/page.rs:1254
+-src/am/ec_ivf/page.rs:1259
+-src/am/ec_ivf/page.rs:1264
+-src/am/ec_ivf/page.rs:1279
+-src/am/ec_ivf/page.rs:1293
+-src/am/ec_ivf/page.rs:1299
+-src/am/ec_ivf/page.rs:1304
+-src/am/ec_ivf/page.rs:1306
+-src/am/ec_ivf/page.rs:1311
+-src/am/ec_ivf/page.rs:1316
+-src/am/ec_ivf/page.rs:1331
+-src/am/ec_ivf/page.rs:1345
+-src/am/ec_ivf/page.rs:1351
+-src/am/ec_ivf/page.rs:1356
+-src/am/ec_ivf/page.rs:1358
+-src/am/ec_ivf/page.rs:1363
+-src/am/ec_ivf/page.rs:1368
+-src/am/ec_ivf/page.rs:1383
+-src/am/ec_ivf/page.rs:1393
+-src/am/ec_ivf/page.rs:1409
+-src/am/ec_ivf/page.rs:1420
+-src/am/ec_ivf/page.rs:1434
+-src/am/ec_ivf/page.rs:1444
+-src/am/ec_ivf/page.rs:1461
+-src/am/ec_ivf/page.rs:1490
+-src/am/ec_ivf/page.rs:1531
+-src/am/ec_ivf/page.rs:1580
+-src/am/ec_ivf/page.rs:1586
+-src/am/ec_ivf/page.rs:1605
+-src/am/ec_ivf/page.rs:1613
++src/am/ec_ivf/page.rs:1419
++src/am/ec_ivf/page.rs:1429
++src/am/ec_ivf/page.rs:1445
++src/am/ec_ivf/page.rs:1456
++src/am/ec_ivf/page.rs:1470
++src/am/ec_ivf/page.rs:1480
++src/am/ec_ivf/page.rs:1497
++src/am/ec_ivf/page.rs:1526
++src/am/ec_ivf/page.rs:1567
+ src/am/ec_ivf/page.rs:1616
+-src/am/ec_ivf/page.rs:1628
+-src/am/ec_ivf/page.rs:1640
++src/am/ec_ivf/page.rs:1622
++src/am/ec_ivf/page.rs:1641
+ src/am/ec_ivf/page.rs:1649
+-src/am/ec_ivf/page.rs:1657
+-src/am/ec_ivf/page.rs:1667
++src/am/ec_ivf/page.rs:1652
++src/am/ec_ivf/page.rs:1664
+ src/am/ec_ivf/page.rs:1676
+-src/am/ec_ivf/page.rs:1686
+-src/am/ec_ivf/page.rs:1688
+-src/am/ec_ivf/page.rs:1689
+-src/am/ec_ivf/page.rs:1691
+-src/am/ec_ivf/page.rs:1696
++src/am/ec_ivf/page.rs:1685
++src/am/ec_ivf/page.rs:1693
++src/am/ec_ivf/page.rs:1703
+ src/am/ec_ivf/page.rs:1712
+-src/am/ec_ivf/page.rs:1713
+-src/am/ec_ivf/page.rs:1714
+-src/am/ec_ivf/page.rs:1726
+-src/am/ec_ivf/page.rs:1736
+-src/am/ec_ivf/page.rs:1738
+-src/am/ec_ivf/page.rs:1739
+-src/am/ec_ivf/page.rs:1741
+-src/am/ec_ivf/page.rs:1756
+-src/am/ec_ivf/page.rs:1757
+-src/am/ec_ivf/page.rs:1758
++src/am/ec_ivf/page.rs:1722
++src/am/ec_ivf/page.rs:1724
++src/am/ec_ivf/page.rs:1725
++src/am/ec_ivf/page.rs:1727
++src/am/ec_ivf/page.rs:1732
++src/am/ec_ivf/page.rs:1748
++src/am/ec_ivf/page.rs:1749
++src/am/ec_ivf/page.rs:1750
++src/am/ec_ivf/page.rs:1762
+ src/am/ec_ivf/page.rs:1772
+-src/am/ec_ivf/page.rs:1787
+-src/am/ec_ivf/page.rs:1789
+-src/am/ec_ivf/page.rs:1801
+-src/am/ec_ivf/page.rs:1824
+-src/am/ec_ivf/page.rs:1827
+-src/am/ec_ivf/page.rs:1840
+-src/am/ec_ivf/page.rs:1855
+-src/am/ec_ivf/page.rs:1857
+-src/am/ec_ivf/page.rs:1869
+-src/am/ec_ivf/page.rs:1900
+-src/am/ec_ivf/page.rs:1902
++src/am/ec_ivf/page.rs:1774
++src/am/ec_ivf/page.rs:1775
++src/am/ec_ivf/page.rs:1777
++src/am/ec_ivf/page.rs:1792
++src/am/ec_ivf/page.rs:1793
++src/am/ec_ivf/page.rs:1794
++src/am/ec_ivf/page.rs:1808
++src/am/ec_ivf/page.rs:1823
++src/am/ec_ivf/page.rs:1825
++src/am/ec_ivf/page.rs:1837
++src/am/ec_ivf/page.rs:1860
++src/am/ec_ivf/page.rs:1863
++src/am/ec_ivf/page.rs:1876
++src/am/ec_ivf/page.rs:1891
++src/am/ec_ivf/page.rs:1893
+ src/am/ec_ivf/page.rs:1905
+-src/am/ec_ivf/page.rs:1916
+-src/am/ec_ivf/page.rs:1931
+-src/am/ec_ivf/page.rs:1933
+-src/am/ec_ivf/page.rs:1945
+-src/am/ec_ivf/page.rs:1968
+-src/am/ec_ivf/page.rs:1971
+-src/am/ec_ivf/page.rs:2002
+-src/am/ec_ivf/page.rs:2008
+-src/am/ec_ivf/page.rs:2032
+-src/am/ec_ivf/page.rs:2042
+-src/am/ec_ivf/page.rs:2062
+-src/am/ec_ivf/page.rs:2085
+-src/am/ec_ivf/page.rs:2091
+-src/am/ec_ivf/page.rs:2156
+-src/am/ec_ivf/page.rs:2158
+-src/am/ec_ivf/page.rs:2167
+-src/am/ec_ivf/page.rs:2230
+-src/am/ec_ivf/page.rs:2242
+-src/am/ec_ivf/page.rs:2247
+-src/am/ec_ivf/page.rs:2249
+-src/am/ec_ivf/page.rs:2250
+-src/am/ec_ivf/page.rs:2309
+-src/am/ec_ivf/page.rs:2334
+-src/am/ec_ivf/page.rs:2347
+-src/am/ec_ivf/page.rs:2353
++src/am/ec_ivf/page.rs:1936
++src/am/ec_ivf/page.rs:1938
++src/am/ec_ivf/page.rs:1941
++src/am/ec_ivf/page.rs:1952
++src/am/ec_ivf/page.rs:1967
++src/am/ec_ivf/page.rs:1969
++src/am/ec_ivf/page.rs:1981
++src/am/ec_ivf/page.rs:2004
++src/am/ec_ivf/page.rs:2007
++src/am/ec_ivf/page.rs:2038
++src/am/ec_ivf/page.rs:2044
++src/am/ec_ivf/page.rs:2068
++src/am/ec_ivf/page.rs:2078
++src/am/ec_ivf/page.rs:2098
++src/am/ec_ivf/page.rs:2121
++src/am/ec_ivf/page.rs:2127
++src/am/ec_ivf/page.rs:2192
++src/am/ec_ivf/page.rs:2194
++src/am/ec_ivf/page.rs:2203
++src/am/ec_ivf/page.rs:2266
++src/am/ec_ivf/page.rs:2278
++src/am/ec_ivf/page.rs:2283
++src/am/ec_ivf/page.rs:2285
++src/am/ec_ivf/page.rs:2286
++src/am/ec_ivf/page.rs:2345
+ src/am/ec_ivf/page.rs:2370
+-src/am/ec_ivf/page.rs:2427
+-src/am/ec_ivf/page.rs:2452
+-src/am/ec_ivf/page.rs:2464
+-src/am/ec_ivf/page.rs:2479
+-src/am/ec_ivf/page.rs:2496
+-src/am/ec_ivf/page.rs:2525
+-src/am/ec_ivf/page.rs:2539
+-src/am/ec_ivf/page.rs:2541
+-src/am/ec_ivf/page.rs:2553
+-src/am/ec_ivf/page.rs:2555
+-src/am/ec_ivf/page.rs:2558
+-src/am/ec_ivf/page.rs:2559
+-src/am/ec_ivf/page.rs:2560
+-src/am/ec_ivf/page.rs:2564
+-src/am/ec_ivf/page.rs:2569
+-src/am/ec_ivf/page.rs:2580
+-src/am/ec_ivf/page.rs:2581
+-src/am/ec_ivf/page.rs:2593
+-src/am/ec_ivf/page.rs:2603
++src/am/ec_ivf/page.rs:2383
++src/am/ec_ivf/page.rs:2389
++src/am/ec_ivf/page.rs:2406
++src/am/ec_ivf/page.rs:2463
++src/am/ec_ivf/page.rs:2488
++src/am/ec_ivf/page.rs:2500
++src/am/ec_ivf/page.rs:2515
++src/am/ec_ivf/page.rs:2532
++src/am/ec_ivf/page.rs:2561
++src/am/ec_ivf/page.rs:2575
++src/am/ec_ivf/page.rs:2577
++src/am/ec_ivf/page.rs:2589
++src/am/ec_ivf/page.rs:2591
++src/am/ec_ivf/page.rs:2594
++src/am/ec_ivf/page.rs:2595
++src/am/ec_ivf/page.rs:2596
++src/am/ec_ivf/page.rs:2600
+ src/am/ec_ivf/page.rs:2605
+-src/am/ec_ivf/page.rs:2606
+-src/am/ec_ivf/page.rs:2607
+-src/am/ec_ivf/page.rs:2621
+-src/am/ec_ivf/page.rs:2622
+-src/am/ec_ivf/page.rs:3121
++src/am/ec_ivf/page.rs:2616
++src/am/ec_ivf/page.rs:2617
++src/am/ec_ivf/page.rs:2629
++src/am/ec_ivf/page.rs:2639
++src/am/ec_ivf/page.rs:2641
++src/am/ec_ivf/page.rs:2642
++src/am/ec_ivf/page.rs:2643
++src/am/ec_ivf/page.rs:2657
++src/am/ec_ivf/page.rs:2658
++src/am/ec_ivf/page.rs:3157
+ src/am/ec_ivf/scan.rs:1028
+ src/am/ec_ivf/scan.rs:1033
+ src/am/ec_ivf/scan.rs:1101
+diff --git a/src/am/ec_ivf/page.rs b/src/am/ec_ivf/page.rs
+index a0f2fda5..ddfd758a 100644
+--- a/src/am/ec_ivf/page.rs
++++ b/src/am/ec_ivf/page.rs
+@@ -1224,6 +1224,8 @@ where
+     F: FnMut(ItemPointer, IvfPostingTuple) -> Result<(), String>,
+ {
+     let mut state = LinearPrefetchState::new(head_block, tail_block);
++    // SAFETY: `index_relation` is live, `state` outlives the stream loop, and
++    // PostgreSQL stores block-number-sized per-buffer data via the callback.
+     let stream = unsafe {
+         pg_sys::read_stream_begin_relation(
+             pg_sys::READ_STREAM_SEQUENTIAL as i32,
+@@ -1238,29 +1240,39 @@ where
+ 
+     loop {
+         let mut per_buffer_data = ptr::null_mut();
++        // SAFETY: `stream` was created above and remains open until the
++        // explicit `read_stream_end` on normal or error exit.
+         let buffer = unsafe { pg_sys::read_stream_next_buffer(stream, &mut per_buffer_data) };
+         if buffer == pg_sys::InvalidBuffer as pg_sys::Buffer {
+             break;
+         }
+         let result = {
++            // SAFETY: PostgreSQL returned a valid pinned buffer from the read
++            // stream; the guard converts that pin into a shared buffer lock.
+             let buffer =
+                 unsafe { LockedBufferGuard::lock_pinned(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) }
+                     .ok_or_else(|| "ec_ivf read stream returned an invalid buffer".to_owned())?;
+             let block_number = if per_buffer_data.is_null() {
+                 buffer.block_number()
+             } else {
++                // SAFETY: the read stream callback stores a `BlockNumber` in
++                // the per-buffer data slot when it is non-null.
+                 unsafe { *per_buffer_data.cast::<pg_sys::BlockNumber>() }
+             };
++            // SAFETY: the buffer is share-locked and `block_number` identifies
++            // the locked page; the visitor helper validates posting tuples.
+             unsafe {
+                 visit_ivf_postings_from_buffer(&buffer, list_id, block_number, payload_len, visitor)
+             }
+         };
+         if let Err(err) = result {
++            // SAFETY: closes the stream created above before returning early.
+             unsafe { pg_sys::read_stream_end(stream) };
+             return Err(err);
+         }
+     }
+ 
++    // SAFETY: closes the stream created above after all buffers are consumed.
+     unsafe { pg_sys::read_stream_end(stream) };
+     Ok(())
+ }
+@@ -1276,6 +1288,8 @@ where
+     F: FnMut(ItemPointer, IvfPostingTuple) -> Result<(), String>,
+ {
+     let mut state = BlockSequencePrefetchState::new(block_numbers.to_vec());
++    // SAFETY: `index_relation` is live, `state` outlives the stream loop, and
++    // PostgreSQL stores block-number-sized per-buffer data via the callback.
+     let stream = unsafe {
+         pg_sys::read_stream_begin_relation(
+             pg_sys::READ_STREAM_SEQUENTIAL as i32,
+@@ -1290,29 +1304,39 @@ where
+ 
+     loop {
+         let mut per_buffer_data = ptr::null_mut();
++        // SAFETY: `stream` was created above and remains open until the
++        // explicit `read_stream_end` on normal or error exit.
+         let buffer = unsafe { pg_sys::read_stream_next_buffer(stream, &mut per_buffer_data) };
+         if buffer == pg_sys::InvalidBuffer as pg_sys::Buffer {
+             break;
+         }
+         let result = {
++            // SAFETY: PostgreSQL returned a valid pinned buffer from the read
++            // stream; the guard converts that pin into a shared buffer lock.
+             let buffer =
+                 unsafe { LockedBufferGuard::lock_pinned(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) }
+                     .ok_or_else(|| "ec_ivf read stream returned an invalid buffer".to_owned())?;
+             let block_number = if per_buffer_data.is_null() {
+                 buffer.block_number()
+             } else {
++                // SAFETY: the read stream callback stores a `BlockNumber` in
++                // the per-buffer data slot when it is non-null.
+                 unsafe { *per_buffer_data.cast::<pg_sys::BlockNumber>() }
+             };
++            // SAFETY: the buffer is share-locked and `block_number` identifies
++            // the locked page; the visitor helper validates posting tuples.
+             unsafe {
+                 visit_all_ivf_postings_from_buffer(&buffer, block_number, payload_len, visitor)
+             }
+         };
+         if let Err(err) = result {
++            // SAFETY: closes the stream created above before returning early.
+             unsafe { pg_sys::read_stream_end(stream) };
+             return Err(err);
+         }
+     }
+ 
++    // SAFETY: closes the stream created above after all buffers are consumed.
+     unsafe { pg_sys::read_stream_end(stream) };
+     Ok(())
+ }
+@@ -1328,6 +1352,8 @@ where
+     F: for<'a> FnMut(ItemPointer, IvfPostingTupleRef<'a>) -> Result<(), String>,
+ {
+     let mut state = BlockSequencePrefetchState::new(block_numbers.to_vec());
++    // SAFETY: `index_relation` is live, `state` outlives the stream loop, and
++    // PostgreSQL stores block-number-sized per-buffer data via the callback.
+     let stream = unsafe {
+         pg_sys::read_stream_begin_relation(
+             pg_sys::READ_STREAM_SEQUENTIAL as i32,
+@@ -1342,29 +1368,39 @@ where
+ 
+     loop {
+         let mut per_buffer_data = ptr::null_mut();
++        // SAFETY: `stream` was created above and remains open until the
++        // explicit `read_stream_end` on normal or error exit.
+         let buffer = unsafe { pg_sys::read_stream_next_buffer(stream, &mut per_buffer_data) };
+         if buffer == pg_sys::InvalidBuffer as pg_sys::Buffer {
+             break;
+         }
+         let result = {
++            // SAFETY: PostgreSQL returned a valid pinned buffer from the read
++            // stream; the guard converts that pin into a shared buffer lock.
+             let buffer =
+                 unsafe { LockedBufferGuard::lock_pinned(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) }
+                     .ok_or_else(|| "ec_ivf read stream returned an invalid buffer".to_owned())?;
+             let block_number = if per_buffer_data.is_null() {
+                 buffer.block_number()
+             } else {
++                // SAFETY: the read stream callback stores a `BlockNumber` in
++                // the per-buffer data slot when it is non-null.
+                 unsafe { *per_buffer_data.cast::<pg_sys::BlockNumber>() }
+             };
++            // SAFETY: the buffer is share-locked and `block_number` identifies
++            // the locked page; the visitor helper validates posting tuple refs.
+             unsafe {
+                 visit_all_ivf_posting_refs_from_buffer(&buffer, block_number, payload_len, visitor)
+             }
+         };
+         if let Err(err) = result {
++            // SAFETY: closes the stream created above before returning early.
+             unsafe { pg_sys::read_stream_end(stream) };
+             return Err(err);
+         }
+     }
+ 
++    // SAFETY: closes the stream created above after all buffers are consumed.
+     unsafe { pg_sys::read_stream_end(stream) };
+     Ok(())
+ }

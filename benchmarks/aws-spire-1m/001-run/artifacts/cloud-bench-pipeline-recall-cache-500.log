@@ -1,0 +1,2 @@
+bench: synced artifacts from s3://ecaz-cloud-1m-b62eb804/bench-artifacts/aws-spire-1m-rabitq-global1152-pipeline-recall-cache-500/20260604T151743Z/
+bench: profile=1m suite=aws-spire-1m-rabitq-global1152-pipeline-recall-cache-500 run=20260604T151743Z log=/home/peter/dev/ecaz/benchmarks/aws-spire-1m/001-run/artifacts/pipeline-recall-cache-500/suite-run.log

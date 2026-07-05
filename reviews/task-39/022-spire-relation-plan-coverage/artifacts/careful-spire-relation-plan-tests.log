@@ -1,0 +1,10 @@
+^D    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.05s
+     Running unittests src/lib.rs (target/debug/deps/ecaz_careful_hardening-3bca8b65b65b7ce7)
+
+running 3 tests
+test careful_spire::storage::tests::local_store_relation_name_is_deterministic ... ok
+test careful_spire::storage::tests::local_store_relation_plan_sorts_and_preserves_tablespaces ... ok
+test careful_spire::storage::tests::local_store_relation_plan_builds_store_config_from_created_relids ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 422 filtered out; finished in 0.00s
+

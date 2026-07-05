@@ -1,0 +1,246 @@
+Script started on 2026-05-26 08:23:53-07:00 [<not executed on terminal>]
+make: Entering directory '/home/peter/dev/ecaz/infra/spire-aws'
+cd /home/peter/dev/ecaz/infra/spire-aws && terraform destroy -auto-approve
+[0m[1mrandom_id.run: Refreshing state... [id=HiWA0Q][0m
+[0m[1mrandom_password.remote[0]: Refreshing state... [id=none][0m
+[0m[1mrandom_password.remote[2]: Refreshing state... [id=none][0m
+[0m[1mrandom_password.remote[1]: Refreshing state... [id=none][0m
+[0m[1maws_secretsmanager_secret.remote[2]: Refreshing state... [id=arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-1e2580d1-remote-3-20260526152336225000000003-zm4Rc2][0m
+[0m[1maws_secretsmanager_secret.remote[0]: Refreshing state... [id=arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-1e2580d1-remote-1-20260526152336225700000005-nm9EC3][0m
+[0m[1maws_secretsmanager_secret.remote[1]: Refreshing state... [id=arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-1e2580d1-remote-2-20260526152336225000000001-cmdq54][0m
+[0m[1maws_s3_bucket.artifacts: Refreshing state... [id=ecaz-spire-aws-20260526152336227800000007][0m
+[0m[1maws_s3_bucket_versioning.artifacts: Refreshing state... [id=ecaz-spire-aws-20260526152336227800000007][0m
+[0m[1maws_s3_bucket_server_side_encryption_configuration.artifacts: Refreshing state... [id=ecaz-spire-aws-20260526152336227800000007][0m
+
+Terraform used the selected providers to generate the following execution plan. Resource actions are indicated with the following symbols:
+  [31m-[0m destroy[0m
+
+Terraform will perform the following actions:
+
+[1m  # aws_s3_bucket.artifacts[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_s3_bucket" "artifacts" {
+      [31m-[0m[0m arn                         = "arn:aws:s3:::ecaz-spire-aws-20260526152336227800000007" [90m-> null[0m[0m
+      [31m-[0m[0m bucket                      = "ecaz-spire-aws-20260526152336227800000007" [90m-> null[0m[0m
+      [31m-[0m[0m bucket_domain_name          = "ecaz-spire-aws-20260526152336227800000007.s3.amazonaws.com" [90m-> null[0m[0m
+      [31m-[0m[0m bucket_prefix               = "ecaz-spire-aws-" [90m-> null[0m[0m
+      [31m-[0m[0m bucket_regional_domain_name = "ecaz-spire-aws-20260526152336227800000007.s3.us-west-2.amazonaws.com" [90m-> null[0m[0m
+      [31m-[0m[0m force_destroy               = true [90m-> null[0m[0m
+      [31m-[0m[0m hosted_zone_id              = "Z3BJ6K6RIION7M" [90m-> null[0m[0m
+      [31m-[0m[0m id                          = "ecaz-spire-aws-20260526152336227800000007" [90m-> null[0m[0m
+      [31m-[0m[0m object_lock_enabled         = false [90m-> null[0m[0m
+      [31m-[0m[0m region                      = "us-west-2" [90m-> null[0m[0m
+      [31m-[0m[0m request_payer               = "BucketOwner" [90m-> null[0m[0m
+      [31m-[0m[0m tags                        = {} [90m-> null[0m[0m
+      [31m-[0m[0m tags_all                    = {
+          [31m-[0m[0m "AutoStop" = "2026-05-27T06:00:00Z"
+          [31m-[0m[0m "Owner"    = "coder1"
+          [31m-[0m[0m "Phase"    = "13-spire-aws-verification"
+          [31m-[0m[0m "Project"  = "ecaz"
+        } [90m-> null[0m[0m
+        [90m# (2 unchanged attributes hidden)[0m[0m
+
+      [31m-[0m[0m grant {
+          [31m-[0m[0m id          = "aa61570614a0334dbb4de3b36666be959cf269342f6a80a0d738c91083fd7476" [90m-> null[0m[0m
+          [31m-[0m[0m permissions = [
+              [31m-[0m[0m "FULL_CONTROL",
+            ] [90m-> null[0m[0m
+          [31m-[0m[0m type        = "CanonicalUser" [90m-> null[0m[0m
+            [90m# (1 unchanged attribute hidden)[0m[0m
+        }
+
+      [31m-[0m[0m server_side_encryption_configuration {
+          [31m-[0m[0m rule {
+              [31m-[0m[0m bucket_key_enabled = false [90m-> null[0m[0m
+
+              [31m-[0m[0m apply_server_side_encryption_by_default {
+                  [31m-[0m[0m sse_algorithm     = "AES256" [90m-> null[0m[0m
+                    [90m# (1 unchanged attribute hidden)[0m[0m
+                }
+            }
+        }
+
+      [31m-[0m[0m versioning {
+          [31m-[0m[0m enabled    = true [90m-> null[0m[0m
+          [31m-[0m[0m mfa_delete = false [90m-> null[0m[0m
+        }
+    }
+
+[1m  # aws_s3_bucket_server_side_encryption_configuration.artifacts[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_s3_bucket_server_side_encryption_configuration" "artifacts" {
+      [31m-[0m[0m bucket                = "ecaz-spire-aws-20260526152336227800000007" [90m-> null[0m[0m
+      [31m-[0m[0m id                    = "ecaz-spire-aws-20260526152336227800000007" [90m-> null[0m[0m
+        [90m# (1 unchanged attribute hidden)[0m[0m
+
+      [31m-[0m[0m rule {
+          [31m-[0m[0m bucket_key_enabled = false [90m-> null[0m[0m
+
+          [31m-[0m[0m apply_server_side_encryption_by_default {
+              [31m-[0m[0m sse_algorithm     = "AES256" [90m-> null[0m[0m
+                [90m# (1 unchanged attribute hidden)[0m[0m
+            }
+        }
+    }
+
+[1m  # aws_s3_bucket_versioning.artifacts[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_s3_bucket_versioning" "artifacts" {
+      [31m-[0m[0m bucket                = "ecaz-spire-aws-20260526152336227800000007" [90m-> null[0m[0m
+      [31m-[0m[0m id                    = "ecaz-spire-aws-20260526152336227800000007" [90m-> null[0m[0m
+        [90m# (1 unchanged attribute hidden)[0m[0m
+
+      [31m-[0m[0m versioning_configuration {
+          [31m-[0m[0m status     = "Enabled" [90m-> null[0m[0m
+            [90m# (1 unchanged attribute hidden)[0m[0m
+        }
+    }
+
+[1m  # aws_secretsmanager_secret.remote[0][0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_secretsmanager_secret" "remote" {
+      [31m-[0m[0m arn                            = "arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-1e2580d1-remote-1-20260526152336225700000005-nm9EC3" [90m-> null[0m[0m
+      [31m-[0m[0m force_overwrite_replica_secret = false [90m-> null[0m[0m
+      [31m-[0m[0m id                             = "arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-1e2580d1-remote-1-20260526152336225700000005-nm9EC3" [90m-> null[0m[0m
+      [31m-[0m[0m name                           = "ecaz-spire-aws-1e2580d1-remote-1-20260526152336225700000005" [90m-> null[0m[0m
+      [31m-[0m[0m name_prefix                    = "ecaz-spire-aws-1e2580d1-remote-1-" [90m-> null[0m[0m
+      [31m-[0m[0m recovery_window_in_days        = 30 [90m-> null[0m[0m
+      [31m-[0m[0m tags                           = {} [90m-> null[0m[0m
+      [31m-[0m[0m tags_all                       = {
+          [31m-[0m[0m "AutoStop" = "2026-05-27T06:00:00Z"
+          [31m-[0m[0m "Owner"    = "coder1"
+          [31m-[0m[0m "Phase"    = "13-spire-aws-verification"
+          [31m-[0m[0m "Project"  = "ecaz"
+        } [90m-> null[0m[0m
+        [90m# (3 unchanged attributes hidden)[0m[0m
+    }
+
+[1m  # aws_secretsmanager_secret.remote[1][0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_secretsmanager_secret" "remote" {
+      [31m-[0m[0m arn                            = "arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-1e2580d1-remote-2-20260526152336225000000001-cmdq54" [90m-> null[0m[0m
+      [31m-[0m[0m force_overwrite_replica_secret = false [90m-> null[0m[0m
+      [31m-[0m[0m id                             = "arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-1e2580d1-remote-2-20260526152336225000000001-cmdq54" [90m-> null[0m[0m
+      [31m-[0m[0m name                           = "ecaz-spire-aws-1e2580d1-remote-2-20260526152336225000000001" [90m-> null[0m[0m
+      [31m-[0m[0m name_prefix                    = "ecaz-spire-aws-1e2580d1-remote-2-" [90m-> null[0m[0m
+      [31m-[0m[0m recovery_window_in_days        = 30 [90m-> null[0m[0m
+      [31m-[0m[0m tags                           = {} [90m-> null[0m[0m
+      [31m-[0m[0m tags_all                       = {
+          [31m-[0m[0m "AutoStop" = "2026-05-27T06:00:00Z"
+          [31m-[0m[0m "Owner"    = "coder1"
+          [31m-[0m[0m "Phase"    = "13-spire-aws-verification"
+          [31m-[0m[0m "Project"  = "ecaz"
+        } [90m-> null[0m[0m
+        [90m# (3 unchanged attributes hidden)[0m[0m
+    }
+
+[1m  # aws_secretsmanager_secret.remote[2][0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_secretsmanager_secret" "remote" {
+      [31m-[0m[0m arn                            = "arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-1e2580d1-remote-3-20260526152336225000000003-zm4Rc2" [90m-> null[0m[0m
+      [31m-[0m[0m force_overwrite_replica_secret = false [90m-> null[0m[0m
+      [31m-[0m[0m id                             = "arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-1e2580d1-remote-3-20260526152336225000000003-zm4Rc2" [90m-> null[0m[0m
+      [31m-[0m[0m name                           = "ecaz-spire-aws-1e2580d1-remote-3-20260526152336225000000003" [90m-> null[0m[0m
+      [31m-[0m[0m name_prefix                    = "ecaz-spire-aws-1e2580d1-remote-3-" [90m-> null[0m[0m
+      [31m-[0m[0m recovery_window_in_days        = 30 [90m-> null[0m[0m
+      [31m-[0m[0m tags                           = {} [90m-> null[0m[0m
+      [31m-[0m[0m tags_all                       = {
+          [31m-[0m[0m "AutoStop" = "2026-05-27T06:00:00Z"
+          [31m-[0m[0m "Owner"    = "coder1"
+          [31m-[0m[0m "Phase"    = "13-spire-aws-verification"
+          [31m-[0m[0m "Project"  = "ecaz"
+        } [90m-> null[0m[0m
+        [90m# (3 unchanged attributes hidden)[0m[0m
+    }
+
+[1m  # random_id.run[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "random_id" "run" {
+      [31m-[0m[0m b64_std     = "HiWA0Q==" [90m-> null[0m[0m
+      [31m-[0m[0m b64_url     = "HiWA0Q" [90m-> null[0m[0m
+      [31m-[0m[0m byte_length = 4 [90m-> null[0m[0m
+      [31m-[0m[0m dec         = "505774289" [90m-> null[0m[0m
+      [31m-[0m[0m hex         = "1e2580d1" [90m-> null[0m[0m
+      [31m-[0m[0m id          = "HiWA0Q" [90m-> null[0m[0m
+    }
+
+[1m  # random_password.remote[0][0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "random_password" "remote" {
+      [31m-[0m[0m bcrypt_hash = (sensitive value) [90m-> null[0m[0m
+      [31m-[0m[0m id          = "none" [90m-> null[0m[0m
+      [31m-[0m[0m length      = 32 [90m-> null[0m[0m
+      [31m-[0m[0m lower       = true [90m-> null[0m[0m
+      [31m-[0m[0m min_lower   = 0 [90m-> null[0m[0m
+      [31m-[0m[0m min_numeric = 0 [90m-> null[0m[0m
+      [31m-[0m[0m min_special = 0 [90m-> null[0m[0m
+      [31m-[0m[0m min_upper   = 0 [90m-> null[0m[0m
+      [31m-[0m[0m number      = true [90m-> null[0m[0m
+      [31m-[0m[0m numeric     = true [90m-> null[0m[0m
+      [31m-[0m[0m result      = (sensitive value) [90m-> null[0m[0m
+      [31m-[0m[0m special     = false [90m-> null[0m[0m
+      [31m-[0m[0m upper       = true [90m-> null[0m[0m
+    }
+
+[1m  # random_password.remote[1][0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "random_password" "remote" {
+      [31m-[0m[0m bcrypt_hash = (sensitive value) [90m-> null[0m[0m
+      [31m-[0m[0m id          = "none" [90m-> null[0m[0m
+      [31m-[0m[0m length      = 32 [90m-> null[0m[0m
+      [31m-[0m[0m lower       = true [90m-> null[0m[0m
+      [31m-[0m[0m min_lower   = 0 [90m-> null[0m[0m
+      [31m-[0m[0m min_numeric = 0 [90m-> null[0m[0m
+      [31m-[0m[0m min_special = 0 [90m-> null[0m[0m
+      [31m-[0m[0m min_upper   = 0 [90m-> null[0m[0m
+      [31m-[0m[0m number      = true [90m-> null[0m[0m
+      [31m-[0m[0m numeric     = true [90m-> null[0m[0m
+      [31m-[0m[0m result      = (sensitive value) [90m-> null[0m[0m
+      [31m-[0m[0m special     = false [90m-> null[0m[0m
+      [31m-[0m[0m upper       = true [90m-> null[0m[0m
+    }
+
+[1m  # random_password.remote[2][0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "random_password" "remote" {
+      [31m-[0m[0m bcrypt_hash = (sensitive value) [90m-> null[0m[0m
+      [31m-[0m[0m id          = "none" [90m-> null[0m[0m
+      [31m-[0m[0m length      = 32 [90m-> null[0m[0m
+      [31m-[0m[0m lower       = true [90m-> null[0m[0m
+      [31m-[0m[0m min_lower   = 0 [90m-> null[0m[0m
+      [31m-[0m[0m min_numeric = 0 [90m-> null[0m[0m
+      [31m-[0m[0m min_special = 0 [90m-> null[0m[0m
+      [31m-[0m[0m min_upper   = 0 [90m-> null[0m[0m
+      [31m-[0m[0m number      = true [90m-> null[0m[0m
+      [31m-[0m[0m numeric     = true [90m-> null[0m[0m
+      [31m-[0m[0m result      = (sensitive value) [90m-> null[0m[0m
+      [31m-[0m[0m special     = false [90m-> null[0m[0m
+      [31m-[0m[0m upper       = true [90m-> null[0m[0m
+    }
+
+[1mPlan:[0m [0m0 to add, 0 to change, 10 to destroy.
+
+Changes to Outputs:
+  [31m-[0m[0m artifact_bucket    = "ecaz-spire-aws-20260526152336227800000007" [90m-> null[0m[0m
+  [31m-[0m[0m availability_zone  = "us-west-2a" [90m-> null[0m[0m
+  [31m-[0m[0m region             = "us-west-2" [90m-> null[0m[0m
+  [31m-[0m[0m remote_secret_arns = [
+      [31m-[0m[0m "arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-1e2580d1-remote-1-20260526152336225700000005-nm9EC3",
+      [31m-[0m[0m "arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-1e2580d1-remote-2-20260526152336225000000001-cmdq54",
+      [31m-[0m[0m "arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-1e2580d1-remote-3-20260526152336225000000003-zm4Rc2",
+    ] [90m-> null[0m[0m
+[0m[1mrandom_password.remote[2]: Destroying... [id=none][0m[0m
+[0m[1mrandom_password.remote[0]: Destroying... [id=none][0m[0m
+[0m[1mrandom_password.remote[1]: Destroying... [id=none][0m[0m
+[0m[1mrandom_password.remote[0]: Destruction complete after 0s[0m
+[0m[1mrandom_password.remote[1]: Destruction complete after 0s[0m
+[0m[1mrandom_password.remote[2]: Destruction complete after 0s[0m
+[0m[1maws_s3_bucket_versioning.artifacts: Destroying... [id=ecaz-spire-aws-20260526152336227800000007][0m[0m
+[0m[1maws_secretsmanager_secret.remote[1]: Destroying... [id=arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-1e2580d1-remote-2-20260526152336225000000001-cmdq54][0m[0m
+[0m[1maws_s3_bucket_server_side_encryption_configuration.artifacts: Destroying... [id=ecaz-spire-aws-20260526152336227800000007][0m[0m
+[0m[1maws_secretsmanager_secret.remote[2]: Destroying... [id=arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-1e2580d1-remote-3-20260526152336225000000003-zm4Rc2][0m[0m
+[0m[1maws_secretsmanager_secret.remote[0]: Destroying... [id=arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-1e2580d1-remote-1-20260526152336225700000005-nm9EC3][0m[0m
+[0m[1maws_secretsmanager_secret.remote[0]: Destruction complete after 0s[0m
+[0m[1maws_secretsmanager_secret.remote[1]: Destruction complete after 0s[0m
+[0m[1maws_secretsmanager_secret.remote[2]: Destruction complete after 0s[0m
+[0m[1mrandom_id.run: Destroying... [id=HiWA0Q][0m[0m
+[0m[1mrandom_id.run: Destruction complete after 0s[0m
+[0m[1maws_s3_bucket_server_side_encryption_configuration.artifacts: Destruction complete after 0s[0m
+[0m[1maws_s3_bucket_versioning.artifacts: Destruction complete after 0s[0m
+[0m[1maws_s3_bucket.artifacts: Destroying... [id=ecaz-spire-aws-20260526152336227800000007][0m[0m
+[0m[1maws_s3_bucket.artifacts: Destruction complete after 1s[0m
+[0m[1m[32m
+Destroy complete! Resources: 10 destroyed.[0m
+make: Leaving directory '/home/peter/dev/ecaz/infra/spire-aws'
+
+Script done on 2026-05-26 08:24:00-07:00 [COMMAND_EXIT_CODE="0"]

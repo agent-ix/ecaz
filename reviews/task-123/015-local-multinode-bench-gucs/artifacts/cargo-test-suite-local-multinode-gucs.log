@@ -1,0 +1,11 @@
+Script started on 2026-06-28 08:59:02-07:00 [<not executed on terminal>]
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.20s
+     Running unittests src/main.rs (target/debug/deps/ecaz-1ef10f61913fa15f)
+
+running 1 test
+test commands::bench::suite::tests::spire_local_multinode_step_expands_local_four_instance_lane ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 417 filtered out; finished in 0.00s
+
+
+Script done on 2026-06-28 08:59:02-07:00 [COMMAND_EXIT_CODE="0"]

@@ -1,0 +1,9 @@
+Script started on 2026-05-13 17:35:04-07:00 [<not executed on terminal>]
+  36197 src/tests/mod.rs
+   2634 src/tests/remote_search.rs
+   2562 src/tests/dml_frontdoor.rs
+  17812 src/lib.rs
+     80 src/am/ec_spire/custom_scan/explain.rs
+  59285 total
+
+Script done on 2026-05-13 17:35:04-07:00 [COMMAND_EXIT_CODE="0"]

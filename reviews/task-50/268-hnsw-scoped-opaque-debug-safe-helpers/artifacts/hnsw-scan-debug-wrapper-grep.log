@@ -1,0 +1,1 @@
+no hnsw_scan_debug macro or call sites remain in src/tests/ec_hnsw_scan_gettuple.rs

@@ -1,0 +1,12 @@
+  pid   |     phase      
+--------+----------------
+ 715916 | building index
+(1 row)
+
+  pid   | state  | wait_event_type | wait_event |       age       |                                    query                                    
+--------+--------+-----------------+------------+-----------------+-----------------------------------------------------------------------------
+ 715916 | active |                 |            | 00:05:32.887941 | CREATE INDEX t106_1m_spire_rabitq_rabitq_idx ON t106_1m_spire_rabitq_corpus+
+        |        |                 |            |                 |         USING ec_spire (embedding ecvector_spire_ip_ops) WITH (n
+ 718048 | active | IO              | WalSync    | 00:05:07.950172 | autovacuum: VACUUM pg_toast.pg_toast_53467181
+(2 rows)
+

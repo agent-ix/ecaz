@@ -1,0 +1,61 @@
+{
+  "name": "task70-diskann-zero-overhead-profile-split-real10k",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-70/013-zero-overhead-profile-split/artifacts",
+  "defaults": {
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 200,
+    "iterations": 500,
+    "force_index": true,
+    "sample_backend_memory": true,
+    "memory_sample_interval_ms": 25,
+    "pg": 18
+  },
+  "steps": [
+    {
+      "kind": "load",
+      "name": "load-diskann-real10k",
+      "tags": ["load", "diskann", "real10k", "profile-split"],
+      "prefix": "task70_013_diskann",
+      "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_corpus.tsv",
+      "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_queries.tsv",
+      "manifest_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "profile": "ec_diskann",
+      "reloptions": [
+        "graph_degree=32",
+        "build_list_size=100",
+        "alpha=1.2",
+        "rerank_budget=64",
+        "top_k=10"
+      ],
+      "log_file": "reviews/task-70/013-zero-overhead-profile-split/artifacts/load-diskann-real10k.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-diskann-real10k-l64-l200",
+      "tags": ["recall", "diskann", "real10k", "profile-split"],
+      "prefix": "task70_013_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [64, 200],
+      "truth_cache_file": "reviews/task-70/013-zero-overhead-profile-split/artifacts/truth-real10k-k10.json",
+      "log_output": "reviews/task-70/013-zero-overhead-profile-split/artifacts/recall-diskann-real10k-l64-l200.log"
+    },
+    {
+      "kind": "compare-vectorscale",
+      "name": "compare-vectorscale-real10k-l64-l200",
+      "tags": ["compare", "vectorscale", "diskann", "real10k", "profile-split"],
+      "prefix": "task70_013_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [64, 200],
+      "vectorscale_num_neighbors": 32,
+      "vectorscale_build_search_list_size": 100,
+      "vectorscale_max_alpha": 1.2,
+      "rebuild": true,
+      "log_file": "reviews/task-70/013-zero-overhead-profile-split/artifacts/compare-vectorscale-real10k-l64-l200.log"
+    }
+  ]
+}

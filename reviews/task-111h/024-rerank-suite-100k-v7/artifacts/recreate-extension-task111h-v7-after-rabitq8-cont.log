@@ -1,0 +1,7 @@
+CREATE EXTENSION
+ extname | extversion 
+---------+------------
+ ecaz    | 0.1.1
+ plpgsql | 1.0
+(2 rows)
+

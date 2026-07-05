@@ -1,0 +1,97 @@
+Script started on 2026-05-19 00:56:11-07:00 [<not executed on terminal>]
+[1mdiff --git a/src/am/ec_spire/coordinator/remote_candidates/executor_receive.rs b/src/am/ec_spire/coordinator/remote_candidates/executor_receive.rs[m
+[1mindex 502b6f9d..ecc9cc09 100644[m
+[1m--- a/src/am/ec_spire/coordinator/remote_candidates/executor_receive.rs[m
+[1m+++ b/src/am/ec_spire/coordinator/remote_candidates/executor_receive.rs[m
+[36m@@ -205,7 +205,11 @@[m [mpub(crate) unsafe fn remote_search_libpq_identity_cache_contract_probe_counts([m
+     consistency_mode: &str,[m
+ ) -> (u64, u64, u64, u64, String) {[m
+     let result = (|| -> Result<(u64, u64, u64, u64, String), String> {[m
+[32m+[m[32m        // SAFETY: test/pg_test callers pass an open SPIRE index relation; rd_id[m
+[32m+[m[32m        // is read only to validate remote endpoint identity.[m
+         let index_relid = unsafe { (*index_relation).rd_id };[m
+[32m+[m[32m        // SAFETY: arguments are forwarded unchanged to the dispatch-plan wrapper,[m
+[32m+[m[32m        // which validates the requested epoch and remote execution plan.[m
+         let dispatch_rows = unsafe {[m
+             remote_search_libpq_dispatch_plan_rows([m
+                 index_relation,[m
+[36m@@ -416,7 +420,11 @@[m [mpub(crate) unsafe fn remote_search_libpq_executor_receive_attempt_rows([m
+ ) -> Vec<SpireRemoteSearchLibpqReceiveAttemptRow> {[m
+     let result = (|| -> Result<Vec<SpireRemoteSearchLibpqReceiveAttemptRow>, String> {[m
+         let requested_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;[m
+[32m+[m[32m        // SAFETY: callers pass an open SPIRE index relation; rd_id is read only[m
+[32m+[m[32m        // to validate remote endpoint identity for dispatched requests.[m
+         let index_relid = unsafe { (*index_relation).rd_id };[m
+[32m+[m[32m        // SAFETY: arguments are forwarded unchanged to the dispatch-plan wrapper,[m
+[32m+[m[32m        // which validates the requested epoch and remote execution plan.[m
+         let dispatch_rows = unsafe {[m
+             remote_search_libpq_dispatch_plan_rows([m
+                 index_relation,[m
+[36m@@ -645,6 +653,8 @@[m [mfn remote_search_libpq_executor_candidate_rows_with_state([m
+     consistency_mode: &str,[m
+     executor_state: &mut SpireRemoteSearchLibpqExecutorState,[m
+ ) -> Result<Vec<SpireRemoteSearchCandidateRow>, String> {[m
+[32m+[m[32m    // SAFETY: arguments are forwarded unchanged to the dispatch-plan wrapper,[m
+[32m+[m[32m    // which validates epoch, fanout, readiness, and remote request state.[m
+     let dispatch_rows = unsafe {[m
+         remote_search_libpq_dispatch_plan_rows([m
+             index_relation,[m
+[36m@@ -656,6 +666,8 @@[m [mfn remote_search_libpq_executor_candidate_rows_with_state([m
+         )[m
+     };[m
+     remote_search_libpq_executor_candidates_from_dispatch_rows_with_state([m
+[32m+[m[32m        // SAFETY: index_relation is the open SPIRE index relation whose relid[m
+[32m+[m[32m        // is compared against remote endpoint identity metadata.[m
+         unsafe { (*index_relation).rd_id },[m
+         &dispatch_rows,[m
+         &query,[m
+[36m@@ -746,6 +758,8 @@[m [mfn remote_search_libpq_executor_heap_candidate_rows_with_state([m
+     consistency_mode: &str,[m
+     executor_state: &mut SpireRemoteSearchLibpqExecutorState,[m
+ ) -> Result<Vec<SpireRemoteSearchLocalHeapCandidateRow>, String> {[m
+[32m+[m[32m    // SAFETY: arguments are forwarded unchanged to the dispatch-plan wrapper,[m
+[32m+[m[32m    // which validates epoch, fanout, readiness, and remote request state.[m
+     let dispatch_rows = unsafe {[m
+         remote_search_libpq_dispatch_plan_rows([m
+             index_relation,[m
+[36m@@ -757,6 +771,8 @@[m [mfn remote_search_libpq_executor_heap_candidate_rows_with_state([m
+         )[m
+     };[m
+     remote_search_libpq_executor_heap_candidates_from_dispatch_rows_with_state([m
+[32m+[m[32m        // SAFETY: index_relation is the open SPIRE index relation whose relid[m
+[32m+[m[32m        // is compared against remote endpoint identity metadata.[m
+         unsafe { (*index_relation).rd_id },[m
+         &dispatch_rows,[m
+         &query,[m
+[36m@@ -798,7 +814,11 @@[m [mpub(crate) unsafe fn remote_search_libpq_identity_cache_summary_row([m
+     consistency_mode: &str,[m
+ ) -> SpireRemoteSearchLibpqIdentityCacheSummaryRow {[m
+     let result = (|| -> Result<SpireRemoteSearchLibpqIdentityCacheSummaryRow, String> {[m
+[32m+[m[32m        // SAFETY: callers pass an open SPIRE index relation; rd_id is read only[m
+[32m+[m[32m        // to validate remote endpoint identity for dispatched requests.[m
+         let index_relid = unsafe { (*index_relation).rd_id };[m
+[32m+[m[32m        // SAFETY: arguments are forwarded unchanged to the dispatch-plan wrapper,[m
+[32m+[m[32m        // which validates the requested epoch and remote execution plan.[m
+         let dispatch_rows = unsafe {[m
+             remote_search_libpq_dispatch_plan_rows([m
+                 index_relation,[m
+[36m@@ -886,6 +906,8 @@[m [mpub(crate) unsafe fn remote_search_receive_plan_rows([m
+     top_k: usize,[m
+     consistency_mode: &str,[m
+ ) -> Vec<SpireRemoteSearchReceivePlanRow> {[m
+[32m+[m[32m    // SAFETY: arguments are forwarded unchanged to the libpq request-plan[m
+[32m+[m[32m    // wrapper, which validates remote execution and request shape.[m
+     let rows = unsafe {[m
+         remote_search_libpq_request_plan_rows([m
+             index_relation,[m
+[36m@@ -926,6 +948,8 @@[m [mpub(crate) unsafe fn remote_search_merge_input_summary_row([m
+     consistency_mode: &str,[m
+ ) -> SpireRemoteSearchMergeInputSummaryRow {[m
+     let result = (|| -> Result<SpireRemoteSearchMergeInputSummaryRow, String> {[m
+[32m+[m[32m        // SAFETY: arguments are forwarded unchanged to the execution-summary[m
+[32m+[m[32m        // wrapper, which validates query, epoch, and remote execution plan rows.[m
+         let execution_summary = unsafe {[m
+             remote_search_execution_summary_row([m
+                 index_relation,[m
+
+Script done on 2026-05-19 00:56:11-07:00 [COMMAND_EXIT_CODE="0"]

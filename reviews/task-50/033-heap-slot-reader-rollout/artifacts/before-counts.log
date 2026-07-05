@@ -1,0 +1,8 @@
+src/am/common/heap_slot.rs 7
+src/am/ec_hnsw/source.rs 51
+src/am/ec_ivf/scan.rs 69
+src/am/ec_diskann/routine.rs 64
+src/am/ec_diskann/scan_state.rs 20
+src/am/ec_spire/scan/relation.rs 29
+src/am/ec_spire/update/materialization.rs 1
+src/am/ec_spire/coordinator/hierarchy_snapshots.rs 48

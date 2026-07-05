@@ -1,0 +1,7 @@
+                        relname                         |  bytes
+--------------------------------------------------------+----------
+ task32_m5_diskann_final_corpus_vectorscale_diskann_idx |  5136384
+ task32_m5_diskann_final_idx                            |  4939776
+ task32_m5_hnsw_final_corpus_pgvector_hnsw_idx          | 81928192
+ task32_m5_hnsw_final_m32_idx                           | 15130624
+(4 rows)

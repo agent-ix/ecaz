@@ -1,0 +1,242 @@
+{
+  "suite": "task51-aws-ivf-rabitq-final-gate",
+  "schema_version": 1,
+  "config": "benchmarks/task51-aws-ivf-rabitq-final-gate/suite.json",
+  "config_sha256": "1af993e79873e9679414bf60284a5307f38af0f49b434e6dcad36bc192b174e4",
+  "dry_run": false,
+  "generated_at_unix_ms": 1779525191115,
+  "connection": {
+    "database": "tqvector_bench",
+    "host": "/var/run/postgresql",
+    "port": null,
+    "user": "postgres",
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "recall-1m-rabitq1-rerank-q500",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/var/run/postgresql",
+        "--user",
+        "postgres",
+        "bench",
+        "recall",
+        "--prefix",
+        "real_1m_ivf_rabitq1_rerank",
+        "--profile",
+        "ec_ivf",
+        "--k",
+        "10",
+        "--sweep",
+        "64,128,256",
+        "--rerank-width",
+        "50",
+        "--queries-limit",
+        "500",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--truth-cache-file",
+        "benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/truth-aws-real-1m-q500-k10.json",
+        "--log-output",
+        "benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/recall-1m-rabitq1-rerank-q500.log"
+      ],
+      "selected": true,
+      "tags": [
+        "aws",
+        "recall",
+        "ec_real_990k",
+        "ivf",
+        "rabitq",
+        "q500"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/recall-1m-rabitq1-rerank-q500.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1779525191115,
+      "finished_at_unix_ms": 1779527510117,
+      "duration_ms": 2319000,
+      "exit_code": 0
+    },
+    {
+      "name": "latency-1m-rabitq1-rerank",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/var/run/postgresql",
+        "--user",
+        "postgres",
+        "bench",
+        "latency",
+        "--prefix",
+        "real_1m_ivf_rabitq1_rerank",
+        "--profile",
+        "ec_ivf",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "200",
+        "--sweep",
+        "64,128,256",
+        "--rerank-width",
+        "50",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/latency-1m-rabitq1-rerank.log"
+      ],
+      "selected": true,
+      "tags": [
+        "aws",
+        "latency",
+        "ec_real_990k",
+        "ivf",
+        "rabitq"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/latency-1m-rabitq1-rerank.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1779527510118,
+      "finished_at_unix_ms": 1779527550299,
+      "duration_ms": 40179,
+      "exit_code": 0
+    },
+    {
+      "name": "storage-1m-rabitq1-rerank",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/var/run/postgresql",
+        "--user",
+        "postgres",
+        "--log-file",
+        "benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/storage-1m-rabitq1-rerank.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "real_1m_ivf_rabitq1_rerank"
+      ],
+      "selected": true,
+      "tags": [
+        "aws",
+        "storage",
+        "ec_real_990k",
+        "ivf",
+        "rabitq"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/storage-1m-rabitq1-rerank.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1779527550299,
+      "finished_at_unix_ms": 1779527550453,
+      "duration_ms": 153,
+      "exit_code": 0
+    },
+    {
+      "name": "explain-1m-rabitq1-rerank-p128",
+      "kind": "explain",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/var/run/postgresql",
+        "--user",
+        "postgres",
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "tqvector_bench",
+        "--socket-dir",
+        "/var/run/postgresql",
+        "--raw",
+        "--file",
+        "benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/explain-1m-rabitq1-rerank-p128.sql",
+        "--log-output",
+        "benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/explain-1m-rabitq1-rerank-p128.log"
+      ],
+      "selected": true,
+      "tags": [
+        "aws",
+        "explain",
+        "ec_real_990k",
+        "ivf",
+        "rabitq",
+        "nprobe128"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/explain-1m-rabitq1-rerank-p128.sql",
+        "benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/explain-1m-rabitq1-rerank-p128.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1779527550453,
+      "finished_at_unix_ms": 1779527550515,
+      "duration_ms": 60,
+      "exit_code": 0
+    },
+    {
+      "name": "explain-1m-rabitq1-rerank-p256",
+      "kind": "explain",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/var/run/postgresql",
+        "--user",
+        "postgres",
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "tqvector_bench",
+        "--socket-dir",
+        "/var/run/postgresql",
+        "--raw",
+        "--file",
+        "benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/explain-1m-rabitq1-rerank-p256.sql",
+        "--log-output",
+        "benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/explain-1m-rabitq1-rerank-p256.log"
+      ],
+      "selected": true,
+      "tags": [
+        "aws",
+        "explain",
+        "ec_real_990k",
+        "ivf",
+        "rabitq",
+        "nprobe256"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/explain-1m-rabitq1-rerank-p256.sql",
+        "benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/explain-1m-rabitq1-rerank-p256.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1779527550515,
+      "finished_at_unix_ms": 1779527550602,
+      "duration_ms": 86,
+      "exit_code": 0
+    }
+  ]
+}

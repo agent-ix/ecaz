@@ -1,0 +1,5 @@
+                                                 version                                                 | current_setting | current_setting | current_setting 
+---------------------------------------------------------------------------------------------------------+-----------------+-----------------+-----------------
+ PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit | 128MB           | 4MB             | 64MB
+(1 row)
+

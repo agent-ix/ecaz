@@ -1,0 +1,96 @@
+{
+  "artifact_dir": "reviews/task-131/027-phase3-increment-a-ab/artifacts/10k-n128-b4/bench-suite",
+  "defaults": {
+    "pg": 18,
+    "queries_limit": 200
+  },
+  "name": "local-multinode-production-read",
+  "schema_version": 1,
+  "steps": [
+    {
+      "kind": "storage",
+      "log_file": "reviews/task-131/027-phase3-increment-a-ab/artifacts/10k-n128-b4/bench-suite/storage.log",
+      "name": "storage-local-coordinator",
+      "prefix": "ec_real_10k",
+      "tags": [
+        "local",
+        "multinode",
+        "storage"
+      ]
+    },
+    {
+      "include_cost_snapshot": true,
+      "include_production_read_profile": true,
+      "include_query_metrics": true,
+      "include_recall": true,
+      "include_remote": true,
+      "index": "t131_p3a_10k_n128_b4_coord_idx",
+      "kind": "spire-pipeline",
+      "log_output": "reviews/task-131/027-phase3-increment-a-ab/artifacts/10k-n128-b4/bench-suite/production-read-k10-threshold-off-default.log",
+      "name": "production-read-k10-threshold-off-default",
+      "prefix": "ec_real_10k",
+      "production_read_only": true,
+      "production_read_timeline_no_payload": true,
+      "queries_limit": 200,
+      "query_metric_k": 10,
+      "query_metric_projection_columns": [
+        "id"
+      ],
+      "require_remote_placements": true,
+      "result_identity_output": "reviews/task-131/027-phase3-increment-a-ab/artifacts/10k-n128-b4/bench-suite/production-read-k10-threshold-off-default-identity.jsonl",
+      "session_gucs": [
+        "ec_spire.remote_search_global_pre_heap_merge=off",
+        "ec_spire.remote_search_initial_threshold_early_stop=off"
+      ],
+      "sweep": [
+        96
+      ],
+      "tags": [
+        "phase5",
+        "local",
+        "multinode",
+        "production-read",
+        "default-cap"
+      ],
+      "top_k": 10,
+      "truth_corpus_file": "data/task106_intel_dbpedia_staged/ec_real_10k_corpus.tsv"
+    },
+    {
+      "include_cost_snapshot": true,
+      "include_production_read_profile": true,
+      "include_query_metrics": true,
+      "include_recall": true,
+      "include_remote": true,
+      "index": "t131_p3a_10k_n128_b4_coord_idx",
+      "kind": "spire-pipeline",
+      "log_output": "reviews/task-131/027-phase3-increment-a-ab/artifacts/10k-n128-b4/bench-suite/production-read-k10-threshold-on-default.log",
+      "name": "production-read-k10-threshold-on-default",
+      "prefix": "ec_real_10k",
+      "production_read_only": true,
+      "production_read_timeline_no_payload": true,
+      "queries_limit": 200,
+      "query_metric_k": 10,
+      "query_metric_projection_columns": [
+        "id"
+      ],
+      "require_remote_placements": true,
+      "result_identity_output": "reviews/task-131/027-phase3-increment-a-ab/artifacts/10k-n128-b4/bench-suite/production-read-k10-threshold-on-default-identity.jsonl",
+      "session_gucs": [
+        "ec_spire.remote_search_global_pre_heap_merge=off",
+        "ec_spire.remote_search_initial_threshold_early_stop=on"
+      ],
+      "sweep": [
+        96
+      ],
+      "tags": [
+        "phase5",
+        "local",
+        "multinode",
+        "production-read",
+        "default-cap"
+      ],
+      "top_k": 10,
+      "truth_corpus_file": "data/task106_intel_dbpedia_staged/ec_real_10k_corpus.tsv"
+    }
+  ]
+}

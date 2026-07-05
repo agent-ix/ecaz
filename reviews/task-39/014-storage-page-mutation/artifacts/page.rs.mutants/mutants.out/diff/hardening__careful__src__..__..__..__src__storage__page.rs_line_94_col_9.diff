@@ -1,0 +1,21 @@
+--- hardening/careful/src/../../../src/storage/page.rs
++++ replace DataPage::free_bytes -> usize with 0
+@@ -86,17 +86,17 @@
+         self.tuples.len()
+     }
+ 
+     pub fn tuples(&self) -> &[Vec<u8>] {
+         &self.tuples
+     }
+ 
+     pub fn free_bytes(&self) -> usize {
+-        self.page_size.saturating_sub(self.used_bytes)
++        0 /* ~ changed by cargo-mutants ~ */
+     }
+ 
+     pub fn can_fit_raw_tuple(&self, payload_len: usize) -> bool {
+         aligned_tuple_bytes(payload_len) <= self.free_bytes()
+     }
+ 
+     pub fn insert_raw_tuple(&mut self, payload: Vec<u8>) -> Result<ItemPointer, String> {
+         if !self.can_fit_raw_tuple(payload.len()) {

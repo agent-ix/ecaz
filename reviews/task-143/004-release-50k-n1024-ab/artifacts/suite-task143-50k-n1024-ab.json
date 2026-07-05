@@ -1,0 +1,198 @@
+{
+  "name": "task143-release-50k-n1024-ab",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-143/004-release-50k-n1024-ab/artifacts",
+  "defaults": {
+    "profile": "ec_spire",
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 200,
+    "iterations": 200,
+    "force_index": true,
+    "sample_backend_memory": true,
+    "memory_sample_interval_ms": 25,
+    "pg": 18,
+    "socket_dir": "/tmp"
+  },
+  "thresholds": [],
+  "_doc": {
+    "intent": "Task 143 50k n1024/b0 release A/B slice. Baseline uses accumulated path+leaf ranking and route_overfetch_multiplier=1.0. Variants isolate leaf-only ranking and alpha overfetch at 1.25, 1.5, and 2.0 on the same built index.",
+    "baseline_reloptions": "nlists=1024, recursive_fanout=8, top_graph_enabled=1, top_graph_degree=32, top_graph_build_list_size=100, top_graph_search_list_size=96, boundary_replica_count=0, training_sample_rows=50000, storage_format=rabitq",
+    "nprobe_sweep": [8, 16, 32, 64, 96],
+    "queries_limit": 200,
+    "prerequisite": "data/staged-current/ec_real_50k_{corpus,queries}.tsv + _manifest.json staged on the local host; PG18 backend must be release-built with Task 143 GUCs."
+  },
+  "steps": [
+    {
+      "kind": "raw",
+      "name": "precheck-host",
+      "tags": ["setup", "precheck", "task143", "50k", "n1024", "release"],
+      "args": [
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "tqvector_bench_task143",
+        "--socket-dir",
+        "/tmp",
+        "--raw",
+        "--sql",
+        "LOAD 'ecaz'; SELECT now() AS captured_at, version() AS postgres_version, ecaz_build_profile() AS ecaz_build_profile, current_setting('ec_spire.leaf_score_only_routing') AS leaf_score_only_routing, current_setting('ec_spire.route_overfetch_multiplier') AS route_overfetch_multiplier;",
+        "--log-output",
+        "${artifact_dir}/precheck-host.log"
+      ],
+      "expected_artifacts": ["${artifact_dir}/precheck-host.log"]
+    },
+    {
+      "kind": "load",
+      "name": "load-50k-n1024-index",
+      "tags": ["load", "task143", "50k", "n1024", "baseline-index", "storage_format=rabitq"],
+      "prefix": "t143_50k_n1024_ab",
+      "index_name": "t143_50k_n1024_ab_idx",
+      "dim": 1536,
+      "corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_50k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "storage_format": "rabitq",
+      "reloptions": [
+        "nlists=1024",
+        "recursive_fanout=8",
+        "top_graph_enabled=1",
+        "top_graph_degree=32",
+        "top_graph_build_list_size=100",
+        "top_graph_search_list_size=96",
+        "boundary_replica_count=0",
+        "training_sample_rows=50000"
+      ],
+      "log_file": "${artifact_dir}/load-50k-n1024-index.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-50k-n1024-index",
+      "tags": ["storage", "task143", "50k", "n1024", "baseline-index"],
+      "prefix": "t143_50k_n1024_ab",
+      "log_file": "${artifact_dir}/storage-50k-n1024-index.log"
+    },
+    {
+      "kind": "recall",
+      "name": "truth-cache-50k-q200-k10",
+      "tags": ["recall", "truth-cache", "task143", "50k", "n1024"],
+      "prefix": "t143_50k_n1024_ab",
+      "k": 10,
+      "sweep": [96],
+      "queries_limit": 200,
+      "profile": "ec_spire",
+      "force_index": true,
+      "truth_corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-cache-50k-q200-k10.json",
+      "log_output": "${artifact_dir}/truth-cache-50k-q200-k10.log"
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-baseline",
+      "tags": ["pipeline", "task143", "50k", "n1024", "variant=baseline"],
+      "prefix": "t143_50k_n1024_ab",
+      "queries_limit": 200,
+      "sweep": [8, 16, 32, 64, 96],
+      "include_query_metrics": true,
+      "include_recall": true,
+      "include_local_store_overlap": true,
+      "include_cost_snapshot": true,
+      "truth_corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-cache-50k-q200-k10.json",
+      "session_gucs": [
+        "ec_spire.leaf_score_only_routing=off",
+        "ec_spire.route_overfetch_multiplier=1.0"
+      ],
+      "funnel_output": "${artifact_dir}/pipeline-baseline-funnel.jsonl",
+      "stage_containment_output": "${artifact_dir}/pipeline-baseline-stage-containment.jsonl",
+      "log_output": "${artifact_dir}/pipeline-baseline.log"
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-leaf-only",
+      "tags": ["pipeline", "task143", "50k", "n1024", "variant=leaf-only"],
+      "prefix": "t143_50k_n1024_ab",
+      "queries_limit": 200,
+      "sweep": [8, 16, 32, 64, 96],
+      "include_query_metrics": true,
+      "include_recall": true,
+      "include_local_store_overlap": true,
+      "include_cost_snapshot": true,
+      "truth_corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-cache-50k-q200-k10.json",
+      "session_gucs": [
+        "ec_spire.leaf_score_only_routing=on",
+        "ec_spire.route_overfetch_multiplier=1.0"
+      ],
+      "funnel_output": "${artifact_dir}/pipeline-leaf-only-funnel.jsonl",
+      "stage_containment_output": "${artifact_dir}/pipeline-leaf-only-stage-containment.jsonl",
+      "log_output": "${artifact_dir}/pipeline-leaf-only.log"
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-overfetch-1_25",
+      "tags": ["pipeline", "task143", "50k", "n1024", "variant=overfetch-1.25"],
+      "prefix": "t143_50k_n1024_ab",
+      "queries_limit": 200,
+      "sweep": [8, 16, 32, 64, 96],
+      "include_query_metrics": true,
+      "include_recall": true,
+      "include_local_store_overlap": true,
+      "include_cost_snapshot": true,
+      "truth_corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-cache-50k-q200-k10.json",
+      "session_gucs": [
+        "ec_spire.leaf_score_only_routing=off",
+        "ec_spire.route_overfetch_multiplier=1.25"
+      ],
+      "funnel_output": "${artifact_dir}/pipeline-overfetch-1_25-funnel.jsonl",
+      "stage_containment_output": "${artifact_dir}/pipeline-overfetch-1_25-stage-containment.jsonl",
+      "log_output": "${artifact_dir}/pipeline-overfetch-1_25.log"
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-overfetch-1_5",
+      "tags": ["pipeline", "task143", "50k", "n1024", "variant=overfetch-1.5"],
+      "prefix": "t143_50k_n1024_ab",
+      "queries_limit": 200,
+      "sweep": [8, 16, 32, 64, 96],
+      "include_query_metrics": true,
+      "include_recall": true,
+      "include_local_store_overlap": true,
+      "include_cost_snapshot": true,
+      "truth_corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-cache-50k-q200-k10.json",
+      "session_gucs": [
+        "ec_spire.leaf_score_only_routing=off",
+        "ec_spire.route_overfetch_multiplier=1.5"
+      ],
+      "funnel_output": "${artifact_dir}/pipeline-overfetch-1_5-funnel.jsonl",
+      "stage_containment_output": "${artifact_dir}/pipeline-overfetch-1_5-stage-containment.jsonl",
+      "log_output": "${artifact_dir}/pipeline-overfetch-1_5.log"
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-overfetch-2_0",
+      "tags": ["pipeline", "task143", "50k", "n1024", "variant=overfetch-2.0"],
+      "prefix": "t143_50k_n1024_ab",
+      "queries_limit": 200,
+      "sweep": [8, 16, 32, 64, 96],
+      "include_query_metrics": true,
+      "include_recall": true,
+      "include_local_store_overlap": true,
+      "include_cost_snapshot": true,
+      "truth_corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-cache-50k-q200-k10.json",
+      "session_gucs": [
+        "ec_spire.leaf_score_only_routing=off",
+        "ec_spire.route_overfetch_multiplier=2.0"
+      ],
+      "funnel_output": "${artifact_dir}/pipeline-overfetch-2_0-funnel.jsonl",
+      "stage_containment_output": "${artifact_dir}/pipeline-overfetch-2_0-stage-containment.jsonl",
+      "log_output": "${artifact_dir}/pipeline-overfetch-2_0.log"
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+
+   0: [91mexecuting SPIRE pipeline query-metrics KNN query[0m
+   1: [91mdb error[0m
+   2: [91mERROR: ec_spire_distributed: DML requires a bigint primary-key equality predicate in v1
+      HINT: See ADR-069 for the v1 SPIRE distributed DML shape.[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/bench/spire_pipeline.rs[0m:[35m462[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.

@@ -1,0 +1,36 @@
+unsafe fn detoasted_varlena_bytes(datum: pg_sys::Datum, label: &str) -> Result<Vec<u8>, String> {
+    unsafe { DetoastedScanDatum::try_from_datum(datum, label) }.map(|datum| datum.to_vec())
+}
+
+#[derive(Debug)]
+// Detoast copies are palloc-owned. Drop frees copied varlena on normal Rust
+// paths; PostgreSQL memory-context cleanup covers ERROR abort fallbacks.
+struct DetoastedScanDatum {
+    varlena: *mut pg_sys::varlena,
+    owned: bool,
+}
+
+impl DetoastedScanDatum {
+    unsafe fn try_from_datum(datum: pg_sys::Datum, label: &str) -> Result<Self, String> {
+        if datum.is_null() {
+            return Err(format!("ec_spire does not support NULL {label}"));
+        }
+        let original = datum.cast_mut_ptr::<c_void>().cast::<pg_sys::varlena>();
+        let varlena = unsafe { pg_sys::pg_detoast_datum_packed(original.cast()) };
+        if varlena.is_null() {
+            return Err(format!("ec_spire could not detoast {label}"));
+        }
+        Ok(Self {
+            varlena,
+            owned: !ptr::eq(varlena, original),
+        })
+    }
+
+    fn as_bytes(&self) -> &[u8] {
+        unsafe { pgrx::varlena::varlena_to_byte_slice(self.varlena) }
+    }
+
+    fn to_vec(&self) -> Vec<u8> {
+        self.as_bytes().to_vec()
+    }
+}

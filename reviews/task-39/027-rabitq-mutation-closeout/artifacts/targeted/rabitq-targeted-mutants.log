@@ -1,0 +1,8 @@
+^DFound 24 mutants to test
+ok       Unmutated baseline in 4s build + 5s test
+ INFO Auto-set test timeout to 28s
+MISSED   hardening/careful/src/../../../src/quant/rabitq.rs:755:24: replace < with <= in CenteredScorer::score_at in 5s build + 21s test
+MISSED   hardening/careful/src/../../../src/quant/rabitq.rs:757:35: replace < with <= in CenteredScorer::score_at in 5s build + 21s test
+MISSED   hardening/careful/src/../../../src/quant/rabitq.rs:998:38: replace * with + in quantize_level in 5s build + 21s test
+MISSED   hardening/careful/src/../../../src/quant/rabitq.rs:1132:30: replace < with <= in estimate_ip_impl in 5s build + 21s test
+24 mutants tested in 10m: 4 missed, 20 caught

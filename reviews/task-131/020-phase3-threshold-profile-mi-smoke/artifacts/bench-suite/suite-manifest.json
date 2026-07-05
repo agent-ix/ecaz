@@ -1,0 +1,73 @@
+{
+  "suite": "phase13e-local-spire-pipeline",
+  "schema_version": 1,
+  "config": "reviews/task-131/020-phase3-threshold-profile-mi-smoke/artifacts/bench-suite/phase13e-local-spire-pipeline-suite.json",
+  "config_sha256": "ba73f8b221b2e0eb129199dfbf16c909bed6927e0a7a68db83900adc6ba4da3c",
+  "dry_run": false,
+  "generated_at_unix_ms": 1782925253792,
+  "connection": {
+    "database": "postgres",
+    "host": "/home/peter/dev/ecaz/target/spire-phase13e-sockets-task131-threshold-mi-020a",
+    "port": 39440,
+    "user": "postgres",
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "phase13e-local-spire-pipeline-read",
+      "kind": "spire-pipeline",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/home/peter/dev/ecaz/target/spire-phase13e-sockets-task131-threshold-mi-020a",
+        "--port",
+        "39440",
+        "--user",
+        "postgres",
+        "bench",
+        "spire-pipeline",
+        "--prefix",
+        "ec_spire_phase13e_coord",
+        "--index",
+        "ec_spire_phase13e_coord_idx",
+        "--queries-limit",
+        "1",
+        "--sweep",
+        "3",
+        "--include-remote",
+        "--require-remote-placements",
+        "--remote-selected-pids",
+        "2,3,4",
+        "--top-k",
+        "6",
+        "--consistency-mode",
+        "strict",
+        "--remote-tuple-transport",
+        "pg_binary_attr_v1",
+        "--include-query-metrics",
+        "--include-recall",
+        "--include-production-read-profile",
+        "--production-read-only",
+        "--query-metric-k",
+        "6",
+        "--log-output",
+        "reviews/task-131/020-phase3-threshold-profile-mi-smoke/artifacts/bench-suite/spire-pipeline.log"
+      ],
+      "selected": true,
+      "tags": [
+        "phase13e",
+        "local",
+        "production-read"
+      ],
+      "expected_artifacts": [
+        "reviews/task-131/020-phase3-threshold-profile-mi-smoke/artifacts/bench-suite/spire-pipeline.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1782925253793,
+      "finished_at_unix_ms": 1782925254138,
+      "duration_ms": 345,
+      "exit_code": 0
+    }
+  ]
+}

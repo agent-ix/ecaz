@@ -1,0 +1,65 @@
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz)
+   Compiling ecaz-cli v0.1.0 (/home/peter/dev/ecaz/crates/ecaz-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 43.50s
+     Running unittests src/main.rs (target/debug/deps/ecaz-27bbce43e3160435)
+
+running 56 tests
+test cli::tests::cli_parses_spire_multicluster_fingerprint_mismatch_fault_command ... ok
+test cli::tests::cli_parses_spire_multicluster_lifecycle_reindex_in_flight_command ... ok
+test cli::tests::cli_parses_spire_multicluster_lifecycle_drop_before_fanout_command ... ok
+test cli::tests::cli_parses_spire_multicluster_connection_reset_mid_batch_fault_command ... ok
+test cli::tests::cli_parses_spire_multicluster_lifecycle_create_missing_descriptor_command ... ok
+test cli::tests::cli_parses_spire_multicluster_local_cancel_fault_command ... ok
+test cli::tests::cli_parses_spire_multicluster_lifecycle_create_new_descriptor_command ... ok
+test cli::tests::cli_parses_spire_multicluster_customscan_read_command ... ok
+test cli::tests::cli_parses_spire_multicluster_local_statement_timeout_fault_command ... ok
+test cli::tests::cli_parses_spire_multicluster_lifecycle_drop_in_flight_command ... ok
+test cli::tests::cli_parses_spire_multicluster_remote_oom_fault_command ... ok
+test cli::tests::cli_parses_spire_multicluster_epoch_mismatch_fault_command ... ok
+test cli::tests::cli_parses_spire_multicluster_insert_read_after_customscan_command ... ok
+test commands::bench::recall::tests::build_knn_sql_uses_raw_real_query_for_spire ... ok
+test cli::tests::cli_parses_spire_multicluster_version_skew_fault_command ... ok
+test commands::bench::spire_pipeline::tests::funnel_record_carries_task85_read_and_score_breakdown ... ok
+test cli::tests::cli_parses_spire_multicluster_fault_command ... ok
+test commands::bench::spire_pipeline::tests::mixed_value_reports_stable_or_mixed_values ... ok
+test commands::bench::spire_pipeline::tests::miss_attribution_classifies_hit_routing_block_and_cap_misses ... ok
+test commands::bench::spire_pipeline::tests::spire_pipeline_defaults_to_spire_sweep_values ... ok
+test commands::bench::spire_pipeline::tests::spire_pipeline_query_matrix_requires_fixed_dimensions ... ok
+test cli::tests::cli_parses_spire_multicluster_remote_backend_termination_fault_command ... ok
+test commands::bench::spire_pipeline::tests::spire_pipeline_query_metric_sql_projects_payload_columns ... ok
+test commands::bench::spire_pipeline::tests::spire_pipeline_rejects_out_of_range_sweep_values ... ok
+test commands::bench::spire_pipeline::tests::spire_pipeline_remote_placement_gate_accepts_remote_placements ... ok
+test commands::bench::spire_pipeline::tests::spire_pipeline_rejects_invalid_limits ... ok
+test commands::bench::spire_pipeline::tests::spire_pipeline_remote_placement_gate_rejects_empty_or_local_only ... ok
+test cli::tests::cli_parses_spire_pipeline_remote_tuple_transport ... ok
+test cli::tests::cli_parses_spire_multicluster_remote_statement_timeout_fault_command ... ok
+test commands::bench::spire_pipeline::tests::spire_pipeline_renders_cost_tuning_snapshot ... ok
+test commands::bench::spire_pipeline::tests::spire_pipeline_renders_endpoint_identity_readiness ... ok
+test commands::bench::spire_pipeline::tests::spire_pipeline_renders_local_store_overlap_counters ... ok
+test commands::bench::suite::tests::explain_sql_uses_spire_profile_gucs_and_cost_snapshot ... ok
+test commands::bench::spire_pipeline::tests::spire_pipeline_renders_production_read_profile ... ok
+test cli::tests::cli_parses_spire_multicluster_missing_remote_index_fault_command ... ok
+test commands::bench::tests::adaptive_nprobe_bench_options_support_ivf_and_spire ... ok
+test commands::bench::spire_pipeline::tests::spire_pipeline_renders_degraded_skip_counters ... ok
+test commands::bench::suite::tests::spire_pooling_gate_reports_not_justified_and_candidates ... ok
+test commands::bench::spire_pipeline::tests::spire_pipeline_renders_query_metrics_with_recall ... ok
+test commands::bench::spire_pipeline::tests::spire_pipeline_reports_remote_tuple_transport_override ... ok
+test commands::bench::spire_pipeline::tests::spire_pipeline_sql_uses_public_snapshot_contracts ... ok
+test commands::corpus::render_spire_registrations::tests::parses_identity_shape_emitted_by_distributed_remote_identity_query ... ok
+test commands::corpus::render_spire_registrations::tests::rejects_identity_that_is_not_ready ... ok
+test commands::corpus::render_spire_registrations::tests::rejects_identity_for_wrong_remote_index ... ok
+test commands::corpus::render_spire_registrations::tests::sql_literals_escape_quotes ... ok
+test commands::bench::suite::tests::expands_spire_pipeline_with_production_profile ... ok
+test commands::corpus::render_spire_registrations::tests::rejects_non_hex_identity ... ok
+test commands::bench::suite::tests::artifact_dir_supplies_default_spire_pipeline_log_output ... ok
+test commands::corpus::render_spire_registrations::tests::rejects_unexpected_identity_fields ... ok
+test commands::corpus::load::tests::distributed_placement_config_rejects_non_spire_profile ... ok
+test profiles::tests::ec_spire_profile_uses_spire_opclass_and_raw_real_scan_query ... ok
+test commands::corpus::render_spire_registrations::tests::renders_descriptor_registration_sql_from_plan_and_identity ... ok
+test cli::tests::cli_parses_spire_multicluster_lifecycle_reindex_before_fanout_command ... ok
+test cli::tests::cli_parses_spire_multicluster_smoke_command ... ok
+test cli::tests::cli_parses_spire_multicluster_transport_overlap_command ... ok
+test psql::tests::spire_index_sql_uses_spire_access_method_and_opclass ... ok
+
+test result: ok. 56 passed; 0 failed; 0 ignored; 0 measured; 350 filtered out; finished in 0.02s
+

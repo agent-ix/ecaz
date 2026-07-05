@@ -1,0 +1,732 @@
+{
+  "name": "task104-hnsw-m5-matrix",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-104/002-hnsw-m5-matrix/artifacts",
+  "defaults": {
+    "pg": 18,
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 100,
+    "iterations": 300,
+    "force_index": true,
+    "sample_backend_memory": false
+  },
+  "steps": [
+    {
+      "kind": "load",
+      "name": "load-hnsw-real10k-turboquant",
+      "tags": [
+        "task104",
+        "m5",
+        "hnsw",
+        "load",
+        "real10k",
+        "quant=turboquant"
+      ],
+      "prefix": "task104_real10k_hnsw_tq",
+      "profile": "ec_hnsw",
+      "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_corpus.tsv",
+      "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_queries.tsv",
+      "manifest_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_manifest.json",
+      "dim": 1536,
+      "storage_format": "turboquant",
+      "log_file": "${artifact_dir}/load-hnsw-real10k-turboquant.log",
+      "allow_manifest_mismatch": true
+    },
+    {
+      "kind": "load",
+      "name": "load-hnsw-real10k-pqfastscan",
+      "tags": [
+        "task104",
+        "m5",
+        "hnsw",
+        "load",
+        "real10k",
+        "quant=pq_fastscan"
+      ],
+      "prefix": "task104_real10k_hnsw_pq",
+      "profile": "ec_hnsw",
+      "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_corpus.tsv",
+      "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_queries.tsv",
+      "manifest_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_manifest.json",
+      "dim": 1536,
+      "storage_format": "pq_fastscan",
+      "log_file": "${artifact_dir}/load-hnsw-real10k-pqfastscan.log",
+      "allow_manifest_mismatch": true
+    },
+    {
+      "kind": "recall",
+      "name": "recall-hnsw-tq-full_lut-kernel-on",
+      "tags": [
+        "task104",
+        "m5",
+        "hnsw",
+        "real10k",
+        "kernel_on",
+        "quant=turboquant",
+        "isa=neon",
+        "kernel_status=valid",
+        "mode=full_lut"
+      ],
+      "prefix": "task104_real10k_hnsw_tq",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        32,
+        80,
+        200
+      ],
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on",
+        "ec_hnsw.turboquant_exact_score_mode=full_lut"
+      ],
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-hnsw-tq-full_lut-kernel-on.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-hnsw-tq-full_lut-kernel-off",
+      "tags": [
+        "task104",
+        "m5",
+        "hnsw",
+        "real10k",
+        "kernel_off",
+        "quant=turboquant",
+        "isa=scalar",
+        "mode=full_lut"
+      ],
+      "prefix": "task104_real10k_hnsw_tq",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        32,
+        80,
+        200
+      ],
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on",
+        "ec_hnsw.turboquant_exact_score_mode=full_lut",
+        "ec_hnsw.candidate_batch_scoring=off"
+      ],
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-hnsw-tq-full_lut-kernel-off.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-hnsw-tq-int8_approx-kernel-on",
+      "tags": [
+        "task104",
+        "m5",
+        "hnsw",
+        "real10k",
+        "kernel_on",
+        "quant=turboquant",
+        "isa=neon",
+        "kernel_status=valid",
+        "mode=int8_approx"
+      ],
+      "prefix": "task104_real10k_hnsw_tq",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        32,
+        80,
+        200
+      ],
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on",
+        "ec_hnsw.turboquant_exact_score_mode=int8_approx"
+      ],
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-hnsw-tq-int8_approx-kernel-on.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-hnsw-tq-int8_approx-kernel-off",
+      "tags": [
+        "task104",
+        "m5",
+        "hnsw",
+        "real10k",
+        "kernel_off",
+        "quant=turboquant",
+        "isa=scalar",
+        "mode=int8_approx"
+      ],
+      "prefix": "task104_real10k_hnsw_tq",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        32,
+        80,
+        200
+      ],
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on",
+        "ec_hnsw.turboquant_exact_score_mode=int8_approx",
+        "ec_hnsw.candidate_batch_scoring=off"
+      ],
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-hnsw-tq-int8_approx-kernel-off.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-hnsw-tq-tiled_lut-kernel-on",
+      "tags": [
+        "task104",
+        "m5",
+        "hnsw",
+        "real10k",
+        "kernel_on",
+        "quant=turboquant",
+        "isa=neon",
+        "kernel_status=retired",
+        "mode=tiled_lut"
+      ],
+      "prefix": "task104_real10k_hnsw_tq",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80
+      ],
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on",
+        "ec_hnsw.turboquant_exact_score_mode=tiled_lut"
+      ],
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-hnsw-tq-tiled_lut-kernel-on.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-hnsw-tq-exact-mode",
+      "tags": [
+        "task104",
+        "m5",
+        "hnsw",
+        "real10k",
+        "quant=turboquant",
+        "mode=exact"
+      ],
+      "prefix": "task104_real10k_hnsw_tq",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80
+      ],
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on",
+        "ec_hnsw.turboquant_exact_score_mode=exact"
+      ],
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-hnsw-tq-exact-mode.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-hnsw-pq-kernel-on",
+      "tags": [
+        "task104",
+        "m5",
+        "hnsw",
+        "real10k",
+        "kernel_on",
+        "quant=pq_fastscan",
+        "isa=neon",
+        "kernel_status=valid"
+      ],
+      "prefix": "task104_real10k_hnsw_pq",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        32,
+        80,
+        200
+      ],
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on"
+      ],
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-hnsw-pq-kernel-on.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-hnsw-pq-kernel-off",
+      "tags": [
+        "task104",
+        "m5",
+        "hnsw",
+        "real10k",
+        "kernel_off",
+        "quant=pq_fastscan",
+        "isa=scalar"
+      ],
+      "prefix": "task104_real10k_hnsw_pq",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        32,
+        80,
+        200
+      ],
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on",
+        "ec_hnsw.candidate_batch_scoring=off"
+      ],
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-hnsw-pq-kernel-off.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-hnsw-tq-full_lut-kernel-on",
+      "tags": [
+        "task104",
+        "m5",
+        "hnsw",
+        "real10k",
+        "kernel_on",
+        "quant=turboquant",
+        "isa=neon",
+        "kernel_status=valid",
+        "mode=full_lut"
+      ],
+      "prefix": "task104_real10k_hnsw_tq",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        32,
+        80,
+        200
+      ],
+      "iterations": 300,
+      "concurrency": 1,
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on",
+        "ec_hnsw.turboquant_exact_score_mode=full_lut"
+      ],
+      "cache_state": "task104_hnsw_full_lut_on",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-hnsw-tq-full_lut-kernel-on.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-hnsw-tq-full_lut-kernel-off",
+      "tags": [
+        "task104",
+        "m5",
+        "hnsw",
+        "real10k",
+        "kernel_off",
+        "quant=turboquant",
+        "isa=scalar",
+        "mode=full_lut"
+      ],
+      "prefix": "task104_real10k_hnsw_tq",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        32,
+        80,
+        200
+      ],
+      "iterations": 300,
+      "concurrency": 1,
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on",
+        "ec_hnsw.turboquant_exact_score_mode=full_lut",
+        "ec_hnsw.candidate_batch_scoring=off"
+      ],
+      "cache_state": "task104_hnsw_full_lut_off",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-hnsw-tq-full_lut-kernel-off.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-hnsw-tq-int8_approx-kernel-on",
+      "tags": [
+        "task104",
+        "m5",
+        "hnsw",
+        "real10k",
+        "kernel_on",
+        "quant=turboquant",
+        "isa=neon",
+        "kernel_status=valid",
+        "mode=int8_approx"
+      ],
+      "prefix": "task104_real10k_hnsw_tq",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        32,
+        80,
+        200
+      ],
+      "iterations": 300,
+      "concurrency": 1,
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on",
+        "ec_hnsw.turboquant_exact_score_mode=int8_approx"
+      ],
+      "cache_state": "task104_hnsw_int8_approx_on",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-hnsw-tq-int8_approx-kernel-on.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-hnsw-tq-int8_approx-kernel-off",
+      "tags": [
+        "task104",
+        "m5",
+        "hnsw",
+        "real10k",
+        "kernel_off",
+        "quant=turboquant",
+        "isa=scalar",
+        "mode=int8_approx"
+      ],
+      "prefix": "task104_real10k_hnsw_tq",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        32,
+        80,
+        200
+      ],
+      "iterations": 300,
+      "concurrency": 1,
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on",
+        "ec_hnsw.turboquant_exact_score_mode=int8_approx",
+        "ec_hnsw.candidate_batch_scoring=off"
+      ],
+      "cache_state": "task104_hnsw_int8_approx_off",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-hnsw-tq-int8_approx-kernel-off.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-hnsw-tq-tiled_lut-retired-confirmation",
+      "tags": [
+        "task104",
+        "m5",
+        "hnsw",
+        "real10k",
+        "kernel_on",
+        "quant=turboquant",
+        "isa=neon",
+        "kernel_status=retired",
+        "mode=tiled_lut"
+      ],
+      "prefix": "task104_real10k_hnsw_tq",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80
+      ],
+      "iterations": 300,
+      "concurrency": 1,
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on",
+        "ec_hnsw.turboquant_exact_score_mode=tiled_lut"
+      ],
+      "cache_state": "task104_hnsw_tiled_lut_on",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-hnsw-tq-tiled_lut-retired-confirmation.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-hnsw-tq-exact-mode",
+      "tags": [
+        "task104",
+        "m5",
+        "hnsw",
+        "real10k",
+        "quant=turboquant",
+        "mode=exact"
+      ],
+      "prefix": "task104_real10k_hnsw_tq",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80
+      ],
+      "iterations": 300,
+      "concurrency": 1,
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on",
+        "ec_hnsw.turboquant_exact_score_mode=exact"
+      ],
+      "cache_state": "task104_hnsw_exact_mode",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-hnsw-tq-exact-mode.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-hnsw-default-config",
+      "tags": [
+        "task104",
+        "m5",
+        "hnsw",
+        "real10k",
+        "quant=turboquant",
+        "default_config"
+      ],
+      "prefix": "task104_real10k_hnsw_tq",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        32,
+        80,
+        200
+      ],
+      "iterations": 300,
+      "concurrency": 1,
+      "cache_state": "task104_hnsw_default",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-hnsw-default-config.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-hnsw-pq-kernel-on",
+      "tags": [
+        "task104",
+        "m5",
+        "hnsw",
+        "real10k",
+        "kernel_on",
+        "quant=pq_fastscan",
+        "isa=neon",
+        "kernel_status=valid"
+      ],
+      "prefix": "task104_real10k_hnsw_pq",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        32,
+        80,
+        200
+      ],
+      "iterations": 300,
+      "concurrency": 1,
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on"
+      ],
+      "cache_state": "task104_hnsw_pq_on",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-hnsw-pq-kernel-on.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-hnsw-pq-kernel-off",
+      "tags": [
+        "task104",
+        "m5",
+        "hnsw",
+        "real10k",
+        "kernel_off",
+        "quant=pq_fastscan",
+        "isa=scalar"
+      ],
+      "prefix": "task104_real10k_hnsw_pq",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        32,
+        80,
+        200
+      ],
+      "iterations": 300,
+      "concurrency": 1,
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on",
+        "ec_hnsw.candidate_batch_scoring=off"
+      ],
+      "cache_state": "task104_hnsw_pq_off",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-hnsw-pq-kernel-off.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-hnsw-real10k-rabitq",
+      "tags": [
+        "task104",
+        "m5",
+        "hnsw",
+        "load",
+        "real10k",
+        "quant=rabitq"
+      ],
+      "prefix": "task104_real10k_hnsw_rb",
+      "profile": "ec_hnsw",
+      "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_corpus.tsv",
+      "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_queries.tsv",
+      "manifest_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "dim": 1536,
+      "storage_format": "rabitq",
+      "log_file": "${artifact_dir}/load-hnsw-real10k-rabitq.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-hnsw-rb-kernel-on",
+      "tags": [
+        "task104",
+        "m5",
+        "hnsw",
+        "real10k",
+        "quant=rabitq",
+        "bits1_sidecar",
+        "kernel_on",
+        "isa=neon",
+        "kernel_status=valid"
+      ],
+      "prefix": "task104_real10k_hnsw_rb",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        32,
+        80,
+        200
+      ],
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on"
+      ],
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-hnsw-rb-kernel-on.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-hnsw-rb-kernel-off",
+      "tags": [
+        "task104",
+        "m5",
+        "hnsw",
+        "real10k",
+        "quant=rabitq",
+        "bits1_sidecar",
+        "kernel_off",
+        "isa=scalar"
+      ],
+      "prefix": "task104_real10k_hnsw_rb",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        32,
+        80,
+        200
+      ],
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on",
+        "ec_hnsw.candidate_batch_scoring=off"
+      ],
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-hnsw-rb-kernel-off.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-hnsw-rb-kernel-on",
+      "tags": [
+        "task104",
+        "m5",
+        "hnsw",
+        "real10k",
+        "quant=rabitq",
+        "bits1_sidecar",
+        "kernel_on",
+        "isa=neon",
+        "kernel_status=valid"
+      ],
+      "prefix": "task104_real10k_hnsw_rb",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        32,
+        80,
+        200
+      ],
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on"
+      ],
+      "iterations": 300,
+      "concurrency": 1,
+      "cache_state": "task104_hnsw_rb_on",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-hnsw-rb-kernel-on.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-hnsw-rb-kernel-off",
+      "tags": [
+        "task104",
+        "m5",
+        "hnsw",
+        "real10k",
+        "quant=rabitq",
+        "bits1_sidecar",
+        "kernel_off",
+        "isa=scalar"
+      ],
+      "prefix": "task104_real10k_hnsw_rb",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        32,
+        80,
+        200
+      ],
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on",
+        "ec_hnsw.candidate_batch_scoring=off"
+      ],
+      "iterations": 300,
+      "concurrency": 1,
+      "cache_state": "task104_hnsw_rb_off",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-hnsw-rb-kernel-off.log"
+    },
+    {
+      "kind": "latency",
+      "name": "marker-hnsw-rabitq-bits4-structurally-absent",
+      "tags": [
+        "task104",
+        "m5",
+        "hnsw",
+        "real10k",
+        "quant=rabitq",
+        "bits4",
+        "kernel_status=structurally_absent"
+      ],
+      "prefix": "task104_real10k_hnsw_rb",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80
+      ],
+      "iterations": 1,
+      "concurrency": 1,
+      "log_output": "${artifact_dir}/marker-hnsw-rabitq-bits4.log"
+    },
+    {
+      "kind": "latency",
+      "name": "marker-hnsw-rabitq-bits8-structurally-absent",
+      "tags": [
+        "task104",
+        "m5",
+        "hnsw",
+        "real10k",
+        "quant=rabitq",
+        "bits8",
+        "kernel_status=structurally_absent"
+      ],
+      "prefix": "task104_real10k_hnsw_rb",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80
+      ],
+      "iterations": 1,
+      "concurrency": 1,
+      "log_output": "${artifact_dir}/marker-hnsw-rabitq-bits8.log"
+    }
+  ]
+}

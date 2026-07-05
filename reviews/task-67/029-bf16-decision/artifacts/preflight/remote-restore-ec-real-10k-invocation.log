@@ -1,0 +1,25 @@
+Script started on 2026-05-30 08:29:59-07:00 [<not executed on terminal>]
+{
+    "CommandId": "e2742d67-7bb1-4aa3-ba36-4c72ee4ecdc0",
+    "InstanceId": "i-02811174cc6ded75c",
+    "Comment": "",
+    "DocumentName": "AWS-RunShellScript",
+    "DocumentVersion": "$DEFAULT",
+    "PluginName": "aws:runShellScript",
+    "ResponseCode": 0,
+    "ExecutionStartDateTime": "2026-05-30T15:29:51.757Z",
+    "ExecutionElapsedTime": "PT3.058S",
+    "ExecutionEndDateTime": "2026-05-30T15:29:54.757Z",
+    "Status": "Success",
+    "StatusDetails": "Success",
+    "StandardOutputContent": "-rw-r--r--. 1 postgres postgres 202M May 30 15:28 /var/lib/pgsql/build/ecaz/target/real-corpus/staged-task50/ec_real_10k_corpus.tsv\n-rw-r--r--. 1 postgres postgres 1.4K May 30 15:28 /var/lib/pgsql/build/ecaz/target/real-corpus/staged-task50/ec_real_10k_manifest.json\n-rw-r--r--. 1 postgres postgres 4.1M May 30 15:28 /var/lib/pgsql/build/ecaz/target/real-corpus/staged-task50/ec_real_10k_queries.tsv\n",
+    "StandardOutputUrl": "",
+    "StandardErrorContent": "++ mkdir -p /var/lib/pgsql/build/ecaz/target/real-corpus/staged-task50\n++ aws s3 cp s3://ecaz-cloud-10k-intel-f85c5b34/bench-artifacts/task67-bf16-corpus/ec_real_10k_corpus.tsv /var/lib/pgsql/build/ecaz/target/real-corpus/staged-task50/ec_real_10k_corpus.tsv --region us-west-2 --only-show-errors\n++ aws s3 cp s3://ecaz-cloud-10k-intel-f85c5b34/bench-artifacts/task67-bf16-corpus/ec_real_10k_queries.tsv /var/lib/pgsql/build/ecaz/target/real-corpus/staged-task50/ec_real_10k_queries.tsv --region us-west-2 --only-show-errors\n++ aws s3 cp s3://ecaz-cloud-10k-intel-f85c5b34/bench-artifacts/task67-bf16-corpus/ec_real_10k_manifest.json /var/lib/pgsql/build/ecaz/target/real-corpus/staged-task50/ec_real_10k_manifest.json --region us-west-2 --only-show-errors\n++ chown -R postgres:postgres /var/lib/pgsql/build/ecaz/target/real-corpus\n++ ls -lh /var/lib/pgsql/build/ecaz/target/real-corpus/staged-task50/ec_real_10k_corpus.tsv /var/lib/pgsql/build/ecaz/target/real-corpus/staged-task50/ec_real_10k_manifest.json /var/lib/pgsql/build/ecaz/target/real-corpus/staged-task50/ec_real_10k_queries.tsv\n",
+    "StandardErrorUrl": "",
+    "CloudWatchOutputConfig": {
+        "CloudWatchLogGroupName": "",
+        "CloudWatchOutputEnabled": false
+    }
+}
+
+Script done on 2026-05-30 08:30:00-07:00 [COMMAND_EXIT_CODE="0"]

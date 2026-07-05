@@ -1,0 +1,2 @@
+python3 scripts/unsafe_ledger.py generate --output reviews/task-50/038-spire-relation-store-prefetch/artifacts/unsafe-ledger-after.jsonl --packet reviews/task-50/038-spire-relation-store-prefetch src
+wrote 2392 unsafe ledger rows to reviews/task-50/038-spire-relation-store-prefetch/artifacts/unsafe-ledger-after.jsonl

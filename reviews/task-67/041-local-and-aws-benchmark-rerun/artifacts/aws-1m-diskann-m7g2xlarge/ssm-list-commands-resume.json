@@ -1,0 +1,2063 @@
+{
+    "CommandInvocations": [
+        {
+            "CommandId": "9b5d0b99-a91b-4ff2-82ce-de02e14e33d1",
+            "InstanceId": "i-0056e46b981edbb17",
+            "InstanceName": "ip-10-42-1-192.us-west-2.compute.internal",
+            "Comment": "",
+            "DocumentName": "AWS-RunShellScript",
+            "DocumentVersion": "$DEFAULT",
+            "RequestedDateTime": "2026-05-30T17:50:46.475000-07:00",
+            "Status": "Success",
+            "StatusDetails": "Success",
+            "StandardOutputUrl": "",
+            "StandardErrorUrl": "",
+            "CommandPlugins": [
+                {
+                    "Name": "aws:runShellScript",
+                    "Status": "Success",
+                    "StatusDetails": "Success",
+                    "ResponseCode": 0,
+                    "ResponseStartDateTime": "2026-05-30T17:50:46.585000-07:00",
+                    "ResponseFinishDateTime": "2026-05-30T17:50:46.723000-07:00",
+                    "Output": "          captured_at          | state  | wait_event_type | wait_event |    query_age    |                                        query                                         \n-------------------------------+--------+-----------------+------------+-----------------+--------------------------------------------------------------------------------------\n 2026-05-31 00:50:46.718181+00 | active |                 |            | 01:01:28.764315 | CREATE INDEX task67_1m_diskann_m7g2xlarge_idx ON task67_1m_diskann_m7g2xlarge_corpus+\n                               |        |                 |            |                 |         USING ec_diskann (embedding ecvector_diskann_ip_ops)\n(1 row)\n\n\n----------ERROR-------\n++ sudo -u postgres psql -h /var/run/postgresql -d postgres -c 'SELECT now() AS captured_at, state, wait_event_type, wait_event, now() - query_start AS query_age, left(query, 180) AS query FROM pg_stat_activity WHERE datname = '\\''postgres'\\'' AND usename = '\\''postgres'\\'' AND pid <> pg_backend_pid() ORDER BY backend_start;'\n",
+                    "StandardOutputUrl": "",
+                    "StandardErrorUrl": "",
+                    "OutputS3Region": "us-west-2",
+                    "OutputS3BucketName": "",
+                    "OutputS3KeyPrefix": ""
+                }
+            ],
+            "ServiceRole": "",
+            "NotificationConfig": {
+                "NotificationArn": "",
+                "NotificationEvents": [],
+                "NotificationType": ""
+            },
+            "CloudWatchOutputConfig": {
+                "CloudWatchLogGroupName": "",
+                "CloudWatchOutputEnabled": false
+            }
+        },
+        {
+            "CommandId": "c531f24e-2559-4b58-87bf-16f69435fb1d",
+            "InstanceId": "i-0056e46b981edbb17",
+            "InstanceName": "ip-10-42-1-192.us-west-2.compute.internal",
+            "Comment": "",
+            "DocumentName": "AWS-RunShellScript",
+            "DocumentVersion": "$DEFAULT",
+            "RequestedDateTime": "2026-05-30T17:40:19.019000-07:00",
+            "Status": "Success",
+            "StatusDetails": "Success",
+            "StandardOutputUrl": "",
+            "StandardErrorUrl": "",
+            "CommandPlugins": [
+                {
+                    "Name": "aws:runShellScript",
+                    "Status": "Success",
+                    "StatusDetails": "Success",
+                    "ResponseCode": 0,
+                    "ResponseStartDateTime": "2026-05-30T17:40:19.129000-07:00",
+                    "ResponseFinishDateTime": "2026-05-30T17:40:19.251000-07:00",
+                    "Output": "          captured_at          | state  | wait_event_type | wait_event |    query_age    |                                        query                                         \n-------------------------------+--------+-----------------+------------+-----------------+--------------------------------------------------------------------------------------\n 2026-05-31 00:40:19.247225+00 | active |                 |            | 00:51:01.293359 | CREATE INDEX task67_1m_diskann_m7g2xlarge_idx ON task67_1m_diskann_m7g2xlarge_corpus+\n                               |        |                 |            |                 |         USING ec_diskann (embedding ecvector_diskann_ip_ops)\n(1 row)\n\n\n----------ERROR-------\n++ sudo -u postgres psql -h /var/run/postgresql -d postgres -c 'SELECT now() AS captured_at, state, wait_event_type, wait_event, now() - query_start AS query_age, left(query, 180) AS query FROM pg_stat_activity WHERE datname = '\\''postgres'\\'' AND usename = '\\''postgres'\\'' AND pid <> pg_backend_pid() ORDER BY backend_start;'\n",
+                    "StandardOutputUrl": "",
+                    "StandardErrorUrl": "",
+                    "OutputS3Region": "us-west-2",
+                    "OutputS3BucketName": "",
+                    "OutputS3KeyPrefix": ""
+                }
+            ],
+            "ServiceRole": "",
+            "NotificationConfig": {
+                "NotificationArn": "",
+                "NotificationEvents": [],
+                "NotificationType": ""
+            },
+            "CloudWatchOutputConfig": {
+                "CloudWatchLogGroupName": "",
+                "CloudWatchOutputEnabled": false
+            }
+        },
+        {
+            "CommandId": "6c6a4d09-5a61-443b-ac51-cea3bd5b8888",
+            "InstanceId": "i-0056e46b981edbb17",
+            "InstanceName": "ip-10-42-1-192.us-west-2.compute.internal",
+            "Comment": "",
+            "DocumentName": "AWS-RunShellScript",
+            "DocumentVersion": "$DEFAULT",
+            "RequestedDateTime": "2026-05-30T17:29:55.468000-07:00",
+            "Status": "Success",
+            "StatusDetails": "Success",
+            "StandardOutputUrl": "",
+            "StandardErrorUrl": "",
+            "CommandPlugins": [
+                {
+                    "Name": "aws:runShellScript",
+                    "Status": "Success",
+                    "StatusDetails": "Success",
+                    "ResponseCode": 0,
+                    "ResponseStartDateTime": "2026-05-30T17:29:55.588000-07:00",
+                    "ResponseFinishDateTime": "2026-05-30T17:29:55.697000-07:00",
+                    "Output": "          captured_at          | state  | wait_event_type | wait_event |    query_age    |                                        query                                         \n-------------------------------+--------+-----------------+------------+-----------------+--------------------------------------------------------------------------------------\n 2026-05-31 00:29:55.691371+00 | active |                 |            | 00:40:37.737505 | CREATE INDEX task67_1m_diskann_m7g2xlarge_idx ON task67_1m_diskann_m7g2xlarge_corpus+\n                               |        |                 |            |                 |         USING ec_diskann (embedding ecvector_diskann_ip_ops)\n(1 row)\n\n\n----------ERROR-------\n++ sudo -u postgres psql -h /var/run/postgresql -d postgres -c 'SELECT now() AS captured_at, state, wait_event_type, wait_event, now() - query_start AS query_age, left(query, 180) AS query FROM pg_stat_activity WHERE datname = '\\''postgres'\\'' AND usename = '\\''postgres'\\'' AND pid <> pg_backend_pid() ORDER BY backend_start;'\n",
+                    "StandardOutputUrl": "",
+                    "StandardErrorUrl": "",
+                    "OutputS3Region": "us-west-2",
+                    "OutputS3BucketName": "",
+                    "OutputS3KeyPrefix": ""
+                }
+            ],
+            "ServiceRole": "",
+            "NotificationConfig": {
+                "NotificationArn": "",
+                "NotificationEvents": [],
+                "NotificationType": ""
+            },
+            "CloudWatchOutputConfig": {
+                "CloudWatchLogGroupName": "",
+                "CloudWatchOutputEnabled": false
+            }
+        },
+        {
+            "CommandId": "092dc7fe-8275-4cfe-94ed-ab969d8618ba",
+            "InstanceId": "i-0056e46b981edbb17",
+            "InstanceName": "ip-10-42-1-192.us-west-2.compute.internal",
+            "Comment": "",
+            "DocumentName": "AWS-RunShellScript",
+            "DocumentVersion": "$DEFAULT",
+            "RequestedDateTime": "2026-05-30T17:19:27.246000-07:00",
+            "Status": "Success",
+            "StatusDetails": "Success",
+            "StandardOutputUrl": "",
+            "StandardErrorUrl": "",
+            "CommandPlugins": [
+                {
+                    "Name": "aws:runShellScript",
+                    "Status": "Success",
+                    "StatusDetails": "Success",
+                    "ResponseCode": 0,
+                    "ResponseStartDateTime": "2026-05-30T17:19:27.354000-07:00",
+                    "ResponseFinishDateTime": "2026-05-30T17:19:27.495000-07:00",
+                    "Output": "          captured_at          | state  | wait_event_type | wait_event |    query_age    |                                        query                                         \n-------------------------------+--------+-----------------+------------+-----------------+--------------------------------------------------------------------------------------\n 2026-05-31 00:19:27.490699+00 | active |                 |            | 00:30:09.536833 | CREATE INDEX task67_1m_diskann_m7g2xlarge_idx ON task67_1m_diskann_m7g2xlarge_corpus+\n                               |        |                 |            |                 |         USING ec_diskann (embedding ecvector_diskann_ip_ops)\n(1 row)\n\n\n----------ERROR-------\n++ sudo -u postgres psql -h /var/run/postgresql -d postgres -c 'SELECT now() AS captured_at, state, wait_event_type, wait_event, now() - query_start AS query_age, left(query, 180) AS query FROM pg_stat_activity WHERE datname = '\\''postgres'\\'' AND usename = '\\''postgres'\\'' AND pid <> pg_backend_pid() ORDER BY backend_start;'\n",
+                    "StandardOutputUrl": "",
+                    "StandardErrorUrl": "",
+                    "OutputS3Region": "us-west-2",
+                    "OutputS3BucketName": "",
+                    "OutputS3KeyPrefix": ""
+                }
+            ],
+            "ServiceRole": "",
+            "NotificationConfig": {
+                "NotificationArn": "",
+                "NotificationEvents": [],
+                "NotificationType": ""
+            },
+            "CloudWatchOutputConfig": {
+                "CloudWatchLogGroupName": "",
+                "CloudWatchOutputEnabled": false
+            }
+        },
+        {
+            "CommandId": "f4c8955c-c89a-462b-9aeb-4977bfe14927",
+            "InstanceId": "i-0056e46b981edbb17",
+            "InstanceName": "ip-10-42-1-192.us-west-2.compute.internal",
+            "Comment": "",
+            "DocumentName": "AWS-RunShellScript",
+            "DocumentVersion": "$DEFAULT",
+            "RequestedDateTime": "2026-05-30T17:14:08.426000-07:00",
+            "Status": "Success",
+            "StatusDetails": "Success",
+            "StandardOutputUrl": "",
+            "StandardErrorUrl": "",
+            "CommandPlugins": [
+                {
+                    "Name": "aws:runShellScript",
+                    "Status": "Success",
+                    "StatusDetails": "Success",
+                    "ResponseCode": 0,
+                    "ResponseStartDateTime": "2026-05-30T17:14:08.534000-07:00",
+                    "ResponseFinishDateTime": "2026-05-30T17:14:08.639000-07:00",
+                    "Output": "          captured_at          | state  | wait_event_type | wait_event |   query_age    |                                        query                                         \n-------------------------------+--------+-----------------+------------+----------------+--------------------------------------------------------------------------------------\n 2026-05-31 00:14:08.634776+00 | active |                 |            | 00:24:50.68091 | CREATE INDEX task67_1m_diskann_m7g2xlarge_idx ON task67_1m_diskann_m7g2xlarge_corpus+\n                               |        |                 |            |                |         USING ec_diskann (embedding ecvector_diskann_ip_ops)\n(1 row)\n\n\n----------ERROR-------\n++ sudo -u postgres psql -h /var/run/postgresql -d postgres -c 'SELECT now() AS captured_at, state, wait_event_type, wait_event, now() - query_start AS query_age, left(query, 180) AS query FROM pg_stat_activity WHERE datname = '\\''postgres'\\'' AND usename = '\\''postgres'\\'' AND pid <> pg_backend_pid() ORDER BY backend_start;'\n",
+                    "StandardOutputUrl": "",
+                    "StandardErrorUrl": "",
+                    "OutputS3Region": "us-west-2",
+                    "OutputS3BucketName": "",
+                    "OutputS3KeyPrefix": ""
+                }
+            ],
+            "ServiceRole": "",
+            "NotificationConfig": {
+                "NotificationArn": "",
+                "NotificationEvents": [],
+                "NotificationType": ""
+            },
+            "CloudWatchOutputConfig": {
+                "CloudWatchLogGroupName": "",
+                "CloudWatchOutputEnabled": false
+            }
+        },
+        {
+            "CommandId": "6ac08ce2-7d5e-4c8d-98b7-b1d0d6bceaaa",
+            "InstanceId": "i-0056e46b981edbb17",
+            "InstanceName": "ip-10-42-1-192.us-west-2.compute.internal",
+            "Comment": "",
+            "DocumentName": "AWS-RunShellScript",
+            "DocumentVersion": "$DEFAULT",
+            "RequestedDateTime": "2026-05-30T17:08:52.108000-07:00",
+            "Status": "Success",
+            "StatusDetails": "Success",
+            "StandardOutputUrl": "",
+            "StandardErrorUrl": "",
+            "CommandPlugins": [
+                {
+                    "Name": "aws:runShellScript",
+                    "Status": "Success",
+                    "StatusDetails": "Success",
+                    "ResponseCode": 0,
+                    "ResponseStartDateTime": "2026-05-30T17:08:52.216000-07:00",
+                    "ResponseFinishDateTime": "2026-05-30T17:08:52.361000-07:00",
+                    "Output": "          captured_at          | state  | wait_event_type | wait_event |    query_age    |                                        query                                         \n-------------------------------+--------+-----------------+------------+-----------------+--------------------------------------------------------------------------------------\n 2026-05-31 00:08:52.357062+00 | active |                 |            | 00:19:34.403196 | CREATE INDEX task67_1m_diskann_m7g2xlarge_idx ON task67_1m_diskann_m7g2xlarge_corpus+\n                               |        |                 |            |                 |         USING ec_diskann (embedding ecvector_diskann_ip_ops)\n(1 row)\n\n\n----------ERROR-------\n++ sudo -u postgres psql -h /var/run/postgresql -d postgres -c 'SELECT now() AS captured_at, state, wait_event_type, wait_event, now() - query_start AS query_age, left(query, 180) AS query FROM pg_stat_activity WHERE datname = '\\''postgres'\\'' AND usename = '\\''postgres'\\'' AND pid <> pg_backend_pid() ORDER BY backend_start;'\n",
+                    "StandardOutputUrl": "",
+                    "StandardErrorUrl": "",
+                    "OutputS3Region": "us-west-2",
+                    "OutputS3BucketName": "",
+                    "OutputS3KeyPrefix": ""
+                }
+            ],
+            "ServiceRole": "",
+            "NotificationConfig": {
+                "NotificationArn": "",
+                "NotificationEvents": [],
+                "NotificationType": ""
+            },
+            "CloudWatchOutputConfig": {
+                "CloudWatchLogGroupName": "",
+                "CloudWatchOutputEnabled": false
+            }
+        },
+        {
+            "CommandId": "86ce9e9e-405a-46da-9ba3-c31ae46e75d2",
+            "InstanceId": "i-0056e46b981edbb17",
+            "InstanceName": "ip-10-42-1-192.us-west-2.compute.internal",
+            "Comment": "",
+            "DocumentName": "AWS-RunShellScript",
+            "DocumentVersion": "$DEFAULT",
+            "RequestedDateTime": "2026-05-30T17:03:30.666000-07:00",
+            "Status": "Success",
+            "StatusDetails": "Success",
+            "StandardOutputUrl": "",
+            "StandardErrorUrl": "",
+            "CommandPlugins": [
+                {
+                    "Name": "aws:runShellScript",
+                    "Status": "Success",
+                    "StatusDetails": "Success",
+                    "ResponseCode": 0,
+                    "ResponseStartDateTime": "2026-05-30T17:03:30.786000-07:00",
+                    "ResponseFinishDateTime": "2026-05-30T17:03:30.875000-07:00",
+                    "Output": "          captured_at          | state  | wait_event_type | wait_event |    query_age    |                                        query                                         \n-------------------------------+--------+-----------------+------------+-----------------+--------------------------------------------------------------------------------------\n 2026-05-31 00:03:30.870713+00 | active |                 |            | 00:14:12.916847 | CREATE INDEX task67_1m_diskann_m7g2xlarge_idx ON task67_1m_diskann_m7g2xlarge_corpus+\n                               |        |                 |            |                 |         USING ec_diskann (embedding ecvector_diskann_ip_ops)\n(1 row)\n\n\n----------ERROR-------\n++ sudo -u postgres psql -h /var/run/postgresql -d postgres -c 'SELECT now() AS captured_at, state, wait_event_type, wait_event, now() - query_start AS query_age, left(query, 180) AS query FROM pg_stat_activity WHERE datname = '\\''postgres'\\'' AND usename = '\\''postgres'\\'' AND pid <> pg_backend_pid() ORDER BY backend_start;'\n",
+                    "StandardOutputUrl": "",
+                    "StandardErrorUrl": "",
+                    "OutputS3Region": "us-west-2",
+                    "OutputS3BucketName": "",
+                    "OutputS3KeyPrefix": ""
+                }
+            ],
+            "ServiceRole": "",
+            "NotificationConfig": {
+                "NotificationArn": "",
+                "NotificationEvents": [],
+                "NotificationType": ""
+            },
+            "CloudWatchOutputConfig": {
+                "CloudWatchLogGroupName": "",
+                "CloudWatchOutputEnabled": false
+            }
+        },
+        {
+            "CommandId": "25bb36f1-4ac9-4d03-a7ff-d411442700c4",
+            "InstanceId": "i-0056e46b981edbb17",
+            "InstanceName": "ip-10-42-1-192.us-west-2.compute.internal",
+            "Comment": "",
+            "DocumentName": "AWS-RunShellScript",
+            "DocumentVersion": "$DEFAULT",
+            "RequestedDateTime": "2026-05-30T16:58:03.775000-07:00",
+            "Status": "Success",
+            "StatusDetails": "Success",
+            "StandardOutputUrl": "",
+            "StandardErrorUrl": "",
+            "CommandPlugins": [
+                {
+                    "Name": "aws:runShellScript",
+                    "Status": "Success",
+                    "StatusDetails": "Success",
+                    "ResponseCode": 0,
+                    "ResponseStartDateTime": "2026-05-30T16:58:03.912000-07:00",
+                    "ResponseFinishDateTime": "2026-05-30T16:58:04.047000-07:00",
+                    "Output": "          captured_at          | state  | wait_event_type | wait_event |   query_age    |                                        query                                         \n-------------------------------+--------+-----------------+------------+----------------+--------------------------------------------------------------------------------------\n 2026-05-30 23:58:04.029396+00 | active |                 |            | 00:08:46.07553 | CREATE INDEX task67_1m_diskann_m7g2xlarge_idx ON task67_1m_diskann_m7g2xlarge_corpus+\n                               |        |                 |            |                |         USING ec_diskann (embedding ecvector_diskann_ip_ops)\n(1 row)\n\n\n----------ERROR-------\n++ sudo -u postgres psql -h /var/run/postgresql -d postgres -c 'SELECT now() AS captured_at, state, wait_event_type, wait_event, now() - query_start AS query_age, left(query, 180) AS query FROM pg_stat_activity WHERE datname = '\\''postgres'\\'' AND usename = '\\''postgres'\\'' AND pid <> pg_backend_pid() ORDER BY backend_start;'\n",
+                    "StandardOutputUrl": "",
+                    "StandardErrorUrl": "",
+                    "OutputS3Region": "us-west-2",
+                    "OutputS3BucketName": "",
+                    "OutputS3KeyPrefix": ""
+                }
+            ],
+            "ServiceRole": "",
+            "NotificationConfig": {
+                "NotificationArn": "",
+                "NotificationEvents": [],
+                "NotificationType": ""
+            },
+            "CloudWatchOutputConfig": {
+                "CloudWatchLogGroupName": "",
+                "CloudWatchOutputEnabled": false
+            }
+        },
+        {
+            "CommandId": "edf194f3-8739-47ec-903f-babbcf77975d",
+            "InstanceId": "i-0056e46b981edbb17",
+            "InstanceName": "ip-10-42-1-192.us-west-2.compute.internal",
+            "Comment": "",
+            "DocumentName": "AWS-RunShellScript",
+            "DocumentVersion": "$DEFAULT",
+            "RequestedDateTime": "2026-05-30T16:52:46.273000-07:00",
+            "Status": "Success",
+            "StatusDetails": "Success",
+            "StandardOutputUrl": "",
+            "StandardErrorUrl": "",
+            "CommandPlugins": [
+                {
+                    "Name": "aws:runShellScript",
+                    "Status": "Success",
+                    "StatusDetails": "Success",
+                    "ResponseCode": 0,
+                    "ResponseStartDateTime": "2026-05-30T16:52:46.458000-07:00",
+                    "ResponseFinishDateTime": "2026-05-30T16:52:46.625000-07:00",
+                    "Output": "         captured_at          | state  | wait_event_type |  wait_event  |    query_age    |                                        query                                         \n------------------------------+--------+-----------------+--------------+-----------------+--------------------------------------------------------------------------------------\n 2026-05-30 23:52:46.61443+00 | active | IO              | DataFileRead | 00:03:28.660564 | CREATE INDEX task67_1m_diskann_m7g2xlarge_idx ON task67_1m_diskann_m7g2xlarge_corpus+\n                              |        |                 |              |                 |         USING ec_diskann (embedding ecvector_diskann_ip_ops)\n(1 row)\n\n\n----------ERROR-------\n++ sudo -u postgres psql -h /var/run/postgresql -d postgres -c 'SELECT now() AS captured_at, state, wait_event_type, wait_event, now() - query_start AS query_age, left(query, 180) AS query FROM pg_stat_activity WHERE datname = '\\''postgres'\\'' AND usename = '\\''postgres'\\'' AND pid <> pg_backend_pid() ORDER BY backend_start;'\n",
+                    "StandardOutputUrl": "",
+                    "StandardErrorUrl": "",
+                    "OutputS3Region": "us-west-2",
+                    "OutputS3BucketName": "",
+                    "OutputS3KeyPrefix": ""
+                }
+            ],
+            "ServiceRole": "",
+            "NotificationConfig": {
+                "NotificationArn": "",
+                "NotificationEvents": [],
+                "NotificationType": ""
+            },
+            "CloudWatchOutputConfig": {
+                "CloudWatchLogGroupName": "",
+                "CloudWatchOutputEnabled": false
+            }
+        },
+        {
+            "CommandId": "4212f432-ea0d-4c74-9f49-d422598d2efe",
+            "InstanceId": "i-0056e46b981edbb17",
+            "InstanceName": "ip-10-42-1-192.us-west-2.compute.internal",
+            "Comment": "",
+            "DocumentName": "AWS-RunShellScript",
+            "DocumentVersion": "$DEFAULT",
+            "RequestedDateTime": "2026-05-30T16:47:25.478000-07:00",
+            "Status": "Success",
+            "StatusDetails": "Success",
+            "StandardOutputUrl": "",
+            "StandardErrorUrl": "",
+            "CommandPlugins": [
+                {
+                    "Name": "aws:runShellScript",
+                    "Status": "Success",
+                    "StatusDetails": "Success",
+                    "ResponseCode": 0,
+                    "ResponseStartDateTime": "2026-05-30T16:47:25.583000-07:00",
+                    "ResponseFinishDateTime": "2026-05-30T16:47:25.881000-07:00",
+                    "Output": "          captured_at          | state  | wait_event_type | wait_event |   query_age    |                                  query                                  \n-------------------------------+--------+-----------------+------------+----------------+-------------------------------------------------------------------------\n 2026-05-30 23:47:25.817887+00 | active |                 |            | 00:00:11.15463 | INSERT INTO task67_1m_diskann_m7g2xlarge_corpus (id, source, embedding)+\n                               |        |                 |            |                |                  SELECT id, source, encode_to_ecvector(source, 4, 42)  +\n                               |        |                 |            |                |                  FROM ecaz_chunk_stage\n(1 row)\n\n\n----------ERROR-------\n++ sudo -u postgres psql -h /var/run/postgresql -d postgres -c 'SELECT now() AS captured_at, state, wait_event_type, wait_event, now() - query_start AS query_age, left(query, 180) AS query FROM pg_stat_activity WHERE datname = '\\''postgres'\\'' AND usename = '\\''postgres'\\'' AND pid <> pg_backend_pid() ORDER BY backend_start;'\n",
+                    "StandardOutputUrl": "",
+                    "StandardErrorUrl": "",
+                    "OutputS3Region": "us-west-2",
+                    "OutputS3BucketName": "",
+                    "OutputS3KeyPrefix": ""
+                }
+            ],
+            "ServiceRole": "",
+            "NotificationConfig": {
+                "NotificationArn": "",
+                "NotificationEvents": [],
+                "NotificationType": ""
+            },
+            "CloudWatchOutputConfig": {
+                "CloudWatchLogGroupName": "",
+                "CloudWatchOutputEnabled": false
+            }
+        },
+        {
+            "CommandId": "55a58ec5-ba2c-410e-90f6-a4a422c0621b",
+            "InstanceId": "i-0056e46b981edbb17",
+            "InstanceName": "ip-10-42-1-192.us-west-2.compute.internal",
+            "Comment": "",
+            "DocumentName": "AWS-RunShellScript",
+            "DocumentVersion": "$DEFAULT",
+            "RequestedDateTime": "2026-05-30T16:42:03.645000-07:00",
+            "Status": "Success",
+            "StatusDetails": "Success",
+            "StandardOutputUrl": "",
+            "StandardErrorUrl": "",
+            "CommandPlugins": [
+                {
+                    "Name": "aws:runShellScript",
+                    "Status": "Success",
+                    "StatusDetails": "Success",
+                    "ResponseCode": 0,
+                    "ResponseStartDateTime": "2026-05-30T16:42:03.765000-07:00",
+                    "ResponseFinishDateTime": "2026-05-30T16:42:04.173000-07:00",
+                    "Output": "         captured_at          | state  | wait_event_type | wait_event |    query_age    |                                       query                                       \n------------------------------+--------+-----------------+------------+-----------------+-----------------------------------------------------------------------------------\n 2026-05-30 23:42:03.85752+00 | active |                 |            | 00:00:05.661778 | COPY ecaz_chunk_stage (id, source) FROM STDIN WITH (FORMAT text, DELIMITER E'\\t')\n(1 row)\n\n\n----------ERROR-------\n++ sudo -u postgres psql -h /var/run/postgresql -d postgres -c 'SELECT now() AS captured_at, state, wait_event_type, wait_event, now() - query_start AS query_age, left(query, 180) AS query FROM pg_stat_activity WHERE datname = '\\''postgres'\\'' AND usename = '\\''postgres'\\'' AND pid <> pg_backend_pid() ORDER BY backend_start;'\n",
+                    "StandardOutputUrl": "",
+                    "StandardErrorUrl": "",
+                    "OutputS3Region": "us-west-2",
+                    "OutputS3BucketName": "",
+                    "OutputS3KeyPrefix": ""
+                }
+            ],
+            "ServiceRole": "",
+            "NotificationConfig": {
+                "NotificationArn": "",
+                "NotificationEvents": [],
+                "NotificationType": ""
+            },
+            "CloudWatchOutputConfig": {
+                "CloudWatchLogGroupName": "",
+                "CloudWatchOutputEnabled": false
+            }
+        },
+        {
+            "CommandId": "5547ca40-416e-40f5-b557-3188a3691c02",
+            "InstanceId": "i-0056e46b981edbb17",
+            "InstanceName": "ip-10-42-1-192.us-west-2.compute.internal",
+            "Comment": "",
+            "DocumentName": "AWS-RunShellScript",
+            "DocumentVersion": "$DEFAULT",
+            "RequestedDateTime": "2026-05-30T16:36:39.757000-07:00",
+            "Status": "Failed",
+            "StatusDetails": "Failed",
+            "StandardOutputUrl": "",
+            "StandardErrorUrl": "",
+            "CommandPlugins": [
+                {
+                    "Name": "aws:runShellScript",
+                    "Status": "Failed",
+                    "StatusDetails": "Failed",
+                    "ResponseCode": 1,
+                    "ResponseStartDateTime": "2026-05-30T16:36:39.867000-07:00",
+                    "ResponseFinishDateTime": "2026-05-30T16:36:40.095000-07:00",
+                    "Output": "\n----------ERROR-------\n++ sudo -u postgres psql -h /var/run/postgresql -d postgres -c 'SELECT now() AS captured_at, '\\''corpus_rows'\\'' AS metric, to_regclass('\\''task67_1m_diskann_m7g2xlarge_corpus'\\'')::text AS relation, CASE WHEN to_regclass('\\''task67_1m_diskann_m7g2xlarge_corpus'\\'') IS NULL THEN NULL ELSE (SELECT count(*)::text FROM task67_1m_diskann_m7g2xlarge_corpus) END AS value UNION ALL SELECT now(), '\\''query_rows'\\'', to_regclass('\\''task67_1m_diskann_m7g2xlarge_queries'\\'')::text, CASE WHEN to_regclass('\\''task67_1m_diskann_m7g2xlarge_queries'\\'') IS NULL THEN NULL ELSE (SELECT count(*)::text FROM task67_1m_diskann_m7g2xlarge_queries) END UNION ALL SELECT now(), chunk_kind || '\\''_state_rows'\\'', NULL, count(*)::text FROM ecaz_corpus_load_state WHERE prefix = '\\''task67_1m_diskann_m7g2xlarge'\\'' GROUP BY chunk_kind ORDER BY metric;'\nERROR:  relation \"task67_1m_diskann_m7g2xlarge_queries\" does not exist\nLINE 1: ...S NULL THEN NULL ELSE (SELECT count(*)::text FROM task67_1m_...\n                                                             ^\nfailed to run commands: exit status 1",
+                    "StandardOutputUrl": "",
+                    "StandardErrorUrl": "",
+                    "OutputS3Region": "us-west-2",
+                    "OutputS3BucketName": "",
+                    "OutputS3KeyPrefix": ""
+                }
+            ],
+            "ServiceRole": "",
+            "NotificationConfig": {
+                "NotificationArn": "",
+                "NotificationEvents": [],
+                "NotificationType": ""
+            },
+            "CloudWatchOutputConfig": {
+                "CloudWatchLogGroupName": "",
+                "CloudWatchOutputEnabled": false
+            }
+        },
+        {
+            "CommandId": "fbfc8ca3-9b0d-4adf-8a08-a1b1de48e780",
+            "InstanceId": "i-0056e46b981edbb17",
+            "InstanceName": "ip-10-42-1-192.us-west-2.compute.internal",
+            "Comment": "",
+            "DocumentName": "AWS-RunShellScript",
+            "DocumentVersion": "$DEFAULT",
+            "RequestedDateTime": "2026-05-30T16:35:28.237000-07:00",
+            "Status": "InProgress",
+            "StatusDetails": "InProgress",
+            "StandardOutputUrl": "",
+            "StandardErrorUrl": "",
+            "CommandPlugins": [
+                {
+                    "Name": "aws:runShellScript",
+                    "Status": "InProgress",
+                    "StatusDetails": "InProgress",
+                    "ResponseCode": -1,
+                    "Output": "",
+                    "StandardOutputUrl": "",
+                    "StandardErrorUrl": "",
+                    "OutputS3Region": "",
+                    "OutputS3BucketName": "",
+                    "OutputS3KeyPrefix": ""
+                }
+            ],
+            "ServiceRole": "",
+            "NotificationConfig": {
+                "NotificationArn": "",
+                "NotificationEvents": [],
+                "NotificationType": ""
+            },
+            "CloudWatchOutputConfig": {
+                "CloudWatchLogGroupName": "",
+                "CloudWatchOutputEnabled": false
+            }
+        },
+        {
+            "CommandId": "d498e4b4-ed53-4a7f-9d88-f3cde7cdc1a1",
+            "InstanceId": "i-0056e46b981edbb17",
+            "InstanceName": "ip-10-42-1-192.us-west-2.compute.internal",
+            "Comment": "",
+            "DocumentName": "AWS-RunShellScript",
+            "DocumentVersion": "$DEFAULT",
+            "RequestedDateTime": "2026-05-30T16:34:53.291000-07:00",
+            "Status": "Success",
+            "StatusDetails": "Success",
+            "StandardOutputUrl": "",
+            "StandardErrorUrl": "",
+            "CommandPlugins": [
+                {
+                    "Name": "aws:runShellScript",
+                    "Status": "Success",
+                    "StatusDetails": "Success",
+                    "ResponseCode": 0,
+                    "ResponseStartDateTime": "2026-05-30T16:34:53.559000-07:00",
+                    "ResponseFinishDateTime": "2026-05-30T16:34:54.313000-07:00",
+                    "Output": "● postgresql.service - PostgreSQL database server\n     Loaded: loaded (/usr/lib/systemd/system/postgresql.service; enabled; preset: disabled)\n    Drop-In: /etc/systemd/system/postgresql.service.d\n             └─pgdata.conf\n     Active: active (running) since Sat 2026-05-30 23:34:54 UTC; 38ms ago\n    Process: 2467 ExecStartPre=/usr/libexec/postgresql-check-db-dir postgresql (code=exited, status=0/SUCCESS)\n   Main PID: 2469 (postgres)\n      Tasks: 10 (limit: 37698)\n     Memory: 22.6M\n        CPU: 29ms\n     CGroup: /system.slice/postgresql.service\n             ├─2469 /usr/bin/postgres -D /var/lib/pgsql/18/data\n             ├─2470 \"postgres: logger \"\n             ├─2471 \"postgres: io worker 0\"\n             ├─2472 \"postgres: io worker 1\"\n             ├─2473 \"postgres: io worker 2\"\n             ├─2474 \"postgres: checkpointer \"\n             ├─2475 \"postgres: background writer \"\n             ├─2477 \"postgres: walwriter \"\n             ├─2478 \"postgres: autovacuum launcher \"\n             └─2479 \"postgres: logical replication launcher \"\n\nMay 30 23:34:54 ip-10-42-1-192.us-west-2.compute.internal systemd[1]: Starting postgresql.service - PostgreSQL database server...\nMay 30 23:34:54 ip-10-42-1-192.us-west-2.compute.internal postgres[2469]: 2026-05-30 23:34:54.080 UTC [2469] LOG:  registered custom cumulative statistics \"ecaz\" with ID 25\nMay 30 23:34:54 ip-10-42-1-192.us-west-2.compute.internal postgres[2469]: 2026-05-30 23:34:54.088 UTC [2469] LOG:  redirecting log output to logging collector process\nMay 30 23:34:54 ip-10-42-1-192.us-west-2.compute.internal postgres[2469]: 2026-05-30 23:34:54.088 UTC [2469] HINT:  Future log output will appear in directory \"log\".\nMay 30 23:34:54 ip-10-42-1-192.us-west-2.compute.internal systemd[1]: Started postgresql.service - PostgreSQL database server.\n                                                    version                                                    \n---------------------------------------------------------------------------------------------------------------\n PostgreSQL 18.3 on aarch64-amazon-linux-gnu, compiled by gcc (GCC) 11.5.0 20240719 (Red Hat 11.5.0-5), 64-bit\n(1 row)\n\n\n----------ERROR-------\n++ sudo systemctl restart postgresql.service\n++ sudo systemctl status postgresql.service --no-pager\n++ sudo -u postgres psql -h /var/run/postgresql -d postgres -c 'select version();'\n",
+                    "StandardOutputUrl": "",
+                    "StandardErrorUrl": "",
+                    "OutputS3Region": "us-west-2",
+                    "OutputS3BucketName": "",
+                    "OutputS3KeyPrefix": ""
+                }
+            ],
+            "ServiceRole": "",
+            "NotificationConfig": {
+                "NotificationArn": "",
+                "NotificationEvents": [],
+                "NotificationType": ""
+            },
+            "CloudWatchOutputConfig": {
+                "CloudWatchLogGroupName": "",
+                "CloudWatchOutputEnabled": false
+            }
+        },
+        {
+            "CommandId": "96f2f0e1-26f0-4552-be98-fb8ebf219db3",
+            "InstanceId": "i-0056e46b981edbb17",
+            "InstanceName": "ip-10-42-1-192.us-west-2.compute.internal",
+            "Comment": "",
+            "DocumentName": "AWS-RunShellScript",
+            "DocumentVersion": "$DEFAULT",
+            "RequestedDateTime": "2026-05-30T16:30:59.722000-07:00",
+            "Status": "Success",
+            "StatusDetails": "Success",
+            "StandardOutputUrl": "",
+            "StandardErrorUrl": "",
+            "CommandPlugins": [
+                {
+                    "Name": "aws:runShellScript",
+                    "Status": "Success",
+                    "StatusDetails": "Success",
+                    "ResponseCode": 0,
+                    "ResponseStartDateTime": "2026-05-30T16:30:59.836000-07:00",
+                    "ResponseFinishDateTime": "2026-05-30T16:31:00.193000-07:00",
+                    "Output": "DROP INDEX\nDROP TABLE\nDROP TABLE\nDELETE 41\n\n----------ERROR-------\n++ sudo -u postgres psql -h /var/run/postgresql -d postgres -c 'DROP INDEX IF EXISTS task67_1m_diskann_default_rerun2_idx; DROP TABLE IF EXISTS task67_1m_diskann_default_rerun2_corpus CASCADE; DROP TABLE IF EXISTS task67_1m_diskann_default_rerun2_queries CASCADE; DELETE FROM ecaz_corpus_load_state WHERE prefix = '\\''task67_1m_diskann_default_rerun2'\\'';'\n",
+                    "StandardOutputUrl": "",
+                    "StandardErrorUrl": "",
+                    "OutputS3Region": "us-west-2",
+                    "OutputS3BucketName": "",
+                    "OutputS3KeyPrefix": ""
+                }
+            ],
+            "ServiceRole": "",
+            "NotificationConfig": {
+                "NotificationArn": "",
+                "NotificationEvents": [],
+                "NotificationType": ""
+            },
+            "CloudWatchOutputConfig": {
+                "CloudWatchLogGroupName": "",
+                "CloudWatchOutputEnabled": false
+            }
+        },
+        {
+            "CommandId": "42d80959-dd9b-4c76-9dec-fb83c9fbd41c",
+            "InstanceId": "i-0056e46b981edbb17",
+            "InstanceName": "ip-10-42-1-192.us-west-2.compute.internal",
+            "Comment": "",
+            "DocumentName": "AWS-RunShellScript",
+            "DocumentVersion": "$DEFAULT",
+            "RequestedDateTime": "2026-05-30T16:30:39.033000-07:00",
+            "Status": "Success",
+            "StatusDetails": "Success",
+            "StandardOutputUrl": "",
+            "StandardErrorUrl": "",
+            "CommandPlugins": [
+                {
+                    "Name": "aws:runShellScript",
+                    "Status": "Success",
+                    "StatusDetails": "Success",
+                    "ResponseCode": 0,
+                    "ResponseStartDateTime": "2026-05-30T16:30:39.144000-07:00",
+                    "ResponseFinishDateTime": "2026-05-30T16:30:39.768000-07:00",
+                    "Output": "● postgresql.service - PostgreSQL database server\n     Loaded: loaded (/usr/lib/systemd/system/postgresql.service; enabled; preset: disabled)\n    Drop-In: /etc/systemd/system/postgresql.service.d\n             └─pgdata.conf\n     Active: active (running) since Sat 2026-05-30 23:30:39 UTC; 98ms ago\n    Process: 2198 ExecStartPre=/usr/libexec/postgresql-check-db-dir postgresql (code=exited, status=0/SUCCESS)\n   Main PID: 2200 (postgres)\n      Tasks: 10 (limit: 18714)\n     Memory: 22.2M\n        CPU: 28ms\n     CGroup: /system.slice/postgresql.service\n             ├─2200 /usr/bin/postgres -D /var/lib/pgsql/18/data\n             ├─2201 \"postgres: logger \"\n             ├─2202 \"postgres: io worker 0\"\n             ├─2203 \"postgres: io worker 1\"\n             ├─2204 \"postgres: io worker 2\"\n             ├─2205 \"postgres: checkpointer \"\n             ├─2206 \"postgres: background writer \"\n             ├─2208 \"postgres: walwriter \"\n             ├─2209 \"postgres: autovacuum launcher \"\n             └─2210 \"postgres: logical replication launcher \"\n\nMay 30 23:30:39 ip-10-42-1-192.us-west-2.compute.internal systemd[1]: Starting postgresql.service - PostgreSQL database server...\nMay 30 23:30:39 ip-10-42-1-192.us-west-2.compute.internal postgres[2200]: 2026-05-30 23:30:39.429 UTC [2200] LOG:  registered custom cumulative statistics \"ecaz\" with ID 25\nMay 30 23:30:39 ip-10-42-1-192.us-west-2.compute.internal postgres[2200]: 2026-05-30 23:30:39.436 UTC [2200] LOG:  redirecting log output to logging collector process\nMay 30 23:30:39 ip-10-42-1-192.us-west-2.compute.internal postgres[2200]: 2026-05-30 23:30:39.436 UTC [2200] HINT:  Future log output will appear in directory \"log\".\nMay 30 23:30:39 ip-10-42-1-192.us-west-2.compute.internal systemd[1]: Started postgresql.service - PostgreSQL database server.\n                                                    version                                                    \n---------------------------------------------------------------------------------------------------------------\n PostgreSQL 18.3 on aarch64-amazon-linux-gnu, compiled by gcc (GCC) 11.5.0 20240719 (Red Hat 11.5.0-5), 64-bit\n(1 row)\n\n\n----------ERROR-------\n++ sudo systemctl restart postgresql.service\n++ sudo systemctl status postgresql.service --no-pager\n++ sudo -u postgres psql -h /var/run/postgresql -d postgres -c 'select version();'\n",
+                    "StandardOutputUrl": "",
+                    "StandardErrorUrl": "",
+                    "OutputS3Region": "us-west-2",
+                    "OutputS3BucketName": "",
+                    "OutputS3KeyPrefix": ""
+                }
+            ],
+            "ServiceRole": "",
+            "NotificationConfig": {
+                "NotificationArn": "",
+                "NotificationEvents": [],
+                "NotificationType": ""
+            },
+            "CloudWatchOutputConfig": {
+                "CloudWatchLogGroupName": "",
+                "CloudWatchOutputEnabled": false
+            }
+        },
+        {
+            "CommandId": "112fb45b-ff40-44e9-9a8f-ac94afa975d3",
+            "InstanceId": "i-0056e46b981edbb17",
+            "InstanceName": "ip-10-42-1-192.us-west-2.compute.internal",
+            "Comment": "",
+            "DocumentName": "AWS-RunShellScript",
+            "DocumentVersion": "$DEFAULT",
+            "RequestedDateTime": "2026-05-30T16:30:09.375000-07:00",
+            "Status": "Success",
+            "StatusDetails": "Success",
+            "StandardOutputUrl": "",
+            "StandardErrorUrl": "",
+            "CommandPlugins": [
+                {
+                    "Name": "aws:runShellScript",
+                    "Status": "Success",
+                    "StatusDetails": "Success",
+                    "ResponseCode": 0,
+                    "ResponseStartDateTime": "2026-05-30T16:30:09.489000-07:00",
+                    "ResponseFinishDateTime": "2026-05-30T16:30:10.097000-07:00",
+                    "Output": "d67e39d1ca07444a948e4e8584f5e9976ee50211\nd67e39d1c Merge remote-tracking branch 'origin/main'\necaz 0.1.0\n\n----------ERROR-------\n++ sudo -u postgres bash -lc 'cd /var/lib/pgsql/build/ecaz && git rev-parse HEAD && git log --oneline -1'\n++ /usr/local/bin/ecaz --version\n",
+                    "StandardOutputUrl": "",
+                    "StandardErrorUrl": "",
+                    "OutputS3Region": "us-west-2",
+                    "OutputS3BucketName": "",
+                    "OutputS3KeyPrefix": ""
+                }
+            ],
+            "ServiceRole": "",
+            "NotificationConfig": {
+                "NotificationArn": "",
+                "NotificationEvents": [],
+                "NotificationType": ""
+            },
+            "CloudWatchOutputConfig": {
+                "CloudWatchLogGroupName": "",
+                "CloudWatchOutputEnabled": false
+            }
+        },
+        {
+            "CommandId": "93d35d3f-a4c6-43f4-82f4-5ef484e06485",
+            "InstanceId": "i-0056e46b981edbb17",
+            "InstanceName": "ip-10-42-1-192.us-west-2.compute.internal",
+            "Comment": "",
+            "DocumentName": "AWS-RunShellScript",
+            "DocumentVersion": "$DEFAULT",
+            "RequestedDateTime": "2026-05-30T16:29:44.439000-07:00",
+            "Status": "Failed",
+            "StatusDetails": "Failed",
+            "StandardOutputUrl": "",
+            "StandardErrorUrl": "",
+            "CommandPlugins": [
+                {
+                    "Name": "aws:runShellScript",
+                    "Status": "Failed",
+                    "StatusDetails": "Failed",
+                    "ResponseCode": 128,
+                    "ResponseStartDateTime": "2026-05-30T16:29:44.708000-07:00",
+                    "ResponseFinishDateTime": "2026-05-30T16:29:44.738000-07:00",
+                    "Output": "\n----------ERROR-------\n++ cd /var/lib/pgsql/build/ecaz\n++ git rev-parse HEAD\nfatal: detected dubious ownership in repository at '/var/lib/pgsql/build/ecaz'\nTo add an exception for this directory, call:\n\n\tgit config --global --add safe.directory /var/lib/pgsql/build/ecaz\nfailed to run commands: exit status 128",
+                    "StandardOutputUrl": "",
+                    "StandardErrorUrl": "",
+                    "OutputS3Region": "us-west-2",
+                    "OutputS3BucketName": "",
+                    "OutputS3KeyPrefix": ""
+                }
+            ],
+            "ServiceRole": "",
+            "NotificationConfig": {
+                "NotificationArn": "",
+                "NotificationEvents": [],
+                "NotificationType": ""
+            },
+            "CloudWatchOutputConfig": {
+                "CloudWatchLogGroupName": "",
+                "CloudWatchOutputEnabled": false
+            }
+        },
+        {
+            "CommandId": "76b57d44-215b-4360-adf5-fa7846e7a0f6",
+            "InstanceId": "i-0056e46b981edbb17",
+            "InstanceName": "ip-10-42-1-192.us-west-2.compute.internal",
+            "Comment": "",
+            "DocumentName": "AWS-RunShellScript",
+            "DocumentVersion": "$DEFAULT",
+            "RequestedDateTime": "2026-05-30T14:57:21.170000-07:00",
+            "Status": "Success",
+            "StatusDetails": "Success",
+            "StandardOutputUrl": "",
+            "StandardErrorUrl": "",
+            "CommandPlugins": [
+                {
+                    "Name": "aws:runShellScript",
+                    "Status": "Success",
+                    "StatusDetails": "Success",
+                    "ResponseCode": 0,
+                    "ResponseStartDateTime": "2026-05-30T16:26:05.529000-07:00",
+                    "ResponseFinishDateTime": "2026-05-30T16:26:05.934000-07:00",
+                    "Output": " captured_at | state | wait_event_type | wait_event | query_age | query \n-------------+-------+-----------------+------------+-----------+-------\n(0 rows)\n\n\n----------ERROR-------\n++ sudo -u postgres psql -h /var/run/postgresql -d postgres -c 'SELECT now() AS captured_at, state, wait_event_type, wait_event, now() - query_start AS query_age, left(query, 160) AS query FROM pg_stat_activity WHERE datname = '\\''postgres'\\'' AND usename = '\\''postgres'\\'' AND pid <> pg_backend_pid() ORDER BY backend_start;'\n",
+                    "StandardOutputUrl": "",
+                    "StandardErrorUrl": "",
+                    "OutputS3Region": "us-west-2",
+                    "OutputS3BucketName": "",
+                    "OutputS3KeyPrefix": ""
+                }
+            ],
+            "ServiceRole": "",
+            "NotificationConfig": {
+                "NotificationArn": "",
+                "NotificationEvents": [],
+                "NotificationType": ""
+            },
+            "CloudWatchOutputConfig": {
+                "CloudWatchLogGroupName": "",
+                "CloudWatchOutputEnabled": false
+            }
+        },
+        {
+            "CommandId": "aa7117cf-ac1b-4bc6-ba49-1503ed50ab24",
+            "InstanceId": "i-0056e46b981edbb17",
+            "InstanceName": "ip-10-42-1-192.us-west-2.compute.internal",
+            "Comment": "",
+            "DocumentName": "AWS-RunShellScript",
+            "DocumentVersion": "$DEFAULT",
+            "RequestedDateTime": "2026-05-30T14:37:38.569000-07:00",
+            "Status": "Success",
+            "StatusDetails": "Success",
+            "StandardOutputUrl": "",
+            "StandardErrorUrl": "",
+            "CommandPlugins": [
+                {
+                    "Name": "aws:runShellScript",
+                    "Status": "Success",
+                    "StatusDetails": "Success",
+                    "ResponseCode": 0,
+                    "ResponseStartDateTime": "2026-05-30T14:37:38.688000-07:00",
+                    "ResponseFinishDateTime": "2026-05-30T14:37:38.800000-07:00",
+                    "Output": "          captured_at          | state  | wait_event_type | wait_event |    query_age    |                                            query                                             \n-------------------------------+--------+-----------------+------------+-----------------+----------------------------------------------------------------------------------------------\n 2026-05-30 21:37:38.795097+00 | active |                 |            | 01:40:14.916676 | CREATE INDEX task67_1m_diskann_default_rerun2_idx ON task67_1m_diskann_default_rerun2_corpus+\n                               |        |                 |            |                 |         USING ec_diskann (embedding ecvector_diskann_ip_ops)\n(1 row)\n\n\n----------ERROR-------\n++ sudo -u postgres psql -h /var/run/postgresql -d postgres -c 'SELECT now() AS captured_at, state, wait_event_type, wait_event, now() - query_start AS query_age, left(query, 160) AS query FROM pg_stat_activity WHERE datname = '\\''postgres'\\'' AND usename = '\\''postgres'\\'' AND pid <> pg_backend_pid() ORDER BY backend_start;'\n",
+                    "StandardOutputUrl": "",
+                    "StandardErrorUrl": "",
+                    "OutputS3Region": "us-west-2",
+                    "OutputS3BucketName": "",
+                    "OutputS3KeyPrefix": ""
+                }
+            ],
+            "ServiceRole": "",
+            "NotificationConfig": {
+                "NotificationArn": "",
+                "NotificationEvents": [],
+                "NotificationType": ""
+            },
+            "CloudWatchOutputConfig": {
+                "CloudWatchLogGroupName": "",
+                "CloudWatchOutputEnabled": false
+            }
+        },
+        {
+            "CommandId": "f4ca3305-2fd8-4e1b-8f50-897d6bf71025",
+            "InstanceId": "i-0056e46b981edbb17",
+            "InstanceName": "ip-10-42-1-192.us-west-2.compute.internal",
+            "Comment": "",
+            "DocumentName": "AWS-RunShellScript",
+            "DocumentVersion": "$DEFAULT",
+            "RequestedDateTime": "2026-05-30T14:22:13.614000-07:00",
+            "Status": "Success",
+            "StatusDetails": "Success",
+            "StandardOutputUrl": "",
+            "StandardErrorUrl": "",
+            "CommandPlugins": [
+                {
+                    "Name": "aws:runShellScript",
+                    "Status": "Success",
+                    "StatusDetails": "Success",
+                    "ResponseCode": 0,
+                    "ResponseStartDateTime": "2026-05-30T14:22:13.758000-07:00",
+                    "ResponseFinishDateTime": "2026-05-30T14:22:13.867000-07:00",
+                    "Output": "          captured_at          | state  | wait_event_type | wait_event |    query_age    |                                            query                                             \n-------------------------------+--------+-----------------+------------+-----------------+----------------------------------------------------------------------------------------------\n 2026-05-30 21:22:13.854378+00 | active |                 |            | 01:24:49.975957 | CREATE INDEX task67_1m_diskann_default_rerun2_idx ON task67_1m_diskann_default_rerun2_corpus+\n                               |        |                 |            |                 |         USING ec_diskann (embedding ecvector_diskann_ip_ops)\n(1 row)\n\n corpus_heap | corpus_total \n-------------+--------------\n 72 MB       | 15 GB\n(1 row)\n\n\n----------ERROR-------\n++ sudo -u postgres psql -h /var/run/postgresql -d postgres -c 'SELECT now() AS captured_at, state, wait_event_type, wait_event, now() - query_start AS query_age, left(query, 160) AS query FROM pg_stat_activity WHERE datname = '\\''postgres'\\'' AND usename = '\\''postgres'\\'' AND pid <> pg_backend_pid() ORDER BY backend_start; SELECT pg_size_pretty(pg_relation_size('\\''task67_1m_diskann_default_rerun2_corpus'\\'')) AS corpus_heap, pg_size_pretty(pg_total_relation_size('\\''task67_1m_diskann_default_rerun2_corpus'\\'')) AS corpus_total;'\n",
+                    "StandardOutputUrl": "",
+                    "StandardErrorUrl": "",
+                    "OutputS3Region": "us-west-2",
+                    "OutputS3BucketName": "",
+                    "OutputS3KeyPrefix": ""
+                }
+            ],
+            "ServiceRole": "",
+            "NotificationConfig": {
+                "NotificationArn": "",
+                "NotificationEvents": [],
+                "NotificationType": ""
+            },
+            "CloudWatchOutputConfig": {
+                "CloudWatchLogGroupName": "",
+                "CloudWatchOutputEnabled": false
+            }
+        },
+        {
+            "CommandId": "2029e832-0bfe-40df-8183-6c34ff3000ed",
+            "InstanceId": "i-0056e46b981edbb17",
+            "InstanceName": "ip-10-42-1-192.us-west-2.compute.internal",
+            "Comment": "",
+            "DocumentName": "AWS-RunShellScript",
+            "DocumentVersion": "$DEFAULT",
+            "RequestedDateTime": "2026-05-30T14:06:31.708000-07:00",
+            "Status": "Success",
+            "StatusDetails": "Success",
+            "StandardOutputUrl": "",
+            "StandardErrorUrl": "",
+            "CommandPlugins": [
+                {
+                    "Name": "aws:runShellScript",
+                    "Status": "Success",
+                    "StatusDetails": "Success",
+                    "ResponseCode": 0,
+                    "ResponseStartDateTime": "2026-05-30T14:06:31.814000-07:00",
+                    "ResponseFinishDateTime": "2026-05-30T14:06:31.916000-07:00",
+                    "Output": "          captured_at          | state  | wait_event_type | wait_event |    query_age    |                                            query                                             \n-------------------------------+--------+-----------------+------------+-----------------+----------------------------------------------------------------------------------------------\n 2026-05-30 21:06:31.911308+00 | active |                 |            | 01:09:08.032887 | CREATE INDEX task67_1m_diskann_default_rerun2_idx ON task67_1m_diskann_default_rerun2_corpus+\n                               |        |                 |            |                 |         USING ec_diskann (embedding ecvector_diskann_ip_ops)\n(1 row)\n\n\n----------ERROR-------\n++ sudo -u postgres psql -h /var/run/postgresql -d postgres -c 'SELECT now() AS captured_at, state, wait_event_type, wait_event, now() - query_start AS query_age, left(query, 160) AS query FROM pg_stat_activity WHERE datname = '\\''postgres'\\'' AND usename = '\\''postgres'\\'' AND pid <> pg_backend_pid() ORDER BY backend_start;'\n",
+                    "StandardOutputUrl": "",
+                    "StandardErrorUrl": "",
+                    "OutputS3Region": "us-west-2",
+                    "OutputS3BucketName": "",
+                    "OutputS3KeyPrefix": ""
+                }
+            ],
+            "ServiceRole": "",
+            "NotificationConfig": {
+                "NotificationArn": "",
+                "NotificationEvents": [],
+                "NotificationType": ""
+            },
+            "CloudWatchOutputConfig": {
+                "CloudWatchLogGroupName": "",
+                "CloudWatchOutputEnabled": false
+            }
+        },
+        {
+            "CommandId": "da19345c-8833-411d-89ad-fd0ee3a478ce",
+            "InstanceId": "i-0056e46b981edbb17",
+            "InstanceName": "ip-10-42-1-192.us-west-2.compute.internal",
+            "Comment": "",
+            "DocumentName": "AWS-RunShellScript",
+            "DocumentVersion": "$DEFAULT",
+            "RequestedDateTime": "2026-05-30T13:45:51.539000-07:00",
+            "Status": "Success",
+            "StatusDetails": "Success",
+            "StandardOutputUrl": "",
+            "StandardErrorUrl": "",
+            "CommandPlugins": [
+                {
+                    "Name": "aws:runShellScript",
+                    "Status": "Success",
+                    "StatusDetails": "Success",
+                    "ResponseCode": 0,
+                    "ResponseStartDateTime": "2026-05-30T13:45:51.649000-07:00",
+                    "ResponseFinishDateTime": "2026-05-30T13:45:51.751000-07:00",
+                    "Output": "          captured_at          | state  | wait_event_type | wait_event |    query_age    |                                            query                                             \n-------------------------------+--------+-----------------+------------+-----------------+----------------------------------------------------------------------------------------------\n 2026-05-30 20:45:51.744072+00 | active |                 |            | 00:48:27.865651 | CREATE INDEX task67_1m_diskann_default_rerun2_idx ON task67_1m_diskann_default_rerun2_corpus+\n                               |        |                 |            |                 |         USING ec_diskann (embedding ecvector_diskann_ip_ops)\n(1 row)\n\n\n----------ERROR-------\n++ sudo -u postgres psql -h /var/run/postgresql -d postgres -c 'SELECT now() AS captured_at, state, wait_event_type, wait_event, now() - query_start AS query_age, left(query, 160) AS query FROM pg_stat_activity WHERE datname = '\\''postgres'\\'' AND usename = '\\''postgres'\\'' AND pid <> pg_backend_pid() ORDER BY backend_start;'\n",
+                    "StandardOutputUrl": "",
+                    "StandardErrorUrl": "",
+                    "OutputS3Region": "us-west-2",
+                    "OutputS3BucketName": "",
+                    "OutputS3KeyPrefix": ""
+                }
+            ],
+            "ServiceRole": "",
+            "NotificationConfig": {
+                "NotificationArn": "",
+                "NotificationEvents": [],
+                "NotificationType": ""
+            },
+            "CloudWatchOutputConfig": {
+                "CloudWatchLogGroupName": "",
+                "CloudWatchOutputEnabled": false
+            }
+        },
+        {
+            "CommandId": "3514d69f-22f8-4ea5-8425-23dd7adb0e41",
+            "InstanceId": "i-0056e46b981edbb17",
+            "InstanceName": "ip-10-42-1-192.us-west-2.compute.internal",
+            "Comment": "",
+            "DocumentName": "AWS-RunShellScript",
+            "DocumentVersion": "$DEFAULT",
+            "RequestedDateTime": "2026-05-30T13:35:29.620000-07:00",
+            "Status": "Success",
+            "StatusDetails": "Success",
+            "StandardOutputUrl": "",
+            "StandardErrorUrl": "",
+            "CommandPlugins": [
+                {
+                    "Name": "aws:runShellScript",
+                    "Status": "Success",
+                    "StatusDetails": "Success",
+                    "ResponseCode": 0,
+                    "ResponseStartDateTime": "2026-05-30T13:35:29.723000-07:00",
+                    "ResponseFinishDateTime": "2026-05-30T13:35:29.817000-07:00",
+                    "Output": "          captured_at          | state  | wait_event_type | wait_event |    query_age    |                                            query                                             \n-------------------------------+--------+-----------------+------------+-----------------+----------------------------------------------------------------------------------------------\n 2026-05-30 20:35:29.810993+00 | active |                 |            | 00:38:05.932572 | CREATE INDEX task67_1m_diskann_default_rerun2_idx ON task67_1m_diskann_default_rerun2_corpus+\n                               |        |                 |            |                 |         USING ec_diskann (embedding ecvector_diskann_ip_ops)\n(1 row)\n\n\n----------ERROR-------\n++ sudo -u postgres psql -h /var/run/postgresql -d postgres -c 'SELECT now() AS captured_at, state, wait_event_type, wait_event, now() - query_start AS query_age, left(query, 160) AS query FROM pg_stat_activity WHERE datname = '\\''postgres'\\'' AND usename = '\\''postgres'\\'' AND pid <> pg_backend_pid() ORDER BY backend_start;'\n",
+                    "StandardOutputUrl": "",
+                    "StandardErrorUrl": "",
+                    "OutputS3Region": "us-west-2",
+                    "OutputS3BucketName": "",
+                    "OutputS3KeyPrefix": ""
+                }
+            ],
+            "ServiceRole": "",
+            "NotificationConfig": {
+                "NotificationArn": "",
+                "NotificationEvents": [],
+                "NotificationType": ""
+            },
+            "CloudWatchOutputConfig": {
+                "CloudWatchLogGroupName": "",
+                "CloudWatchOutputEnabled": false
+            }
+        },
+        {
+            "CommandId": "05e6a198-7e55-445c-93c5-944047112d28",
+            "InstanceId": "i-0056e46b981edbb17",
+            "InstanceName": "ip-10-42-1-192.us-west-2.compute.internal",
+            "Comment": "",
+            "DocumentName": "AWS-RunShellScript",
+            "DocumentVersion": "$DEFAULT",
+            "RequestedDateTime": "2026-05-30T13:25:02.708000-07:00",
+            "Status": "Success",
+            "StatusDetails": "Success",
+            "StandardOutputUrl": "",
+            "StandardErrorUrl": "",
+            "CommandPlugins": [
+                {
+                    "Name": "aws:runShellScript",
+                    "Status": "Success",
+                    "StatusDetails": "Success",
+                    "ResponseCode": 0,
+                    "ResponseStartDateTime": "2026-05-30T13:25:02.823000-07:00",
+                    "ResponseFinishDateTime": "2026-05-30T13:25:02.943000-07:00",
+                    "Output": "          captured_at          | state  | wait_event_type | wait_event |    query_age    |                                            query                                             \n-------------------------------+--------+-----------------+------------+-----------------+----------------------------------------------------------------------------------------------\n 2026-05-30 20:25:02.935453+00 | active |                 |            | 00:27:39.057032 | CREATE INDEX task67_1m_diskann_default_rerun2_idx ON task67_1m_diskann_default_rerun2_corpus+\n                               |        |                 |            |                 |         USING ec_diskann (embedding ecvector_diskann_ip_ops)\n(1 row)\n\n\n----------ERROR-------\n++ sudo -u postgres psql -h /var/run/postgresql -d postgres -c 'SELECT now() AS captured_at, state, wait_event_type, wait_event, now() - query_start AS query_age, left(query, 160) AS query FROM pg_stat_activity WHERE datname = '\\''postgres'\\'' AND usename = '\\''postgres'\\'' AND pid <> pg_backend_pid() ORDER BY backend_start;'\n",
+                    "StandardOutputUrl": "",
+                    "StandardErrorUrl": "",
+                    "OutputS3Region": "us-west-2",
+                    "OutputS3BucketName": "",
+                    "OutputS3KeyPrefix": ""
+                }
+            ],
+            "ServiceRole": "",
+            "NotificationConfig": {
+                "NotificationArn": "",
+                "NotificationEvents": [],
+                "NotificationType": ""
+            },
+            "CloudWatchOutputConfig": {
+                "CloudWatchLogGroupName": "",
+                "CloudWatchOutputEnabled": false
+            }
+        },
+        {
+            "CommandId": "ffadddb8-41d2-4665-9344-adfee07dfa4c",
+            "InstanceId": "i-0056e46b981edbb17",
+            "InstanceName": "ip-10-42-1-192.us-west-2.compute.internal",
+            "Comment": "",
+            "DocumentName": "AWS-RunShellScript",
+            "DocumentVersion": "$DEFAULT",
+            "RequestedDateTime": "2026-05-30T13:14:42.421000-07:00",
+            "Status": "Success",
+            "StatusDetails": "Success",
+            "StandardOutputUrl": "",
+            "StandardErrorUrl": "",
+            "CommandPlugins": [
+                {
+                    "Name": "aws:runShellScript",
+                    "Status": "Success",
+                    "StatusDetails": "Success",
+                    "ResponseCode": 0,
+                    "ResponseStartDateTime": "2026-05-30T13:14:42.528000-07:00",
+                    "ResponseFinishDateTime": "2026-05-30T13:14:42.627000-07:00",
+                    "Output": "          captured_at          |  pid  | datid | datname  |  relid  | index_relid |   command    |     phase      | lockers_total | lockers_done | current_locker_pid | blocks_total | blocks_done | tuples_total | tuples_done | partitions_total | partitions_done \n-------------------------------+-------+-------+----------+---------+-------------+--------------+----------------+---------------+--------------+--------------------+--------------+-------------+--------------+-------------+------------------+-----------------\n 2026-05-30 20:14:42.612036+00 | 65268 |     5 | postgres | 3039236 |           0 | CREATE INDEX | building index |             0 |            0 |                  0 |            0 |           0 |            0 |           0 |                0 |               0\n(1 row)\n\n\n----------ERROR-------\n++ sudo -u postgres psql -h /var/run/postgresql -d postgres -c 'SELECT now() AS captured_at, * FROM pg_stat_progress_create_index;'\n",
+                    "StandardOutputUrl": "",
+                    "StandardErrorUrl": "",
+                    "OutputS3Region": "us-west-2",
+                    "OutputS3BucketName": "",
+                    "OutputS3KeyPrefix": ""
+                }
+            ],
+            "ServiceRole": "",
+            "NotificationConfig": {
+                "NotificationArn": "",
+                "NotificationEvents": [],
+                "NotificationType": ""
+            },
+            "CloudWatchOutputConfig": {
+                "CloudWatchLogGroupName": "",
+                "CloudWatchOutputEnabled": false
+            }
+        },
+        {
+            "CommandId": "36ab2234-5380-48c6-a7d7-1f32d29b93cf",
+            "InstanceId": "i-0056e46b981edbb17",
+            "InstanceName": "ip-10-42-1-192.us-west-2.compute.internal",
+            "Comment": "",
+            "DocumentName": "AWS-RunShellScript",
+            "DocumentVersion": "$DEFAULT",
+            "RequestedDateTime": "2026-05-30T13:09:21.996000-07:00",
+            "Status": "Success",
+            "StatusDetails": "Success",
+            "StandardOutputUrl": "",
+            "StandardErrorUrl": "",
+            "CommandPlugins": [
+                {
+                    "Name": "aws:runShellScript",
+                    "Status": "Success",
+                    "StatusDetails": "Success",
+                    "ResponseCode": 0,
+                    "ResponseStartDateTime": "2026-05-30T13:09:22.108000-07:00",
+                    "ResponseFinishDateTime": "2026-05-30T13:09:22.231000-07:00",
+                    "Output": "          captured_at          | state  | wait_event_type | wait_event |                                            query                                             \n-------------------------------+--------+-----------------+------------+----------------------------------------------------------------------------------------------\n 2026-05-30 20:09:22.217097+00 | active |                 |            | CREATE INDEX task67_1m_diskann_default_rerun2_idx ON task67_1m_diskann_default_rerun2_corpus+\n                               |        |                 |            |         USING ec_diskann (e\n(1 row)\n\n\n----------ERROR-------\n++ sudo -u postgres psql -h /var/run/postgresql -d postgres -c 'SELECT now() AS captured_at, state, wait_event_type, wait_event, left(query, 120) AS query FROM pg_stat_activity WHERE datname = '\\''postgres'\\'' AND usename = '\\''postgres'\\'' AND pid <> pg_backend_pid() ORDER BY backend_start;'\n",
+                    "StandardOutputUrl": "",
+                    "StandardErrorUrl": "",
+                    "OutputS3Region": "us-west-2",
+                    "OutputS3BucketName": "",
+                    "OutputS3KeyPrefix": ""
+                }
+            ],
+            "ServiceRole": "",
+            "NotificationConfig": {
+                "NotificationArn": "",
+                "NotificationEvents": [],
+                "NotificationType": ""
+            },
+            "CloudWatchOutputConfig": {
+                "CloudWatchLogGroupName": "",
+                "CloudWatchOutputEnabled": false
+            }
+        },
+        {
+            "CommandId": "39b40b9d-2809-43fd-8ab0-c3f6e7a4027b",
+            "InstanceId": "i-0056e46b981edbb17",
+            "InstanceName": "ip-10-42-1-192.us-west-2.compute.internal",
+            "Comment": "",
+            "DocumentName": "AWS-RunShellScript",
+            "DocumentVersion": "$DEFAULT",
+            "RequestedDateTime": "2026-05-30T13:04:04.086000-07:00",
+            "Status": "Success",
+            "StatusDetails": "Success",
+            "StandardOutputUrl": "",
+            "StandardErrorUrl": "",
+            "CommandPlugins": [
+                {
+                    "Name": "aws:runShellScript",
+                    "Status": "Success",
+                    "StatusDetails": "Success",
+                    "ResponseCode": 0,
+                    "ResponseStartDateTime": "2026-05-30T13:04:04.418000-07:00",
+                    "ResponseFinishDateTime": "2026-05-30T13:04:04.625000-07:00",
+                    "Output": " state  | wait_event_type | wait_event |                                            query                                             \n--------+-----------------+------------+----------------------------------------------------------------------------------------------\n active |                 |            | CREATE INDEX task67_1m_diskann_default_rerun2_idx ON task67_1m_diskann_default_rerun2_corpus+\n        |                 |            |         USING ec_diskann (e\n(1 row)\n\n\n----------ERROR-------\n++ sudo -u postgres psql -h /var/run/postgresql -d postgres -c 'SELECT state, wait_event_type, wait_event, left(query, 120) AS query FROM pg_stat_activity WHERE datname = '\\''postgres'\\'' AND usename = '\\''postgres'\\'' AND pid <> pg_backend_pid() ORDER BY backend_start;'\n",
+                    "StandardOutputUrl": "",
+                    "StandardErrorUrl": "",
+                    "OutputS3Region": "us-west-2",
+                    "OutputS3BucketName": "",
+                    "OutputS3KeyPrefix": ""
+                }
+            ],
+            "ServiceRole": "",
+            "NotificationConfig": {
+                "NotificationArn": "",
+                "NotificationEvents": [],
+                "NotificationType": ""
+            },
+            "CloudWatchOutputConfig": {
+                "CloudWatchLogGroupName": "",
+                "CloudWatchOutputEnabled": false
+            }
+        },
+        {
+            "CommandId": "9709f0fc-807d-44f6-ac25-d589739d1769",
+            "InstanceId": "i-0056e46b981edbb17",
+            "InstanceName": "ip-10-42-1-192.us-west-2.compute.internal",
+            "Comment": "",
+            "DocumentName": "AWS-RunShellScript",
+            "DocumentVersion": "$DEFAULT",
+            "RequestedDateTime": "2026-05-30T13:01:41.623000-07:00",
+            "Status": "Success",
+            "StatusDetails": "Success",
+            "StandardOutputUrl": "",
+            "StandardErrorUrl": "",
+            "CommandPlugins": [
+                {
+                    "Name": "aws:runShellScript",
+                    "Status": "Success",
+                    "StatusDetails": "Success",
+                    "ResponseCode": 0,
+                    "ResponseStartDateTime": "2026-05-30T13:01:41.997000-07:00",
+                    "ResponseFinishDateTime": "2026-05-30T13:01:42.358000-07:00",
+                    "Output": "       metric       | value  \n--------------------+--------\n corpus_rows        | 990000\n corpus_state_rows  | 40\n queries_state_rows | 1\n query_rows         | 10000\n(4 rows)\n\n\n----------ERROR-------\n++ sudo -u postgres psql -h /var/run/postgresql -d postgres -c 'SELECT '\\''corpus_rows'\\'' AS metric, count(*)::text AS value FROM task67_1m_diskann_default_rerun2_corpus UNION ALL SELECT '\\''query_rows'\\'', count(*)::text FROM task67_1m_diskann_default_rerun2_queries UNION ALL SELECT chunk_kind || '\\''_state_rows'\\'', count(*)::text FROM ecaz_corpus_load_state WHERE prefix = '\\''task67_1m_diskann_default_rerun2'\\'' GROUP BY chunk_kind ORDER BY metric;'\n",
+                    "StandardOutputUrl": "",
+                    "StandardErrorUrl": "",
+                    "OutputS3Region": "us-west-2",
+                    "OutputS3BucketName": "",
+                    "OutputS3KeyPrefix": ""
+                }
+            ],
+            "ServiceRole": "",
+            "NotificationConfig": {
+                "NotificationArn": "",
+                "NotificationEvents": [],
+                "NotificationType": ""
+            },
+            "CloudWatchOutputConfig": {
+                "CloudWatchLogGroupName": "",
+                "CloudWatchOutputEnabled": false
+            }
+        },
+        {
+            "CommandId": "634eb523-0e58-415e-a8fe-78c4e041f213",
+            "InstanceId": "i-0056e46b981edbb17",
+            "InstanceName": "ip-10-42-1-192.us-west-2.compute.internal",
+            "Comment": "",
+            "DocumentName": "AWS-RunShellScript",
+            "DocumentVersion": "$DEFAULT",
+            "RequestedDateTime": "2026-05-30T12:42:51.169000-07:00",
+            "Status": "Failed",
+            "StatusDetails": "Failed",
+            "StandardOutputUrl": "",
+            "StandardErrorUrl": "",
+            "CommandPlugins": [
+                {
+                    "Name": "aws:runShellScript",
+                    "Status": "Failed",
+                    "StatusDetails": "Failed",
+                    "ResponseCode": 1,
+                    "ResponseStartDateTime": "2026-05-30T16:26:57.898000-07:00",
+                    "ResponseFinishDateTime": "2026-05-30T16:27:57.940000-07:00",
+                    "Output": "document process failed unexpectedly: ipc messaging received timeout signal , check [ssm-document-worker]/[ssm-session-worker] log for crash reason",
+                    "StandardOutputUrl": "",
+                    "StandardErrorUrl": "",
+                    "OutputS3Region": "us-west-2",
+                    "OutputS3BucketName": "",
+                    "OutputS3KeyPrefix": ""
+                }
+            ],
+            "ServiceRole": "",
+            "NotificationConfig": {
+                "NotificationArn": "",
+                "NotificationEvents": [],
+                "NotificationType": ""
+            },
+            "CloudWatchOutputConfig": {
+                "CloudWatchLogGroupName": "",
+                "CloudWatchOutputEnabled": false
+            }
+        },
+        {
+            "CommandId": "eee23f53-2b78-485a-9c0f-65f4a247ab15",
+            "InstanceId": "i-0056e46b981edbb17",
+            "InstanceName": "ip-10-42-1-192.us-west-2.compute.internal",
+            "Comment": "",
+            "DocumentName": "AWS-RunShellScript",
+            "DocumentVersion": "$DEFAULT",
+            "RequestedDateTime": "2026-05-30T12:42:30.597000-07:00",
+            "Status": "Success",
+            "StatusDetails": "Success",
+            "StandardOutputUrl": "",
+            "StandardErrorUrl": "",
+            "CommandPlugins": [
+                {
+                    "Name": "aws:runShellScript",
+                    "Status": "Success",
+                    "StatusDetails": "Success",
+                    "ResponseCode": 0,
+                    "ResponseStartDateTime": "2026-05-30T12:42:30.731000-07:00",
+                    "ResponseFinishDateTime": "2026-05-30T12:42:30.916000-07:00",
+                    "Output": "DROP TABLE\nDROP TABLE\nDELETE 0\n\n----------ERROR-------\n++ sudo -u postgres psql -h /var/run/postgresql -d postgres -c 'DROP TABLE IF EXISTS task67_1m_diskann_default_rerun2_corpus CASCADE; DROP TABLE IF EXISTS task67_1m_diskann_default_rerun2_queries CASCADE; DELETE FROM ecaz_corpus_load_state WHERE prefix = '\\''task67_1m_diskann_default_rerun2'\\'';'\nNOTICE:  table \"task67_1m_diskann_default_rerun2_queries\" does not exist, skipping\n",
+                    "StandardOutputUrl": "",
+                    "StandardErrorUrl": "",
+                    "OutputS3Region": "us-west-2",
+                    "OutputS3BucketName": "",
+                    "OutputS3KeyPrefix": ""
+                }
+            ],
+            "ServiceRole": "",
+            "NotificationConfig": {
+                "NotificationArn": "",
+                "NotificationEvents": [],
+                "NotificationType": ""
+            },
+            "CloudWatchOutputConfig": {
+                "CloudWatchLogGroupName": "",
+                "CloudWatchOutputEnabled": false
+            }
+        },
+        {
+            "CommandId": "9f6d4dac-ef4a-4d0c-9893-388ff0d5cfc3",
+            "InstanceId": "i-0056e46b981edbb17",
+            "InstanceName": "ip-10-42-1-192.us-west-2.compute.internal",
+            "Comment": "",
+            "DocumentName": "AWS-RunShellScript",
+            "DocumentVersion": "$DEFAULT",
+            "RequestedDateTime": "2026-05-30T12:28:27.043000-07:00",
+            "Status": "Success",
+            "StatusDetails": "Success",
+            "StandardOutputUrl": "",
+            "StandardErrorUrl": "",
+            "CommandPlugins": [
+                {
+                    "Name": "aws:runShellScript",
+                    "Status": "Success",
+                    "StatusDetails": "Success",
+                    "ResponseCode": 0,
+                    "ResponseStartDateTime": "2026-05-30T12:28:27.156000-07:00",
+                    "ResponseFinishDateTime": "2026-05-30T12:41:18.078000-07:00",
+                    "Output": "HEAD is now at 441e86399 Honor manifest mismatch for chunked corpus load\nRemoving reviews/task-67/041-local-and-aws-benchmark-rerun/\nYour branch is behind 'origin/main' by 6 commits, and can be fast-forwarded.\n  (use \"git pull\" to update your local branch)\nHEAD is now at d67e39d1c Merge remote-tracking branch 'origin/main'\n\u001b[32m\u001b[1m    Building\u001b[0m\u001b[39m extension with features \u001b[36mpg18\u001b[39m\n\u001b[32m\u001b[1m     Running\u001b[0m\u001b[39m command \u001b[36m\"/var/lib/pgsql/.rustup/toolchains/stable-aarch64-unknown-linux-gnu/bin/cargo\" \"build\" \"--lib\" \"--release\" \"--features\" \"pg18\" \"--no-default-features\" \"--message-format=json-render-diagnostics\"\u001b[39m\n\u001b[32m\u001b[1m  Installing\u001b[0m\u001b[39m extension\n\u001b[32m\u001b[1m     Copying\u001b[0m\u001b[39m control file to \u001b[36mtarget/release/ecaz-pg18/usr/share/pgsql/extension/ecaz.control\u001b[39m\n\u001b[32m\u001b[1m     Copying\u001b[0m\u001b[39m shared library to \u001b[36mtarget/release/ecaz-pg18/usr/lib64/pgsql/ecaz.so\u001b[39m\n\u001b[32m\u001b[1m    Finished\u001b[0m\u001b[39m installing ecaz\n\u001b[32m\u001b[1m       Running\u001b[0m\u001b[39m sudo cp /var/lib/pgsql/build/ecaz/target/release/ecaz-pg18/usr/share/pgsql/extension/ecaz.control /usr/share/pgsql/extension/ecaz.control\n\u001b[32m\u001b[1m       Running\u001b[0m\u001b[39m sudo cp /var/lib/pgsql/build/ecaz/target/release/ecaz-pg\n---Output truncated---\n----------ERROR-------\n+ sudo mkdir -p /var/lib/pgsql/build\n+ sudo chown -R postgres:postgres /var/lib/pgsql/build\n+ sudo -u postgres bash -lc '\n  set -eux\n  export PATH=$HOME/.cargo/bin:$PATH\n  if [ ! -d /var/lib/pgsql/build/ecaz/.git ]; then\n    rm -rf /var/lib/pgsql/build\n    mkdir -p /var/lib/pgsql/build\n    git clone https://github.com/agent-ix/ecaz.git /var/lib/pgsql/build/ecaz\n  fi\n  cd /var/lib/pgsql/build/ecaz\n\n  git reset --hard\n  git clean -fd\n  git fetch --all --tags\n  git checkout --force main || git checkout --force origin/main\n  if git rev-parse --verify origin/main >/dev/null 2>&1; then\n    git reset --hard origin/main\n  else\n    git reset --hard main\n  fi\n  cargo pgrx install --sudo --release --pg-config /usr/bin/pg_config\n  cargo build --release -p ecaz-cli\n\n'\n+ export PATH=/var/lib/pgsql/.cargo/bin:/var/lib/pgsql/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/var/lib/snapd/snap/bin\n+ PATH=/var/lib/pgsql/.cargo/bin:/var/lib/pgsql/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/var/lib/snapd/snap/bin\n+ '[' '!' -d /var/lib/pgsql/build/ecaz/.git ']'\n+ cd /var/lib/pgsql/build/ecaz\n+ git reset --hard\nUpdating files:  60% (15078/24828)\rUpdating files:  61% \n---Error truncated----",
+                    "StandardOutputUrl": "",
+                    "StandardErrorUrl": "",
+                    "OutputS3Region": "us-west-2",
+                    "OutputS3BucketName": "",
+                    "OutputS3KeyPrefix": ""
+                }
+            ],
+            "ServiceRole": "",
+            "NotificationConfig": {
+                "NotificationArn": "",
+                "NotificationEvents": [],
+                "NotificationType": ""
+            },
+            "CloudWatchOutputConfig": {
+                "CloudWatchLogGroupName": "",
+                "CloudWatchOutputEnabled": false
+            }
+        },
+        {
+            "CommandId": "82649b67-b49e-4b4a-85c7-2b5e95f89c1f",
+            "InstanceId": "i-0056e46b981edbb17",
+            "InstanceName": "ip-10-42-1-192.us-west-2.compute.internal",
+            "Comment": "",
+            "DocumentName": "AWS-RunShellScript",
+            "DocumentVersion": "$DEFAULT",
+            "RequestedDateTime": "2026-05-30T12:23:20.618000-07:00",
+            "Status": "Failed",
+            "StatusDetails": "Failed",
+            "StandardOutputUrl": "",
+            "StandardErrorUrl": "",
+            "CommandPlugins": [
+                {
+                    "Name": "aws:runShellScript",
+                    "Status": "Failed",
+                    "StatusDetails": "Failed",
+                    "ResponseCode": 1,
+                    "ResponseStartDateTime": "2026-05-30T12:23:20.728000-07:00",
+                    "ResponseFinishDateTime": "2026-05-30T12:23:21.758000-07:00",
+                    "Output": "[suite:task67-diskann-1m-min-rerun-fresh] load-diskann-real1m-default -> --database postgres --host /var/run/postgresql --user postgres --log-file reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-diskann-fresh/load-diskann-real1m-default.log corpus load --prefix task67_1m_diskann_default_rerun2 --profile ec_diskann --manifest-file /var/lib/pgsql/18/datasets/staged-task67-1m/ec_real_ann_benchmarks_anchor_manifest.json --allow-manifest-mismatch --chunked --bits 4 --seed 42\n\n----------ERROR-------\n+ cd /var/lib/pgsql/build/ecaz\n++ dirname reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/task67-diskann-1m-min-rerun-fresh-suite.json\n+ mkdir -p reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-diskann-fresh\n+ trap 'status=$?; set +e; aws s3 sync reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-diskann-fresh s3://ecaz-cloud-1m-b62eb804/bench-artifacts/task67-diskann-1m-min-rerun-fresh/20260530T192319Z/ --region us-west-2 --only-show-errors || true; exit $status' EXIT\n+ cat\n++ dirname reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/task67-diskann-1m-min-rerun-fresh-suite.json\n+ chown -R postgres:postgres reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-diskann-fresh\n+ :\n+ sudo -u postgres bash -lc 'cd '\\''/var/lib/pgsql/build/ecaz'\\''; export PATH=/usr/local/bin:$HOME/.cargo/bin:$PATH; '\\''/usr/local/bin/ecaz'\\'' --database '\\''postgres'\\'' --host /var/run/postgresql --user postgres --log-file '\\''reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-diskann-fresh/suite-run.log'\\'' bench suite run --config '\\''reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/task67-diskann-1m-min-rerun-fresh-suite.json'\\'' --manifest-output '\\''reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-diskann-fresh/suite-manifest.json'\\'' --results-output '\\''reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-diskann-fresh/results.jsonl'\\'''\n[suite:task67-diskann-1m-min-rerun-fresh] wrote reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-diskann-fresh/suite-manifest.json\n[suite:task67-diskann-1m-min-rerun-fresh] wrote reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-diskann-fresh/suite-manifest.json\n[loader] warning: manifest prefix \"ec_real_ann_benchmarks_anchor\" d\n---Error truncated----",
+                    "StandardOutputUrl": "",
+                    "StandardErrorUrl": "",
+                    "OutputS3Region": "us-west-2",
+                    "OutputS3BucketName": "",
+                    "OutputS3KeyPrefix": ""
+                }
+            ],
+            "ServiceRole": "",
+            "NotificationConfig": {
+                "NotificationArn": "",
+                "NotificationEvents": [],
+                "NotificationType": ""
+            },
+            "CloudWatchOutputConfig": {
+                "CloudWatchLogGroupName": "",
+                "CloudWatchOutputEnabled": false
+            }
+        },
+        {
+            "CommandId": "bacdeeae-7de3-4843-8618-3a805794ad68",
+            "InstanceId": "i-0056e46b981edbb17",
+            "InstanceName": "ip-10-42-1-192.us-west-2.compute.internal",
+            "Comment": "",
+            "DocumentName": "AWS-RunShellScript",
+            "DocumentVersion": "$DEFAULT",
+            "RequestedDateTime": "2026-05-30T12:22:30.323000-07:00",
+            "Status": "Success",
+            "StatusDetails": "Success",
+            "StandardOutputUrl": "",
+            "StandardErrorUrl": "",
+            "CommandPlugins": [
+                {
+                    "Name": "aws:runShellScript",
+                    "Status": "Success",
+                    "StatusDetails": "Success",
+                    "ResponseCode": 0,
+                    "ResponseStartDateTime": "2026-05-30T12:22:30.431000-07:00",
+                    "ResponseFinishDateTime": "2026-05-30T12:22:30.652000-07:00",
+                    "Output": " prefix | chunk_kind | count \n--------+------------+-------\n(0 rows)\n\n\n----------ERROR-------\n++ sudo -u postgres psql -h /var/run/postgresql -d postgres -c 'SELECT prefix, chunk_kind, count(*) FROM ecaz_corpus_load_state WHERE prefix LIKE '\\''task67_1m_diskann%'\\'' GROUP BY prefix, chunk_kind ORDER BY prefix, chunk_kind;'\n",
+                    "StandardOutputUrl": "",
+                    "StandardErrorUrl": "",
+                    "OutputS3Region": "us-west-2",
+                    "OutputS3BucketName": "",
+                    "OutputS3KeyPrefix": ""
+                }
+            ],
+            "ServiceRole": "",
+            "NotificationConfig": {
+                "NotificationArn": "",
+                "NotificationEvents": [],
+                "NotificationType": ""
+            },
+            "CloudWatchOutputConfig": {
+                "CloudWatchLogGroupName": "",
+                "CloudWatchOutputEnabled": false
+            }
+        },
+        {
+            "CommandId": "ea520199-ab40-406d-92cc-ab882d2be5b2",
+            "InstanceId": "i-0056e46b981edbb17",
+            "InstanceName": "ip-10-42-1-192.us-west-2.compute.internal",
+            "Comment": "",
+            "DocumentName": "AWS-RunShellScript",
+            "DocumentVersion": "$DEFAULT",
+            "RequestedDateTime": "2026-05-30T12:21:23.638000-07:00",
+            "Status": "Failed",
+            "StatusDetails": "Failed",
+            "StandardOutputUrl": "",
+            "StandardErrorUrl": "",
+            "CommandPlugins": [
+                {
+                    "Name": "aws:runShellScript",
+                    "Status": "Failed",
+                    "StatusDetails": "Failed",
+                    "ResponseCode": 1,
+                    "ResponseStartDateTime": "2026-05-30T12:21:23.748000-07:00",
+                    "ResponseFinishDateTime": "2026-05-30T12:21:24.774000-07:00",
+                    "Output": "[suite:task67-diskann-1m-min-rerun-resume] load-diskann-real1m-default -> --database postgres --host /var/run/postgresql --user postgres --log-file reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-diskann/load-diskann-real1m-default.log corpus load --prefix task67_1m_diskann_default_rerun --profile ec_diskann --manifest-file /var/lib/pgsql/18/datasets/staged-task67-1m/ec_real_ann_benchmarks_anchor_manifest.json --allow-manifest-mismatch --chunked --bits 4 --seed 42\n\n----------ERROR-------\n+ cd /var/lib/pgsql/build/ecaz\n++ dirname reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/task67-diskann-1m-min-rerun-resume-suite.json\n+ mkdir -p reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-diskann\n+ trap 'status=$?; set +e; aws s3 sync reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-diskann s3://ecaz-cloud-1m-b62eb804/bench-artifacts/task67-diskann-1m-min-rerun-resume-after-cleanup/20260530T192122Z/ --region us-west-2 --only-show-errors || true; exit $status' EXIT\n+ cat\n++ dirname reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/task67-diskann-1m-min-rerun-resume-suite.json\n+ chown -R postgres:postgres reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-diskann\n+ :\n+ sudo -u postgres bash -lc 'cd '\\''/var/lib/pgsql/build/ecaz'\\''; export PATH=/usr/local/bin:$HOME/.cargo/bin:$PATH; '\\''/usr/local/bin/ecaz'\\'' --database '\\''postgres'\\'' --host /var/run/postgresql --user postgres --log-file '\\''reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-diskann/suite-run.log'\\'' bench suite run --config '\\''reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/task67-diskann-1m-min-rerun-resume-suite.json'\\'' --manifest-output '\\''reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-diskann/suite-manifest.json'\\'' --results-output '\\''reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-diskann/results.jsonl'\\'''\n[suite:task67-diskann-1m-min-rerun-resume] wrote reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-diskann/suite-manifest.json\n[suite:task67-diskann-1m-min-rerun-resume] wrote reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-diskann/suite-manifest.json\n[loader] warning: manifest prefix \"ec_real_ann_benchmarks_anchor\" does not match --prefix \"task67_1m_\n---Error truncated----",
+                    "StandardOutputUrl": "",
+                    "StandardErrorUrl": "",
+                    "OutputS3Region": "us-west-2",
+                    "OutputS3BucketName": "",
+                    "OutputS3KeyPrefix": ""
+                }
+            ],
+            "ServiceRole": "",
+            "NotificationConfig": {
+                "NotificationArn": "",
+                "NotificationEvents": [],
+                "NotificationType": ""
+            },
+            "CloudWatchOutputConfig": {
+                "CloudWatchLogGroupName": "",
+                "CloudWatchOutputEnabled": false
+            }
+        },
+        {
+            "CommandId": "34005daa-ebb5-4fb0-90e8-a52e238e4173",
+            "InstanceId": "i-0056e46b981edbb17",
+            "InstanceName": "ip-10-42-1-192.us-west-2.compute.internal",
+            "Comment": "",
+            "DocumentName": "AWS-RunShellScript",
+            "DocumentVersion": "$DEFAULT",
+            "RequestedDateTime": "2026-05-30T12:21:01.798000-07:00",
+            "Status": "Success",
+            "StatusDetails": "Success",
+            "StandardOutputUrl": "",
+            "StandardErrorUrl": "",
+            "CommandPlugins": [
+                {
+                    "Name": "aws:runShellScript",
+                    "Status": "Success",
+                    "StatusDetails": "Success",
+                    "ResponseCode": 0,
+                    "ResponseStartDateTime": "2026-05-30T12:21:01.907000-07:00",
+                    "ResponseFinishDateTime": "2026-05-30T12:21:02.131000-07:00",
+                    "Output": "DROP TABLE\nDROP TABLE\nDELETE 0\n\n----------ERROR-------\n++ sudo -u postgres psql -h /var/run/postgresql -d postgres -c 'DROP TABLE IF EXISTS task67_1m_diskann_default_rerun_corpus CASCADE; DROP TABLE IF EXISTS task67_1m_diskann_default_rerun_queries CASCADE; DELETE FROM ecaz_corpus_load_state WHERE prefix = '\\''task67_1m_diskann_default_rerun'\\'';'\nNOTICE:  table \"task67_1m_diskann_default_rerun_queries\" does not exist, skipping\n",
+                    "StandardOutputUrl": "",
+                    "StandardErrorUrl": "",
+                    "OutputS3Region": "us-west-2",
+                    "OutputS3BucketName": "",
+                    "OutputS3KeyPrefix": ""
+                }
+            ],
+            "ServiceRole": "",
+            "NotificationConfig": {
+                "NotificationArn": "",
+                "NotificationEvents": [],
+                "NotificationType": ""
+            },
+            "CloudWatchOutputConfig": {
+                "CloudWatchLogGroupName": "",
+                "CloudWatchOutputEnabled": false
+            }
+        },
+        {
+            "CommandId": "5da17b00-ac6b-4beb-8060-a6ab3da14267",
+            "InstanceId": "i-0056e46b981edbb17",
+            "InstanceName": "ip-10-42-1-192.us-west-2.compute.internal",
+            "Comment": "",
+            "DocumentName": "AWS-RunShellScript",
+            "DocumentVersion": "$DEFAULT",
+            "RequestedDateTime": "2026-05-30T12:17:59.157000-07:00",
+            "Status": "Failed",
+            "StatusDetails": "Failed",
+            "StandardOutputUrl": "",
+            "StandardErrorUrl": "",
+            "CommandPlugins": [
+                {
+                    "Name": "aws:runShellScript",
+                    "Status": "Failed",
+                    "StatusDetails": "Failed",
+                    "ResponseCode": 1,
+                    "ResponseStartDateTime": "2026-05-30T12:17:59.265000-07:00",
+                    "ResponseFinishDateTime": "2026-05-30T12:18:00.373000-07:00",
+                    "Output": "[suite:task67-diskann-1m-min-rerun-resume] load-diskann-real1m-default -> --database postgres --host /var/run/postgresql --user postgres --log-file reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-diskann/load-diskann-real1m-default.log corpus load --prefix task67_1m_diskann_default_rerun --profile ec_diskann --manifest-file /var/lib/pgsql/18/datasets/staged-task67-1m/ec_real_ann_benchmarks_anchor_manifest.json --allow-manifest-mismatch --chunked --bits 4 --seed 42\n\n----------ERROR-------\n+ cd /var/lib/pgsql/build/ecaz\n++ dirname reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/task67-diskann-1m-min-rerun-resume-suite.json\n+ mkdir -p reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-diskann\n+ trap 'status=$?; set +e; aws s3 sync reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-diskann s3://ecaz-cloud-1m-b62eb804/bench-artifacts/task67-diskann-1m-min-rerun-resume-after-pg-restart/20260530T191758Z/ --region us-west-2 --only-show-errors || true; exit $status' EXIT\n+ cat\n++ dirname reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/task67-diskann-1m-min-rerun-resume-suite.json\n+ chown -R postgres:postgres reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-diskann\n+ :\n+ sudo -u postgres bash -lc 'cd '\\''/var/lib/pgsql/build/ecaz'\\''; export PATH=/usr/local/bin:$HOME/.cargo/bin:$PATH; '\\''/usr/local/bin/ecaz'\\'' --database '\\''postgres'\\'' --host /var/run/postgresql --user postgres --log-file '\\''reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-diskann/suite-run.log'\\'' bench suite run --config '\\''reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/task67-diskann-1m-min-rerun-resume-suite.json'\\'' --manifest-output '\\''reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-diskann/suite-manifest.json'\\'' --results-output '\\''reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-diskann/results.jsonl'\\'''\n[suite:task67-diskann-1m-min-rerun-resume] wrote reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-diskann/suite-manifest.json\n[suite:task67-diskann-1m-min-rerun-resume] wrote reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-diskann/suite-manifest.json\n[loader] warning: manifest prefix \"ec_real_ann_benchmarks_anchor\" does not match --prefix \"task67_\n---Error truncated----",
+                    "StandardOutputUrl": "",
+                    "StandardErrorUrl": "",
+                    "OutputS3Region": "us-west-2",
+                    "OutputS3BucketName": "",
+                    "OutputS3KeyPrefix": ""
+                }
+            ],
+            "ServiceRole": "",
+            "NotificationConfig": {
+                "NotificationArn": "",
+                "NotificationEvents": [],
+                "NotificationType": ""
+            },
+            "CloudWatchOutputConfig": {
+                "CloudWatchLogGroupName": "",
+                "CloudWatchOutputEnabled": false
+            }
+        },
+        {
+            "CommandId": "15557e38-9f0b-464e-b6da-44f470271df7",
+            "InstanceId": "i-0056e46b981edbb17",
+            "InstanceName": "ip-10-42-1-192.us-west-2.compute.internal",
+            "Comment": "",
+            "DocumentName": "AWS-RunShellScript",
+            "DocumentVersion": "$DEFAULT",
+            "RequestedDateTime": "2026-05-30T12:17:31.074000-07:00",
+            "Status": "Success",
+            "StatusDetails": "Success",
+            "StandardOutputUrl": "",
+            "StandardErrorUrl": "",
+            "CommandPlugins": [
+                {
+                    "Name": "aws:runShellScript",
+                    "Status": "Success",
+                    "StatusDetails": "Success",
+                    "ResponseCode": 0,
+                    "ResponseStartDateTime": "2026-05-30T12:17:31.185000-07:00",
+                    "ResponseFinishDateTime": "2026-05-30T12:17:31.880000-07:00",
+                    "Output": "● postgresql.service - PostgreSQL database server\n     Loaded: loaded (/usr/lib/systemd/system/postgresql.service; enabled; preset: disabled)\n    Drop-In: /etc/systemd/system/postgresql.service.d\n             └─pgdata.conf\n     Active: active (running) since Sat 2026-05-30 19:17:31 UTC; 98ms ago\n    Process: 62462 ExecStartPre=/usr/libexec/postgresql-check-db-dir postgresql (code=exited, status=0/SUCCESS)\n   Main PID: 62464 (postgres)\n      Tasks: 10 (limit: 18714)\n     Memory: 22.2M\n        CPU: 29ms\n     CGroup: /system.slice/postgresql.service\n             ├─62464 /usr/bin/postgres -D /var/lib/pgsql/18/data\n             ├─62465 \"postgres: logger \"\n             ├─62466 \"postgres: io worker 0\"\n             ├─62467 \"postgres: io worker 1\"\n             ├─62468 \"postgres: io worker 2\"\n             ├─62469 \"postgres: checkpointer \"\n             ├─62470 \"postgres: background writer \"\n             ├─62472 \"postgres: walwriter \"\n             ├─62473 \"postgres: autovacuum launcher \"\n             └─62474 \"postgres: logical replication launcher \"\n\nMay 30 19:17:31 ip-10-42-1-192.us-west-2.compute.internal systemd[1]: Starting postgresql.service - PostgreSQL database server...\nMay 30 19:17:31 ip-10-42-1-192.us-west-2.compute.internal postgres[62464]: 2026-05-30 19:17:31.542 UTC [62464] LOG:  registered custom cumulative statistics \"ecaz\" with ID 25\nMay 30 19:17:31 ip-10-42-1-192.us-west-2.compute.internal postgres[62464]: 2026-05-30 19:17:31.548 UTC [62464] LOG:  redirecting log output to logging collector process\nMay 30 19:17:31 ip-10-42-1-192.us-west-2.compute.internal postgres[62464]: 2026-05-30 19:17:31.548 UTC [62464] HINT:  Future log output will appear in directory \"log\".\nMay 30 19:17:31 ip-10-42-1-192.us-west-2.compute.internal systemd[1]: Started postgresql.service - PostgreSQL database server.\n                                                    version                                                    \n---------------------------------------------------------------------------------------------------------------\n PostgreSQL 18.3 on aarch64-amazon-linux-gnu, compiled by gcc (GCC) 11.5.0 20240719 (Red Hat 11.5.0-5), 64-bit\n(1 row)\n\n\n----------ERROR-------\n++ sudo systemctl restart postgresql.service\n++ sudo systemctl status postgresql.service --no-pager\n++ sudo -u postgres psql -h /var/run/postgresql -d postgres -c 'select version();'\n",
+                    "StandardOutputUrl": "",
+                    "StandardErrorUrl": "",
+                    "OutputS3Region": "us-west-2",
+                    "OutputS3BucketName": "",
+                    "OutputS3KeyPrefix": ""
+                }
+            ],
+            "ServiceRole": "",
+            "NotificationConfig": {
+                "NotificationArn": "",
+                "NotificationEvents": [],
+                "NotificationType": ""
+            },
+            "CloudWatchOutputConfig": {
+                "CloudWatchLogGroupName": "",
+                "CloudWatchOutputEnabled": false
+            }
+        },
+        {
+            "CommandId": "1c0d1681-a71a-44ea-a070-b0f61f49e288",
+            "InstanceId": "i-0056e46b981edbb17",
+            "InstanceName": "ip-10-42-1-192.us-west-2.compute.internal",
+            "Comment": "",
+            "DocumentName": "AWS-RunShellScript",
+            "DocumentVersion": "$DEFAULT",
+            "RequestedDateTime": "2026-05-30T12:13:19.416000-07:00",
+            "Status": "Success",
+            "StatusDetails": "Success",
+            "StandardOutputUrl": "",
+            "StandardErrorUrl": "",
+            "CommandPlugins": [
+                {
+                    "Name": "aws:runShellScript",
+                    "Status": "Success",
+                    "StatusDetails": "Success",
+                    "ResponseCode": 0,
+                    "ResponseStartDateTime": "2026-05-30T12:13:19.525000-07:00",
+                    "ResponseFinishDateTime": "2026-05-30T12:14:07.423000-07:00",
+                    "Output": "● postgresql.service - PostgreSQL database server\n     Loaded: loaded (/usr/lib/systemd/system/postgresql.service; enabled; preset: disabled)\n    Drop-In: /etc/systemd/system/postgresql.service.d\n             └─pgdata.conf\n     Active: active (running) since Sat 2026-05-30 19:14:07 UTC; 95ms ago\n    Process: 62251 ExecStartPre=/usr/libexec/postgresql-check-db-dir postgresql (code=exited, status=0/SUCCESS)\n   Main PID: 62253 (postgres)\n      Tasks: 10 (limit: 18714)\n     Memory: 1.9G\n        CPU: 1.541s\n     CGroup: /system.slice/postgresql.service\n             ├─62253 /usr/bin/postgres -D /var/lib/pgsql/18/data\n             ├─62254 \"postgres: logger \"\n             ├─62255 \"postgres: io worker 0\"\n             ├─62256 \"postgres: io worker 1\"\n             ├─62257 \"postgres: io worker 2\"\n             ├─62258 \"postgres: checkpointer \"\n             ├─62259 \"postgres: background writer \"\n             ├─62310 \"postgres: walwriter \"\n             ├─62311 \"postgres: autovacuum launcher \"\n             └─62312 \"postgres: logical replication launcher \"\n\nMay 30 19:13:19 ip-10-42-1-192.us-west-2.compute.internal systemd[1]: Starting postgresql.service - PostgreSQL database server...\nMay 30 19:13:19 ip-10-42-1-192.us-west-2.compute.internal postgres[62253]: 2026-05-30 19:13:19.840 UTC [62253] LOG:  registered custom cumulative statistics \"ecaz\" with ID 25\nMay 30 19:13:19 ip-10-42-1-192.us-west-2.compute.internal postgres[62253]: 2026-05-30 19:13:19.848 UTC [62253] LOG:  redirecting log output to logging collector process\nMay 30 19:13:19 ip-10-42-1-192.us-west-2.compute.internal postgres[62253]: 2026-05-30 19:13:19.848 UTC [62253] HINT:  Future log output will appear in directory \"log\".\nMay 30 19:14:07 ip-10-42-1-192.us-west-2.compute.internal systemd[1]: Started postgresql.service - PostgreSQL database server.\n                                                    version                                                    \n---------------------------------------------------------------------------------------------------------------\n PostgreSQL 18.3 on aarch64-amazon-linux-gnu, compiled by gcc (GCC) 11.5.0 20240719 (Red Hat 11.5.0-5), 64-bit\n(1 row)\n\n\n----------ERROR-------\n++ sudo systemctl restart postgresql.service\n++ sudo systemctl status postgresql.service --no-pager\n++ sudo -u postgres psql -h /var/run/postgresql -d postgres -c 'select version();'\n",
+                    "StandardOutputUrl": "",
+                    "StandardErrorUrl": "",
+                    "OutputS3Region": "us-west-2",
+                    "OutputS3BucketName": "",
+                    "OutputS3KeyPrefix": ""
+                }
+            ],
+            "ServiceRole": "",
+            "NotificationConfig": {
+                "NotificationArn": "",
+                "NotificationEvents": [],
+                "NotificationType": ""
+            },
+            "CloudWatchOutputConfig": {
+                "CloudWatchLogGroupName": "",
+                "CloudWatchOutputEnabled": false
+            }
+        },
+        {
+            "CommandId": "159b75a2-cac6-4499-b714-86390855a7d2",
+            "InstanceId": "i-0056e46b981edbb17",
+            "InstanceName": "ip-10-42-1-192.us-west-2.compute.internal",
+            "Comment": "",
+            "DocumentName": "AWS-RunShellScript",
+            "DocumentVersion": "$DEFAULT",
+            "RequestedDateTime": "2026-05-30T12:10:58.057000-07:00",
+            "Status": "Success",
+            "StatusDetails": "Success",
+            "StandardOutputUrl": "",
+            "StandardErrorUrl": "",
+            "CommandPlugins": [
+                {
+                    "Name": "aws:runShellScript",
+                    "Status": "Success",
+                    "StatusDetails": "Success",
+                    "ResponseCode": 0,
+                    "ResponseStartDateTime": "2026-05-30T12:10:58.167000-07:00",
+                    "ResponseFinishDateTime": "2026-05-30T12:10:58.272000-07:00",
+                    "Output": "● postgresql.service                                    loaded    failed     failed        PostgreSQL database server\ntotal 4\ndrwxr-xr-x.  4 postgres postgres   34 May 30 17:40 .\ndrwx------.  9 postgres postgres  150 May 30 17:09 ..\ndrwx------. 20 postgres postgres 4096 May 30 18:57 data\ndrwxr-xr-x.  4 postgres postgres   63 May 30 17:41 datasets\n/var/lib/pgsql/18/data/PG_VERSION\n/var/lib/pgsql/18/data/postgresql.conf\n/var/lib/pgsql/.pgrx/data-18/PG_VERSION\n/var/lib/pgsql/.pgrx/data-18/postgresql.conf\n\n----------ERROR-------\n++ systemctl list-units --type=service --all --no-pager\n++ grep -Ei 'postgres|pgsql|pgrx'\n++ ps -ef\n++ grep -Ei 'postgres|pgsql'\n++ grep -v grep\n++ true\n++ ls -la /var/lib/pgsql/18\n++ find /var/lib/pgsql -maxdepth 3 -name postgresql.conf -o -name PG_VERSION\n",
+                    "StandardOutputUrl": "",
+                    "StandardErrorUrl": "",
+                    "OutputS3Region": "us-west-2",
+                    "OutputS3BucketName": "",
+                    "OutputS3KeyPrefix": ""
+                }
+            ],
+            "ServiceRole": "",
+            "NotificationConfig": {
+                "NotificationArn": "",
+                "NotificationEvents": [],
+                "NotificationType": ""
+            },
+            "CloudWatchOutputConfig": {
+                "CloudWatchLogGroupName": "",
+                "CloudWatchOutputEnabled": false
+            }
+        },
+        {
+            "CommandId": "85a335cc-5018-4110-ad18-c29088179389",
+            "InstanceId": "i-0056e46b981edbb17",
+            "InstanceName": "ip-10-42-1-192.us-west-2.compute.internal",
+            "Comment": "",
+            "DocumentName": "AWS-RunShellScript",
+            "DocumentVersion": "$DEFAULT",
+            "RequestedDateTime": "2026-05-30T12:09:49.122000-07:00",
+            "Status": "Failed",
+            "StatusDetails": "Failed",
+            "StandardOutputUrl": "",
+            "StandardErrorUrl": "",
+            "CommandPlugins": [
+                {
+                    "Name": "aws:runShellScript",
+                    "Status": "Failed",
+                    "StatusDetails": "Failed",
+                    "ResponseCode": 5,
+                    "ResponseStartDateTime": "2026-05-30T12:09:49.245000-07:00",
+                    "ResponseFinishDateTime": "2026-05-30T12:09:49.526000-07:00",
+                    "Output": "\n----------ERROR-------\n++ sudo systemctl status postgresql-18 --no-pager\nUnit postgresql-18.service could not be found.\n++ true\n++ sudo systemctl restart postgresql-18\nFailed to restart postgresql-18.service: Unit postgresql-18.service not found.\nfailed to run commands: exit status 5",
+                    "StandardOutputUrl": "",
+                    "StandardErrorUrl": "",
+                    "OutputS3Region": "us-west-2",
+                    "OutputS3BucketName": "",
+                    "OutputS3KeyPrefix": ""
+                }
+            ],
+            "ServiceRole": "",
+            "NotificationConfig": {
+                "NotificationArn": "",
+                "NotificationEvents": [],
+                "NotificationType": ""
+            },
+            "CloudWatchOutputConfig": {
+                "CloudWatchLogGroupName": "",
+                "CloudWatchOutputEnabled": false
+            }
+        },
+        {
+            "CommandId": "1e572ba1-5b1d-4e07-a1bf-75fe5f22533e",
+            "InstanceId": "i-0056e46b981edbb17",
+            "InstanceName": "ip-10-42-1-192.us-west-2.compute.internal",
+            "Comment": "",
+            "DocumentName": "AWS-RunShellScript",
+            "DocumentVersion": "$DEFAULT",
+            "RequestedDateTime": "2026-05-30T12:03:49.312000-07:00",
+            "Status": "Failed",
+            "StatusDetails": "Failed",
+            "StandardOutputUrl": "",
+            "StandardErrorUrl": "",
+            "CommandPlugins": [
+                {
+                    "Name": "aws:runShellScript",
+                    "Status": "Failed",
+                    "StatusDetails": "Failed",
+                    "ResponseCode": 1,
+                    "ResponseStartDateTime": "2026-05-30T12:03:49.602000-07:00",
+                    "ResponseFinishDateTime": "2026-05-30T12:03:50.716000-07:00",
+                    "Output": "[suite:task67-diskann-1m-min-rerun-resume] load-diskann-real1m-default -> --database postgres --host /var/run/postgresql --user postgres --log-file reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-diskann/load-diskann-real1m-default.log corpus load --prefix task67_1m_diskann_default_rerun --profile ec_diskann --manifest-file /var/lib/pgsql/18/datasets/staged-task67-1m/ec_real_ann_benchmarks_anchor_manifest.json --allow-manifest-mismatch --chunked --bits 4 --seed 42\n\n----------ERROR-------\n+ cd /var/lib/pgsql/build/ecaz\n++ dirname reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/task67-diskann-1m-min-rerun-resume-suite.json\n+ mkdir -p reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-diskann\n+ trap 'status=$?; set +e; aws s3 sync reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-diskann s3://ecaz-cloud-1m-b62eb804/bench-artifacts/task67-diskann-1m-min-rerun-resume/20260530T190348Z/ --region us-west-2 --only-show-errors || true; exit $status' EXIT\n+ cat\n++ dirname reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/task67-diskann-1m-min-rerun-resume-suite.json\n+ chown -R postgres:postgres reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-diskann\n+ :\n+ sudo -u postgres bash -lc 'cd '\\''/var/lib/pgsql/build/ecaz'\\''; export PATH=/usr/local/bin:$HOME/.cargo/bin:$PATH; '\\''/usr/local/bin/ecaz'\\'' --database '\\''postgres'\\'' --host /var/run/postgresql --user postgres --log-file '\\''reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-diskann/suite-run.log'\\'' bench suite run --config '\\''reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/task67-diskann-1m-min-rerun-resume-suite.json'\\'' --manifest-output '\\''reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-diskann/suite-manifest.json'\\'' --results-output '\\''reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-diskann/results.jsonl'\\'''\n[suite:task67-diskann-1m-min-rerun-resume] wrote reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-diskann/suite-manifest.json\n[suite:task67-diskann-1m-min-rerun-resume] wrote reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-diskann/suite-manifest.json\n[loader] warning: manifest prefix \"ec_real_ann_benchmarks_anchor\" does not match --prefix \"task67_1m_diskann_defaul\n---Error truncated----",
+                    "StandardOutputUrl": "",
+                    "StandardErrorUrl": "",
+                    "OutputS3Region": "us-west-2",
+                    "OutputS3BucketName": "",
+                    "OutputS3KeyPrefix": ""
+                }
+            ],
+            "ServiceRole": "",
+            "NotificationConfig": {
+                "NotificationArn": "",
+                "NotificationEvents": [],
+                "NotificationType": ""
+            },
+            "CloudWatchOutputConfig": {
+                "CloudWatchLogGroupName": "",
+                "CloudWatchOutputEnabled": false
+            }
+        },
+        {
+            "CommandId": "1bdfc0d5-6103-4510-b6df-d1ffd1a1cdef",
+            "InstanceId": "i-0056e46b981edbb17",
+            "InstanceName": "ip-10-42-1-192.us-west-2.compute.internal",
+            "Comment": "",
+            "DocumentName": "AWS-RunShellScript",
+            "DocumentVersion": "$DEFAULT",
+            "RequestedDateTime": "2026-05-30T11:38:37.631000-07:00",
+            "Status": "Failed",
+            "StatusDetails": "Failed",
+            "StandardOutputUrl": "",
+            "StandardErrorUrl": "",
+            "CommandPlugins": [
+                {
+                    "Name": "aws:runShellScript",
+                    "Status": "Failed",
+                    "StatusDetails": "Failed",
+                    "ResponseCode": 1,
+                    "ResponseStartDateTime": "2026-05-30T11:38:37.757000-07:00",
+                    "ResponseFinishDateTime": "2026-05-30T11:57:22.967000-07:00",
+                    "Output": "[suite:task67-hnsw-1m-min-rerun-resume] load-hnsw-real1m-m16 -> --database postgres --host /var/run/postgresql --user postgres --log-file reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-hnsw/load-hnsw-real1m-m16.log corpus load --prefix task67_1m_hnsw_m16_rerun --profile ec_hnsw --manifest-file /var/lib/pgsql/18/datasets/staged-task67-1m/ec_real_ann_benchmarks_anchor_manifest.json --allow-manifest-mismatch --chunked --bits 4 --seed 42 --m 16 --ef-construction 128\n\n----------ERROR-------\n+ cd /var/lib/pgsql/build/ecaz\n++ dirname reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/task67-hnsw-1m-min-rerun-resume-suite.json\n+ mkdir -p reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-hnsw\n+ trap 'status=$?; set +e; aws s3 sync reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-hnsw s3://ecaz-cloud-1m-b62eb804/bench-artifacts/task67-hnsw-1m-min-rerun-resume/20260530T183836Z/ --region us-west-2 --only-show-errors || true; exit $status' EXIT\n+ cat\n++ dirname reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/task67-hnsw-1m-min-rerun-resume-suite.json\n+ chown -R postgres:postgres reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-hnsw\n+ :\n+ sudo -u postgres bash -lc 'cd '\\''/var/lib/pgsql/build/ecaz'\\''; export PATH=/usr/local/bin:$HOME/.cargo/bin:$PATH; '\\''/usr/local/bin/ecaz'\\'' --database '\\''postgres'\\'' --host /var/run/postgresql --user postgres --log-file '\\''reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-hnsw/suite-run.log'\\'' bench suite run --config '\\''reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/task67-hnsw-1m-min-rerun-resume-suite.json'\\'' --manifest-output '\\''reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-hnsw/suite-manifest.json'\\'' --results-output '\\''reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-hnsw/results.jsonl'\\'''\n[suite:task67-hnsw-1m-min-rerun-resume] wrote reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-hnsw/suite-manifest.json\n[suite:task67-hnsw-1m-min-rerun-resume] wrote reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-hnsw/suite-manifest.json\n[loader] warning: manifest prefix \"ec_real_ann_benchmarks_anchor\" does not match --prefix \"task67_1m_hnsw_m16_rerun\"\n[loader] loaded corpus chunk corpus/corpu\n---Error truncated----",
+                    "StandardOutputUrl": "",
+                    "StandardErrorUrl": "",
+                    "OutputS3Region": "us-west-2",
+                    "OutputS3BucketName": "",
+                    "OutputS3KeyPrefix": ""
+                }
+            ],
+            "ServiceRole": "",
+            "NotificationConfig": {
+                "NotificationArn": "",
+                "NotificationEvents": [],
+                "NotificationType": ""
+            },
+            "CloudWatchOutputConfig": {
+                "CloudWatchLogGroupName": "",
+                "CloudWatchOutputEnabled": false
+            }
+        },
+        {
+            "CommandId": "a1dfcf49-e244-4a6c-a363-6edfb44897a0",
+            "InstanceId": "i-0056e46b981edbb17",
+            "InstanceName": "ip-10-42-1-192.us-west-2.compute.internal",
+            "Comment": "",
+            "DocumentName": "AWS-RunShellScript",
+            "DocumentVersion": "$DEFAULT",
+            "RequestedDateTime": "2026-05-30T11:04:29.840000-07:00",
+            "Status": "Success",
+            "StatusDetails": "Success",
+            "StandardOutputUrl": "",
+            "StandardErrorUrl": "",
+            "CommandPlugins": [
+                {
+                    "Name": "aws:runShellScript",
+                    "Status": "Success",
+                    "StatusDetails": "Success",
+                    "ResponseCode": 0,
+                    "ResponseStartDateTime": "2026-05-30T11:04:29.950000-07:00",
+                    "ResponseFinishDateTime": "2026-05-30T11:16:54.119000-07:00",
+                    "Output": "HEAD is now at f93cb6a11 Add reviewer feedback for Task 67 packets 037, 038, 039\nRemoving reviews/task-67/041-local-and-aws-benchmark-rerun/\nYour branch is behind 'origin/main' by 2 commits, and can be fast-forwarded.\n  (use \"git pull\" to update your local branch)\nHEAD is now at 441e86399 Honor manifest mismatch for chunked corpus load\n\u001b[32m\u001b[1m    Building\u001b[0m\u001b[39m extension with features \u001b[36mpg18\u001b[39m\n\u001b[32m\u001b[1m     Running\u001b[0m\u001b[39m command \u001b[36m\"/var/lib/pgsql/.rustup/toolchains/stable-aarch64-unknown-linux-gnu/bin/cargo\" \"build\" \"--lib\" \"--release\" \"--features\" \"pg18\" \"--no-default-features\" \"--message-format=json-render-diagnostics\"\u001b[39m\n\u001b[32m\u001b[1m  Installing\u001b[0m\u001b[39m extension\n\u001b[32m\u001b[1m     Copying\u001b[0m\u001b[39m control file to \u001b[36mtarget/release/ecaz-pg18/usr/share/pgsql/extension/ecaz.control\u001b[39m\n\u001b[32m\u001b[1m     Copying\u001b[0m\u001b[39m shared library to \u001b[36mtarget/release/ecaz-pg18/usr/lib64/pgsql/ecaz.so\u001b[39m\n\u001b[32m\u001b[1m    Finished\u001b[0m\u001b[39m installing ecaz\n\u001b[32m\u001b[1m       Running\u001b[0m\u001b[39m sudo cp /var/lib/pgsql/build/ecaz/target/release/ecaz-pg18/usr/share/pgsql/extension/ecaz.control /usr/share/pgsql/extension/ecaz.control\n\u001b[32m\u001b[1m       Running\u001b[0m\u001b[39m sudo cp /var/lib/pgsql/build/ecaz/target/re\n---Output truncated---\n----------ERROR-------\n+ sudo mkdir -p /var/lib/pgsql/build\n+ sudo chown -R postgres:postgres /var/lib/pgsql/build\n+ sudo -u postgres bash -lc '\n  set -eux\n  export PATH=$HOME/.cargo/bin:$PATH\n  if [ ! -d /var/lib/pgsql/build/ecaz/.git ]; then\n    rm -rf /var/lib/pgsql/build\n    mkdir -p /var/lib/pgsql/build\n    git clone https://github.com/agent-ix/ecaz.git /var/lib/pgsql/build/ecaz\n  fi\n  cd /var/lib/pgsql/build/ecaz\n\n  git reset --hard\n  git clean -fd\n  git fetch --all --tags\n  git checkout --force main || git checkout --force origin/main\n  if git rev-parse --verify origin/main >/dev/null 2>&1; then\n    git reset --hard origin/main\n  else\n    git reset --hard main\n  fi\n  cargo pgrx install --sudo --release --pg-config /usr/bin/pg_config\n  cargo build --release -p ecaz-cli\n\n'\n+ export PATH=/var/lib/pgsql/.cargo/bin:/var/lib/pgsql/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/var/lib/snapd/snap/bin\n+ PATH=/var/lib/pgsql/.cargo/bin:/var/lib/pgsql/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/var/lib/snapd/snap/bin\n+ '[' '!' -d /var/lib/pgsql/build/ecaz/.git ']'\n+ cd /var/lib/pgsql/build/ecaz\n+ git reset --hard\nUpdating files:  59% (14693/24828)\rUpdating files:  60% \n---Error truncated----",
+                    "StandardOutputUrl": "",
+                    "StandardErrorUrl": "",
+                    "OutputS3Region": "us-west-2",
+                    "OutputS3BucketName": "",
+                    "OutputS3KeyPrefix": ""
+                }
+            ],
+            "ServiceRole": "",
+            "NotificationConfig": {
+                "NotificationArn": "",
+                "NotificationEvents": [],
+                "NotificationType": ""
+            },
+            "CloudWatchOutputConfig": {
+                "CloudWatchLogGroupName": "",
+                "CloudWatchOutputEnabled": false
+            }
+        },
+        {
+            "CommandId": "03edd98f-c3a1-4e65-8817-9d994fd79546",
+            "InstanceId": "i-0056e46b981edbb17",
+            "InstanceName": "ip-10-42-1-192.us-west-2.compute.internal",
+            "Comment": "",
+            "DocumentName": "AWS-RunShellScript",
+            "DocumentVersion": "$DEFAULT",
+            "RequestedDateTime": "2026-05-30T10:58:24.925000-07:00",
+            "Status": "Failed",
+            "StatusDetails": "Failed",
+            "StandardOutputUrl": "",
+            "StandardErrorUrl": "",
+            "CommandPlugins": [
+                {
+                    "Name": "aws:runShellScript",
+                    "Status": "Failed",
+                    "StatusDetails": "Failed",
+                    "ResponseCode": 1,
+                    "ResponseStartDateTime": "2026-05-30T10:58:25.125000-07:00",
+                    "ResponseFinishDateTime": "2026-05-30T10:58:26.090000-07:00",
+                    "Output": "[suite:task67-hnsw-1m-min-rerun-resume] load-hnsw-real1m-m16 -> --database postgres --host /var/run/postgresql --user postgres --log-file reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-hnsw/load-hnsw-real1m-m16.log corpus load --prefix task67_1m_hnsw_m16_rerun --profile ec_hnsw --manifest-file /var/lib/pgsql/18/datasets/staged-task67-1m/ec_real_ann_benchmarks_anchor_manifest.json --allow-manifest-mismatch --chunked --bits 4 --seed 42 --m 16 --ef-construction 128\n\n----------ERROR-------\n+ cd /var/lib/pgsql/build/ecaz\n++ dirname reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/task67-hnsw-1m-min-rerun-resume-suite.json\n+ mkdir -p reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-hnsw\n+ trap 'status=$?; set +e; aws s3 sync reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-hnsw s3://ecaz-cloud-1m-b62eb804/bench-artifacts/task67-hnsw-1m-min-rerun-resume/20260530T175824Z/ --region us-west-2 --only-show-errors || true; exit $status' EXIT\n+ cat\n++ dirname reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/task67-hnsw-1m-min-rerun-resume-suite.json\n+ chown -R postgres:postgres reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-hnsw\n+ :\n+ sudo -u postgres bash -lc 'cd '\\''/var/lib/pgsql/build/ecaz'\\''; export PATH=/usr/local/bin:$HOME/.cargo/bin:$PATH; '\\''/usr/local/bin/ecaz'\\'' --database '\\''postgres'\\'' --host /var/run/postgresql --user postgres --log-file '\\''reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-hnsw/suite-run.log'\\'' bench suite run --config '\\''reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/task67-hnsw-1m-min-rerun-resume-suite.json'\\'' --manifest-output '\\''reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-hnsw/suite-manifest.json'\\'' --results-output '\\''reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-hnsw/results.jsonl'\\'''\n[suite:task67-hnsw-1m-min-rerun-resume] wrote reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-hnsw/suite-manifest.json\n[suite:task67-hnsw-1m-min-rerun-resume] wrote reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-hnsw/suite-manifest.json\n\n   0: \u001b[91mmanifest prefix \"ec_real_ann_benchmarks_anchor\" does not match --prefix \"task67_1m_hnsw_m16_rerun\"\u001b[0m\n\nLocation:\n   \u001b[35mcrates/ecaz-cli/src/comm\n---Error truncated----",
+                    "StandardOutputUrl": "",
+                    "StandardErrorUrl": "",
+                    "OutputS3Region": "us-west-2",
+                    "OutputS3BucketName": "",
+                    "OutputS3KeyPrefix": ""
+                }
+            ],
+            "ServiceRole": "",
+            "NotificationConfig": {
+                "NotificationArn": "",
+                "NotificationEvents": [],
+                "NotificationType": ""
+            },
+            "CloudWatchOutputConfig": {
+                "CloudWatchLogGroupName": "",
+                "CloudWatchOutputEnabled": false
+            }
+        },
+        {
+            "CommandId": "8839241f-8653-485a-a3f9-688e29aa2382",
+            "InstanceId": "i-0056e46b981edbb17",
+            "InstanceName": "ip-10-42-1-192.us-west-2.compute.internal",
+            "Comment": "",
+            "DocumentName": "AWS-RunShellScript",
+            "DocumentVersion": "$DEFAULT",
+            "RequestedDateTime": "2026-05-30T10:40:27.035000-07:00",
+            "Status": "Failed",
+            "StatusDetails": "Failed",
+            "StandardOutputUrl": "",
+            "StandardErrorUrl": "",
+            "CommandPlugins": [
+                {
+                    "Name": "aws:runShellScript",
+                    "Status": "Failed",
+                    "StatusDetails": "Failed",
+                    "ResponseCode": 1,
+                    "ResponseStartDateTime": "2026-05-30T10:40:27.140000-07:00",
+                    "ResponseFinishDateTime": "2026-05-30T10:53:54.257000-07:00",
+                    "Output": "[suite:task67-hnsw-1m-min-rerun] fetch-dbpedia-openai3-1m -> --database postgres --host /var/run/postgresql --user postgres corpus fetch --dataset qdrant-dbpedia-openai3-large-1536-1m --output-dir /var/lib/pgsql/18/datasets/task67-dbpedia-openai3-1m\n[suite:task67-hnsw-1m-min-rerun] prepare-real1m -> --database postgres --host /var/run/postgresql --user postgres corpus prepare --profile ec_real_ann_benchmarks_anchor --parquet /var/lib/pgsql/18/datasets/task67-dbpedia-openai3-1m/data --output-dir /var/lib/pgsql/18/datasets/staged-task67-1m --chunk-rows 25000\n[suite:task67-hnsw-1m-min-rerun] load-hnsw-real1m-m16 -> --database postgres --host /var/run/postgresql --user postgres --log-file reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-hnsw/load-hnsw-real1m-m16.log corpus load --prefix task67_1m_hnsw_m16_rerun --profile ec_hnsw --manifest-file /var/lib/pgsql/18/datasets/staged-task67-1m/ec_real_ann_benchmarks_anchor_manifest.json --chunked --bits 4 --seed 42 --m 16 --ef-construction 128\n\n----------ERROR-------\n+ cd /var/lib/pgsql/build/ecaz\n++ dirname reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/task67-hnsw-1m-min-rerun-suite.json\n+ mkdir -p reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-hnsw\n+ trap 'status=$?; set +e; aws s3 sync reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-hnsw s3://ecaz-cloud-1m-b62eb804/bench-artifacts/task67-hnsw-1m-min-rerun/20260530T174026Z/ --region us-west-2 --only-show-errors || true; exit $status' EXIT\n+ cat\n++ dirname reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/task67-hnsw-1m-min-rerun-suite.json\n+ chown -R postgres:postgres reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-hnsw\n+ :\n+ sudo -u postgres bash -lc 'cd '\\''/var/lib/pgsql/build/ecaz'\\''; export PATH=/usr/local/bin:$HOME/.cargo/bin:$PATH; '\\''/usr/local/bin/ecaz'\\'' --database '\\''postgres'\\'' --host /var/run/postgresql --user postgres --log-file '\\''reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-hnsw/suite-run.log'\\'' bench suite run --config '\\''reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/task67-hnsw-1m-min-rerun-suite.json'\\'' --manifest-output '\\''reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-hnsw/suite-manifest.json'\\'' --results-output '\\''reviews/task-67/040-loc\n---Error truncated----",
+                    "StandardOutputUrl": "",
+                    "StandardErrorUrl": "",
+                    "OutputS3Region": "us-west-2",
+                    "OutputS3BucketName": "",
+                    "OutputS3KeyPrefix": ""
+                }
+            ],
+            "ServiceRole": "",
+            "NotificationConfig": {
+                "NotificationArn": "",
+                "NotificationEvents": [],
+                "NotificationType": ""
+            },
+            "CloudWatchOutputConfig": {
+                "CloudWatchLogGroupName": "",
+                "CloudWatchOutputEnabled": false
+            }
+        },
+        {
+            "CommandId": "d5f504be-4259-4e53-a2e6-5f73316c20c9",
+            "InstanceId": "i-0056e46b981edbb17",
+            "InstanceName": "ip-10-42-1-192.us-west-2.compute.internal",
+            "Comment": "",
+            "DocumentName": "AWS-RunShellScript",
+            "DocumentVersion": "$DEFAULT",
+            "RequestedDateTime": "2026-05-30T10:27:49.522000-07:00",
+            "Status": "Success",
+            "StatusDetails": "Success",
+            "StandardOutputUrl": "",
+            "StandardErrorUrl": "",
+            "CommandPlugins": [
+                {
+                    "Name": "aws:runShellScript",
+                    "Status": "Success",
+                    "StatusDetails": "Success",
+                    "ResponseCode": 0,
+                    "ResponseStartDateTime": "2026-05-30T10:27:49.627000-07:00",
+                    "ResponseFinishDateTime": "2026-05-30T10:40:15.198000-07:00",
+                    "Output": "HEAD is now at a072689e0 Mark Task 67 scale packet superseded\nYour branch is behind 'origin/main' by 1 commit, and can be fast-forwarded.\n  (use \"git pull\" to update your local branch)\nHEAD is now at f93cb6a11 Add reviewer feedback for Task 67 packets 037, 038, 039\n\u001b[32m\u001b[1m    Building\u001b[0m\u001b[39m extension with features \u001b[36mpg18\u001b[39m\n\u001b[32m\u001b[1m     Running\u001b[0m\u001b[39m command \u001b[36m\"/var/lib/pgsql/.rustup/toolchains/stable-aarch64-unknown-linux-gnu/bin/cargo\" \"build\" \"--lib\" \"--release\" \"--features\" \"pg18\" \"--no-default-features\" \"--message-format=json-render-diagnostics\"\u001b[39m\n\u001b[32m\u001b[1m  Installing\u001b[0m\u001b[39m extension\n\u001b[32m\u001b[1m     Copying\u001b[0m\u001b[39m control file to \u001b[36mtarget/release/ecaz-pg18/usr/share/pgsql/extension/ecaz.control\u001b[39m\n\u001b[32m\u001b[1m     Copying\u001b[0m\u001b[39m shared library to \u001b[36mtarget/release/ecaz-pg18/usr/lib64/pgsql/ecaz.so\u001b[39m\n\u001b[32m\u001b[1m    Finished\u001b[0m\u001b[39m installing ecaz\n\u001b[32m\u001b[1m       Running\u001b[0m\u001b[39m sudo cp /var/lib/pgsql/build/ecaz/target/release/ecaz-pg18/usr/share/pgsql/extension/ecaz.control /usr/share/pgsql/extension/ecaz.control\n\u001b[32m\u001b[1m       Running\u001b[0m\u001b[39m sudo cp /var/lib/pgsql/build/ecaz/target/release/ecaz-pg18/usr/lib64/pgsql/ecaz.so /usr/lib64/pgsql/ecaz.so\n\u001b[32m\u001b[\n---Output truncated---\n----------ERROR-------\n+ sudo mkdir -p /var/lib/pgsql/build\n+ sudo chown -R postgres:postgres /var/lib/pgsql/build\n+ sudo -u postgres bash -lc '\n  set -eux\n  export PATH=$HOME/.cargo/bin:$PATH\n  if [ ! -d /var/lib/pgsql/build/ecaz/.git ]; then\n    rm -rf /var/lib/pgsql/build\n    mkdir -p /var/lib/pgsql/build\n    git clone https://github.com/agent-ix/ecaz.git /var/lib/pgsql/build/ecaz\n  fi\n  cd /var/lib/pgsql/build/ecaz\n\n  git reset --hard\n  git clean -fd\n  git fetch --all --tags\n  git checkout --force main || git checkout --force origin/main\n  if git rev-parse --verify origin/main >/dev/null 2>&1; then\n    git reset --hard origin/main\n  else\n    git reset --hard main\n  fi\n  cargo pgrx install --sudo --release --pg-config /usr/bin/pg_config\n  cargo build --release -p ecaz-cli\n\n'\n+ export PATH=/var/lib/pgsql/.cargo/bin:/var/lib/pgsql/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/var/lib/snapd/snap/bin\n+ PATH=/var/lib/pgsql/.cargo/bin:/var/lib/pgsql/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/var/lib/snapd/snap/bin\n+ '[' '!' -d /var/lib/pgsql/build/ecaz/.git ']'\n+ cd /var/lib/pgsql/build/ecaz\n+ git reset --hard\nUpdating files:  61% (15327/24825)\rUpdating files:  62% \n---Error truncated----",
+                    "StandardOutputUrl": "",
+                    "StandardErrorUrl": "",
+                    "OutputS3Region": "us-west-2",
+                    "OutputS3BucketName": "",
+                    "OutputS3KeyPrefix": ""
+                }
+            ],
+            "ServiceRole": "",
+            "NotificationConfig": {
+                "NotificationArn": "",
+                "NotificationEvents": [],
+                "NotificationType": ""
+            },
+            "CloudWatchOutputConfig": {
+                "CloudWatchLogGroupName": "",
+                "CloudWatchOutputEnabled": false
+            }
+        },
+        {
+            "CommandId": "5877afcf-5312-491c-8926-bbcb2395e6e4",
+            "InstanceId": "i-0056e46b981edbb17",
+            "InstanceName": "ip-10-42-1-192.us-west-2.compute.internal",
+            "Comment": "task67-install-cargo-pgrx",
+            "DocumentName": "AWS-RunShellScript",
+            "DocumentVersion": "$DEFAULT",
+            "RequestedDateTime": "2026-05-30T10:08:00.942000-07:00",
+            "Status": "Success",
+            "StatusDetails": "Success",
+            "StandardOutputUrl": "",
+            "StandardErrorUrl": "",
+            "CommandPlugins": [
+                {
+                    "Name": "aws:runShellScript",
+                    "Status": "Success",
+                    "StatusDetails": "Success",
+                    "ResponseCode": 0,
+                    "ResponseStartDateTime": "2026-05-30T10:08:01.166000-07:00",
+                    "ResponseFinishDateTime": "2026-05-30T10:11:30.626000-07:00",
+                    "Output": "\n----------ERROR-------\n+ export PATH=/var/lib/pgsql/.cargo/bin:/var/lib/pgsql/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/var/lib/snapd/snap/bin\n+ PATH=/var/lib/pgsql/.cargo/bin:/var/lib/pgsql/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/var/lib/snapd/snap/bin\n+ cargo install cargo-pgrx --version 0.17.0 --locked\n    Updating crates.io index\n  Installing cargo-pgrx v0.17.0\n    Updating crates.io index\n    Updating crates.io index\n   Compiling proc-macro2 v1.0.101\n   Compiling unicode-ident v1.0.19\n   Compiling libc v0.2.176\n   Compiling cfg-if v1.0.3\n   Compiling find-msvc-tools v0.1.2\n   Compiling shlex v1.3.0\n   Compiling memchr v2.7.6\n   Compiling serde_core v1.0.226\n   Compiling quote v1.0.40\n   Compiling once_cell v1.21.3\n   Compiling syn v2.0.106\n   Compiling jobserver v0.1.34\n   Compiling pkg-config v0.3.32\n   Compiling cc v1.2.38\n   Compiling log v0.4.28\n   Compiling pin-project-lite v0.2.16\n   Compiling serde v1.0.226\n   Compiling itoa v1.0.15\n   Compiling bytes v1.10.1\n   Compiling version_check v0.9.5\n   Compiling stable_deref_trait v1.2.0\n   Compiling typenum v1.18.0\n   Compiling generic-array v0.14.7\n   Compiling smallvec v1.15.1\n   Compiling bitflags v2.9.4\n   Compiling subtle v2.6.1\n   Compiling equivalent v1.0.2\n   Compiling futures-core v0.3.31\n   Compiling hashbrown v0.16.0\n   Compiling tracing-core v0.1.34\n   Compiling synstructure v0.13.2\n   Compiling indexmap v2.11.4\n   Compiling mio v1.0.4\n   Compiling socket2 v0.6.0\n   Compiling fnv v1.0.7\n   Compiling tokio v1.47.1\n   Compiling http v1.3.1\n   Compiling crypto-common v0.1.6\n   Compiling ring v0.17.14\n   Compiling zerofrom-derive v0.1.6\n   Compiling serde_derive v1.0.226\n   Compiling zerofrom v0.1.6\n   Compiling zeroize_derive v1.4.2\n   Compiling yoke-derive v0.8.0\n   Compiling zeroize v1.8.1\n   Compiling zerovec-derive v0.11.1\n   Compiling yoke v0.8.0\n   Compiling displaydoc v0.2.5\n   Compiling zerovec v0.11.4\n   Compiling rustls-pki-types v1.12.0\n   Compiling tracing-attributes v0.1.30\n   Compiling tinystr v0.8.1\n   Compiling litemap v0.8.0\n   Compiling adler2 v2.0.1\n   Compiling writeable v0.6.1\n   Compiling crc32fast v1.5.0\n   Compiling rustix v1.1.2\n   Compiling futures-sink v0.3.31\n   Compiling tracing v0.1.41\n   Compiling icu_locale_core v2.0.0\n   Compiling miniz_oxide v0.8.9\n   Compiling potential_utf v0.1.3\n   Compiling zerotrie v0.2.2\n   Compiling linux-raw-sys v0.11.0\n   Compiling icu_normalizer\n---Error truncated----",
+                    "StandardOutputUrl": "",
+                    "StandardErrorUrl": "",
+                    "OutputS3Region": "us-west-2",
+                    "OutputS3BucketName": "",
+                    "OutputS3KeyPrefix": ""
+                }
+            ],
+            "ServiceRole": "",
+            "NotificationConfig": {
+                "NotificationArn": "",
+                "NotificationEvents": [],
+                "NotificationType": ""
+            },
+            "CloudWatchOutputConfig": {
+                "CloudWatchLogGroupName": "",
+                "CloudWatchOutputEnabled": false
+            }
+        },
+        {
+            "CommandId": "42ae6e9f-c026-4ae5-bf90-6007c9c83412",
+            "InstanceId": "i-0056e46b981edbb17",
+            "InstanceName": "ip-10-42-1-192.us-west-2.compute.internal",
+            "Comment": "",
+            "DocumentName": "AWS-RunShellScript",
+            "DocumentVersion": "$DEFAULT",
+            "RequestedDateTime": "2026-05-30T10:07:09.475000-07:00",
+            "Status": "Failed",
+            "StatusDetails": "Failed",
+            "StandardOutputUrl": "",
+            "StandardErrorUrl": "",
+            "CommandPlugins": [
+                {
+                    "Name": "aws:runShellScript",
+                    "Status": "Failed",
+                    "StatusDetails": "Failed",
+                    "ResponseCode": 101,
+                    "ResponseStartDateTime": "2026-05-30T10:07:09.716000-07:00",
+                    "ResponseFinishDateTime": "2026-05-30T10:07:22.642000-07:00",
+                    "Output": "HEAD is now at a072689e0 Mark Task 67 scale packet superseded\nYour branch is up to date with 'origin/main'.\nHEAD is now at a072689e0 Mark Task 67 scale packet superseded\n\n----------ERROR-------\n+ sudo mkdir -p /var/lib/pgsql/build\n+ sudo chown -R postgres:postgres /var/lib/pgsql/build\n+ sudo -u postgres bash -lc '\n  set -eux\n  export PATH=$HOME/.cargo/bin:$PATH\n  if [ ! -d /var/lib/pgsql/build/ecaz/.git ]; then\n    rm -rf /var/lib/pgsql/build\n    mkdir -p /var/lib/pgsql/build\n    git clone https://github.com/agent-ix/ecaz.git /var/lib/pgsql/build/ecaz\n  fi\n  cd /var/lib/pgsql/build/ecaz\n\n  git reset --hard\n  git clean -fd\n  git fetch --all --tags\n  git checkout --force main || git checkout --force origin/main\n  if git rev-parse --verify origin/main >/dev/null 2>&1; then\n    git reset --hard origin/main\n  else\n    git reset --hard main\n  fi\n  cargo pgrx install --sudo --release --pg-config /usr/bin/pg_config\n  cargo build --release -p ecaz-cli\n\n'\n+ export PATH=/var/lib/pgsql/.cargo/bin:/var/lib/pgsql/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/var/lib/snapd/snap/bin\n+ PATH=/var/lib/pgsql/.cargo/bin:/var/lib/pgsql/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/var/lib/snapd/snap/bin\n+ '[' '!' -d /var/lib/pgsql/build/ecaz/.git ']'\n+ rm -rf /var/lib/pgsql/build\n+ mkdir -p /var/lib/pgsql/build\n+ git clone https://github.com/agent-ix/ecaz.git /var/lib/pgsql/build/ecaz\nCloning into '/var/lib/pgsql/build/ecaz'...\nUpdating files:  63% (15688/24825)\rUpdating files:  64% (15888/24825)\rUpdating files:  65% (16137/24825)\rUpdating files:  66% (16385/24825)\rUpdating files:  67% (16633/24825)\rUpdating files:  68% (16881/24825)\rUpdating files:  69% (17130/24825)\rUpdating files:  70% (17378/24825)\rUpdating files:  71% (17626/24825)\rUpdating files:  72% (17874/24825)\rUpdating files:  73% (18123/24825)\rUpdating files:  74% (18371/24825)\rUpdating files:  75% (18619/24825)\rUpdating files:  76% (18867/24825)\rUpdating files:  77% (19116/24825)\rUpdating files:  78% (19364/24825)\rUpdating files:  79% (19612/24825)\rUpdating files:  80% (19860/24825)\rUpdating files:  81% (20109/24825)\rUpdating files:  82% (20357/24825)\rUpdating files:  83% (20605/24825)\rUpdating files:  84% (20853/24825)\rUpdating files:  85% (21102/24825)\rUpdating files:  86% (21350/24825)\rUpdating files:  87% (21598/24825)\rUpdating files:  88% (21846/24825)\rUpdating files:  89% (22095/24825)\rUpdating files:  90% (22343/24825)\rUpdating file\n---Error truncated----",
+                    "StandardOutputUrl": "",
+                    "StandardErrorUrl": "",
+                    "OutputS3Region": "us-west-2",
+                    "OutputS3BucketName": "",
+                    "OutputS3KeyPrefix": ""
+                }
+            ],
+            "ServiceRole": "",
+            "NotificationConfig": {
+                "NotificationArn": "",
+                "NotificationEvents": [],
+                "NotificationType": ""
+            },
+            "CloudWatchOutputConfig": {
+                "CloudWatchLogGroupName": "",
+                "CloudWatchOutputEnabled": false
+            }
+        },
+        {
+            "CommandId": "fc22bca4-3729-42f0-a33b-6843d5c52e91",
+            "InstanceId": "i-0056e46b981edbb17",
+            "InstanceName": "ip-10-42-1-192.us-west-2.compute.internal",
+            "Comment": "",
+            "DocumentName": "AWS-RunShellScript",
+            "DocumentVersion": "$DEFAULT",
+            "RequestedDateTime": "2026-05-30T10:06:16.531000-07:00",
+            "Status": "Failed",
+            "StatusDetails": "Failed",
+            "StandardOutputUrl": "",
+            "StandardErrorUrl": "",
+            "CommandPlugins": [
+                {
+                    "Name": "aws:runShellScript",
+                    "Status": "Failed",
+                    "StatusDetails": "Failed",
+                    "ResponseCode": 1,
+                    "ResponseStartDateTime": "2026-05-30T10:06:17.430000-07:00",
+                    "ResponseFinishDateTime": "2026-05-30T10:06:18.209000-07:00",
+                    "Output": "\n----------ERROR-------\n+ sudo mkdir -p /var/lib/pgsql/build\n+ sudo chown -R postgres:postgres /var/lib/pgsql/build\nchown: invalid user: ‘postgres:postgres’\nfailed to run commands: exit status 1",
+                    "StandardOutputUrl": "",
+                    "StandardErrorUrl": "",
+                    "OutputS3Region": "us-west-2",
+                    "OutputS3BucketName": "",
+                    "OutputS3KeyPrefix": ""
+                }
+            ],
+            "ServiceRole": "",
+            "NotificationConfig": {
+                "NotificationArn": "",
+                "NotificationEvents": [],
+                "NotificationType": ""
+            },
+            "CloudWatchOutputConfig": {
+                "CloudWatchLogGroupName": "",
+                "CloudWatchOutputEnabled": false
+            }
+        },
+        {
+            "CommandId": "72239c71-7e44-4641-a073-862c07984dd6",
+            "InstanceId": "i-0056e46b981edbb17",
+            "InstanceName": "ip-10-42-1-192.us-west-2.compute.internal",
+            "Comment": "",
+            "DocumentName": "AWS-RunShellScript",
+            "DocumentVersion": "$DEFAULT",
+            "RequestedDateTime": "2026-05-30T16:21:15.145000-07:00",
+            "Status": "Failed",
+            "StatusDetails": "Undeliverable",
+            "StandardOutputUrl": "",
+            "StandardErrorUrl": "",
+            "CommandPlugins": [
+                {
+                    "Name": "aws:runShellScript",
+                    "Status": "Failed",
+                    "StatusDetails": "Undeliverable",
+                    "ResponseCode": -1,
+                    "Output": "",
+                    "StandardOutputUrl": "",
+                    "StandardErrorUrl": "",
+                    "OutputS3Region": "",
+                    "OutputS3BucketName": "",
+                    "OutputS3KeyPrefix": ""
+                }
+            ],
+            "ServiceRole": "",
+            "NotificationConfig": {
+                "NotificationArn": "",
+                "NotificationEvents": [],
+                "NotificationType": ""
+            },
+            "CloudWatchOutputConfig": {
+                "CloudWatchLogGroupName": "",
+                "CloudWatchOutputEnabled": false
+            }
+        },
+        {
+            "CommandId": "0df0e89c-2a76-4b89-940b-fb81a099f555",
+            "InstanceId": "i-0056e46b981edbb17",
+            "InstanceName": "ip-10-42-1-192.us-west-2.compute.internal",
+            "Comment": "",
+            "DocumentName": "AWS-RunShellScript",
+            "DocumentVersion": "$DEFAULT",
+            "RequestedDateTime": "2026-05-30T15:56:45.105000-07:00",
+            "Status": "Failed",
+            "StatusDetails": "Undeliverable",
+            "StandardOutputUrl": "",
+            "StandardErrorUrl": "",
+            "CommandPlugins": [
+                {
+                    "Name": "aws:runShellScript",
+                    "Status": "Failed",
+                    "StatusDetails": "Undeliverable",
+                    "ResponseCode": -1,
+                    "Output": "",
+                    "StandardOutputUrl": "",
+                    "StandardErrorUrl": "",
+                    "OutputS3Region": "",
+                    "OutputS3BucketName": "",
+                    "OutputS3KeyPrefix": ""
+                }
+            ],
+            "ServiceRole": "",
+            "NotificationConfig": {
+                "NotificationArn": "",
+                "NotificationEvents": [],
+                "NotificationType": ""
+            },
+            "CloudWatchOutputConfig": {
+                "CloudWatchLogGroupName": "",
+                "CloudWatchOutputEnabled": false
+            }
+        },
+        {
+            "CommandId": "f273ff33-6b05-4ede-be4d-23b26671e4ed",
+            "InstanceId": "i-0056e46b981edbb17",
+            "InstanceName": "ip-10-42-1-192.us-west-2.compute.internal",
+            "Comment": "",
+            "DocumentName": "AWS-RunShellScript",
+            "DocumentVersion": "$DEFAULT",
+            "RequestedDateTime": "2026-05-30T15:55:41.689000-07:00",
+            "Status": "Failed",
+            "StatusDetails": "Undeliverable",
+            "StandardOutputUrl": "",
+            "StandardErrorUrl": "",
+            "CommandPlugins": [
+                {
+                    "Name": "aws:runShellScript",
+                    "Status": "Failed",
+                    "StatusDetails": "Undeliverable",
+                    "ResponseCode": -1,
+                    "Output": "",
+                    "StandardOutputUrl": "",
+                    "StandardErrorUrl": "",
+                    "OutputS3Region": "",
+                    "OutputS3BucketName": "",
+                    "OutputS3KeyPrefix": ""
+                }
+            ],
+            "ServiceRole": "",
+            "NotificationConfig": {
+                "NotificationArn": "",
+                "NotificationEvents": [],
+                "NotificationType": ""
+            },
+            "CloudWatchOutputConfig": {
+                "CloudWatchLogGroupName": "",
+                "CloudWatchOutputEnabled": false
+            }
+        }
+    ]
+}

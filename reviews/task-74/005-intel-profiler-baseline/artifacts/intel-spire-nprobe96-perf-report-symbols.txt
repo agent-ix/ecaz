@@ -1,0 +1,52 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 2K of event 'cpu-clock:u'
+# Event count (approx.): 29767676470
+#
+# Overhead  Symbol                                                                                                IPC   [IPC Coverage]
+# ........  ....................................................................................................  ....................
+#
+    75.06%  [.] ecaz::quant::prod::ProdQuantizer::score_ip_from_split_parts                                       -      -            
+     2.07%  [.] hash_search_with_hash_value                                                                       -      -            
+            |          
+            |--1.26%--0x1635e97
+            |          
+             --0.81%--0x7e9d8fcbc250
+
+     1.76%  [.] PageGetMaxOffsetNumber__pgrx_cshim                                                                -      -            
+            |          
+             --1.66%--0xf17ff8659350eb32
+                       0x6529aa2fd5d0
+                       0x60504030201fbfa
+
+     1.76%  [.] 0x00000000001a09f1                                                                                -      -            
+            |          
+             --1.66%--0x48d48378b48fb89
+
+     1.29%  [.] ecaz::am::ec_spire::storage::decode_leaf_v2_vec_id                                                -      -            
+            |          
+             --1.05%--0
+
+     1.26%  [.] ecaz::am::ec_spire::storage::SpireLeafPartitionObjectV2Segment::validate_against_meta             -      -            
+     1.12%  [.] 0x00000000001a0a29                                                                                -      -            
+            |          
+             --1.09%--0x48d48378b48fb89
+
+     1.02%  [.] ecaz::am::ec_spire::storage::SpireRoutingPartitionObject::decode                                  -      -            
+     1.02%  [.] 0x00000000001a0a33                                                                                -      -            
+            |          
+             --0.98%--0x48d48378b48fb89
+
+     0.85%  [.] ecaz::am::ec_spire::scan::collect_validated_quantized_leaf_route_candidates                       -      -            
+     0.78%  [.] malloc                                                                                            -      -            
+     0.75%  [.] randomize_mem                                                                                     -      -            
+     0.54%  [.] core::hash::BuildHasher::hash_one                                                                 -      -            
+     0.51%  [.] ecaz::am::ec_spire::scan::SpireScoredCandidateAccumulator::append                                 -      -            
+
+
+#
+# (Tip: To see callchains in a more compact form: perf report -g folded)
+#

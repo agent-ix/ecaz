@@ -1,0 +1,19 @@
+[loader] inspecting /var/tmp/ecaz-task107-phase2-rabitq-1m-l1/remote-node-2/task107_phase2_rabitq_1m_l1_node_2_corpus.tsv
+[loader] corpus: 504734 rows, sha256=b64dcb30320a0054fea30c25b1de5dfd6330af569173a8909414e66175206e7d  queries: skipped (--corpus-only)
+[loader] copied corpus table task107_phase2_rabitq_1m_l1_node_2_corpus in 162.76s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table task107_phase2_rabitq_1m_l1_node_2_corpus in 211.15s
+[loader] building task107_phase2_rabitq_1m_l1_remote_idx using ec_spire (reloptions=[local_store_count=1, storage_format=rabitq]) ...
+[loader] built task107_phase2_rabitq_1m_l1_remote_idx in 1003.53s
+┌─────────┬─────────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                               │
+╞═════════╪═════════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_spire                                                                            │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ task107_phase2_rabitq_1m_l1_node_2_corpus (504734 rows)                             │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ skipped (--corpus-only)                                                             │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ task107_phase2_rabitq_1m_l1_remote_idx [local_store_count=1, storage_format=rabitq] │
+└─────────┴─────────────────────────────────────────────────────────────────────────────────────┘
+[loader] completed prefix task107_phase2_rabitq_1m_l1_node_2 in 1442.10s

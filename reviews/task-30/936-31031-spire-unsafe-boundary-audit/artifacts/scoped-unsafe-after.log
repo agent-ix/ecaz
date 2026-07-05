@@ -1,0 +1,258 @@
+Script started on 2026-05-13 20:22:34-07:00 [<not executed on terminal>]
+src/am/ec_spire/update/types.rs
+363:        unsafe { self.insert_routing_object(epoch, object) }
+374:        unsafe {
+
+src/am/ec_spire/update/materialization.rs
+275:pub(super) unsafe fn fetch_split_replacement_source_vectors(
+289:            let Some(source_vector) = unsafe {
+
+src/am/ec_spire/update/routing.rs
+538:pub(super) unsafe fn build_relation_selected_scheduled_split_replacement_execution_input_from_heap_sources(
+557:    let fetched_sources = unsafe {
+
+src/am/ec_spire/dml_frontdoor/mod.rs
+198:    Option<unsafe extern "C-unwind" fn(arg: pg_sys::Datum, relid: pg_sys::Oid)>;
+200:unsafe extern "C" {
+208:pub(crate) unsafe fn register_dml_frontdoor_planner_hook() {
+209:    unsafe {
+219:unsafe fn dml_frontdoor_register_relcache_callback() {
+220:    unsafe {
+231:unsafe extern "C-unwind" fn dml_frontdoor_relation_context_relcache_callback(
+263:    let callback_registered = unsafe { RELATION_CONTEXT_RELCACHE_CALLBACK_REGISTERED };
+284:    let (installed, classifier_invoked, last_supported, last_kind, last_status, last_action) = unsafe {
+370:pub(crate) unsafe fn dml_frontdoor_relation_context_catalog_row(
+373:    unsafe { dml_frontdoor_register_relcache_callback() };
+391:    let heap_relation = unsafe {
+401:    let result = unsafe {
+421:    unsafe { pg_sys::table_close(heap_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+426:unsafe extern "C-unwind" fn ec_spire_dml_frontdoor_planner_hook(
+434:    let decision = unsafe { dml_frontdoor_observe_planner_query(parse) };
+435:    let plan_expr = unsafe { dml_frontdoor_plan_tree_replacement_expr(parse, decision.as_ref()) };
+436:    let planned_stmt = if let Some(previous_hook) = unsafe { PREVIOUS_PLANNER_HOOK } {
+437:        unsafe { previous_hook(parse, query_string, cursor_options, bound_params) }
+439:        unsafe { pg_sys::standard_planner(parse, query_string, cursor_options, bound_params) }
+441:    unsafe { dml_frontdoor_maybe_replace_plan_tree(planned_stmt, plan_expr) }
+444:unsafe fn dml_frontdoor_plan_tree_replacement_expr(
+448:    unsafe {
+463:unsafe fn dml_frontdoor_maybe_replace_plan_tree(
+467:    unsafe {
+493:unsafe fn dml_frontdoor_observe_planner_query(
+496:    let Some(decision) = (unsafe { dml_frontdoor_replacement_decision_catalog_row(query) }) else {
+500:    unsafe {
+556:pub(crate) unsafe fn dml_frontdoor_replacement_decision_catalog_row(
+559:    let target_relation_oid = unsafe { dml_frontdoor_target_relation_oid(query)? };
+560:    let relation = match unsafe { dml_frontdoor_relation_context_catalog_row(target_relation_oid) }
+585:    let detail = unsafe { dml_frontdoor_query_detail_with_relation(query, &relation)? };
+593:pub(crate) unsafe fn dml_frontdoor_primitive_plan_expr_catalog_row(
+596:    let target_relation_oid = unsafe { dml_frontdoor_target_relation_oid(query)? };
+597:    let relation = match unsafe { dml_frontdoor_relation_context_catalog_row(target_relation_oid) }
+607:    let detail = unsafe { dml_frontdoor_query_detail_with_relation(query, &relation)? };
+628:pub(crate) unsafe fn dml_frontdoor_primitive_plan_expr_from_baserel(
+632:    unsafe {
+689:pub(crate) unsafe fn dml_frontdoor_pk_select_primitive_plan_expr_from_baserel(
+693:    unsafe {
+705:pub(crate) unsafe fn dml_frontdoor_update_primitive_plan_expr_from_baserel(
+709:    unsafe {
+721:pub(crate) unsafe fn dml_frontdoor_delete_primitive_plan_expr_from_baserel(
+725:    unsafe {
+873:pub(crate) unsafe fn dml_frontdoor_primitive_plan_pk_value_bytes(
+882:            let value = unsafe { dml_frontdoor_bound_param_bigint_value(params, param_id)? };
+888:pub(crate) unsafe fn dml_frontdoor_primitive_invocation_from_plan(
+892:    let pk_value = unsafe { dml_frontdoor_primitive_plan_pk_value_bytes(plan, params)? };
+907:unsafe fn dml_frontdoor_bound_param_bigint_value(
+921:    let params_ref = unsafe { &*params };
+932:        unsafe { fetch(params, param_id, false, &mut workspace) }
+934:        unsafe { params_ref.params.as_ptr().add((param_id - 1) as usize) }
+941:    let param_ref = unsafe { &*param };
+947:    unsafe { dml_frontdoor_param_datum_to_bigint(param_id, param_ref.value, param_ref.ptype) }
+950:unsafe fn dml_frontdoor_param_datum_to_bigint(
+956:        pg_sys::INT2OID => Ok(i64::from(unsafe { pg_sys::DatumGetInt16(datum) })),
+957:        pg_sys::INT4OID => Ok(i64::from(unsafe { pg_sys::DatumGetInt32(datum) })),
+958:        pg_sys::INT8OID => Ok(unsafe { pg_sys::DatumGetInt64(datum) }),
+999:unsafe fn dml_frontdoor_classify_query_with_catalog_context(
+1002:    let target_relation_oid = unsafe { dml_frontdoor_target_relation_oid(query)? };
+1003:    let relation = match unsafe { dml_frontdoor_relation_context_catalog_row(target_relation_oid) }
+1017:    unsafe { dml_frontdoor_classify_query_with_relation(query, &relation) }
+1020:unsafe fn dml_frontdoor_classify_query_with_relation(
+1024:    let detail = unsafe { dml_frontdoor_query_detail_with_relation(query, relation)? };
+1045:unsafe fn dml_frontdoor_query_detail_with_relation(
+1049:    let query_ref = unsafe { query.as_ref()? };
+1068:    let shape = unsafe { classify_dml_frontdoor_query(query, query_context)? };
+1073:        SpireDmlFrontdoorOperation::PkSelect => unsafe {
+1078:        unsafe { dml_frontdoor_pk_predicate(query_ref, target_rtindex, &query_context) };
+1080:        unsafe { dml_frontdoor_target_column_exprs(query_ref.targetList, &query_context) }
+1093:        unsafe { dml_frontdoor_target_columns(query_ref.targetList, &query_context) }
+1129:unsafe fn dml_frontdoor_query_detail_from_baserel(
+1136:    let query_ref = unsafe { query.as_ref()? };
+1159:    let predicate = unsafe {
+1168:        unsafe { dml_frontdoor_target_column_exprs(query_ref.targetList, &query_context) }
+1181:        unsafe { dml_frontdoor_target_columns(query_ref.targetList, &query_context) }
+1193:    let has_join = unsafe { dml_frontdoor_query_has_join_shape(query_ref, operation) };
+1282:unsafe fn dml_frontdoor_relation_context_catalog_for_open_heap(
+1285:    let heap_relation_oid = unsafe { (*heap_relation).rd_id };
+1286:    let column_names = unsafe { dml_frontdoor_relation_column_names_from_rel(heap_relation)? };
+1288:        unsafe { dml_frontdoor_catalog_index_and_pk(heap_relation)? };
+1293:        unsafe { dml_frontdoor_index_key_column_names_from_rel(index_oid, heap_relation)? }
+1335:unsafe fn dml_frontdoor_catalog_index_and_pk(
+1345:    let ec_spire_am_oid = unsafe { pg_sys::get_index_am_oid(EC_SPIRE_AM_NAME.as_ptr(), true) };
+1349:        unsafe { PgList::<pg_sys::Oid>::from_pg(pg_sys::RelationGetIndexList(heap_relation)) };
+1358:            unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+1362:        let index_form = unsafe { (*index_relation).rd_index.as_ref() };
+1363:        let class_form = unsafe { (*index_relation).rd_rel.as_ref() };
+1376:                primary_key = unsafe {
+1381:        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+1393:unsafe fn dml_frontdoor_primary_key_column_from_index(
+1400:    let attnum = unsafe { *index_form.indkey.values.as_ptr() };
+1405:        (unsafe { dml_frontdoor_relation_attr_name_and_form(heap_relation, attnum)? })
+1414:        column_type: unsafe { dml_frontdoor_format_type_name(attr.atttypid)? },
+1418:unsafe fn dml_frontdoor_relation_column_names_from_rel(
+1421:    let tuple_desc = unsafe { (*heap_relation).rd_att };
+1425:    let natts = unsafe { (*tuple_desc).natts };
+1428:        let attr = unsafe { pg_sys::TupleDescAttr(tuple_desc, attr_index) };
+1429:        if attr.is_null() || unsafe { (*attr).attisdropped } {
+1432:        let attnum = unsafe { (*attr).attnum };
+1436:        let name = unsafe { dml_frontdoor_attr_name(attr)? };
+1442:unsafe fn dml_frontdoor_index_key_column_names_from_rel(
+1447:        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+1451:    let result = unsafe {
+1474:    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+1478:unsafe fn dml_frontdoor_relation_attr_name_and_form(
+1482:    let tuple_desc = unsafe { (*heap_relation).rd_att };
+1483:    if tuple_desc.is_null() || attnum <= 0 || i32::from(attnum) > unsafe { (*tuple_desc).natts } {
+1486:    let attr = unsafe { pg_sys::TupleDescAttr(tuple_desc, i32::from(attnum - 1)) };
+1487:    if attr.is_null() || unsafe { (*attr).attisdropped } {
+1490:    Ok(Some((unsafe { dml_frontdoor_attr_name(attr)? }, unsafe {
+1495:unsafe fn dml_frontdoor_attr_name(
+1498:    unsafe { CStr::from_ptr((*attr).attname.data.as_ptr()) }
+1504:unsafe fn dml_frontdoor_format_type_name(type_oid: pg_sys::Oid) -> Result<String, String> {
+1505:    let type_name = unsafe { pg_sys::format_type_be(type_oid) };
+1509:    let decoded = unsafe { CStr::from_ptr(type_name) }
+1513:    unsafe { pg_sys::pfree(type_name.cast()) };
+1777:pub(crate) unsafe fn classify_dml_frontdoor_query(
+1784:    let query_ref = unsafe { query.as_ref()? };
+1793:            unsafe { single_range_table_ref(query_ref) }.unwrap_or_default()
+1796:    let has_join = unsafe { dml_frontdoor_query_has_join_shape(query_ref, operation) };
+1797:    let predicate = unsafe { dml_frontdoor_pk_predicate(query_ref, target_rtindex, &context) };
+1799:        unsafe { dml_frontdoor_target_columns(query_ref.targetList, &context) }
+1804:        unsafe { dml_frontdoor_target_columns(query_ref.targetList, &context) }
+1834:pub(crate) unsafe fn dml_frontdoor_target_relation_oid(
+1840:    let query_ref = unsafe { query.as_ref()? };
+1846:        SpireDmlFrontdoorOperation::PkSelect => unsafe { single_range_table_ref(query_ref)? },
+1848:    unsafe { dml_frontdoor_relation_oid_from_rtable(query_ref, target_rtindex) }
+1860:unsafe fn dml_frontdoor_query_has_join_shape(
+1868:        SpireDmlFrontdoorOperation::PkSelect => unsafe { single_range_table_ref(query).is_none() },
+1869:        SpireDmlFrontdoorOperation::Update | SpireDmlFrontdoorOperation::Delete => unsafe {
+1875:unsafe fn dml_frontdoor_dml_has_extra_from_shape(query: &pg_sys::Query) -> bool {
+1876:    let Some(jointree) = (unsafe { query.jointree.as_ref() }) else {
+1882:    let fromlist = unsafe { PgList::<pg_sys::Node>::from_pg(jointree.fromlist) };
+1892:    if from_node.is_null() || unsafe { (*from_node).type_ } != pg_sys::NodeTag::T_RangeTblRef {
+1896:    unsafe { (*range_table_ref).rtindex != query.resultRelation }
+1907:unsafe fn single_range_table_ref(query: &pg_sys::Query) -> Option<i32> {
+1908:    let jointree = unsafe { query.jointree.as_ref()? };
+1912:    let fromlist = unsafe { PgList::<pg_sys::Node>::from_pg(jointree.fromlist) };
+1917:    if from_node.is_null() || unsafe { (*from_node).type_ } != pg_sys::NodeTag::T_RangeTblRef {
+1921:    Some(unsafe { (*range_table_ref).rtindex })
+1924:unsafe fn dml_frontdoor_relation_oid_from_rtable(
+1931:    let rtable = unsafe { PgList::<pg_sys::RangeTblEntry>::from_pg(query.rtable) };
+1933:    let rte = unsafe { rte.as_ref()? };
+1940:unsafe fn dml_frontdoor_pk_predicate(
+1945:    let Some(jointree) = (unsafe { query.jointree.as_ref() }) else {
+1949:    unsafe { dml_frontdoor_pk_predicate_from_clause(qual.cast(), target_rtindex, context) }
+1953:unsafe fn dml_frontdoor_pk_predicate_from_baserestrictinfo(
+1961:    let restrict_infos = unsafe { PgList::<pg_sys::RestrictInfo>::from_pg(baserestrictinfo) };
+1963:        let Some(restrict_info) = (unsafe { restrict_info.as_ref() }) else {
+1966:        if let Some(predicate) = unsafe {
+1975:unsafe fn dml_frontdoor_pk_predicate_from_clause(
+1983:    if unsafe { (*clause.cast::<pg_sys::Node>()).type_ } != pg_sys::NodeTag::T_OpExpr {
+1984:        if unsafe {
+1998:        if dml_frontdoor_bigint_equality_opcode(unsafe { pg_sys::get_opcode((*op_expr).opno) }) {
+2003:    let args = unsafe { PgList::<pg_sys::Expr>::from_pg((*op_expr).args) };
+2017:                unsafe { dml_frontdoor_predicate_var_column(left, target_rtindex, context) }
+2022:                    value: unsafe { dml_frontdoor_predicate_value(right) },
+2027:                unsafe { dml_frontdoor_predicate_var_column(right, target_rtindex, context) }
+2032:                    value: unsafe { dml_frontdoor_predicate_value(left) },
+2052:unsafe fn dml_frontdoor_predicate_var_column(
+2057:    if let Some(column) = unsafe { dml_frontdoor_var_column(expr, target_rtindex, context) } {
+2063:    match unsafe { (*expr.cast::<pg_sys::Node>()).type_ } {
+2066:            unsafe { dml_frontdoor_predicate_var_column((*relabel).arg, target_rtindex, context) }
+2070:            unsafe { dml_frontdoor_predicate_var_column((*coerce).arg, target_rtindex, context) }
+2074:            unsafe {
+2086:unsafe fn dml_frontdoor_single_predicate_var_column(
+2094:    let exprs = unsafe { PgList::<pg_sys::Expr>::from_pg(exprs) };
+2099:    unsafe { dml_frontdoor_predicate_var_column(expr, target_rtindex, context) }
+2102:unsafe fn dml_frontdoor_expr_references_column(
+2111:    match unsafe { (*expr.cast::<pg_sys::Node>()).type_ } {
+2112:        pg_sys::NodeTag::T_Var => unsafe {
+2117:            unsafe {
+2128:            unsafe {
+2139:            unsafe {
+2150:            unsafe {
+2161:            unsafe {
+2172:            unsafe {
+2185:unsafe fn dml_frontdoor_expr_list_references_column(
+2194:    let exprs = unsafe { PgList::<pg_sys::Expr>::from_pg(exprs) };
+2195:    let references_column = exprs.iter_ptr().any(|expr| unsafe {
+2217:unsafe fn dml_frontdoor_var_column(
+2222:    if expr.is_null() || unsafe { (*expr.cast::<pg_sys::Node>()).type_ } != pg_sys::NodeTag::T_Var {
+2225:    let var = unsafe { &*expr.cast::<pg_sys::Var>() };
+2235:unsafe fn dml_frontdoor_value_kind(expr: *mut pg_sys::Expr) -> SpireDmlFrontdoorValueKind {
+2236:    unsafe { dml_frontdoor_predicate_value(expr).kind }
+2239:unsafe fn dml_frontdoor_predicate_value(
+2242:    unsafe { dml_frontdoor_predicate_value_inner(expr, 0) }
+2245:unsafe fn dml_frontdoor_predicate_value_inner(
+2255:    match unsafe { (*expr.cast::<pg_sys::Node>()).type_ } {
+2257:            let const_expr = unsafe { &*expr.cast::<pg_sys::Const>() };
+2263:                    const_bigint: unsafe { dml_frontdoor_const_bigint_value(const_expr) },
+2271:            let param = unsafe { &*expr.cast::<pg_sys::Param>() };
+2283:            let func_expr = unsafe { &*expr.cast::<pg_sys::FuncExpr>() };
+2287:            unsafe { dml_frontdoor_single_coerced_arg_value(func_expr.args, wrapper_depth) }
+2290:            let relabel = unsafe { &*expr.cast::<pg_sys::RelabelType>() };
+2294:            unsafe { dml_frontdoor_coercible_integer_value(relabel.arg, wrapper_depth) }
+2297:            let coerce = unsafe { &*expr.cast::<pg_sys::CoerceViaIO>() };
+2301:            unsafe { dml_frontdoor_coercible_integer_value(coerce.arg, wrapper_depth) }
+2307:unsafe fn dml_frontdoor_single_coerced_arg_value(
+2311:    let Some(arg) = (unsafe { dml_frontdoor_single_list_expr_arg(args) }) else {
+2314:    unsafe { dml_frontdoor_coercible_integer_value(arg, wrapper_depth) }
+2317:unsafe fn dml_frontdoor_single_list_expr_arg(args: *mut pg_sys::List) -> Option<*mut pg_sys::Expr> {
+2318:    let args = unsafe { args.as_ref()? };
+2324:    Some(unsafe { (*args.elements).ptr_value }.cast::<pg_sys::Expr>())
+2327:unsafe fn dml_frontdoor_coercible_integer_value(
+2334:    match unsafe { (*expr.cast::<pg_sys::Node>()).type_ } {
+2336:            let const_expr = unsafe { &*expr.cast::<pg_sys::Const>() };
+2342:                    const_bigint: unsafe { dml_frontdoor_const_bigint_value(const_expr) },
+2350:            let param = unsafe { &*expr.cast::<pg_sys::Param>() };
+2361:        _ => unsafe { dml_frontdoor_predicate_value_inner(expr, wrapper_depth + 1) },
+2373:unsafe fn dml_frontdoor_const_bigint_value(const_expr: &pg_sys::Const) -> Option<i64> {
+2374:    unsafe {
+2410:unsafe fn dml_frontdoor_target_columns(
+2414:    unsafe {
+2422:unsafe fn dml_frontdoor_target_column_exprs(
+2429:    let targets = unsafe { PgList::<pg_sys::TargetEntry>::from_pg(target_list) };
+2432:        let Some(target_entry) = (unsafe { target_entry.as_ref() }) else {
+2447:            if let Ok(column) = unsafe { CStr::from_ptr(target_entry.resname) }.to_str() {
+
+src/am/ec_spire/dml_frontdoor/tests.rs
+209:            unsafe {
+219:            unsafe {
+231:            unsafe {
+257:            unsafe {
+267:            unsafe {
+308:            unsafe {
+320:            unsafe {
+
+src/am/ec_spire/update/publish/relation.rs
+1:pub(super) unsafe fn publish_relation_scheduled_replacement_epoch(
+48:        unsafe { write_placement_entries_to_relation(index_relation, &placement_directory)? };
+64:    let root_control = unsafe { page::read_root_control_page(index_relation) };
+72:        unsafe { load_relation_local_store_config(index_relation, root_control)? };
+73:    unsafe {
+83:pub(super) unsafe fn publish_relation_selected_scheduled_replacement_epoch(
+97:    unsafe {
+111:pub(super) unsafe fn publish_relation_replacement_epoch_from_object_placements(
+133:        unsafe { write_placement_entries_to_relation(index_relation, &placement_directory)? };
+144:    let root_control = unsafe { page::read_root_control_page(index_relation) };
+152:        unsafe { load_relation_local_store_config(index_relation, root_control)? };
+153:    unsafe {
+
+Script done on 2026-05-13 20:22:34-07:00 [COMMAND_EXIT_CODE="0"]

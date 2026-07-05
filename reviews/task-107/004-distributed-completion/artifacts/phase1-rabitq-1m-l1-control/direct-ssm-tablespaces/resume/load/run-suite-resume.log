@@ -1,0 +1,127 @@
+[suite:task107-phase1-rabitq-1m-l1-control-node] wrote /var/tmp/ecaz-task107-phase1-rabitq-1m-l1/bench/suite-manifest-node.json
+[suite:task107-phase1-rabitq-1m-l1-control-node] wrote /var/tmp/ecaz-task107-phase1-rabitq-1m-l1/bench/suite-manifest-node.json
+[suite:task107-phase1-rabitq-1m-l1-control-node] 13a3a-recall-k10 -> --database postgres --host 127.0.0.1 --port 5432 --user ecaz_coord bench recall --prefix task107_phase1_rabitq_1m_l1 --profile ec_spire --k 10 --sweep "8,16,24,32,64" --queries-limit 100 --bits 4 --seed 42 --truth-cache-file /var/tmp/ecaz-task107-phase1-rabitq-1m-l1/bench/truth-cache/13a3a-recall-k10.json --truth-corpus-file /var/tmp/ecaz-task107-phase1-rabitq-1m-l1/ec_real_ann_benchmarks_anchor_corpus.tsv --log-output /var/tmp/ecaz-task107-phase1-rabitq-1m-l1/bench/13a3a-recall-k10.log
+[suite:task107-phase1-rabitq-1m-l1-control-node] wrote /var/tmp/ecaz-task107-phase1-rabitq-1m-l1/bench/suite-manifest-node.json
+┌────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ nprobe ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 8      ┆ 100     ┆ 1000          ┆ 0.8110   ┆ 0.7856          ┆ 0.8341           ┆ 0.4000     ┆ 0.9000     ┆ 1.0000     ┆ 0.0000       ┆ 0.9849 ┆ 193.81 ms   │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 16     ┆ 100     ┆ 1000          ┆ 0.8820   ┆ 0.8605          ┆ 0.9005           ┆ 0.5900     ┆ 1.0000     ┆ 1.0000     ┆ 0.3000       ┆ 0.9919 ┆ 331.68 ms   │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 24     ┆ 100     ┆ 1000          ┆ 0.9060   ┆ 0.8863          ┆ 0.9226           ┆ 0.7000     ┆ 1.0000     ┆ 1.0000     ┆ 0.3000       ┆ 0.9937 ┆ 477.22 ms   │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 32     ┆ 100     ┆ 1000          ┆ 0.9340   ┆ 0.9169          ┆ 0.9478           ┆ 0.8000     ┆ 1.0000     ┆ 1.0000     ┆ 0.4000       ┆ 0.9957 ┆ 613.93 ms   │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 64     ┆ 100     ┆ 1000          ┆ 0.9690   ┆ 0.9563          ┆ 0.9781           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.7000       ┆ 0.9976 ┆ 1159.29 ms  │
+└────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from task107_phase1_rabitq_1m_l1_queries ...
+[recall] loading truth corpus from /var/tmp/ecaz-task107-phase1-rabitq-1m-l1/ec_real_ann_benchmarks_anchor_corpus.tsv ...
+[recall] computing ground truth: 100 queries vs 990000 corpus rows (dim=1536) ...
+[recall] ground truth in 5.14s
+[recall] wrote ground truth cache /var/tmp/ecaz-task107-phase1-rabitq-1m-l1/bench/truth-cache/13a3a-recall-k10.json
+[suite:task107-phase1-rabitq-1m-l1-control-node] wrote /var/tmp/ecaz-task107-phase1-rabitq-1m-l1/bench/suite-manifest-node.json
+[suite:task107-phase1-rabitq-1m-l1-control-node] 13a3a-recall-k100 -> --database postgres --host 127.0.0.1 --port 5432 --user ecaz_coord bench recall --prefix task107_phase1_rabitq_1m_l1 --profile ec_spire --k 100 --sweep "8,16,24,32,64" --queries-limit 100 --bits 4 --seed 42 --truth-cache-file /var/tmp/ecaz-task107-phase1-rabitq-1m-l1/bench/truth-cache/13a3a-recall-k100.json --truth-corpus-file /var/tmp/ecaz-task107-phase1-rabitq-1m-l1/ec_real_ann_benchmarks_anchor_corpus.tsv --log-output /var/tmp/ecaz-task107-phase1-rabitq-1m-l1/bench/13a3a-recall-k100.log
+[suite:task107-phase1-rabitq-1m-l1-control-node] wrote /var/tmp/ecaz-task107-phase1-rabitq-1m-l1/bench/suite-manifest-node.json
+┌────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ nprobe ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 8      ┆ 100     ┆ 10000         ┆ 0.7626   ┆ 0.7542          ┆ 0.7708           ┆ 0.4490     ┆ 0.8350     ┆ 0.9910     ┆ 0.2000       ┆ 0.9781 ┆ 190.65 ms   │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 16     ┆ 100     ┆ 10000         ┆ 0.8425   ┆ 0.8352          ┆ 0.8495           ┆ 0.5790     ┆ 0.9100     ┆ 1.0000     ┆ 0.2500       ┆ 0.9873 ┆ 325.85 ms   │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 24     ┆ 100     ┆ 10000         ┆ 0.8763   ┆ 0.8697          ┆ 0.8826           ┆ 0.6700     ┆ 0.9400     ┆ 1.0000     ┆ 0.2700       ┆ 0.9906 ┆ 472.49 ms   │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 32     ┆ 100     ┆ 10000         ┆ 0.8988   ┆ 0.8927          ┆ 0.9046           ┆ 0.7100     ┆ 0.9600     ┆ 1.0000     ┆ 0.3700       ┆ 0.9929 ┆ 602.68 ms   │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 64     ┆ 100     ┆ 10000         ┆ 0.9375   ┆ 0.9326          ┆ 0.9421           ┆ 0.8280     ┆ 0.9700     ┆ 1.0000     ┆ 0.6000       ┆ 0.9960 ┆ 1208.66 ms  │
+└────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from task107_phase1_rabitq_1m_l1_queries ...
+[recall] loading truth corpus from /var/tmp/ecaz-task107-phase1-rabitq-1m-l1/ec_real_ann_benchmarks_anchor_corpus.tsv ...
+[recall] computing ground truth: 100 queries vs 990000 corpus rows (dim=1536) ...
+[recall] ground truth in 5.14s
+[recall] wrote ground truth cache /var/tmp/ecaz-task107-phase1-rabitq-1m-l1/bench/truth-cache/13a3a-recall-k100.json
+[suite:task107-phase1-rabitq-1m-l1-control-node] wrote /var/tmp/ecaz-task107-phase1-rabitq-1m-l1/bench/suite-manifest-node.json
+[suite:task107-phase1-rabitq-1m-l1-control-node] 13a3a-latency-k10-c1 -> --database postgres --host 127.0.0.1 --port 5432 --user ecaz_coord bench latency --prefix task107_phase1_rabitq_1m_l1 --profile ec_spire --k 10 --concurrency 1 --iterations 50 --sweep "8,16,24,32" --bits 4 --seed 42 --sample-backend-memory --memory-sample-interval-ms 25 --log-output /var/tmp/ecaz-task107-phase1-rabitq-1m-l1/bench/13a3a-latency-k10-c1.log
+[suite:task107-phase1-rabitq-1m-l1-control-node] wrote /var/tmp/ecaz-task107-phase1-rabitq-1m-l1/bench/suite-manifest-node.json
+┌────────┬───────┬──────────┬──────────┬──────────┬──────────┬──────────┬──────────┬──────────┬─────────────┬─────────────┬─────────────┬────────────────┐
+│ nprobe ┆ count ┆ mean     ┆ stddev   ┆ min      ┆ p50      ┆ p95      ┆ p99      ┆ max      ┆ cache_state ┆ rss_peak_kb ┆ hwm_peak_kb ┆ memory_samples │
+╞════════╪═══════╪══════════╪══════════╪══════════╪══════════╪══════════╪══════════╪══════════╪═════════════╪═════════════╪═════════════╪════════════════╡
+│ 8      ┆ 50    ┆ 187.9 ms ┆ 48.8 ms  ┆ 101.0 ms ┆ 179.0 ms ┆ 274.8 ms ┆ 347.1 ms ┆ 362.9 ms ┆ unspecified ┆ 10923140    ┆ 10923140    ┆ 361            │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 16     ┆ 50    ┆ 336.2 ms ┆ 76.1 ms  ┆ 204.7 ms ┆ 325.4 ms ┆ 494.6 ms ┆ 544.0 ms ┆ 551.9 ms ┆ unspecified ┆ 13521372    ┆ 13521372    ┆ 645            │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 24     ┆ 50    ┆ 487.4 ms ┆ 99.4 ms  ┆ 284.4 ms ┆ 482.6 ms ┆ 650.2 ms ┆ 716.2 ms ┆ 719.3 ms ┆ unspecified ┆ 15173640    ┆ 15173640    ┆ 935            │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 32     ┆ 50    ┆ 620.9 ms ┆ 102.8 ms ┆ 382.5 ms ┆ 622.6 ms ┆ 800.8 ms ┆ 839.8 ms ┆ 840.9 ms ┆ unspecified ┆ 15848468    ┆ 15848468    ┆ 1191           │
+└────────┴───────┴──────────┴──────────┴──────────┴──────────┴──────────┴──────────┴──────────┴─────────────┴─────────────┴─────────────┴────────────────┘
+[suite:task107-phase1-rabitq-1m-l1-control-node] wrote /var/tmp/ecaz-task107-phase1-rabitq-1m-l1/bench/suite-manifest-node.json
+[suite:task107-phase1-rabitq-1m-l1-control-node] 13a3a-latency-k10-c4 -> --database postgres --host 127.0.0.1 --port 5432 --user ecaz_coord bench latency --prefix task107_phase1_rabitq_1m_l1 --profile ec_spire --k 10 --concurrency 4 --iterations 50 --sweep "8,16,24,32" --bits 4 --seed 42 --sample-backend-memory --memory-sample-interval-ms 25 --log-output /var/tmp/ecaz-task107-phase1-rabitq-1m-l1/bench/13a3a-latency-k10-c4.log
+[suite:task107-phase1-rabitq-1m-l1-control-node] wrote /var/tmp/ecaz-task107-phase1-rabitq-1m-l1/bench/suite-manifest-node.json
+┌────────┬───────┬──────────┬──────────┬──────────┬──────────┬──────────┬──────────┬──────────┬─────────────┬─────────────┬─────────────┬────────────────┐
+│ nprobe ┆ count ┆ mean     ┆ stddev   ┆ min      ┆ p50      ┆ p95      ┆ p99      ┆ max      ┆ cache_state ┆ rss_peak_kb ┆ hwm_peak_kb ┆ memory_samples │
+╞════════╪═══════╪══════════╪══════════╪══════════╪══════════╪══════════╪══════════╪══════════╪═════════════╪═════════════╪═════════════╪════════════════╡
+│ 8      ┆ 50    ┆ 211.4 ms ┆ 54.5 ms  ┆ 117.1 ms ┆ 201.5 ms ┆ 309.9 ms ┆ 377.8 ms ┆ 403.4 ms ┆ unspecified ┆ 6740820     ┆ 6740820     ┆ 407            │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 16     ┆ 50    ┆ 382.6 ms ┆ 85.5 ms  ┆ 236.7 ms ┆ 371.5 ms ┆ 538.2 ms ┆ 612.4 ms ┆ 624.2 ms ┆ unspecified ┆ 9501848     ┆ 9501848     ┆ 735            │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 24     ┆ 50    ┆ 541.4 ms ┆ 117.1 ms ┆ 308.0 ms ┆ 532.8 ms ┆ 722.1 ms ┆ 787.5 ms ┆ 812.1 ms ┆ unspecified ┆ 11592144    ┆ 11592144    ┆ 1038           │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 32     ┆ 50    ┆ 678.5 ms ┆ 109.5 ms ┆ 428.9 ms ┆ 674.5 ms ┆ 845.7 ms ┆ 899.3 ms ┆ 902.7 ms ┆ unspecified ┆ 13278496    ┆ 13278496    ┆ 1302           │
+└────────┴───────┴──────────┴──────────┴──────────┴──────────┴──────────┴──────────┴──────────┴─────────────┴─────────────┴─────────────┴────────────────┘
+[suite:task107-phase1-rabitq-1m-l1-control-node] wrote /var/tmp/ecaz-task107-phase1-rabitq-1m-l1/bench/suite-manifest-node.json
+[suite:task107-phase1-rabitq-1m-l1-control-node] 13a3a-latency-k10-c8 -> --database postgres --host 127.0.0.1 --port 5432 --user ecaz_coord bench latency --prefix task107_phase1_rabitq_1m_l1 --profile ec_spire --k 10 --concurrency 8 --iterations 50 --sweep "8,16,24,32" --bits 4 --seed 42 --sample-backend-memory --memory-sample-interval-ms 25 --log-output /var/tmp/ecaz-task107-phase1-rabitq-1m-l1/bench/13a3a-latency-k10-c8.log
+[suite:task107-phase1-rabitq-1m-l1-control-node] wrote /var/tmp/ecaz-task107-phase1-rabitq-1m-l1/bench/suite-manifest-node.json
+┌────────┬───────┬──────────┬──────────┬──────────┬──────────┬──────────┬──────────┬──────────┬─────────────┬─────────────┬─────────────┬────────────────┐
+│ nprobe ┆ count ┆ mean     ┆ stddev   ┆ min      ┆ p50      ┆ p95      ┆ p99      ┆ max      ┆ cache_state ┆ rss_peak_kb ┆ hwm_peak_kb ┆ memory_samples │
+╞════════╪═══════╪══════════╪══════════╪══════════╪══════════╪══════════╪══════════╪══════════╪═════════════╪═════════════╪═════════════╪════════════════╡
+│ 8      ┆ 50    ┆ 230.3 ms ┆ 57.1 ms  ┆ 124.4 ms ┆ 222.1 ms ┆ 337.1 ms ┆ 395.9 ms ┆ 426.5 ms ┆ unspecified ┆ 5244856     ┆ 5244856     ┆ 445            │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 16     ┆ 50    ┆ 404.3 ms ┆ 89.8 ms  ┆ 246.6 ms ┆ 392.8 ms ┆ 550.8 ms ┆ 629.3 ms ┆ 649.1 ms ┆ unspecified ┆ 7353820     ┆ 7353820     ┆ 779            │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 24     ┆ 50    ┆ 575.3 ms ┆ 119.8 ms ┆ 333.6 ms ┆ 576.6 ms ┆ 767.8 ms ┆ 808.5 ms ┆ 830.9 ms ┆ unspecified ┆ 9082672     ┆ 9082672     ┆ 1106           │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 32     ┆ 50    ┆ 721.7 ms ┆ 117.6 ms ┆ 449.7 ms ┆ 711.1 ms ┆ 910.2 ms ┆ 946.0 ms ┆ 952.7 ms ┆ unspecified ┆ 10157124    ┆ 10157124    ┆ 1386           │
+└────────┴───────┴──────────┴──────────┴──────────┴──────────┴──────────┴──────────┴──────────┴─────────────┴─────────────┴─────────────┴────────────────┘
+[suite:task107-phase1-rabitq-1m-l1-control-node] wrote /var/tmp/ecaz-task107-phase1-rabitq-1m-l1/bench/suite-manifest-node.json
+[suite:task107-phase1-rabitq-1m-l1-control-node] 13a3f-pk-c32 -> --database postgres --host 127.0.0.1 --port 5432 --user ecaz_coord bench latency --prefix task107_phase1_rabitq_1m_l1 --profile ec_spire --k 1 --concurrency 32 --iterations 250 --sweep 32 --bits 4 --seed 42 --sample-backend-memory --memory-sample-interval-ms 25 --log-output /var/tmp/ecaz-task107-phase1-rabitq-1m-l1/bench/13a3f-pk-c32.log
+[suite:task107-phase1-rabitq-1m-l1-control-node] wrote /var/tmp/ecaz-task107-phase1-rabitq-1m-l1/bench/suite-manifest-node.json
+┌────────┬───────┬───────────┬──────────┬──────────┬───────────┬───────────┬───────────┬───────────┬─────────────┬─────────────┬─────────────┬────────────────┐
+│ nprobe ┆ count ┆ mean      ┆ stddev   ┆ min      ┆ p50       ┆ p95       ┆ p99       ┆ max       ┆ cache_state ┆ rss_peak_kb ┆ hwm_peak_kb ┆ memory_samples │
+╞════════╪═══════╪═══════════╪══════════╪══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═════════════╪═════════════╪═════════════╪════════════════╡
+│ 32     ┆ 250   ┆ 1505.3 ms ┆ 374.5 ms ┆ 473.9 ms ┆ 1482.1 ms ┆ 2147.7 ms ┆ 2618.6 ms ┆ 2942.0 ms ┆ unspecified ┆ 12281568    ┆ 12281568    ┆ 14354          │
+└────────┴───────┴───────────┴──────────┴──────────┴───────────┴───────────┴───────────┴───────────┴─────────────┴─────────────┴─────────────┴────────────────┘
+[suite:task107-phase1-rabitq-1m-l1-control-node] wrote /var/tmp/ecaz-task107-phase1-rabitq-1m-l1/bench/suite-manifest-node.json
+[suite:task107-phase1-rabitq-1m-l1-control-node] storage -> --database postgres --host 127.0.0.1 --port 5432 --user ecaz_coord --log-file /var/tmp/ecaz-task107-phase1-rabitq-1m-l1/bench/storage.log bench storage --prefix task107_phase1_rabitq_1m_l1
+[suite:task107-phase1-rabitq-1m-l1-control-node] wrote /var/tmp/ecaz-task107-phase1-rabitq-1m-l1/bench/suite-manifest-node.json
+┌───────────────────────────────┬────────────────────────────────────┐
+│ field                         ┆ value                              │
+╞═══════════════════════════════╪════════════════════════════════════╡
+│ prefix                        ┆ task107_phase1_rabitq_1m_l1        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus                        ┆ task107_phase1_rabitq_1m_l1_corpus │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ rows                          ┆ 990000                             │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ heap                          ┆ 72.3 MiB                           │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ table (heap + toast + fsm/vm) ┆ 15.3 GiB                           │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes                       ┆ 806.3 MiB                          │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ total                         ┆ 16.1 GiB                           │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (total)               ┆ 17499.8 B                          │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (heap only)           ┆ 76.6 B                             │
+└───────────────────────────────┴────────────────────────────────────┘
+┌─────────────────────────────────────────┬───────────────┬───────────┬────────────────────────────────────────────────────────────────────────────────────────┬───────────┬─────────┐
+│ index                                   ┆ access method ┆ profile   ┆ reloptions                                                                             ┆ size      ┆ per row │
+╞═════════════════════════════════════════╪═══════════════╪═══════════╪════════════════════════════════════════════════════════════════════════════════════════╪═══════════╪═════════╡
+│ task107_phase1_rabitq_1m_l1_idx         ┆ ec_spire      ┆ ec_spire  ┆ {local_store_count=1,local_store_tablespaces=ecaz_spire_store_1,storage_format=rabitq} ┆ 784.8 MiB ┆ 831.3 B │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ task107_phase1_rabitq_1m_l1_corpus_pkey ┆ btree         ┆ <unknown> ┆ {}                                                                                     ┆ 21.2 MiB  ┆ 22.5 B  │
+└─────────────────────────────────────────┴───────────────┴───────────┴────────────────────────────────────────────────────────────────────────────────────────┴───────────┴─────────┘
+[suite:task107-phase1-rabitq-1m-l1-control-node] wrote /var/tmp/ecaz-task107-phase1-rabitq-1m-l1/bench/suite-manifest-node.json
+[suite:task107-phase1-rabitq-1m-l1-control-node] wrote /var/tmp/ecaz-task107-phase1-rabitq-1m-l1/bench/suite-results-node.jsonl
+[suite:task107-phase1-rabitq-1m-l1-control-node] wrote /var/tmp/ecaz-task107-phase1-rabitq-1m-l1/bench/suite-manifest-node.json

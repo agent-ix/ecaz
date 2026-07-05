@@ -1,0 +1,5 @@
+Script started on 2026-05-21 12:28:51-07:00 [<not executed on terminal>]
+python3 scripts/unsafe_ledger.py generate --output reviews/task-50/300-hnsw-debug-palloc-scan-key-removal/artifacts/unsafe-ledger-after.jsonl --packet reviews/task-50/300-hnsw-debug-palloc-scan-key-removal src
+wrote 1389 unsafe ledger rows to reviews/task-50/300-hnsw-debug-palloc-scan-key-removal/artifacts/unsafe-ledger-after.jsonl
+
+Script done on 2026-05-21 12:28:51-07:00 [COMMAND_EXIT_CODE="0"]

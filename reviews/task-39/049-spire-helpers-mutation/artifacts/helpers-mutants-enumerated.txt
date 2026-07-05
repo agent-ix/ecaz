@@ -1,0 +1,190 @@
+helpers.rs:2:5: replace validate_vec_id_bytes -> Result<(), String> with Ok(())
+helpers.rs:5:20: replace > with == in validate_vec_id_bytes
+helpers.rs:5:20: replace > with < in validate_vec_id_bytes
+helpers.rs:5:20: replace > with >= in validate_vec_id_bytes
+helpers.rs:13:28: replace != with == in validate_vec_id_bytes
+helpers.rs:13:33: replace + with - in validate_vec_id_bytes
+helpers.rs:13:33: replace + with * in validate_vec_id_bytes
+helpers.rs:22:30: replace == with != in validate_vec_id_bytes
+helpers.rs:27:28: replace == with != in validate_vec_id_bytes
+helpers.rs:39:5: replace is_visible_primary_assignment_flags -> bool with true
+helpers.rs:39:5: replace is_visible_primary_assignment_flags -> bool with false
+helpers.rs:42:9: replace | with & in is_visible_primary_assignment_flags
+helpers.rs:42:9: replace | with ^ in is_visible_primary_assignment_flags
+helpers.rs:41:9: replace | with & in is_visible_primary_assignment_flags
+helpers.rs:41:9: replace | with ^ in is_visible_primary_assignment_flags
+helpers.rs:40:9: replace | with & in is_visible_primary_assignment_flags
+helpers.rs:40:9: replace | with ^ in is_visible_primary_assignment_flags
+helpers.rs:43:48: replace && with || in is_visible_primary_assignment_flags
+helpers.rs:43:43: replace != with == in is_visible_primary_assignment_flags
+helpers.rs:43:11: replace & with | in is_visible_primary_assignment_flags
+helpers.rs:43:11: replace & with ^ in is_visible_primary_assignment_flags
+helpers.rs:43:73: replace == with != in is_visible_primary_assignment_flags
+helpers.rs:43:57: replace & with | in is_visible_primary_assignment_flags
+helpers.rs:43:57: replace & with ^ in is_visible_primary_assignment_flags
+helpers.rs:47:5: replace is_visible_scored_assignment_flags -> bool with true
+helpers.rs:47:5: replace is_visible_scored_assignment_flags -> bool with false
+helpers.rs:49:9: replace | with & in is_visible_scored_assignment_flags
+helpers.rs:49:9: replace | with ^ in is_visible_scored_assignment_flags
+helpers.rs:48:9: replace | with & in is_visible_scored_assignment_flags
+helpers.rs:48:9: replace | with ^ in is_visible_scored_assignment_flags
+helpers.rs:50:54: replace | with & in is_visible_scored_assignment_flags
+helpers.rs:50:54: replace | with ^ in is_visible_scored_assignment_flags
+helpers.rs:51:31: replace && with || in is_visible_scored_assignment_flags
+helpers.rs:51:26: replace != with == in is_visible_scored_assignment_flags
+helpers.rs:51:11: replace & with | in is_visible_scored_assignment_flags
+helpers.rs:51:11: replace & with ^ in is_visible_scored_assignment_flags
+helpers.rs:51:56: replace == with != in is_visible_scored_assignment_flags
+helpers.rs:51:40: replace & with | in is_visible_scored_assignment_flags
+helpers.rs:51:40: replace & with ^ in is_visible_scored_assignment_flags
+helpers.rs:55:5: replace is_visible_primary_assignment -> bool with true
+helpers.rs:55:5: replace is_visible_primary_assignment -> bool with false
+helpers.rs:59:5: replace is_visible_scored_assignment -> bool with true
+helpers.rs:59:5: replace is_visible_scored_assignment -> bool with false
+helpers.rs:65:5: replace is_visible_primary_assignment_ref -> bool with true
+helpers.rs:65:5: replace is_visible_primary_assignment_ref -> bool with false
+helpers.rs:69:5: replace is_delete_delta_assignment_flags -> bool with true
+helpers.rs:69:5: replace is_delete_delta_assignment_flags -> bool with false
+helpers.rs:69:48: replace != with == in is_delete_delta_assignment_flags
+helpers.rs:69:11: replace & with | in is_delete_delta_assignment_flags
+helpers.rs:69:11: replace & with ^ in is_delete_delta_assignment_flags
+helpers.rs:73:5: replace is_delete_delta_assignment -> bool with true
+helpers.rs:73:5: replace is_delete_delta_assignment -> bool with false
+helpers.rs:80:5: replace validate_leaf_v2_header -> Result<(), String> with Ok(())
+helpers.rs:81:20: replace != with == in validate_leaf_v2_header
+helpers.rs:87:27: replace != with == in validate_leaf_v2_header
+helpers.rs:93:21: replace != with == in validate_leaf_v2_header
+helpers.rs:103:5: replace validate_leaf_v2_locator -> Result<(), String> with Ok(())
+helpers.rs:103:16: replace == with != in validate_leaf_v2_locator
+helpers.rs:106:30: replace == with != in validate_leaf_v2_locator
+helpers.rs:111:41: replace || with && in validate_leaf_v2_locator
+helpers.rs:111:29: replace == with != in validate_leaf_v2_locator
+helpers.rs:111:66: replace == with != in validate_leaf_v2_locator
+helpers.rs:120:5: replace encode_leaf_v2_local_vec_id -> Result<(), String> with Ok(())
+helpers.rs:126:19: replace + with - in encode_leaf_v2_local_vec_id
+helpers.rs:126:19: replace + with * in encode_leaf_v2_local_vec_id
+helpers.rs:126:54: replace - with + in encode_leaf_v2_local_vec_id
+helpers.rs:126:54: replace - with / in encode_leaf_v2_local_vec_id
+helpers.rs:126:50: replace - with + in encode_leaf_v2_local_vec_id
+helpers.rs:126:50: replace - with / in encode_leaf_v2_local_vec_id
+helpers.rs:138:5: replace encode_leaf_v2_vec_id -> Result<(), String> with Ok(())
+helpers.rs:140:30: replace != with == in encode_leaf_v2_vec_id
+helpers.rs:148:39: replace != with == in encode_leaf_v2_vec_id
+helpers.rs:154:40: replace != with == in encode_leaf_v2_vec_id
+helpers.rs:167:5: replace decode_leaf_v2_local_vec_id -> Result<u64, String> with Ok(0)
+helpers.rs:167:5: replace decode_leaf_v2_local_vec_id -> Result<u64, String> with Ok(1)
+helpers.rs:167:20: replace != with == in decode_leaf_v2_local_vec_id
+helpers.rs:173:17: replace != with == in decode_leaf_v2_local_vec_id
+helpers.rs:179:16: replace + with - in decode_leaf_v2_local_vec_id
+helpers.rs:179:16: replace + with * in decode_leaf_v2_local_vec_id
+helpers.rs:179:62: replace != with == in decode_leaf_v2_local_vec_id
+helpers.rs:183:20: replace + with - in decode_leaf_v2_local_vec_id
+helpers.rs:183:20: replace + with * in decode_leaf_v2_local_vec_id
+helpers.rs:187:22: replace == with != in decode_leaf_v2_local_vec_id
+helpers.rs:197:5: replace decode_leaf_v2_vec_id -> Result<SpireVecId, String> with Ok(Default::default())
+helpers.rs:201:39: replace != with == in decode_leaf_v2_vec_id
+helpers.rs:223:5: replace leaf_v2_assignment_vec_id_layout -> Result<(SpireVecIdKind, usize), String> with Ok((Default::default(), 0))
+helpers.rs:223:5: replace leaf_v2_assignment_vec_id_layout -> Result<(SpireVecIdKind, usize), String> with Ok((Default::default(), 1))
+helpers.rs:233:27: replace || with && in leaf_v2_assignment_vec_id_layout
+helpers.rs:233:23: replace < with == in leaf_v2_assignment_vec_id_layout
+helpers.rs:233:23: replace < with > in leaf_v2_assignment_vec_id_layout
+helpers.rs:233:23: replace < with <= in leaf_v2_assignment_vec_id_layout
+helpers.rs:233:37: replace > with == in leaf_v2_assignment_vec_id_layout
+helpers.rs:233:37: replace > with < in leaf_v2_assignment_vec_id_layout
+helpers.rs:233:37: replace > with >= in leaf_v2_assignment_vec_id_layout
+helpers.rs:247:5: replace leaf_v2_column_layout -> Result<SpireLeafV2ColumnLayout, String> with Ok(Default::default())
+helpers.rs:256:29: replace == with != in leaf_v2_column_layout
+helpers.rs:262:23: replace == with != in leaf_v2_column_layout
+helpers.rs:267:38: replace != with == in leaf_v2_column_layout
+helpers.rs:273:45: replace != with == in leaf_v2_column_layout
+helpers.rs:281:35: replace != with == in leaf_v2_column_layout
+helpers.rs:287:37: replace != with == in leaf_v2_column_layout
+helpers.rs:306:5: replace leaf_v2_max_segment_rows -> Result<usize, String> with Ok(0)
+helpers.rs:306:5: replace leaf_v2_max_segment_rows -> Result<usize, String> with Ok(1)
+helpers.rs:312:18: replace == with != in leaf_v2_max_segment_rows
+helpers.rs:319:20: replace >= with < in leaf_v2_max_segment_rows
+helpers.rs:324:49: replace / with % in leaf_v2_max_segment_rows
+helpers.rs:324:49: replace / with * in leaf_v2_max_segment_rows
+helpers.rs:324:34: replace - with + in leaf_v2_max_segment_rows
+helpers.rs:324:34: replace - with / in leaf_v2_max_segment_rows
+helpers.rs:326:9: replace && with || in leaf_v2_max_segment_rows
+helpers.rs:325:16: replace > with == in leaf_v2_max_segment_rows
+helpers.rs:325:16: replace > with < in leaf_v2_max_segment_rows
+helpers.rs:325:16: replace > with >= in leaf_v2_max_segment_rows
+helpers.rs:326:12: delete ! in leaf_v2_max_segment_rows
+helpers.rs:326:56: replace + with - in leaf_v2_max_segment_rows
+helpers.rs:326:56: replace + with * in leaf_v2_max_segment_rows
+helpers.rs:328:14: replace -= with += in leaf_v2_max_segment_rows
+helpers.rs:328:14: replace -= with /= in leaf_v2_max_segment_rows
+helpers.rs:330:13: replace == with != in leaf_v2_max_segment_rows
+helpers.rs:339:5: replace validate_assignment_flags -> Result<(), String> with Ok(())
+helpers.rs:339:25: replace & with | in validate_assignment_flags
+helpers.rs:339:25: replace & with ^ in validate_assignment_flags
+helpers.rs:339:27: delete ! in validate_assignment_flags
+helpers.rs:340:16: replace != with == in validate_assignment_flags
+helpers.rs:349:5: replace validate_assignment_payload_format -> Result<(), String> with Ok(())
+helpers.rs:361:5: replace validate_scored_assignment_payload -> Result<(), String> with Ok(())
+helpers.rs:361:34: replace == with != in validate_scored_assignment_payload
+helpers.rs:371:5: replace validate_delta_assignment -> Result<(), String> with Ok(())
+helpers.rs:372:75: replace != with == in validate_delta_assignment
+helpers.rs:372:38: replace & with | in validate_delta_assignment
+helpers.rs:372:38: replace & with ^ in validate_delta_assignment
+helpers.rs:373:75: replace != with == in validate_delta_assignment
+helpers.rs:373:38: replace & with | in validate_delta_assignment
+helpers.rs:373:38: replace & with ^ in validate_delta_assignment
+helpers.rs:374:18: replace == with != in validate_delta_assignment
+helpers.rs:379:63: replace != with == in validate_delta_assignment
+helpers.rs:379:25: replace & with | in validate_delta_assignment
+helpers.rs:379:25: replace & with ^ in validate_delta_assignment
+helpers.rs:383:26: replace & with | in validate_delta_assignment
+helpers.rs:383:26: replace & with ^ in validate_delta_assignment
+helpers.rs:383:59: replace | with & in validate_delta_assignment
+helpers.rs:383:59: replace | with ^ in validate_delta_assignment
+helpers.rs:384:18: replace && with || in validate_delta_assignment
+helpers.rs:384:54: replace != with == in validate_delta_assignment
+helpers.rs:390:18: replace && with || in validate_delta_assignment
+helpers.rs:390:72: replace != with == in validate_delta_assignment
+helpers.rs:390:38: replace & with | in validate_delta_assignment
+helpers.rs:390:38: replace & with ^ in validate_delta_assignment
+helpers.rs:396:18: replace && with || in validate_delta_assignment
+helpers.rs:396:70: replace != with == in validate_delta_assignment
+helpers.rs:396:38: replace & with | in validate_delta_assignment
+helpers.rs:396:38: replace & with ^ in validate_delta_assignment
+helpers.rs:399:18: replace && with || in validate_delta_assignment
+helpers.rs:399:79: replace != with == in validate_delta_assignment
+helpers.rs:399:38: replace & with | in validate_delta_assignment
+helpers.rs:399:38: replace & with ^ in validate_delta_assignment
+helpers.rs:402:18: replace && with || in validate_delta_assignment
+helpers.rs:402:72: replace == with != in validate_delta_assignment
+helpers.rs:402:38: replace & with | in validate_delta_assignment
+helpers.rs:402:38: replace & with ^ in validate_delta_assignment
+helpers.rs:405:18: replace && with || in validate_delta_assignment
+helpers.rs:405:47: replace != with == in validate_delta_assignment
+helpers.rs:408:18: replace && with || in validate_delta_assignment
+helpers.rs:408:38: replace != with == in validate_delta_assignment
+helpers.rs:411:18: replace && with || in validate_delta_assignment
+helpers.rs:411:21: delete ! in validate_delta_assignment
+helpers.rs:418:5: replace validate_leaf_assignments -> Result<(), String> with Ok(())
+helpers.rs:421:12: delete ! in validate_leaf_assignments
+helpers.rs:431:5: replace validate_leaf_assignment -> Result<(), String> with Ok(())
+helpers.rs:433:9: replace != with == in validate_leaf_assignment
+helpers.rs:432:25: replace & with | in validate_leaf_assignment
+helpers.rs:432:25: replace & with ^ in validate_leaf_assignment
+helpers.rs:432:63: replace | with & in validate_leaf_assignment
+helpers.rs:432:63: replace | with ^ in validate_leaf_assignment
+helpers.rs:440:9: replace | with & in validate_leaf_assignment
+helpers.rs:440:9: replace | with ^ in validate_leaf_assignment
+helpers.rs:439:9: replace | with & in validate_leaf_assignment
+helpers.rs:439:9: replace | with ^ in validate_leaf_assignment
+helpers.rs:438:9: replace | with & in validate_leaf_assignment
+helpers.rs:438:9: replace | with ^ in validate_leaf_assignment
+helpers.rs:441:38: replace == with != in validate_leaf_assignment
+helpers.rs:441:25: replace & with | in validate_leaf_assignment
+helpers.rs:441:25: replace & with ^ in validate_leaf_assignment
+helpers.rs:445:9: replace != with == in validate_leaf_assignment
+helpers.rs:444:25: replace & with | in validate_leaf_assignment
+helpers.rs:444:25: replace & with ^ in validate_leaf_assignment
+helpers.rs:444:58: replace | with & in validate_leaf_assignment
+helpers.rs:444:58: replace | with ^ in validate_leaf_assignment
+helpers.rs:453:5: replace validate_delta_assignments -> Result<(), String> with Ok(())
+helpers.rs:456:12: delete ! in validate_delta_assignments

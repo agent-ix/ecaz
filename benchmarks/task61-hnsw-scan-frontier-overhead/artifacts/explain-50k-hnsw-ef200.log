@@ -1,0 +1,161 @@
+Pager usage is off.
+Timing is on.
+SET
+Time: 0.091 ms
+SET
+Time: 0.026 ms
+ server_version | sweep_value | profile 
+----------------+-------------+---------
+ 18.3           | 200         | ec_hnsw
+(1 row)
+
+Time: 0.262 ms
+         index_name          | index_bytes | index_size 
+-----------------------------+-------------+------------
+ task61_opt_50k_hnsw_m16_idx |    68280320 | 65 MB
+(1 row)
+
+Time: 0.224 ms
+ planner_scan_enabled |                             planner_gate_reason                              | relation_ef_search | session_ef_search | effective_ef_search | effective_source | m  | dimensions | max_level | resolved_tree_height |    tree_height_source    | pg18_tree_height_callback_ready | index_pages | reltuples | random_page_cost | seq_page_cost | cpu_operator_cost | modeled_startup_cost | modeled_total_cost | modeled_selectivity | modeled_correlation |   gated_startup_cost    |    gated_total_cost     | gated_selectivity | gated_correlation 
+----------------------+------------------------------------------------------------------------------+--------------------+-------------------+---------------------+------------------+----+------------+-----------+----------------------+--------------------------+---------------------------------+-------------+-----------+------------------+---------------+-------------------+----------------------+--------------------+---------------------+---------------------+-------------------------+-------------------------+-------------------+-------------------
+ t                    | planner cost activation is live: FR-020 cost model replaces ADR-011 override |                 40 |               200 |                 200 | session          | 16 |       1536 |         4 |                    4 | amgettreeheight_callback | t                               |        8335 |     50000 |                4 |             1 |            0.0025 |              1403.52 |  150010.1048830234 |                   1 |                   0 | 1.7976931348623157e+308 | 1.7976931348623157e+308 |                 0 |                 0
+(1 row)
+
+Time: 0.534 ms
+                           QUERY PLAN                            
+-----------------------------------------------------------------
+ [                                                              +
+   {                                                            +
+     "Plan": {                                                  +
+       "Node Type": "Limit",                                    +
+       "Parallel Aware": false,                                 +
+       "Async Capable": false,                                  +
+       "Actual Startup Time": 8.645,                            +
+       "Actual Total Time": 8.837,                              +
+       "Actual Rows": 10.00,                                    +
+       "Actual Loops": 1,                                       +
+       "Disabled": false,                                       +
+       "Shared Hit Blocks": 4999,                               +
+       "Shared Read Blocks": 0,                                 +
+       "Shared Dirtied Blocks": 0,                              +
+       "Shared Written Blocks": 0,                              +
+       "Local Hit Blocks": 0,                                   +
+       "Local Read Blocks": 0,                                  +
+       "Local Dirtied Blocks": 0,                               +
+       "Local Written Blocks": 0,                               +
+       "Temp Read Blocks": 0,                                   +
+       "Temp Written Blocks": 0,                                +
+       "Plans": [                                               +
+         {                                                      +
+           "Node Type": "Limit",                                +
+           "Parent Relationship": "InitPlan",                   +
+           "Subplan Name": "InitPlan 1",                        +
+           "Parallel Aware": false,                             +
+           "Async Capable": false,                              +
+           "Actual Startup Time": 0.008,                        +
+           "Actual Total Time": 0.009,                          +
+           "Actual Rows": 1.00,                                 +
+           "Actual Loops": 1,                                   +
+           "Disabled": false,                                   +
+           "Shared Hit Blocks": 3,                              +
+           "Shared Read Blocks": 0,                             +
+           "Shared Dirtied Blocks": 0,                          +
+           "Shared Written Blocks": 0,                          +
+           "Local Hit Blocks": 0,                               +
+           "Local Read Blocks": 0,                              +
+           "Local Dirtied Blocks": 0,                           +
+           "Local Written Blocks": 0,                           +
+           "Temp Read Blocks": 0,                               +
+           "Temp Written Blocks": 0,                            +
+           "Plans": [                                           +
+             {                                                  +
+               "Node Type": "Index Scan",                       +
+               "Parent Relationship": "Outer",                  +
+               "Parallel Aware": false,                         +
+               "Async Capable": false,                          +
+               "Scan Direction": "Forward",                     +
+               "Index Name": "task61_opt_50k_hnsw_queries_pkey",+
+               "Relation Name": "task61_opt_50k_hnsw_queries",  +
+               "Alias": "task61_opt_50k_hnsw_queries",          +
+               "Actual Startup Time": 0.008,                    +
+               "Actual Total Time": 0.008,                      +
+               "Actual Rows": 1.00,                             +
+               "Actual Loops": 1,                               +
+               "Disabled": false,                               +
+               "Index Searches": 1,                             +
+               "Shared Hit Blocks": 3,                          +
+               "Shared Read Blocks": 0,                         +
+               "Shared Dirtied Blocks": 0,                      +
+               "Shared Written Blocks": 0,                      +
+               "Local Hit Blocks": 0,                           +
+               "Local Read Blocks": 0,                          +
+               "Local Dirtied Blocks": 0,                       +
+               "Local Written Blocks": 0,                       +
+               "Temp Read Blocks": 0,                           +
+               "Temp Written Blocks": 0                         +
+             }                                                  +
+           ]                                                    +
+         },                                                     +
+         {                                                      +
+           "Node Type": "Index Scan",                           +
+           "Parent Relationship": "Outer",                      +
+           "Parallel Aware": false,                             +
+           "Async Capable": false,                              +
+           "Scan Direction": "Forward",                         +
+           "Index Name": "task61_opt_50k_hnsw_m16_idx",         +
+           "Relation Name": "task61_opt_50k_hnsw_corpus",       +
+           "Alias": "task61_opt_50k_hnsw_corpus",               +
+           "Actual Startup Time": 8.645,                        +
+           "Actual Total Time": 8.834,                          +
+           "Actual Rows": 10.00,                                +
+           "Actual Loops": 1,                                   +
+           "Disabled": false,                                   +
+           "Order By": "(embedding <#> (InitPlan 1).col1)",     +
+           "Index Searches": 0,                                 +
+           "Shared Hit Blocks": 4999,                           +
+           "Shared Read Blocks": 0,                             +
+           "Shared Dirtied Blocks": 0,                          +
+           "Shared Written Blocks": 0,                          +
+           "Local Hit Blocks": 0,                               +
+           "Local Read Blocks": 0,                              +
+           "Local Dirtied Blocks": 0,                           +
+           "Local Written Blocks": 0,                           +
+           "Temp Read Blocks": 0,                               +
+           "Temp Written Blocks": 0,                            +
+           "Ecaz Stats": {                                      +
+             "Bootstrap Expansions": 74,                        +
+             "Bootstrap Pages Read": 74,                        +
+             "Linear Pages Read": 0,                            +
+             "Elements Scored": 74,                             +
+             "Elements Skipped": 0,                             +
+             "Heap TIDs Returned": 10,                          +
+             "Quantizer Cache Hit": true                        +
+           }                                                    +
+         }                                                      +
+       ]                                                        +
+     },                                                         +
+     "Planning": {                                              +
+       "Shared Hit Blocks": 80,                                 +
+       "Shared Read Blocks": 0,                                 +
+       "Shared Dirtied Blocks": 0,                              +
+       "Shared Written Blocks": 0,                              +
+       "Local Hit Blocks": 0,                                   +
+       "Local Read Blocks": 0,                                  +
+       "Local Dirtied Blocks": 0,                               +
+       "Local Written Blocks": 0,                               +
+       "Temp Read Blocks": 0,                                   +
+       "Temp Written Blocks": 0                                 +
+     },                                                         +
+     "Planning Time": 0.149,                                    +
+     "Triggers": [                                              +
+     ],                                                         +
+     "Execution Time": 9.047                                    +
+   }                                                            +
+ ]
+(1 row)
+
+Time: 9.578 ms
+RESET
+Time: 0.037 ms
+RESET
+Time: 0.016 ms

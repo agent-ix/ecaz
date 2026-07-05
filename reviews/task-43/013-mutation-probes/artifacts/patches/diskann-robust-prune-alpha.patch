@@ -1,0 +1,13 @@
+diff --git a/src/am/ec_diskann/vamana.rs b/src/am/ec_diskann/vamana.rs
+index 7a84795b..4f7dea9d 100644
+--- a/src/am/ec_diskann/vamana.rs
++++ b/src/am/ec_diskann/vamana.rs
+@@ -316,7 +316,7 @@ where
+             // Keep v iff α · d(p*, v) > d(p, v) — i.e. v is not
+             // α-dominated by p*. Using <= for the drop side so that
+             // exact ties prune, matching pgvectorscale behavior.
+-            if alpha * dist(pivot_star.node, v.node) <= v.distance {
++            if alpha * dist(pivot_star.node, v.node) >= v.distance {
+                 active[idx] = false;
+                 remaining -= 1;
+             }

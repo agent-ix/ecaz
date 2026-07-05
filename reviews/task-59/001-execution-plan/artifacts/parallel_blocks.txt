@@ -1,0 +1,34 @@
+  90:        Ok(unsafe { &*self.worker_slots.cast::<u8>().add(offset).cast() })
+  96:        unsafe { &*self.coordinator }
+  148:    let max_workers = unsafe { pg_sys::max_parallel_workers_per_gather }.max(0) as u32;
+  159:    unsafe {
+  176:    unsafe {
+  193:    unsafe {
+  205:        let slot = unsafe {
+  217:        unsafe {
+  311:    let state = unsafe {
+  333:    let state = unsafe {
+  354:    Ok(Some(validate_parallel_scan_state(unsafe { &*state })?))
+  367:        unsafe { &mut *target.cast::<EcParallelScanState>() },
+  378:    unsafe {
+  411:    let attachment = validate_parallel_scan_state(unsafe { &*state })?;
+  433:    let attachment = validate_parallel_scan_state(unsafe { &*state })?;
+  449:    let attachment = validate_parallel_scan_state(unsafe { &*state })?;
+  463:        let state_ref = unsafe { &mut *state };
+  472:    reset_parallel_scan_layout(unsafe { &mut *state });
+  533:            validate_parallel_scan_state(unsafe { &*self.0 })
+  571:            unsafe { (*parallel_scan).ps_offset = TEST_PARALLEL_SCAN_OFFSET };
+  577:            unsafe { (*parallel_scan).ps_offset_am = TEST_PARALLEL_SCAN_OFFSET };
+  591:            unsafe { (*parallel_scan).ps_offset = TEST_PARALLEL_SCAN_OFFSET };
+  597:            unsafe { (*parallel_scan).ps_offset_am = TEST_PARALLEL_SCAN_OFFSET };
+  601:        let target = unsafe { base.add(TEST_PARALLEL_SCAN_OFFSET) }.cast::<c_void>();
+  608:        unsafe { storage.bytes.as_mut_ptr().add(TEST_PARALLEL_SCAN_OFFSET) }.cast::<c_void>()
+  614:        unsafe {
+  625:        unsafe { parallel_scan_attachment(parallel_scan) }
+  635:        unsafe { parallel_scan_attachment(parallel_scan) }
+  642:        unsafe { claim_parallel_scan_worker_slot(attachment) }.expect("claim should succeed")
+  650:        unsafe { claim_parallel_scan_worker_slot(attachment) }
+  656:        unsafe {
+  669:        unsafe {
+  686:        unsafe { read_parallel_scan_worker_slot_snapshot(attachment.state, slot_index) }
+  693:        unsafe { reset_parallel_scan_state(parallel_scan) }

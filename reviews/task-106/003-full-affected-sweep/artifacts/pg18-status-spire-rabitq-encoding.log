@@ -1,0 +1,15 @@
+ pid | bytes_processed | tuples_processed 
+-----+-----------------+------------------
+(0 rows)
+
+ pid | phase 
+-----+-------
+(0 rows)
+
+  pid   | state  | wait_event_type | wait_event |       age       |                               query                               
+--------+--------+-----------------+------------+-----------------+-------------------------------------------------------------------
+ 715916 | active |                 |            | 00:00:40.559994 | INSERT INTO t106_1m_spire_rabitq_corpus (id, source, embedding)  +
+        |        |                 |            |                 |              SELECT id, source, encode_to_ecvector(source, 4, 42)+
+        |        |                 |            |                 |           
+(1 row)
+

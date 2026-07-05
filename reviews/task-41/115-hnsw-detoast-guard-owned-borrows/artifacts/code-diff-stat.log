@@ -1,0 +1,3 @@
+ffe7338d Keep HNSW detoast borrows guard-owned
+ src/am/ec_hnsw/source.rs | 114 ++++++++++++++++++++++++++---------------------
+ 1 file changed, 62 insertions(+), 52 deletions(-)

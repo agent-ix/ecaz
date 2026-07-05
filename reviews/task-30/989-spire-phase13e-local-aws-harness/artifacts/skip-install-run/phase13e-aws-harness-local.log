@@ -1,0 +1,7 @@
+run_dir=/home/peter/dev/ecaz/target/spire-phase13e-aws-local-20260526T165158Z
+coord_port=39700
+remote1_port=39701
+remote2_port=39702
+remote3_port=39703
+pg_ctl: could not start server
+Examine the log output.

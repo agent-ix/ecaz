@@ -1,0 +1,318 @@
+   Compiling stable_deref_trait v1.2.1
+   Compiling autocfg v1.5.0
+   Compiling memchr v2.8.0
+   Compiling libm v0.2.16
+   Compiling bytes v1.11.1
+   Compiling writeable v0.6.3
+   Compiling litemap v0.8.2
+   Compiling utf8_iter v1.0.4
+   Compiling icu_normalizer_data v2.2.0
+   Compiling pin-project-lite v0.2.17
+   Compiling smallvec v1.15.1
+   Compiling zerocopy v0.8.48
+   Compiling icu_properties_data v2.2.0
+   Compiling regex-syntax v0.8.10
+   Compiling jobserver v0.1.34
+   Compiling zerofrom v0.1.7
+   Compiling zerocopy-derive v0.8.48
+   Compiling typenum v1.20.0
+   Compiling version_check v0.9.5
+   Compiling yoke v0.8.2
+   Compiling errno v0.3.14
+   Compiling bitflags v2.11.1
+   Compiling futures-core v0.3.32
+   Compiling futures-sink v0.3.32
+   Compiling cc v1.2.61
+   Compiling zerovec v0.11.6
+   Compiling zerotrie v0.2.4
+   Compiling unicode-width v0.2.2
+   Compiling anstyle v1.0.14
+   Compiling num-traits v0.2.19
+   Compiling futures-channel v0.3.32
+   Compiling signal-hook-registry v1.4.8
+   Compiling tokio-macros v2.7.0
+   Compiling socket2 v0.6.3
+   Compiling mio v1.2.0
+   Compiling either v1.15.0
+   Compiling serde_json v1.0.149
+   Compiling aho-corasick v1.1.4
+   Compiling futures-macro v0.3.32
+   Compiling tracing-core v0.1.36
+   Compiling futures-io v0.3.32
+   Compiling slab v0.4.12
+   Compiling getrandom v0.4.2
+   Compiling futures-task v0.3.32
+   Compiling rand_core v0.10.1
+   Compiling tinystr v0.8.3
+   Compiling potential_utf v0.1.5
+   Compiling hybrid-array v0.4.11
+   Compiling nom v7.1.3
+   Compiling tracing-attributes v0.1.31
+   Compiling tokio v1.52.1
+   Compiling icu_collections v2.2.0
+   Compiling icu_locale_core v2.2.0
+   Compiling cmov v0.5.3
+   Compiling base64 v0.22.1
+   Compiling getrandom v0.3.4
+   Compiling ctutils v0.4.2
+   Compiling futures-util v0.3.32
+   Compiling crypto-common v0.2.1
+   Compiling block-buffer v0.12.0
+   Compiling itertools v0.13.0
+   Compiling annotate-snippets v0.11.5
+   Compiling http v1.4.0
+   Compiling ring v0.17.14
+   Compiling icu_provider v2.2.0
+   Compiling regex-automata v0.4.14
+   Compiling tracing v0.1.44
+   Compiling icu_properties v2.2.0
+   Compiling icu_normalizer v2.2.0
+   Compiling num-integer v0.1.46
+   Compiling num-complex v0.4.6
+   Compiling cexpr v0.6.0
+   Compiling ahash v0.8.12
+   Compiling lexical-util v1.0.7
+   Compiling num-bigint v0.4.6
+   Compiling num-iter v0.1.45
+   Compiling log v0.4.29
+   Compiling crossbeam-utils v0.8.21
+   Compiling const-oid v0.10.2
+   Compiling pkg-config v0.3.33
+   Compiling percent-encoding v2.3.2
+   Compiling core-foundation-sys v0.8.7
+   Compiling zeroize v1.8.2
+   Compiling digest v0.11.2
+   Compiling rustls-pki-types v1.14.1
+   Compiling iana-time-zone v0.1.65
+   Compiling http-body v1.0.1
+   Compiling generic-array v0.14.7
+   Compiling tinyvec_macros v0.1.1
+   Compiling parking_lot_core v0.9.12
+   Compiling idna_adapter v1.2.2
+   Compiling zstd-sys v2.0.16+zstd.1.5.7
+   Compiling untrusted v0.9.0
+   Compiling idna v1.1.0
+   Compiling arrow-schema v55.2.0
+   Compiling httparse v1.10.1
+   Compiling semver v1.0.28
+   Compiling url v2.5.8
+   Compiling num-rational v0.4.2
+   Compiling rustc_version v0.4.1
+   Compiling regex v1.12.3
+   Compiling pgrx-pg-config v0.17.0
+   Compiling num v0.4.3
+   Compiling tinyvec v1.11.0
+   Compiling chrono v0.4.44
+   Compiling cee-scape v0.2.0
+   Compiling bindgen v0.72.1
+   Compiling rustls v0.23.40
+   Compiling byteorder v1.5.0
+   Compiling tower-service v0.3.3
+   Compiling lazy_static v1.5.0
+   Compiling scopeguard v1.2.0
+   Compiling try-lock v0.2.5
+   Compiling sharded-slab v0.1.7
+   Compiling want v0.3.1
+   Compiling lock_api v0.4.14
+   Compiling unicode-normalization v0.1.25
+   Compiling flatbuffers v25.12.19
+   Compiling lexical-write-integer v1.0.6
+   Compiling lexical-parse-integer v1.0.6
+   Compiling tracing-log v0.2.0
+   Compiling crossbeam-epoch v0.9.18
+   Compiling chacha20 v0.10.0
+   Compiling cpufeatures v0.3.0
+   Compiling thread_local v1.1.9
+   Compiling rayon-core v1.13.0
+   Compiling zstd-safe v7.2.4
+   Compiling owo-colors v4.3.0
+   Compiling subtle v2.6.1
+   Compiling atomic-waker v1.1.2
+   Compiling ryu v1.0.23
+   Compiling utf8parse v0.2.2
+   Compiling object v0.37.3
+   Compiling unicode-properties v0.1.4
+   Compiling unicode-bidi v0.3.18
+   Compiling nu-ansi-term v0.50.3
+   Compiling rustix v1.1.4
+   Compiling anstyle-parse v1.0.0
+   Compiling matchers v0.2.0
+   Compiling crossbeam-deque v0.8.6
+   Compiling tracing-subscriber v0.3.23
+   Compiling parking_lot v0.12.5
+   Compiling rand v0.10.1
+   Compiling stringprep v0.1.5
+   Compiling sha2 v0.11.0
+   Compiling lexical-parse-float v1.0.6
+   Compiling lexical-write-float v1.0.6
+   Compiling hmac v0.13.0
+   Compiling half v2.7.1
+   Compiling ppv-lite86 v0.2.21
+   Compiling md-5 v0.11.0
+   Compiling form_urlencoded v1.2.2
+   Compiling arrow-buffer v55.2.0
+   Compiling rand_chacha v0.3.1
+   Compiling matrixmultiply v0.3.10
+   Compiling objc2-core-foundation v0.3.2
+   Compiling sync_wrapper v1.0.2
+   Compiling hyper v1.9.0
+   Compiling color-spantrace v0.3.0
+   Compiling tower-layer v0.3.3
+   Compiling portable-atomic v1.13.1
+   Compiling ipnet v2.12.0
+   Compiling fallible-iterator v0.2.0
+   Compiling anstyle-query v1.1.5
+   Compiling arrow-data v55.2.0
+   Compiling siphasher v1.0.2
+   Compiling adler2 v2.0.1
+   Compiling snap v1.1.1
+   Compiling is_terminal_polyfill v1.70.2
+   Compiling gimli v0.32.3
+   Compiling colorchoice v1.0.5
+   Compiling litrs v1.0.0
+   Compiling paste v1.0.15
+   Compiling postgres-protocol v0.6.11
+   Compiling anstream v1.0.0
+   Compiling miniz_oxide v0.8.9
+   Compiling pgrx-bindgen v0.17.0
+   Compiling hyper-util v0.1.20
+   Compiling document-features v0.2.12
+   Compiling arrow-array v55.2.0
+   Compiling phf_shared v0.13.1
+   Compiling objc2-system-configuration v0.3.2
+   Compiling tower v0.5.3
+   Compiling tracing-error v0.2.1
+   Compiling rand v0.8.6
+   Compiling block-buffer v0.10.4
+   Compiling crypto-common v0.1.7
+   Compiling lexical-core v1.0.6
+   Compiling tokio-util v0.7.18
+   Compiling ecaz v0.1.1 (/Users/peter/dev/tqvector)
+   Compiling webpki-roots v1.0.7
+   Compiling uuid v1.23.1
+   Compiling ordered-float v2.10.1
+   Compiling atoi v2.0.0
+   Compiling clap_lex v1.1.0
+   Compiling addr2line v0.25.1
+   Compiling twox-hash v2.1.2
+   Compiling rustc-demangle v0.1.27
+   Compiling strsim v0.11.1
+   Compiling heck v0.5.0
+   Compiling integer-encoding v3.0.4
+   Compiling rawpointer v0.2.1
+   Compiling pgrx-pg-sys v0.17.0
+   Compiling iri-string v0.7.12
+   Compiling zlib-rs v0.6.3
+   Compiling thrift v0.17.0
+   Compiling clap_derive v4.6.1
+   Compiling clap_builder v4.6.0
+   Compiling lz4_flex v0.11.6
+   Compiling arrow-select v55.2.0
+   Compiling arrow-ipc v55.2.0
+   Compiling crossterm v0.29.0
+   Compiling rustls-webpki v0.103.13
+   Compiling digest v0.10.7
+   Compiling backtrace v0.3.76
+   Compiling tower-http v0.6.8
+   Compiling rayon v1.12.0
+   Compiling whoami v2.1.2
+   Compiling phf v0.13.1
+   Compiling postgres-types v0.2.13
+   Compiling serde_urlencoded v0.7.1
+   Compiling futures-executor v0.3.32
+   Compiling http-body-util v0.1.3
+   Compiling console v0.15.11
+   Compiling async-trait v0.1.89
+   Compiling cpufeatures v0.2.17
+   Compiling arrow-cast v55.2.0
+   Compiling number_prefix v0.4.0
+   Compiling seq-macro v0.3.6
+   Compiling sha2 v0.10.9
+   Compiling clap v4.6.1
+   Compiling futures v0.3.32
+   Compiling indicatif v0.17.11
+   Compiling color-eyre v0.6.5
+   Compiling rand_distr v0.4.3
+   Compiling tokio-postgres v0.7.17
+   Compiling ndarray v0.16.1
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: In file included from /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:19:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:537:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   537 | dlist_next_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:547:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   547 | dlist_prev_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:1054:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:  1054 | slist_next_node(slist_head *head, slist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:58: warning: unused parameter 'size' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                          ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:70: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                                      ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:882:56: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   882 | pgstat_hash_hash_key(const void *d, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                        ^
+warning: ecaz@0.1.1: 6 warnings generated.
+   Compiling comfy-table v7.2.2
+   Compiling flate2 v1.1.9
+   Compiling tokio-rustls v0.26.4
+   Compiling hyper-rustls v0.27.9
+   Compiling zstd v0.13.3
+   Compiling reqwest v0.12.28
+   Compiling parquet v55.2.0
+   Compiling pgrx v0.17.0
+   Compiling ecaz-cli v0.1.0 (/Users/peter/dev/tqvector/crates/ecaz-cli)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 29.90s
+     Running `target/debug/ecaz --help`
+ecaz — corpus loading, benchmarking (recall / latency / storage), and cross-engine comparison for the Ecaz Postgres vector extension. Access methods (ec_hnsw, ec_ivf, ec_diskann) are selected via `--profile`; every command is profile-aware.
+
+Usage: ecaz [OPTIONS] <COMMAND>
+
+Commands:
+  corpus   Corpus plumbing: load fixtures, inspect what's loaded, verify manifests
+  bench    Benchmarks against a loaded corpus (recall, latency, storage, ...)
+  compare  Compare Ecaz against external vector-search engines on the same corpus
+  dev      Development/setup/test helpers that own the old wrapper-script surface
+  quant    Offline quantizer feasibility / recall studies (no DB required)
+  stress   Correctness-under-load harnesses (vacuum concurrency, crash recovery, ...)
+  help     Print this message or the help of the given subcommand(s)
+
+Options:
+      --database <DATABASE>
+          PostgreSQL database name. Defaults to $PGDATABASE or 'tqvector_bench'
+          
+          [env: PGDATABASE=]
+          [default: tqvector_bench]
+
+      --host <HOST>
+          PostgreSQL host name or Unix socket directory
+          
+          [env: PGHOST=]
+
+      --port <PORT>
+          PostgreSQL port
+          
+          [env: PGPORT=]
+
+      --user <USER>
+          PostgreSQL user name
+          
+          [env: PGUSER=]
+
+      --password <PASSWORD>
+          PostgreSQL password. Prefer `.pgpass` for non-local use
+          
+          [env: PGPASSWORD]
+
+      --log-file <LOG_FILE>
+          Mirror CLI stdout/stderr into a file for packet-local artifact capture. Progress bars are suppressed so the file stays stable and diffable
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version

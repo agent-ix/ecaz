@@ -1,0 +1,19 @@
+Script started on 2026-05-13 15:52:18-07:00 [<not executed on terminal>]
+src/tests/placement.rs
+2:    fn test_ec_spire_placement_directory_catalog_sql() {
+343:    fn test_ec_spire_selected_pid_placement_snapshot_sql() {
+
+src/tests/mod.rs
+2764:    include!("placement.rs");
+2767:    fn test_ec_spire_scan_placement_snapshot_sql() {
+18730:    fn test_pg18_ec_spire_placement_write_contention_distinct_pk_dml() {
+  42134 src/tests/mod.rs
+    405 src/tests/placement.rs
+    999 src/tests/dml_frontdoor.rs
+   1764 src/tests/insert.rs
+   2634 src/tests/remote_search.rs
+    796 src/tests/custom_scan.rs
+  17812 src/lib.rs
+  66544 total
+
+Script done on 2026-05-13 15:52:18-07:00 [COMMAND_EXIT_CODE="0"]

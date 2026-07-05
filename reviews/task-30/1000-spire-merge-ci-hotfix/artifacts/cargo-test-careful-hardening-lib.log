@@ -1,0 +1,815 @@
+Script started on 2026-05-29 12:42:18-07:00 [<not executed on terminal>]
+warning: unexpected `cfg` condition value: `rabitq-bf16`
+    --> hardening/careful/src/../../../src/quant/rabitq.rs:1352:11
+     |
+1352 |     #[cfg(feature = "rabitq-bf16")]
+     |           ^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = note: expected values for `feature` are: `bench`, `pg17`, `pg18`, and `pg_test`
+     = help: consider adding `rabitq-bf16` as a feature in `Cargo.toml`
+     = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+     = note: `#[warn(unexpected_cfgs)]` on by default
+
+warning: unexpected `cfg` condition value: `rabitq-bf16`
+    --> hardening/careful/src/../../../src/quant/rabitq.rs:1365:15
+     |
+1365 |     #[cfg(not(feature = "rabitq-bf16"))]
+     |               ^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = note: expected values for `feature` are: `bench`, `pg17`, `pg18`, and `pg_test`
+     = help: consider adding `rabitq-bf16` as a feature in `Cargo.toml`
+     = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unnecessary `unsafe` block
+   --> hardening/careful/src/spire.rs:462:27
+    |
+462 |             let decoded = unsafe { store.read_routing_object(&placement) }.unwrap();
+    |                           ^^^^^^ unnecessary `unsafe` block
+    |
+    = note: `#[warn(unused_unsafe)]` (part of `#[warn(unused)]`) on by default
+
+warning: unnecessary `unsafe` block
+   --> hardening/careful/src/spire.rs:468:26
+    |
+468 |             let header = unsafe { store.read_object_header(&placement) }.unwrap();
+    |                          ^^^^^^ unnecessary `unsafe` block
+
+warning: unnecessary `unsafe` block
+   --> hardening/careful/src/spire.rs:488:27
+    |
+488 |             let decoded = unsafe { store.read_leaf_object_v2(&placement) }.unwrap();
+    |                           ^^^^^^ unnecessary `unsafe` block
+
+warning: unnecessary `unsafe` block
+   --> hardening/careful/src/spire.rs:496:26
+    |
+496 |             let header = unsafe { store.read_object_header(&placement) }.unwrap();
+    |                          ^^^^^^ unnecessary `unsafe` block
+
+warning: unnecessary `unsafe` block
+   --> hardening/careful/src/spire.rs:530:27
+    |
+530 |             let decoded = unsafe { store.read_delta_object(&placement) }.unwrap();
+    |                           ^^^^^^ unnecessary `unsafe` block
+
+warning: unnecessary `unsafe` block
+   --> hardening/careful/src/spire.rs:536:26
+    |
+536 |             let header = unsafe { store.read_object_header(&placement) }.unwrap();
+    |                          ^^^^^^ unnecessary `unsafe` block
+
+warning: unnecessary `unsafe` block
+   --> hardening/careful/src/spire.rs:570:27
+    |
+570 |             let decoded = unsafe { store.read_top_graph_object(&placement) }.unwrap();
+    |                           ^^^^^^ unnecessary `unsafe` block
+
+warning: unnecessary `unsafe` block
+   --> hardening/careful/src/spire.rs:575:26
+    |
+575 |             let header = unsafe { store.read_object_header(&placement) }.unwrap();
+    |                          ^^^^^^ unnecessary `unsafe` block
+
+warning: unnecessary `unsafe` block
+   --> hardening/careful/src/spire.rs:623:27
+    |
+623 |             let decoded = unsafe { store.read_routing_object(&placement) }.unwrap();
+    |                           ^^^^^^ unnecessary `unsafe` block
+
+warning: unnecessary `unsafe` block
+   --> hardening/careful/src/spire.rs:631:26
+    |
+631 |             let header = unsafe { store.read_object_header(&placement) }.unwrap();
+    |                          ^^^^^^ unnecessary `unsafe` block
+
+warning: unnecessary `unsafe` block
+   --> hardening/careful/src/spire.rs:637:23
+    |
+637 |             let raw = unsafe { store.read_object_bytes(&placement) }.unwrap();
+    |                       ^^^^^^ unnecessary `unsafe` block
+
+warning: unnecessary `unsafe` block
+   --> hardening/careful/src/spire.rs:673:27
+    |
+673 |             let decoded = unsafe { store.read_top_graph_object(&placement) }.unwrap();
+    |                           ^^^^^^ unnecessary `unsafe` block
+
+warning: unnecessary `unsafe` block
+   --> hardening/careful/src/spire.rs:678:26
+    |
+678 |             let header = unsafe { store.read_object_header(&placement) }.unwrap();
+    |                          ^^^^^^ unnecessary `unsafe` block
+
+warning: unnecessary `unsafe` block
+   --> hardening/careful/src/spire.rs:704:27
+    |
+704 |             let decoded = unsafe { store.read_leaf_object_v2(&placement) }.unwrap();
+    |                           ^^^^^^ unnecessary `unsafe` block
+
+warning: unnecessary `unsafe` block
+   --> hardening/careful/src/spire.rs:714:26
+    |
+714 |             let header = unsafe { store.read_object_header(&placement) }.unwrap();
+    |                          ^^^^^^ unnecessary `unsafe` block
+
+warning: unnecessary `unsafe` block
+   --> hardening/careful/src/spire.rs:739:21
+    |
+739 |             assert!(unsafe { store.read_leaf_object(&placement) }.is_err());
+    |                     ^^^^^^ unnecessary `unsafe` block
+
+warning: unnecessary `unsafe` block
+   --> hardening/careful/src/spire.rs:756:21
+    |
+756 |             assert!(unsafe { store.read_routing_object(&wrong_node) }.is_err());
+    |                     ^^^^^^ unnecessary `unsafe` block
+
+warning: unnecessary `unsafe` block
+   --> hardening/careful/src/spire.rs:761:21
+    |
+761 |             assert!(unsafe { store.read_routing_object(&stale) }.is_err());
+    |                     ^^^^^^ unnecessary `unsafe` block
+
+warning: unnecessary `unsafe` block
+   --> hardening/careful/src/spire.rs:766:21
+    |
+766 |             assert!(unsafe { store.read_routing_object(&wrong_store) }.is_err());
+    |                     ^^^^^^ unnecessary `unsafe` block
+
+warning: unnecessary `unsafe` block
+   --> hardening/careful/src/spire.rs:886:17
+    |
+886 |                 unsafe { store.active_object_tuple_locators(&small_placement) }.unwrap();
+    |                 ^^^^^^ unnecessary `unsafe` block
+
+warning: unnecessary `unsafe` block
+   --> hardening/careful/src/spire.rs:895:17
+    |
+895 |                 unsafe { store.active_object_tuple_locators(&chain_placement) }.unwrap();
+    |                 ^^^^^^ unnecessary `unsafe` block
+
+warning: unnecessary `unsafe` block
+   --> hardening/careful/src/spire.rs:911:17
+    |
+911 |                 unsafe { store.active_object_tuple_locators(&leaf_placement) }.unwrap();
+    |                 ^^^^^^ unnecessary `unsafe` block
+
+warning: unnecessary `unsafe` block
+   --> hardening/careful/src/spire.rs:937:13
+    |
+937 |             unsafe { store.prefetch_object_tuple(&placement_a) }.unwrap();
+    |             ^^^^^^ unnecessary `unsafe` block
+
+warning: unnecessary `unsafe` block
+   --> hardening/careful/src/spire.rs:938:13
+    |
+938 |             unsafe { store.prefetch_object_tuples(&[placement_a, placement_b]) }.unwrap();
+    |             ^^^^^^ unnecessary `unsafe` block
+
+warning: unnecessary `unsafe` block
+    --> hardening/careful/src/spire.rs:1133:23
+     |
+1133 |             let err = unsafe { store.read_routing_object(&wrong_bytes) }
+     |                       ^^^^^^ unnecessary `unsafe` block
+
+warning: unnecessary `unsafe` block
+    --> hardening/careful/src/spire.rs:1156:23
+     |
+1156 |             let err = unsafe { store.read_routing_object(&non_local) }
+     |                       ^^^^^^ unnecessary `unsafe` block
+
+warning: unnecessary `unsafe` block
+    --> hardening/careful/src/spire.rs:1181:28
+     |
+1181 |             let locators = unsafe { store.active_object_tuple_locators(&placement) }.unwrap();
+     |                            ^^^^^^ unnecessary `unsafe` block
+
+warning: unnecessary `unsafe` block
+    --> hardening/careful/src/spire.rs:1215:23
+     |
+1215 |             let err = unsafe { store.active_object_tuple_locators(&placement) }
+     |                       ^^^^^^ unnecessary `unsafe` block
+
+warning: unnecessary `unsafe` block
+    --> hardening/careful/src/spire.rs:1241:28
+     |
+1241 |             let locators = unsafe { store.active_object_tuple_locators(&placement) }.unwrap();
+     |                            ^^^^^^ unnecessary `unsafe` block
+
+warning: unnecessary `unsafe` block
+    --> hardening/careful/src/spire.rs:1267:23
+     |
+1267 |             let err = unsafe { store.read_routing_object(&placement) }
+     |                       ^^^^^^ unnecessary `unsafe` block
+
+warning: unnecessary `unsafe` block
+    --> hardening/careful/src/spire.rs:1299:13
+     |
+1299 |             unsafe { store.prefetch_object_tuples(&[placement_a, placement_b]) }.unwrap();
+     |             ^^^^^^ unnecessary `unsafe` block
+
+warning: unnecessary `unsafe` block
+    --> hardening/careful/src/spire.rs:1335:23
+     |
+1335 |             let raw = unsafe { store.read_object_bytes(&placement) }.unwrap();
+     |                       ^^^^^^ unnecessary `unsafe` block
+
+warning: type `LockedBufferGuard` is more private than the item `GenericXLogTxn::register_locked_buffer_full_image`
+   --> hardening/careful/src/../../../src/storage/wal.rs:83:5
+    |
+ 83 | /     pub fn register_locked_buffer_full_image(
+ 84 | |         &mut self,
+ 85 | |         buffer: &LockedBufferGuard,
+ 86 | |     ) -> pg_sys::Page {
+    | |_____________________^ method `GenericXLogTxn::register_locked_buffer_full_image` is reachable at visibility `pub`
+    |
+note: but type `LockedBufferGuard` is only usable at visibility `pub(crate)`
+   --> hardening/careful/src/../../../src/storage/buffer_guard.rs:121:1
+    |
+121 | pub(crate) struct LockedBufferGuard {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = note: `#[warn(private_interfaces)]` on by default
+
+warning: `ecaz-careful-hardening` (lib test) generated 35 warnings
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.08s
+     Running unittests src/lib.rs (target/debug/deps/ecaz_careful_hardening-6ce400faddbc63c8)
+
+running 573 tests
+test careful_common_cost::tests::planner_cost_model_accounts_for_graph_and_linear_components ... [32mok[m
+test careful_common_cost::tests::planner_cost_model_does_not_charge_linear_tail_when_graph_covers_index ... [32mok[m
+test careful_common_cost::tests::planner_cost_model_keeps_real_10k_ef200_probe_below_seqscan_sort_crossover ... [32mok[m
+test careful_common_cost::tests::planner_cost_model_returns_max_for_empty_index ... [32mok[m
+test careful_common_cost::tests::planner_cost_model_stays_cheaper_than_seqscan_for_large_tables ... [32mok[m
+test careful_common_cost::tests::planner_cost_model_stays_more_expensive_than_seqscan_for_small_tables ... [32mok[m
+test careful_common_cost::tests::planner_cost_model_uses_reltuples_heuristic_when_stats_are_missing ... [32mok[m
+test careful_common_cost::tests::planner_cost_model_uses_reltuples_when_stats_are_available ... [32mok[m
+test careful_common_cost::tests::planner_cost_tree_height_snapshot_matches_build_target ... [32mok[m
+test careful_common_cost::tests::strategy_translation_maps_ordering_strategy_to_compare_lt ... [32mok[m
+test careful_common_cost::tests::strategy_translation_rejects_invalid_inputs ... [32mok[m
+test careful_common_cost::tests::strategy_translation_snapshot_matches_build_target ... [32mok[m
+test careful_common_cost::tests::tree_height_callback_value_returns_metadata_max_level ... [32mok[m
+test careful_common_training::tests::grouped_pq4_training_rejects_empty_input ... [32mok[m
+test careful_diskann_build::tests::bo_001_empty_payloads_errors ... [32mok[m
+test careful_common_training::tests::srht_forward_transform_pads_to_effective_dimension ... [32mok[m
+test careful_diskann_build::tests::bo_002_zero_r_errors ... [32mok[m
+test careful_diskann_build::tests::bo_003_alpha_below_one_errors ... [32mok[m
+test careful_diskann_build::tests::bo_003b_payload_flags_clears_cold_rerank_in_v0 ... [32mok[m
+test careful_diskann_build::tests::bo_004_w_c_derivation ... [32mok[m
+test careful_common_training::tests::grouped_pq4_model_trains_and_derives_codes ... [32mok[m
+test careful_diskann_build::tests::bo_006_payload_shape_mismatch_errors ... [32mok[m
+test careful_diskann_build::tests::rabitq_build_params_use_direct_search_code_without_sidecar_flags ... [32mok[m
+test careful_diskann_page::tests::decode_preserves_existing_grouped_pq_metadata ... [32mok[m
+test careful_diskann_page::tests::la_001_fresh_metadata_roundtrip ... [32mok[m
+test careful_diskann_page::tests::la_002_format_version_tag_is_three ... [32mok[m
+test careful_diskann_build::tests::bo_008_persisted_tuples_decode_with_metadata_constants ... [32mok[m
+test careful_diskann_page::tests::la_003_encoded_length_matches_constant ... [32mok[m
+test careful_diskann_page::tests::la_004_foreign_format_tag_rejected ... [32mok[m
+test careful_diskann_page::tests::la_005_alpha_f32_bit_exact ... [32mok[m
+test careful_diskann_page::tests::la_005b_empty_clears_cold_rerank_flag ... [32mok[m
+test careful_diskann_page::tests::la_006_needs_medoid_refresh_flag_roundtrips ... [32mok[m
+test careful_diskann_page::tests::metadata_roundtrip_preserves_rabitq_codec_fields ... [32mok[m
+test careful_diskann_page::tests::miri_vamana_metadata_roundtrip_with_codebook_head ... [32mok[m
+test careful_diskann_persist::tests::cb_001_empty_model_errors ... [32mok[m
+test careful_diskann_persist::tests::cb_002_centroid_count_mismatch_errors ... [32mok[m
+test careful_diskann_persist::tests::cb_003_single_group_terminates_chain ... [32mok[m
+test careful_diskann_persist::tests::pe_001_empty_graph_errors ... [32mok[m
+test careful_diskann_persist::tests::cb_004_multi_group_chain_links_all_shards ... [32mok[m
+test careful_diskann_persist::tests::pe_002_payload_count_mismatch_errors ... [32mok[m
+test careful_diskann_persist::tests::pe_003_medoid_out_of_range_errors ... [32mok[m
+test careful_diskann_persist::tests::pe_004_payload_body_size_mismatch_errors ... [32mok[m
+test careful_diskann_persist::tests::pe_005_max_degree_exceeds_r_errors ... [32mok[m
+test careful_diskann_persist::tests::pe_006_single_node_persists ... [32mok[m
+test careful_diskann_persist::tests::pe_007_connected_chain_round_trip ... [32mok[m
+test careful_diskann_persist::tests::pe_008_disconnected_graph_persists_unreached ... [32mok[m
+test careful_diskann_build::tests::bo_007_deterministic_for_fixed_seed ... [32mok[m
+test careful_diskann_persist::tests::pe_010_placeholder_patched_lengths_align ... [32mok[m
+test careful_diskann_reader::tests::rd_001_read_node_round_trip ... [32mok[m
+test careful_diskann_reader::tests::rd_002_read_node_unknown_block_errors ... [32mok[m
+test careful_diskann_reader::tests::rd_003_neighbors_drops_invalid_tail ... [32mok[m
+test careful_diskann_reader::tests::rd_005_adjacency_matches_in_memory ... [32mok[m
+test careful_diskann_reader::tests::rd_004_reader_bfs_reaches_all ... [32mok[m
+test careful_diskann_persist::tests::pe_009_multi_page_chain ... [32mok[m
+test careful_diskann_reader::tests::rd_007_greedy_descends_gradient ... [32mok[m
+test careful_diskann_reader::tests::rd_008_greedy_rejects_bad_args ... [32mok[m
+test careful_diskann_reader::tests::rd_009_frontier_is_sorted ... [32mok[m
+test careful_diskann_reader::tests::rd_012_visited_state_clear_and_reserve ... [32mok[m
+test careful_diskann_reader::tests::rd_013_iter_tids_walks_every_slot_in_order ... [32mok[m
+test careful_diskann_build::tests::bo_005_end_to_end_metadata_and_persisted ... [32mok[m
+test careful_diskann_reader::tests::rd_014_iter_live_tids_skips_tombstoned ... [32mok[m
+test careful_diskann_reader::tests::rd_015_first_live_tid_skips_leading_tombstones ... [32mok[m
+test careful_diskann_reader::tests::rd_011_visited_state_reuse_matches_fresh ... [32mok[m
+test careful_diskann_reader::tests::rd_016_first_live_tid_none_when_all_dead ... [32mok[m
+test careful_diskann_reader::tests::rd_017_iter_live_tids_skips_stripped_without_tombstone ... [32mok[m
+test careful_diskann_reader::tests::rd_018_first_live_tid_skips_stripped_without_tombstone ... [32mok[m
+test careful_diskann_reader::tests::rd_019_overflow_only_tuple_is_live ... [32mok[m
+test careful_diskann_reader::tests::rd_020_iter_live_tids_skips_grouped_codebook_tuples ... [32mok[m
+test careful_diskann_reader::tests::rd_021_first_live_tid_skips_grouped_codebook_gap ... [32mok[m
+test careful_diskann_routine_helpers::scaffold::tests::miri_collect_node_tids_walks_every_chain_page_in_order ... [32mok[m
+test careful_diskann_reader::tests::rd_006_greedy_matches_in_memory_oracle ... [32mok[m
+test careful_diskann_persist::tests::pe_011_end_to_end_with_built_graph ... [32mok[m
+test careful_diskann_reader::tests::rd_010_bridge_from_build_output ... [32mok[m
+test careful_diskann_routine_helpers::scaffold::tests::miri_collect_tuple_rewrites_rejects_block_number_mismatch ... [32mok[m
+test careful_diskann_routine_helpers::scaffold::tests::miri_collect_tuple_rewrites_finds_only_changed_tuples ... [32mok[m
+test careful_diskann_routine_helpers::scaffold::tests::miri_collect_tuple_rewrites_rejects_tuple_count_mismatch ... [32mok[m
+test careful_diskann_routine_helpers::scaffold::tests::miri_collect_tuple_rewrites_rejects_mismatched_page_counts ... [32mok[m
+test careful_diskann_routine_helpers::scaffold::tests::miri_count_live_tuples_in_chain_excludes_deleted_entries ... [32mok[m
+test careful_diskann_routine_helpers::scaffold::tests::miri_expand_scan_results_inflates_per_owner_and_respects_top_k ... [32mok[m
+test careful_diskann_routine_helpers::scaffold::tests::miri_collect_tuple_rewrites_returns_empty_when_identical ... [32mok[m
+test careful_diskann_routine_helpers::scaffold::tests::miri_read_chain_node_round_trips_through_persisted_reader ... [32mok[m
+test careful_diskann_routine_helpers::scaffold::tests::miri_sort_and_dedup_item_pointers_sorts_physical_and_removes_dupes ... [32mok[m
+test careful_diskann_routine_helpers::scaffold::tests::miri_sql_scan_result_cap_returns_rerank_budget_regardless_of_top_k ... [32mok[m
+test careful_diskann_routine_helpers::scaffold::tests::miri_vacuum_repair_scan_budget_clamps_to_at_least_one_neighbor ... [32mok[m
+test careful_diskann_routine_helpers::scaffold::tests::miri_write_chain_node_rejects_unknown_block_number ... [32mok[m
+test careful_diskann_routine_helpers::scaffold::tests::miri_write_chain_node_round_trips_mutated_tuple ... [32mok[m
+test careful_diskann_scan::tests::sc_001_end_to_end_top1_on_chain ... [32mok[m
+test careful_diskann_scan::tests::sc_002_rerank_can_reorder_prefilter ... [32mok[m
+test careful_diskann_scan::tests::sc_003_rerank_budget_caps_rerank_calls ... [32mok[m
+test careful_diskann_scan::tests::sc_003b_rerank_visits_in_full_heap_tid_order ... [32mok[m
+test careful_diskann_scan::tests::sc_004_top_k_truncates ... [32mok[m
+test careful_diskann_scan::tests::sc_005_invalid_entry_errors ... [32mok[m
+test careful_diskann_scan::tests::sc_006_parameter_validation ... [32mok[m
+test careful_diskann_scan::tests::sc_008_result_carries_primary_heaptid ... [32mok[m
+test careful_diskann_scan::tests::sc_009_results_sorted_by_distance ... [32mok[m
+test careful_diskann_scan::tests::sc_012_resolve_entry_point_prefers_live_medoid ... [32mok[m
+test careful_diskann_scan::tests::sc_011_scan_with_scratch_reuse_matches_fresh ... [32mok[m
+test careful_diskann_scan::tests::sc_013_resolve_entry_point_falls_back_on_dead_medoid ... [32mok[m
+test careful_diskann_scan::tests::sc_014_resolve_entry_point_none_when_all_dead ... [32mok[m
+test careful_diskann_scan::tests::sc_015_resolve_entry_point_rejects_stripped_without_tombstone ... [32mok[m
+test careful_diskann_scan::tests::sc_016_scan_drops_stripped_candidates ... [32mok[m
+test careful_diskann_scan::tests::sc_017_scan_returns_empty_when_all_stripped ... [32mok[m
+test careful_diskann_tuple::tests::la_010_empty_node_roundtrip ... [32mok[m
+test careful_diskann_tuple::tests::la_012_encoded_len_matches_computation ... [32mok[m
+test careful_diskann_tuple::tests::la_013_foreign_tag_rejected ... [32mok[m
+test careful_diskann_tuple::tests::la_014_validate_neighbor_capacity ... [32mok[m
+test careful_diskann_tuple::tests::la_015_validate_neighbor_count_bounded_by_r ... [32mok[m
+test careful_diskann_tuple::tests::la_016_empty_slots_are_invalid_pointer ... [32mok[m
+test careful_diskann_tuple::tests::la_017_deleted_flag_roundtrips ... [32mok[m
+test careful_diskann_tuple::tests::la_018_overflow_heaptids_flag_independent ... [32mok[m
+test careful_diskann_tuple::tests::la_019_fixed_length_invariant ... [32mok[m
+test careful_diskann_tuple::tests::la_020_header_size_locked ... [32mok[m
+test careful_diskann_tuple::tests::la_021_decode_rejects_wrong_length ... [32mok[m
+test careful_diskann_tuple::tests::la_022_validate_body_sizes_against_metadata ... [32mok[m
+test careful_diskann_tuple::tests::la_031_codebook_placeholder_patched_same_length ... [32mok[m
+test careful_diskann_tuple::tests::la_032_codebook_foreign_tag_rejected ... [32mok[m
+test careful_diskann_tuple::tests::la_033_codebook_wrong_length_rejected ... [32mok[m
+test careful_diskann_tuple::tests::miri_la_011_filled_node_roundtrip ... [32mok[m
+test careful_diskann_tuple::tests::miri_la_030_codebook_tuple_roundtrip ... [32mok[m
+test careful_diskann_scan::tests::sc_010_greedy_descent_exposed ... [32mok[m
+test careful_diskann_vacuum::tests::miri_vc_001_mark_deleted_is_idempotent ... [32mok[m
+test careful_diskann_vacuum::tests::miri_vc_002_mark_deleted_preserves_payload ... [32mok[m
+test careful_diskann_vacuum::tests::miri_vc_003_strip_dead_primary_heaptid_predicate ... [32mok[m
+test careful_diskann_vacuum::tests::miri_vc_004_strip_skips_already_invalid ... [32mok[m
+test careful_diskann_vacuum::tests::miri_vc_005_is_fully_dead_semantics ... [32mok[m
+test careful_diskann_vacuum::tests::miri_vc_006_repair_neighbors_compacts_and_pads ... [32mok[m
+test careful_diskann_vacuum::tests::miri_vc_009_repair_preserves_encoded_length ... [32mok[m
+test careful_diskann_vacuum::tests::miri_vc_010_full_deletion_state_machine ... [32mok[m
+test careful_diskann_vacuum::tests::vc_007_repair_with_empty_dead_set_noop ... [32mok[m
+test careful_diskann_vacuum::tests::vc_008_repair_is_stable ... [32mok[m
+test careful_diskann_vamana::tests::append_candidates_for_prune_deduplicates_extra_nodes ... [32mok[m
+test careful_diskann_scan::tests::sc_007_end_to_end_matches_brute_force ... [32mok[m
+test careful_diskann_vamana::tests::candidate_pool_includes_existing_out_neighbors ... [32mok[m
+test careful_diskann_vamana::tests::miri_greedy_search_finds_nearest ... [32mok[m
+test careful_diskann_vamana::tests::miri_robust_prune_excludes_alpha_dominated ... [32mok[m
+test careful_diskann_vamana::tests::miri_build_stats_include_pass1_extra_candidates ... [32mok[m
+test careful_diskann_vamana::tests::miri_build_small_graph_is_connected ... [32mok[m
+test careful_diskann_vamana::tests::robust_prune_respects_max_degree ... [32mok[m
+test careful_hnsw_page::tests::compressed_element_tuple_fits_on_default_page ... [32mok[m
+test careful_hnsw_page::tests::data_page_chain_typed_updates_mutate_tuple_payloads_and_report_missing_blocks ... [32mok[m
+test careful_hnsw_page::tests::element_tuple_lengths_and_heap_tid_bounds_are_checked ... [32mok[m
+test careful_hnsw_page::tests::data_page_typed_updates_mutate_tuple_payloads_and_report_missing_tids ... [32mok[m
+test careful_hnsw_page::tests::element_tuple_page_roundtrip ... [32mok[m
+test careful_hnsw_page::tests::element_tuple_ref_exposes_borrowed_code_and_live_heaptids ... [32mok[m
+test careful_hnsw_page::tests::element_tuple_roundtrip ... [32mok[m
+test careful_hnsw_page::tests::grouped_codebook_tuple_page_roundtrip ... [32mok[m
+test careful_hnsw_page::tests::grouped_codebook_tuple_roundtrip ... [32mok[m
+test careful_hnsw_page::tests::grouped_hot_tuple_lengths_and_heap_tid_bounds_are_checked ... [32mok[m
+test careful_hnsw_page::tests::grouped_hot_tuple_page_roundtrip ... [32mok[m
+test careful_diskann_vamana::tests::build_stats_include_pass1_extra_candidates ... [32mok[m
+test careful_hnsw_page::tests::grouped_hot_tuple_ref_exposes_borrowed_payloads ... [32mok[m
+test careful_diskann_vamana::tests::approximate_medoid_within_10pct_of_exact ... [32mok[m
+test careful_hnsw_page::tests::grouped_hot_tuple_roundtrip ... [32mok[m
+test careful_hnsw_page::tests::layout_constants_pin_metadata_tuple_and_flag_bytes ... [32mok[m
+test careful_hnsw_page::tests::level_cap_produces_fitting_neighbor_tuple ... [32mok[m
+test careful_hnsw_page::tests::metadata_current_builders_gate_codecs_on_dimensions_and_bits ... [32mok[m
+test careful_hnsw_page::tests::metadata_decode_page_accepts_legacy_layout ... [32mok[m
+test careful_hnsw_page::tests::metadata_graph_storage_format_distinguishes_v1_v2_and_v3 ... [32mok[m
+test careful_hnsw_page::tests::metadata_page_boundaries_and_current_to_legacy_fallbacks ... [32mok[m
+test careful_hnsw_page::tests::metadata_page_roundtrip ... [32mok[m
+test careful_hnsw_page::tests::metadata_roundtrip ... [32mok[m
+test careful_hnsw_page::tests::metadata_roundtrip_preserves_v3_turbo_hot_cold_layout ... [32mok[m
+test careful_hnsw_page::tests::miri_element_tuple_roundtrip ... [32mok[m
+test careful_hnsw_page::tests::miri_grouped_hot_tuple_roundtrip ... [32mok[m
+test careful_hnsw_page::tests::miri_metadata_roundtrip ... [32mok[m
+test careful_hnsw_page::tests::miri_neighbor_tuple_roundtrip ... [32mok[m
+test careful_hnsw_page::tests::miri_rerank_tuple_roundtrip ... [32mok[m
+test careful_hnsw_page::tests::miri_turbo_hot_tuple_roundtrip ... [32mok[m
+test careful_hnsw_page::tests::neighbor_tuple_lengths_counts_and_fit_boundaries_are_checked ... [32mok[m
+test careful_hnsw_page::tests::neighbor_tuple_page_roundtrip ... [32mok[m
+test careful_hnsw_page::tests::neighbor_tuple_roundtrip ... [32mok[m
+test careful_hnsw_page::tests::page_chain_extends_for_multiple_element_tuples ... [32mok[m
+test careful_hnsw_page::tests::page_chain_extends_for_multiple_grouped_hot_tuples ... [32mok[m
+test careful_hnsw_page::tests::page_chain_extends_for_multiple_rerank_tuples ... [32mok[m
+test careful_hnsw_page::tests::rerank_tuple_page_roundtrip ... [32mok[m
+test careful_hnsw_page::tests::rerank_tuple_roundtrip ... [32mok[m
+test careful_hnsw_page::tests::page_chain_extends_for_multiple_turbo_hot_tuples ... [32mok[m
+test careful_hnsw_page::tests::turbo_hot_tuple_lengths_and_heap_tid_bounds_are_checked ... [32mok[m
+test careful_hnsw_page::tests::turbo_hot_tuple_page_roundtrip ... [32mok[m
+test careful_hnsw_page::tests::turbo_hot_tuple_ref_exposes_borrowed_payloads ... [32mok[m
+test careful_hnsw_page::tests::turbo_hot_tuple_roundtrip ... [32mok[m
+test careful_hnsw_search::tests::beam_search_expand_one_matches_incremental_best_first_progress ... [32mok[m
+test careful_hnsw_page::tests::page_chain_extends_for_multiple_grouped_codebook_tuples ... [32mok[m
+test careful_hnsw_search::tests::beam_search_expands_best_first_from_seeds ... [32mok[m
+test careful_hnsw_search::tests::beam_search_forget_queued_ignores_expanded_or_unknown_nodes ... [32mok[m
+test careful_hnsw_search::tests::beam_search_respects_expansion_budget ... [32mok[m
+test careful_hnsw_search::tests::beam_search_run_matches_repeated_expand_one ... [32mok[m
+test careful_hnsw_search::tests::beam_search_seed_many_accepts_unique_candidates_only ... [32mok[m
+test careful_hnsw_search::tests::beam_search_take_best_matching_consumes_first_live_candidate ... [32mok[m
+test careful_hnsw_search::tests::miri_beam_search_deduplicates_self_loops_and_parallel_edges ... [32mok[m
+test careful_hnsw_search::tests::miri_beam_search_forget_queued_removes_frontier_node_and_allows_reseed ... [32mok[m
+test careful_hnsw_search::tests::miri_beam_search_peek_best_matching_returns_none_after_dropping_fully_stale_frontier ... [32mok[m
+test careful_diskann_vamana::tests::build_small_graph_is_connected ... [32mok[m
+test careful_hnsw_search::tests::miri_beam_search_peek_best_matching_skips_stale_leaders ... [32mok[m
+test careful_hnsw_search::tests::miri_visible_frontier_best_candidate_prefers_live_scheduler_node ... [32mok[m
+test careful_hnsw_search::tests::miri_visible_frontier_select_next_with_refill_skips_until_selected_then_advances ... [32mok[m
+test careful_hnsw_search::tests::visible_frontier_advance_after_consume_marks_refills_and_tops_up_unexpanded_source ... [32mok[m
+test careful_hnsw_search::tests::visible_frontier_advance_after_consume_skips_refill_for_expanded_source ... [32mok[m
+test careful_hnsw_search::tests::visible_frontier_best_candidate_falls_back_after_scheduler_drains ... [32mok[m
+test careful_hnsw_search::tests::visible_frontier_consume_best_prefers_live_scheduler_node ... [32mok[m
+test careful_hnsw_search::tests::visible_frontier_refill_from_source_uses_remaining_capacity_and_seeds ... [32mok[m
+test careful_hnsw_search::tests::visible_frontier_seed_bootstrap_trace_seeds_and_marks_entry_source ... [32mok[m
+test careful_hnsw_search::tests::visible_frontier_seed_discovered_marks_nodes_and_seeds_scheduler ... [32mok[m
+test careful_hnsw_search::tests::visible_frontier_top_up_from_visible_seeds_filters_marks_and_seeds ... [32mok[m
+test careful_ivf_page::tests::block_in_range_rejects_invalid_and_out_of_range_blocks ... [32mok[m
+test careful_ivf_page::tests::block_ref_roundtrip ... [32mok[m
+test careful_ivf_page::tests::centroid_tuple_rejects_dimension_mismatch ... [32mok[m
+test careful_ivf_page::tests::centroid_tuple_roundtrip ... [32mok[m
+test careful_ivf_page::tests::data_page_chain_extends_for_large_posting_tuples ... [32mok[m
+test careful_ivf_page::tests::data_page_chain_ivf_tuple_roundtrips ... [32mok[m
+test careful_ivf_page::tests::data_page_ivf_tuple_roundtrips ... [32mok[m
+test careful_ivf_page::tests::layout_constants_pin_tuple_offsets_and_flags ... [32mok[m
+test careful_ivf_page::tests::layout_fit_helpers_track_page_capacity ... [32mok[m
+test careful_ivf_page::tests::list_directory_tuple_roundtrip ... [32mok[m
+test careful_ivf_page::tests::metadata_decode_accepts_known_format_codes_and_rejects_unknown_codes ... [32mok[m
+test careful_ivf_page::tests::metadata_decode_rejects_truncated_input ... [32mok[m
+test careful_ivf_page::tests::metadata_roundtrip ... [32mok[m
+test careful_ivf_page::tests::next_physical_tuple_tid_advances_within_page_and_across_blocks ... [32mok[m
+test careful_ivf_page::tests::page_line_pointer_count_uses_header_lower_bound ... [32mok[m
+test careful_ivf_page::tests::posting_delete_compaction_is_disabled_on_mixed_pages ... [32mok[m
+test careful_ivf_page::tests::posting_free_hint_roundtrip_is_keyed_by_relation_and_list ... [32mok[m
+test careful_ivf_page::tests::posting_tuple_rejects_heaptid_overflow ... [32mok[m
+test careful_ivf_page::tests::posting_tuple_rejects_invalid_flags_and_heap_tid_counts ... [32mok[m
+test careful_ivf_page::tests::posting_tuple_roundtrip_preserves_duplicate_heap_tids ... [32mok[m
+test careful_ivf_page::tests::pq_codebook_tuple_roundtrip ... [32mok[m
+test careful_pg_guards::tests::lock_guard_releases_adopted_lwlock_once ... [32mok[m
+test careful_pg_guards::tests::locked_buffer_guard_rejects_invalid_and_unlocks_release ... [32mok[m
+test careful_pg_guards::tests::locked_buffer_read_main_variants_wrap_read_buffer ... [32mok[m
+test careful_pg_guards::tests::pinned_buffer_guard_rejects_invalid_and_releases_pin ... [32mok[m
+test careful_pg_guards::tests::pinned_buffer_read_main_wraps_read_buffer_and_rejects_invalid_reads ... [32mok[m
+test careful_pg_guards::tests::slot_guard_drops_created_slots_once ... [32mok[m
+test careful_pg_guards::tests::relation_guards_reject_null_and_close_matching_relation_kind ... [32mok[m
+test careful_pg_guards::tests::scan_guards_end_index_and_heap_scans_once ... [32mok[m
+test careful_pg_guards::tests::snapshot_guards_unregister_and_active_guard_pops ... [32mok[m
+test careful_pg_guards::tests::spi_tuple_table_guard_rejects_null_and_frees_owned_table ... [32mok[m
+test careful_spire::meta::tests::cleanup_eligibility_keeps_building_and_published_epochs ... [32mok[m
+test careful_spire::meta::tests::cleanup_eligibility_keeps_retired_epochs_until_retention_and_queries_clear ... [32mok[m
+test careful_spire::meta::tests::cleanup_eligibility_uses_failed_epoch_retain_until ... [32mok[m
+test careful_spire::meta::tests::cleanup_plan_keeps_active_epoch_and_newest_retired_epochs ... [32mok[m
+test careful_spire::meta::tests::cleanup_plan_rejects_duplicate_epochs ... [32mok[m
+test careful_spire::meta::tests::cleanup_plan_waits_for_retention_and_active_queries ... [32mok[m
+test careful_spire::meta::tests::embedded_single_store_config_preserves_current_store_shape ... [32mok[m
+test careful_spire::meta::tests::epoch_manifest_allows_building_without_publish_timestamp ... [32mok[m
+test careful_spire::meta::tests::epoch_manifest_rejects_invalid_magic_and_format ... [32mok[m
+test careful_spire::meta::tests::epoch_manifest_rejects_invalid_publish_timing ... [32mok[m
+test careful_spire::meta::tests::epoch_manifest_rejects_invalid_state_and_consistency_mode ... [32mok[m
+test careful_spire::meta::tests::epoch_manifest_round_trips ... [32mok[m
+test careful_spire::meta::tests::local_single_store_placement_uses_default_ids ... [32mok[m
+test careful_spire::meta::tests::local_single_store_state_constructors_make_state_explicit ... [32mok[m
+test careful_spire::meta::tests::local_store_config_allows_repeated_tablespaces_for_baselines ... [32mok[m
+test careful_spire::meta::tests::local_store_config_places_pid_by_stable_hash_mod_store_count ... [32mok[m
+test careful_spire::meta::tests::local_store_config_rejects_empty_duplicate_or_invalid_store_relid ... [32mok[m
+test careful_spire::meta::tests::local_store_config_validates_placements_against_active_store_set ... [32mok[m
+test careful_spire::meta::tests::manifest_entry_rejects_invalid_identity_locator_and_reserved_bytes ... [32mok[m
+test careful_spire::meta::tests::manifest_entry_round_trips ... [32mok[m
+test careful_spire::meta::tests::object_manifest_rejects_corrupt_header_and_length ... [32mok[m
+test careful_spire::meta::tests::object_manifest_rejects_duplicate_pid_and_epoch_mismatch ... [32mok[m
+test careful_spire::meta::tests::object_manifest_sorts_and_round_trips_entries ... [32mok[m
+test careful_spire::meta::tests::placement_directory_rejects_corrupt_header_and_length ... [32mok[m
+test careful_spire::meta::tests::placement_directory_rejects_duplicate_pid_and_epoch_mismatch ... [32mok[m
+test careful_spire::meta::tests::placement_directory_sorts_and_round_trips_entries ... [32mok[m
+test careful_spire::meta::tests::placement_entry_rejects_invalid_identity_and_locator ... [32mok[m
+test careful_spire::meta::tests::placement_entry_rejects_unknown_state_and_format ... [32mok[m
+test careful_spire::meta::tests::placement_entry_round_trips ... [32mok[m
+test careful_spire::meta::tests::published_epoch_snapshot_accepts_strict_available_placement ... [32mok[m
+test careful_spire::meta::tests::published_epoch_snapshot_degraded_mode_allows_unavailable_or_skipped_placement ... [32mok[m
+test careful_spire::meta::tests::published_epoch_snapshot_rejects_epoch_mismatch ... [32mok[m
+test careful_spire::meta::tests::published_epoch_snapshot_rejects_missing_or_version_mismatched_placement ... [32mok[m
+test careful_spire::meta::tests::published_epoch_snapshot_rejects_non_available_placement_in_strict_mode ... [32mok[m
+test careful_spire::meta::tests::published_epoch_snapshot_rejects_non_published_epoch ... [32mok[m
+test careful_spire::meta::tests::retention_defaults_match_phase0_design ... [32mok[m
+test careful_spire::meta::tests::root_control_empty_state_round_trips ... [32mok[m
+test careful_spire::meta::tests::root_control_published_state_round_trips ... [32mok[m
+test careful_spire::meta::tests::root_control_rejects_corrupt_header ... [32mok[m
+test careful_spire::meta::tests::root_control_rejects_invalid_cursors_and_manifest_refs ... [32mok[m
+test careful_spire::meta::tests::spire_pid_hash_has_stable_cross_platform_values ... [32mok[m
+test careful_spire::meta::tests::validated_epoch_snapshot_builds_pid_lookup_cache ... [32mok[m
+test careful_spire::page_tests::append_and_read_object_tuple_round_trip_through_emulator ... [32mok[m
+test careful_spire::page_tests::append_object_tuple_rejects_empty_payload ... [32mok[m
+test careful_spire::page_tests::append_object_tuple_rejects_uninitialized_relation ... [32mok[m
+test careful_spire::page_tests::delete_object_tuples_no_compact_is_noop_for_empty_input ... [32mok[m
+test careful_spire::page_tests::delete_object_tuples_no_compact_rejects_metadata_block_tid ... [32mok[m
+test careful_spire::page_tests::first_data_block_is_immediately_after_metadata_block ... [32mok[m
+test careful_spire::page_tests::delete_object_tuples_no_compact_removes_real_tuples_and_reports_bytes ... [32mok[m
+test careful_spire::page_tests::initialize_and_read_root_control_round_trip_through_emulator ... [32mok[m
+test careful_spire::page_tests::read_object_tuple_rejects_metadata_block_tid ... [32mok[m
+test careful_spire::page_tests::rewrite_object_tuple_same_len_updates_payload_in_place ... [32mok[m
+test careful_spire::page_tests::scan_object_tuples_visits_every_appended_tuple_in_order ... [32mok[m
+test careful_spire::storage::tests::leaf_partition_object_rejects_count_mismatch_and_trailing_bytes ... [32mok[m
+test careful_spire::storage::tests::leaf_partition_object_rejects_delta_flags ... [32mok[m
+test careful_spire::storage::tests::leaf_partition_object_rejects_duplicate_vec_ids ... [32mok[m
+test careful_spire::storage::tests::leaf_partition_object_rejects_missing_role_flags ... [32mok[m
+test careful_spire::storage::tests::leaf_partition_object_rejects_non_leaf_header_and_children ... [32mok[m
+test careful_spire::storage::tests::leaf_partition_object_rejects_scored_assignments_without_payload ... [32mok[m
+test careful_spire::storage::tests::leaf_partition_object_round_trips_assignments ... [32mok[m
+test careful_spire::storage::tests::leaf_partition_object_v2_rejects_mixed_payload_or_vec_id_layout ... [32mok[m
+test careful_spire::storage::tests::leaf_partition_object_v2_store_preserves_empty_leaf_without_segments ... [32mok[m
+test careful_spire::storage::tests::leaf_partition_object_v2_store_preserves_fixed_width_global_vec_ids ... [32mok[m
+test careful_spire::storage::tests::local_object_store_preserves_descriptor_store_id ... [32mok[m
+test careful_spire::storage::tests::leaf_partition_object_v2_store_segments_large_leaf ... [32mok[m
+test careful_spire::storage::tests::local_object_store_reads_object_headers_for_dispatch ... [32mok[m
+test careful_spire::storage::tests::local_object_store_rejects_invalid_store_and_epoch ... [32mok[m
+test careful_spire::storage::tests::local_object_store_rejects_mismatched_delta_placement ... [32mok[m
+test careful_spire::storage::tests::local_object_store_rejects_mismatched_placement ... [32mok[m
+test careful_spire::storage::tests::local_object_store_rejects_mismatched_routing_placement ... [32mok[m
+test careful_spire::storage::tests::local_object_store_rejects_unavailable_descriptor ... [32mok[m
+test careful_spire::storage::tests::local_object_store_set_from_config_rejects_duplicate_local_store_id ... [32mok[m
+test careful_spire::storage::tests::local_object_store_set_indexes_non_contiguous_store_ids ... [32mok[m
+test careful_spire::storage::tests::local_object_store_set_object_reader_trait_routes_through_store_for_placement ... [32mok[m
+test careful_spire::storage::tests::local_object_store_set_rejects_unconfigured_placements ... [32mok[m
+test careful_spire::storage::tests::local_object_store_set_round_trips_leaf_v1 ... [32mok[m
+test careful_spire::storage::tests::local_object_store_set_round_trips_non_leaf_object_kinds ... [32mok[m
+test careful_spire::storage::tests::local_object_store_set_routes_by_pid_and_reads_back_objects ... [32mok[m
+test careful_spire::storage::tests::local_object_store_writes_and_reads_delta_object ... [32mok[m
+test careful_spire::storage::tests::local_object_store_trait_dispatch_covers_all_read_methods ... [32mok[m
+test careful_spire::storage::tests::local_object_store_writes_and_reads_leaf_object ... [32mok[m
+test careful_spire::storage::tests::local_object_store_writes_and_reads_routing_object ... [32mok[m
+test careful_spire::storage::tests::local_store_relation_name_is_deterministic ... [32mok[m
+test careful_spire::storage::tests::local_object_store_writes_and_reads_top_graph_object ... [32mok[m
+test careful_spire::storage::tests::local_store_relation_plan_builds_store_config_from_created_relids ... [32mok[m
+test careful_spire::storage::tests::local_store_relation_plan_sorts_and_preserves_tablespaces ... [32mok[m
+test careful_spire::storage::tests::miri_assignment_row_decode_rejects_vec_id_len_above_max ... [32mok[m
+test careful_spire::storage::tests::miri_assignment_row_decode_rejects_zero_vec_id_len_at_min_prefix_boundary ... [32mok[m
+test careful_spire::storage::tests::miri_assignment_row_prefix_decoder_returns_tail ... [32mok[m
+test careful_spire::storage::tests::miri_assignment_row_ref_prefix_decoder_borrows_payload ... [32mok[m
+test careful_spire::storage::tests::miri_assignment_row_rejects_length_mismatch ... [32mok[m
+test careful_spire::storage::tests::miri_assignment_row_rejects_unknown_flags_and_invalid_locator ... [32mok[m
+test careful_spire::storage::tests::miri_assignment_row_rejects_unknown_payload_format ... [32mok[m
+test careful_spire::storage::tests::miri_assignment_row_round_trips ... [32mok[m
+test careful_spire::storage::tests::miri_assignment_row_round_trips_with_vec_id_at_max_bytes ... [32mok[m
+test careful_spire::storage::tests::miri_assignment_visibility_helpers_match_primary_and_delta_semantics ... [32mok[m
+test careful_spire::storage::tests::miri_decode_leaf_v2_local_vec_id_padding_check_starts_after_seq ... [32mok[m
+test careful_spire::storage::tests::miri_delta_partition_object_rejects_delete_payloads ... [32mok[m
+test careful_spire::storage::tests::miri_delta_partition_object_rejects_duplicate_vec_ids ... [32mok[m
+test careful_spire::storage::tests::miri_delta_partition_object_rejects_invalid_delta_flags ... [32mok[m
+test careful_spire::storage::tests::miri_delta_partition_object_rejects_invalid_header_shape ... [32mok[m
+test careful_spire::storage::tests::miri_delta_partition_object_round_trips_insert_and_delete_rows ... [32mok[m
+test careful_spire::storage::tests::miri_global_vec_id_max_payload_is_accepted ... [32mok[m
+test careful_spire::storage::tests::miri_global_vec_id_preserves_payload ... [32mok[m
+test careful_spire::storage::tests::miri_is_delete_delta_assignment_flags_distinguishes_zero_and_set ... [32mok[m
+test careful_spire::storage::tests::miri_is_delete_delta_assignment_wrapper_rejects_non_delete_rows ... [32mok[m
+test careful_spire::storage::tests::miri_is_visible_primary_assignment_flags_rejects_zero_flags ... [32mok[m
+test careful_spire::storage::tests::miri_is_visible_primary_assignment_ref_rejects_tombstone ... [32mok[m
+test careful_spire::storage::tests::miri_is_visible_scored_assignment_flags_rejects_zero_flags ... [32mok[m
+test careful_spire::storage::tests::miri_is_visible_scored_assignment_rejects_tombstone ... [32mok[m
+test careful_spire::storage::tests::miri_leaf_object_columns_row_rejects_out_of_range_offset ... [32mok[m
+test careful_spire::storage::tests::miri_leaf_object_columns_row_with_row_base_offsets_row_index ... [32mok[m
+test careful_spire::storage::tests::miri_leaf_v2_assignment_rows_round_trips_segments_back_to_rows ... [32mok[m
+test careful_spire::storage::tests::miri_leaf_v2_assignment_vec_id_layout_accepts_boundary_global_strides ... [32mok[m
+test careful_spire::storage::tests::miri_leaf_v2_column_layout_offsets_are_consistent ... [32mok[m
+test careful_spire::storage::tests::miri_leaf_v2_empty_meta_rejects_segment_locator ... [32mok[m
+test careful_spire::storage::tests::miri_leaf_v2_max_segment_rows_returns_expected_count_and_errors_on_zero_room ... [32mok[m
+test careful_spire::storage::tests::miri_leaf_v2_meta_rejects_empty_meta_with_nonzero_segment_count ... [32mok[m
+test careful_spire::storage::tests::miri_leaf_v2_meta_rejects_invalid_validate_inputs ... [32mok[m
+test careful_spire::storage::tests::miri_leaf_v2_segment_decode_distinguishes_prefix_boundary_via_error_message ... [32mok[m
+test careful_spire::storage::tests::miri_leaf_v2_segment_rows_roundtrip_through_columns ... [32mok[m
+test careful_spire::storage::tests::miri_leaf_v2_segment_validate_rejects_object_version_mismatch_only ... [32mok[m
+test careful_spire::storage::tests::miri_leaf_v2_segment_validate_rejects_pid_mismatch_only ... [32mok[m
+test careful_spire::storage::tests::miri_leaf_v2_segment_validate_rejects_row_with_delta_insert_flag ... [32mok[m
+test careful_spire::storage::tests::miri_leaf_v2_validate_rejects_final_segment_with_non_invalid_locator ... [32mok[m
+test careful_spire::storage::tests::miri_leaf_v2_validate_rejects_meta_assignment_count_mismatch ... [32mok[m
+test careful_spire::storage::tests::miri_leaf_v2_validate_rejects_non_final_segment_missing_locator ... [32mok[m
+test careful_spire::storage::tests::miri_leaf_v2_validate_rejects_row_base_mismatch ... [32mok[m
+test careful_spire::storage::tests::miri_leaf_v2_validate_rejects_segment_count_mismatch ... [32mok[m
+test careful_spire::storage::tests::miri_leaf_v2_validate_rejects_segment_number_mismatch ... [32mok[m
+test careful_spire::storage::tests::miri_local_object_store_read_rejects_placement_epoch_below_object_backref ... [32mok[m
+test careful_spire::storage::tests::miri_local_vec_id_round_trips_sequence ... [32mok[m
+test careful_spire::storage::tests::miri_top_graph_partition_object_round_trips_nodes ... [32mok[m
+test careful_spire::storage::tests::miri_validate_delta_assignment_requires_tombstone_on_delete ... [32mok[m
+test careful_spire::storage::tests::miri_validate_leaf_assignment_accepts_role_only_flag_combinations ... [32mok[m
+test careful_spire::storage::tests::miri_validate_leaf_assignment_tombstone_only_skips_scored_payload_validation ... [32mok[m
+test careful_spire::storage::tests::miri_validate_leaf_v2_header_rejects_non_leaf_kind ... [32mok[m
+test careful_spire::storage::tests::miri_validate_leaf_v2_locator_rejects_partial_max_block_or_offset ... [32mok[m
+test careful_spire::storage::tests::miri_validate_vec_id_bytes_accepts_max_length_global ... [32mok[m
+test careful_spire::storage::tests::miri_vec_id_kind_decode_accepts_known_and_rejects_unknown ... [32mok[m
+test careful_spire::storage::tests::miri_vec_id_local_sequence_is_none_for_global ... [32mok[m
+test careful_spire::storage::tests::miri_vec_id_ref_round_trips_local_and_global_through_assignment_row ... [32mok[m
+test careful_spire::storage::tests::miri_vec_id_rejects_invalid_shapes ... [32mok[m
+test careful_spire::storage::tests::partition_object_constructors_reject_invalid_header_identity ... [32mok[m
+test careful_spire::storage::tests::partition_object_header_decodes_prefix_and_payload_tail ... [32mok[m
+test careful_spire::storage::tests::partition_object_header_rejects_invalid_identity ... [32mok[m
+test careful_spire::storage::tests::relation_object_store_for_index_relation_rejects_null_and_invalid_oid ... [32mok[m
+test careful_spire::storage::tests::relation_object_store_inserts_reject_epoch_zero ... [32mok[m
+test careful_spire::storage::tests::relation_store_chain_meta_codec_round_trip_and_error_branches ... [32mok[m
+test careful_spire::storage::tests::relation_store_chain_segment_codec_round_trip_and_error_branches ... [32mok[m
+test careful_spire::storage::tests::relation_store_active_object_tuple_locators_for_each_kind ... [32mok[m
+test careful_spire::storage::tests::relation_store_insert_and_read_leaf_v2_multi_segment_round_trip ... [32mok[m
+test careful_spire::storage::tests::relation_store_max_segment_payload_bytes_is_positive ... [32mok[m
+test careful_spire::storage::tests::relation_store_chain_walker_rejects_corrupted_byte_base ... [32mok[m
+test careful_spire::storage::tests::relation_store_insert_and_read_delta_object_round_trip ... [32mok[m
+test careful_spire::storage::tests::routing_partition_object_decode_rejects_prefix_only_tail_with_length_mismatch ... [32mok[m
+test careful_spire::storage::tests::routing_partition_object_rejects_corrupt_header_and_body ... [32mok[m
+test careful_spire::storage::tests::routing_partition_object_rejects_invalid_shape ... [32mok[m
+test careful_spire::storage::tests::routing_partition_object_round_trips_internal_children ... [32mok[m
+test careful_spire::storage::tests::relation_store_routing_object_chain_round_trip_through_large_payload ... [32mok[m
+test careful_spire::storage::tests::routing_partition_object_round_trips_root_children ... [32mok[m
+test careful_spire::storage::tests::top_graph_partition_object_accepts_alpha_exactly_one ... [32mok[m
+test careful_spire::storage::tests::relation_store_chain_segment_decode_rejects_segment_number_mismatch ... [32mok[m
+test careful_spire::storage::tests::top_graph_partition_object_accepts_neighbor_count_equal_to_degree ... [32mok[m
+test careful_spire::storage::tests::relation_store_insert_and_read_leaf_v2_round_trip ... [32mok[m
+test careful_spire::storage::tests::relation_store_insert_and_read_routing_object_round_trip ... [32mok[m
+test careful_spire::storage::tests::top_graph_partition_object_decode_rejects_prefix_only_tail_at_boundary ... [32mok[m
+test careful_spire::storage::tests::top_graph_partition_object_decode_rejects_reserved_bytes_and_trailing_bytes ... [32mok[m
+test careful_spire::storage::tests::relation_store_insert_and_read_top_graph_round_trip ... [32mok[m
+test careful_spire::storage::tests::top_graph_partition_object_decode_rejects_truncated_body ... [32mok[m
+test careful_spire::storage::tests::top_graph_partition_object_rejects_duplicate_centroid_ordinal ... [32mok[m
+test careful_spire::storage::tests::relation_store_object_reader_trait_dispatch_covers_all_methods ... [32mok[m
+test careful_spire::storage::tests::top_graph_partition_object_rejects_duplicate_neighbor ... [32mok[m
+test careful_spire::storage::tests::relation_store_prefetch_drains_read_stream_with_buffered_blocks ... [32mok[m
+test careful_spire::storage::tests::top_graph_partition_object_rejects_empty_nodes_and_duplicate_child_pid ... [32mok[m
+test careful_spire::storage::tests::relation_store_prefetch_object_tuple_and_tuples_dispatch_through_trait ... [32mok[m
+test careful_spire::storage::tests::top_graph_partition_object_rejects_entry_node_outside_node_count ... [32mok[m
+test careful_spire::storage::tests::top_graph_partition_object_rejects_invalid_alpha ... [32mok[m
+test careful_spire::storage::tests::relation_store_read_object_bytes_returns_single_tuple_payload ... [32mok[m
+test careful_spire::storage::tests::top_graph_partition_object_rejects_invalid_degree ... [32mok[m
+test careful_spire::storage::tests::relation_store_insert_and_read_leaf_v1_round_trip ... [32mok[m
+test careful_spire::storage::tests::top_graph_partition_object_rejects_invalid_dimensions_level_assignments_and_flags ... [32mok[m
+test careful_spire::storage::tests::top_graph_partition_object_rejects_neighbor_outside_node_count ... [32mok[m
+test careful_spire::storage::tests::top_graph_partition_object_rejects_self_neighbor ... [32mok[m
+test careful_spire_diagnostics_helpers::scaffold::tests::miri_assignment_payload_format_name_covers_every_variant ... [32mok[m
+test careful_spire_diagnostics_helpers::scaffold::tests::miri_assignment_payload_scannability_reports_status_per_variant ... [32mok[m
+test careful_spire_diagnostics_helpers::scaffold::tests::miri_boundary_replica_identity_scope_distinguishes_global_local_invalid ... [32mok[m
+test careful_spire_diagnostics_helpers::scaffold::tests::miri_boundary_replica_identity_status_walks_every_branch ... [32mok[m
+test careful_spire_diagnostics_helpers::scaffold::tests::miri_boundary_replica_placement_status_walks_every_branch ... [32mok[m
+test careful_spire_diagnostics_helpers::scaffold::tests::miri_epoch_cleanup_blocked_reason_walks_every_branch ... [32mok[m
+test careful_spire_diagnostics_helpers::scaffold::tests::miri_health_snapshot_walks_every_status_branch ... [32mok[m
+test careful_spire_diagnostics_helpers::scaffold::tests::miri_leaf_maintenance_thresholds_and_labels_round_trip ... [32mok[m
+test careful_spire_diagnostics_helpers::scaffold::tests::miri_meta_name_helpers_cover_every_enum_variant ... [32mok[m
+test careful_spire_diagnostics_helpers::scaffold::tests::miri_scan_sanity_status_picks_configuration_per_input ... [32mok[m
+test careful_storage_page::tests::data_page_chain_appends_empty_pages_contiguously ... [32mok[m
+test careful_storage_page::tests::data_page_chain_can_start_next_tuple_on_fresh_page ... [32mok[m
+test careful_storage_page::tests::data_page_chain_overflow_creates_new_block ... [32mok[m
+test careful_storage_page::tests::data_page_raw_round_trip ... [32mok[m
+test careful_storage_page::tests::miri_data_page_chain_preserves_tuple_lookup_across_pages ... [32mok[m
+test careful_storage_page::tests::miri_item_pointer_roundtrip ... [32mok[m
+test quant::codebook::tests::beta_pdf_out_of_range ... [32mok[m
+test quant::codebook::tests::log_gamma_known_values ... [32mok[m
+test quant::grouped_pq::tests::build_grouped_pq_lut_f32_uses_flat_codebooks_by_group ... [32mok[m
+test quant::grouped_pq::tests::encode_grouped_pq_packs_nibbles_from_shared_codebooks ... [32mok[m
+test quant::grouped_pq::tests::grouped_pq_nibble_reads_even_and_odd_groups ... [32mok[m
+test quant::grouped_pq::tests::grouped_pq_score_f32_sums_lut_rows_by_nibble ... [32mok[m
+test quant::grouped_pq::tests::nearest_centroid_l2_prefers_lowest_distance ... [32mok[m
+test quant::grouped_pq::tests::pack_grouped_pq_nibbles_packs_even_count ... [32mok[m
+test quant::grouped_pq::tests::pack_grouped_pq_nibbles_packs_odd_count ... [32mok[m
+test quant::hadamard::tests::fwht16_avx2_block_matches_scalar_when_available ... [32mok[m
+test quant::hadamard::tests::fwht32_avx2_block_matches_scalar_when_available ... [32mok[m
+test quant::hadamard::tests::fwht64_avx2_block_matches_scalar_when_available ... [32mok[m
+test quant::hadamard::tests::fwht8_avx2_block_matches_scalar_when_available ... [32mok[m
+test quant::hadamard::tests::fwht_preserves_norm_after_normalization ... [32mok[m
+test quant::hadamard::tests::miri_fwht_small ... [32mok[m
+test quant::hadamard::tests::miri_orthonormal_fwht_small ... [32mok[m
+test quant::hadamard::tests::tiled_fwht_matches_chunkwise_full_fwht ... [32mok[m
+test quant::mse::tests::nearest_centroid_index_prefers_lower_index_on_tie ... [32mok[m
+test quant::hadamard::tests::tiled_orthonormal_fwht_preserves_norm_per_tile ... [32mok[m
+test quant::mse::tests::quantize_to_indices_dispatches_unrolled_for_16_centroids ... [32mok[m
+test quant::prod::tests::decode_eight_3bit_aligned_matches_packer ... [32mok[m
+test quant::hadamard::tests::fwht_tiled_avx2_exact_sizes_match_scalar_when_available ... [32mok[m
+test careful_spire::storage::tests::relation_store_top_graph_object_chain_round_trip_through_large_payload ... [32mok[m
+test careful_spire::storage::tests::relation_store_validate_placement_rejects_non_local_node_id ... [32mok[m
+test careful_spire::storage::tests::relation_store_validate_placement_rejects_wrong_node_id_and_state ... [32mok[m
+test careful_spire::storage::tests::relation_store_with_single_tuple_object_bytes_rejects_length_mismatch ... [32mok[m
+test quant::prod::tests::decode_eight_3bit_lanes_avx2_matches_scalar_when_available ... [32mok[m
+test quant::codebook::tests::lloyd_max_b1_centroids_symmetric ... [32mok[m
+test quant::mse::tests::branchless_matches_branching_over_random_inputs ... [32mok[m
+test quant::mse::tests::unrolled_16_matches_generic_branchless ... [32mok[m
+test quant::codebook::tests::beta_pdf_integrates_to_one ... [32mok[m
+test quant::hadamard::tests::fwht_runtime_path_matches_scalar_on_random_inputs ... [32mok[m
+test quant::hadamard::tests::orthonormal_fwht_runtime_path_matches_scalar_on_random_inputs ... [32mok[m
+test quant::prod::tests::miri_pack_unpack_mse ... [32mok[m
+test quant::prod::tests::miri_pack_unpack_qjl ... [32mok[m
+test quant::grouped_pq::tests::pq_fastscan_quantizer_trait_score_matches_direct_helpers ... [32mok[m
+test careful_diskann_vamana::tests::build_recall_at_10_meets_baseline ... [32mok[m
+test quant::prod::tests::encode_decode_has_reasonable_fidelity ... [32mok[m
+test quant::prod::tests::mse_pack_unpack_roundtrip_all_widths ... [32mok[m
+test quant::prod::tests::pack_mse_indices_fast_paths_match_generic ... [32mok[m
+test quant::prod::tests::encode_payload_length_matches_spec ... [32mok[m
+test quant::prod::tests::qjl_pack_unpack_roundtrip ... [32mok[m
+test quant::prod::tests::qjl_sign_lanes_exhaustive ... [32mok[m
+test quant::prod::tests::explicit_lut_no_qjl_4bit_matches_direct_scoring ... [32mok[m
+test quant::prod::tests::binary_sign_no_qjl_4bit_keeps_identical_vector_ranked_first ... [32mok[m
+test quant::prod::tests::encode_is_deterministic ... [32mok[m
+test quant::prod::tests::cached_quantizer_reuses_instances ... [32mok[m
+test quant::prod::tests::binary_sign_query_prep_rejects_qjl_active_lane - should panic ... [32mok[m
+test quant::prod::tests::code_to_code_score_is_symmetric_and_ignores_qjl ... [32mok[m
+test quant::prod::tests::int8_approx_no_qjl_4bit_keeps_identical_vector_ranked_first ... [32mok[m
+test quant::prod::tests::explicit_lut_query_prep_rejects_qjl_active_lane - should panic ... [32mok[m
+test quant::prod::tests::quantizer_1536_4bit_disables_unused_qjl_and_lut_state ... [32mok[m
+test quant::prod::tests::quantizer_1536_4bit_supports_explicit_lut_query_prep ... [32mok[m
+test quant::prod::tests::int8_approx_query_prep_rejects_qjl_active_lane - should panic ... [32mok[m
+test quant::prod::tests::quantizer_1536_4bit_reallocates_qjl_budget_to_mse ... [32mok[m
+test quant::prod::tests::quantizer_1536_4bit_supports_int8_approx_query_prep ... [32mok[m
+test quant::prod::tests::quantizer_1536_4bit_supports_tiled_lut_query_prep ... [32mok[m
+test quant::rabitq::tests::bit_level_packers_round_trip_all_supported_widths ... [32mok[m
+test quant::rabitq::tests::bits1_batch_estimator_matches_scalar_order ... [32mok[m
+test quant::prod::tests::quantizer_1536_uses_tiled_working_dimension ... [32mok[m
+test quant::prod::tests::quantizer_1536_4bit_supports_binary_sign_query_prep ... [32mok[m
+test quant::rabitq::tests::bits1_byte_lut_matches_per_bit_decode ... [32mok[m
+test quant::rabitq::tests::centered_api_rejects_qbit_bits ... [32mok[m
+test quant::rabitq::tests::centered_context_and_scorer_cover_raw_and_degenerate_paths ... [32mok[m
+test quant::rabitq::tests::bits1_byte_lut_scalar_sum_matches_per_bit_decode ... [32mok[m
+test quant::rabitq::tests::centered_encode_pins_asymmetric_center_tail_and_zero_residual ... [32mok[m
+test quant::rabitq::tests::centered_estimator_bound_dominates_error_on_random_vectors ... [32mok[m
+test quant::rabitq::tests::centered_estimator_is_exact_on_sign_aligned_residual ... [32mok[m
+test quant::rabitq::tests::centered_scorer_floor_boundaries_cover_below_equal_and_above ... [32mok[m
+test quant::rabitq::tests::centered_scorer_matches_manual_unit_residual_ip ... [32mok[m
+test quant::rabitq::tests::centered_scorer_pins_nontrivial_bound_formula ... [32mok[m
+test quant::rabitq::tests::custom_rotation_plugs_into_seam ... [32mok[m
+test quant::rabitq::tests::encode_code_pins_qbit_payload_and_scalars ... [32mok[m
+test quant::rabitq::tests::encode_code_pins_zero_vector_tail_and_levels ... [32mok[m
+test quant::rabitq::tests::bits1_batch_estimator_rejects_wrong_width_and_stride ... [32mok[m
+test quant::rabitq::tests::estimate_ip_guards_and_bound_are_pinned ... [32mok[m
+test quant::rabitq::tests::estimate_ip_o_dot_floor_covers_below_equal_and_above ... [32mok[m
+test quant::rabitq::tests::estimator_bound_dominates_error_on_random_vectors ... [32mok[m
+test quant::rabitq::tests::estimator_recovers_self_ip_on_sign_aligned_vector ... [32mok[m
+test quant::rabitq::tests::hamming_similarity_identity_equals_dim ... [32mok[m
+test quant::rabitq::tests::least_squares_estimator_uses_o_dot_as_shrinkage ... [32mok[m
+test quant::prod::tests::prepared_query_score_matches_explicit_formula ... [32mok[m
+test quant::rabitq::tests::prepared_queries_only_keep_bits1_byte_lut_for_bits1 ... [32mok[m
+test quant::rabitq::tests::qbit_code_len_scales_with_bits ... [32mok[m
+test quant::rabitq::tests::qbit_encoder_reduces_error_vs_binary ... [32mok[m
+test quant::rabitq::tests::qbit_quantize_and_dequantize_pin_level_midpoints ... [32mok[m
+test quant::rabitq::tests::qbit_quantize_pins_non_roundtrip_scale_term ... [32mok[m
+test quant::rabitq::tests::qbit_rejects_unsupported_bits ... [32mok[m
+test quant::rabitq::tests::quantizer_and_prepared_estimator_accessors_are_stable ... [32mok[m
+test quant::rabitq::tests::query_scorer_matches_estimator_for_nontrivial_pair ... [32mok[m
+test quant::rabitq::tests::sign_sidecar_helpers_pack_exact_words ... [32mok[m
+test quant::rabitq::tests::sign_words_from_rotated_matches_manual_pack ... [32mok[m
+test quant::prod::tests::miri_encode_decode_roundtrip ... [32mok[m
+test quant::prod::tests::quantizer_trait_score_matches_inherent_score_ip_encoded ... [32mok[m
+test quant::rotation::tests::srht_preserves_norm ... [32mok[m
+test quant::prod::tests::miri_score_ip_encoded ... [32mok[m
+test quant::rotation::tests::tiled_srht_roundtrip_1536 ... [32mok[m
+test quant::simd::tests::backend_name_matches_detected_backend ... [32mok[m
+test quant::simd::tests::detect_backend_honors_forced_scalar ... [32mok[m
+test quant::simd::tests::forced_backend_accepts_auto_empty_and_absent ... [32mok[m
+test quant::simd::tests::forced_backend_accepts_supported_backend_names ... [32mok[m
+test quant::simd::tests::forced_backend_rejects_unknown_name ... [32mok[m
+test quant::simd::tests::x86_backend_gate_requires_avx2_and_fma ... [32mok[m
+test tests::data_page_chain_rejects_tuple_larger_than_page_payload_capacity ... [32mok[m
+test tests::data_page_chain_reports_size_and_mutates_existing_page ... [32mok[m
+test tests::data_page_chain_zero_empty_pages_is_noop ... [32mok[m
+test tests::data_page_rejects_invalid_tid_lookups_and_updates ... [32mok[m
+test tests::data_page_rejects_tuple_that_does_not_fit ... [32mok[m
+test tests::data_page_reports_layout_and_free_space ... [32mok[m
+test tests::diskann_tuple_codebook_roundtrip ... [32mok[m
+test tests::diskann_vacuum_repair_neighbors_compacts_and_pads ... [32mok[m
+test tests::item_pointer_decode_rejects_long_payloads ... [32mok[m
+test tests::item_pointer_decode_rejects_short_payloads ... [32mok[m
+test tests::page_alignment_helpers_preserve_exact_and_round_up_cases ... [32mok[m
+test tests::page_chain_preserves_payloads_across_overflow ... [32mok[m
+test tests::quant_family_default_and_names_are_stable ... [32mok[m
+test tests::quant_family_reloption_parser_accepts_known_values ... [32mok[m
+test tests::quant_family_reloption_parser_rejects_unknown_values ... [32mok[m
+test tests::quant_simd_backend_name_is_reported ... [32mok[m
+test quant::prod::tests::miri_score_ip_codes_lite ... [32mok[m
+test quant::prod::tests::tiled_lut_no_qjl_4bit_matches_direct_scoring ... [32mok[m
+test quant::prod::tests::score_from_parts_matches_encoded_payload_path ... [32mok[m
+test quant::prod::tests::quantizer_32_4bit_keeps_qjl_and_lut_state_when_active ... [32mok[m
+test quant::prod::tests::raw_code_score_matches_encoded_lite_path ... [32mok[m
+test quant::prod::tests::score_from_parts_honors_supplied_gamma ... [32mok[m
+test quant::prod::tests::tiled_lut_query_prep_rejects_qjl_active_lane - should panic ... [32mok[m
+test quant::rotation::tests::srht_padded_matches_pad_input_plus_srht ... [32mok[m
+test quant::rotation::tests::srht_runtime_path_matches_scalar_on_random_inputs ... [32mok[m
+test quant::prod::tests::dispatched_score_matches_scalar_at_production_dims ... [32mok[m
+test quant::hadamard::tests::fwht_runtime_path_matches_scalar_at_large_sizes ... [32mok[m
+test quant::prod::tests::dispatched_score_matches_scalar_with_tail_dims ... [32mok[m
+test quant::prod::tests::cached_with_presence_reports_whether_entry_already_existed ... [32mok[m
+test quant::rabitq::tests::code_len_matches_dimension ... [32mok[m
+test quant::rabitq::tests::encode_then_score_same_vector_is_nonnegative ... [32mok[m
+test quant::rabitq::tests::srht_seeded_rotation_is_deterministic_and_independent_of_prod ... [32mok[m
+test quant::prod::tests::miri_quantizer_cache_concurrent_init_under_contention ... [32mok[m
+test quant::rabitq::tests::persisted_sidecar_helpers_preserve_supported_and_unsupported_lanes ... [32mok[m
+test quant::prod::tests::dispatched_score_matches_scalar_on_random_inputs ... [32mok[m
+
+test result: [32mok[m. 573 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.21s
+
+
+Script done on 2026-05-29 12:42:21-07:00 [COMMAND_EXIT_CODE="0"]

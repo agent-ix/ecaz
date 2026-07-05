@@ -1,0 +1,4 @@
+id	bigint		not null	
+embedding	ecvector			
+title	text			
+body	text			

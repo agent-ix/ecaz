@@ -1,0 +1,12 @@
+Script started on 2026-05-21 05:41:21-07:00 [<not executed on terminal>]
+current_planner_cost_constants_signature
+102:pub(crate) unsafe fn current_planner_cost_constants() -> PlannerCostConstants {
+387:    let constants = unsafe { current_planner_cost_constants() };
+current_cpu_tuple_cost_signature
+120:pub(crate) unsafe fn current_cpu_tuple_cost() -> f64 {
+repo_before
+2478
+repo_after
+2490
+
+Script done on 2026-05-21 05:41:22-07:00 [COMMAND_EXIT_CODE="0"]

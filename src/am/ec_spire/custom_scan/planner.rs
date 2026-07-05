@@ -1,0 +1,566 @@
+pub(crate) fn custom_scan_index_eligibility_result(
+    index: SpireLiveIndexRelation,
+) -> Result<SpireCustomScanIndexEligibilityRow, String> {
+    let root_control = index.root_control();
+    if root_control.active_epoch == 0 {
+        return Ok(SpireCustomScanIndexEligibilityRow {
+            active_epoch: 0,
+            local_placement_count: 0,
+            remote_node_count: 0,
+            remote_available_node_count: 0,
+            remote_placement_count: 0,
+            remote_available_placement_count: 0,
+            remote_unavailable_placement_count: 0,
+            all_remote_placements_available: false,
+            eligible_for_custom_scan: false,
+            status: "no_active_epoch",
+            next_step: "keep local-only ec_spire index AM path",
+        });
+    }
+
+    let placement_directory = load_custom_scan_placement_directory(index, root_control)?;
+    let active_epoch = root_control.active_epoch;
+    let mut local_placement_count = 0_u64;
+    let mut remote_placement_count = 0_u64;
+    let mut remote_available_placement_count = 0_u64;
+    let mut remote_unavailable_placement_count = 0_u64;
+    let mut remote_node_ids = std::collections::BTreeSet::new();
+    let mut remote_available_node_ids = std::collections::BTreeSet::new();
+
+    for placement in placement_directory.entries {
+        if placement.node_id == meta::SPIRE_LOCAL_NODE_ID {
+            local_placement_count = local_placement_count.saturating_add(1);
+        } else {
+            remote_node_ids.insert(placement.node_id);
+            remote_placement_count = remote_placement_count.saturating_add(1);
+            if placement.state == meta::SpirePlacementState::Available {
+                remote_available_placement_count =
+                    remote_available_placement_count.saturating_add(1);
+                remote_available_node_ids.insert(placement.node_id);
+            } else {
+                remote_unavailable_placement_count =
+                    remote_unavailable_placement_count.saturating_add(1);
+            }
+        }
+    }
+
+    let eligible = active_epoch != 0 && remote_available_placement_count > 0;
+    let all_remote_placements_available =
+        remote_placement_count > 0 && remote_unavailable_placement_count == 0;
+    Ok(SpireCustomScanIndexEligibilityRow {
+        active_epoch,
+        local_placement_count,
+        remote_node_count: remote_node_ids.len() as u64,
+        remote_available_node_count: remote_available_node_ids.len() as u64,
+        remote_placement_count,
+        remote_available_placement_count,
+        remote_unavailable_placement_count,
+        all_remote_placements_available,
+        eligible_for_custom_scan: eligible,
+        status: if eligible {
+            "customscan_candidate"
+        } else if active_epoch == 0 {
+            "no_active_epoch"
+        } else if remote_placement_count == 0 {
+            "local_only"
+        } else {
+            "no_available_remote_placements"
+        },
+        next_step: if eligible {
+            "planner path generation must also verify ORDER BY vector distance LIMIT query shape"
+        } else {
+            "keep local-only ec_spire index AM path"
+        },
+    })
+}
+
+fn load_custom_scan_placement_directory(
+    index: SpireLiveIndexRelation,
+    root_control: meta::SpireRootControlState,
+) -> Result<meta::SpirePlacementDirectory, String> {
+    // The SQL eligibility wrapper normally returns `no_active_epoch` before
+    // this helper is called. Keep the helper fail-closed so future callers
+    // cannot accidentally dereference an empty placement-directory TID.
+    if root_control.active_epoch == 0 {
+        return Err("ec_spire cannot load placement directory for empty active epoch".to_owned());
+    }
+
+    // ADR-067 planner eligibility needs only placement availability. Avoid the
+    // heavier fanout loader used by executor paths, which also decodes epoch
+    // and object manifests; executor paths remain responsible for full
+    // identity and manifest validation before result-stream merge.
+    let placement_bytes = index.object_tuple(root_control.placement_directory_tid)?;
+    let placement_directory = meta::SpirePlacementDirectory::decode(&placement_bytes)?;
+    if placement_directory.epoch != root_control.active_epoch {
+        return Err(format!(
+            "ec_spire root/control active epoch {} does not match placement directory {}",
+            root_control.active_epoch, placement_directory.epoch
+        ));
+    }
+    Ok(placement_directory)
+}
+
+/// # Safety
+/// PostgreSQL invokes set_rel_pathlist hooks with live planner pointers;
+/// the previous hook receives the original arguments first.
+#[pg_guard]
+unsafe extern "C-unwind" fn ec_spire_set_rel_pathlist_hook(
+    root: *mut pg_sys::PlannerInfo,
+    rel: *mut pg_sys::RelOptInfo,
+    rti: pg_sys::Index,
+    rte: *mut pg_sys::RangeTblEntry,
+) {
+    if let Some(previous_hook) = PREVIOUS_SET_REL_PATHLIST_HOOK {
+        previous_hook(root, rel, rti, rte);
+    }
+    let Some(hook_input) = CustomScanRelPathlistInput::new(root, rel, rte) else {
+        return;
+    };
+    if let Some((index_oid, eligibility)) = hook_input.custom_scan_candidate_index_oid() {
+        let planner_rel = hook_input.planner_rel;
+        // SAFETY: hook_input was built from the current planner hook pointers.
+        // The CustomPath node and private OID list are allocated in PostgreSQL
+        // planner memory and transferred with add_path.
+        unsafe {
+            let mut custom_path =
+                PgBox::<pg_sys::CustomPath>::alloc_node(pg_sys::NodeTag::T_CustomPath);
+            let rows = planner_rel.output_rows_for_custom_scan();
+            let cost = planner_rel.estimate_custom_scan_cost(rows, &eligibility);
+            custom_path.path.type_ = pg_sys::NodeTag::T_CustomPath;
+            custom_path.path.pathtype = pg_sys::NodeTag::T_CustomScan;
+            custom_path.path.parent = rel;
+            custom_path.path.pathtarget = planner_rel.reltarget();
+            custom_path.path.param_info = std::ptr::null_mut();
+            custom_path.path.parallel_aware = false;
+            custom_path.path.parallel_safe = false;
+            custom_path.path.parallel_workers = 0;
+            custom_path.path.rows = rows;
+            custom_path.path.disabled_nodes = 0;
+            custom_path.path.startup_cost = cost.startup_cost;
+            custom_path.path.total_cost = cost.total_cost;
+            custom_path.path.pathkeys = planner_rel.sort_pathkeys();
+            custom_path.flags = pg_sys::CUSTOMPATH_SUPPORT_PROJECTION;
+            custom_path.custom_paths = std::ptr::null_mut();
+            custom_path.custom_restrictinfo = planner_rel.baserestrictinfo();
+            custom_path.custom_private = pg_sys::lappend_oid(
+                pg_sys::lappend_oid(
+                    std::ptr::null_mut(),
+                    pg_sys::Oid::from(CUSTOM_SCAN_PLAN_MODE_VECTOR_ORDER_LIMIT),
+                ),
+                index_oid,
+            );
+            custom_path.methods = &raw const CUSTOM_PATH_METHODS;
+
+            pg_sys::add_path(rel, custom_path.into_pg() as *mut pg_sys::Path);
+        }
+    }
+    if let Some(index_oid) = hook_input.dml_pk_select_candidate_index_oid() {
+        let planner_rel = hook_input.planner_rel;
+        // SAFETY: rel was supplied by the current planner hook call. The CustomPath
+        // node and private OID list are allocated in PostgreSQL planner memory and
+        // transferred with add_path.
+        unsafe {
+            let mut custom_path =
+                PgBox::<pg_sys::CustomPath>::alloc_node(pg_sys::NodeTag::T_CustomPath);
+            custom_path.path.type_ = pg_sys::NodeTag::T_CustomPath;
+            custom_path.path.pathtype = pg_sys::NodeTag::T_CustomScan;
+            custom_path.path.parent = rel;
+            custom_path.path.pathtarget = planner_rel.reltarget();
+            custom_path.path.param_info = std::ptr::null_mut();
+            custom_path.path.parallel_aware = false;
+            custom_path.path.parallel_safe = false;
+            custom_path.path.parallel_workers = 0;
+            custom_path.path.rows = 1.0;
+            custom_path.path.disabled_nodes = 0;
+            custom_path.path.startup_cost = -1.0;
+            custom_path.path.total_cost = -1.0;
+            custom_path.path.pathkeys = std::ptr::null_mut();
+            custom_path.flags = pg_sys::CUSTOMPATH_SUPPORT_PROJECTION;
+            custom_path.custom_paths = std::ptr::null_mut();
+            custom_path.custom_restrictinfo = planner_rel.baserestrictinfo();
+            custom_path.custom_private = pg_sys::lappend_oid(
+                pg_sys::lappend_oid(
+                    std::ptr::null_mut(),
+                    pg_sys::Oid::from(CUSTOM_SCAN_PLAN_MODE_DML_PK_SELECT),
+                ),
+                index_oid,
+            );
+            custom_path.methods = &raw const CUSTOM_PATH_METHODS;
+
+            pg_sys::add_path(rel, custom_path.into_pg() as *mut pg_sys::Path);
+        }
+    }
+}
+
+/// # Safety
+/// PostgreSQL calls PlanCustomPath with live planner/path/list pointers;
+/// allocated plan nodes are returned to PostgreSQL ownership.
+#[pg_guard]
+unsafe extern "C-unwind" fn ec_spire_plan_custom_path(
+    root: *mut pg_sys::PlannerInfo,
+    rel: *mut pg_sys::RelOptInfo,
+    best_path: *mut pg_sys::CustomPath,
+    tlist: *mut pg_sys::List,
+    clauses: *mut pg_sys::List,
+    custom_plans: *mut pg_sys::List,
+) -> *mut pg_sys::Plan {
+    {
+        let path = CustomScanPath::new(best_path).unwrap_or_else(|| {
+            pgrx::error!("EcSpireDistributedScan PlanCustomPath missing CustomPath")
+        });
+        let planner_rel = CustomScanPlannerRel::new(root, rel).unwrap_or_else(|| {
+            pgrx::error!("EcSpireDistributedScan PlanCustomPath missing planner relation")
+        });
+        let mode = path.mode().unwrap_or_else(|| {
+            pgrx::error!("EcSpireDistributedScan CustomPath is missing plan mode")
+        });
+        if mode.is_dml() {
+            return plan_dml_custom_path(root, rel, path, tlist, clauses, custom_plans, mode);
+        }
+
+        let top_k = planner_rel.top_k().unwrap_or(1);
+        let query_expr = planner_rel.orderby_query_expr().unwrap_or_else(|| {
+            pgrx::error!(
+                "EcSpireDistributedScan could not extract ORDER BY vector query expression"
+            )
+        });
+        let custom_exprs = pg_sys::lappend(
+            std::ptr::null_mut(),
+            pg_sys::copyObjectImpl(query_expr.cast()).cast(),
+        );
+        let path_fields = path.plan_fields();
+
+        let mut custom_scan =
+            PgBox::<pg_sys::CustomScan>::alloc_node(pg_sys::NodeTag::T_CustomScan);
+        custom_scan.scan.plan.type_ = pg_sys::NodeTag::T_CustomScan;
+        custom_scan.scan.plan.disabled_nodes = path_fields.disabled_nodes;
+        custom_scan.scan.plan.startup_cost = path_fields.startup_cost;
+        custom_scan.scan.plan.total_cost = path_fields.total_cost;
+        custom_scan.scan.plan.plan_rows = path_fields.rows;
+        custom_scan.scan.plan.plan_width = path_fields.width;
+        custom_scan.scan.plan.parallel_aware = false;
+        custom_scan.scan.plan.parallel_safe = false;
+        custom_scan.scan.plan.async_capable = false;
+        custom_scan.scan.plan.targetlist = tlist;
+        custom_scan.scan.plan.qual = pg_sys::extract_actual_clauses(clauses, false);
+        custom_scan.scan.scanrelid = path_fields.scanrelid;
+        custom_scan.flags = path_fields.flags;
+        custom_scan.custom_plans = custom_plans;
+        custom_scan.custom_exprs = custom_exprs;
+        custom_scan.custom_private = pg_sys::lappend_oid(
+            pg_sys::lappend_oid(
+                pg_sys::lappend_oid(
+                    std::ptr::null_mut(),
+                    pg_sys::Oid::from(CUSTOM_SCAN_PLAN_MODE_VECTOR_ORDER_LIMIT),
+                ),
+                path.index_oid(),
+            ),
+            pg_sys::Oid::from(u32::try_from(top_k).unwrap_or_else(|_| {
+                pgrx::error!("EcSpireDistributedScan LIMIT exceeds CustomScan plan-private range")
+            })),
+        );
+        custom_scan.custom_scan_tlist = std::ptr::null_mut();
+        custom_scan.custom_relids = std::ptr::null_mut();
+        custom_scan.methods = &raw const CUSTOM_SCAN_METHODS;
+        custom_scan.into_pg() as *mut pg_sys::Plan
+    }
+}
+
+/// # Safety
+/// Caller provides live PlanCustomPath pointers; DML handoff copies
+/// expression nodes into the CustomScan before returning it to PostgreSQL.
+unsafe fn plan_dml_custom_path(
+    root: *mut pg_sys::PlannerInfo,
+    rel: *mut pg_sys::RelOptInfo,
+    path: CustomScanPath<'_>,
+    tlist: *mut pg_sys::List,
+    clauses: *mut pg_sys::List,
+    custom_plans: *mut pg_sys::List,
+    mode: SpireCustomScanPlanMode,
+) -> *mut pg_sys::Plan {
+    {
+        let plan_expr = match super::with_dml_frontdoor_baserel_view(root, rel, |baserel| {
+            super::dml_frontdoor_primitive_plan_expr_from_baserel(baserel)
+        })
+        .flatten()
+        .unwrap_or_else(|| {
+            pgrx::error!("EcSpireDistributedScan could not build DML expression handoff")
+        }) {
+            Ok(plan_expr) => plan_expr,
+            Err(err) => pgrx::error!("{err}"),
+        };
+        let plan_mode = custom_scan_plan_mode_for_dml_mode(plan_expr.primitive_plan.mode);
+        if plan_mode != mode {
+            pgrx::error!(
+                "EcSpireDistributedScan DML plan mode {:?} does not match primitive mode {:?}",
+                mode,
+                plan_expr.primitive_plan.mode
+            )
+        }
+        let custom_exprs = custom_scan_dml_custom_exprs_from_plan_expr(&plan_expr);
+        let path_fields = path.plan_fields();
+        let mut custom_scan =
+            PgBox::<pg_sys::CustomScan>::alloc_node(pg_sys::NodeTag::T_CustomScan);
+        custom_scan.scan.plan.type_ = pg_sys::NodeTag::T_CustomScan;
+        custom_scan.scan.plan.disabled_nodes = path_fields.disabled_nodes;
+        custom_scan.scan.plan.startup_cost = path_fields.startup_cost;
+        custom_scan.scan.plan.total_cost = path_fields.total_cost;
+        custom_scan.scan.plan.plan_rows = path_fields.rows;
+        custom_scan.scan.plan.plan_width = path_fields.width;
+        custom_scan.scan.plan.parallel_aware = false;
+        custom_scan.scan.plan.parallel_safe = false;
+        custom_scan.scan.plan.async_capable = false;
+        custom_scan.scan.plan.targetlist = tlist;
+        custom_scan.scan.plan.qual = pg_sys::extract_actual_clauses(clauses, false);
+        custom_scan.scan.scanrelid = path_fields.scanrelid;
+        custom_scan.flags = path_fields.flags;
+        custom_scan.custom_plans = custom_plans;
+        custom_scan.custom_exprs = custom_exprs;
+        custom_scan.custom_private = custom_scan_dml_plan_private(
+            mode,
+            path.index_oid(),
+            &plan_expr.primitive_plan.pk_argument.pk_column,
+            &plan_expr.primitive_plan.updated_columns,
+            &plan_expr.primitive_plan.projected_columns,
+        );
+        custom_scan.custom_scan_tlist = std::ptr::null_mut();
+        custom_scan.custom_relids = std::ptr::null_mut();
+        custom_scan.methods = &raw const CUSTOM_SCAN_METHODS;
+        custom_scan.into_pg() as *mut pg_sys::Plan
+    }
+}
+
+/// # Safety
+/// `plan_expr` expression pointers come from the live planner tree;
+/// copyObjectImpl duplicates them into planner memory for CustomScan.
+unsafe fn custom_scan_dml_custom_exprs_from_plan_expr(
+    plan_expr: &super::dml_frontdoor::SpireDmlFrontdoorPrimitivePlanExpr,
+) -> *mut pg_sys::List {
+    let mut custom_exprs = pg_sys::lappend(
+        std::ptr::null_mut(),
+        pg_sys::copyObjectImpl(plan_expr.pk_value_expr.cast()).cast(),
+    );
+    for expr in &plan_expr.updated_value_exprs {
+        custom_exprs =
+            pg_sys::lappend(custom_exprs, pg_sys::copyObjectImpl((*expr).cast()).cast());
+    }
+    custom_exprs
+}
+
+/// # Safety
+/// `fallback_plan`, when non-null, is a live PostgreSQL plan node; this
+/// constructs a replacement CustomScan node in planner memory.
+pub(crate) unsafe fn custom_scan_dml_replacement_plan(
+    plan_expr: super::dml_frontdoor::SpireDmlFrontdoorPrimitivePlanExpr,
+    fallback_plan: *mut pg_sys::Plan,
+) -> *mut pg_sys::Plan {
+    {
+        let mode = custom_scan_plan_mode_for_dml_mode(plan_expr.primitive_plan.mode);
+        let custom_exprs = custom_scan_dml_custom_exprs_from_plan_expr(&plan_expr);
+        let mut custom_scan =
+            PgBox::<pg_sys::CustomScan>::alloc_node(pg_sys::NodeTag::T_CustomScan);
+        custom_scan.scan.plan.type_ = pg_sys::NodeTag::T_CustomScan;
+        // This replacement is not competing in path selection; the planner
+        // has already produced fallback_plan. Copy its cost fields so EXPLAIN
+        // remains roughly comparable until DML-specific costing exists.
+        custom_scan.scan.plan.disabled_nodes = if fallback_plan.is_null() {
+            0
+        } else {
+            (*fallback_plan).disabled_nodes
+        };
+        custom_scan.scan.plan.startup_cost = if fallback_plan.is_null() {
+            0.0
+        } else {
+            (*fallback_plan).startup_cost
+        };
+        custom_scan.scan.plan.total_cost = if fallback_plan.is_null() {
+            0.0
+        } else {
+            (*fallback_plan).total_cost
+        };
+        custom_scan.scan.plan.plan_rows = 0.0;
+        custom_scan.scan.plan.plan_width = 0;
+        custom_scan.scan.plan.parallel_aware = false;
+        custom_scan.scan.plan.parallel_safe = false;
+        custom_scan.scan.plan.async_capable = false;
+        custom_scan.scan.plan.targetlist = std::ptr::null_mut();
+        custom_scan.scan.plan.qual = std::ptr::null_mut();
+        custom_scan.scan.scanrelid = 0;
+        custom_scan.flags = 0;
+        custom_scan.custom_plans = std::ptr::null_mut();
+        custom_scan.custom_exprs = custom_exprs;
+        custom_scan.custom_private = custom_scan_dml_plan_private(
+            mode,
+            plan_expr.primitive_plan.index_oid,
+            &plan_expr.primitive_plan.pk_argument.pk_column,
+            &plan_expr.primitive_plan.updated_columns,
+            &plan_expr.primitive_plan.projected_columns,
+        );
+        custom_scan.custom_scan_tlist = std::ptr::null_mut();
+        custom_scan.custom_relids = std::ptr::null_mut();
+        custom_scan.methods = &raw const CUSTOM_SCAN_METHODS;
+        custom_scan.into_pg() as *mut pg_sys::Plan
+    }
+}
+
+fn custom_scan_ec_spire_am_oid() -> Option<pg_sys::Oid> {
+    super::ec_spire_access_method_oid()
+}
+
+#[derive(Clone, Copy)]
+struct CustomScanRelPathlistInput<'a> {
+    root: *mut pg_sys::PlannerInfo,
+    rel: *mut pg_sys::RelOptInfo,
+    planner_rel: CustomScanPlannerRel<'a>,
+}
+
+impl<'a> CustomScanRelPathlistInput<'a> {
+    unsafe fn new(
+        root: *mut pg_sys::PlannerInfo,
+        rel: *mut pg_sys::RelOptInfo,
+        rte: *mut pg_sys::RangeTblEntry,
+    ) -> Option<Self> {
+        // SAFETY: PostgreSQL invokes set_rel_pathlist hooks with live planner
+        // pointers for the duration of this callback.
+        let planner_rel = unsafe { CustomScanPlannerRel::new_base_rel(root, rel, rte)? };
+        Some(Self {
+            root,
+            rel,
+            planner_rel,
+        })
+    }
+
+    fn custom_scan_candidate_index_oid(
+        self,
+    ) -> Option<(pg_sys::Oid, SpireCustomScanIndexEligibilityRow)> {
+        if !self.planner_rel.is_plain_base_relation() {
+            return None;
+        }
+        if !self.planner_rel.has_vector_order_limit_shape() {
+            return None;
+        }
+        let _ = self.planner_rel.orderby_query_expr()?;
+
+        let ec_spire_am_oid = custom_scan_ec_spire_am_oid()?;
+        let mut candidate = None;
+        self.planner_rel.for_each_index_info(|index_info| {
+            if index_info.relam != ec_spire_am_oid {
+                return true;
+            }
+            let Some(index_relation) =
+                crate::storage::relation_guard::IndexRelationGuard::try_access_share(
+                    index_info.indexoid,
+                )
+            else {
+                return true;
+            };
+            let index = super::live_index_relation_from_guard(&index_relation);
+            if let Ok(row) = custom_scan_index_eligibility_result(index) {
+                if row.eligible_for_custom_scan {
+                    candidate = Some((index_info.indexoid, row));
+                    return false;
+                }
+            }
+            true
+        });
+        candidate
+    }
+
+    fn dml_pk_select_candidate_index_oid(self) -> Option<pg_sys::Oid> {
+        if !self.planner_rel.is_plain_base_relation() {
+            return None;
+        }
+        let ec_spire_am_oid = custom_scan_ec_spire_am_oid()?;
+
+        let mut placement_index_oid = None;
+        self.planner_rel.for_each_index_info(|index_info| {
+            if index_info.relam == ec_spire_am_oid
+                && custom_scan_index_has_sql_placement(index_info.indexoid)
+            {
+                placement_index_oid = Some(index_info.indexoid);
+                return false;
+            }
+            true
+        });
+        let placement_index_oid = placement_index_oid?;
+        // SAFETY: callback receives live set_rel_pathlist pointers; the typed
+        // baserel view is scoped to this closure and cannot escape.
+        let plan_expr = match unsafe {
+            super::with_dml_frontdoor_baserel_view(self.root, self.rel, |baserel| {
+                super::dml_frontdoor_pk_select_primitive_plan_expr_from_baserel(baserel)
+            })
+        }
+        .flatten()?
+        {
+            Ok(plan_expr) => plan_expr,
+            Err(_err) => return None,
+        };
+        if plan_expr.primitive_plan.mode
+            != super::SpireDmlFrontdoorCustomScanMode::CoordinatorPkSelectTuplePayload
+        {
+            return None;
+        }
+        (plan_expr.primitive_plan.index_oid == placement_index_oid)
+            .then_some(plan_expr.primitive_plan.index_oid)
+    }
+}
+
+fn custom_scan_index_has_sql_placement(index_oid: pg_sys::Oid) -> bool {
+    // SAFETY: catalog relation names are static nul-terminated C strings; all
+    // opened relations/scans/snapshots are guard-managed in this block.
+    unsafe {
+        let placement_oid = pg_sys::RelnameGetRelid(EC_SPIRE_PLACEMENT_RELNAME.as_ptr());
+        let placement_by_index_oid =
+            pg_sys::RelnameGetRelid(EC_SPIRE_PLACEMENT_BY_INDEX_OID_RELNAME.as_ptr());
+        if placement_oid == pg_sys::InvalidOid {
+            return false;
+        }
+        if placement_by_index_oid == pg_sys::InvalidOid {
+            return false;
+        }
+        let Some(placement_relation) =
+            crate::storage::relation_guard::HeapRelationGuard::try_access_share(placement_oid)
+        else {
+            return false;
+        };
+        let Some(placement_index) =
+            crate::storage::relation_guard::IndexRelationGuard::try_access_share(
+                placement_by_index_oid,
+            )
+        else {
+            return false;
+        };
+
+        let mut scan_key = std::mem::MaybeUninit::<pg_sys::ScanKeyData>::zeroed().assume_init();
+        pg_sys::ScanKeyInit(
+            &mut scan_key,
+            EC_SPIRE_PLACEMENT_INDEX_OID_ATTNO,
+            pg_sys::BTEqualStrategyNumber as pg_sys::StrategyNumber,
+            pg_sys::F_OIDEQ.into(),
+            index_oid.into(),
+        );
+        let Some(snapshot) = crate::storage::snapshot_guard::ActiveSnapshotGuard::latest() else {
+            return false;
+        };
+        let Some(scan) = crate::storage::scan_guard::IndexScanGuard::begin(
+            &placement_relation,
+            &placement_index,
+            &snapshot,
+            1,
+            0,
+        ) else {
+            return false;
+        };
+        let Some(slot) = crate::storage::slot_guard::TupleTableSlotGuard::create_for_heap_guard(
+            &placement_relation,
+        ) else {
+            return false;
+        };
+        pg_sys::index_rescan(scan.as_ptr(), &mut scan_key, 1, ptr::null_mut(), 0);
+        pg_sys::index_getnext_slot(
+            scan.as_ptr(),
+            pg_sys::ScanDirection::ForwardScanDirection,
+            slot.as_ptr(),
+        )
+    }
+}

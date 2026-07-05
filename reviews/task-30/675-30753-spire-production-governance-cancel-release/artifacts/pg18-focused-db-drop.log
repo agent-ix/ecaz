@@ -1,0 +1,5 @@
+Script started on 2026-05-10 10:55:03-07:00 [<not executed on terminal>]
+NOTICE:  database "ecaz_30753" does not exist, skipping
+DROP DATABASE
+
+Script done on 2026-05-10 10:55:04-07:00 [COMMAND_EXIT_CODE="0"]

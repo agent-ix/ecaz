@@ -1,0 +1,34 @@
+{
+  "name": "task59-drop-partial-1m",
+  "schema_version": 1,
+  "artifact_dir": "benchmarks/task59-aws-diskann-final-graviton-suite/artifacts/drop-partial-1m",
+  "defaults": {
+    "pg": 18,
+    "socket_dir": "/var/run/postgresql"
+  },
+  "steps": [
+    {
+      "kind": "raw",
+      "name": "drop-partial-1m-tables",
+      "tags": ["cleanup", "ec_real_1m", "graviton", "task59"],
+      "args": [
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "postgres",
+        "--socket-dir",
+        "/var/run/postgresql",
+        "--raw",
+        "--sql",
+        "DROP TABLE IF EXISTS task59_real_1m_diskann_corpus CASCADE; DROP TABLE IF EXISTS task59_real_1m_diskann_queries CASCADE; CHECKPOINT; SELECT pg_size_pretty(pg_database_size(current_database())) AS database_size;",
+        "--log-output",
+        "benchmarks/task59-aws-diskann-final-graviton-suite/artifacts/drop-partial-1m/drop-partial-1m-tables.log"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task59-aws-diskann-final-graviton-suite/artifacts/drop-partial-1m/drop-partial-1m-tables.log"
+      ]
+    }
+  ]
+}

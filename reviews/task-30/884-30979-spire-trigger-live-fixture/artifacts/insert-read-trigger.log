@@ -1,0 +1,8 @@
+run_dir=/home/peter/dev/ecaz/target/spire-insert-read-after-cscan-pg18-p12trig
+remote_port=39201
+coord_port=39200
+insert_mode=trigger
+NOTICE:  trigger "ec_spire_coordinator_insert_flush" for relation "ec_spire_insert_read_coord_sql" does not exist, skipping
+NOTICE:  trigger "ec_spire_coordinator_insert_forward" for relation "ec_spire_insert_read_coord_sql" does not exist, skipping
+psql: error: connection to server on socket "/home/peter/dev/ecaz/target/spire-insert-read-after-cscan-pg18-p12trig/s/.s.PGSQL.39200" failed: FATAL:  unrecognized configuration parameter "enable_customscan"
+connection to server on socket "/home/peter/dev/ecaz/target/spire-insert-read-after-cscan-pg18-p12trig/s/.s.PGSQL.39200" failed: FATAL:  unrecognized configuration parameter "enable_customscan"

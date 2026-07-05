@@ -1,0 +1,18 @@
+Timing is on.
+                  relname                   | estimated_rows 
+--------------------------------------------+----------------
+ ec_hnsw_real_ann_benchmarks_anchor_corpus  |         990000
+ ec_hnsw_real_ann_benchmarks_anchor_queries |          10000
+(2 rows)
+
+Time: 5.247 ms
+                 table_name                 | column_name |  data_type   | udt_name 
+--------------------------------------------+-------------+--------------+----------
+ ec_hnsw_real_ann_benchmarks_anchor_corpus  | id          | bigint       | int8
+ ec_hnsw_real_ann_benchmarks_anchor_corpus  | source      | ARRAY        | _float4
+ ec_hnsw_real_ann_benchmarks_anchor_corpus  | embedding   | USER-DEFINED | ecvector
+ ec_hnsw_real_ann_benchmarks_anchor_queries | id          | bigint       | int8
+ ec_hnsw_real_ann_benchmarks_anchor_queries | source      | ARRAY        | _float4
+(5 rows)
+
+Time: 34.582 ms

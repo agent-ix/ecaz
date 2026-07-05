@@ -1,0 +1,152 @@
+Pager usage is off.
+Timing is on.
+SET
+Time: 0.055 ms
+SET
+Time: 0.039 ms
+ server_version  | sweep_value |  profile   
+-----------------+-------------+------------
+ 18.3 (Homebrew) | 800         | ec_diskann
+(1 row)
+
+Time: 0.154 ms
+             index_name              | index_bytes | index_size 
+-------------------------------------+-------------+------------
+ task60_real_100k_diskann_rabitq_idx |    43130880 | 41 MB
+(1 row)
+
+Time: 1.086 ms
+ planner_scan_enabled |                     planner_gate_reason                      | dimensions | graph_degree | build_list_size | relation_list_size | session_list_size | effective_list_size | effective_list_size_source | rerank_budget | top_k |       alpha        | storage_format | resolved_tree_height |  tree_height_source  | index_pages | reltuples | random_page_cost | seq_page_cost | cpu_operator_cost | modeled_startup_cost | modeled_total_cost | modeled_selectivity | modeled_correlation 
+----------------------+--------------------------------------------------------------+------------+--------------+-----------------+--------------------+-------------------+---------------------+----------------------------+---------------+-------+--------------------+----------------+----------------------+----------------------+-------------+-----------+------------------+---------------+-------------------+----------------------+--------------------+---------------------+---------------------
+ t                    | planner scan selection is live: ec_diskann cost model active |       1536 |           32 |             100 |                100 |               800 |                 800 | session                    |            64 |    10 | 1.2000000476837158 | rabitq         |                    1 | single_layer_diskann |        5265 |    100000 |                4 |             1 |            0.0025 |              5510.88 | 254159.49538461538 |                   1 |                   0
+(1 row)
+
+Time: 0.418 ms
+                                 QUERY PLAN                                  
+-----------------------------------------------------------------------------
+ [                                                                          +
+   {                                                                        +
+     "Plan": {                                                              +
+       "Node Type": "Limit",                                                +
+       "Parallel Aware": false,                                             +
+       "Async Capable": false,                                              +
+       "Actual Startup Time": 11.770,                                       +
+       "Actual Total Time": 11.857,                                         +
+       "Actual Rows": 10.00,                                                +
+       "Actual Loops": 1,                                                   +
+       "Disabled": false,                                                   +
+       "Shared Hit Blocks": 6027,                                           +
+       "Shared Read Blocks": 2622,                                          +
+       "Shared Dirtied Blocks": 0,                                          +
+       "Shared Written Blocks": 0,                                          +
+       "Local Hit Blocks": 0,                                               +
+       "Local Read Blocks": 0,                                              +
+       "Local Dirtied Blocks": 0,                                           +
+       "Local Written Blocks": 0,                                           +
+       "Temp Read Blocks": 0,                                               +
+       "Temp Written Blocks": 0,                                            +
+       "Plans": [                                                           +
+         {                                                                  +
+           "Node Type": "Limit",                                            +
+           "Parent Relationship": "InitPlan",                               +
+           "Subplan Name": "InitPlan 1",                                    +
+           "Parallel Aware": false,                                         +
+           "Async Capable": false,                                          +
+           "Actual Startup Time": 0.011,                                    +
+           "Actual Total Time": 0.011,                                      +
+           "Actual Rows": 1.00,                                             +
+           "Actual Loops": 1,                                               +
+           "Disabled": false,                                               +
+           "Shared Hit Blocks": 0,                                          +
+           "Shared Read Blocks": 3,                                         +
+           "Shared Dirtied Blocks": 0,                                      +
+           "Shared Written Blocks": 0,                                      +
+           "Local Hit Blocks": 0,                                           +
+           "Local Read Blocks": 0,                                          +
+           "Local Dirtied Blocks": 0,                                       +
+           "Local Written Blocks": 0,                                       +
+           "Temp Read Blocks": 0,                                           +
+           "Temp Written Blocks": 0,                                        +
+           "Plans": [                                                       +
+             {                                                              +
+               "Node Type": "Index Scan",                                   +
+               "Parent Relationship": "Outer",                              +
+               "Parallel Aware": false,                                     +
+               "Async Capable": false,                                      +
+               "Scan Direction": "Forward",                                 +
+               "Index Name": "task60_real_100k_diskann_rabitq_queries_pkey",+
+               "Relation Name": "task60_real_100k_diskann_rabitq_queries",  +
+               "Alias": "task60_real_100k_diskann_rabitq_queries",          +
+               "Actual Startup Time": 0.011,                                +
+               "Actual Total Time": 0.011,                                  +
+               "Actual Rows": 1.00,                                         +
+               "Actual Loops": 1,                                           +
+               "Disabled": false,                                           +
+               "Index Searches": 1,                                         +
+               "Shared Hit Blocks": 0,                                      +
+               "Shared Read Blocks": 3,                                     +
+               "Shared Dirtied Blocks": 0,                                  +
+               "Shared Written Blocks": 0,                                  +
+               "Local Hit Blocks": 0,                                       +
+               "Local Read Blocks": 0,                                      +
+               "Local Dirtied Blocks": 0,                                   +
+               "Local Written Blocks": 0,                                   +
+               "Temp Read Blocks": 0,                                       +
+               "Temp Written Blocks": 0                                     +
+             }                                                              +
+           ]                                                                +
+         },                                                                 +
+         {                                                                  +
+           "Node Type": "Index Scan",                                       +
+           "Parent Relationship": "Outer",                                  +
+           "Parallel Aware": false,                                         +
+           "Async Capable": false,                                          +
+           "Scan Direction": "Forward",                                     +
+           "Index Name": "task60_real_100k_diskann_rabitq_idx",             +
+           "Relation Name": "task60_real_100k_diskann_rabitq_corpus",       +
+           "Alias": "task60_real_100k_diskann_rabitq_corpus",               +
+           "Actual Startup Time": 11.767,                                   +
+           "Actual Total Time": 11.853,                                     +
+           "Actual Rows": 10.00,                                            +
+           "Actual Loops": 1,                                               +
+           "Disabled": false,                                               +
+           "Order By": "(embedding <#> (InitPlan 1).col1)",                 +
+           "Index Searches": 0,                                             +
+           "Shared Hit Blocks": 6027,                                       +
+           "Shared Read Blocks": 2622,                                      +
+           "Shared Dirtied Blocks": 0,                                      +
+           "Shared Written Blocks": 0,                                      +
+           "Local Hit Blocks": 0,                                           +
+           "Local Read Blocks": 0,                                          +
+           "Local Dirtied Blocks": 0,                                       +
+           "Local Written Blocks": 0,                                       +
+           "Temp Read Blocks": 0,                                           +
+           "Temp Written Blocks": 0                                         +
+         }                                                                  +
+       ]                                                                    +
+     },                                                                     +
+     "Planning": {                                                          +
+       "Shared Hit Blocks": 77,                                             +
+       "Shared Read Blocks": 3,                                             +
+       "Shared Dirtied Blocks": 0,                                          +
+       "Shared Written Blocks": 0,                                          +
+       "Local Hit Blocks": 0,                                               +
+       "Local Read Blocks": 0,                                              +
+       "Local Dirtied Blocks": 0,                                           +
+       "Local Written Blocks": 0,                                           +
+       "Temp Read Blocks": 0,                                               +
+       "Temp Written Blocks": 0                                             +
+     },                                                                     +
+     "Planning Time": 0.195,                                                +
+     "Triggers": [                                                          +
+     ],                                                                     +
+     "Execution Time": 11.885                                               +
+   }                                                                        +
+ ]
+(1 row)
+
+Time: 12.329 ms
+RESET
+Time: 0.032 ms
+RESET
+Time: 0.020 ms

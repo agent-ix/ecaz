@@ -1,0 +1,37 @@
+hardening/careful/src/../../../src/am/common/cost.rs:68:9: replace PlannerCompareType::as_str -> &'static str with ""
+hardening/careful/src/../../../src/am/common/cost.rs:68:9: replace PlannerCompareType::as_str -> &'static str with "xyzzy"
+hardening/careful/src/../../../src/am/common/cost.rs:134:5: replace amgettreeheight_callback_value -> i32 with 1
+hardening/careful/src/../../../src/am/common/cost.rs:134:5: replace amgettreeheight_callback_value -> i32 with 0
+hardening/careful/src/../../../src/am/common/cost.rs:134:5: replace amgettreeheight_callback_value -> i32 with -1
+hardening/careful/src/../../../src/am/common/cost.rs:139:9: delete match arm 1 in amtranslatestrategy_callback
+hardening/careful/src/../../../src/am/common/cost.rs:145:5: replace amtranslatecmptype_callback -> i32 with 0
+hardening/careful/src/../../../src/am/common/cost.rs:145:5: replace amtranslatecmptype_callback -> i32 with 1
+hardening/careful/src/../../../src/am/common/cost.rs:145:5: replace amtranslatecmptype_callback -> i32 with -1
+hardening/careful/src/../../../src/am/common/cost.rs:222:27: replace <= with > in estimate_planner_cost
+hardening/careful/src/../../../src/am/common/cost.rs:226:46: replace > with == in estimate_planner_cost
+hardening/careful/src/../../../src/am/common/cost.rs:226:46: replace > with >= in estimate_planner_cost
+hardening/careful/src/../../../src/am/common/cost.rs:229:28: replace * with + in estimate_planner_cost
+hardening/careful/src/../../../src/am/common/cost.rs:229:28: replace * with / in estimate_planner_cost
+hardening/careful/src/../../../src/am/common/cost.rs:231:59: replace * with + in estimate_planner_cost
+hardening/careful/src/../../../src/am/common/cost.rs:231:59: replace * with / in estimate_planner_cost
+hardening/careful/src/../../../src/am/common/cost.rs:235:53: replace <= with > in estimate_planner_cost
+hardening/careful/src/../../../src/am/common/cost.rs:236:46: replace * with + in estimate_planner_cost
+hardening/careful/src/../../../src/am/common/cost.rs:237:71: replace * with + in estimate_planner_cost
+hardening/careful/src/../../../src/am/common/cost.rs:237:71: replace * with / in estimate_planner_cost
+hardening/careful/src/../../../src/am/common/cost.rs:237:41: replace * with + in estimate_planner_cost
+hardening/careful/src/../../../src/am/common/cost.rs:237:41: replace * with / in estimate_planner_cost
+hardening/careful/src/../../../src/am/common/cost.rs:238:27: replace + with - in estimate_planner_cost
+hardening/careful/src/../../../src/am/common/cost.rs:238:27: replace + with * in estimate_planner_cost
+hardening/careful/src/../../../src/am/common/cost.rs:245:39: replace + with * in estimate_planner_cost
+hardening/careful/src/../../../src/am/common/cost.rs:246:38: replace * with + in estimate_planner_cost
+hardening/careful/src/../../../src/am/common/cost.rs:246:38: replace * with / in estimate_planner_cost
+hardening/careful/src/../../../src/am/common/cost.rs:247:67: replace * with + in estimate_planner_cost
+hardening/careful/src/../../../src/am/common/cost.rs:247:67: replace * with / in estimate_planner_cost
+hardening/careful/src/../../../src/am/common/cost.rs:247:37: replace * with / in estimate_planner_cost
+hardening/careful/src/../../../src/am/common/cost.rs:256:26: replace / with % in estimate_planner_cost
+hardening/careful/src/../../../src/am/common/cost.rs:256:26: replace / with * in estimate_planner_cost
+hardening/careful/src/../../../src/am/common/cost.rs:261:28: replace * with / in estimate_planner_cost
+hardening/careful/src/../../../src/am/common/cost.rs:262:39: replace + with - in estimate_planner_cost
+hardening/careful/src/../../../src/am/common/cost.rs:262:39: replace + with * in estimate_planner_cost
+hardening/careful/src/../../../src/am/common/cost.rs:263:51: replace + with * in estimate_planner_cost
+hardening/careful/src/../../../src/am/common/cost.rs:263:37: replace + with * in estimate_planner_cost

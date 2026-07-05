@@ -1,0 +1,172 @@
+diff --git a/src/am/ec_spire/dml_frontdoor/mod.rs b/src/am/ec_spire/dml_frontdoor/mod.rs
+index dc441ec3..9955a257 100644
+--- a/src/am/ec_spire/dml_frontdoor/mod.rs
++++ b/src/am/ec_spire/dml_frontdoor/mod.rs
+@@ -12,7 +12,7 @@ use pgrx::{pg_guard, pg_sys, PgList, Spi};
+ use std::collections::HashMap;
+ use std::ffi::CStr;
+ use std::os::raw::c_char;
+-use std::sync::atomic::{AtomicU64, Ordering};
++use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+ use std::sync::{Mutex, OnceLock};
+ 
+ use crate::storage::relation_guard::{HeapRelationGuard, IndexRelationGuard};
+@@ -175,16 +175,33 @@ pub(crate) struct SpireDmlFrontdoorQueryContext<'a> {
+     pub(crate) embedding_columns: &'a [&'a str],
+ }
+ 
++#[derive(Debug, Clone, Copy, Default)]
++struct DmlFrontdoorBackendHookState {
++    planner_hook_installed: bool,
++    relcache_callback_registered: bool,
++    classification_attempted: bool,
++    last_classification_supported: Option<bool>,
++    last_classification_kind: Option<&'static str>,
++    last_classification_status: Option<&'static str>,
++    last_hook_action: Option<&'static str>,
++}
++
+ static mut PREVIOUS_PLANNER_HOOK: pg_sys::planner_hook_type = None;
+-static mut PLANNER_HOOK_INSTALLED: bool = false;
++static PLANNER_HOOK_INSTALLED: AtomicBool = AtomicBool::new(false);
++static RELATION_CONTEXT_RELCACHE_CALLBACK_REGISTERED: AtomicBool = AtomicBool::new(false);
++
+ // These hook diagnostics are intentionally backend-local. They answer "what
+ // did this session's planner hook last see?" rather than aggregating globally.
+-static mut HOOK_CLASSIFICATION_ATTEMPTED: bool = false;
+-static mut LAST_HOOK_CLASSIFICATION_SUPPORTED: Option<bool> = None;
+-static mut LAST_HOOK_CLASSIFICATION_KIND: Option<&'static str> = None;
+-static mut LAST_HOOK_CLASSIFICATION_STATUS: Option<&'static str> = None;
+-static mut LAST_HOOK_ACTION: Option<&'static str> = None;
+-static mut RELATION_CONTEXT_RELCACHE_CALLBACK_REGISTERED: bool = false;
++static DML_FRONTDOOR_HOOK_STATE: Mutex<DmlFrontdoorBackendHookState> =
++    Mutex::new(DmlFrontdoorBackendHookState {
++        planner_hook_installed: false,
++        relcache_callback_registered: false,
++        classification_attempted: false,
++        last_classification_supported: None,
++        last_classification_kind: None,
++        last_classification_status: None,
++        last_hook_action: None,
++    });
+ 
+ static RELATION_CONTEXT_CACHE: OnceLock<Mutex<HashMap<u32, CachedRelationContext>>> =
+     OnceLock::new();
+@@ -198,17 +215,6 @@ struct CachedRelationContext {
+     watched_relation_oids: Vec<pg_sys::Oid>,
+ }
+ 
+-#[derive(Debug, Clone, Copy)]
+-struct DmlFrontdoorBackendHookState {
+-    planner_hook_installed: bool,
+-    relcache_callback_registered: bool,
+-    classification_attempted: bool,
+-    last_classification_supported: Option<bool>,
+-    last_classification_kind: Option<&'static str>,
+-    last_classification_status: Option<&'static str>,
+-    last_hook_action: Option<&'static str>,
+-}
+-
+ type RelcacheCallbackFunction =
+     Option<unsafe extern "C-unwind" fn(arg: pg_sys::Datum, relid: pg_sys::Oid)>;
+ 
+@@ -224,12 +230,12 @@ pub(crate) unsafe fn register_dml_frontdoor_planner_hook() {
+     // SAFETY: planner_hook is PostgreSQL backend-local process state; install
+     // only once during extension initialization and preserve the previous hook.
+     unsafe {
+-        if !PLANNER_HOOK_INSTALLED {
++        if !PLANNER_HOOK_INSTALLED.swap(true, Ordering::Relaxed) {
+             PREVIOUS_PLANNER_HOOK = pg_sys::planner_hook;
+             pg_sys::planner_hook = Some(ec_spire_dml_frontdoor_planner_hook);
+-            PLANNER_HOOK_INSTALLED = true;
+         }
+     }
++    dml_frontdoor_record_hook_install();
+     dml_frontdoor_register_relcache_callback();
+ }
+ 
+@@ -237,45 +243,51 @@ fn dml_frontdoor_register_relcache_callback() {
+     // SAFETY: the relcache callback registry is backend-local; this flag keeps
+     // registration idempotent for the current backend.
+     unsafe {
+-        if !RELATION_CONTEXT_RELCACHE_CALLBACK_REGISTERED {
++        if !RELATION_CONTEXT_RELCACHE_CALLBACK_REGISTERED.swap(true, Ordering::Relaxed) {
+             CacheRegisterRelcacheCallback(
+                 Some(dml_frontdoor_relation_context_relcache_callback),
+                 pg_sys::Datum::from(0),
+             );
+-            RELATION_CONTEXT_RELCACHE_CALLBACK_REGISTERED = true;
+         }
+     }
++    dml_frontdoor_record_relcache_callback_registration();
+ }
+ 
+ fn dml_frontdoor_backend_hook_state() -> DmlFrontdoorBackendHookState {
+-    // SAFETY: hook diagnostics are backend-local scalars updated by this
+-    // backend's planner hook and relcache callback setup. Copying them into a
+-    // status snapshot is sufficient for diagnostic reporting.
+-    unsafe {
+-        DmlFrontdoorBackendHookState {
+-            planner_hook_installed: PLANNER_HOOK_INSTALLED,
+-            relcache_callback_registered: RELATION_CONTEXT_RELCACHE_CALLBACK_REGISTERED,
+-            classification_attempted: HOOK_CLASSIFICATION_ATTEMPTED,
+-            last_classification_supported: LAST_HOOK_CLASSIFICATION_SUPPORTED,
+-            last_classification_kind: LAST_HOOK_CLASSIFICATION_KIND,
+-            last_classification_status: LAST_HOOK_CLASSIFICATION_STATUS,
+-            last_hook_action: LAST_HOOK_ACTION,
+-        }
+-    }
++    DML_FRONTDOOR_HOOK_STATE
++        .lock()
++        .map(|state| *state)
++        .unwrap_or_default()
+ }
+ 
+ fn dml_frontdoor_record_hook_observation(
+     decision: &SpireDmlFrontdoorReplacementDecisionRow,
+     action: &'static str,
+ ) {
+-    // SAFETY: hook status fields are backend-local diagnostics updated only by
+-    // this backend while processing planner-hook calls.
+-    unsafe {
+-        HOOK_CLASSIFICATION_ATTEMPTED = true;
+-        LAST_HOOK_CLASSIFICATION_SUPPORTED = Some(decision.supported);
+-        LAST_HOOK_CLASSIFICATION_KIND = Some(decision.kind);
+-        LAST_HOOK_CLASSIFICATION_STATUS = Some(decision.status);
+-        LAST_HOOK_ACTION = Some(action);
++    if let Ok(mut state) = DML_FRONTDOOR_HOOK_STATE.lock() {
++        state.classification_attempted = true;
++        state.last_classification_supported = Some(decision.supported);
++        state.last_classification_kind = Some(decision.kind);
++        state.last_classification_status = Some(decision.status);
++        state.last_hook_action = Some(action);
++    }
++}
++
++fn dml_frontdoor_record_hook_install() {
++    if let Ok(mut state) = DML_FRONTDOOR_HOOK_STATE.lock() {
++        state.planner_hook_installed = true;
++    }
++}
++
++fn dml_frontdoor_record_relcache_callback_registration() {
++    if let Ok(mut state) = DML_FRONTDOOR_HOOK_STATE.lock() {
++        state.relcache_callback_registered = true;
++    }
++}
++
++fn dml_frontdoor_record_hook_action(action: &'static str) {
++    if let Ok(mut state) = DML_FRONTDOOR_HOOK_STATE.lock() {
++        state.last_hook_action = Some(action);
+     }
+ }
+ 
+@@ -526,7 +538,7 @@ fn dml_frontdoor_maybe_replace_plan_tree(
+             plan_expr,
+             (*planned_stmt).planTree,
+         );
+-        LAST_HOOK_ACTION = Some("plan_tree_replaced_customscan");
++        dml_frontdoor_record_hook_action("plan_tree_replaced_customscan");
+         planned_stmt
+     }
+ }

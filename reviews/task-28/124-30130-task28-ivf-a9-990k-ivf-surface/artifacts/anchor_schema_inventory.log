@@ -1,0 +1,36 @@
+Pager usage is off.
+Timing is on.
+ server_version
+----------------
+ 18.3
+(1 row)
+
+Time: 0.728 ms
+                 table_name                 | estimated_rows | table_bytes | table_pretty
+--------------------------------------------+----------------+-------------+--------------
+ ec_hnsw_real_ann_benchmarks_anchor_corpus  |         990000 |    75800576 | 72 MB
+ ec_hnsw_real_ann_benchmarks_anchor_queries |          10000 |      606208 | 592 kB
+(2 rows)
+
+Time: 5.985 ms
+                   table_name                    | attnum |  attname  | data_type | attnotnull
+-------------------------------------------------+--------+-----------+-----------+------------
+ ec_hnsw_real_ann_benchmarks_anchor_corpus       |      1 | id        | bigint    | t
+ ec_hnsw_real_ann_benchmarks_anchor_corpus       |      2 | source    | real[]    | t
+ ec_hnsw_real_ann_benchmarks_anchor_corpus       |      3 | embedding | ecvector  | t
+ ec_hnsw_real_ann_benchmarks_anchor_corpus_pkey  |      1 | id        | bigint    | f
+ ec_hnsw_real_ann_benchmarks_anchor_m16_w8_idx   |      1 | embedding | ecvector  | f
+ ec_hnsw_real_ann_benchmarks_anchor_queries      |      1 | id        | bigint    | t
+ ec_hnsw_real_ann_benchmarks_anchor_queries      |      2 | source    | real[]    | t
+ ec_hnsw_real_ann_benchmarks_anchor_queries_pkey |      1 | id        | bigint    | f
+(8 rows)
+
+Time: 42.192 ms
+                 table_name                 |                   index_name                    | index_bytes | index_pretty |                                                                                                 indexdef
+--------------------------------------------+-------------------------------------------------+-------------+--------------+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ ec_hnsw_real_ann_benchmarks_anchor_corpus  | ec_hnsw_real_ann_benchmarks_anchor_corpus_pkey  |    22257664 | 21 MB        | CREATE UNIQUE INDEX ec_hnsw_real_ann_benchmarks_anchor_corpus_pkey ON public.ec_hnsw_real_ann_benchmarks_anchor_corpus USING btree (id)
+ ec_hnsw_real_ann_benchmarks_anchor_corpus  | ec_hnsw_real_ann_benchmarks_anchor_m16_w8_idx   |  1351688192 | 1289 MB      | CREATE INDEX ec_hnsw_real_ann_benchmarks_anchor_m16_w8_idx ON public.ec_hnsw_real_ann_benchmarks_anchor_corpus USING ec_hnsw (embedding) WITH (m='16', ef_construction='128', build_source_column=source)
+ ec_hnsw_real_ann_benchmarks_anchor_queries | ec_hnsw_real_ann_benchmarks_anchor_queries_pkey |      245760 | 240 kB       | CREATE UNIQUE INDEX ec_hnsw_real_ann_benchmarks_anchor_queries_pkey ON public.ec_hnsw_real_ann_benchmarks_anchor_queries USING btree (id)
+(3 rows)
+
+Time: 3.991 ms

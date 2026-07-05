@@ -1,0 +1,97 @@
+Script started on 2026-05-21 19:40:32-07:00 [<not executed on terminal>]
+diff --git a/src/am/ec_spire/coordinator/hierarchy_snapshots.rs b/src/am/ec_spire/coordinator/hierarchy_snapshots.rs
+index 8c912afef..059a6946d 100644
+--- a/src/am/ec_spire/coordinator/hierarchy_snapshots.rs
++++ b/src/am/ec_spire/coordinator/hierarchy_snapshots.rs
+@@ -195,8 +195,9 @@ fn remote_search_heap_candidate_rows_from_compact_candidates(
+                 "ec_spire remote heap resolution failed to allocate a heap tuple slot".to_owned()
+             })?;
+     // SAFETY: heap_relation and index relation are both open for this lookup.
+-    // The resolved indexed vector attribute, heap relation guard, active
+-    // snapshot, and tuple slot stay live through the local-heap resolution pass.
++    // The returned tuple is valid because the indexed vector attribute is copied
++    // by value, and the heap relation guard, active snapshot, and tuple slot stay
++    // live through the local-heap resolution pass.
+     let (indexed_attribute, mut heap_reader) = unsafe {
+         let indexed_attribute = crate::am::ec_hnsw::source::resolve_indexed_vector_attribute(
+             heap_relation.as_ptr(),
+@@ -296,7 +297,8 @@ fn load_relation_epoch_manifests_for_coordinator_fanout(
+     }
+     // SAFETY: root_control was read from this live relation and names manifest
+     // tuple IDs in the same SPIRE index relation; each page helper returns owned
+-    // bytes before the decoded manifests are validated below.
++    // bytes before the decoded manifests are validated below. The tuple groups
++    // the three manifests that are cross-checked against the same active epoch.
+     let (epoch_bytes, object_bytes, placement_bytes) = unsafe {
+         (
+             page::read_object_tuple(index_relation, root_control.epoch_manifest_tid)?,
+diff --git a/src/am/ec_spire/coordinator/maintenance.rs b/src/am/ec_spire/coordinator/maintenance.rs
+index c39bd1cb6..c23d908fa 100644
+--- a/src/am/ec_spire/coordinator/maintenance.rs
++++ b/src/am/ec_spire/coordinator/maintenance.rs
+@@ -453,7 +453,9 @@ pub(crate) fn index_maintenance_run(
+         };
+         // SAFETY: publish lock is held. The selected plan, execution input, and
+         // published replacement objects/manifests all derive from the same live
+-        // index relation and epoch snapshot.
++        // index relation and epoch snapshot; the input is constructed and
++        // consumed within this boundary before the mutable object-store borrow
++        // returns to safe code.
+         unsafe {
+             let input = build_relation_selected_scheduled_maintenance_input(
+                 index_relation,
+diff --git a/src/am/ec_spire/storage/relation_plan.rs b/src/am/ec_spire/storage/relation_plan.rs
+index 17fd1fd0c..5d8f73541 100644
+--- a/src/am/ec_spire/storage/relation_plan.rs
++++ b/src/am/ec_spire/storage/relation_plan.rs
+@@ -148,7 +148,8 @@ fn spire_aux_store_reloptions() -> Result<pg_sys::Datum, String> {
+     // SAFETY: option is a NUL-terminated CString that remains live while
+     // PostgreSQL copies it into a text Datum. The non-null text varlena is then
+     // wrapped as one TEXT datum, copied into a PostgreSQL array value, and the
+-    // resulting non-null array varlena is returned as a Datum.
++    // resulting non-null array varlena is returned as a Datum. The one-element
++    // Datum array is stack-local and remains live for construct_array_builtin.
+     unsafe {
+         let text = pg_sys::cstring_to_text(option.as_ptr());
+         if text.is_null() {
+diff --git a/src/lib.rs b/src/lib.rs
+index 5cf226c1b..77f2d5a7b 100644
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -876,7 +876,8 @@ impl DetoastedTypmodArray {
+         // SAFETY: `self.array` is a detoasted PostgreSQL ArrayType varlena kept
+         // alive by this wrapper while PostgreSQL decodes integer typmods. The
+         // returned pointer is read only after PostgreSQL reports exactly one
+-        // typmod and the pointer is checked non-null.
++        // typmod, so dereferencing the non-null pointer reads the single int4
++        // slot PostgreSQL says is present.
+         let typmod = unsafe {
+             let raw_typmods = pg_sys::ArrayGetIntegerTypmods(
+                 self.array.as_ptr().cast::<pg_sys::ArrayType>(),
+diff --git a/src/storage/string_info.rs b/src/storage/string_info.rs
+index a6baa78a6..e42e4469d 100644
+--- a/src/storage/string_info.rs
++++ b/src/storage/string_info.rs
+@@ -41,7 +41,8 @@ impl<'msg> StringInfoReader<'msg> {
+ 
+     pub(crate) fn remaining_len(&self, label: &str) -> Result<usize, String> {
+         // SAFETY: `StringInfoReader` is constructed only for PostgreSQL's live
+-        // receive buffer; len and cursor are read-only fields copied by value.
++        // receive buffer; len and cursor are read-only fields copied by value
++        // from the same StringInfoData before bounds are checked below.
+         let (total_len, cursor) = unsafe {
+             (
+                 usize::try_from((*self.msg).len)
+@@ -65,8 +66,8 @@ impl<'msg> StringInfoReader<'msg> {
+         }
+         // SAFETY: `StringInfoReader` owns the live receive-buffer cursor for
+         // this call. PostgreSQL advances the cursor and returns a pointer to
+-        // the requested byte range; copy before returning so no borrowed
+-        // message-buffer lifetime escapes.
++        // the requested byte range for exactly `len` bytes; copy before
++        // returning so no borrowed message-buffer lifetime escapes.
+         unsafe {
+             let ptr = pg_sys::pq_getmsgbytes(self.msg, len as i32) as *const u8;
+             Ok(std::slice::from_raw_parts(ptr, len).to_vec())
+
+Script done on 2026-05-21 19:40:32-07:00 [COMMAND_EXIT_CODE="0"]

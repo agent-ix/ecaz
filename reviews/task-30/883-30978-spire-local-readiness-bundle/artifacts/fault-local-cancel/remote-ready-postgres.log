@@ -1,0 +1,51 @@
+2026-05-13 01:10:33.414 PDT [1794020] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-05-13 01:10:33.416 PDT [1794020] LOG:  listening on Unix socket "/home/peter/dev/ecaz/target/spire-stage-e-transport-fault-pg18-p12lc/sockets/.s.PGSQL.39197"
+2026-05-13 01:10:33.423 PDT [1794026] LOG:  database system was shut down at 2026-05-13 01:10:31 PDT
+2026-05-13 01:10:33.427 PDT [1794020] LOG:  database system is ready to accept connections
+2026-05-13 01:10:33.858 PDT [1794091] ERROR:  canceling statement due to user request
+2026-05-13 01:10:33.858 PDT [1794091] STATEMENT:  SELECT pg_sleep(0.30)
+2026-05-13 01:10:33.858 PDT [1794091] LOG:  could not send data to client: Broken pipe
+2026-05-13 01:10:33.858 PDT [1794091] STATEMENT:  SELECT pg_sleep(0.30)
+2026-05-13 01:10:33.858 PDT [1794091] FATAL:  connection to client lost
+2026-05-13 01:10:33.858 PDT [1794092] ERROR:  canceling statement due to user request
+2026-05-13 01:10:33.858 PDT [1794092] STATEMENT:  SELECT pg_sleep(0.30)
+2026-05-13 01:10:33.858 PDT [1794092] LOG:  could not send data to client: Broken pipe
+2026-05-13 01:10:33.858 PDT [1794092] STATEMENT:  SELECT pg_sleep(0.30)
+2026-05-13 01:10:33.858 PDT [1794092] FATAL:  connection to client lost
+2026-05-13 01:10:33.896 PDT [1794097] ERROR:  canceling statement due to user request
+2026-05-13 01:10:33.896 PDT [1794097] STATEMENT:  SELECT pg_sleep(0.30)
+2026-05-13 01:10:33.896 PDT [1794097] LOG:  could not send data to client: Broken pipe
+2026-05-13 01:10:33.896 PDT [1794097] STATEMENT:  SELECT pg_sleep(0.30)
+2026-05-13 01:10:33.896 PDT [1794097] FATAL:  connection to client lost
+2026-05-13 01:10:33.896 PDT [1794098] ERROR:  canceling statement due to user request
+2026-05-13 01:10:33.896 PDT [1794098] STATEMENT:  SELECT pg_sleep(0.30)
+2026-05-13 01:10:33.896 PDT [1794098] LOG:  could not send data to client: Broken pipe
+2026-05-13 01:10:33.896 PDT [1794098] STATEMENT:  SELECT pg_sleep(0.30)
+2026-05-13 01:10:33.896 PDT [1794098] FATAL:  connection to client lost
+2026-05-13 01:10:33.936 PDT [1794105] ERROR:  canceling statement due to user request
+2026-05-13 01:10:33.936 PDT [1794105] STATEMENT:  SELECT pg_sleep(0.30)
+2026-05-13 01:10:33.936 PDT [1794105] LOG:  could not send data to client: Broken pipe
+2026-05-13 01:10:33.936 PDT [1794105] STATEMENT:  SELECT pg_sleep(0.30)
+2026-05-13 01:10:33.936 PDT [1794105] FATAL:  connection to client lost
+2026-05-13 01:10:33.936 PDT [1794106] ERROR:  canceling statement due to user request
+2026-05-13 01:10:33.936 PDT [1794106] STATEMENT:  SELECT pg_sleep(0.30)
+2026-05-13 01:10:33.936 PDT [1794106] LOG:  could not send data to client: Broken pipe
+2026-05-13 01:10:33.936 PDT [1794106] STATEMENT:  SELECT pg_sleep(0.30)
+2026-05-13 01:10:33.936 PDT [1794106] FATAL:  connection to client lost
+2026-05-13 01:10:33.972 PDT [1794111] ERROR:  canceling statement due to user request
+2026-05-13 01:10:33.972 PDT [1794111] STATEMENT:  SELECT pg_sleep(0.30)
+2026-05-13 01:10:33.972 PDT [1794111] LOG:  could not send data to client: Broken pipe
+2026-05-13 01:10:33.972 PDT [1794111] STATEMENT:  SELECT pg_sleep(0.30)
+2026-05-13 01:10:33.972 PDT [1794111] FATAL:  connection to client lost
+2026-05-13 01:10:33.972 PDT [1794112] ERROR:  canceling statement due to user request
+2026-05-13 01:10:33.972 PDT [1794112] STATEMENT:  SELECT pg_sleep(0.30)
+2026-05-13 01:10:33.972 PDT [1794112] LOG:  could not send data to client: Broken pipe
+2026-05-13 01:10:33.972 PDT [1794112] STATEMENT:  SELECT pg_sleep(0.30)
+2026-05-13 01:10:33.972 PDT [1794112] FATAL:  connection to client lost
+2026-05-13 01:10:34.077 PDT [1794020] LOG:  received fast shutdown request
+2026-05-13 01:10:34.086 PDT [1794020] LOG:  aborting any active transactions
+2026-05-13 01:10:34.087 PDT [1794020] LOG:  background worker "logical replication launcher" (PID 1794029) exited with exit code 1
+2026-05-13 01:10:34.087 PDT [1794024] LOG:  shutting down
+2026-05-13 01:10:34.090 PDT [1794024] LOG:  checkpoint starting: shutdown immediate
+2026-05-13 01:10:34.104 PDT [1794024] LOG:  checkpoint complete: wrote 0 buffers (0.0%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.004 s, sync=0.002 s, total=0.017 s; sync files=2, longest=0.001 s, average=0.001 s; distance=0 kB, estimate=0 kB; lsn=0/1754600, redo lsn=0/1754600
+2026-05-13 01:10:34.111 PDT [1794020] LOG:  database system is shut down

@@ -1,0 +1,98 @@
+{
+  "name": "task51-local-ivf-rabitq-990k",
+  "schema_version": 1,
+  "artifact_dir": "benchmarks/task51-local-ivf-rabitq-990k/artifacts",
+  "defaults": {
+    "pg": 18,
+    "socket_dir": "/home/peter/.pgrx",
+    "profile": "ec_ivf",
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 100,
+    "iterations": 100,
+    "force_index": true
+  },
+  "steps": [
+    {
+      "kind": "load",
+      "name": "load-990k-rabitq1-n1024-w50",
+      "tags": ["load", "ec_real_990k", "ivf", "rabitq", "nlists1024"],
+      "prefix": "task51_local_990k_ivf_rabitq1_n1024_w50",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "storage_format": "rabitq",
+      "corpus_file": "target/real-corpus/staged-task50/ec_real_ann_benchmarks_anchor_corpus.tsv",
+      "queries_file": "target/real-corpus/staged-task50/ec_real_ann_benchmarks_anchor_queries.tsv",
+      "manifest_file": "target/real-corpus/staged-task50/ec_real_ann_benchmarks_anchor_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=1024",
+        "nprobe=256",
+        "training_sample_rows=10000",
+        "quant_bits=1",
+        "rerank=heap_f32",
+        "rerank_width=50"
+      ],
+      "log_file": "benchmarks/task51-local-ivf-rabitq-990k/artifacts/load-990k-rabitq1-n1024-w50.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-990k-rabitq1-n1024-w50",
+      "tags": ["recall", "ec_real_990k", "ivf", "rabitq", "nlists1024"],
+      "prefix": "task51_local_990k_ivf_rabitq1_n1024_w50",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "k": 10,
+      "sweep": [64, 96, 128, 192, 256],
+      "rerank_width": 50,
+      "force_index": true,
+      "truth_cache_file": "benchmarks/task51-local-ivf-rabitq-990k/artifacts/truth-ec-real-990k-q100-k10.json",
+      "log_output": "benchmarks/task51-local-ivf-rabitq-990k/artifacts/recall-990k-rabitq1-n1024-w50.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-990k-rabitq1-n1024-w50",
+      "tags": ["latency", "ec_real_990k", "ivf", "rabitq", "nlists1024"],
+      "prefix": "task51_local_990k_ivf_rabitq1_n1024_w50",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "sweep": [64, 96, 128, 192, 256],
+      "rerank_width": 50,
+      "force_index": true,
+      "iterations": 100,
+      "concurrency": 1,
+      "log_output": "benchmarks/task51-local-ivf-rabitq-990k/artifacts/latency-990k-rabitq1-n1024-w50.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-990k-rabitq1-n1024-w50",
+      "tags": ["storage", "ec_real_990k", "ivf", "rabitq", "nlists1024"],
+      "prefix": "task51_local_990k_ivf_rabitq1_n1024_w50",
+      "log_file": "benchmarks/task51-local-ivf-rabitq-990k/artifacts/storage-990k-rabitq1-n1024-w50.log"
+    },
+    {
+      "kind": "explain",
+      "name": "explain-990k-rabitq1-n1024-w50-p128",
+      "tags": ["explain", "ec_real_990k", "ivf", "rabitq", "nlists1024", "nprobe128"],
+      "prefix": "task51_local_990k_ivf_rabitq1_n1024_w50",
+      "profile": "ec_ivf",
+      "index_name": "task51_local_990k_ivf_rabitq1_n1024_w50_rabitq_idx",
+      "nprobe": 128,
+      "rerank_width": 50,
+      "sql_file": "benchmarks/task51-local-ivf-rabitq-990k/artifacts/explain-990k-rabitq1-n1024-w50-p128.sql",
+      "log_output": "benchmarks/task51-local-ivf-rabitq-990k/artifacts/explain-990k-rabitq1-n1024-w50-p128.log"
+    },
+    {
+      "kind": "explain",
+      "name": "explain-990k-rabitq1-n1024-w50-p256",
+      "tags": ["explain", "ec_real_990k", "ivf", "rabitq", "nlists1024", "nprobe256"],
+      "prefix": "task51_local_990k_ivf_rabitq1_n1024_w50",
+      "profile": "ec_ivf",
+      "index_name": "task51_local_990k_ivf_rabitq1_n1024_w50_rabitq_idx",
+      "nprobe": 256,
+      "rerank_width": 50,
+      "sql_file": "benchmarks/task51-local-ivf-rabitq-990k/artifacts/explain-990k-rabitq1-n1024-w50-p256.sql",
+      "log_output": "benchmarks/task51-local-ivf-rabitq-990k/artifacts/explain-990k-rabitq1-n1024-w50-p256.log"
+    }
+  ]
+}

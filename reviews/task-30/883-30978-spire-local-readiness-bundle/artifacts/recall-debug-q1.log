@@ -1,0 +1,13 @@
+SET
+SET
+SET
+SET
+SET
+pred	{350,351,349,352,348,353,347,354,346,22}
+SET
+SET
+SET
+SET
+exact	{36,35,37,34,38,33,39,40,32,336}
+ERROR:  ec_spire_distributed: subquery DML is not yet supported in v1
+HINT:  See ADR-069 for the v1 SPIRE distributed DML shape.

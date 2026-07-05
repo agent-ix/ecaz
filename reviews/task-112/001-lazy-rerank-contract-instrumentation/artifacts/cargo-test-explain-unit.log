@@ -1,0 +1,16 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.17s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-52f8c7085962b346)
+
+running 9 tests
+test am::common::explain::tests::explain_counter_definitions_match_the_staged_fr024_contract ... ok
+test am::common::explain::tests::explain_counters_record_each_staged_statistic ... ok
+test am::common::explain::tests::explain_counters_reset_back_to_zero_state ... ok
+test am::common::explain::tests::explain_option_snapshot_matches_build_target ... ok
+test am::common::explain::tests::explain_output_group_matches_fr024_hook_contract ... ok
+test am::common::explain::tests::explain_properties_render_the_current_counter_values ... ok
+test am::common::explain::tests::explain_property_emission_requires_option_index_scan_and_supported_access_method ... ok
+test am::common::explain::tests::ivf_explain_counters_record_each_staged_statistic ... ok
+test am::common::explain::tests::ivf_explain_properties_render_the_current_counter_values ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 2156 filtered out; finished in 0.00s
+

@@ -1,0 +1,21 @@
+--- hardening/careful/src/../../../src/storage/page.rs
++++ replace == with != in DataPage::update_raw_tuple
+@@ -136,17 +136,17 @@
+ 
+     pub fn update_raw_tuple(&mut self, tid: ItemPointer, payload: Vec<u8>) -> Result<(), String> {
+         if tid.block_number != self.block_number {
+             return Err(format!(
+                 "tuple block mismatch: got {}, page is {}",
+                 tid.block_number, self.block_number
+             ));
+         }
+-        if tid.offset_number == 0 {
++        if tid.offset_number != /* ~ changed by cargo-mutants ~ */ 0 {
+             return Err("offset number must be 1-based".into());
+         }
+ 
+         let index = (tid.offset_number - 1) as usize;
+         let existing = self
+             .tuples
+             .get_mut(index)
+             .ok_or_else(|| format!("tuple offset {} out of range", tid.offset_number))?;

@@ -1,0 +1,163 @@
+diff --git a/src/am/ec_ivf/scan.rs b/src/am/ec_ivf/scan.rs
+index 8c69bb13..8d89da09 100644
+--- a/src/am/ec_ivf/scan.rs
++++ b/src/am/ec_ivf/scan.rs
+@@ -591,10 +591,14 @@ unsafe fn store_scan_query(opaque: &mut EcIvfScanOpaque, query: &[f32]) {
+ 
+     let query_bytes = std::mem::size_of_val(query);
+     crate::fault::maybe_fail_palloc("ec_ivf scan query values");
++    // SAFETY: allocates `query_bytes` in PostgreSQL memory for scan-local
++    // query storage; the result is checked before use.
+     let query_values = unsafe { pg_sys::palloc(query_bytes) }.cast::<f32>();
+     if query_values.is_null() {
+         pgrx::error!("ec_ivf failed to allocate scan query state");
+     }
++    // SAFETY: `query_values` points to space for exactly `query.len()` f32
++    // values, and source/destination do not overlap.
+     unsafe { ptr::copy_nonoverlapping(query.as_ptr(), query_values, query.len()) };
+     opaque.query_dimensions = u16::try_from(query.len()).expect("query length should fit in u16");
+     opaque.query_values = query_values;
+@@ -602,6 +606,8 @@ unsafe fn store_scan_query(opaque: &mut EcIvfScanOpaque, query: &[f32]) {
+ 
+ unsafe fn free_scan_query(opaque: &mut EcIvfScanOpaque) {
+     if !opaque.query_values.is_null() {
++        // SAFETY: `query_values` was allocated by `palloc` in
++        // `store_scan_query` and is owned by this scan opaque.
+         unsafe { pg_sys::pfree(opaque.query_values.cast()) };
+         opaque.query_values = ptr::null_mut();
+     }
+@@ -641,6 +647,8 @@ fn store_scan_prepared_query(
+ 
+ fn free_scan_prepared_query(opaque: &mut EcIvfScanOpaque) {
+     if !opaque.prepared_query.is_null() {
++        // SAFETY: `prepared_query` was created with `Box::into_raw` by this
++        // scan opaque and has not been freed while the pointer is non-null.
+         drop(unsafe { Box::from_raw(opaque.prepared_query) });
+         opaque.prepared_query = ptr::null_mut();
+     }
+@@ -652,14 +660,20 @@ fn pq_fastscan_model_for_scan<'a>(
+     metadata: &super::page::MetadataPage,
+ ) -> Result<&'a IvfPqFastScanModel, String> {
+     if opaque.pq_fastscan_model.is_null() {
++        // SAFETY: `index_relation` and metadata describe the live IVF index;
++        // the quantizer loader validates the on-disk PQ model.
+         let model = unsafe { quantizer::load_pq_fastscan_model(index_relation, metadata) }?;
+         opaque.pq_fastscan_model = Box::into_raw(Box::new(model));
+     }
++    // SAFETY: the pointer is initialized above and remains owned by `opaque`
++    // until `free_pq_fastscan_model` clears it.
+     Ok(unsafe { &*opaque.pq_fastscan_model })
+ }
+ 
+ fn free_pq_fastscan_model(opaque: &mut EcIvfScanOpaque) {
+     if !opaque.pq_fastscan_model.is_null() {
++        // SAFETY: `pq_fastscan_model` was created with `Box::into_raw` by this
++        // scan opaque and has not been freed while the pointer is non-null.
+         drop(unsafe { Box::from_raw(opaque.pq_fastscan_model) });
+         opaque.pq_fastscan_model = ptr::null_mut();
+     }
+@@ -673,10 +687,14 @@ unsafe fn store_centroid_scores(opaque: &mut EcIvfScanOpaque, scores: &[EcIvfCen
+ 
+     let bytes = std::mem::size_of_val(scores);
+     crate::fault::maybe_fail_palloc("ec_ivf scan centroid scores");
++    // SAFETY: allocates enough PostgreSQL memory for all centroid score
++    // entries; the result is checked before use.
+     let score_ptr = unsafe { pg_sys::palloc(bytes) }.cast::<EcIvfCentroidScore>();
+     if score_ptr.is_null() {
+         pgrx::error!("ec_ivf failed to allocate centroid score state");
+     }
++    // SAFETY: `score_ptr` points to space for exactly `scores.len()` entries,
++    // and source/destination do not overlap.
+     unsafe { ptr::copy_nonoverlapping(scores.as_ptr(), score_ptr, scores.len()) };
+     opaque.centroid_score_count =
+         u32::try_from(scores.len()).expect("centroid score count should fit in u32");
+@@ -685,6 +703,8 @@ unsafe fn store_centroid_scores(opaque: &mut EcIvfScanOpaque, scores: &[EcIvfCen
+ 
+ unsafe fn free_centroid_scores(opaque: &mut EcIvfScanOpaque) {
+     if !opaque.centroid_scores.is_null() {
++        // SAFETY: `centroid_scores` was allocated by `palloc` in
++        // `store_centroid_scores` and is owned by this scan opaque.
+         unsafe { pg_sys::pfree(opaque.centroid_scores.cast()) };
+         opaque.centroid_scores = ptr::null_mut();
+     }
+@@ -699,10 +719,14 @@ unsafe fn store_selected_lists(opaque: &mut EcIvfScanOpaque, selected_lists: &[u
+ 
+     let bytes = std::mem::size_of_val(selected_lists);
+     crate::fault::maybe_fail_palloc("ec_ivf scan selected lists");
++    // SAFETY: allocates enough PostgreSQL memory for all selected list ids;
++    // the result is checked before use.
+     let list_ptr = unsafe { pg_sys::palloc(bytes) }.cast::<u32>();
+     if list_ptr.is_null() {
+         pgrx::error!("ec_ivf failed to allocate selected-list state");
+     }
++    // SAFETY: `list_ptr` points to space for exactly `selected_lists.len()`
++    // entries, and source/destination do not overlap.
+     unsafe { ptr::copy_nonoverlapping(selected_lists.as_ptr(), list_ptr, selected_lists.len()) };
+     opaque.selected_list_count =
+         u32::try_from(selected_lists.len()).expect("selected list count should fit in u32");
+@@ -711,6 +735,8 @@ unsafe fn store_selected_lists(opaque: &mut EcIvfScanOpaque, selected_lists: &[u
+ 
+ unsafe fn free_selected_lists(opaque: &mut EcIvfScanOpaque) {
+     if !opaque.selected_lists.is_null() {
++        // SAFETY: `selected_lists` was allocated by `palloc` in
++        // `store_selected_lists` and is owned by this scan opaque.
+         unsafe { pg_sys::pfree(opaque.selected_lists.cast()) };
+         opaque.selected_lists = ptr::null_mut();
+     }
+@@ -728,10 +754,14 @@ unsafe fn store_posting_candidates(
+ 
+     let bytes = std::mem::size_of_val(candidates);
+     crate::fault::maybe_fail_palloc("ec_ivf scan posting candidates");
++    // SAFETY: allocates enough PostgreSQL memory for all scored candidates;
++    // the result is checked before use.
+     let candidate_ptr = unsafe { pg_sys::palloc(bytes) }.cast::<EcIvfScoredCandidate>();
+     if candidate_ptr.is_null() {
+         pgrx::error!("ec_ivf failed to allocate posting candidate state");
+     }
++    // SAFETY: `candidate_ptr` points to space for exactly `candidates.len()`
++    // entries, and source/destination do not overlap.
+     unsafe { ptr::copy_nonoverlapping(candidates.as_ptr(), candidate_ptr, candidates.len()) };
+     opaque.posting_candidate_count =
+         u32::try_from(candidates.len()).expect("posting candidate count should fit in u32");
+@@ -741,6 +771,8 @@ unsafe fn store_posting_candidates(
+ 
+ unsafe fn free_posting_candidates(opaque: &mut EcIvfScanOpaque) {
+     if !opaque.posting_candidates.is_null() {
++        // SAFETY: `posting_candidates` was allocated by `palloc` in
++        // `store_posting_candidates` and is owned by this scan opaque.
+         unsafe { pg_sys::pfree(opaque.posting_candidates.cast()) };
+         opaque.posting_candidates = ptr::null_mut();
+     }
+@@ -749,9 +781,14 @@ unsafe fn free_posting_candidates(opaque: &mut EcIvfScanOpaque) {
+ }
+ 
+ unsafe fn free_scan_query_prep(opaque: &mut EcIvfScanOpaque) {
++    // SAFETY: all freed pointers are scan-opaque owned and each helper clears
++    // its pointer after releasing storage.
+     unsafe { free_scan_query(opaque) };
+     free_scan_prepared_query(opaque);
++    // SAFETY: heap rerank state is scan-opaque owned and cleared by helper.
+     unsafe { free_heap_rerank_state(opaque) };
++    // SAFETY: all remaining palloc-backed buffers are scan-opaque owned and
++    // cleared by their respective helpers.
+     unsafe {
+         free_centroid_scores(opaque);
+         free_selected_lists(opaque);
+@@ -771,6 +808,8 @@ fn candidate_dedup_map(
+         return opaque.candidate_dedup;
+     }
+ 
++    // SAFETY: `candidate_dedup` was created with `Box::into_raw` by this scan
++    // opaque and remains valid while the pointer is non-null.
+     let map = unsafe { &mut *opaque.candidate_dedup };
+     map.clear();
+     if map.capacity() < capacity {
+@@ -781,6 +820,8 @@ fn candidate_dedup_map(
+ 
+ fn free_candidate_dedup(opaque: &mut EcIvfScanOpaque) {
+     if !opaque.candidate_dedup.is_null() {
++        // SAFETY: `candidate_dedup` was created with `Box::into_raw` by this
++        // scan opaque and has not been freed while the pointer is non-null.
+         drop(unsafe { Box::from_raw(opaque.candidate_dedup) });
+         opaque.candidate_dedup = ptr::null_mut();
+     }

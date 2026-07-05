@@ -1,0 +1,1239 @@
+{
+  "name": "current-intel-local",
+  "schema_version": 1,
+  "artifact_dir": "benchmarks/current/intel-local/artifacts",
+  "defaults": {
+    "pg": 18,
+    "socket_dir": "/home/peter/.pgrx",
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 200,
+    "iterations": 200,
+    "force_index": true,
+    "sample_backend_memory": true,
+    "memory_sample_interval_ms": 25
+  },
+  "thresholds": [],
+  "steps": [
+    {
+      "kind": "raw",
+      "name": "precheck-host",
+      "tags": [
+        "setup",
+        "precheck",
+        "current",
+        "intel-local"
+      ],
+      "args": [
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "postgres",
+        "--socket-dir",
+        "/home/peter/.pgrx",
+        "--raw",
+        "--sql",
+        "SELECT now() AS captured_at, version() AS postgres_version, current_setting('shared_buffers') AS shared_buffers, current_setting('work_mem') AS work_mem, current_setting('maintenance_work_mem') AS maintenance_work_mem, current_setting('effective_cache_size') AS effective_cache_size;",
+        "--log-output",
+        "${artifact_dir}/precheck-host.log"
+      ],
+      "expected_artifacts": [
+        "${artifact_dir}/precheck-host.log"
+      ]
+    },
+    {
+      "kind": "load",
+      "name": "load-10k-hnsw",
+      "tags": [
+        "load",
+        "current",
+        "intel-local",
+        "ec_real_10k",
+        "hnsw"
+      ],
+      "prefix": "current_intel_real10k_hnsw",
+      "profile": "ec_hnsw",
+      "corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_10k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_10k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "m": [
+        16
+      ],
+      "ef_construction": 128
+    },
+    {
+      "kind": "recall",
+      "name": "recall-10k-hnsw",
+      "tags": [
+        "recall",
+        "current",
+        "intel-local",
+        "ec_real_10k",
+        "hnsw"
+      ],
+      "prefix": "current_intel_real10k_hnsw",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        40,
+        64,
+        100,
+        128,
+        160,
+        200
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-10k-hnsw",
+      "tags": [
+        "latency",
+        "current",
+        "intel-local",
+        "ec_real_10k",
+        "hnsw"
+      ],
+      "prefix": "current_intel_real10k_hnsw",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        40,
+        64,
+        100,
+        128,
+        160,
+        200
+      ],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-10k-hnsw",
+      "tags": [
+        "storage",
+        "current",
+        "intel-local",
+        "ec_real_10k",
+        "hnsw"
+      ],
+      "prefix": "current_intel_real10k_hnsw"
+    },
+    {
+      "kind": "load",
+      "name": "load-10k-ivf",
+      "tags": [
+        "load",
+        "current",
+        "intel-local",
+        "ec_real_10k",
+        "ivf"
+      ],
+      "prefix": "current_intel_real10k_ivf",
+      "profile": "ec_ivf",
+      "corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_10k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_10k_manifest.json",
+      "allow_manifest_mismatch": true
+    },
+    {
+      "kind": "recall",
+      "name": "recall-10k-ivf",
+      "tags": [
+        "recall",
+        "current",
+        "intel-local",
+        "ec_real_10k",
+        "ivf"
+      ],
+      "prefix": "current_intel_real10k_ivf",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-10k-ivf",
+      "tags": [
+        "latency",
+        "current",
+        "intel-local",
+        "ec_real_10k",
+        "ivf"
+      ],
+      "prefix": "current_intel_real10k_ivf",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-10k-ivf",
+      "tags": [
+        "storage",
+        "current",
+        "intel-local",
+        "ec_real_10k",
+        "ivf"
+      ],
+      "prefix": "current_intel_real10k_ivf"
+    },
+    {
+      "kind": "load",
+      "name": "load-10k-diskann",
+      "tags": [
+        "load",
+        "current",
+        "intel-local",
+        "ec_real_10k",
+        "diskann"
+      ],
+      "prefix": "current_intel_real10k_diskann",
+      "profile": "ec_diskann",
+      "corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_10k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_10k_manifest.json",
+      "allow_manifest_mismatch": true
+    },
+    {
+      "kind": "recall",
+      "name": "recall-10k-diskann",
+      "tags": [
+        "recall",
+        "current",
+        "intel-local",
+        "ec_real_10k",
+        "diskann"
+      ],
+      "prefix": "current_intel_real10k_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128,
+        200,
+        400,
+        800
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-10k-diskann",
+      "tags": [
+        "latency",
+        "current",
+        "intel-local",
+        "ec_real_10k",
+        "diskann"
+      ],
+      "prefix": "current_intel_real10k_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128,
+        200,
+        400,
+        800
+      ],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-10k-diskann",
+      "tags": [
+        "storage",
+        "current",
+        "intel-local",
+        "ec_real_10k",
+        "diskann"
+      ],
+      "prefix": "current_intel_real10k_diskann"
+    },
+    {
+      "kind": "load",
+      "name": "load-10k-spire",
+      "tags": [
+        "load",
+        "current",
+        "intel-local",
+        "ec_real_10k",
+        "spire"
+      ],
+      "prefix": "current_intel_real10k_spire",
+      "profile": "ec_spire",
+      "corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_10k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_10k_manifest.json",
+      "allow_manifest_mismatch": true
+    },
+    {
+      "kind": "recall",
+      "name": "recall-10k-spire",
+      "tags": [
+        "recall",
+        "current",
+        "intel-local",
+        "ec_real_10k",
+        "spire"
+      ],
+      "prefix": "current_intel_real10k_spire",
+      "profile": "ec_spire",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-10k-spire",
+      "tags": [
+        "latency",
+        "current",
+        "intel-local",
+        "ec_real_10k",
+        "spire"
+      ],
+      "prefix": "current_intel_real10k_spire",
+      "profile": "ec_spire",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32
+      ],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-10k-spire",
+      "tags": [
+        "storage",
+        "current",
+        "intel-local",
+        "ec_real_10k",
+        "spire"
+      ],
+      "prefix": "current_intel_real10k_spire"
+    },
+    {
+      "kind": "load",
+      "name": "load-50k-hnsw",
+      "tags": [
+        "load",
+        "current",
+        "intel-local",
+        "ec_real_50k",
+        "hnsw"
+      ],
+      "prefix": "current_intel_real50k_hnsw",
+      "profile": "ec_hnsw",
+      "corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_50k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "m": [
+        16
+      ],
+      "ef_construction": 128
+    },
+    {
+      "kind": "recall",
+      "name": "recall-50k-hnsw",
+      "tags": [
+        "recall",
+        "current",
+        "intel-local",
+        "ec_real_50k",
+        "hnsw"
+      ],
+      "prefix": "current_intel_real50k_hnsw",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        40,
+        64,
+        100,
+        128,
+        160,
+        200
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-50k-hnsw",
+      "tags": [
+        "latency",
+        "current",
+        "intel-local",
+        "ec_real_50k",
+        "hnsw"
+      ],
+      "prefix": "current_intel_real50k_hnsw",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        40,
+        64,
+        100,
+        128,
+        160,
+        200
+      ],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-50k-hnsw",
+      "tags": [
+        "storage",
+        "current",
+        "intel-local",
+        "ec_real_50k",
+        "hnsw"
+      ],
+      "prefix": "current_intel_real50k_hnsw"
+    },
+    {
+      "kind": "load",
+      "name": "load-50k-ivf",
+      "tags": [
+        "load",
+        "current",
+        "intel-local",
+        "ec_real_50k",
+        "ivf"
+      ],
+      "prefix": "current_intel_real50k_ivf",
+      "profile": "ec_ivf",
+      "corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_50k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_50k_manifest.json",
+      "allow_manifest_mismatch": true
+    },
+    {
+      "kind": "recall",
+      "name": "recall-50k-ivf",
+      "tags": [
+        "recall",
+        "current",
+        "intel-local",
+        "ec_real_50k",
+        "ivf"
+      ],
+      "prefix": "current_intel_real50k_ivf",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-50k-ivf",
+      "tags": [
+        "latency",
+        "current",
+        "intel-local",
+        "ec_real_50k",
+        "ivf"
+      ],
+      "prefix": "current_intel_real50k_ivf",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-50k-ivf",
+      "tags": [
+        "storage",
+        "current",
+        "intel-local",
+        "ec_real_50k",
+        "ivf"
+      ],
+      "prefix": "current_intel_real50k_ivf"
+    },
+    {
+      "kind": "load",
+      "name": "load-50k-diskann",
+      "tags": [
+        "load",
+        "current",
+        "intel-local",
+        "ec_real_50k",
+        "diskann"
+      ],
+      "prefix": "current_intel_real50k_diskann",
+      "profile": "ec_diskann",
+      "corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_50k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_50k_manifest.json",
+      "allow_manifest_mismatch": true
+    },
+    {
+      "kind": "recall",
+      "name": "recall-50k-diskann",
+      "tags": [
+        "recall",
+        "current",
+        "intel-local",
+        "ec_real_50k",
+        "diskann"
+      ],
+      "prefix": "current_intel_real50k_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128,
+        200,
+        400,
+        800
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-50k-diskann",
+      "tags": [
+        "latency",
+        "current",
+        "intel-local",
+        "ec_real_50k",
+        "diskann"
+      ],
+      "prefix": "current_intel_real50k_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128,
+        200,
+        400,
+        800
+      ],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-50k-diskann",
+      "tags": [
+        "storage",
+        "current",
+        "intel-local",
+        "ec_real_50k",
+        "diskann"
+      ],
+      "prefix": "current_intel_real50k_diskann"
+    },
+    {
+      "kind": "load",
+      "name": "load-50k-spire",
+      "tags": [
+        "load",
+        "current",
+        "intel-local",
+        "ec_real_50k",
+        "spire"
+      ],
+      "prefix": "current_intel_real50k_spire",
+      "profile": "ec_spire",
+      "corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_50k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_50k_manifest.json",
+      "allow_manifest_mismatch": true
+    },
+    {
+      "kind": "recall",
+      "name": "recall-50k-spire",
+      "tags": [
+        "recall",
+        "current",
+        "intel-local",
+        "ec_real_50k",
+        "spire"
+      ],
+      "prefix": "current_intel_real50k_spire",
+      "profile": "ec_spire",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-50k-spire",
+      "tags": [
+        "latency",
+        "current",
+        "intel-local",
+        "ec_real_50k",
+        "spire"
+      ],
+      "prefix": "current_intel_real50k_spire",
+      "profile": "ec_spire",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32
+      ],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-50k-spire",
+      "tags": [
+        "storage",
+        "current",
+        "intel-local",
+        "ec_real_50k",
+        "spire"
+      ],
+      "prefix": "current_intel_real50k_spire"
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-hnsw",
+      "tags": [
+        "load",
+        "current",
+        "intel-local",
+        "ec_real_100k",
+        "hnsw"
+      ],
+      "prefix": "current_intel_real100k_hnsw",
+      "profile": "ec_hnsw",
+      "corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_100k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "m": [
+        16
+      ],
+      "ef_construction": 128
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-hnsw",
+      "tags": [
+        "recall",
+        "current",
+        "intel-local",
+        "ec_real_100k",
+        "hnsw"
+      ],
+      "prefix": "current_intel_real100k_hnsw",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        40,
+        64,
+        100,
+        128,
+        160,
+        200
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-hnsw",
+      "tags": [
+        "latency",
+        "current",
+        "intel-local",
+        "ec_real_100k",
+        "hnsw"
+      ],
+      "prefix": "current_intel_real100k_hnsw",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        40,
+        64,
+        100,
+        128,
+        160,
+        200
+      ],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k-hnsw",
+      "tags": [
+        "storage",
+        "current",
+        "intel-local",
+        "ec_real_100k",
+        "hnsw"
+      ],
+      "prefix": "current_intel_real100k_hnsw"
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-ivf",
+      "tags": [
+        "load",
+        "current",
+        "intel-local",
+        "ec_real_100k",
+        "ivf"
+      ],
+      "prefix": "current_intel_real100k_ivf",
+      "profile": "ec_ivf",
+      "corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_100k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-ivf",
+      "tags": [
+        "recall",
+        "current",
+        "intel-local",
+        "ec_real_100k",
+        "ivf"
+      ],
+      "prefix": "current_intel_real100k_ivf",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-ivf",
+      "tags": [
+        "latency",
+        "current",
+        "intel-local",
+        "ec_real_100k",
+        "ivf"
+      ],
+      "prefix": "current_intel_real100k_ivf",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k-ivf",
+      "tags": [
+        "storage",
+        "current",
+        "intel-local",
+        "ec_real_100k",
+        "ivf"
+      ],
+      "prefix": "current_intel_real100k_ivf"
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-diskann",
+      "tags": [
+        "load",
+        "current",
+        "intel-local",
+        "ec_real_100k",
+        "diskann"
+      ],
+      "prefix": "current_intel_real100k_diskann",
+      "profile": "ec_diskann",
+      "corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_100k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-diskann",
+      "tags": [
+        "recall",
+        "current",
+        "intel-local",
+        "ec_real_100k",
+        "diskann"
+      ],
+      "prefix": "current_intel_real100k_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128,
+        200,
+        400,
+        800
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-diskann",
+      "tags": [
+        "latency",
+        "current",
+        "intel-local",
+        "ec_real_100k",
+        "diskann"
+      ],
+      "prefix": "current_intel_real100k_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128,
+        200,
+        400,
+        800
+      ],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k-diskann",
+      "tags": [
+        "storage",
+        "current",
+        "intel-local",
+        "ec_real_100k",
+        "diskann"
+      ],
+      "prefix": "current_intel_real100k_diskann"
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-spire",
+      "tags": [
+        "load",
+        "current",
+        "intel-local",
+        "ec_real_100k",
+        "spire"
+      ],
+      "prefix": "current_intel_real100k_spire",
+      "profile": "ec_spire",
+      "corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_100k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-spire",
+      "tags": [
+        "recall",
+        "current",
+        "intel-local",
+        "ec_real_100k",
+        "spire"
+      ],
+      "prefix": "current_intel_real100k_spire",
+      "profile": "ec_spire",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-spire",
+      "tags": [
+        "latency",
+        "current",
+        "intel-local",
+        "ec_real_100k",
+        "spire"
+      ],
+      "prefix": "current_intel_real100k_spire",
+      "profile": "ec_spire",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32
+      ],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k-spire",
+      "tags": [
+        "storage",
+        "current",
+        "intel-local",
+        "ec_real_100k",
+        "spire"
+      ],
+      "prefix": "current_intel_real100k_spire"
+    },
+    {
+      "kind": "load",
+      "name": "load-1m-hnsw",
+      "tags": [
+        "load",
+        "current",
+        "intel-local",
+        "ec_real_1m",
+        "hnsw"
+      ],
+      "prefix": "current_intel_real1m_hnsw",
+      "profile": "ec_hnsw",
+      "corpus_file": "data/staged-current/ec_real_1m_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_1m_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_1m_manifest.json",
+      "allow_manifest_mismatch": true,
+      "m": [
+        16
+      ],
+      "ef_construction": 128
+    },
+    {
+      "kind": "recall",
+      "name": "recall-1m-hnsw",
+      "tags": [
+        "recall",
+        "current",
+        "intel-local",
+        "ec_real_1m",
+        "hnsw"
+      ],
+      "prefix": "current_intel_real1m_hnsw",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        40,
+        64,
+        100,
+        128,
+        160,
+        200
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-1m-hnsw",
+      "tags": [
+        "latency",
+        "current",
+        "intel-local",
+        "ec_real_1m",
+        "hnsw"
+      ],
+      "prefix": "current_intel_real1m_hnsw",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        40,
+        64,
+        100,
+        128,
+        160,
+        200
+      ],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-1m-hnsw",
+      "tags": [
+        "storage",
+        "current",
+        "intel-local",
+        "ec_real_1m",
+        "hnsw"
+      ],
+      "prefix": "current_intel_real1m_hnsw"
+    },
+    {
+      "kind": "load",
+      "name": "load-1m-ivf",
+      "tags": [
+        "load",
+        "current",
+        "intel-local",
+        "ec_real_1m",
+        "ivf"
+      ],
+      "prefix": "current_intel_real1m_ivf",
+      "profile": "ec_ivf",
+      "corpus_file": "data/staged-current/ec_real_1m_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_1m_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_1m_manifest.json",
+      "allow_manifest_mismatch": true
+    },
+    {
+      "kind": "recall",
+      "name": "recall-1m-ivf",
+      "tags": [
+        "recall",
+        "current",
+        "intel-local",
+        "ec_real_1m",
+        "ivf"
+      ],
+      "prefix": "current_intel_real1m_ivf",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-1m-ivf",
+      "tags": [
+        "latency",
+        "current",
+        "intel-local",
+        "ec_real_1m",
+        "ivf"
+      ],
+      "prefix": "current_intel_real1m_ivf",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-1m-ivf",
+      "tags": [
+        "storage",
+        "current",
+        "intel-local",
+        "ec_real_1m",
+        "ivf"
+      ],
+      "prefix": "current_intel_real1m_ivf"
+    },
+    {
+      "kind": "load",
+      "name": "load-1m-diskann",
+      "tags": [
+        "load",
+        "current",
+        "intel-local",
+        "ec_real_1m",
+        "diskann"
+      ],
+      "prefix": "current_intel_real1m_diskann",
+      "profile": "ec_diskann",
+      "corpus_file": "data/staged-current/ec_real_1m_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_1m_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_1m_manifest.json",
+      "allow_manifest_mismatch": true
+    },
+    {
+      "kind": "recall",
+      "name": "recall-1m-diskann",
+      "tags": [
+        "recall",
+        "current",
+        "intel-local",
+        "ec_real_1m",
+        "diskann"
+      ],
+      "prefix": "current_intel_real1m_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128,
+        200,
+        400,
+        800
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-1m-diskann",
+      "tags": [
+        "latency",
+        "current",
+        "intel-local",
+        "ec_real_1m",
+        "diskann"
+      ],
+      "prefix": "current_intel_real1m_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128,
+        200,
+        400,
+        800
+      ],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-1m-diskann",
+      "tags": [
+        "storage",
+        "current",
+        "intel-local",
+        "ec_real_1m",
+        "diskann"
+      ],
+      "prefix": "current_intel_real1m_diskann"
+    },
+    {
+      "kind": "load",
+      "name": "load-1m-spire",
+      "tags": [
+        "load",
+        "current",
+        "intel-local",
+        "ec_real_1m",
+        "spire"
+      ],
+      "prefix": "current_intel_real1m_spire",
+      "profile": "ec_spire",
+      "corpus_file": "data/staged-current/ec_real_1m_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_1m_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_1m_manifest.json",
+      "allow_manifest_mismatch": true
+    },
+    {
+      "kind": "recall",
+      "name": "recall-1m-spire",
+      "tags": [
+        "recall",
+        "current",
+        "intel-local",
+        "ec_real_1m",
+        "spire"
+      ],
+      "prefix": "current_intel_real1m_spire",
+      "profile": "ec_spire",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-1m-spire",
+      "tags": [
+        "latency",
+        "current",
+        "intel-local",
+        "ec_real_1m",
+        "spire"
+      ],
+      "prefix": "current_intel_real1m_spire",
+      "profile": "ec_spire",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32
+      ],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-1m-spire",
+      "tags": [
+        "storage",
+        "current",
+        "intel-local",
+        "ec_real_1m",
+        "spire"
+      ],
+      "prefix": "current_intel_real1m_spire"
+    }
+  ]
+}

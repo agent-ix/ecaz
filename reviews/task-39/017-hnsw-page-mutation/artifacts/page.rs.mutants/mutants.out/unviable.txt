@@ -1,0 +1,75 @@
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:25:53: replace + with -
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:51:32: replace + with -
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:61:36: replace + with -
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:73:34: replace + with -
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:82:65: replace + with -
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:88:40: replace + with -
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:116:9: replace TransformKind::decode -> Result<Self, String> with Ok(Default::default())
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:135:9: replace SearchCodecKind::decode -> Result<Self, String> with Ok(Default::default())
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:154:9: replace RerankCodecKind::decode -> Result<Self, String> with Ok(Default::default())
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:205:9: replace MetadataPage::graph_storage_format -> Result<GraphStorageFormat, String> with Ok(Default::default())
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:215:9: replace MetadataPage::current_v1_scalar -> Self with Default::default()
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:250:9: replace MetadataPage::current_v3_turbo_hot_cold -> Self with Default::default()
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:311:9: replace MetadataPage::decode -> Result<Self, String> with Ok(Default::default())
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:366:9: replace MetadataPage::decode_legacy -> Result<Self, String> with Ok(Default::default())
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:386:42: replace + with - in MetadataPage::encode_page
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:401:9: replace MetadataPage::decode_page -> Result<Self, String> with Ok(Default::default())
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:401:43: replace + with - in MetadataPage::decode_page
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:409:44: replace + with - in MetadataPage::decode_page
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:422:9: replace MetadataPage::decode_contents -> Result<Self, String> with Ok(Default::default())
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:534:9: replace TqElementTupleRef<'a>::decode -> Result<Self, String> with Ok(Default::default())
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:547:77: replace + with - in TqElementTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:548:46: replace + with - in TqElementTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:591:9: replace TqElementTupleRef<'a>::heaptids -> impl Iterator<Item = ItemPointer>+'_ with ::std::iter::once(Default::default())
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:601:9: replace TqElementTupleRef<'a>::collect_heaptids -> Vec<ItemPointer> with vec![Default::default()]
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:661:9: replace TqElementTuple::decode -> Result<Self, String> with Ok(Default::default())
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:680:13: replace + with - in TqElementTuple::encoded_len_with_binary
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:695:9: replace TqGroupedHotTupleRef<'a>::decode -> Result<Self, String> with Ok(Default::default())
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:708:77: replace + with - in TqGroupedHotTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:709:46: replace + with - in TqGroupedHotTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:746:9: replace TqGroupedHotTupleRef<'a>::heaptids -> impl Iterator<Item = ItemPointer>+'_ with ::std::iter::once(Default::default())
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:756:9: replace TqGroupedHotTupleRef<'a>::collect_heaptids -> Vec<ItemPointer> with vec![Default::default()]
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:814:9: replace TqGroupedHotTuple::decode -> Result<Self, String> with Ok(Default::default())
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:829:13: replace + with - in TqGroupedHotTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:840:9: replace TqTurboHotTupleRef<'a>::decode -> Result<Self, String> with Ok(Default::default())
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:853:77: replace + with - in TqTurboHotTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:854:46: replace + with - in TqTurboHotTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:888:9: replace TqTurboHotTupleRef<'a>::heaptids -> impl Iterator<Item = ItemPointer>+'_ with ::std::iter::once(Default::default())
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:898:9: replace TqTurboHotTupleRef<'a>::collect_heaptids -> Vec<ItemPointer> with vec![Default::default()]
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:948:9: replace TqTurboHotTuple::decode -> Result<Self, String> with Ok(Default::default())
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:962:13: replace + with - in TqTurboHotTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:972:9: replace TqRerankTupleRef<'a>::decode -> Result<Self, String> with Ok(Default::default())
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1000:9: replace TqRerankTuple::decode -> Result<Self, String> with Ok(Default::default())
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1008:11: replace + with - in TqRerankTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1014:9: replace TqGroupedCodebookTupleRef<'a>::decode -> Result<Self, String> with Ok(Default::default())
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1027:54: replace + with - in TqGroupedCodebookTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1028:38: replace + with - in TqGroupedCodebookTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1056:9: replace TqGroupedCodebookTuple::decode -> Result<Self, String> with Ok(Default::default())
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1065:15: replace + with - in TqGroupedCodebookTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1065:11: replace + with - in TqGroupedCodebookTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1095:9: replace TqNeighborTuple::decode -> Result<Self, String> with Ok(Default::default())
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1121:7: replace + with - in neighbor_tuple_encoded_len
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1153:9: replace DataPage::insert_element -> Result<ItemPointer, String> with Ok(Default::default())
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1161:9: replace DataPage::read_element -> Result<TqElementTuple, String> with Ok(Default::default())
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1165:9: replace DataPage::insert_neighbor -> Result<ItemPointer, String> with Ok(Default::default())
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1169:9: replace DataPage::read_neighbor -> Result<TqNeighborTuple, String> with Ok(Default::default())
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1173:9: replace DataPage::insert_grouped_hot -> Result<ItemPointer, String> with Ok(Default::default())
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1177:9: replace DataPage::insert_turbo_hot -> Result<ItemPointer, String> with Ok(Default::default())
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1186:9: replace DataPage::read_grouped_hot -> Result<TqGroupedHotTuple, String> with Ok(Default::default())
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1190:9: replace DataPage::insert_rerank -> Result<ItemPointer, String> with Ok(Default::default())
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1194:9: replace DataPage::read_rerank -> Result<TqRerankTuple, String> with Ok(Default::default())
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1202:9: replace DataPage::read_turbo_hot -> Result<TqTurboHotTuple, String> with Ok(Default::default())
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1209:9: replace DataPage::insert_grouped_codebook -> Result<ItemPointer, String> with Ok(Default::default())
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1217:9: replace DataPage::read_grouped_codebook -> Result<TqGroupedCodebookTuple, String> with Ok(Default::default())
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1267:9: replace DataPageChain::insert_element -> Result<ItemPointer, String> with Ok(Default::default())
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1271:9: replace DataPageChain::insert_neighbor -> Result<ItemPointer, String> with Ok(Default::default())
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1275:9: replace DataPageChain::insert_grouped_hot -> Result<ItemPointer, String> with Ok(Default::default())
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1279:9: replace DataPageChain::insert_turbo_hot -> Result<ItemPointer, String> with Ok(Default::default())
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1283:9: replace DataPageChain::insert_rerank -> Result<ItemPointer, String> with Ok(Default::default())
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1290:9: replace DataPageChain::insert_grouped_codebook -> Result<ItemPointer, String> with Ok(Default::default())
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1298:9: replace DataPageChain::read_element -> Result<TqElementTuple, String> with Ok(Default::default())
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1304:9: replace DataPageChain::read_neighbor -> Result<TqNeighborTuple, String> with Ok(Default::default())
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1315:9: replace DataPageChain::read_grouped_hot -> Result<TqGroupedHotTuple, String> with Ok(Default::default())
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1325:9: replace DataPageChain::read_turbo_hot -> Result<TqTurboHotTuple, String> with Ok(Default::default())
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1331:9: replace DataPageChain::read_rerank -> Result<TqRerankTuple, String> with Ok(Default::default())
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1341:9: replace DataPageChain::read_grouped_codebook -> Result<TqGroupedCodebookTuple, String> with Ok(Default::default())

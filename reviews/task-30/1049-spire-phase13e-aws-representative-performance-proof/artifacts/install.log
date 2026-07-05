@@ -1,0 +1,10 @@
+waiting_for_ssm_online pending=i-0d6e92d177e4bcdf7:None i-0cc23dd3c80d059b2:None i-0125a20b166792423:None i-038889fbfe67224a9:None
+waiting_for_ssm_online pending=i-0d6e92d177e4bcdf7:None i-0cc23dd3c80d059b2:None i-0125a20b166792423:None i-038889fbfe67224a9:None
+waiting_for_ssm_online pending=i-0d6e92d177e4bcdf7:None i-0cc23dd3c80d059b2:None i-0125a20b166792423:None i-038889fbfe67224a9:None
+waiting_for_ssm_online pending=i-0d6e92d177e4bcdf7:None i-0cc23dd3c80d059b2:None i-0125a20b166792423:None
+ssm_online instance_count=4 status=ready
+i-0d6e92d177e4bcdf7 ssm command id: f7c6a630-7faf-4355-8de9-f9d8d22182d2
+i-0cc23dd3c80d059b2 ssm command id: 72ad3b3c-1e66-4977-bd9f-804b5e379c2d
+i-0125a20b166792423 ssm command id: 9c109a93-b54a-4f10-b439-91e9e5b09291
+i-038889fbfe67224a9 ssm command id: ba928864-a5cc-45f5-9862-0b1c5a5c1f50
+coordinator remote conninfo ssm command id: b93a31ca-1235-41c0-9d57-6af8ed250abf

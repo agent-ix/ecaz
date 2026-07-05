@@ -1,0 +1,2 @@
+if [ -z "src/quant/simd.rs" ]; then echo "error: set MUTANTS_MODULE=src/path.rs"; exit 2; fi
+bash scripts/hardening.sh mutants --file src/quant/simd.rs --output-dir target/quality/mutants --jobs 2

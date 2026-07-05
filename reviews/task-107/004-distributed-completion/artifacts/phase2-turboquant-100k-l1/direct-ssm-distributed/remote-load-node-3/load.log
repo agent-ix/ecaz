@@ -1,0 +1,19 @@
+[loader] inspecting /var/tmp/ecaz-task107-phase2-turboquant-100k-l1/remote-node-3/task107_phase2_turboquant_100k_l1_node_3_corpus.tsv
+[loader] corpus: 47969 rows, sha256=565616597f2f549387990691550d0689eae3535150361cdeff06f937a4285fba  queries: skipped (--corpus-only)
+[loader] copied corpus table task107_phase2_turboquant_100k_l1_node_3_corpus in 15.48s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table task107_phase2_turboquant_100k_l1_node_3_corpus in 6.42s
+[loader] building task107_phase2_turboquant_100k_l1_remote_idx using ec_spire (reloptions=[local_store_count=1, storage_format=turboquant]) ...
+[loader] built task107_phase2_turboquant_100k_l1_remote_idx in 32.82s
+┌─────────┬───────────────────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                                         │
+╞═════════╪═══════════════════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_spire                                                                                      │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ task107_phase2_turboquant_100k_l1_node_3_corpus (47969 rows)                                  │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ skipped (--corpus-only)                                                                       │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ task107_phase2_turboquant_100k_l1_remote_idx [local_store_count=1, storage_format=turboquant] │
+└─────────┴───────────────────────────────────────────────────────────────────────────────────────────────┘
+[loader] completed prefix task107_phase2_turboquant_100k_l1_node_3 in 60.82s

@@ -1,0 +1,87 @@
+diff --git a/src/am/ec_ivf/page.rs b/src/am/ec_ivf/page.rs
+index ddfd758a..266a824d 100644
+--- a/src/am/ec_ivf/page.rs
++++ b/src/am/ec_ivf/page.rs
+@@ -1416,6 +1416,8 @@ unsafe fn visit_ivf_postings_for_list_block<F>(
+ where
+     F: FnMut(ItemPointer, IvfPostingTuple) -> Result<(), String>,
+ {
++    // SAFETY: the caller supplies a live index relation and a posting-list
++    // block number from IVF list metadata; the guard pins and share-locks it.
+     let buffer = unsafe {
+         LockedBufferGuard::read_main(
+             index_relation,
+@@ -1426,6 +1428,8 @@ where
+     }
+     .ok_or_else(|| format!("ec_ivf failed to open posting-list block {block_number}"))?;
+ 
++    // SAFETY: `buffer` is share-locked for `block_number`, and the shared
++    // visitor helper validates tuple line pointers before decoding postings.
+     let result = unsafe {
+         visit_ivf_postings_from_buffer(&buffer, list_id, block_number, payload_len, visitor)
+     };
+@@ -1442,6 +1446,8 @@ unsafe fn visit_all_ivf_postings_for_block<F>(
+ where
+     F: FnMut(ItemPointer, IvfPostingTuple) -> Result<(), String>,
+ {
++    // SAFETY: the caller supplies a live index relation and a posting block
++    // from an IVF block sequence; the guard pins and share-locks it.
+     let buffer = unsafe {
+         LockedBufferGuard::read_main(
+             index_relation,
+@@ -1452,6 +1458,8 @@ where
+     }
+     .ok_or_else(|| format!("ec_ivf failed to open posting-list block {block_number}"))?;
+ 
++    // SAFETY: `buffer` is share-locked for `block_number`, and the shared
++    // visitor helper validates tuple line pointers before decoding postings.
+     let result =
+         unsafe { visit_all_ivf_postings_from_buffer(&buffer, block_number, payload_len, visitor) };
+     result
+@@ -1467,6 +1475,8 @@ unsafe fn visit_all_ivf_posting_refs_for_block<F>(
+ where
+     F: for<'a> FnMut(ItemPointer, IvfPostingTupleRef<'a>) -> Result<(), String>,
+ {
++    // SAFETY: the caller supplies a live index relation and a posting block
++    // from an IVF block sequence; the guard pins and share-locks it.
+     let buffer = unsafe {
+         LockedBufferGuard::read_main(
+             index_relation,
+@@ -1477,6 +1487,8 @@ where
+     }
+     .ok_or_else(|| format!("ec_ivf failed to open posting-list block {block_number}"))?;
+ 
++    // SAFETY: `buffer` is share-locked for `block_number`, and the shared
++    // visitor helper validates tuple line pointers before borrowing postings.
+     let result = unsafe {
+         visit_all_ivf_posting_refs_from_buffer(&buffer, block_number, payload_len, visitor)
+     };
+@@ -1494,6 +1506,8 @@ unsafe fn visit_ivf_postings_from_buffer<F>(
+ where
+     F: FnMut(ItemPointer, IvfPostingTuple) -> Result<(), String>,
+ {
++    // SAFETY: forwards the same share-locked page to the all-postings visitor;
++    // the closure only filters decoded postings by list id.
+     unsafe {
+         visit_all_ivf_postings_from_buffer(
+             buffer,
+@@ -1523,6 +1537,9 @@ where
+     let page_size = buffer.page_size();
+     let line_pointer_count = page_line_pointer_count(page_ptr);
+     for offset in 1..=line_pointer_count {
++        // SAFETY: `page_ptr` and `page_size` come from a share-locked buffer,
++        // and `offset` is within the current line-pointer range; the helper
++        // checks item-id bounds before exposing tuple bytes to the decoder.
+         unsafe {
+             with_page_line_tuple_bytes(
+                 page_ptr,
+@@ -1564,6 +1581,9 @@ where
+     let page_size = buffer.page_size();
+     let line_pointer_count = page_line_pointer_count(page_ptr);
+     for offset in 1..=line_pointer_count {
++        // SAFETY: `page_ptr` and `page_size` come from a share-locked buffer,
++        // and `offset` is within the current line-pointer range; the helper
++        // checks item-id bounds before exposing tuple bytes to the decoder.
+         unsafe {
+             with_page_line_tuple_bytes(
+                 page_ptr,

@@ -1,0 +1,99 @@
+---
+type: index
+name: ecaz
+status: IMPLEMENTED
+title: "ADR Index"
+---
+# ADR Index
+
+This index is the canonical navigation surface for Ecaz architecture decisions. Some historical ADR files share numeric IDs because they were added before the repository enforced unique ADR numbering. The files are preserved to avoid link churn; this index records the current interpretation.
+
+## Contents
+
+- [Current Implemented Decisions](#current-implemented-decisions)
+- [Current Optional or Deferred Decisions](#current-optional-or-deferred-decisions)
+- [Superseded Historical Decisions](#superseded-historical-decisions)
+- [Numbering Policy](#numbering-policy)
+
+## Current Implemented Decisions
+
+| Canonical topic | File | Current status | Notes |
+| --- | --- | --- | --- |
+| Own quantizer | `ADR-006-own-quantizer.md` | DECIDED | In-tree TurboQuant-family implementation. |
+| Query scoring and payload | `ADR-007-query-scoring-and-payload.md` | DECIDED | Gamma-aware raw-query path plus code-to-code path. |
+| `ef_search` control surface | `ADR-016-ef-search-control-surface.md` | DECIDED | Session override over relation default. |
+| PG18 primary target | `ADR-016-pg18-primary-target.md` | DECIDED | Historical duplicate ID; current PG18 target decision. |
+| HNSW graph quality | `ADR-018-hnsw-quantized-graph-quality.md` | DECIDED | HNSW remains default graph AM. |
+| Live insert lock ordering | `ADR-026-live-insert-backlink-lock-ordering.md` | ACCEPTED | HNSW insert lock ordering. |
+| Vacuum graph repair lock ordering | `ADR-027-vacuum-graph-repair-lock-ordering.md` | ACCEPTED | HNSW vacuum repair ordering. |
+| Module structure | `ADR-041-module-structure-for-multi-am-multi-quantizer-growth.md` | IMPLEMENTED | Current `src/am/{common,ec_hnsw,ec_ivf,ec_diskann,ec_spire}` layout. |
+| Native HNSW build | `ADR-042-native-hnsw-build-path.md` | DECIDED | Production build path no longer depends on `hnsw_rs`. |
+| Canonical `ecvector` row type | `ADR-043-native-ecvector-raw-f32-column-type.md` | IMPLEMENTED | `ecvector(dim)` is the canonical user row type. |
+| Extension identity rename | `ADR-047-rename-extension-identity-to-ecaz.md` | DECIDED | Supersedes old single `tqvector` extension identity direction. |
+| IVF access method | `ADR-048-ivf-access-method.md` | IMPLEMENTED | Historical duplicate ID; current IVF AM decision. |
+| Parallel HNSW build graph assembly | `ADR-048-parallel-hnsw-build-graph-assembly.md` | DECIDED | Historical duplicate ID; current HNSW parallel build decision. |
+
+## Current Optional or Deferred Decisions
+
+| Topic | File | Current status | Notes |
+| --- | --- | --- | --- |
+| DiskANN second AM | `ADR-034-diskann-second-access-method.md` | IMPLEMENTED | Local v1 has landed; larger product-scale claims are deferred. |
+| `ecvector` storage policy | `ADR-044-ecvector-rerank-source-location-and-storage-policy.md` | PROPOSED | Deferred measurement decision. |
+| Graph page-layout discipline | `ADR-045-page-layout-discipline-for-graph-access-methods.md` | PROPOSED | Still useful design guidance. |
+| SymphonyQG | `ADR-045-symphonyqg-quantized-graph-access-method.md` | SHELVED | Historical duplicate ID; RaBitQ survived independently, but the Symphony AM is not active roadmap work. |
+| GPU offline trainer | `ADR-046-gpu-accelerated-offline-build-trainer.md` | PROPOSED | Future/offline optimization lane. |
+| Vamana insert lock ordering | `ADR-046-vamana-insert-lock-ordering.md` | ACCEPTED | Historical duplicate ID; applies to `ec_diskann`. |
+| Vamana vacuum lock ordering | `ADR-047-vamana-vacuum-lock-ordering.md` | ACCEPTED | Historical duplicate ID; applies to `ec_diskann`. |
+| SPIRE partition-object IVF | `ADR-049-spire-on-single-level-ivf-foundation.md` | PROPOSED | Phase 0 chooses relation-backed PID objects, epoch manifests, index-local `vec_id`s, and Phase 1 `ec_spire`; preserve boundary replication, local multi-NVMe stores, future node placement, and epoch publication. |
+| Configured benchmark suite runner | `ADR-050-configured-benchmark-suite-runner.md` | PROPOSED | Declarative long-running `ecaz bench suite` orchestration for index and architecture onboarding. |
+| SPIRE multi-probe centroid scoring | `ADR-051-multi-probe-centroid-scoring-deferred.md` | DEFERRED | Deferred from Task 30 Phase 9 because anisotropic centroid scoring is expected to subsume the main benefit. |
+| SPIRE learned NN-routing classifier | `ADR-052-learned-nn-routing-classifier-deferred.md` | DEFERRED | Deferred research track until drift, retraining, artifact, and eval-harness questions are answered. |
+| SPIRE learned routing reranker | `ADR-053-routing-reranker-deferred.md` | DEFERRED | Deferred research track until deterministic Phase 9 routing-quality baselines and false-negative risk measurements exist. |
+| SPIRE top-graph frontier contract | `ADR-054-spire-top-graph-frontier-contract.md` | ACCEPTED | Top graph nodes are the active root/top routing object's child frontier; root fanout, graph node count, and leaf count must be diagnosed separately. |
+| SPIRE vector identity contract | `ADR-055-spire-vector-identity-contract.md` | ACCEPTED | Global `0x02` vec IDs dedupe across nodes; existing local `0x01` vec IDs are node-scoped during remote merge. |
+| SPIRE eager bounded scan contract | `ADR-056-spire-eager-bounded-scan-contract.md` | ACCEPTED | Current AM scans materialize a bounded candidate cursor in `amrescan`; `amgettuple` remains forward-only cursor drain until a separate streaming ADR is accepted. |
+| SPIRE local-store read scheduling contract | `ADR-057-spire-local-store-read-scheduling-contract.md` | ACCEPTED | Local store reads are grouped by `(node_id, local_store_id)` and prefetched before sequential scoring inside one backend; true parallel store execution requires a later ADR and benchmark packet. |
+| SPIRE remote libpq executor boundary | `ADR-058-spire-remote-libpq-executor-boundary.md` | ACCEPTED | Current SQL-visible libpq executor remains diagnostic/operator-only; production remote AM execution still needs concurrent pipeline/async dispatch, cancellation, timeouts, identity validation, fail-closed behavior, and final row delivery. |
+| SPIRE remote heap resolution contract | `ADR-059-spire-remote-heap-resolution-contract.md` | ACCEPTED | Remote heap resolution is origin-node owned; coordinator row locators stay opaque and production remote final rows remain blocked until origin-node heap visibility plus global vec-id allocation land. |
+| SPIRE anisotropic centroid scoring | `ADR-060-spire-anisotropic-centroid-scoring-deferred.md` | DEFERRED | Deferred until a harder local fixture or hard-query subset exposes measurable recall headroom beyond the saturated real10k baseline. |
+| SPIRE IMI reshape | `ADR-061-spire-imi-reshape-deferred.md` | DEFERRED | Deferred until a larger local fixture can exercise the storage-format and routing-space A/B. |
+| SPIRE query difficulty estimator | `ADR-062-spire-query-difficulty-estimator-deferred.md` | DEFERRED | Deferred to research track; adaptive `nprobe` diagnostics are the input signal for future estimator work. |
+| SPIRE source identity provider | `ADR-063-spire-source-identity-provider.md` | ACCEPTED | Selects explicit included `uuid` or exact 16-byte `bytea` source identity as the v1 live writer provider for global vector IDs. |
+| SPIRE remote row materialization lifecycle | `ADR-064-spire-remote-row-materialization-lifecycle.md` | SUPERSEDED | Superseded by ADR-067; the index-AM `xs_heaptid` constraint no longer applies to the distributed path under CustomScan. |
+| SPIRE remote row materialization catalog | `ADR-065-spire-remote-row-materialization-catalog.md` | SUPERSEDED | Superseded by ADR-067; CustomScan returns tuples directly without consulting a materialization catalog. |
+| SPIRE operator-owned row materialization mirror sync | `ADR-066-spire-operator-owned-row-materialization-mirror-sync.md` | SUPERSEDED | Superseded by ADR-067; CustomScan returns tuples directly without coordinator-side materialization. |
+| SPIRE distributed scan via CustomScan | `ADR-067-spire-customscan-distributed-scan.md` | ACCEPTED | Distributed read path uses a CustomScan node returning typed tuples directly, replacing the index-AM + mirror-sync design from ADR-064/065/066. Local-only deployments retain the index AM. |
+| SPIRE distributed table topology | `ADR-068-spire-distributed-table-topology.md` | ACCEPTED | Coordinator hosts routing centroids and placement metadata; remote nodes host shard rows and local SPIRE indexes. Endpoint contract uses typed tuple-column payloads for CustomScan delivery. |
+| SPIRE distributed write path scope | `ADR-069-spire-distributed-write-path-scope.md` | ACCEPTED | Coordinator-routed INSERT uses two-phase commit; PK UPDATE/DELETE/PK-read route through the placement directory; embedding-UPDATE, bulk-load automation, and cross-shard non-vector queries are deferred. |
+| Parallel index scan | `ADR-040-parallel-index-scan.md` | SHELVED | Not current scaling frontier; reopen only by new accepted ADR. |
+| SPANN | `ADR-035-spann-billion-scale.md` | DROPPED | Dropped from active roadmap. |
+| On-disk forward-compat encoding convention | `ADR-070-on-disk-forward-compat-encoding-convention.md` | PROPOSED | Realises NFR-016. Selects per-payload posture: reject-unknown (default), flag-byte optional regions, or length-prefixed TLV extension block. Blesses existing HNSW/DiskANN `payload_flags` as Option B. |
+| Unified quantizer interface | `ADR-071-unified-quantizer-interface.md` | ACCEPTED | `QuantCodec` is the shared quantizer-family scoring contract across HNSW, DiskANN, IVF, and SPIRE; storage/traversal binding remains AM-owned. |
+| Index-local quantized codec adapters | `ADR-072-index-local-quantized-codec-adapters.md` | ACCEPTED | Companion to ADR-071. `QuantCodec` owns shared scoring; AM-local storage bindings own metadata, tuple/list layout, sidecars, and traversal binding. |
+| HNSW staged offline bulk build | `ADR-073-hnsw-staged-offline-bulk-build.md` | PROPOSED | Task 33 M5 refresh stops worker-threshold tuning and selects a staged/offline HNSW bulk-build design lane while keeping ADR-048 as the fallback. |
+| SPIRE leaf-local block pruning | `ADR-074-spire-leaf-local-block-pruning.md` | PROPOSED | Task 79 Phase 4 direction: query-aware subleaf block summaries reachable before row segment reads, with a SPIRE leaf format bump and full-leaf fallback. |
+| DiskANN graph build worker stepping stone | `ADR-075-diskann-graph-build-worker-stepping-stone.md` | PROPOSED | Task 65b uses rayon only as a deterministic graph-core stepping stone while PostgreSQL remains the worker-count authority. |
+| Universal block kernel pattern | `ADR-076-universal-block-kernel-pattern.md` | ACCEPTED | Task 92 standardizes block width, runtime ISA detection, `(AM, quant, ISA)` counters, off-path scalar accounting, and the per-kernel module layout for Tasks 93-99. |
+| Block kernel completeness closing record | `ADR-077-block-kernel-completeness-closing-record.md` | ACCEPTED | Task 99 closes the kernel-completeness initiative: aggregate matrix as coverage gate, anchor-regime menu, per-AM enablement policy (IVF batch default → on), ISA dispatch policy incl. `ecaz.isa_cap` and the measured NEON-over-SVE2 G4 decision, deliberate exclusions, and named open gaps. |
+| IVF dense format negative result | `ADR-078-ivf-dense-format-negative-result.md` | ACCEPTED | Task 111f keeps page-local/aligned dense blocks, coalescing, typed views, and coarse rerank; removes the dominated page-spanning packed, columnar frozen-list, and page-scatter experimental formats. |
+| IVF index-side rerank sidecar directory | `ADR-079-ivf-rerank-sidecar-directory.md` | PROPOSED | Task 111g: a flat heap-TID-keyed `0x2A` rerank sidecar produces O(N) bounded-read regressions; motivates a directory over the sidecar. |
+| IVF rerank sidecar two-level directory | `ADR-080-ivf-rerank-sidecar-two-level-directory.md` | PROPOSED | Refines ADR-079: the rerank sidecar directory must be two-level for fat f16/rabitq4 payloads. |
+| TQ+ experimental calibration profile | `ADR-081-tqplus-experimental-calibration-profile.md` | ACCEPTED | Task 89: TQ+ is an experimental TurboQuant calibration profile (learned transform), not a separate quantizer family; affects FR-013/FR-038 and ADR-070/071/072. |
+| TurboQuant TQ+ format and validation | `ADR-082-turboquant-tqplus-format-and-validation.md` | PROPOSED | Task 89 TQ+ re-landing format/validation across IVF, SPIRE, HNSW, DiskANN (renumbered from a draft that collided with ADR-076). |
+| SPIRE closure/pruning distance surrogate | `ADR-084-spire-closure-pruning-distance-surrogate.md` | ACCEPTED | Task 144 uses the same route-score IP-distance proxy for closure assignment diagnostics/build work and query-time probe-ratio pruning until a later normalized routing ADR changes both halves together. |
+
+## Superseded Historical Decisions
+
+| File | Superseded by |
+| --- | --- |
+| `ADR-001-code-to-code-scoring.md` | ADR-006 |
+| `ADR-002-hnsw-rs-no-delete.md` | ADR-042 and native page-owned AMs |
+| `ADR-003-hnsw-rs-serialization.md` | ADR-042 |
+| `ADR-005-turbocode-serialization.md` | ADR-006 and ADR-007 |
+| `ADR-011-planner-cost-override-until-ordered-scan.md` | Live cost model and planner selection |
+| `ADR-017-pg18-module-identity-and-upgrade-direction.md` | ADR-047 extension identity rename |
+| `ADR-031-rabitq-binary-prefilter.md` | Landed first-class RaBitQ quantizer plus IVF `rabitq` storage/profile support |
+
+## Numbering Policy
+
+New ADRs SHALL use the next unused numeric identifier and SHALL NOT reuse an existing number. Historical duplicate IDs remain in place as legacy filenames. If a duplicate must become a frequent reference target, prefer linking this index row plus the filename rather than relying on the number alone.

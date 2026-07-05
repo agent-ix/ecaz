@@ -1,0 +1,33 @@
+Script started on 2026-05-13 19:27:30-07:00 [<not executed on terminal>]
+src/tests/diagnostics.rs
+2:    fn test_ec_spire_hierarchy_snapshot_sql() {
+120:    fn test_ec_spire_object_snapshot_sql() {
+213:    fn test_ec_spire_delta_snapshot_sql() {
+295:    fn test_ec_spire_delta_snapshot_sql_delete_delta() {
+360:    fn test_ec_spire_options_snapshot_sql() {
+642:    fn test_ec_spire_scan_sanity_snapshot_sql() {
+737:    fn test_ec_spire_health_snapshot_sql() {
+816:    fn test_ec_spire_relation_storage_snapshot_sql() {
+983:    fn test_ec_spire_active_snapshot_diagnostics_sql() {
+1047:    fn test_ec_spire_large_routing_object_builds_and_scans() {
+1099:    fn test_ec_spire_allocator_snapshot_sql() {
+1190:    fn test_ec_spire_top_graph_snapshot_sql() {
+1348:    fn test_ec_spire_boundary_replica_placement_diagnostics_sql() {
+1472:    fn test_ec_spire_leaf_snapshot_sql() {
+1579:    fn test_ec_spire_relation_object_tuple_roundtrip() {
+1603:    fn test_ec_spire_relation_leaf_v2_roundtrip() {
+1625:    fn test_ec_spire_empty_manifest_publish_roundtrip() {
+
+src/tests/mod.rs
+2492:    include!("cost_and_planner.rs");
+2494:    include!("placement.rs");
+2496:    include!("scan.rs");
+2498:    include!("insert.rs");
+2500:    include!("diagnostics.rs");
+2502:    include!("build.rs");
+2505:    include!("vacuum.rs");
+2511:    include!("remote_search.rs");
+2515:    include!("dml_frontdoor.rs");
+2541:    include!("custom_scan.rs");
+
+Script done on 2026-05-13 19:27:30-07:00 [COMMAND_EXIT_CODE="0"]

@@ -1,0 +1,290 @@
+[
+  {
+    "diff": "--- hardening/careful/src/../../../src/quant/simd.rs\n+++ replace backend -> SimdBackend with Default::default()\n@@ -8,18 +8,17 @@\n     Scalar,\n     #[cfg(target_arch = \"x86_64\")]\n     Avx2Fma,\n     #[cfg(target_arch = \"aarch64\")]\n     Neon,\n }\n \n pub(crate) fn backend() -> SimdBackend {\n-    static BACKEND: OnceLock<SimdBackend> = OnceLock::new();\n-    *BACKEND.get_or_init(detect_backend)\n+    Default::default() /* ~ changed by cargo-mutants ~ */\n }\n \n fn detect_backend() -> SimdBackend {\n     if let Some(forced) = forced_backend_from_env() {\n         return forced;\n     }\n \n     #[cfg(target_arch = \"x86_64\")]\n",
+    "file": "hardening/careful/src/../../../src/quant/simd.rs",
+    "function": {
+      "function_name": "backend",
+      "return_type": "-> SimdBackend",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 18
+        },
+        "start": {
+          "column": 1,
+          "line": 15
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/quant/simd.rs:16:5: replace backend -> SimdBackend with Default::default()",
+    "package": "ecaz-careful-hardening",
+    "replacement": "Default::default()",
+    "span": {
+      "end": {
+        "column": 41,
+        "line": 17
+      },
+      "start": {
+        "column": 5,
+        "line": 16
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/quant/simd.rs\n+++ replace detect_backend -> SimdBackend with Default::default()\n@@ -13,38 +13,17 @@\n }\n \n pub(crate) fn backend() -> SimdBackend {\n     static BACKEND: OnceLock<SimdBackend> = OnceLock::new();\n     *BACKEND.get_or_init(detect_backend)\n }\n \n fn detect_backend() -> SimdBackend {\n-    if let Some(forced) = forced_backend_from_env() {\n-        return forced;\n-    }\n-\n-    #[cfg(target_arch = \"x86_64\")]\n-    {\n-        if has_avx2_fma(\n-            std::arch::is_x86_feature_detected!(\"avx2\"),\n-            std::arch::is_x86_feature_detected!(\"fma\"),\n-        ) {\n-            return SimdBackend::Avx2Fma;\n-        }\n-    }\n-\n-    #[cfg(target_arch = \"aarch64\")]\n-    {\n-        if std::arch::is_aarch64_feature_detected!(\"neon\") {\n-            return SimdBackend::Neon;\n-        }\n-    }\n-\n-    SimdBackend::Scalar\n+    Default::default() /* ~ changed by cargo-mutants ~ */\n }\n \n #[cfg(any(target_arch = \"x86_64\", test))]\n fn has_avx2_fma(avx2: bool, fma: bool) -> bool {\n     avx2 && fma\n }\n \n fn forced_backend_from_env() -> Option<SimdBackend> {\n",
+    "file": "hardening/careful/src/../../../src/quant/simd.rs",
+    "function": {
+      "function_name": "detect_backend",
+      "return_type": "-> SimdBackend",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 43
+        },
+        "start": {
+          "column": 1,
+          "line": 20
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/quant/simd.rs:21:5: replace detect_backend -> SimdBackend with Default::default()",
+    "package": "ecaz-careful-hardening",
+    "replacement": "Default::default()",
+    "span": {
+      "end": {
+        "column": 24,
+        "line": 42
+      },
+      "start": {
+        "column": 5,
+        "line": 21
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/quant/simd.rs\n+++ replace has_avx2_fma -> bool with true\n@@ -39,17 +39,17 @@\n         }\n     }\n \n     SimdBackend::Scalar\n }\n \n #[cfg(any(target_arch = \"x86_64\", test))]\n fn has_avx2_fma(avx2: bool, fma: bool) -> bool {\n-    avx2 && fma\n+    true /* ~ changed by cargo-mutants ~ */\n }\n \n fn forced_backend_from_env() -> Option<SimdBackend> {\n     let requested = env::var(\"ECAZ_SIMD\").ok()?;\n     match requested.trim().to_ascii_lowercase().as_str() {\n         \"\" | \"auto\" => None,\n         \"scalar\" => Some(SimdBackend::Scalar),\n         #[cfg(target_arch = \"x86_64\")]\n",
+    "file": "hardening/careful/src/../../../src/quant/simd.rs",
+    "function": {
+      "function_name": "has_avx2_fma",
+      "return_type": "-> bool",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 48
+        },
+        "start": {
+          "column": 1,
+          "line": 45
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/quant/simd.rs:47:5: replace has_avx2_fma -> bool with true",
+    "package": "ecaz-careful-hardening",
+    "replacement": "true",
+    "span": {
+      "end": {
+        "column": 16,
+        "line": 47
+      },
+      "start": {
+        "column": 5,
+        "line": 47
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/quant/simd.rs\n+++ replace has_avx2_fma -> bool with false\n@@ -39,17 +39,17 @@\n         }\n     }\n \n     SimdBackend::Scalar\n }\n \n #[cfg(any(target_arch = \"x86_64\", test))]\n fn has_avx2_fma(avx2: bool, fma: bool) -> bool {\n-    avx2 && fma\n+    false /* ~ changed by cargo-mutants ~ */\n }\n \n fn forced_backend_from_env() -> Option<SimdBackend> {\n     let requested = env::var(\"ECAZ_SIMD\").ok()?;\n     match requested.trim().to_ascii_lowercase().as_str() {\n         \"\" | \"auto\" => None,\n         \"scalar\" => Some(SimdBackend::Scalar),\n         #[cfg(target_arch = \"x86_64\")]\n",
+    "file": "hardening/careful/src/../../../src/quant/simd.rs",
+    "function": {
+      "function_name": "has_avx2_fma",
+      "return_type": "-> bool",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 48
+        },
+        "start": {
+          "column": 1,
+          "line": 45
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/quant/simd.rs:47:5: replace has_avx2_fma -> bool with false",
+    "package": "ecaz-careful-hardening",
+    "replacement": "false",
+    "span": {
+      "end": {
+        "column": 16,
+        "line": 47
+      },
+      "start": {
+        "column": 5,
+        "line": 47
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/quant/simd.rs\n+++ replace && with || in has_avx2_fma\n@@ -39,17 +39,17 @@\n         }\n     }\n \n     SimdBackend::Scalar\n }\n \n #[cfg(any(target_arch = \"x86_64\", test))]\n fn has_avx2_fma(avx2: bool, fma: bool) -> bool {\n-    avx2 && fma\n+    avx2 || /* ~ changed by cargo-mutants ~ */ fma\n }\n \n fn forced_backend_from_env() -> Option<SimdBackend> {\n     let requested = env::var(\"ECAZ_SIMD\").ok()?;\n     match requested.trim().to_ascii_lowercase().as_str() {\n         \"\" | \"auto\" => None,\n         \"scalar\" => Some(SimdBackend::Scalar),\n         #[cfg(target_arch = \"x86_64\")]\n",
+    "file": "hardening/careful/src/../../../src/quant/simd.rs",
+    "function": {
+      "function_name": "has_avx2_fma",
+      "return_type": "-> bool",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 48
+        },
+        "start": {
+          "column": 1,
+          "line": 45
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/quant/simd.rs:47:10: replace && with || in has_avx2_fma",
+    "package": "ecaz-careful-hardening",
+    "replacement": "||",
+    "span": {
+      "end": {
+        "column": 12,
+        "line": 47
+      },
+      "start": {
+        "column": 10,
+        "line": 47
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/quant/simd.rs\n+++ replace forced_backend_from_env -> Option<SimdBackend> with None\n@@ -43,26 +43,17 @@\n }\n \n #[cfg(any(target_arch = \"x86_64\", test))]\n fn has_avx2_fma(avx2: bool, fma: bool) -> bool {\n     avx2 && fma\n }\n \n fn forced_backend_from_env() -> Option<SimdBackend> {\n-    let requested = env::var(\"ECAZ_SIMD\").ok()?;\n-    match requested.trim().to_ascii_lowercase().as_str() {\n-        \"\" | \"auto\" => None,\n-        \"scalar\" => Some(SimdBackend::Scalar),\n-        #[cfg(target_arch = \"x86_64\")]\n-        \"avx2\" | \"avx2_fma\" | \"avx2+fma\" => Some(SimdBackend::Avx2Fma),\n-        #[cfg(target_arch = \"aarch64\")]\n-        \"neon\" => Some(SimdBackend::Neon),\n-        other => panic!(\"unsupported ECAZ_SIMD value: {other}\"),\n-    }\n+    None /* ~ changed by cargo-mutants ~ */\n }\n \n pub(crate) fn backend_name() -> &'static str {\n     match backend() {\n         SimdBackend::Scalar => \"scalar\",\n         #[cfg(target_arch = \"x86_64\")]\n         SimdBackend::Avx2Fma => \"avx2+fma\",\n         #[cfg(target_arch = \"aarch64\")]\n",
+    "file": "hardening/careful/src/../../../src/quant/simd.rs",
+    "function": {
+      "function_name": "forced_backend_from_env",
+      "return_type": "-> Option<SimdBackend>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 61
+        },
+        "start": {
+          "column": 1,
+          "line": 50
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/quant/simd.rs:51:5: replace forced_backend_from_env -> Option<SimdBackend> with None",
+    "package": "ecaz-careful-hardening",
+    "replacement": "None",
+    "span": {
+      "end": {
+        "column": 6,
+        "line": 60
+      },
+      "start": {
+        "column": 5,
+        "line": 51
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/quant/simd.rs\n+++ replace forced_backend_from_env -> Option<SimdBackend> with Some(Default::default())\n@@ -43,26 +43,17 @@\n }\n \n #[cfg(any(target_arch = \"x86_64\", test))]\n fn has_avx2_fma(avx2: bool, fma: bool) -> bool {\n     avx2 && fma\n }\n \n fn forced_backend_from_env() -> Option<SimdBackend> {\n-    let requested = env::var(\"ECAZ_SIMD\").ok()?;\n-    match requested.trim().to_ascii_lowercase().as_str() {\n-        \"\" | \"auto\" => None,\n-        \"scalar\" => Some(SimdBackend::Scalar),\n-        #[cfg(target_arch = \"x86_64\")]\n-        \"avx2\" | \"avx2_fma\" | \"avx2+fma\" => Some(SimdBackend::Avx2Fma),\n-        #[cfg(target_arch = \"aarch64\")]\n-        \"neon\" => Some(SimdBackend::Neon),\n-        other => panic!(\"unsupported ECAZ_SIMD value: {other}\"),\n-    }\n+    Some(Default::default()) /* ~ changed by cargo-mutants ~ */\n }\n \n pub(crate) fn backend_name() -> &'static str {\n     match backend() {\n         SimdBackend::Scalar => \"scalar\",\n         #[cfg(target_arch = \"x86_64\")]\n         SimdBackend::Avx2Fma => \"avx2+fma\",\n         #[cfg(target_arch = \"aarch64\")]\n",
+    "file": "hardening/careful/src/../../../src/quant/simd.rs",
+    "function": {
+      "function_name": "forced_backend_from_env",
+      "return_type": "-> Option<SimdBackend>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 61
+        },
+        "start": {
+          "column": 1,
+          "line": 50
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/quant/simd.rs:51:5: replace forced_backend_from_env -> Option<SimdBackend> with Some(Default::default())",
+    "package": "ecaz-careful-hardening",
+    "replacement": "Some(Default::default())",
+    "span": {
+      "end": {
+        "column": 6,
+        "line": 60
+      },
+      "start": {
+        "column": 5,
+        "line": 51
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/quant/simd.rs\n+++ replace backend_name -> &'static str with \"\"\n@@ -56,23 +56,17 @@\n         \"avx2\" | \"avx2_fma\" | \"avx2+fma\" => Some(SimdBackend::Avx2Fma),\n         #[cfg(target_arch = \"aarch64\")]\n         \"neon\" => Some(SimdBackend::Neon),\n         other => panic!(\"unsupported ECAZ_SIMD value: {other}\"),\n     }\n }\n \n pub(crate) fn backend_name() -> &'static str {\n-    match backend() {\n-        SimdBackend::Scalar => \"scalar\",\n-        #[cfg(target_arch = \"x86_64\")]\n-        SimdBackend::Avx2Fma => \"avx2+fma\",\n-        #[cfg(target_arch = \"aarch64\")]\n-        SimdBackend::Neon => \"neon\",\n-    }\n+    \"\" /* ~ changed by cargo-mutants ~ */\n }\n \n #[cfg(test)]\n mod tests {\n     use super::*;\n     use std::ffi::OsString;\n     use std::panic;\n     use std::sync::Mutex;\n",
+    "file": "hardening/careful/src/../../../src/quant/simd.rs",
+    "function": {
+      "function_name": "backend_name",
+      "return_type": "-> &'static str",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 71
+        },
+        "start": {
+          "column": 1,
+          "line": 63
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/quant/simd.rs:64:5: replace backend_name -> &'static str with \"\"",
+    "package": "ecaz-careful-hardening",
+    "replacement": "\"\"",
+    "span": {
+      "end": {
+        "column": 6,
+        "line": 70
+      },
+      "start": {
+        "column": 5,
+        "line": 64
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/quant/simd.rs\n+++ replace backend_name -> &'static str with \"xyzzy\"\n@@ -56,23 +56,17 @@\n         \"avx2\" | \"avx2_fma\" | \"avx2+fma\" => Some(SimdBackend::Avx2Fma),\n         #[cfg(target_arch = \"aarch64\")]\n         \"neon\" => Some(SimdBackend::Neon),\n         other => panic!(\"unsupported ECAZ_SIMD value: {other}\"),\n     }\n }\n \n pub(crate) fn backend_name() -> &'static str {\n-    match backend() {\n-        SimdBackend::Scalar => \"scalar\",\n-        #[cfg(target_arch = \"x86_64\")]\n-        SimdBackend::Avx2Fma => \"avx2+fma\",\n-        #[cfg(target_arch = \"aarch64\")]\n-        SimdBackend::Neon => \"neon\",\n-    }\n+    \"xyzzy\" /* ~ changed by cargo-mutants ~ */\n }\n \n #[cfg(test)]\n mod tests {\n     use super::*;\n     use std::ffi::OsString;\n     use std::panic;\n     use std::sync::Mutex;\n",
+    "file": "hardening/careful/src/../../../src/quant/simd.rs",
+    "function": {
+      "function_name": "backend_name",
+      "return_type": "-> &'static str",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 71
+        },
+        "start": {
+          "column": 1,
+          "line": 63
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/quant/simd.rs:64:5: replace backend_name -> &'static str with \"xyzzy\"",
+    "package": "ecaz-careful-hardening",
+    "replacement": "\"xyzzy\"",
+    "span": {
+      "end": {
+        "column": 6,
+        "line": 70
+      },
+      "start": {
+        "column": 5,
+        "line": 64
+      }
+    }
+  }
+]

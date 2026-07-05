@@ -1,0 +1,12 @@
+Script started on 2026-06-15 16:48:34-07:00 [<not executed on terminal>]
+---------------------------------------
+|          DescribeInstances          |
++----------------------+--------------+
+|      InstanceId      |    State     |
++----------------------+--------------+
+|  [1m[34mi-00c2f2aca9dbdd6bd[0m |  [1m[34mterminated[0m  |
+|  [1m[34mi-07bcc98c3d5d027ee[0m |  [1m[34mterminated[0m  |
+|  [1m[34mi-0b4386fa5017f1363[0m |  [1m[34mterminated[0m  |
++----------------------+--------------+
+[0m
+Script done on 2026-06-15 16:48:35-07:00 [COMMAND_EXIT_CODE="0"]

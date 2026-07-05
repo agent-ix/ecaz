@@ -1,0 +1,17 @@
+Command:
+cargo run -p ecaz-cli -- --host /home/peter/.pgrx --port 28818 --database postgres bench recall --prefix task28_ivf_postopt10k_n128w25 --profile ec_ivf --k 10 --queries-limit 100 --sweep 8,16,24,32,48,64
+
+Output before manual stop:
+Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.22s
+Running `target/debug/ecaz --host /home/peter/.pgrx --port 28818 --database postgres bench recall --prefix task28_ivf_postopt10k_n128w25 --profile ec_ivf --k 10 --queries-limit 100 --sweep 8,16,24,32,48,64`
+[recall] fetching corpus from task28_ivf_postopt10k_n128w25_corpus ...
+[recall] fetching queries from task28_ivf_postopt10k_n128w25_queries ...
+[recall] computing ground truth: 100 queries vs 10000 corpus rows (dim=1536) ...
+[recall] ground truth in 2.04s
+
+Manual stop:
+The run did not finish a result table after several minutes. The `ecaz`
+process was killed locally to avoid burning the rest of the tuning turn.
+Follow-up EXPLAIN artifacts in this packet show why: the normal planner path
+selected a sequential scan for the n128 surface, while `enable_seqscan=off`
+forced the IVF index path and returned one nprobe=8 query in 67.987 ms.

@@ -1,0 +1,23 @@
+[loader] inspecting data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_corpus.tsv
+[loader] inspecting data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_queries.tsv
+[loader] corpus: 10000 rows, sha256=c67c5810b66d982d705974e48d4775479adfbd92a988f694091266e049a35e75  queries: 200 rows, sha256=a2c191bb742017d849e73f6e6866e8e0f0bac1579ba212f7fc76b8eb09904ae8
+[loader] warning: manifest verification failed for data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_manifest.json: prefix="ec_hnsw_real_10k" (expected "task65b_w0_rerun_real10k")
+[loader] copied corpus table task65b_w0_rerun_real10k_corpus in 5.54s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table task65b_w0_rerun_real10k_corpus in 2.09s
+[loader] copied queries table task65b_w0_rerun_real10k_queries in 116.20ms
+[loader] building task65b_w0_rerun_real10k_pq_fastscan_idx using ec_diskann (reloptions=[graph_degree=32, build_list_size=100, alpha=1.2, storage_format=pq_fastscan]) ...
+[loader] built task65b_w0_rerun_real10k_pq_fastscan_idx in 6.49s
+[loader] ec_diskann_ambuild_timing index=task65b_w0_rerun_real10k_pq_fastscan_idx phase=complete heap_tuples=10000 scanned_tuples=10000 unique_tuples=10000 data_pages=589 heap_scan_ms=32 source_ref_ms=0 training_ms=8 sidecar_setup_ms=0 payload_derivation_ms=13 build_persist_ms=6414 core_medoid_ms=96 core_graph_ms=6313 core_persist_ms=3 parallel_requested_workers=0 parallel_effective_workers=0 parallel_batch_size=1 parallel_flush_rate=0 parallel_rayon_scaffold=0 parallel_epochs=0 parallel_proposal_ms=0 parallel_reducer_ms=0 parallel_same_epoch_candidate_reads=0 parallel_total_candidate_reads=0 overflow_ms=0 codebook_ms=0 write_pages_ms=12 metadata_ms=0 flush_total_ms=6450 total_ms=6483
+┌─────────┬────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                                                                  │
+╞═════════╪════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_diskann                                                                                                             │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ task65b_w0_rerun_real10k_corpus (10000 rows)                                                                           │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ task65b_w0_rerun_real10k_queries (200 rows)                                                                            │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ task65b_w0_rerun_real10k_pq_fastscan_idx [graph_degree=32, build_list_size=100, alpha=1.2, storage_format=pq_fastscan] │
+└─────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+[loader] completed prefix task65b_w0_rerun_real10k in 24.00s

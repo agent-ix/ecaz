@@ -1,0 +1,1 @@
+ERROR:  ec_spire coordinator read status schema_drift: remote side drifted for node_id 92: descriptor remote fingerprint c74a9f89b09768d94e4d973ff3a23869 does not match current remote fingerprint 83afeb83c4c048fbba864043134d670b; hint: pause reads, apply matching DDL on the remote, refresh the descriptor, then retry

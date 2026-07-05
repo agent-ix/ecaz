@@ -1,0 +1,143 @@
+Script started on 2026-05-19 00:49:32-07:00 [<not executed on terminal>]
+[1mdiff --git a/scripts/unsafe_comment_baseline.txt b/scripts/unsafe_comment_baseline.txt[m
+[1mindex ca640eb6..337ec9d4 100644[m
+[1m--- a/scripts/unsafe_comment_baseline.txt[m
+[1m+++ b/scripts/unsafe_comment_baseline.txt[m
+[36m@@ -1275,20 +1275,6 @@[m [msrc/am/ec_spire/build/publish.rs:514[m
+ src/am/ec_spire/build/recursive.rs:1061[m
+ src/am/ec_spire/build/recursive.rs:1069[m
+ src/am/ec_spire/build/recursive.rs:1071[m
+[31m-src/am/ec_spire/build/tuples.rs:115[m
+[31m-src/am/ec_spire/build/tuples.rs:122[m
+[31m-src/am/ec_spire/build/tuples.rs:137[m
+[31m-src/am/ec_spire/build/tuples.rs:159[m
+[31m-src/am/ec_spire/build/tuples.rs:160[m
+[31m-src/am/ec_spire/build/tuples.rs:164[m
+[31m-src/am/ec_spire/build/tuples.rs:167[m
+[31m-src/am/ec_spire/build/tuples.rs:179[m
+[31m-src/am/ec_spire/build/tuples.rs:191[m
+[31m-src/am/ec_spire/build/tuples.rs:268[m
+[31m-src/am/ec_spire/build/tuples.rs:283[m
+[31m-src/am/ec_spire/build/tuples.rs:56[m
+[31m-src/am/ec_spire/build/tuples.rs:65[m
+[31m-src/am/ec_spire/build/tuples.rs:81[m
+ src/am/ec_spire/coordinator/debug.rs:131[m
+ src/am/ec_spire/coordinator/debug.rs:132[m
+ src/am/ec_spire/coordinator/debug.rs:138[m
+[1mdiff --git a/src/am/ec_spire/build/tuples.rs b/src/am/ec_spire/build/tuples.rs[m
+[1mindex 8ac5dad2..80a114b3 100644[m
+[1m--- a/src/am/ec_spire/build/tuples.rs[m
+[1m+++ b/src/am/ec_spire/build/tuples.rs[m
+[36m@@ -53,6 +53,8 @@[m [mfn build_dimensions(dimensions: usize, context: &str, label: &str) -> u16 {[m
+ }[m
+ [m
+ unsafe fn detoasted_varlena_bytes(datum: pg_sys::Datum, label: &str) -> Vec<u8> {[m
+[32m+[m[32m    // SAFETY: callers pass a varlena Datum from PostgreSQL tuple storage; the[m
+[32m+[m[32m    // detoast wrapper copies packed bytes before returning.[m
+     unsafe { DetoastedVarlena::packed_from_datum(datum) }[m
+         .unwrap_or_else(|| pgrx::error!("ec_spire could not detoast {label}"))[m
+         .to_vec()[m
+[36m@@ -62,6 +64,8 @@[m [mpub(super) unsafe fn decode_heap_tid(tid: pg_sys::ItemPointer, context: &str) ->[m
+     if tid.is_null() {[m
+         pgrx::error!("ec_spire {context} received a null heap tid");[m
+     }[m
+[32m+[m[32m    // SAFETY: tid was checked non-null and points to PostgreSQL's callback-owned[m
+[32m+[m[32m    // ItemPointerData for the current heap tuple.[m
+     let (block_number, offset_number) = item_pointer_get_both(unsafe { *tid });[m
+     ItemPointer {[m
+         block_number,[m
+[36m@@ -78,6 +82,8 @@[m [mpub(super) unsafe fn resolve_indexed_tuple_layout([m
+     if index_info.is_null() {[m
+         pgrx::error!("ec_spire {context} received a null IndexInfo");[m
+     }[m
+[32m+[m[32m    // SAFETY: index_info was checked non-null and PostgreSQL keeps the IndexInfo[m
+[32m+[m[32m    // live for the duration of the build callback/setup path.[m
+     let index_info = unsafe { &*index_info };[m
+     if index_info.ii_NumIndexKeyAttrs != 1 {[m
+         pgrx::error!("ec_spire currently supports exactly one vector key column");[m
+[36m@@ -112,6 +118,8 @@[m [mpub(super) unsafe fn resolve_indexed_tuple_layout([m
+         pgrx::error!("ec_spire requires a base heap column index key");[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: heap_relation is an open PostgreSQL relation and rd_att points to[m
+[32m+[m[32m    // its live tuple descriptor; PgTupleDesc takes its own copy.[m
+     let tuple_desc = unsafe { PgTupleDesc::from_pg_copy((*heap_relation).rd_att) };[m
+     let att = tuple_desc[m
+         .get(attnum as usize - 1)[m
+[36m@@ -119,6 +127,8 @@[m [mpub(super) unsafe fn resolve_indexed_tuple_layout([m
+     if att.attisdropped {[m
+         pgrx::error!("ec_spire indexed column references a dropped column");[m
+     }[m
+[32m+[m[32m    // SAFETY: att.atttypid is read from the copied tuple descriptor and passed[m
+[32m+[m[32m    // to PostgreSQL type lookup helpers.[m
+     let vector_kind = unsafe { resolve_indexed_vector_kind_from_type(att.atttypid) }[m
+         .unwrap_or_else(|| pgrx::error!("ec_spire indexed column must be ecvector or tqvector"));[m
+     let source_identity = match options.source_identity {[m
+[36m@@ -134,6 +144,8 @@[m [mpub(super) unsafe fn resolve_indexed_tuple_layout([m
+             if identity_att.attisdropped {[m
+                 pgrx::error!("ec_spire source_identity INCLUDE column references a dropped column");[m
+             }[m
+[32m+[m[32m            // SAFETY: identity_att.atttypid is read from the copied tuple[m
+[32m+[m[32m            // descriptor and passed to PostgreSQL type lookup helpers.[m
+             let datum_kind = unsafe { resolve_source_identity_datum_kind(identity_att.atttypid) }[m
+                 .unwrap_or_else(|| {[m
+                     pgrx::error!([m
+[36m@@ -156,14 +168,20 @@[m [mpub(super) unsafe fn resolve_indexed_tuple_layout([m
+ unsafe fn resolve_indexed_vector_kind_from_type([m
+     type_oid: pg_sys::Oid,[m
+ ) -> Option<SpireIndexedVectorKind> {[m
+[32m+[m[32m    // SAFETY: type_oid comes from PostgreSQL tuple descriptor metadata.[m
+     let base_type_oid = unsafe { pg_sys::getBaseType(type_oid) };[m
+[32m+[m[32m    // SAFETY: base_type_oid is the PostgreSQL base type OID returned above.[m
+     let formatted = unsafe { pg_sys::format_type_be(base_type_oid) };[m
+     if formatted.is_null() {[m
+         return None;[m
+     }[m
+[32m+[m[32m    // SAFETY: format_type_be returns a non-null NUL-terminated string on[m
+[32m+[m[32m    // success; it remains valid until pfree below.[m
+     let name = unsafe { CStr::from_ptr(formatted) }[m
+         .to_string_lossy()[m
+         .into_owned();[m
+[32m+[m[32m    // SAFETY: formatted was allocated by PostgreSQL format_type_be and is no[m
+[32m+[m[32m    // longer needed after copying into name.[m
+     unsafe { pg_sys::pfree(formatted.cast()) };[m
+     let type_name = name.rsplit('.').next().unwrap_or(&name).trim_matches('"');[m
+     match type_name {[m
+[36m@@ -176,6 +194,7 @@[m [munsafe fn resolve_indexed_vector_kind_from_type([m
+ unsafe fn resolve_source_identity_datum_kind([m
+     type_oid: pg_sys::Oid,[m
+ ) -> Option<SpireSourceIdentityDatumKind> {[m
+[32m+[m[32m    // SAFETY: type_oid comes from PostgreSQL tuple descriptor metadata.[m
+     match unsafe { pg_sys::getBaseType(type_oid) } {[m
+         pg_sys::UUIDOID => Some(SpireSourceIdentityDatumKind::Uuid),[m
+         pg_sys::BYTEAOID => Some(SpireSourceIdentityDatumKind::Bytea16),[m
+[36m@@ -188,6 +207,9 @@[m [mpub(super) unsafe extern "C-unwind" fn ec_spire_ambuild([m
+     index_relation: pg_sys::Relation,[m
+     index_info: *mut pg_sys::IndexInfo,[m
+ ) -> *mut pg_sys::IndexBuildResult {[m
+[32m+[m[32m    // SAFETY: PostgreSQL invokes ambuild with live heap/index relations and an[m
+[32m+[m[32m    // IndexInfo pointer; the guard converts Rust panics/errors into PostgreSQL[m
+[32m+[m[32m    // error handling while the closure performs all catalog/build work.[m
+     unsafe {[m
+         pgrx::pgrx_extern_c_guard(|| {[m
+             let options = options::relation_options(index_relation);[m
+[36m@@ -265,6 +287,8 @@[m [mpub(super) unsafe extern "C-unwind" fn ec_spire_ambuild([m
+ }[m
+ [m
+ pub(super) unsafe extern "C-unwind" fn ec_spire_ambuildempty(_index_relation: pg_sys::Relation) {[m
+[32m+[m[32m    // SAFETY: PostgreSQL invokes ambuildempty with the target index relation[m
+[32m+[m[32m    // open; the guarded closure initializes only that index's root page.[m
+     unsafe {[m
+         pgrx::pgrx_extern_c_guard(|| {[m
+             page::initialize_root_control_page(_index_relation, SpireRootControlState::empty());[m
+[36m@@ -280,6 +304,8 @@[m [munsafe extern "C-unwind" fn ec_spire_build_callback([m
+     _tuple_is_alive: bool,[m
+     state: *mut c_void,[m
+ ) {[m
+[32m+[m[32m    // SAFETY: table_index_build_scan invokes this callback with Datum/null[m
+[32m+[m[32m    // arrays and the SpireBuildState pointer supplied by ec_spire_ambuild.[m
+     unsafe {[m
+         pgrx::pgrx_extern_c_guard(|| {[m
+             let state = &mut *state.cast::<SpireBuildState>();[m
+
+Script done on 2026-05-19 00:49:32-07:00 [COMMAND_EXIT_CODE="0"]

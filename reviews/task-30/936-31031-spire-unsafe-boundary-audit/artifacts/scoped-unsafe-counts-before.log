@@ -1,0 +1,9 @@
+Script started on 2026-05-13 20:22:34-07:00 [<not executed on terminal>]
+    219 src/am/ec_spire/dml_frontdoor/mod.rs
+     15 src/am/ec_spire/update/publish/relation.rs
+      7 src/am/ec_spire/dml_frontdoor/tests.rs
+      2 src/am/ec_spire/update/types.rs
+      2 src/am/ec_spire/update/routing.rs
+      2 src/am/ec_spire/update/materialization.rs
+
+Script done on 2026-05-13 20:22:34-07:00 [COMMAND_EXIT_CODE="0"]

@@ -1,0 +1,31 @@
+Script started on 2026-06-14 14:43:02-07:00 [<not executed on terminal>]
+tunnel coordinator ready on port 15432
+tunnel remote-2 ready on port 15433
+tunnel remote-3 ready on port 15434
+make: Entering directory '/home/peter/dev/ecaz/infra/spire-aws'
+cd /home/peter/dev/ecaz && /home/peter/dev/ecaz/scripts/spire-aws/bench.sh representative-priority /home/peter/dev/ecaz/reviews/task-107/003-aws-benchmarks/artifacts/rabitq-100k-l1/aws-topology.tunneled.json /home/peter/dev/ecaz/reviews/task-107/003-aws-benchmarks/artifacts/rabitq-100k-l1
+[suite:spire-aws-representative-priority] wrote /home/peter/dev/ecaz/reviews/task-107/003-aws-benchmarks/artifacts/rabitq-100k-l1/suite-manifest-representative-priority.json
+[suite:spire-aws-representative-priority] wrote /home/peter/dev/ecaz/reviews/task-107/003-aws-benchmarks/artifacts/rabitq-100k-l1/suite-manifest-representative-priority.json
+[suite:spire-aws-representative-priority] 13a3a-recall-k10 -> --database postgres --host 127.0.0.1 --port 15432 --user ecaz_coord bench recall --prefix ec_spire_aws_repr_1m --profile ec_spire --k 10 --sweep "8,16,24,32,64" --queries-limit 1000 --bits 4 --seed 42 --truth-cache-file /home/peter/dev/ecaz/reviews/task-107/003-aws-benchmarks/artifacts/rabitq-100k-l1/truth-cache/13a3a-recall-k10.json --truth-corpus-file /home/peter/dev/ecaz/reviews/task-107/003-aws-benchmarks/work/qdrant-dbpedia/prepared/ec_real_100k_corpus.tsv --log-output /home/peter/dev/ecaz/reviews/task-107/003-aws-benchmarks/artifacts/rabitq-100k-l1/13a3a-recall-k10.log
+[suite:spire-aws-representative-priority] wrote /home/peter/dev/ecaz/reviews/task-107/003-aws-benchmarks/artifacts/rabitq-100k-l1/suite-manifest-representative-priority.json
+
+   0: [91mno ec_spire index found for profile "ec_spire"; build one first with `ecaz corpus load --profile ec_spire ...` on "ec_spire_aws_repr_1m_corpus"[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/bench/recall.rs[0m:[35m165[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.
+[suite:spire-aws-representative-priority] wrote /home/peter/dev/ecaz/reviews/task-107/003-aws-benchmarks/artifacts/rabitq-100k-l1/suite-manifest-representative-priority.json
+
+   0: [91msuite step "13a3a-recall-k10" failed with exit code 1; rerun with --continue-on-error to keep going[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/bench/suite.rs[0m:[35m916[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.
+make: *** [Makefile:192: bench-representative-priority] Error 1
+make: Leaving directory '/home/peter/dev/ecaz/infra/spire-aws'
+
+Script done on 2026-06-14 14:43:05-07:00 [COMMAND_EXIT_CODE="2"]

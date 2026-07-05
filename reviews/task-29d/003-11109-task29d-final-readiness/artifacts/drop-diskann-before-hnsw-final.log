@@ -1,0 +1,5 @@
+DROP INDEX
+DROP INDEX
+DROP INDEX
+NOTICE:  index "task29c_phase_profile_m32_idx" does not exist, skipping
+NOTICE:  index "task29c_hnsw_reference_idx" does not exist, skipping

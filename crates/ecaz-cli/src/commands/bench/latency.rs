@@ -1,0 +1,840 @@
+//! `ecaz bench latency` — wall-clock p50/p95/p99 for KNN SQL at k.
+//!
+//! # Flow
+//!
+//! 1. Connect, validate profile + prefix + tuning GUC.
+//! 2. Load `--iterations` query vectors from `<prefix>_queries.source`
+//!    (round-robined if iterations > queries).
+//! 3. Spawn `--concurrency` workers, each pulling from a shared counter
+//!    and running the same prepared KNN statement.
+//! 4. Merge per-worker duration buffers, emit one comfy-table row per
+//!    sweep value: count, mean, stddev, min, p50, p95, p99, max.
+//!
+//! # Purity boundary
+//!
+//! `percentile` and `summarize` are pure functions over `&[Duration]`.
+//! The orchestration (`run`) is a thin DB shell on top; live-Postgres
+//! coverage lands with the integration suite.
+
+use clap::Args;
+use color_eyre::eyre::{eyre, Context, Result};
+use comfy_table::{presets::UTF8_FULL, Cell, Table};
+use indicatif::{ProgressBar, ProgressStyle};
+use std::path::PathBuf;
+use std::sync::{
+    atomic::{AtomicBool, AtomicUsize, Ordering},
+    Arc,
+};
+use std::time::{Duration, Instant};
+use tokio::sync::Mutex;
+
+use crate::profiles;
+use crate::psql::{self, ConnectionOptions};
+
+use super::recall::build_knn_sql;
+
+#[derive(Args, Debug)]
+pub struct LatencyArgs {
+    /// Prefix identifying the corpus.
+    #[arg(long)]
+    pub prefix: String,
+    /// Access-method profile to measure.
+    #[arg(long, default_value = "ec_hnsw")]
+    pub profile: String,
+    /// k for KNN ORDER BY ... LIMIT k.
+    #[arg(long, default_value_t = 10)]
+    pub k: usize,
+    /// Number of concurrent worker connections.
+    #[arg(long, default_value_t = 1)]
+    pub concurrency: usize,
+    /// Total number of queries to run per sweep value.
+    #[arg(long, default_value_t = 1000)]
+    pub iterations: usize,
+    /// Sweep values for the profile's tuning axis. Accepts `--sweep 100,200`
+    /// or repeated `--sweep 100 --sweep 200`.
+    #[arg(long, value_delimiter = ',')]
+    pub sweep: Vec<i32>,
+    /// IVF-only: session override for heap-f32 rerank frontier width.
+    /// Use -1 for the index reloption, 0 for the full probed frontier.
+    #[arg(long)]
+    pub rerank_width: Option<i32>,
+    /// IVF/SPIRE: enable deterministic adaptive nprobe during the sweep.
+    #[arg(long)]
+    pub adaptive_nprobe: bool,
+    /// IVF/SPIRE: score-gap threshold for adaptive nprobe decisions.
+    #[arg(long)]
+    pub adaptive_nprobe_score_gap_micros: Option<i32>,
+    /// IVF-only: score margin-ratio threshold, in basis points, for adaptive nprobe decisions.
+    #[arg(long)]
+    pub adaptive_nprobe_score_margin_ratio_bps: Option<i32>,
+    /// IVF-only: enable experimental posting scratch SoA batch decode.
+    #[arg(long)]
+    pub ivf_scratch_soa_batch_decode: bool,
+    /// Quantization bits used when encoding query vectors (must match loader).
+    #[arg(long, default_value_t = 4)]
+    pub bits: i32,
+    /// Quantizer seed (must match loader).
+    #[arg(long, default_value_t = 42)]
+    pub seed: i64,
+    /// Force benchmark queries onto the index path by disabling sequential scans.
+    #[arg(long)]
+    pub force_index: bool,
+    /// Sample each worker backend's /proc status while the latency sweep runs.
+    #[arg(long)]
+    pub sample_backend_memory: bool,
+    /// Operator-supplied cache-state label recorded with each latency row.
+    #[arg(long, default_value = "unspecified")]
+    pub cache_state: String,
+    /// Extra session GUCs to set on every worker connection, as name=value.
+    #[arg(long = "session-guc")]
+    pub session_gucs: Vec<String>,
+    /// Reset and snapshot Task 87 CandidateBatch scoring counters on each worker connection.
+    #[arg(long)]
+    pub task87_candidate_batch_counters: bool,
+    /// Milliseconds between backend RSS/HWM samples when --sample-backend-memory is set.
+    #[arg(long, default_value_t = 25)]
+    pub memory_sample_interval_ms: u64,
+    /// Write the final latency table to this path in addition to stdout.
+    #[arg(long)]
+    pub log_output: Option<PathBuf>,
+}
+
+pub async fn run(conn: &ConnectionOptions, args: LatencyArgs) -> Result<()> {
+    profiles::validate_ident(&args.prefix)
+        .wrap_err_with(|| format!("invalid prefix {:?}", args.prefix))?;
+    if args.k == 0 || args.iterations == 0 || args.concurrency == 0 {
+        return Err(eyre!("--k, --iterations, --concurrency must all be >= 1"));
+    }
+    if args.memory_sample_interval_ms == 0 {
+        return Err(eyre!("--memory-sample-interval-ms must be >= 1"));
+    }
+    let profile = profiles::resolve(&args.profile).ok_or_else(|| {
+        eyre!(
+            "unknown profile {:?}; try {}",
+            args.profile,
+            profiles::names().join(", ")
+        )
+    })?;
+    let guc = profile
+        .ef_search_guc
+        .ok_or_else(|| eyre!("profile {:?} has no tuning GUC to sweep", profile.name))?;
+    let sweep_values: Vec<i32> = if args.sweep.is_empty() {
+        if profile.default_sweep.is_empty() {
+            return Err(eyre!(
+                "--sweep is required for profile {:?} (no default sweep registered)",
+                profile.name
+            ));
+        }
+        eprintln!(
+            "[latency] no --sweep provided; using profile default {} values {:?}",
+            profile.sweep_axis_label(),
+            profile.default_sweep
+        );
+        profile.default_sweep.to_vec()
+    } else {
+        args.sweep.clone()
+    };
+    validate_rerank_width_arg(profile, args.rerank_width)?;
+    let adaptive_nprobe_options = super::AdaptiveNprobeBenchOptions {
+        enabled: args.adaptive_nprobe,
+        score_gap_micros: args.adaptive_nprobe_score_gap_micros,
+        score_margin_ratio_bps: args.adaptive_nprobe_score_margin_ratio_bps,
+    };
+    super::validate_adaptive_nprobe_options(profile, adaptive_nprobe_options)?;
+    super::validate_ivf_scratch_soa_batch_decode(profile, args.ivf_scratch_soa_batch_decode)?;
+    let session_gucs = super::parse_session_gucs(&args.session_gucs)?;
+
+    let corpus_table = format!("{}_corpus", args.prefix);
+    let queries_table = format!("{}_queries", args.prefix);
+    let sql = build_knn_sql(profile, &corpus_table);
+
+    // Pull query vectors once into memory. Iterations > n_queries wraps.
+    let bootstrap = psql::connect(conn).await?;
+    if psql::index_count_with_am(&bootstrap, &corpus_table, profile.access_method).await? == 0 {
+        return Err(eyre!(
+            "{} on {:?}",
+            super::missing_am_error(profile, profile.access_method),
+            corpus_table
+        ));
+    }
+    let rows = bootstrap
+        .query(
+            &format!("SELECT source FROM {queries_table} ORDER BY id"),
+            &[],
+        )
+        .await
+        .wrap_err_with(|| format!("reading {queries_table}"))?;
+    if rows.is_empty() {
+        return Err(eyre!("{queries_table} is empty"));
+    }
+    let queries: Arc<Vec<Vec<f32>>> =
+        Arc::new(rows.iter().map(|r| r.get::<_, Vec<f32>>(0)).collect());
+    drop(bootstrap);
+
+    let mut table = Table::new();
+    table.load_preset(UTF8_FULL);
+    let mut header = vec![
+        profile.sweep_axis_label(),
+        "count",
+        "mean",
+        "stddev",
+        "min",
+        "p50",
+        "p95",
+        "p99",
+        "max",
+        "cache_state",
+    ];
+    if args.sample_backend_memory {
+        header.extend(["rss_peak_kb", "hwm_peak_kb", "memory_samples"]);
+    }
+    table.set_header(header);
+
+    let rerank_width_guc = rerank_width_guc(profile);
+    let mut task87_counter_lines = Vec::new();
+    for value in &sweep_values {
+        let sweep_label = super::sweep_value_label(profile, *value);
+        let sweep = run_sweep_point(
+            conn,
+            profile,
+            guc,
+            rerank_width_guc,
+            sweep_label.clone(),
+            *value,
+            &sql,
+            Arc::clone(&queries),
+            args.concurrency,
+            args.iterations,
+            profile.encode_scan_query,
+            args.force_index,
+            args.rerank_width,
+            session_gucs.clone(),
+            adaptive_nprobe_options,
+            args.ivf_scratch_soa_batch_decode,
+            args.bits,
+            args.seed,
+            args.k,
+            args.sample_backend_memory,
+            args.memory_sample_interval_ms,
+            args.task87_candidate_batch_counters,
+        )
+        .await?;
+        if args.task87_candidate_batch_counters {
+            task87_counter_lines.push(super::format_block_kernel_counter_lines(
+                "latency",
+                &sweep_label,
+                &sweep.task87_candidate_batch_counters,
+            ));
+        }
+        let stats = summarize(&sweep.durations);
+        let mut row = vec![
+            Cell::new(value),
+            Cell::new(stats.count),
+            Cell::new(format_ms(stats.mean)),
+            Cell::new(format_ms(stats.stddev)),
+            Cell::new(format_ms(stats.min)),
+            Cell::new(format_ms(stats.p50)),
+            Cell::new(format_ms(stats.p95)),
+            Cell::new(format_ms(stats.p99)),
+            Cell::new(format_ms(stats.max)),
+            Cell::new(&args.cache_state),
+        ];
+        if args.sample_backend_memory {
+            row.extend([
+                Cell::new(sweep.memory.rss_peak_kb),
+                Cell::new(sweep.memory.hwm_peak_kb),
+                Cell::new(sweep.memory.samples),
+            ]);
+        }
+        table.add_row(row);
+    }
+    let mut output = table.to_string();
+    if !task87_counter_lines.is_empty() {
+        output.push('\n');
+        output.push_str(&task87_counter_lines.join("\n"));
+    }
+    println!("{output}");
+    if let Some(path) = args.log_output {
+        if let Some(parent) = path.parent() {
+            tokio::fs::create_dir_all(parent)
+                .await
+                .wrap_err_with(|| format!("creating {}", parent.display()))?;
+        }
+        tokio::fs::write(&path, format!("{output}\n"))
+            .await
+            .wrap_err_with(|| format!("writing {}", path.display()))?;
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn run_sweep_point(
+    conn: &ConnectionOptions,
+    profile: &'static profiles::IndexProfile,
+    guc: &str,
+    rerank_width_guc: Option<&str>,
+    sweep_label: String,
+    value: i32,
+    sql: &str,
+    queries: Arc<Vec<Vec<f32>>>,
+    concurrency: usize,
+    iterations: usize,
+    encode_scan_query: bool,
+    force_index: bool,
+    rerank_width: Option<i32>,
+    session_gucs: Vec<(String, String)>,
+    adaptive_nprobe_options: super::AdaptiveNprobeBenchOptions,
+    ivf_scratch_soa_batch_decode: bool,
+    bits: i32,
+    seed: i64,
+    k: usize,
+    sample_backend_memory: bool,
+    memory_sample_interval_ms: u64,
+    task87_candidate_batch_counters: bool,
+) -> Result<LatencySweepResult> {
+    let bar = ProgressBar::new(iterations as u64);
+    bar.set_style(
+        ProgressStyle::with_template("[latency {msg}] {wide_bar} {pos}/{len} ({per_sec})").unwrap(),
+    );
+    let msg = match (rerank_width, rerank_width_guc) {
+        (Some(rerank_width), Some(rerank_width_guc)) => {
+            format!("{sweep_label} {rerank_width_guc}={rerank_width}")
+        }
+        _ => sweep_label,
+    };
+    let msg = super::append_adaptive_nprobe_label(msg, adaptive_nprobe_options);
+    let msg = super::append_ivf_scratch_soa_batch_decode_label(msg, ivf_scratch_soa_batch_decode);
+    bar.set_message(msg);
+    bar.enable_steady_tick(Duration::from_millis(250));
+    let bar = Arc::new(bar);
+
+    let counter = Arc::new(AtomicUsize::new(0));
+    let mut handles = Vec::with_capacity(concurrency);
+    for _ in 0..concurrency {
+        let conn = conn.clone();
+        let guc = guc.to_owned();
+        let rerank_width_guc = rerank_width_guc.map(str::to_owned);
+        let session_gucs = session_gucs.clone();
+        let sql = sql.to_owned();
+        let queries = Arc::clone(&queries);
+        let counter = Arc::clone(&counter);
+        let bar = Arc::clone(&bar);
+        handles.push(tokio::spawn(async move {
+            worker(
+                conn,
+                profile,
+                guc,
+                value,
+                sql,
+                queries,
+                counter,
+                iterations,
+                encode_scan_query,
+                force_index,
+                rerank_width,
+                rerank_width_guc,
+                session_gucs,
+                adaptive_nprobe_options,
+                ivf_scratch_soa_batch_decode,
+                bits,
+                seed,
+                k,
+                sample_backend_memory,
+                memory_sample_interval_ms,
+                task87_candidate_batch_counters,
+                bar,
+            )
+            .await
+        }));
+    }
+
+    let mut merged: Vec<Duration> = Vec::with_capacity(iterations);
+    let mut memory = MemorySample::default();
+    let mut task87_counter_sets = Vec::new();
+    for h in handles {
+        let result = h.await.map_err(|e| eyre!("worker panicked: {e}"))??;
+        merged.extend(result.durations);
+        memory.merge(result.memory);
+        task87_counter_sets.push(result.task87_candidate_batch_counters);
+    }
+    bar.finish_and_clear();
+    Ok(LatencySweepResult {
+        durations: merged,
+        memory,
+        task87_candidate_batch_counters: super::merge_block_kernel_counters(task87_counter_sets),
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn worker(
+    conn: ConnectionOptions,
+    profile: &'static profiles::IndexProfile,
+    guc: String,
+    value: i32,
+    sql: String,
+    queries: Arc<Vec<Vec<f32>>>,
+    counter: Arc<AtomicUsize>,
+    iterations: usize,
+    encode_scan_query: bool,
+    force_index: bool,
+    rerank_width: Option<i32>,
+    rerank_width_guc: Option<String>,
+    session_gucs: Vec<(String, String)>,
+    adaptive_nprobe_options: super::AdaptiveNprobeBenchOptions,
+    ivf_scratch_soa_batch_decode: bool,
+    bits: i32,
+    seed: i64,
+    k: usize,
+    sample_backend_memory: bool,
+    memory_sample_interval_ms: u64,
+    task87_candidate_batch_counters: bool,
+    bar: Arc<ProgressBar>,
+) -> Result<LatencyWorkerResult> {
+    // Each worker needs its own connection so the session-local GUC sticks.
+    let client = psql::connect(&conn).await?;
+    psql::prefer_ordered_ann_path(&client).await?;
+    client
+        .batch_execute(&format!("SET {guc} = {value}"))
+        .await?;
+    if let Some(rerank_width) = rerank_width {
+        if let Some(rerank_width_guc) = rerank_width_guc {
+            client
+                .batch_execute(&format!("SET {rerank_width_guc} = {rerank_width}"))
+                .await?;
+        }
+    }
+    super::apply_session_gucs(&client, &session_gucs).await?;
+    super::apply_adaptive_nprobe_options(&client, profile, adaptive_nprobe_options).await?;
+    super::apply_ivf_scratch_soa_batch_decode(&client, profile, ivf_scratch_soa_batch_decode)
+        .await?;
+    if force_index {
+        client.batch_execute("SET enable_seqscan = off").await?;
+    }
+    if task87_candidate_batch_counters {
+        super::reset_block_kernel_counters(&client).await?;
+    }
+    let memory = Arc::new(Mutex::new(MemorySample::default()));
+    let stop_memory_monitor = Arc::new(AtomicBool::new(false));
+    let memory_monitor = if sample_backend_memory {
+        let backend_pid: i32 = client
+            .query_one("SELECT pg_backend_pid()", &[])
+            .await
+            .wrap_err("fetching latency worker backend pid")?
+            .get(0);
+        Some(tokio::spawn(monitor_backend_memory(
+            backend_pid,
+            memory_sample_interval_ms,
+            Arc::clone(&stop_memory_monitor),
+            Arc::clone(&memory),
+        )))
+    } else {
+        None
+    };
+    let stmt = client.prepare(&sql).await?;
+    let k_i64 = k as i64;
+
+    let mut durations = Vec::new();
+    let query_result: Result<()> = loop {
+        let idx = counter.fetch_add(1, Ordering::Relaxed);
+        if idx >= iterations {
+            break Ok(());
+        }
+        let q = &queries[idx % queries.len()];
+        let t0 = Instant::now();
+        let query_result = if encode_scan_query {
+            client.query(&stmt, &[q, &bits, &seed, &k_i64]).await
+        } else {
+            client.query(&stmt, &[q, &k_i64]).await
+        };
+        if let Err(err) = query_result {
+            break Err(err.into());
+        }
+        durations.push(t0.elapsed());
+        bar.inc(1);
+    };
+
+    stop_memory_monitor.store(true, Ordering::SeqCst);
+    if let Some(memory_monitor) = memory_monitor {
+        memory_monitor
+            .await
+            .map_err(|e| eyre!("latency memory monitor task failed: {e}"))??;
+    }
+    query_result?;
+    let task87_candidate_batch_counters = if task87_candidate_batch_counters {
+        super::snapshot_block_kernel_counters(&client).await?
+    } else {
+        super::BlockKernelCounterSnapshots::default()
+    };
+    let memory = *memory.lock().await;
+    Ok(LatencyWorkerResult {
+        durations,
+        memory,
+        task87_candidate_batch_counters,
+    })
+}
+
+fn validate_rerank_width_arg(
+    profile: &profiles::IndexProfile,
+    rerank_width: Option<i32>,
+) -> Result<()> {
+    let Some(value) = rerank_width else {
+        return Ok(());
+    };
+    if rerank_width_guc(profile).is_none() {
+        return Err(eyre!(
+            "--rerank-width is only supported with --profile ec_ivf or ec_spire"
+        ));
+    }
+    if value < -1 {
+        return Err(eyre!("--rerank-width must be >= -1"));
+    }
+    Ok(())
+}
+
+fn rerank_width_guc(profile: &profiles::IndexProfile) -> Option<&'static str> {
+    match profile.name {
+        "ec_ivf" => Some("ec_ivf.rerank_width"),
+        "ec_spire" => Some("ec_spire.rerank_width"),
+        _ => None,
+    }
+}
+
+/// Fixed-field summary of a latency sample. All durations are in the
+/// Duration type so the caller decides how to format; `summarize` never
+/// looks at wall time on its own.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LatencyStats {
+    pub count: usize,
+    pub mean: Duration,
+    pub stddev: Duration,
+    pub min: Duration,
+    pub p50: Duration,
+    pub p95: Duration,
+    pub p99: Duration,
+    pub max: Duration,
+}
+
+impl LatencyStats {
+    pub const ZERO: Self = Self {
+        count: 0,
+        mean: Duration::ZERO,
+        stddev: Duration::ZERO,
+        min: Duration::ZERO,
+        p50: Duration::ZERO,
+        p95: Duration::ZERO,
+        p99: Duration::ZERO,
+        max: Duration::ZERO,
+    };
+}
+
+/// Summarise a sample of latencies. Percentiles use linear interpolation
+/// between the two nearest ranks (numpy's default). An empty input returns
+/// `LatencyStats::ZERO` — the caller decides whether to render that.
+pub fn summarize(durations: &[Duration]) -> LatencyStats {
+    if durations.is_empty() {
+        return LatencyStats::ZERO;
+    }
+    let mut sorted_ns: Vec<f64> = durations.iter().map(|d| d.as_nanos() as f64).collect();
+    sorted_ns.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let count = sorted_ns.len();
+    let mean_ns = sorted_ns.iter().sum::<f64>() / count as f64;
+    let var = sorted_ns
+        .iter()
+        .map(|x| {
+            let d = x - mean_ns;
+            d * d
+        })
+        .sum::<f64>()
+        / count as f64;
+    let stddev_ns = var.sqrt();
+    LatencyStats {
+        count,
+        mean: ns_to_duration(mean_ns),
+        stddev: ns_to_duration(stddev_ns),
+        min: ns_to_duration(sorted_ns[0]),
+        p50: ns_to_duration(percentile_sorted(&sorted_ns, 0.50)),
+        p95: ns_to_duration(percentile_sorted(&sorted_ns, 0.95)),
+        p99: ns_to_duration(percentile_sorted(&sorted_ns, 0.99)),
+        max: ns_to_duration(sorted_ns[count - 1]),
+    }
+}
+
+#[derive(Debug, Default)]
+struct LatencySweepResult {
+    durations: Vec<Duration>,
+    memory: MemorySample,
+    task87_candidate_batch_counters: super::BlockKernelCounterSnapshots,
+}
+
+#[derive(Debug, Default)]
+struct LatencyWorkerResult {
+    durations: Vec<Duration>,
+    memory: MemorySample,
+    task87_candidate_batch_counters: super::BlockKernelCounterSnapshots,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+struct MemorySample {
+    rss_peak_kb: i64,
+    hwm_peak_kb: i64,
+    samples: i64,
+}
+
+impl MemorySample {
+    fn merge(&mut self, other: Self) {
+        self.rss_peak_kb = self.rss_peak_kb.max(other.rss_peak_kb);
+        self.hwm_peak_kb = self.hwm_peak_kb.max(other.hwm_peak_kb);
+        self.samples += other.samples;
+    }
+}
+
+async fn monitor_backend_memory(
+    pid: i32,
+    sample_interval_ms: u64,
+    stop: Arc<AtomicBool>,
+    peak: Arc<Mutex<MemorySample>>,
+) -> Result<()> {
+    while !stop.load(Ordering::Relaxed) {
+        if let Some(sample) = read_proc_status_memory(pid).await? {
+            let mut peak = peak.lock().await;
+            peak.samples += 1;
+            peak.rss_peak_kb = peak.rss_peak_kb.max(sample.rss_peak_kb);
+            peak.hwm_peak_kb = peak.hwm_peak_kb.max(sample.hwm_peak_kb);
+        }
+        tokio::time::sleep(Duration::from_millis(sample_interval_ms)).await;
+    }
+    Ok(())
+}
+
+async fn read_proc_status_memory(pid: i32) -> Result<Option<MemorySample>> {
+    let path = format!("/proc/{pid}/status");
+    let Ok(contents) = tokio::fs::read_to_string(&path).await else {
+        return Ok(None);
+    };
+    let mut sample = MemorySample::default();
+    for line in contents.lines() {
+        if let Some(value) = line.strip_prefix("VmRSS:") {
+            sample.rss_peak_kb = parse_status_kb(value)?;
+        } else if let Some(value) = line.strip_prefix("VmHWM:") {
+            sample.hwm_peak_kb = parse_status_kb(value)?;
+        }
+    }
+    Ok(Some(sample))
+}
+
+fn parse_status_kb(value: &str) -> Result<i64> {
+    value
+        .split_whitespace()
+        .next()
+        .ok_or_else(|| eyre!("missing /proc status memory value"))?
+        .parse::<i64>()
+        .wrap_err("parsing /proc status memory value")
+}
+
+/// Linear-interpolated percentile from a pre-sorted ascending sample.
+/// `p` is in [0, 1]; out-of-range values are clamped so a caller passing
+/// `0.95` vs `95.0` never produces a panic.
+pub fn percentile_sorted(sorted: &[f64], p: f64) -> f64 {
+    if sorted.is_empty() {
+        return 0.0;
+    }
+    let p = p.clamp(0.0, 1.0);
+    let n = sorted.len();
+    if n == 1 {
+        return sorted[0];
+    }
+    let rank = p * (n - 1) as f64;
+    let lo = rank.floor() as usize;
+    let hi = rank.ceil() as usize;
+    if lo == hi {
+        sorted[lo]
+    } else {
+        let frac = rank - lo as f64;
+        sorted[lo] + frac * (sorted[hi] - sorted[lo])
+    }
+}
+
+fn ns_to_duration(ns: f64) -> Duration {
+    if !ns.is_finite() || ns < 0.0 {
+        return Duration::ZERO;
+    }
+    Duration::from_nanos(ns.round() as u64)
+}
+
+fn format_ms(d: Duration) -> String {
+    let ms = d.as_secs_f64() * 1000.0;
+    if ms >= 10.0 {
+        format!("{ms:.1} ms")
+    } else {
+        format!("{ms:.2} ms")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ms(n: u64) -> Duration {
+        Duration::from_millis(n)
+    }
+
+    // --- percentile_sorted ---
+
+    #[test]
+    fn percentile_sorted_empty_is_zero() {
+        assert_eq!(percentile_sorted(&[], 0.5), 0.0);
+    }
+
+    #[test]
+    fn percentile_sorted_single_value_is_that_value_for_any_p() {
+        assert_eq!(percentile_sorted(&[42.0], 0.0), 42.0);
+        assert_eq!(percentile_sorted(&[42.0], 0.5), 42.0);
+        assert_eq!(percentile_sorted(&[42.0], 1.0), 42.0);
+    }
+
+    #[test]
+    fn percentile_sorted_endpoints_hit_extremes() {
+        let v = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+        assert_eq!(percentile_sorted(&v, 0.0), 1.0);
+        assert_eq!(percentile_sorted(&v, 1.0), 5.0);
+    }
+
+    #[test]
+    fn percentile_sorted_linear_interpolates_between_ranks() {
+        // Matches numpy.percentile([1,2,3,4], [50, 95]) = [2.5, 3.85]
+        let v = vec![1.0, 2.0, 3.0, 4.0];
+        assert!((percentile_sorted(&v, 0.50) - 2.5).abs() < 1e-9);
+        assert!((percentile_sorted(&v, 0.95) - 3.85).abs() < 1e-9);
+    }
+
+    #[test]
+    fn percentile_sorted_clamps_out_of_range_p() {
+        let v = vec![1.0, 2.0, 3.0];
+        assert_eq!(percentile_sorted(&v, -0.5), 1.0);
+        assert_eq!(percentile_sorted(&v, 95.0), 3.0);
+    }
+
+    // --- summarize ---
+
+    #[test]
+    fn summarize_empty_returns_zero_stats() {
+        assert_eq!(summarize(&[]), LatencyStats::ZERO);
+    }
+
+    #[test]
+    fn summarize_single_value_has_zero_stddev_and_equal_percentiles() {
+        let s = summarize(&[ms(5)]);
+        assert_eq!(s.count, 1);
+        assert_eq!(s.mean, ms(5));
+        assert_eq!(s.stddev, Duration::ZERO);
+        assert_eq!(s.min, ms(5));
+        assert_eq!(s.max, ms(5));
+        assert_eq!(s.p50, ms(5));
+        assert_eq!(s.p99, ms(5));
+    }
+
+    #[test]
+    fn summarize_is_independent_of_input_order() {
+        let asc = [ms(1), ms(2), ms(3), ms(4), ms(5)];
+        let desc = [ms(5), ms(4), ms(3), ms(2), ms(1)];
+        assert_eq!(summarize(&asc), summarize(&desc));
+    }
+
+    #[test]
+    fn summarize_mean_and_min_max_match_raw_sample() {
+        let sample: Vec<Duration> = (1..=100).map(ms).collect();
+        let s = summarize(&sample);
+        assert_eq!(s.count, 100);
+        assert_eq!(s.min, ms(1));
+        assert_eq!(s.max, ms(100));
+        // Mean of 1..=100 = 50.5 ms — allow slight rounding into whole ns.
+        let mean_ms = s.mean.as_secs_f64() * 1000.0;
+        assert!((mean_ms - 50.5).abs() < 0.001, "mean={mean_ms}");
+    }
+
+    #[test]
+    fn summarize_stddev_matches_population_formula() {
+        // sample = [1, 2, 3, 4, 5] ms → pop variance = 2.0, stddev = sqrt(2)
+        let s = summarize(&[ms(1), ms(2), ms(3), ms(4), ms(5)]);
+        let stddev_ms = s.stddev.as_secs_f64() * 1000.0;
+        assert!(
+            (stddev_ms - (2.0_f64).sqrt()).abs() < 1e-6,
+            "stddev={stddev_ms}"
+        );
+    }
+
+    #[test]
+    fn summarize_p50_is_the_median() {
+        let s = summarize(&[ms(1), ms(2), ms(3), ms(4), ms(5)]);
+        assert_eq!(s.p50, ms(3));
+    }
+
+    // --- format_ms / ns_to_duration ---
+
+    #[test]
+    fn format_ms_switches_precision_at_10ms_boundary() {
+        assert_eq!(format_ms(Duration::from_micros(4_567)), "4.57 ms");
+        assert_eq!(format_ms(Duration::from_millis(150)), "150.0 ms");
+    }
+
+    #[test]
+    fn ns_to_duration_rejects_nan_and_negative() {
+        assert_eq!(ns_to_duration(f64::NAN), Duration::ZERO);
+        assert_eq!(ns_to_duration(-1.0), Duration::ZERO);
+        assert_eq!(ns_to_duration(f64::INFINITY), Duration::ZERO);
+    }
+
+    #[test]
+    fn memory_sample_merge_keeps_peaks_and_adds_samples() {
+        let mut left = MemorySample {
+            rss_peak_kb: 10,
+            hwm_peak_kb: 30,
+            samples: 2,
+        };
+        left.merge(MemorySample {
+            rss_peak_kb: 20,
+            hwm_peak_kb: 25,
+            samples: 3,
+        });
+
+        assert_eq!(
+            left,
+            MemorySample {
+                rss_peak_kb: 20,
+                hwm_peak_kb: 30,
+                samples: 5,
+            }
+        );
+    }
+
+    #[test]
+    fn parse_status_kb_reads_proc_status_value() {
+        assert_eq!(parse_status_kb("   12345 kB").unwrap(), 12345);
+    }
+
+    #[test]
+    fn parse_session_gucs_accepts_qualified_names() {
+        let parsed =
+            super::super::parse_session_gucs(&["ec_diskann.scan_profile_notice=on".to_owned()])
+                .expect("valid guc");
+        assert_eq!(
+            parsed,
+            vec![("ec_diskann.scan_profile_notice".to_owned(), "on".to_owned())]
+        );
+    }
+
+    #[test]
+    fn parse_session_gucs_rejects_malformed_entries() {
+        assert!(
+            super::super::parse_session_gucs(&["ec_diskann.scan_profile_notice".to_owned()])
+                .is_err()
+        );
+        assert!(
+            super::super::parse_session_gucs(&["ec_diskann.scan_profile_notice=".to_owned()])
+                .is_err()
+        );
+        assert!(
+            super::super::parse_session_gucs(&["ec_diskann.scan-profile=on".to_owned()]).is_err()
+        );
+    }
+}

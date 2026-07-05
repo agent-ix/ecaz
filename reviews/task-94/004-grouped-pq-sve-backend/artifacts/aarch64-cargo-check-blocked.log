@@ -1,0 +1,20 @@
+command: cargo check --target aarch64-unknown-linux-gnu --lib
+timestamp: 2026-06-09T17:13:24Z
+head: f67107166e6dc1485b1a884250c52c79e1d9cc32
+
+Result: blocked by local cross-toolchain dependency before checking this crate.
+
+Key output:
+
+```text
+warning: ring@0.17.14: Compiler family detection failed due to error: ToolNotFound: failed to find tool "aarch64-linux-gnu-gcc": No such file or directory (os error 2)
+error: failed to run custom build command for `ring v0.17.14`
+
+Caused by:
+  process didn't exit successfully: `/home/peter/dev/ecaz/target/debug/build/ring-408140a73baa0c40/build-script-build` (exit status: 1)
+
+error occurred in cc-rs: failed to find tool "aarch64-linux-gnu-gcc": No such file or directory (os error 2)
+```
+
+No retry was attempted because installing cross-compilers or running AWS
+validation is outside the current local-only instruction.

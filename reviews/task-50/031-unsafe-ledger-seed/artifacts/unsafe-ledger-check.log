@@ -1,0 +1,2 @@
+python3 scripts/unsafe_ledger.py check --ledger reviews/task-50/031-unsafe-ledger-seed/artifacts/unsafe-ledger.jsonl src
+ledger covers 2446 current unsafe rows

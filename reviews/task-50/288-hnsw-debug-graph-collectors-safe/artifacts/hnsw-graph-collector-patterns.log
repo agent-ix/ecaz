@@ -1,0 +1,16 @@
+Script started on 2026-05-21 11:31:05-07:00 [<not executed on terminal>]
+119:fn debug_with_page_line_tuple_bytes<R, F>(
+1487:fn debug_collect_element_tids_at_level(
+1518:            let matches_element_tag = debug_with_page_line_tuple_bytes(
+1556:fn debug_collect_element_tids_at_or_above_level(
+1587:            let matches_element_tag = debug_with_page_line_tuple_bytes(
+1625:fn debug_collect_element_tid_by_heap_tid(
+1655:            let matches_element_tag = debug_with_page_line_tuple_bytes(
+1720:        debug_collect_element_tids_at_level(index_relation, storage, metadata.max_level)
+1893:            debug_collect_element_tids_at_level(index_relation, parts.storage, metadata.max_level);
+1964:            debug_collect_element_tids_at_level(index_relation, parts.storage, metadata.max_level);
+2075:            debug_collect_element_tids_at_or_above_level(index_relation, parts.storage, layer);
+2213:            debug_collect_element_tids_at_or_above_level(index_relation, parts.storage, layer);
+2340:            debug_collect_element_tid_by_heap_tid(index_relation, parts.storage);
+
+Script done on 2026-05-21 11:31:05-07:00 [COMMAND_EXIT_CODE="0"]

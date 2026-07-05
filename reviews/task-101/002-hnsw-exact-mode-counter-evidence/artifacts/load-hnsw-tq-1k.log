@@ -1,0 +1,22 @@
+[loader] inspecting reviews/task-101/002-hnsw-exact-mode-counter-evidence/artifacts/task101_hnsw_tq_1k_corpus.tsv
+[loader] inspecting reviews/task-101/002-hnsw-exact-mode-counter-evidence/artifacts/task101_hnsw_tq_1k_queries.tsv
+[loader] corpus: 1000 rows, sha256=c1da094c85925cf9a7fa688fc9c112e90bc78826876317f543baac7934665732  queries: 64 rows, sha256=68ad347b75b55ec05bf84fd413814a9561737934130dbb7084085ccf43635b80
+[loader] no sibling manifest at reviews/task-101/002-hnsw-exact-mode-counter-evidence/artifacts/task101_hnsw_tq_1k_manifest.json; continuing without verification
+[loader] copied corpus table task101_hnsw_tq_1k_corpus in 827.45ms
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table task101_hnsw_tq_1k_corpus in 272.09ms
+[loader] copied queries table task101_hnsw_tq_1k_queries in 76.99ms
+[loader] building task101_hnsw_tq_1k_turboquant_m16_idx using ec_hnsw (reloptions=[m=16, ef_construction=128, build_source_column=source, storage_format=turboquant]) ...
+[loader] built task101_hnsw_tq_1k_turboquant_m16_idx in 263.49ms
+┌─────────┬──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                                                                    │
+╞═════════╪══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_hnsw                                                                                                                  │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ task101_hnsw_tq_1k_corpus (1000 rows)                                                                                    │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ task101_hnsw_tq_1k_queries (64 rows)                                                                                     │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ task101_hnsw_tq_1k_turboquant_m16_idx [m=16, ef_construction=128, build_source_column=source, storage_format=turboquant] │
+└─────────┴──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+[loader] completed prefix task101_hnsw_tq_1k in 2.62s

@@ -1,0 +1,59 @@
+Script started on 2026-05-19 01:47:57-07:00 [<not executed on terminal>]
+[1mdiff --git a/src/am/ec_spire/coordinator/remote_candidates/operator.rs b/src/am/ec_spire/coordinator/remote_candidates/operator.rs[m
+[1mindex aca80a15..91afef40 100644[m
+[1m--- a/src/am/ec_spire/coordinator/remote_candidates/operator.rs[m
+[1m+++ b/src/am/ec_spire/coordinator/remote_candidates/operator.rs[m
+[36m@@ -6,6 +6,8 @@[m [mpub(crate) unsafe fn remote_search_libpq_secret_plan_rows([m
+     top_k: usize,[m
+     consistency_mode: &str,[m
+ ) -> Vec<SpireRemoteSearchLibpqSecretPlanRow> {[m
+[32m+[m[32m    // SAFETY: forwards the live index relation and caller-validated remote[m
+[32m+[m[32m    // search planning inputs into the dispatch-plan diagnostic path.[m
+     let dispatch_rows = unsafe {[m
+         remote_search_libpq_dispatch_plan_rows([m
+             index_relation,[m
+[36m@@ -84,6 +86,9 @@[m [mpub(crate) unsafe fn remote_search_libpq_secret_summary_row([m
+     top_k: usize,[m
+     consistency_mode: &str,[m
+ ) -> SpireRemoteSearchLibpqSecretSummaryRow {[m
+[32m+[m[32m    // SAFETY: forwards the live index relation and diagnostic request fields to[m
+[32m+[m[32m    // the secret-plan wrapper, which preserves dispatch gating before secret[m
+[32m+[m[32m    // resolution.[m
+     let rows = unsafe {[m
+         remote_search_libpq_secret_plan_rows([m
+             index_relation,[m
+[36m@@ -188,6 +193,8 @@[m [mpub(crate) unsafe fn remote_search_libpq_connection_open_plan_rows([m
+     top_k: usize,[m
+     consistency_mode: &str,[m
+ ) -> Vec<SpireRemoteSearchLibpqConnectionOpenPlanRow> {[m
+[32m+[m[32m    // SAFETY: forwards the live index relation and request fields through the[m
+[32m+[m[32m    // secret-plan stage before deriving connection-open actions.[m
+     let secret_rows = unsafe {[m
+         remote_search_libpq_secret_plan_rows([m
+             index_relation,[m
+[36m@@ -252,6 +259,8 @@[m [mpub(crate) unsafe fn remote_search_libpq_connection_open_summary_row([m
+     top_k: usize,[m
+     consistency_mode: &str,[m
+ ) -> SpireRemoteSearchLibpqConnectionOpenSummaryRow {[m
+[32m+[m[32m    // SAFETY: forwards the live index relation and diagnostic request fields to[m
+[32m+[m[32m    // the connection-open plan wrapper before summarizing row counts.[m
+     let rows = unsafe {[m
+         remote_search_libpq_connection_open_plan_rows([m
+             index_relation,[m
+[36m@@ -345,6 +354,9 @@[m [mpub(crate) unsafe fn remote_search_libpq_executor_readiness_row([m
+         let query_for_empty_plan = query.clone();[m
+         let top_k_for_empty_plan = u64::try_from(top_k)[m
+             .map_err(|_| "ec_spire remote search libpq executor readiness top_k exceeds u64")?;[m
+[32m+[m[32m        // SAFETY: forwards the live index relation and checked request fields to[m
+[32m+[m[32m        // the dispatch-plan diagnostic path; results are summarized before[m
+[32m+[m[32m        // executor readiness is reported.[m
+         let dispatch_rows = unsafe {[m
+             remote_search_libpq_dispatch_plan_rows([m
+                 index_relation,[m
+[36m@@ -773,4 +785,3 @@[m [mpub(crate) fn remote_search_libpq_result_contract_rows([m
+         },[m
+     ][m
+ }[m
+[31m-[m
+
+Script done on 2026-05-19 01:47:57-07:00 [COMMAND_EXIT_CODE="0"]

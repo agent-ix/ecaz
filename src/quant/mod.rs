@@ -1,0 +1,85 @@
+//! TurboQuant two-stage vector quantization.
+//!
+//! Extracted from TurboQuantDB and adapted for the pgrx extension context:
+//! - `ndarray::Array1<f64>` replaced with `&[f32]` / `Vec<f32>`
+//! - rayon removed (Postgres backends are single-threaded per query)
+//! - AVX2+FMA SIMD retained, aarch64 NEON added
+//!
+//! ## Pipeline
+//!
+//! 1. [`rotation`] + [`mse`] — SRHT rotation + Lloyd-Max scalar codebook
+//! 2. [`qjl`] — residual projection, 1-bit quantized and bit-packed where enabled
+//! 3. [`prod::ProdQuantizer`] — orchestrates both stages and exposes encode/decode/score APIs
+//!
+//! ## Storage format
+//!
+//! Packed code = `[mse_packed][qjl_packed]`
+//! - Default MSE budget: `bits-1` bits/dim
+//! - Default QJL budget: `1` bit/dim
+//! - Special case at tiled `1536 @ 4-bit`: all `4` bits go to MSE and QJL is omitted
+//! - Total packed code at 1536-dim, 4-bit stays `768` bytes
+//!
+//! ## Scoring
+//!
+//! Query preparation (`prepare_ip_query`) computes a lookup table once.
+//! Each candidate is scored with `score_ip_encoded` — O(n) with zero allocation,
+//! AVX2+FMA or NEON accelerated.
+
+pub mod codebook;
+pub mod grouped_pq;
+pub(crate) mod grouped_pq_block;
+pub mod hadamard;
+pub(crate) mod hamming32;
+pub(crate) mod int8_approx32;
+pub(crate) mod isa;
+pub(crate) mod lut32;
+pub mod mse;
+pub mod prod;
+pub mod qjl;
+pub(crate) mod qjl32;
+pub mod rabitq;
+pub(crate) mod rabitq32;
+pub mod rotation;
+mod simd;
+pub(crate) mod tiled_lut32;
+pub mod traits;
+
+pub use traits::{Quantizer, QueryScorer};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Family {
+    TurboQuant,
+    PqFastScan,
+    RaBitQ,
+}
+
+impl Family {
+    pub const DEFAULT: Self = Self::TurboQuant;
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::TurboQuant => "turboquant",
+            Self::PqFastScan => "pq_fastscan",
+            Self::RaBitQ => "rabitq",
+        }
+    }
+
+    pub fn parse_reloption(raw: &str) -> Result<Self, String> {
+        match raw {
+            "turboquant" => Ok(Self::TurboQuant),
+            "pq_fastscan" => Ok(Self::PqFastScan),
+            "rabitq" => Ok(Self::RaBitQ),
+            other => Err(format!(
+                "invalid ec_hnsw storage_format reloption: expected one of [turboquant, pq_fastscan, rabitq], got {:?}",
+                other
+            )),
+        }
+    }
+}
+
+pub(crate) fn simd_backend_name() -> &'static str {
+    simd::backend_name()
+}
+
+/// Index into the MSE codebook. Max 2^16 = 65536 centroids (bits <= 16).
+pub type CodeIndex = u16;

@@ -1,0 +1,146 @@
+Script started on 2026-05-19 03:37:34-07:00 [<not executed on terminal>]
+[1mdiff --git a/scripts/unsafe_comment_baseline.txt b/scripts/unsafe_comment_baseline.txt[m
+[1mindex d1d06fcb..64ea6e9a 100644[m
+[1m--- a/scripts/unsafe_comment_baseline.txt[m
+[1m+++ b/scripts/unsafe_comment_baseline.txt[m
+[36m@@ -1,18 +1,3 @@[m
+[31m-src/am/common/explain.rs:337[m
+[31m-src/am/common/explain.rs:342[m
+[31m-src/am/common/explain.rs:347[m
+[31m-src/am/common/explain.rs:352[m
+[31m-src/am/common/explain.rs:360[m
+[31m-src/am/common/explain.rs:365[m
+[31m-src/am/common/explain.rs:366[m
+[31m-src/am/common/explain.rs:371[m
+[31m-src/am/common/explain.rs:374[m
+[31m-src/am/common/explain.rs:382[m
+[31m-src/am/common/explain.rs:389[m
+[31m-src/am/common/explain.rs:404[m
+[31m-src/am/common/explain.rs:415[m
+[31m-src/am/common/explain.rs:436[m
+[31m-src/am/common/explain.rs:490[m
+ src/am/ec_diskann/ambuild.rs:105[m
+ src/am/ec_diskann/ambuild.rs:162[m
+ src/am/ec_diskann/ambuild.rs:225[m
+[1mdiff --git a/src/am/common/explain.rs b/src/am/common/explain.rs[m
+[1mindex 139b9695..374379d4 100644[m
+[1m--- a/src/am/common/explain.rs[m
+[1m+++ b/src/am/common/explain.rs[m
+[36m@@ -334,21 +334,29 @@[m [mfn previous_explain_per_node_hook() -> pg_sys::explain_per_node_hook_type {[m
+ [m
+ #[cfg(feature = "pg18")][m
+ fn explain_extension_id() -> i32 {[m
+[32m+[m[32m    // SAFETY: The literal is NUL-terminated and has static lifetime for[m
+[32m+[m[32m    // PostgreSQL's extension EXPLAIN option lookup.[m
+     unsafe { pg_sys::GetExplainExtensionId(c"ecaz".as_ptr()) }[m
+ }[m
+ [m
+ #[cfg(feature = "pg18")][m
+ unsafe fn explain_option_enabled(es: *mut pg_sys::ExplainState) -> bool {[m
+[32m+[m[32m    // SAFETY: `es` is the live ExplainState supplied by PostgreSQL's explain[m
+[32m+[m[32m    // hook; the extension id is registered by `register_pg18_explain_hooks`.[m
+     let state = unsafe { pg_sys::GetExplainExtensionState(es, explain_extension_id()) };[m
+     if state.is_null() {[m
+         return false;[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: The option handler stores a `bool` allocated for this extension[m
+[32m+[m[32m    // id, and a non-null state pointer therefore points at that bool.[m
+     unsafe { *(state.cast::<bool>()) }[m
+ }[m
+ [m
+ #[cfg(feature = "pg18")][m
+ unsafe fn explain_node_kind(planstate: *mut pg_sys::PlanState) -> ExplainNodeKind {[m
+[32m+[m[32m    // SAFETY: Callers pass PostgreSQL's non-null PlanState while processing the[m
+[32m+[m[32m    // per-node EXPLAIN hook.[m
+     match unsafe { (*planstate).type_ } {[m
+         pg_sys::NodeTag::T_IndexScanState => ExplainNodeKind::IndexScan,[m
+         _ => ExplainNodeKind::Other,[m
+[36m@@ -357,20 +365,29 @@[m [munsafe fn explain_node_kind(planstate: *mut pg_sys::PlanState) -> ExplainNodeKin[m
+ [m
+ #[cfg(feature = "pg18")][m
+ unsafe fn explain_access_method_name(index_state: *mut pg_sys::IndexScanState) -> Option<String> {[m
+[32m+[m[32m    // SAFETY: `index_state` is a PlanState already identified as IndexScanState[m
+[32m+[m[32m    // by the caller, so its relation descriptor field may be inspected.[m
+     let index_relation = unsafe { (*index_state).iss_RelationDesc };[m
+     if index_relation.is_null() {[m
+         return None;[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: The relation descriptor is non-null and PostgreSQL owns its[m
+[32m+[m[32m    // relcache tuple for the duration of the hook.[m
+     let am_oid = unsafe { (*(*index_relation).rd_rel).relam };[m
+[32m+[m[32m    // SAFETY: `am_oid` comes from the relation descriptor; PostgreSQL returns a[m
+[32m+[m[32m    // palloc-owned C string or null when no AM name exists.[m
+     let am_name_ptr = unsafe { pg_sys::get_am_name(am_oid) };[m
+     if am_name_ptr.is_null() {[m
+         return None;[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: `get_am_name` returned a non-null NUL-terminated C string.[m
+     let name = unsafe { CStr::from_ptr(am_name_ptr) }[m
+         .to_string_lossy()[m
+         .into_owned();[m
+[32m+[m[32m    // SAFETY: PostgreSQL allocated the string returned by `get_am_name`, so it[m
+[32m+[m[32m    // must be released with `pfree` after copying.[m
+     unsafe { pg_sys::pfree(am_name_ptr.cast()) };[m
+     Some(name)[m
+ }[m
+[36m@@ -379,6 +396,8 @@[m [munsafe fn explain_access_method_name(index_state: *mut pg_sys::IndexScanState) -[m
+ unsafe fn emit_explain_properties(es: *mut pg_sys::ExplainState, properties: &[ExplainProperty]) {[m
+     let group = explain_output_group();[m
+     let group_label = CString::new(group.group_label).expect("group label should not contain NUL");[m
+[32m+[m[32m    // SAFETY: `es` is the live ExplainState from PostgreSQL, and the group[m
+[32m+[m[32m    // labels are NUL-free CStrings that outlive the call.[m
+     unsafe {[m
+         pg_sys::ExplainOpenGroup(group_label.as_ptr(), group_label.as_ptr(), true, es);[m
+     }[m
+[36m@@ -386,6 +405,8 @@[m [munsafe fn emit_explain_properties(es: *mut pg_sys::ExplainState, properties: &[E[m
+     for property in properties {[m
+         let property_name =[m
+             CString::new(property.property_name).expect("property name should not contain NUL");[m
+[32m+[m[32m        // SAFETY: `es` is live during hook execution and `property_name` is a[m
+[32m+[m[32m        // NUL-free CString that outlives each ExplainProperty call.[m
+         unsafe {[m
+             match property.value {[m
+                 ExplainPropertyValue::Integer(value) => pg_sys::ExplainPropertyInteger([m
+[36m@@ -401,6 +422,8 @@[m [munsafe fn emit_explain_properties(es: *mut pg_sys::ExplainState, properties: &[E[m
+         }[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: This closes the group opened above on the same live ExplainState,[m
+[32m+[m[32m    // using the same CString labels.[m
+     unsafe {[m
+         pg_sys::ExplainCloseGroup(group_label.as_ptr(), group_label.as_ptr(), true, es);[m
+     }[m
+[36m@@ -412,6 +435,8 @@[m [munsafe extern "C-unwind" fn ecaz_explain_option_handler([m
+     opt: *mut pg_sys::DefElem,[m
+     _pstate: *mut pg_sys::ParseState,[m
+ ) {[m
+[32m+[m[32m    // SAFETY: PostgreSQL invokes the option handler with live ExplainState and[m
+[32m+[m[32m    // DefElem pointers; the guard contains Rust unwinding at the C boundary.[m
+     unsafe {[m
+         pgrx::pgrx_extern_c_guard(|| {[m
+             let enabled = pg_sys::defGetBoolean(opt);[m
+[36m@@ -433,6 +458,9 @@[m [munsafe extern "C-unwind" fn ecaz_explain_per_node_hook([m
+     plan_name: *const std::ffi::c_char,[m
+     es: *mut pg_sys::ExplainState,[m
+ ) {[m
+[32m+[m[32m    // SAFETY: PostgreSQL invokes the per-node hook with hook arguments valid for[m
+[32m+[m[32m    // the duration of the call; the guard contains Rust unwinding at the C[m
+[32m+[m[32m    // boundary while preserving previous-hook chaining below.[m
+     unsafe {[m
+         pgrx::pgrx_extern_c_guard(|| {[m
+             if !planstate.is_null()[m
+[36m@@ -487,6 +515,9 @@[m [munsafe extern "C-unwind" fn ecaz_explain_per_node_hook([m
+ [m
+ #[cfg(feature = "pg18")][m
+ pub(crate) unsafe fn register_pg18_explain_hooks() {[m
+[32m+[m[32m    // SAFETY: Registration runs during extension initialization. The atomic[m
+[32m+[m[32m    // guard prevents duplicate mutation of PostgreSQL's global hook pointer,[m
+[32m+[m[32m    // and the option name is a static NUL-terminated literal.[m
+     unsafe {[m
+         if ECAZ_EXPLAIN_REGISTERED.load(Ordering::Acquire) {[m
+             return;[m
+
+Script done on 2026-05-19 03:37:34-07:00 [COMMAND_EXIT_CODE="0"]

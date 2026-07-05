@@ -1,0 +1,48 @@
+Script started on 2026-05-19 02:00:54-07:00 [<not executed on terminal>]
+[1mdiff --git a/src/am/ec_spire/coordinator/lifecycle.rs b/src/am/ec_spire/coordinator/lifecycle.rs[m
+[1mindex f273c8b6..7dc604f5 100644[m
+[1m--- a/src/am/ec_spire/coordinator/lifecycle.rs[m
+[1m+++ b/src/am/ec_spire/coordinator/lifecycle.rs[m
+[36m@@ -7,6 +7,8 @@[m [mpub(super) struct SpireRelationLockGuard {[m
+ [m
+ impl Drop for SpireRelationLockGuard {[m
+     fn drop(&mut self) {[m
+[32m+[m[32m        // SAFETY: relid/lockmode were captured when the lock was acquired, and[m
+[32m+[m[32m        // Drop releases by OID without dereferencing a Relation pointer.[m
+         unsafe { pg_sys::UnlockRelationOid(self.relid, self.lockmode) };[m
+     }[m
+ }[m
+[36m@@ -16,7 +18,11 @@[m [mpub(super) unsafe fn lock_publish_relation([m
+ ) -> SpireRelationLockGuard {[m
+     // Callers hold an open Relation for the guard lifetime. Capture the relid[m
+     // before locking and unlock by relid so Drop never dereferences the pointer.[m
+[32m+[m[32m    // SAFETY: index_relation is live for the publish lock acquisition; only the[m
+[32m+[m[32m    // stable relation OID is copied out before locking.[m
+     let relid = unsafe { (*index_relation).rd_id };[m
+[32m+[m[32m    // SAFETY: relid identifies the open index relation and the lock mode is the[m
+[32m+[m[32m    // fixed publish lock mode paired with SpireRelationLockGuard::drop.[m
+     unsafe { pg_sys::LockRelationOid(relid, SPIRE_PUBLISH_LOCK_MODE) };[m
+     SpireRelationLockGuard {[m
+         relid,[m
+[36m@@ -27,7 +33,10 @@[m [mpub(super) unsafe fn lock_publish_relation([m
+ unsafe fn open_spire_heap_relation_for_index([m
+     index_relation: pg_sys::Relation,[m
+ ) -> Result<HeapRelationGuard, String> {[m
+[32m+[m[32m    // SAFETY: index_relation is live while resolving its owning heap relation.[m
+     let index_oid = unsafe { (*index_relation).rd_id };[m
+[32m+[m[32m    // SAFETY: IndexGetRelation reads catalog metadata for the copied index OID[m
+[32m+[m[32m    // and does not retain the Relation pointer.[m
+     let heap_oid = unsafe { pg_sys::IndexGetRelation(index_oid, false) };[m
+     if heap_oid == pg_sys::InvalidOid {[m
+         return Err("ec_spire maintenance could not resolve heap relation".to_owned());[m
+[36m@@ -37,6 +46,8 @@[m [munsafe fn open_spire_heap_relation_for_index([m
+ }[m
+ [m
+ unsafe fn active_spire_maintenance_snapshot() -> Result<pg_sys::Snapshot, String> {[m
+[32m+[m[32m    // SAFETY: GetActiveSnapshot returns PostgreSQL backend-local snapshot state;[m
+[32m+[m[32m    // the caller checks for null before using it.[m
+     let snapshot = unsafe { pg_sys::GetActiveSnapshot() };[m
+     if snapshot.is_null() {[m
+         return Err("ec_spire maintenance requires an active heap snapshot".to_owned());[m
+
+Script done on 2026-05-19 02:00:54-07:00 [COMMAND_EXIT_CODE="0"]

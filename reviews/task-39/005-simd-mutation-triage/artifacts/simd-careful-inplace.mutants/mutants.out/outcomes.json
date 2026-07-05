@@ -1,0 +1,596 @@
+{
+  "outcomes": [
+    {
+      "scenario": "Baseline",
+      "summary": "Success",
+      "log_path": "log/baseline.log",
+      "diff_path": null,
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.271338917,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 1.697321208,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/quant/simd.rs:16:5: replace backend -> SimdBackend with Default::default()",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/quant/simd.rs",
+          "function": {
+            "function_name": "backend",
+            "return_type": "-> SimdBackend",
+            "span": {
+              "start": {
+                "line": 15,
+                "column": 1
+              },
+              "end": {
+                "line": 18,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 16,
+              "column": 5
+            },
+            "end": {
+              "line": 17,
+              "column": 41
+            }
+          },
+          "replacement": "Default::default()",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/hardening__careful__src__..__..__..__src__quant__simd.rs_line_16_col_5.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__quant__simd.rs_line_16_col_5.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.329029208,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/quant/simd.rs:21:5: replace detect_backend -> SimdBackend with Default::default()",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/quant/simd.rs",
+          "function": {
+            "function_name": "detect_backend",
+            "return_type": "-> SimdBackend",
+            "span": {
+              "start": {
+                "line": 20,
+                "column": 1
+              },
+              "end": {
+                "line": 43,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 21,
+              "column": 5
+            },
+            "end": {
+              "line": 42,
+              "column": 24
+            }
+          },
+          "replacement": "Default::default()",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/hardening__careful__src__..__..__..__src__quant__simd.rs_line_21_col_5.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__quant__simd.rs_line_21_col_5.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.328928209,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/quant/simd.rs:47:5: replace has_avx2_fma -> bool with true",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/quant/simd.rs",
+          "function": {
+            "function_name": "has_avx2_fma",
+            "return_type": "-> bool",
+            "span": {
+              "start": {
+                "line": 45,
+                "column": 1
+              },
+              "end": {
+                "line": 48,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 47,
+              "column": 5
+            },
+            "end": {
+              "line": 47,
+              "column": 16
+            }
+          },
+          "replacement": "true",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__quant__simd.rs_line_47_col_5.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__quant__simd.rs_line_47_col_5.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.65691925,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.068283833,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/quant/simd.rs:47:5: replace has_avx2_fma -> bool with false",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/quant/simd.rs",
+          "function": {
+            "function_name": "has_avx2_fma",
+            "return_type": "-> bool",
+            "span": {
+              "start": {
+                "line": 45,
+                "column": 1
+              },
+              "end": {
+                "line": 48,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 47,
+              "column": 5
+            },
+            "end": {
+              "line": 47,
+              "column": 16
+            }
+          },
+          "replacement": "false",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__quant__simd.rs_line_47_col_5_001.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__quant__simd.rs_line_47_col_5_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.661098333,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.118856083,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/quant/simd.rs:47:10: replace && with || in has_avx2_fma",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/quant/simd.rs",
+          "function": {
+            "function_name": "has_avx2_fma",
+            "return_type": "-> bool",
+            "span": {
+              "start": {
+                "line": 45,
+                "column": 1
+              },
+              "end": {
+                "line": 48,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 47,
+              "column": 10
+            },
+            "end": {
+              "line": 47,
+              "column": 12
+            }
+          },
+          "replacement": "||",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__quant__simd.rs_line_47_col_10.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__quant__simd.rs_line_47_col_10.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.657559917,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.019700584,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/quant/simd.rs:51:5: replace forced_backend_from_env -> Option<SimdBackend> with None",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/quant/simd.rs",
+          "function": {
+            "function_name": "forced_backend_from_env",
+            "return_type": "-> Option<SimdBackend>",
+            "span": {
+              "start": {
+                "line": 50,
+                "column": 1
+              },
+              "end": {
+                "line": 61,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 51,
+              "column": 5
+            },
+            "end": {
+              "line": 60,
+              "column": 6
+            }
+          },
+          "replacement": "None",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__quant__simd.rs_line_51_col_5.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__quant__simd.rs_line_51_col_5.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.71162925,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.012525583,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/quant/simd.rs:51:5: replace forced_backend_from_env -> Option<SimdBackend> with Some(Default::default())",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/quant/simd.rs",
+          "function": {
+            "function_name": "forced_backend_from_env",
+            "return_type": "-> Option<SimdBackend>",
+            "span": {
+              "start": {
+                "line": 50,
+                "column": 1
+              },
+              "end": {
+                "line": 61,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 51,
+              "column": 5
+            },
+            "end": {
+              "line": 60,
+              "column": 6
+            }
+          },
+          "replacement": "Some(Default::default())",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/hardening__careful__src__..__..__..__src__quant__simd.rs_line_51_col_5_001.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__quant__simd.rs_line_51_col_5_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.384167459,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/quant/simd.rs:64:5: replace backend_name -> &'static str with \"\"",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/quant/simd.rs",
+          "function": {
+            "function_name": "backend_name",
+            "return_type": "-> &'static str",
+            "span": {
+              "start": {
+                "line": 63,
+                "column": 1
+              },
+              "end": {
+                "line": 71,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 64,
+              "column": 5
+            },
+            "end": {
+              "line": 70,
+              "column": 6
+            }
+          },
+          "replacement": "\"\"",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__quant__simd.rs_line_64_col_5.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__quant__simd.rs_line_64_col_5.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.714054208,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.0304875,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/quant/simd.rs:64:5: replace backend_name -> &'static str with \"xyzzy\"",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/quant/simd.rs",
+          "function": {
+            "function_name": "backend_name",
+            "return_type": "-> &'static str",
+            "span": {
+              "start": {
+                "line": 63,
+                "column": 1
+              },
+              "end": {
+                "line": 71,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 64,
+              "column": 5
+            },
+            "end": {
+              "line": 70,
+              "column": 6
+            }
+          },
+          "replacement": "\"xyzzy\"",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__quant__simd.rs_line_64_col_5_001.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__quant__simd.rs_line_64_col_5_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.660635958,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.023353209,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    }
+  ],
+  "total_mutants": 9,
+  "missed": 0,
+  "caught": 6,
+  "timeout": 0,
+  "unviable": 3,
+  "success": 0,
+  "start_time": "2026-05-18T21:34:33.66309Z",
+  "end_time": "2026-05-18T21:34:53.015478Z",
+  "cargo_mutants_version": "27.0.0"
+}

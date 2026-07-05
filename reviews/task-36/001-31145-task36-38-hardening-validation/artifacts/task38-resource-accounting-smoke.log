@@ -1,0 +1,16 @@
+ec_hnsw-resource-tiny-work-mem	resource	ec_hnsw	tiny-work-mem	clean ERROR or successful bounded execution; no negative counters
+ec_hnsw-resource-temp-file-limit	resource	ec_hnsw	temp-file-limit	clean ERROR; backend remains usable and temp state is released
+postcondition probes:
+SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND application_name LIKE 'ecaz-fault-%' AND pid <> pg_backend_pid()
+SELECT count(*) FROM pg_locks l JOIN pg_stat_activity a USING (pid) WHERE a.datname = current_database() AND a.application_name LIKE 'ecaz-fault-%' AND a.pid <> pg_backend_pid()
+SELECT count(*) FROM pg_prepared_xacts WHERE database = current_database()
+pg_buffercache fixture pin count
+pg_stat_io non-decreasing total operation count
+[fault] resource_accumulator_prepare rows=8192 limit=1000 work_mem=64kB
+ec_hnsw	table=ecaz_fault_hnsw	table_path=base/8052051/8229695	index=ecaz_fault_hnsw_idx	index_path=base/8052051/8229705
+[fault] resource_accumulator_pressure am=ec_hnsw rows=8192 limit=1000 returned=1000 work_mem=64kB effective_cache_size=1MB
+[fault] resource_temp_spill_accounting am=ec_hnsw mode=temp_file_limit temp_bytes_before=262144 after=262144 delta=0
+[fault] pg_buffercache_fixture_pins=0
+[fault] pg_buffercache_fixture_pins_ok=true pins=0
+[fault] pg_stat_io_ops_before=3601 after=3919
+[fault] pg_stat_wal_records_before=184204 after=201469 bytes_before=28229024 after=31578146

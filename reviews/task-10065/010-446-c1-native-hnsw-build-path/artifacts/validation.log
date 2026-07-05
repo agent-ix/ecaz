@@ -1,0 +1,8 @@
+cargo test
+test result: ok. 505 passed; 0 failed; 7 ignored; 0 measured; 0 filtered out
+
+bash scripts/run_pgrx_pg17_test.sh
+test result: ok. 505 passed; 0 failed; 7 ignored; 0 measured; 0 filtered out
+
+cargo clippy --all-targets --no-default-features --features pg17 -- -D warnings
+Finished `dev` profile [unoptimized + debuginfo] target(s) in 10.24s

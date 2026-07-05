@@ -1,0 +1,9 @@
+CREATE EXTENSION
+DROP FUNCTION
+CREATE FUNCTION
+                       proname                       |         args          
+-----------------------------------------------------+-----------------------
+ ec_spire_index_scan_leaf_target_block_rank_snapshot | oid, real[], bigint[]
+(1 row)
+
+NOTICE:  extension "ecaz" already exists, skipping

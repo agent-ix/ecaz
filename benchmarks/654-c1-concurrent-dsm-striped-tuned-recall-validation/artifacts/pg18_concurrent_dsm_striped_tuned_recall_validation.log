@@ -1,0 +1,119 @@
+Timing is on.
+=== pg18 parallel concurrent DSM tuned recall validation fixture ===
+          started_at           |                                            postgres_version                                             | server_version | max_worker_processes 
+-------------------------------+---------------------------------------------------------------------------------------------------------+----------------+----------------------
+ 2026-04-25 20:51:07.011602-07 | PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit | 18.3           | 8
+(1 row)
+
+Time: 0.849 ms
+DROP TABLE
+Time: 13.751 ms
+DROP TABLE
+Time: 4.436 ms
+DROP EXTENSION
+Time: 65.756 ms
+CREATE EXTENSION
+Time: 47.043 ms
+CREATE TABLE
+Time: 6.552 ms
+CREATE TABLE
+Time: 4.029 ms
+=== load 10000 corpus rows x 64 dims ===
+INSERT 0 10000
+Time: 420.653 ms
+=== load 100 query rows x 64 dims ===
+INSERT 0 100
+Time: 3.463 ms
+VACUUM
+Time: 198.054 ms
+VACUUM
+Time: 4.149 ms
+ corpus_rows 
+-------------
+       10000
+(1 row)
+
+Time: 1.375 ms
+ query_rows 
+------------
+        100
+(1 row)
+
+Time: 0.446 ms
+SET
+Time: 0.176 ms
+SET
+Time: 0.130 ms
+SET
+Time: 0.118 ms
+=== serial-built tuned index ===
+SET
+Time: 0.148 ms
+SET
+Time: 0.127 ms
+ALTER TABLE
+Time: 1.170 ms
+CREATE INDEX
+Time: 13627.173 ms (00:13.627)
+ build_path | requested_workers | workers_launched | heap_tuples | index_tuples | heap_ingest_us | parallel_begin_us | parallel_drain_us | parallel_sort_push_us | flush_total_us | graph_us | stage_us | write_us 
+------------+-------------------+------------------+-------------+--------------+----------------+-------------------+-------------------+-----------------------+----------------+----------+----------+----------
+ serial     |                 0 |                0 |       10000 |         9998 |         310591 |                 0 |                 0 |                     0 |       13294592 | 13146880 |    97121 |    47190
+(1 row)
+
+Time: 0.681 ms
+ build_path | m  | ef_search | recall_at_10 | exact_quantized_recall_at_10 | mean_abs_score_error | mean_query_latency_ms 
+------------+----+-----------+--------------+------------------------------+----------------------+-----------------------
+ serial     | 16 |       128 |        0.505 |                            1 |            43.905148 |            15.6536665
+ serial     | 16 |       200 |        0.534 |                            1 |            44.020798 |             24.864399
+ serial     | 16 |       400 |        0.599 |                            1 |            44.650146 |             47.537582
+(3 rows)
+
+Time: 28577.031 ms (00:28.577)
+=== parallel concurrent DSM-built tuned index ===
+SET
+Time: 0.216 ms
+SET
+Time: 0.108 ms
+ALTER TABLE
+Time: 1.232 ms
+CREATE INDEX
+Time: 5282.376 ms (00:05.282)
+   build_path   | requested_workers | workers_launched | heap_tuples | index_tuples | heap_ingest_us | parallel_begin_us | parallel_drain_us | parallel_sort_push_us | flush_total_us | graph_us | stage_us | write_us 
+----------------+-------------------+------------------+-------------+--------------+----------------+-------------------+-------------------+-----------------------+----------------+----------+----------+----------
+ concurrent_dsm |                 4 |                4 |       10000 |         9998 |         159690 |              2651 |            128307 |                 28727 |        5073365 |  4904564 |   137323 |    30310
+(1 row)
+
+Time: 0.484 ms
+ concurrent_dsm_graph_workers_launched 
+---------------------------------------
+                                     4
+(1 row)
+
+Time: 0.448 ms
+   build_path   | m  | ef_search | recall_at_10 | exact_quantized_recall_at_10 | mean_abs_score_error | mean_query_latency_ms 
+----------------+----+-----------+--------------+------------------------------+----------------------+-----------------------
+ concurrent_dsm | 16 |       128 |        0.552 |                            1 |            45.237545 |             14.417151
+ concurrent_dsm | 16 |       200 |        0.558 |                            1 |            45.267284 |              24.59842
+ concurrent_dsm | 16 |       400 |        0.582 |                            1 |            45.314503 |             48.913914
+(3 rows)
+
+Time: 29057.983 ms (00:29.058)
+=== tuned serial vs concurrent DSM recall delta at ef_search 200 ===
+ serial_graph_recall_at_10 | concurrent_dsm_graph_recall_at_10 | recall_delta | serial_graph_recall_at_100 | concurrent_dsm_graph_recall_at_100 | recall_100_delta | serial_exact_quantized_recall_at_10 | concurrent_dsm_exact_quantized_recall_at_10 | concurrent_dsm_graph_below_exact_queries | concurrent_dsm_worst_exact_gap 
+---------------------------+-----------------------------------+--------------+----------------------------+------------------------------------+------------------+-------------------------------------+---------------------------------------------+------------------------------------------+--------------------------------
+                     0.534 |                             0.558 |  0.024000049 |                     0.7189 |                             0.7256 |     0.0066999793 |                                   1 |                                           1 |                                       82 |                             10
+(1 row)
+
+Time: 44265.706 ms (00:44.266)
+ serial_index_bytes | concurrent_dsm_index_bytes 
+--------------------+----------------------------
+            3563520 |                    3563520
+(1 row)
+
+Time: 0.689 ms
+          finished_at          
+-------------------------------
+ 2026-04-25 20:53:08.303032-07
+(1 row)
+
+Time: 0.236 ms

@@ -1,0 +1,39 @@
+Script started on 2026-05-19 01:31:29-07:00 [<not executed on terminal>]
+[1mdiff --git a/src/am/ec_spire/coordinator/remote_candidates/fault_matrix.rs b/src/am/ec_spire/coordinator/remote_candidates/fault_matrix.rs[m
+[1mindex d6aad72d..00c41720 100644[m
+[1m--- a/src/am/ec_spire/coordinator/remote_candidates/fault_matrix.rs[m
+[1m+++ b/src/am/ec_spire/coordinator/remote_candidates/fault_matrix.rs[m
+[36m@@ -13,9 +13,15 @@[m [mpub(crate) unsafe fn remote_search_production_consistency_policy_summary_row([m
+         }[m
+         let requested_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;[m
+         let requested_consistency_mode = consistency_mode_name(requested_consistency_mode);[m
+[32m+[m[32m        // SAFETY: index_relation is the live PostgreSQL index relation supplied[m
+[32m+[m[32m        // by the SQL diagnostic caller for the duration of this summary read.[m
+         let root_control = unsafe { page::read_root_control_page(index_relation) };[m
+[31m-        let (epoch_manifest, _, _) =[m
+[31m-            unsafe { load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control)? };[m
+[32m+[m[32m        let (epoch_manifest, _, _) = {[m
+[32m+[m[32m            // SAFETY: root_control was read from the same relation immediately[m
+[32m+[m[32m            // above, so manifest locators are interpreted against their owning[m
+[32m+[m[32m            // index relation.[m
+[32m+[m[32m            unsafe { load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control) }?[m
+[32m+[m[32m        };[m
+         let active_consistency_mode = consistency_mode_name(epoch_manifest.consistency_mode);[m
+ [m
+         let ([m
+[36m@@ -71,6 +77,8 @@[m [mpub(crate) unsafe fn remote_search_production_session_consistency_policy_summary[m
+     requested_epoch: u64,[m
+ ) -> SpireRemoteProductionConsistencyPolicySummaryRow {[m
+     let consistency_mode = options::current_session_remote_search_consistency_mode_name();[m
+[32m+[m[32m    // SAFETY: forwards the live index relation from the diagnostic caller and a[m
+[32m+[m[32m    // backend-local session consistency-mode name into the checked summary path.[m
+     unsafe {[m
+         remote_search_production_consistency_policy_summary_row([m
+             index_relation,[m
+[36m@@ -714,4 +722,3 @@[m [mfn stage_e_lifecycle_matrix_row([m
+         required_evidence,[m
+     }[m
+ }[m
+[31m-[m
+
+Script done on 2026-05-19 01:31:29-07:00 [COMMAND_EXIT_CODE="0"]

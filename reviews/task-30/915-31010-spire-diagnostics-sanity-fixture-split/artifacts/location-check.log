@@ -1,0 +1,7 @@
+Script started on 2026-05-13 16:50:32-07:00 [<not executed on terminal>]
+src/tests/diagnostics.rs
+642:    fn test_ec_spire_scan_sanity_snapshot_sql() {
+737:    fn test_ec_spire_health_snapshot_sql() {
+816:    fn test_ec_spire_relation_storage_snapshot_sql() {
+
+Script done on 2026-05-13 16:50:32-07:00 [COMMAND_EXIT_CODE="0"]

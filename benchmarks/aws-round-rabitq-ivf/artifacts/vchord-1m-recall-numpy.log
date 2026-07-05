@@ -1,0 +1,41 @@
+  python3-numpy-1:1.21.1-1.amzn2023.0.3.aarch64                                 
+
+Complete!
+Completed 3.1 KiB/3.1 KiB (55.7 KiB/s) with 1 file(s) remainingdownload: s3://ecaz-cloud-10k-medium-db4b238f/gt-1m.py to ../../tmp/gt-1m.py
+[gt] fetching 100 query vectors...
+[gt] queries loaded in 0.2s shape=(100, 1536)
+[gt] fetching corpus (this takes ~1-2 min for 1m)...
+Traceback (most recent call last):
+  File "/tmp/gt-1m.py", line 43, in <module>
+    raw = psql(
+  File "/tmp/gt-1m.py", line 14, in psql
+    return subprocess.run(
+  File "/usr/lib64/python3.9/subprocess.py", line 528, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['sudo', '-u', 'postgres', '/usr/bin/psql', '-d', 'tqvector_bench', '-t', '-A', '-c', 'SELECT id, source::text FROM real_1m_vchord_corpus WHERE id >= 0 AND id < 50000 ORDER BY id;']' returned non-zero exit status 1.
+=== vchord recall sweep ===
+--- probes=16 ---
+ERROR:  trailing junk after numeric literal at or near "1m"
+LINE 1: ..._vchord_queries ORDER BY id LIMIT 100) q) SELECT  1m probes=...
+                                                             ^
+--- probes=32 ---
+ERROR:  trailing junk after numeric literal at or near "1m"
+LINE 1: ..._vchord_queries ORDER BY id LIMIT 100) q) SELECT  1m probes=...
+                                                             ^
+--- probes=64 ---
+ERROR:  trailing junk after numeric literal at or near "1m"
+LINE 1: ..._vchord_queries ORDER BY id LIMIT 100) q) SELECT  1m probes=...
+                                                             ^
+--- probes=128 ---
+ERROR:  trailing junk after numeric literal at or near "1m"
+LINE 1: ..._vchord_queries ORDER BY id LIMIT 100) q) SELECT  1m probes=...
+                                                             ^
+--- probes=256 ---
+ERROR:  trailing junk after numeric literal at or near "1m"
+LINE 1: ..._vchord_queries ORDER BY id LIMIT 100) q) SELECT  1m probes=...
+                                                             ^
+--- probes=512 ---
+ERROR:  trailing junk after numeric literal at or near "1m"
+LINE 1: ..._vchord_queries ORDER BY id LIMIT 100) q) SELECT  1m probes=...
+                                                             ^
+

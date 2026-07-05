@@ -1,0 +1,15 @@
+[suite:task65b-diskann-worker-batch-sweep] wrote reviews/task-65b/013-worker-batch-results/artifacts/suite-manifest.json
+[suite:task65b-diskann-worker-batch-sweep] precheck-host -> --database tqvector_bench dev sql --pg 18 --db tqvector_bench --socket-dir /Users/peter/.pgrx --raw --sql "SELECT now() AS captured_at, version() AS postgres_version, current_setting('shared_buffers') AS shared_buffers, current_setting('work_mem') AS work_mem, current_setting('maintenance_work_mem') AS maintenance_work_mem, current_setting('max_parallel_workers') AS max_parallel_workers, current_setting('max_parallel_maintenance_workers') AS max_parallel_maintenance_workers; SELECT extversion FROM pg_extension WHERE extname = 'ecaz';" --log-output reviews/task-65b/013-worker-batch-results/artifacts/precheck-host.log
+[suite:task65b-diskann-worker-batch-sweep] wrote reviews/task-65b/013-worker-batch-results/artifacts/suite-manifest.json
+[suite:task65b-diskann-worker-batch-sweep] wrote reviews/task-65b/013-worker-batch-results/artifacts/suite-manifest.json
+[suite:task65b-diskann-worker-batch-sweep] load-real10k-w1-b1 -> PGOPTIONS="-c max_parallel_maintenance_workers=1 -c max_parallel_workers=1" --database tqvector_bench --log-file reviews/task-65b/013-worker-batch-results/artifacts/load-real10k-w1-b1.log corpus load --prefix task65b_sweep_real10k_w1_b1 --profile ec_diskann --corpus-file data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_corpus.tsv --queries-file data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_queries.tsv --manifest-file data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_manifest.json --allow-manifest-mismatch --bits 4 --seed 42 --storage-format pq_fastscan --table-reloption parallel_workers=1 --reloption graph_degree=32 --reloption build_list_size=100 --reloption alpha=1.2 --reloption parallel_build_batch_size=1
+[suite:task65b-diskann-worker-batch-sweep] wrote reviews/task-65b/013-worker-batch-results/artifacts/suite-manifest.json
+[suite:task65b-diskann-worker-batch-sweep] wrote reviews/task-65b/013-worker-batch-results/artifacts/suite-manifest.json
+
+   0: [91msuite step "load-real10k-w1-b1" failed with exit code 1; rerun with --continue-on-error to keep going[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/bench/suite.rs[0m:[35m841[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.

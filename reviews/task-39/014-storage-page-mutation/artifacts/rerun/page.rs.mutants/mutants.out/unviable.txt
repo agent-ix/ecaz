@@ -1,0 +1,7 @@
+hardening/careful/src/../../../src/storage/page.rs:23:27: replace % with + in align_up
+hardening/careful/src/../../../src/storage/page.rs:49:9: replace ItemPointer::decode -> Result<Self, String> with Ok(Default::default())
+hardening/careful/src/../../../src/storage/page.rs:102:9: replace DataPage::insert_raw_tuple -> Result<ItemPointer, String> with Ok(Default::default())
+hardening/careful/src/../../../src/storage/page.rs:184:9: replace DataPageChain::pages -> &[DataPage] with Vec::leak(vec![Default::default()])
+hardening/careful/src/../../../src/storage/page.rs:188:9: replace DataPageChain::get_page -> Option<&DataPage> with Some(Box::leak(Box::new(Default::default())))
+hardening/careful/src/../../../src/storage/page.rs:193:9: replace DataPageChain::get_page_mut -> Option<&mut DataPage> with Some(Box::leak(Box::new(Default::default())))
+hardening/careful/src/../../../src/storage/page.rs:238:9: replace DataPageChain::insert_raw_tuple -> Result<ItemPointer, String> with Ok(Default::default())

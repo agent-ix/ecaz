@@ -1,0 +1,6 @@
+Script started on 2026-06-07 09:03:32-07:00 [<not executed on terminal>]
+1421091 2701290 Ss         00:00 script          script -q -e -c ps -eo pid,ppid,stat,etime,comm,args | rg 'cargo test -p ecaz-cli spire_pipeline|cargo check -p ecaz|rustc' || true reviews/task-85/011-row-segment-read-amplification/artifacts/cargo-process-status-after-timeout.log
+1421092 1421091 Ss+        00:00 bash            bash -c ps -eo pid,ppid,stat,etime,comm,args | rg 'cargo test -p ecaz-cli spire_pipeline|cargo check -p ecaz|rustc' || true
+1421094 1421092 S+         00:00 rg              rg cargo test -p ecaz-cli spire_pipeline|cargo check -p ecaz|rustc
+
+Script done on 2026-06-07 09:03:32-07:00 [COMMAND_EXIT_CODE="0"]

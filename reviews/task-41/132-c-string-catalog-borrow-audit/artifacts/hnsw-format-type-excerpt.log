@@ -1,0 +1,36 @@
+}
+
+unsafe fn resolve_indexed_vector_kind(type_oid: pg_sys::Oid) -> Option<IndexedVectorKind> {
+    let base_type_oid = unsafe { pg_sys::getBaseType(type_oid) };
+    let formatted = unsafe { pg_sys::format_type_be(base_type_oid) };
+    if formatted.is_null() {
+        return None;
+    }
+    let name = unsafe { CStr::from_ptr(formatted) }
+        .to_string_lossy()
+        .into_owned();
+    unsafe { pg_sys::pfree(formatted.cast()) };
+    let type_name = name.rsplit('.').next().unwrap_or(&name).trim_matches('"');
+    match type_name {
+        "ecvector" => Some(IndexedVectorKind::Ecvector),
+        "tqvector" => Some(IndexedVectorKind::Tqvector),
+        _ => None,
+    }
+}
+
+unsafe fn resolve_source_datum_kind(type_oid: pg_sys::Oid) -> Option<SourceDatumKind> {
+    match type_oid {
+        pg_sys::FLOAT4ARRAYOID => Some(SourceDatumKind::RealArray),
+        pg_sys::BYTEAOID => Some(SourceDatumKind::Bytea),
+        _ => {
+            let base_type_oid = unsafe { pg_sys::getBaseType(type_oid) };
+            let formatted = unsafe { pg_sys::format_type_be(base_type_oid) };
+            if formatted.is_null() {
+                return None;
+            }
+            let name = unsafe { CStr::from_ptr(formatted) }
+                .to_string_lossy()
+                .into_owned();
+            unsafe { pg_sys::pfree(formatted.cast()) };
+            let type_name = name.rsplit('.').next().unwrap_or(&name).trim_matches('"');
+            if type_name == "ecvector" {

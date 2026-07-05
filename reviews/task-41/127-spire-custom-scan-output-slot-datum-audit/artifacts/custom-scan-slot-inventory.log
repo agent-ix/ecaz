@@ -1,0 +1,36 @@
+src/am/ec_spire/custom_scan/begin_exec.rs:167:) -> *mut pg_sys::TupleTableSlot {
+src/am/ec_spire/custom_scan/begin_exec.rs:385:) -> *mut pg_sys::TupleTableSlot {
+src/am/ec_spire/custom_scan/begin_exec.rs:403:                return pg_sys::ExecClearTuple((*scan_state).ss_ScanTupleSlot);
+src/am/ec_spire/custom_scan/begin_exec.rs:415:            pg_sys::ExecClearTuple((*scan_state).ss_ScanTupleSlot);
+src/am/ec_spire/custom_scan/begin_exec.rs:436:) -> *mut pg_sys::TupleTableSlot {
+src/am/ec_spire/custom_scan/begin_exec.rs:440:            return pg_sys::ExecClearTuple((*scan_state).ss_ScanTupleSlot);
+src/am/ec_spire/custom_scan/begin_exec.rs:444:            return pg_sys::ExecClearTuple((*scan_state).ss_ScanTupleSlot);
+src/am/ec_spire/custom_scan/begin_exec.rs:457:) -> *mut pg_sys::TupleTableSlot {
+src/am/ec_spire/custom_scan/begin_exec.rs:467:        pg_sys::ExecClearTuple((*scan_state).ss_ScanTupleSlot)
+src/am/ec_spire/custom_scan/begin_exec.rs:474:) -> *mut pg_sys::TupleTableSlot {
+src/am/ec_spire/custom_scan/begin_exec.rs:484:        pg_sys::ExecClearTuple((*scan_state).ss_ScanTupleSlot)
+src/am/ec_spire/custom_scan/begin_exec.rs:491:    _slot: *mut pg_sys::TupleTableSlot,
+src/am/ec_spire/custom_scan/tuple_payload.rs:5:) -> *mut pg_sys::TupleTableSlot {
+src/am/ec_spire/custom_scan/tuple_payload.rs:36:    slot: *mut pg_sys::TupleTableSlot,
+src/am/ec_spire/custom_scan/tuple_payload.rs:39:) -> *mut pg_sys::TupleTableSlot {
+src/am/ec_spire/custom_scan/tuple_payload.rs:59:        pg_sys::ExecClearTuple(slot);
+src/am/ec_spire/custom_scan/tuple_payload.rs:64:                *(*slot).tts_isnull.add(attr_index as usize) = true;
+src/am/ec_spire/custom_scan/tuple_payload.rs:65:                *(*slot).tts_values.add(attr_index as usize) = pg_sys::Datum::from(0);
+src/am/ec_spire/custom_scan/tuple_payload.rs:75:                    *(*slot).tts_isnull.add(attr_index as usize) = true;
+src/am/ec_spire/custom_scan/tuple_payload.rs:76:                    *(*slot).tts_values.add(attr_index as usize) = pg_sys::Datum::from(0);
+src/am/ec_spire/custom_scan/tuple_payload.rs:79:                    *(*slot).tts_isnull.add(attr_index as usize) = false;
+src/am/ec_spire/custom_scan/tuple_payload.rs:89:                    *(*slot).tts_values.add(attr_index as usize) =
+src/am/ec_spire/custom_scan/tuple_payload.rs:102:    slot: *mut pg_sys::TupleTableSlot,
+src/am/ec_spire/custom_scan/tuple_payload.rs:104:) -> *mut pg_sys::TupleTableSlot {
+src/am/ec_spire/custom_scan/tuple_payload.rs:145:    slot: *mut pg_sys::TupleTableSlot,
+src/am/ec_spire/custom_scan/tuple_payload.rs:148:) -> *mut pg_sys::TupleTableSlot {
+src/am/ec_spire/custom_scan/tuple_payload.rs:186:        pg_sys::ExecClearTuple(slot);
+src/am/ec_spire/custom_scan/tuple_payload.rs:191:                *(*slot).tts_isnull.add(attr_index as usize) = true;
+src/am/ec_spire/custom_scan/tuple_payload.rs:192:                *(*slot).tts_values.add(attr_index as usize) = pg_sys::Datum::from(0);
+src/am/ec_spire/custom_scan/tuple_payload.rs:206:                *(*slot).tts_isnull.add(attr_index as usize) = true;
+src/am/ec_spire/custom_scan/tuple_payload.rs:207:                *(*slot).tts_values.add(attr_index as usize) = pg_sys::Datum::from(0);
+src/am/ec_spire/custom_scan/tuple_payload.rs:212:                *(*slot).tts_isnull.add(attr_index as usize) = true;
+src/am/ec_spire/custom_scan/tuple_payload.rs:213:                *(*slot).tts_values.add(attr_index as usize) = pg_sys::Datum::from(0);
+src/am/ec_spire/custom_scan/tuple_payload.rs:225:            *(*slot).tts_isnull.add(attr_index as usize) = false;
+src/am/ec_spire/custom_scan/tuple_payload.rs:226:            *(*slot).tts_values.add(attr_index as usize) = custom_scan_binary_value_to_datum(
+src/am/ec_spire/custom_scan/planner.rs:479:            crate::storage::slot_guard::TupleTableSlotGuard::create(placement_relation.as_ptr())

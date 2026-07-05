@@ -1,0 +1,14 @@
+run_dir=/home/peter/dev/ecaz/target/se30961-customscan-read-success
+remote_port=39228
+coord_port=39229
+NOTICE:  ec_spire_register_remote_node_descriptor remote node_id 2 reports max_prepared_transactions = 0; coordinator-routed SPIRE writes require max_prepared_transactions > 0 and enough free prepared transaction slots
+remote_epoch=1
+coord_epoch=1
+remote_pids=2,3
+coord_pids=2,3
+remote_identity_hex=dd4053f7cf354494
+plan=Limit
+  ->  Custom Scan (EcSpireDistributedScan) on ec_spire_customscan_coord_sql
+read_row=10,remote alpha
+payload_probe=ready,2,{"id": 10, "title": "remote alpha"}
+SPIRE multicluster CustomScan read passed

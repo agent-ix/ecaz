@@ -1,0 +1,140 @@
+          captured_at          |                                               postgres_version                                                | server_version | shared_buffers | work_mem | maintenance_work_mem | effective_cache_size 
+-------------------------------+---------------------------------------------------------------------------------------------------------------+----------------+----------------+----------+----------------------+----------------------
+ 2026-06-14 15:36:59.959643+00 | PostgreSQL 18.4 on aarch64-amazon-linux-gnu, compiled by gcc (GCC) 11.5.0 20240719 (Red Hat 11.5.0-5), 64-bit | 18.4           | 128MB          | 64MB     | 512MB                | 4GB
+(1 row)
+
+                                                                                                                                         cpuinfo_prefix                                                                                                                                         
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ processor       : 0                                                                                                                                                                                                                                                                           +
+ BogoMIPS        : 2000.00                                                                                                                                                                                                                                                                     +
+ Features        : fp asimd evtstrm aes pmull sha1 sha2 crc32 atomics fphp asimdhp cpuid asimdrdm jscvt fcma lrcpc dcpop sha3 asimddp sha512 sve asimdfhm dit uscat ilrcpc flagm sb paca pacg dcpodp sve2 sveaes svepmull svebitperm svesha3 flagm2 frint svei8mm svebf16 i8mm bf16 dgh rng bti+
+ CPU implementer : 0x41                                                                                                                                                                                                                                                                        +
+ CPU architecture: 8                                                                                                                                                                                                                                                                           +
+ CPU variant     : 0x0                                                                                                                                                                                                                                                                         +
+ CPU part        : 0xd4f                                                                                                                                                                                                                                                                       +
+ CPU revision    : 1                                                                                                                                                                                                                                                                           +
+                                                                                                                                                                                                                                                                                               +
+ processor       : 1                                                                                                                                                                                                                                                                           +
+ BogoMIPS        : 2000.00                                                                                                                                                                                                                                                                     +
+ Features        : fp asimd evtstrm aes pmull sha1 sha2 crc32 atomics fphp asimdhp cpuid asimdrdm jscvt fcma lrcpc dcpop sha3 asimddp sha512 sve asimdfhm dit uscat ilrcpc flagm sb paca pacg dcpodp sve2 sveaes svepmull svebitperm svesha3 flagm2 frint svei8mm svebf16 i8mm bf16 dgh rng bti+
+ CPU implementer : 0x41                                                                                                                                                                                                                                                                        +
+ CPU architecture: 8                                                                                                                                                                                                                                                                           +
+ CPU variant     : 0x0                                                                                                                                                                                                                                                                         +
+ CPU part        : 0xd4f                                                                                                                                                                                                                                                                       +
+ CPU revision    : 1                                                                                                                                                                                                                                                                           +
+                                                                                                                                                                                                                                                                                               +
+ processor       : 2                                                                                                                                                                                                                                                                           +
+ BogoMIPS        : 2000.00                                                                                                                                                                                                                                                                     +
+ Features        : fp asimd evtstrm aes pmull sha1 sha2 crc32 atomics fphp asimdhp cpuid asimdrdm jscvt fcma lrcpc dcpop sha3 asimddp sha512 sve asimdfhm dit uscat ilrcpc flagm sb paca pacg dcpodp sve2 sveaes svepmull svebitperm svesha3 flagm2 frint svei8mm svebf16 i8mm bf16 dgh rng bti+
+ CPU implementer : 0x41                                                                                                                                                                                                                                                                        +
+ CPU architecture: 8                                                                                                                                                                                                                                                                           +
+ CPU variant     : 0x0                                                                                                                                                                                                                                                                         +
+ CPU part        : 0xd4f                                                                                                                                                                                                                                                                       +
+ CPU revision    : 1                                                                                                                                                                                                                                                                           +
+                                                                                                                                                                                                                                                                                               +
+ processor       : 3                                                                                                                                                                                                                                                                           +
+ BogoMIPS        : 2000.00                                                                                                                                                                                                                                                                     +
+ Features        : fp asimd evtstrm aes pmull sha1 sha2 crc32 atomics fphp asimdhp cpuid asimdrdm jscvt fcma lrcpc dcpop sha3 asimddp sha512 sve asimdfhm dit uscat ilrcpc flagm sb paca pacg dcpodp sve2 sveaes svepmull svebitperm svesha3 flagm2 frint svei8mm svebf16 i8mm bf16 dgh rng bti+
+ CPU implementer : 0x41                                                                                                                                                                                                                                                                        +
+ CPU architecture: 8                                                                                                                                                                                                                                                                           +
+ CPU variant     : 0x0                                                                                                                                                                                                                                                                         +
+ CPU part        : 0xd4f                                                                                                                                                                                                                                                                       +
+ CPU revision    : 1                                                                                                                                                                                                                                                                           +
+                                                                                                                                                                                                                                                                                               +
+ processor       : 4                                                                                                                                                                                                                                                                           +
+ BogoMIPS        : 2000.00                                                                                                                                                                                                                                                                     +
+ Features        : fp asimd evtstrm aes pmull sha1 sha2 crc32 atomics fphp asimdhp cpuid asimdrdm jscvt fcma lrcpc dcpop sha3 asimddp sha512 sve asimdfhm dit uscat ilrcpc flagm sb paca pacg dcpodp sve2 sveaes svepmull svebitperm svesha3 flagm2 frint svei8mm svebf16 i8mm bf16 dgh rng bti+
+ CPU implementer : 0x41                                                                                                                                                                                                                                                                        +
+ CPU architecture: 8                                                                                                                                                                                                                                                                           +
+ CPU variant     : 0x0                                                                                                                                                                                                                                                                         +
+ CPU part        : 0xd4f                                                                                                                                                                                                                                                                       +
+ CPU revision    : 1                                                                                                                                                                                                                                                                           +
+                                                                                                                                                                                                                                                                                               +
+ processor       : 5                                                                                                                                                                                                                                                                           +
+ BogoMIPS        : 2000.00                                                                                                                                                                                                                                                                     +
+ Features        : fp asimd evtstrm aes pmull sha1 sha2 crc32 atomics fphp asimdhp cpuid asimdrdm jscvt fcma lrcpc dcpop sha3 asimddp sha512 sve asimdfhm dit uscat ilrcpc flagm sb paca pacg dcpodp sve2 sveaes svepmull svebitperm svesha3 flagm2 frint svei8mm svebf16 i8mm bf16 dgh rng bti+
+ CPU implementer : 0x41                                                                                                                                                                                                                                                                        +
+ CPU architecture: 8                                                                                                                                                                                                                                                                           +
+ CPU variant     : 0x0                                                                                                                                                                                                                                                                         +
+ CPU part        : 0xd4f                                                                                                                                                                                                                                                                       +
+ CPU revision    : 1                                                                                                                                                                                                                                                                           +
+                                                                                                                                                                                                                                                                                               +
+ processor       : 6                                                                                                                                                                                                                                                                           +
+ BogoMIPS        : 2000.00                                                                                                                                                                                                                                                                     +
+ Features        : fp asimd evtstrm aes pmull sha1 sha2 crc32 atomics fphp asimdhp cpuid asimdrdm jscvt fcma lrcpc dcpop sha3 asimddp sha512 sve asimdfhm dit uscat ilrcpc flagm sb paca pacg dcpodp sve2 sveaes svepmull svebitperm svesha3 flagm2 frint svei8mm svebf16 i8mm bf16 dgh rng bti+
+ CPU implementer : 0x41                                                                                                                                                                                                                                                                        +
+ CPU architecture: 8                                                                                                                                                                                                                                                                           +
+ CPU variant     : 0x0                                                                                                                                                                                                                                                                         +
+ CPU part        : 0xd4f                                                                                                                                                                                                                                                                       +
+ CPU revision    : 1                                                                                                                                                                                                                                                                           +
+                                                                                                                                                                                                                                                                                               +
+ processor       : 7                                                                                                                                                                                                                                                                           +
+ BogoMIPS        : 2000.00                                                                                                                                                                                                                                                                     +
+ Features        : fp asimd evtstrm aes pmull sha1 sha2 crc32 atomics fphp asimdhp cpuid asimdrdm jscvt fcma lrcpc dcpop sha3 asimddp sha512 sve asimdfhm dit uscat ilrcpc flagm sb paca pacg dcpodp sve2 sveaes svepmull svebitperm svesha3 flagm2 frint svei8mm svebf16 i8mm bf16 dgh rng bti+
+ CPU implementer : 0x41                                                                                                                                                                                                                                                                        +
+ CPU architecture: 8                                                                                                                                                                                                                                                                           +
+ CPU variant     : 0x0                                                                                                                                                                                                                                                                         +
+ CPU part        : 0xd4f                                                                                                                                                                                                                                                                       +
+ CPU revision    : 1                                                                                                                                                                                                                                                                           +
+                                                                                                                                                                                                                                                                                               +
+ 
+(1 row)
+
+         meminfo_prefix          
+---------------------------------
+ MemTotal:       32249636 kB    +
+ MemFree:        30413188 kB    +
+ MemAvailable:   31487984 kB    +
+ Buffers:            2168 kB    +
+ Cached:          1347560 kB    +
+ SwapCached:            0 kB    +
+ Active:           478204 kB    +
+ Inactive:         957228 kB    +
+ Active(anon):       2660 kB    +
+ Inactive(anon):   101632 kB    +
+ Active(file):     475544 kB    +
+ Inactive(file):   855596 kB    +
+ Unevictable:           0 kB    +
+ Mlocked:               0 kB    +
+ SwapTotal:             0 kB    +
+ SwapFree:              0 kB    +
+ Zswap:                 0 kB    +
+ Zswapped:              0 kB    +
+ Dirty:                36 kB    +
+ Writeback:             0 kB    +
+ AnonPages:         86036 kB    +
+ Mapped:           109432 kB    +
+ Shmem:             18284 kB    +
+ KReclaimable:     105804 kB    +
+ Slab:             166708 kB    +
+ SReclaimable:     105804 kB    +
+ SUnreclaim:        60904 kB    +
+ KernelStack:        4800 kB    +
+ PageTables:         3624 kB    +
+ SecPageTables:         0 kB    +
+ NFS_Unstable:          0 kB    +
+ Bounce:                0 kB    +
+ WritebackTmp:          0 kB    +
+ CommitLimit:    16124816 kB    +
+ Committed_AS:     592392 kB    +
+ VmallocTotal:   135288315904 kB+
+ VmallocUsed:       13032 kB    +
+ VmallocChunk:          0 kB    +
+ Percpu:             2752 kB    +
+ HardwareCorrupted:     0 kB    +
+ AnonHugePages:         0 kB    +
+ ShmemHugePages:        0 kB    +
+ ShmemPmdMapped:        0 kB    +
+ FileHugePages:    139264 kB    +
+ FilePmdMapped:         0 kB    +
+ CmaTotal:          65536 kB    +
+ CmaFree:           52976 kB    +
+ HugePages_Total:       0       +
+ HugePages_Free:        0       +
+ HugePages_Rsvd:        0       +
+ HugePages_Surp:        0       +
+ Hugepagesize:       2048 kB    +
+ Hugetlb:               0 kB    +
+ 
+(1 row)
+

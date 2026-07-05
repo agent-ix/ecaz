@@ -1,0 +1,21 @@
+--- hardening/careful/src/../../../src/storage/page.rs
++++ replace DataPage::block_number -> u32 with 1
+@@ -74,17 +74,17 @@
+             block_number,
+             page_size,
+             used_bytes: PAGE_HEADER_BYTES,
+             tuples: Vec::new(),
+         }
+     }
+ 
+     pub fn block_number(&self) -> u32 {
+-        self.block_number
++        1 /* ~ changed by cargo-mutants ~ */
+     }
+ 
+     pub fn tuple_count(&self) -> usize {
+         self.tuples.len()
+     }
+ 
+     pub fn tuples(&self) -> &[Vec<u8>] {
+         &self.tuples

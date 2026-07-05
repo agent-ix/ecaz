@@ -1,0 +1,280 @@
+warning: unexpected `cfg` condition value: `bench`
+  --> src/../../src/quant/hadamard.rs:49:17
+   |
+49 | #[cfg(any(test, feature = "bench"))]
+   |                 ^^^^^^^^^^^^^^^^^
+   |
+   = note: expected values for `feature` are: `pg_test`
+   = help: consider adding `bench` as a feature in `Cargo.toml`
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+   = note: `#[warn(unexpected_cfgs)]` on by default
+
+warning: unexpected `cfg` condition value: `bench`
+  --> src/../../src/quant/hadamard.rs:54:21
+   |
+54 | #[cfg(all(any(test, feature = "bench"), target_arch = "x86_64"))]
+   |                     ^^^^^^^^^^^^^^^^^
+   |
+   = note: expected values for `feature` are: `pg_test`
+   = help: consider adding `bench` as a feature in `Cargo.toml`
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition value: `bench`
+  --> src/../../src/quant/hadamard.rs:59:21
+   |
+59 | #[cfg(all(any(test, feature = "bench"), target_arch = "aarch64"))]
+   |                     ^^^^^^^^^^^^^^^^^
+   |
+   = note: expected values for `feature` are: `pg_test`
+   = help: consider adding `bench` as a feature in `Cargo.toml`
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition value: `bench`
+   --> src/../../src/quant/prod.rs:247:21
+    |
+247 |     #[cfg(any(test, feature = "bench"))]
+    |                     ^^^^^^^^^^^^^^^^^
+    |
+    = note: expected values for `feature` are: `pg_test`
+    = help: consider adding `bench` as a feature in `Cargo.toml`
+    = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition value: `bench`
+   --> src/../../src/quant/prod.rs:258:25
+    |
+258 |     #[cfg(all(any(test, feature = "bench"), target_arch = "x86_64"))]
+    |                         ^^^^^^^^^^^^^^^^^
+    |
+    = note: expected values for `feature` are: `pg_test`
+    = help: consider adding `bench` as a feature in `Cargo.toml`
+    = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition value: `bench`
+   --> src/../../src/quant/prod.rs:275:25
+    |
+275 |     #[cfg(all(any(test, feature = "bench"), target_arch = "aarch64"))]
+    |                         ^^^^^^^^^^^^^^^^^
+    |
+    = note: expected values for `feature` are: `pg_test`
+    = help: consider adding `bench` as a feature in `Cargo.toml`
+    = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition value: `bench`
+   --> src/../../src/quant/prod.rs:738:21
+    |
+738 |     #[cfg(any(test, feature = "bench"))]
+    |                     ^^^^^^^^^^^^^^^^^
+    |
+    = note: expected values for `feature` are: `pg_test`
+    = help: consider adding `bench` as a feature in `Cargo.toml`
+    = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition value: `bench`
+   --> src/../../src/quant/prod.rs:745:25
+    |
+745 |     #[cfg(all(any(test, feature = "bench"), target_arch = "x86_64"))]
+    |                         ^^^^^^^^^^^^^^^^^
+    |
+    = note: expected values for `feature` are: `pg_test`
+    = help: consider adding `bench` as a feature in `Cargo.toml`
+    = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition value: `bench`
+   --> src/../../src/quant/prod.rs:762:25
+    |
+762 |     #[cfg(all(any(test, feature = "bench"), target_arch = "aarch64"))]
+    |                         ^^^^^^^^^^^^^^^^^
+    |
+    = note: expected values for `feature` are: `pg_test`
+    = help: consider adding `bench` as a feature in `Cargo.toml`
+    = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition value: `rabitq-bf16`
+    --> src/../../src/quant/rabitq.rs:1348:11
+     |
+1348 |     #[cfg(feature = "rabitq-bf16")]
+     |           ^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = note: expected values for `feature` are: `pg_test`
+     = help: consider adding `rabitq-bf16` as a feature in `Cargo.toml`
+     = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition value: `rabitq-bf16`
+    --> src/../../src/quant/rabitq.rs:1361:15
+     |
+1361 |     #[cfg(not(feature = "rabitq-bf16"))]
+     |               ^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = note: expected values for `feature` are: `pg_test`
+     = help: consider adding `rabitq-bf16` as a feature in `Cargo.toml`
+     = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition value: `rabitq-bf16`
+    --> src/../../src/quant/rabitq.rs:1458:19
+     |
+1458 |             #[cfg(feature = "rabitq-bf16")]
+     |                   ^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = note: expected values for `feature` are: `pg_test`
+     = help: consider adding `rabitq-bf16` as a feature in `Cargo.toml`
+     = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: `ecaz-fuzz` (lib) generated 12 warnings
+    Finished `release` profile [optimized + debuginfo] target(s) in 0.02s
+warning: unexpected `cfg` condition value: `bench`
+  --> src/../../src/quant/hadamard.rs:49:17
+   |
+49 | #[cfg(any(test, feature = "bench"))]
+   |                 ^^^^^^^^^^^^^^^^^
+   |
+   = note: expected values for `feature` are: `pg_test`
+   = help: consider adding `bench` as a feature in `Cargo.toml`
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+   = note: `#[warn(unexpected_cfgs)]` on by default
+
+warning: unexpected `cfg` condition value: `bench`
+  --> src/../../src/quant/hadamard.rs:54:21
+   |
+54 | #[cfg(all(any(test, feature = "bench"), target_arch = "x86_64"))]
+   |                     ^^^^^^^^^^^^^^^^^
+   |
+   = note: expected values for `feature` are: `pg_test`
+   = help: consider adding `bench` as a feature in `Cargo.toml`
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition value: `bench`
+  --> src/../../src/quant/hadamard.rs:59:21
+   |
+59 | #[cfg(all(any(test, feature = "bench"), target_arch = "aarch64"))]
+   |                     ^^^^^^^^^^^^^^^^^
+   |
+   = note: expected values for `feature` are: `pg_test`
+   = help: consider adding `bench` as a feature in `Cargo.toml`
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition value: `bench`
+   --> src/../../src/quant/prod.rs:247:21
+    |
+247 |     #[cfg(any(test, feature = "bench"))]
+    |                     ^^^^^^^^^^^^^^^^^
+    |
+    = note: expected values for `feature` are: `pg_test`
+    = help: consider adding `bench` as a feature in `Cargo.toml`
+    = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition value: `bench`
+   --> src/../../src/quant/prod.rs:258:25
+    |
+258 |     #[cfg(all(any(test, feature = "bench"), target_arch = "x86_64"))]
+    |                         ^^^^^^^^^^^^^^^^^
+    |
+    = note: expected values for `feature` are: `pg_test`
+    = help: consider adding `bench` as a feature in `Cargo.toml`
+    = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition value: `bench`
+   --> src/../../src/quant/prod.rs:275:25
+    |
+275 |     #[cfg(all(any(test, feature = "bench"), target_arch = "aarch64"))]
+    |                         ^^^^^^^^^^^^^^^^^
+    |
+    = note: expected values for `feature` are: `pg_test`
+    = help: consider adding `bench` as a feature in `Cargo.toml`
+    = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition value: `bench`
+   --> src/../../src/quant/prod.rs:738:21
+    |
+738 |     #[cfg(any(test, feature = "bench"))]
+    |                     ^^^^^^^^^^^^^^^^^
+    |
+    = note: expected values for `feature` are: `pg_test`
+    = help: consider adding `bench` as a feature in `Cargo.toml`
+    = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition value: `bench`
+   --> src/../../src/quant/prod.rs:745:25
+    |
+745 |     #[cfg(all(any(test, feature = "bench"), target_arch = "x86_64"))]
+    |                         ^^^^^^^^^^^^^^^^^
+    |
+    = note: expected values for `feature` are: `pg_test`
+    = help: consider adding `bench` as a feature in `Cargo.toml`
+    = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition value: `bench`
+   --> src/../../src/quant/prod.rs:762:25
+    |
+762 |     #[cfg(all(any(test, feature = "bench"), target_arch = "aarch64"))]
+    |                         ^^^^^^^^^^^^^^^^^
+    |
+    = note: expected values for `feature` are: `pg_test`
+    = help: consider adding `bench` as a feature in `Cargo.toml`
+    = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition value: `rabitq-bf16`
+    --> src/../../src/quant/rabitq.rs:1348:11
+     |
+1348 |     #[cfg(feature = "rabitq-bf16")]
+     |           ^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = note: expected values for `feature` are: `pg_test`
+     = help: consider adding `rabitq-bf16` as a feature in `Cargo.toml`
+     = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition value: `rabitq-bf16`
+    --> src/../../src/quant/rabitq.rs:1361:15
+     |
+1361 |     #[cfg(not(feature = "rabitq-bf16"))]
+     |               ^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = note: expected values for `feature` are: `pg_test`
+     = help: consider adding `rabitq-bf16` as a feature in `Cargo.toml`
+     = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition value: `rabitq-bf16`
+    --> src/../../src/quant/rabitq.rs:1458:19
+     |
+1458 |             #[cfg(feature = "rabitq-bf16")]
+     |                   ^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = note: expected values for `feature` are: `pg_test`
+     = help: consider adding `rabitq-bf16` as a feature in `Cargo.toml`
+     = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: `ecaz-fuzz` (lib) generated 12 warnings
+    Finished `release` profile [optimized + debuginfo] target(s) in 0.01s
+     Running `fuzz/target/aarch64-apple-darwin/release/fuzz_vector_normalize_structured -artifact_prefix=/Users/peter/dev/tqvector/fuzz/artifacts/fuzz_vector_normalize_structured/ -max_total_time=10 -print_final_stats=1 /Users/peter/dev/tqvector/fuzz/corpus/fuzz_vector_normalize_structured`
+INFO: Running with entropic power schedule (0xFF, 100).
+INFO: Seed: 4025793182
+INFO: Loaded 1 modules   (13478 inline 8-bit counters): 13478 [0x102ba5c00, 0x102ba90a6), 
+INFO: Loaded 1 PC tables (13478 PCs): 13478 [0x102ba90a8,0x102bddb08), 
+INFO:       19 files found in /Users/peter/dev/tqvector/fuzz/corpus/fuzz_vector_normalize_structured
+INFO: -max_len is not provided; libFuzzer will not generate inputs larger than 4096 bytes
+INFO: seed corpus: files: 19 min: 1b max: 21b total: 192b rss: 36Mb
+#20	INITED cov: 363 ft: 464 corp: 16/154b exec/s: 0 rss: 47Mb
+#565	REDUCE cov: 363 ft: 464 corp: 16/153b lim: 25 exec/s: 565 rss: 190Mb L: 16/21 MS: 5 ChangeByte-CopyPart-ChangeBit-EraseBytes-InsertByte-
+	NEW_FUNC[1/2]: 0x000102b49244 in _RINvNvMs2_NtCsd2x5cwsPjX9_5alloc7raw_vecINtB8_11RawVecInnerpE7reserve21do_reserve_and_handleNtNtBa_5alloc6GlobalECshLS5gCb1o7r_32fuzz_vector_normalize_structured mod.rs:661
+	NEW_FUNC[2/2]: 0x000102b4942c in _RNvMs4_NtCsd2x5cwsPjX9_5alloc7raw_vecNtB5_11RawVecInner11finish_growCshLS5gCb1o7r_32fuzz_vector_normalize_structured mod.rs:543
+#615	NEW    cov: 375 ft: 479 corp: 17/175b lim: 25 exec/s: 307 rss: 213Mb L: 22/22 MS: 5 CMP-EraseBytes-CopyPart-ChangeByte-InsertByte- DE: "\002\000\000\000\000\000\000\000"-
+#833	NEW    cov: 381 ft: 485 corp: 18/197b lim: 25 exec/s: 416 rss: 268Mb L: 22/22 MS: 2 ChangeBit-ChangeBit-
+#1024	pulse  cov: 381 ft: 485 corp: 18/197b lim: 25 exec/s: 341 rss: 313Mb
+#1229	NEW    cov: 389 ft: 493 corp: 19/220b lim: 25 exec/s: 409 rss: 313Mb L: 23/23 MS: 1 InsertByte-
+#1426	NEW    cov: 389 ft: 494 corp: 20/243b lim: 25 exec/s: 356 rss: 313Mb L: 23/23 MS: 2 ChangeBinInt-ChangeByte-
+#1625	REDUCE cov: 389 ft: 494 corp: 20/239b lim: 25 exec/s: 325 rss: 313Mb L: 18/23 MS: 4 ChangeBinInt-ShuffleBytes-InsertByte-CrossOver-
+#1691	NEW    cov: 389 ft: 495 corp: 21/263b lim: 25 exec/s: 338 rss: 313Mb L: 24/24 MS: 1 InsertByte-
+#2048	pulse  cov: 389 ft: 495 corp: 21/263b lim: 25 exec/s: 341 rss: 313Mb
+#2130	NEW    cov: 389 ft: 496 corp: 22/290b lim: 29 exec/s: 355 rss: 313Mb L: 27/27 MS: 4 CrossOver-CrossOver-CrossOver-CrossOver-
+#2476	REDUCE cov: 389 ft: 496 corp: 22/289b lim: 29 exec/s: 353 rss: 313Mb L: 22/27 MS: 1 EraseBytes-
+#2930	NEW    cov: 389 ft: 498 corp: 23/322b lim: 33 exec/s: 366 rss: 313Mb L: 33/33 MS: 4 InsertRepeatedBytes-ChangeByte-ChangeBinInt-CrossOver-
+#3223	REDUCE cov: 389 ft: 498 corp: 23/317b lim: 33 exec/s: 358 rss: 313Mb L: 17/33 MS: 3 InsertByte-ChangeByte-EraseBytes-
+#3758	DONE   cov: 389 ft: 498 corp: 23/317b lim: 38 exec/s: 341 rss: 313Mb
+###### Recommended dictionary. ######
+"\002\000\000\000\000\000\000\000" # Uses: 219
+###### End of recommended dictionary. ######
+Done 3758 runs in 11 second(s)
+stat::number_of_executed_units: 3758
+stat::average_exec_per_sec:     341
+stat::new_units_added:          11
+stat::slowest_unit_time_sec:    0
+stat::peak_rss_mb:              313

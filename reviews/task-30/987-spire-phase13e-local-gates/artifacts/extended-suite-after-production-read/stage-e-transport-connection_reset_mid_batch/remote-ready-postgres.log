@@ -1,0 +1,19 @@
+2026-05-26 07:47:43.581 PDT [2302872] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-05-26 07:47:43.583 PDT [2302872] LOG:  listening on Unix socket "/home/peter/dev/ecaz/target/s-2698638768/.s.PGSQL.39647"
+2026-05-26 07:47:43.589 PDT [2302878] LOG:  database system was shut down at 2026-05-26 07:47:42 PDT
+2026-05-26 07:47:43.592 PDT [2302872] LOG:  database system is ready to accept connections
+2026-05-26 07:47:44.019 PDT [2302903] FATAL:  terminating connection due to administrator command
+2026-05-26 07:47:44.019 PDT [2302903] STATEMENT:  SELECT CASE WHEN g = 1 THEN 1 ELSE CASE WHEN pg_terminate_backend(pg_backend_pid()) THEN 2 ELSE 3 END END FROM generate_series(1, 2) AS g
+2026-05-26 07:47:44.032 PDT [2302907] FATAL:  terminating connection due to administrator command
+2026-05-26 07:47:44.032 PDT [2302907] STATEMENT:  SELECT CASE WHEN g = 1 THEN 1 ELSE CASE WHEN pg_terminate_backend(pg_backend_pid()) THEN 2 ELSE 3 END END FROM generate_series(1, 2) AS g
+2026-05-26 07:47:44.048 PDT [2302913] FATAL:  terminating connection due to administrator command
+2026-05-26 07:47:44.048 PDT [2302913] STATEMENT:  SELECT CASE WHEN g = 1 THEN 1 ELSE CASE WHEN pg_terminate_backend(pg_backend_pid()) THEN 2 ELSE 3 END END FROM generate_series(1, 2) AS g
+2026-05-26 07:47:44.060 PDT [2302917] FATAL:  terminating connection due to administrator command
+2026-05-26 07:47:44.060 PDT [2302917] STATEMENT:  SELECT CASE WHEN g = 1 THEN 1 ELSE CASE WHEN pg_terminate_backend(pg_backend_pid()) THEN 2 ELSE 3 END END FROM generate_series(1, 2) AS g
+2026-05-26 07:47:44.165 PDT [2302872] LOG:  received fast shutdown request
+2026-05-26 07:47:44.167 PDT [2302872] LOG:  aborting any active transactions
+2026-05-26 07:47:44.167 PDT [2302872] LOG:  background worker "logical replication launcher" (PID 2302881) exited with exit code 1
+2026-05-26 07:47:44.167 PDT [2302876] LOG:  shutting down
+2026-05-26 07:47:44.169 PDT [2302876] LOG:  checkpoint starting: shutdown immediate
+2026-05-26 07:47:44.180 PDT [2302876] LOG:  checkpoint complete: wrote 0 buffers (0.0%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.004 s, sync=0.002 s, total=0.013 s; sync files=2, longest=0.001 s, average=0.001 s; distance=0 kB, estimate=0 kB; lsn=0/1754600, redo lsn=0/1754600
+2026-05-26 07:47:44.187 PDT [2302872] LOG:  database system is shut down

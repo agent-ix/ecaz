@@ -1,0 +1,19 @@
+[loader] inspecting /var/tmp/ecaz-spire-aws-load/representative/node-3/ec_spire_aws_repr_1m_node_3_corpus.tsv
+[loader] corpus: 32930 rows, sha256=27cc5f4a7938f32365e2914bbfa4582c6bafc87547ec086892a22212dbab3a3f  queries: skipped (--corpus-only)
+[loader] copied corpus table ec_spire_aws_repr_1m_node_3_corpus in 10.95s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table ec_spire_aws_repr_1m_node_3_corpus in 4.83s
+[loader] building ec_spire_aws_repr_1m_remote_idx using ec_spire (reloptions=[storage_format=rabitq]) ...
+[loader] built ec_spire_aws_repr_1m_remote_idx in 34.61s
+┌─────────┬─────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                   │
+╞═════════╪═════════════════════════════════════════════════════════╡
+│ profile ┆ ec_spire                                                │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ ec_spire_aws_repr_1m_node_3_corpus (32930 rows)         │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ skipped (--corpus-only)                                 │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ ec_spire_aws_repr_1m_remote_idx [storage_format=rabitq] │
+└─────────┴─────────────────────────────────────────────────────────┘
+[loader] completed prefix ec_spire_aws_repr_1m_node_3 in 54.59s

@@ -1,0 +1,38 @@
+Script started on 2026-05-19 01:43:49-07:00 [<not executed on terminal>]
+[1mdiff --git a/src/am/ec_spire/coordinator/remote_candidates/endpoint_identity.rs b/src/am/ec_spire/coordinator/remote_candidates/endpoint_identity.rs[m
+[1mindex 6b74006a..e77f6ed1 100644[m
+[1m--- a/src/am/ec_spire/coordinator/remote_candidates/endpoint_identity.rs[m
+[1m+++ b/src/am/ec_spire/coordinator/remote_candidates/endpoint_identity.rs[m
+[36m@@ -433,16 +433,21 @@[m [mpub(crate) unsafe fn remote_search_endpoint_identity_row([m
+     index_relation: pg_sys::Relation,[m
+ ) -> SpireRemoteSearchEndpointIdentityRow {[m
+     let result = (|| -> Result<SpireRemoteSearchEndpointIdentityRow, String> {[m
+[32m+[m[32m        // SAFETY: index_relation is the live PostgreSQL index relation supplied[m
+[32m+[m[32m        // by the endpoint identity SQL wrapper for this summary read.[m
+         let relation_options = unsafe { options::relation_options(index_relation) };[m
+[32m+[m[32m        // SAFETY: rd_id is stable while the relation is open for this diagnostic[m
+[32m+[m[32m        // read and is used only as an OID input to identity helpers.[m
+[32m+[m[32m        let index_oid = unsafe { (*index_relation).rd_id };[m
+         let assignment_payload_format = relation_options.assignment_payload_format();[m
+         let assignment_payload_format_name =[m
+             remote_search_assignment_payload_format_name(assignment_payload_format);[m
+         let quantizer_profile =[m
+             remote_search_endpoint_quantizer_profile(assignment_payload_format);[m
+[31m-        let opclass_identity =[m
+[31m-            remote_search_endpoint_opclass_identity(unsafe { (*index_relation).rd_id })?;[m
+[31m-        let generation_identity =[m
+[31m-            remote_search_endpoint_generation_identity(unsafe { (*index_relation).rd_id })?;[m
+[32m+[m[32m        let opclass_identity = remote_search_endpoint_opclass_identity(index_oid)?;[m
+[32m+[m[32m        let generation_identity = remote_search_endpoint_generation_identity(index_oid)?;[m
+[32m+[m[32m        // SAFETY: reads the root control page from the same live relation used[m
+[32m+[m[32m        // to resolve the relation options and index identity above.[m
+         let root_control = unsafe { page::read_root_control_page(index_relation) };[m
+         let scoring_profile = "inner_product_score_v1";[m
+         let storage_format = relation_options.storage_format.reloption_name();[m
+[36m@@ -493,4 +498,3 @@[m [mpub(crate) unsafe fn remote_search_endpoint_identity_row([m
+     })();[m
+     result.unwrap_or_else(|e| pgrx::error!("{e}"))[m
+ }[m
+[31m-[m
+
+Script done on 2026-05-19 01:43:49-07:00 [COMMAND_EXIT_CODE="0"]

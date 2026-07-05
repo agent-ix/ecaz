@@ -1,0 +1,21 @@
+src/am/ec_hnsw/scan_debug.rs:167:    opaque.query_values_or_empty().to_vec()
+src/am/ec_hnsw/scan_debug.rs:1188:                unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
+src/am/ec_hnsw/scan_debug.rs:1258:                unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
+src/am/ec_hnsw/scan_debug.rs:1327:                unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
+src/am/ec_hnsw/scan.rs:1891:    let query_values = unsafe { pg_sys::palloc(query_bytes) }.cast::<f32>();
+src/am/ec_hnsw/scan.rs:1892:    if query_values.is_null() {
+src/am/ec_hnsw/scan.rs:1897:        ptr::copy_nonoverlapping(query.as_ptr(), query_values, query.len());
+src/am/ec_hnsw/scan.rs:1900:    opaque.query_values = query_values;
+src/am/ec_hnsw/scan.rs:1904:    if !opaque.query_values.is_null() {
+src/am/ec_hnsw/scan.rs:1905:        unsafe { pg_sys::pfree(opaque.query_values.cast()) };
+src/am/ec_hnsw/scan.rs:1906:        opaque.query_values = ptr::null_mut();
+src/am/ec_hnsw/scan.rs:2606:                    source::negative_inner_product(opaque.query_values(), source.as_slice());
+src/am/ec_hnsw/scan.rs:4758:            unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
+src/am/ec_hnsw/scan.rs:5261:    pub(super) query_values: *mut f32,
+src/am/ec_hnsw/scan.rs:5324:    fn query_values(&self) -> &[f32] {
+src/am/ec_hnsw/scan.rs:5325:        if self.query_values.is_null() || self.query_dimensions == 0 {
+src/am/ec_hnsw/scan.rs:5329:        unsafe { std::slice::from_raw_parts(self.query_values, self.query_dimensions as usize) }
+src/am/ec_hnsw/scan.rs:5333:    pub(super) fn query_values_or_empty(&self) -> &[f32] {
+src/am/ec_hnsw/scan.rs:5334:        if self.query_values.is_null() || self.query_dimensions == 0 {
+src/am/ec_hnsw/scan.rs:5338:        unsafe { std::slice::from_raw_parts(self.query_values, self.query_dimensions as usize) }
+src/am/ec_hnsw/scan.rs:5351:            query_values: ptr::null_mut(),

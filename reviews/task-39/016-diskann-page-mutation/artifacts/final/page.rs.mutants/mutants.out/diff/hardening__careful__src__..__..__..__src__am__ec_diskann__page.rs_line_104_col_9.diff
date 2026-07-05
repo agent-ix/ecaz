@@ -1,0 +1,38 @@
+--- hardening/careful/src/../../../src/am/ec_diskann/page.rs
++++ replace VamanaMetadataPage::encode -> Vec<u8> with vec![]
+@@ -96,34 +96,17 @@
+             payload_flags: PAYLOAD_FLAG_GROUPED_SEARCH_CODE,
+             search_subvector_count: 0,
+             search_subvector_dim: 0,
+             grouped_codebook_head: ItemPointer::INVALID,
+         }
+     }
+ 
+     pub fn encode(&self) -> Vec<u8> {
+-        let mut out = Vec::with_capacity(VAMANA_METADATA_BYTES);
+-        out.extend_from_slice(&self.format_version.to_le_bytes());
+-        self.entry_point.encode_into(&mut out);
+-        out.extend_from_slice(&self.graph_degree_r.to_le_bytes());
+-        out.extend_from_slice(&self.build_list_size_l.to_le_bytes());
+-        out.extend_from_slice(&self.alpha.to_le_bytes());
+-        out.extend_from_slice(&self.dimensions.to_le_bytes());
+-        out.extend_from_slice(&self.seed.to_le_bytes());
+-        out.extend_from_slice(&self.inserted_since_rebuild.to_le_bytes());
+-        out.push(self.needs_medoid_refresh as u8);
+-        out.push(self.transform_kind);
+-        out.push(self.search_codec_kind);
+-        out.push(self.payload_flags);
+-        out.extend_from_slice(&self.search_subvector_count.to_le_bytes());
+-        out.extend_from_slice(&self.search_subvector_dim.to_le_bytes());
+-        self.grouped_codebook_head.encode_into(&mut out);
+-        debug_assert_eq!(out.len(), VAMANA_METADATA_BYTES);
+-        out
++        vec![] /* ~ changed by cargo-mutants ~ */
+     }
+ 
+     pub fn decode(input: &[u8]) -> Result<Self, String> {
+         if input.len() != VAMANA_METADATA_BYTES {
+             return Err(format!(
+                 "vamana metadata length mismatch: got {}, expected {VAMANA_METADATA_BYTES}",
+                 input.len()
+             ));

@@ -1,0 +1,76 @@
+{
+  "name": "task106-aws-targeted-fixture-prep",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-106/004-aws-targeted-bench/artifacts/fixture-prep",
+  "defaults": {
+    "pg": 18,
+    "socket_dir": "/var/run/postgresql",
+    "seed": 42
+  },
+  "steps": [
+    {
+      "kind": "corpus-fetch",
+      "name": "fetch-dbpedia-openai3-if-missing",
+      "tags": [
+        "task106",
+        "aws-targeted",
+        "fixture-prep",
+        "fetch"
+      ],
+      "dataset": "qdrant-dbpedia-openai3-large-1536-1m",
+      "output_dir": "/var/lib/pgsql/18/datasets/dbpedia-openai3-1m"
+    },
+    {
+      "kind": "corpus-prepare",
+      "name": "prepare-10k",
+      "tags": [
+        "task106",
+        "aws-targeted",
+        "fixture-prep",
+        "real10k"
+      ],
+      "profile": "ec_real_10k",
+      "parquet": "/var/lib/pgsql/18/datasets/dbpedia-openai3-1m/data",
+      "output_dir": "/var/lib/pgsql/18/datasets/staged-task106-targeted"
+    },
+    {
+      "kind": "corpus-prepare",
+      "name": "prepare-50k",
+      "tags": [
+        "task106",
+        "aws-targeted",
+        "fixture-prep",
+        "real50k"
+      ],
+      "profile": "ec_real_50k",
+      "parquet": "/var/lib/pgsql/18/datasets/dbpedia-openai3-1m/data",
+      "output_dir": "/var/lib/pgsql/18/datasets/staged-task106-targeted"
+    },
+    {
+      "kind": "corpus-prepare",
+      "name": "prepare-100k",
+      "tags": [
+        "task106",
+        "aws-targeted",
+        "fixture-prep",
+        "real100k"
+      ],
+      "profile": "ec_real_100k",
+      "parquet": "/var/lib/pgsql/18/datasets/dbpedia-openai3-1m/data",
+      "output_dir": "/var/lib/pgsql/18/datasets/staged-task106-targeted"
+    },
+    {
+      "kind": "corpus-prepare",
+      "name": "prepare-1m",
+      "tags": [
+        "task106",
+        "aws-targeted",
+        "fixture-prep",
+        "real1m"
+      ],
+      "profile": "ec_real_ann_benchmarks_anchor",
+      "parquet": "/var/lib/pgsql/18/datasets/dbpedia-openai3-1m/data",
+      "output_dir": "/var/lib/pgsql/18/datasets/staged-task106-targeted"
+    }
+  ]
+}

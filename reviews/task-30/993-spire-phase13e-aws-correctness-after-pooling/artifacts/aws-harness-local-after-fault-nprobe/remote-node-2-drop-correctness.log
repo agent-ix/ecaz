@@ -1,0 +1,4 @@
+DROP TABLE
+DROP TABLE
+NOTICE:  table "ec_spire_aws_synth_10k_node_2_queries" does not exist, skipping
+NOTICE:  table "ec_spire_aws_synth_10k_node_2_corpus" does not exist, skipping

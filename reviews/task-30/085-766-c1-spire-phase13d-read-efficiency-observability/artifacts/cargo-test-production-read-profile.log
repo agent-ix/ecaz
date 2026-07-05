@@ -1,0 +1,12 @@
+Script started on 2026-05-15 10:54:25-07:00 [<not executed on terminal>]
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 00s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-c50e3d6e2f24510f)
+/home/peter/dev/ecaz/target/debug/deps/ecaz-c50e3d6e2f24510f: symbol lookup error: /home/peter/dev/ecaz/target/debug/deps/ecaz-c50e3d6e2f24510f: undefined symbol: pg_re_throw
+error: test failed, to rerun pass `--lib`
+
+Caused by:
+  process didn't exit successfully: `/home/peter/dev/ecaz/target/debug/deps/ecaz-c50e3d6e2f24510f production_read_profile_row_preserves_metric_rollup` (exit status: 127)
+note: test exited abnormally; to see the full output pass --no-capture to the harness.
+
+Script done on 2026-05-15 10:55:26-07:00 [COMMAND_EXIT_CODE="127"]

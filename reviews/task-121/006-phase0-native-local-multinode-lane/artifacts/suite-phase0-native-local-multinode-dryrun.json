@@ -1,0 +1,46 @@
+{
+  "name": "task121-phase0-native-local-multinode-dryrun",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-121/006-phase0-native-local-multinode-lane/artifacts/dryrun",
+  "defaults": {
+    "pg": 18
+  },
+  "steps": [
+    {
+      "kind": "spire-local-multinode",
+      "name": "native-local-multinode-cell",
+      "tags": [
+        "task121",
+        "phase0",
+        "local-multinode",
+        "matrix"
+      ],
+      "run_id": "task121-native-dryrun",
+      "coord_port": 39810,
+      "remote1_port": 39811,
+      "remote2_port": 39812,
+      "remote3_port": 39813,
+      "tier": "correctness",
+      "storage_format": "rabitq",
+      "coord_index": "task121_native_coord_idx",
+      "remote_index": "task121_native_remote_idx",
+      "reloptions": [
+        "nlists=128",
+        "recursive_fanout=8",
+        "top_graph_enabled=1"
+      ],
+      "coord_reloptions": [
+        "training_sample_rows=10000"
+      ],
+      "remote_reloptions": [
+        "boundary_replica_count=1"
+      ],
+      "bench_top_k": 6,
+      "bench_queries_limit": 1,
+      "bench_sweep": "3",
+      "skip_bench_suite": true,
+      "skip_fault_drills": true,
+      "skip_install": true
+    }
+  ]
+}

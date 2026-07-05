@@ -1,0 +1,1 @@
+skipped: ec_spire_index_placement_snapshot currently requires local heap tuple delivery and is intentionally unavailable after remote placement publication. Remote placement ownership is verified by remote-node-snapshot-baseline.log plus remote-leaf-materialization/*-required/observed leaf parity.
