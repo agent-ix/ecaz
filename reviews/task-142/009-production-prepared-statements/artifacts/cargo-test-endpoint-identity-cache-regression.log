@@ -1,0 +1,83 @@
+Script started on 2026-07-05 02:47:11-07:00 [<not executed on terminal>]
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.20s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-b9338e6d656e24b5)
+
+running 1 test
+test am::ec_spire::production_executor_state_tests::cached_production_endpoint_identity_requires_matching_identity ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2259 filtered out; finished in 0.00s
+
+     Running unittests src/bin/approx_score_study.rs (target/debug/deps/approx_score_study-155143ab91e00681)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+     Running unittests src/bin/pgrx_embed.rs (target/debug/deps/pgrx_embed_ecaz-e52d95ed716a5c31)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/simd_bench.rs (target/debug/deps/simd_bench-4eab3ba02dd4916a)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/kani_item_pointer.rs (target/debug/deps/kani_item_pointer-0f9d3b262608231f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/on_disk_fixtures.rs (target/debug/deps/on_disk_fixtures-d2195d632ce80e4b)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 53 filtered out; finished in 0.00s
+
+     Running tests/proptest_page.rs (target/debug/deps/proptest_page-c18cbea8c380fad0)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+     Running tests/proptest_quant.rs (target/debug/deps/proptest_quant-693b29a39b87de59)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.00s
+
+     Running tests/recall_integration.rs (target/debug/deps/recall_integration-3532b035d72b6836)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 23 filtered out; finished in 0.00s
+
+     Running tests/simd_diff.rs (target/debug/deps/simd_diff-50242d835143ed05)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/size_of_assertions.rs (target/debug/deps/size_of_assertions-78f519669c441092)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.00s
+
+     Running tests/upgrade_matrix.rs (target/debug/deps/upgrade_matrix-0bf6da41145efda4)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+     Running tests/wal_policy.rs (target/debug/deps/wal_policy-1bce249b7dbe8052)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+
+Script done on 2026-07-05 02:47:11-07:00 [COMMAND_EXIT_CODE="0"]
