@@ -191,6 +191,13 @@ pub struct SpirePipelineArgs {
     /// containment uses the target candidate-rank SQL snapshot.
     #[arg(long)]
     pub stage_containment_output: Option<PathBuf>,
+    /// Write Task 144 geometry diagnostics as JSONL.
+    ///
+    /// Requires `--include-recall`. Reports leaf-size variance and per-query
+    /// true-neighbor leaf-list concentration for the active single-assignment
+    /// surface.
+    #[arg(long)]
+    pub geometry_output: Option<PathBuf>,
     /// Write per-query returned id lists as JSONL for A/B result identity checks.
     #[arg(long)]
     pub result_identity_output: Option<PathBuf>,
@@ -361,9 +368,36 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
     let mut target_block_rank_rows = Vec::<LeafBlockRankRecord>::new();
     let mut target_candidate_rank_rows = Vec::<TargetCandidateRankRecord>::new();
     let mut miss_attribution_rows = Vec::<MissAttributionRecord>::new();
+    let mut geometry_rows = Vec::<GeometryRecord>::new();
     let mut result_identity_rows = Vec::<ResultIdentityRecord>::new();
     let mut remote_epoch = args.remote_requested_epoch;
     let mut task87_counter_lines = Vec::new();
+
+    if args.geometry_output.is_some() {
+        let truth_ids = query_truth
+            .as_ref()
+            .expect("geometry output is validated to require recall truth");
+        let leaf_rows = query_leaf_size_rows(&client, &index).await?;
+        geometry_rows.extend(GeometryRecord::leaf_size_summary(&leaf_rows));
+        let flattened_target_local_sequences = truth_ids
+            .iter()
+            .flat_map(|ids| ids.iter())
+            .map(|truth_id| {
+                truth_id
+                    .checked_add(args.leaf_block_rank_local_sequence_offset)
+                    .ok_or_else(|| {
+                        eyre!("geometry local sequence overflow for truth id {truth_id}")
+                    })
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let target_assignments =
+            query_leaf_target_assignment_rows(&client, &index, &flattened_target_local_sequences)
+                .await?;
+        geometry_rows.extend(GeometryRecord::single_assignment_concentration(
+            truth_ids,
+            &target_assignments,
+        )?);
+    }
 
     for nprobe in &sweep_values {
         apply_session_options(
@@ -917,6 +951,7 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
                 &target_block_rank_rows,
                 &target_candidate_rank_rows,
                 &miss_attribution_rows,
+                &geometry_rows,
                 &result_identity_rows,
             )
             .await?;
@@ -998,6 +1033,7 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
         &target_block_rank_rows,
         &target_candidate_rank_rows,
         &miss_attribution_rows,
+        &geometry_rows,
         &result_identity_rows,
     )
     .await?;
@@ -1076,6 +1112,11 @@ fn validate_args(args: &SpirePipelineArgs) -> Result<()> {
             "--stage-containment-output requires --include-recall so exact truth ids are available"
         ));
     }
+    if args.geometry_output.is_some() && !args.include_recall {
+        return Err(eyre!(
+            "--geometry-output requires --include-recall so exact truth ids are available"
+        ));
+    }
     if args.miss_attribution_output.is_some() && !args.include_query_metrics {
         return Err(eyre!(
             "--miss-attribution-output requires --include-query-metrics so returned ids are available"
@@ -1095,7 +1136,8 @@ fn validate_args(args: &SpirePipelineArgs) -> Result<()> {
         || args.target_block_rank_output.is_some()
         || args.target_candidate_rank_output.is_some()
         || args.miss_attribution_output.is_some()
-        || args.stage_containment_output.is_some())
+        || args.stage_containment_output.is_some()
+        || args.geometry_output.is_some())
         && args.leaf_block_rank_local_sequence_offset < 0
     {
         return Err(eyre!(
@@ -1587,6 +1629,14 @@ async fn query_leaf_target_assignment_rows(
         .collect())
 }
 
+async fn query_leaf_size_rows(client: &Client, index: &str) -> Result<Vec<LeafSizeRow>> {
+    let rows = client
+        .query(leaf_size_snapshot_sql(), &[&index])
+        .await
+        .wrap_err("querying ec_spire_index_leaf_snapshot")?;
+    Ok(rows.into_iter().map(LeafSizeRow::from).collect())
+}
+
 async fn query_leaf_block_rank_rows(
     client: &Client,
     index: &str,
@@ -1859,6 +1909,13 @@ fn leaf_target_assignment_snapshot_sql() -> &'static str {
      FROM ec_spire_index_leaf_target_assignment_snapshot(
             $1::text::regclass::oid, $2::bigint[])
      ORDER BY target_ordinal, leaf_pid NULLS LAST, row_index NULLS LAST"
+}
+
+fn leaf_size_snapshot_sql() -> &'static str {
+    "SELECT leaf_pid, effective_assignment_count
+     FROM ec_spire_index_leaf_snapshot($1::text::regclass::oid)
+     WHERE placement_state = 'available'
+     ORDER BY leaf_pid"
 }
 
 fn leaf_block_rank_snapshot_sql() -> &'static str {
@@ -2273,6 +2330,22 @@ impl From<Row> for LeafTargetAssignmentRow {
             object_version: row.get(5),
             row_index: row.get(6),
             assignment_flags: row.get(7),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct LeafSizeRow {
+    #[allow(dead_code)]
+    leaf_pid: i64,
+    effective_assignment_count: i64,
+}
+
+impl From<Row> for LeafSizeRow {
+    fn from(row: Row) -> Self {
+        Self {
+            leaf_pid: row.get(0),
+            effective_assignment_count: row.get(1),
         }
     }
 }
@@ -2825,6 +2898,175 @@ struct FunnelRecord {
     rerank_heap_block_span: i64,
     rerank_heap_block_jump_sum: i64,
     rerank_heap_block_jump_max: i64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(tag = "kind")]
+enum GeometryRecord {
+    #[serde(rename = "spire_geometry_leaf_size_summary")]
+    LeafSizeSummary {
+        leaf_count: usize,
+        assignment_total: i64,
+        assignment_mean: f64,
+        assignment_stddev: f64,
+        assignment_cv: f64,
+        assignment_min: i64,
+        assignment_p50: i64,
+        assignment_p90: i64,
+        assignment_p95: i64,
+        assignment_p99: i64,
+        assignment_max: i64,
+        empty_leaf_count: usize,
+    },
+    #[serde(rename = "spire_geometry_true_neighbor_concentration")]
+    TrueNeighborConcentration {
+        mode: &'static str,
+        query_ordinal: usize,
+        truth_top_k_count: usize,
+        found_truth_count: usize,
+        assigned_leaf_count: usize,
+        assignment_row_count: usize,
+        min_leaf_cover_count: usize,
+        missing_truth_count: usize,
+    },
+}
+
+impl GeometryRecord {
+    fn leaf_size_summary(rows: &[LeafSizeRow]) -> Vec<Self> {
+        let mut counts = rows
+            .iter()
+            .map(|row| row.effective_assignment_count)
+            .collect::<Vec<_>>();
+        counts.sort_unstable();
+        let leaf_count = counts.len();
+        let assignment_total = counts.iter().sum::<i64>();
+        let assignment_mean = if leaf_count == 0 {
+            0.0
+        } else {
+            assignment_total as f64 / leaf_count as f64
+        };
+        let assignment_stddev = if leaf_count == 0 {
+            0.0
+        } else {
+            let variance = counts
+                .iter()
+                .map(|count| {
+                    let delta = *count as f64 - assignment_mean;
+                    delta * delta
+                })
+                .sum::<f64>()
+                / leaf_count as f64;
+            variance.sqrt()
+        };
+        let assignment_cv = if assignment_mean == 0.0 {
+            0.0
+        } else {
+            assignment_stddev / assignment_mean
+        };
+        vec![Self::LeafSizeSummary {
+            leaf_count,
+            assignment_total,
+            assignment_mean,
+            assignment_stddev,
+            assignment_cv,
+            assignment_min: counts.first().copied().unwrap_or(0),
+            assignment_p50: percentile_nearest_rank(&mut counts.clone(), 50),
+            assignment_p90: percentile_nearest_rank(&mut counts.clone(), 90),
+            assignment_p95: percentile_nearest_rank(&mut counts.clone(), 95),
+            assignment_p99: percentile_nearest_rank(&mut counts, 99),
+            assignment_max: rows
+                .iter()
+                .map(|row| row.effective_assignment_count)
+                .max()
+                .unwrap_or(0),
+            empty_leaf_count: rows
+                .iter()
+                .filter(|row| row.effective_assignment_count == 0)
+                .count(),
+        }]
+    }
+
+    fn single_assignment_concentration(
+        truth_ids: &[Vec<i64>],
+        assignment_rows: &[LeafTargetAssignmentRow],
+    ) -> Result<Vec<Self>> {
+        let mut rows_by_ordinal = HashMap::<i64, Vec<&LeafTargetAssignmentRow>>::new();
+        for row in assignment_rows {
+            rows_by_ordinal
+                .entry(row.target_ordinal)
+                .or_default()
+                .push(row);
+        }
+
+        let mut records = Vec::with_capacity(truth_ids.len());
+        let mut base_ordinal = 0_i64;
+        for (query_ordinal, query_truth_ids) in truth_ids.iter().enumerate() {
+            let mut leaf_counts = HashMap::<i64, usize>::new();
+            let mut found_truth_count = 0_usize;
+            let mut assignment_row_count = 0_usize;
+            for truth_index in 0..query_truth_ids.len() {
+                let target_ordinal = base_ordinal
+                    .checked_add(i64::try_from(truth_index).map_err(|_| {
+                        eyre!("truth index {truth_index} exceeds i64 for geometry output")
+                    })?)
+                    .ok_or_else(|| eyre!("geometry target ordinal overflow"))?;
+                let Some(rows) = rows_by_ordinal.get(&target_ordinal) else {
+                    continue;
+                };
+                let mut target_seen = false;
+                for row in rows {
+                    if row.status != "found" {
+                        continue;
+                    }
+                    let Some(leaf_pid) = row.leaf_pid else {
+                        continue;
+                    };
+                    target_seen = true;
+                    assignment_row_count += 1;
+                    *leaf_counts.entry(leaf_pid).or_default() += 1;
+                }
+                found_truth_count += usize::from(target_seen);
+            }
+            let min_leaf_cover_count =
+                minimum_leaf_cover_count(query_truth_ids.len(), leaf_counts.values().copied());
+            records.push(Self::TrueNeighborConcentration {
+                mode: "single_assignment",
+                query_ordinal,
+                truth_top_k_count: query_truth_ids.len(),
+                found_truth_count,
+                assigned_leaf_count: leaf_counts.len(),
+                assignment_row_count,
+                min_leaf_cover_count,
+                missing_truth_count: query_truth_ids.len().saturating_sub(found_truth_count),
+            });
+            base_ordinal = base_ordinal
+                .checked_add(
+                    i64::try_from(query_truth_ids.len())
+                        .map_err(|_| eyre!("truth id count exceeds i64 for geometry output"))?,
+                )
+                .ok_or_else(|| eyre!("geometry base ordinal overflow"))?;
+        }
+        Ok(records)
+    }
+}
+
+fn minimum_leaf_cover_count(
+    truth_top_k_count: usize,
+    leaf_assignment_counts: impl IntoIterator<Item = usize>,
+) -> usize {
+    if truth_top_k_count == 0 {
+        return 0;
+    }
+    let mut counts = leaf_assignment_counts.into_iter().collect::<Vec<_>>();
+    counts.sort_unstable_by(|a, b| b.cmp(a));
+    let mut covered = 0_usize;
+    for (index, count) in counts.iter().enumerate() {
+        covered = covered.saturating_add(*count);
+        if covered >= truth_top_k_count {
+            return index + 1;
+        }
+    }
+    counts.len()
 }
 
 impl FunnelRecord {
@@ -3529,6 +3771,7 @@ async fn flush_pipeline_jsonl_outputs(
     target_block_rank_rows: &[LeafBlockRankRecord],
     target_candidate_rank_rows: &[TargetCandidateRankRecord],
     miss_attribution_rows: &[MissAttributionRecord],
+    geometry_rows: &[GeometryRecord],
     result_identity_rows: &[ResultIdentityRecord],
 ) -> Result<()> {
     if let Some(path) = args.funnel_output.as_ref() {
@@ -3548,6 +3791,9 @@ async fn flush_pipeline_jsonl_outputs(
     }
     if let Some(path) = args.miss_attribution_output.as_ref() {
         write_miss_attribution_jsonl(path, miss_attribution_rows).await?;
+    }
+    if let Some(path) = args.geometry_output.as_ref() {
+        write_geometry_jsonl(path, geometry_rows).await?;
     }
     if let Some(path) = args.result_identity_output.as_ref() {
         write_result_identity_jsonl(path, result_identity_rows).await?;
@@ -3649,6 +3895,22 @@ async fn write_miss_attribution_jsonl(
     let mut output = String::new();
     for row in rows {
         output.push_str(&serde_json::to_string(row).wrap_err("serializing miss attribution row")?);
+        output.push('\n');
+    }
+    tokio::fs::write(path, output)
+        .await
+        .wrap_err_with(|| format!("writing {}", path.display()))
+}
+
+async fn write_geometry_jsonl(path: &PathBuf, rows: &[GeometryRecord]) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .wrap_err_with(|| format!("creating {}", parent.display()))?;
+    }
+    let mut output = String::new();
+    for row in rows {
+        output.push_str(&serde_json::to_string(row).wrap_err("serializing geometry row")?);
         output.push('\n');
     }
     tokio::fs::write(path, output)
@@ -5483,6 +5745,7 @@ mod tests {
             log_output: None,
             funnel_output: None,
             stage_containment_output: None,
+            geometry_output: None,
             result_identity_output: None,
         }
     }
@@ -5834,6 +6097,113 @@ mod tests {
             1
         );
         assert_eq!(final_topk.missing_reason_counts["not_returned_in_topk"], 1);
+    }
+
+    #[test]
+    fn geometry_records_leaf_size_and_single_assignment_concentration() {
+        let leaf_rows = vec![
+            LeafSizeRow {
+                leaf_pid: 11,
+                effective_assignment_count: 0,
+            },
+            LeafSizeRow {
+                leaf_pid: 12,
+                effective_assignment_count: 10,
+            },
+            LeafSizeRow {
+                leaf_pid: 13,
+                effective_assignment_count: 20,
+            },
+        ];
+        let summary = GeometryRecord::leaf_size_summary(&leaf_rows);
+        let GeometryRecord::LeafSizeSummary {
+            leaf_count,
+            assignment_total,
+            assignment_mean,
+            assignment_min,
+            assignment_p50,
+            assignment_max,
+            empty_leaf_count,
+            ..
+        } = summary[0]
+        else {
+            panic!("expected leaf size summary");
+        };
+        assert_eq!(leaf_count, 3);
+        assert_eq!(assignment_total, 30);
+        assert_eq!(assignment_mean, 10.0);
+        assert_eq!(assignment_min, 0);
+        assert_eq!(assignment_p50, 10);
+        assert_eq!(assignment_max, 20);
+        assert_eq!(empty_leaf_count, 1);
+
+        let concentration = GeometryRecord::single_assignment_concentration(
+            &[vec![10, 20, 30], vec![40, 50]],
+            &[
+                leaf_target_assignment_row(0, "found", Some(101)),
+                leaf_target_assignment_row(1, "found", Some(101)),
+                leaf_target_assignment_row(2, "found", Some(102)),
+                leaf_target_assignment_row(3, "found", Some(201)),
+                leaf_target_assignment_row(4, "not_found", None),
+            ],
+        )
+        .unwrap();
+        let GeometryRecord::TrueNeighborConcentration {
+            query_ordinal,
+            truth_top_k_count,
+            found_truth_count,
+            assigned_leaf_count,
+            assignment_row_count,
+            min_leaf_cover_count,
+            missing_truth_count,
+            ..
+        } = concentration[0]
+        else {
+            panic!("expected concentration record");
+        };
+        assert_eq!(query_ordinal, 0);
+        assert_eq!(truth_top_k_count, 3);
+        assert_eq!(found_truth_count, 3);
+        assert_eq!(assigned_leaf_count, 2);
+        assert_eq!(assignment_row_count, 3);
+        assert_eq!(min_leaf_cover_count, 2);
+        assert_eq!(missing_truth_count, 0);
+
+        let GeometryRecord::TrueNeighborConcentration {
+            query_ordinal,
+            truth_top_k_count,
+            found_truth_count,
+            assigned_leaf_count,
+            min_leaf_cover_count,
+            missing_truth_count,
+            ..
+        } = concentration[1]
+        else {
+            panic!("expected second concentration record");
+        };
+        assert_eq!(query_ordinal, 1);
+        assert_eq!(truth_top_k_count, 2);
+        assert_eq!(found_truth_count, 1);
+        assert_eq!(assigned_leaf_count, 1);
+        assert_eq!(min_leaf_cover_count, 1);
+        assert_eq!(missing_truth_count, 1);
+    }
+
+    fn leaf_target_assignment_row(
+        target_ordinal: i64,
+        status: &'static str,
+        leaf_pid: Option<i64>,
+    ) -> LeafTargetAssignmentRow {
+        LeafTargetAssignmentRow {
+            target_ordinal,
+            target_local_sequence: target_ordinal + 1,
+            status: status.to_owned(),
+            leaf_pid,
+            parent_pid: None,
+            object_version: None,
+            row_index: None,
+            assignment_flags: None,
+        }
     }
 
     #[test]

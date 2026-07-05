@@ -564,6 +564,8 @@ struct SpirePipelineStep {
     #[serde(default)]
     stage_containment_output: Option<PathBuf>,
     #[serde(default)]
+    geometry_output: Option<PathBuf>,
+    #[serde(default)]
     result_identity_output: Option<PathBuf>,
 }
 
@@ -1290,6 +1292,7 @@ fn apply_artifact_dir_templates(config: &mut SuiteConfig) {
                 rewrite_artifact_dir_path(&mut step.log_output, &artifact_dir);
                 rewrite_artifact_dir_path(&mut step.funnel_output, &artifact_dir);
                 rewrite_artifact_dir_path(&mut step.stage_containment_output, &artifact_dir);
+                rewrite_artifact_dir_path(&mut step.geometry_output, &artifact_dir);
                 rewrite_artifact_dir_path(&mut step.result_identity_output, &artifact_dir);
             }
             SuiteStep::Storage(step) => {
@@ -2853,6 +2856,7 @@ impl SuiteStep {
                 .iter()
                 .chain(step.funnel_output.iter())
                 .chain(step.stage_containment_output.iter())
+                .chain(step.geometry_output.iter())
                 .chain(step.result_identity_output.iter())
                 .chain(step.leaf_block_rank_output.iter())
                 .chain(step.target_block_rank_output.iter())
@@ -3575,6 +3579,11 @@ fn expand_spire_pipeline(step: &SpirePipelineStep, defaults: &SuiteDefaults) -> 
         &mut args,
         "--stage-containment-output",
         step.stage_containment_output.as_deref(),
+    );
+    push_opt_path(
+        &mut args,
+        "--geometry-output",
+        step.geometry_output.as_deref(),
     );
     push_opt_path(
         &mut args,
@@ -4765,6 +4774,7 @@ mod tests {
                 log_output: Some("${artifact_dir}/profile.log".into()),
                 funnel_output: Some("${artifact_dir}/profile-funnel.jsonl".into()),
                 stage_containment_output: Some("${artifact_dir}/profile-stage.jsonl".into()),
+                geometry_output: Some("${artifact_dir}/profile-geometry.jsonl".into()),
                 result_identity_output: Some("${artifact_dir}/profile-identity.jsonl".into()),
             })],
         };
@@ -4788,6 +4798,7 @@ mod tests {
                 PathBuf::from("artifacts/current/profile.log"),
                 PathBuf::from("artifacts/current/profile-funnel.jsonl"),
                 PathBuf::from("artifacts/current/profile-stage.jsonl"),
+                PathBuf::from("artifacts/current/profile-geometry.jsonl"),
                 PathBuf::from("artifacts/current/profile-identity.jsonl"),
                 PathBuf::from("artifacts/current/profile-leaf-block-rank.jsonl"),
                 PathBuf::from("artifacts/current/profile-target-block-rank.jsonl"),
@@ -4814,6 +4825,11 @@ mod tests {
             == [
                 "--stage-containment-output",
                 "artifacts/current/profile-stage.jsonl"
+            ]));
+        assert!(args.windows(2).any(|w| w
+            == [
+                "--geometry-output",
+                "artifacts/current/profile-geometry.jsonl"
             ]));
         assert!(args.windows(2).any(|w| w
             == [
@@ -5919,6 +5935,7 @@ mod tests {
             log_output: Some("spire-profile.log".into()),
             funnel_output: None,
             stage_containment_output: Some("stage-containment.jsonl".into()),
+            geometry_output: Some("geometry.jsonl".into()),
             result_identity_output: Some("identity.jsonl".into()),
         };
 
@@ -5969,6 +5986,9 @@ mod tests {
         assert!(args
             .windows(2)
             .any(|w| w == ["--stage-containment-output", "stage-containment.jsonl"]));
+        assert!(args
+            .windows(2)
+            .any(|w| w == ["--geometry-output", "geometry.jsonl"]));
         assert!(args
             .windows(2)
             .any(|w| w == ["--result-identity-output", "identity.jsonl"]));
@@ -6032,6 +6052,7 @@ mod tests {
                 log_output: None,
                 funnel_output: None,
                 stage_containment_output: None,
+                geometry_output: None,
                 result_identity_output: None,
             })],
         };
