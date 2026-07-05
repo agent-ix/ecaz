@@ -1,0 +1,12 @@
+Script started on 2026-07-05 00:57:12-07:00 [<not executed on terminal>]
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 42.70s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-c2925dc8ee61e76b)
+
+running 1 test
+test am::ec_spire::scan::tests::collect_resolved_scan_plan_selection_loads_routing_hierarchy_once ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2254 filtered out; finished in 0.00s
+
+
+Script done on 2026-07-05 00:57:55-07:00 [COMMAND_EXIT_CODE="0"]
