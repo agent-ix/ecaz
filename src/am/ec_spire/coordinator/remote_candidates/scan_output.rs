@@ -429,25 +429,22 @@ fn production_read_timeline_rows(
     result: &SpireRemoteProductionCandidateAndHeapResult,
 ) -> Vec<SpireRemoteProductionReadTimelineRow> {
     let mut rows = Vec::new();
-    rows.extend(
-        result
-            .candidate_results
-            .iter()
-            .map(|result| SpireRemoteProductionReadTimelineRow {
-                requested_epoch,
-                phase: "candidate_receive",
-                node_id: result.node_id,
-                started_after_ms: result.started_after_ms,
-                completed_after_ms: result.completed_after_ms,
-                elapsed_ms: result.elapsed_ms,
-                candidate_count: result.candidate_count,
-                payload_decode_elapsed_ms: 0,
-                payload_decode_row_count: 0,
-                payload_decode_bytes: 0,
-                status: result.status,
-                failure_category: result.failure_category,
-            }),
-    );
+    rows.extend(result.candidate_results.iter().map(|result| {
+        SpireRemoteProductionReadTimelineRow {
+            requested_epoch,
+            phase: "candidate_receive",
+            node_id: result.node_id,
+            started_after_ms: result.started_after_ms,
+            completed_after_ms: result.completed_after_ms,
+            elapsed_ms: result.elapsed_ms,
+            candidate_count: result.candidate_count,
+            payload_decode_elapsed_ms: 0,
+            payload_decode_row_count: 0,
+            payload_decode_bytes: 0,
+            status: result.status,
+            failure_category: result.failure_category,
+        }
+    }));
     rows.extend(
         result
             .heap_results
@@ -503,6 +500,10 @@ fn production_read_profile_row(
         status: summary.status,
         recommendation: summary.recommendation,
         planning_elapsed_ms: metrics.planning_elapsed_ms,
+        manifest_load_elapsed_ms: metrics.manifest_load_elapsed_ms,
+        leaf_count_elapsed_ms: metrics.leaf_count_elapsed_ms,
+        route_select_elapsed_ms: metrics.route_select_elapsed_ms,
+        local_heap_elapsed_ms: metrics.local_heap_elapsed_ms,
         fingerprint_guard_elapsed_ms: metrics.fingerprint_guard_elapsed_ms,
         conninfo_secret_lookup_elapsed_ms: metrics.conninfo_secret_lookup_elapsed_ms,
         connect_elapsed_ms: metrics.connect_elapsed_ms,
@@ -510,6 +511,7 @@ fn production_read_profile_row(
         regclass_probe_elapsed_ms: metrics.regclass_probe_elapsed_ms,
         endpoint_identity_elapsed_ms: metrics.endpoint_identity_elapsed_ms,
         candidate_receive_elapsed_ms: metrics.candidate_receive_elapsed_ms,
+        candidate_decode_elapsed_ms: metrics.candidate_decode_elapsed_ms,
         heap_receive_elapsed_ms: metrics.heap_receive_elapsed_ms,
         payload_decode_elapsed_ms: metrics.payload_decode_elapsed_ms,
         merge_elapsed_ms: metrics.merge_elapsed_ms,
@@ -589,8 +591,10 @@ fn remote_search_production_scan_heap_resolution_result_stream_impl(
         );
     }
 
+    let manifest_start = std::time::Instant::now();
     let (epoch_manifest, object_manifest, placement_directory) =
         load_relation_epoch_manifests_for_coordinator_fanout(index, root_control)?;
+    add_profile_elapsed(&mut metrics.manifest_load_elapsed_ms, manifest_start);
     let snapshot = meta::SpirePublishedEpochSnapshot::new(
         &epoch_manifest,
         &object_manifest,
@@ -602,7 +606,9 @@ fn remote_search_production_scan_heap_resolution_result_stream_impl(
     )?;
     let relation_options = index.relation_options();
     let top_graph_plan = relation_options.top_graph_plan()?;
+    let leaf_count_start = std::time::Instant::now();
     let leaf_count = scan::count_scan_plan_routable_leaf_pids(&snapshot, &object_store)?;
+    add_profile_elapsed(&mut metrics.leaf_count_elapsed_ms, leaf_count_start);
     let scan_plan = options::resolve_single_level_scan_plan(leaf_count, relation_options)?;
     let top_k = match top_k_override {
         Some(top_k) => top_k,
@@ -610,6 +616,7 @@ fn remote_search_production_scan_heap_resolution_result_stream_impl(
             "ec_spire production AM scan candidate limit is unavailable".to_owned()
         })?,
     };
+    let route_select_start = std::time::Instant::now();
     let selected_leaf_pids = scan::collect_scan_plan_selected_leaf_pids(
         &snapshot,
         &object_store,
@@ -617,6 +624,7 @@ fn remote_search_production_scan_heap_resolution_result_stream_impl(
         scan_plan,
         top_graph_plan,
     )?;
+    add_profile_elapsed(&mut metrics.route_select_elapsed_ms, route_select_start);
     let selected_pid_count = u64::try_from(selected_leaf_pids.len())
         .map_err(|_| "ec_spire production scan heap selected PID count exceeds u64")?;
     let execution_summary = remote_search_execution_summary_row(
@@ -660,6 +668,7 @@ fn remote_search_production_scan_heap_resolution_result_stream_impl(
         );
     }
 
+    let local_heap_start = std::time::Instant::now();
     let local_heap_rows = if execution_summary.local_pid_count > 0 {
         remote_search_local_heap_candidate_rows_for_result_summary(
             index,
@@ -672,6 +681,7 @@ fn remote_search_production_scan_heap_resolution_result_stream_impl(
     } else {
         Vec::new()
     };
+    add_profile_elapsed(&mut metrics.local_heap_elapsed_ms, local_heap_start);
     let local_heap_candidate_count = u64::try_from(
         local_heap_rows
             .iter()
@@ -909,8 +919,12 @@ pub(crate) fn remote_search_production_threshold_profile_rows(
     top_k: usize,
     threshold_score: f32,
 ) -> Vec<scan::SpireSelectedLeafThresholdProfile> {
-    let result =
-        remote_search_production_threshold_profile_rows_result(index, query, top_k, threshold_score);
+    let result = remote_search_production_threshold_profile_rows_result(
+        index,
+        query,
+        top_k,
+        threshold_score,
+    );
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
@@ -919,7 +933,8 @@ pub(crate) fn remote_search_production_candidate_threshold_profile_rows(
     query: Vec<f32>,
     top_k: usize,
 ) -> Vec<scan::SpireSelectedLeafThresholdProfile> {
-    let result = remote_search_production_candidate_threshold_profile_rows_result(index, query, top_k);
+    let result =
+        remote_search_production_candidate_threshold_profile_rows_result(index, query, top_k);
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
@@ -1089,8 +1104,10 @@ fn remote_search_production_global_candidate_threshold_score_result(
         top_k,
         consistency_mode,
     );
-    let mut executor =
-        SpireRemoteFanoutExecutor::from_libpq_dispatch_rows(root_control.active_epoch, &dispatch_rows);
+    let mut executor = SpireRemoteFanoutExecutor::from_libpq_dispatch_rows(
+        root_control.active_epoch,
+        &dispatch_rows,
+    );
     let parsed_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;
     if parsed_consistency_mode == meta::SpireConsistencyMode::Degraded {
         executor.apply_blocked_before_dispatch_degraded_skips();
@@ -1099,9 +1116,15 @@ fn remote_search_production_global_candidate_threshold_score_result(
     executor.run_compact_candidate_receive(query_for_scan.values(), top_k, consistency_mode)?;
     batches.extend(executor.ready_candidate_batches()?);
 
-    let merged =
-        merge_validated_remote_search_candidate_batches(root_control.active_epoch, batches, Some(top_k))?;
-    Ok(global_compact_candidate_threshold_score(&merged.candidates, top_k))
+    let merged = merge_validated_remote_search_candidate_batches(
+        root_control.active_epoch,
+        batches,
+        Some(top_k),
+    )?;
+    Ok(global_compact_candidate_threshold_score(
+        &merged.candidates,
+        top_k,
+    ))
 }
 
 fn global_compact_candidate_threshold_score(
@@ -1119,8 +1142,11 @@ fn remote_search_production_candidate_threshold_profile_rows_result(
     query: Vec<f32>,
     top_k: usize,
 ) -> Result<Vec<scan::SpireSelectedLeafThresholdProfile>, String> {
-    let Some(threshold_score) =
-        remote_search_production_global_candidate_threshold_score_result(index, query.clone(), top_k)?
+    let Some(threshold_score) = remote_search_production_global_candidate_threshold_score_result(
+        index,
+        query.clone(),
+        top_k,
+    )?
     else {
         return Ok(Vec::new());
     };
@@ -1134,7 +1160,9 @@ fn remote_search_production_threshold_profile_rows_result(
     threshold_score: f32,
 ) -> Result<Vec<scan::SpireSelectedLeafThresholdProfile>, String> {
     if !threshold_score.is_finite() {
-        return Err("ec_spire production threshold profile threshold_score must be finite".to_owned());
+        return Err(
+            "ec_spire production threshold profile threshold_score must be finite".to_owned(),
+        );
     }
     let query_for_scan = scan::SpireScanQuery::new(query.clone())?;
     let consistency_mode = options::current_session_remote_search_consistency_mode_name();
@@ -1223,8 +1251,11 @@ fn remote_search_libpq_executor_scan_profile_for_dispatch(
             row.node_id
         )
     })?;
-    let mut client =
-        remote_search_libpq_connect_with_session_timeouts(&conninfo, row.node_id, "production scan profile")?;
+    let mut client = remote_search_libpq_connect_with_session_timeouts(
+        &conninfo,
+        row.node_id,
+        "production scan profile",
+    )?;
     let remote_index_oid = client
         .query_one(
             "SELECT to_regclass($1)::oid",
@@ -1266,8 +1297,8 @@ fn remote_search_libpq_executor_scan_profile_for_dispatch(
                 .map_err(|_| "ec_spire production scan profile selected PID exceeds i64")
         })
         .collect::<Result<Vec<_>, _>>()?;
-    let top_k = i32::try_from(top_k)
-        .map_err(|_| "ec_spire production scan profile top_k exceeds i32")?;
+    let top_k =
+        i32::try_from(top_k).map_err(|_| "ec_spire production scan profile top_k exceeds i32")?;
     let result_row = client
         .query_one(
             SPIRE_REMOTE_SEARCH_LIBPQ_SCAN_PROFILE_SQL_TEMPLATE,

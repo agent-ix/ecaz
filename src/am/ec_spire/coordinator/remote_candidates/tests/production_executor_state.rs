@@ -37,10 +37,7 @@ mod production_executor_state_tests {
         row
     }
 
-    fn ready_transport_row(
-        node_id: u32,
-        row_count: u64,
-    ) -> SpireRemoteProductionTransportProbeRow {
+    fn ready_transport_row(node_id: u32, row_count: u64) -> SpireRemoteProductionTransportProbeRow {
         SpireRemoteProductionTransportProbeRow {
             node_id,
             started_after_ms: 1,
@@ -130,14 +127,8 @@ mod production_executor_state_tests {
             global_compact_candidate_threshold_score(&[best.clone(), kth.clone(), below_k], 2),
             Some(kth.score)
         );
-        assert_eq!(
-            global_compact_candidate_threshold_score(&[best], 2),
-            None
-        );
-        assert_eq!(
-            global_compact_candidate_threshold_score(&[kth], 0),
-            None
-        );
+        assert_eq!(global_compact_candidate_threshold_score(&[best], 2), None);
+        assert_eq!(global_compact_candidate_threshold_score(&[kth], 0), None);
     }
 
     #[test]
@@ -177,7 +168,10 @@ mod production_executor_state_tests {
             parameters.assignment_flags,
             vec![i16::try_from(storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY).unwrap()]
         );
-        assert_eq!(parameters.vec_id_hex_values, vec![hex::encode(&candidates[0].vec_id)]);
+        assert_eq!(
+            parameters.vec_id_hex_values,
+            vec![hex::encode(&candidates[0].vec_id)]
+        );
         assert_eq!(
             parameters.row_locator_hex_values,
             vec![hex::encode(&candidates[0].row_locator)]
@@ -222,10 +216,7 @@ mod production_executor_state_tests {
         }
     }
 
-    fn ready_heap_receive_result(
-        node_id: u32,
-        pid: u64,
-    ) -> SpireRemoteProductionHeapReceiveResult {
+    fn ready_heap_receive_result(node_id: u32, pid: u64) -> SpireRemoteProductionHeapReceiveResult {
         SpireRemoteProductionHeapReceiveResult {
             node_id,
             started_after_ms: 3,
@@ -331,6 +322,10 @@ mod production_executor_state_tests {
     fn production_read_profile_row_preserves_metric_rollup() {
         let mut metrics = SpireRemoteProductionReadMetrics {
             planning_elapsed_ms: 11,
+            manifest_load_elapsed_ms: 41,
+            leaf_count_elapsed_ms: 43,
+            route_select_elapsed_ms: 47,
+            local_heap_elapsed_ms: 53,
             fingerprint_guard_elapsed_ms: 3,
             conninfo_secret_lookup_elapsed_ms: 2,
             connect_elapsed_ms: 5,
@@ -338,6 +333,7 @@ mod production_executor_state_tests {
             regclass_probe_elapsed_ms: 13,
             endpoint_identity_elapsed_ms: 17,
             candidate_receive_elapsed_ms: 19,
+            candidate_decode_elapsed_ms: 59,
             heap_receive_elapsed_ms: 23,
             payload_decode_elapsed_ms: 29,
             merge_elapsed_ms: 31,
@@ -372,6 +368,11 @@ mod production_executor_state_tests {
 
         assert_eq!(row.requested_epoch, 7);
         assert_eq!(row.socket_open_count, 1);
+        assert_eq!(row.manifest_load_elapsed_ms, 41);
+        assert_eq!(row.leaf_count_elapsed_ms, 43);
+        assert_eq!(row.route_select_elapsed_ms, 47);
+        assert_eq!(row.local_heap_elapsed_ms, 53);
+        assert_eq!(row.candidate_decode_elapsed_ms, 59);
         assert_eq!(row.tls_require_count, 1);
         assert_eq!(row.global_pre_heap_candidate_count, 2);
         assert_eq!(row.global_pre_heap_pruned_candidate_count, 2);
@@ -411,7 +412,11 @@ mod production_executor_state_tests {
             SPIRE_REMOTE_PRODUCTION_REMOTE_HEAP_ROW_MISSING,
         ];
 
-        assert_eq!(rows.len(), categories.len(), "matrix categories should be unique");
+        assert_eq!(
+            rows.len(),
+            categories.len(),
+            "matrix categories should be unique"
+        );
         for category in required {
             assert!(categories.contains(category), "missing category {category}");
         }
@@ -456,9 +461,16 @@ mod production_executor_state_tests {
             "missing_or_reindexed_remote_index",
         ];
 
-        assert_eq!(rows.len(), cases.len(), "Stage E fault cases should be unique");
+        assert_eq!(
+            rows.len(),
+            cases.len(),
+            "Stage E fault cases should be unique"
+        );
         for fault_case in required {
-            assert!(cases.contains(fault_case), "missing Stage E case {fault_case}");
+            assert!(
+                cases.contains(fault_case),
+                "missing Stage E case {fault_case}"
+            );
         }
 
         let local_cancel = rows
@@ -613,7 +625,10 @@ mod production_executor_state_tests {
         assert_eq!(rows[0].status, "degraded_skipped");
         assert_eq!(rows[1].node_id, 4);
         assert_eq!(rows[1].skipped_pid_count, 2);
-        assert_eq!(rows[1].first_skip_category, "incompatible_extension_version");
+        assert_eq!(
+            rows[1].first_skip_category,
+            "incompatible_extension_version"
+        );
         assert_eq!(rows[1].first_skip_hint, "none");
         assert_eq!(rows[1].status, "degraded_skipped");
     }
@@ -637,8 +652,14 @@ mod production_executor_state_tests {
             .expect("degraded skip report should include retired tuple transport");
 
         assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].first_skip_category, SPIRE_REMOTE_STATUS_TUPLE_TRANSPORT_RETIRED);
-        assert_eq!(rows[0].first_skip_hint, SPIRE_REMOTE_TUPLE_TRANSPORT_RETIRED_HINT);
+        assert_eq!(
+            rows[0].first_skip_category,
+            SPIRE_REMOTE_STATUS_TUPLE_TRANSPORT_RETIRED
+        );
+        assert_eq!(
+            rows[0].first_skip_hint,
+            SPIRE_REMOTE_TUPLE_TRANSPORT_RETIRED_HINT
+        );
     }
 
     #[test]
@@ -686,9 +707,8 @@ mod production_executor_state_tests {
 
         let mut omitted_collations = valid_typed_payload_fields();
         omitted_collations.payload_collations = None;
-        let payload =
-            decode_remote_typed_tuple_payload_fields_with_limit(omitted_collations, 64)
-                .expect("omitted collations should default to InvalidOid");
+        let payload = decode_remote_typed_tuple_payload_fields_with_limit(omitted_collations, 64)
+            .expect("omitted collations should default to InvalidOid");
         assert_eq!(
             payload.payload_collations,
             vec![pg_sys::InvalidOid, pg_sys::InvalidOid]
@@ -814,7 +834,7 @@ mod production_executor_state_tests {
                     selected_pids: oversized_pids.clone(),
                     top_k: 1,
                     consistency_mode: "strict".to_owned(),
-                initial_threshold_score: None,
+                    initial_threshold_score: None,
                 },
             ])
             .expect("candidate receive cap check should not need a live connection");
@@ -891,7 +911,10 @@ mod production_executor_state_tests {
             SPIRE_REMOTE_STATUS_REMOTE_PAYLOAD_TOO_LARGE
         );
         assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].first_skip_category, SPIRE_REMOTE_STATUS_REMOTE_PAYLOAD_TOO_LARGE);
+        assert_eq!(
+            rows[0].first_skip_category,
+            SPIRE_REMOTE_STATUS_REMOTE_PAYLOAD_TOO_LARGE
+        );
         assert_eq!(rows[0].first_skip_hint, SPIRE_REMOTE_PAYLOAD_TOO_LARGE_HINT);
     }
 
@@ -907,18 +930,22 @@ mod production_executor_state_tests {
                 failed_candidate_receive_result(2, failure_category),
                 ready_candidate_receive_result(3, vec![30], 1),
             ];
-            let row = remote_search_production_executor_state_summary_from_candidate_receive_results(
-                7,
-                &dispatch_rows,
-                &transport_rows,
-                &receive_results,
-            )
-            .expect("strict candidate receive summary should preserve 12a category");
+            let row =
+                remote_search_production_executor_state_summary_from_candidate_receive_results(
+                    7,
+                    &dispatch_rows,
+                    &transport_rows,
+                    &receive_results,
+                )
+                .expect("strict candidate receive summary should preserve 12a category");
 
             assert_eq!(row.candidate_receive_sent_dispatch_count, 2);
             assert_eq!(row.candidate_receive_ready_dispatch_count, 1);
             assert_eq!(row.candidate_receive_failed_dispatch_count, 1);
-            assert_eq!(row.first_candidate_receive_failure_category, failure_category);
+            assert_eq!(
+                row.first_candidate_receive_failure_category,
+                failure_category
+            );
             assert_eq!(row.degraded_skipped_dispatch_count, 0);
             assert_eq!(row.next_executor_step, "compact_candidate_receive");
             assert_eq!(row.status, "remote_candidate_receive_failed");
@@ -976,8 +1003,7 @@ mod production_executor_state_tests {
         let secret_key = remote_conninfo_secret_provider_lookup_key("spire/remote/82")
             .expect("secret key should build");
         std::env::set_var(&secret_key, "host=127.0.0.1 port=1");
-        let mut executor =
-            SpireRemoteFanoutExecutor::from_libpq_dispatch_rows(7, &dispatch_rows);
+        let mut executor = SpireRemoteFanoutExecutor::from_libpq_dispatch_rows(7, &dispatch_rows);
         executor
             .apply_transport_probe_rows(&transport_rows)
             .expect("transport rows should apply");
@@ -1056,9 +1082,10 @@ mod production_executor_state_tests {
         degraded_executor
             .apply_remote_heap_receive_results_with_consistency_mode(&heap_results, "degraded")
             .expect("degraded heap receive rows should apply");
-        let (degraded_heap_ready, degraded_heap_failed, degraded_heap_candidates) = degraded_executor
-            .remote_heap_resolution_counts()
-            .expect("degraded heap counts should build");
+        let (degraded_heap_ready, degraded_heap_failed, degraded_heap_candidates) =
+            degraded_executor
+                .remote_heap_resolution_counts()
+                .expect("degraded heap counts should build");
         let degraded = degraded_executor
             .summary("test", "degraded")
             .expect("degraded heap tuple transport summary should build");
@@ -1109,7 +1136,10 @@ mod production_executor_state_tests {
         assert_eq!(row.candidate_row_count, 1);
         assert_eq!(row.next_executor_step, "compact_candidate_receive");
         assert_eq!(row.status, "remote_candidate_receive_failed");
-        assert_eq!(row.first_candidate_receive_failure_category, "candidate_decode_failed");
+        assert_eq!(
+            row.first_candidate_receive_failure_category,
+            "candidate_decode_failed"
+        );
     }
 
     #[test]
@@ -1143,7 +1173,10 @@ mod production_executor_state_tests {
         assert_eq!(row.candidate_receive_ready_dispatch_count, 1);
         assert_eq!(row.candidate_receive_failed_dispatch_count, 0);
         assert_eq!(row.degraded_skipped_dispatch_count, 1);
-        assert_eq!(row.first_degraded_skip_category, "endpoint_identity_mismatch");
+        assert_eq!(
+            row.first_degraded_skip_category,
+            "endpoint_identity_mismatch"
+        );
         assert_eq!(row.next_executor_step, "remote_heap_resolution");
         assert_eq!(row.status, "degraded_ready");
         assert_eq!(merged.input_count, 1);
@@ -1249,8 +1282,7 @@ mod production_executor_state_tests {
             ready_candidate_receive_result(2, vec![10], 1),
             ready_candidate_receive_result(3, vec![20], 1),
         ];
-        let mut executor =
-            SpireRemoteFanoutExecutor::from_libpq_dispatch_rows(7, &dispatch_rows);
+        let mut executor = SpireRemoteFanoutExecutor::from_libpq_dispatch_rows(7, &dispatch_rows);
         executor
             .apply_transport_probe_rows(&transport_rows)
             .expect("transport rows should apply");
@@ -1289,8 +1321,7 @@ mod production_executor_state_tests {
     #[test]
     fn production_executor_transport_local_cancel_result_cancels_all_dispatches() {
         let dispatch_rows = vec![planned_dispatch(2, 1), planned_dispatch(3, 1)];
-        let mut executor =
-            SpireRemoteFanoutExecutor::from_libpq_dispatch_rows(7, &dispatch_rows);
+        let mut executor = SpireRemoteFanoutExecutor::from_libpq_dispatch_rows(7, &dispatch_rows);
         executor
             .apply_transport_probe_rows(&[failed_transport_row(
                 2,
@@ -1315,8 +1346,7 @@ mod production_executor_state_tests {
     #[test]
     fn production_executor_transport_local_statement_timeout_cancels_all_dispatches() {
         let dispatch_rows = vec![planned_dispatch(2, 1), planned_dispatch(3, 1)];
-        let mut executor =
-            SpireRemoteFanoutExecutor::from_libpq_dispatch_rows(7, &dispatch_rows);
+        let mut executor = SpireRemoteFanoutExecutor::from_libpq_dispatch_rows(7, &dispatch_rows);
         executor
             .apply_transport_probe_rows(&[failed_transport_row(
                 2,
@@ -1346,8 +1376,7 @@ mod production_executor_state_tests {
             2,
             SPIRE_REMOTE_PRODUCTION_LOCAL_QUERY_CANCELLED,
         )];
-        let mut executor =
-            SpireRemoteFanoutExecutor::from_libpq_dispatch_rows(7, &dispatch_rows);
+        let mut executor = SpireRemoteFanoutExecutor::from_libpq_dispatch_rows(7, &dispatch_rows);
         executor
             .apply_transport_probe_rows(&transport_rows)
             .expect("transport rows should apply");
@@ -1439,17 +1468,16 @@ mod production_executor_state_tests {
 
     #[test]
     fn production_executor_compact_receive_requests_use_dispatch_state() {
-        let secret_42 =
-            remote_conninfo_secret_provider_lookup_key("spire/remote/42").expect("key should build");
-        let secret_43 =
-            remote_conninfo_secret_provider_lookup_key("spire/remote/43").expect("key should build");
+        let secret_42 = remote_conninfo_secret_provider_lookup_key("spire/remote/42")
+            .expect("key should build");
+        let secret_43 = remote_conninfo_secret_provider_lookup_key("spire/remote/43")
+            .expect("key should build");
         std::env::set_var(&secret_42, "host=/tmp dbname=postgres");
         std::env::set_var(&secret_43, "host=/tmp dbname=postgres");
 
         let dispatch_rows = vec![planned_dispatch(42, 2), planned_dispatch(43, 1)];
         let transport_rows = vec![ready_transport_row(42, 1), ready_transport_row(43, 1)];
-        let mut executor =
-            SpireRemoteFanoutExecutor::from_libpq_dispatch_rows(7, &dispatch_rows);
+        let mut executor = SpireRemoteFanoutExecutor::from_libpq_dispatch_rows(7, &dispatch_rows);
         executor
             .apply_transport_probe_rows(&transport_rows)
             .expect("transport rows should apply");
@@ -1492,17 +1520,16 @@ mod production_executor_state_tests {
 
     #[test]
     fn production_executor_compact_receive_request_build_isolates_missing_secret() {
-        let secret_52 =
-            remote_conninfo_secret_provider_lookup_key("spire/remote/52").expect("key should build");
-        let secret_53 =
-            remote_conninfo_secret_provider_lookup_key("spire/remote/53").expect("key should build");
+        let secret_52 = remote_conninfo_secret_provider_lookup_key("spire/remote/52")
+            .expect("key should build");
+        let secret_53 = remote_conninfo_secret_provider_lookup_key("spire/remote/53")
+            .expect("key should build");
         std::env::set_var(&secret_52, "host=/tmp dbname=postgres");
         std::env::remove_var(&secret_53);
 
         let dispatch_rows = vec![planned_dispatch(52, 1), planned_dispatch(53, 1)];
         let transport_rows = vec![ready_transport_row(52, 1), ready_transport_row(53, 1)];
-        let mut executor =
-            SpireRemoteFanoutExecutor::from_libpq_dispatch_rows(7, &dispatch_rows);
+        let mut executor = SpireRemoteFanoutExecutor::from_libpq_dispatch_rows(7, &dispatch_rows);
         executor
             .apply_transport_probe_rows(&transport_rows)
             .expect("transport rows should apply");
@@ -1530,17 +1557,16 @@ mod production_executor_state_tests {
 
     #[test]
     fn production_executor_degraded_missing_secret_skips_receive_request() {
-        let secret_72 =
-            remote_conninfo_secret_provider_lookup_key("spire/remote/72").expect("key should build");
-        let secret_73 =
-            remote_conninfo_secret_provider_lookup_key("spire/remote/73").expect("key should build");
+        let secret_72 = remote_conninfo_secret_provider_lookup_key("spire/remote/72")
+            .expect("key should build");
+        let secret_73 = remote_conninfo_secret_provider_lookup_key("spire/remote/73")
+            .expect("key should build");
         std::env::set_var(&secret_72, "host=/tmp dbname=postgres");
         std::env::remove_var(&secret_73);
 
         let dispatch_rows = vec![planned_dispatch(72, 1), planned_dispatch(73, 1)];
         let transport_rows = vec![ready_transport_row(72, 1), ready_transport_row(73, 1)];
-        let mut executor =
-            SpireRemoteFanoutExecutor::from_libpq_dispatch_rows(7, &dispatch_rows);
+        let mut executor = SpireRemoteFanoutExecutor::from_libpq_dispatch_rows(7, &dispatch_rows);
         executor
             .apply_transport_probe_rows(&transport_rows)
             .expect("transport rows should apply");
@@ -1569,14 +1595,13 @@ mod production_executor_state_tests {
 
     #[test]
     fn production_executor_compact_receive_run_applies_adapter_failure() {
-        let secret_62 =
-            remote_conninfo_secret_provider_lookup_key("spire/remote/62").expect("key should build");
+        let secret_62 = remote_conninfo_secret_provider_lookup_key("spire/remote/62")
+            .expect("key should build");
         std::env::set_var(&secret_62, "port=not-a-number dbname=postgres");
 
         let dispatch_rows = vec![planned_dispatch(62, 1)];
         let transport_rows = vec![ready_transport_row(62, 1)];
-        let mut executor =
-            SpireRemoteFanoutExecutor::from_libpq_dispatch_rows(7, &dispatch_rows);
+        let mut executor = SpireRemoteFanoutExecutor::from_libpq_dispatch_rows(7, &dispatch_rows);
         executor
             .apply_transport_probe_rows(&transport_rows)
             .expect("transport row should apply");
@@ -1620,9 +1645,15 @@ mod production_executor_state_tests {
         assert!(coordinator_prepared_xact_intent_state_is_valid(
             "prepare_requested"
         ));
-        assert!(coordinator_prepared_xact_intent_state_is_valid("prepare_acked"));
-        assert!(coordinator_prepared_xact_intent_state_is_valid("commit_local"));
-        assert!(coordinator_prepared_xact_intent_state_is_valid("rollback_local"));
+        assert!(coordinator_prepared_xact_intent_state_is_valid(
+            "prepare_acked"
+        ));
+        assert!(coordinator_prepared_xact_intent_state_is_valid(
+            "commit_local"
+        ));
+        assert!(coordinator_prepared_xact_intent_state_is_valid(
+            "rollback_local"
+        ));
         assert!(!coordinator_prepared_xact_intent_state_is_valid("prepared"));
     }
 
@@ -1709,9 +1740,8 @@ mod production_executor_state_tests {
         let missing_key = remote_conninfo_secret_provider_lookup_key(missing_secret)
             .expect("missing secret lookup key should build");
         std::env::remove_var(&missing_key);
-        let missing_warning =
-            remote_prepared_transaction_registration_warning(missing_secret, 2)
-                .expect("missing secret should warn");
+        let missing_warning = remote_prepared_transaction_registration_warning(missing_secret, 2)
+            .expect("missing secret should warn");
         assert!(missing_warning.contains("max_prepared_transactions preflight"));
         assert!(missing_warning.contains("conninfo_secret_missing"));
 
@@ -1719,9 +1749,8 @@ mod production_executor_state_tests {
         let empty_key = remote_conninfo_secret_provider_lookup_key(empty_secret)
             .expect("empty secret lookup key should build");
         std::env::set_var(&empty_key, "");
-        let empty_warning =
-            remote_prepared_transaction_registration_warning(empty_secret, 3)
-                .expect("empty secret should warn");
+        let empty_warning = remote_prepared_transaction_registration_warning(empty_secret, 3)
+            .expect("empty secret should warn");
         std::env::remove_var(&empty_key);
         assert!(empty_warning.contains("max_prepared_transactions preflight"));
         assert!(empty_warning.contains("conninfo_secret_empty"));

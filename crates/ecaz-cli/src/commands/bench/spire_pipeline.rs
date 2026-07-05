@@ -4191,9 +4191,14 @@ struct ProductionReadProfileAggregate {
     remote_cancel_count_sum: i64,
     degraded_skipped_dispatch_count_sum: i64,
     returned_candidate_count_sum: i64,
+    manifest_load_elapsed: Vec<Duration>,
+    leaf_count_elapsed: Vec<Duration>,
+    route_select_elapsed: Vec<Duration>,
+    local_heap_elapsed: Vec<Duration>,
     connect_elapsed: Vec<Duration>,
     endpoint_identity_elapsed: Vec<Duration>,
     candidate_receive_elapsed: Vec<Duration>,
+    candidate_decode_elapsed: Vec<Duration>,
     heap_receive_elapsed: Vec<Duration>,
     payload_decode_elapsed: Vec<Duration>,
     merge_elapsed: Vec<Duration>,
@@ -4240,12 +4245,22 @@ impl ProductionReadProfileAggregate {
         self.degraded_skipped_dispatch_count_sum +=
             row.i64_metric("degraded_skipped_dispatch_count");
         self.returned_candidate_count_sum += row.i64_metric("returned_candidate_count");
+        self.manifest_load_elapsed
+            .push(row.duration_metric("manifest_load_elapsed_ms"));
+        self.leaf_count_elapsed
+            .push(row.duration_metric("leaf_count_elapsed_ms"));
+        self.route_select_elapsed
+            .push(row.duration_metric("route_select_elapsed_ms"));
+        self.local_heap_elapsed
+            .push(row.duration_metric("local_heap_elapsed_ms"));
         self.connect_elapsed
             .push(row.duration_metric("connect_elapsed_ms"));
         self.endpoint_identity_elapsed
             .push(row.duration_metric("endpoint_identity_elapsed_ms"));
         self.candidate_receive_elapsed
             .push(row.duration_metric("candidate_receive_elapsed_ms"));
+        self.candidate_decode_elapsed
+            .push(row.duration_metric("candidate_decode_elapsed_ms"));
         self.heap_receive_elapsed
             .push(row.duration_metric("heap_receive_elapsed_ms"));
         self.payload_decode_elapsed
@@ -5025,6 +5040,18 @@ fn render_production_read_profile_table(
         "remote_heap_candidate_sum",
         "local_heap_candidate_sum",
         "socket_open_sum",
+        "manifest_load_p50",
+        "manifest_load_p95",
+        "manifest_load_p99",
+        "leaf_count_p50",
+        "leaf_count_p95",
+        "leaf_count_p99",
+        "route_select_p50",
+        "route_select_p95",
+        "route_select_p99",
+        "local_heap_p50",
+        "local_heap_p95",
+        "local_heap_p99",
         "connect_p50",
         "connect_p95",
         "connect_p99",
@@ -5034,6 +5061,9 @@ fn render_production_read_profile_table(
         "candidate_p50",
         "candidate_p95",
         "candidate_p99",
+        "candidate_decode_p50",
+        "candidate_decode_p95",
+        "candidate_decode_p99",
         "heap_p50",
         "heap_p95",
         "heap_p99",
@@ -5065,9 +5095,14 @@ fn render_production_read_profile_table(
         "returned_sum",
     ]);
     for (nprobe, aggregate) in rows {
+        let manifest_load = summarize_durations(&aggregate.manifest_load_elapsed);
+        let leaf_count = summarize_durations(&aggregate.leaf_count_elapsed);
+        let route_select = summarize_durations(&aggregate.route_select_elapsed);
+        let local_heap = summarize_durations(&aggregate.local_heap_elapsed);
         let connect = summarize_durations(&aggregate.connect_elapsed);
         let endpoint_identity = summarize_durations(&aggregate.endpoint_identity_elapsed);
         let candidate = summarize_durations(&aggregate.candidate_receive_elapsed);
+        let candidate_decode = summarize_durations(&aggregate.candidate_decode_elapsed);
         let heap = summarize_durations(&aggregate.heap_receive_elapsed);
         let payload_decode = summarize_durations(&aggregate.payload_decode_elapsed);
         let merge = summarize_durations(&aggregate.merge_elapsed);
@@ -5088,6 +5123,18 @@ fn render_production_read_profile_table(
             Cell::new(aggregate.remote_heap_candidate_count_sum),
             Cell::new(aggregate.local_heap_candidate_count_sum),
             Cell::new(aggregate.socket_open_count_sum),
+            Cell::new(format_duration_ms(manifest_load.p50)),
+            Cell::new(format_duration_ms(manifest_load.p95)),
+            Cell::new(format_duration_ms(manifest_load.p99)),
+            Cell::new(format_duration_ms(leaf_count.p50)),
+            Cell::new(format_duration_ms(leaf_count.p95)),
+            Cell::new(format_duration_ms(leaf_count.p99)),
+            Cell::new(format_duration_ms(route_select.p50)),
+            Cell::new(format_duration_ms(route_select.p95)),
+            Cell::new(format_duration_ms(route_select.p99)),
+            Cell::new(format_duration_ms(local_heap.p50)),
+            Cell::new(format_duration_ms(local_heap.p95)),
+            Cell::new(format_duration_ms(local_heap.p99)),
             Cell::new(format_duration_ms(connect.p50)),
             Cell::new(format_duration_ms(connect.p95)),
             Cell::new(format_duration_ms(connect.p99)),
@@ -5097,6 +5144,9 @@ fn render_production_read_profile_table(
             Cell::new(format_duration_ms(candidate.p50)),
             Cell::new(format_duration_ms(candidate.p95)),
             Cell::new(format_duration_ms(candidate.p99)),
+            Cell::new(format_duration_ms(candidate_decode.p50)),
+            Cell::new(format_duration_ms(candidate_decode.p95)),
+            Cell::new(format_duration_ms(candidate_decode.p99)),
             Cell::new(format_duration_ms(heap.p50)),
             Cell::new(format_duration_ms(heap.p95)),
             Cell::new(format_duration_ms(heap.p99)),
@@ -6181,9 +6231,14 @@ mod tests {
                 ("remote_heap_candidate_count".into(), "5".into()),
                 ("local_heap_candidate_count".into(), "1".into()),
                 ("socket_open_count".into(), "2".into()),
+                ("manifest_load_elapsed_ms".into(), "11".into()),
+                ("leaf_count_elapsed_ms".into(), "12".into()),
+                ("route_select_elapsed_ms".into(), "13".into()),
+                ("local_heap_elapsed_ms".into(), "14".into()),
                 ("connect_elapsed_ms".into(), "1".into()),
                 ("endpoint_identity_elapsed_ms".into(), "2".into()),
                 ("candidate_receive_elapsed_ms".into(), "5".into()),
+                ("candidate_decode_elapsed_ms".into(), "4".into()),
                 ("heap_receive_elapsed_ms".into(), "7".into()),
                 ("payload_decode_elapsed_ms".into(), "3".into()),
                 ("merge_elapsed_ms".into(), "1".into()),
@@ -6212,6 +6267,11 @@ mod tests {
 
         let rendered = render_production_read_profile_table(&rows);
         assert!(rendered.contains("Production read profile"));
+        assert!(rendered.contains("manifest_load_p95"));
+        assert!(rendered.contains("leaf_count_p99"));
+        assert!(rendered.contains("route_select_p95"));
+        assert!(rendered.contains("local_heap_p99"));
+        assert!(rendered.contains("candidate_decode_p95"));
         assert!(rendered.contains("connect_p99"));
         assert!(rendered.contains("connect_p95"));
         assert!(rendered.contains("heap_p99"));

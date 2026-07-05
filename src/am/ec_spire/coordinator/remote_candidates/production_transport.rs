@@ -38,6 +38,10 @@ fn is_remote_cancel_failure_category(failure_category: &str) -> bool {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct SpireRemoteProductionReadMetrics {
     planning_elapsed_ms: u64,
+    manifest_load_elapsed_ms: u64,
+    leaf_count_elapsed_ms: u64,
+    route_select_elapsed_ms: u64,
+    local_heap_elapsed_ms: u64,
     fingerprint_guard_elapsed_ms: u64,
     conninfo_secret_lookup_elapsed_ms: u64,
     connect_elapsed_ms: u64,
@@ -45,6 +49,7 @@ struct SpireRemoteProductionReadMetrics {
     regclass_probe_elapsed_ms: u64,
     endpoint_identity_elapsed_ms: u64,
     candidate_receive_elapsed_ms: u64,
+    candidate_decode_elapsed_ms: u64,
     heap_receive_elapsed_ms: u64,
     payload_decode_elapsed_ms: u64,
     merge_elapsed_ms: u64,
@@ -79,7 +84,9 @@ impl SpireRemoteProductionReadMetrics {
         self.conninfo_secret_lookup_elapsed_ms = self
             .conninfo_secret_lookup_elapsed_ms
             .saturating_add(other.conninfo_secret_lookup_elapsed_ms);
-        self.connect_elapsed_ms = self.connect_elapsed_ms.saturating_add(other.connect_elapsed_ms);
+        self.connect_elapsed_ms = self
+            .connect_elapsed_ms
+            .saturating_add(other.connect_elapsed_ms);
         self.statement_timeout_setup_elapsed_ms = self
             .statement_timeout_setup_elapsed_ms
             .saturating_add(other.statement_timeout_setup_elapsed_ms);
@@ -92,6 +99,9 @@ impl SpireRemoteProductionReadMetrics {
         self.candidate_receive_elapsed_ms = self
             .candidate_receive_elapsed_ms
             .saturating_add(other.candidate_receive_elapsed_ms);
+        self.candidate_decode_elapsed_ms = self
+            .candidate_decode_elapsed_ms
+            .saturating_add(other.candidate_decode_elapsed_ms);
         self.heap_receive_elapsed_ms = self
             .heap_receive_elapsed_ms
             .saturating_add(other.heap_receive_elapsed_ms);
@@ -101,9 +111,15 @@ impl SpireRemoteProductionReadMetrics {
         self.conninfo_secret_lookup_count = self
             .conninfo_secret_lookup_count
             .saturating_add(other.conninfo_secret_lookup_count);
-        self.socket_open_count = self.socket_open_count.saturating_add(other.socket_open_count);
-        self.tls_disable_count = self.tls_disable_count.saturating_add(other.tls_disable_count);
-        self.tls_require_count = self.tls_require_count.saturating_add(other.tls_require_count);
+        self.socket_open_count = self
+            .socket_open_count
+            .saturating_add(other.socket_open_count);
+        self.tls_disable_count = self
+            .tls_disable_count
+            .saturating_add(other.tls_disable_count);
+        self.tls_require_count = self
+            .tls_require_count
+            .saturating_add(other.tls_require_count);
         self.tls_verify_full_count = self
             .tls_verify_full_count
             .saturating_add(other.tls_verify_full_count);
@@ -552,8 +568,7 @@ impl SpireRemoteProductionDispatch {
                 ));
             };
             let batch_candidate_count = u64::try_from(batch.candidates.len()).map_err(|_| {
-                "ec_spire production executor candidate receive batch count exceeds u64"
-                    .to_owned()
+                "ec_spire production executor candidate receive batch count exceeds u64".to_owned()
             })?;
             if result.candidate_count != batch_candidate_count {
                 return Err(format!(
@@ -727,8 +742,8 @@ impl SpireRemoteFanoutExecutor {
         rows: &[SpireRemoteProductionTransportProbeRow],
         consistency_mode: &str,
     ) -> Result<(), String> {
-        let degraded =
-            parse_remote_search_consistency_mode(consistency_mode)? == meta::SpireConsistencyMode::Degraded;
+        let degraded = parse_remote_search_consistency_mode(consistency_mode)?
+            == meta::SpireConsistencyMode::Degraded;
         if let Some(cancelled_row) = rows
             .iter()
             .find(|row| is_local_cancellation_failure_category(row.failure_category))
@@ -780,8 +795,8 @@ impl SpireRemoteFanoutExecutor {
         results: &[SpireRemoteProductionCandidateReceiveResult],
         consistency_mode: &str,
     ) -> Result<(), String> {
-        let degraded =
-            parse_remote_search_consistency_mode(consistency_mode)? == meta::SpireConsistencyMode::Degraded;
+        let degraded = parse_remote_search_consistency_mode(consistency_mode)?
+            == meta::SpireConsistencyMode::Degraded;
         if let Some(cancelled_result) = results
             .iter()
             .find(|result| is_local_cancellation_failure_category(result.failure_category))
@@ -826,8 +841,8 @@ impl SpireRemoteFanoutExecutor {
         results: &[SpireRemoteProductionHeapReceiveResult],
         consistency_mode: &str,
     ) -> Result<(), String> {
-        let degraded =
-            parse_remote_search_consistency_mode(consistency_mode)? == meta::SpireConsistencyMode::Degraded;
+        let degraded = parse_remote_search_consistency_mode(consistency_mode)?
+            == meta::SpireConsistencyMode::Degraded;
         if let Some(cancelled_result) = results
             .iter()
             .find(|result| is_local_cancellation_failure_category(result.failure_category))
@@ -886,8 +901,7 @@ impl SpireRemoteFanoutExecutor {
             if dispatch.state == SpireRemoteProductionDispatchState::Planned {
                 dispatch.state = SpireRemoteProductionDispatchState::TransportReady;
                 dispatch.status = SPIRE_REMOTE_STATUS_REQUIRES_COMPACT_CANDIDATE_RECEIVE;
-                dispatch.next_executor_step =
-                    SPIRE_REMOTE_EXECUTOR_STEP_COMPACT_CANDIDATE_RECEIVE;
+                dispatch.next_executor_step = SPIRE_REMOTE_EXECUTOR_STEP_COMPACT_CANDIDATE_RECEIVE;
             }
         }
     }
@@ -898,7 +912,13 @@ impl SpireRemoteFanoutExecutor {
         top_k: usize,
         consistency_mode: &str,
     ) -> Result<Vec<SpireRemoteProductionCandidateReceiveRequest>, String> {
-        self.compact_candidate_receive_requests_with_metrics(query, top_k, consistency_mode, None, None)
+        self.compact_candidate_receive_requests_with_metrics(
+            query,
+            top_k,
+            consistency_mode,
+            None,
+            None,
+        )
     }
 
     fn compact_candidate_receive_requests_with_metrics(
@@ -909,8 +929,8 @@ impl SpireRemoteFanoutExecutor {
         initial_threshold_score: Option<f32>,
         mut metrics: Option<&mut SpireRemoteProductionReadMetrics>,
     ) -> Result<Vec<SpireRemoteProductionCandidateReceiveRequest>, String> {
-        let degraded =
-            parse_remote_search_consistency_mode(consistency_mode)? == meta::SpireConsistencyMode::Degraded;
+        let degraded = parse_remote_search_consistency_mode(consistency_mode)?
+            == meta::SpireConsistencyMode::Degraded;
         let mut requests = Vec::new();
         let mut secret_lookup_count = self.conninfo_secret_lookup_count;
         for dispatch in &mut self.dispatches {
@@ -948,8 +968,12 @@ impl SpireRemoteFanoutExecutor {
                         initial_threshold_score,
                     });
                 }
-                Err(_) if degraded => dispatch.apply_degraded_skip(SPIRE_REMOTE_STATUS_REQUIRES_SECRET),
-                Err(_) => dispatch.apply_candidate_receive_failure(SPIRE_REMOTE_STATUS_REQUIRES_SECRET),
+                Err(_) if degraded => {
+                    dispatch.apply_degraded_skip(SPIRE_REMOTE_STATUS_REQUIRES_SECRET)
+                }
+                Err(_) => {
+                    dispatch.apply_candidate_receive_failure(SPIRE_REMOTE_STATUS_REQUIRES_SECRET)
+                }
             }
         }
         self.conninfo_secret_lookup_count = secret_lookup_count;
@@ -994,11 +1018,12 @@ impl SpireRemoteFanoutExecutor {
                 metrics: SpireRemoteProductionReadMetrics::default(),
             });
         }
-        let result = SpireRemoteProductionTransportAdapter::run_candidate_and_heap_receive_requests(
-            requests,
-            tuple_payload_columns.map(<[String]>::to_vec),
-            consistency_mode,
-        )?;
+        let result =
+            SpireRemoteProductionTransportAdapter::run_candidate_and_heap_receive_requests(
+                requests,
+                tuple_payload_columns.map(<[String]>::to_vec),
+                consistency_mode,
+            )?;
         self.socket_open_count = self
             .socket_open_count
             .saturating_add(result.metrics.socket_open_count);
@@ -1027,8 +1052,8 @@ impl SpireRemoteFanoutExecutor {
         consistency_mode: &str,
         tuple_payload_columns: Option<&[String]>,
     ) -> Result<Vec<SpireRemoteProductionHeapReceiveRequest>, String> {
-        let degraded =
-            parse_remote_search_consistency_mode(consistency_mode)? == meta::SpireConsistencyMode::Degraded;
+        let degraded = parse_remote_search_consistency_mode(consistency_mode)?
+            == meta::SpireConsistencyMode::Degraded;
         let mut requests = Vec::new();
         let mut secret_lookup_count = self.conninfo_secret_lookup_count;
         for dispatch in &mut self.dispatches {
@@ -1056,7 +1081,9 @@ impl SpireRemoteFanoutExecutor {
                     consistency_mode: consistency_mode.to_owned(),
                     tuple_payload_columns: tuple_payload_columns.map(<[String]>::to_vec),
                 }),
-                Err(_) if degraded => dispatch.apply_degraded_skip(SPIRE_REMOTE_STATUS_REQUIRES_SECRET),
+                Err(_) if degraded => {
+                    dispatch.apply_degraded_skip(SPIRE_REMOTE_STATUS_REQUIRES_SECRET)
+                }
                 Err(_) => {
                     let now = std::time::Instant::now();
                     let result = failed_production_heap_receive_result(
@@ -1080,8 +1107,12 @@ impl SpireRemoteFanoutExecutor {
         consistency_mode: &str,
         tuple_payload_columns: Option<&[String]>,
     ) -> Result<(), String> {
-        let requests =
-            self.remote_heap_receive_requests(query, top_k, consistency_mode, tuple_payload_columns)?;
+        let requests = self.remote_heap_receive_requests(
+            query,
+            top_k,
+            consistency_mode,
+            tuple_payload_columns,
+        )?;
         if requests.is_empty() {
             return Ok(());
         }
@@ -1684,7 +1715,11 @@ impl SpireRemoteFanoutExecutor {
                 "return ready heap-resolved rows and report degraded skipped dispatches",
             )
         } else if remote_heap_ready_dispatch_count > 0 {
-            (SPIRE_REMOTE_NONE, SPIRE_REMOTE_STATUS_READY, SPIRE_REMOTE_NONE)
+            (
+                SPIRE_REMOTE_NONE,
+                SPIRE_REMOTE_STATUS_READY,
+                SPIRE_REMOTE_NONE,
+            )
         } else if candidate_receive_ready_dispatch_count > 0 && degraded_skipped_dispatch_count > 0
         {
             (
@@ -1705,7 +1740,11 @@ impl SpireRemoteFanoutExecutor {
                 "wire origin-node remote heap resolution before returning SQL rows",
             )
         } else {
-            (SPIRE_REMOTE_NONE, SPIRE_REMOTE_STATUS_READY, SPIRE_REMOTE_NONE)
+            (
+                SPIRE_REMOTE_NONE,
+                SPIRE_REMOTE_STATUS_READY,
+                SPIRE_REMOTE_NONE,
+            )
         };
 
         Ok(SpireRemoteProductionExecutorStateSummaryRow {
