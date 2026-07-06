@@ -1064,7 +1064,9 @@ unsafe fn store_scan_prepared_query(
         quantizer
             .prepare_ip_query_with_pq_model(query, model)
             .unwrap_or_else(|e| pgrx::error!("ec_ivf failed to prepare scan query: {e}"))
-    } else if metadata.turboquant_profile == TurboQuantProfile::TqPlus {
+    } else if metadata.storage_format == StorageFormat::TurboQuant
+        && metadata.turboquant_profile == TurboQuantProfile::TqPlus
+    {
         let model =
             tq_calibration_model_for_scan(opaque, index_relation, metadata).unwrap_or_else(|e| {
                 pgrx::error!("ec_ivf failed to load TurboQuant calibration model: {e}")
