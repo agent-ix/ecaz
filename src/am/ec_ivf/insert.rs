@@ -112,7 +112,12 @@ unsafe fn reencode_tuple_for_storage(
             // from it; the model chain is validated by the loader.
             let model = unsafe { quantizer::load_pq_fastscan_model(index_relation, metadata) }?;
             ivf_quantizer.encode_source_with_pq_model(&tuple.source_vector, &model)?
-        } else if metadata.turboquant_profile == options::TurboQuantProfile::TqPlus {
+        } else if metadata.turboquant_profile == options::TurboQuantProfile::TqPlus
+            && matches!(
+                metadata.storage_format,
+                options::StorageFormat::Auto | options::StorageFormat::TurboQuant
+            )
+        {
             let model = unsafe { quantizer::load_tq_calibration_model(index_relation, metadata) }?;
             ivf_quantizer.encode_source_with_tq_calibration_model(&tuple.source_vector, &model)?
         } else {

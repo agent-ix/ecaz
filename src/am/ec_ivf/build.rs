@@ -673,6 +673,14 @@ impl BuildState {
         } else {
             None
         };
+        let tq_posting_calibration_model = if matches!(
+            self.options.storage_format,
+            options::StorageFormat::Auto | options::StorageFormat::TurboQuant
+        ) {
+            tq_calibration_model.as_ref()
+        } else {
+            None
+        };
         // Task 115: when residual encoding is gated on (RaBitQ only), resolve a
         // residual-mode quantizer once; postings are re-encoded against their
         // assigned centroid inside the per-list loop below.
@@ -728,7 +736,7 @@ impl BuildState {
                     let (heap_tid, gamma, payload) = encode_build_posting(
                         &self.heap_tuples[*tuple_index],
                         &pq_model,
-                        &tq_calibration_model,
+                        tq_posting_calibration_model,
                         pq_posting_quantizer,
                         residual_posting,
                     )?;
@@ -780,7 +788,7 @@ impl BuildState {
                     let (heap_tid, gamma, payload) = encode_build_posting(
                         &self.heap_tuples[*tuple_index],
                         &pq_model,
-                        &tq_calibration_model,
+                        tq_posting_calibration_model,
                         pq_posting_quantizer,
                         residual_posting,
                     )?;
@@ -1308,7 +1316,7 @@ fn insert_dense_posting_group(
 fn encode_build_posting(
     tuple: &BuildTuple,
     pq_model: &Option<IvfPqFastScanModel>,
-    tq_calibration_model: &Option<IvfTqCalibrationModel>,
+    tq_calibration_model: Option<&IvfTqCalibrationModel>,
     pq_posting_quantizer: Option<IvfQuantizer>,
     residual_posting: Option<(IvfQuantizer, &[f32])>,
 ) -> Result<(ItemPointer, f32, Vec<u8>), String> {
@@ -1695,6 +1703,21 @@ mod tests {
         }
     }
 
+    fn tuple_for_quantizer(
+        offset_number: u16,
+        source_vector: Vec<f32>,
+        quantizer: IvfQuantizer,
+    ) -> BuildTuple {
+        let (dimensions, gamma, payload) = quantizer.encode_source(&source_vector).unwrap();
+        BuildTuple {
+            heap_tid: tid(offset_number),
+            dimensions,
+            gamma,
+            payload,
+            source_vector,
+        }
+    }
+
     fn model(centroids: Vec<Vec<f32>>) -> training::SphericalKMeansModel {
         training::SphericalKMeansModel {
             dimensions: centroids.first().map_or(0, Vec::len),
@@ -1829,6 +1852,72 @@ mod tests {
         assert_eq!(dense.gammas.len(), 2);
         assert_eq!(dense.heap_tids.len(), 2);
         assert_eq!(dense.payloads.len(), 2 * payload_len);
+    }
+
+    #[test]
+    fn tqplus_coarse_rerank_dense_postings_keep_coarse_payload_width() {
+        let mut opts = options(0, 2);
+        opts.storage_format = options::StorageFormat::CoarseRerank;
+        opts.turboquant_profile = options::TurboQuantProfile::TqPlus;
+        opts.rerank_placement = options::RerankPlacement::Index;
+        opts.rerank_format = options::RerankFormat::TurboQuant;
+        opts.rerank_width = 2;
+        opts.stage2_final_rerank_width = 1;
+        opts.quant_bits = 1;
+        opts.coarse_bits = 1;
+        opts.dense_posting_blocks = true;
+
+        let dimensions = 1536;
+        let coarse_quantizer = IvfQuantizer::resolve_with_pq_group_size_and_bits(
+            options::StorageFormat::CoarseRerank,
+            dimensions,
+            None,
+            Some(1),
+        )
+        .unwrap();
+        let coarse_payload_len = coarse_quantizer.payload_len();
+        let tq_payload_len = IvfQuantizer::resolve(options::StorageFormat::TurboQuant, dimensions)
+            .unwrap()
+            .payload_len();
+        assert_ne!(coarse_payload_len, tq_payload_len);
+
+        let mut state = BuildState::new(opts, IndexedVectorKind::Ecvector);
+        let source = |sign: f32, phase: f32| {
+            (0..dimensions)
+                .map(|index| sign * ((((index % 17) + 1) as f32 / 17.0) + phase))
+                .collect::<Vec<_>>()
+        };
+        let sources = [
+            source(1.0, 0.01),
+            source(0.9, 0.03),
+            source(-1.0, 0.02),
+            source(-0.9, 0.04),
+        ];
+        for (index, source) in sources.into_iter().enumerate() {
+            state
+                .try_push(tuple_for_quantizer(
+                    (index + 1) as u16,
+                    source,
+                    coarse_quantizer,
+                ))
+                .unwrap();
+        }
+
+        let centroids = model(vec![vec![0.4; dimensions], vec![-0.4; dimensions]]);
+        let plan = state.stage_build_plan(&centroids).unwrap();
+
+        for posting_tids in &plan.posting_tids_by_list {
+            for tid in posting_tids {
+                let dense = plan
+                    .data_pages
+                    .read_ivf_dense_posting_block(*tid, coarse_payload_len)
+                    .unwrap();
+                assert_eq!(
+                    dense.payloads.len(),
+                    dense.gammas.len() * coarse_payload_len
+                );
+            }
+        }
     }
 
     #[test]
