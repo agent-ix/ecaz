@@ -1,0 +1,14 @@
+run_dir=target/t145bpeng2-50n1024
+coord_port=39700
+remote1_port=39701
+remote2_port=39702
+remote3_port=39703
+tier=representative
+prefix=ec_real_50k
+install_profile=release
+node_build_profile node_id=1 name=coord port=39700 profile=release
+node_build_profile node_id=2 name=remote1 port=39701 profile=release
+node_build_profile node_id=3 name=remote2 port=39702 profile=release
+node_build_profile node_id=4 name=remote3 port=39703 profile=release
+SPIRE local multinode fixture passed
+HARNESS PASSED
