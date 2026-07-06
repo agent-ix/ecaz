@@ -1,0 +1,192 @@
+{
+  "name": "task145-remote-rerank-width-ab-rerun",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-145/006-remote-rerank-width-ab-rerun/artifacts/top-suite",
+  "defaults": {
+    "pg": 18
+  },
+  "thresholds": [],
+  "_doc": {
+    "intent": "Task 145 Phase 0 remote-path rerank_width A/B rerun after packet 005 split the production-read result limit from the remote heap frontier limit.",
+    "scales": [
+      "10k n128/b0",
+      "50k n1024/b0",
+      "100k n1024/b0"
+    ],
+    "nprobe_sweep": [
+      8,
+      16,
+      32,
+      64,
+      96
+    ],
+    "queries_limit": 200,
+    "held_constant": [
+      "storage_format=rabitq",
+      "boundary_replica_count=0",
+      "source_identity=include",
+      "leaf_score_only_routing=on",
+      "route_overfetch_multiplier=1.0",
+      "probe_distance_ratio=0",
+      "max_remote_payload_bytes_per_row=16384"
+    ]
+  },
+  "steps": [
+    {
+      "kind": "spire-local-multinode",
+      "name": "remote-10k-n128-rerank-ab",
+      "tags": [
+        "task145",
+        "remote",
+        "release",
+        "10k",
+        "n128",
+        "rerank-width-ab"
+      ],
+      "artifact_dir": "reviews/task-145/006-remote-rerank-width-ab-rerun/artifacts/remote-10k-n128-r6",
+      "run_dir": "target/t145r6c-10n128",
+      "run_id": "t145r6c-10n128",
+      "tier": "representative",
+      "prefix": "ec_real_10k",
+      "prepared_prefix": "ec_real_10k",
+      "prepared_dir": "data/staged-current",
+      "storage_format": "rabitq",
+      "coord_index": "t145_r6_10_n128_coord_idx",
+      "remote_index": "t145_r6_10_n128_remote_idx",
+      "reloptions": [
+        "nlists=128",
+        "recursive_fanout=8",
+        "top_graph_enabled=1",
+        "top_graph_degree=32",
+        "top_graph_build_list_size=100",
+        "top_graph_search_list_size=96",
+        "boundary_replica_count=0",
+        "training_sample_rows=10000",
+        "source_identity=include"
+      ],
+      "bench_top_k": 10,
+      "bench_queries_limit": 200,
+      "bench_sweep": "8,16,32,64,96",
+      "skip_bench_rowcap": true,
+      "bench_query_metric_projection_columns": [
+        "id",
+        "source"
+      ],
+      "bench_session_gucs": [
+        "ec_spire.leaf_score_only_routing=on",
+        "ec_spire.route_overfetch_multiplier=1.0",
+        "ec_spire.probe_distance_ratio=0",
+        "ec_spire.max_remote_payload_bytes_per_row=16384"
+      ],
+      "bench_production_read_variants": [
+        "name=rerank-full;projection=id,source;guc=ec_spire.rerank_width=0;guc=ec_spire.max_candidate_rows=100",
+        "name=rerank-50;projection=id,source;guc=ec_spire.rerank_width=50;guc=ec_spire.max_candidate_rows=100"
+      ],
+      "skip_fault_drills": true
+    },
+    {
+      "kind": "spire-local-multinode",
+      "name": "remote-50k-n1024-rerank-ab",
+      "tags": [
+        "task145",
+        "remote",
+        "release",
+        "50k",
+        "n1024",
+        "rerank-width-ab"
+      ],
+      "artifact_dir": "reviews/task-145/006-remote-rerank-width-ab-rerun/artifacts/remote-50k-n1024-r6",
+      "run_dir": "target/t145r6c-50n1024",
+      "run_id": "t145r6c-50n1024",
+      "tier": "representative",
+      "prefix": "ec_real_50k",
+      "prepared_prefix": "ec_real_50k",
+      "prepared_dir": "data/staged-current",
+      "storage_format": "rabitq",
+      "coord_index": "t145_r6_50_n1024_coord_idx",
+      "remote_index": "t145_r6_50_n1024_remote_idx",
+      "reloptions": [
+        "nlists=1024",
+        "recursive_fanout=8",
+        "top_graph_enabled=1",
+        "top_graph_degree=32",
+        "top_graph_build_list_size=100",
+        "top_graph_search_list_size=96",
+        "boundary_replica_count=0",
+        "training_sample_rows=50000",
+        "source_identity=include"
+      ],
+      "bench_top_k": 10,
+      "bench_queries_limit": 200,
+      "bench_sweep": "8,16,32,64,96",
+      "skip_bench_rowcap": true,
+      "bench_query_metric_projection_columns": [
+        "id",
+        "source"
+      ],
+      "bench_session_gucs": [
+        "ec_spire.leaf_score_only_routing=on",
+        "ec_spire.route_overfetch_multiplier=1.0",
+        "ec_spire.probe_distance_ratio=0",
+        "ec_spire.max_remote_payload_bytes_per_row=16384"
+      ],
+      "bench_production_read_variants": [
+        "name=rerank-full;projection=id,source;guc=ec_spire.rerank_width=0;guc=ec_spire.max_candidate_rows=100",
+        "name=rerank-50;projection=id,source;guc=ec_spire.rerank_width=50;guc=ec_spire.max_candidate_rows=100"
+      ],
+      "skip_fault_drills": true
+    },
+    {
+      "kind": "spire-local-multinode",
+      "name": "remote-100k-n1024-rerank-ab",
+      "tags": [
+        "task145",
+        "remote",
+        "release",
+        "100k",
+        "n1024",
+        "rerank-width-ab"
+      ],
+      "artifact_dir": "reviews/task-145/006-remote-rerank-width-ab-rerun/artifacts/remote-100k-n1024-r6",
+      "run_dir": "target/t145r6c-100n1024",
+      "run_id": "t145r6c-100n1024",
+      "tier": "representative",
+      "prefix": "ec_real_100k",
+      "prepared_prefix": "ec_real_100k",
+      "prepared_dir": "data/staged-current",
+      "storage_format": "rabitq",
+      "coord_index": "t145_r6_100_n1024_coord_idx",
+      "remote_index": "t145_r6_100_n1024_remote_idx",
+      "reloptions": [
+        "nlists=1024",
+        "recursive_fanout=8",
+        "top_graph_enabled=1",
+        "top_graph_degree=32",
+        "top_graph_build_list_size=100",
+        "top_graph_search_list_size=96",
+        "boundary_replica_count=0",
+        "training_sample_rows=100000",
+        "source_identity=include"
+      ],
+      "bench_top_k": 10,
+      "bench_queries_limit": 200,
+      "bench_sweep": "8,16,32,64,96",
+      "skip_bench_rowcap": true,
+      "bench_query_metric_projection_columns": [
+        "id",
+        "source"
+      ],
+      "bench_session_gucs": [
+        "ec_spire.leaf_score_only_routing=on",
+        "ec_spire.route_overfetch_multiplier=1.0",
+        "ec_spire.probe_distance_ratio=0",
+        "ec_spire.max_remote_payload_bytes_per_row=16384"
+      ],
+      "bench_production_read_variants": [
+        "name=rerank-full;projection=id,source;guc=ec_spire.rerank_width=0;guc=ec_spire.max_candidate_rows=100",
+        "name=rerank-50;projection=id,source;guc=ec_spire.rerank_width=50;guc=ec_spire.max_candidate_rows=100"
+      ],
+      "skip_fault_drills": true
+    }
+  ]
+}
