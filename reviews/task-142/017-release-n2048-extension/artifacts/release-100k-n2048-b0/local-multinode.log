@@ -1,0 +1,14 @@
+run_dir=target/spire-local-multinode-task142-release-100k-n2048-b0
+coord_port=39800
+remote1_port=39801
+remote2_port=39802
+remote3_port=39803
+tier=representative
+prefix=ec_real_100k
+install_profile=release
+node_build_profile node_id=1 name=coord port=39800 profile=release
+node_build_profile node_id=2 name=remote1 port=39801 profile=release
+node_build_profile node_id=3 name=remote2 port=39802 profile=release
+node_build_profile node_id=4 name=remote3 port=39803 profile=release
+SPIRE local multinode fixture passed
+HARNESS PASSED
