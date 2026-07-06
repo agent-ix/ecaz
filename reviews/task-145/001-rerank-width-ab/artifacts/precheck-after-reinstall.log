@@ -1,0 +1,14 @@
+LOAD
+ ecaz_build_profile 
+--------------------
+ release
+(1 row)
+
+                name                 | setting 
+-------------------------------------+---------
+ ec_spire.leaf_score_only_routing    | off
+ ec_spire.probe_distance_ratio       | 0
+ ec_spire.rerank_width               | -1
+ ec_spire.route_overfetch_multiplier | 1
+(4 rows)
+

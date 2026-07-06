@@ -1,0 +1,5 @@
+release_artifact=target/release/libecaz.so
+installed_backend=/home/peter/.pgrx/18.3/pgrx-install/lib/postgresql/ecaz.so
+113a9599ce22721e490f32484a68f36cc55a8014212533610e2d173cdcaf3cff  target/release/libecaz.so
+113a9599ce22721e490f32484a68f36cc55a8014212533610e2d173cdcaf3cff  /home/peter/.pgrx/18.3/pgrx-install/lib/postgresql/ecaz.so
+cmp_exit=0

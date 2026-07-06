@@ -1,0 +1,2 @@
+createdb_command=/home/peter/.pgrx/18.3/pgrx-install/bin/createdb -h /home/peter/.pgrx -p 28818 tqvector_bench_task145
+createdb_status=0

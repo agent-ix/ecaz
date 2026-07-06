@@ -1,0 +1,70 @@
+LOAD
+                           name                            | setting 
+-----------------------------------------------------------+---------
+ ec_diskann.candidate_batch_scoring                        | on
+ ec_diskann.list_size                                      | -1
+ ec_diskann.prefilter_kind                                 | auto
+ ec_diskann.scan_profile_notice                            | off
+ ec_hnsw.candidate_batch_scoring                           | on
+ ec_hnsw.disable_binary_prefilter                          | off
+ ec_hnsw.ef_search                                         | -1
+ ec_hnsw.enable_parallel_build_concurrent_dsm              | on
+ ec_hnsw.force_binary_derivation                           | off
+ ec_hnsw.turboquant_exact_score_mode                       | exact
+ ec_ivf.adaptive_nprobe                                    | off
+ ec_ivf.adaptive_nprobe_score_gap_micros                   | 1000
+ ec_ivf.adaptive_nprobe_score_margin_ratio_bps             | 0
+ ec_ivf.dense_posting_coalescing                           | on
+ ec_ivf.dense_posting_typed_views                          | on
+ ec_ivf.lazy_heap_rerank                                   | on
+ ec_ivf.nprobe                                             | -1
+ ec_ivf.posting_bound_prune                                | on
+ ec_ivf.rerank_width                                       | -1
+ ec_ivf.scratch_soa_batch_decode                           | on
+ ec_ivf.stage2_final_rerank_width                          | -1
+ ec_spire.adaptive_nprobe                                  | off
+ ec_spire.adaptive_nprobe_score_gap_micros                 | 1000
+ ec_spire.candidate_batch_scoring                          | on
+ ec_spire.cost_index_page_scale                            | 1
+ ec_spire.cost_leaf_dimension_scale                        | 0.01
+ ec_spire.cost_local_store_page_fanout_scale               | 0.05
+ ec_spire.cost_rerank_multiplier                           | 1.35
+ ec_spire.cost_routing_dimension_scale                     | 0.01
+ ec_spire.cost_storage_scoring_multiplier                  | 1
+ ec_spire.leaf_block_pruning_global_probe_blocks           | 0
+ ec_spire.leaf_block_pruning_max_blocks_per_leaf           | 0
+ ec_spire.leaf_block_pruning_max_global_blocks             | 0
+ ec_spire.leaf_block_pruning_route_prior_weight            | 0
+ ec_spire.leaf_block_pruning_sample_rows_per_block         | 0
+ ec_spire.leaf_block_pruning_sample_summary_prior_weight   | 0.8
+ ec_spire.leaf_block_pruning_summary_radius_weight         | 1
+ ec_spire.leaf_block_rows                                  | 0
+ ec_spire.leaf_block_summary_representatives               | 2
+ ec_spire.max_candidate_rows                               | -1
+ ec_spire.max_remote_payload_bytes_per_row                 | 1024
+ ec_spire.max_remote_payload_rows_per_batch                | 128
+ ec_spire.max_routed_candidate_rows                        | 0
+ ec_spire.nprobe                                           | -1
+ ec_spire.pre_materialization_prune                        | off
+ ec_spire.remote_search_connect_timeout_ms                 | 0
+ ec_spire.remote_search_connection_pool_size               | 16
+ ec_spire.remote_search_consistency_mode                   | strict
+ ec_spire.remote_search_global_pre_heap_merge              | off
+ ec_spire.remote_search_initial_threshold_early_stop       | off
+ ec_spire.remote_search_max_concurrent_dispatches          | 0
+ ec_spire.remote_search_max_concurrent_dispatches_per_node | 0
+ ec_spire.remote_search_max_nodes                          | 0
+ ec_spire.remote_search_max_pids                           | 0
+ ec_spire.remote_search_max_pids_per_node                  | 0
+ ec_spire.remote_search_statement_timeout_ms               | 0
+ ec_spire.remote_tuple_transport                           | auto
+ ec_spire.rerank_width                                     | -1
+ ecaz.fault_palloc_nth                                     | -1
+ ecaz.isa_cap                                              | none
+(60 rows)
+
+ spire_rerank 
+--------------
+ -1
+(1 row)
+

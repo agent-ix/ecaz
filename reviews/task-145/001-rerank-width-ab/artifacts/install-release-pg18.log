@@ -1,0 +1,3 @@
+[install] repo=/home/peter/dev/ecaz
+[install] pgrx_home=/home/peter/.pgrx
+[install] pg_config=/home/peter/.pgrx/18.3/pgrx-install/bin/pg_config

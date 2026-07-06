@@ -1,0 +1,6 @@
+LOAD
+         captured_at          |                                            postgres_version                                             | ecaz_build_profile | session_rerank_width | leaf_score_only_routing 
+------------------------------+---------------------------------------------------------------------------------------------------------+--------------------+----------------------+-------------------------
+ 2026-07-06 03:41:30.22566-07 | PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit | release            | -1                   | off
+(1 row)
+
