@@ -309,7 +309,13 @@ fn production_scan_result_and_heap_frontier_limits(
     top_k_override: Option<usize>,
 ) -> (usize, usize) {
     let result_limit = top_k_override.unwrap_or(scan_candidate_limit);
-    let heap_frontier_limit = scan_candidate_limit.max(result_limit);
+    let automatic_unbounded_frontier =
+        usize::try_from(EC_SPIRE_MAX_MAX_CANDIDATE_ROWS).ok() == Some(scan_candidate_limit);
+    let heap_frontier_limit = if top_k_override.is_some() && automatic_unbounded_frontier {
+        result_limit
+    } else {
+        scan_candidate_limit.max(result_limit)
+    };
     (result_limit, heap_frontier_limit)
 }
 

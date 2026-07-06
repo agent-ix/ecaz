@@ -348,6 +348,21 @@ mod production_executor_state_tests {
     }
 
     #[test]
+    fn production_scan_heap_frontier_keeps_auto_width_zero_top_k_bounded() {
+        let automatic_candidate_limit =
+            usize::try_from(EC_SPIRE_MAX_MAX_CANDIDATE_ROWS).expect("candidate ceiling fits usize");
+
+        assert_eq!(
+            production_scan_result_and_heap_frontier_limits(automatic_candidate_limit, Some(10)),
+            (10, 10)
+        );
+        assert_eq!(
+            production_scan_result_and_heap_frontier_limits(automatic_candidate_limit, None),
+            (automatic_candidate_limit, automatic_candidate_limit)
+        );
+    }
+
+    #[test]
     fn explicit_heap_candidate_parameters_encode_binary_fields_as_hex() {
         let candidates = vec![candidate_for_state_test(2, 10, 3)];
 
