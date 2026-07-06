@@ -1351,6 +1351,16 @@ fn remote_search_libpq_executor_scan_profile_for_dispatch(
         row,
         executor_state,
     )?;
+    apply_remote_production_session_gucs_sync(
+        &mut client,
+        &remote_production_leaf_block_pruning_session_gucs(),
+    )
+    .map_err(|category| {
+        format!(
+            "ec_spire production scan profile failed to apply remote scan GUCs for node_id {}: {category}",
+            row.node_id
+        )
+    })?;
     let requested_epoch = i64::try_from(row.requested_epoch)
         .map_err(|_| "ec_spire production scan profile requested_epoch exceeds i64")?;
     let selected_pids = row
@@ -1435,6 +1445,16 @@ fn remote_search_libpq_executor_threshold_profile_for_dispatch(
         row,
         executor_state,
     )?;
+    apply_remote_production_session_gucs_sync(
+        &mut client,
+        &remote_production_leaf_block_pruning_session_gucs(),
+    )
+    .map_err(|category| {
+        format!(
+            "ec_spire production threshold profile failed to apply remote scan GUCs for node_id {}: {category}",
+            row.node_id
+        )
+    })?;
     let requested_epoch = i64::try_from(row.requested_epoch)
         .map_err(|_| "ec_spire production threshold profile requested_epoch exceeds i64")?;
     let selected_pids = row

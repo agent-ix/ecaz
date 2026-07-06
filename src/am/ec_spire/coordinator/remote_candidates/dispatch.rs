@@ -429,6 +429,21 @@ async fn apply_remote_production_session_gucs(
     Ok(())
 }
 
+fn apply_remote_production_session_gucs_sync(
+    client: &mut postgres::Client,
+    session_gucs: &[SpireRemoteProductionSessionGuc],
+) -> Result<(), &'static str> {
+    for session_guc in session_gucs {
+        client
+            .execute(
+                "SELECT set_config($1, $2, false)",
+                &[&session_guc.name, &session_guc.value],
+            )
+            .map_err(|error| production_remote_query_failure_category(&error))?;
+    }
+    Ok(())
+}
+
 struct SpireRemoteExplicitHeapCandidateParameters {
     served_epochs: Vec<i64>,
     pids: Vec<i64>,
