@@ -388,6 +388,203 @@
     }
 
     #[test]
+    fn collect_cached_resolved_scan_plan_selection_reloads_on_epoch_change() {
+        reset_coordinator_routing_hierarchy_cache_for_test();
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+
+        let epoch7_root = SpireRoutingPartitionObject::root_at_level(
+            SPIRE_FIRST_PID,
+            1,
+            2,
+            2,
+            vec![
+                routing_child(0, SPIRE_FIRST_PID + 10, vec![1.0, 0.0]),
+                routing_child(1, SPIRE_FIRST_PID + 20, vec![-1.0, 0.0]),
+            ],
+        )
+        .unwrap();
+        let epoch7_positive_internal = SpireRoutingPartitionObject::internal(
+            SPIRE_FIRST_PID + 10,
+            1,
+            1,
+            SPIRE_FIRST_PID,
+            2,
+            vec![routing_child(0, SPIRE_FIRST_PID + 11, vec![1.0, 0.0])],
+        )
+        .unwrap();
+        let epoch7_negative_internal = SpireRoutingPartitionObject::internal(
+            SPIRE_FIRST_PID + 20,
+            1,
+            1,
+            SPIRE_FIRST_PID,
+            2,
+            vec![routing_child(0, SPIRE_FIRST_PID + 21, vec![-1.0, 0.0])],
+        )
+        .unwrap();
+        let epoch7_placements = vec![
+            object_store.insert_routing_object(7, &epoch7_root).unwrap(),
+            object_store
+                .insert_routing_object(7, &epoch7_positive_internal)
+                .unwrap(),
+            object_store
+                .insert_routing_object(7, &epoch7_negative_internal)
+                .unwrap(),
+            object_store
+                .insert_leaf_object_v2_from_rows(
+                    7,
+                    SPIRE_FIRST_PID + 11,
+                    1,
+                    SPIRE_FIRST_PID + 10,
+                    &[],
+                )
+                .unwrap(),
+            object_store
+                .insert_leaf_object_v2_from_rows(
+                    7,
+                    SPIRE_FIRST_PID + 21,
+                    1,
+                    SPIRE_FIRST_PID + 20,
+                    &[],
+                )
+                .unwrap(),
+        ];
+        let epoch7_manifest = SpireEpochManifest {
+            epoch: 7,
+            state: SpireEpochState::Published,
+            consistency_mode: SpireConsistencyMode::Strict,
+            published_at_micros: 1000,
+            retain_until_micros: 2000,
+            active_query_count: 0,
+        };
+        let epoch7_object_manifest = SpireObjectManifest::from_entries(
+            7,
+            epoch7_placements.iter().map(manifest_entry_for).collect(),
+        )
+        .unwrap();
+        let epoch7_placement_directory =
+            SpirePlacementDirectory::from_entries(7, epoch7_placements).unwrap();
+        let epoch7_snapshot = SpirePublishedEpochSnapshot::new(
+            &epoch7_manifest,
+            &epoch7_object_manifest,
+            &epoch7_placement_directory,
+        )
+        .unwrap();
+
+        let epoch8_root = SpireRoutingPartitionObject::root_at_level(
+            SPIRE_FIRST_PID + 100,
+            1,
+            2,
+            2,
+            vec![
+                routing_child(0, SPIRE_FIRST_PID + 110, vec![-1.0, 0.0]),
+                routing_child(1, SPIRE_FIRST_PID + 120, vec![1.0, 0.0]),
+            ],
+        )
+        .unwrap();
+        let epoch8_negative_internal = SpireRoutingPartitionObject::internal(
+            SPIRE_FIRST_PID + 110,
+            1,
+            1,
+            SPIRE_FIRST_PID + 100,
+            2,
+            vec![routing_child(0, SPIRE_FIRST_PID + 111, vec![-1.0, 0.0])],
+        )
+        .unwrap();
+        let epoch8_positive_internal = SpireRoutingPartitionObject::internal(
+            SPIRE_FIRST_PID + 120,
+            1,
+            1,
+            SPIRE_FIRST_PID + 100,
+            2,
+            vec![routing_child(0, SPIRE_FIRST_PID + 121, vec![1.0, 0.0])],
+        )
+        .unwrap();
+        let epoch8_placements = vec![
+            object_store.insert_routing_object(8, &epoch8_root).unwrap(),
+            object_store
+                .insert_routing_object(8, &epoch8_negative_internal)
+                .unwrap(),
+            object_store
+                .insert_routing_object(8, &epoch8_positive_internal)
+                .unwrap(),
+            object_store
+                .insert_leaf_object_v2_from_rows(
+                    8,
+                    SPIRE_FIRST_PID + 111,
+                    1,
+                    SPIRE_FIRST_PID + 110,
+                    &[],
+                )
+                .unwrap(),
+            object_store
+                .insert_leaf_object_v2_from_rows(
+                    8,
+                    SPIRE_FIRST_PID + 121,
+                    1,
+                    SPIRE_FIRST_PID + 120,
+                    &[],
+                )
+                .unwrap(),
+        ];
+        let epoch8_manifest = SpireEpochManifest {
+            epoch: 8,
+            state: SpireEpochState::Published,
+            consistency_mode: SpireConsistencyMode::Strict,
+            published_at_micros: 3000,
+            retain_until_micros: 4000,
+            active_query_count: 0,
+        };
+        let epoch8_object_manifest = SpireObjectManifest::from_entries(
+            8,
+            epoch8_placements.iter().map(manifest_entry_for).collect(),
+        )
+        .unwrap();
+        let epoch8_placement_directory =
+            SpirePlacementDirectory::from_entries(8, epoch8_placements).unwrap();
+        let epoch8_snapshot = SpirePublishedEpochSnapshot::new(
+            &epoch8_manifest,
+            &epoch8_object_manifest,
+            &epoch8_placement_directory,
+        )
+        .unwrap();
+
+        let options = EcSpireOptions {
+            nprobe: 1,
+            ..EcSpireOptions::DEFAULT
+        };
+        let query = SpireScanQuery::new(vec![1.0, 0.0]).unwrap();
+        let index_relid = 12345;
+
+        let epoch7_selection = collect_cached_resolved_scan_plan_selection(
+            SpireRoutingHierarchyCacheKey {
+                index_relid,
+                active_epoch: 7,
+            },
+            &epoch7_snapshot,
+            &object_store,
+            &options,
+            &query,
+        )
+        .unwrap();
+        let epoch8_selection = collect_cached_resolved_scan_plan_selection(
+            SpireRoutingHierarchyCacheKey {
+                index_relid,
+                active_epoch: 8,
+            },
+            &epoch8_snapshot,
+            &object_store,
+            &options,
+            &query,
+        )
+        .unwrap();
+
+        assert_eq!(epoch7_selection.selected_leaf_pids, vec![SPIRE_FIRST_PID + 11]);
+        assert_eq!(epoch8_selection.selected_leaf_pids, vec![SPIRE_FIRST_PID + 121]);
+        assert_eq!(epoch7_selection.routing_hierarchy_load_count, 1);
+        assert_eq!(epoch8_selection.routing_hierarchy_load_count, 1);
+    }
+
+    #[test]
     fn collect_snapshot_routed_probe_leaf_rows_accepts_recursive_leaf_parent() {
         let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
         let root_pid = SPIRE_FIRST_PID;
