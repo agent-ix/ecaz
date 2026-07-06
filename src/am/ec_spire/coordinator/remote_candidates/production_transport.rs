@@ -932,11 +932,13 @@ impl SpireRemoteFanoutExecutor {
         &mut self,
         query: &[f32],
         top_k: usize,
+        effective_rerank_width: i32,
         consistency_mode: &str,
     ) -> Result<Vec<SpireRemoteProductionCandidateReceiveRequest>, String> {
         self.compact_candidate_receive_requests_with_metrics(
             query,
             top_k,
+            effective_rerank_width,
             consistency_mode,
             None,
             None,
@@ -947,6 +949,7 @@ impl SpireRemoteFanoutExecutor {
         &mut self,
         query: &[f32],
         top_k: usize,
+        effective_rerank_width: i32,
         consistency_mode: &str,
         initial_threshold_score: Option<f32>,
         mut metrics: Option<&mut SpireRemoteProductionReadMetrics>,
@@ -986,6 +989,7 @@ impl SpireRemoteFanoutExecutor {
                         query: query.to_vec(),
                         selected_pids: dispatch.selected_pids.clone(),
                         top_k,
+                        effective_rerank_width,
                         consistency_mode: consistency_mode.to_owned(),
                         initial_threshold_score,
                     });
@@ -1006,9 +1010,15 @@ impl SpireRemoteFanoutExecutor {
         &mut self,
         query: &[f32],
         top_k: usize,
+        effective_rerank_width: i32,
         consistency_mode: &str,
     ) -> Result<(), String> {
-        let requests = self.compact_candidate_receive_requests(query, top_k, consistency_mode)?;
+        let requests = self.compact_candidate_receive_requests(
+            query,
+            top_k,
+            effective_rerank_width,
+            consistency_mode,
+        )?;
         if requests.is_empty() {
             return Ok(());
         }
@@ -1021,6 +1031,7 @@ impl SpireRemoteFanoutExecutor {
         &mut self,
         query: &[f32],
         top_k: usize,
+        effective_rerank_width: i32,
         consistency_mode: &str,
         tuple_payload_columns: Option<&[String]>,
         initial_threshold_score: Option<f32>,
@@ -1029,6 +1040,7 @@ impl SpireRemoteFanoutExecutor {
         let requests = self.compact_candidate_receive_requests_with_metrics(
             query,
             top_k,
+            effective_rerank_width,
             consistency_mode,
             initial_threshold_score,
             Some(metrics),
@@ -1071,6 +1083,7 @@ impl SpireRemoteFanoutExecutor {
         &mut self,
         query: &[f32],
         top_k: usize,
+        effective_rerank_width: i32,
         consistency_mode: &str,
         tuple_payload_columns: Option<&[String]>,
     ) -> Result<Vec<SpireRemoteProductionHeapReceiveRequest>, String> {
@@ -1100,6 +1113,7 @@ impl SpireRemoteFanoutExecutor {
                     query: query.to_vec(),
                     selected_pids: dispatch.selected_pids.clone(),
                     top_k,
+                    effective_rerank_width,
                     consistency_mode: consistency_mode.to_owned(),
                     tuple_payload_columns: tuple_payload_columns.map(<[String]>::to_vec),
                 }),
@@ -1126,12 +1140,14 @@ impl SpireRemoteFanoutExecutor {
         &mut self,
         query: &[f32],
         top_k: usize,
+        effective_rerank_width: i32,
         consistency_mode: &str,
         tuple_payload_columns: Option<&[String]>,
     ) -> Result<(), String> {
         let requests = self.remote_heap_receive_requests(
             query,
             top_k,
+            effective_rerank_width,
             consistency_mode,
             tuple_payload_columns,
         )?;

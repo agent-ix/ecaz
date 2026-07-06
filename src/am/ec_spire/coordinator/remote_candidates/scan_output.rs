@@ -137,6 +137,8 @@ pub(crate) fn remote_search_production_scan_handoff_summary_row(
             &query_for_scan,
         )?;
         let scan_plan = scan_selection.scan_plan;
+        let effective_rerank_width = i32::try_from(scan_plan.rerank_width)
+            .map_err(|_| "ec_spire production scan handoff rerank_width exceeds i32")?;
         let selected_leaf_pids = scan_selection.selected_leaf_pids;
         let selected_pid_count = u64::try_from(selected_leaf_pids.len())
             .map_err(|_| "ec_spire production scan handoff selected PID count exceeds u64")?;
@@ -191,7 +193,12 @@ pub(crate) fn remote_search_production_scan_handoff_summary_row(
             executor.apply_blocked_before_dispatch_degraded_skips();
         }
         executor.mark_planned_dispatches_candidate_receive_ready();
-        executor.run_compact_candidate_receive(&query, top_k, consistency_mode)?;
+        executor.run_compact_candidate_receive(
+            &query,
+            top_k,
+            effective_rerank_width,
+            consistency_mode,
+        )?;
         let summary = executor.summary(
             "ec_spire.remote_search_consistency_mode",
             consistency_mode_name(parsed_consistency_mode),
@@ -747,6 +754,8 @@ fn remote_search_production_scan_heap_resolution_result_stream_impl(
     let fanout_result = executor.run_candidate_and_heap_receive_reusing_sessions(
         &query,
         top_k,
+        i32::try_from(scan_plan.rerank_width)
+            .map_err(|_| "ec_spire production scan heap rerank_width exceeds i32")?,
         consistency_mode,
         tuple_payload_columns,
         initial_threshold_score,
@@ -1095,6 +1104,8 @@ fn remote_search_production_global_candidate_threshold_score_result(
         &relation_options,
         &query_for_scan,
     )?;
+    let effective_rerank_width = i32::try_from(scan_selection.scan_plan.rerank_width)
+        .map_err(|_| "ec_spire production candidate merge rerank_width exceeds i32")?;
     let selected_leaf_pids = scan_selection.selected_leaf_pids;
     let fanout_plan = plan_remote_search_fanout(&snapshot, &selected_leaf_pids)?;
     let mut batches = Vec::new();
@@ -1145,7 +1156,12 @@ fn remote_search_production_global_candidate_threshold_score_result(
         executor.apply_blocked_before_dispatch_degraded_skips();
     }
     executor.mark_planned_dispatches_candidate_receive_ready();
-    executor.run_compact_candidate_receive(query_for_scan.values(), top_k, consistency_mode)?;
+    executor.run_compact_candidate_receive(
+        query_for_scan.values(),
+        top_k,
+        effective_rerank_width,
+        consistency_mode,
+    )?;
     batches.extend(executor.ready_candidate_batches()?);
 
     let merged = merge_validated_remote_search_candidate_batches(

@@ -137,8 +137,9 @@ mod production_executor_state_tests {
             assignment_payload_format: "binary".to_owned(),
             quantizer_profile: "test".to_owned(),
             scoring_profile: "ip".to_owned(),
-            tuple_transport_capabilities: vec![SPIRE_REMOTE_TUPLE_TRANSPORT_PG_BINARY_ATTR_V1
-                .to_owned()],
+            tuple_transport_capabilities: vec![
+                SPIRE_REMOTE_TUPLE_TRANSPORT_PG_BINARY_ATTR_V1.to_owned()
+            ],
             tuple_transport_default: SPIRE_REMOTE_TUPLE_TRANSPORT_PG_BINARY_ATTR_V1.to_owned(),
             tuple_transport_status: SPIRE_REMOTE_STATUS_READY.to_owned(),
             profile_fingerprint,
@@ -1022,6 +1023,7 @@ mod production_executor_state_tests {
                     query: vec![1.0, 0.0],
                     selected_pids: oversized_pids.clone(),
                     top_k: 1,
+                    effective_rerank_width: 1,
                     consistency_mode: "strict".to_owned(),
                     initial_threshold_score: None,
                 },
@@ -1050,6 +1052,7 @@ mod production_executor_state_tests {
                 query: vec![1.0, 0.0],
                 selected_pids: oversized_pids,
                 top_k: 1,
+                effective_rerank_width: 1,
                 consistency_mode: "strict".to_owned(),
                 tuple_payload_columns: Some(vec!["id".to_owned()]),
             },
@@ -1202,11 +1205,12 @@ mod production_executor_state_tests {
         let requested_columns = vec!["id".to_owned(), "title".to_owned()];
 
         let requests = executor
-            .remote_heap_receive_requests(&[1.0, 0.0], 1, "strict", Some(&requested_columns))
+            .remote_heap_receive_requests(&[1.0, 0.0], 1, 1, "strict", Some(&requested_columns))
             .expect("heap receive requests should build");
         std::env::remove_var(secret_key);
 
         assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].effective_rerank_width, 1);
         assert_eq!(
             requests[0].tuple_payload_columns.as_deref(),
             Some(requested_columns.as_slice())
@@ -1675,6 +1679,7 @@ mod production_executor_state_tests {
             .compact_candidate_receive_requests_with_metrics(
                 &[1.0, 0.0],
                 4,
+                9,
                 "strict",
                 threshold,
                 None,
@@ -1700,6 +1705,7 @@ mod production_executor_state_tests {
         assert_eq!(node_42.requested_epoch, 7);
         assert_eq!(node_42.query, vec![1.0, 0.0]);
         assert_eq!(node_42.top_k, 4);
+        assert_eq!(node_42.effective_rerank_width, 9);
         assert_eq!(node_42.consistency_mode, "strict");
         assert_eq!(node_42.initial_threshold_score, threshold);
         assert!(requests
@@ -1723,7 +1729,7 @@ mod production_executor_state_tests {
             .apply_transport_probe_rows(&transport_rows)
             .expect("transport rows should apply");
         let requests = executor
-            .compact_candidate_receive_requests(&[1.0, 0.0], 3, "strict")
+            .compact_candidate_receive_requests(&[1.0, 0.0], 3, 3, "strict")
             .expect("request build should isolate missing secrets");
 
         std::env::remove_var(&secret_52);
@@ -1760,7 +1766,7 @@ mod production_executor_state_tests {
             .apply_transport_probe_rows(&transport_rows)
             .expect("transport rows should apply");
         let requests = executor
-            .compact_candidate_receive_requests(&[1.0, 0.0], 3, "degraded")
+            .compact_candidate_receive_requests(&[1.0, 0.0], 3, 3, "degraded")
             .expect("degraded request build should isolate missing secrets");
 
         std::env::remove_var(&secret_72);
@@ -1795,7 +1801,7 @@ mod production_executor_state_tests {
             .apply_transport_probe_rows(&transport_rows)
             .expect("transport row should apply");
         executor
-            .run_compact_candidate_receive(&[1.0, 0.0], 3, "strict")
+            .run_compact_candidate_receive(&[1.0, 0.0], 3, 3, "strict")
             .expect("adapter failure should stay isolated in executor state");
 
         std::env::remove_var(&secret_62);

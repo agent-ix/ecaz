@@ -868,6 +868,7 @@
         requested_epoch: i64,
         query: Vec<f32>,
         top_k: i32,
+        effective_rerank_width: i32,
         consistency_mode: String,
     ) -> Vec<am::SpireRemoteProductionCandidateReceiveRequest> {
         if node_ids.len() != conninfo_secret_names.len()
@@ -926,6 +927,7 @@
                         query: query.clone(),
                         selected_pids: selected_pids.clone(),
                         top_k,
+                        effective_rerank_width,
                         consistency_mode: consistency_mode.clone(),
                         initial_threshold_score: None,
                     }
@@ -1049,6 +1051,7 @@
         requested_epoch: i64,
         query: Vec<f32>,
         top_k: i32,
+        effective_rerank_width: i32,
         consistency_mode: String,
     ) -> TableIterator<
         'static,
@@ -1072,6 +1075,7 @@
             requested_epoch,
             query,
             top_k,
+            effective_rerank_width,
             consistency_mode,
         );
         let rows = am::spire_remote_search_production_candidate_receive_for_test(requests);
@@ -1101,6 +1105,7 @@
         requested_epoch: i64,
         query: Vec<f32>,
         top_k: i32,
+        effective_rerank_width: i32,
         consistency_mode: String,
         remote_sql_conninfo_secret_name: String,
         remote_sql: String,
@@ -1126,6 +1131,7 @@
             requested_epoch,
             query,
             top_k,
+            effective_rerank_width,
             consistency_mode,
         );
         ec_spire_test_run_remote_sql_after_request_build(
@@ -1160,6 +1166,7 @@
         requested_epoch: i64,
         query: Vec<f32>,
         top_k: i32,
+        effective_rerank_width: i32,
         consistency_mode: String,
     ) -> TableIterator<
         'static,
@@ -1187,6 +1194,7 @@
             requested_epoch,
             query,
             top_k,
+            effective_rerank_width,
             consistency_mode.clone(),
         );
         let row = am::spire_remote_search_production_candidate_receive_summary_for_test(
@@ -1224,6 +1232,7 @@
         requested_epoch: i64,
         query: Vec<f32>,
         top_k: i32,
+        effective_rerank_width: i32,
         consistency_mode: String,
         remote_sql_conninfo_secret_name: String,
         remote_sql: String,
@@ -1253,6 +1262,7 @@
             requested_epoch,
             query,
             top_k,
+            effective_rerank_width,
             consistency_mode.clone(),
         );
         ec_spire_test_run_remote_sql_after_request_build(
@@ -1295,6 +1305,7 @@
         requested_epoch: i64,
         query: Vec<f32>,
         top_k: i32,
+        effective_rerank_width: i32,
         consistency_mode: String,
         remote_sql_conninfo_secret_name: String,
         remote_sql: String,
@@ -1335,6 +1346,7 @@
             requested_epoch,
             query,
             top_k,
+            effective_rerank_width,
             consistency_mode.clone(),
         );
         ec_spire_test_run_remote_sql_after_request_build(

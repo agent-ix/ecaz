@@ -257,6 +257,7 @@ pub(crate) struct SpireRemoteProductionCandidateReceiveRequest {
     pub(crate) query: Vec<f32>,
     pub(crate) selected_pids: Vec<u64>,
     pub(crate) top_k: usize,
+    pub(crate) effective_rerank_width: i32,
     pub(crate) consistency_mode: String,
     pub(crate) initial_threshold_score: Option<f32>,
 }
@@ -285,6 +286,7 @@ pub(crate) struct SpireRemoteProductionHeapReceiveRequest {
     pub(crate) query: Vec<f32>,
     pub(crate) selected_pids: Vec<u64>,
     pub(crate) top_k: usize,
+    pub(crate) effective_rerank_width: i32,
     pub(crate) consistency_mode: String,
     pub(crate) tuple_payload_columns: Option<Vec<String>>,
 }
@@ -324,6 +326,7 @@ struct SpireRemoteProductionCandidateSession {
     selected_pids: Vec<i64>,
     requested_epoch: i64,
     top_k: i32,
+    effective_rerank_width: i32,
     started_after_ms: u64,
     request_start: std::time::Instant,
     global_heap_candidates: Option<Vec<SpireRemoteSearchCandidateRow>>,
@@ -1228,8 +1231,10 @@ impl SpireRemoteProductionTransportAdapter {
                         Ok(permit) => permit,
                         Err(error) => {
                             let failure_category = production_governance_failure_category(&error);
-                            metrics
-                                .record_failure_category(&request.consistency_mode, failure_category);
+                            metrics.record_failure_category(
+                                &request.consistency_mode,
+                                failure_category,
+                            );
                             return SpireRemoteProductionCandidateSessionResult {
                                 candidate_result: failed_production_candidate_receive_result(
                                     request.node_id,
@@ -1339,67 +1344,72 @@ impl SpireRemoteProductionTransportAdapter {
                         timeout_start,
                     );
                 }
-                let (remote_index_oid, endpoint_identity) = match cached_production_endpoint_identity(
-                    connection.validated_remote_index_oid,
-                    connection.validated_endpoint_identity.as_ref(),
-                    &request.remote_index_identity,
-                ) {
-                    Some((remote_index_oid, endpoint_identity)) => {
-                        (remote_index_oid, endpoint_identity)
-                    }
-                    None => {
-                        let regclass_start = std::time::Instant::now();
-                        add_profile_count(&mut query_metrics.regclass_probe_count, 1);
-                        let remote_index_oid = connection
-                            .client
-                            .query_one(
-                                "SELECT to_regclass($1)::oid",
-                                &[&request.remote_index_regclass.as_str()],
-                            )
-                            .await
-                            .map_err(|error| {
-                                let category = production_remote_query_failure_category(&error);
-                                if category == SPIRE_REMOTE_PRODUCTION_TRANSPORT_REMOTE_QUERY_FAILED {
-                                    SPIRE_REMOTE_PRODUCTION_REMOTE_INDEX_UNAVAILABLE
-                                } else {
-                                    category
-                                }
-                            })?
-                            .try_get::<_, Option<u32>>(0)
-                            .map_err(|_| SPIRE_REMOTE_PRODUCTION_REMOTE_INDEX_UNAVAILABLE)?
-                            .ok_or(SPIRE_REMOTE_PRODUCTION_REMOTE_INDEX_UNAVAILABLE)?;
-                        add_profile_elapsed(
-                            &mut query_metrics.regclass_probe_elapsed_us,
-                            regclass_start,
-                        );
-
-                        let identity_start = std::time::Instant::now();
-                        add_profile_count(&mut query_metrics.endpoint_identity_query_count, 1);
-                        let endpoint_identity_row = connection
-                            .client
-                            .query_one(
-                                SPIRE_REMOTE_SEARCH_ENDPOINT_IDENTITY_SQL_TEMPLATE,
-                                &[&remote_index_oid],
-                            )
-                            .await
-                            .map_err(|_| SPIRE_REMOTE_STATUS_ENDPOINT_IDENTITY_MISMATCH)?;
-                        let endpoint_identity =
-                            validate_remote_search_endpoint_identity_row(&endpoint_identity_row)
-                                .map_err(|_| SPIRE_REMOTE_STATUS_ENDPOINT_IDENTITY_MISMATCH)?;
-                        if endpoint_identity.profile_fingerprint_bytes.as_slice()
-                            != request.remote_index_identity.as_slice()
-                        {
-                            return Err(SPIRE_REMOTE_STATUS_ENDPOINT_IDENTITY_MISMATCH);
+                let (remote_index_oid, endpoint_identity) =
+                    match cached_production_endpoint_identity(
+                        connection.validated_remote_index_oid,
+                        connection.validated_endpoint_identity.as_ref(),
+                        &request.remote_index_identity,
+                    ) {
+                        Some((remote_index_oid, endpoint_identity)) => {
+                            (remote_index_oid, endpoint_identity)
                         }
-                        add_profile_elapsed(
-                            &mut query_metrics.endpoint_identity_elapsed_us,
-                            identity_start,
-                        );
-                        connection.validated_remote_index_oid = Some(remote_index_oid);
-                        connection.validated_endpoint_identity = Some(endpoint_identity.clone());
-                        (remote_index_oid, endpoint_identity)
-                    }
-                };
+                        None => {
+                            let regclass_start = std::time::Instant::now();
+                            add_profile_count(&mut query_metrics.regclass_probe_count, 1);
+                            let remote_index_oid = connection
+                                .client
+                                .query_one(
+                                    "SELECT to_regclass($1)::oid",
+                                    &[&request.remote_index_regclass.as_str()],
+                                )
+                                .await
+                                .map_err(|error| {
+                                    let category = production_remote_query_failure_category(&error);
+                                    if category
+                                        == SPIRE_REMOTE_PRODUCTION_TRANSPORT_REMOTE_QUERY_FAILED
+                                    {
+                                        SPIRE_REMOTE_PRODUCTION_REMOTE_INDEX_UNAVAILABLE
+                                    } else {
+                                        category
+                                    }
+                                })?
+                                .try_get::<_, Option<u32>>(0)
+                                .map_err(|_| SPIRE_REMOTE_PRODUCTION_REMOTE_INDEX_UNAVAILABLE)?
+                                .ok_or(SPIRE_REMOTE_PRODUCTION_REMOTE_INDEX_UNAVAILABLE)?;
+                            add_profile_elapsed(
+                                &mut query_metrics.regclass_probe_elapsed_us,
+                                regclass_start,
+                            );
+
+                            let identity_start = std::time::Instant::now();
+                            add_profile_count(&mut query_metrics.endpoint_identity_query_count, 1);
+                            let endpoint_identity_row = connection
+                                .client
+                                .query_one(
+                                    SPIRE_REMOTE_SEARCH_ENDPOINT_IDENTITY_SQL_TEMPLATE,
+                                    &[&remote_index_oid],
+                                )
+                                .await
+                                .map_err(|_| SPIRE_REMOTE_STATUS_ENDPOINT_IDENTITY_MISMATCH)?;
+                            let endpoint_identity = validate_remote_search_endpoint_identity_row(
+                                &endpoint_identity_row,
+                            )
+                            .map_err(|_| SPIRE_REMOTE_STATUS_ENDPOINT_IDENTITY_MISMATCH)?;
+                            if endpoint_identity.profile_fingerprint_bytes.as_slice()
+                                != request.remote_index_identity.as_slice()
+                            {
+                                return Err(SPIRE_REMOTE_STATUS_ENDPOINT_IDENTITY_MISMATCH);
+                            }
+                            add_profile_elapsed(
+                                &mut query_metrics.endpoint_identity_elapsed_us,
+                                identity_start,
+                            );
+                            connection.validated_remote_index_oid = Some(remote_index_oid);
+                            connection.validated_endpoint_identity =
+                                Some(endpoint_identity.clone());
+                            (remote_index_oid, endpoint_identity)
+                        }
+                    };
 
                 let candidate_start = std::time::Instant::now();
                 add_profile_count(&mut query_metrics.candidate_receive_query_count, 1);
@@ -1574,6 +1584,7 @@ impl SpireRemoteProductionTransportAdapter {
                 candidates,
             }),
         };
+        let effective_rerank_width = request.effective_rerank_width;
         let session = SpireRemoteProductionCandidateSession {
             request,
             connection,
@@ -1582,6 +1593,7 @@ impl SpireRemoteProductionTransportAdapter {
             selected_pids,
             requested_epoch,
             top_k,
+            effective_rerank_width,
             started_after_ms,
             request_start,
             global_heap_candidates: None,
@@ -1608,6 +1620,7 @@ impl SpireRemoteProductionTransportAdapter {
             selected_pids,
             requested_epoch,
             top_k,
+            effective_rerank_width,
             started_after_ms: _candidate_started_after_ms,
             request_start: _candidate_request_start,
             global_heap_candidates,
@@ -1642,6 +1655,15 @@ impl SpireRemoteProductionTransportAdapter {
             async {
                 let mut query_metrics = SpireRemoteProductionReadMetrics::default();
                 add_profile_count(&mut query_metrics.heap_receive_query_count, 1);
+                let remote_rerank_width = effective_rerank_width.to_string();
+                connection
+                    .client
+                    .execute(
+                        "SELECT set_config('ec_spire.rerank_width', $1, false)",
+                        &[&remote_rerank_width],
+                    )
+                    .await
+                    .map_err(|error| production_remote_query_failure_category(&error))?;
                 let result = match tuple_payload_columns {
                     None if global_heap_candidates.is_some() => {
                         let candidates = global_heap_candidates.as_ref().expect("checked is_some");
@@ -2233,6 +2255,14 @@ impl SpireRemoteProductionTransportAdapter {
                 {
                     return Err(SPIRE_REMOTE_STATUS_ENDPOINT_IDENTITY_MISMATCH);
                 }
+                let remote_rerank_width = request.effective_rerank_width.to_string();
+                client
+                    .execute(
+                        "SELECT set_config('ec_spire.rerank_width', $1, false)",
+                        &[&remote_rerank_width],
+                    )
+                    .await
+                    .map_err(|error| production_remote_query_failure_category(&error))?;
                 match request.tuple_payload_columns.as_ref() {
                     Some(tuple_payload_columns) => {
                         let sql = remote_tuple_payload_production_sql(&endpoint_identity)?;

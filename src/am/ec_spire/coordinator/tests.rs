@@ -136,6 +136,89 @@ mod tests {
     }
 
     #[test]
+    fn remote_heap_rerank_prefix_keeps_full_frontier_for_zero_width() {
+        let candidates = vec![
+            remote_candidate(
+                1,
+                10,
+                0,
+                remote_local_vec_id(1),
+                0.30,
+                storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+            ),
+            remote_candidate(
+                1,
+                11,
+                0,
+                remote_local_vec_id(2),
+                0.10,
+                storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+            ),
+            remote_candidate(
+                1,
+                12,
+                0,
+                remote_local_vec_id(3),
+                0.20,
+                storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+            ),
+        ];
+
+        let prefix = remote_search_compact_candidate_rerank_prefix(candidates, 0)
+            .expect("zero rerank width should keep all candidates");
+
+        assert_eq!(prefix.len(), 3);
+        assert_eq!(prefix[0].score, 0.10);
+        assert_eq!(prefix[1].score, 0.20);
+        assert_eq!(prefix[2].score, 0.30);
+    }
+
+    #[test]
+    fn remote_heap_rerank_prefix_limits_exact_heap_resolution_width() {
+        let candidates = vec![
+            remote_candidate(
+                1,
+                10,
+                0,
+                remote_local_vec_id(1),
+                0.30,
+                storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+            ),
+            remote_candidate(
+                1,
+                11,
+                0,
+                remote_local_vec_id(2),
+                0.10,
+                storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+            ),
+            remote_candidate(
+                1,
+                12,
+                0,
+                remote_local_vec_id(3),
+                0.20,
+                storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+            ),
+            remote_candidate(
+                1,
+                13,
+                0,
+                remote_local_vec_id(4),
+                0.05,
+                storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+            ),
+        ];
+
+        let prefix = remote_search_compact_candidate_rerank_prefix(candidates, 2)
+            .expect("positive rerank width should bound candidate prefix");
+
+        assert_eq!(prefix.len(), 2);
+        assert_eq!(prefix[0].score, 0.05);
+        assert_eq!(prefix[1].score, 0.10);
+    }
+
+    #[test]
     fn remote_leaf_materialization_summaries_disabled_keeps_v2_shape() {
         let source_vectors = vec![vec![1.0, 0.0], vec![0.0, 1.0]];
         let rows = source_vectors

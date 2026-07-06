@@ -170,6 +170,34 @@ fn remote_search_exact_heap_score(query: &[f32], source_vector: &[f32]) -> Resul
     Ok(-inner_product)
 }
 
+fn remote_search_compact_candidate_rerank_prefix_len(
+    effective_rerank_width: i32,
+    candidate_count: usize,
+) -> Result<usize, String> {
+    if effective_rerank_width <= 0 {
+        return Ok(candidate_count);
+    }
+    let width = usize::try_from(effective_rerank_width)
+        .map_err(|_| "ec_spire remote heap resolution rerank_width exceeds usize".to_owned())?;
+    Ok(width.min(candidate_count))
+}
+
+fn remote_search_compact_candidate_rerank_prefix(
+    mut candidates: Vec<SpireRemoteSearchCandidateRow>,
+    effective_rerank_width: i32,
+) -> Result<Vec<SpireRemoteSearchCandidateRow>, String> {
+    let rerank_len = remote_search_compact_candidate_rerank_prefix_len(
+        effective_rerank_width,
+        candidates.len(),
+    )?;
+    if rerank_len < candidates.len() {
+        candidates.select_nth_unstable_by(rerank_len, remote_search_candidate_cmp);
+        candidates.truncate(rerank_len);
+    }
+    candidates.sort_by(remote_search_candidate_cmp);
+    Ok(candidates)
+}
+
 fn remote_search_heap_candidate_rows_from_compact_candidates(
     index: SpireLiveIndexRelation,
     requested_epoch: u64,
@@ -212,6 +240,11 @@ fn remote_search_heap_candidate_rows_from_compact_candidates(
         )?;
         (indexed_attribute, heap_reader)
     };
+    let rerank_width = options::resolve_scan_rerank_width(index.relation_options().rerank_width);
+    let candidates = remote_search_compact_candidate_rerank_prefix(
+        candidates,
+        rerank_width.effective_rerank_width,
+    )?;
 
     let result = (|| -> Result<Vec<SpireRemoteSearchLocalHeapCandidateRow>, String> {
         let mut rows = Vec::with_capacity(candidates.len());
@@ -1058,7 +1091,16 @@ pub(crate) fn remote_search_explicit_local_heap_candidate_rows(
             .zip(row_locators)
             .zip(scores)
             .map(
-                |(((((((served_epoch, pid), object_version), row_index), assignment_flags), vec_id), row_locator), score)| {
+                |(
+                    (
+                        (
+                            ((((served_epoch, pid), object_version), row_index), assignment_flags),
+                            vec_id,
+                        ),
+                        row_locator,
+                    ),
+                    score,
+                )| {
                     SpireRemoteSearchCandidateRow {
                         served_epoch,
                         node_id: meta::SPIRE_LOCAL_NODE_ID,
