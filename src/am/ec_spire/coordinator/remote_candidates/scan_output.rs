@@ -1353,7 +1353,7 @@ fn remote_search_libpq_executor_scan_profile_for_dispatch(
     )?;
     apply_remote_production_session_gucs_sync(
         &mut client,
-        &remote_production_leaf_block_pruning_session_gucs(),
+        &remote_production_scan_session_gucs(),
     )
     .map_err(|category| {
         format!(
@@ -1447,7 +1447,7 @@ fn remote_search_libpq_executor_threshold_profile_for_dispatch(
     )?;
     apply_remote_production_session_gucs_sync(
         &mut client,
-        &remote_production_leaf_block_pruning_session_gucs(),
+        &remote_production_scan_session_gucs(),
     )
     .map_err(|category| {
         format!(

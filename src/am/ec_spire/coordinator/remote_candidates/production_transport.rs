@@ -956,7 +956,7 @@ impl SpireRemoteFanoutExecutor {
     ) -> Result<Vec<SpireRemoteProductionCandidateReceiveRequest>, String> {
         let degraded = parse_remote_search_consistency_mode(consistency_mode)?
             == meta::SpireConsistencyMode::Degraded;
-        let remote_scan_session_gucs = remote_production_leaf_block_pruning_session_gucs();
+        let remote_scan_session_gucs = remote_production_scan_session_gucs();
         let mut requests = Vec::new();
         let mut secret_lookup_count = self.conninfo_secret_lookup_count;
         for dispatch in &mut self.dispatches {

@@ -379,8 +379,8 @@ fn remote_heap_payload_decode_bytes(candidates: &[SpireRemoteSearchLocalHeapCand
         .fold(0_u64, u64::saturating_add)
 }
 
-fn remote_production_leaf_block_pruning_session_gucs() -> Vec<SpireRemoteProductionSessionGuc> {
-    vec![
+fn remote_production_scan_session_gucs() -> Vec<SpireRemoteProductionSessionGuc> {
+    let mut gucs = vec![
         SpireRemoteProductionSessionGuc {
             name: "ec_spire.leaf_block_pruning_max_blocks_per_leaf",
             value: options::current_session_leaf_block_pruning_max_blocks_per_leaf().to_string(),
@@ -410,7 +410,12 @@ fn remote_production_leaf_block_pruning_session_gucs() -> Vec<SpireRemoteProduct
             name: "ec_spire.leaf_block_pruning_route_prior_weight",
             value: options::current_session_leaf_block_pruning_route_prior_weight().to_string(),
         },
-    ]
+    ];
+    gucs.push(SpireRemoteProductionSessionGuc {
+        name: "ec_spire.pre_materialization_prune",
+        value: options::pre_materialization_prune_enabled().to_string(),
+    });
+    gucs
 }
 
 async fn apply_remote_production_session_gucs(

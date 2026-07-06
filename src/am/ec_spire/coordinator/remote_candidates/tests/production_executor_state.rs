@@ -1738,11 +1738,15 @@ mod production_executor_state_tests {
         assert_eq!(node_42.query, vec![1.0, 0.0]);
         assert_eq!(node_42.top_k, 4);
         assert_eq!(node_42.effective_rerank_width, 9);
-        assert_eq!(node_42.remote_scan_session_gucs.len(), 7);
+        assert_eq!(node_42.remote_scan_session_gucs.len(), 8);
         assert!(node_42
             .remote_scan_session_gucs
             .iter()
             .any(|guc| guc.name == "ec_spire.leaf_block_pruning_max_global_blocks"));
+        assert!(node_42
+            .remote_scan_session_gucs
+            .iter()
+            .any(|guc| guc.name == "ec_spire.pre_materialization_prune"));
         assert!(requests
             .iter()
             .all(|request| request.remote_scan_session_gucs == node_42.remote_scan_session_gucs));
