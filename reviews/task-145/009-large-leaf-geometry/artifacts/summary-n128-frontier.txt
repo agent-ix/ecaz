@@ -1,0 +1,15 @@
+production-read-k10-geometry-fixed-default	8	29050	29050	19050	remote_heap_candidates
+production-read-k10-geometry-fixed-default	16	30000	30000	20000	remote_heap_candidates
+production-read-k10-geometry-fixed-default	32	30000	30000	20000	remote_heap_candidates
+production-read-k10-geometry-fixed-default	64	30000	30000	20000	remote_heap_candidates
+production-read-k10-geometry-fixed-default	96	30000	30000	20000	remote_heap_candidates
+production-read-k10-geometry-ratio4-default	8	29050	29050	19050	remote_heap_candidates
+production-read-k10-geometry-ratio4-default	16	30000	30000	20000	remote_heap_candidates
+production-read-k10-geometry-ratio4-default	32	30000	30000	20000	remote_heap_candidates
+production-read-k10-geometry-ratio4-default	64	30000	30000	20000	remote_heap_candidates
+production-read-k10-geometry-ratio4-default	96	30000	30000	20000	remote_heap_candidates
+production-read-k10-geometry-ratio8-default	8	29050	29050	19050	remote_heap_candidates
+production-read-k10-geometry-ratio8-default	16	30000	30000	20000	remote_heap_candidates
+production-read-k10-geometry-ratio8-default	32	30000	30000	20000	remote_heap_candidates
+production-read-k10-geometry-ratio8-default	64	30000	30000	20000	remote_heap_candidates
+production-read-k10-geometry-ratio8-default	96	30000	30000	20000	remote_heap_candidates

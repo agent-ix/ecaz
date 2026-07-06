@@ -1,0 +1,15 @@
+production-read-k10-geometry-fixed-default	8	0.7155	0.7155	139.488 ms	145.961 ms
+production-read-k10-geometry-fixed-default	16	0.8270	0.8270	142.628 ms	147.197 ms
+production-read-k10-geometry-fixed-default	32	0.8895	0.8895	141.496 ms	147.211 ms
+production-read-k10-geometry-fixed-default	64	0.9290	0.9290	145.699 ms	172.262 ms
+production-read-k10-geometry-fixed-default	96	0.9340	0.9340	145.738 ms	152.307 ms
+production-read-k10-geometry-ratio4-default	8	0.7155	0.7155	140.374 ms	147.642 ms
+production-read-k10-geometry-ratio4-default	16	0.8270	0.8270	139.853 ms	143.817 ms
+production-read-k10-geometry-ratio4-default	32	0.8895	0.8895	140.999 ms	145.827 ms
+production-read-k10-geometry-ratio4-default	64	0.9290	0.9290	145.663 ms	151.053 ms
+production-read-k10-geometry-ratio4-default	96	0.9340	0.9340	144.878 ms	153.050 ms
+production-read-k10-geometry-ratio8-default	8	0.7155	0.7155	139.548 ms	143.521 ms
+production-read-k10-geometry-ratio8-default	16	0.8270	0.8270	139.926 ms	144.487 ms
+production-read-k10-geometry-ratio8-default	32	0.8895	0.8895	144.758 ms	149.213 ms
+production-read-k10-geometry-ratio8-default	64	0.9290	0.9290	142.830 ms	147.259 ms
+production-read-k10-geometry-ratio8-default	96	0.9340	0.9340	143.658 ms	150.947 ms
