@@ -1,0 +1,50 @@
+production-read-k10-block-off-default	8		0.7155	136.911 ms				
+production-read-k10-block-off-default	16		0.8270	140.106 ms				
+production-read-k10-block-off-default	32		0.8895	140.661 ms				
+production-read-k10-block-off-default	64		0.9375	140.251 ms				
+production-read-k10-block-off-default	96		0.9570	142.663 ms				
+production-read-k10-block-off-default	8				28183			
+production-read-k10-block-off-default	16				29983			
+production-read-k10-block-off-default	32				30000			
+production-read-k10-block-off-default	64				30000			
+production-read-k10-block-off-default	96				30000			
+production-read-k10-block-off-default	8	2				2827	2827	0
+production-read-k10-block-off-default	8	3				3904	3904	0
+production-read-k10-block-off-default	8	4				2688	2688	0
+production-read-k10-block-off-default	16	2				6210	6210	0
+production-read-k10-block-off-default	16	3				7365	7365	0
+production-read-k10-block-off-default	16	4				6505	6505	0
+production-read-k10-block-off-default	32	2				13516	13516	0
+production-read-k10-block-off-default	32	3				13716	13716	0
+production-read-k10-block-off-default	32	4				14008	14008	0
+production-read-k10-block-off-default	64	2				27527	27527	0
+production-read-k10-block-off-default	64	3				26397	26397	0
+production-read-k10-block-off-default	64	4				29666	29666	0
+production-read-k10-block-off-default	96	2				41541	41541	0
+production-read-k10-block-off-default	96	3				39321	39321	0
+production-read-k10-block-off-default	96	4				45322	45322	0
+production-read-k10-block-global128-default	8		0.7155	139.098 ms				
+production-read-k10-block-global128-default	16		0.8270	137.970 ms				
+production-read-k10-block-global128-default	32		0.8895	138.672 ms				
+production-read-k10-block-global128-default	64		0.9290	139.906 ms				
+production-read-k10-block-global128-default	96		0.9340	144.001 ms				
+production-read-k10-block-global128-default	8				28183			
+production-read-k10-block-global128-default	16				29983			
+production-read-k10-block-global128-default	32				30000			
+production-read-k10-block-global128-default	64				30000			
+production-read-k10-block-global128-default	96				30000			
+production-read-k10-block-global128-default	8	2				2827	2827	0
+production-read-k10-block-global128-default	8	3				3904	3904	0
+production-read-k10-block-global128-default	8	4				2688	2688	0
+production-read-k10-block-global128-default	16	2				6210	6210	0
+production-read-k10-block-global128-default	16	3				7365	7365	0
+production-read-k10-block-global128-default	16	4				6505	6505	0
+production-read-k10-block-global128-default	32	2				13516	13511	5
+production-read-k10-block-global128-default	32	3				13716	13710	6
+production-read-k10-block-global128-default	32	4				14008	14008	0
+production-read-k10-block-global128-default	64	2				27527	24529	2998
+production-read-k10-block-global128-default	64	3				26397	23744	2653
+production-read-k10-block-global128-default	64	4				29666	25162	4504
+production-read-k10-block-global128-default	96	2				41541	25600	15941
+production-read-k10-block-global128-default	96	3				39321	25597	13724
+production-read-k10-block-global128-default	96	4				45322	25600	19722

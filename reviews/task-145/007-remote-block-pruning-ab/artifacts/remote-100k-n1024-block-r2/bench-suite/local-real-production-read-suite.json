@@ -1,0 +1,120 @@
+{
+  "artifact_dir": "reviews/task-145/007-remote-block-pruning-ab/artifacts/remote-100k-n1024-block-r2/bench-suite",
+  "defaults": {
+    "pg": 18,
+    "queries_limit": 200
+  },
+  "name": "local-multinode-production-read",
+  "schema_version": 1,
+  "steps": [
+    {
+      "kind": "storage",
+      "log_file": "reviews/task-145/007-remote-block-pruning-ab/artifacts/remote-100k-n1024-block-r2/bench-suite/storage.log",
+      "name": "storage-local-coordinator",
+      "prefix": "ec_real_100k",
+      "tags": [
+        "local",
+        "multinode",
+        "storage"
+      ]
+    },
+    {
+      "include_cost_snapshot": true,
+      "include_production_read_profile": true,
+      "include_query_metrics": true,
+      "include_recall": true,
+      "include_remote": true,
+      "index": "t145_b2_100_n1024_coord_idx",
+      "kind": "spire-pipeline",
+      "log_output": "reviews/task-145/007-remote-block-pruning-ab/artifacts/remote-100k-n1024-block-r2/bench-suite/production-read-k10-block-off-default.log",
+      "name": "production-read-k10-block-off-default",
+      "prefix": "ec_real_100k",
+      "production_read_only": true,
+      "queries_limit": 200,
+      "query_metric_k": 10,
+      "query_metric_projection_columns": [
+        "id",
+        "source"
+      ],
+      "require_remote_placements": true,
+      "result_identity_output": "reviews/task-145/007-remote-block-pruning-ab/artifacts/remote-100k-n1024-block-r2/bench-suite/production-read-k10-block-off-default-identity.jsonl",
+      "session_gucs": [
+        "ec_spire.leaf_score_only_routing=on",
+        "ec_spire.route_overfetch_multiplier=1.0",
+        "ec_spire.probe_distance_ratio=0",
+        "ec_spire.max_remote_payload_bytes_per_row=16384",
+        "ec_spire.rerank_width=50",
+        "ec_spire.max_candidate_rows=100",
+        "ec_spire.leaf_block_pruning_max_blocks_per_leaf=0",
+        "ec_spire.leaf_block_pruning_max_global_blocks=0"
+      ],
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "tags": [
+        "phase5",
+        "local",
+        "multinode",
+        "production-read",
+        "default-cap"
+      ],
+      "top_k": 10,
+      "truth_corpus_file": "data/staged-current/ec_real_100k_corpus.tsv"
+    },
+    {
+      "include_cost_snapshot": true,
+      "include_production_read_profile": true,
+      "include_query_metrics": true,
+      "include_recall": true,
+      "include_remote": true,
+      "index": "t145_b2_100_n1024_coord_idx",
+      "kind": "spire-pipeline",
+      "log_output": "reviews/task-145/007-remote-block-pruning-ab/artifacts/remote-100k-n1024-block-r2/bench-suite/production-read-k10-block-global128-default.log",
+      "name": "production-read-k10-block-global128-default",
+      "prefix": "ec_real_100k",
+      "production_read_only": true,
+      "queries_limit": 200,
+      "query_metric_k": 10,
+      "query_metric_projection_columns": [
+        "id",
+        "source"
+      ],
+      "require_remote_placements": true,
+      "result_identity_output": "reviews/task-145/007-remote-block-pruning-ab/artifacts/remote-100k-n1024-block-r2/bench-suite/production-read-k10-block-global128-default-identity.jsonl",
+      "session_gucs": [
+        "ec_spire.leaf_score_only_routing=on",
+        "ec_spire.route_overfetch_multiplier=1.0",
+        "ec_spire.probe_distance_ratio=0",
+        "ec_spire.max_remote_payload_bytes_per_row=16384",
+        "ec_spire.rerank_width=50",
+        "ec_spire.max_candidate_rows=100",
+        "ec_spire.leaf_block_pruning_max_blocks_per_leaf=0",
+        "ec_spire.leaf_block_pruning_max_global_blocks=128",
+        "ec_spire.leaf_block_pruning_global_probe_blocks=0",
+        "ec_spire.leaf_block_pruning_sample_rows_per_block=0",
+        "ec_spire.leaf_block_pruning_summary_radius_weight=1.0",
+        "ec_spire.leaf_block_pruning_route_prior_weight=0.0"
+      ],
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "tags": [
+        "phase5",
+        "local",
+        "multinode",
+        "production-read",
+        "default-cap"
+      ],
+      "top_k": 10,
+      "truth_corpus_file": "data/staged-current/ec_real_100k_corpus.tsv"
+    }
+  ]
+}
