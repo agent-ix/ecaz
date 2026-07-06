@@ -1,0 +1,12 @@
+Script started on 2026-07-06 11:35:00-07:00 [<not executed on terminal>]
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 30.20s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-52f8c7085962b346)
+
+running 1 test
+test am::ec_spire::production_executor_state_tests::production_executor_compact_receive_requests_use_dispatch_state ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2271 filtered out; finished in 0.00s
+
+
+Script done on 2026-07-06 11:35:30-07:00 [COMMAND_EXIT_CODE="0"]
