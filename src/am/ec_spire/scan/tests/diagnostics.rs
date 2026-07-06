@@ -448,6 +448,7 @@
         assert_eq!(store.candidate_row_count, 1);
         assert_eq!(store.deduped_candidate_row_count, 0);
         assert_eq!(store.truncated_candidate_row_count, 1);
+        assert_eq!(store.pre_materialization_pruned_candidate_row_count, 1);
         assert_eq!(store.truncated_primary_candidate_row_count, 1);
         assert_eq!(store.truncated_boundary_replica_candidate_row_count, 0);
         assert_eq!(store.candidate_winner_count, 1);

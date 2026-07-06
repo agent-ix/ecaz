@@ -2048,6 +2048,11 @@
         assert!(profile.candidate_winner_count > 0);
         assert!(profile.leaf_candidate_row_count >= profile.candidate_winner_count);
         assert!(profile.truncated_candidate_row_count > 0);
+        assert!(profile.pre_materialization_pruned_candidate_row_count > 0);
+        assert!(
+            profile.truncated_candidate_row_count
+                >= profile.pre_materialization_pruned_candidate_row_count
+        );
         assert!(profile.local_kth_score.is_some());
     }
 

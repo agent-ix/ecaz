@@ -2105,6 +2105,9 @@ pub(crate) fn index_scan_placement_snapshot(
                     .deduped_boundary_replica_candidate_row_count
                     as u64,
                 truncated_candidate_row_count: store.truncated_candidate_row_count as u64,
+                pre_materialization_pruned_candidate_row_count: store
+                    .pre_materialization_pruned_candidate_row_count
+                    as u64,
                 truncated_primary_candidate_row_count: store.truncated_primary_candidate_row_count
                     as u64,
                 truncated_boundary_replica_candidate_row_count: store
@@ -2175,6 +2178,9 @@ pub(crate) fn index_scan_leaf_candidate_snapshot(
                     as u64,
                 deduped_candidate_row_count: leaf.deduped_candidate_row_count as u64,
                 truncated_candidate_row_count: leaf.truncated_candidate_row_count as u64,
+                pre_materialization_pruned_candidate_row_count: leaf
+                    .pre_materialization_pruned_candidate_row_count
+                    as u64,
                 candidate_winner_count: leaf.candidate_winner_count as u64,
                 leaf_object_read_nanos: leaf.leaf_object_read_nanos,
                 leaf_summary_score_nanos: leaf.leaf_summary_score_nanos,

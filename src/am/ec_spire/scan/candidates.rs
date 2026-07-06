@@ -162,6 +162,7 @@ pub(super) fn collect_quantized_selected_leaf_scan_profile(
             leaf_candidate_row_count: 0,
             deduped_candidate_row_count: 0,
             truncated_candidate_row_count: 0,
+            pre_materialization_pruned_candidate_row_count: 0,
             candidate_winner_count: 0,
             leaf_block_available_count: 0,
             leaf_block_selected_count: 0,
@@ -201,6 +202,7 @@ pub(super) fn collect_quantized_selected_leaf_scan_profile(
     let mut leaf_candidate_row_count = 0_u64;
     let mut deduped_candidate_row_count = 0_u64;
     let mut truncated_candidate_row_count = 0_u64;
+    let mut pre_materialization_pruned_candidate_row_count = 0_u64;
     let mut candidate_winner_count = 0_u64;
     let mut leaf_block_available_count = 0_u64;
     let mut leaf_block_selected_count = 0_u64;
@@ -229,6 +231,14 @@ pub(super) fn collect_quantized_selected_leaf_scan_profile(
                 "ec_spire selected-leaf scan profile truncated candidate count exceeds u64"
             })?,
         );
+        pre_materialization_pruned_candidate_row_count =
+            pre_materialization_pruned_candidate_row_count.saturating_add(
+                u64::try_from(store.pre_materialization_pruned_candidate_row_count).map_err(
+                    |_| {
+                        "ec_spire selected-leaf scan profile pre-materialization pruned candidate count exceeds u64"
+                    },
+                )?,
+            );
         candidate_winner_count = candidate_winner_count.saturating_add(
             u64::try_from(store.candidate_winner_count).map_err(|_| {
                 "ec_spire selected-leaf scan profile candidate winner count exceeds u64"
@@ -263,6 +273,7 @@ pub(super) fn collect_quantized_selected_leaf_scan_profile(
         leaf_candidate_row_count,
         deduped_candidate_row_count,
         truncated_candidate_row_count,
+        pre_materialization_pruned_candidate_row_count,
         candidate_winner_count,
         leaf_block_available_count,
         leaf_block_selected_count,
@@ -3163,7 +3174,7 @@ fn append_quantized_v2_scored_column_candidate(
             .pre_materialization_min_ip_to_keep()
             .is_some_and(|min_ip_to_keep| ip < min_ip_to_keep)
     {
-        observer.truncated_candidate(epoch, placement, columns.flags[row_offset]);
+        observer.pre_materialization_pruned_candidate(epoch, placement, columns.flags[row_offset]);
         return Ok(());
     }
 
@@ -3353,7 +3364,7 @@ fn append_quantized_v2_column_candidates(
                 .pre_materialization_min_ip_to_keep()
                 .is_some_and(|min_ip_to_keep| ip < min_ip_to_keep)
         {
-            observer.truncated_candidate(epoch, placement, columns.flags[row_offset]);
+            observer.pre_materialization_pruned_candidate(epoch, placement, columns.flags[row_offset]);
             continue;
         }
 

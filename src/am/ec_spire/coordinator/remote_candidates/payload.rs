@@ -111,6 +111,8 @@ fn decode_remote_search_scan_profile_pg_row(
         decode_nonnegative_i64_metric(row, "deduped_candidate_row_count")?;
     let truncated_candidate_row_count =
         decode_nonnegative_i64_metric(row, "truncated_candidate_row_count")?;
+    let pre_materialization_pruned_candidate_row_count =
+        decode_nonnegative_i64_metric(row, "pre_materialization_pruned_candidate_row_count")?;
     let candidate_winner_count = decode_nonnegative_i64_metric(row, "candidate_winner_count")?;
     let leaf_block_available_count =
         decode_nonnegative_i64_metric(row, "leaf_block_available_count")?;
@@ -137,6 +139,7 @@ fn decode_remote_search_scan_profile_pg_row(
         leaf_candidate_row_count,
         deduped_candidate_row_count,
         truncated_candidate_row_count,
+        pre_materialization_pruned_candidate_row_count,
         candidate_winner_count,
         leaf_block_available_count,
         leaf_block_selected_count,

@@ -8065,6 +8065,7 @@ fn ec_spire_index_scan_leaf_candidate_snapshot(
         name!(boundary_replica_candidate_row_count, i64),
         name!(deduped_candidate_row_count, i64),
         name!(truncated_candidate_row_count, i64),
+        name!(pre_materialization_pruned_candidate_row_count, i64),
         name!(candidate_winner_count, i64),
         name!(leaf_object_read_nanos, i64),
         name!(leaf_summary_score_nanos, i64),
@@ -8122,6 +8123,8 @@ fn ec_spire_index_scan_leaf_candidate_snapshot(
                 .expect("deduped candidate row count should fit in i64"),
             i64::try_from(row.truncated_candidate_row_count)
                 .expect("truncated candidate row count should fit in i64"),
+            i64::try_from(row.pre_materialization_pruned_candidate_row_count)
+                .expect("pre-materialization pruned candidate row count should fit in i64"),
             i64::try_from(row.candidate_winner_count)
                 .expect("candidate winner count should fit in i64"),
             i64::try_from(row.leaf_object_read_nanos)
@@ -13818,6 +13821,7 @@ fn ec_spire_remote_search_production_scan_profile(
         name!(leaf_candidate_row_count, i64),
         name!(deduped_candidate_row_count, i64),
         name!(truncated_candidate_row_count, i64),
+        name!(pre_materialization_pruned_candidate_row_count, i64),
         name!(candidate_winner_count, i64),
         name!(leaf_block_available_count, i64),
         name!(leaf_block_selected_count, i64),
@@ -13858,6 +13862,8 @@ fn ec_spire_remote_search_production_scan_profile(
                 .expect("deduped candidate row count should fit in i64"),
             i64::try_from(row.truncated_candidate_row_count)
                 .expect("truncated candidate row count should fit in i64"),
+            i64::try_from(row.pre_materialization_pruned_candidate_row_count)
+                .expect("pre-materialization pruned candidate row count should fit in i64"),
             i64::try_from(row.candidate_winner_count)
                 .expect("candidate winner count should fit in i64"),
             i64::try_from(row.leaf_block_available_count)
@@ -17421,6 +17427,7 @@ fn ec_spire_remote_search_coordinator_local_scan_profile(
         name!(leaf_candidate_row_count, i64),
         name!(deduped_candidate_row_count, i64),
         name!(truncated_candidate_row_count, i64),
+        name!(pre_materialization_pruned_candidate_row_count, i64),
         name!(candidate_winner_count, i64),
         name!(leaf_block_available_count, i64),
         name!(leaf_block_selected_count, i64),
@@ -17483,6 +17490,8 @@ fn ec_spire_remote_search_coordinator_local_scan_profile(
             .expect("deduped candidate row count should fit in i64"),
         i64::try_from(row.truncated_candidate_row_count)
             .expect("truncated candidate row count should fit in i64"),
+        i64::try_from(row.pre_materialization_pruned_candidate_row_count)
+            .expect("pre-materialization pruned candidate row count should fit in i64"),
         i64::try_from(row.candidate_winner_count)
             .expect("candidate winner count should fit in i64"),
         i64::try_from(row.leaf_block_available_count)

@@ -1946,7 +1946,8 @@ fn leaf_candidate_snapshot_sql() -> &'static str {
             leaf_block_skipped_count, leaf_summary_object_bytes, leaf_row_object_bytes,
             primary_candidate_row_count,
             boundary_replica_candidate_row_count, deduped_candidate_row_count,
-            truncated_candidate_row_count, candidate_winner_count,
+            truncated_candidate_row_count, pre_materialization_pruned_candidate_row_count,
+            candidate_winner_count,
             leaf_object_read_nanos, leaf_summary_score_nanos, leaf_row_score_nanos,
             candidate_score_nanos,
             candidate_materialize_nanos, candidate_heap_append_nanos,
@@ -2067,7 +2068,8 @@ fn production_read_timeline_sql() -> &'static str {
 fn production_scan_profile_sql() -> &'static str {
     "SELECT served_epoch, node_id, selected_pid_count, scanned_pid_count,
             leaf_candidate_row_count, deduped_candidate_row_count,
-            truncated_candidate_row_count, candidate_winner_count,
+            truncated_candidate_row_count, pre_materialization_pruned_candidate_row_count,
+            candidate_winner_count,
             leaf_block_available_count, leaf_block_selected_count,
             leaf_block_skipped_count, sound_upper_bound_available_count,
             sound_upper_bound_missing_count, leaf_summary_score_nanos,
@@ -2285,6 +2287,7 @@ struct LeafCandidateRow {
     boundary_replica_candidate_row_count: i64,
     deduped_candidate_row_count: i64,
     truncated_candidate_row_count: i64,
+    pre_materialization_pruned_candidate_row_count: i64,
     candidate_winner_count: i64,
     leaf_object_read_nanos: i64,
     leaf_summary_score_nanos: i64,
@@ -2313,15 +2316,16 @@ impl From<Row> for LeafCandidateRow {
             boundary_replica_candidate_row_count: row.get(13),
             deduped_candidate_row_count: row.get(14),
             truncated_candidate_row_count: row.get(15),
-            candidate_winner_count: row.get(16),
-            leaf_object_read_nanos: row.get(17),
-            leaf_summary_score_nanos: row.get(18),
-            leaf_row_score_nanos: row.get(19),
-            candidate_score_nanos: row.get(20),
-            candidate_materialize_nanos: row.get(21),
-            candidate_heap_append_nanos: row.get(22),
-            leaf_row_segment_read_count: row.get(23),
-            leaf_row_segment_read_bytes: row.get(24),
+            pre_materialization_pruned_candidate_row_count: row.get(16),
+            candidate_winner_count: row.get(17),
+            leaf_object_read_nanos: row.get(18),
+            leaf_summary_score_nanos: row.get(19),
+            leaf_row_score_nanos: row.get(20),
+            candidate_score_nanos: row.get(21),
+            candidate_materialize_nanos: row.get(22),
+            candidate_heap_append_nanos: row.get(23),
+            leaf_row_segment_read_count: row.get(24),
+            leaf_row_segment_read_bytes: row.get(25),
         }
     }
 }
@@ -2347,6 +2351,7 @@ impl LeafCandidateRow {
             boundary_replica_candidate_row_count: row.get(13),
             deduped_candidate_row_count: row.get(14),
             truncated_candidate_row_count: row.get(15),
+            pre_materialization_pruned_candidate_row_count: 0,
             candidate_winner_count: row.get(16),
             leaf_object_read_nanos: row.get(17),
             leaf_summary_score_nanos: row.get(18),
@@ -2968,6 +2973,7 @@ struct FunnelRecord {
     returned_to_k_count: Option<usize>,
     deduped_candidate_count: i64,
     truncated_candidate_count: i64,
+    pre_materialization_pruned_candidate_count: i64,
     candidate_winner_count: i64,
     leaf_candidate_mean: f64,
     leaf_candidate_p95: i64,
@@ -3317,6 +3323,10 @@ impl FunnelRecord {
             .iter()
             .map(|row| row.truncated_candidate_row_count)
             .sum();
+        let pre_materialization_pruned_candidate_count = leaf_rows
+            .iter()
+            .map(|row| row.pre_materialization_pruned_candidate_row_count)
+            .sum();
         let candidate_winner_count = leaf_rows.iter().map(|row| row.candidate_winner_count).sum();
         let leaf_object_bytes = leaf_rows.iter().map(|row| row.object_bytes).sum();
         let leaf_summary_object_bytes = leaf_rows
@@ -3396,6 +3406,7 @@ impl FunnelRecord {
             returned_to_k_count,
             deduped_candidate_count,
             truncated_candidate_count,
+            pre_materialization_pruned_candidate_count,
             candidate_winner_count,
             leaf_candidate_mean,
             leaf_candidate_p95,
@@ -4280,6 +4291,7 @@ struct ProductionScanProfileRow {
     leaf_candidate_row_count: i64,
     deduped_candidate_row_count: i64,
     truncated_candidate_row_count: i64,
+    pre_materialization_pruned_candidate_row_count: i64,
     candidate_winner_count: i64,
     leaf_block_available_count: i64,
     leaf_block_selected_count: i64,
@@ -4302,16 +4314,17 @@ impl From<Row> for ProductionScanProfileRow {
             leaf_candidate_row_count: row.get(4),
             deduped_candidate_row_count: row.get(5),
             truncated_candidate_row_count: row.get(6),
-            candidate_winner_count: row.get(7),
-            leaf_block_available_count: row.get(8),
-            leaf_block_selected_count: row.get(9),
-            leaf_block_skipped_count: row.get(10),
-            sound_upper_bound_available_count: row.get(11),
-            sound_upper_bound_missing_count: row.get(12),
-            leaf_summary_score_nanos: row.get(13),
-            leaf_row_score_nanos: row.get(14),
-            candidate_score_nanos: row.get(15),
-            local_kth_score: row.get(16),
+            pre_materialization_pruned_candidate_row_count: row.get(7),
+            candidate_winner_count: row.get(8),
+            leaf_block_available_count: row.get(9),
+            leaf_block_selected_count: row.get(10),
+            leaf_block_skipped_count: row.get(11),
+            sound_upper_bound_available_count: row.get(12),
+            sound_upper_bound_missing_count: row.get(13),
+            leaf_summary_score_nanos: row.get(14),
+            leaf_row_score_nanos: row.get(15),
+            candidate_score_nanos: row.get(16),
+            local_kth_score: row.get(17),
         }
     }
 }
@@ -4792,6 +4805,7 @@ struct ProductionScanProfileAggregate {
     leaf_candidate_row_count_sum: i64,
     deduped_candidate_row_count_sum: i64,
     truncated_candidate_row_count_sum: i64,
+    pre_materialization_pruned_candidate_row_count_sum: i64,
     candidate_winner_count_sum: i64,
     leaf_block_available_count_sum: i64,
     leaf_block_selected_count_sum: i64,
@@ -4875,6 +4889,8 @@ impl ProductionScanProfileAggregate {
         self.leaf_candidate_row_count_sum += row.leaf_candidate_row_count;
         self.deduped_candidate_row_count_sum += row.deduped_candidate_row_count;
         self.truncated_candidate_row_count_sum += row.truncated_candidate_row_count;
+        self.pre_materialization_pruned_candidate_row_count_sum +=
+            row.pre_materialization_pruned_candidate_row_count;
         self.candidate_winner_count_sum += row.candidate_winner_count;
         self.leaf_block_available_count_sum += row.leaf_block_available_count;
         self.leaf_block_selected_count_sum += row.leaf_block_selected_count;
@@ -5796,6 +5812,7 @@ fn render_production_scan_profile_table(
         "leaf_candidate_sum",
         "deduped_candidate_sum",
         "truncated_candidate_sum",
+        "pre_materialization_pruned_sum",
         "winner_sum",
         "leaf_block_available_sum",
         "leaf_block_selected_sum",
@@ -5821,6 +5838,7 @@ fn render_production_scan_profile_table(
             Cell::new(aggregate.leaf_candidate_row_count_sum),
             Cell::new(aggregate.deduped_candidate_row_count_sum),
             Cell::new(aggregate.truncated_candidate_row_count_sum),
+            Cell::new(aggregate.pre_materialization_pruned_candidate_row_count_sum),
             Cell::new(aggregate.candidate_winner_count_sum),
             Cell::new(aggregate.leaf_block_available_count_sum),
             Cell::new(aggregate.leaf_block_selected_count_sum),
@@ -6212,6 +6230,7 @@ mod tests {
             boundary_replica_candidate_row_count: 0,
             deduped_candidate_row_count: 0,
             truncated_candidate_row_count: 275,
+            pre_materialization_pruned_candidate_row_count: 25,
             candidate_winner_count: 25,
             leaf_object_read_nanos: 1000,
             leaf_summary_score_nanos: 200,
@@ -6513,6 +6532,7 @@ mod tests {
                 boundary_replica_candidate_row_count: 10,
                 deduped_candidate_row_count: 1,
                 truncated_candidate_row_count: 75,
+                pre_materialization_pruned_candidate_row_count: 5,
                 candidate_winner_count: 25,
                 leaf_object_read_nanos: 1000,
                 leaf_summary_score_nanos: 200,
@@ -6540,6 +6560,7 @@ mod tests {
                 boundary_replica_candidate_row_count: 10,
                 deduped_candidate_row_count: 2,
                 truncated_candidate_row_count: 175,
+                pre_materialization_pruned_candidate_row_count: 15,
                 candidate_winner_count: 25,
                 leaf_object_read_nanos: 3000,
                 leaf_summary_score_nanos: 400,
@@ -7087,6 +7108,7 @@ mod tests {
             leaf_candidate_row_count: 20,
             deduped_candidate_row_count: 18,
             truncated_candidate_row_count: 10,
+            pre_materialization_pruned_candidate_row_count: 4,
             candidate_winner_count: 9,
             leaf_block_available_count: 5,
             leaf_block_selected_count: 4,
@@ -7106,6 +7128,7 @@ mod tests {
             leaf_candidate_row_count: 12,
             deduped_candidate_row_count: 11,
             truncated_candidate_row_count: 8,
+            pre_materialization_pruned_candidate_row_count: 3,
             candidate_winner_count: 8,
             leaf_block_available_count: 3,
             leaf_block_selected_count: 3,

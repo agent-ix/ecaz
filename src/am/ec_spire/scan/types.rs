@@ -259,6 +259,7 @@ pub(super) struct SpireStoreScanDiagnostics {
     pub(super) deduped_primary_candidate_row_count: usize,
     pub(super) deduped_boundary_replica_candidate_row_count: usize,
     pub(super) truncated_candidate_row_count: usize,
+    pub(super) pre_materialization_pruned_candidate_row_count: usize,
     pub(super) truncated_primary_candidate_row_count: usize,
     pub(super) truncated_boundary_replica_candidate_row_count: usize,
     pub(super) candidate_winner_count: usize,
@@ -296,6 +297,7 @@ pub(super) struct SpireLeafScanDiagnostics {
     pub(super) boundary_replica_candidate_row_count: usize,
     pub(super) deduped_candidate_row_count: usize,
     pub(super) truncated_candidate_row_count: usize,
+    pub(super) pre_materialization_pruned_candidate_row_count: usize,
     pub(super) candidate_winner_count: usize,
     pub(super) leaf_object_read_nanos: u64,
     pub(super) leaf_summary_score_nanos: u64,
@@ -337,6 +339,7 @@ pub(crate) struct SpireSelectedLeafScanProfile {
     pub(crate) leaf_candidate_row_count: u64,
     pub(crate) deduped_candidate_row_count: u64,
     pub(crate) truncated_candidate_row_count: u64,
+    pub(crate) pre_materialization_pruned_candidate_row_count: u64,
     pub(crate) candidate_winner_count: u64,
     pub(crate) leaf_block_available_count: u64,
     pub(crate) leaf_block_selected_count: u64,
@@ -475,6 +478,15 @@ trait SpireRoutedScanObserver {
         _placement: &SpirePlacementEntry,
         _assignment_flags: u16,
     ) {
+    }
+
+    fn pre_materialization_pruned_candidate(
+        &mut self,
+        epoch: u64,
+        placement: &SpirePlacementEntry,
+        assignment_flags: u16,
+    ) {
+        self.truncated_candidate(epoch, placement, assignment_flags);
     }
 
     fn candidate_winner(
@@ -633,6 +645,7 @@ impl SpireScanPlacementDiagnosticsObserver {
                 deduped_primary_candidate_row_count: 0,
                 deduped_boundary_replica_candidate_row_count: 0,
                 truncated_candidate_row_count: 0,
+                pre_materialization_pruned_candidate_row_count: 0,
                 truncated_primary_candidate_row_count: 0,
                 truncated_boundary_replica_candidate_row_count: 0,
                 candidate_winner_count: 0,
@@ -677,6 +690,7 @@ impl SpireScanPlacementDiagnosticsObserver {
                 boundary_replica_candidate_row_count: 0,
                 deduped_candidate_row_count: 0,
                 truncated_candidate_row_count: 0,
+                pre_materialization_pruned_candidate_row_count: 0,
                 candidate_winner_count: 0,
                 leaf_object_read_nanos: 0,
                 leaf_summary_score_nanos: 0,
@@ -819,6 +833,26 @@ impl SpireRoutedScanObserver for SpireScanPlacementDiagnosticsObserver {
         );
         if let Some(leaf) = self.leaf_entry_if_routed(placement) {
             leaf.truncated_candidate_row_count += 1;
+        }
+    }
+
+    fn pre_materialization_pruned_candidate(
+        &mut self,
+        epoch: u64,
+        placement: &SpirePlacementEntry,
+        assignment_flags: u16,
+    ) {
+        let entry = self.entry(epoch, placement);
+        entry.truncated_candidate_row_count += 1;
+        entry.pre_materialization_pruned_candidate_row_count += 1;
+        count_candidate_role(
+            assignment_flags,
+            &mut entry.truncated_primary_candidate_row_count,
+            &mut entry.truncated_boundary_replica_candidate_row_count,
+        );
+        if let Some(leaf) = self.leaf_entry_if_routed(placement) {
+            leaf.truncated_candidate_row_count += 1;
+            leaf.pre_materialization_pruned_candidate_row_count += 1;
         }
     }
 
