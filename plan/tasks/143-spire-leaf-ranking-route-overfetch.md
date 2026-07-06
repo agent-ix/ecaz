@@ -47,8 +47,13 @@ and quantify the containment lift.
 
 - If containment at nprobe X after fixes ≥ containment at nprobe 2X before,
   promote as default and re-anchor the frontier point for Task 146.
-  Otherwise publish the negative with funnel evidence and hand the
-  precision question to Task 144.
+  Otherwise publish the positive/negative split with funnel evidence and hand
+  the precision question to Task 144.
+- Default-on promotion also requires shape coverage beyond the current
+  2-level exact-leaf grid. The release A/B proves leaf-score-only ranking is a
+  positive candidate on the measured 10k/n128 and 50k/100k n1024 b0 shapes, but
+  it does not cover deeper hierarchies, larger fan-outs, or approximate leaf
+  scoring where parent `path_score` may still carry useful signal.
 
 ## Required Evidence
 
@@ -65,6 +70,8 @@ and quantify the containment lift.
 1. Leaf-only ranking + overfetch landed behind GUCs, A/B'd at 10k/50k/100k.
 2. Containment funnel published; promote/iterate/negative decision with
    numbers.
+3. Default-on decision states whether measured dominance is enough to promote or
+   whether unmeasured hierarchy/leaf-scoring coverage keeps the GUC default-off.
 
 ## References
 

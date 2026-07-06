@@ -17,8 +17,12 @@ No new benchmark jobs were run for this packet. The decision cites the release
 - Treat leaf-score-only routing as a positive, release-validated candidate. It
   improves equal-nprobe recall across 10k, 50k, and 100k, and it often improves
   latency at the current higher-probe frontier.
-- Do not flip it default-on in this packet. The aggressive half-nprobe gate is
-  not consistently met at 50k/100k.
+- Do not flip it default-on in this packet. The measured release A/B covers the
+  2-level exact-leaf grid (`nlists=128` at 10k, `nlists=1024` at 50k/100k,
+  b0, all leaf centroids scored exactly in f32). It does not cover deeper
+  hierarchies, larger fan-outs, or approximate leaf scoring where parent
+  `path_score` may still carry signal. That coverage gap, not the half-nprobe
+  frontier-reanchoring bar, is the conservative default-off rationale.
 - Keep route overfetch diagnostic/default-off. Overfetch improves baseline but
   does not beat leaf-only recall at 100k and only marginally beats leaf-only at
   one 50k endpoint.
@@ -41,8 +45,12 @@ source references.
 
 Please confirm the decision boundary:
 
-- leaf-score-only routing should remain a default-off candidate until reviewer
-  approval or a later frontier-selection task promotes it;
+- leaf-score-only routing should remain a default-off candidate until broader
+  shape coverage or a later frontier-selection task promotes it;
 - overfetch should remain default-off;
+- the combined `leaf_score_only=on` plus `route_overfetch_multiplier>1.0` cell
+  is out of scope for this closeout because the isolated overfetch lever is
+  dominated; Task 146 should include the combined cell if it revisits leaf-only
+  promotion;
 - Task 144 should continue from the route containment evidence rather than
   rerunning this Task 143 matrix.

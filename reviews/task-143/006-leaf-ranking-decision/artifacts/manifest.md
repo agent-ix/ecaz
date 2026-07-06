@@ -52,12 +52,21 @@ packet over the release `ecaz bench suite` artifacts above.
   it improves latency in the higher-probe 50k/100k rows that matter for the
   current frontier.
 - Do not flip `ec_spire.leaf_score_only_routing` to default-on in this packet.
-  The strict Task 143 half-nprobe promotion gate is not consistently met at
-  50k and 100k. The code remains available behind the default-off GUC for
-  reviewer approval and follow-on Task 146 frontier selection.
+  The measured release A/B covers only the 2-level exact-leaf grid:
+  `nlists=128` at 10k, `nlists=1024` at 50k/100k, `boundary_replica_count=0`,
+  all leaf centroids scored exactly in f32. It does not cover deeper
+  hierarchies, larger fan-outs, or approximate leaf scoring where parent
+  `path_score` may carry useful signal. That configuration coverage gap is the
+  conservative default-off rationale; the half-nprobe gate remains a
+  frontier-reanchoring bar, not the safe-to-enable bar.
 - Keep `ec_spire.route_overfetch_multiplier` at its default `1.0`. Overfetch
   improves baseline recall, but it does not beat leaf-only recall at 100k and
   only wins by a marginal `+0.0010` over leaf-only at 50k nprobe96.
+- The combined `leaf_score_only=on` plus `route_overfetch_multiplier>1.0` cell
+  is not required for this closeout because the isolated overfetch lever is
+  dominated by leaf-only at 100k and only marginally wins at one 50k endpoint.
+  If Task 146 revisits leaf-only promotion, include the combined cell in its
+  shape matrix rather than assuming it equals leaf-only.
 - Hand the remaining route precision problem to Task 144. The source packets
   show route containment equals final distinct recall in every row, so the
   unsolved gap remains in route / leaf selection rather than downstream rerank.
@@ -67,7 +76,7 @@ packet over the release `ecaz bench suite` artifacts above.
 Please review this as the Task 143 Phase 2 decision:
 
 - accept leaf-score-only routing as a positive, release-validated candidate;
-- confirm that default-on promotion should wait because the half-nprobe gate is
-  mixed at 50k/100k;
+- confirm that default-on promotion should wait because measured coverage is
+  limited to the 2-level exact-leaf grid;
 - confirm overfetch remains diagnostic/default-off;
 - confirm Task 144 owns the next precision step.
