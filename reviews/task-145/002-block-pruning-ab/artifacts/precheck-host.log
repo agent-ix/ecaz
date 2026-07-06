@@ -1,0 +1,6 @@
+LOAD
+          captured_at          |                                            postgres_version                                             | ecaz_build_profile | leaf_block_rows | leaf_block_pruning_max_global_blocks | session_rerank_width 
+-------------------------------+---------------------------------------------------------------------------------------------------------+--------------------+-----------------+--------------------------------------+----------------------
+ 2026-07-06 04:09:14.326994-07 | PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit | release            | 0               | 0                                    | -1
+(1 row)
+
