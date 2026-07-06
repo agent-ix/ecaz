@@ -29,6 +29,9 @@ baselines on the same host/corpus.
 
 - From 143/144/145 packets, pick ≤6 candidate shapes (including one
   fixed-count-replication control and the historical n128/b0 anchor).
+- Treat Task 144 packet 012 as a negative gate input: closure/ratio pruning does
+  not reach the 1-4-probe / <=5% scan regime at 50k/100k, and the least-bad
+  0.99 scan fraction regresses 2.96% -> 35.68% -> 78.66% with corpus size.
 - Carry Task 139 Phase 2's router-saturation levers as shape axes if
   143/144 leave recall short of the gate: `top_graph_search_list_size`
   {96, 128, 200, 400} (Task 121 found it clipped at 96 with recall still

@@ -31,3 +31,19 @@ Ratio pruning should be retired as a headline lever. Across the matrix, tight ra
 ## Call
 
 Task 144’s release matrix says **do not promote closure/ratio pruning**. The next program step should treat this as an iterate/escalate outcome and avoid building Tasks 145/146 on the assumption that the 10k closure shape is scalable.
+
+## Escalation Follow-through
+
+The selected outcome is **escalate**. This packet now records that ADR-060
+revisit condition 1 is met by the release matrix: on checked-in real50k and
+real100k fixtures, the useful <=5% scan operating point stays below the
+high-recall target and the least-bad 0.99 scan fraction regresses from 2.96%
+at 10k to 35.68% at 50k and 78.66% at 100k.
+
+ADR-060 has a reopen note for this evidence. ADR-051 remains deferred until
+anisotropic centroid scoring lands or is rejected and a separate packet proves
+standalone multi-probe benefit.
+
+Task 146 gate input: **closure/ratio pruning does NOT reach the 1-4-probe /
+<=5%-scan regime at 50k/100k -- least-bad 0.99 scan% regresses 2.96% -> 35.68%
+-> 78.66% with corpus size.**

@@ -41,3 +41,20 @@ Reasons:
 - At 50k, the least-bad 0.99 row is plain `fixed_b2`, not closure.
 - At 100k, only `closure_e050_b8` reaches 0.99 recall, but at about 79% candidate row scan and 568.8 MiB / 7.1315 mean replicas per vector.
 - The evidence points to a scaling problem in the candidate-generation strategy, not a threshold tuning problem.
+
+## Escalation Record
+
+Task 144 selects **escalate**. The release matrix meets ADR-060 revisit
+condition 1: a checked-in real50k-or-larger fixture where the baseline useful
+operating point is below roughly 0.95 recall at the required scan budget. At
+<=5% row-instances scanned, the 50k/100k matrix cannot reach the Task 144
+high-recall target; the usable 0.99-recall points require 35.6834% scan at 50k
+and 78.6594% scan at 100k.
+
+ADR-060 now has a Task 144 reopen note pointing to this funnel evidence.
+ADR-051 remains deferred until anisotropic centroid scoring lands or is
+rejected and a separate packet proves standalone multi-probe benefit.
+
+Task 146 gate input: **closure/ratio pruning does NOT reach the 1-4-probe /
+<=5%-scan regime at 50k/100k -- least-bad 0.99 scan% regresses 2.96% -> 35.68%
+-> 78.66% with corpus size.**

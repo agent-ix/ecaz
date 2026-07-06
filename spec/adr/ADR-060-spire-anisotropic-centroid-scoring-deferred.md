@@ -57,6 +57,22 @@ Any reopening packet must record:
   routing;
 - default-off control surface and diagnostics for the selected scoring mode.
 
+### Reopen Note: Task 144 Release Matrix
+
+Task 144 packet 012 (`reviews/task-144/012-release-matrix-decision/`) records
+that revisit condition 1 is now met on the release SPIRE remediation matrix.
+The 50k and 100k checked-in fixtures fail the useful high-recall operating
+point at the Task 144 scan budget: closure/ratio pruning does not reach the
+1-4-probe / <=5% row-instances-scanned regime, and the least-bad 0.99-recall
+scan fraction regresses from 2.96% at 10k to 35.68% at 50k and 78.66% at
+100k.
+
+This reopens the anisotropic-centroid-scoring evaluation path for a future
+default-off treatment. It does not by itself reopen ADR-051 standalone
+multi-probe centroid scoring: ADR-051 remains gated until anisotropic scoring
+lands or is rejected and packet-local evidence shows multi-probe improves
+recall independently of simply raising `nprobe`.
+
 ## Consequences
 
 - Phase 9 closes the anisotropic item as ADR-deferred rather than silently
