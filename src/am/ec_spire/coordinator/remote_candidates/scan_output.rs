@@ -304,6 +304,15 @@ fn production_scan_output_from_heap_candidate(
     }
 }
 
+fn production_scan_result_and_heap_frontier_limits(
+    scan_candidate_limit: usize,
+    top_k_override: Option<usize>,
+) -> (usize, usize) {
+    let result_limit = top_k_override.unwrap_or(scan_candidate_limit);
+    let heap_frontier_limit = scan_candidate_limit.max(result_limit);
+    (result_limit, heap_frontier_limit)
+}
+
 fn production_scan_outputs_from_heap_candidates(
     candidates: &[SpireRemoteSearchLocalHeapCandidateRow],
 ) -> Vec<SpireRemoteProductionScanOutputRow> {
@@ -655,12 +664,11 @@ fn remote_search_production_scan_heap_resolution_result_stream_impl(
         scan_selection.route_select_elapsed_us,
     );
     let scan_plan = scan_selection.scan_plan;
-    let top_k = match top_k_override {
-        Some(top_k) => top_k,
-        None => scan_plan.candidate_limit.ok_or_else(|| {
-            "ec_spire production AM scan candidate limit is unavailable".to_owned()
-        })?,
-    };
+    let scan_candidate_limit = scan_plan.candidate_limit.ok_or_else(|| {
+        "ec_spire production AM scan candidate limit is unavailable".to_owned()
+    })?;
+    let (result_limit, heap_frontier_limit) =
+        production_scan_result_and_heap_frontier_limits(scan_candidate_limit, top_k_override);
     let selected_leaf_pids = scan_selection.selected_leaf_pids;
     let selected_pid_count = u64::try_from(selected_leaf_pids.len())
         .map_err(|_| "ec_spire production scan heap selected PID count exceeds u64")?;
@@ -669,11 +677,11 @@ fn remote_search_production_scan_heap_resolution_result_stream_impl(
         root_control.active_epoch,
         query.clone(),
         selected_leaf_pids.clone(),
-        top_k,
+        heap_frontier_limit,
         consistency_mode,
     );
 
-    if top_k == 0 {
+    if result_limit == 0 {
         add_profile_elapsed(&mut metrics.planning_elapsed_us, planning_start);
         add_profile_elapsed(&mut metrics.total_elapsed_us, total_start);
         return production_profiled_scan_result_stream(
@@ -712,7 +720,7 @@ fn remote_search_production_scan_heap_resolution_result_stream_impl(
             root_control.active_epoch,
             query.clone(),
             selected_leaf_pids.clone(),
-            top_k,
+            heap_frontier_limit,
             consistency_mode,
         )
     } else {
@@ -727,7 +735,7 @@ fn remote_search_production_scan_heap_resolution_result_stream_impl(
     )
     .map_err(|_| "ec_spire production scan heap local candidate count exceeds u64")?;
     let initial_threshold_score =
-        initial_remote_scan_threshold_from_local_heap_rows(&local_heap_rows, top_k)?;
+        initial_remote_scan_threshold_from_local_heap_rows(&local_heap_rows, result_limit)?;
 
     let fingerprint_start = std::time::Instant::now();
     let dispatch_rows = remote_search_libpq_dispatch_plan_rows(
@@ -735,7 +743,7 @@ fn remote_search_production_scan_heap_resolution_result_stream_impl(
         root_control.active_epoch,
         query.clone(),
         selected_leaf_pids,
-        top_k,
+        heap_frontier_limit,
         consistency_mode,
     );
     add_profile_elapsed(&mut metrics.fingerprint_guard_elapsed_us, fingerprint_start);
@@ -753,7 +761,7 @@ fn remote_search_production_scan_heap_resolution_result_stream_impl(
     executor.mark_planned_dispatches_candidate_receive_ready();
     let fanout_result = executor.run_candidate_and_heap_receive_reusing_sessions(
         &query,
-        top_k,
+        heap_frontier_limit,
         i32::try_from(scan_plan.rerank_width)
             .map_err(|_| "ec_spire production scan heap rerank_width exceeds i32")?,
         consistency_mode,
@@ -785,7 +793,8 @@ fn remote_search_production_scan_heap_resolution_result_stream_impl(
     heap_rows.extend(remote_heap_rows);
     metrics.merge_input_count = u64::try_from(heap_rows.len()).unwrap_or(u64::MAX);
     let merge_start = std::time::Instant::now();
-    let merge_result = merge_remote_search_heap_candidates_for_result_with_stats(heap_rows, top_k)?;
+    let merge_result =
+        merge_remote_search_heap_candidates_for_result_with_stats(heap_rows, result_limit)?;
     add_profile_elapsed(&mut metrics.merge_elapsed_us, merge_start);
     metrics.merge_duplicate_vec_id_count = merge_result.duplicate_vec_id_count;
     let merged = merge_result.candidates;

@@ -332,6 +332,22 @@ mod production_executor_state_tests {
     }
 
     #[test]
+    fn production_scan_heap_frontier_uses_scan_candidate_limit_not_result_top_k() {
+        assert_eq!(
+            production_scan_result_and_heap_frontier_limits(50, Some(10)),
+            (10, 50)
+        );
+        assert_eq!(
+            production_scan_result_and_heap_frontier_limits(10, Some(50)),
+            (50, 50)
+        );
+        assert_eq!(
+            production_scan_result_and_heap_frontier_limits(50, None),
+            (50, 50)
+        );
+    }
+
+    #[test]
     fn explicit_heap_candidate_parameters_encode_binary_fields_as_hex() {
         let candidates = vec![candidate_for_state_test(2, 10, 3)];
 
