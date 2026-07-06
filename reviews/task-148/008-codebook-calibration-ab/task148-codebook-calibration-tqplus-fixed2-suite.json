@@ -1,0 +1,667 @@
+{
+  "name": "task148-codebook-calibration-tqplus-fixed2-ab",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-148/008-codebook-calibration-ab/artifacts/tqplus-fixed2",
+  "defaults": {
+    "pg": 18,
+    "socket_dir": "/Users/peter/.pgrx",
+    "profile": "ec_ivf",
+    "seed": 42,
+    "queries_limit": 32,
+    "iterations": 32,
+    "force_index": true,
+    "sample_backend_memory": true,
+    "memory_sample_interval_ms": 25
+  },
+  "thresholds": [],
+  "steps": [
+    {
+      "kind": "raw",
+      "name": "precheck-build-sha",
+      "tags": [
+        "setup",
+        "precheck",
+        "task148",
+        "tqplus",
+        "final",
+        "fixed2"
+      ],
+      "args": [
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "tqvector_bench",
+        "--socket-dir",
+        "/Users/peter/.pgrx",
+        "--raw",
+        "--sql",
+        "SELECT now() AS captured_at, ecaz_build_git_sha(), current_setting('ec_ivf.turboquant_scorer') AS scorer_default;",
+        "--log-output",
+        "${artifact_dir}/precheck-build-sha.log"
+      ],
+      "expected_artifacts": [
+        "${artifact_dir}/precheck-build-sha.log"
+      ]
+    },
+    {
+      "kind": "load",
+      "name": "load-tqdefault-10k",
+      "tags": [
+        "load",
+        "task148",
+        "tqdefault",
+        "real10k",
+        "tqplus",
+        "final",
+        "fixed2"
+      ],
+      "prefix": "task148_calib_tqplus_fixed2_tqdefault_real10k",
+      "profile": "ec_ivf",
+      "storage_format": "turboquant",
+      "bits": 4,
+      "corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_10k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_10k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "log_file": "${artifact_dir}/load-tqdefault-10k.log",
+      "reloptions": [
+        "turboquant_profile=tqplus"
+      ]
+    },
+    {
+      "kind": "recall",
+      "name": "recall-tqdefault-10k",
+      "tags": [
+        "recall",
+        "task148",
+        "tqdefault",
+        "real10k",
+        "tqplus",
+        "final",
+        "fixed2"
+      ],
+      "prefix": "task148_calib_tqplus_fixed2_tqdefault_real10k",
+      "profile": "ec_ivf",
+      "k": 10,
+      "bits": 4,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ],
+      "queries_limit": 32,
+      "truth_cache_dir": "reviews/task-148/008-codebook-calibration-ab/truth-cache",
+      "log_output": "${artifact_dir}/recall-tqdefault-10k.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-tqdefault-10k",
+      "tags": [
+        "latency",
+        "task148",
+        "tqdefault",
+        "real10k",
+        "tqplus",
+        "final",
+        "fixed2"
+      ],
+      "prefix": "task148_calib_tqplus_fixed2_tqdefault_real10k",
+      "profile": "ec_ivf",
+      "k": 10,
+      "bits": 4,
+      "sweep": [
+        32,
+        40
+      ],
+      "iterations": 32,
+      "queries_limit": 32,
+      "concurrency": 1,
+      "cache_state": "task148_calib_tqplus_fixed2_tqdefault_real10k_warm",
+      "task87_candidate_batch_counters": true,
+      "ivf_stage_counters": true,
+      "log_output": "${artifact_dir}/latency-tqdefault-10k.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-tqdefault-10k",
+      "tags": [
+        "storage",
+        "task148",
+        "tqdefault",
+        "real10k",
+        "tqplus",
+        "final",
+        "fixed2"
+      ],
+      "prefix": "task148_calib_tqplus_fixed2_tqdefault_real10k",
+      "log_file": "${artifact_dir}/storage-tqdefault-10k.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-tqdefault-50k",
+      "tags": [
+        "load",
+        "task148",
+        "tqdefault",
+        "real50k",
+        "tqplus",
+        "final",
+        "fixed2"
+      ],
+      "prefix": "task148_calib_tqplus_fixed2_tqdefault_real50k",
+      "profile": "ec_ivf",
+      "storage_format": "turboquant",
+      "bits": 4,
+      "corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_50k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "log_file": "${artifact_dir}/load-tqdefault-50k.log",
+      "reloptions": [
+        "turboquant_profile=tqplus"
+      ]
+    },
+    {
+      "kind": "recall",
+      "name": "recall-tqdefault-50k",
+      "tags": [
+        "recall",
+        "task148",
+        "tqdefault",
+        "real50k",
+        "tqplus",
+        "final",
+        "fixed2"
+      ],
+      "prefix": "task148_calib_tqplus_fixed2_tqdefault_real50k",
+      "profile": "ec_ivf",
+      "k": 10,
+      "bits": 4,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ],
+      "queries_limit": 32,
+      "truth_cache_dir": "reviews/task-148/008-codebook-calibration-ab/truth-cache",
+      "log_output": "${artifact_dir}/recall-tqdefault-50k.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-tqdefault-50k",
+      "tags": [
+        "latency",
+        "task148",
+        "tqdefault",
+        "real50k",
+        "tqplus",
+        "final",
+        "fixed2"
+      ],
+      "prefix": "task148_calib_tqplus_fixed2_tqdefault_real50k",
+      "profile": "ec_ivf",
+      "k": 10,
+      "bits": 4,
+      "sweep": [
+        32,
+        40
+      ],
+      "iterations": 32,
+      "queries_limit": 32,
+      "concurrency": 1,
+      "cache_state": "task148_calib_tqplus_fixed2_tqdefault_real50k_warm",
+      "task87_candidate_batch_counters": true,
+      "ivf_stage_counters": true,
+      "log_output": "${artifact_dir}/latency-tqdefault-50k.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-tqdefault-50k",
+      "tags": [
+        "storage",
+        "task148",
+        "tqdefault",
+        "real50k",
+        "tqplus",
+        "final",
+        "fixed2"
+      ],
+      "prefix": "task148_calib_tqplus_fixed2_tqdefault_real50k",
+      "log_file": "${artifact_dir}/storage-tqdefault-50k.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-tqdefault-100k",
+      "tags": [
+        "load",
+        "task148",
+        "tqdefault",
+        "real100k",
+        "tqplus",
+        "final",
+        "fixed2"
+      ],
+      "prefix": "task148_calib_tqplus_fixed2_tqdefault_real100k",
+      "profile": "ec_ivf",
+      "storage_format": "turboquant",
+      "bits": 4,
+      "corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_100k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "log_file": "${artifact_dir}/load-tqdefault-100k.log",
+      "reloptions": [
+        "turboquant_profile=tqplus"
+      ]
+    },
+    {
+      "kind": "recall",
+      "name": "recall-tqdefault-100k",
+      "tags": [
+        "recall",
+        "task148",
+        "tqdefault",
+        "real100k",
+        "tqplus",
+        "final",
+        "fixed2"
+      ],
+      "prefix": "task148_calib_tqplus_fixed2_tqdefault_real100k",
+      "profile": "ec_ivf",
+      "k": 10,
+      "bits": 4,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ],
+      "queries_limit": 32,
+      "truth_cache_dir": "reviews/task-148/008-codebook-calibration-ab/truth-cache",
+      "log_output": "${artifact_dir}/recall-tqdefault-100k.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-tqdefault-100k",
+      "tags": [
+        "latency",
+        "task148",
+        "tqdefault",
+        "real100k",
+        "tqplus",
+        "final",
+        "fixed2"
+      ],
+      "prefix": "task148_calib_tqplus_fixed2_tqdefault_real100k",
+      "profile": "ec_ivf",
+      "k": 10,
+      "bits": 4,
+      "sweep": [
+        32,
+        40
+      ],
+      "iterations": 32,
+      "queries_limit": 32,
+      "concurrency": 1,
+      "cache_state": "task148_calib_tqplus_fixed2_tqdefault_real100k_warm",
+      "task87_candidate_batch_counters": true,
+      "ivf_stage_counters": true,
+      "log_output": "${artifact_dir}/latency-tqdefault-100k.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-tqdefault-100k",
+      "tags": [
+        "storage",
+        "task148",
+        "tqdefault",
+        "real100k",
+        "tqplus",
+        "final",
+        "fixed2"
+      ],
+      "prefix": "task148_calib_tqplus_fixed2_tqdefault_real100k",
+      "log_file": "${artifact_dir}/storage-tqdefault-100k.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-stage2-10k",
+      "tags": [
+        "load",
+        "task148",
+        "stage2",
+        "real10k",
+        "tqplus",
+        "final",
+        "fixed2"
+      ],
+      "prefix": "task148_calib_tqplus_fixed2_stage2_real10k",
+      "profile": "ec_ivf",
+      "storage_format": "coarse_rerank",
+      "bits": 4,
+      "corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_10k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_10k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "rerank_placement=index",
+        "rerank_format=turboquant",
+        "rerank_width=50",
+        "stage2_final_rerank_width=25",
+        "turboquant_profile=tqplus"
+      ],
+      "log_file": "${artifact_dir}/load-stage2-10k.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-stage2-10k",
+      "tags": [
+        "recall",
+        "task148",
+        "stage2",
+        "real10k",
+        "tqplus",
+        "final",
+        "fixed2"
+      ],
+      "prefix": "task148_calib_tqplus_fixed2_stage2_real10k",
+      "profile": "ec_ivf",
+      "k": 10,
+      "bits": 4,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ],
+      "queries_limit": 32,
+      "truth_cache_dir": "reviews/task-148/008-codebook-calibration-ab/truth-cache",
+      "log_output": "${artifact_dir}/recall-stage2-10k.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-stage2-10k",
+      "tags": [
+        "latency",
+        "task148",
+        "stage2",
+        "real10k",
+        "tqplus",
+        "final",
+        "fixed2"
+      ],
+      "prefix": "task148_calib_tqplus_fixed2_stage2_real10k",
+      "profile": "ec_ivf",
+      "k": 10,
+      "bits": 4,
+      "sweep": [
+        32,
+        40
+      ],
+      "iterations": 32,
+      "queries_limit": 32,
+      "concurrency": 1,
+      "cache_state": "task148_calib_tqplus_fixed2_stage2_real10k_warm",
+      "task87_candidate_batch_counters": true,
+      "ivf_stage_counters": true,
+      "log_output": "${artifact_dir}/latency-stage2-10k.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-stage2-10k",
+      "tags": [
+        "storage",
+        "task148",
+        "stage2",
+        "real10k",
+        "tqplus",
+        "final",
+        "fixed2"
+      ],
+      "prefix": "task148_calib_tqplus_fixed2_stage2_real10k",
+      "log_file": "${artifact_dir}/storage-stage2-10k.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-stage2-50k",
+      "tags": [
+        "load",
+        "task148",
+        "stage2",
+        "real50k",
+        "tqplus",
+        "final",
+        "fixed2"
+      ],
+      "prefix": "task148_calib_tqplus_fixed2_stage2_real50k",
+      "profile": "ec_ivf",
+      "storage_format": "coarse_rerank",
+      "bits": 4,
+      "corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_50k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "rerank_placement=index",
+        "rerank_format=turboquant",
+        "rerank_width=50",
+        "stage2_final_rerank_width=25",
+        "turboquant_profile=tqplus"
+      ],
+      "log_file": "${artifact_dir}/load-stage2-50k.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-stage2-50k",
+      "tags": [
+        "recall",
+        "task148",
+        "stage2",
+        "real50k",
+        "tqplus",
+        "final",
+        "fixed2"
+      ],
+      "prefix": "task148_calib_tqplus_fixed2_stage2_real50k",
+      "profile": "ec_ivf",
+      "k": 10,
+      "bits": 4,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ],
+      "queries_limit": 32,
+      "truth_cache_dir": "reviews/task-148/008-codebook-calibration-ab/truth-cache",
+      "log_output": "${artifact_dir}/recall-stage2-50k.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-stage2-50k",
+      "tags": [
+        "latency",
+        "task148",
+        "stage2",
+        "real50k",
+        "tqplus",
+        "final",
+        "fixed2"
+      ],
+      "prefix": "task148_calib_tqplus_fixed2_stage2_real50k",
+      "profile": "ec_ivf",
+      "k": 10,
+      "bits": 4,
+      "sweep": [
+        32,
+        40
+      ],
+      "iterations": 32,
+      "queries_limit": 32,
+      "concurrency": 1,
+      "cache_state": "task148_calib_tqplus_fixed2_stage2_real50k_warm",
+      "task87_candidate_batch_counters": true,
+      "ivf_stage_counters": true,
+      "log_output": "${artifact_dir}/latency-stage2-50k.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-stage2-50k",
+      "tags": [
+        "storage",
+        "task148",
+        "stage2",
+        "real50k",
+        "tqplus",
+        "final",
+        "fixed2"
+      ],
+      "prefix": "task148_calib_tqplus_fixed2_stage2_real50k",
+      "log_file": "${artifact_dir}/storage-stage2-50k.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-stage2-100k",
+      "tags": [
+        "load",
+        "task148",
+        "stage2",
+        "real100k",
+        "tqplus",
+        "final",
+        "fixed2"
+      ],
+      "prefix": "task148_calib_tqplus_fixed2_stage2_real100k",
+      "profile": "ec_ivf",
+      "storage_format": "coarse_rerank",
+      "bits": 4,
+      "corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_100k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "rerank_placement=index",
+        "rerank_format=turboquant",
+        "rerank_width=50",
+        "stage2_final_rerank_width=25",
+        "turboquant_profile=tqplus"
+      ],
+      "log_file": "${artifact_dir}/load-stage2-100k.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-stage2-100k",
+      "tags": [
+        "recall",
+        "task148",
+        "stage2",
+        "real100k",
+        "tqplus",
+        "final",
+        "fixed2"
+      ],
+      "prefix": "task148_calib_tqplus_fixed2_stage2_real100k",
+      "profile": "ec_ivf",
+      "k": 10,
+      "bits": 4,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ],
+      "queries_limit": 32,
+      "truth_cache_dir": "reviews/task-148/008-codebook-calibration-ab/truth-cache",
+      "log_output": "${artifact_dir}/recall-stage2-100k.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-stage2-100k",
+      "tags": [
+        "latency",
+        "task148",
+        "stage2",
+        "real100k",
+        "tqplus",
+        "final",
+        "fixed2"
+      ],
+      "prefix": "task148_calib_tqplus_fixed2_stage2_real100k",
+      "profile": "ec_ivf",
+      "k": 10,
+      "bits": 4,
+      "sweep": [
+        32,
+        40
+      ],
+      "iterations": 32,
+      "queries_limit": 32,
+      "concurrency": 1,
+      "cache_state": "task148_calib_tqplus_fixed2_stage2_real100k_warm",
+      "task87_candidate_batch_counters": true,
+      "ivf_stage_counters": true,
+      "log_output": "${artifact_dir}/latency-stage2-100k.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-stage2-100k",
+      "tags": [
+        "storage",
+        "task148",
+        "stage2",
+        "real100k",
+        "tqplus",
+        "final",
+        "fixed2"
+      ],
+      "prefix": "task148_calib_tqplus_fixed2_stage2_real100k",
+      "log_file": "${artifact_dir}/storage-stage2-100k.log"
+    },
+    {
+      "kind": "raw",
+      "name": "postcheck-build-sha",
+      "tags": [
+        "setup",
+        "postcheck",
+        "task148",
+        "tqplus",
+        "final",
+        "fixed2"
+      ],
+      "args": [
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "tqvector_bench",
+        "--socket-dir",
+        "/Users/peter/.pgrx",
+        "--raw",
+        "--sql",
+        "SELECT now() AS captured_at, ecaz_build_git_sha(), current_setting('ec_ivf.turboquant_scorer') AS scorer_default;",
+        "--log-output",
+        "${artifact_dir}/postcheck-build-sha.log"
+      ],
+      "expected_artifacts": [
+        "${artifact_dir}/postcheck-build-sha.log"
+      ]
+    }
+  ]
+}

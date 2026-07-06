@@ -1,0 +1,21 @@
+Task 148 TQ+ install log
+
+Command attempted first: cargo pgrx install --release --pg-config pg18
+Status: failed; cargo-pgrx expected an existing pg_config path, not the pg18 alias.
+
+Command: cargo pgrx install --release --pg-config /opt/homebrew/opt/postgresql@18/bin/pg_config
+Status: success
+Key output:
+- Using PgConfig("pg18") and pg_config from /opt/homebrew/opt/postgresql@18/bin/pg_config
+- Building extension with features pg18
+- Copying shared library to /opt/homebrew/lib/postgresql@18/ecaz.dylib
+- Writing SQL entities to /opt/homebrew/share/postgresql@18/extension/ecaz--0.1.1.sql
+- Finished installing ecaz
+
+Installed extension precheck:
+- ecaz_build_git_sha(): a18c8c063d333e16ca3be3ab7ff15dfddb51b231
+- scorer_default: int8_approx
+- precheck log: reviews/task-148/008-codebook-calibration-ab/artifacts/precheck-after-a18c8c063.log
+
+Dylib shasum:
+- 4a3b36737d8901378fe7c9bbb4dd438013fc293a3bc29eeb8dd5c45e3fd92c63  /opt/homebrew/lib/postgresql@18/ecaz.dylib

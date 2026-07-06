@@ -1,0 +1,47 @@
+┌────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────────────────────────────────────────────┬─────────────┬─────────────┬────────────────┐
+│ nprobe ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state                                     ┆ rss_peak_kb ┆ hwm_peak_kb ┆ memory_samples │
+╞════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════════════════════════════════════════════╪═════════════╪═════════════╪════════════════╡
+│ 32     ┆ 32    ┆ 1.17 ms ┆ 0.37 ms ┆ 0.97 ms ┆ 1.11 ms ┆ 1.30 ms ┆ 2.62 ms ┆ 3.18 ms ┆ task148_calib_tqplus_fixed2_stage2_real50k_warm ┆ 0           ┆ 0           ┆ 0              │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 40     ┆ 32    ┆ 1.34 ms ┆ 0.37 ms ┆ 1.08 ms ┆ 1.28 ms ┆ 1.46 ms ┆ 2.76 ms ┆ 3.34 ms ┆ task148_calib_tqplus_fixed2_stage2_real50k_warm ┆ 0           ┆ 0           ┆ 0              │
+└────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────────────────────────────────────────────┴─────────────┴─────────────┴────────────────┘
+[block-kernel-counters] command=latency label=nprobe=32 surface=ivf quant=rabitq isa=neon flushes=893 candidates=225031 elapsed_nanos=14766375 elapsed_ms=14.766375 kernel_flushes=893 kernel_candidates=225031 kernel_elapsed_nanos=14766375 kernel_elapsed_ms=14.766375 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=0 width_8_15=2 width_16_31=1 width_ge32=890 pruned_candidates=0 kept_candidates=0
+[block-kernel-counters] command=latency label=nprobe=32 surface=ivf quant=turboquant isa=neon flushes=32 candidates=1600 elapsed_nanos=215416 elapsed_ms=0.215416 kernel_flushes=32 kernel_candidates=1600 kernel_elapsed_nanos=215416 kernel_elapsed_ms=0.215416 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=0 width_8_15=0 width_16_31=0 width_ge32=32 pruned_candidates=0 kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=ivf flushes=925 candidates=226631 elapsed_nanos=14981791 elapsed_ms=14.981791 lut32_flushes=32 lut32_candidates=1600 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[block-kernel-counters] command=latency label=nprobe=40 surface=ivf quant=rabitq isa=neon flushes=1113 candidates=281405 elapsed_nanos=18510738 elapsed_ms=18.510738 kernel_flushes=1113 kernel_candidates=281405 kernel_elapsed_nanos=18510738 kernel_elapsed_ms=18.510738 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=0 width_8_15=1 width_16_31=0 width_ge32=1112 pruned_candidates=0 kept_candidates=0
+[block-kernel-counters] command=latency label=nprobe=40 surface=ivf quant=turboquant isa=neon flushes=32 candidates=1600 elapsed_nanos=216914 elapsed_ms=0.216914 kernel_flushes=32 kernel_candidates=1600 kernel_elapsed_nanos=216914 kernel_elapsed_ms=0.216914 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=0 width_8_15=0 width_16_31=0 width_ge32=32 pruned_candidates=0 kept_candidates=0
+[task87-counters] command=latency label=nprobe=40 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=40 surface=ivf flushes=1145 candidates=283005 elapsed_nanos=18727652 elapsed_ms=18.727652 lut32_flushes=32 lut32_candidates=1600 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=40 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=40 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[ivf-stage-counters] command=latency label=nprobe=32 stage=approximate_scan scans=32 samples=32 elapsed_us=20626 elapsed_ms=20.626
+[ivf-stage-counters] command=latency label=nprobe=32 stage=candidate_record scans=32 samples=893 elapsed_us=322 elapsed_ms=0.322
+[ivf-stage-counters] command=latency label=nprobe=32 stage=centroid_score scans=32 samples=32 elapsed_us=2401 elapsed_ms=2.401
+[ivf-stage-counters] command=latency label=nprobe=32 stage=exact_rerank scans=32 samples=32 elapsed_us=7239 elapsed_ms=7.239
+[ivf-stage-counters] command=latency label=nprobe=32 stage=posting_page_decode scans=32 samples=32 elapsed_us=19139 elapsed_ms=19.139
+[ivf-stage-counters] command=latency label=nprobe=32 stage=posting_visit scans=32 samples=32 elapsed_us=20419 elapsed_ms=20.419
+[ivf-stage-counters] command=latency label=nprobe=32 stage=probe_plan scans=32 samples=32 elapsed_us=2646 elapsed_ms=2.646
+[ivf-stage-counters] command=latency label=nprobe=32 stage=query_prep scans=32 samples=32 elapsed_us=150 elapsed_ms=0.150
+[ivf-stage-counters] command=latency label=nprobe=32 stage=rerank_payload_decode scans=32 samples=64 elapsed_us=4741 elapsed_ms=4.741
+[ivf-stage-counters] command=latency label=nprobe=32 stage=rerank_payload_score scans=32 samples=64 elapsed_us=281 elapsed_ms=0.281
+[ivf-stage-counters] command=latency label=nprobe=32 stage=rescan_total scans=32 samples=32 elapsed_us=33259 elapsed_ms=33.259
+[ivf-stage-counters] command=latency label=nprobe=32 stage=scorer_batch scans=32 samples=893 elapsed_us=14849 elapsed_ms=14.849
+[ivf-stage-counters] command=latency label=nprobe=32 stage=scratch_flush scans=32 samples=893 elapsed_us=15917 elapsed_ms=15.917
+[ivf-stage-counters] command=latency label=nprobe=32 stage=topk_collect scans=32 samples=32 elapsed_us=162 elapsed_ms=0.162
+[ivf-stage-counters] command=latency label=nprobe=40 stage=approximate_scan scans=32 samples=32 elapsed_us=25802 elapsed_ms=25.802
+[ivf-stage-counters] command=latency label=nprobe=40 stage=candidate_record scans=32 samples=1113 elapsed_us=354 elapsed_ms=0.354
+[ivf-stage-counters] command=latency label=nprobe=40 stage=centroid_score scans=32 samples=32 elapsed_us=2449 elapsed_ms=2.449
+[ivf-stage-counters] command=latency label=nprobe=40 stage=exact_rerank scans=32 samples=32 elapsed_us=7373 elapsed_ms=7.373
+[ivf-stage-counters] command=latency label=nprobe=40 stage=posting_page_decode scans=32 samples=32 elapsed_us=24023 elapsed_ms=24.023
+[ivf-stage-counters] command=latency label=nprobe=40 stage=posting_visit scans=32 samples=32 elapsed_us=25579 elapsed_ms=25.579
+[ivf-stage-counters] command=latency label=nprobe=40 stage=probe_plan scans=32 samples=32 elapsed_us=2734 elapsed_ms=2.734
+[ivf-stage-counters] command=latency label=nprobe=40 stage=query_prep scans=32 samples=32 elapsed_us=159 elapsed_ms=0.159
+[ivf-stage-counters] command=latency label=nprobe=40 stage=rerank_payload_decode scans=32 samples=64 elapsed_us=4836 elapsed_ms=4.836
+[ivf-stage-counters] command=latency label=nprobe=40 stage=rerank_payload_score scans=32 samples=64 elapsed_us=284 elapsed_ms=0.284
+[ivf-stage-counters] command=latency label=nprobe=40 stage=rescan_total scans=32 samples=32 elapsed_us=38722 elapsed_ms=38.722
+[ivf-stage-counters] command=latency label=nprobe=40 stage=scorer_batch scans=32 samples=1113 elapsed_us=18606 elapsed_ms=18.606
+[ivf-stage-counters] command=latency label=nprobe=40 stage=scratch_flush scans=32 samples=1113 elapsed_us=19901 elapsed_ms=19.901
+[ivf-stage-counters] command=latency label=nprobe=40 stage=topk_collect scans=32 samples=32 elapsed_us=174 elapsed_ms=0.174

@@ -1,0 +1,2 @@
+38a05f51602601f390c30c022dab42d50da697208127eae8e8d8a5c5fa571292  /opt/homebrew/lib/postgresql@18/ecaz.dylib
+38a05f51602601f390c30c022dab42d50da697208127eae8e8d8a5c5fa571292  /Users/peter/dev/tqvector/.task-worktrees/task-148-baseline/target/release/libecaz.dylib
