@@ -1,0 +1,11 @@
+Script started on 2026-07-06 14:07:31-07:00 [<not executed on terminal>]
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.16s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-52f8c7085962b346)
+
+running 1 test
+test am::ec_spire::scan::tests::collect_scan_placement_diagnostics_reports_candidate_truncation ... [32mok(B[m
+
+test result: [32mok(B[m. 1 passed; 0 failed; 0 ignored; 0 measured; 2271 filtered out; finished in 0.06s
+
+
+Script done on 2026-07-06 14:07:31-07:00 [COMMAND_EXIT_CODE="0"]
