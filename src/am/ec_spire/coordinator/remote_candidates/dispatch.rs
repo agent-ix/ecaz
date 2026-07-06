@@ -258,8 +258,15 @@ pub(crate) struct SpireRemoteProductionCandidateReceiveRequest {
     pub(crate) selected_pids: Vec<u64>,
     pub(crate) top_k: usize,
     pub(crate) effective_rerank_width: i32,
+    pub(crate) remote_scan_session_gucs: Vec<SpireRemoteProductionSessionGuc>,
     pub(crate) consistency_mode: String,
     pub(crate) initial_threshold_score: Option<f32>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct SpireRemoteProductionSessionGuc {
+    pub(crate) name: &'static str,
+    pub(crate) value: String,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -370,6 +377,56 @@ fn remote_heap_payload_decode_bytes(candidates: &[SpireRemoteSearchLocalHeapCand
             typed_bytes.saturating_add(json_bytes)
         })
         .fold(0_u64, u64::saturating_add)
+}
+
+fn remote_production_leaf_block_pruning_session_gucs() -> Vec<SpireRemoteProductionSessionGuc> {
+    vec![
+        SpireRemoteProductionSessionGuc {
+            name: "ec_spire.leaf_block_pruning_max_blocks_per_leaf",
+            value: options::current_session_leaf_block_pruning_max_blocks_per_leaf().to_string(),
+        },
+        SpireRemoteProductionSessionGuc {
+            name: "ec_spire.leaf_block_pruning_max_global_blocks",
+            value: options::current_session_leaf_block_pruning_max_global_blocks().to_string(),
+        },
+        SpireRemoteProductionSessionGuc {
+            name: "ec_spire.leaf_block_pruning_global_probe_blocks",
+            value: options::current_session_leaf_block_pruning_global_probe_blocks().to_string(),
+        },
+        SpireRemoteProductionSessionGuc {
+            name: "ec_spire.leaf_block_pruning_sample_rows_per_block",
+            value: options::current_session_leaf_block_pruning_sample_rows_per_block().to_string(),
+        },
+        SpireRemoteProductionSessionGuc {
+            name: "ec_spire.leaf_block_pruning_sample_summary_prior_weight",
+            value: options::current_session_leaf_block_pruning_sample_summary_prior_weight()
+                .to_string(),
+        },
+        SpireRemoteProductionSessionGuc {
+            name: "ec_spire.leaf_block_pruning_summary_radius_weight",
+            value: options::current_session_leaf_block_pruning_summary_radius_weight().to_string(),
+        },
+        SpireRemoteProductionSessionGuc {
+            name: "ec_spire.leaf_block_pruning_route_prior_weight",
+            value: options::current_session_leaf_block_pruning_route_prior_weight().to_string(),
+        },
+    ]
+}
+
+async fn apply_remote_production_session_gucs(
+    client: &tokio_postgres::Client,
+    session_gucs: &[SpireRemoteProductionSessionGuc],
+) -> Result<(), &'static str> {
+    for session_guc in session_gucs {
+        client
+            .execute(
+                "SELECT set_config($1, $2, false)",
+                &[&session_guc.name, &session_guc.value],
+            )
+            .await
+            .map_err(|error| production_remote_query_failure_category(&error))?;
+    }
+    Ok(())
 }
 
 struct SpireRemoteExplicitHeapCandidateParameters {
@@ -1411,6 +1468,12 @@ impl SpireRemoteProductionTransportAdapter {
                         }
                     };
 
+                apply_remote_production_session_gucs(
+                    &connection.client,
+                    &request.remote_scan_session_gucs,
+                )
+                .await?;
+
                 let candidate_start = std::time::Instant::now();
                 add_profile_count(&mut query_metrics.candidate_receive_query_count, 1);
                 let result_rows =
@@ -2018,6 +2081,8 @@ impl SpireRemoteProductionTransportAdapter {
                 {
                     return Err(SPIRE_REMOTE_STATUS_ENDPOINT_IDENTITY_MISMATCH);
                 }
+                apply_remote_production_session_gucs(&client, &request.remote_scan_session_gucs)
+                    .await?;
                 client
                     .query(
                         SPIRE_REMOTE_SEARCH_LIBPQ_SQL_TEMPLATE,

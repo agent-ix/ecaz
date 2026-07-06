@@ -56,6 +56,7 @@
                 selected_pids: vec![selected_pid],
                 top_k: 1,
                 effective_rerank_width: 0,
+                remote_scan_session_gucs: Vec::new(),
                 consistency_mode: "strict".to_owned(),
                 initial_threshold_score: None,
             },
@@ -135,6 +136,7 @@
                 selected_pids: vec![u64::try_from(selected_pid).expect("pid should fit u64")],
                 top_k: 0,
                 effective_rerank_width: 0,
+                remote_scan_session_gucs: Vec::new(),
                 consistency_mode: "strict".to_owned(),
                 initial_threshold_score: None,
             },
@@ -222,8 +224,9 @@
                 selected_pids: vec![u64::try_from(selected_pid).expect("pid should fit u64")],
                 top_k: 1,
                 effective_rerank_width: 0,
+                remote_scan_session_gucs: Vec::new(),
                 consistency_mode: consistency_mode.to_owned(),
-                    initial_threshold_score: None,
+                initial_threshold_score: None,
             }
         };
 
@@ -359,6 +362,7 @@
                     selected_pids: vec![u64::try_from(selected_pid).expect("pid should fit u64")],
                     top_k: 1,
                     effective_rerank_width: 0,
+                    remote_scan_session_gucs: Vec::new(),
                     consistency_mode: consistency_mode.to_owned(),
                     initial_threshold_score: None,
                 }
@@ -489,8 +493,9 @@
                 selected_pids: vec![u64::try_from(selected_pid).expect("pid should fit u64")],
                 top_k: 1,
                 effective_rerank_width: 0,
+                remote_scan_session_gucs: Vec::new(),
                 consistency_mode: consistency_mode.to_owned(),
-                    initial_threshold_score: None,
+                initial_threshold_score: None,
             }
         };
 
@@ -624,6 +629,7 @@
                     selected_pids: vec![u64::try_from(selected_pid).expect("pid should fit u64")],
                     top_k: 1,
                     effective_rerank_width: 0,
+                    remote_scan_session_gucs: Vec::new(),
                     consistency_mode: consistency_mode.to_owned(),
                     initial_threshold_score: None,
                 }
@@ -778,6 +784,7 @@
                     selected_pids: selected_pids.clone(),
                     top_k: 1,
                     effective_rerank_width: 0,
+                    remote_scan_session_gucs: Vec::new(),
                     consistency_mode: consistency_mode.to_owned(),
                     initial_threshold_score: None,
                 }
@@ -936,6 +943,7 @@
                 selected_pids: vec![u64::try_from(selected_pid).expect("pid should fit u64")],
                 top_k: 1,
                 effective_rerank_width: 0,
+                remote_scan_session_gucs: Vec::new(),
                 consistency_mode: "strict".to_owned(),
                 initial_threshold_score: None,
             },
@@ -1027,6 +1035,7 @@
                 selected_pids: vec![u64::try_from(selected_pid).expect("pid should fit u64")],
                 top_k: 1,
                 effective_rerank_width: 0,
+                remote_scan_session_gucs: Vec::new(),
                 consistency_mode: "strict".to_owned(),
                 initial_threshold_score: None,
             },
@@ -1128,6 +1137,7 @@
                 selected_pids: vec![u64::try_from(selected_pid).expect("pid should fit u64")],
                 top_k: 1,
                 effective_rerank_width: 0,
+                remote_scan_session_gucs: Vec::new(),
                 consistency_mode: "strict".to_owned(),
                 initial_threshold_score: None,
             }],
@@ -1180,6 +1190,7 @@
                 selected_pids: vec![1],
                 top_k: 1,
                 effective_rerank_width: 0,
+                remote_scan_session_gucs: Vec::new(),
                 consistency_mode: "strict".to_owned(),
                 initial_threshold_score: None,
             },
@@ -1266,6 +1277,7 @@
                 selected_pids: vec![u64::try_from(selected_pid).expect("pid should fit u64")],
                 top_k: 1,
                 effective_rerank_width: 0,
+                remote_scan_session_gucs: Vec::new(),
                 consistency_mode: "strict".to_owned(),
                 initial_threshold_score: None,
             },
@@ -1360,6 +1372,7 @@
                 selected_pids: vec![u64::try_from(selected_pid).expect("pid should fit u64")],
                 top_k: 1,
                 effective_rerank_width: 0,
+                remote_scan_session_gucs: Vec::new(),
                 consistency_mode: "strict".to_owned(),
                 initial_threshold_score: None,
             },
@@ -1451,6 +1464,7 @@
                 selected_pids: vec![u64::try_from(selected_pid).expect("pid should fit u64")],
                 top_k: 1,
                 effective_rerank_width: 0,
+                remote_scan_session_gucs: Vec::new(),
                 consistency_mode: "strict".to_owned(),
                 initial_threshold_score: None,
             },
@@ -1584,8 +1598,9 @@
                 selected_pids,
                 top_k: 1,
                 effective_rerank_width: 0,
+                remote_scan_session_gucs: Vec::new(),
                 consistency_mode: consistency_mode.to_owned(),
-                    initial_threshold_score: None,
+                initial_threshold_score: None,
             }
         };
         let rows = am::spire_remote_search_production_candidate_receive_for_test(vec![

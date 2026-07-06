@@ -928,6 +928,7 @@
                         selected_pids: selected_pids.clone(),
                         top_k,
                         effective_rerank_width,
+                        remote_scan_session_gucs: Vec::new(),
                         consistency_mode: consistency_mode.clone(),
                         initial_threshold_score: None,
                     }

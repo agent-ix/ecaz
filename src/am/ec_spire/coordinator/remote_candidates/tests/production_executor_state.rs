@@ -1055,6 +1055,7 @@ mod production_executor_state_tests {
                     selected_pids: oversized_pids.clone(),
                     top_k: 1,
                     effective_rerank_width: 1,
+                    remote_scan_session_gucs: Vec::new(),
                     consistency_mode: "strict".to_owned(),
                     initial_threshold_score: None,
                 },
@@ -1737,6 +1738,14 @@ mod production_executor_state_tests {
         assert_eq!(node_42.query, vec![1.0, 0.0]);
         assert_eq!(node_42.top_k, 4);
         assert_eq!(node_42.effective_rerank_width, 9);
+        assert_eq!(node_42.remote_scan_session_gucs.len(), 7);
+        assert!(node_42
+            .remote_scan_session_gucs
+            .iter()
+            .any(|guc| guc.name == "ec_spire.leaf_block_pruning_max_global_blocks"));
+        assert!(requests
+            .iter()
+            .all(|request| request.remote_scan_session_gucs == node_42.remote_scan_session_gucs));
         assert_eq!(node_42.consistency_mode, "strict");
         assert_eq!(node_42.initial_threshold_score, threshold);
         assert!(requests
