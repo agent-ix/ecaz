@@ -1,5 +1,0 @@
-ssm_online instance_count=3 status=ready
-i-0b4386fa5017f1363 ssm command id: 2bb58093-379f-4cad-8c17-a784f32ad19a
-i-07bcc98c3d5d027ee ssm command id: a296cdd1-1b88-4efd-8cb0-f6313ccf8b2a
-i-00c2f2aca9dbdd6bd ssm command id: 96b97b80-dc39-4af8-95a0-cbc48638832f
-coordinator remote conninfo ssm command id: 4712b962-0ae8-4cdf-84db-2664f9e27f35

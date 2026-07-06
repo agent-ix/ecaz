@@ -1,4 +1,0 @@
-Script started on 2026-05-21 19:36:14-07:00 [<not executed on terminal>]
-102:    let (epoch_bytes, object_bytes, placement_bytes) = unsafe {
-
-Script done on 2026-05-21 19:36:14-07:00 [COMMAND_EXIT_CODE="0"]

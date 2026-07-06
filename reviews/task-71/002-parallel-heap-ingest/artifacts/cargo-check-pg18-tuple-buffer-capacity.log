@@ -1,9 +1,0 @@
-Command:
-cargo check --no-default-features --features pg18
-
-Result:
-passed, non-escalated
-
-Key output:
-Checking ecaz v0.1.1 (/Users/peter/dev/tqvector)
-Finished dev profile [unoptimized + debuginfo] target(s) in 21.08s

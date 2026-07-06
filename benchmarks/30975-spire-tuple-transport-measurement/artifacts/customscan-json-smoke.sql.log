@@ -1,4 +1,0 @@
-SET
-SET
-SET
-ERROR:  EcSpireDistributedScan requires a finite real[] ORDER BY query parameter

@@ -1,9 +1,0 @@
-Script started on 2026-06-14 13:52:50-07:00 [<not executed on terminal>]
-make: Entering directory '/home/peter/dev/ecaz/infra/spire-aws'
-cd /home/peter/dev/ecaz && /home/peter/dev/ecaz/scripts/spire-aws/setup-coordinator-store-volumes.sh /home/peter/dev/ecaz/reviews/task-107/002-aws-provisioning/artifacts/aws-topology.json /home/peter/dev/ecaz/reviews/task-107/002-aws-provisioning/artifacts
-setup coordinator store volumes ssm command id: d4af80fa-4133-448c-86c3-f4a8b844c66f
-setup coordinator store volumes failed with status=Failed
-make: *** [Makefile:127: setup-coordinator-store-volumes] Error 1
-make: Leaving directory '/home/peter/dev/ecaz/infra/spire-aws'
-
-Script done on 2026-06-14 13:53:09-07:00 [COMMAND_EXIT_CODE="2"]

@@ -1,6 +1,0 @@
-[install] repo=/home/peter/dev/ecaz
-[install] pgrx_home=/home/peter/.pgrx
-[install] pg_config=/home/peter/.pgrx/18.3/pgrx-install/bin/pg_config
-[install] backend artifact assertion passed
-[install] installed_backend=/home/peter/.pgrx/18.3/pgrx-install/lib/postgresql/ecaz.so
-[install] sha256=5e9a0a5cdf885629a680bfdd8ec34e6f75495d8a0262159988d4450f0955f80a

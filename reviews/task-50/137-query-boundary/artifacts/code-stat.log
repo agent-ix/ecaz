@@ -1,5 +1,0 @@
-6358c019 Centralize PostgreSQL query analysis unsafe
- src/lib.rs           | 64 +++++-----------------------------------------------
- src/storage/mod.rs   |  1 +
- src/storage/query.rs | 36 +++++++++++++++++++++++++++++
- 3 files changed, 43 insertions(+), 58 deletions(-)

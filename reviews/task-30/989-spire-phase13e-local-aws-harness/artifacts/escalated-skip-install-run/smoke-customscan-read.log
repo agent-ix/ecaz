@@ -1,9 +1,0 @@
-SET
-SET
-=== Registered remote nodes ===
-0	active	1
-2	active	34
-3	active	33
-4	active	33
-=== EXPLAIN ANALYZE: vector ORDER BY LIMIT through CustomScan ===
-psql:scripts/spire-aws/smoke-customscan-read.sql:35: ERROR:  ec_spire production executor cannot merge remote heap candidates while node_id 2 is in state CandidateReceiveFailed with status remote_candidate_receive_failed

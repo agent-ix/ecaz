@@ -1,5 +1,0 @@
-Script started on 2026-06-14 13:31:56-07:00 [<not executed on terminal>]
-SPIRE AWS nondefault Graviton lane override accepted: coordinator=r7g.4xlarge remote=r7g.2xlarge
-SPIRE AWS operator preflight passed: region=us-west-2 az=us-west-2a ami=ami-04e0d7d889f694536 coordinator=r7g.4xlarge remote=r7g.2xlarge remote_count=2
-
-Script done on 2026-06-14 13:31:57-07:00 [COMMAND_EXIT_CODE="0"]

@@ -1,8 +1,0 @@
-
-   0: [91mssm command 1febccfe-b5ec-4069-94d9-54da3538f752 on i-0056e46b981edbb17 ended in Failed (rc=127): + cd /var/lib/pgsql/build/ecaz / ++ dirname benchmarks/task73-74-aws-spire-quality-overhead-refresh-20260531/suite.json / + mkdir -p benchmarks/task73-74-aws-spire-quality-overhead-refresh-20260531 benchmarks/task73-74-aws-spire-quality-overhead-refresh-20260531/artifacts / + trap 'status=$?; set +e; aws s3 sync benchmarks/task73-74-aws-spire-quality-overhead-refresh-20260531/artifacts s3://ecaz-cloud-1m-b62eb804/bench-artifacts/task73-74-aws-spire-quality-overhead-refresh-20260531/20260531T164851Z/ --region us-west-2 --only-show-errors || true; exit $status' EXIT / + '[' '!' -f benchmarks/task73-74-aws-spire-quality-overhead-refresh-20260531/suite.json ']'[0m
-
-Location:
-   [35mcrates/ecaz-cloud/src/ssm.rs[0m:[35m111[0m
-
-Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
-Run with RUST_BACKTRACE=full to include source snippets.

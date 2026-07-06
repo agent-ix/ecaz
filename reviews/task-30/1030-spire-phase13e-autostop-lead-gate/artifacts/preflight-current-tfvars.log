@@ -1,4 +1,0 @@
-Script started on 2026-05-27 11:07:23-07:00 [<not executed on terminal>]
-SPIRE AWS operator preflight passed: region=us-west-2 az=us-west-2a ami=ami-04e0d7d889f694536 coordinator=m7g.large remote=m7g.large remote_count=3
-
-Script done on 2026-05-27 11:07:24-07:00 [COMMAND_EXIT_CODE="0"]

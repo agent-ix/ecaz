@@ -1,2 +1,0 @@
-python3 scripts/unsafe_ledger.py check --ledger reviews/task-50/321-spire-boundary-replica-diagnostics-safe-signatures/artifacts/unsafe-ledger-after.jsonl src
-ledger covers 1368 current unsafe rows

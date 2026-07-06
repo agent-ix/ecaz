@@ -1,6 +1,0 @@
-   pid   | state  | wait_event_type | wait_event |       age       |                                                                              query
----------+--------+-----------------+------------+-----------------+------------------------------------------------------------------------------------------------------------------------------------------------------------------
- 1923555 | active |                 |            | 00:02:52.426694 | CREATE INDEX task111h021_1m_index_turboquant_w128_idx ON task111h021_1m_shared_corpus                                                                           +
-         |        |                 |            |                 |         USING ec_ivf (embedding ecvector_ip_ops) WITH (nlists = 1024, npro
- 1924910 | active |                 |            | 00:00:00        | SELECT pid, state, wait_event_type, wait_event, now() - query_start AS age, left(query, 160) AS query FROM pg_stat_activity WHERE datname = 'task111h_rerank_1m'
-(2 rows)

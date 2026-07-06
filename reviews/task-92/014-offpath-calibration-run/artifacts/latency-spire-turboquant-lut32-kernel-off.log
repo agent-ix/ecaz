@@ -1,9 +1,0 @@
-┌────────┬───────┬──────────┬─────────┬──────────┬──────────┬──────────┬──────────┬──────────┬───────────────────────────┐
-│ nprobe ┆ count ┆ mean     ┆ stddev  ┆ min      ┆ p50      ┆ p95      ┆ p99      ┆ max      ┆ cache_state               │
-╞════════╪═══════╪══════════╪═════════╪══════════╪══════════╪══════════╪══════════╪══════════╪═══════════════════════════╡
-│ 32     ┆ 32    ┆ 440.9 ms ┆ 11.1 ms ┆ 422.1 ms ┆ 438.4 ms ┆ 455.9 ms ┆ 472.3 ms ┆ 479.6 ms ┆ task92_offpath_kernel_off │
-└────────┴───────┴──────────┴─────────┴──────────┴──────────┴──────────┴──────────┴──────────┴───────────────────────────┘
-[task87-counters] command=latency label=nprobe=32 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
-[task87-counters] command=latency label=nprobe=32 surface=ivf flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
-[task87-counters] command=latency label=nprobe=32 surface=spire flushes=1024 candidates=65453 elapsed_nanos=952817421 elapsed_ms=952.817421 lut32_flushes=0 lut32_candidates=0
-[task87-counters] command=latency label=nprobe=32 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0

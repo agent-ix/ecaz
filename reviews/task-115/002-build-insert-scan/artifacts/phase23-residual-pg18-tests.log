@@ -1,6 +1,0 @@
-test tests::pg_test_ec_ivf_rabitq_residual_insert_after_build ... ok
-test tests::pg_test_ec_ivf_rabitq_residual_posting_bound_prune_equals_unpruned ... ok
-test tests::pg_test_ec_ivf_rabitq_residual_build_equals_insert ... ok
-test tests::pg_test_ec_ivf_rabitq_residual_heap_f32_rerank_matches_plain ... ok
-test tests::pg_test_ec_ivf_rabitq_residual_coexists_with_plain ... ok
-test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 2180 filtered out; finished in 54.36s

@@ -1,4 +1,0 @@
-Script started on 2026-05-27 09:11:19-07:00 [<not executed on terminal>]
-ERROR: pooling delta improvement row missing or incomplete in reviews/task-30/1013-spire-phase13e-pooling-latency-delta-gate/artifacts/bad-summary/representative-pooling-delta-summary.tsv
-
-Script done on 2026-05-27 09:11:19-07:00 [COMMAND_EXIT_CODE="2"]

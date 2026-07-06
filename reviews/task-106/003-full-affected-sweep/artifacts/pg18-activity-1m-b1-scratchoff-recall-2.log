@@ -1,5 +1,0 @@
-  pid   | state  | wait_event_type | wait_event |       age       |                              query                              
---------+--------+-----------------+------------+-----------------+-----------------------------------------------------------------
- 615853 | active |                 |            | 00:03:32.570196 | SELECT id, source FROM t106_1m_ivf_rabitq_b1_corpus ORDER BY id
-(1 row)
-

@@ -1,2 +1,0 @@
-src/am/ec_spire/quantizer/mod.rs
-src/am/ec_spire/quantizer/tests.rs

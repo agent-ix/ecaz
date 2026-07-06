@@ -1,6 +1,0 @@
-# HNSW metadata fixture for format v4 RaBitQ.
-# m=16, ef_construction=200, entry=(5,2), dimensions=128, bits=4,
-# max_level=3, seed=0x0102030405060708, inserted_since_rebuild=42.
-# Format-specific tail: v4, SRHT transform, RaBitQ search codec, cold rerank
-# payload, 1-bit search code, scalar rerank codec, no grouped codebook.
-1000c8000500000002008000040308070605040302012a000000000000000400010304010100000100ffffffffffff

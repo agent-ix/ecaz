@@ -1,8 +1,0 @@
-
-   0: [91mssm command 2ac3d437-0429-44fa-b6b5-1504abd4737d on i-0d46840c00f93dbb6 ended in Failed (rc=1): + cd /var/lib/pgsql/build/ecaz / ++ dirname benchmarks/task61-aws-hnsw-graviton-baseline/suite.json / + mkdir -p benchmarks/task61-aws-hnsw-graviton-baseline benchmarks/task61-aws-hnsw-graviton-baseline/artifacts / + trap 'status=$?; set +e; aws s3 sync benchmarks/task61-aws-hnsw-graviton-baseline/artifacts s3://ecaz-cloud-10k-medium-a02e4aea/bench-artifacts/smoke/20260525T032913Z/ --region us-west-2 --only-show-errors || true; exit $status' EXIT / + '[' '!' -f benchmarks/task61-aws-hnsw-graviton-baseline/suite.json ']'[0m
-
-Location:
-   [35mcrates/ecaz-cloud/src/ssm.rs[0m:[35m111[0m
-
-Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
-Run with RUST_BACKTRACE=full to include source snippets.

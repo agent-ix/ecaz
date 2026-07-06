@@ -1,8 +1,0 @@
-{
-  "Parameters": {
-    "commands": [
-      "sudo -u postgres bash -lc 'set -eux; export PATH=$HOME/.cargo/bin:$PATH; cd /var/lib/pgsql/build/ecaz; target/release/ecaz --database tqvector_bench --host /var/run/postgresql --port 5432 --log-file benchmarks/task51-aws-ivf-rabitq-current-head-final-gate/artifacts/suite-run.log bench suite run --config benchmarks/task51-aws-ivf-rabitq-current-head-final-gate/suite.json --manifest-output benchmarks/task51-aws-ivf-rabitq-current-head-final-gate/artifacts/suite-manifest.json; target/release/ecaz --log-file benchmarks/task51-aws-ivf-rabitq-current-head-final-gate/artifacts/suite-status.log bench suite status --manifest benchmarks/task51-aws-ivf-rabitq-current-head-final-gate/artifacts/suite-manifest.json; target/release/ecaz --log-file benchmarks/task51-aws-ivf-rabitq-current-head-final-gate/artifacts/suite-report.log bench suite report --manifest benchmarks/task51-aws-ivf-rabitq-current-head-final-gate/artifacts/suite-manifest.json --results-output benchmarks/task51-aws-ivf-rabitq-current-head-final-gate/artifacts/results-report.jsonl'"
-    ]
-  },
-  "TimeoutSeconds": 21600
-}

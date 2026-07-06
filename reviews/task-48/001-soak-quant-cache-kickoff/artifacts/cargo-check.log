@@ -1,7 +1,0 @@
-warning: unused import: `load_relation_local_store_config`
-warning: `ecaz` (lib) generated 1 warning (run `cargo fix --lib -p ecaz` to apply 1 suggestion)
-    Checking ecaz-cloud v0.1.0 (/Users/peter/dev/tqvector/crates/ecaz-cloud)
-    Checking comfy-table v7.2.2
-    Checking ecaz-cli v0.1.0 (/Users/peter/dev/tqvector/crates/ecaz-cli)
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 12m 07s
-EXIT=0

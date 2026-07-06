@@ -1,2 +1,0 @@
-python3 scripts/unsafe_ledger.py check --ledger reviews/task-50/124-spire-remote-target-wrapper-boundary/artifacts/unsafe-ledger-after.jsonl src
-ledger covers 1632 current unsafe rows

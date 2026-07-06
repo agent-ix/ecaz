@@ -1,2 +1,0 @@
-python3 scripts/unsafe_ledger.py check --ledger reviews/task-50/127-index-heap-relation-boundary/artifacts/unsafe-ledger-after.jsonl src
-ledger covers 1596 current unsafe rows

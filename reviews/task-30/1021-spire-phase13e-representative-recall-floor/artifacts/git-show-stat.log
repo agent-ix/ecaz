@@ -1,9 +1,0 @@
-Script started on 2026-05-27 10:03:17-07:00 [<not executed on terminal>]
-[33m70074aa89[m[33m ([m[1;36mHEAD -> [m[1;32mdiskann-aws-optimization[m[33m)[m Gate SPIRE representative recall floor
- .../preflight-representative-performance.sh        | 52 [32m++++++++++++++++[m[31m-[m
- .../spire-aws/suite-representative-pooling.json    | 24 [32m++++++++[m
- .../spire-aws/suite-representative-priority.json   | 24 [32m++++++++[m
- .../verify-representative-performance-summary.sh   | 65 [32m++++++++++++++++++++++[m
- 4 files changed, 163 insertions(+), 2 deletions(-)
-
-Script done on 2026-05-27 10:03:17-07:00 [COMMAND_EXIT_CODE="0"]

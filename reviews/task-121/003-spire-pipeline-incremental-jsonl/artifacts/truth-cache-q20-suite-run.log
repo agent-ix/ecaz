@@ -1,7 +1,0 @@
-[suite:task121-stage1-routing-screen-100k] wrote reviews/task-121/003-spire-pipeline-incremental-jsonl/artifacts/truth-cache-q20-suite-manifest.json
-[suite:task121-stage1-routing-screen-100k] wrote reviews/task-121/003-spire-pipeline-incremental-jsonl/artifacts/truth-cache-q20-suite-manifest.json
-[suite:task121-stage1-routing-screen-100k] truth-cache-100k-q20-k10 -> --database tqvector_bench_task121 --host /home/peter/.pgrx --port 28818 bench recall --prefix t121_s1_100k_baseline --profile ec_spire --k 10 --sweep 96 --queries-limit 20 --bits 4 --seed 42 --force-index --truth-cache-file reviews/task-121/003-spire-pipeline-incremental-jsonl/artifacts/truth-cache-100k-q20-k10.json --truth-corpus-file data/staged-current/ec_real_100k_corpus.tsv --log-output reviews/task-121/003-spire-pipeline-incremental-jsonl/artifacts/truth-cache-100k-q20-k10.log
-[suite:task121-stage1-routing-screen-100k] wrote reviews/task-121/003-spire-pipeline-incremental-jsonl/artifacts/truth-cache-q20-suite-manifest.json
-[suite:task121-stage1-routing-screen-100k] wrote reviews/task-121/003-spire-pipeline-incremental-jsonl/artifacts/truth-cache-q20-suite-manifest.json
-[suite:task121-stage1-routing-screen-100k] wrote reviews/task-121/003-spire-pipeline-incremental-jsonl/artifacts/truth-cache-q20-suite-results.jsonl
-[suite:task121-stage1-routing-screen-100k] wrote reviews/task-121/003-spire-pipeline-incremental-jsonl/artifacts/truth-cache-q20-suite-manifest.json

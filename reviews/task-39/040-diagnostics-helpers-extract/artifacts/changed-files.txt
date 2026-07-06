@@ -1,2 +1,0 @@
-am/ec_spire/coordinator/diagnostics.rs
-am/ec_spire/coordinator/diagnostics_helpers.rs

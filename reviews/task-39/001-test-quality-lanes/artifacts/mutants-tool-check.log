@@ -1,3 +1,0 @@
-missing optional hardening tool: cargo-mutants
-install/setup:
-  cargo install cargo-mutants

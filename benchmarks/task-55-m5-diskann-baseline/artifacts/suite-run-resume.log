@@ -1,3 +1,0 @@
-[suite:task-55-m5-diskann-baseline] wrote benchmarks/task-55-m5-diskann-baseline/artifacts/suite-manifest.json
-[suite:task-55-m5-diskann-baseline] latency-100k-diskann -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench latency --prefix ec_real_100k_diskann --profile ec_diskann --k 10 --concurrency 1 --iterations 1000 --sweep "64,128,200,400,800" --bits 4 --seed 42 --memory-sample-interval-ms 25 --log-output benchmarks/task-55-m5-diskann-baseline/artifacts/latency-ec_real_100k-diskann.log
-[suite:task-55-m5-diskann-baseline] wrote benchmarks/task-55-m5-diskann-baseline/artifacts/suite-manifest.json

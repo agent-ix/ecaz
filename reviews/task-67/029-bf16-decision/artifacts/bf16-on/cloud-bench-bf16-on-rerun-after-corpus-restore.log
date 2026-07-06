@@ -1,5 +1,0 @@
-Script started on 2026-05-30 08:30:07-07:00 [<not executed on terminal>]
-bench: synced artifacts from s3://ecaz-cloud-10k-intel-f85c5b34/bench-artifacts/task67-bf16-on/20260530T153009Z/
-bench: profile=10k-intel suite=task67-bf16-on run=20260530T153009Z log=/home/peter/dev/ecaz/reviews/task-67/029-bf16-decision/artifacts/bf16-on/suite-run.log
-
-Script done on 2026-05-30 08:30:30-07:00 [COMMAND_EXIT_CODE="0"]

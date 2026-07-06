@@ -1,5 +1,0 @@
-node_id=4
-status=ok
-elapsed_ms=1203
-rendered_sql=reviews/task-142/016-post-cache-release-ab/artifacts/release-50k-n128-b0/remote-leaf-materialization/node-4-remote-materialize-rendered.sql
-log=reviews/task-142/016-post-cache-release-ab/artifacts/release-50k-n128-b0/remote-leaf-materialization/node-4-remote-materialize.log

@@ -1,7 +1,0 @@
-DELETE 1
-DELETE 1
-                   status                   | turboquant_remaining_rows | pq_remaining_rows 
---------------------------------------------+---------------------------+-------------------
- task64_hnsw_existing_formats_delete_passed |                         6 |                 6
-(1 row)
-

@@ -1,6 +1,0 @@
-LOAD
- ec_ivf.adaptive_nprobe_score_margin_ratio_bps 
------------------------------------------------
- 0
-(1 row)
-

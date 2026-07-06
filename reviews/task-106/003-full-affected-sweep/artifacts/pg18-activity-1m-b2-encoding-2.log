@@ -1,6 +1,0 @@
-  pid   | state  | wait_event_type | wait_event |       age       |                              query                               
---------+--------+-----------------+------------+-----------------+------------------------------------------------------------------
- 617056 | active |                 |            | 00:02:58.043071 | INSERT INTO t106_1m_ivf_rabitq_b2_corpus (id, source, embedding)+
-        |        |                 |            |                 |              SELECT id, source, encode_to_ecvector(sour
-(1 row)
-

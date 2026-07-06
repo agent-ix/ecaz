@@ -1,7 +1,0 @@
-Script started on 2026-05-26 22:07:59-07:00 [<not executed on terminal>]
-make: Entering directory '/home/peter/dev/ecaz/infra/spire-aws'
-cd /home/peter/dev/ecaz && /home/peter/dev/ecaz/scripts/spire-aws/preflight-state.sh /home/peter/dev/ecaz/infra/spire-aws/terraform.tfstate
-SPIRE AWS state preflight passed: local Terraform state has no managed resources
-make: Leaving directory '/home/peter/dev/ecaz/infra/spire-aws'
-
-Script done on 2026-05-26 22:07:59-07:00 [COMMAND_EXIT_CODE="0"]

@@ -1,2 +1,0 @@
-python3 scripts/unsafe_ledger.py generate --output reviews/task-50/142-relation-tuple-desc-soundness-followup/artifacts/unsafe-ledger-after.jsonl --packet reviews/task-50/142-relation-tuple-desc-soundness-followup src
-wrote 1550 unsafe ledger rows to reviews/task-50/142-relation-tuple-desc-soundness-followup/artifacts/unsafe-ledger-after.jsonl

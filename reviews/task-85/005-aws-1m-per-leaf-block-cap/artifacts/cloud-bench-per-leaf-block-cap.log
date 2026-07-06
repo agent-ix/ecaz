@@ -1,7 +1,0 @@
-Command:
-target/debug/ecaz cloud bench --profile 1m --database postgres --config reviews/task-85/005-aws-1m-per-leaf-block-cap/suite-aws-1m-per-leaf-block-cap-q500.json --suite task85-aws-1m-per-leaf-block-cap-q500 --ecaz-bin /usr/local/bin/ecaz --log-file reviews/task-85/005-aws-1m-per-leaf-block-cap/artifacts/cloud-bench-per-leaf-block-cap.log
-
-Captured output:
-ssm: instance=i-06ace3e95ab942623 command_id=ac72e32f-c89e-46a1-ab7a-3024bd21e7b2 timeout_secs=21600
-bench: synced artifacts from s3://ecaz-cloud-1m-b62eb804/bench-artifacts/task85-aws-1m-per-leaf-block-cap-q500/20260607T091531Z/
-bench: profile=1m suite=task85-aws-1m-per-leaf-block-cap-q500 run=20260607T091531Z log=/home/peter/dev/ecaz/reviews/task-85/005-aws-1m-per-leaf-block-cap/artifacts/aws-1m-per-leaf-block-cap-q500/suite-run.log

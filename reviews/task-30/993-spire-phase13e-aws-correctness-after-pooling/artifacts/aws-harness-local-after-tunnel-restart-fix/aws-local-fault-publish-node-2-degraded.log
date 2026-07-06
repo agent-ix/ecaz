@@ -1,5 +1,0 @@
- active_epoch | remote_node_count |                    status                    
---------------+-------------------+----------------------------------------------
-            1 |                 0 | set_static_remote_placement_consistency_mode
-(1 row)
-

@@ -1,3 +1,0 @@
-row_count|990000
-query_count|10000
-index_state|task107_phase1_rabitq_1m_l1_idx|t|t|t|ec_spire|822960128|{local_store_count=1,local_store_tablespaces=ecaz_spire_store_1,storage_format=rabitq}

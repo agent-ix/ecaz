@@ -1,6 +1,0 @@
-tunnel coordinator ready on port 15432
-tunnel remote-2 ready on port 15433
-tunnel remote-3 ready on port 15434
-2026-06-15 09:35:38.881273+00|row_count|990000
-2026-06-15 09:35:38.881273+00|query_count|10000
-2026-06-15 09:35:38.881273+00|index_state|task107_phase1_rabitq_1m_l1_idx|t|t|t|ec_spire|822960128|{local_store_count=1,local_store_tablespaces=ecaz_spire_store_1,storage_format=rabitq}

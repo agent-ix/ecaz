@@ -1,2 +1,0 @@
-python3 scripts/unsafe_ledger.py generate --output reviews/task-50/143-generic-xlog-register-return-check/artifacts/unsafe-ledger-after.jsonl --packet reviews/task-50/143-generic-xlog-register-return-check src
-wrote 1550 unsafe ledger rows to reviews/task-50/143-generic-xlog-register-return-check/artifacts/unsafe-ledger-after.jsonl

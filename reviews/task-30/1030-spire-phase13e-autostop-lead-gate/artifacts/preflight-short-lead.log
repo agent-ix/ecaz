@@ -1,4 +1,0 @@
-Script started on 2026-05-27 11:07:13-07:00 [<not executed on terminal>]
-ERROR: auto_stop_at must be at least 18000s after preflight time for the representative pass watchdog budget, got: 2026-05-27T20:00:00Z
-
-Script done on 2026-05-27 11:07:13-07:00 [COMMAND_EXIT_CODE="2"]

@@ -1,5 +1,0 @@
-864c2433 Centralize StringInfo receive unsafe
- src/lib.rs                 | 81 +++++++++-------------------------------------
- src/storage/mod.rs         |  1 +
- src/storage/string_info.rs | 52 +++++++++++++++++++++++++++++
- 3 files changed, 69 insertions(+), 65 deletions(-)

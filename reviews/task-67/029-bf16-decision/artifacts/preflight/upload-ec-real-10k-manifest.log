@@ -1,9 +1,0 @@
-Script started on 2026-05-30 08:28:34-07:00 [<not executed on terminal>]
-{
-    "ETag": "\"ed732d802009a67e17239d4d24727cc8\"",
-    "ChecksumCRC64NVME": "ffLXJCBkhkY=",
-    "ChecksumType": "FULL_OBJECT",
-    "ServerSideEncryption": "AES256"
-}
-
-Script done on 2026-05-30 08:28:35-07:00 [COMMAND_EXIT_CODE="0"]

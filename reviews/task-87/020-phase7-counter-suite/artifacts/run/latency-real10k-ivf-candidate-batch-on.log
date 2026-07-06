@@ -1,9 +1,0 @@
-┌────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬──────────────────┬─────────────┬─────────────┬────────────────┐
-│ nprobe ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state      ┆ rss_peak_kb ┆ hwm_peak_kb ┆ memory_samples │
-╞════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪══════════════════╪═════════════╪═════════════╪════════════════╡
-│ 64     ┆ 200   ┆ 17.1 ms ┆ 1.34 ms ┆ 16.1 ms ┆ 16.7 ms ┆ 18.7 ms ┆ 23.2 ms ┆ 28.4 ms ┆ post_recall_warm ┆ 58000       ┆ 58000       ┆ 129            │
-└────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴──────────────────┴─────────────┴─────────────┴────────────────┘
-[task87-counters] command=latency label=nprobe=64 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
-[task87-counters] command=latency label=nprobe=64 surface=ivf flushes=8000 candidates=2000000 elapsed_nanos=2302509555 elapsed_ms=2302.509555 lut32_flushes=7800 lut32_candidates=1996800
-[task87-counters] command=latency label=nprobe=64 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
-[task87-counters] command=latency label=nprobe=64 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0

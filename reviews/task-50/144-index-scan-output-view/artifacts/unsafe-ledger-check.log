@@ -1,2 +1,0 @@
-python3 scripts/unsafe_ledger.py check --ledger reviews/task-50/144-index-scan-output-view/artifacts/unsafe-ledger-after.jsonl src
-ledger covers 1550 current unsafe rows

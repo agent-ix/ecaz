@@ -1,9 +1,0 @@
-{
-  "commands": [
-    "set -euxo pipefail",
-    "cd /var/lib/pgsql/build/ecaz",
-    "scripts/comparators/pgvector/install.sh",
-    "scripts/comparators/vchord/install.sh",
-    "sudo -u postgres psql -d tqvector_bench -Atqc \"SHOW shared_preload_libraries; SELECT name FROM pg_available_extensions WHERE name IN ('vector', 'vchord') ORDER BY name;\""
-  ]
-}

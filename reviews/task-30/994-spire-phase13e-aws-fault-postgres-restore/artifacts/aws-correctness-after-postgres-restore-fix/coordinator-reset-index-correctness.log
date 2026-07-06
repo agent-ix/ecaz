@@ -1,2 +1,0 @@
-DROP INDEX
-NOTICE:  index "ec_spire_aws_synth_10k_idx" does not exist, skipping

@@ -1,3 +1,0 @@
-ssm: instance=i-06ace3e95ab942623 command_id=e050cc6d-7353-4ee2-a282-e276a130d16d timeout_secs=21600
-bench: synced artifacts from s3://ecaz-cloud-1m-b62eb804/bench-artifacts/task85-aws-1m-product-baseline-q500/20260607T060021Z/
-bench: profile=1m suite=task85-aws-1m-product-baseline-q500 run=20260607T060021Z log=/home/peter/dev/ecaz/reviews/task-85/001-handoff-product-baseline-suite/artifacts/aws-1m-product-baseline-q500/suite-run.log

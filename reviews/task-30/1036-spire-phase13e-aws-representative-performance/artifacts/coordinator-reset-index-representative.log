@@ -1,2 +1,0 @@
-DROP INDEX
-NOTICE:  index "ec_spire_aws_repr_1m_idx" does not exist, skipping

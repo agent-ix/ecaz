@@ -1,3 +1,0 @@
-def32aaf Tie HNSW scan query slice to opaque owner
- src/am/ec_hnsw/scan.rs | 20 +++++++++++---------
- 1 file changed, 11 insertions(+), 9 deletions(-)

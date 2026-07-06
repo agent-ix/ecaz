@@ -1,3 +1,0 @@
-59:        let datum = unsafe { pg_sys::slot_getattr(slot.as_ptr(), attnum, &mut is_null) };
-69:        unsafe { i64::from_datum(datum, is_null) }
-78:        unsafe { String::from_datum(datum, is_null) }

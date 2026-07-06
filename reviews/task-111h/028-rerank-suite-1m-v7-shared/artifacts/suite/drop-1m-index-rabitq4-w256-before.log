@@ -1,2 +1,0 @@
-DROP INDEX
-NOTICE:  index "task111h028_1m_index_rabitq4_w256_idx" does not exist, skipping

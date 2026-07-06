@@ -1,5 +1,0 @@
-2026-05-26 09:52:04.864 PDT [81] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
-2026-05-26 09:52:04.866 PDT [81] LOG:  could not bind Unix address "/home/peter/dev/ecaz/target/spire-phase13e-aws-local-sockets-20260526T165158Z/.s.PGSQL.39701": Operation not permitted
-2026-05-26 09:52:04.866 PDT [81] WARNING:  could not create Unix-domain socket in directory "/home/peter/dev/ecaz/target/spire-phase13e-aws-local-sockets-20260526T165158Z"
-2026-05-26 09:52:04.866 PDT [81] FATAL:  could not create any Unix-domain sockets
-2026-05-26 09:52:04.868 PDT [81] LOG:  database system is shut down

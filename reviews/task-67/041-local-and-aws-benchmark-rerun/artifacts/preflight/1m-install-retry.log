@@ -1,8 +1,0 @@
-
-   0: [91mssm command 42ae6e9f-c026-4ae5-bf90-6007c9c83412 on i-0056e46b981edbb17 ended in Failed (rc=101): + sudo mkdir -p /var/lib/pgsql/build / + sudo chown -R postgres:postgres /var/lib/pgsql/build / + sudo -u postgres bash -lc ' /   set -eux /   export PATH=$HOME/.cargo/bin:$PATH[0m
-
-Location:
-   [35mcrates/ecaz-cloud/src/ssm.rs[0m:[35m111[0m
-
-Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
-Run with RUST_BACKTRACE=full to include source snippets.

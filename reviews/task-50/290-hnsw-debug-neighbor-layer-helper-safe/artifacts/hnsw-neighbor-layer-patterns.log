@@ -1,7 +1,0 @@
-Script started on 2026-05-21 11:38:40-07:00 [<not executed on terminal>]
-147:fn debug_load_neighbor_tids_for_layer(
-1781:        for neighbor_tid in debug_load_neighbor_tids_for_layer(
-1835:            debug_load_neighbor_tids_for_layer(index_relation, storage, element_tid, m, 0)
-2244:            for neighbor_tid in debug_load_neighbor_tids_for_layer(
-
-Script done on 2026-05-21 11:38:40-07:00 [COMMAND_EXIT_CODE="0"]

@@ -1,9 +1,0 @@
-[suite:task87-phase6-candidate-batch-matrix] wrote reviews/task-87/012-phase6-suite-prep/artifacts/setup-run-manifest.json
-[suite:task87-phase6-candidate-batch-matrix] precheck-host -> --database postgres --host /home/peter/.pgrx --port 28818 dev sql --pg 18 --db postgres --socket-dir /home/peter/.pgrx --port 28818 --raw --sql "SELECT now() AS captured_at, version() AS postgres_version, current_setting('shared_buffers') AS shared_buffers, current_setting('work_mem') AS work_mem, current_setting('maintenance_work_mem') AS maintenance_work_mem, current_setting('effective_cache_size') AS effective_cache_size;" --log-output reviews/task-87/012-phase6-suite-prep/artifacts/run/precheck-host.log
-[suite:task87-phase6-candidate-batch-matrix] wrote reviews/task-87/012-phase6-suite-prep/artifacts/setup-run-manifest.json
-[suite:task87-phase6-candidate-batch-matrix] wrote reviews/task-87/012-phase6-suite-prep/artifacts/setup-run-manifest.json
-[suite:task87-phase6-candidate-batch-matrix] prepare-isolated-surfaces -> --database postgres --host /home/peter/.pgrx --port 28818 dev sql --pg 18 --db postgres --socket-dir /home/peter/.pgrx --port 28818 --raw --file reviews/task-87/012-phase6-suite-prep/artifacts/prepare-isolated-surfaces.sql --log-output reviews/task-87/012-phase6-suite-prep/artifacts/run/prepare-isolated-surfaces.log
-[suite:task87-phase6-candidate-batch-matrix] wrote reviews/task-87/012-phase6-suite-prep/artifacts/setup-run-manifest.json
-[suite:task87-phase6-candidate-batch-matrix] wrote reviews/task-87/012-phase6-suite-prep/artifacts/setup-run-manifest.json
-[suite:task87-phase6-candidate-batch-matrix] wrote reviews/task-87/012-phase6-suite-prep/artifacts/setup-run-results.jsonl
-[suite:task87-phase6-candidate-batch-matrix] wrote reviews/task-87/012-phase6-suite-prep/artifacts/setup-run-manifest.json

@@ -1,7 +1,0 @@
-{
-  "Parameters": {
-    "commands": [
-      "sudo -u postgres bash -lc 'set -eux; export PATH=$HOME/.cargo/bin:$PATH; cd /var/lib/pgsql/build/ecaz; git fetch origin; git checkout aws-optimization-ivf-rabitq-spire; git pull --ff-only origin aws-optimization-ivf-rabitq-spire; git rev-parse HEAD; test -f benchmarks/task51-aws-ivf-rabitq-current-head-final-gate/suite.json; target/release/ecaz --version || true'"
-    ]
-  }
-}

@@ -1,5 +1,0 @@
-Script started on 2026-05-21 11:23:24-07:00 [<not executed on terminal>]
- src/am/ec_hnsw/scan_debug.rs | 96 [32m++++++++++++++++[m[31m----------------------------[m
- 1 file changed, 35 insertions(+), 61 deletions(-)
-
-Script done on 2026-05-21 11:23:24-07:00 [COMMAND_EXIT_CODE="0"]

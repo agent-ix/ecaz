@@ -1,6 +1,0 @@
-psql:/var/tmp/ecaz-task107-phase2-turboquant-1m-l1/remote-node-2/drop.sql:1: NOTICE:  index "task107_phase2_turboquant_1m_l1_remote_idx" does not exist, skipping
-DROP INDEX
-psql:/var/tmp/ecaz-task107-phase2-turboquant-1m-l1/remote-node-2/drop.sql:2: NOTICE:  table "task107_phase2_turboquant_1m_l1_node_2_queries" does not exist, skipping
-DROP TABLE
-psql:/var/tmp/ecaz-task107-phase2-turboquant-1m-l1/remote-node-2/drop.sql:3: NOTICE:  table "task107_phase2_turboquant_1m_l1_node_2_corpus" does not exist, skipping
-DROP TABLE

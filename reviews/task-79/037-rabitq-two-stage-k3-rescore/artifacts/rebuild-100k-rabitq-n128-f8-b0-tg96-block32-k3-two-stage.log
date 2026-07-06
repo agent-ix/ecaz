@@ -1,6 +1,0 @@
-SET
-SET
-DROP INDEX
-CREATE INDEX
-RESET
-NOTICE:  ec_spire_ambuild_timing index=task79_surface_100k_idx phase=complete heap_tuples=100000 scanned_tuples=100000 index_tuples=100000 recursive_fanout=8 setup_ms=0 heap_scan_ms=5527 sample_collect_ms=0 kmeans_ms=943 kmeans_calls=1 assignment_ms=1049 recursive_kmeans_ms=12 recursive_kmeans_calls=1 recursive_kmeans_max_level=1 recursive_assignment_ms=1 recursive_routing_initial_children=128 recursive_routing_final_children=8 recursive_routing_iterations=1 draft_ms=9123 draft_total_ms=9136 draft_input_clone_ms=303 draft_pid_alloc_ms=0 draft_recursive_routing_ms=14 draft_route_map_ms=0 draft_leaf_rows_ms=37 draft_leaf_inputs_ms=8711 draft_validation_ms=0 top_graph_ms=1482 pq4_training_ms=0 object_store_ms=0 object_store_total_ms=1482 publish_ms=7 total_ms=18150

@@ -1,5 +1,0 @@
-Script started on 2026-05-30 07:37:34-07:00 [<not executed on terminal>]
-bench: synced artifacts from s3://ecaz-cloud-10k-intel-f85c5b34/bench-artifacts/task67-rabitq8-headline-scalar/20260530T143737Z/
-bench: profile=10k-intel suite=task67-rabitq8-headline-scalar run=20260530T143737Z log=/home/peter/dev/ecaz/reviews/task-67/027-rabitq8-headline-sql-measurement/artifacts/scalar/suite-run.log
-
-Script done on 2026-05-30 07:37:58-07:00 [COMMAND_EXIT_CODE="0"]

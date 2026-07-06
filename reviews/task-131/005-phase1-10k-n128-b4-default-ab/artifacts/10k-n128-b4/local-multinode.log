@@ -1,9 +1,0 @@
-run_dir=/home/peter/dev/ecaz/target/spire-local-multinode-task131-p4-mi-10k-n128-b4
-coord_port=40510
-remote1_port=40511
-remote2_port=40512
-remote3_port=40513
-tier=representative
-prefix=ec_real_10k
-SPIRE local multinode fixture passed
-HARNESS PASSED

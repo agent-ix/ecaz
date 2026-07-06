@@ -1,6 +1,0 @@
-SET
-DROP INDEX
-DROP INDEX
-CREATE INDEX
-NOTICE:  index "task68_spire_100k_profile_idx" does not exist, skipping
-NOTICE:  ec_spire_ambuild_timing index=task68_spire_100k_profile_idx phase=complete heap_tuples=100000 scanned_tuples=100000 index_tuples=100000 recursive_fanout=8 setup_ms=0 heap_scan_ms=1220 sample_collect_ms=0 kmeans_ms=486 kmeans_calls=1 assignment_ms=570 recursive_kmeans_ms=2 recursive_kmeans_calls=1 recursive_kmeans_max_level=1 recursive_assignment_ms=0 draft_ms=19282 top_graph_ms=252 pq4_training_ms=0 object_store_ms=252 publish_ms=1 total_ms=21814

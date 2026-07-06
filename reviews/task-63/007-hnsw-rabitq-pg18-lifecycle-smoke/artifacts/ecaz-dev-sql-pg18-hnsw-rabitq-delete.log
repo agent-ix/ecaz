@@ -1,6 +1,0 @@
-DELETE 1
-              status              | remaining_rows 
-----------------------------------+----------------
- task63_hnsw_rabitq_delete_passed |              8
-(1 row)
-

@@ -1,3 +1,0 @@
-[2026-05-28T23:40:04Z] starting pass-representative-performance-body with timeout=14400s
-[2026-05-29T01:14:53Z] pass-representative-performance-body failed with status 2; preserving AWS resources for in-place diagnosis
-[2026-05-29T01:14:53Z] pass-representative-performance-body exiting with status 2

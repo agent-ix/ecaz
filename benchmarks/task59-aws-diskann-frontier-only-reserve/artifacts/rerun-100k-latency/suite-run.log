@@ -1,6 +1,0 @@
-[suite:task59-aws-diskann-frontier-only-reserve-rerun-100k-latency] wrote benchmarks/task59-aws-diskann-frontier-only-reserve/artifacts/rerun-100k-latency/suite-manifest.json
-[suite:task59-aws-diskann-frontier-only-reserve-rerun-100k-latency] latency-100k-diskann-default -> --database postgres --host /var/run/postgresql --user postgres bench latency --prefix task55_real_100k_diskann --profile ec_diskann --k 10 --concurrency 1 --iterations 200 --sweep "64,128,200,400,800" --bits 4 --seed 42 --force-index --memory-sample-interval-ms 25 --log-output benchmarks/task59-aws-diskann-frontier-only-reserve/artifacts/rerun-100k-latency/latency-100k-diskann-default.log
-[suite:task59-aws-diskann-frontier-only-reserve-rerun-100k-latency] wrote benchmarks/task59-aws-diskann-frontier-only-reserve/artifacts/rerun-100k-latency/suite-manifest.json
-[suite:task59-aws-diskann-frontier-only-reserve-rerun-100k-latency] wrote benchmarks/task59-aws-diskann-frontier-only-reserve/artifacts/rerun-100k-latency/suite-manifest.json
-[suite:task59-aws-diskann-frontier-only-reserve-rerun-100k-latency] wrote benchmarks/task59-aws-diskann-frontier-only-reserve/artifacts/rerun-100k-latency/results.jsonl
-[suite:task59-aws-diskann-frontier-only-reserve-rerun-100k-latency] wrote benchmarks/task59-aws-diskann-frontier-only-reserve/artifacts/rerun-100k-latency/suite-manifest.json

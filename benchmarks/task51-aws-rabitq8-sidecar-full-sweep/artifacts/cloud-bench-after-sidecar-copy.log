@@ -1,8 +1,0 @@
-
-   0: [91mssm command e7644e50-d207-444e-997a-cc727b2a211a on i-076683d54d878df15 ended in Failed (rc=1): + cd /var/lib/pgsql/build/ecaz / ++ dirname benchmarks/task51-aws-rabitq8-sidecar-full-sweep/suite.json / + mkdir -p benchmarks/task51-aws-rabitq8-sidecar-full-sweep benchmarks/task51-aws-rabitq8-sidecar-full-sweep/artifacts / + trap 'status=$?; set +e; aws s3 sync benchmarks/task51-aws-rabitq8-sidecar-full-sweep/artifacts s3://ecaz-cloud-10k-medium-a02e4aea/bench-artifacts/task51-aws-rabitq8-sidecar-full-sweep/20260524T022336Z/ --region us-west-2 --only-show-errors || true; exit $status' EXIT / + cat[0m
-
-Location:
-   [35mcrates/ecaz-cloud/src/ssm.rs[0m:[35m111[0m
-
-Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
-Run with RUST_BACKTRACE=full to include source snippets.

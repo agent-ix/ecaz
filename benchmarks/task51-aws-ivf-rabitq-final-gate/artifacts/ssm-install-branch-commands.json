@@ -1,8 +1,0 @@
-{
-  "commands": [
-    "set -euxo pipefail",
-    "sudo -u postgres bash -lc 'set -eux; export PATH=$HOME/.cargo/bin:$PATH; cd /var/lib/pgsql/build/ecaz; git fetch --all --tags; git checkout aws-optimization-ivf-rabitq-spire; git pull --ff-only origin aws-optimization-ivf-rabitq-spire; cargo pgrx install --release --pg-config /usr/bin/pg_config'",
-    "systemctl restart postgresql",
-    "sudo -u postgres psql -d tqvector_bench -Atc \"CREATE EXTENSION IF NOT EXISTS ecaz; SELECT extname, extversion FROM pg_extension WHERE extname = 'ecaz';\""
-  ]
-}

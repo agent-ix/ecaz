@@ -1,3 +1,0 @@
-$ cargo check -q --lib
-
-Command exited 0 with no output.

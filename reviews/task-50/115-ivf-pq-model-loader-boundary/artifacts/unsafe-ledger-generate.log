@@ -1,2 +1,0 @@
-python3 scripts/unsafe_ledger.py generate --output reviews/task-50/115-ivf-pq-model-loader-boundary/artifacts/unsafe-ledger-after.jsonl --packet reviews/task-50/115-ivf-pq-model-loader-boundary src
-wrote 1665 unsafe ledger rows to reviews/task-50/115-ivf-pq-model-loader-boundary/artifacts/unsafe-ledger-after.jsonl

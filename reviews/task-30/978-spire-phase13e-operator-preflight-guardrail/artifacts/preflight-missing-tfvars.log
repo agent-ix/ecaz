@@ -1,8 +1,0 @@
-Script started on 2026-05-25 14:40:28-07:00 [<not executed on terminal>]
-make: Entering directory '/home/peter/dev/ecaz/infra/spire-aws'
-cd /home/peter/dev/ecaz && /home/peter/dev/ecaz/scripts/spire-aws/preflight-operator.sh /home/peter/dev/ecaz/infra/spire-aws/terraform.tfvars
-ERROR: missing /home/peter/dev/ecaz/infra/spire-aws/terraform.tfvars; create it from infra/spire-aws/terraform.tfvars.example before provisioning
-make: *** [Makefile:44: preflight-operator] Error 2
-make: Leaving directory '/home/peter/dev/ecaz/infra/spire-aws'
-
-Script done on 2026-05-25 14:40:28-07:00 [COMMAND_EXIT_CODE="2"]

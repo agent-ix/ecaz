@@ -1,5 +1,0 @@
-Script started on 2026-05-21 08:22:12-07:00 [<not executed on terminal>]
-python3 scripts/unsafe_ledger.py generate --output reviews/task-50/255-current-ledger-refresh/artifacts/unsafe-ledger-after.jsonl --packet reviews/task-50/255-current-ledger-refresh src
-wrote 1640 unsafe ledger rows to reviews/task-50/255-current-ledger-refresh/artifacts/unsafe-ledger-after.jsonl
-
-Script done on 2026-05-21 08:22:13-07:00 [COMMAND_EXIT_CODE="0"]

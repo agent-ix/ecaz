@@ -1,8 +1,0 @@
-
-   0: [91mssm command fc787aba-1080-42d3-a7a2-8689dd963479 on i-02811174cc6ded75c ended in Failed (rc=1): + cd /var/lib/pgsql/build/ecaz / ++ dirname reviews/task-67/017-intel-measurement-final/artifacts/task67-intel-10k-scalar-suite.json / + mkdir -p reviews/task-67/017-intel-measurement-final/artifacts reviews/task-67/017-intel-measurement-final/artifacts/scalar / + trap 'status=$?; set +e; aws s3 sync reviews/task-67/017-intel-measurement-final/artifacts/scalar s3://ecaz-cloud-10k-intel-f85c5b34/bench-artifacts/task67-intel-10k-scalar/20260530T034436Z/ --region us-west-2 --only-show-errors || true; exit $status' EXIT / + cat[0m
-
-Location:
-   [35mcrates/ecaz-cloud/src/ssm.rs[0m:[35m111[0m
-
-Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
-Run with RUST_BACKTRACE=full to include source snippets.

@@ -1,5 +1,0 @@
-LOAD
- ec_spire.max_leaf_candidate_rows
-----------------------------------
- 0
-(1 row)

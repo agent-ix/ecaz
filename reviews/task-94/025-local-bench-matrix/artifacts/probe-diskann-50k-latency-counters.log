@@ -1,9 +1,0 @@
-┌───────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬──────────┬──────────┬──────────────────────┐
-│ list_size ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99      ┆ max      ┆ cache_state          │
-╞═══════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪══════════╪══════════╪══════════════════════╡
-│ 64        ┆ 40    ┆ 21.5 ms ┆ 28.0 ms ┆ 6.46 ms ┆ 13.5 ms ┆ 46.8 ms ┆ 136.6 ms ┆ 175.5 ms ┆ task94_probe_diskann │
-└───────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴──────────┴──────────┴──────────────────────┘
-[task87-counters] command=latency label=list_size=64 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
-[task87-counters] command=latency label=list_size=64 surface=ivf flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
-[task87-counters] command=latency label=list_size=64 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
-[task87-counters] command=latency label=list_size=64 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0

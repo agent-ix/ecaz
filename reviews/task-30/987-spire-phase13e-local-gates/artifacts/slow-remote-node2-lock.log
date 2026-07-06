@@ -1,8 +1,0 @@
-BEGIN
-LOCK TABLE
- pg_sleep 
-----------
- 
-(1 row)
-
-COMMIT

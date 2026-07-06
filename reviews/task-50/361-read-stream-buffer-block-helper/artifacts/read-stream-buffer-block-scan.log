@@ -1,8 +1,0 @@
-Script started on 2026-05-21 18:02:56-07:00 [<not executed on terminal>]
-257:fn read_stream_per_buffer_block_number(
-265:        Some(unsafe { *per_buffer_data.cast::<pg_sys::BlockNumber>() })
-298:        let block_number = read_stream_per_buffer_block_number(per_buffer_data)
-329:    let block_number = read_stream_per_buffer_block_number(per_buffer_data);
-481:    let block_slot = per_buffer_data.cast::<pg_sys::BlockNumber>();
-
-Script done on 2026-05-21 18:02:56-07:00 [COMMAND_EXIT_CODE="0"]

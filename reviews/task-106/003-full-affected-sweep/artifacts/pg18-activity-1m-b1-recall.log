@@ -1,6 +1,0 @@
-  pid   | state  | wait_event_type | wait_event  |       age       |                              query                              
---------+--------+-----------------+-------------+-----------------+-----------------------------------------------------------------
- 613365 | active | Timeout         | VacuumDelay | 00:03:32.720455 | autovacuum: VACUUM pg_toast.pg_toast_35587013
- 613581 | active |                 |             | 00:01:38.191718 | SELECT id, source FROM t106_1m_ivf_rabitq_b1_corpus ORDER BY id
-(2 rows)
-

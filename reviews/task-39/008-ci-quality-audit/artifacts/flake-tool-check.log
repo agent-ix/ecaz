@@ -1,4 +1,0 @@
-^Dmissing:cargo-fuzz
-error: no such command: `+nightly`
-
-help: invoke `cargo` through `rustup` to handle `+toolchain` directives

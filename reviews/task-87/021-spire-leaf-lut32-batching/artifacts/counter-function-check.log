@@ -1,5 +1,0 @@
-                 reset_fn                  |                 snapshot_fn                  
--------------------------------------------+----------------------------------------------
- ec_task87_candidate_batch_scoring_reset() | ec_task87_candidate_batch_scoring_snapshot()
-(1 row)
-

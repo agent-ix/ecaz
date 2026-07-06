@@ -1,9 +1,0 @@
-SET
-SET
-SET
-DO
-                status                 | index_bytes 
----------------------------------------+-------------
- task63_hnsw_rabitq_post_vacuum_passed |       16384
-(1 row)
-

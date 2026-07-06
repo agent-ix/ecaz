@@ -1,6 +1,0 @@
-BEGIN
-DROP FUNCTION
-CREATE FUNCTION
-ALTER EXTENSION
-COMMIT
-NOTICE:  function ec_spire_index_scan_rerank_locality_snapshot(oid,pg_catalog.float4[]) does not exist, skipping

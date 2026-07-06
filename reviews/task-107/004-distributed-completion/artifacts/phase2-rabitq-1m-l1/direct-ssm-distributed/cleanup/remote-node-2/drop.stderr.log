@@ -1,1 +1,0 @@
-psql:/var/tmp/ecaz-task107-phase2-rabitq-1m-l1/cleanup-remote-node-2/drop.sql:3: NOTICE:  table "task107_phase2_rabitq_1m_l1_node_2_queries" does not exist, skipping

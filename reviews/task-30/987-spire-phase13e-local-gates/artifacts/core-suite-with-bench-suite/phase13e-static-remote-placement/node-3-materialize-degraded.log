@@ -1,9 +1,0 @@
-CREATE TABLE
-COPY 3
-SELECT 3
-DO
- active_epoch | leaf_count | assignment_count | next_pid | next_local_vec_seq |    status    
---------------+------------+------------------+----------+--------------------+--------------
-            1 |          1 |                3 |        5 |                 13 | materialized
-(1 row)
-

@@ -1,5 +1,0 @@
-Script started on 2026-06-22 11:46:36-07:00 [<not executed on terminal>]
-[suite:task121-phase0-local-multinode-dryrun] wrote reviews/task-121/002-phase0-local-multinode-suite-lane/artifacts/suite-phase0-local-multinode-dryrun-manifest.json
-[suite:task121-phase0-local-multinode-dryrun] local-multinode-smoke-dryrun -> --database postgres --host /home/peter/.pgrx --port 28818 dev spire-multicluster local-multinode-pg18 --pg 18 --artifact-dir reviews/task-121/002-phase0-local-multinode-suite-lane/artifacts/local-multinode-smoke-dryrun --run-dir target/task121-phase0-local-multinode-smoke --smoke-log reviews/task-121/002-phase0-local-multinode-suite-lane/artifacts/local-multinode-smoke-dryrun/phase13e-local-multinode.log --coord-port 39800 --remote1-port 39801 --remote2-port 39802 --remote3-port 39803 --run-id task121-phase0-dryrun --tier correctness --bench-top-k 6 --bench-queries-limit 1 --bench-sweep 3 --skip-bench-suite --skip-fault-drills --skip-install
-
-Script done on 2026-06-22 11:46:36-07:00 [COMMAND_EXIT_CODE="0"]

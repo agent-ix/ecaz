@@ -1,5 +1,0 @@
-Command:
-target/debug/ecaz cloud pause --profile 1m --database postgres
-
-Captured output:
-pause: profile=1m stopped (db + loader)

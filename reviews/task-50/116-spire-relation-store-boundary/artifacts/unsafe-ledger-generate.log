@@ -1,2 +1,0 @@
-python3 scripts/unsafe_ledger.py generate --output reviews/task-50/116-spire-relation-store-boundary/artifacts/unsafe-ledger-after.jsonl --packet reviews/task-50/116-spire-relation-store-boundary src
-wrote 1657 unsafe ledger rows to reviews/task-50/116-spire-relation-store-boundary/artifacts/unsafe-ledger-after.jsonl

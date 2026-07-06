@@ -1,6 +1,0 @@
-Script started on 2026-05-21 08:08:37-07:00 [<not executed on terminal>]
-   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 21s
-  Executable unittests src/lib.rs (target/debug/deps/ecaz-bd03b5ecc8756b91)
-
-Script done on 2026-05-21 08:09:57-07:00 [COMMAND_EXIT_CODE="0"]

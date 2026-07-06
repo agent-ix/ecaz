@@ -1,8 +1,0 @@
-Script started on 2026-05-27 20:46:48-07:00 [<not executed on terminal>]
-   0: [91mreading pgrx home .pgrx[0m
-   1: [91mNo such file or directory (os error 2)[0m
-The user-provided path /var/tmp/ecaz-spire-aws-load/representative/coordinator/reset-index.log does not exist.
-failed to run commands: exit status 1
-Filesystem      Size  Used Avail Use% Mounted on
-
-Script done on 2026-05-27 20:46:48-07:00 [COMMAND_EXIT_CODE="0"]

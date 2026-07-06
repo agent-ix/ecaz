@@ -1,6 +1,0 @@
-[suite:task65b-diskann-real100k-b768-probe] wrote reviews/task-65b/014-batched-backlink-reducer/artifacts/real100k-b768-after-effective-workers-recall-manifest.json
-[suite:task65b-diskann-real100k-b768-probe] recall-real100k-w8-b768 -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench recall --prefix task65b_batchprobe_real100k_w8_b768 --profile ec_diskann --k 10 --sweep "64,128,200" --queries-limit 200 --bits 4 --seed 42 --force-index --truth-cache-file reviews/task-65b/014-batched-backlink-reducer/artifacts/truth-real100k-b768-k10.json --log-output reviews/task-65b/014-batched-backlink-reducer/artifacts/recall-real100k-w8-b768.log
-[suite:task65b-diskann-real100k-b768-probe] wrote reviews/task-65b/014-batched-backlink-reducer/artifacts/real100k-b768-after-effective-workers-recall-manifest.json
-[suite:task65b-diskann-real100k-b768-probe] wrote reviews/task-65b/014-batched-backlink-reducer/artifacts/real100k-b768-after-effective-workers-recall-manifest.json
-[suite:task65b-diskann-real100k-b768-probe] wrote reviews/task-65b/014-batched-backlink-reducer/artifacts/real100k-b768-after-effective-workers-recall-results.jsonl
-[suite:task65b-diskann-real100k-b768-probe] wrote reviews/task-65b/014-batched-backlink-reducer/artifacts/real100k-b768-after-effective-workers-recall-manifest.json

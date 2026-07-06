@@ -1,9 +1,0 @@
-run_dir=/home/peter/dev/ecaz/target/spire-local-multinode-t131mat66
-coord_port=40830
-remote1_port=40831
-remote2_port=40832
-remote3_port=40833
-tier=representative
-prefix=ec_real_10k
-SPIRE local multinode fixture passed
-HARNESS PASSED

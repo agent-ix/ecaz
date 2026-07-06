@@ -1,1 +1,0 @@
-0dd64dd36a6dc232dcba28a6b13613803da00ebbe36804080c1f82368a2fa425  infra/spire-aws/terraform.tfstate

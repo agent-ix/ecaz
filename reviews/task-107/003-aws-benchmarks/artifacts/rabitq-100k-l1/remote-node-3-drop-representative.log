@@ -1,4 +1,0 @@
-psql:/var/tmp/ecaz-spire-aws-load/representative/node-3/drop.sql:1: NOTICE:  table "task107_rabitq_100k_l1_node_3_queries" does not exist, skipping
-DROP TABLE
-psql:/var/tmp/ecaz-spire-aws-load/representative/node-3/drop.sql:1: NOTICE:  table "task107_rabitq_100k_l1_node_3_corpus" does not exist, skipping
-DROP TABLE
