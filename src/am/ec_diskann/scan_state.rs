@@ -293,6 +293,82 @@ impl GraphReader for RelationGraphReader {
         })
     }
 
+    /// Task 168 Phase 3: prefetch the batch's distinct blocks through the
+    /// read-stream helper, then decode block-grouped so each shared page
+    /// is pinned and share-locked once per round instead of once per node.
+    /// Output order matches `tids` order.
+    fn read_nodes(
+        &self,
+        tids: &[ItemPointer],
+        out: &mut Vec<VamanaNodeTuple>,
+    ) -> Result<(), String> {
+        if tids.len() <= 1 {
+            for &tid in tids {
+                out.push(self.read_node(tid)?);
+            }
+            return Ok(());
+        }
+
+        let mut order: Vec<usize> = (0..tids.len()).collect();
+        order.sort_by_key(|&i| (tids[i].block_number, tids[i].offset_number));
+
+        let mut blocks: Vec<pg_sys::BlockNumber> =
+            order.iter().map(|&i| tids[i].block_number).collect();
+        blocks.dedup();
+        crate::am::stream::prefetch_relation_blocks(
+            self.handle.as_ptr(),
+            blocks,
+            "ec_diskann graph batch",
+        );
+
+        let mut decoded: Vec<Option<VamanaNodeTuple>> = Vec::new();
+        decoded.resize_with(tids.len(), || None);
+        let mut position = 0;
+        while position < order.len() {
+            let block_number = tids[order[position]].block_number;
+            let group_end = order[position..]
+                .iter()
+                .position(|&i| tids[i].block_number != block_number)
+                .map_or(order.len(), |offset| position + offset);
+            let buffer = LockedBufferGuard::read_main_handle(
+                self.handle,
+                block_number,
+                pg_sys::ReadBufferMode::RBM_NORMAL,
+                pg_sys::BUFFER_LOCK_SHARE as i32,
+            )
+            .ok_or_else(|| {
+                format!("ec_diskann scan could not open data block {block_number}")
+            })?;
+            for &index in &order[position..group_end] {
+                let tid = tids[index];
+                let visit = buffer.visit_tuple_bytes(tid, "ec_diskann scan node", |raw| {
+                    VamanaNodeTuple::decode(
+                        raw,
+                        self.graph_degree_r,
+                        self.binary_word_count,
+                        self.search_code_len,
+                    )
+                })?;
+                match visit {
+                    LockedPageTupleVisit::Present(tuple) => decoded[index] = Some(tuple),
+                    LockedPageTupleVisit::Unused => {
+                        return Err(format!(
+                            "ec_diskann scan node tuple ({},{}) is unused",
+                            tid.block_number, tid.offset_number
+                        ))
+                    }
+                }
+            }
+            position = group_end;
+        }
+
+        out.reserve(decoded.len());
+        for tuple in decoded {
+            out.push(tuple.expect("every batched tid decodes exactly once"));
+        }
+        Ok(())
+    }
+
     fn first_live_tid(&self) -> Result<Option<ItemPointer>, String> {
         let block_count = crate::storage::relation::main_fork_block_count_handle(self.handle);
         for block_number in FIRST_DATA_BLOCK_NUMBER..block_count {

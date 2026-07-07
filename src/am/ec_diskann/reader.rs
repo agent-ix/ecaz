@@ -41,6 +41,22 @@ use crate::storage::page::{DataPageChain, ItemPointer};
 pub trait GraphReader {
     fn read_node(&self, tid: ItemPointer) -> Result<VamanaNodeTuple, String>;
     fn first_live_tid(&self) -> Result<Option<ItemPointer>, String>;
+
+    /// Read a batch of nodes, appending to `out` in `tids` order.
+    /// Readers backed by buffered storage override this to prefetch and
+    /// group reads by block (Task 168 Phase 3); the default is the
+    /// per-node loop.
+    fn read_nodes(
+        &self,
+        tids: &[ItemPointer],
+        out: &mut Vec<VamanaNodeTuple>,
+    ) -> Result<(), String> {
+        out.reserve(tids.len());
+        for &tid in tids {
+            out.push(self.read_node(tid)?);
+        }
+        Ok(())
+    }
 }
 
 /// Handle to a persisted Vamana graph. Holds a borrowed
