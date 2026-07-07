@@ -5345,6 +5345,7 @@ mod tests {
             schema_version: 1,
             config: "suite.json".into(),
             config_sha256: "abc".into(),
+            runner_git_commit: None,
             dry_run: false,
             generated_at_unix_ms: 0,
             connection: ManifestConnection {
@@ -5446,6 +5447,7 @@ mod tests {
             adaptive_nprobe_score_gap_micros: None,
             adaptive_nprobe_score_margin_ratio_bps: None,
             ivf_scratch_soa_batch_decode: None,
+            ivf_stage_counters: None,
             profile: Some("ec_diskann".into()),
             bits: None,
             seed: None,
@@ -5864,6 +5866,7 @@ mod tests {
             schema_version: 1,
             config: "suite.json".into(),
             config_sha256: "hash".into(),
+            runner_git_commit: None,
             dry_run: false,
             generated_at_unix_ms: 0,
             connection: ManifestConnection {
@@ -5955,6 +5958,7 @@ mod tests {
             schema_version: 1,
             config: "suite.json".into(),
             config_sha256: "hash".into(),
+            runner_git_commit: None,
             dry_run: false,
             generated_at_unix_ms: 0,
             connection: ManifestConnection {
