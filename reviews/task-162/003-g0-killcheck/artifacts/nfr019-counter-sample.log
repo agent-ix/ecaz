@@ -1,0 +1,20 @@
+SET
+SET
+SET
+SET
+SET
+  id   
+-------
+ 38468
+ 43507
+ 49535
+ 49537
+ 47454
+ 46120
+ 43404
+ 29308
+ 48198
+ 41432
+(10 rows)
+
+NOTICE:  ec_distann_scan_profile beam_width=32 hop_rounds=8 top_k=200 rounds_executed=8 records_expanded=256 neighbors_code_scored=8161 early_exit=false beam_exhausted=false result_count=256
