@@ -209,7 +209,34 @@ pub const EC_SPIRE: IndexProfile = IndexProfile {
     default_sweep: &[8, 16, 24, 32],
 };
 
-const REGISTRY: &[&IndexProfile] = &[&EC_HNSW, &EC_DISKANN, &EC_IVF, &EC_SPIRE];
+pub const EC_DISTANN: IndexProfile = IndexProfile {
+    name: "ec_distann",
+    access_method: "ec_distann",
+    operator_class: "ecvector_distann_ip_ops",
+    embedding_type: "ecvector",
+    encoder_function: "encode_to_ecvector",
+    encode_scan_query: false,
+    // The scan-quality knob is the D9 early-exit bar ec_distann.top_k
+    // (the ec_diskann list_size analog): the scan keeps expanding until
+    // the beam cannot improve the current kth exact distance. Sweeping
+    // hop_rounds is inert past convergence (measured in task-162 packet
+    // 002); hop_rounds stays the NFR-019 hard cap at its default.
+    ef_search_guc: Some("ec_distann.top_k"),
+    build_source_column: None,
+    sweep_axis: SweepAxis::None,
+    known_reloptions: &[
+        "graph_degree",
+        "build_list_size",
+        "alpha",
+        "neighbor_code_format",
+        "closure_epsilon",
+        "head_index_cap",
+        "source_identity",
+    ],
+    default_sweep: &[16, 32, 64, 100, 200],
+};
+
+const REGISTRY: &[&IndexProfile] = &[&EC_HNSW, &EC_DISKANN, &EC_DISTANN, &EC_IVF, &EC_SPIRE];
 
 pub fn resolve(name: &str) -> Option<&'static IndexProfile> {
     REGISTRY.iter().find(|p| p.name == name).copied()
@@ -289,7 +316,10 @@ mod tests {
 
     #[test]
     fn names_are_sorted_and_complete() {
-        assert_eq!(names(), vec!["ec_diskann", "ec_hnsw", "ec_ivf", "ec_spire"]);
+        assert_eq!(
+            names(),
+            vec!["ec_diskann", "ec_distann", "ec_hnsw", "ec_ivf", "ec_spire"]
+        );
     }
 
     #[test]

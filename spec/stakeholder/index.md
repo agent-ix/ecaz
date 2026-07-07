@@ -14,3 +14,4 @@ description: "Index of artifacts in this directory."
 * [StR-005: Multi-Access-Method Vector Search Portfolio](./StR-005-multi-am-vector-search.md)
 * [StR-006: Benchmark Evidence Discipline](./StR-006-benchmark-evidence-discipline.md)
 * [StR-007: Repeatable Scale Benchmarking on Managed Cloud](./StR-007-cloud-scale-benchmarking.md)
+* [StR-008: Distributed Vector Search at Single-Instance Economics](./StR-008-distributed-search-single-instance-economics.md)

@@ -10,16 +10,18 @@ pub(crate) enum CandidateBatchScoringSurface {
     Spire,
     Ivf,
     Diskann,
+    Distann,
     Hnsw,
     Unknown,
 }
 
 impl CandidateBatchScoringSurface {
     const TASK87_ALL: [Self; 4] = [Self::Spire, Self::Ivf, Self::Hnsw, Self::Unknown];
-    const BLOCK_KERNEL_ALL: [Self; 5] = [
+    const BLOCK_KERNEL_ALL: [Self; 6] = [
         Self::Spire,
         Self::Ivf,
         Self::Diskann,
+        Self::Distann,
         Self::Hnsw,
         Self::Unknown,
     ];
@@ -29,6 +31,7 @@ impl CandidateBatchScoringSurface {
             Self::Spire => "spire",
             Self::Ivf => "ivf",
             Self::Diskann => "diskann",
+            Self::Distann => "distann",
             Self::Hnsw => "hnsw",
             Self::Unknown => "unknown",
         }
@@ -38,7 +41,7 @@ impl CandidateBatchScoringSurface {
         Self::TASK87_ALL
     }
 
-    fn block_kernel_all() -> [Self; 5] {
+    fn block_kernel_all() -> [Self; 6] {
         Self::BLOCK_KERNEL_ALL
     }
 
@@ -47,8 +50,9 @@ impl CandidateBatchScoringSurface {
             Self::Spire => 0,
             Self::Ivf => 1,
             Self::Diskann => 2,
-            Self::Hnsw => 3,
-            Self::Unknown => 4,
+            Self::Distann => 3,
+            Self::Hnsw => 4,
+            Self::Unknown => 5,
         }
     }
 }
@@ -241,7 +245,7 @@ impl BlockKernelCounters {
     }
 }
 
-const SURFACE_COUNT: usize = 5;
+const SURFACE_COUNT: usize = 6;
 const QUANT_COUNT: usize = 7;
 const ISA_COUNT: usize = 5;
 

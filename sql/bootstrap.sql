@@ -706,6 +706,11 @@ RETURNS index_am_handler
 LANGUAGE c
 AS 'MODULE_PATHNAME', 'ec_diskann_handler';
 
+CREATE FUNCTION ec_distann_handler(internal)
+RETURNS index_am_handler
+LANGUAGE c
+AS 'MODULE_PATHNAME', 'ec_distann_handler';
+
 CREATE OPERATOR <#> (
     PROCEDURE = tqvector_negative_inner_product,
     LEFTARG = tqvector,
@@ -734,6 +739,7 @@ CREATE OPERATOR <#> (
 
 CREATE ACCESS METHOD ec_hnsw TYPE INDEX HANDLER ec_hnsw_handler;
 CREATE ACCESS METHOD ec_diskann TYPE INDEX HANDLER ec_diskann_handler;
+CREATE ACCESS METHOD ec_distann TYPE INDEX HANDLER ec_distann_handler;
 
 CREATE ACCESS METHOD ec_ivf TYPE INDEX HANDLER ec_ivf_handler;
 CREATE ACCESS METHOD ec_spire TYPE INDEX HANDLER ec_spire_handler;
@@ -775,5 +781,15 @@ DEFAULT FOR TYPE tqvector USING ec_diskann AS
 
 CREATE OPERATOR CLASS ecvector_diskann_ip_ops
 DEFAULT FOR TYPE ecvector USING ec_diskann AS
+    OPERATOR 1 <#>(ecvector, real[]) FOR ORDER BY float_ops,
+    FUNCTION 1 ecvector_query_inner_product(ecvector, real[]);
+
+CREATE OPERATOR CLASS tqvector_distann_ip_ops
+DEFAULT FOR TYPE tqvector USING ec_distann AS
+    OPERATOR 1 <#>(tqvector, real[]) FOR ORDER BY float_ops,
+    FUNCTION 1 tqvector_query_inner_product(tqvector, real[]);
+
+CREATE OPERATOR CLASS ecvector_distann_ip_ops
+DEFAULT FOR TYPE ecvector USING ec_distann AS
     OPERATOR 1 <#>(ecvector, real[]) FOR ORDER BY float_ops,
     FUNCTION 1 ecvector_query_inner_product(ecvector, real[]);

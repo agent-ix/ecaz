@@ -1,0 +1,23 @@
+[loader] inspecting data/staged-current/ec_real_50k_corpus.tsv
+[loader] inspecting data/staged-current/ec_real_50k_queries.tsv
+[loader] corpus: 50000 rows, sha256=56023baaa7bc42f758272e8617603d538808e6290a8a70a3a84e057571240133  queries: 1000 rows, sha256=95ac7992578aa80bb193657f10fbcbf1ea3867e559739244bf5a467f7a5a9fa3
+[loader] warning: manifest verification failed for data/staged-current/ec_real_50k_manifest.json: prefix="ec_real_50k" (expected "m0_50k_diskann")
+[loader] copied corpus table m0_50k_diskann_corpus in 19.87s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table m0_50k_diskann_corpus in 13.46s
+[loader] copied queries table m0_50k_diskann_queries in 446.69ms
+[loader] building m0_50k_diskann_idx using ec_diskann (reloptions=[<none>]) ...
+[loader] built m0_50k_diskann_idx in 157.43s
+[loader] ec_diskann_ambuild_timing index=m0_50k_diskann_idx phase=complete heap_tuples=50000 scanned_tuples=50000 unique_tuples=50000 data_pages=2632 heap_scan_ms=1803 source_ref_ms=2 training_ms=0 sidecar_setup_ms=0 payload_derivation_ms=50 build_persist_ms=155332 core_medoid_ms=253 core_graph_ms=155007 core_persist_ms=66 parallel_requested_workers=0 parallel_effective_workers=0 parallel_batch_size=704 parallel_flush_rate=0 parallel_rayon_scaffold=0 parallel_epochs=0 parallel_proposal_ms=0 parallel_reducer_ms=0 parallel_same_epoch_candidate_reads=0 parallel_total_candidate_reads=0 overflow_ms=0 codebook_ms=0 write_pages_ms=222 metadata_ms=0 flush_total_ms=155608 total_ms=157417
+┌─────────┬────────────────────────────────────┐
+│ field   ┆ value                              │
+╞═════════╪════════════════════════════════════╡
+│ profile ┆ ec_diskann                         │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ m0_50k_diskann_corpus (50000 rows) │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ m0_50k_diskann_queries (1000 rows) │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ m0_50k_diskann_idx [<default>]     │
+└─────────┴────────────────────────────────────┘
+[loader] completed prefix m0_50k_diskann in 199.03s

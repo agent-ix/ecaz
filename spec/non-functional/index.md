@@ -23,3 +23,7 @@ description: "Index of artifacts in this directory."
 * [NFR-014: SPIRE Transport Security and Operations](./NFR-014-spire-transport-security-and-operations.md)
 * [NFR-015: Benchmark Reporting Standard](./NFR-015-benchmark-reporting-standard.md)
 * [NFR-016: On-Disk Format Evolution Discipline](./NFR-016-on-disk-format-evolution-discipline.md)
+* [NFR-017: Distann Latency and Recall Gate](./NFR-017-distann-latency-recall-gate.md)
+* [NFR-018: Distann Space Amplification Budget](./NFR-018-distann-space-amplification.md)
+* [NFR-019: Distann Per-Query Touch Bound](./NFR-019-distann-per-query-touch-bound.md)
+* [NFR-020: Distann Fault Behavior](./NFR-020-distann-fault-behavior.md)

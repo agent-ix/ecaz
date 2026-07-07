@@ -1,0 +1,1666 @@
+{
+  "suite": "task-162-m0-bench-cells",
+  "schema_version": 1,
+  "config": "reviews/task-162/002-m0-bench-cells/task-162-m0-suite.json",
+  "config_sha256": "920d31b071ea63770c347b2e87ae9123d0c3b0af734aeb8282e33a186703a482",
+  "dry_run": false,
+  "generated_at_unix_ms": 1783448923968,
+  "runner_git_commit": "a27502ccd1c74f17d107b8bf350e98e840950853-dirty",
+  "connection": {
+    "database": "ec_distann_bench",
+    "host": "/home/peter/.pgrx",
+    "port": 28818,
+    "user": null,
+    "password_configured": false
+  },
+  "backend": {
+    "build_profile": "release",
+    "git_commit": "1fd0159355e1d196f26fc1a9f093275660f789f7",
+    "sha256": "add5e27881a0e73edd0002708519a6bbbf3f36983a55dddcdea3f3c9711137d8",
+    "path": "/home/peter/.pgrx/18.3/pgrx-install/lib/postgresql/ecaz.so"
+  },
+  "steps": [
+    {
+      "name": "precheck-host",
+      "kind": "raw",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "setup",
+        "precheck",
+        "m0",
+        "task-162"
+      ],
+      "expected_artifacts": [
+        "reviews/task-162/002-m0-bench-cells/artifacts/precheck-host.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-10k-diskann",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "m0",
+        "task-162",
+        "ec_real_10k",
+        "diskann",
+        "load"
+      ],
+      "expected_artifacts": [
+        "reviews/task-162/002-m0-bench-cells/artifacts/load-10k-diskann.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-10k-diskann",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "m0",
+        "task-162",
+        "ec_real_10k",
+        "diskann",
+        "recall"
+      ],
+      "expected_artifacts": [
+        "reviews/task-162/002-m0-bench-cells/artifacts/recall-10k-diskann.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-10k-diskann",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "m0",
+        "task-162",
+        "ec_real_10k",
+        "diskann",
+        "latency"
+      ],
+      "expected_artifacts": [
+        "reviews/task-162/002-m0-bench-cells/artifacts/latency-10k-diskann.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-10k-diskann",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "m0",
+        "task-162",
+        "ec_real_10k",
+        "diskann",
+        "storage"
+      ],
+      "expected_artifacts": [
+        "reviews/task-162/002-m0-bench-cells/artifacts/storage-10k-diskann.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-10k-distann_gpq",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "m0",
+        "task-162",
+        "ec_real_10k",
+        "distann_gpq",
+        "load"
+      ],
+      "expected_artifacts": [
+        "reviews/task-162/002-m0-bench-cells/artifacts/load-10k-distann_gpq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-10k-distann_gpq",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "m0",
+        "task-162",
+        "ec_real_10k",
+        "distann_gpq",
+        "recall"
+      ],
+      "expected_artifacts": [
+        "reviews/task-162/002-m0-bench-cells/artifacts/recall-10k-distann_gpq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-10k-distann_gpq",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "m0",
+        "task-162",
+        "ec_real_10k",
+        "distann_gpq",
+        "latency"
+      ],
+      "expected_artifacts": [
+        "reviews/task-162/002-m0-bench-cells/artifacts/latency-10k-distann_gpq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-10k-distann_gpq",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "m0",
+        "task-162",
+        "ec_real_10k",
+        "distann_gpq",
+        "storage"
+      ],
+      "expected_artifacts": [
+        "reviews/task-162/002-m0-bench-cells/artifacts/storage-10k-distann_gpq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-10k-distann_rbq",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "m0",
+        "task-162",
+        "ec_real_10k",
+        "distann_rbq",
+        "load"
+      ],
+      "expected_artifacts": [
+        "reviews/task-162/002-m0-bench-cells/artifacts/load-10k-distann_rbq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-10k-distann_rbq",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "m0",
+        "task-162",
+        "ec_real_10k",
+        "distann_rbq",
+        "recall"
+      ],
+      "expected_artifacts": [
+        "reviews/task-162/002-m0-bench-cells/artifacts/recall-10k-distann_rbq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-10k-distann_rbq",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "m0",
+        "task-162",
+        "ec_real_10k",
+        "distann_rbq",
+        "latency"
+      ],
+      "expected_artifacts": [
+        "reviews/task-162/002-m0-bench-cells/artifacts/latency-10k-distann_rbq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-10k-distann_rbq",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "m0",
+        "task-162",
+        "ec_real_10k",
+        "distann_rbq",
+        "storage"
+      ],
+      "expected_artifacts": [
+        "reviews/task-162/002-m0-bench-cells/artifacts/storage-10k-distann_rbq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-10k-distann_tq",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "m0",
+        "task-162",
+        "ec_real_10k",
+        "distann_tq",
+        "load"
+      ],
+      "expected_artifacts": [
+        "reviews/task-162/002-m0-bench-cells/artifacts/load-10k-distann_tq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-10k-distann_tq",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "m0",
+        "task-162",
+        "ec_real_10k",
+        "distann_tq",
+        "recall"
+      ],
+      "expected_artifacts": [
+        "reviews/task-162/002-m0-bench-cells/artifacts/recall-10k-distann_tq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-10k-distann_tq",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "m0",
+        "task-162",
+        "ec_real_10k",
+        "distann_tq",
+        "latency"
+      ],
+      "expected_artifacts": [
+        "reviews/task-162/002-m0-bench-cells/artifacts/latency-10k-distann_tq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-10k-distann_tq",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "m0",
+        "task-162",
+        "ec_real_10k",
+        "distann_tq",
+        "storage"
+      ],
+      "expected_artifacts": [
+        "reviews/task-162/002-m0-bench-cells/artifacts/storage-10k-distann_tq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-10k-distann_tq_r8",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "m0",
+        "task-162",
+        "ec_real_10k",
+        "distann_tq_r8",
+        "load"
+      ],
+      "expected_artifacts": [
+        "reviews/task-162/002-m0-bench-cells/artifacts/load-10k-distann_tq_r8.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-10k-distann_tq_r8",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "m0",
+        "task-162",
+        "ec_real_10k",
+        "distann_tq_r8",
+        "recall"
+      ],
+      "expected_artifacts": [
+        "reviews/task-162/002-m0-bench-cells/artifacts/recall-10k-distann_tq_r8.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-10k-distann_tq_r8",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "m0",
+        "task-162",
+        "ec_real_10k",
+        "distann_tq_r8",
+        "latency"
+      ],
+      "expected_artifacts": [
+        "reviews/task-162/002-m0-bench-cells/artifacts/latency-10k-distann_tq_r8.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-10k-distann_tq_r8",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "m0",
+        "task-162",
+        "ec_real_10k",
+        "distann_tq_r8",
+        "storage"
+      ],
+      "expected_artifacts": [
+        "reviews/task-162/002-m0-bench-cells/artifacts/storage-10k-distann_tq_r8.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-50k-diskann",
+      "kind": "load",
+      "command": [
+        "--database",
+        "ec_distann_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-162/002-m0-bench-cells/artifacts/load-50k-diskann.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "m0_50k_diskann",
+        "--profile",
+        "ec_diskann",
+        "--corpus-file",
+        "data/staged-current/ec_real_50k_corpus.tsv",
+        "--queries-file",
+        "data/staged-current/ec_real_50k_queries.tsv",
+        "--manifest-file",
+        "data/staged-current/ec_real_50k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--bits",
+        "4",
+        "--seed",
+        "42"
+      ],
+      "selected": true,
+      "tags": [
+        "m0",
+        "task-162",
+        "ec_real_50k",
+        "diskann",
+        "load"
+      ],
+      "expected_artifacts": [
+        "reviews/task-162/002-m0-bench-cells/artifacts/load-50k-diskann.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783448924045,
+      "finished_at_unix_ms": 1783449113426,
+      "duration_ms": 199035,
+      "exit_code": 0
+    },
+    {
+      "name": "recall-50k-diskann",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "ec_distann_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "recall",
+        "--prefix",
+        "m0_50k_diskann",
+        "--profile",
+        "ec_diskann",
+        "--k",
+        "10",
+        "--sweep",
+        "64,128,200,400,800",
+        "--queries-limit",
+        "200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--log-output",
+        "reviews/task-162/002-m0-bench-cells/artifacts/recall-50k-diskann.log"
+      ],
+      "selected": true,
+      "tags": [
+        "m0",
+        "task-162",
+        "ec_real_50k",
+        "diskann",
+        "recall"
+      ],
+      "expected_artifacts": [
+        "reviews/task-162/002-m0-bench-cells/artifacts/recall-50k-diskann.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783449113427,
+      "finished_at_unix_ms": 1783449178865,
+      "duration_ms": 68188,
+      "exit_code": 0
+    },
+    {
+      "name": "latency-50k-diskann",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "ec_distann_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "latency",
+        "--prefix",
+        "m0_50k_diskann",
+        "--profile",
+        "ec_diskann",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "200",
+        "--sweep",
+        "64,128,200,400,800",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--sample-backend-memory",
+        "--cache-state",
+        "post_recall_warm",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "reviews/task-162/002-m0-bench-cells/artifacts/latency-50k-diskann.log"
+      ],
+      "selected": true,
+      "tags": [
+        "m0",
+        "task-162",
+        "ec_real_50k",
+        "diskann",
+        "latency"
+      ],
+      "expected_artifacts": [
+        "reviews/task-162/002-m0-bench-cells/artifacts/latency-50k-diskann.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783449178866,
+      "finished_at_unix_ms": 1783449186256,
+      "duration_ms": 7388,
+      "exit_code": 0
+    },
+    {
+      "name": "storage-50k-diskann",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "ec_distann_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-162/002-m0-bench-cells/artifacts/storage-50k-diskann.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "m0_50k_diskann"
+      ],
+      "selected": true,
+      "tags": [
+        "m0",
+        "task-162",
+        "ec_real_50k",
+        "diskann",
+        "storage"
+      ],
+      "expected_artifacts": [
+        "reviews/task-162/002-m0-bench-cells/artifacts/storage-50k-diskann.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783449186256,
+      "finished_at_unix_ms": 1783449186283,
+      "duration_ms": 25,
+      "exit_code": 0
+    },
+    {
+      "name": "load-50k-distann_gpq",
+      "kind": "load",
+      "command": [
+        "--database",
+        "ec_distann_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-162/002-m0-bench-cells/artifacts/load-50k-distann_gpq.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "m0_50k_distann_gpq",
+        "--profile",
+        "ec_distann",
+        "--corpus-file",
+        "data/staged-current/ec_real_50k_corpus.tsv",
+        "--queries-file",
+        "data/staged-current/ec_real_50k_queries.tsv",
+        "--manifest-file",
+        "data/staged-current/ec_real_50k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--bits",
+        "4",
+        "--seed",
+        "42"
+      ],
+      "selected": true,
+      "tags": [
+        "m0",
+        "task-162",
+        "ec_real_50k",
+        "distann_gpq",
+        "load"
+      ],
+      "expected_artifacts": [
+        "reviews/task-162/002-m0-bench-cells/artifacts/load-50k-distann_gpq.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783449186284,
+      "finished_at_unix_ms": 1783449366555,
+      "duration_ms": 189933,
+      "exit_code": 0
+    },
+    {
+      "name": "recall-50k-distann_gpq",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "ec_distann_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "recall",
+        "--prefix",
+        "m0_50k_distann_gpq",
+        "--profile",
+        "ec_distann",
+        "--k",
+        "10",
+        "--sweep",
+        "16,32,64,100,200",
+        "--queries-limit",
+        "200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--log-output",
+        "reviews/task-162/002-m0-bench-cells/artifacts/recall-50k-distann_gpq.log"
+      ],
+      "selected": true,
+      "tags": [
+        "m0",
+        "task-162",
+        "ec_real_50k",
+        "distann_gpq",
+        "recall"
+      ],
+      "expected_artifacts": [
+        "reviews/task-162/002-m0-bench-cells/artifacts/recall-50k-distann_gpq.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783449366555,
+      "finished_at_unix_ms": 1783449440836,
+      "duration_ms": 77043,
+      "exit_code": 0
+    },
+    {
+      "name": "latency-50k-distann_gpq",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "ec_distann_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "latency",
+        "--prefix",
+        "m0_50k_distann_gpq",
+        "--profile",
+        "ec_distann",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "200",
+        "--sweep",
+        "16,32,64,100,200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--sample-backend-memory",
+        "--cache-state",
+        "post_recall_warm",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "reviews/task-162/002-m0-bench-cells/artifacts/latency-50k-distann_gpq.log"
+      ],
+      "selected": true,
+      "tags": [
+        "m0",
+        "task-162",
+        "ec_real_50k",
+        "distann_gpq",
+        "latency"
+      ],
+      "expected_artifacts": [
+        "reviews/task-162/002-m0-bench-cells/artifacts/latency-50k-distann_gpq.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783449440836,
+      "finished_at_unix_ms": 1783449503708,
+      "duration_ms": 65637,
+      "exit_code": 0
+    },
+    {
+      "name": "storage-50k-distann_gpq",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "ec_distann_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-162/002-m0-bench-cells/artifacts/storage-50k-distann_gpq.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "m0_50k_distann_gpq"
+      ],
+      "selected": true,
+      "tags": [
+        "m0",
+        "task-162",
+        "ec_real_50k",
+        "distann_gpq",
+        "storage"
+      ],
+      "expected_artifacts": [
+        "reviews/task-162/002-m0-bench-cells/artifacts/storage-50k-distann_gpq.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783449503708,
+      "finished_at_unix_ms": 1783449503735,
+      "duration_ms": 26,
+      "exit_code": 0
+    },
+    {
+      "name": "load-50k-distann_rbq",
+      "kind": "load",
+      "command": [
+        "--database",
+        "ec_distann_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-162/002-m0-bench-cells/artifacts/load-50k-distann_rbq.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "m0_50k_distann_rbq",
+        "--profile",
+        "ec_distann",
+        "--corpus-file",
+        "data/staged-current/ec_real_50k_corpus.tsv",
+        "--queries-file",
+        "data/staged-current/ec_real_50k_queries.tsv",
+        "--manifest-file",
+        "data/staged-current/ec_real_50k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--reloption",
+        "neighbor_code_format=rabitq"
+      ],
+      "selected": true,
+      "tags": [
+        "m0",
+        "task-162",
+        "ec_real_50k",
+        "distann_rbq",
+        "load"
+      ],
+      "expected_artifacts": [
+        "reviews/task-162/002-m0-bench-cells/artifacts/load-50k-distann_rbq.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783449503735,
+      "finished_at_unix_ms": 1783449684754,
+      "duration_ms": 190693,
+      "exit_code": 0
+    },
+    {
+      "name": "recall-50k-distann_rbq",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "ec_distann_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "recall",
+        "--prefix",
+        "m0_50k_distann_rbq",
+        "--profile",
+        "ec_distann",
+        "--k",
+        "10",
+        "--sweep",
+        "16,32,64,100,200",
+        "--queries-limit",
+        "200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--log-output",
+        "reviews/task-162/002-m0-bench-cells/artifacts/recall-50k-distann_rbq.log"
+      ],
+      "selected": true,
+      "tags": [
+        "m0",
+        "task-162",
+        "ec_real_50k",
+        "distann_rbq",
+        "recall"
+      ],
+      "expected_artifacts": [
+        "reviews/task-162/002-m0-bench-cells/artifacts/recall-50k-distann_rbq.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783449684754,
+      "finished_at_unix_ms": 1783449759195,
+      "duration_ms": 77185,
+      "exit_code": 0
+    },
+    {
+      "name": "latency-50k-distann_rbq",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "ec_distann_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "latency",
+        "--prefix",
+        "m0_50k_distann_rbq",
+        "--profile",
+        "ec_distann",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "200",
+        "--sweep",
+        "16,32,64,100,200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--sample-backend-memory",
+        "--cache-state",
+        "post_recall_warm",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "reviews/task-162/002-m0-bench-cells/artifacts/latency-50k-distann_rbq.log"
+      ],
+      "selected": true,
+      "tags": [
+        "m0",
+        "task-162",
+        "ec_real_50k",
+        "distann_rbq",
+        "latency"
+      ],
+      "expected_artifacts": [
+        "reviews/task-162/002-m0-bench-cells/artifacts/latency-50k-distann_rbq.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783449759195,
+      "finished_at_unix_ms": 1783449814184,
+      "duration_ms": 57753,
+      "exit_code": 0
+    },
+    {
+      "name": "storage-50k-distann_rbq",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "ec_distann_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-162/002-m0-bench-cells/artifacts/storage-50k-distann_rbq.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "m0_50k_distann_rbq"
+      ],
+      "selected": true,
+      "tags": [
+        "m0",
+        "task-162",
+        "ec_real_50k",
+        "distann_rbq",
+        "storage"
+      ],
+      "expected_artifacts": [
+        "reviews/task-162/002-m0-bench-cells/artifacts/storage-50k-distann_rbq.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783449814185,
+      "finished_at_unix_ms": 1783449814214,
+      "duration_ms": 27,
+      "exit_code": 0
+    },
+    {
+      "name": "load-50k-distann_tq",
+      "kind": "load",
+      "command": [
+        "--database",
+        "ec_distann_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-162/002-m0-bench-cells/artifacts/load-50k-distann_tq.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "m0_50k_distann_tq",
+        "--profile",
+        "ec_distann",
+        "--corpus-file",
+        "data/staged-current/ec_real_50k_corpus.tsv",
+        "--queries-file",
+        "data/staged-current/ec_real_50k_queries.tsv",
+        "--manifest-file",
+        "data/staged-current/ec_real_50k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--reloption",
+        "neighbor_code_format=turboquant"
+      ],
+      "selected": true,
+      "tags": [
+        "m0",
+        "task-162",
+        "ec_real_50k",
+        "distann_tq",
+        "load"
+      ],
+      "expected_artifacts": [
+        "reviews/task-162/002-m0-bench-cells/artifacts/load-50k-distann_tq.log"
+      ],
+      "status": "failed",
+      "started_at_unix_ms": 1783449814214,
+      "finished_at_unix_ms": 1783449999076,
+      "duration_ms": 194481,
+      "exit_code": 1
+    },
+    {
+      "name": "recall-50k-distann_tq",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "ec_distann_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "recall",
+        "--prefix",
+        "m0_50k_distann_tq",
+        "--profile",
+        "ec_distann",
+        "--k",
+        "10",
+        "--sweep",
+        "16,32,64,100,200",
+        "--queries-limit",
+        "200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--log-output",
+        "reviews/task-162/002-m0-bench-cells/artifacts/recall-50k-distann_tq.log"
+      ],
+      "selected": true,
+      "tags": [
+        "m0",
+        "task-162",
+        "ec_real_50k",
+        "distann_tq",
+        "recall"
+      ],
+      "expected_artifacts": [
+        "reviews/task-162/002-m0-bench-cells/artifacts/recall-50k-distann_tq.log"
+      ],
+      "status": "failed",
+      "started_at_unix_ms": 1783449999076,
+      "finished_at_unix_ms": 1783449999091,
+      "duration_ms": 14,
+      "exit_code": 1
+    },
+    {
+      "name": "latency-50k-distann_tq",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "ec_distann_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "latency",
+        "--prefix",
+        "m0_50k_distann_tq",
+        "--profile",
+        "ec_distann",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "200",
+        "--sweep",
+        "16,32,64,100,200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--sample-backend-memory",
+        "--cache-state",
+        "post_recall_warm",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "reviews/task-162/002-m0-bench-cells/artifacts/latency-50k-distann_tq.log"
+      ],
+      "selected": true,
+      "tags": [
+        "m0",
+        "task-162",
+        "ec_real_50k",
+        "distann_tq",
+        "latency"
+      ],
+      "expected_artifacts": [
+        "reviews/task-162/002-m0-bench-cells/artifacts/latency-50k-distann_tq.log"
+      ],
+      "status": "failed",
+      "started_at_unix_ms": 1783449999091,
+      "finished_at_unix_ms": 1783449999107,
+      "duration_ms": 14,
+      "exit_code": 1
+    },
+    {
+      "name": "storage-50k-distann_tq",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "ec_distann_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-162/002-m0-bench-cells/artifacts/storage-50k-distann_tq.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "m0_50k_distann_tq"
+      ],
+      "selected": true,
+      "tags": [
+        "m0",
+        "task-162",
+        "ec_real_50k",
+        "distann_tq",
+        "storage"
+      ],
+      "expected_artifacts": [
+        "reviews/task-162/002-m0-bench-cells/artifacts/storage-50k-distann_tq.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783449999107,
+      "finished_at_unix_ms": 1783449999130,
+      "duration_ms": 22,
+      "exit_code": 0
+    },
+    {
+      "name": "load-50k-distann_tq_r8",
+      "kind": "load",
+      "command": [
+        "--database",
+        "ec_distann_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-162/002-m0-bench-cells/artifacts/load-50k-distann_tq_r8.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "m0_50k_distann_tq_r8",
+        "--profile",
+        "ec_distann",
+        "--corpus-file",
+        "data/staged-current/ec_real_50k_corpus.tsv",
+        "--queries-file",
+        "data/staged-current/ec_real_50k_queries.tsv",
+        "--manifest-file",
+        "data/staged-current/ec_real_50k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--reloption",
+        "neighbor_code_format=turboquant",
+        "--reloption",
+        "graph_degree=8"
+      ],
+      "selected": true,
+      "tags": [
+        "m0",
+        "task-162",
+        "ec_real_50k",
+        "distann_tq_r8",
+        "load"
+      ],
+      "expected_artifacts": [
+        "reviews/task-162/002-m0-bench-cells/artifacts/load-50k-distann_tq_r8.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783449999130,
+      "finished_at_unix_ms": 1783450070747,
+      "duration_ms": 74381,
+      "exit_code": 0
+    },
+    {
+      "name": "recall-50k-distann_tq_r8",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "ec_distann_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "recall",
+        "--prefix",
+        "m0_50k_distann_tq_r8",
+        "--profile",
+        "ec_distann",
+        "--k",
+        "10",
+        "--sweep",
+        "16,32,64,100,200",
+        "--queries-limit",
+        "200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--log-output",
+        "reviews/task-162/002-m0-bench-cells/artifacts/recall-50k-distann_tq_r8.log"
+      ],
+      "selected": true,
+      "tags": [
+        "m0",
+        "task-162",
+        "ec_real_50k",
+        "distann_tq_r8",
+        "recall"
+      ],
+      "expected_artifacts": [
+        "reviews/task-162/002-m0-bench-cells/artifacts/recall-50k-distann_tq_r8.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783450070747,
+      "finished_at_unix_ms": 1783450141495,
+      "duration_ms": 74858,
+      "exit_code": 0
+    },
+    {
+      "name": "latency-50k-distann_tq_r8",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "ec_distann_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "latency",
+        "--prefix",
+        "m0_50k_distann_tq_r8",
+        "--profile",
+        "ec_distann",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "200",
+        "--sweep",
+        "16,32,64,100,200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--sample-backend-memory",
+        "--cache-state",
+        "post_recall_warm",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "reviews/task-162/002-m0-bench-cells/artifacts/latency-50k-distann_tq_r8.log"
+      ],
+      "selected": true,
+      "tags": [
+        "m0",
+        "task-162",
+        "ec_real_50k",
+        "distann_tq_r8",
+        "latency"
+      ],
+      "expected_artifacts": [
+        "reviews/task-162/002-m0-bench-cells/artifacts/latency-50k-distann_tq_r8.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783450141495,
+      "finished_at_unix_ms": 1783450184540,
+      "duration_ms": 44432,
+      "exit_code": 0
+    },
+    {
+      "name": "storage-50k-distann_tq_r8",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "ec_distann_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-162/002-m0-bench-cells/artifacts/storage-50k-distann_tq_r8.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "m0_50k_distann_tq_r8"
+      ],
+      "selected": true,
+      "tags": [
+        "m0",
+        "task-162",
+        "ec_real_50k",
+        "distann_tq_r8",
+        "storage"
+      ],
+      "expected_artifacts": [
+        "reviews/task-162/002-m0-bench-cells/artifacts/storage-50k-distann_tq_r8.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783450184541,
+      "finished_at_unix_ms": 1783450184567,
+      "duration_ms": 25,
+      "exit_code": 0
+    },
+    {
+      "name": "load-50k-distann_gpq_c1024",
+      "kind": "load",
+      "command": [
+        "--database",
+        "ec_distann_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-162/002-m0-bench-cells/artifacts/load-50k-distann_gpq_c1024.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "m0_50k_distann_gpq_c1024",
+        "--profile",
+        "ec_distann",
+        "--corpus-file",
+        "data/staged-current/ec_real_50k_corpus.tsv",
+        "--queries-file",
+        "data/staged-current/ec_real_50k_queries.tsv",
+        "--manifest-file",
+        "data/staged-current/ec_real_50k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--reloption",
+        "head_index_cap=1024"
+      ],
+      "selected": true,
+      "tags": [
+        "m0",
+        "task-162",
+        "ec_real_50k",
+        "distann_gpq_c1024",
+        "load"
+      ],
+      "expected_artifacts": [
+        "reviews/task-162/002-m0-bench-cells/artifacts/load-50k-distann_gpq_c1024.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783450184567,
+      "finished_at_unix_ms": 1783450372884,
+      "duration_ms": 197979,
+      "exit_code": 0
+    },
+    {
+      "name": "recall-50k-distann_gpq_c1024",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "ec_distann_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "recall",
+        "--prefix",
+        "m0_50k_distann_gpq_c1024",
+        "--profile",
+        "ec_distann",
+        "--k",
+        "10",
+        "--sweep",
+        "16,32,64,100,200",
+        "--queries-limit",
+        "200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--log-output",
+        "reviews/task-162/002-m0-bench-cells/artifacts/recall-50k-distann_gpq_c1024.log"
+      ],
+      "selected": true,
+      "tags": [
+        "m0",
+        "task-162",
+        "ec_real_50k",
+        "distann_gpq_c1024",
+        "recall"
+      ],
+      "expected_artifacts": [
+        "reviews/task-162/002-m0-bench-cells/artifacts/recall-50k-distann_gpq_c1024.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783450372884,
+      "finished_at_unix_ms": 1783450436692,
+      "duration_ms": 66568,
+      "exit_code": 0
+    },
+    {
+      "name": "latency-50k-distann_gpq_c1024",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "ec_distann_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "latency",
+        "--prefix",
+        "m0_50k_distann_gpq_c1024",
+        "--profile",
+        "ec_distann",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "200",
+        "--sweep",
+        "16,32,64,100,200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--sample-backend-memory",
+        "--cache-state",
+        "post_recall_warm",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "reviews/task-162/002-m0-bench-cells/artifacts/latency-50k-distann_gpq_c1024.log"
+      ],
+      "selected": true,
+      "tags": [
+        "m0",
+        "task-162",
+        "ec_real_50k",
+        "distann_gpq_c1024",
+        "latency"
+      ],
+      "expected_artifacts": [
+        "reviews/task-162/002-m0-bench-cells/artifacts/latency-50k-distann_gpq_c1024.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783450436693,
+      "finished_at_unix_ms": 1783450445700,
+      "duration_ms": 9006,
+      "exit_code": 0
+    },
+    {
+      "name": "storage-50k-distann_gpq_c1024",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "ec_distann_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-162/002-m0-bench-cells/artifacts/storage-50k-distann_gpq_c1024.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "m0_50k_distann_gpq_c1024"
+      ],
+      "selected": true,
+      "tags": [
+        "m0",
+        "task-162",
+        "ec_real_50k",
+        "distann_gpq_c1024",
+        "storage"
+      ],
+      "expected_artifacts": [
+        "reviews/task-162/002-m0-bench-cells/artifacts/storage-50k-distann_gpq_c1024.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783450445701,
+      "finished_at_unix_ms": 1783450445731,
+      "duration_ms": 24,
+      "exit_code": 0
+    },
+    {
+      "name": "load-50k-distann_gpq_c16384",
+      "kind": "load",
+      "command": [
+        "--database",
+        "ec_distann_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-162/002-m0-bench-cells/artifacts/load-50k-distann_gpq_c16384.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "m0_50k_distann_gpq_c16384",
+        "--profile",
+        "ec_distann",
+        "--corpus-file",
+        "data/staged-current/ec_real_50k_corpus.tsv",
+        "--queries-file",
+        "data/staged-current/ec_real_50k_queries.tsv",
+        "--manifest-file",
+        "data/staged-current/ec_real_50k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--reloption",
+        "head_index_cap=16384"
+      ],
+      "selected": true,
+      "tags": [
+        "m0",
+        "task-162",
+        "ec_real_50k",
+        "distann_gpq_c16384",
+        "load"
+      ],
+      "expected_artifacts": [
+        "reviews/task-162/002-m0-bench-cells/artifacts/load-50k-distann_gpq_c16384.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783450445731,
+      "finished_at_unix_ms": 1783450632740,
+      "duration_ms": 196693,
+      "exit_code": 0
+    },
+    {
+      "name": "recall-50k-distann_gpq_c16384",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "ec_distann_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "recall",
+        "--prefix",
+        "m0_50k_distann_gpq_c16384",
+        "--profile",
+        "ec_distann",
+        "--k",
+        "10",
+        "--sweep",
+        "16,32,64,100,200",
+        "--queries-limit",
+        "200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--log-output",
+        "reviews/task-162/002-m0-bench-cells/artifacts/recall-50k-distann_gpq_c16384.log"
+      ],
+      "selected": true,
+      "tags": [
+        "m0",
+        "task-162",
+        "ec_real_50k",
+        "distann_gpq_c16384",
+        "recall"
+      ],
+      "expected_artifacts": [
+        "reviews/task-162/002-m0-bench-cells/artifacts/recall-50k-distann_gpq_c16384.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783450632740,
+      "finished_at_unix_ms": 1783450828021,
+      "duration_ms": 204976,
+      "exit_code": 0
+    },
+    {
+      "name": "latency-50k-distann_gpq_c16384",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "ec_distann_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "latency",
+        "--prefix",
+        "m0_50k_distann_gpq_c16384",
+        "--profile",
+        "ec_distann",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "200",
+        "--sweep",
+        "16,32,64,100,200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--sample-backend-memory",
+        "--cache-state",
+        "post_recall_warm",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "reviews/task-162/002-m0-bench-cells/artifacts/latency-50k-distann_gpq_c16384.log"
+      ],
+      "selected": true,
+      "tags": [
+        "m0",
+        "task-162",
+        "ec_real_50k",
+        "distann_gpq_c16384",
+        "latency"
+      ],
+      "expected_artifacts": [
+        "reviews/task-162/002-m0-bench-cells/artifacts/latency-50k-distann_gpq_c16384.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783450828022,
+      "finished_at_unix_ms": 1783451652832,
+      "duration_ms": 865153,
+      "exit_code": 0
+    },
+    {
+      "name": "storage-50k-distann_gpq_c16384",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "ec_distann_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-162/002-m0-bench-cells/artifacts/storage-50k-distann_gpq_c16384.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "m0_50k_distann_gpq_c16384"
+      ],
+      "selected": true,
+      "tags": [
+        "m0",
+        "task-162",
+        "ec_real_50k",
+        "distann_gpq_c16384",
+        "storage"
+      ],
+      "expected_artifacts": [
+        "reviews/task-162/002-m0-bench-cells/artifacts/storage-50k-distann_gpq_c16384.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783451652832,
+      "finished_at_unix_ms": 1783451652861,
+      "duration_ms": 27,
+      "exit_code": 0
+    }
+  ]
+}

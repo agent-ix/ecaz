@@ -401,7 +401,7 @@ fn empty_metadata(state: &BuildState) -> VamanaMetadataPage {
     )
 }
 
-pub(super) fn default_group_size(dimensions: u16) -> usize {
+pub(crate) fn default_group_size(dimensions: u16) -> usize {
     let transform_dim = crate::quant::rotation::effective_transform_dim(dimensions as usize);
     transform_dim.min(PQ_FASTSCAN_TARGET_GROUP_SIZE)
 }
@@ -793,7 +793,7 @@ fn log_ambuild_timing(
     );
 }
 
-fn source_inner_product_distance(left: &[f32], right: &[f32]) -> f32 {
+pub(crate) fn source_inner_product_distance(left: &[f32], right: &[f32]) -> f32 {
     debug_assert_eq!(left.len(), right.len());
     let ip = source_inner_product(left, right);
     let d = ECDISKANN_UNIT_NORM_DISTANCE_BIAS - ip;
@@ -805,7 +805,7 @@ fn source_inner_product_distance(left: &[f32], right: &[f32]) -> f32 {
 }
 
 #[cfg(target_arch = "x86_64")]
-pub(super) fn source_inner_product(left: &[f32], right: &[f32]) -> f32 {
+pub(crate) fn source_inner_product(left: &[f32], right: &[f32]) -> f32 {
     if std::arch::is_x86_feature_detected!("avx2") && std::arch::is_x86_feature_detected!("fma") {
         // SAFETY: Runtime feature detection guarantees the target features
         // required by the AVX2/FMA kernel before entering the target-feature fn.
@@ -816,7 +816,7 @@ pub(super) fn source_inner_product(left: &[f32], right: &[f32]) -> f32 {
 }
 
 #[cfg(target_arch = "aarch64")]
-pub(super) fn source_inner_product(left: &[f32], right: &[f32]) -> f32 {
+pub(crate) fn source_inner_product(left: &[f32], right: &[f32]) -> f32 {
     if std::arch::is_aarch64_feature_detected!("neon") {
         // SAFETY: Runtime feature detection guarantees NEON support before
         // entering the target-feature fn.
@@ -827,7 +827,7 @@ pub(super) fn source_inner_product(left: &[f32], right: &[f32]) -> f32 {
 }
 
 #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
-pub(super) fn source_inner_product(left: &[f32], right: &[f32]) -> f32 {
+pub(crate) fn source_inner_product(left: &[f32], right: &[f32]) -> f32 {
     source_inner_product_scalar(left, right)
 }
 
@@ -1054,7 +1054,7 @@ fn write_metadata_to_buffer(
     wal_txn.finish();
 }
 
-pub(super) fn write_data_pages(handle: RelationHandle, chain: &DataPageChain) {
+pub(crate) fn write_data_pages(handle: RelationHandle, chain: &DataPageChain) {
     for staged_page in chain.pages() {
         let buffer = LockedBufferGuard::read_main_locked_handle(
             handle,
@@ -1084,7 +1084,7 @@ pub(super) fn write_data_pages(handle: RelationHandle, chain: &DataPageChain) {
     }
 }
 
-pub(super) unsafe fn decode_heap_tid(tid: pg_sys::ItemPointer) -> ItemPointer {
+pub(crate) unsafe fn decode_heap_tid(tid: pg_sys::ItemPointer) -> ItemPointer {
     if tid.is_null() {
         pgrx::error!("ec_diskann ambuild received a null heap tid");
     }
@@ -1155,7 +1155,7 @@ pub(super) unsafe fn with_ecvector_datum_slice<T>(
     f(body)
 }
 
-pub(super) unsafe fn ecvector_datum_to_vec(datum: pg_sys::Datum) -> Vec<f32> {
+pub(crate) unsafe fn ecvector_datum_to_vec(datum: pg_sys::Datum) -> Vec<f32> {
     with_ecvector_datum_slice(datum, |body| body.to_vec())
 }
 

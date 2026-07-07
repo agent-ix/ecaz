@@ -2004,7 +2004,7 @@ fn prefetch_heap_rerank_blocks(heap_relation: pg_sys::Relation, heap_tids: &[Ite
     );
 }
 
-fn exact_heap_rerank_distance(
+pub(crate) fn exact_heap_rerank_distance(
     heap_relation: pg_sys::Relation,
     snapshot: pg_sys::Snapshot,
     slot: *mut pg_sys::TupleTableSlot,
