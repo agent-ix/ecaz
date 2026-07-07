@@ -29,7 +29,7 @@ use crate::storage::relation::RelationHandle;
 use crate::storage::wal;
 use crate::DEFAULT_QUANT_SEED;
 
-use super::identity::vec_id_from_local_heap_tid;
+use super::identity::{vec_id_from_local_heap_tid, vec_id_from_source_identity};
 use super::options::{self, DistannSourceIdentityProvider, EcDistannOptions};
 use super::page::DistannMetadataPage;
 use super::quantizer::DistannCodecBinding;
@@ -46,13 +46,33 @@ const DISTANN_DIRECTORY_CHUNK_ENTRIES: usize = 400;
 const DISTANN_UNIT_NORM_SAMPLE_CAP: usize = 1024;
 const DISTANN_UNIT_NORM_EPSILON: f32 = 0.01;
 
+/// ADR-063 canonical identity payload width (uuid / bytea16).
+const DISTANN_SOURCE_IDENTITY_BYTES: usize = 16;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DistannIdentityDatumKind {
+    Uuid,
+    Bytea16,
+}
+
+/// Resolved `source_identity = 'include'` attribute (ADR-063 v1 provider:
+/// exactly one INCLUDE column of type uuid or bytea, canonicalized to the
+/// 16-byte payload; NULL or wrong-width values reject the row).
+#[derive(Debug, Clone, Copy)]
+struct DistannIdentityAttribute {
+    index_attr_offset: usize,
+    datum_kind: DistannIdentityDatumKind,
+}
+
 struct CollectedRow {
     heap_tid: ItemPointer,
     source_vector: Vec<f32>,
+    identity_payload: Option<[u8; DISTANN_SOURCE_IDENTITY_BYTES]>,
 }
 
 struct BuildState {
     options: EcDistannOptions,
+    identity: Option<DistannIdentityAttribute>,
     dimensions: Option<u16>,
     rows: Vec<CollectedRow>,
     scanned_tuples: usize,
@@ -63,13 +83,19 @@ impl BuildState {
         let options = options::relation_options(index_relation);
         Self {
             options,
+            identity: None,
             dimensions: None,
             rows: Vec::new(),
             scanned_tuples: 0,
         }
     }
 
-    fn push(&mut self, heap_tid: ItemPointer, source_vector: Vec<f32>) {
+    fn push(
+        &mut self,
+        heap_tid: ItemPointer,
+        source_vector: Vec<f32>,
+        identity_payload: Option<[u8; DISTANN_SOURCE_IDENTITY_BYTES]>,
+    ) {
         self.scanned_tuples += 1;
         if source_vector.is_empty() {
             pgrx::error!("ec_distann ambuild received an empty indexed vector");
@@ -90,6 +116,7 @@ impl BuildState {
         self.rows.push(CollectedRow {
             heap_tid,
             source_vector,
+            identity_payload,
         });
     }
 }
@@ -114,7 +141,8 @@ pub(super) unsafe extern "C-unwind" fn ec_distann_ambuild(
 ) -> *mut pg_sys::IndexBuildResult {
     pg_am_callback!({
         let mut state = BuildState::new(index_relation);
-        validate_single_ecvector_attribute(heap_relation, index_info);
+        state.identity =
+            resolve_identity_attribute(heap_relation, index_info, &state.options);
 
         initialize_metadata_page(index_relation, empty_metadata(&state));
 
@@ -129,12 +157,9 @@ pub(super) unsafe extern "C-unwind" fn ec_distann_ambuild(
             ptr::null_mut(),
         );
 
-        if heap_tuples != state.scanned_tuples as f64 {
-            pgrx::error!(
-                "ec_distann ambuild scanned {heap_tuples} heap tuples but observed {}",
-                state.scanned_tuples
-            );
-        }
+        // `heap_tuples` counts live rows only; the callback may legitimately
+        // also receive recently-dead tuples (they must be indexed for
+        // concurrent snapshots), so no equality check between the two.
 
         let index_tuples = if state.rows.is_empty() {
             0.0
@@ -180,8 +205,132 @@ unsafe extern "C-unwind" fn ec_distann_build_callback(
         let state = &mut *state.cast::<BuildState>();
         let source_vector = ecvector_datum_to_vec(datum);
         let heap_tid = decode_heap_tid(tid);
-        state.push(heap_tid, source_vector);
+        let identity_payload = state
+            .identity
+            .map(|identity| extract_identity_payload(identity, values, isnull));
+        state.push(heap_tid, source_vector, identity_payload);
     })
+}
+
+/// Canonicalize the INCLUDE-column datum into the 16-byte ADR-063 payload.
+/// NULL and wrong-width values reject the row: mixed identity namespaces
+/// inside a global-writer index would break cross-node dedupe.
+///
+/// # Safety
+/// `values`/`isnull` are the live PG build/insert callback arrays and
+/// `identity` came from `resolve_identity_attribute` on the same index.
+unsafe fn extract_identity_payload(
+    identity: DistannIdentityAttribute,
+    values: *mut pg_sys::Datum,
+    isnull: *mut bool,
+) -> [u8; DISTANN_SOURCE_IDENTITY_BYTES] {
+    let values_view = crate::am::common::pg_ptr::DatumArrayView::new(
+        NonNull::new(values).expect("ec_distann values should be non-null"),
+        NonNull::new(isnull).expect("ec_distann isnull should be non-null"),
+    );
+    let datum = values_view.non_null_datum(
+        identity.index_attr_offset,
+        "ec_distann",
+        "source_identity INCLUDE column",
+    );
+    match identity.datum_kind {
+        DistannIdentityDatumKind::Uuid => {
+            // PostgreSQL UUID datums are fixed 16-byte payloads.
+            let bytes = std::slice::from_raw_parts(
+                datum.cast_mut_ptr::<u8>(),
+                DISTANN_SOURCE_IDENTITY_BYTES,
+            );
+            let mut payload = [0_u8; DISTANN_SOURCE_IDENTITY_BYTES];
+            payload.copy_from_slice(bytes);
+            payload
+        }
+        DistannIdentityDatumKind::Bytea16 => {
+            let bytes = crate::am::common::detoast::DetoastedVarlena::packed_from_datum(datum)
+                .unwrap_or_else(|| {
+                    pgrx::error!("ec_distann could not detoast the source_identity INCLUDE column")
+                })
+                .to_vec();
+            <[u8; DISTANN_SOURCE_IDENTITY_BYTES]>::try_from(bytes.as_slice()).unwrap_or_else(
+                |_| {
+                    pgrx::error!(
+                        "ec_distann source_identity bytea payload length {} must be {} bytes",
+                        bytes.len(),
+                        DISTANN_SOURCE_IDENTITY_BYTES
+                    )
+                },
+            )
+        }
+    }
+}
+
+/// Validate the ADR-063 DDL shape and resolve the identity attribute:
+/// local mode = exactly one key column; include mode = one key column plus
+/// exactly one INCLUDE column of type uuid or bytea.
+unsafe fn resolve_identity_attribute(
+    heap_relation: pg_sys::Relation,
+    index_info: *mut pg_sys::IndexInfo,
+    options: &EcDistannOptions,
+) -> Option<DistannIdentityAttribute> {
+    if index_info.is_null() {
+        pgrx::error!("ec_distann ambuild received a null IndexInfo");
+    }
+    if heap_relation.is_null() {
+        pgrx::error!("ec_distann ambuild received a null heap relation");
+    }
+    let info = crate::am::common::pg_ptr::index_info(
+        NonNull::new(index_info).expect("ec_distann IndexInfo should be non-null"),
+    );
+    if info.ii_NumIndexKeyAttrs != 1 {
+        pgrx::error!("ec_distann currently supports single-key-column indexes only");
+    }
+    match options.source_identity {
+        DistannSourceIdentityProvider::None => {
+            if info.ii_NumIndexAttrs != 1 {
+                pgrx::error!(
+                    "ec_distann without source_identity='include' takes no INCLUDE columns"
+                );
+            }
+            None
+        }
+        DistannSourceIdentityProvider::Include => {
+            if info.ii_NumIndexAttrs != 2 {
+                pgrx::error!(
+                    "ec_distann source_identity='include' requires exactly one INCLUDE column (uuid or 16-byte bytea)"
+                );
+            }
+            let identity_attnum = i32::from(info.ii_IndexAttrNumbers[1]);
+            if identity_attnum <= 0 {
+                pgrx::error!(
+                    "ec_distann source_identity INCLUDE column must be a base heap column"
+                );
+            }
+            let tuple_desc = crate::storage::relation::relation_tuple_desc_copy_handle(
+                NonNull::new(heap_relation).expect("heap relation should be non-null"),
+            );
+            let identity_att = tuple_desc
+                .get(identity_attnum as usize - 1)
+                .unwrap_or_else(|| {
+                    pgrx::error!("ec_distann source_identity INCLUDE column not found in heap")
+                });
+            if identity_att.attisdropped {
+                pgrx::error!(
+                    "ec_distann source_identity INCLUDE column references a dropped column"
+                );
+            }
+            let datum_kind = match crate::storage::type_info::base_type_oid(identity_att.atttypid)
+            {
+                pg_sys::UUIDOID => DistannIdentityDatumKind::Uuid,
+                pg_sys::BYTEAOID => DistannIdentityDatumKind::Bytea16,
+                _ => pgrx::error!(
+                    "ec_distann source_identity INCLUDE column must be uuid or bytea"
+                ),
+            };
+            Some(DistannIdentityAttribute {
+                index_attr_offset: 1,
+                datum_kind,
+            })
+        }
+    }
 }
 
 unsafe fn flush_build_state(
@@ -203,19 +352,17 @@ unsafe fn flush_build_state(
         .collect();
     warn_on_non_unit_source_sample(&source_refs);
 
-    // D6 vec_id assignment + build-time collision detection.
-    if state.options.source_identity == DistannSourceIdentityProvider::Include {
-        return Err(
-            "ec_distann source_identity='include' is not wired yet: the ADR-063 include-column \
-             provider lands in a later Task 162 slice; drop the reloption for the local-identity \
-             posture"
-                .to_owned(),
-        );
-    }
+    // D6 vec_id assignment + build-time collision detection. Include mode
+    // hashes the ADR-063 canonical payload (stable across rebuilds, table
+    // rewrites, and nodes); local mode hashes the heap TID (single-node
+    // posture, stable across index rebuilds only).
     let vec_ids: Vec<u64> = state
         .rows
         .iter()
-        .map(|row| vec_id_from_local_heap_tid(row.heap_tid))
+        .map(|row| match &row.identity_payload {
+            Some(payload) => vec_id_from_source_identity(payload),
+            None => vec_id_from_local_heap_tid(row.heap_tid),
+        })
         .collect();
     let mut seen_vec_ids: HashMap<u64, usize> = HashMap::with_capacity(node_count);
     for (node, vec_id) in vec_ids.iter().enumerate() {
@@ -431,24 +578,6 @@ fn warn_on_non_unit_source_sample(source_refs: &[&[f32]]) {
             );
             return;
         }
-    }
-}
-
-unsafe fn validate_single_ecvector_attribute(
-    heap_relation: pg_sys::Relation,
-    index_info: *mut pg_sys::IndexInfo,
-) {
-    if index_info.is_null() {
-        pgrx::error!("ec_distann ambuild received a null IndexInfo");
-    }
-    let info = crate::am::common::pg_ptr::index_info(
-        NonNull::new(index_info).expect("ec_distann IndexInfo should be non-null"),
-    );
-    if info.ii_NumIndexAttrs != 1 || info.ii_NumIndexKeyAttrs != 1 {
-        pgrx::error!("ec_distann currently supports single-column indexes only");
-    }
-    if heap_relation.is_null() {
-        pgrx::error!("ec_distann ambuild received a null heap relation");
     }
 }
 

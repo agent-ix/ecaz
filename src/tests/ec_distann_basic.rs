@@ -606,6 +606,167 @@ fn test_ec_distann_head_cache_invalidates_across_reindex() {
     assert_distann_self_queries_return_self("ec_distann_cache_reindex");
 }
 
+fn create_distann_identity_fixture(table: &str, tid_shift: bool) {
+    // ADR-063 include-provider fixture: stable uuid identities per logical
+    // row. `tid_shift` reverses the insertion order so two tables carry the
+    // same identities at different physical heap addresses.
+    Spi::run(&format!(
+        "CREATE TABLE {table} (id bigint, ident uuid, embedding ecvector)"
+    ))
+    .expect("table creation should succeed");
+    let order: Vec<usize> = if tid_shift {
+        (0..DISTANN_FIXTURE_ROWS.len()).rev().collect()
+    } else {
+        (0..DISTANN_FIXTURE_ROWS.len()).collect()
+    };
+    for row_id in order {
+        let vector = &DISTANN_FIXTURE_ROWS[row_id];
+        Spi::run(&format!(
+            "INSERT INTO {table} VALUES ({}, '00000000-0000-0000-0000-{:012}', \
+             encode_to_ecvector(ARRAY[{}, {}, {}, {}], 4, 42))",
+            row_id + 1,
+            row_id + 1,
+            vector[0],
+            vector[1],
+            vector[2],
+            vector[3]
+        ))
+        .expect("fixture row should insert");
+    }
+    Spi::run(&format!(
+        "CREATE INDEX {table}_idx ON {table} \
+         USING ec_distann (embedding ecvector_distann_ip_ops) INCLUDE (ident) \
+         WITH (source_identity = 'include', graph_degree = 4, \
+               neighbor_code_format = 'rabitq')"
+    ))
+    .expect("include-mode index creation should succeed");
+}
+
+fn distann_directory_vec_ids(index_name: &str) -> Vec<u64> {
+    let (metadata, chain) = distann_materialized_index(index_name);
+    crate::am::ec_distann::reader::read_directory_chain(
+        &chain,
+        metadata.directory_head,
+        metadata.node_count as usize,
+    )
+    .expect("directory should read")
+    .into_iter()
+    .map(|(vec_id, _)| vec_id)
+    .collect()
+}
+
+#[pg_test]
+fn test_ec_distann_include_identity_is_tid_independent() {
+    // FR-076-AC-2 in global-identity mode: the same logical rows (same
+    // uuids) get identical vec_ids regardless of heap TID layout — the
+    // property local mode cannot provide across table rewrites.
+    create_distann_identity_fixture("ec_distann_ident_a", false);
+    create_distann_identity_fixture("ec_distann_ident_b", true);
+    let ids_a = distann_directory_vec_ids("ec_distann_ident_a_idx");
+    let ids_b = distann_directory_vec_ids("ec_distann_ident_b_idx");
+    assert_eq!(ids_a.len(), 8);
+    assert_eq!(
+        ids_a, ids_b,
+        "identity-derived vec_ids must not depend on heap TIDs"
+    );
+
+    // And the include-mode index scans correctly through the planner.
+    Spi::run("SET enable_seqscan = off").expect("disabling seqscan should succeed");
+    let top_id = Spi::get_one::<i64>(
+        "SELECT id FROM ec_distann_ident_a \
+         ORDER BY embedding <#> ARRAY[0.0, 1.0, 0.0, 0.0]::real[] LIMIT 1",
+    )
+    .expect("SPI query should succeed")
+    .expect("top row should exist");
+    assert_eq!(top_id, 2);
+    Spi::run("RESET enable_seqscan").expect("seqscan reset should succeed");
+}
+
+#[pg_test]
+fn test_ec_distann_include_mode_requires_include_column() {
+    Spi::run("CREATE TABLE ec_distann_ident_noinc (id bigint, embedding ecvector)")
+        .expect("table creation should succeed");
+    let error = expect_pg_error(|| {
+        Spi::run(
+            "CREATE INDEX ec_distann_ident_noinc_idx ON ec_distann_ident_noinc \
+             USING ec_distann (embedding ecvector_distann_ip_ops) \
+             WITH (source_identity = 'include')",
+        )
+        .expect("this create must error before succeeding");
+    });
+    assert!(
+        error.contains("requires exactly one INCLUDE column"),
+        "unexpected error: {error}"
+    );
+}
+
+#[pg_test]
+fn test_ec_distann_include_mode_rejects_null_identity() {
+    Spi::run("CREATE TABLE ec_distann_ident_null (id bigint, ident uuid, embedding ecvector)")
+        .expect("table creation should succeed");
+    Spi::run(
+        "INSERT INTO ec_distann_ident_null VALUES \
+         (1, NULL, encode_to_ecvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42))",
+    )
+    .expect("row should insert");
+    let error = expect_pg_error(|| {
+        Spi::run(
+            "CREATE INDEX ec_distann_ident_null_idx ON ec_distann_ident_null \
+             USING ec_distann (embedding ecvector_distann_ip_ops) INCLUDE (ident) \
+             WITH (source_identity = 'include')",
+        )
+        .expect("this create must error before succeeding");
+    });
+    assert!(
+        error.contains("source_identity INCLUDE column"),
+        "unexpected error: {error}"
+    );
+}
+
+#[pg_test]
+fn test_ec_distann_include_mode_rejects_short_bytea_identity() {
+    Spi::run(
+        "CREATE TABLE ec_distann_ident_width (id bigint, ident bytea, embedding ecvector)",
+    )
+    .expect("table creation should succeed");
+    Spi::run(
+        "INSERT INTO ec_distann_ident_width VALUES \
+         (1, '\\x0102030405'::bytea, encode_to_ecvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42))",
+    )
+    .expect("row should insert");
+    let error = expect_pg_error(|| {
+        Spi::run(
+            "CREATE INDEX ec_distann_ident_width_idx ON ec_distann_ident_width \
+             USING ec_distann (embedding ecvector_distann_ip_ops) INCLUDE (ident) \
+             WITH (source_identity = 'include')",
+        )
+        .expect("this create must error before succeeding");
+    });
+    assert!(
+        error.contains("must be 16 bytes"),
+        "unexpected error: {error}"
+    );
+}
+
+#[pg_test]
+fn test_ec_distann_rejects_stray_include_column() {
+    Spi::run(
+        "CREATE TABLE ec_distann_ident_stray (id bigint, ident uuid, embedding ecvector)",
+    )
+    .expect("table creation should succeed");
+    let error = expect_pg_error(|| {
+        Spi::run(
+            "CREATE INDEX ec_distann_ident_stray_idx ON ec_distann_ident_stray \
+             USING ec_distann (embedding ecvector_distann_ip_ops) INCLUDE (ident)",
+        )
+        .expect("this create must error before succeeding");
+    });
+    assert!(
+        error.contains("takes no INCLUDE columns"),
+        "unexpected error: {error}"
+    );
+}
+
 #[pg_test]
 fn test_ec_distann_guc_defaults() {
     let beam_width = Spi::get_one::<String>("SHOW ec_distann.beam_width")

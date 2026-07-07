@@ -41,7 +41,9 @@ fn build_ec_distann_routine() -> IndexAmRoutineBox {
     // The FR-077 sharded build (M1) owns build parallelism; the monolithic
     // M0 build is single-process.
     amroutine.amcanbuildparallel = false;
-    amroutine.amcaninclude = false;
+    // ADR-063 include provider: `source_identity = 'include'` carries the
+    // 16-byte identity through one INCLUDE column (uuid or bytea16).
+    amroutine.amcaninclude = true;
     amroutine.amusemaintenanceworkmem = true;
     amroutine.amsummarizing = false;
     amroutine.amparallelvacuumoptions = 0;
@@ -429,8 +431,10 @@ fn indexed_ecvector_attnum(index_relation: pg_sys::Relation) -> Result<i32, Stri
             return Err("ec_distann scan could not build index metadata".into());
         }
         let info = &*index_info;
-        let result = if info.ii_NumIndexAttrs != 1 || info.ii_NumIndexKeyAttrs != 1 {
-            Err("ec_distann scan currently supports single-column indexes only".into())
+        // One key column; an optional second attr is the ADR-063
+        // source_identity INCLUDE column.
+        let result = if info.ii_NumIndexKeyAttrs != 1 || info.ii_NumIndexAttrs > 2 {
+            Err("ec_distann scan currently supports single-key-column indexes only".into())
         } else {
             let attnum = i32::from(info.ii_IndexAttrNumbers[0]);
             if attnum <= 0 {
