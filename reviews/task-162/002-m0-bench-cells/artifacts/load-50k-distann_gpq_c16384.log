@@ -1,0 +1,22 @@
+[loader] inspecting data/staged-current/ec_real_50k_corpus.tsv
+[loader] inspecting data/staged-current/ec_real_50k_queries.tsv
+[loader] corpus: 50000 rows, sha256=56023baaa7bc42f758272e8617603d538808e6290a8a70a3a84e057571240133  queries: 1000 rows, sha256=95ac7992578aa80bb193657f10fbcbf1ea3867e559739244bf5a467f7a5a9fa3
+[loader] warning: manifest verification failed for data/staged-current/ec_real_50k_manifest.json: prefix="ec_real_50k" (expected "m0_50k_distann_gpq_c16384")
+[loader] copied corpus table m0_50k_distann_gpq_c16384_corpus in 19.76s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table m0_50k_distann_gpq_c16384_corpus in 13.58s
+[loader] copied queries table m0_50k_distann_gpq_c16384_queries in 453.72ms
+[loader] building m0_50k_distann_gpq_c16384_idx using ec_distann (reloptions=[head_index_cap=16384]) ...
+[loader] built m0_50k_distann_gpq_c16384_idx in 157.53s
+┌─────────┬──────────────────────────────────────────────────────┐
+│ field   ┆ value                                                │
+╞═════════╪══════════════════════════════════════════════════════╡
+│ profile ┆ ec_distann                                           │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ m0_50k_distann_gpq_c16384_corpus (50000 rows)        │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ m0_50k_distann_gpq_c16384_queries (1000 rows)        │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ m0_50k_distann_gpq_c16384_idx [head_index_cap=16384] │
+└─────────┴──────────────────────────────────────────────────────┘
+[loader] completed prefix m0_50k_distann_gpq_c16384 in 196.69s
