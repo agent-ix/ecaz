@@ -2,7 +2,7 @@
 id: SR-003
 type: SpecReview
 analysis: integrity
-scope: "StR-008; FR-075..FR-083 (spec/functional/index/distann); NFR-017..NFR-020; ADR-085; spec/tests.md TC-037..TC-044, EC-019..EC-023"
+scope: "StR-008; FR-075..FR-083 (spec/functional/index/distann); NFR-017..NFR-020; ADR-085; spec/tests.md TC-037..TC-044, EC-019..EC-023; re-reviewed against revision d25ea9e0c (ADR-085 D11 — lean node records + co-placed heap rerank: FR-076/FR-078/FR-079, NFR-018)"
 review_set: all
 title: "Integrity Analysis: ec_distann Spec Batch (StR-008 / FR-075..083 / NFR-017..020 / ADR-085)"
 ---
@@ -14,51 +14,83 @@ Quality-gate (completeness / consistency / atomicity) analysis of the
 ec_distann specification batch: StR-008, FR-075..FR-083, NFR-017..NFR-020,
 ADR-085, and the TC-037..TC-044 / EC-019..EC-023 rows in `spec/tests.md`.
 
-**Completeness — strong.** Every FR chains to StR-008 (FR-075 `implements`,
-the rest via the FR dependency DAG); every FR and NFR has acceptance
-criteria and a mapped test case (TC-037..TC-044); all four NFRs are
-explicitly scoped and referenced by the constrained FRs; the edge-case table
-covers the batch's distinctive failure modes (partial hop round, vec_id
-collision, batch skew, epoch swap, tombstone/vacuum). ADR-085 sub-decisions
-D1/D6/D7→FR-076, D3→FR-080, D5→FR-083, D8→FR-077, D9→FR-081 are each cited
-by their consuming FR; D4 is correctly ADR-only with a reopen trigger.
+**Re-review context (d25ea9e0c).** The original 13 findings (FND-001..013)
+were assessed against the first-pass batch (`3c4a22b26`). They were published
+together with a round of consolidated fixes (`98b40e961`), so most were
+already addressed in the tree at the moment the review landed. This re-review
+then evaluates the batch after revision **d25ea9e0c**, which replaces inline
+full-precision vectors with **lean node records + a co-placed heap rerank
+tier** (ADR-085 decision D11): FR-076 drops the record's `vector` field for a
+coarse `search_code`; FR-078 co-places each record's full-precision heap row
+on the same `hash(vec_id)`-owned node; FR-079 computes `exact_dist` from that
+node-local heap read; NFR-018 makes the heap tier the 1.0× ratio denominator;
+ADR-085 D1 drops ~5.0× → ~4.0×.
 
-**Consistency — one real contradiction and several coherence gaps.** The
-probed FR-079 exact_dist vs FR-081 no-rerank pair is *consistent* (FR-081
-explicitly relies on expansion responses carrying exact distances). But the
-probed FR-083 vacuum-reclaim vs FR-079 missing-record pair is a genuine
-contradiction (FND-001): after vacuum reclaims a tombstone but before
-adjacency repair, a frontier request for the reclaimed vec_id must
-simultaneously error (FR-079-AC-3, NFR-020 `missing_node_record`) and never
-error (FR-083-AC-2). FR-083 also re-opens the interim-insert choice that
-ADR-085 D5 already fixed (FND-003), ADR-085 D1's own storage arithmetic
-lands above the NFR-018 threshold it claims to satisfy (FND-004), and the
-frontmatter relationship graph diverges from body Dependencies in several
-places, including a misplaced FR-055 edge (FND-006, FND-007).
+**Prior findings — net state.** Of the 13, twelve are now resolved and one
+still stands:
+- Resolved by the consolidated fixes (`98b40e961`, pre-revision): FND-001
+  (the sole high-severity contradiction — reclaim/repair are now atomic
+  epoch-build operations, so no mid-epoch reclaim window exists), FND-002,
+  FND-003, FND-005, FND-006, FND-008, FND-010, FND-011, FND-012, and
+  partially FND-009.
+- Resolved / advanced by revision **d25ea9e0c**: FND-004 (storage arithmetic
+  now internally coherent at ~4.0×, downgraded — see below) and FND-007's
+  FR-076→FR-078 edge.
+- Still standing: FND-013 (FR-083 remains a three-behavior bundle).
 
-**Atomicity — mostly good.** FRs define single, observable, testable
-obligations, with one exception: FR-083 bundles three separately-milestoned
-behaviors (FND-013), and FR-080's head-sample procedure uses an undefined
-term ("shard top layers") that makes it non-implementable as written
-(FND-005).
+**FND-004 is downgraded, not fully closed.** d25ea9e0c removes the 1.0×-raw
+inline vector from the record, so the self-inconsistent arithmetic (30 KB /
+5.0× vs a stated 24.6 KB) is gone: the record is now the ~24.6 KB code block
+≈ **~4.0× raw**. But ~4.0× is *at* NFR-018's threshold, not under it, and
+still over the ≤3.0× target; the binding term is the untouched R×
+neighbor-code block, and the D7 `GroupedPq` default code size is still
+unstated — so the *default* configuration's budget fit remains undemonstrated
+(M0 measurement decides). Kept as a low-severity open item.
 
-No blocking issue outside FND-001; recommend resolving FND-001..FND-005
-before task generation (spec-to-plan) for the affected FRs.
+**Completeness — one real gap the revision introduces.** The co-placed heap
+tier is now epoch-critical exact-rerank fidelity state, but two seams are
+unspecified: FR-083's incremental-insert path writes the new record without
+its co-placed heap row (FND-014), and FR-082's epoch mutation model /
+fingerprint never bring the heap tier under epoch immutability or cover
+`heap_tid` staleness (FND-015).
+
+**Consistency — no residual record-read contradiction.** The revision is
+internally coherent on the record-read language: no FR still says
+"self-sufficient", "exactly one record read", or stores a "full-precision
+vector" in the record; `exact_dist` remains in the FR-079 wire schema; beam
+ordering (coarse `search_code`/neighbor codes) and result scoring (heap
+`exact_dist`) are cleanly separated. The one loose thread is that NFR-019's
+touch bound and counters do not name the per-expansion heap read that ADR-085
+D11's affordability argument depends on (FND-016).
+
+**Atomicity.** FR-078-AC-4 is a clean single obligation. FR-076-AC-5 and
+FR-079-AC-5 each bundle two claims (FND-017).
+
+No blocking contradiction remains. Recommend resolving FND-014 and FND-015
+before task generation (spec-to-plan) for FR-082/FR-083, and closing the
+low-severity residuals (FND-004, FND-007, FND-009, FND-013, FND-016, FND-017)
+opportunistically.
 
 ## Findings
 
 | ID | Severity | Summary | Refs |
 |----|----------|---------|------|
-| FND-001 | high | Vacuum edge-repair contradicts missing-record error semantics: FR-083 drops edges to reclaimed records "at expansion time until repaired" and FR-083-AC-2 requires "no expansion ever errors on a reclaimed neighbor", but the coordinator (FR-081) will place a reclaimed neighbor's vec_id in the frontier and request it from its owner, where FR-079 mandates a raised error for a missing record and NFR-020 drills `missing_node_record` as error-or-correct. The same request must both error and not error; needs an explicit mechanism (e.g. repair-before-reclaim ordering, or a `reclaimed` response marker exempting formerly-tombstoned vec_ids from FR-079's error) | FR-083 (Behavior: Delete, AC-2), FR-079 (Behavior bullet 3, AC-3), FR-081, NFR-020 (fault taxonomy), EC-023, TC-042/TC-043 |
-| FND-002 | medium | FR-079 conflates non-owned with owned-but-absent: the behavior bullet defines an error only for "a requested vec_id … not owned by this node", yet attaches "distinguishing missing-record from tombstone" to that placement error. Behavior for a vec_id that hashes to this node but has no record (the NFR-020 `missing_node_record` case, and the FND-001 window) is unspecified — two valid interpretations (placement error vs distinct missing-record error vs row with `is_tombstone`) | FR-079 (Behavior, Outputs, AC-3), NFR-020, FR-078 |
-| FND-003 | medium | FR-083 re-opens a decision ADR-085 D5 already fixed: FR-083's interim posture is "SHALL either error … or spool to a bounded exact-scan delta buffer; the chosen posture SHALL be a documented reloption default" and later "same-epoch delta visibility vs next-epoch visibility", while D5 states the delta buffer *was chosen* ("chosen over erroring") with same-statement visibility. As written the FR admits two interpretations of an already-made decision; FR-083-AC-3 ("behaves exactly as documented") inherits the ambiguity | FR-083 (Behavior: Interim insert, AC-3), ADR-085 D5 |
-| FND-004 | medium | ADR-085 D1 arithmetic conflicts with NFR-018: D1's example (dim=1536, R=32, 4-bit ≈768 B/code) gives 6,144 B vector + 24,576 B codes ≈ 30 KB/record ≈ 5.0× raw — the stated "≈24.6 KB" (4.03×) does not match its own inputs, and either figure exceeds NFR-018's ≤3.0 target and sits at/over the ≤4.0 threshold before metadata and head sample. The arithmetic is also computed for rabitq-class codes while D7 makes GroupedPq the default codec, whose code size is never stated — no demonstration that the *default* configuration fits the budget | ADR-085 D1/D7, NFR-018 (Statement, Measurement), FR-076-CON-1, TC-044 |
-| FND-005 | medium | FR-080 head-sample construction uses an undefined concept: "breadth-first sample … union across build shards' top layers". Vamana graphs (FR-077 per-shard builds) are single-layer with a medoid entry point — "top layers" is an HNSW notion with no definition anywhere in the batch, so the sampling procedure has no single valid interpretation and FR-080-AC-3 (per-shard-region reachability) cannot be constructed from the spec text | FR-080 (Behavior bullet 1, AC-3), FR-077, ADR-085 D3 |
-| FND-006 | medium | Frontmatter/body dependency mismatch on FR-055: FR-076 frontmatter declares `depends_on` FR-055 (SPIRE topology/placement directory) but its body Dependencies never mentions FR-055 (it cites the ADR-068 source-identity contract instead). The spec that actually consumes FR-055 machinery is FR-078 ("adapted from `SpirePlacementDirectory`"), which carries no FR-055 edge in frontmatter or body — the edge appears to be on the wrong FR | FR-076 (frontmatter vs Dependencies), FR-078 (Behavior bullet 3), FR-055 |
-| FND-007 | low | Upstream/downstream edge asymmetries: FR-075 lists FR-081 downstream but FR-081 omits FR-075 upstream (frontmatter and body) despite FR-075 normatively routing multinode scans through FR-081; FR-076 downstream omits FR-078 (which depends on FR-076); FR-077 lists FR-078 downstream but FR-078 upstream omits FR-077 (placement runs on FR-077's stitched output per the workflow diagram); FR-079 downstream omits FR-082; FR-081 lists FR-083 downstream but FR-083 upstream omits FR-081 even though incremental insert "SHALL run the FR-081 beam search" | FR-075..FR-083 frontmatter `relationships` + body Dependencies |
-| FND-008 | low | ADR-085 D2 (gate substrate) has no consuming spec text: NFR-017 fixes the loopback multi-instance fixture but never cites D2, and D2's normative companions — one informational netem injected-latency run accompanying the gate, and H×RTT sensitivity reported-not-gated — appear nowhere in NFR-017's Measurement/Verification or in TC-044, so the gate can pass without producing the D2-mandated evidence | ADR-085 D2, NFR-017 (Scope, Verification), TC-044 |
-| FND-009 | low | Metric-name and matched-recall drift: FR-075-AC-4 and FR-077-AC-1 gate on "recall@10" while StR-008/NFR-017/tests.md use "distinct_recall@10" (equivalent single-node, but the batch's own rationale is that the distinction was the predecessor's failure mode — name one metric); NFR-017's "at matched recall" is ambiguous between matching the IVF anchor's 0.9980 and the gate's own ≥0.999 floor, two different latency operating points | FR-075-AC-4, FR-077-AC-1, StR-008 (Validation), NFR-017 |
-| FND-010 | low | Test-matrix traceability slips: EC-020 (vec_id hash collision, an FR-076/D6 build behavior) is verified by TC-038, whose requirements column lists only FR-077 items and whose harness is the stitch proptest suite; the `closure_epsilon` configuration row is assigned to TC-037 and asserts "stitch output invariants hold", but TC-037 covers FR-075/076/080 (M0) and stitch invariants belong to TC-038 (M1) | spec/tests.md (EC-020, config rows 241–242, TC-037/TC-038), FR-076, FR-077 |
-| FND-011 | low | Under-filled result set unspecified: FR-081's result heap is fed only by exact distances from expanded records, and expansion is capped at BW×H (NFR-019), but no requirement relates BW×H (or head-index candidates, which never receive exact distances) to k — behavior when fewer than k records are expanded (tiny corpus, aggressive early-exit, low BW/H GUC settings) is undefined | FR-081, FR-080, NFR-019, FR-075 (GUCs) |
-| FND-012 | low | Milestones M0..M5 are load-bearing but undefined in the spec set: FR-080-AC-4 verifies "at M0", FR-083 downstream is "program milestone M5", ADR-085 keys D1/D3/D4/D7 to M0/M2, and every TC row carries a Planned(Mx) status — yet no artifact in scope defines the milestone sequence, entry/exit criteria, or ownership | FR-080-AC-4, FR-083 (Dependencies), ADR-085, spec/tests.md TC-037..TC-044 |
-| FND-013 | low | FR-083 is non-atomic: it bundles three separately-verified, separately-milestoned obligations (tombstone delete + vacuum repair; interim insert posture, read-path milestones only; incremental distributed insert, final milestone M5) under one FR. Splitting (delete/vacuum vs interim vs incremental) would let the M0–M3 slices close without carrying open M5 criteria, and would isolate the FND-001/FND-003 fixes | FR-083, TC-043, ADR-085 D5 |
+| FND-001 | low | RESOLVED (consolidated fixes 98b40e961): the vacuum-reclaim vs missing-record contradiction is closed by making physical reclaim and adjacency repair atomic **epoch-build** operations (FR-082 D10 mutation model; FR-083 "Physical reclaim" + AC-2). Within a published epoch no record is ever physically reclaimed, tombstoned records stay traversable with intact adjacency, and FR-079 case (c) owned-but-absent is now defined as "corruption or placement drift, never a vacuum race" — so no request must both error and not-error. d25ea9e0c did not affect this | FR-083 (Physical reclaim, AC-2), FR-079 (outcome c), FR-082 (D10), NFR-020, EC-023 |
+| FND-002 | low | RESOLVED (consolidated fixes 98b40e961): FR-079 now enumerates exactly three outcomes — (a) present, (b) not owned → placement error, (c) owned-but-absent → structural fault error — cleanly separating the non-owned and owned-but-absent (`missing_node_record`) cases the original conflated. d25ea9e0c added AC-5 but did not alter this block | FR-079 (Behavior three-outcome list, AC-3), NFR-020, FR-078 |
+| FND-003 | low | RESOLVED (consolidated fixes 98b40e961): FR-083 interim-insert now states the single chosen ADR-085 D5 posture ("spool to a bounded exact-scan delta buffer … merged into results with same-statement visibility; drained by the next epoch build"), no longer "either error or spool" — the FR no longer re-opens a decision the ADR fixed | FR-083 (Interim insert, AC-3), ADR-085 D5 |
+| FND-004 | low | DOWNGRADED by d25ea9e0c (partially resolved): dropping the inline vector (D11) removes the self-inconsistent 30 KB/5.0× vs 24.6 KB figures — the record is now the ~24.6 KB neighbor-code block ≈ **~4.0× raw**, internally coherent and matching NFR-018's refreshed note. **Residual (open, low):** ~4.0× is *at* the 4.0× threshold, not under it (and over the ≤3.0× target); the binding amplifier is the untouched R× neighbor-code block; and the D7 `GroupedPq` *default* code size is still unstated, so the default configuration's budget fit is still not demonstrated (M0 storage measurement decides) | ADR-085 D1/D7/D11, NFR-018, FR-076-CON-1, TC-044 |
+| FND-005 | low | RESOLVED (consolidated fixes 98b40e961): FR-080 replaced the undefined HNSW "top layers" term with a defined single-layer procedure — a bounded BFS from each build shard's entry medoid over that shard's Vamana graph, per-shard samples unioned ("Vamana graphs are single-layer; 'entry region' means BFS-near the medoid") — so FR-080-AC-3 is now constructible from the spec text | FR-080 (Behavior bullet 1, AC-3), FR-077 |
+| FND-006 | low | RESOLVED (consolidated fixes 98b40e961): the misplaced FR-055 dependency was relocated from FR-076 to FR-078 (the actual `SpirePlacementDirectory` consumer) — FR-076 frontmatter now carries only FR-075; FR-078 frontmatter carries FR-055. d25ea9e0c did not touch this. Residual body/frontmatter mismatch on FR-078 (below) folds into FND-007 | FR-076 frontmatter, FR-078 frontmatter/Behavior bullet 3, FR-055 |
+| FND-007 | low | PARTIALLY RESOLVED (d25ea9e0c): the FR-076→FR-078 downstream edge is now present ("co-places the heap row"). Remaining asymmetries still stand: FR-075 lists FR-081 downstream but FR-081 omits FR-075 upstream; FR-078 **body** Dependencies Upstream lists only FR-076 while its frontmatter now also declares FR-055 and FR-077; FR-079 downstream omits FR-082; FR-081 lists FR-083 downstream but FR-083 upstream omits FR-081 | FR-075..FR-083 frontmatter `relationships` + body Dependencies |
+| FND-008 | low | RESOLVED (consolidated fixes 98b40e961): NFR-017 Verification now cites ADR-085 D2 explicitly — the informational injected-latency (netem) run accompanying the gate and the H×RTT sensitivity "reported, not gated" — and TC-044 carries the netem H×RTT run, so the D2 evidence can no longer be silently omitted | ADR-085 D2, NFR-017 (Verification), TC-044 |
+| FND-009 | low | PARTIALLY RESOLVED (consolidated fixes 98b40e961): FR-075-AC-4 now gates on `distinct_recall@10`, and NFR-017 defines a precise pre-registered "matched-recall comparison rule", removing the "at matched recall" ambiguity. **Residual:** FR-077-AC-1 still gates on bare `recall@10` while the rest of the batch uses `distinct_recall@10` — name one metric | FR-077-AC-1, StR-008, NFR-017 |
+| FND-010 | low | RESOLVED (consolidated fixes 98b40e961): the test-matrix slips are corrected — EC-020 (vec_id hash collision) now maps to FR-076/FR-083 and TC-037/TC-043 (not TC-038), and the `closure_epsilon` config row now sits under TC-038 (stitch, M1) where the stitch-output invariants belong | spec/tests.md (EC-020, config rows, TC-037/TC-038), FR-076, FR-077 |
+| FND-011 | low | RESOLVED (consolidated fixes 98b40e961): FR-081 now specifies the under-filled result set — beam exhaustion before k accumulates returns the fewer-than-k results as a complete (non-fault) result, empty index → zero rows, and results are drawn only from expanded records (head-index candidates count only via their own expansion, and thus only once they carry an exact distance) | FR-081, FR-080, NFR-019, FR-075 |
+| FND-012 | low | RESOLVED (consolidated fixes 98b40e961): `plan/design/distann-global-graph-architecture.md` is now the normative home of the M0–M5 milestone definitions, with a "Milestone definitions (normative)" section and an explicit milestone→task mapping (M0=162 … M5=167), so the load-bearing milestone references across the batch now have a defining artifact | FR-080-AC-4, FR-083 (Dependencies), ADR-085, spec/tests.md TC-037..TC-044, plan/design/distann-global-graph-architecture.md |
+| FND-013 | low | STILL STANDS (softened): FR-083 remains a single FR bundling three separately-milestoned obligations (delete/vacuum; interim insert, read-path milestones; incremental distributed insert, M5). A "Milestone slicing" note now clarifies which behaviors land when, but the FR is not split, so the early (M0–M3) slices still carry the open M5 incremental-insert criteria inside the same requirement. Splitting would also isolate the FND-014 fix | FR-083, TC-043, ADR-085 D5 |
+| FND-014 | medium | NEW (d25ea9e0c completeness gap): the co-placed heap row is now required for exact rerank (FR-078/FR-079), but FR-083's incremental-insert path writes only "the new record to its hash-owned node" and applies back-edges — it never writes the co-placed full-precision heap row that FR-078's build→publish hand-off co-places. An inserted vec_id would then have an index record with no co-placed heap row, so FR-079's `exact_dist` heap read (FR-079-AC-5) has nothing to read. The insert path must co-place the vector alongside the record, parallel to FR-078 | FR-083 (Incremental insert, Remote write endpoint), FR-078 (build→publish co-placement), FR-079-AC-5, FR-076 (heap_tid) |
+| FND-015 | medium | NEW (d25ea9e0c consistency/completeness gap): FR-082's epoch model does not bring the co-placed heap tier under epoch consistency. The D10 mutation model enumerates only "graph-node records and adjacency" as the within-epoch immutable set, and the epoch fingerprint "attests to roster, placement, format version, and the build-time record set" — the co-placed vector/heap tier is named nowhere as epoch-versioned, immutable, or fingerprint-covered. If a heap row moves or changes within a published epoch (HOT update, `heap_tid` staleness — the exact hazard EC-009 flags for SPIRE's stored heap TID), FR-079's `exact_dist` can silently read a stale/wrong tuple, undetected by the fingerprint. No distann edge-case (EC-019..EC-023) covers co-placed-heap immutability or `heap_tid` staleness | FR-082 (D10 mutation model, fingerprint), FR-078, FR-079 (exact_dist, AC-5), FR-076 (heap_tid), spec/tests.md EC-009 analog |
+| FND-016 | low | NEW (d25ea9e0c consistency gap): ADR-085 D11's justification for co-placed heap over an index-resident tier rests on the equality "records read == nodes expanded == nodes exact-reranked == materialized set (all ≤ BW×H)", but the normative touch-bound NFR-019 only bounds and counts *expanded graph-node records* — its statement, metric table, and EXPLAIN/pipeline counters never name the one-per-expansion co-placed heap read that FR-079 now mandates. The equality that makes D11 affordable is asserted in the ADR/design doc but pinned by no normative NFR/AC | NFR-019 (Statement, Measurement, counters), ADR-085 D11, FR-079 (expansion = record read + heap read), FR-081-AC-2 |
+| FND-017 | low | NEW (d25ea9e0c atomicity nit): two of the three new ACs bundle obligations. FR-076-AC-5 couples a structural claim ("record carries no full-precision vector field") with a derived-property claim ("encoded record bytes at fixed R are independent of vector dimension"); FR-079-AC-5 couples a value equality ("exact_dist == full-precision distance to the co-placed heap vector") with a negative implementation assertion ("no vector is read from the index record") that is not independently observable through the FR-079 wire contract. FR-078-AC-4 (record and heap row co-resolve to one node) is, by contrast, a single testable obligation | FR-076-AC-5, FR-079-AC-5, FR-078-AC-4 |
+</content>
+</invoke>
