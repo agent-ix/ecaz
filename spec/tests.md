@@ -61,6 +61,7 @@ presence alone.
 | StR-005 SPIRE extension | US-018..US-020, US-022, FR-048..FR-060, NFR-013, NFR-014 | TC-020 SPIRE, TC-021..TC-025, TC-034 | Partial: implementation baseline is broad, but AC-level mapping, CustomScan lifecycle proof, Stage E live coverage, and product-scale AWS evidence remain gaps |
 | StR-006 | US-015, US-016, US-017 benchmark suites, FR-037, FR-038 benchmark suites, NFR-007..NFR-009, NFR-015 | TC-015, TC-016, TC-019, TC-020 benchmark suites, TC-033 | Partial: product hardware gates are explicit gaps |
 | StR-007 cloud | US-021, FR-044..FR-047, NFR-010, NFR-011 | TC-026..TC-032 | Planned: cloud harness implementation begins on `feat/cloud-test-harness` |
+| StR-008 distann | FR-075..FR-083, NFR-017..NFR-020 | TC-037..TC-044 | Planned: ec_distann program (Task 161 specs); gate evidence lands with milestones M0..M5 |
 
 ### User Story Coverage
 
@@ -149,6 +150,15 @@ presence alone.
 | FR-045 | FR-045-AC-1..4 | TC-027 | Planned: terraform module and profile selection |
 | FR-046 | FR-046-AC-1..3 | TC-028 | Planned: dataset registry and parquet staging |
 | FR-047 | FR-047-AC-1..4 | TC-029, TC-032 | Planned: in-VPC parallel corpus load |
+| FR-075 | FR-075-AC-1..4 | TC-037 | Planned: ec_distann AM surface (`src/tests/ec_distann_basic.rs`) |
+| FR-076 | FR-076-AC-1..4, FR-076-CON-1..2 | TC-037, TC-044 | Planned: record round-trip + identity stability in TC-037; CON-1 storage budget measured in TC-044 |
+| FR-077 | FR-077-AC-1..4, FR-077-CON-1..4 | TC-038, TC-039 | Planned: proptest invariants (TC-038) + stitched-vs-monolithic recall A/B (TC-039) |
+| FR-078 | FR-078-AC-1..3 | TC-040 | Planned: placement determinism + roster-change epoch behavior |
+| FR-079 | FR-079-AC-1..4 | TC-040 | Planned: expand_nodes contract incl. epoch-fingerprint rejection and placement-error disambiguation |
+| FR-080 | FR-080-AC-1..4, FR-080-CON-1 | TC-037, TC-041 | Planned: determinism/reachability in TC-037; C recall-sensitivity measurement in TC-041 |
+| FR-081 | FR-081-AC-1..5 | TC-041 | Planned: 2-node result identity, BW×H cap assertion, dedupe, early-exit equivalence, EXPLAIN counters |
+| FR-082 | FR-082-AC-1..3 | TC-042 | Planned: lifecycle drills (epoch-swap-under-load, fingerprint retry, retirement gating) |
+| FR-083 | FR-083-AC-1..6 | TC-043 | Planned: tombstone/vacuum, interim posture, incremental insert parity + mid-insert fault drills |
 
 ### Non-Functional Requirement Coverage
 
@@ -169,6 +179,10 @@ presence alone.
 | NFR-013 | SPIRE local readiness and capacity | TC-020 SPIRE, TC-021, TC-022, TC-023, TC-025 | Partial: implementation traceability exists; full capacity envelope needs controlled local storage evidence |
 | NFR-014 | SPIRE transport security and operations | TC-024, TC-025 | Partial: v1 contract specifies TLS, timeout, cancellation, and observability behavior; deployment evidence deferred |
 | NFR-015 | Benchmark reporting standard | TC-033, TC-035, TC-036 | Partial: standard is specified; existing and future benchmark rows must conform packet-by-packet, including block-kernel counters and backend provenance, before being marked complete |
+| NFR-017 | distinct_recall/latency gate vs release IVF anchor, 10k/50k/100k, 3-worker | TC-044 | Planned: pre-registered `ecaz bench suite` matrix on the Task 146 anchor protocol; release-guarded distann-pipeline step kind |
+| NFR-018 | Space amplification ≤4× raw vector bytes | TC-044 | Planned: storage step ratio row per scale, plus transient build peak in epoch manifest |
+| NFR-019 | Per-query expansion ≤ BW×H, corpus-independent | TC-041, TC-044 | Planned: per-cell counter assertion + cross-scale expanded-count ratio row |
+| NFR-020 | Fault behavior: correct-or-error, never silent partials | TC-042, TC-043 | Planned: full drill matrix (reused + hop_round_failure_mid_beam, missing_node_record, placement_drift, mid-insert) |
 
 ## Test Case Summary
 
@@ -211,11 +225,22 @@ presence alone.
 | TC-034 | Task 34 hardening and analysis lanes | Static analysis / fuzz / model checking / sanitizer / supply-chain audit | P0 | NFR-004, FR-011, FR-049, FR-050, FR-051, FR-052, FR-053, FR-054, FR-055, FR-056, FR-057, FR-058, FR-059 | Partial: packeted Task 34 evidence currently covers installer, MIRAI, Flux, and Rudra-family logs; aggregate local/nightly, sanitizer, fuzz, cargo-careful, Kani, Loom, Shuttle, cargo-vet, cargo-geiger, AFL, PG18 sanitizer, and SQLsmith evidence remain gaps until packeted |
 | TC-035 | QuantCodec block-kernel completeness matrix | Unit / benchmark packet / docs audit | P0 | FR-014, FR-015, FR-030, FR-032, FR-035, FR-063, FR-066, FR-067, FR-068, FR-071, FR-074, NFR-015 | Partial: target matrix is specified; Task 99, Task 102 ARM evidence, the Task 103 Intel lane, Graviton 4 vector-length, and deferred hardware cells remain gaps until packeted |
 | TC-036 | Benchmark suite backend-profile preflight | CLI unit / suite audit | P0 | FR-038, FR-064, FR-065, FR-070, NFR-007, NFR-015 | Partial: suite manifests must prove release/debug backend selection for latency and recall rows before product benchmark claims |
+| TC-037 | ec_distann single-node AM surface, record format, head index | Unit / pg_test (`src/tests/ec_distann_basic.rs`) | P0 | FR-075, FR-076, FR-080 | Planned (M0) |
+| TC-038 | Stitch correctness property suite (degree ≤ R, vec_id uniqueness, medoid reachability, idempotence, α-prune invariant) | proptest (`src/am/ec_distann/`) | P0 | FR-077-CON-1..3, FR-077-AC-2, FR-077-AC-4 | Planned (M1) |
+| TC-039 | Stitched-vs-monolithic build recall A/B at 100k | Benchmark (`ecaz bench suite`) | P0 | FR-077-AC-1, FR-077-AC-3 | Planned (M1) |
+| TC-040 | Hash placement determinism + remote expansion protocol contract | pg_test (`src/tests/ec_distann_remote.rs`) | P0 | FR-078, FR-079 | Planned (M2) |
+| TC-041 | Hop-round orchestration: 2-node result identity, BW×H cap, dedupe, early-exit equivalence, EXPLAIN counters, head-index C sensitivity | pg_test + 2-node fixture + bench counters | P0 | FR-080, FR-081, NFR-019 | Planned (M2) |
+| TC-042 | Epoch lifecycle + multinode fault drill matrix (reused cases + hop_round_failure_mid_beam, missing_node_record, placement_drift) | Multinode fixture drills | P0 | FR-082, NFR-020 | Planned (M3) |
+| TC-043 | DML path: tombstone/vacuum, interim insert posture, incremental distributed insert parity, mid-insert fault + concurrency drills | pg_test + multinode drills | P1 | FR-083, NFR-020 | Planned (M3/M5) |
+| TC-044 | distann bench gate: 10k/50k/100k four-way comparison (ec_distann / IVF / HNSW / best-SPIRE) on the Task 146 protocol, release-guarded distann-pipeline step | Benchmark (`ecaz bench suite`) | P0 | NFR-017, NFR-018, NFR-019, FR-076-CON-1, StR-008 | Planned (M4, program gate) |
 
 ## Option Permutation Matrix
 
 | Test Case | Option Set | Required Coverage | Expected Behavior |
 | --- | --- | --- | --- |
+| TC-037 | `ec_distann.neighbor_code_format` | `grouped_pq` (default), `rabitq`, `turboquant` | All codecs build/scan correctly; recall/storage per codec recorded at M0 (ADR-085 D7) |
+| TC-037 | `ec_distann.closure_epsilon` | 0 (single shard assignment), default, high overlap | Build succeeds; duplication factor recorded; stitch output invariants hold at every value |
+| TC-041 | `ec_distann.beam_width` × `ec_distann.hop_rounds` | low/default/high BW × H combinations | Expansion counter ≤ BW×H in every combination; recall monotone non-decreasing in BW and H |
 | TC-004 | `ec_hnsw.storage_format` | `turboquant`, `pq_fastscan`, `rabitq` | Valid formats build/scan; incompatible live storage-format changes reject until rebuild |
 | TC-004 | `ec_hnsw.ef_search` | relation default, session override, reset | Effective scan breadth follows session override when set |
 | TC-004 | `ec_hnsw.turboquant_exact_score_mode` | `exact`, `full_lut`, `tiled_lut`, `int8_approx` | All four modes return correct ordered results; compressed modes emit their own `quant_kind` counter rows (`FR-071`) |
@@ -248,6 +273,10 @@ presence alone.
 
 | Constraint | Boundary Type | Test Value | Test Case | Expected |
 | --- | --- | --- | --- | --- |
+| distann `graph_degree` (R) out-degree | Max | union of shard edges > R | TC-038 | Stitch re-prunes to exactly ≤ R |
+| distann reloption ranges (`graph_degree`, `head_index_cap`, `hop_rounds`, `beam_width`) | Below-min / above-max | invalid values at CREATE INDEX / SET | TC-037 | ERROR with descriptive message |
+| distann expansion cap | Max | query configured at BW×H boundary | TC-041 | Counter never exceeds BW×H |
+| distann space amplification | Max | 100k storage ratio | TC-044 | ≤ 4.0× raw vector bytes (NFR-018 threshold) |
 | `ecvector(N)` dimension | Exact | N values | TC-002 | Pass |
 | `ecvector(N)` dimension | Mismatch | N-1 / N+1 values | TC-002 | ERROR |
 | `encode_to_ecvector` defaults | Canonical | `(4, 42)` | TC-002 | Pass |
@@ -266,6 +295,11 @@ presence alone.
 
 | ID | Description | Related Req | Test Case | Risk if Untested |
 | --- | --- | --- | --- | --- |
+| EC-019 | Hop round k of H fails after k−1 succeeded (partial beam) | FR-081, NFR-020 | TC-042 | Silent recall degradation presented as complete results |
+| EC-020 | vec_id hash collision at build time (ADR-085 D6) | FR-076 | TC-038 | Two logical rows alias one graph node; wrong results |
+| EC-021 | All frontier candidates owned by one node (batch skew) | FR-078, FR-081 | TC-041 | Round serialization or per-node batch overflow |
+| EC-022 | Query during epoch swap; expansion against retired epoch | FR-082 | TC-042 | Mixed-epoch results or reads of reclaimed storage |
+| EC-023 | Tombstoned neighbor mid-traversal; vacuumed neighbor edge | FR-083 | TC-043 | Traversal dead-ends or errors on reclaimed records |
 | EC-001 | Empty indexes and repeated rescans | FR-030, FR-032, FR-035 | TC-004, TC-008, TC-011 | Executor may emit stale state or crash |
 | EC-002 | Duplicate vectors and duplicate heap TID overflow | FR-030, FR-036 | TC-004, TC-012 | Missing rows or corrupted duplicate chains |
 | EC-003 | Non-finite fp32 input | FR-028, FR-034 | TC-002, TC-010 | Invalid scores or backend errors |
