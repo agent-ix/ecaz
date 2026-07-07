@@ -2,7 +2,7 @@
 id: SR-007
 type: SpecReview
 analysis: scope-boundary
-scope: "StR-008; FR-075..FR-083 (spec/functional/index/distann); NFR-017..NFR-020; ADR-085 (re-run at d25ea9e0c: co-placed heap rerank tier, ADR-085 D11)"
+scope: "StR-008; FR-075..FR-083 (spec/functional/index/distann); NFR-017..NFR-020; ADR-085 (re-run at d25ea9e0c: co-placed heap rerank tier, ADR-085 D11; dispositions reconciled at b19551e21)"
 review_set: all
 title: "Scope and Boundary Analysis: ec_distann Spec Batch"
 ---
@@ -31,8 +31,10 @@ the owning node, and is never duplicated into the index record"). This
 frames the rerank tier as an AM-owned, once-stored, epoch-build artifact
 co-located by the identical `hash(vec_id)` — not the Postgres base-table
 heap being externally sharded across data nodes. The single-node (M0) case
-is the trivial one (index + base table share one instance). The residual
-softness is naming/lifecycle, not a scope grab (FND-008, FND-009 below).
+is the trivial one (index + base table share one instance). The prior
+naming/lifecycle softness is now closed normatively: FR-079 fixes `heap_tid`
+as an epoch-scoped handle into the AM tier (FND-008), and FR-082 brings the
+tier under the full epoch lifecycle (FND-009).
 
 **What is well-bounded.** The read-path split remains clean and the
 revision preserves it: the coordinator owns head-index descent, hop-round
@@ -46,23 +48,30 @@ load balance only" and its topology-only directory remain exemplary boundary
 statements. BatANN baton passing (D4) and injected-latency gating (D2) stay
 recorded out-of-scope; the partitioned-SPIRE lane stays shelved.
 
-**Where boundaries are soft.** Nine findings. Two priors are now resolved by
-the revision (the divergent-node sub-question of FND-001; see below). The
-most serious open item is unchanged by the revision: the committed
-incremental-insert milestone (FR-083) specifies distributed remote *writes*
-with no owning component — and the revision widens that gap, since an insert
-must now land both the record AND its co-placed heap row remotely (FND-001).
-The build→publish hand-off is still owned by no node-level FR, and the
-revision loads the co-placed heap tier onto the same unowned seam (FND-002).
-Reuse posture toward SPIRE/ec_diskann machinery is still edge-less
-(FND-003/FND-004) — and the revision sharpens FND-003 by staking a deeper
-"this is the ec_diskann coarse-in-index/exact-from-heap split, sharded"
-claim with still no FR-034 edge. New this revision: the "heap row"/`heap_tid`
-naming is borrowed from single-node ec_diskann and blurs whether a remote
-data node holds an AM artifact or the base-table heap itself (FND-008), and
-the co-placed heap tier's epoch lifecycle is placed (FR-078) but not
-enumerated in FR-082's build-assembly / atomic-publication / retirement set
-(FND-009). Learned routing is still unrecorded as out-of-scope (FND-005).
+**Disposition after the b19551e21 spec fixes: all nine findings are now
+resolved or addressed.** The boundary verdict is unchanged — the reconciled
+spec confirms co-placement stays an AM-owned, epoch-scoped artifact inside
+ec_distann's boundary and does not shard the user base table. The two most
+serious items are RESOLVED: FR-083 now specifies the "Remote write endpoint"
+(`ec_distann_apply_record_writes`) with the coordinator driving
+`aminsert`/`ambulkdelete`, back-edge re-pruning on the owning data node, and
+the co-placed heap row written atomically to the hash-owned node — closing the
+unowned incremental-write seam (FND-001) — and FR-078 now names the
+coordinator's epoch build pipeline as the owner of the build→publish hand-off,
+writing each record and its co-placed vector over the NFR-014 transport
+(FND-002). Reuse posture is settled in prose: FR-077/FR-080 declare
+extract-to-shared for `routing_plan` and the top-graph Vamana builder, and
+FR-075 declares the FR-034 Vamana core shared-not-forked (FND-003/FND-004).
+FR-079 now states normatively that `heap_tid` is an epoch-scoped handle into
+the AM-owned vector tier, not a live base-table `ItemPointer` on a data node
+(FND-008), and FR-082 brings the co-placed vector tier under the full epoch
+lifecycle — build assembly, atomic publication, D10 immutability, fingerprint
+attestation, and retirement reclaim (FND-009). Mode selection is now
+determined by the published manifest's node roster (FND-006), the head sample
+is persisted as an epoch-versioned index-relation object listed in the
+manifest (FND-007), and ADR-085 records learned routing as a Rejected
+Alternative (FND-005). No scope-boundary finding remains open. See the
+Findings table for the per-finding disposition tag and its supporting edit.
 
 ## System Context
 
@@ -79,7 +88,7 @@ flowchart LR
   subgraph DATA [Data node xN]
     expand[ec_distann_expand_nodes FR-079]
     rec[(Lean graph-node records FR-076)]
-    heap[(Co-placed heap rerank tier FR-078 D11: AM-owned artifact, lifecycle OWNER UNASSIGNED FND-009)]
+    heap[(Co-placed heap rerank tier FR-078 D11: AM-owned artifact, lifecycle under FR-082 FND-009 RESOLVED)]
     epochd[Epoch validation FR-082]
   end
   subgraph BUILD [Build pipeline FR-077]
@@ -97,14 +106,14 @@ flowchart LR
   orch -->|1 call/node/round| expand --> rec
   expand -->|local heap read: exact_dist FR-079| heap
   expand --> epochd
-  shard --> stitch -->|hash placement + publish record & heap row: OWNER UNASSIGNED| rec
-  stitch -->|co-place vector, same hash: OWNER UNASSIGNED| heap
-  orch -.->|lifted, no edge| ext1
-  orch -.->|lifted, no edge| ext2
-  epochc -.->|reused, no edge| ext3
-  plc -.->|adapted, edge on FR-076 not FR-078| ext4
-  stitch -.->|shared, no edge| ext5
-  rec -.->|assumed, no edge| ext6
+  shard --> stitch -->|hash placement + publish record & heap row: coordinator epoch build FR-078| rec
+  stitch -->|co-place vector, same hash: coordinator epoch build FR-078| heap
+  orch -.->|lifted, extract-to-shared| ext1
+  orch -.->|lifted, extract-to-shared| ext2
+  epochc -.->|reused| ext3
+  plc -.->|adapted, edge on FR-076| ext4
+  stitch -.->|shared-not-forked FR-075| ext5
+  rec -.->|assumed| ext6
 ```
 
 ## In-Scope Responsibilities
@@ -133,15 +142,15 @@ flowchart LR
 
 | Dependency | Type | Assumed or Guaranteed | Contract |
 |------------|------|------------------------|----------|
-| SPIRE CustomScan provider / eager-scan pattern (ADR-056, FR-058) | Reused code ("lifted") | Assumed — reuse mode and edge missing (FND-003) | None declared |
-| SPIRE typed transport + post-142 pooled libpq (FR-056, FR-057) | Reused code ("lifted") | Assumed — no edge (FND-003) | FR-079-AC via drills, indirectly |
-| SPIRE epoch-manifest machinery + retention gate (FR-051, FR-052) | Reused code ("reusing") | Assumed — no edge (FND-003) | FR-082-AC-1..3 exercise behavior |
-| SpirePlacementDirectory (FR-055) | Adapted (topology-only divergence) | Guaranteed for identity via FR-076→FR-055 edge; adapter FR-078 lacks the edge (FND-003) | FR-078-AC-1/3 |
+| SPIRE CustomScan provider / eager-scan pattern (ADR-056, FR-058) | Reused code ("lifted") | Reuse mode declared in prose (FND-003 ADDRESSED); frontmatter edge optional | None declared |
+| SPIRE typed transport + post-142 pooled libpq (FR-056, FR-057) | Reused code ("lifted") | Reuse mode declared; FR-078 build→publish cites NFR-014 transport (FND-002/FND-003) | FR-079-AC via drills, indirectly |
+| SPIRE epoch-manifest machinery + retention gate (FR-051, FR-052) | Reused code ("reusing") | Reuse mode declared in prose (FND-003 ADDRESSED) | FR-082-AC-1..3 exercise behavior |
+| SpirePlacementDirectory (FR-055) | Adapted (topology-only divergence) | Guaranteed for identity via FR-076→FR-055 edge; reuse mode prose-declared (FND-003 ADDRESSED) | FR-078-AC-1/3 |
 | ADR-068 source-identity contract | Contract | Guaranteed | FR-076-AC-2 (vec_id stability) |
-| ec_diskann Vamana core (`build_vamana_graph_with_stats`, `robust_prune`) | Shared library | Guaranteed behaviorally (FR-075-AC-4 parity, FR-077-AC-1) but no spec edge (FND-003) | FR-075-AC-4 |
-| SPIRE closure/distance-ratio assignment (`src/am/ec_spire/build/routing_plan.rs`) | Repurposed source file | Assumed — named by path, no edge, shared-vs-forked undecided (FND-004) | FR-077 property tests, indirectly |
-| SPIRE top-graph in-memory Vamana builder | Reused code | Assumed — no edge (FND-004) | FR-080-AC-2 |
-| QuantCodec scoring (FR-074) | Shared trait | Guaranteed behaviorally (FR-079-AC-4) but no edge (FND-003) | FR-076-AC-3, FR-079-AC-4 |
+| ec_diskann Vamana core (`build_vamana_graph_with_stats`, `robust_prune`) | Shared library (FR-075 declares shared-not-forked) | Guaranteed behaviorally (FR-075-AC-4 parity, FR-077-AC-1); reuse mode declared (FND-003 ADDRESSED) | FR-075-AC-4 |
+| SPIRE closure/distance-ratio assignment (`src/am/ec_spire/build/routing_plan.rs`) | Extract-to-shared module (FR-077) | Declared extract-to-shared, not fork; SPIRE spec ownership unchanged (FND-004 RESOLVED) | FR-077 property tests, indirectly |
+| SPIRE top-graph in-memory Vamana builder | Extract-to-shared module (FR-080) | Declared extract-to-shared, not fork (FND-004 RESOLVED) | FR-080-AC-2 |
+| QuantCodec scoring (FR-074) | Shared trait | Guaranteed behaviorally (FR-079-AC-4); reuse mode prose-declared (FND-003 ADDRESSED) | FR-076-AC-3, FR-079-AC-4 |
 | PostgreSQL index AM API | Platform | Assumed | pgrx / FR-075-AC-1 |
 | `ecaz bench suite` protocol (FR-038, Task 146 anchors) | Measurement harness | Guaranteed | NFR-017 verification section |
 
@@ -152,15 +161,15 @@ flowchart LR
 | StR-008 | ec_distann lane (program) | core |
 | FR-075 (AM surface, reloptions, GUCs) | Coordinator AM handler | core |
 | FR-076 (lean record format, vec_id; heap_tid → co-placed heap row) | Data-node storage | infrastructure |
-| FR-077 (sharded build + stitch) | Build pipeline (executor node unnamed — FND-002) | core |
-| FR-078 (hash placement, directory, heap-row co-placement) | Coordinator + every node (deterministic shared function); directory + co-placed heap tier: infrastructure (tier lifecycle owner unstated — FND-009) | infrastructure |
+| FR-077 (sharded build + stitch) | Coordinator epoch build pipeline (build→publish owner named at b19551e21 — FND-002 RESOLVED) | core |
+| FR-078 (hash placement, directory, heap-row co-placement) | Coordinator + every node (deterministic shared function); directory + co-placed heap tier: infrastructure (tier lifecycle now under FR-082 — FND-009 RESOLVED) | infrastructure |
 | FR-079 (expand endpoint; local index read + local heap read + exact_dist) | Data node | core |
-| Co-placed heap rerank tier (D11) — placement | FR-078 (build→publish hand-off, same as records — FND-002) | infrastructure |
-| Co-placed heap rerank tier (D11) — epoch lifecycle/versioning | UNOWNED: not in FR-082 build-assembly / publication triple / retirement (FND-009) | infrastructure |
-| FR-080 (head index) | Coordinator (sample persistence location unassigned — FND-007) | core |
+| Co-placed heap rerank tier (D11) — placement | Coordinator epoch build pipeline (build→publish hand-off, same as records, over NFR-014 transport — FND-002 RESOLVED) | infrastructure |
+| Co-placed heap rerank tier (D11) — epoch lifecycle/versioning | FR-082 build-assembly / atomic publication / D10 immutability / retirement reclaim (FND-009 RESOLVED) | infrastructure |
+| FR-080 (head index) | Coordinator (sample persisted as epoch-versioned index-relation object in the manifest — FND-007 ADDRESSED) | core |
 | FR-081 (orchestration, dedupe, cap) | Coordinator | core |
 | FR-082 (epoch lifecycle; validation at data node, retry at coordinator) | Coordinator + data node, split explicit | infrastructure |
-| FR-083 (delete/interim insert: local AM; incremental insert remote writes: UNOWNED — FND-001) | Coordinator AM + unspecified remote-write path | core |
+| FR-083 (delete/interim insert: local AM; incremental insert remote writes via `ec_distann_apply_record_writes`, re-prune on owning data node — FND-001 RESOLVED) | Coordinator AM drives the remote write endpoint; owning data node executes re-prune | core |
 | NFR-017 (gate) | Bench harness over FR-081 | cross-cutting |
 | NFR-018 (space budget) | Data-node storage + build instrumentation | cross-cutting |
 | NFR-019 (touch bound) | Coordinator counters + bench assertion | cross-cutting |
@@ -170,12 +179,12 @@ flowchart LR
 
 | ID | Severity | Summary | Refs |
 |----|----------|---------|------|
-| FND-001 | high | The committed incremental-insert milestone has remote *writes* with no owning component or protocol FR — and the d25ea9e0c revision *widens* the gap: an insert must now place both the graph record AND its co-placed full-precision heap row on the vec_id's owning node, yet only a remote *read* endpoint exists (FR-079). Still unassigned: which component executes the back-edge re-prune (coordinator RMW vs a data-node-local write function), the remote-write endpoint/contract, and — new — the remote write of the co-placed heap row. NFR-020 gates "mid-insert failure" against a path no FR allocates. **Partially resolved by the revision:** the prior sub-question "where `aminsert` runs when the heap row's node differs from the record's node" is now moot — FR-078 guarantees the heap row is co-placed on the *same* hash-owned node — but that just relocates the unowned write, it does not assign it. | FR-083 Behavior; FR-078 Behavior (co-placement); FR-079 (read-only); NFR-020 Scope; ADR-085 D6/D11 |
-| FND-002 | medium | The build→publish hand-off that physically distributes records to their owning nodes is unowned, and the revision loads a second artifact onto the same seam. FR-078 now says the build SHALL write "each record **and its full-precision vector (heap row)**" to the hash-owned node and "no other component moves records or vectors" — but still names no node/executor: FR-077 ends at "emit exactly one record per vec_id", and FR-082 says "a build SHALL assemble the full record set, placement metadata, and head sample" without naming which node runs the build or writes record+vector X onto data node Y. Every other pipeline step has an owner; this three-FR seam — now carrying the heap tier too — does not. | FR-077 Workflow/Behavior; FR-078 Behavior; FR-082 Behavior |
-| FND-003 | medium | Reuse mode per subsystem is unstated and the batch carries no relationship edges to the owning FRs of the reused machinery; the revision *sharpens* the ec_diskann case. ADR-085 says "lifted" (CustomScan/transport/epoch), FR-078 "adapted" (SpirePlacementDirectory), FR-082 "reusing" (epoch manifests), FR-077 "repurposed" — but no FR declares shared-vs-fork. The only cross-family edge is FR-076→FR-055 (identity); FR-078 (the SpirePlacementDirectory adapter) has no FR-055 edge; FR-079/FR-081 no edge to FR-056/FR-057/FR-058; FR-082 none to FR-051/FR-052; FR-075/FR-077 none to FR-034. FR-076/FR-079 now *repeatedly* stake "this is the `ec_diskann` coarse-in-index / exact-from-heap split, sharded" (D11) — a deeper behavioral-parity claim on ec_diskann than before — yet still carry no edge to FR-034 (the ec_diskann Vamana/heap-rerank owner); FR-076 still names FR-074 (QuantCodec) only in prose. | FR-076..FR-082 frontmatter; spire/distributed/FR-055..058; index/diskann/FR-034; quant/FR-074; ADR-085 D5/D11 |
-| FND-004 | medium | Two FRs reach directly into SPIRE-owned implementation with no spec relationship, risking silent expansion into SPIRE's territory: FR-077 names `src/am/ec_spire/build/routing_plan.rs` (distance-ratio closure assignment, specced under the SPIRE build family) as machinery to repurpose, and FR-080 reuses "the in-memory Vamana builder used by the SPIRE top-graph". If these are adapted in place, ec_distann changes behavior under SPIRE's spec ownership; if forked, the fork is undocumented. Either way an explicit edge (or an extract-to-shared-module statement) is required — especially since the SPIRE lane is shelved-with-evidence and its specs remain APPROVED. | FR-077 Behavior; FR-080 Behavior; ADR-085 Consequences ("reused, not discarded") |
-| FND-005 | low | Learned routing is not recorded as out-of-scope. ADR-085 records BatANN baton passing (D4, with reopen trigger) and injected-latency gating (D2, informational only), but learned routing appears in neither Sub-Decisions nor Rejected Alternatives, so nothing prevents it re-entering scope unrecorded. Add it to ADR-085's rejected/deferred list with a one-line rationale. | ADR-085 Sub-Decisions D2/D4, Rejected Alternatives |
-| FND-006 | low | The single-node vs multinode mode boundary has no determinant. FR-075 switches behavior on "while the index participates in a multinode deployment" and FR-081 on "while the deployment is single-node", but no requirement states what makes an index a participant (roster in the placement directory? a registration step? a GUC?) or which component decides at plan/scan time. The mode selects between two different execution paths, so its owner should be explicit. | FR-075 Behavior; FR-081 Behavior; FR-078 (roster) |
-| FND-007 | low | FR-080's head-sample persistence location is unassigned: the pipeline SHALL "persist the sample with the epoch", but not where (coordinator-local relation, epoch manifest payload, or a data node), even though FR-082 lists the head sample as part of atomic publication. The revision adds a second such artifact — the co-placed heap tier (FND-009) — so this is no longer the only epoch artifact with an unstated storage owner. | FR-080 Behavior; FR-082 Behavior (publication triple) |
-| FND-008 | medium | The co-placed rerank tier's *nature* is under-pinned because the spec reuses single-node `ec_diskann` naming across the node boundary. FR-076 defines `heap_tid` as "owning heap tuple" (an `ItemPointer`, i.e. a base-table TID), and FR-078/FR-079 call the co-placed artifact the "heap row" resolved "via `heap_tid`". In single-node (M0) `heap_tid` legitimately indexes the base-table heap. In multi-node, FR-078 instead has the build→publish pipeline *ship* "its full-precision vector (heap row)" to the owning node and stores it "once, on the owning node" — an AM-managed artifact, not necessarily the Postgres base-table heap. The spec never states, on a remote data node, whether `heap_tid` still denotes a base-table `ItemPointer` (which would imply the base table is present/sharded on each node — the very boundary claim the revision means to avoid) or an opaque handle into an AM-owned rerank tier. The boundary verdict (AM artifact, in-scope) is *implied* by "stored once, no other component moves vectors" but not stated normatively; a one-line invariant ("the co-placed tier is an AM-owned epoch artifact; on a data node `heap_tid` resolves within that tier, not the user base table") would close the ambiguity. | FR-076 Layout (`heap_tid`); FR-078 Behavior (ship/store once); FR-079 (exact_dist via `heap_tid`); ADR-085 D11 |
-| FND-009 | low | The co-placed heap tier is *placed* (FR-078) but its *epoch lifecycle* is not enumerated in FR-082. FR-082's build clause assembles "the full record set, placement metadata, and head sample"; its atomic-publication triple is "(manifest, placement, head sample)"; its retirement gate reclaims "a Retired epoch's storage" — none of these name the co-placed vector tier, even though it is epoch-scoped state that must be built, published atomically with the records it reranks, and reclaimed on retirement. FR-078 assigns placement + the build→publish write, but no FR/AC assigns the tier's versioning, atomic publication, or retirement reclaim. Add the heap tier to FR-082's build-assembly set, publication set, and retention gate (or an explicit AC), so it is not an orphan artifact between FR-078 placement and FR-082 lifecycle. | FR-082 Behavior (assembly/publication/retirement); FR-078 Behavior; NFR-018 (heap tier baseline) |
+| FND-001 | high | RESOLVED (b19551e21) — FR-083 now specifies a "Remote write endpoint" (`ec_distann_apply_record_writes`, the write counterpart to FR-079: new-record append with its co-placed full-precision heap row, tombstone set, back-edge amendment with per-record `robust_prune`, epoch-fingerprint-validated, per-record atomicity). It assigns all three previously-unowned pieces: `aminsert`/`ambulkdelete` run on the coordinator and drive the endpoint; degree re-pruning (the back-edge re-prune) executes on the data node that owns the amended record; and the new record's co-placed heap row is written atomically to the same hash-owned node (FR-078). NFR-020's "mid-insert failure" now gates a path FR-083 allocates, and the incremental-insert milestone (FR-083-AC-5/AC-7) covers both the dangling-edge and missing-heap-row fault cases. | FR-083 Behavior (Remote write endpoint); FR-078 Behavior (co-placement); FR-079; NFR-020 Scope; ADR-085 D6/D11 |
+| FND-002 | medium | RESOLVED (b19551e21) — FR-078 now names the coordinator's epoch build pipeline as the owner that writes each record and its co-placed vector to the hash-owned node over the NFR-014 transport. The build→publish hand-off that physically distributes records (and, since d25ea9e0c, their co-placed full-precision heap rows) is no longer an unowned seam: the executor and transport are stated, closing the prior gap where FR-077 ended at "emit exactly one record per vec_id" and FR-082 assembled the record set without naming which node runs the build or moves record+vector X onto data node Y. | FR-077 Workflow/Behavior; FR-078 Behavior; FR-082 Behavior |
+| FND-003 | medium | ADDRESSED — reuse mode is now explicit in prose: FR-077 and FR-080 declare "extract-to-shared (not fork, SPIRE spec ownership unchanged)", and FR-075 already declares the FR-034 Vamana core "shared ... not forked". The frontmatter-edge maximalism (a declared relationship edge per reused FR) is accepted as prose-declared reuse mode — the shared-vs-fork question the finding raised is answered even without exhaustive frontmatter edges. The residual is stylistic (prose vs frontmatter edges), not a scope ambiguity: no reused subsystem is left with an undeclared shared-vs-fork posture. | FR-076..FR-082 frontmatter; spire/distributed/FR-055..058; index/diskann/FR-034; quant/FR-074; ADR-085 D5/D11 |
+| FND-004 | medium | RESOLVED — both FR-077 and FR-080 now state extract-to-shared: the pure helper (FR-077's `routing_plan` distance-ratio closure assignment; FR-080's top-graph in-memory Vamana builder) is lifted into a shared module, not edited in place under SPIRE's spec ownership. This is exactly the extract-to-shared-module statement the finding asked for, so neither FR silently expands into SPIRE's territory: the shared code is co-owned via a shared module rather than adapted-in-place or silently forked. | FR-077 Behavior; FR-080 Behavior; ADR-085 Consequences ("reused, not discarded") |
+| FND-005 | low | ADDRESSED — ADR-085 Rejected Alternatives now lists "Learned routing over partitions (ADR-052/053 lineage): out of scope for this program", so learned routing is recorded as out-of-scope and cannot re-enter scope unrecorded. This is exactly the rejected/deferred-list entry (with lineage rationale) the finding requested. | ADR-085 Sub-Decisions D2/D4, Rejected Alternatives |
+| FND-006 | low | ADDRESSED — FR-075 states the mode is determined by the published epoch manifest's node roster: a roster size greater than 1 means multinode, and no GUC overrides it. This supplies the missing determinant the finding asked for (a concrete, manifest-owned discriminator rather than an unstated registration step or GUC), so the single-node vs multinode path selection now has an explicit owner. | FR-075 Behavior; FR-081 Behavior; FR-078 (roster) |
+| FND-007 | low | ADDRESSED — FR-080 states the head sample is persisted "as an epoch-versioned object in the index relation, listed in the epoch manifest", so the storage location the finding flagged as unassigned is now concrete (an index-relation, epoch-versioned object referenced from the manifest) rather than an open choice among coordinator-local relation / manifest payload / data node. | FR-080 Behavior; FR-082 Behavior (publication triple) |
+| FND-008 | medium | RESOLVED — FR-079 now carries the exact normative invariant the finding asked for: `heap_tid` SHALL be interpreted as the epoch-scoped handle to the vec_id's frozen co-placed vector, **not** as a live base-table `ItemPointer` on a data node — a data node is not required to host the user base table, only the epoch's vector tier for its owned vec_ids (the single-node degenerate case is called out as the sole place the handle is the local base-table TID). This states normatively that the co-placed tier is an AM-owned epoch artifact and that the base table is not sharded onto data nodes, closing the boundary ambiguity; FR-079 case (d) adds a distinct structural fault when a record's co-placed vector is missing/unreadable. | FR-076 Layout (`heap_tid`); FR-078 Behavior (ship/store once); FR-079 (heap_tid handle / case (d)); ADR-085 D11 |
+| FND-009 | low | RESOLVED — FR-082 now enumerates the co-placed vector tier across its full epoch lifecycle: it is included in build assembly, in the atomic publication set, held immutable under D10, attested by fingerprint, and reclaimed on retirement. The tier is no longer an orphan artifact between FR-078 placement and FR-082 lifecycle — its versioning, atomic publication with the records it reranks, and retirement reclaim are all assigned. | FR-082 Behavior (assembly/publication/retirement); FR-078 Behavior; NFR-018 (heap tier baseline) |

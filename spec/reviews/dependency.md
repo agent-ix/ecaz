@@ -2,7 +2,7 @@
 id: SR-004
 type: SpecReview
 analysis: dependency
-scope: "StR-008; FR-075..FR-083 (spec/functional/index/distann); NFR-017..NFR-020; ADR-085; re-run against revision d25ea9e0c (inline vector → co-placed heap rerank, ADR-085 D11)"
+scope: "StR-008; FR-075..FR-083 (spec/functional/index/distann); NFR-017..NFR-020; ADR-085; re-run against revision d25ea9e0c (inline vector → co-placed heap rerank, ADR-085 D11); reconciled at b19551e21"
 review_set: all
 title: "Dependency and Ordering Analysis: ec_distann Spec Batch"
 ---
@@ -45,11 +45,23 @@ description does not acknowledge the heap-tier co-placement obligation FR-078
 now hangs off it (FND-011); and NFR-018/NFR-019 gain load-bearing dependencies
 on FR-078/D11 that their own Dependencies do not cite (FND-012).
 
-**Milestone consistency: the 4 prior medium findings survive the revision
-unchanged** (FND-001..FND-004). **FND-005 is RESOLVED** by the revision (the
-FR-076 ↔ FR-078 downstream edge is now declared both ways). FND-006 and
-FND-007 (identity-citation precision, uncited lifted transport NFR-014) are
-unaffected and still open.
+**Disposition after the b19551e21 spec fixes: all dependency findings are now
+resolved or addressed — none open.** The four milestone-ordering findings
+(FND-001..FND-004) are ADDRESSED: the FR text is milestone-agnostic and the M0–M5
+mapping is owned by the design doc's milestone table, which now carries the
+degenerate single-shard head-sample case (FND-001), the M0 local-expansion slice
+of FR-081 (FND-002), the M2 epoch-fingerprint subset of FR-082 (FND-003), and
+FR-083's early-milestone delete/interim-insert slicing with the FR-083→FR-081
+edge present (FND-004). FND-005/FND-006/FND-007 (edge symmetry, identity-citation
+precision, lifted transport NFR-014) are RESOLVED — FR-075 now cites ADR-063 and
+FR-081 now cites NFR-014. The five co-placed-heap-tier findings introduced by the
+revision (FND-008..FND-012) are RESOLVED: FR-082 now versions/freezes/attests/
+reclaims the co-placed vector tier (FND-008), FR-083 insert co-places the vector
+(FND-009), the spec test matrix covers the new co-placement ACs and EC-024..027
+(FND-010), FR-077 emits the full-precision rerank tier (FND-011), and
+NFR-018/NFR-019 cite FR-078/D11 (FND-012). FND-013 remains informational
+(no defect — the semantic-completeness edge is deliberately not a `depends_on`,
+so no cycle).
 
 ## Classification
 
@@ -173,16 +185,16 @@ d25ea9e0c. The revision introduces two body-level references worth checking:
 
 | ID | Severity | Summary | Refs |
 |----|----------|---------|------|
-| FND-001 | medium | FR-080 is milestoned M0 but its declared upstream is FR-077 (M1): the head sample is "breadth-first sample … union across build shards' top layers", which does not exist under an M0 monolithic build, yet FR-080-AC-4 and ADR-085 D3 require the C-sensitivity measurement at M0. Add a single-shard degenerate-case clause to FR-080 or move its shard-union behavior to M1. UNCHANGED by d25ea9e0c. | FR-080, FR-077, ADR-085 D3 |
-| FND-002 | medium | M0's single-node query path has no owner. FR-075-AC-3/AC-4 (ordered top-k, recall parity vs ec_diskann) need a search loop, but the loop and its local-expansion function are specified only in FR-081 (M2). An M0 local-expansion slice of FR-081 (or an explicit local-scan behavior owned by FR-075) must precede FR-075 closeout. UNCHANGED by d25ea9e0c. | FR-075, FR-081 |
-| FND-003 | medium | FR-079 (M2) SHALL validate `epoch_fingerprint` before any read and FR-078 (M2) requires an epoch-stamped manifest, but publish atomicity and fingerprint semantics are owned by FR-082 (M3), which declares FR-079 upstream (latent cross-milestone cycle). Declare the split (FR-082a publish/fingerprint at M2, lifecycle transitions + drills at M3) or an M2 single-epoch stub. UNCHANGED by d25ea9e0c. | FR-079, FR-078, FR-082 |
-| FND-004 | medium | FR-083 spans milestones but is scheduled wholly at M5, while ADR-085 commits "tombstone deletes now" and D5's interim insert exists to exercise DML visibility early, and FR-075 registers insert/bulkdelete at M0 — so delete + interim-insert slices are M0–M3 prerequisites. Also FR-083's incremental insert "SHALL run the FR-081 beam search" but FR-083 now declares FR-081 in frontmatter (edge present); keep the milestone-split note. UNCHANGED by d25ea9e0c. | FR-083, FR-081, ADR-085 D5, FR-075 |
+| FND-001 | medium | ADDRESSED — FR-080 states the single-shard monolithic degenerate case ("one medoid, one BFS sample"); the M0/M1 mapping is owned by the design doc's milestone table (FRs are milestone-agnostic). | FR-080, FR-077, ADR-085 D3 |
+| FND-002 | medium | ADDRESSED — FR-081 states "The single-node local-expansion form of this loop is the first implementation slice (milestone M0)". | FR-075, FR-081 |
+| FND-003 | medium | ADDRESSED — the design doc milestone table assigns the epoch-fingerprint-validation subset of FR-082 to M2 and full FR-082 to M3; the FR text is milestone-agnostic, so no cross-milestone cycle in the spec. | FR-079, FR-078, FR-082 |
+| FND-004 | medium | ADDRESSED — FR-083's "Milestone slicing" note marks delete/tombstone + interim-insert as early-milestone prerequisites; TC-043 is tagged M3/M5; the FR-083→FR-081 edge is present. | FR-083, FR-081, ADR-085 D5, FR-075 |
 | FND-005 | low | RESOLVED by d25ea9e0c. Prior one-sided edges are now bidirectional: FR-076's Downstream now lists FR-078 ("co-places the heap row"), matching FR-078's existing `depends_on` FR-076; and FR-078's `depends_on` FR-077 (pre-existing) matches FR-077's Downstream FR-078. Both FR-076↔FR-078 and FR-077↔FR-078 edges extract mechanically. No action. | FR-076, FR-077, FR-078 |
-| FND-006 | low | Identity-contract citation imprecision: FR-075/FR-076 cite "the ADR-068 source-identity contract", but ADR-068 delegates identity to ADR-063; ADR-068 is the topology/placement ADR. Cite ADR-063 where the identity contract is consumed (vec_id derivation, D6) and reserve ADR-068/FR-055 for topology/roster reuse. UNCHANGED by d25ea9e0c. | FR-075, FR-076, ADR-068, ADR-063, FR-055 |
-| FND-007 | low | The lifted SPIRE transport is cited operationally (FR-079 "pooled libpq transport", ADR-085 "post-142 pooling", FR-082 "SPIRE epoch-manifest machinery") but NFR-014 (spire transport security and operations) is cited nowhere in the distann batch. Cite NFR-014 as constraining FR-079/FR-081 or record why it does not apply. UNCHANGED by d25ea9e0c. | FR-079, FR-081, NFR-014, ADR-085 |
-| FND-008 | medium | **Orphaned artifact — the co-placed heap tier is not owned by the epoch lifecycle.** d25ea9e0c makes each record's full-precision heap row a per-epoch, hash-co-placed artifact (FR-078 build→publish writes "each record AND its full-precision vector"; ADR-085 D11), but FR-082 was not revised: "assemble the full record set, placement metadata, and head sample" and the publish tuple "(manifest, placement, head sample)" omit the heap tier; D10 immutability freezes "graph-node records and adjacency" but not the heap rows; the epoch fingerprint attests to "roster, placement, format version, and the build-time record set" — not the heap tier; and Retired-epoch reclaim enumerates "records" only. The heap tier is thus unversioned, unfrozen (no D10 coverage against under-epoch mutation), unattested by the fingerprint, and its reclaim on retire is unspecified. Extend FR-082 (assemble/publish/D10/fingerprint/reclaim) to cover the co-placed heap tier, or state where its lifecycle is owned. | FR-082, FR-078, ADR-085 D10, ADR-085 D11 |
-| FND-009 | medium | **Broken edge — FR-083 incremental insert does not co-place the new vector's heap row.** Post-D11, FR-078 co-placement applies to every vec_id, including live inserts, or FR-079 exact rerank of a freshly inserted node has no node-local heap source. But FR-083 (unrevised) says incremental insert "write[s] the new record to its hash-owned node" and its write endpoint `ec_distann_apply_record_writes` lists only "new-record append, tombstone set, back-edge amendment" — the co-placed full-precision heap row for the inserted vector (and for the re-inserted vector on UPDATE) is unstated. FR-083-AC-4 (post-insert recall parity) implicitly needs it. Add heap-row co-placement to FR-083's insert path / write endpoint (FR-078/D11). | FR-083, FR-078, FR-079, ADR-085 D11 |
-| FND-010 | medium | **Traceability orphan — tests.md does not cover the three new co-placement ACs.** d25ea9e0c added FR-076-AC-5 (no inline vector field), FR-078-AC-4 (record and heap row co-resolve to one node), and FR-079-AC-5 (`exact_dist` == co-placed heap distance, no vector read from the record), but spec/tests.md still maps FR-076→AC-1..4, FR-078→AC-1..3, and FR-079→AC-1..4. The load-bearing co-placement / no-inline-vector guarantees have no test-matrix row. Update the FR-076/FR-078/FR-079 traceability rows (TC-037/TC-040) to include the new ACs. | spec/tests.md, FR-076, FR-078, FR-079 |
-| FND-011 | low | **FR-077's emitted artifact no longer matches FR-078's co-placement contract.** FR-078's build→publish hand-off now requires writing "each record AND its full-precision vector (heap row)" co-placed, "after the FR-077 stitch emits records". But FR-077 (unrevised) emits "exactly one record per vec_id" (workflow node E → F "Hash placement + epoch publish") and its recorded build outputs (shard count, duplication factor, edge-union stats, wall time) do not enumerate the co-placed heap tier as a build product. The FR-077 → FR-078 edge now carries a heap-tier obligation FR-077's own text does not acknowledge. State the heap-tier co-placement as an FR-077 build output (or explicitly locate it in FR-078). | FR-077, FR-078, ADR-085 D11 |
-| FND-012 | low | **Uncited new gate dependencies on FR-078/D11.** NFR-018 now defines its ratio *denominator* as the co-placed 1.0× heap tier (ADR-085 D11, owned by FR-078), but its Dependencies cite only FR-076, D1, D7 — not FR-078 or D11. Symmetrically, ADR-085 D11's affordability is stated to rest on NFR-019's BW×H bound (the new "records read == nodes expanded == nodes exact-reranked == nodes materialized" equality that bounds the heap-rerank fetch count), yet NFR-019's scope/relationships do not record that it now underwrites the rerank-read count, not only the expansion count. Add the FR-078/D11 citation to NFR-018 Dependencies and the D11↔NFR-019 dependency to NFR-019 (or ADR-085). | NFR-018, NFR-019, FR-078, ADR-085 D1, ADR-085 D11 |
+| FND-006 | low | RESOLVED (b19551e21) — FR-075 now cites ADR-063 for the identity contract (ADR-068 = topology); FR-076 already did. | FR-075, FR-076, ADR-068, ADR-063, FR-055 |
+| FND-007 | low | RESOLVED — FR-079 already cited NFR-014; FR-081 now cites it on the pooled transport too. | FR-079, FR-081, NFR-014, ADR-085 |
+| FND-008 | medium | RESOLVED — FR-082 assembly/publication tuple/D10 immutability/fingerprint/reclaim now all include the co-placed vector tier; +AC-5/AC-6. | FR-082, FR-078, ADR-085 D10, ADR-085 D11 |
+| FND-009 | medium | RESOLVED — FR-083 insert + write endpoint co-place the vector; +AC-7. | FR-083, FR-078, FR-079, ADR-085 D11 |
+| FND-010 | medium | RESOLVED — spec-matrix updated FR-076/078/079/082/083 AC coverage + EC-024..027. | spec/tests.md, FR-076, FR-078, FR-079 |
+| FND-011 | low | RESOLVED — FR-077 now emits each vec_id's full-precision vector as the co-placed rerank tier. | FR-077, FR-078, ADR-085 D11 |
+| FND-012 | low | RESOLVED — NFR-018 Dependencies now cite FR-078 + D11; NFR-019 records the D11 rerank-read equality. | NFR-018, NFR-019, FR-078, ADR-085 D1, ADR-085 D11 |
 | FND-013 | low | **Cycle check (informational, no defect).** FR-076's body/Layout now cite FR-078/FR-079 for exact-rerank co-placement and FR-076's Downstream lists FR-078; the record's exact-rerank *completeness* is now provided by FR-078. The revision correctly kept this out of FR-076's frontmatter `depends_on` (still FR-075 only), so no FR-076↔FR-078 build-order cycle exists against FR-078's `depends_on` FR-076. This dependency graph represents that reliance as a dotted semantic-completeness edge (FR-078 ⇢ FR-076) distinct from the solid build-order edge, so the analysis stays faithful to the lean-record/co-placed-heap split without implying a cycle. | FR-076, FR-078, FR-079 |

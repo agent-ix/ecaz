@@ -2,7 +2,7 @@
 id: SR-003
 type: SpecReview
 analysis: integrity
-scope: "StR-008; FR-075..FR-083 (spec/functional/index/distann); NFR-017..NFR-020; ADR-085; spec/tests.md TC-037..TC-044, EC-019..EC-023; re-reviewed against revision d25ea9e0c (ADR-085 D11 — lean node records + co-placed heap rerank: FR-076/FR-078/FR-079, NFR-018)"
+scope: "StR-008; FR-075..FR-083 (spec/functional/index/distann); NFR-017..NFR-020; ADR-085; spec/tests.md TC-037..TC-044, EC-019..EC-023; re-reviewed against revision d25ea9e0c (ADR-085 D11 — lean node records + co-placed heap rerank: FR-076/FR-078/FR-079, NFR-018); dispositions reconciled at b19551e21"
 review_set: all
 title: "Integrity Analysis: ec_distann Spec Batch (StR-008 / FR-075..083 / NFR-017..020 / ADR-085)"
 ---
@@ -66,10 +66,24 @@ D11's affordability argument depends on (FND-016).
 **Atomicity.** FR-078-AC-4 is a clean single obligation. FR-076-AC-5 and
 FR-079-AC-5 each bundle two claims (FND-017).
 
-No blocking contradiction remains. Recommend resolving FND-014 and FND-015
-before task generation (spec-to-plan) for FR-082/FR-083, and closing the
-low-severity residuals (FND-004, FND-007, FND-009, FND-013, FND-016, FND-017)
-opportunistically.
+**Post-fix disposition (b19551e21).** The spec fixes committed through
+`b19551e21` reconcile every prior open finding. FND-014 (insert co-places the
+heap row) is resolved by FR-083's incremental insert + the
+`ec_distann_apply_record_writes` write endpoint co-placing the new vector's
+heap row (+FR-083-AC-7). FND-015 (heap tier under epoch consistency) is
+resolved: FR-082 now assembles/publishes/freezes (D10)/fingerprints/reclaims
+the co-placed vector tier and `heap_tid` resolves the epoch-frozen vector, with
+EC-027 added in tests.md. FND-016 (NFR-019 counts the heap read) is resolved:
+NFR-019 now covers the per-expansion co-placed heap read (records read ==
+expansions == exact-reranks) and records the ADR-085 D11 equality. FND-017
+(AC atomicity) is resolved: FR-076-AC-5 split into AC-5/AC-6 and FR-079-AC-5
+reworded to the observable value equality only. FND-004, FND-007, and FND-009
+were already resolved in earlier rounds. The **only residual** is FND-013
+(FR-083 bundles three milestoned behaviors), accepted at low severity: the FR's
+"Milestone slicing" note, the per-milestone TC mapping (TC-043 tagged M3/M5),
+and ADR-085 D5's fixed interim posture make the milestone boundaries clear
+without a split, and the larger three-FR restructure is not warranted. No
+blocking contradiction remains; the batch is spec-to-plan ready.
 
 ## Findings
 
@@ -87,10 +101,8 @@ opportunistically.
 | FND-010 | low | RESOLVED (consolidated fixes 98b40e961): the test-matrix slips are corrected — EC-020 (vec_id hash collision) now maps to FR-076/FR-083 and TC-037/TC-043 (not TC-038), and the `closure_epsilon` config row now sits under TC-038 (stitch, M1) where the stitch-output invariants belong | spec/tests.md (EC-020, config rows, TC-037/TC-038), FR-076, FR-077 |
 | FND-011 | low | RESOLVED (consolidated fixes 98b40e961): FR-081 now specifies the under-filled result set — beam exhaustion before k accumulates returns the fewer-than-k results as a complete (non-fault) result, empty index → zero rows, and results are drawn only from expanded records (head-index candidates count only via their own expansion, and thus only once they carry an exact distance) | FR-081, FR-080, NFR-019, FR-075 |
 | FND-012 | low | RESOLVED (consolidated fixes 98b40e961): `plan/design/distann-global-graph-architecture.md` is now the normative home of the M0–M5 milestone definitions, with a "Milestone definitions (normative)" section and an explicit milestone→task mapping (M0=162 … M5=167), so the load-bearing milestone references across the batch now have a defining artifact | FR-080-AC-4, FR-083 (Dependencies), ADR-085, spec/tests.md TC-037..TC-044, plan/design/distann-global-graph-architecture.md |
-| FND-013 | low | STILL STANDS (softened): FR-083 remains a single FR bundling three separately-milestoned obligations (delete/vacuum; interim insert, read-path milestones; incremental distributed insert, M5). A "Milestone slicing" note now clarifies which behaviors land when, but the FR is not split, so the early (M0–M3) slices still carry the open M5 incremental-insert criteria inside the same requirement. Splitting would also isolate the FND-014 fix | FR-083, TC-043, ADR-085 D5 |
-| FND-014 | medium | NEW (d25ea9e0c completeness gap): the co-placed heap row is now required for exact rerank (FR-078/FR-079), but FR-083's incremental-insert path writes only "the new record to its hash-owned node" and applies back-edges — it never writes the co-placed full-precision heap row that FR-078's build→publish hand-off co-places. An inserted vec_id would then have an index record with no co-placed heap row, so FR-079's `exact_dist` heap read (FR-079-AC-5) has nothing to read. The insert path must co-place the vector alongside the record, parallel to FR-078 | FR-083 (Incremental insert, Remote write endpoint), FR-078 (build→publish co-placement), FR-079-AC-5, FR-076 (heap_tid) |
-| FND-015 | medium | NEW (d25ea9e0c consistency/completeness gap): FR-082's epoch model does not bring the co-placed heap tier under epoch consistency. The D10 mutation model enumerates only "graph-node records and adjacency" as the within-epoch immutable set, and the epoch fingerprint "attests to roster, placement, format version, and the build-time record set" — the co-placed vector/heap tier is named nowhere as epoch-versioned, immutable, or fingerprint-covered. If a heap row moves or changes within a published epoch (HOT update, `heap_tid` staleness — the exact hazard EC-009 flags for SPIRE's stored heap TID), FR-079's `exact_dist` can silently read a stale/wrong tuple, undetected by the fingerprint. No distann edge-case (EC-019..EC-023) covers co-placed-heap immutability or `heap_tid` staleness | FR-082 (D10 mutation model, fingerprint), FR-078, FR-079 (exact_dist, AC-5), FR-076 (heap_tid), spec/tests.md EC-009 analog |
-| FND-016 | low | NEW (d25ea9e0c consistency gap): ADR-085 D11's justification for co-placed heap over an index-resident tier rests on the equality "records read == nodes expanded == nodes exact-reranked == materialized set (all ≤ BW×H)", but the normative touch-bound NFR-019 only bounds and counts *expanded graph-node records* — its statement, metric table, and EXPLAIN/pipeline counters never name the one-per-expansion co-placed heap read that FR-079 now mandates. The equality that makes D11 affordable is asserted in the ADR/design doc but pinned by no normative NFR/AC | NFR-019 (Statement, Measurement, counters), ADR-085 D11, FR-079 (expansion = record read + heap read), FR-081-AC-2 |
-| FND-017 | low | NEW (d25ea9e0c atomicity nit): two of the three new ACs bundle obligations. FR-076-AC-5 couples a structural claim ("record carries no full-precision vector field") with a derived-property claim ("encoded record bytes at fixed R are independent of vector dimension"); FR-079-AC-5 couples a value equality ("exact_dist == full-precision distance to the co-placed heap vector") with a negative implementation assertion ("no vector is read from the index record") that is not independently observable through the FR-079 wire contract. FR-078-AC-4 (record and heap row co-resolve to one node) is, by contrast, a single testable obligation | FR-076-AC-5, FR-079-AC-5, FR-078-AC-4 |
-</content>
-</invoke>
+| FND-013 | low | ACCEPTED (low): FR-083 remains a single FR bundling three separately-milestoned obligations (delete/vacuum; interim insert, read-path milestones; incremental distributed insert, M5). Splitting FR-083 into three FRs is a larger restructure that is not warranted: the FR's "Milestone slicing" note plus the per-milestone TC mapping (TC-043 tagged M3/M5) plus ADR-085 D5's fixed interim posture already make the milestone boundaries clear, so which behavior lands when is unambiguous without a split. Accepted as a low-severity structural preference | FR-083, TC-043, ADR-085 D5 |
+| FND-014 | medium | RESOLVED (b19551e21): FR-083's incremental-insert path AND the `ec_distann_apply_record_writes` write endpoint now co-place the new vector's full-precision heap row on the same hash-owned node alongside the index record (+FR-083-AC-7), parallel to FR-078's build→publish co-placement. An inserted vec_id therefore always has a co-placed heap row for FR-079's `exact_dist` heap read to resolve | FR-083 (Incremental insert, Remote write endpoint, AC-7), FR-078 (build→publish co-placement), FR-079-AC-5 |
+| FND-015 | medium | RESOLVED (b19551e21): FR-082 now brings the co-placed heap tier under epoch consistency — it assembles, publishes, freezes (D10), fingerprints, and reclaims the co-placed vector tier as epoch-versioned immutable state, and `heap_tid` resolves the epoch-frozen vector so there is no TID-reuse / HOT-update staleness race within a published epoch (+FR-082-AC-5). EC-027 in spec/tests.md covers co-placed-heap immutability | FR-082 (D10 mutation model, fingerprint, AC-5), FR-078, FR-079 (exact_dist), spec/tests.md EC-027 |
+| FND-016 | low | RESOLVED (b19551e21): NFR-019's statement now covers the per-expansion co-placed heap read — records read == expansions == exact-reranks, all bounded by the same BW×H — and records the ADR-085 D11 equality that makes co-placed heap affordable, so the one-per-expansion heap read is now pinned by the normative touch bound rather than only asserted in the ADR/design doc | NFR-019 (Statement, Measurement, counters), ADR-085 D11, FR-079 (expansion = record read + heap read) |
+| FND-017 | low | RESOLVED (b19551e21): the bundled ACs are split. FR-076-AC-5 is now AC-5 (record carries no full-precision vector field) + AC-6 (encoded record bytes at fixed R are independent of vector dimension), each a single obligation; FR-079-AC-5 is reworded to the observable value equality only (`exact_dist` == full-precision distance to the co-placed heap vector), dropping the non-observable negative implementation assertion | FR-076-AC-5/6, FR-079-AC-5, FR-078-AC-4 |
