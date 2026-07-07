@@ -1,0 +1,65 @@
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz-task168)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 36.71s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-1c15c1b36dd3c96a)
+
+running 33 tests
+test am::ec_diskann::scan::tests::greedy_descent_uses_batch_prefilter_for_neighbor_expansions ... ok
+test am::ec_diskann::scan::tests::sc_002_rerank_can_reorder_prefilter ... ok
+test am::ec_diskann::scan::tests::sc_001_end_to_end_top1_on_chain ... ok
+test am::ec_diskann::scan::tests::sc_004_top_k_truncates ... ok
+test am::ec_diskann::scan::tests::sc_006_parameter_validation ... ok
+test am::ec_diskann::scan::tests::sc_003_rerank_budget_caps_rerank_calls ... ok
+test am::ec_diskann::scan::tests::sc_005_invalid_entry_errors ... ok
+test am::ec_diskann::scan::tests::sc_003b_rerank_visits_in_full_heap_tid_order ... ok
+test am::ec_diskann::scan::tests::sc_008_result_carries_primary_heaptid ... ok
+test am::ec_diskann::scan::tests::sc_009_results_sorted_by_distance ... ok
+test am::ec_diskann::scan::tests::sc_011b_scan_with_frontier_profile_records_counters ... ok
+test am::ec_diskann::scan::tests::sc_012_resolve_entry_point_prefers_live_medoid ... ok
+test am::ec_diskann::scan::tests::sc_013_resolve_entry_point_falls_back_on_dead_medoid ... ok
+test am::ec_diskann::scan::tests::sc_011_scan_with_scratch_reuse_matches_fresh ... ok
+test am::ec_diskann::scan::tests::sc_014_resolve_entry_point_none_when_all_dead ... ok
+test am::ec_diskann::scan::tests::sc_015_resolve_entry_point_rejects_stripped_without_tombstone ... ok
+test am::ec_diskann::scan::tests::sc_016_scan_drops_stripped_candidates ... ok
+test am::ec_diskann::scan::tests::sc_017_scan_returns_empty_when_all_stripped ... ok
+test am::ec_diskann::scan::tests::sc_018_tombstoned_top_scores_do_not_starve_emittable_frontier ... ok
+test am::ec_diskann::scan_query::tests::cr_003_invalid_head_rejected ... ok
+test am::ec_diskann::scan_query::tests::cr_004_declared_group_count_too_high_errors ... ok
+test am::ec_diskann::scan::tests::sc_011c_batched_beam_matches_sequential_results ... ok
+test am::ec_diskann::scan_query::tests::cr_001_multi_group_roundtrip_preserves_order ... ok
+test am::ec_diskann::scan_query::tests::cr_006_centroid_count_mismatch_errors ... ok
+test am::ec_diskann::scan_query::tests::cr_002_single_group_roundtrip ... ok
+test am::ec_diskann::scan_query::tests::cr_005_declared_group_count_too_low_errors ... ok
+test am::ec_diskann::scan_query::tests::cr_009_pack_query_sign_bits_matches_manual_word_layout ... ok
+test am::ec_diskann::scan_query::tests::cr_010_hamming_xor_popcount_scores_word_pairs ... ok
+test am::ec_diskann::scan_query::tests::cr_010_srht_encode_is_deterministic_and_sized ... ok
+test am::ec_diskann::scan_query::tests::cr_012_zero_group_size_rejected ... ok
+test am::ec_diskann::scan::tests::sc_010_greedy_descent_exposed ... ok
+test am::ec_diskann::scan::tests::sc_007_end_to_end_matches_brute_force ... ok
+test am::ec_diskann::scan_query::tests::cr_011_end_to_end_lut_matches_in_memory ... ok
+
+test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 2229 filtered out; finished in 0.01s
+
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz-task168)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 28.73s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-1c15c1b36dd3c96a)
+
+running 17 tests
+test am::ec_diskann::tuple::tests::la_012_encoded_len_matches_computation ... ok
+test am::ec_diskann::tuple::tests::la_010_empty_node_roundtrip ... ok
+test am::ec_diskann::tuple::tests::la_013_foreign_tag_rejected ... ok
+test am::ec_diskann::tuple::tests::la_015_validate_neighbor_count_bounded_by_r ... ok
+test am::ec_diskann::tuple::tests::la_014_validate_neighbor_capacity ... ok
+test am::ec_diskann::tuple::tests::la_017_deleted_flag_roundtrips ... ok
+test am::ec_diskann::tuple::tests::la_016_empty_slots_are_invalid_pointer ... ok
+test am::ec_diskann::tuple::tests::la_018_overflow_heaptids_flag_independent ... ok
+test am::ec_diskann::tuple::tests::la_020_header_size_locked ... ok
+test am::ec_diskann::tuple::tests::la_021_decode_rejects_wrong_length ... ok
+test am::ec_diskann::tuple::tests::la_019_fixed_length_invariant ... ok
+test am::ec_diskann::tuple::tests::la_022_validate_body_sizes_against_metadata ... ok
+test am::ec_diskann::tuple::tests::la_031_codebook_placeholder_patched_same_length ... ok
+test am::ec_diskann::tuple::tests::la_032_codebook_foreign_tag_rejected ... ok
+test am::ec_diskann::tuple::tests::la_033_codebook_wrong_length_rejected ... ok
+test am::ec_diskann::tuple::tests::miri_la_011_filled_node_roundtrip ... ok
+test am::ec_diskann::tuple::tests::miri_la_030_codebook_tuple_roundtrip ... ok
+
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 2245 filtered out; finished in 0.00s

@@ -23,11 +23,33 @@
 4. **docs/benchmarks.md refreshed** — Task 168 note in the `ec_diskann`
    section (rabitq default, beam GUC, local-Intel deltas); AWS-lane cells
    intentionally left for their next canonical run. DONE (this packet).
-5. **clippy pg18 -D warnings clean; no new unsafe** — clean at every
-   commit; zero new `unsafe` blocks in the task diff. DONE.
+5. **clippy pg18 -D warnings clean; no new unsafe** — clean **at HEAD**,
+   packet-local log `artifacts/clippy-pg18-head.log` (exit 0); zero new
+   `unsafe` blocks in the task diff. Per-commit clippy runs happened during
+   development but were not captured as durable logs, so the claim is
+   narrowed to HEAD-only per reviewer feedback. DONE (as narrowed).
+
+### Validation evidence (added per 2026-07-07-01 reviewer feedback)
+
+| Log | Result |
+|---|---|
+| `artifacts/clippy-pg18-head.log` | exit 0, `-D warnings` clean at HEAD |
+| `artifacts/cargo-test-ec-diskann-scan-head.log` | scan 33/33 + tuple 17/17 pass |
+| `artifacts/cargo-pgrx-test-pg18-ec-diskann-head.log` | 212 passed, 2 failed (both non-regressions, next rows) |
+| `artifacts/guc-flake-single-threaded-head.log` | the GUC failure passes single-threaded (parallel-FFI flake) |
+| `artifacts/turboquant-counters-preexisting-on-specs-branch.log` | the quantizer counters failure reproduces on unmodified main-derived src (task-161 worktree) |
 
 Also included: `StorageFormat::DEFAULT` PqFastScan → RaBitQ with pg_test
 updates (packet 004).
+
+### Feedback 2026-07-07-01 — resolution
+
+1. P2 validation logs: added (table above); clippy claim narrowed to HEAD.
+2. P2 missing task file: `plan/tasks/168-diskann-batched-beam-and-prefetch.md`
+   checked out from `task-161-ec-distann-specs` onto this branch — the
+   packet is now self-contained.
+3. P3 whitespace: all `build-profile.log` files + `profile-summary.txt`
+   stripped; `git diff --check origin/main..HEAD` is clean.
 
 ## Open items for the reviewer
 

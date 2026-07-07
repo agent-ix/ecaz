@@ -1,0 +1,12 @@
+   Compiling ring v0.17.14
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz-task168)
+   Compiling rustls v0.23.41
+   Compiling rustls-webpki v0.103.13
+   Compiling tokio-rustls v0.26.4
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 32.62s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-1c15c1b36dd3c96a)
+
+running 1 test
+test am::ec_diskann::options::tests::scan_profile_notice_guc_defaults_to_off ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2261 filtered out; finished in 0.00s

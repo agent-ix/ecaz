@@ -177,4 +177,3 @@ rerank_count mean=64.00 p50=64.00 p95=64.00 min=64.00 max=64.00
 result_count mean=64.00 p50=64.00 p95=64.00 min=64.00 max=64.00
 frontier_share_of_total_pct=70.6
 flush_width_pct zero=1.9 w1_7=27.1 w8_15=34.1 w16_31=36.8 ge32=0.2
-

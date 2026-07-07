@@ -1,0 +1,28 @@
+   Compiling rand v0.8.6
+   Compiling pgrx-pg-sys v0.17.0
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz-task161)
+   Compiling pgrx v0.17.0
+   Compiling pgrx-tests v0.17.0
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 55.70s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-1c15c1b36dd3c96a)
+
+running 1 test
+test am::ec_diskann::quantizer::tests::diskann_turboquant_prepared_prefilter_batch_scores_and_records_counters ... FAILED
+
+failures:
+
+---- am::ec_diskann::quantizer::tests::diskann_turboquant_prepared_prefilter_batch_scores_and_records_counters stdout ----
+
+thread 'am::ec_diskann::quantizer::tests::diskann_turboquant_prepared_prefilter_batch_scores_and_records_counters' (4029261) panicked at src/am/ec_diskann/quantizer.rs:1428:13:
+assertion `left == right` failed
+  left: 3151609872
+ right: 3151609866
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    am::ec_diskann::quantizer::tests::diskann_turboquant_prepared_prefilter_batch_scores_and_records_counters
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2260 filtered out; finished in 0.06s
+
+error: test failed, to rerun pass `--lib`
