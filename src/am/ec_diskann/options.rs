@@ -26,7 +26,10 @@ static ECDISKANN_PREFILTER_KIND_GUC: GucSetting<PrefilterKind> =
 static ECDISKANN_SCAN_PROFILE_NOTICE_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
 static ECDISKANN_CANDIDATE_BATCH_SCORING_GUC: GucSetting<bool> = GucSetting::<bool>::new(true);
 
-pub(super) const ECDISKANN_DEFAULT_BEAM_WIDTH: i32 = 1;
+/// Default from the Task 168 packet 002 A/B: width 4 wins latency at
+/// every 50k/100k sweep point (up to 18%) with recall never below the
+/// width-1 reference; 10k pays <= 0.2 ms at L=64.
+pub(super) const ECDISKANN_DEFAULT_BEAM_WIDTH: i32 = 4;
 pub(super) const ECDISKANN_MAX_BEAM_WIDTH: i32 = 64;
 static ECDISKANN_BEAM_WIDTH_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(ECDISKANN_DEFAULT_BEAM_WIDTH);
