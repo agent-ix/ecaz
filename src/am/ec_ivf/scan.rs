@@ -1688,8 +1688,13 @@ unsafe fn materialize_probe_candidates(
     // bug), residual mode runs UNPRUNED here. The shifted-cutoff is the
     // documented follow-up lever; it preserves recall by construction.
     let bound_pruning_active = quantizer.uses_score_bound_pruning() && !quantizer.rabitq_residual();
+    // Resolve the session rerank width ONCE here on the backend thread; the
+    // pure `pre_rerank_candidate_limit` / `ranked_collect_limit` helpers take it
+    // as a parameter so they never touch pgrx GUC FFI off-thread.
+    let effective_rerank_width =
+        super::options::resolve_scan_rerank_width(index_options.rerank_width).effective_rerank_width;
     let mut running_top = bound_pruning_active
-        .then(|| pre_rerank_candidate_limit(index_options))
+        .then(|| pre_rerank_candidate_limit(index_options, effective_rerank_width))
         .flatten()
         .map(CandidateTopK::new);
     let mut remaining_live_tids_by_list = probe_plan.remaining_live_tids_by_list.clone();
@@ -1913,7 +1918,7 @@ unsafe fn materialize_probe_candidates(
     let candidate_len = best_by_heap_tid.candidates().len();
     let mut ranked = collect_ranked_probe_candidates(
         best_by_heap_tid.candidates().iter().copied(),
-        ranked_collect_limit(index_options, candidate_len),
+        ranked_collect_limit(index_options, effective_rerank_width, candidate_len),
     );
     record_stage_elapsed(
         opaque,
@@ -2467,11 +2472,18 @@ fn record_scored_posting_candidates<I>(
     }
 }
 
-fn pre_rerank_candidate_limit(index_options: &super::options::EcIvfOptions) -> Option<usize> {
-    let rerank_width = super::options::resolve_scan_rerank_width(index_options.rerank_width)
-        .effective_rerank_width;
+/// Pure given the caller-resolved `effective_rerank_width` (resolve the session
+/// GUC once on the backend thread via `resolve_scan_rerank_width`; do NOT read
+/// it here, so this stays unit-testable off-backend without tripping pgrx's
+/// "postgres FFI may not be called from multiple threads" guard).
+fn pre_rerank_candidate_limit(
+    index_options: &super::options::EcIvfOptions,
+    effective_rerank_width: i32,
+) -> Option<usize> {
     match index_options.rerank.v1_effective() {
-        super::options::RerankMode::HeapF32 if rerank_width > 0 => Some(rerank_width as usize),
+        super::options::RerankMode::HeapF32 if effective_rerank_width > 0 => {
+            Some(effective_rerank_width as usize)
+        }
         _ => None,
     }
 }
@@ -2487,15 +2499,19 @@ fn pre_rerank_candidate_limit(index_options: &super::options::EcIvfOptions) -> O
 /// heap_f32+width<=0 on the sorted path is what prevents the exact rerank from
 /// being silently skipped (a recall regression vs the former unconditional
 /// rerank).
+///
+/// `effective_rerank_width` is resolved once by the caller (see
+/// `pre_rerank_candidate_limit`), keeping this function pure/unit-testable.
 fn ranked_collect_limit(
     index_options: &super::options::EcIvfOptions,
+    effective_rerank_width: i32,
     candidate_len: usize,
 ) -> Option<usize> {
     if matches!(
         index_options.rerank.v1_effective(),
         super::options::RerankMode::HeapF32
     ) {
-        Some(pre_rerank_candidate_limit(index_options).unwrap_or(candidate_len))
+        Some(pre_rerank_candidate_limit(index_options, effective_rerank_width).unwrap_or(candidate_len))
     } else {
         None
     }
@@ -5602,19 +5618,19 @@ mod tests {
     #[test]
     fn pre_rerank_candidate_limit_requires_heap_f32_positive_width() {
         assert_eq!(
-            pre_rerank_candidate_limit(&options_with_rerank(RerankMode::HeapF32, 50)),
+            pre_rerank_candidate_limit(&options_with_rerank(RerankMode::HeapF32, 50), 50),
             Some(50)
         );
         assert_eq!(
-            pre_rerank_candidate_limit(&options_with_rerank(RerankMode::HeapF32, 0)),
+            pre_rerank_candidate_limit(&options_with_rerank(RerankMode::HeapF32, 0), 0),
             None
         );
         assert_eq!(
-            pre_rerank_candidate_limit(&options_with_rerank(RerankMode::Off, 50)),
+            pre_rerank_candidate_limit(&options_with_rerank(RerankMode::Off, 50), 50),
             None
         );
         assert_eq!(
-            pre_rerank_candidate_limit(&options_with_rerank(RerankMode::Auto, 50)),
+            pre_rerank_candidate_limit(&options_with_rerank(RerankMode::Auto, 50), 50),
             None
         );
     }
@@ -5623,7 +5639,7 @@ mod tests {
     fn ranked_collect_limit_keeps_heap_f32_on_sorted_path_including_rerank_all() {
         // Positive width -> bounded sorted top-`width` (unchanged from before).
         assert_eq!(
-            ranked_collect_limit(&options_with_rerank(RerankMode::HeapF32, 50), 1000),
+            ranked_collect_limit(&options_with_rerank(RerankMode::HeapF32, 50), 50, 1000),
             Some(50)
         );
         // heap_f32 + width<=0 is the "rerank all" sentinel: it MUST stay on the
@@ -5632,17 +5648,17 @@ mod tests {
         // regresses vs the former unconditional rerank. This is the Task 145
         // review fix (2026-07-06).
         assert_eq!(
-            ranked_collect_limit(&options_with_rerank(RerankMode::HeapF32, 0), 1000),
+            ranked_collect_limit(&options_with_rerank(RerankMode::HeapF32, 0), 0, 1000),
             Some(1000)
         );
         // Non-heap_f32 modes never rerank -> lazy heap (None), the default fast
         // path that carries the topk_collect win.
         assert_eq!(
-            ranked_collect_limit(&options_with_rerank(RerankMode::Off, 50), 1000),
+            ranked_collect_limit(&options_with_rerank(RerankMode::Off, 50), 50, 1000),
             None
         );
         assert_eq!(
-            ranked_collect_limit(&options_with_rerank(RerankMode::Auto, 50), 1000),
+            ranked_collect_limit(&options_with_rerank(RerankMode::Auto, 50), 50, 1000),
             None
         );
     }
