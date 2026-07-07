@@ -62,7 +62,10 @@ pub(super) const ECDISTANN_MAX_BEAM_WIDTH: i32 = 64;
 /// FR-081 H default; provisional until the M0 recall-vs-H kill-check
 /// measurement (ADR-085 D2) pins it.
 pub(super) const ECDISTANN_DEFAULT_HOP_ROUNDS: i32 = 8;
-pub(super) const ECDISTANN_MAX_HOP_ROUNDS: i32 = 64;
+/// High ceiling so the bench sweep can match ec_diskann expansion budgets
+/// (BW x H up to ~800 at the default BW=4); D9 early-exit terminates long
+/// sweeps in practice.
+pub(super) const ECDISTANN_MAX_HOP_ROUNDS: i32 = 256;
 
 /// Result-heap size k for the FR-081 convergence early-exit; session GUC
 /// because k is a query property, not an index property.
