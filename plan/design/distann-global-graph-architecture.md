@@ -8,8 +8,11 @@ the specs and test matrix reference.
 ## Architecture summary
 
 One global Vamana graph over all indexed vectors. No partitions, no routing
-decision, no boundary replication. Records are self-sufficient (full vector +
-adjacency + embedded neighbor codes, FR-076), hash-placed across nodes
+decision, no boundary replication. Records are lean (coarse search code +
+adjacency + embedded neighbor codes, FR-076) with the full-precision vector
+held once in a co-placed heap row for node-local exact rerank (ADR-085 D11,
+FR-078/FR-079 — the `ec_diskann` coarse-in-index / exact-from-heap split,
+sharded), hash-placed across nodes
 (FR-078), built by sharded parallel Vamana builds stitched into one graph
 (FR-077), and searched by a coordinator loop: local head-index descent
 (FR-080) then H batched hop-rounds of per-node `ec_distann_expand_nodes`
@@ -49,13 +52,19 @@ spec authoring = 161 (this lane).
   edge repair are epoch-build operations (this resolves the
   reclaimed-neighbor/missing-record contradiction found in spec review).
 - Placement is load-balance-only; every placement disagreement is an error,
-  never a silent miss.
+  never a silent miss. Placement co-locates each record's full-precision heap
+  row on the same owning node (ADR-085 D11), so exact rerank is node-local.
 - The expand-response wire contract is independent of the D1 record layout.
+- `records read == nodes expanded == nodes exact-reranked == nodes
+  materialized` (all ≤ BW×H) — the equality that makes co-placed heap rerank
+  (D11) affordable where SPIRE's wide-leaf scan-fraction forced an
+  index-resident code.
 
 ## Open items tracked to milestones
 
-- D1/D7 arithmetic likely breaches NFR-018 at R=32 defaults → M0 decides
-  (lower R / smaller codes / fallback layout).
+- D1/D7 arithmetic sits at NFR-018's 4.0× threshold at R=32 defaults once
+  D11 removes the inline vector (~5.0× → ~4.0×) → M0 measures whether the R×
+  neighbor-code block still needs lower R / smaller codes / fallback layout.
 - H×RTT floor → M0 kill-check spike projects it; M2 measures it; D4 reopen
   trigger (hop RTT ≥ 50% of multinode p50) reopens baton passing.
 - NFR-018 multinode storage summation is a suite-runner extension landing as

@@ -86,8 +86,9 @@ flowchart LR
 
 ## In-Scope Responsibilities
 
-- One global Vamana graph; self-sufficient node records keyed by global
-  vec_id (FR-075, FR-076; ADR-085 D1/D6).
+- One global Vamana graph; lean node records (coarse code + adjacency +
+  neighbor codes) keyed by global vec_id, with the full vector in a co-placed
+  heap tier for node-local exact rerank (FR-075, FR-076; ADR-085 D1/D6/D11).
 - Sharded closure-overlap build and stitch to one record per vec_id
   (FR-077, D8).
 - Deterministic hash placement + topology-only placement directory (FR-078).

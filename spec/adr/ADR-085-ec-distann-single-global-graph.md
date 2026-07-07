@@ -49,9 +49,12 @@ Build `ec_distann` as a fifth access method:
    routing decision, no boundary replication; the entire
    duplicate/distinct-recall problem class of the partitioned lane does not
    exist here (one logical record per vector, global vec_id).
-2. **Self-sufficient node records** (FR-076): full vector + adjacency +
-   embedded compressed neighbor codes, so one read expands a node and scores
-   all neighbors.
+2. **Lean node records + co-placed heap rerank** (FR-076/D11): each record
+   holds a coarse search code + adjacency + embedded compressed neighbor
+   codes, so one read expands a node and scores all neighbors; the
+   full-precision vector is NOT in the record but in a co-placed heap row
+   (FR-078) read node-locally for exact rerank. This is the `ec_diskann`
+   coarse-in-index / exact-from-heap split, sharded.
 3. **Hash placement** (FR-078): `hash(vec_id) mod roster`; placement affects
    load balance only.
 4. **Sharded build + stitch** (FR-077): closure-overlap clustering (the
@@ -70,15 +73,19 @@ Build `ec_distann` as a fifth access method:
 - **D1 — Neighbor-code duplication over on-demand fetch.** Embedding R
   neighbor codes per record trades disk for one-read expansion. Honest
   arithmetic at dim=1536 (6,144 B raw f32): with R=32 and rabitq-class 4-bit
-  codes (~768 B/code) the code block alone is ~24.6 KB → record ≈ 31 KB ≈
-  **5.0× raw — over NFR-018's 4.0× threshold at these defaults.** The D7
-  default (GroupedPq) code size must be pinned at M0; staying inside the
-  budget requires some combination of lower `graph_degree`, smaller codes
-  (e.g. ~384 B/code ⇒ ≈3.1×), or the fallback layout (adjacency-only
-  records, codes piggybacked on expansion responses — a format-version
-  change, acceptable under the research rebuild posture). The M0 storage
-  measurement decides; the reference paper's ~10× used
-  full-precision-adjacent OPQ at higher degree.
+  codes (~768 B/code) the code block alone is ~24.6 KB. Because D11 keeps the
+  full-precision vector out of the record (it is exactly 1.0× raw, stored
+  once in the co-placed heap tier, not duplicated per record), the graph
+  record is ~25 KB ≈ **4.0× raw — at NFR-018's threshold, not the ~5.0× an
+  inline-vector layout would carry.** The remaining amplifier is the R×
+  neighbor-code block, so staying inside the budget still requires pinning
+  the D7 default (GroupedPq) code size at M0 plus some combination of lower
+  `graph_degree`, smaller codes (e.g. ~384 B/code ⇒ ≈2.1×), or the fallback
+  layout (adjacency-only records, codes piggybacked on expansion responses —
+  a format-version change, acceptable under the research rebuild posture).
+  The M0 storage measurement decides; the reference paper's ~10× used
+  full-precision-adjacent OPQ at higher degree. Dropping the inline vector
+  (D11) is the first ~1.0× of that reduction.
 - **D2 — Gate substrate: loopback multi-instance**, matching how the
   IVF/HNSW anchors were measured; one informational injected-latency
   (netem) run accompanies the gate for external validity. H×RTT sensitivity
@@ -120,6 +127,33 @@ Build `ec_distann` as a fifth access method:
   next epoch build; in-flight scans may observe pre- or post-amendment
   adjacency (both valid), with per-record write atomicity. Normative text in
   FR-082.
+- **D11 — Co-placed heap rerank (A) over an index-resident shipped rerank
+  tier (B).** The rerank fidelity source is the co-placed full-precision
+  heap row, read node-locally via `heap_tid`; the index record carries no
+  vector (FR-076/FR-078/FR-079). **Why (A), not SPIRE's (B):** SPIRE ships a
+  compressed rerank code into index storage because its wide-leaf scan
+  scores *many* candidates per leaf, so a per-candidate heap fetch is a
+  random-read storm — index-resident codes are forced by scan-fraction.
+  distann has no scan-fraction: NFR-019 caps per-query work at BW×H expanded
+  records independent of corpus size, and (crucially) `records read ==
+  nodes expanded == nodes exact-reranked == the set materialized`, so the
+  rerank fetch count is bounded, small, and coincides with the
+  materialization read that would happen anyway. The thing that forced (B)
+  is exactly the failure mode distann is designed not to have. **What (A)
+  buys:** the full vector is stored once (in the heap tier), never
+  duplicated into the index → −1.0× raw off per-record amplification (D1);
+  the index is byte-identical in shape to `ec_diskann`, so M0 single-node is
+  literally the `ec_diskann` path (index = codes, heap = vectors, exact
+  rerank from the local heap) and inherits its parity almost for free;
+  fidelity is exact, not code-approximated. **Honest cost:** in a multi-node
+  deployment expansion is two node-local reads (record + heap row) rather
+  than one inline read, and the vector must be co-placed with the record
+  (FR-078) — an extra placement obligation. Both reads stay local (no extra
+  network round-trip), and the read-count delta is bounded by BW×H, so it is
+  dominated by transport. The rerank source is kept conceptually pluggable
+  (a future `index`-tier mode could serve a same-node deployment that wants
+  to avoid the heap detoast), but `ec_diskann`/`ec_distann` default to — and
+  in practice only use — the table/heap source.
 
 ## Consequences
 
@@ -128,7 +162,13 @@ Build `ec_distann` as a fifth access method:
   head-to-head against single-instance IVF on the same protocol.
 - Build becomes the hard distributed problem (stitch correctness is the
   least-proven step — FR-077 carries property-test obligations), and disk
-  pays the D1 amplification.
+  pays the D1 amplification — now the R× neighbor-code block alone, since
+  D11 keeps the 1.0×-raw vector out of the record.
+- Placement gains a co-location obligation (D11/FR-078): each vec_id's
+  full-precision heap row must land on the same node as its record;
+  multi-node expansion is two node-local reads (record + heap) instead of
+  one inline read. Both stay local, so latency is still H × per-round
+  transport, not read-bound.
 - Latency floor is H × per-round transport cost; the post-142 pooling work
   is a prerequisite, and D4's reopen trigger guards the risk.
 - The SPIRE partitioned lane remains shelved-with-evidence; its

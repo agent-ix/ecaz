@@ -80,7 +80,7 @@ This index is the canonical navigation surface for Ecaz architecture decisions. 
 | IVF rerank sidecar two-level directory | `ADR-080-ivf-rerank-sidecar-two-level-directory.md` | PROPOSED | Refines ADR-079: the rerank sidecar directory must be two-level for fat f16/rabitq4 payloads. |
 | TQ+ experimental calibration profile | `ADR-081-tqplus-experimental-calibration-profile.md` | ACCEPTED | Task 89: TQ+ is an experimental TurboQuant calibration profile (learned transform), not a separate quantizer family; affects FR-013/FR-038 and ADR-070/071/072. |
 | TurboQuant TQ+ format and validation | `ADR-082-turboquant-tqplus-format-and-validation.md` | PROPOSED | Task 89 TQ+ re-landing format/validation across IVF, SPIRE, HNSW, DiskANN (renumbered from a draft that collided with ADR-076). |
-| ec_distann single global graph | `ADR-085-ec-distann-single-global-graph.md` | PROPOSED | Fifth AM: one global Vamana graph, hash-placed self-sufficient records, coordinator hop-round search; successor to the measured partitioned-routing rejection (SPIRE remediation lane, branches `task-141..146-spire-*`). IDs 083/084 are reserved by ADRs on the SPIRE remediation branches. |
+| ec_distann single global graph | `ADR-085-ec-distann-single-global-graph.md` | PROPOSED | Fifth AM: one global Vamana graph, hash-placed lean records with co-placed heap rerank (D11), coordinator hop-round search; successor to the measured partitioned-routing rejection (SPIRE remediation lane, branches `task-141..146-spire-*`). IDs 083/084 are reserved by ADRs on the SPIRE remediation branches. |
 
 ## Superseded Historical Decisions
 

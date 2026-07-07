@@ -51,9 +51,14 @@ neighbor_code_dists real[])`, one row per requested vec_id.
 - The function SHALL validate `epoch_fingerprint` against the node's active
   epoch before any read and raise a retriable epoch-mismatch error on
   disagreement ([FR-082](./FR-082-distann-epoch-lifecycle.md)).
-- Expansion SHALL perform exactly one record read per requested vec_id;
-  neighbor scoring SHALL use only the embedded neighbor codes
-  ([FR-076](./FR-076-distann-graph-node-record-format.md)).
+- Expansion SHALL perform, per requested vec_id, exactly one index-record
+  read (neighbor scoring SHALL use only the embedded neighbor codes,
+  [FR-076](./FR-076-distann-graph-node-record-format.md)) plus exactly one
+  co-located heap read of that node's full-precision vector for its exact
+  distance. Both reads are node-local — the heap row is co-placed by
+  [FR-078](./FR-078-distann-hash-placement.md) — so the call remains one
+  network round-trip per node per hop round with no separate rerank
+  round-trip.
 - Requested vec_ids SHALL resolve to exactly one of three defined outcomes:
   (a) present (row returned, `is_tombstone` reflecting the flag);
   (b) not owned by this node under the epoch's placement → placement error
@@ -62,8 +67,14 @@ neighbor_code_dists real[])`, one row per requested vec_id.
   ([FR-082](./FR-082-distann-epoch-lifecycle.md)), so case (c) always
   indicates corruption or placement drift, never a vacuum race
   ([NFR-020](../../../non-functional/NFR-020-distann-fault-behavior.md)).
-- Exact distances SHALL be computed against the full-precision stored
-  vector so the coordinator needs no separate rerank round-trip.
+- Exact distances SHALL be computed against the node's co-placed
+  full-precision heap row (resolved via `heap_tid`,
+  [FR-078](./FR-078-distann-hash-placement.md)) — not against any vector
+  stored in the index record, which carries none — so the coordinator needs
+  no separate rerank round-trip. This is exactly the `ec_diskann`
+  coarse-search-then-heap-rerank split, executed node-locally; the
+  rerank-fidelity source is table/heap (co-placed, exact), the default and,
+  for `ec_diskann`/`ec_distann`, effectively the only mode (ADR-085 D11).
 - `code_threshold` SHALL default to NULL (no pruning). When set, it is a
   documented recall-risk parameter: pruned neighbors may include true
   results. Gate benchmark runs ([NFR-017](../../../non-functional/NFR-017-distann-latency-recall-gate.md))
@@ -85,6 +96,7 @@ neighbor_code_dists real[])`, one row per requested vec_id.
 | FR-079-AC-2 | Stale epoch_fingerprint yields the retriable epoch-mismatch error, never data | Test |
 | FR-079-AC-3 | Non-owned vec_id yields a placement error; owned-but-absent yields a structural fault error; tombstones return normally with the flag set | Test |
 | FR-079-AC-4 | Neighbor code distances equal direct QuantCodec scoring of the same codes | Test |
+| FR-079-AC-5 | `exact_dist` for each returned vec_id equals the full-precision distance between the query and the node's co-placed heap vector; no vector is read from the index record | Test |
 
 ## Dependencies
 

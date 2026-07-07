@@ -24,6 +24,11 @@ bytes of the indexed corpus.
 - Drivers: per-record neighbor-code block (R × code bytes) and closure-build
   duplication (transient, reclaimed after stitch); the budget covers the
   published epoch, not transient build state.
+- The co-placed full-precision heap tier (ADR-085 D11) is the single,
+  once-stored copy of the corpus vectors — it is the 1.0× raw baseline (the
+  ratio denominator), NOT index amplification, and is excluded from the
+  numerator. Records carry no vector, so amplification is codes + adjacency +
+  metadata only.
 
 ## Rationale
 
@@ -49,10 +54,12 @@ closeout.
 Multinode measurement mechanism: the suite's storage step runs once per node
 and the suite report sums the per-node index bytes for the ratio (this
 summation is a suite-runner extension that lands as its own commit before
-the gate run). Note ADR-085 D1's arithmetic indicates the stated defaults
-(R=32 with rabitq-class codes) likely exceed the 4.0× threshold — the M0
-storage measurement decides between lower `graph_degree`, a smaller
-`neighbor_code_format`, or the D1 fallback layout, before the gate run.
+the gate run). With the D11 lean record (no inline vector) ADR-085 D1's
+arithmetic puts the R=32 rabitq-class default at ≈4.0× — at the threshold,
+not over it as the inline-vector layout was (≈5.0×). The M0 storage
+measurement still decides whether the R× neighbor-code block needs a lower
+`graph_degree`, a smaller `neighbor_code_format`, or the D1 fallback layout
+before the gate run.
 
 ## Dependencies
 

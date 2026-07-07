@@ -19,14 +19,25 @@ relationships:
 ## Description
 
 Graph-node records SHALL be distributed across nodes by a deterministic hash
-of vec_id. Placement SHALL affect load balance only — never recall or graph
-structure — and SHALL be resolvable by any coordinator without a per-record
-directory lookup.
+of vec_id, with each record's co-placed heap row (its full-precision vector,
+the rerank tier of [FR-076](./FR-076-distann-graph-node-record-format.md))
+landing on the same hash-owned node so exact rerank
+([FR-079](./FR-079-distann-remote-expansion-protocol.md)) is always a
+node-local read. Placement SHALL affect load balance only — never recall or
+graph structure — and SHALL be resolvable by any coordinator without a
+per-record directory lookup.
 
 ## Behavior
 
 - The owning node of a record SHALL be `hash(vec_id) mod node_count` under
   the epoch's registered node roster.
+- The placement function SHALL map a record's full-precision heap row
+  (referenced by `heap_tid`) to the same owning node as the record itself,
+  co-placing the heap tier by the identical `hash(vec_id)` so no record's
+  exact-rerank vector lives on a different node than the record. In the
+  degenerate single-node deployment (M0) this is satisfied by the index and
+  its base table sharing one instance; in a multi-node deployment the
+  build→publish hand-off co-locates the vector with the record (below).
 - The epoch manifest SHALL fix the hash function version and roster ordering
   so every participant computes identical placement.
 - An epoch-stamped placement directory (adapted — not shared — from
@@ -36,9 +47,11 @@ directory lookup.
   per-record entries.
 - The build→publish hand-off SHALL be owned by the epoch build pipeline:
   after the FR-077 stitch emits records, the build SHALL write each record
-  to its hash-owned node and then publish the epoch
+  **and its full-precision vector (heap row)** to the same hash-owned node
+  and then publish the epoch
   ([FR-082](./FR-082-distann-epoch-lifecycle.md)); no other component moves
-  records.
+  records or vectors. The vector is stored once, on the owning node, and is
+  never duplicated into the index record (ADR-085 decision D11).
 - When the roster changes, a new epoch SHALL be built and published; queries
   against the old epoch continue against the old roster until retirement
   ([FR-082](./FR-082-distann-epoch-lifecycle.md)).
@@ -52,6 +65,7 @@ directory lookup.
 | FR-078-AC-1 | Placement of any vec_id is identical when computed on coordinator and on every data node | Test |
 | FR-078-AC-2 | Record counts per node are within 10% of uniform at 100k across 3 nodes | Analysis (build stats) |
 | FR-078-AC-3 | A roster change never alters placement within a published epoch | Test |
+| FR-078-AC-4 | For every vec_id, its graph record and its full-precision heap row resolve to the same owning node under the epoch roster | Test |
 
 ## Dependencies
 
