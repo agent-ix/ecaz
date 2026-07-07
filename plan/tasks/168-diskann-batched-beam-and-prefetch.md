@@ -1,10 +1,12 @@
 # Task 168: DiskANN Batched-Beam Expansion + Prefetch (rabitq streaming path)
 
-Status: proposed (2026-07-06, P1). Successor to the closed Task 70
+Status: done (2026-07-07; merged to main in `e9bb9430d`, evidence in
+`reviews/task-168/001..005`; Phase 3 prefetch shelved as a measured loss,
+all other phases landed). Successor to the closed Task 70
 (scan-kernel) / Task 32 (M5). Foundation for the ec_distann program:
 the batched-beam primitive here is distann's M0 hop-round shape
 (FR-081), so landing it in DiskANN first avoids forking the beam loop.
-Owner: to be assigned. One coder, one branch.
+Owner: Agent IX (coder). One coder, one branch.
 
 ## Why
 
