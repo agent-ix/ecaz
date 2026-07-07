@@ -202,6 +202,7 @@ These pre-lane task files are retained only for historical context under
 158. `158-rabitq-scalar-tail-soa-plane.md` — **proposed** (2026-07-04, P3, gated on 152): the 3 interleaved tail scalars force per-candidate unaligned reads + branches in every kernel epilogue; split them into an SoA plane at scratch-fill (Phase 1, no format change) for a vector-wide block correction.
 159. `159-graph-am-rabitq-flush-width-profile.md` — **proposed** (2026-07-04, P3): HNSW/DiskANN flush RaBitQ scoring per expanded node (width ≈ degree, heavy `<32` partial share); publish the existing width-bucket histograms and size the cross-node-accumulation ceiling (Task 134's negative was TQ-only).
 160. `160-spire-pre-materialization-prune-promotion.md` — **proposed** (2026-07-04, P3): `ec_spire.pre_materialization_prune` is a shipped default-off speedup with no A/B packet anywhere; bench it and promote/keep/retire (coordinate with the active SPIRE desktop lane before any default flip).
+168. `168-diskann-batched-beam-and-prefetch.md` — **done** (2026-07-07, merged `e9bb9430d`): rabitq-path characterization at 10/50/100k, width-4 batched-beam default (the ec_distann FR-081 primitive), pooled-decode/alloc cleanups, `StorageFormat::DEFAULT` → rabitq; Phase-3 graph prefetch shelved as a measured loss. Evidence `reviews/task-168/001..005`. (161–167 are the ec_distann program tasks on `task-161-ec-distann-specs` / `task-162-ec-distann-m0`.)
 
 ## Coordination rules
 
