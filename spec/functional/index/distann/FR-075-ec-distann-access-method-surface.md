@@ -45,9 +45,14 @@ unchanged.
   out-of-range values with actionable errors.
 - While the index participates in a multinode deployment, scans SHALL execute
   through the coordinator orchestration path of
-  [FR-081](./FR-081-distann-query-orchestration.md).
+  [FR-081](./FR-081-distann-query-orchestration.md). The deployment mode is
+  determined by the published epoch manifest's node roster: roster size > 1
+  is multinode; no session state or GUC overrides it.
 - While the deployment is single-node, the AM SHALL serve the same plan shape
   with local expansion.
+- The Vamana core (build, prune, traversal) is shared with `ec_diskann`
+  ([FR-034](../diskann/FR-034-diskann-build-and-storage.md) lineage), not
+  forked.
 
 ## Acceptance Criteria
 
@@ -56,7 +61,7 @@ unchanged.
 | FR-075-AC-1 | `CREATE ACCESS METHOD ec_distann` succeeds and `CREATE INDEX ... USING ec_distann` builds a queryable index | Test |
 | FR-075-AC-2 | Invalid reloption values are rejected at index creation with a descriptive error | Test |
 | FR-075-AC-3 | Ordered top-k scans return results in non-increasing score order | Test |
-| FR-075-AC-4 | Single-node recall@10 at 10k is within 0.002 of `ec_diskann` at equivalent parameters | Test |
+| FR-075-AC-4 | Single-node distinct_recall@10 at 10k is within 0.002 of `ec_diskann` at equivalent parameters | Test (bench A/B via `ecaz bench suite`) |
 
 ## Dependencies
 

@@ -31,9 +31,14 @@ stale result presented as complete.
   (FR-082), and the incremental insert path (FR-083).
 - Fault taxonomy: the reused multinode drill cases
   (connection_reset_mid_batch, epoch_mismatch, remote_statement_timeout,
-  remote_backend_termination, missing_or_reindexed_remote_index, network
-  partition) plus the distann-specific cases hop_round_failure_mid_beam,
-  missing_node_record, placement_drift, and mid-insert failure.
+  remote_backend_termination, missing_or_reindexed_remote_index, and
+  simulated network partition via the existing fixture's
+  `simulated_network_partition` mechanism — connection-level injection, as
+  true interface partition is not injectable on the loopback fixture) plus
+  the distann-specific cases hop_round_failure_mid_beam,
+  missing_node_record, placement_drift, mid-insert failure, and mid-delete
+  failure (a lost remote tombstone write must error, never silently
+  resurrect the row).
 
 ## Rationale
 

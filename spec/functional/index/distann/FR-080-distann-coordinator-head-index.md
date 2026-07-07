@@ -19,16 +19,25 @@ in the correct region of the global graph.
 
 ## Behavior
 
-- At build time, the pipeline SHALL collect a breadth-first sample of up to
-  `head_index_cap` (C) vectors from the global graph's entry region (union
-  across build shards' top layers, guaranteeing every shard's region is
-  reachable) and persist the sample with the epoch.
+- At build time, the pipeline SHALL collect an entry-region sample of up to
+  `head_index_cap` (C) vectors: a breadth-first traversal from each build
+  shard's entry medoid over that shard's graph, bounded by hop radius, with
+  the per-shard samples unioned (guaranteeing every shard's region is
+  represented). Vamana graphs are single-layer; "entry region" means
+  BFS-near the medoid, not a layered structure. The sample SHALL be
+  persisted with the epoch as an epoch-versioned object in the index
+  relation, listed in the epoch manifest alongside placement metadata
+  ([FR-082](./FR-082-distann-epoch-lifecycle.md)). A single-shard
+  (monolithic) build is the degenerate case: one medoid, one BFS sample.
 - The coordinator SHALL construct the in-memory head index from the persisted
   sample on first use per epoch (reusing the in-memory Vamana builder used
   by the SPIRE top-graph) and cache it keyed on `(index_oid, epoch)`.
 - A query SHALL search the head index first; its best results seed the hop
   round frontier of [FR-081](./FR-081-distann-query-orchestration.md).
 - Head-index construction SHALL be deterministic under a fixed seed.
+- If the persisted sample is missing or fails to decode, scans SHALL error
+  (strict policy — a silent medoid-entry fallback would change recall
+  without a signal).
 
 ## Constraints
 

@@ -40,6 +40,14 @@ neighbors into the beam and exact distances into the result heap.
   twice in one scan.
 - Final results SHALL be ordered by exact distance; no separate rerank
   round-trip is performed (exact distances arrive with expansion responses).
+  Results SHALL be drawn only from expanded records (head-index candidates
+  enter results only via their own expansion).
+- If the beam exhausts (no unvisited candidates remain) before k results
+  accumulate, the scan SHALL return the fewer-than-k results as a complete
+  result (scan exhaustion is not a fault); empty index → zero rows.
+- The single-node local-expansion form of this loop is the first
+  implementation slice (milestone M0), delivered before the remote transport
+  exists; the remote form retargets the same loop.
 - The scan SHALL surface per-query counters (rounds executed, records
   expanded, candidates code-scored, per-node batch sizes, pool reuse) via
   EXPLAIN and the bench pipeline step.

@@ -50,6 +50,23 @@ Task 146 host/corpus/query protocol, producing a four-way comparison table
 (ec_distann / IVF / HNSW / best-SPIRE) in the owning review packet; every
 cited number traces to `results.jsonl`.
 
+**Matched-recall comparison rule (pre-registered)**: each AM is compared at
+its own cheapest operating point achieving distinct_recall@10 ≥ 0.999 on the
+scale's query set; if an anchor AM has no measured point ≥ 0.999, the
+comparison uses its maximum-recall measured point and reports both recalls
+alongside both p50s (no interpolation).
+
+The gate packet SHALL also include one informational injected-latency run
+(ADR-085 D2: netem or equivalent per-hop delay) reporting H×RTT sensitivity;
+it does not gate.
+
+**Prerequisites**: the `distinct_recall` metric emitter (branch
+`task-138-spire-distinct-recall-metric`) and the anchor evidence
+(`reviews/task-146/006-anchor-results/` on branch
+`task-146-spire-honest-pareto-confirmation`) must be merged to the measuring
+branch before this NFR is executable; record the merge SHAs in the gate
+packet manifest.
+
 ## Dependencies
 
 - **Upstream**: [StR-008](../stakeholder/StR-008-distributed-search-single-instance-economics.md),

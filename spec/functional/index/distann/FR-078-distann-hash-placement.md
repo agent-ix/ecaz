@@ -7,6 +7,12 @@ relationships:
   - target: "ix://agent-ix/ecaz/FR-076"
     type: "depends_on"
     cardinality: "N:1"
+  - target: "ix://agent-ix/ecaz/FR-055"
+    type: "depends_on"
+    cardinality: "N:1"
+  - target: "ix://agent-ix/ecaz/FR-077"
+    type: "depends_on"
+    cardinality: "N:1"
 ---
 # FR-078: Distann Hash Placement and Placement Directory
 
@@ -23,10 +29,16 @@ directory lookup.
   the epoch's registered node roster.
 - The epoch manifest SHALL fix the hash function version and roster ordering
   so every participant computes identical placement.
-- An epoch-stamped placement directory (adapted from
-  `SpirePlacementDirectory`) SHALL carry topology metadata only: node
-  roster, roster ordering, hash function version, and per-node record
-  counts. It SHALL NOT store per-record entries.
+- An epoch-stamped placement directory (adapted — not shared — from
+  `SpirePlacementDirectory`, whose contract stays owned by the SPIRE specs)
+  SHALL carry topology metadata only: node roster, roster ordering, hash
+  function version, and per-node record counts. It SHALL NOT store
+  per-record entries.
+- The build→publish hand-off SHALL be owned by the epoch build pipeline:
+  after the FR-077 stitch emits records, the build SHALL write each record
+  to its hash-owned node and then publish the epoch
+  ([FR-082](./FR-082-distann-epoch-lifecycle.md)); no other component moves
+  records.
 - When the roster changes, a new epoch SHALL be built and published; queries
   against the old epoch continue against the old roster until retirement
   ([FR-082](./FR-082-distann-epoch-lifecycle.md)).

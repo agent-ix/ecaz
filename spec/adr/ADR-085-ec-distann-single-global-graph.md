@@ -30,11 +30,16 @@ branch + packet path):
 
 The root cause is architectural: a lossy partition-level routing decision
 must be hedged wider as recall targets rise and corpora grow. DistributedANN
-(arXiv:2509.06046; local copy
+(**arXiv:2509.06046**, the durable citation; convenience local copy
 `~/dev_bak/papers/distributedann-2509.06046.pdf`; same research group as
 SPANN/SPIRE, replaced partition-routing in Bing production) inverts the
 design: distribute the storage, keep the index whole. One global Vamana
 graph; records hash-placed; query cost = beam × hops, corpus-independent.
+
+Milestones M0–M5 referenced throughout this batch are defined normatively in
+`plan/design/distann-global-graph-architecture.md` (M0 single-node parity,
+M1 stitch, M2 two-node read path, M3 lifecycle+faults, M4 bench gate, M5
+incremental insert).
 
 ## Decision
 
@@ -63,18 +68,25 @@ Build `ec_distann` as a fifth access method:
 ## Sub-Decisions
 
 - **D1 — Neighbor-code duplication over on-demand fetch.** Embedding R
-  neighbor codes per record trades disk for one-read expansion. Arithmetic at
-  dim=1536, R=32, rabitq-class 4-bit codes (~768 B/code): ≈24.6 KB/record vs
-  6.1 KB raw vector — dominated by the code block, bounded by NFR-018's ≤4×
-  budget only with compact codes; the reference paper's ~10× used
-  full-precision-adjacent OPQ at higher degree. Validate by M0 storage
-  measurement; fallback (adjacency-only records, codes piggybacked on
-  expansion responses) is a format-version change, acceptable under the
-  research rebuild posture.
+  neighbor codes per record trades disk for one-read expansion. Honest
+  arithmetic at dim=1536 (6,144 B raw f32): with R=32 and rabitq-class 4-bit
+  codes (~768 B/code) the code block alone is ~24.6 KB → record ≈ 31 KB ≈
+  **5.0× raw — over NFR-018's 4.0× threshold at these defaults.** The D7
+  default (GroupedPq) code size must be pinned at M0; staying inside the
+  budget requires some combination of lower `graph_degree`, smaller codes
+  (e.g. ~384 B/code ⇒ ≈3.1×), or the fallback layout (adjacency-only
+  records, codes piggybacked on expansion responses — a format-version
+  change, acceptable under the research rebuild posture). The M0 storage
+  measurement decides; the reference paper's ~10× used
+  full-precision-adjacent OPQ at higher degree.
 - **D2 — Gate substrate: loopback multi-instance**, matching how the
   IVF/HNSW anchors were measured; one informational injected-latency
   (netem) run accompanies the gate for external validity. H×RTT sensitivity
-  is reported, not gated.
+  is reported, not gated. Because NFR-017 is the program kill criterion and
+  transport data first exists at M2, M0/M1 SHALL include a **kill-check
+  spike**: single-node recall-vs-H curve × the measured per-round transport
+  cost of the existing SPIRE pipeline, projecting multinode p50 before M2 is
+  built.
 - **D3 — Head-index size C: fixed cap reloption** (`head_index_cap`,
   default 4096, breadth-first sample unioned across shard top layers);
   recall sensitivity measured at M0 before the default is frozen.
@@ -84,7 +96,9 @@ Build `ec_distann` as a fifth access method:
 - **D5 — Interim insert posture: bounded exact-scan delta buffer** (visible
   same-statement, drained at next epoch build), chosen over erroring so DML
   tests exercise visibility semantics early; the end state is FR-083's
-  incremental insert with next-epoch neighbor-edge repair semantics.
+  incremental insert with next-epoch neighbor-edge repair semantics. The
+  interim posture is not an acceptable terminal state: the program closes
+  only with incremental insert landed or an explicit operator descope.
 - **D6 — vec_id = hash64(source_identity) with build-time collision
   detection** (fail the build on collision; probability negligible at
   research scales), over dense per-epoch assignment — keeps vec_ids stable
@@ -97,6 +111,15 @@ Build `ec_distann` as a fifth access method:
   vec_id group plus prune working set in memory.
 - **D9 — Termination: fixed H with convergence early-exit** (FR-081); BW×H
   stays the hard cap so NFR-019 is assertable per query.
+- **D10 — Published-epoch mutation model** (added after failure-domain
+  review): within a Published epoch, records and adjacency are immutable
+  except monotonic tombstone-flag sets, delta-buffer appends (D5), and
+  incremental-insert appends with back-edge amendments (FR-083). The
+  fingerprint attests to roster/placement/format/build-time record set, not
+  the mutable delta state; physical reclaim + edge repair happen only at the
+  next epoch build; in-flight scans may observe pre- or post-amendment
+  adjacency (both valid), with per-record write atomicity. Normative text in
+  FR-082.
 
 ## Consequences
 
@@ -119,3 +142,6 @@ Build `ec_distann` as a fifth access method:
 - **BatANN-style baton passing** (arXiv:2512.09331): deferred per D4.
 - **IVF-only distributed**: viable fallback recorded in the Task 146 lane;
   does not address the scan-fraction scaling at higher recall targets.
+- **Learned routing over partitions** (ADR-052/053 lineage): out of scope
+  for this program — it iterates the rejected partition-routing
+  architecture rather than removing the routing decision.

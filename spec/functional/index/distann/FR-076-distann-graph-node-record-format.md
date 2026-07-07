@@ -8,9 +8,6 @@ relationships:
   - target: "ix://agent-ix/ecaz/FR-075"
     type: "depends_on"
     cardinality: "N:1"
-  - target: "ix://agent-ix/ecaz/FR-055"
-    type: "depends_on"
-    cardinality: "N:1"
 ---
 # FR-076: Distann Graph-Node Record Format and Global Identity
 
@@ -55,10 +52,13 @@ fields:
   page following the `VamanaMetadataPage` convention; version bumps follow
   [NFR-016](../../../non-functional/NFR-016-on-disk-format-evolution-discipline.md)
   (research posture: rebuild, no migration).
-- `vec_id` SHALL be stable across index rebuilds for the same logical row
-  (derived from `source_identity`), so cross-epoch and cross-node references
-  never alias distinct rows. The derivation (hash64 with collision handling
-  vs dense per-epoch assignment) is fixed by ADR-085 decision D6.
+- `vec_id` SHALL be stable across index rebuilds for the same logical row,
+  derived from `source_identity` per the ADR-063 source-identity provider
+  contract (reached via ADR-068's distributed topology), so cross-epoch and
+  cross-node references never alias distinct rows. The derivation (hash64
+  with collision handling vs dense per-epoch assignment) is fixed by
+  ADR-085 decision D6. Placement
+  ([FR-078](./FR-078-distann-hash-placement.md)) consumes this identity.
 - Expanding a record SHALL require exactly one record read: scoring all its
   neighbors uses the embedded codes, never a secondary lookup.
 - Tombstoned records SHALL remain readable (for graph traversal continuity)

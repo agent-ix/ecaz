@@ -46,6 +46,14 @@ Every gate benchmark run includes the storage step; the ratio row appears in
 the packet manifest per scale. A threshold breach fails the milestone
 closeout.
 
+Multinode measurement mechanism: the suite's storage step runs once per node
+and the suite report sums the per-node index bytes for the ratio (this
+summation is a suite-runner extension that lands as its own commit before
+the gate run). Note ADR-085 D1's arithmetic indicates the stated defaults
+(R=32 with rabitq-class codes) likely exceed the 4.0× threshold — the M0
+storage measurement decides between lower `graph_degree`, a smaller
+`neighbor_code_format`, or the D1 fallback layout, before the gate run.
+
 ## Dependencies
 
 - **Upstream**: [FR-076](../functional/index/distann/FR-076-distann-graph-node-record-format.md);

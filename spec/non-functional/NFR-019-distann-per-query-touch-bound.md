@@ -42,8 +42,9 @@ comparison meaningful.
 
 | Metric | Target | Threshold | Method |
 |--------|--------|-----------|--------|
-| records expanded per query | < BW×H (early exit) | ≤ BW×H | pipeline-step counter assertion, every cell |
+| records expanded per query (per-query MAX across the cell, not mean) | < BW×H (early exit) | ≤ BW×H per attempt (restart per FR-082 resets accounting; max 2 attempts) | pipeline-step counter assertion, every cell |
 | expanded-count ratio 100k ÷ 10k at fixed BW,H | ≈ 1.0 | ≤ 1.1 | bench counter comparison across scales |
+| minimum BW×H achieving distinct_recall@10 ≥ 0.999, per scale | flat across scales | ≤ 2× growth 10k→100k | gate-packet analysis row (guards against the budget-needed-for-recall growth failure mode that killed the partitioned lane) |
 
 ## Verification
 

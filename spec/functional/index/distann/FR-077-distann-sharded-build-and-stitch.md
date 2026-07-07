@@ -51,6 +51,13 @@ flowchart LR
   `graph_degree` edges; and emit exactly one record per vec_id.
 - When a vector appears in only one shard, the stitch SHALL pass its record
   through unchanged (stitch idempotence).
+- The full build (shard assignment, per-shard builds, stitch) SHALL be
+  deterministic under a fixed seed: identical corpus + seed + options yield
+  an identical stitched graph (this is what makes FR-081-AC-1's
+  single-vs-multinode result-identity test possible).
+- A single-shard (monolithic) build SHALL remain available as the fallback
+  path: a stitch-quality failure degrades build parallelism, not the
+  program (ADR-085 Consequences).
 - The build SHALL record in the epoch manifest: shard count,
   closure duplication factor, stitch edge-union statistics, and build wall
   time.
@@ -62,7 +69,7 @@ flowchart LR
 | FR-077-CON-1 | Post-stitch out-degree SHALL NOT exceed `graph_degree` for any node | Integrity | Property test |
 | FR-077-CON-2 | Every vec_id SHALL appear exactly once in the stitched output | Integrity | Property test |
 | FR-077-CON-3 | Every node SHALL be reachable from the entry medoid in the stitched graph | Integrity | Property test (BFS) |
-| FR-077-CON-4 | Stitch memory usage SHALL stay within the bound set by ADR-085 decision D8 | Performance | Analysis + build instrumentation |
+| FR-077-CON-4 | Stitch memory usage SHALL stay within the bound set by ADR-085 decision D8 (streamed by vec_id group: peak ≤ one vec_id group + prune working set) | Performance | Analysis (peak-memory row in the epoch manifest, cited in the owning packet manifest) |
 
 ## Acceptance Criteria
 
