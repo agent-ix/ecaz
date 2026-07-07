@@ -1,0 +1,23 @@
+[loader] inspecting data/staged-current/ec_real_100k_corpus.tsv
+[loader] inspecting data/staged-current/ec_real_100k_queries.tsv
+[loader] corpus: 100000 rows, sha256=07275cfd5a7a4b415ddf5eacc086de98294ac978532df46ffae30f9202323a95  queries: 1000 rows, sha256=a7cbec6fc44f6c148234538f61339d00d2f10646febc8f667dcbe75d9cf41782
+[loader] warning: manifest verification failed for data/staged-current/ec_real_100k_manifest.json: prefix="ec_real_100k" (expected "current_intel_real100k_diskann")
+[loader] copied corpus table current_intel_real100k_diskann_corpus in 39.99s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table current_intel_real100k_diskann_corpus in 31.25s
+[loader] copied queries table current_intel_real100k_diskann_queries in 427.86ms
+[loader] building current_intel_real100k_diskann_idx using ec_diskann (reloptions=[<none>]) ...
+[loader] built current_intel_real100k_diskann_idx in 346.29s
+[loader] ec_diskann_ambuild_timing index=current_intel_real100k_diskann_idx phase=complete heap_tuples=100000 scanned_tuples=100000 unique_tuples=100000 data_pages=5264 heap_scan_ms=3566 source_ref_ms=2 training_ms=0 sidecar_setup_ms=0 payload_derivation_ms=100 build_persist_ms=342200 core_medoid_ms=280 core_graph_ms=341769 core_persist_ms=133 parallel_requested_workers=0 parallel_effective_workers=0 parallel_batch_size=704 parallel_flush_rate=0 parallel_rayon_scaffold=0 parallel_epochs=0 parallel_proposal_ms=0 parallel_reducer_ms=0 parallel_same_epoch_candidate_reads=0 parallel_total_candidate_reads=0 overflow_ms=0 codebook_ms=0 write_pages_ms=382 metadata_ms=0 flush_total_ms=342686 total_ms=346264
+┌─────────┬─────────────────────────────────────────────────────┐
+│ field   ┆ value                                               │
+╞═════════╪═════════════════════════════════════════════════════╡
+│ profile ┆ ec_diskann                                          │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ current_intel_real100k_diskann_corpus (100000 rows) │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ current_intel_real100k_diskann_queries (1000 rows)  │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ current_intel_real100k_diskann_idx [<default>]      │
+└─────────┴─────────────────────────────────────────────────────┘
+[loader] completed prefix current_intel_real100k_diskann in 431.07s
