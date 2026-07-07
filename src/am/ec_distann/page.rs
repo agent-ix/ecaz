@@ -12,7 +12,8 @@ use crate::storage::page::ItemPointer;
 pub const INDEX_FORMAT_V1_DISTANN: u16 = 1;
 
 /// Neighbor-code codec kinds persisted in the metadata page. Mirrors the
-/// `neighbor_code_format` reloption (ADR-085 D7: GroupedPq default).
+/// `neighbor_code_format` reloption (ADR-085 D7; default pinned to RaBitQ
+/// by the M0 measurement, task-162 packet 002).
 pub const DISTANN_NEIGHBOR_CODEC_GROUPED_PQ: u8 = 1;
 pub const DISTANN_NEIGHBOR_CODEC_RABITQ: u8 = 2;
 pub const DISTANN_NEIGHBOR_CODEC_TURBOQUANT: u8 = 3;

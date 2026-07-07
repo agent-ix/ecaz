@@ -113,6 +113,11 @@ Build `ec_distann` as a fifth access method:
 - **D7 — Neighbor-code codec: GroupedPq default** (closest to the paper's
   OPQ; already a `QuantCodec`), exposed as the `neighbor_code_format`
   reloption with rabitq and turboquant as measured alternatives at M0.
+  **M0 measured outcome (2026-07-07, `reviews/task-162/002-m0-bench-cells/`):
+  default pinned to `rabitq`.** GroupedPq tops out at 0.9245 recall@10 at
+  50k where rabitq reaches 0.9950 at comparable latency, and turboquant's
+  768 B codes exceed page capacity at the default R=32 (the D1 fallback
+  scenario). The reloption keeps all three formats selectable.
 - **D8 — Stitch memory: stream by vec_id group.** Shard outputs are sorted
   by vec_id; the stitch merges shard streams and never holds more than one
   vec_id group plus prune working set in memory.

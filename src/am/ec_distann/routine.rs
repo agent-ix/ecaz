@@ -139,9 +139,22 @@ unsafe fn ec_distann_noop_vacuum_stats(
 
 /// Eager scan state (ADR-056 pattern): amrescan runs the FR-081 loop to
 /// completion; amgettuple is a cursor over the finished results.
+///
+/// Only the first `proven_k` entries of `result_buf` are ordering-proven
+/// when `early_exit` fired (the D9 exit shows the beam cannot improve the
+/// kth exact distance, nothing deeper). When a consumer reads past that
+/// prefix, `amgettuple` transparently re-runs the orchestration with a
+/// doubled exit bar (iterative deepening) instead of serving unproven
+/// rows — so `LIMIT > ec_distann.top_k` stays correct without manual GUC
+/// tuning. Deepening terminates: once k exceeds the BW×H expansion cap the
+/// early-exit can no longer fire and the buffer is the complete FR-081
+/// answer.
 struct DistannScanOpaque {
+    raw_query: Vec<f32>,
     result_buf: Vec<DistannScanHit>,
     result_cursor: usize,
+    proven_k: usize,
+    early_exit: bool,
     rescan_called: bool,
 }
 
@@ -160,8 +173,11 @@ unsafe extern "C-unwind" fn ec_distann_ambeginscan(
         ptr::write(
             opaque.as_ptr(),
             DistannScanOpaque {
+                raw_query: Vec::new(),
                 result_buf: Vec::new(),
                 result_cursor: 0,
+                proven_k: 0,
+                early_exit: false,
                 rescan_called: false,
             },
         );
@@ -198,6 +214,8 @@ unsafe extern "C-unwind" fn ec_distann_amrescan(
         let opaque = &mut *opaque_ptr;
         opaque.result_buf.clear();
         opaque.result_cursor = 0;
+        opaque.proven_k = 0;
+        opaque.early_exit = false;
         opaque.rescan_called = true;
 
         let orderby = &*orderbys;
@@ -212,19 +230,40 @@ unsafe extern "C-unwind" fn ec_distann_amrescan(
         if raw_query.is_empty() {
             pgrx::error!("ec_distann scan query must not be empty");
         }
+        opaque.raw_query = raw_query;
 
         (*scan).xs_recheck = false;
         (*scan).xs_recheckorderby = false;
         (*scan).xs_orderbyvals = ptr::null_mut();
         (*scan).xs_orderbynulls = ptr::null_mut();
 
+        execute_distann_scan(scan, opaque, options::current_top_k());
+    })
+}
+
+/// Run (or re-run, for iterative deepening) the FR-081 orchestration into
+/// the scan opaque. `effective_top_k` is the D9 exit bar for this attempt.
+unsafe fn execute_distann_scan(
+    scan: pg_sys::IndexScanDesc,
+    opaque: &mut DistannScanOpaque,
+    effective_top_k: usize,
+) {
+    {
+        // Cloned so the opaque can be mutated at the end of the attempt
+        // (1536 floats; negligible next to the scan itself).
+        let raw_query = opaque.raw_query.clone();
+        let raw_query = raw_query.as_slice();
         let index_relation = (*scan).indexRelation;
         let handle = ptr::NonNull::new(index_relation)
             .unwrap_or_else(|| pgrx::error!("ec_distann scan received a null index relation"));
         let metadata = ambuild::read_metadata_from_index_handle(handle)
             .unwrap_or_else(|e| pgrx::error!("ec_distann scan metadata read failed: {e}"));
         if metadata.dimensions == 0 || metadata.node_count == 0 {
-            return; // empty index -> zero rows (FR-081)
+            // Empty index -> zero rows (FR-081); nothing to deepen either.
+            opaque.result_buf = Vec::new();
+            opaque.proven_k = effective_top_k;
+            opaque.early_exit = false;
+            return;
         }
         if raw_query.len() != usize::from(metadata.dimensions) {
             pgrx::error!(
@@ -238,14 +277,14 @@ unsafe extern "C-unwind" fn ec_distann_amrescan(
         let entry = head_cache::cached_index_entry(index_oid.into(), handle, &metadata)
             .unwrap_or_else(|e| pgrx::error!("ec_distann scan head-cache setup failed: {e}"));
         let prepared_query =
-            DistannPreparedQuery::prepare(&metadata, entry.flat_codebooks.as_deref(), &raw_query)
+            DistannPreparedQuery::prepare(&metadata, entry.flat_codebooks.as_deref(), raw_query)
                 .unwrap_or_else(|e| pgrx::error!("ec_distann scan query preparation failed: {e}"));
         let code_len = quantizer::metadata_code_len(&metadata)
             .unwrap_or_else(|e| pgrx::error!("ec_distann scan code length failed: {e}"));
 
         let beam_width = options::current_beam_width();
         let hop_rounds = options::current_hop_rounds();
-        let top_k = options::current_top_k();
+        let top_k = effective_top_k;
 
         // FR-080 head-index descent: exact -ip over the sample vectors,
         // zero remote calls; the frontier seeds the hop rounds.
@@ -256,7 +295,7 @@ unsafe extern "C-unwind" fn ec_distann_amrescan(
             head_list_size,
             |node: u32| {
                 -crate::am::ec_diskann::source_inner_product(
-                    &raw_query,
+                    raw_query,
                     &entry.head_vectors[node as usize],
                 )
             },
@@ -270,7 +309,7 @@ unsafe extern "C-unwind" fn ec_distann_amrescan(
             })
             .collect();
 
-        let scan_desc = DiskannScanDescView::from_raw(scan, "ec_distann amrescan");
+        let scan_desc = DiskannScanDescView::from_raw(scan, "ec_distann scan");
         let heap_relation_state = scan_desc
             .resolve_heap_relation()
             .unwrap_or_else(|e| pgrx::error!("ec_distann scan heap relation setup failed: {e}"));
@@ -294,7 +333,7 @@ unsafe extern "C-unwind" fn ec_distann_amrescan(
             snapshot: snapshot_state.as_ptr(),
             slot: slot.as_ptr(),
             source_attnum,
-            raw_query: &raw_query,
+            raw_query,
             pooled_node: DistannNodeTuple::placeholder(metadata.graph_degree_r, code_len),
         };
         let (hits, counters) = distann_orchestrated_search(
@@ -323,7 +362,9 @@ unsafe extern "C-unwind" fn ec_distann_amrescan(
             );
         }
         opaque.result_buf = hits;
-    })
+        opaque.proven_k = top_k;
+        opaque.early_exit = counters.early_exit;
+    }
 }
 
 unsafe extern "C-unwind" fn ec_distann_amgettuple(
@@ -344,6 +385,15 @@ unsafe extern "C-unwind" fn ec_distann_amgettuple(
         let opaque = &mut *opaque_ptr;
         if !opaque.rescan_called {
             pgrx::error!("ec_distann amgettuple requires amrescan before scan execution");
+        }
+        // Iterative deepening: never serve a row past the proven prefix of
+        // an early-exited scan; re-run with a doubled exit bar instead.
+        while opaque.early_exit && opaque.result_cursor >= opaque.proven_k {
+            let deeper_k = opaque
+                .proven_k
+                .saturating_mul(2)
+                .max(opaque.result_cursor + 1);
+            execute_distann_scan(scan, opaque, deeper_k);
         }
         if opaque.result_cursor >= opaque.result_buf.len() {
             return false;

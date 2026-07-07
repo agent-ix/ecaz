@@ -131,7 +131,10 @@
       "corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
       "queries_file": "data/staged-current/ec_real_10k_queries.tsv",
       "manifest_file": "data/staged-current/ec_real_10k_manifest.json",
-      "allow_manifest_mismatch": true
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "neighbor_code_format=grouped_pq"
+      ]
     },
     {
       "kind": "recall",
@@ -506,7 +509,10 @@
       "corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
       "queries_file": "data/staged-current/ec_real_50k_queries.tsv",
       "manifest_file": "data/staged-current/ec_real_50k_manifest.json",
-      "allow_manifest_mismatch": true
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "neighbor_code_format=grouped_pq"
+      ]
     },
     {
       "kind": "recall",
@@ -810,6 +816,7 @@
       "manifest_file": "data/staged-current/ec_real_50k_manifest.json",
       "allow_manifest_mismatch": true,
       "reloptions": [
+        "neighbor_code_format=grouped_pq",
         "head_index_cap=1024"
       ]
     },
@@ -886,6 +893,7 @@
       "manifest_file": "data/staged-current/ec_real_50k_manifest.json",
       "allow_manifest_mismatch": true,
       "reloptions": [
+        "neighbor_code_format=grouped_pq",
         "head_index_cap=16384"
       ]
     },

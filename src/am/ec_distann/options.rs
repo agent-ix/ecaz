@@ -49,9 +49,11 @@ struct EcDistannReloptions {
     source_identity_offset: i32,
 }
 
-/// Neighbor-code codec selected by the `neighbor_code_format` reloption
-/// (ADR-085 D7: GroupedPq default; rabitq and turboquant are the measured
-/// M0 alternatives).
+/// Neighbor-code codec selected by the `neighbor_code_format` reloption.
+/// ADR-085 D7 said "GroupedPq default, pinned at M0"; the M0 measurement
+/// (task-162 packet 002) pinned it to RaBitQ: gpq tops out at 0.9245
+/// recall@10 at 50k where rbq reaches 0.9950, and TQ does not fit a page
+/// at the default R.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum NeighborCodeFormat {
     GroupedPq,
@@ -60,7 +62,7 @@ pub(crate) enum NeighborCodeFormat {
 }
 
 impl NeighborCodeFormat {
-    pub(super) const DEFAULT: Self = Self::GroupedPq;
+    pub(super) const DEFAULT: Self = Self::RaBitQ;
 
     pub(super) fn as_str(self) -> &'static str {
         match self {
@@ -165,7 +167,7 @@ pub(super) fn register_gucs() {
     GucRegistry::define_int_guc(
         c"ec_distann.top_k",
         c"Result-heap size k for ec_distann scans.",
-        c"Bounds the FR-081 convergence early-exit: the scan may stop once k exact results cannot be improved by the beam's best unvisited code distance. Results themselves are all expanded records, so a query LIMIT above k still gets rows; set k >= the query LIMIT for correct early-exit behavior.",
+        c"Initial FR-081 convergence early-exit bar: the scan may stop once k exact results cannot be improved by the beam's best unvisited code distance. When a consumer reads past the proven top-k prefix (e.g. a SQL LIMIT above k), the scan transparently re-runs with a doubled bar (iterative deepening), so correctness does not depend on matching this GUC to the query LIMIT; it is a performance hint.",
         &ECDISTANN_TOP_K_GUC,
         1,
         ECDISTANN_MAX_TOP_K,
@@ -367,7 +369,7 @@ mod tests {
         assert_eq!(defaults.build_list_size, 100);
         assert_eq!(defaults.head_index_cap, ECDISTANN_DEFAULT_HEAD_INDEX_CAP);
         assert_eq!(defaults.head_index_cap, 4096);
-        assert_eq!(defaults.neighbor_code_format, NeighborCodeFormat::GroupedPq);
+        assert_eq!(defaults.neighbor_code_format, NeighborCodeFormat::RaBitQ);
         assert_eq!(
             defaults.source_identity,
             DistannSourceIdentityProvider::None

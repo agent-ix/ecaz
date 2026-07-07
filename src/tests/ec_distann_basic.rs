@@ -434,14 +434,27 @@ fn test_ec_distann_ordered_scan_self_recall_rabitq() {
 }
 
 #[pg_test]
-fn test_ec_distann_ordered_scan_self_recall_grouped_pq_default() {
-    // Default codec (D7 GroupedPq): exercises codebook persistence, the
-    // codebook chain reader, and the LUT scoring path end to end.
+fn test_ec_distann_ordered_scan_self_recall_grouped_pq() {
+    // Explicit GroupedPq: exercises codebook persistence, the codebook
+    // chain reader, and the LUT scoring path end to end.
     create_distann_fixture(
         "ec_distann_scan_grouped",
-        "WITH (graph_degree = 4, build_list_size = 16)",
+        "WITH (graph_degree = 4, build_list_size = 16, \
+               neighbor_code_format = 'grouped_pq')",
     );
     assert_distann_self_queries_return_self("ec_distann_scan_grouped");
+}
+
+#[pg_test]
+fn test_ec_distann_default_codec_is_rabitq() {
+    // D7 default measured at M0 (task-162 packet 002): rabitq.
+    create_distann_fixture("ec_distann_default_codec", "");
+    let (metadata, _) = distann_materialized_index("ec_distann_default_codec_idx");
+    assert_eq!(
+        metadata.neighbor_codec_kind,
+        crate::am::ec_distann::page::DISTANN_NEIGHBOR_CODEC_RABITQ
+    );
+    assert_distann_self_queries_return_self("ec_distann_default_codec");
 }
 
 #[pg_test]
@@ -549,6 +562,51 @@ fn test_ec_distann_head_sample_is_deterministic_across_reindex() {
 }
 
 #[pg_test]
+fn test_ec_distann_limit_beyond_top_k_deepens_correctly() {
+    // F4 regression (packet 003 feedback): a LIMIT above ec_distann.top_k
+    // must return the same ordering as a scan whose exit bar covers the
+    // LIMIT — the proven-prefix guard re-runs with a deeper bar instead of
+    // serving unproven rows.
+    create_distann_fixture(
+        "ec_distann_deepening",
+        "WITH (graph_degree = 4, neighbor_code_format = 'rabitq')",
+    );
+    Spi::run("SET enable_seqscan = off").expect("disabling seqscan should succeed");
+    let ordered_ids = |top_k: i32| -> Vec<i64> {
+        Spi::run(&format!("SET ec_distann.top_k = {top_k}")).expect("GUC set should succeed");
+        Spi::get_one::<Vec<i64>>(
+            "SELECT array_agg(id) FROM (SELECT id FROM ec_distann_deepening \
+             ORDER BY embedding <#> ARRAY[1.0, 0.0, 0.0, 0.0]::real[] LIMIT 6) q",
+        )
+        .expect("SPI query should succeed")
+        .expect("ids should exist")
+    };
+    let shallow = ordered_ids(2);
+    let deep = ordered_ids(200);
+    assert_eq!(shallow.len(), 6, "LIMIT 6 must yield 6 rows even at top_k=2");
+    assert_eq!(
+        shallow, deep,
+        "deepened scan must match a scan whose exit bar covers the LIMIT"
+    );
+    Spi::run("RESET ec_distann.top_k").expect("GUC reset should succeed");
+    Spi::run("RESET enable_seqscan").expect("seqscan reset should succeed");
+}
+
+#[pg_test]
+fn test_ec_distann_head_cache_invalidates_across_reindex() {
+    // Repeated scans in one backend across a REINDEX: the fingerprint-keyed
+    // head cache must refresh (stale chain heads would break directory or
+    // head-sample reads).
+    create_distann_fixture(
+        "ec_distann_cache_reindex",
+        "WITH (graph_degree = 4, neighbor_code_format = 'rabitq')",
+    );
+    assert_distann_self_queries_return_self("ec_distann_cache_reindex");
+    Spi::run("REINDEX INDEX ec_distann_cache_reindex_idx").expect("reindex should succeed");
+    assert_distann_self_queries_return_self("ec_distann_cache_reindex");
+}
+
+#[pg_test]
 fn test_ec_distann_guc_defaults() {
     let beam_width = Spi::get_one::<String>("SHOW ec_distann.beam_width")
         .expect("SPI query should succeed")
@@ -557,7 +615,11 @@ fn test_ec_distann_guc_defaults() {
     let hop_rounds = Spi::get_one::<String>("SHOW ec_distann.hop_rounds")
         .expect("SPI query should succeed")
         .expect("GUC should exist");
-    assert_eq!(hop_rounds, "8");
+    assert_eq!(hop_rounds, "100");
+    let top_k = Spi::get_one::<String>("SHOW ec_distann.top_k")
+        .expect("SPI query should succeed")
+        .expect("GUC should exist");
+    assert_eq!(top_k, "10");
 }
 
 #[pg_test]
