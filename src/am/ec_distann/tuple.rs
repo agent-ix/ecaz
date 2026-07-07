@@ -14,9 +14,16 @@
 
 use crate::storage::page::ItemPointer;
 
-/// Record tag for distann graph-node tuples. 0x0A/0x0B are reserved for the
-/// FR-083 delta-buffer and FR-080 head-sample tuples of later slices.
+/// Record tag for distann graph-node tuples. 0x0A is reserved for the
+/// FR-083 delta-buffer tuples of a later slice.
 pub const DISTANN_NODE_TAG: u8 = 0x09;
+
+/// FR-080 persisted entry-region sample tuple (one sampled node per tuple:
+/// vec_id + full-precision vector, chained via next_tid).
+pub const DISTANN_HEAD_SAMPLE_TAG: u8 = 0x0B;
+
+/// Sorted vec_id -> record-TID directory tuple (chained via next_tid).
+pub const DISTANN_DIRECTORY_TAG: u8 = 0x0C;
 
 /// `flags` bit 0: tombstoned (deleted; retained for traversal continuity
 /// within the published epoch per ADR-085 D10, excluded from results).
@@ -227,6 +234,131 @@ impl DistannNodeTuple {
     }
 }
 
+/// One chunk of the sorted `vec_id -> record TID` directory. Entries are
+/// globally sorted by vec_id across the chain; a chunk never splits a sort
+/// run (the builder writes them in order).
+#[derive(Debug, Clone, PartialEq)]
+pub struct DistannDirectoryTuple {
+    pub next_tid: ItemPointer,
+    pub entries: Vec<(u64, ItemPointer)>,
+}
+
+/// tag(1) + reserved(1) + entry_count(2) + next_tid(6).
+pub const DISTANN_DIRECTORY_HEADER_BYTES: usize = 10;
+pub const DISTANN_DIRECTORY_ENTRY_BYTES: usize = 14;
+
+impl DistannDirectoryTuple {
+    pub const fn encoded_len(entry_count: usize) -> usize {
+        DISTANN_DIRECTORY_HEADER_BYTES + entry_count * DISTANN_DIRECTORY_ENTRY_BYTES
+    }
+
+    pub fn encode(&self) -> Result<Vec<u8>, String> {
+        let entry_count = u16::try_from(self.entries.len())
+            .map_err(|_| "distann directory chunk exceeds u16 entries".to_owned())?;
+        let mut out = Vec::with_capacity(Self::encoded_len(self.entries.len()));
+        out.push(DISTANN_DIRECTORY_TAG);
+        out.push(0);
+        out.extend_from_slice(&entry_count.to_le_bytes());
+        self.next_tid.encode_into(&mut out);
+        for (vec_id, tid) in &self.entries {
+            out.extend_from_slice(&vec_id.to_le_bytes());
+            tid.encode_into(&mut out);
+        }
+        Ok(out)
+    }
+
+    pub fn decode(input: &[u8]) -> Result<Self, String> {
+        if input.len() < DISTANN_DIRECTORY_HEADER_BYTES {
+            return Err("distann directory tuple too short".to_owned());
+        }
+        if input[0] != DISTANN_DIRECTORY_TAG {
+            return Err(format!(
+                "invalid distann directory tag: got {:#04x}, expected {DISTANN_DIRECTORY_TAG:#04x}",
+                input[0]
+            ));
+        }
+        let entry_count =
+            usize::from(u16::from_le_bytes(input[2..4].try_into().expect("count bytes")));
+        let expected = Self::encoded_len(entry_count);
+        if input.len() != expected {
+            return Err(format!(
+                "distann directory tuple length mismatch: got {}, expected {expected}",
+                input.len()
+            ));
+        }
+        let next_tid = ItemPointer::decode(&input[4..10])?;
+        let mut entries = Vec::with_capacity(entry_count);
+        for slot in 0..entry_count {
+            let base = DISTANN_DIRECTORY_HEADER_BYTES + slot * DISTANN_DIRECTORY_ENTRY_BYTES;
+            let vec_id =
+                u64::from_le_bytes(input[base..base + 8].try_into().expect("vec_id bytes"));
+            let tid = ItemPointer::decode(&input[base + 8..base + 14])?;
+            entries.push((vec_id, tid));
+        }
+        Ok(Self { next_tid, entries })
+    }
+}
+
+/// One FR-080 entry-region sample node: its vec_id and full-precision
+/// vector, from which the coordinator rebuilds the in-memory head index.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DistannHeadSampleTuple {
+    pub next_tid: ItemPointer,
+    pub vec_id: u64,
+    pub vector: Vec<f32>,
+}
+
+/// tag(1) + reserved(1) + next_tid(6) + vec_id(8).
+pub const DISTANN_HEAD_SAMPLE_HEADER_BYTES: usize = 16;
+
+impl DistannHeadSampleTuple {
+    pub const fn encoded_len(dimensions: usize) -> usize {
+        DISTANN_HEAD_SAMPLE_HEADER_BYTES + dimensions * 4
+    }
+
+    pub fn encode(&self) -> Vec<u8> {
+        let mut out = Vec::with_capacity(Self::encoded_len(self.vector.len()));
+        out.push(DISTANN_HEAD_SAMPLE_TAG);
+        out.push(0);
+        self.next_tid.encode_into(&mut out);
+        out.extend_from_slice(&self.vec_id.to_le_bytes());
+        for value in &self.vector {
+            out.extend_from_slice(&value.to_le_bytes());
+        }
+        out
+    }
+
+    pub fn decode(input: &[u8], dimensions: usize) -> Result<Self, String> {
+        let expected = Self::encoded_len(dimensions);
+        if input.len() != expected {
+            return Err(format!(
+                "distann head-sample tuple length mismatch: got {}, expected {expected}",
+                input.len()
+            ));
+        }
+        if input[0] != DISTANN_HEAD_SAMPLE_TAG {
+            return Err(format!(
+                "invalid distann head-sample tag: got {:#04x}, expected {DISTANN_HEAD_SAMPLE_TAG:#04x}",
+                input[0]
+            ));
+        }
+        let next_tid = ItemPointer::decode(&input[2..8])?;
+        let vec_id = u64::from_le_bytes(input[8..16].try_into().expect("vec_id bytes"));
+        let mut vector = Vec::with_capacity(dimensions);
+        for slot in 0..dimensions {
+            let base = DISTANN_HEAD_SAMPLE_HEADER_BYTES + slot * 4;
+            vector.push(f32::from_le_bytes(
+                input[base..base + 4].try_into().expect("vector bytes"),
+            ));
+        }
+        Ok(Self {
+            next_tid,
+            vec_id,
+            vector,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{DistannNodeTuple, DISTANN_FLAG_TOMBSTONE, DISTANN_NODE_HEADER_BYTES};
@@ -324,6 +456,46 @@ mod tests {
             search_code_ptr,
             "pooled decode should not reallocate the search-code buffer"
         );
+    }
+
+    #[test]
+    fn distann_directory_tuple_round_trips() {
+        let tuple = super::DistannDirectoryTuple {
+            next_tid: ItemPointer {
+                block_number: 9,
+                offset_number: 2,
+            },
+            entries: vec![
+                (10, ItemPointer { block_number: 1, offset_number: 1 }),
+                (20, ItemPointer { block_number: 1, offset_number: 2 }),
+                (30, ItemPointer { block_number: 2, offset_number: 1 }),
+            ],
+        };
+        let encoded = tuple.encode().expect("encode");
+        assert_eq!(
+            encoded.len(),
+            super::DistannDirectoryTuple::encoded_len(3)
+        );
+        let decoded = super::DistannDirectoryTuple::decode(&encoded).expect("decode");
+        assert_eq!(decoded, tuple);
+    }
+
+    #[test]
+    fn distann_head_sample_tuple_round_trips() {
+        let tuple = super::DistannHeadSampleTuple {
+            next_tid: ItemPointer::INVALID,
+            vec_id: 0xABCD_EF01_2345_6789,
+            vector: vec![0.25, -0.5, 1.0, 0.0],
+        };
+        let encoded = tuple.encode();
+        assert_eq!(
+            encoded.len(),
+            super::DistannHeadSampleTuple::encoded_len(4)
+        );
+        let decoded =
+            super::DistannHeadSampleTuple::decode(&encoded, 4).expect("decode");
+        assert_eq!(decoded, tuple);
+        assert!(super::DistannHeadSampleTuple::decode(&encoded, 5).is_err());
     }
 
     #[test]

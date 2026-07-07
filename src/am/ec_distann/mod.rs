@@ -18,6 +18,8 @@ mod cost;
 mod identity;
 mod options;
 pub mod page;
+pub(crate) mod quantizer;
+pub(crate) mod reader;
 mod routine;
 pub mod tuple;
 

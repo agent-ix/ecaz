@@ -401,7 +401,7 @@ fn empty_metadata(state: &BuildState) -> VamanaMetadataPage {
     )
 }
 
-pub(super) fn default_group_size(dimensions: u16) -> usize {
+pub(crate) fn default_group_size(dimensions: u16) -> usize {
     let transform_dim = crate::quant::rotation::effective_transform_dim(dimensions as usize);
     transform_dim.min(PQ_FASTSCAN_TARGET_GROUP_SIZE)
 }
@@ -793,7 +793,7 @@ fn log_ambuild_timing(
     );
 }
 
-fn source_inner_product_distance(left: &[f32], right: &[f32]) -> f32 {
+pub(crate) fn source_inner_product_distance(left: &[f32], right: &[f32]) -> f32 {
     debug_assert_eq!(left.len(), right.len());
     let ip = source_inner_product(left, right);
     let d = ECDISKANN_UNIT_NORM_DISTANCE_BIAS - ip;
@@ -1054,7 +1054,7 @@ fn write_metadata_to_buffer(
     wal_txn.finish();
 }
 
-pub(super) fn write_data_pages(handle: RelationHandle, chain: &DataPageChain) {
+pub(crate) fn write_data_pages(handle: RelationHandle, chain: &DataPageChain) {
     for staged_page in chain.pages() {
         let buffer = LockedBufferGuard::read_main_locked_handle(
             handle,

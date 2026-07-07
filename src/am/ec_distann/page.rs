@@ -17,7 +17,7 @@ pub const DISTANN_NEIGHBOR_CODEC_GROUPED_PQ: u8 = 1;
 pub const DISTANN_NEIGHBOR_CODEC_RABITQ: u8 = 2;
 pub const DISTANN_NEIGHBOR_CODEC_TURBOQUANT: u8 = 3;
 
-pub const DISTANN_METADATA_BYTES: usize = 56;
+pub const DISTANN_METADATA_BYTES: usize = 72;
 
 pub const DISTANN_METADATA_FORMAT_VERSION_OFFSET: usize = 0;
 pub const DISTANN_METADATA_ENTRY_POINT_OFFSET: usize = 2;
@@ -33,6 +33,10 @@ pub const DISTANN_METADATA_CLOSURE_EPSILON_OFFSET: usize = 32;
 pub const DISTANN_METADATA_NODE_COUNT_OFFSET: usize = 36;
 pub const DISTANN_METADATA_HEAD_SAMPLE_HEAD_OFFSET: usize = 44;
 pub const DISTANN_METADATA_DELTA_BUFFER_HEAD_OFFSET: usize = 50;
+pub const DISTANN_METADATA_CODEC_SUBVECTOR_COUNT_OFFSET: usize = 56;
+pub const DISTANN_METADATA_CODEC_SUBVECTOR_DIM_OFFSET: usize = 58;
+pub const DISTANN_METADATA_GROUPED_CODEBOOK_HEAD_OFFSET: usize = 60;
+pub const DISTANN_METADATA_DIRECTORY_HEAD_OFFSET: usize = 66;
 
 /// Fixed-size metadata record stored on block 0.
 #[derive(Debug, Clone, PartialEq)]
@@ -62,6 +66,17 @@ pub struct DistannMetadataPage {
     /// Head of the FR-083 interim delta-buffer chain; INVALID until the
     /// DML slice lands.
     pub delta_buffer_head: ItemPointer,
+    /// Codec shape parameters, mirroring the ec_diskann convention:
+    /// GroupedPq -> (group_count, group_size); RaBitQ -> (0, bits);
+    /// TurboQuant -> (0, bits).
+    pub codec_subvector_count: u16,
+    pub codec_subvector_dim: u16,
+    /// Head of the persisted GroupedPq codebook chain (INVALID for the
+    /// seeded codecs).
+    pub grouped_codebook_head: ItemPointer,
+    /// Head of the sorted vec_id -> record-TID directory chain (FR-078's
+    /// per-node resolution surface; single-node in M0).
+    pub directory_head: ItemPointer,
 }
 
 impl DistannMetadataPage {
@@ -91,6 +106,10 @@ impl DistannMetadataPage {
             node_count: 0,
             head_sample_head: ItemPointer::INVALID,
             delta_buffer_head: ItemPointer::INVALID,
+            codec_subvector_count: 0,
+            codec_subvector_dim: 0,
+            grouped_codebook_head: ItemPointer::INVALID,
+            directory_head: ItemPointer::INVALID,
         }
     }
 
@@ -110,6 +129,10 @@ impl DistannMetadataPage {
         out.extend_from_slice(&self.node_count.to_le_bytes());
         self.head_sample_head.encode_into(&mut out);
         self.delta_buffer_head.encode_into(&mut out);
+        out.extend_from_slice(&self.codec_subvector_count.to_le_bytes());
+        out.extend_from_slice(&self.codec_subvector_dim.to_le_bytes());
+        self.grouped_codebook_head.encode_into(&mut out);
+        self.directory_head.encode_into(&mut out);
         debug_assert_eq!(out.len(), DISTANN_METADATA_BYTES);
         out
     }
@@ -165,6 +188,14 @@ impl DistannMetadataPage {
             node_count: u64::from_le_bytes(input[36..44].try_into().expect("node_count bytes")),
             head_sample_head: ItemPointer::decode(&input[44..50])?,
             delta_buffer_head: ItemPointer::decode(&input[50..56])?,
+            codec_subvector_count: u16::from_le_bytes(
+                input[56..58].try_into().expect("codec_subvector_count bytes"),
+            ),
+            codec_subvector_dim: u16::from_le_bytes(
+                input[58..60].try_into().expect("codec_subvector_dim bytes"),
+            ),
+            grouped_codebook_head: ItemPointer::decode(&input[60..66])?,
+            directory_head: ItemPointer::decode(&input[66..72])?,
         })
     }
 }
@@ -193,6 +224,16 @@ mod tests {
             offset_number: 3,
         };
         metadata.node_count = 12_345;
+        metadata.codec_subvector_count = 96;
+        metadata.codec_subvector_dim = 16;
+        metadata.grouped_codebook_head = ItemPointer {
+            block_number: 42,
+            offset_number: 1,
+        };
+        metadata.directory_head = ItemPointer {
+            block_number: 43,
+            offset_number: 2,
+        };
         metadata
     }
 

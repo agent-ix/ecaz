@@ -47,7 +47,7 @@ struct EcDistannReloptions {
 /// (ADR-085 D7: GroupedPq default; rabitq and turboquant are the measured
 /// M0 alternatives).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum NeighborCodeFormat {
+pub(crate) enum NeighborCodeFormat {
     GroupedPq,
     RaBitQ,
     TurboQuant,

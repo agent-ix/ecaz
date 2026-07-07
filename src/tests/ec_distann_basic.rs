@@ -85,10 +85,19 @@ fn test_ec_distann_create_on_populated_table_records_metadata() {
         crate::am::ec_distann::page::DISTANN_NEIGHBOR_CODEC_RABITQ
     );
     assert_eq!(metadata.dimensions, 4);
-    assert_eq!(
+    assert_eq!(metadata.node_count, 3);
+    assert_ne!(
         metadata.entry_point,
         crate::storage::page::ItemPointer::INVALID,
-        "scaffold slice writes no graph yet"
+        "populated build must record the medoid entry point"
+    );
+    assert_ne!(
+        metadata.directory_head,
+        crate::storage::page::ItemPointer::INVALID
+    );
+    assert_ne!(
+        metadata.head_sample_head,
+        crate::storage::page::ItemPointer::INVALID
     );
     drop(index_relation);
 
@@ -142,6 +151,255 @@ fn test_ec_distann_rejects_out_of_range_graph_degree() {
         error.contains("out of bounds") && error.contains("graph_degree"),
         "unexpected error: {error}"
     );
+}
+
+fn distann_materialized_index(
+    index_name: &str,
+) -> (
+    crate::am::ec_distann::page::DistannMetadataPage,
+    crate::storage::page::DataPageChain,
+) {
+    let index_oid =
+        Spi::get_one::<pg_sys::Oid>(&format!("SELECT '{index_name}'::regclass::oid"))
+            .expect("SPI query should succeed")
+            .expect("index oid should exist");
+    let index_relation = IndexRelationGuard::open(
+        index_oid,
+        pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+        "ec_distann basic test",
+    );
+    let handle = std::ptr::NonNull::new(index_relation.as_ptr())
+        .expect("index relation should be non-null");
+    crate::am::ec_distann::reader::materialize_chain_from_index_handle(handle)
+        .expect("chain should materialize")
+}
+
+// Eight unit-norm fixture vectors (dim 4).
+const DISTANN_HALF_SQRT2: f32 = std::f32::consts::FRAC_1_SQRT_2;
+const DISTANN_FIXTURE_ROWS: &[[f32; 4]] = &[
+    [1.0, 0.0, 0.0, 0.0],
+    [0.0, 1.0, 0.0, 0.0],
+    [0.0, 0.0, 1.0, 0.0],
+    [0.0, 0.0, 0.0, 1.0],
+    [DISTANN_HALF_SQRT2, DISTANN_HALF_SQRT2, 0.0, 0.0],
+    [0.0, DISTANN_HALF_SQRT2, DISTANN_HALF_SQRT2, 0.0],
+    [0.0, 0.0, DISTANN_HALF_SQRT2, DISTANN_HALF_SQRT2],
+    [DISTANN_HALF_SQRT2, 0.0, 0.0, DISTANN_HALF_SQRT2],
+];
+
+fn create_distann_fixture(table: &str, with_clause: &str) {
+    Spi::run(&format!(
+        "CREATE TABLE {table} (id bigint, embedding ecvector)"
+    ))
+    .expect("table creation should succeed");
+    for (row_id, vector) in DISTANN_FIXTURE_ROWS.iter().enumerate() {
+        Spi::run(&format!(
+            "INSERT INTO {table} VALUES ({}, encode_to_ecvector(ARRAY[{}, {}, {}, {}], 4, 42))",
+            row_id + 1,
+            vector[0],
+            vector[1],
+            vector[2],
+            vector[3]
+        ))
+        .expect("fixture row should insert");
+    }
+    Spi::run(&format!(
+        "CREATE INDEX {table}_idx ON {table} \
+         USING ec_distann (embedding ecvector_distann_ip_ops) {with_clause}"
+    ))
+    .expect("index creation should succeed");
+}
+
+#[pg_test]
+fn test_ec_distann_build_persists_graph_structures() {
+    create_distann_fixture(
+        "ec_distann_build_shapes",
+        "WITH (graph_degree = 4, build_list_size = 16, head_index_cap = 16, \
+               neighbor_code_format = 'rabitq')",
+    );
+    let (metadata, chain) = distann_materialized_index("ec_distann_build_shapes_idx");
+    assert_eq!(metadata.node_count, 8);
+    let code_len = crate::am::ec_distann::quantizer::metadata_code_len(&metadata)
+        .expect("code_len should derive");
+
+    // Directory: eight strictly-ascending entries, each resolving to a
+    // node record carrying that vec_id.
+    let directory = crate::am::ec_distann::reader::read_directory_chain(
+        &chain,
+        metadata.directory_head,
+        8,
+    )
+    .expect("directory should read");
+    for (vec_id, tid) in &directory {
+        let node = crate::am::ec_distann::reader::read_node(
+            &chain,
+            *tid,
+            metadata.graph_degree_r,
+            code_len,
+        )
+        .expect("directory tid should resolve to a node record");
+        assert_eq!(node.vec_id, *vec_id);
+        assert!(node.is_live());
+    }
+
+    // Entry point decodes as a node record (the build medoid).
+    let entry = crate::am::ec_distann::reader::read_node(
+        &chain,
+        metadata.entry_point,
+        metadata.graph_degree_r,
+        code_len,
+    )
+    .expect("entry point should resolve");
+    assert!(entry.is_live());
+
+    // FR-076-AC-3 groundwork: every embedded neighbor code equals the
+    // neighbor record's own search code, so one record read scores
+    // neighbors identically to reading each neighbor.
+    let mut checked_neighbors = 0;
+    for (_, tid) in &directory {
+        let node = crate::am::ec_distann::reader::read_node(
+            &chain,
+            *tid,
+            metadata.graph_degree_r,
+            code_len,
+        )
+        .expect("node should decode");
+        for slot in 0..usize::from(node.neighbor_count) {
+            let neighbor_vec_id = node.neighbor_vec_ids[slot];
+            let neighbor_tid =
+                crate::am::ec_distann::reader::directory_lookup(&directory, neighbor_vec_id)
+                    .expect("neighbor vec_id should resolve through the directory");
+            let neighbor = crate::am::ec_distann::reader::read_node(
+                &chain,
+                neighbor_tid,
+                metadata.graph_degree_r,
+                code_len,
+            )
+            .expect("neighbor should decode");
+            assert_eq!(
+                &node.neighbor_codes[slot * code_len..(slot + 1) * code_len],
+                neighbor.search_code.as_slice(),
+                "embedded neighbor code must equal the neighbor's search code"
+            );
+            checked_neighbors += 1;
+        }
+    }
+    assert!(checked_neighbors > 0, "graph should have edges");
+
+    // FR-080: BFS head sample present, within cap, seeded at the medoid.
+    let samples = crate::am::ec_distann::reader::read_head_sample_chain(
+        &chain,
+        metadata.head_sample_head,
+        usize::from(metadata.dimensions),
+        metadata.head_index_cap as usize,
+    )
+    .expect("head sample should read");
+    assert_eq!(samples.len(), 8, "cap 16 > 8 nodes: sample covers all");
+    assert_eq!(samples[0].vec_id, entry.vec_id, "BFS starts at the medoid");
+}
+
+#[pg_test]
+fn test_ec_distann_search_codes_match_direct_codec_encoding() {
+    create_distann_fixture(
+        "ec_distann_codec_parity",
+        "WITH (graph_degree = 4, neighbor_code_format = 'rabitq')",
+    );
+    let (metadata, chain) = distann_materialized_index("ec_distann_codec_parity_idx");
+    let code_len = crate::am::ec_distann::quantizer::metadata_code_len(&metadata)
+        .expect("code_len should derive");
+
+    // heap ctid -> fixture vector, via the repo's ctid::text convention.
+    let mut tid_to_row: std::collections::HashMap<(u32, u16), usize> =
+        std::collections::HashMap::new();
+    for row_id in 1..=DISTANN_FIXTURE_ROWS.len() {
+        let ctid = Spi::get_one::<String>(&format!(
+            "SELECT ctid::text FROM ec_distann_codec_parity WHERE id = {row_id}"
+        ))
+        .expect("SPI query should succeed")
+        .expect("ctid should exist");
+        let trimmed = ctid
+            .trim()
+            .trim_start_matches('(')
+            .trim_end_matches(')')
+            .to_owned();
+        let (block, offset) = trimmed
+            .split_once(',')
+            .expect("ctid should contain block and offset");
+        tid_to_row.insert(
+            (
+                block.trim().parse::<u32>().expect("ctid block"),
+                offset.trim().parse::<u16>().expect("ctid offset"),
+            ),
+            row_id - 1,
+        );
+    }
+
+    use crate::quant::Quantizer as _;
+    let quantizer = crate::quant::rabitq::RaBitQQuantizer::cached_seeded_srht_bits(
+        usize::from(metadata.dimensions),
+        metadata.seed,
+        u8::try_from(metadata.codec_subvector_dim).expect("bits fit u8"),
+    )
+    .expect("quantizer should build");
+
+    let mut checked = 0;
+    for page in chain.pages() {
+        for raw in page.tuples() {
+            if raw.first().copied()
+                != Some(crate::am::ec_distann::tuple::DISTANN_NODE_TAG)
+            {
+                continue;
+            }
+            let node = crate::am::ec_distann::tuple::DistannNodeTuple::decode(
+                raw,
+                metadata.graph_degree_r,
+                code_len,
+            )
+            .expect("node should decode");
+            let row = tid_to_row
+                .get(&(node.heap_tid.block_number, node.heap_tid.offset_number))
+                .expect("record heap_tid should map to a fixture row");
+            let expected = quantizer
+                .encode_code(&DISTANN_FIXTURE_ROWS[*row])
+                .into_vec();
+            assert_eq!(
+                node.search_code, expected,
+                "persisted search code must equal direct codec encoding (FR-076-AC-3)"
+            );
+            checked += 1;
+        }
+    }
+    assert_eq!(checked, 8);
+}
+
+#[pg_test]
+fn test_ec_distann_rebuild_assigns_identical_vec_ids() {
+    // FR-076-AC-2: two builds of the same corpus assign identical vec_ids.
+    create_distann_fixture("ec_distann_rebuild_ids", "WITH (graph_degree = 4)");
+    let (metadata_before, chain_before) =
+        distann_materialized_index("ec_distann_rebuild_ids_idx");
+    let directory_before = crate::am::ec_distann::reader::read_directory_chain(
+        &chain_before,
+        metadata_before.directory_head,
+        8,
+    )
+    .expect("directory should read");
+
+    Spi::run("REINDEX INDEX ec_distann_rebuild_ids_idx").expect("reindex should succeed");
+
+    let (metadata_after, chain_after) =
+        distann_materialized_index("ec_distann_rebuild_ids_idx");
+    let directory_after = crate::am::ec_distann::reader::read_directory_chain(
+        &chain_after,
+        metadata_after.directory_head,
+        8,
+    )
+    .expect("directory should read after reindex");
+
+    let ids_before: Vec<u64> = directory_before.iter().map(|(id, _)| *id).collect();
+    let ids_after: Vec<u64> = directory_after.iter().map(|(id, _)| *id).collect();
+    assert_eq!(ids_before, ids_after);
+    assert_eq!(metadata_before.seed, metadata_after.seed);
 }
 
 #[pg_test]
