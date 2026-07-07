@@ -15,6 +15,7 @@ by bounded context so new work has an obvious home.
 * [`index/hnsw/`](./index/hnsw/) — `ec_hnsw` page, build, scan, insert, vacuum, and current AM surface.
 * [`index/ivf/`](./index/ivf/) — `ec_ivf` build/storage, scan/rerank/cost, insert/vacuum/admin surface.
 * [`index/diskann/`](./index/diskann/) — `ec_diskann` build/storage, scan/prefilter/rerank, insert/vacuum/diagnostic surface.
+* [`index/distann/`](./index/distann/) — `ec_distann` single global Vamana graph: record format, sharded build + stitch, hash placement, remote expansion, head index, hop-round orchestration, epoch lifecycle, DML.
 * [`operator/`](./operator/) — `ecaz` CLI, configured benchmark suites, and cloud operator surfaces.
 * [`spire/`](./spire/) — SPIRE bounded context: storage, local execution, distributed execution, operations, and archived superseded SPIRE IDs.
 

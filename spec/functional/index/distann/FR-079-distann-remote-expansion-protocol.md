@@ -1,0 +1,79 @@
+---
+id: FR-079
+title: Distann Remote Expansion Protocol
+type: FR
+status: PROPOSED
+object: api_endpoint
+relationships:
+  - target: "ix://agent-ix/ecaz/FR-076"
+    type: "depends_on"
+    cardinality: "N:1"
+  - target: "ix://agent-ix/ecaz/FR-078"
+    type: "depends_on"
+    cardinality: "N:1"
+---
+# FR-079: Distann Remote Expansion Protocol
+
+## Description
+
+Each data node SHALL expose a SQL function `ec_distann_expand_nodes` that
+expands a batch of locally-owned graph-node records in one call: it returns
+each requested node's exact query distance plus its neighbors' vec_ids with
+code-approximated distances, so the coordinator can advance one beam-search
+hop round per owned-node batch with a single statement.
+
+## Endpoint
+
+SQL function on every data node, invoked by the coordinator once per owning
+node per hop round over the pooled libpq transport:
+
+`ec_distann_expand_nodes(index_regclass regclass, epoch_fingerprint bytea,
+query <vector>, vec_ids bigint[], code_threshold real DEFAULT NULL) RETURNS
+TABLE (vec_id bigint, exact_dist real, is_tombstone bool, neighbor_vec_ids
+bigint[], neighbor_code_dists real[])`
+
+## Inputs
+
+- `index_regclass` — the local ec_distann index
+- `epoch_fingerprint` — the coordinator's active epoch identity
+- `query` — full-precision query vector
+- `vec_ids bigint[]` — locally-owned records to expand (≤ beam width)
+- `code_threshold` — optional score floor; neighbors scoring below it MAY be
+  omitted
+
+## Outputs
+
+Set of rows: `(vec_id, exact_dist, is_tombstone, neighbor_vec_ids bigint[],
+neighbor_code_dists real[])`, one row per requested vec_id.
+
+## Behavior
+
+- The function SHALL validate `epoch_fingerprint` against the node's active
+  epoch before any read and raise a retriable epoch-mismatch error on
+  disagreement ([FR-082](./FR-082-distann-epoch-lifecycle.md)).
+- Expansion SHALL perform exactly one record read per requested vec_id;
+  neighbor scoring SHALL use only the embedded neighbor codes
+  ([FR-076](./FR-076-distann-graph-node-record-format.md)).
+- If a requested vec_id is not owned by this node under the epoch's
+  placement, the function SHALL raise a placement error (never return an
+  empty result), distinguishing missing-record from tombstone
+  ([NFR-020](../../../non-functional/NFR-020-distann-fault-behavior.md)).
+- Exact distances SHALL be computed against the full-precision stored
+  vector so the coordinator needs no separate rerank round-trip.
+- The function SHALL execute over the lifted async transport (connection
+  pool, batched statements) with one call per node per hop round.
+
+## Acceptance Criteria
+
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-079-AC-1 | Response rows preserve request order and cover every requested vec_id | Test |
+| FR-079-AC-2 | Stale epoch_fingerprint yields the retriable epoch-mismatch error, never data | Test |
+| FR-079-AC-3 | Non-owned vec_id yields a placement error distinguishing missing vs tombstone | Test |
+| FR-079-AC-4 | Neighbor code distances equal direct QuantCodec scoring of the same codes | Test |
+
+## Dependencies
+
+- **Upstream**: [FR-076](./FR-076-distann-graph-node-record-format.md),
+  [FR-078](./FR-078-distann-hash-placement.md)
+- **Downstream**: [FR-081](./FR-081-distann-query-orchestration.md)
