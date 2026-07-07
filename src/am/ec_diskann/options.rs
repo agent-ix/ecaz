@@ -71,7 +71,10 @@ pub(super) enum StorageFormat {
 }
 
 impl StorageFormat {
-    pub(super) const DEFAULT: Self = Self::PqFastScan;
+    /// rabitq is the benchmarked/recommended codec (`docs/benchmarks.md`:
+    /// `ec_diskann (rabitq)`); the previous PqFastScan default predated it
+    /// and forced every deployment to opt in by reloption (Task 168).
+    pub(super) const DEFAULT: Self = Self::RaBitQ;
 
     pub(super) fn as_str(self) -> &'static str {
         match self {
@@ -429,7 +432,7 @@ mod tests {
             defaults.parallel_build_flush_rate,
             ECDISKANN_DEFAULT_PARALLEL_BUILD_FLUSH_RATE
         );
-        assert_eq!(defaults.storage_format, StorageFormat::PqFastScan);
+        assert_eq!(defaults.storage_format, StorageFormat::RaBitQ);
     }
 
     #[test]

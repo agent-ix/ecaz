@@ -2358,7 +2358,7 @@ mod tests {
         .expect("fixture rows should insert");
         Spi::run(
             "CREATE INDEX ec_diskann_prefilter_kind_override_idx ON ec_diskann_prefilter_kind_override USING ec_diskann \
-             (embedding ecvector_diskann_ip_ops)",
+             (embedding ecvector_diskann_ip_ops) WITH (storage_format = 'pq_fastscan')",
         )
         .expect("index creation should succeed");
 
