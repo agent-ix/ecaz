@@ -582,9 +582,9 @@ where
                     continue;
                 }
                 neighbor_tids.push(nbr);
+                neighbor_tuples.push(reader.read_node(nbr)?);
             }
         }
-        reader.read_nodes(&neighbor_tids, &mut neighbor_tuples)?;
         let mut neighbor_scores = vec![0.0_f32; neighbor_tuples.len()];
         prefilter.score_batch(&neighbor_tuples, &mut neighbor_scores);
         for ((nbr, nbr_tuple), score) in neighbor_tids
@@ -724,9 +724,9 @@ where
                 add_profile_elapsed(&mut frontier_profile.visited_set_us, visited_started);
                 frontier_profile.visited_set_ops += 1;
                 neighbor_tids.push(nbr);
+                neighbor_tuples.push(reader.read_node(nbr)?);
             }
         }
-        reader.read_nodes(&neighbor_tids, &mut neighbor_tuples)?;
         frontier_profile.record_flush_width(neighbor_tuples.len());
         let mut neighbor_scores = vec![0.0_f32; neighbor_tuples.len()];
         prefilter.score_batch(&neighbor_tuples, &mut neighbor_scores);
