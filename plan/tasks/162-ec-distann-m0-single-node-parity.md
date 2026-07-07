@@ -1,6 +1,9 @@
 # Task 162: ec_distann M0 — Single-Node Parity
 
 Status: proposed (2026-07-06). Depends on: Task 161 (specs merged).
+Prefer landing Task 168 (DiskANN batched-beam primitive) first and reusing its
+width-W beam shape for the FR-081 local-expansion loop, rather than forking
+`ec_diskann/scan.rs`.
 Owner: coder (to be assigned). One coder, one branch off main after 161.
 Priority: P0 — first implementation milestone; carries the program
 kill-check spike.
