@@ -1,0 +1,1802 @@
+{
+  "name": "task146-pareto-single-instance",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-146/003-single-instance-suite-config/artifacts/top-suite",
+  "defaults": {
+    "profile": "ec_spire",
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 200,
+    "iterations": 200,
+    "force_index": true,
+    "sample_backend_memory": true,
+    "memory_sample_interval_ms": 25,
+    "pg": 18
+  },
+  "thresholds": [],
+  "_doc": {
+    "intent": "Task 146 preregistered single-instance release matrix config. This is the local attribution half paired with packet 002 multinode config.",
+    "step_count": "57 = 18 load + 3 truth-cache + 18 storage + 18 spire-pipeline",
+    "validity": [
+      "source_identity=include",
+      "no closure/ratio pruning",
+      "no bound-prune candidate",
+      "no rerank-economy promotion",
+      "standard nprobe sweep 8,16,32,64,96",
+      "200 queries",
+      "query metrics and production-read profile enabled"
+    ]
+  },
+  "steps": [
+    {
+      "kind": "load",
+      "name": "load-10k-S1-n128-b0",
+      "tags": [
+        "load",
+        "task146",
+        "single-instance",
+        "10k",
+        "S1",
+        "n128",
+        "b0"
+      ],
+      "prefix": "t146_10k_s1",
+      "index_name": "t146_10k_s1_idx",
+      "dim": 1536,
+      "corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_10k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_10k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "storage_format": "rabitq",
+      "reloptions": [
+        "nlists=128",
+        "recursive_fanout=8",
+        "top_graph_enabled=1",
+        "top_graph_degree=32",
+        "top_graph_build_list_size=100",
+        "top_graph_search_list_size=96",
+        "boundary_replica_count=0",
+        "training_sample_rows=10000",
+        "source_identity=include"
+      ],
+      "log_file": "${artifact_dir}/load-10k-S1-n128-b0.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-10k-S2-n1024-b0",
+      "tags": [
+        "load",
+        "task146",
+        "single-instance",
+        "10k",
+        "S2",
+        "n1024",
+        "b0"
+      ],
+      "prefix": "t146_10k_s2",
+      "index_name": "t146_10k_s2_idx",
+      "dim": 1536,
+      "corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_10k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_10k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "storage_format": "rabitq",
+      "reloptions": [
+        "nlists=1024",
+        "recursive_fanout=8",
+        "top_graph_enabled=1",
+        "top_graph_degree=32",
+        "top_graph_build_list_size=100",
+        "top_graph_search_list_size=96",
+        "boundary_replica_count=0",
+        "training_sample_rows=10000",
+        "source_identity=include"
+      ],
+      "log_file": "${artifact_dir}/load-10k-S2-n1024-b0.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-10k-S3-n1024-b2",
+      "tags": [
+        "load",
+        "task146",
+        "single-instance",
+        "10k",
+        "S3",
+        "n1024",
+        "b2"
+      ],
+      "prefix": "t146_10k_s3",
+      "index_name": "t146_10k_s3_idx",
+      "dim": 1536,
+      "corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_10k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_10k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "storage_format": "rabitq",
+      "reloptions": [
+        "nlists=1024",
+        "recursive_fanout=8",
+        "top_graph_enabled=1",
+        "top_graph_degree=32",
+        "top_graph_build_list_size=100",
+        "top_graph_search_list_size=96",
+        "boundary_replica_count=2",
+        "training_sample_rows=10000",
+        "source_identity=include"
+      ],
+      "log_file": "${artifact_dir}/load-10k-S3-n1024-b2.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-10k-S4-leaf-only",
+      "tags": [
+        "load",
+        "task146",
+        "single-instance",
+        "10k",
+        "S4",
+        "n1024",
+        "b0"
+      ],
+      "prefix": "t146_10k_s4",
+      "index_name": "t146_10k_s4_idx",
+      "dim": 1536,
+      "corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_10k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_10k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "storage_format": "rabitq",
+      "reloptions": [
+        "nlists=1024",
+        "recursive_fanout=8",
+        "top_graph_enabled=1",
+        "top_graph_degree=32",
+        "top_graph_build_list_size=100",
+        "top_graph_search_list_size=96",
+        "boundary_replica_count=0",
+        "training_sample_rows=10000",
+        "source_identity=include"
+      ],
+      "log_file": "${artifact_dir}/load-10k-S4-leaf-only.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-10k-S5-leaf-overfetch",
+      "tags": [
+        "load",
+        "task146",
+        "single-instance",
+        "10k",
+        "S5",
+        "n1024",
+        "b0"
+      ],
+      "prefix": "t146_10k_s5",
+      "index_name": "t146_10k_s5_idx",
+      "dim": 1536,
+      "corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_10k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_10k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "storage_format": "rabitq",
+      "reloptions": [
+        "nlists=1024",
+        "recursive_fanout=8",
+        "top_graph_enabled=1",
+        "top_graph_degree=32",
+        "top_graph_build_list_size=100",
+        "top_graph_search_list_size=96",
+        "boundary_replica_count=0",
+        "training_sample_rows=10000",
+        "source_identity=include"
+      ],
+      "log_file": "${artifact_dir}/load-10k-S5-leaf-overfetch.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-10k-S6-router-saturation",
+      "tags": [
+        "load",
+        "task146",
+        "single-instance",
+        "10k",
+        "S6",
+        "n1024",
+        "b0"
+      ],
+      "prefix": "t146_10k_s6",
+      "index_name": "t146_10k_s6_idx",
+      "dim": 1536,
+      "corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_10k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_10k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "storage_format": "rabitq",
+      "reloptions": [
+        "nlists=1024",
+        "recursive_fanout=8",
+        "top_graph_enabled=1",
+        "top_graph_degree=32",
+        "top_graph_build_list_size=100",
+        "top_graph_search_list_size=200",
+        "boundary_replica_count=0",
+        "training_sample_rows=10000",
+        "source_identity=include"
+      ],
+      "log_file": "${artifact_dir}/load-10k-S6-router-saturation.log"
+    },
+    {
+      "kind": "recall",
+      "name": "truth-cache-10k-k10",
+      "tags": [
+        "truth-cache",
+        "recall",
+        "task146",
+        "single-instance",
+        "10k"
+      ],
+      "prefix": "t146_10k_s1",
+      "k": 10,
+      "sweep": [
+        8
+      ],
+      "queries_limit": 200,
+      "truth_corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-10k-k10.json",
+      "log_output": "${artifact_dir}/truth-cache-10k-k10.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-10k-S1-n128-b0",
+      "tags": [
+        "storage",
+        "task146",
+        "single-instance",
+        "10k",
+        "S1",
+        "n128",
+        "b0"
+      ],
+      "prefix": "t146_10k_s1",
+      "log_file": "${artifact_dir}/storage-10k-S1-n128-b0.log"
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-10k-S1-n128-b0",
+      "tags": [
+        "pipeline",
+        "task146",
+        "single-instance",
+        "10k",
+        "S1",
+        "n128",
+        "b0"
+      ],
+      "prefix": "t146_10k_s1",
+      "index": "t146_10k_s1_idx",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "queries_limit": 200,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-10k-k10.json",
+      "query_metric_projection_columns": [
+        "id",
+        "source"
+      ],
+      "session_gucs": [
+        "ec_spire.leaf_score_only_routing=off",
+        "ec_spire.route_overfetch_multiplier=1.0",
+        "ec_spire.probe_distance_ratio=0",
+        "ec_spire.rerank_width=50",
+        "ec_spire.max_candidate_rows=100",
+        "ec_spire.pre_materialization_prune=off",
+        "ec_spire.leaf_block_pruning_max_blocks_per_leaf=0",
+        "ec_spire.leaf_block_pruning_max_global_blocks=0"
+      ],
+      "log_output": "${artifact_dir}/pipeline-10k-S1-n128-b0.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-10k-S1-n128-b0.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-10k-S1-n128-b0.jsonl"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-10k-S2-n1024-b0",
+      "tags": [
+        "storage",
+        "task146",
+        "single-instance",
+        "10k",
+        "S2",
+        "n1024",
+        "b0"
+      ],
+      "prefix": "t146_10k_s2",
+      "log_file": "${artifact_dir}/storage-10k-S2-n1024-b0.log"
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-10k-S2-n1024-b0",
+      "tags": [
+        "pipeline",
+        "task146",
+        "single-instance",
+        "10k",
+        "S2",
+        "n1024",
+        "b0"
+      ],
+      "prefix": "t146_10k_s2",
+      "index": "t146_10k_s2_idx",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "queries_limit": 200,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-10k-k10.json",
+      "query_metric_projection_columns": [
+        "id",
+        "source"
+      ],
+      "session_gucs": [
+        "ec_spire.leaf_score_only_routing=off",
+        "ec_spire.route_overfetch_multiplier=1.0",
+        "ec_spire.probe_distance_ratio=0",
+        "ec_spire.rerank_width=50",
+        "ec_spire.max_candidate_rows=100",
+        "ec_spire.pre_materialization_prune=off",
+        "ec_spire.leaf_block_pruning_max_blocks_per_leaf=0",
+        "ec_spire.leaf_block_pruning_max_global_blocks=0"
+      ],
+      "log_output": "${artifact_dir}/pipeline-10k-S2-n1024-b0.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-10k-S2-n1024-b0.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-10k-S2-n1024-b0.jsonl"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-10k-S3-n1024-b2",
+      "tags": [
+        "storage",
+        "task146",
+        "single-instance",
+        "10k",
+        "S3",
+        "n1024",
+        "b2"
+      ],
+      "prefix": "t146_10k_s3",
+      "log_file": "${artifact_dir}/storage-10k-S3-n1024-b2.log"
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-10k-S3-n1024-b2",
+      "tags": [
+        "pipeline",
+        "task146",
+        "single-instance",
+        "10k",
+        "S3",
+        "n1024",
+        "b2"
+      ],
+      "prefix": "t146_10k_s3",
+      "index": "t146_10k_s3_idx",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "queries_limit": 200,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-10k-k10.json",
+      "query_metric_projection_columns": [
+        "id",
+        "source"
+      ],
+      "session_gucs": [
+        "ec_spire.leaf_score_only_routing=off",
+        "ec_spire.route_overfetch_multiplier=1.0",
+        "ec_spire.probe_distance_ratio=0",
+        "ec_spire.rerank_width=50",
+        "ec_spire.max_candidate_rows=100",
+        "ec_spire.pre_materialization_prune=off",
+        "ec_spire.leaf_block_pruning_max_blocks_per_leaf=0",
+        "ec_spire.leaf_block_pruning_max_global_blocks=0"
+      ],
+      "log_output": "${artifact_dir}/pipeline-10k-S3-n1024-b2.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-10k-S3-n1024-b2.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-10k-S3-n1024-b2.jsonl"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-10k-S4-leaf-only",
+      "tags": [
+        "storage",
+        "task146",
+        "single-instance",
+        "10k",
+        "S4",
+        "n1024",
+        "b0"
+      ],
+      "prefix": "t146_10k_s4",
+      "log_file": "${artifact_dir}/storage-10k-S4-leaf-only.log"
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-10k-S4-leaf-only",
+      "tags": [
+        "pipeline",
+        "task146",
+        "single-instance",
+        "10k",
+        "S4",
+        "n1024",
+        "b0"
+      ],
+      "prefix": "t146_10k_s4",
+      "index": "t146_10k_s4_idx",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "queries_limit": 200,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-10k-k10.json",
+      "query_metric_projection_columns": [
+        "id",
+        "source"
+      ],
+      "session_gucs": [
+        "ec_spire.leaf_score_only_routing=on",
+        "ec_spire.route_overfetch_multiplier=1.0",
+        "ec_spire.probe_distance_ratio=0",
+        "ec_spire.rerank_width=50",
+        "ec_spire.max_candidate_rows=100",
+        "ec_spire.pre_materialization_prune=off",
+        "ec_spire.leaf_block_pruning_max_blocks_per_leaf=0",
+        "ec_spire.leaf_block_pruning_max_global_blocks=0"
+      ],
+      "log_output": "${artifact_dir}/pipeline-10k-S4-leaf-only.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-10k-S4-leaf-only.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-10k-S4-leaf-only.jsonl"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-10k-S5-leaf-overfetch",
+      "tags": [
+        "storage",
+        "task146",
+        "single-instance",
+        "10k",
+        "S5",
+        "n1024",
+        "b0"
+      ],
+      "prefix": "t146_10k_s5",
+      "log_file": "${artifact_dir}/storage-10k-S5-leaf-overfetch.log"
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-10k-S5-leaf-overfetch",
+      "tags": [
+        "pipeline",
+        "task146",
+        "single-instance",
+        "10k",
+        "S5",
+        "n1024",
+        "b0"
+      ],
+      "prefix": "t146_10k_s5",
+      "index": "t146_10k_s5_idx",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "queries_limit": 200,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-10k-k10.json",
+      "query_metric_projection_columns": [
+        "id",
+        "source"
+      ],
+      "session_gucs": [
+        "ec_spire.leaf_score_only_routing=on",
+        "ec_spire.route_overfetch_multiplier=2.0",
+        "ec_spire.probe_distance_ratio=0",
+        "ec_spire.rerank_width=50",
+        "ec_spire.max_candidate_rows=100",
+        "ec_spire.pre_materialization_prune=off",
+        "ec_spire.leaf_block_pruning_max_blocks_per_leaf=0",
+        "ec_spire.leaf_block_pruning_max_global_blocks=0"
+      ],
+      "log_output": "${artifact_dir}/pipeline-10k-S5-leaf-overfetch.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-10k-S5-leaf-overfetch.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-10k-S5-leaf-overfetch.jsonl"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-10k-S6-router-saturation",
+      "tags": [
+        "storage",
+        "task146",
+        "single-instance",
+        "10k",
+        "S6",
+        "n1024",
+        "b0"
+      ],
+      "prefix": "t146_10k_s6",
+      "log_file": "${artifact_dir}/storage-10k-S6-router-saturation.log"
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-10k-S6-router-saturation",
+      "tags": [
+        "pipeline",
+        "task146",
+        "single-instance",
+        "10k",
+        "S6",
+        "n1024",
+        "b0"
+      ],
+      "prefix": "t146_10k_s6",
+      "index": "t146_10k_s6_idx",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "queries_limit": 200,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-10k-k10.json",
+      "query_metric_projection_columns": [
+        "id",
+        "source"
+      ],
+      "session_gucs": [
+        "ec_spire.leaf_score_only_routing=on",
+        "ec_spire.route_overfetch_multiplier=1.0",
+        "ec_spire.probe_distance_ratio=0",
+        "ec_spire.rerank_width=50",
+        "ec_spire.max_candidate_rows=100",
+        "ec_spire.pre_materialization_prune=off",
+        "ec_spire.leaf_block_pruning_max_blocks_per_leaf=0",
+        "ec_spire.leaf_block_pruning_max_global_blocks=0"
+      ],
+      "log_output": "${artifact_dir}/pipeline-10k-S6-router-saturation.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-10k-S6-router-saturation.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-10k-S6-router-saturation.jsonl"
+    },
+    {
+      "kind": "load",
+      "name": "load-50k-S1-n128-b0",
+      "tags": [
+        "load",
+        "task146",
+        "single-instance",
+        "50k",
+        "S1",
+        "n128",
+        "b0"
+      ],
+      "prefix": "t146_50k_s1",
+      "index_name": "t146_50k_s1_idx",
+      "dim": 1536,
+      "corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_50k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "storage_format": "rabitq",
+      "reloptions": [
+        "nlists=128",
+        "recursive_fanout=8",
+        "top_graph_enabled=1",
+        "top_graph_degree=32",
+        "top_graph_build_list_size=100",
+        "top_graph_search_list_size=96",
+        "boundary_replica_count=0",
+        "training_sample_rows=50000",
+        "source_identity=include"
+      ],
+      "log_file": "${artifact_dir}/load-50k-S1-n128-b0.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-50k-S2-n1024-b0",
+      "tags": [
+        "load",
+        "task146",
+        "single-instance",
+        "50k",
+        "S2",
+        "n1024",
+        "b0"
+      ],
+      "prefix": "t146_50k_s2",
+      "index_name": "t146_50k_s2_idx",
+      "dim": 1536,
+      "corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_50k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "storage_format": "rabitq",
+      "reloptions": [
+        "nlists=1024",
+        "recursive_fanout=8",
+        "top_graph_enabled=1",
+        "top_graph_degree=32",
+        "top_graph_build_list_size=100",
+        "top_graph_search_list_size=96",
+        "boundary_replica_count=0",
+        "training_sample_rows=50000",
+        "source_identity=include"
+      ],
+      "log_file": "${artifact_dir}/load-50k-S2-n1024-b0.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-50k-S3-n1024-b2",
+      "tags": [
+        "load",
+        "task146",
+        "single-instance",
+        "50k",
+        "S3",
+        "n1024",
+        "b2"
+      ],
+      "prefix": "t146_50k_s3",
+      "index_name": "t146_50k_s3_idx",
+      "dim": 1536,
+      "corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_50k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "storage_format": "rabitq",
+      "reloptions": [
+        "nlists=1024",
+        "recursive_fanout=8",
+        "top_graph_enabled=1",
+        "top_graph_degree=32",
+        "top_graph_build_list_size=100",
+        "top_graph_search_list_size=96",
+        "boundary_replica_count=2",
+        "training_sample_rows=50000",
+        "source_identity=include"
+      ],
+      "log_file": "${artifact_dir}/load-50k-S3-n1024-b2.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-50k-S4-leaf-only",
+      "tags": [
+        "load",
+        "task146",
+        "single-instance",
+        "50k",
+        "S4",
+        "n1024",
+        "b0"
+      ],
+      "prefix": "t146_50k_s4",
+      "index_name": "t146_50k_s4_idx",
+      "dim": 1536,
+      "corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_50k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "storage_format": "rabitq",
+      "reloptions": [
+        "nlists=1024",
+        "recursive_fanout=8",
+        "top_graph_enabled=1",
+        "top_graph_degree=32",
+        "top_graph_build_list_size=100",
+        "top_graph_search_list_size=96",
+        "boundary_replica_count=0",
+        "training_sample_rows=50000",
+        "source_identity=include"
+      ],
+      "log_file": "${artifact_dir}/load-50k-S4-leaf-only.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-50k-S5-leaf-overfetch",
+      "tags": [
+        "load",
+        "task146",
+        "single-instance",
+        "50k",
+        "S5",
+        "n1024",
+        "b0"
+      ],
+      "prefix": "t146_50k_s5",
+      "index_name": "t146_50k_s5_idx",
+      "dim": 1536,
+      "corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_50k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "storage_format": "rabitq",
+      "reloptions": [
+        "nlists=1024",
+        "recursive_fanout=8",
+        "top_graph_enabled=1",
+        "top_graph_degree=32",
+        "top_graph_build_list_size=100",
+        "top_graph_search_list_size=96",
+        "boundary_replica_count=0",
+        "training_sample_rows=50000",
+        "source_identity=include"
+      ],
+      "log_file": "${artifact_dir}/load-50k-S5-leaf-overfetch.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-50k-S6-router-saturation",
+      "tags": [
+        "load",
+        "task146",
+        "single-instance",
+        "50k",
+        "S6",
+        "n1024",
+        "b0"
+      ],
+      "prefix": "t146_50k_s6",
+      "index_name": "t146_50k_s6_idx",
+      "dim": 1536,
+      "corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_50k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "storage_format": "rabitq",
+      "reloptions": [
+        "nlists=1024",
+        "recursive_fanout=8",
+        "top_graph_enabled=1",
+        "top_graph_degree=32",
+        "top_graph_build_list_size=100",
+        "top_graph_search_list_size=200",
+        "boundary_replica_count=0",
+        "training_sample_rows=50000",
+        "source_identity=include"
+      ],
+      "log_file": "${artifact_dir}/load-50k-S6-router-saturation.log"
+    },
+    {
+      "kind": "recall",
+      "name": "truth-cache-50k-k10",
+      "tags": [
+        "truth-cache",
+        "recall",
+        "task146",
+        "single-instance",
+        "50k"
+      ],
+      "prefix": "t146_50k_s1",
+      "k": 10,
+      "sweep": [
+        8
+      ],
+      "queries_limit": 200,
+      "truth_corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-50k-k10.json",
+      "log_output": "${artifact_dir}/truth-cache-50k-k10.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-50k-S1-n128-b0",
+      "tags": [
+        "storage",
+        "task146",
+        "single-instance",
+        "50k",
+        "S1",
+        "n128",
+        "b0"
+      ],
+      "prefix": "t146_50k_s1",
+      "log_file": "${artifact_dir}/storage-50k-S1-n128-b0.log"
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-50k-S1-n128-b0",
+      "tags": [
+        "pipeline",
+        "task146",
+        "single-instance",
+        "50k",
+        "S1",
+        "n128",
+        "b0"
+      ],
+      "prefix": "t146_50k_s1",
+      "index": "t146_50k_s1_idx",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "queries_limit": 200,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-50k-k10.json",
+      "query_metric_projection_columns": [
+        "id",
+        "source"
+      ],
+      "session_gucs": [
+        "ec_spire.leaf_score_only_routing=off",
+        "ec_spire.route_overfetch_multiplier=1.0",
+        "ec_spire.probe_distance_ratio=0",
+        "ec_spire.rerank_width=50",
+        "ec_spire.max_candidate_rows=100",
+        "ec_spire.pre_materialization_prune=off",
+        "ec_spire.leaf_block_pruning_max_blocks_per_leaf=0",
+        "ec_spire.leaf_block_pruning_max_global_blocks=0"
+      ],
+      "log_output": "${artifact_dir}/pipeline-50k-S1-n128-b0.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-50k-S1-n128-b0.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-50k-S1-n128-b0.jsonl"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-50k-S2-n1024-b0",
+      "tags": [
+        "storage",
+        "task146",
+        "single-instance",
+        "50k",
+        "S2",
+        "n1024",
+        "b0"
+      ],
+      "prefix": "t146_50k_s2",
+      "log_file": "${artifact_dir}/storage-50k-S2-n1024-b0.log"
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-50k-S2-n1024-b0",
+      "tags": [
+        "pipeline",
+        "task146",
+        "single-instance",
+        "50k",
+        "S2",
+        "n1024",
+        "b0"
+      ],
+      "prefix": "t146_50k_s2",
+      "index": "t146_50k_s2_idx",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "queries_limit": 200,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-50k-k10.json",
+      "query_metric_projection_columns": [
+        "id",
+        "source"
+      ],
+      "session_gucs": [
+        "ec_spire.leaf_score_only_routing=off",
+        "ec_spire.route_overfetch_multiplier=1.0",
+        "ec_spire.probe_distance_ratio=0",
+        "ec_spire.rerank_width=50",
+        "ec_spire.max_candidate_rows=100",
+        "ec_spire.pre_materialization_prune=off",
+        "ec_spire.leaf_block_pruning_max_blocks_per_leaf=0",
+        "ec_spire.leaf_block_pruning_max_global_blocks=0"
+      ],
+      "log_output": "${artifact_dir}/pipeline-50k-S2-n1024-b0.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-50k-S2-n1024-b0.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-50k-S2-n1024-b0.jsonl"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-50k-S3-n1024-b2",
+      "tags": [
+        "storage",
+        "task146",
+        "single-instance",
+        "50k",
+        "S3",
+        "n1024",
+        "b2"
+      ],
+      "prefix": "t146_50k_s3",
+      "log_file": "${artifact_dir}/storage-50k-S3-n1024-b2.log"
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-50k-S3-n1024-b2",
+      "tags": [
+        "pipeline",
+        "task146",
+        "single-instance",
+        "50k",
+        "S3",
+        "n1024",
+        "b2"
+      ],
+      "prefix": "t146_50k_s3",
+      "index": "t146_50k_s3_idx",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "queries_limit": 200,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-50k-k10.json",
+      "query_metric_projection_columns": [
+        "id",
+        "source"
+      ],
+      "session_gucs": [
+        "ec_spire.leaf_score_only_routing=off",
+        "ec_spire.route_overfetch_multiplier=1.0",
+        "ec_spire.probe_distance_ratio=0",
+        "ec_spire.rerank_width=50",
+        "ec_spire.max_candidate_rows=100",
+        "ec_spire.pre_materialization_prune=off",
+        "ec_spire.leaf_block_pruning_max_blocks_per_leaf=0",
+        "ec_spire.leaf_block_pruning_max_global_blocks=0"
+      ],
+      "log_output": "${artifact_dir}/pipeline-50k-S3-n1024-b2.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-50k-S3-n1024-b2.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-50k-S3-n1024-b2.jsonl"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-50k-S4-leaf-only",
+      "tags": [
+        "storage",
+        "task146",
+        "single-instance",
+        "50k",
+        "S4",
+        "n1024",
+        "b0"
+      ],
+      "prefix": "t146_50k_s4",
+      "log_file": "${artifact_dir}/storage-50k-S4-leaf-only.log"
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-50k-S4-leaf-only",
+      "tags": [
+        "pipeline",
+        "task146",
+        "single-instance",
+        "50k",
+        "S4",
+        "n1024",
+        "b0"
+      ],
+      "prefix": "t146_50k_s4",
+      "index": "t146_50k_s4_idx",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "queries_limit": 200,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-50k-k10.json",
+      "query_metric_projection_columns": [
+        "id",
+        "source"
+      ],
+      "session_gucs": [
+        "ec_spire.leaf_score_only_routing=on",
+        "ec_spire.route_overfetch_multiplier=1.0",
+        "ec_spire.probe_distance_ratio=0",
+        "ec_spire.rerank_width=50",
+        "ec_spire.max_candidate_rows=100",
+        "ec_spire.pre_materialization_prune=off",
+        "ec_spire.leaf_block_pruning_max_blocks_per_leaf=0",
+        "ec_spire.leaf_block_pruning_max_global_blocks=0"
+      ],
+      "log_output": "${artifact_dir}/pipeline-50k-S4-leaf-only.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-50k-S4-leaf-only.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-50k-S4-leaf-only.jsonl"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-50k-S5-leaf-overfetch",
+      "tags": [
+        "storage",
+        "task146",
+        "single-instance",
+        "50k",
+        "S5",
+        "n1024",
+        "b0"
+      ],
+      "prefix": "t146_50k_s5",
+      "log_file": "${artifact_dir}/storage-50k-S5-leaf-overfetch.log"
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-50k-S5-leaf-overfetch",
+      "tags": [
+        "pipeline",
+        "task146",
+        "single-instance",
+        "50k",
+        "S5",
+        "n1024",
+        "b0"
+      ],
+      "prefix": "t146_50k_s5",
+      "index": "t146_50k_s5_idx",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "queries_limit": 200,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-50k-k10.json",
+      "query_metric_projection_columns": [
+        "id",
+        "source"
+      ],
+      "session_gucs": [
+        "ec_spire.leaf_score_only_routing=on",
+        "ec_spire.route_overfetch_multiplier=2.0",
+        "ec_spire.probe_distance_ratio=0",
+        "ec_spire.rerank_width=50",
+        "ec_spire.max_candidate_rows=100",
+        "ec_spire.pre_materialization_prune=off",
+        "ec_spire.leaf_block_pruning_max_blocks_per_leaf=0",
+        "ec_spire.leaf_block_pruning_max_global_blocks=0"
+      ],
+      "log_output": "${artifact_dir}/pipeline-50k-S5-leaf-overfetch.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-50k-S5-leaf-overfetch.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-50k-S5-leaf-overfetch.jsonl"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-50k-S6-router-saturation",
+      "tags": [
+        "storage",
+        "task146",
+        "single-instance",
+        "50k",
+        "S6",
+        "n1024",
+        "b0"
+      ],
+      "prefix": "t146_50k_s6",
+      "log_file": "${artifact_dir}/storage-50k-S6-router-saturation.log"
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-50k-S6-router-saturation",
+      "tags": [
+        "pipeline",
+        "task146",
+        "single-instance",
+        "50k",
+        "S6",
+        "n1024",
+        "b0"
+      ],
+      "prefix": "t146_50k_s6",
+      "index": "t146_50k_s6_idx",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "queries_limit": 200,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-50k-k10.json",
+      "query_metric_projection_columns": [
+        "id",
+        "source"
+      ],
+      "session_gucs": [
+        "ec_spire.leaf_score_only_routing=on",
+        "ec_spire.route_overfetch_multiplier=1.0",
+        "ec_spire.probe_distance_ratio=0",
+        "ec_spire.rerank_width=50",
+        "ec_spire.max_candidate_rows=100",
+        "ec_spire.pre_materialization_prune=off",
+        "ec_spire.leaf_block_pruning_max_blocks_per_leaf=0",
+        "ec_spire.leaf_block_pruning_max_global_blocks=0"
+      ],
+      "log_output": "${artifact_dir}/pipeline-50k-S6-router-saturation.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-50k-S6-router-saturation.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-50k-S6-router-saturation.jsonl"
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-S1-n128-b0",
+      "tags": [
+        "load",
+        "task146",
+        "single-instance",
+        "100k",
+        "S1",
+        "n128",
+        "b0"
+      ],
+      "prefix": "t146_100k_s1",
+      "index_name": "t146_100k_s1_idx",
+      "dim": 1536,
+      "corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_100k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "storage_format": "rabitq",
+      "reloptions": [
+        "nlists=128",
+        "recursive_fanout=8",
+        "top_graph_enabled=1",
+        "top_graph_degree=32",
+        "top_graph_build_list_size=100",
+        "top_graph_search_list_size=96",
+        "boundary_replica_count=0",
+        "training_sample_rows=100000",
+        "source_identity=include"
+      ],
+      "log_file": "${artifact_dir}/load-100k-S1-n128-b0.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-S2-n1024-b0",
+      "tags": [
+        "load",
+        "task146",
+        "single-instance",
+        "100k",
+        "S2",
+        "n1024",
+        "b0"
+      ],
+      "prefix": "t146_100k_s2",
+      "index_name": "t146_100k_s2_idx",
+      "dim": 1536,
+      "corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_100k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "storage_format": "rabitq",
+      "reloptions": [
+        "nlists=1024",
+        "recursive_fanout=8",
+        "top_graph_enabled=1",
+        "top_graph_degree=32",
+        "top_graph_build_list_size=100",
+        "top_graph_search_list_size=96",
+        "boundary_replica_count=0",
+        "training_sample_rows=100000",
+        "source_identity=include"
+      ],
+      "log_file": "${artifact_dir}/load-100k-S2-n1024-b0.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-S3-n1024-b2",
+      "tags": [
+        "load",
+        "task146",
+        "single-instance",
+        "100k",
+        "S3",
+        "n1024",
+        "b2"
+      ],
+      "prefix": "t146_100k_s3",
+      "index_name": "t146_100k_s3_idx",
+      "dim": 1536,
+      "corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_100k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "storage_format": "rabitq",
+      "reloptions": [
+        "nlists=1024",
+        "recursive_fanout=8",
+        "top_graph_enabled=1",
+        "top_graph_degree=32",
+        "top_graph_build_list_size=100",
+        "top_graph_search_list_size=96",
+        "boundary_replica_count=2",
+        "training_sample_rows=100000",
+        "source_identity=include"
+      ],
+      "log_file": "${artifact_dir}/load-100k-S3-n1024-b2.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-S4-leaf-only",
+      "tags": [
+        "load",
+        "task146",
+        "single-instance",
+        "100k",
+        "S4",
+        "n1024",
+        "b0"
+      ],
+      "prefix": "t146_100k_s4",
+      "index_name": "t146_100k_s4_idx",
+      "dim": 1536,
+      "corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_100k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "storage_format": "rabitq",
+      "reloptions": [
+        "nlists=1024",
+        "recursive_fanout=8",
+        "top_graph_enabled=1",
+        "top_graph_degree=32",
+        "top_graph_build_list_size=100",
+        "top_graph_search_list_size=96",
+        "boundary_replica_count=0",
+        "training_sample_rows=100000",
+        "source_identity=include"
+      ],
+      "log_file": "${artifact_dir}/load-100k-S4-leaf-only.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-S5-leaf-overfetch",
+      "tags": [
+        "load",
+        "task146",
+        "single-instance",
+        "100k",
+        "S5",
+        "n1024",
+        "b0"
+      ],
+      "prefix": "t146_100k_s5",
+      "index_name": "t146_100k_s5_idx",
+      "dim": 1536,
+      "corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_100k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "storage_format": "rabitq",
+      "reloptions": [
+        "nlists=1024",
+        "recursive_fanout=8",
+        "top_graph_enabled=1",
+        "top_graph_degree=32",
+        "top_graph_build_list_size=100",
+        "top_graph_search_list_size=96",
+        "boundary_replica_count=0",
+        "training_sample_rows=100000",
+        "source_identity=include"
+      ],
+      "log_file": "${artifact_dir}/load-100k-S5-leaf-overfetch.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-S6-router-saturation",
+      "tags": [
+        "load",
+        "task146",
+        "single-instance",
+        "100k",
+        "S6",
+        "n1024",
+        "b0"
+      ],
+      "prefix": "t146_100k_s6",
+      "index_name": "t146_100k_s6_idx",
+      "dim": 1536,
+      "corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_100k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "storage_format": "rabitq",
+      "reloptions": [
+        "nlists=1024",
+        "recursive_fanout=8",
+        "top_graph_enabled=1",
+        "top_graph_degree=32",
+        "top_graph_build_list_size=100",
+        "top_graph_search_list_size=200",
+        "boundary_replica_count=0",
+        "training_sample_rows=100000",
+        "source_identity=include"
+      ],
+      "log_file": "${artifact_dir}/load-100k-S6-router-saturation.log"
+    },
+    {
+      "kind": "recall",
+      "name": "truth-cache-100k-k10",
+      "tags": [
+        "truth-cache",
+        "recall",
+        "task146",
+        "single-instance",
+        "100k"
+      ],
+      "prefix": "t146_100k_s1",
+      "k": 10,
+      "sweep": [
+        8
+      ],
+      "queries_limit": 200,
+      "truth_corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-100k-k10.json",
+      "log_output": "${artifact_dir}/truth-cache-100k-k10.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k-S1-n128-b0",
+      "tags": [
+        "storage",
+        "task146",
+        "single-instance",
+        "100k",
+        "S1",
+        "n128",
+        "b0"
+      ],
+      "prefix": "t146_100k_s1",
+      "log_file": "${artifact_dir}/storage-100k-S1-n128-b0.log"
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-100k-S1-n128-b0",
+      "tags": [
+        "pipeline",
+        "task146",
+        "single-instance",
+        "100k",
+        "S1",
+        "n128",
+        "b0"
+      ],
+      "prefix": "t146_100k_s1",
+      "index": "t146_100k_s1_idx",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "queries_limit": 200,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-100k-k10.json",
+      "query_metric_projection_columns": [
+        "id",
+        "source"
+      ],
+      "session_gucs": [
+        "ec_spire.leaf_score_only_routing=off",
+        "ec_spire.route_overfetch_multiplier=1.0",
+        "ec_spire.probe_distance_ratio=0",
+        "ec_spire.rerank_width=50",
+        "ec_spire.max_candidate_rows=100",
+        "ec_spire.pre_materialization_prune=off",
+        "ec_spire.leaf_block_pruning_max_blocks_per_leaf=0",
+        "ec_spire.leaf_block_pruning_max_global_blocks=0"
+      ],
+      "log_output": "${artifact_dir}/pipeline-100k-S1-n128-b0.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-100k-S1-n128-b0.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-100k-S1-n128-b0.jsonl"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k-S2-n1024-b0",
+      "tags": [
+        "storage",
+        "task146",
+        "single-instance",
+        "100k",
+        "S2",
+        "n1024",
+        "b0"
+      ],
+      "prefix": "t146_100k_s2",
+      "log_file": "${artifact_dir}/storage-100k-S2-n1024-b0.log"
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-100k-S2-n1024-b0",
+      "tags": [
+        "pipeline",
+        "task146",
+        "single-instance",
+        "100k",
+        "S2",
+        "n1024",
+        "b0"
+      ],
+      "prefix": "t146_100k_s2",
+      "index": "t146_100k_s2_idx",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "queries_limit": 200,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-100k-k10.json",
+      "query_metric_projection_columns": [
+        "id",
+        "source"
+      ],
+      "session_gucs": [
+        "ec_spire.leaf_score_only_routing=off",
+        "ec_spire.route_overfetch_multiplier=1.0",
+        "ec_spire.probe_distance_ratio=0",
+        "ec_spire.rerank_width=50",
+        "ec_spire.max_candidate_rows=100",
+        "ec_spire.pre_materialization_prune=off",
+        "ec_spire.leaf_block_pruning_max_blocks_per_leaf=0",
+        "ec_spire.leaf_block_pruning_max_global_blocks=0"
+      ],
+      "log_output": "${artifact_dir}/pipeline-100k-S2-n1024-b0.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-100k-S2-n1024-b0.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-100k-S2-n1024-b0.jsonl"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k-S3-n1024-b2",
+      "tags": [
+        "storage",
+        "task146",
+        "single-instance",
+        "100k",
+        "S3",
+        "n1024",
+        "b2"
+      ],
+      "prefix": "t146_100k_s3",
+      "log_file": "${artifact_dir}/storage-100k-S3-n1024-b2.log"
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-100k-S3-n1024-b2",
+      "tags": [
+        "pipeline",
+        "task146",
+        "single-instance",
+        "100k",
+        "S3",
+        "n1024",
+        "b2"
+      ],
+      "prefix": "t146_100k_s3",
+      "index": "t146_100k_s3_idx",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "queries_limit": 200,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-100k-k10.json",
+      "query_metric_projection_columns": [
+        "id",
+        "source"
+      ],
+      "session_gucs": [
+        "ec_spire.leaf_score_only_routing=off",
+        "ec_spire.route_overfetch_multiplier=1.0",
+        "ec_spire.probe_distance_ratio=0",
+        "ec_spire.rerank_width=50",
+        "ec_spire.max_candidate_rows=100",
+        "ec_spire.pre_materialization_prune=off",
+        "ec_spire.leaf_block_pruning_max_blocks_per_leaf=0",
+        "ec_spire.leaf_block_pruning_max_global_blocks=0"
+      ],
+      "log_output": "${artifact_dir}/pipeline-100k-S3-n1024-b2.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-100k-S3-n1024-b2.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-100k-S3-n1024-b2.jsonl"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k-S4-leaf-only",
+      "tags": [
+        "storage",
+        "task146",
+        "single-instance",
+        "100k",
+        "S4",
+        "n1024",
+        "b0"
+      ],
+      "prefix": "t146_100k_s4",
+      "log_file": "${artifact_dir}/storage-100k-S4-leaf-only.log"
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-100k-S4-leaf-only",
+      "tags": [
+        "pipeline",
+        "task146",
+        "single-instance",
+        "100k",
+        "S4",
+        "n1024",
+        "b0"
+      ],
+      "prefix": "t146_100k_s4",
+      "index": "t146_100k_s4_idx",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "queries_limit": 200,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-100k-k10.json",
+      "query_metric_projection_columns": [
+        "id",
+        "source"
+      ],
+      "session_gucs": [
+        "ec_spire.leaf_score_only_routing=on",
+        "ec_spire.route_overfetch_multiplier=1.0",
+        "ec_spire.probe_distance_ratio=0",
+        "ec_spire.rerank_width=50",
+        "ec_spire.max_candidate_rows=100",
+        "ec_spire.pre_materialization_prune=off",
+        "ec_spire.leaf_block_pruning_max_blocks_per_leaf=0",
+        "ec_spire.leaf_block_pruning_max_global_blocks=0"
+      ],
+      "log_output": "${artifact_dir}/pipeline-100k-S4-leaf-only.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-100k-S4-leaf-only.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-100k-S4-leaf-only.jsonl"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k-S5-leaf-overfetch",
+      "tags": [
+        "storage",
+        "task146",
+        "single-instance",
+        "100k",
+        "S5",
+        "n1024",
+        "b0"
+      ],
+      "prefix": "t146_100k_s5",
+      "log_file": "${artifact_dir}/storage-100k-S5-leaf-overfetch.log"
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-100k-S5-leaf-overfetch",
+      "tags": [
+        "pipeline",
+        "task146",
+        "single-instance",
+        "100k",
+        "S5",
+        "n1024",
+        "b0"
+      ],
+      "prefix": "t146_100k_s5",
+      "index": "t146_100k_s5_idx",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "queries_limit": 200,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-100k-k10.json",
+      "query_metric_projection_columns": [
+        "id",
+        "source"
+      ],
+      "session_gucs": [
+        "ec_spire.leaf_score_only_routing=on",
+        "ec_spire.route_overfetch_multiplier=2.0",
+        "ec_spire.probe_distance_ratio=0",
+        "ec_spire.rerank_width=50",
+        "ec_spire.max_candidate_rows=100",
+        "ec_spire.pre_materialization_prune=off",
+        "ec_spire.leaf_block_pruning_max_blocks_per_leaf=0",
+        "ec_spire.leaf_block_pruning_max_global_blocks=0"
+      ],
+      "log_output": "${artifact_dir}/pipeline-100k-S5-leaf-overfetch.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-100k-S5-leaf-overfetch.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-100k-S5-leaf-overfetch.jsonl"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k-S6-router-saturation",
+      "tags": [
+        "storage",
+        "task146",
+        "single-instance",
+        "100k",
+        "S6",
+        "n1024",
+        "b0"
+      ],
+      "prefix": "t146_100k_s6",
+      "log_file": "${artifact_dir}/storage-100k-S6-router-saturation.log"
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-100k-S6-router-saturation",
+      "tags": [
+        "pipeline",
+        "task146",
+        "single-instance",
+        "100k",
+        "S6",
+        "n1024",
+        "b0"
+      ],
+      "prefix": "t146_100k_s6",
+      "index": "t146_100k_s6_idx",
+      "sweep": [
+        8,
+        16,
+        32,
+        64,
+        96
+      ],
+      "top_k": 10,
+      "query_metric_k": 10,
+      "queries_limit": 200,
+      "include_recall": true,
+      "include_query_metrics": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "truth_cache_file": "${artifact_dir}/truth-100k-k10.json",
+      "query_metric_projection_columns": [
+        "id",
+        "source"
+      ],
+      "session_gucs": [
+        "ec_spire.leaf_score_only_routing=on",
+        "ec_spire.route_overfetch_multiplier=1.0",
+        "ec_spire.probe_distance_ratio=0",
+        "ec_spire.rerank_width=50",
+        "ec_spire.max_candidate_rows=100",
+        "ec_spire.pre_materialization_prune=off",
+        "ec_spire.leaf_block_pruning_max_blocks_per_leaf=0",
+        "ec_spire.leaf_block_pruning_max_global_blocks=0"
+      ],
+      "log_output": "${artifact_dir}/pipeline-100k-S6-router-saturation.log",
+      "stage_containment_output": "${artifact_dir}/stage-containment-100k-S6-router-saturation.jsonl",
+      "result_identity_output": "${artifact_dir}/result-identity-100k-S6-router-saturation.jsonl"
+    }
+  ]
+}
