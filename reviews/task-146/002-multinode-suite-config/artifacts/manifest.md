@@ -36,3 +36,13 @@
   matrix/result packet still owes HNSW anchors, matched 10k/50k anchors,
   epoch-cache engagement proof, viability-vs-dominance wording, and 15% scan
   gate justification.
+
+## Sweep Rationale
+
+The multinode config intentionally uses the SPIRE program sweep
+`8,16,32,64,96`, not the registered `ec_spire` default sweep
+`8,16,24,32`. This is a bespoke grid for comparability with the accepted SPIRE
+program evidence: Task76 and Task139 used this high-recall sweep shape, and the
+Task146 frontier/gate compares against anchors and prior release evidence at
+the same operating points. The grid is therefore fixed as part of the packet
+001 preregistration and should not be changed during execution.

@@ -35,3 +35,14 @@
   HNSW anchors, matched 10k/50k anchors, epoch-cache engagement proof,
   viability-vs-dominance wording, and 15% scan gate justification.
 
+## Sweep Rationale
+
+The single-instance SPIRE pipelines intentionally use the SPIRE program sweep
+`8,16,32,64,96`, not the registered `ec_spire` default sweep
+`8,16,24,32`. This is a bespoke grid for comparability with the accepted SPIRE
+program evidence: Task76 and Task139 used this high-recall sweep shape, and the
+Task146 frontier/gate compares against anchors and prior release evidence at
+the same operating points. The grid is therefore fixed as part of the packet
+001 preregistration and should not be changed during execution. The three
+truth-cache `recall` steps remain `sweep=[8]` because they only materialize
+ground truth for the shared query set and do not define operating points.
