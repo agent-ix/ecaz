@@ -26,6 +26,11 @@ static ECDISKANN_PREFILTER_KIND_GUC: GucSetting<PrefilterKind> =
 static ECDISKANN_SCAN_PROFILE_NOTICE_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
 static ECDISKANN_CANDIDATE_BATCH_SCORING_GUC: GucSetting<bool> = GucSetting::<bool>::new(true);
 
+pub(super) const ECDISKANN_DEFAULT_BEAM_WIDTH: i32 = 1;
+pub(super) const ECDISKANN_MAX_BEAM_WIDTH: i32 = 64;
+static ECDISKANN_BEAM_WIDTH_GUC: GucSetting<i32> =
+    GucSetting::<i32>::new(ECDISKANN_DEFAULT_BEAM_WIDTH);
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PostgresGucEnum)]
 pub(super) enum PrefilterKind {
     #[name = c"auto"]
@@ -154,6 +159,16 @@ pub(super) fn register_gucs() {
         GucContext::Userset,
         GucFlags::default(),
     );
+    GucRegistry::define_int_guc(
+        c"ec_diskann.beam_width",
+        c"Batched-beam expansion width for ec_diskann query scans.",
+        c"Task 168 Phase 2 knob. Each traversal round pops up to this many frontier candidates and scores the deduplicated union of their neighbors with one batch call. 1 preserves the legacy one-pop-per-hop loop; larger widths fill the 32-wide block kernels. Applies to query scans only, not to insert planning or vacuum edge repair.",
+        &ECDISKANN_BEAM_WIDTH_GUC,
+        1,
+        ECDISKANN_MAX_BEAM_WIDTH,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
     GucRegistry::define_bool_guc(
         c"ec_diskann.candidate_batch_scoring",
         c"Enable Task 93 ec_diskann CandidateBatch prefilter scoring.",
@@ -170,6 +185,10 @@ pub(super) fn current_session_list_size() -> i32 {
 
 pub(super) fn current_prefilter_kind() -> PrefilterKind {
     ECDISKANN_PREFILTER_KIND_GUC.get()
+}
+
+pub(super) fn current_beam_width() -> usize {
+    usize::try_from(ECDISKANN_BEAM_WIDTH_GUC.get()).unwrap_or(1).max(1)
 }
 
 pub(super) fn scan_profile_notice_enabled() -> bool {

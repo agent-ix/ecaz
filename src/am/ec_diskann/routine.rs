@@ -823,10 +823,11 @@ where
     R: GraphReader + ?Sized,
 {
     let rerank_error = RefCell::new(None::<String>);
-    let results = scan::vamana_scan_with(
+    let results = scan::vamana_scan_beam_with(
         reader,
         visited,
         scan_params,
+        options::current_beam_width(),
         prefilter,
         |heap_tids: &[ItemPointer]| prefetch_heap_rerank_blocks(heap_relation, heap_tids),
         |heap_tid| match exact_heap_rerank_distance(
@@ -953,10 +954,11 @@ where
         inner: prefilter,
         profile: &profile_cell,
     };
-    let results = scan::vamana_scan_with_frontier_profile(
+    let results = scan::vamana_scan_beam_with_frontier_profile(
         &profiled_reader,
         visited,
         scan_params,
+        options::current_beam_width(),
         profiled_prefilter,
         |heap_tids: &[ItemPointer]| {
             let started = Instant::now();
