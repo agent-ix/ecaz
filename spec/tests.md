@@ -151,14 +151,14 @@ presence alone.
 | FR-046 | FR-046-AC-1..3 | TC-028 | Planned: dataset registry and parquet staging |
 | FR-047 | FR-047-AC-1..4 | TC-029, TC-032 | Planned: in-VPC parallel corpus load |
 | FR-075 | FR-075-AC-1..4 | TC-037 | Planned: ec_distann AM surface (`src/tests/ec_distann_basic.rs`) |
-| FR-076 | FR-076-AC-1..4, FR-076-CON-1..2 | TC-037, TC-044 | Planned: record round-trip + identity stability in TC-037; CON-1 storage budget measured in TC-044 |
-| FR-077 | FR-077-AC-1..4, FR-077-CON-1..4 | TC-038, TC-039 | Planned: proptest invariants (TC-038) + stitched-vs-monolithic recall A/B (TC-039) |
-| FR-078 | FR-078-AC-1..3 | TC-040 | Planned: placement determinism + roster-change epoch behavior |
-| FR-079 | FR-079-AC-1..4 | TC-040 | Planned: expand_nodes contract incl. epoch-fingerprint rejection and placement-error disambiguation |
+| FR-076 | FR-076-AC-1..5, FR-076-CON-1..2 | TC-037, TC-044 | Planned: record round-trip + identity stability + lean-record/no-inline-vector (AC-5) in TC-037; CON-1 storage budget measured in TC-044 |
+| FR-077 | FR-077-AC-1..4, FR-077-CON-1..4 | TC-038, TC-039 | Planned: proptest invariants (TC-038) + stitched-vs-monolithic recall A/B (TC-039); build emits co-placed vector tier (asserted via TC-040 co-resolution) |
+| FR-078 | FR-078-AC-1..4 | TC-040 | Planned: placement determinism + roster-change epoch behavior; AC-4 record/heap-row co-resolution + runtime co-placement-drift fault |
+| FR-079 | FR-079-AC-1..5 | TC-040 | Planned: expand_nodes contract incl. epoch-fingerprint rejection, placement-error disambiguation, four-outcome table (incl. missing-heap-row case d), and exact_dist==heap distance (AC-5) |
 | FR-080 | FR-080-AC-1..4, FR-080-CON-1 | TC-037, TC-041 | Planned: determinism/reachability in TC-037; C recall-sensitivity measurement in TC-041 |
 | FR-081 | FR-081-AC-1..5 | TC-041 | Planned: 2-node result identity, BW×H cap assertion, dedupe, early-exit equivalence, EXPLAIN counters |
-| FR-082 | FR-082-AC-1..3 | TC-042 | Planned: lifecycle drills (epoch-swap-under-load, fingerprint retry, retirement gating) |
-| FR-083 | FR-083-AC-1..6 | TC-043 | Planned: tombstone/vacuum, interim posture, incremental insert parity + mid-insert fault drills |
+| FR-082 | FR-082-AC-1..5 | TC-042 | Planned: lifecycle drills (epoch-swap-under-load, fingerprint retry, retirement gating) + epoch-frozen co-placed vector under concurrent delete+VACUUM+TID-reuse (AC-5) |
+| FR-083 | FR-083-AC-1..7 | TC-043 | Planned: tombstone/vacuum, interim posture, incremental insert parity + mid-insert fault drills; AC-7 inserted vec_id reads co-placed vector node-locally |
 
 ### Non-Functional Requirement Coverage
 
@@ -181,8 +181,8 @@ presence alone.
 | NFR-015 | Benchmark reporting standard | TC-033, TC-035, TC-036 | Partial: standard is specified; existing and future benchmark rows must conform packet-by-packet, including block-kernel counters and backend provenance, before being marked complete |
 | NFR-017 | distinct_recall/latency gate vs release IVF anchor, 10k/50k/100k, 3-worker | TC-044 | Planned: pre-registered `ecaz bench suite` matrix on the Task 146 anchor protocol; release-guarded distann-pipeline step kind |
 | NFR-018 | Space amplification ≤4× raw vector bytes | TC-044 | Planned: storage step ratio row per scale, plus transient build peak in epoch manifest |
-| NFR-019 | Per-query expansion ≤ BW×H, corpus-independent | TC-041, TC-044 | Planned: per-cell counter assertion + cross-scale expanded-count ratio row |
-| NFR-020 | Fault behavior: correct-or-error, never silent partials | TC-042, TC-043 | Planned: full drill matrix (reused + hop_round_failure_mid_beam, missing_node_record, placement_drift, mid-insert) |
+| NFR-019 | Per-query expansion ≤ BW×H, corpus-independent | TC-041, TC-044 | Planned: per-cell counter assertion + cross-scale expanded-count ratio row; per-expansion heap-read count equals expanded-record count (same BW×H bound, ADR-085 D11) |
+| NFR-020 | Fault behavior: correct-or-error, never silent partials | TC-042, TC-043 | Planned: full drill matrix (reused + hop_round_failure_mid_beam, missing_node_record, placement_drift, missing_heap_row, coplacement_drift, mid-insert) |
 
 ## Test Case Summary
 
@@ -225,13 +225,13 @@ presence alone.
 | TC-034 | Task 34 hardening and analysis lanes | Static analysis / fuzz / model checking / sanitizer / supply-chain audit | P0 | NFR-004, FR-011, FR-049, FR-050, FR-051, FR-052, FR-053, FR-054, FR-055, FR-056, FR-057, FR-058, FR-059 | Partial: packeted Task 34 evidence currently covers installer, MIRAI, Flux, and Rudra-family logs; aggregate local/nightly, sanitizer, fuzz, cargo-careful, Kani, Loom, Shuttle, cargo-vet, cargo-geiger, AFL, PG18 sanitizer, and SQLsmith evidence remain gaps until packeted |
 | TC-035 | QuantCodec block-kernel completeness matrix | Unit / benchmark packet / docs audit | P0 | FR-014, FR-015, FR-030, FR-032, FR-035, FR-063, FR-066, FR-067, FR-068, FR-071, FR-074, NFR-015 | Partial: target matrix is specified; Task 99, Task 102 ARM evidence, the Task 103 Intel lane, Graviton 4 vector-length, and deferred hardware cells remain gaps until packeted |
 | TC-036 | Benchmark suite backend-profile preflight | CLI unit / suite audit | P0 | FR-038, FR-064, FR-065, FR-070, NFR-007, NFR-015 | Partial: suite manifests must prove release/debug backend selection for latency and recall rows before product benchmark claims |
-| TC-037 | ec_distann single-node AM surface, record format, head index; M0 bench evidence (ec_diskann parity A/B, head-cap C sensitivity, D7 codec comparison, D1 storage ratio) | Unit / pg_test (`src/tests/ec_distann_basic.rs`) + `ecaz bench suite` (M0 cells) | P0 | FR-075, FR-076, FR-080, NFR-018 | Planned (M0) |
+| TC-037 | ec_distann single-node AM surface, record format (lean record carries no full-precision vector field, FR-076-AC-5), head index; M0 bench evidence (ec_diskann parity A/B, head-cap C sensitivity, D7 codec comparison, D1 storage ratio) | Unit / pg_test (`src/tests/ec_distann_basic.rs`) + `ecaz bench suite` (M0 cells) | P0 | FR-075, FR-076, FR-080, NFR-018 | Planned (M0) |
 | TC-038 | Stitch correctness property suite (degree ≤ R, vec_id uniqueness, medoid reachability, idempotence, α-prune invariant) | proptest (`src/am/ec_distann/`) | P0 | FR-077-CON-1..3, FR-077-AC-2, FR-077-AC-4 | Planned (M1) |
 | TC-039 | Stitched-vs-monolithic build recall A/B at 100k | Benchmark (`ecaz bench suite`) | P0 | FR-077-AC-1, FR-077-AC-3 | Planned (M1) |
-| TC-040 | Hash placement determinism + remote expansion protocol contract | pg_test (`src/tests/ec_distann_remote.rs`) | P0 | FR-078, FR-079 | Planned (M2) |
+| TC-040 | Hash placement determinism + record/heap-row co-resolution (FR-078-AC-4) + remote expansion protocol contract: four-outcome table incl. missing-heap-row (case d) and co-placement-drift structural faults, exact_dist==full-precision heap distance (FR-079-AC-5) | pg_test (`src/tests/ec_distann_remote.rs`) | P0 | FR-078, FR-079 | Planned (M2) |
 | TC-041 | Hop-round orchestration: 2-node result identity, BW×H cap, dedupe, early-exit equivalence, EXPLAIN counters, head-index C sensitivity | pg_test + 2-node fixture + bench counters | P0 | FR-080, FR-081, NFR-019 | Planned (M2) |
-| TC-042 | Epoch lifecycle + multinode fault drill matrix (reused cases + hop_round_failure_mid_beam, missing_node_record, placement_drift) | Multinode fixture drills | P0 | FR-082, NFR-020 | Planned (M3) |
-| TC-043 | DML path: tombstone/vacuum, interim insert posture, incremental distributed insert parity, mid-insert fault + concurrency drills | pg_test + multinode drills | P1 | FR-083, NFR-020 | Planned (M3/M5) |
+| TC-042 | Epoch lifecycle + multinode fault drill matrix (reused cases + hop_round_failure_mid_beam, missing_node_record, placement_drift, missing_heap_row, coplacement_drift) + epoch-frozen co-placed vector: concurrent delete+VACUUM+TID-reuse never reranks against a different tuple (FR-082-AC-5) | Multinode fixture drills | P0 | FR-082, NFR-020 | Planned (M3) |
+| TC-043 | DML path: tombstone/vacuum (tombstone traversable, exact_dist may be NULL, no heap read required), interim insert posture, incremental distributed insert parity + co-placed vector for inserted vec_id (FR-083-AC-7), mid-insert fault + concurrency drills | pg_test + multinode drills | P1 | FR-083, NFR-020 | Planned (M3/M5) |
 | TC-044 | distann bench gate: 10k/50k/100k four-way comparison (ec_distann / IVF / HNSW / best-SPIRE) on the Task 146 protocol, release-guarded distann-pipeline step, matched-recall rule per NFR-017, informational netem H×RTT run, multinode storage summation, min-BW×H-for-recall row; M5 insert-parity bench cell (FR-083-AC-4) | Benchmark (`ecaz bench suite`) | P0 | NFR-017, NFR-018, NFR-019, FR-076-CON-1, FR-083-AC-4, StR-008 | Planned (M4 gate; prerequisite: task-138 distinct_recall + task-146 anchors merged) |
 
 ## Option Permutation Matrix
@@ -300,6 +300,10 @@ presence alone.
 | EC-021 | All frontier candidates owned by one node (batch skew) | FR-078, FR-081 | TC-041 | Round serialization or per-node batch overflow |
 | EC-022 | Query during epoch swap; expansion against retired epoch | FR-082 | TC-042 | Mixed-epoch results or reads of reclaimed storage |
 | EC-023 | Tombstoned neighbor mid-traversal; vacuumed neighbor edge | FR-083 | TC-043 | Traversal dead-ends or errors on reclaimed records |
+| EC-024 | Record present but its co-placed vector missing/unreadable (torn build→publish, partial heap write) | FR-079, FR-082 | TC-040, TC-042 | Silent mis-rerank if not a distinct structural fault (FR-079 case d) |
+| EC-025 | Co-placement drift: record on node A, its heap row on node B | FR-078, FR-079 | TC-040, TC-042 | Runtime silent miss instead of a placement/structural fault |
+| EC-026 | Tombstoned record returned with is_tombstone but its heap tuple already VACUUMed | FR-079, FR-083 | TC-043 | Forced heap read on an excluded row → spurious fault; exact_dist must be skippable (NULL) |
+| EC-027 | heap_tid resolves a TID-reused tuple after concurrent delete+VACUUM within a published epoch | FR-082 | TC-042 | exact_dist silently computed against the wrong vector, undetected by the epoch fingerprint |
 | EC-001 | Empty indexes and repeated rescans | FR-030, FR-032, FR-035 | TC-004, TC-008, TC-011 | Executor may emit stale state or crash |
 | EC-002 | Duplicate vectors and duplicate heap TID overflow | FR-030, FR-036 | TC-004, TC-012 | Missing rows or corrupted duplicate chains |
 | EC-003 | Non-finite fp32 input | FR-028, FR-034 | TC-002, TC-010 | Invalid scores or backend errors |
