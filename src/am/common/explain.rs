@@ -135,6 +135,18 @@ pub(crate) struct IvfExplainCounters {
     /// Task 111h: time spent in the exact rerank scorer after payloads have
     /// been fetched/decoded.
     pub stats_rerank_payload_score_elapsed_us: u32,
+    /// Task 146: wall time storing the scan query, building the quantizer
+    /// prepared query (rotation + LUT/int8 query encode), and configuring
+    /// heap-rerank state during amrescan.
+    pub stats_query_prep_elapsed_us: u32,
+    /// Task 146: wall time scoring all nlists centroids and selecting probe
+    /// lists during amrescan.
+    pub stats_centroid_score_elapsed_us: u32,
+    /// Task 146: wall time of the whole amrescan body. The executor/gettuple
+    /// share of a query is e2e minus this; the rescan-internal unattributed
+    /// share is this minus query_prep, centroid_score, approximate_scan, and
+    /// exact_rerank.
+    pub stats_rescan_total_elapsed_us: u32,
     pub stats_filtered_duplicates: u32,
     /// Task 112: number of frontier candidates considered for exact heap-f32
     /// rerank (the `rerank_width`-bounded approximate frontier handed to the
@@ -228,6 +240,9 @@ impl Default for IvfExplainCounters {
             stats_exact_rerank_elapsed_us: 0,
             stats_rerank_payload_decode_elapsed_us: 0,
             stats_rerank_payload_score_elapsed_us: 0,
+            stats_query_prep_elapsed_us: 0,
+            stats_centroid_score_elapsed_us: 0,
+            stats_rescan_total_elapsed_us: 0,
             stats_filtered_duplicates: 0,
             stats_rerank_candidates_considered: 0,
             stats_rerank_candidates_skipped: 0,
@@ -556,6 +571,23 @@ impl IvfExplainCounters {
             .saturating_add(elapsed_us);
     }
 
+    pub(crate) fn record_query_prep_elapsed_us(&mut self, elapsed_us: u32) {
+        self.stats_query_prep_elapsed_us =
+            self.stats_query_prep_elapsed_us.saturating_add(elapsed_us);
+    }
+
+    pub(crate) fn record_centroid_score_elapsed_us(&mut self, elapsed_us: u32) {
+        self.stats_centroid_score_elapsed_us = self
+            .stats_centroid_score_elapsed_us
+            .saturating_add(elapsed_us);
+    }
+
+    pub(crate) fn record_rescan_total_elapsed_us(&mut self, elapsed_us: u32) {
+        self.stats_rescan_total_elapsed_us = self
+            .stats_rescan_total_elapsed_us
+            .saturating_add(elapsed_us);
+    }
+
     pub(crate) fn record_rerank_payload_score_elapsed_us(&mut self, elapsed_us: u32) {
         self.stats_rerank_payload_score_elapsed_us = self
             .stats_rerank_payload_score_elapsed_us
@@ -647,7 +679,7 @@ impl IvfExplainCounters {
         *self = Self::default();
     }
 
-    pub(crate) fn explain_properties(self) -> [ExplainProperty; 51] {
+    pub(crate) fn explain_properties(self) -> [ExplainProperty; 54] {
         [
             ExplainProperty {
                 property_name: "Rerank Placement",
@@ -788,6 +820,18 @@ impl IvfExplainCounters {
             ExplainProperty {
                 property_name: "Rerank Payload Score Elapsed Us",
                 value: ExplainPropertyValue::Integer(self.stats_rerank_payload_score_elapsed_us),
+            },
+            ExplainProperty {
+                property_name: "Query Prep Elapsed Us",
+                value: ExplainPropertyValue::Integer(self.stats_query_prep_elapsed_us),
+            },
+            ExplainProperty {
+                property_name: "Centroid Score Elapsed Us",
+                value: ExplainPropertyValue::Integer(self.stats_centroid_score_elapsed_us),
+            },
+            ExplainProperty {
+                property_name: "Rescan Total Elapsed Us",
+                value: ExplainPropertyValue::Integer(self.stats_rescan_total_elapsed_us),
             },
             ExplainProperty {
                 property_name: "Filtered Duplicates",
@@ -1274,6 +1318,9 @@ mod tests {
         counters.record_scorer_batch_elapsed_us(113);
         counters.record_candidate_record_elapsed_us(127);
         counters.record_topk_collect_elapsed_us(131);
+        counters.record_query_prep_elapsed_us(1009);
+        counters.record_centroid_score_elapsed_us(1013);
+        counters.record_rescan_total_elapsed_us(1019);
         counters.record_exact_rerank_elapsed_us(41);
         counters.record_rerank_payload_decode_elapsed_us(43);
         counters.record_rerank_payload_score_elapsed_us(47);
@@ -1324,6 +1371,9 @@ mod tests {
                 stats_exact_rerank_elapsed_us: 41,
                 stats_rerank_payload_decode_elapsed_us: 43,
                 stats_rerank_payload_score_elapsed_us: 47,
+                stats_query_prep_elapsed_us: 1009,
+                stats_centroid_score_elapsed_us: 1013,
+                stats_rescan_total_elapsed_us: 1019,
                 stats_filtered_duplicates: 1,
                 stats_rerank_candidates_considered: 59,
                 stats_rerank_candidates_skipped: 5,
@@ -1382,6 +1432,9 @@ mod tests {
             stats_exact_rerank_elapsed_us: 127,
             stats_rerank_payload_decode_elapsed_us: 131,
             stats_rerank_payload_score_elapsed_us: 133,
+            stats_query_prep_elapsed_us: 1021,
+            stats_centroid_score_elapsed_us: 1031,
+            stats_rescan_total_elapsed_us: 1033,
             stats_filtered_duplicates: 137,
             stats_rerank_candidates_considered: 139,
             stats_rerank_candidates_skipped: 149,
@@ -1539,6 +1592,18 @@ mod tests {
                 ExplainProperty {
                     property_name: "Rerank Payload Score Elapsed Us",
                     value: ExplainPropertyValue::Integer(133),
+                },
+                ExplainProperty {
+                    property_name: "Query Prep Elapsed Us",
+                    value: ExplainPropertyValue::Integer(1021),
+                },
+                ExplainProperty {
+                    property_name: "Centroid Score Elapsed Us",
+                    value: ExplainPropertyValue::Integer(1031),
+                },
+                ExplainProperty {
+                    property_name: "Rescan Total Elapsed Us",
+                    value: ExplainPropertyValue::Integer(1033),
                 },
                 ExplainProperty {
                     property_name: "Filtered Duplicates",

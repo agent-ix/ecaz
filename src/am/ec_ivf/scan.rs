@@ -1,6 +1,6 @@
 use hashbrown::hash_map::Entry;
 use hashbrown::HashMap;
-use std::cmp::Ordering;
+use std::cmp::{Ordering, Reverse};
 use std::collections::{BinaryHeap, HashSet};
 use std::ptr::{self, NonNull};
 use std::time::{Duration, Instant};
@@ -48,10 +48,17 @@ struct EcIvfScanOpaque {
     centroid_score_count: u32,
     selected_lists: *mut u32,
     selected_list_count: u32,
-    candidate_dedup: *mut HashMap<ItemPointer, EcIvfScoredCandidate>,
+    candidate_dedup: *mut CandidateDedupPool,
     posting_candidates: *mut EcIvfScoredCandidate,
     posting_candidate_count: u32,
     next_candidate_index: u32,
+    /// Task 145: the unbounded-collect path (no pre-rerank limit) stores the
+    /// ranked candidates as a min-heap and `next_posting_candidate` pops them
+    /// on demand — exactly sorted order under the strict `candidate_cmp`
+    /// total order, without the former full O(n log n) sort or the palloc
+    /// copy of the whole candidate set. `None` whenever the bounded sorted
+    /// array path is active.
+    posting_candidate_heap: Option<BinaryHeap<Reverse<CandidateHeapEntry>>>,
     posting_scratch_soa: *mut IvfPostingScratchSoa,
     dense_posting_coalescing_scratch: *mut IvfPostingScratchSoa,
     dense_posting_block_scratch: *mut IvfDensePostingBlockScratch,
@@ -84,6 +91,10 @@ impl std::fmt::Debug for EcIvfScanOpaque {
             .field("posting_candidates", &self.posting_candidates)
             .field("posting_candidate_count", &self.posting_candidate_count)
             .field("next_candidate_index", &self.next_candidate_index)
+            .field(
+                "posting_candidate_heap",
+                &self.posting_candidate_heap.as_ref().map(BinaryHeap::len),
+            )
             .field("posting_scratch_soa", &self.posting_scratch_soa)
             .field(
                 "dense_posting_coalescing_scratch",
@@ -121,6 +132,9 @@ impl EcIvfScanOpaque {
     }
 
     fn next_posting_candidate(&mut self) -> Option<EcIvfScoredCandidate> {
+        if let Some(heap) = self.posting_candidate_heap.as_mut() {
+            return heap.pop().map(|entry| entry.0.candidate);
+        }
         if self.posting_candidates.is_null()
             || self.next_candidate_index >= self.posting_candidate_count
         {
@@ -323,6 +337,84 @@ impl CandidateTopK {
             .collect::<Vec<_>>();
         candidates.sort_by(candidate_cmp);
         candidates
+    }
+}
+
+/// Outcome of recording one scored candidate against the dedup pool. The
+/// caller maps these onto the existing explain counters so the counter
+/// stream stays identical to the pre-Task-145 `HashMap` entry logic.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CandidateRecordOutcome {
+    Inserted,
+    ReplacedWorse,
+    KeptExisting,
+}
+
+/// Scan-owned candidate dedup state (Task 145). The authoritative candidate
+/// pool is the dense `pool` vec; `index_by_heap_tid` only maps a heap tid to
+/// its pool slot. The post-visit collect walks the contiguous pool slice
+/// instead of iterating the hash map — the Task 143 1m stage budget measured
+/// that full-map walk (plus per-entry top-k pushes) at 17% of the
+/// approximate scan. Dedup semantics are unchanged: one slot per heap tid,
+/// replaced only when a strictly better (`candidate_cmp` `Less`) score
+/// arrives, so the pool holds exactly the map's former value set and the
+/// collect's bounded top-k over it stays byte-identical (`candidate_cmp` is
+/// a strict total order over distinct heap tids, so top-k selection is
+/// iteration-order independent).
+#[derive(Debug, Default)]
+struct CandidateDedupPool {
+    index_by_heap_tid: HashMap<ItemPointer, u32>,
+    pool: Vec<EcIvfScoredCandidate>,
+}
+
+impl CandidateDedupPool {
+    fn with_capacity(capacity: usize) -> Self {
+        Self {
+            index_by_heap_tid: HashMap::with_capacity(capacity),
+            pool: Vec::with_capacity(capacity),
+        }
+    }
+
+    fn clear_and_reserve(&mut self, capacity: usize) {
+        self.index_by_heap_tid.clear();
+        if self.index_by_heap_tid.capacity() < capacity {
+            self.index_by_heap_tid
+                .reserve(capacity - self.index_by_heap_tid.capacity());
+        }
+        self.pool.clear();
+        if self.pool.capacity() < capacity {
+            self.pool.reserve(capacity - self.pool.capacity());
+        }
+    }
+
+    fn record_best(&mut self, candidate: EcIvfScoredCandidate) -> CandidateRecordOutcome {
+        match self.index_by_heap_tid.entry(candidate.heap_tid) {
+            Entry::Occupied(entry) => {
+                let slot = *entry.get() as usize;
+                let existing = &mut self.pool[slot];
+                if candidate_cmp(&candidate, existing) == Ordering::Less {
+                    *existing = candidate;
+                    CandidateRecordOutcome::ReplacedWorse
+                } else {
+                    CandidateRecordOutcome::KeptExisting
+                }
+            }
+            Entry::Vacant(entry) => {
+                // A u32 slot bounds the pool at ~4.29e9 candidates per scan;
+                // the dedup map held the same candidate count as 24-byte
+                // values before this layout, so that regime was already
+                // unreachable. Fail closed rather than wrap.
+                let slot = u32::try_from(self.pool.len())
+                    .expect("ec_ivf candidate dedup pool exceeds u32 slots");
+                entry.insert(slot);
+                self.pool.push(candidate);
+                CandidateRecordOutcome::Inserted
+            }
+        }
+    }
+
+    fn candidates(&self) -> &[EcIvfScoredCandidate] {
+        &self.pool
     }
 }
 
@@ -604,6 +696,11 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amrescan(
             pgrx::error!("ec_ivf scan query must not be NULL");
         }
 
+        // Task 146: bound the whole rescan body, including query datum
+        // extraction, metadata read, query prep, centroid scoring, and the
+        // approximate scan, so e2e − rescan_total isolates the
+        // executor/gettuple share.
+        let rescan_started = Instant::now();
         let query =
             Vec::<f32>::from_polymorphic_datum(orderby.sk_argument, false, pg_sys::FLOAT4ARRAYOID)
                 .unwrap_or_else(|| pgrx::error!("ec_ivf scan requires a real[] ORDER BY query"));
@@ -674,11 +771,18 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amrescan(
             resolve_effective_nprobe(&metadata)
         };
         opaque.scan_nprobe = requested_nprobe;
+        let query_prep_started = Instant::now();
         store_scan_query(opaque, &query);
         store_scan_prepared_query(opaque, (*scan).indexRelation, &query, &metadata);
         configure_heap_rerank_state(scan, opaque, &index_options);
+        record_stage_elapsed(
+            opaque,
+            super::stage_counters::IvfQueryStage::QueryPrep,
+            query_prep_started.elapsed(),
+        );
 
         if metadata.dimensions != 0 {
+            let centroid_score_started = Instant::now();
             let centroid_scores = load_centroid_scores((*scan).indexRelation, &metadata, &query)
                 .unwrap_or_else(|e| pgrx::error!("{e}"));
             let selected_lists = select_probe_lists_with_adaptive(
@@ -687,6 +791,11 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amrescan(
                 super::options::current_session_adaptive_nprobe(),
                 super::options::current_session_adaptive_nprobe_score_gap_micros(),
                 super::options::current_session_adaptive_nprobe_score_margin_ratio_bps(),
+            );
+            record_stage_elapsed(
+                opaque,
+                super::stage_counters::IvfQueryStage::CentroidScore,
+                centroid_score_started.elapsed(),
             );
             opaque.scan_nprobe = u32::try_from(selected_lists.len()).unwrap_or(u32::MAX);
             opaque
@@ -708,8 +817,20 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amrescan(
             .unwrap_or_else(|e| pgrx::error!("{e}"));
             store_centroid_scores(opaque, &centroid_scores);
             store_selected_lists(opaque, &selected_lists);
-            store_posting_candidates(opaque, &posting_candidates);
+            match posting_candidates {
+                RankedProbeCandidates::Sorted(candidates) => {
+                    store_posting_candidates(opaque, &candidates);
+                }
+                RankedProbeCandidates::LazyHeap(heap) => {
+                    store_posting_candidate_heap(opaque, heap);
+                }
+            }
         };
+        record_stage_elapsed(
+            opaque,
+            super::stage_counters::IvfQueryStage::RescanTotal,
+            rescan_started.elapsed(),
+        );
     })
 }
 
@@ -852,6 +973,9 @@ fn record_stage_elapsed(
         Stage::ExactRerank => counters.record_exact_rerank_elapsed_us(elapsed_us),
         Stage::RerankPayloadDecode => counters.record_rerank_payload_decode_elapsed_us(elapsed_us),
         Stage::RerankPayloadScore => counters.record_rerank_payload_score_elapsed_us(elapsed_us),
+        Stage::QueryPrep => counters.record_query_prep_elapsed_us(elapsed_us),
+        Stage::CentroidScore => counters.record_centroid_score_elapsed_us(elapsed_us),
+        Stage::RescanTotal => counters.record_rescan_total_elapsed_us(elapsed_us),
     }
     super::stage_counters::record_stage_elapsed_us(stage, elapsed_us);
 }
@@ -1032,6 +1156,18 @@ fn free_posting_candidates(opaque: &mut EcIvfScanOpaque) {
     pfree_scan_slice(opaque, |opaque| &mut opaque.posting_candidates);
     opaque.posting_candidate_count = 0;
     opaque.next_candidate_index = 0;
+    opaque.posting_candidate_heap = None;
+}
+
+fn store_posting_candidate_heap(
+    opaque: &mut EcIvfScanOpaque,
+    heap: BinaryHeap<Reverse<CandidateHeapEntry>>,
+) {
+    free_posting_candidates(opaque);
+    if heap.is_empty() {
+        return;
+    }
+    opaque.posting_candidate_heap = Some(heap);
 }
 
 fn free_scan_query_prep(opaque: &mut EcIvfScanOpaque) {
@@ -1053,17 +1189,16 @@ fn free_scan_query_prep(opaque: &mut EcIvfScanOpaque) {
 unsafe fn candidate_dedup_map(
     opaque: &mut EcIvfScanOpaque,
     capacity: usize,
-) -> *mut HashMap<ItemPointer, EcIvfScoredCandidate> {
+) -> *mut CandidateDedupPool {
     if opaque.candidate_dedup.is_null() {
-        opaque.candidate_dedup = Box::into_raw(Box::new(HashMap::with_capacity(capacity)));
+        opaque.candidate_dedup = Box::into_raw(Box::new(CandidateDedupPool::with_capacity(
+            capacity,
+        )));
         return opaque.candidate_dedup;
     }
 
-    let map = &mut *opaque.candidate_dedup;
-    map.clear();
-    if map.capacity() < capacity {
-        map.reserve(capacity - map.capacity());
-    }
+    let dedup = &mut *opaque.candidate_dedup;
+    dedup.clear_and_reserve(capacity);
     opaque.candidate_dedup
 }
 
@@ -1491,9 +1626,9 @@ unsafe fn materialize_probe_candidates(
     opaque: &mut EcIvfScanOpaque,
     selected_lists: &[u32],
     centroid_scores: &[EcIvfCentroidScore],
-) -> Result<Vec<EcIvfScoredCandidate>, String> {
+) -> Result<RankedProbeCandidates, String> {
     if selected_lists.is_empty() {
-        return Ok(Vec::new());
+        return Ok(RankedProbeCandidates::Sorted(Vec::new()));
     }
     if opaque.prepared_query.is_null() {
         return Err("ec_ivf posting-list scan requires a prepared query".to_owned());
@@ -1553,8 +1688,13 @@ unsafe fn materialize_probe_candidates(
     // bug), residual mode runs UNPRUNED here. The shifted-cutoff is the
     // documented follow-up lever; it preserves recall by construction.
     let bound_pruning_active = quantizer.uses_score_bound_pruning() && !quantizer.rabitq_residual();
+    // Resolve the session rerank width ONCE here on the backend thread; the
+    // pure `pre_rerank_candidate_limit` / `ranked_collect_limit` helpers take it
+    // as a parameter so they never touch pgrx GUC FFI off-thread.
+    let effective_rerank_width =
+        super::options::resolve_scan_rerank_width(index_options.rerank_width).effective_rerank_width;
     let mut running_top = bound_pruning_active
-        .then(|| pre_rerank_candidate_limit(index_options))
+        .then(|| pre_rerank_candidate_limit(index_options, effective_rerank_width))
         .flatten()
         .map(CandidateTopK::new);
     let mut remaining_live_tids_by_list = probe_plan.remaining_live_tids_by_list.clone();
@@ -1771,13 +1911,14 @@ unsafe fn materialize_probe_candidates(
         );
     }
 
-    // SAFETY: `best_by_heap_tid` points to the scan-owned dedup map populated
+    // SAFETY: `best_by_heap_tid` points to the scan-owned dedup pool populated
     // during the posting visitor above.
     let best_by_heap_tid = unsafe { &mut *best_by_heap_tid };
     let topk_collect_started = Instant::now();
-    let mut candidates = collect_ranked_probe_candidates(
-        best_by_heap_tid.values().copied(),
-        pre_rerank_candidate_limit(index_options),
+    let candidate_len = best_by_heap_tid.candidates().len();
+    let mut ranked = collect_ranked_probe_candidates(
+        best_by_heap_tid.candidates().iter().copied(),
+        ranked_collect_limit(index_options, effective_rerank_width, candidate_len),
     );
     record_stage_elapsed(
         opaque,
@@ -1789,31 +1930,30 @@ unsafe fn materialize_probe_candidates(
         super::stage_counters::IvfQueryStage::ApproximateScan,
         approximate_started.elapsed(),
     );
-    let should_record_exact_rerank = matches!(
-        index_options.rerank.v1_effective(),
-        super::options::RerankMode::HeapF32
-    ) && pre_rerank_candidate_limit(index_options).is_some()
-        && !candidates.is_empty();
-    // SAFETY: candidates were materialized for this live scan and opaque; the
-    // rerank helper validates whether heap_f32 state is present before use.
-    let rerank_started = should_record_exact_rerank.then(Instant::now);
-    unsafe {
-        rerank_probe_candidates(
-            scan,
-            index_options,
-            opaque,
-            centroid_scores,
-            &mut candidates,
-        )
-    };
-    if let Some(rerank_started) = rerank_started {
-        record_stage_elapsed(
-            opaque,
-            super::stage_counters::IvfQueryStage::ExactRerank,
-            rerank_started.elapsed(),
-        );
+    // The lazy-heap path is taken iff rerank is not heap_f32 (see
+    // `pre_rerank_candidate_limit`), and `rerank_probe_candidates` is a no-op
+    // for every non-heap_f32 mode, so skipping the call for `LazyHeap` is
+    // behavior-identical to the former unconditional call. heap_f32 always
+    // takes the sorted path below — including the "rerank all" width<=0
+    // sentinel, which sorts the whole frontier — and always reranks.
+    if let RankedProbeCandidates::Sorted(candidates) = &mut ranked {
+        // Reaching the sorted path means heap_f32 rerank is active, so the
+        // exact rerank always runs here (an empty frontier is a no-op).
+        let should_record_exact_rerank = !candidates.is_empty();
+        // SAFETY: candidates were materialized for this live scan and opaque;
+        // the rerank helper validates whether heap_f32 state is present
+        // before use.
+        let rerank_started = should_record_exact_rerank.then(Instant::now);
+        unsafe { rerank_probe_candidates(scan, index_options, opaque, centroid_scores, candidates) };
+        if let Some(rerank_started) = rerank_started {
+            record_stage_elapsed(
+                opaque,
+                super::stage_counters::IvfQueryStage::ExactRerank,
+                rerank_started.elapsed(),
+            );
+        }
     }
-    Ok(candidates)
+    Ok(ranked)
 }
 
 fn use_scratch_soa_batch_decode(metadata: &super::page::MetadataPage) -> bool {
@@ -1861,7 +2001,7 @@ fn process_scratch_soa_postings(
     quantizer: IvfQuantizer,
     prepared_query: &IvfPreparedQuery,
     opaque: &mut EcIvfScanOpaque,
-    best_by_heap_tid: *mut HashMap<ItemPointer, EcIvfScoredCandidate>,
+    best_by_heap_tid: *mut CandidateDedupPool,
     running_top: &mut Option<CandidateTopK>,
 ) -> Result<(), String> {
     if scratch.is_empty() {
@@ -1892,7 +2032,7 @@ fn process_scratch_soa_postings_inner(
     quantizer: IvfQuantizer,
     prepared_query: &IvfPreparedQuery,
     opaque: &mut EcIvfScanOpaque,
-    best_by_heap_tid: *mut HashMap<ItemPointer, EcIvfScoredCandidate>,
+    best_by_heap_tid: *mut CandidateDedupPool,
     running_top: &mut Option<CandidateTopK>,
 ) -> Result<(), String> {
     let payload_bytes = scratch.payloads.len();
@@ -2062,7 +2202,7 @@ fn process_dense_coalesced_postings(
     quantizer: IvfQuantizer,
     prepared_query: &IvfPreparedQuery,
     opaque: &mut EcIvfScanOpaque,
-    best_by_heap_tid: *mut HashMap<ItemPointer, EcIvfScoredCandidate>,
+    best_by_heap_tid: *mut CandidateDedupPool,
     running_top: &mut Option<CandidateTopK>,
 ) -> Result<(), String> {
     process_scratch_soa_postings(
@@ -2084,7 +2224,7 @@ fn append_dense_posting_block_to_coalesced_scratch(
     quantizer: IvfQuantizer,
     prepared_query: &IvfPreparedQuery,
     opaque: &mut EcIvfScanOpaque,
-    best_by_heap_tid: *mut HashMap<ItemPointer, EcIvfScoredCandidate>,
+    best_by_heap_tid: *mut CandidateDedupPool,
     running_top: &mut Option<CandidateTopK>,
     remaining_live_tids_by_list: &mut [u64],
     // Task 115: exact `⟨q, c⟩` for this block's list (0.0 in plain mode).
@@ -2141,7 +2281,7 @@ fn process_dense_posting_block(
     quantizer: IvfQuantizer,
     prepared_query: &IvfPreparedQuery,
     opaque: &mut EcIvfScanOpaque,
-    best_by_heap_tid: *mut HashMap<ItemPointer, EcIvfScoredCandidate>,
+    best_by_heap_tid: *mut CandidateDedupPool,
     running_top: &mut Option<CandidateTopK>,
     remaining_live_tids_by_list: &mut [u64],
     // Task 115: exact `⟨q, c⟩` for this block's list (0.0 in plain mode).
@@ -2286,7 +2426,7 @@ fn posting_prune_cutoff(running_top: &Option<CandidateTopK>) -> Option<f32> {
 
 fn record_scored_posting_candidates<I>(
     opaque: &mut EcIvfScanOpaque,
-    best_by_heap_tid: *mut HashMap<ItemPointer, EcIvfScoredCandidate>,
+    best_by_heap_tid: *mut CandidateDedupPool,
     running_top: &mut Option<CandidateTopK>,
     candidate_tids: I,
     heap_tid_count: usize,
@@ -2315,41 +2455,84 @@ fn record_scored_posting_candidates<I>(
             rerank_tid,
             score,
         };
-        // SAFETY: `best_by_heap_tid` points to the scan-owned dedup map
+        // SAFETY: `best_by_heap_tid` points to the scan-owned dedup pool
         // returned by `candidate_dedup_map` above.
         let best_by_heap_tid = unsafe { &mut *best_by_heap_tid };
-        match best_by_heap_tid.entry(heap_tid) {
-            Entry::Occupied(mut entry) => {
-                opaque.explain_counters.record_filtered_duplicate();
-                let existing = entry.get_mut();
-                if candidate_cmp(&candidate, existing) == Ordering::Less {
-                    *existing = candidate;
-                }
-            }
-            Entry::Vacant(entry) => {
-                entry.insert(candidate);
+        match best_by_heap_tid.record_best(candidate) {
+            CandidateRecordOutcome::Inserted => {
                 opaque.explain_counters.record_candidate_inserted();
                 if let Some(top_k) = running_top.as_mut() {
                     top_k.push(candidate);
                 }
             }
+            CandidateRecordOutcome::ReplacedWorse | CandidateRecordOutcome::KeptExisting => {
+                opaque.explain_counters.record_filtered_duplicate();
+            }
         }
     }
 }
 
-fn pre_rerank_candidate_limit(index_options: &super::options::EcIvfOptions) -> Option<usize> {
-    let rerank_width = super::options::resolve_scan_rerank_width(index_options.rerank_width)
-        .effective_rerank_width;
+/// Pure given the caller-resolved `effective_rerank_width` (resolve the session
+/// GUC once on the backend thread via `resolve_scan_rerank_width`; do NOT read
+/// it here, so this stays unit-testable off-backend without tripping pgrx's
+/// "postgres FFI may not be called from multiple threads" guard).
+fn pre_rerank_candidate_limit(
+    index_options: &super::options::EcIvfOptions,
+    effective_rerank_width: i32,
+) -> Option<usize> {
     match index_options.rerank.v1_effective() {
-        super::options::RerankMode::HeapF32 if rerank_width > 0 => Some(rerank_width as usize),
+        super::options::RerankMode::HeapF32 if effective_rerank_width > 0 => {
+            Some(effective_rerank_width as usize)
+        }
         _ => None,
     }
 }
 
-fn collect_ranked_probe_candidates<I>(
-    candidates: I,
-    limit: Option<usize>,
-) -> Vec<EcIvfScoredCandidate>
+/// Collect limit passed to `collect_ranked_probe_candidates`, which uses `Some`
+/// to select the fully-sorted vec and `None` to select the lazy min-heap.
+///
+/// heap_f32 always reranks, so it MUST take the sorted path (never the lazy
+/// heap, which skips rerank): a positive rerank width bounds the pre-rerank
+/// frontier to the top `width`, and the "rerank all" width<=0 sentinel sorts
+/// the whole frontier (`candidate_len`). Every non-heap_f32 mode never reranks
+/// and takes the lazy heap (`None`) — the shipping-default fast path. Keeping
+/// heap_f32+width<=0 on the sorted path is what prevents the exact rerank from
+/// being silently skipped (a recall regression vs the former unconditional
+/// rerank).
+///
+/// `effective_rerank_width` is resolved once by the caller (see
+/// `pre_rerank_candidate_limit`), keeping this function pure/unit-testable.
+fn ranked_collect_limit(
+    index_options: &super::options::EcIvfOptions,
+    effective_rerank_width: i32,
+    candidate_len: usize,
+) -> Option<usize> {
+    if matches!(
+        index_options.rerank.v1_effective(),
+        super::options::RerankMode::HeapF32
+    ) {
+        Some(pre_rerank_candidate_limit(index_options, effective_rerank_width).unwrap_or(candidate_len))
+    } else {
+        None
+    }
+}
+
+/// The ranked output of a probe collect. The heap_f32 rerank path stays a
+/// fully sorted vec (the exact heap-f32 rerank consumes an ascending prefix,
+/// or the whole frontier when width<=0); the unbounded path (no pre-rerank
+/// limit — the shipping default, where rerank mode is not heap_f32) becomes a
+/// min-heap popped lazily by
+/// `next_posting_candidate`. Pop order equals the former full-sort order
+/// because `candidate_cmp` is a strict total order over distinct heap tids,
+/// so this replaces the per-query O(n log n) sort over every deduped
+/// candidate (~45k at 1m/nprobe 32) with an O(n) heapify plus O(log n) per
+/// row actually pulled by the executor (k=10 in the standard sweeps).
+enum RankedProbeCandidates {
+    Sorted(Vec<EcIvfScoredCandidate>),
+    LazyHeap(BinaryHeap<Reverse<CandidateHeapEntry>>),
+}
+
+fn collect_ranked_probe_candidates<I>(candidates: I, limit: Option<usize>) -> RankedProbeCandidates
 where
     I: IntoIterator<Item = EcIvfScoredCandidate>,
 {
@@ -2358,11 +2541,14 @@ where
         for candidate in candidates {
             top_k.push(candidate);
         }
-        top_k.into_sorted_candidates()
+        RankedProbeCandidates::Sorted(top_k.into_sorted_candidates())
     } else {
-        let mut ranked = candidates.into_iter().collect::<Vec<_>>();
-        ranked.sort_by(candidate_cmp);
-        ranked
+        RankedProbeCandidates::LazyHeap(
+            candidates
+                .into_iter()
+                .map(|candidate| Reverse(CandidateHeapEntry { candidate }))
+                .collect(),
+        )
     }
 }
 
@@ -4663,12 +4849,14 @@ mod tests {
         IvfPostingTupleRef, IvfRerankGroupHeaderTuple,
     };
     use super::{
-        build_probe_block_sequence, candidate_heap_blocks, candidate_heap_tid_cmp,
-        choose_adaptive_nprobe, consume_live_tid_budget, inner_product, inner_product_scalar,
-        pre_rerank_candidate_limit, rerank_group_payload_for_candidate, select_probe_lists,
-        select_probe_lists_with_adaptive, use_scratch_soa_batch_decode_for_format, CandidateTopK,
-        EcIvfCentroidScore, EcIvfScoredCandidate, IvfDensePostingBlockScratch,
-        IvfPostingScratchSoa, LoadedRerankGroup, ProbeBlockRange, SelectedRerankPayloadSlab,
+        build_probe_block_sequence, candidate_cmp, candidate_heap_blocks, candidate_heap_tid_cmp,
+        choose_adaptive_nprobe, collect_ranked_probe_candidates, consume_live_tid_budget,
+        inner_product, inner_product_scalar, pre_rerank_candidate_limit, ranked_collect_limit,
+        rerank_group_payload_for_candidate, select_probe_lists, select_probe_lists_with_adaptive,
+        use_scratch_soa_batch_decode_for_format, CandidateDedupPool, CandidateRecordOutcome,
+        CandidateTopK, EcIvfCentroidScore, EcIvfScoredCandidate, IvfDensePostingBlockScratch,
+        IvfPostingScratchSoa, LoadedRerankGroup, ProbeBlockRange, RankedProbeCandidates,
+        SelectedRerankPayloadSlab,
     };
     use crate::storage::page::ItemPointer;
 
@@ -5174,6 +5362,223 @@ mod tests {
     }
 
     #[test]
+    fn candidate_dedup_pool_reports_record_outcomes_and_keeps_best_scores() {
+        let mut dedup = CandidateDedupPool::with_capacity(4);
+
+        assert_eq!(
+            dedup.record_best(candidate(1, 1, 3.0)),
+            CandidateRecordOutcome::Inserted
+        );
+        // Worse (higher) score for the same heap tid is kept-existing.
+        assert_eq!(
+            dedup.record_best(candidate(1, 1, 4.0)),
+            CandidateRecordOutcome::KeptExisting
+        );
+        // Strictly better (lower) score replaces in place.
+        assert_eq!(
+            dedup.record_best(candidate(1, 1, 1.0)),
+            CandidateRecordOutcome::ReplacedWorse
+        );
+        // Equal score + equal tid compares `Equal`, not `Less`: kept.
+        assert_eq!(
+            dedup.record_best(candidate(1, 1, 1.0)),
+            CandidateRecordOutcome::KeptExisting
+        );
+        assert_eq!(
+            dedup.record_best(candidate(2, 7, 2.0)),
+            CandidateRecordOutcome::Inserted
+        );
+
+        let mut pool = dedup.candidates().to_vec();
+        pool.sort_by(candidate_cmp);
+        assert_eq!(pool.len(), 2);
+        assert_eq!(pool[0].heap_tid.block_number, 1);
+        assert_eq!(pool[0].score, 1.0);
+        assert_eq!(pool[1].heap_tid.block_number, 2);
+        assert_eq!(pool[1].score, 2.0);
+    }
+
+    #[test]
+    fn candidate_dedup_pool_collect_matches_reference_map_dedup() {
+        // Byte-identity guard: the pool + bounded collect must produce
+        // exactly what the pre-Task-145 shape (HashMap<tid, candidate> then
+        // full-map walk) produced, on a stream with duplicates, later
+        // improvements, and later-worse repeats, under both a bounded and an
+        // unbounded collect.
+        let mut stream = Vec::new();
+        let mut state = 0x2545F4914F6CDD1D_u64;
+        for i in 0..10_000_u32 {
+            state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            let block = (state >> 33) as u32 % 512;
+            let offset = 1 + ((state >> 17) as u16 % 128);
+            let score = ((state >> 40) as f32) / 1e6 - 8.0;
+            stream.push(candidate(block, offset, score));
+            let _ = i;
+        }
+
+        let mut dedup = CandidateDedupPool::with_capacity(stream.len());
+        let mut reference: HashMap<ItemPointer, EcIvfScoredCandidate> =
+            HashMap::with_capacity(stream.len());
+        for cand in &stream {
+            dedup.record_best(*cand);
+            match reference.entry(cand.heap_tid) {
+                hashbrown::hash_map::Entry::Occupied(mut entry) => {
+                    if candidate_cmp(cand, entry.get()) == std::cmp::Ordering::Less {
+                        *entry.get_mut() = *cand;
+                    }
+                }
+                hashbrown::hash_map::Entry::Vacant(entry) => {
+                    entry.insert(*cand);
+                }
+            }
+        }
+
+        for limit in [None, Some(1), Some(50), Some(20_000)] {
+            let from_pool = drain_ranked(collect_ranked_probe_candidates(
+                dedup.candidates().iter().copied(),
+                limit,
+            ));
+            let from_reference = drain_ranked(collect_ranked_probe_candidates(
+                reference.values().copied(),
+                limit,
+            ));
+            assert_eq!(from_pool.len(), from_reference.len(), "limit {limit:?}");
+            for (left, right) in from_pool.iter().zip(from_reference.iter()) {
+                assert_eq!(left.heap_tid, right.heap_tid, "limit {limit:?}");
+                assert_eq!(left.rerank_tid, right.rerank_tid, "limit {limit:?}");
+                assert_eq!(left.score.to_bits(), right.score.to_bits(), "limit {limit:?}");
+            }
+        }
+    }
+
+    /// Drain a ranked collect into the exact sequence `amgettuple` streams:
+    /// the sorted vec verbatim, or repeated lazy-heap pops. Also asserts the
+    /// lazy-heap pop sequence is ascending under `candidate_cmp` — the
+    /// byte-identity claim that heap pops equal the former full sort.
+    fn drain_ranked(ranked: RankedProbeCandidates) -> Vec<EcIvfScoredCandidate> {
+        match ranked {
+            RankedProbeCandidates::Sorted(candidates) => candidates,
+            RankedProbeCandidates::LazyHeap(mut heap) => {
+                let mut drained = Vec::with_capacity(heap.len());
+                while let Some(entry) = heap.pop() {
+                    drained.push(entry.0.candidate);
+                }
+                for pair in drained.windows(2) {
+                    assert_eq!(
+                        candidate_cmp(&pair[0], &pair[1]),
+                        std::cmp::Ordering::Less,
+                        "lazy-heap pops must be strictly ascending"
+                    );
+                }
+                drained
+            }
+        }
+    }
+
+    /// Task 145 packet profile: attribute the pre-change `topk_collect`
+    /// cost (full dedup-map walk + bounded top-k pushes + sort) against the
+    /// dense-pool walk shape, at the 1m operating shape (~45k candidates,
+    /// rerank_width 50). Ignored by default; run explicitly for packet
+    /// evidence with:
+    /// `cargo test --release --no-default-features --features pg18 \
+    ///    candidate_dedup_profile -- --ignored --nocapture`
+    #[test]
+    #[ignore = "packet profile measurement, not a correctness gate"]
+    fn candidate_dedup_profile_map_walk_vs_pool_walk() {
+        use std::hint::black_box;
+        use std::time::Instant;
+
+        const CANDIDATES: usize = 45_000;
+        const LIMIT: usize = 50;
+        const ITERS: u32 = 200;
+
+        let mut stream = Vec::with_capacity(CANDIDATES);
+        let mut state = 0x9E3779B97F4A7C15_u64;
+        for i in 0..CANDIDATES as u64 {
+            state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            // Unique tids so the map holds the full candidate count.
+            let block = (i / 291) as u32;
+            let offset = 1 + (i % 291) as u16;
+            let score = ((state >> 40) as f32) / 1e6 - 8.0;
+            stream.push(candidate(block, offset, score));
+        }
+
+        let mut map: HashMap<ItemPointer, EcIvfScoredCandidate> =
+            HashMap::with_capacity(CANDIDATES);
+        let mut pool = CandidateDedupPool::with_capacity(CANDIDATES);
+        for cand in &stream {
+            map.insert(cand.heap_tid, *cand);
+            pool.record_best(*cand);
+        }
+
+        let time_ns = |label: &str, mut body: Box<dyn FnMut() -> usize>| {
+            for _ in 0..10 {
+                black_box(body());
+            }
+            let started = Instant::now();
+            for _ in 0..ITERS {
+                black_box(body());
+            }
+            let ns = started.elapsed().as_nanos() / u128::from(ITERS);
+            println!(
+                "{label}: {ns} ns/iter ({:.1} ns/candidate)",
+                ns as f64 / CANDIDATES as f64
+            );
+            ns
+        };
+
+        let map_ref = &map;
+        let map_walk = time_ns(
+            "map walk only (values -> black_box)",
+            Box::new(move || map_ref.values().map(|c| c.heap_tid.offset_number as usize).sum()),
+        );
+        let ranked_len = |ranked: RankedProbeCandidates| match ranked {
+            RankedProbeCandidates::Sorted(candidates) => candidates.len(),
+            RankedProbeCandidates::LazyHeap(heap) => heap.len(),
+        };
+        let map_ref = &map;
+        let map_collect = time_ns(
+            "map walk + top-k(50) + sort  [pre-change topk_collect]",
+            Box::new(move || {
+                ranked_len(collect_ranked_probe_candidates(
+                    map_ref.values().copied(),
+                    Some(LIMIT),
+                ))
+            }),
+        );
+        let pool_ref = &pool;
+        let pool_walk = time_ns(
+            "pool walk only (slice -> black_box)",
+            Box::new(move || {
+                pool_ref
+                    .candidates()
+                    .iter()
+                    .map(|c| c.heap_tid.offset_number as usize)
+                    .sum()
+            }),
+        );
+        let pool_ref = &pool;
+        let pool_collect = time_ns(
+            "pool walk + top-k(50) + sort [post-change topk_collect]",
+            Box::new(move || {
+                ranked_len(collect_ranked_probe_candidates(
+                    pool_ref.candidates().iter().copied(),
+                    Some(LIMIT),
+                ))
+            }),
+        );
+
+        println!(
+            "attribution: map-walk share of pre-change collect = {:.1}%; \
+             pool-walk share of post-change collect = {:.1}%; \
+             pool collect vs map collect = {:.1}%",
+            100.0 * map_walk as f64 / map_collect as f64,
+            100.0 * pool_walk as f64 / pool_collect as f64,
+            100.0 * pool_collect as f64 / map_collect as f64
+        );
+    }
+
+    #[test]
     fn candidate_heap_tid_cmp_orders_by_heap_location_before_score() {
         let mut candidates = [
             candidate(8, 3, 0.5),
@@ -5213,19 +5618,47 @@ mod tests {
     #[test]
     fn pre_rerank_candidate_limit_requires_heap_f32_positive_width() {
         assert_eq!(
-            pre_rerank_candidate_limit(&options_with_rerank(RerankMode::HeapF32, 50)),
+            pre_rerank_candidate_limit(&options_with_rerank(RerankMode::HeapF32, 50), 50),
             Some(50)
         );
         assert_eq!(
-            pre_rerank_candidate_limit(&options_with_rerank(RerankMode::HeapF32, 0)),
+            pre_rerank_candidate_limit(&options_with_rerank(RerankMode::HeapF32, 0), 0),
             None
         );
         assert_eq!(
-            pre_rerank_candidate_limit(&options_with_rerank(RerankMode::Off, 50)),
+            pre_rerank_candidate_limit(&options_with_rerank(RerankMode::Off, 50), 50),
             None
         );
         assert_eq!(
-            pre_rerank_candidate_limit(&options_with_rerank(RerankMode::Auto, 50)),
+            pre_rerank_candidate_limit(&options_with_rerank(RerankMode::Auto, 50), 50),
+            None
+        );
+    }
+
+    #[test]
+    fn ranked_collect_limit_keeps_heap_f32_on_sorted_path_including_rerank_all() {
+        // Positive width -> bounded sorted top-`width` (unchanged from before).
+        assert_eq!(
+            ranked_collect_limit(&options_with_rerank(RerankMode::HeapF32, 50), 50, 1000),
+            Some(50)
+        );
+        // heap_f32 + width<=0 is the "rerank all" sentinel: it MUST stay on the
+        // sorted path (Some == full pool length), NOT fall through to the lazy
+        // heap, otherwise the exact rerank is silently skipped and recall
+        // regresses vs the former unconditional rerank. This is the Task 145
+        // review fix (2026-07-06).
+        assert_eq!(
+            ranked_collect_limit(&options_with_rerank(RerankMode::HeapF32, 0), 0, 1000),
+            Some(1000)
+        );
+        // Non-heap_f32 modes never rerank -> lazy heap (None), the default fast
+        // path that carries the topk_collect win.
+        assert_eq!(
+            ranked_collect_limit(&options_with_rerank(RerankMode::Off, 50), 50, 1000),
+            None
+        );
+        assert_eq!(
+            ranked_collect_limit(&options_with_rerank(RerankMode::Auto, 50), 50, 1000),
             None
         );
     }

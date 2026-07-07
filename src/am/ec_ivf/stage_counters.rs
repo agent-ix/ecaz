@@ -27,10 +27,20 @@ pub(crate) enum IvfQueryStage {
     ExactRerank,
     RerankPayloadDecode,
     RerankPayloadScore,
+    /// Task 146: scan-query storage + quantizer prepared-query construction
+    /// (rotation, LUT/int8 query encode) + heap-rerank-state configuration.
+    QueryPrep,
+    /// Task 146: full-nlists centroid scoring + probe-list selection.
+    CentroidScore,
+    /// Task 146: the whole amrescan body. Executor/gettuple share of a
+    /// query = e2e − rescan_total; rescan-internal unattributed =
+    /// rescan_total − query_prep − centroid_score − approximate_scan −
+    /// exact_rerank.
+    RescanTotal,
 }
 
 impl IvfQueryStage {
-    pub(crate) const ALL: [Self; 11] = [
+    pub(crate) const ALL: [Self; 14] = [
         Self::ApproximateScan,
         Self::ProbePlan,
         Self::PostingVisit,
@@ -42,6 +52,9 @@ impl IvfQueryStage {
         Self::ExactRerank,
         Self::RerankPayloadDecode,
         Self::RerankPayloadScore,
+        Self::QueryPrep,
+        Self::CentroidScore,
+        Self::RescanTotal,
     ];
 
     pub(crate) fn label(self) -> &'static str {
@@ -57,6 +70,9 @@ impl IvfQueryStage {
             Self::ExactRerank => "exact_rerank",
             Self::RerankPayloadDecode => "rerank_payload_decode",
             Self::RerankPayloadScore => "rerank_payload_score",
+            Self::QueryPrep => "query_prep",
+            Self::CentroidScore => "centroid_score",
+            Self::RescanTotal => "rescan_total",
         }
     }
 
@@ -73,6 +89,9 @@ impl IvfQueryStage {
             Self::ExactRerank => 8,
             Self::RerankPayloadDecode => 9,
             Self::RerankPayloadScore => 10,
+            Self::QueryPrep => 11,
+            Self::CentroidScore => 12,
+            Self::RescanTotal => 13,
         }
     }
 }

@@ -1,0 +1,4 @@
+[32m[1m    Finished[0m[39m installing ecaz
+90a677f6fe39ca6c300377c305cd6e695ca6cf9e  /opt/homebrew/lib/postgresql@18/ecaz.dylib
+90a677f6fe39ca6c300377c305cd6e695ca6cf9e  target/release/libecaz.dylib
+da6101a008292e36dad7c599265452bc6e7ee86e

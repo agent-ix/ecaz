@@ -1,0 +1,4 @@
+test am::ec_ivf::scan::tests::candidate_dedup_pool_collect_matches_reference_map_dedup ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 2255 filtered out; finished in 0.00s
+

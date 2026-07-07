@@ -1,9 +1,73 @@
 # Task 124: IVF TurboQuant Stage-2 Rerank Pipeline
 
-Status: **measured / superseded by Task 130 clean keep-set** (2026-06-30; full
-experimental branch `origin/task-124-ivf-tq-stage2` is not landable as-is).
-Owner: coder (to be assigned). One coder, one branch.
+Status: **measured — awaiting review; Phase 6 (IO-sensitive) is the
+remaining gate** (2026-07-04).
+Owner: Codex (measurement re-baseline; branch `task-124-stage2-pareto`,
+packet `reviews/task-124/001-stage2-vs-rb1-pareto/`). Original in-engine
+implementation ran on the historical `task-124-ivf-tq-stage2` branch; its
+validated keep-set landed on `main` via Task 130
+(`130-tq-post-task124-cleanup.md`).
+Packet 001 verdict: **no warm-cache promotion** — stage2@25 matches
+rb1@w50 recall at ≤100k and wins −4..−10% latency at 100k, but at 1m it
+pays 0.3–1.0 pp recall and is pareto-equivalent at matched recall, at
+4.4× the index size. Density control (TQ 4-bit + same rerank) proves
+the Task 169 win was primarily the rerank stage. Live paths: Phase 6
+cold-cache (halved heap fetches, 25 vs 50/query) and TQ sidecar decode
+optimization (98% of stage-2 payload cost).
 Priority: P1 follow-up for the Task 122 TurboQuant keep-experimental outcome.
+
+## 2026-07-04 Re-baseline (supersedes Phase 5 comparators below)
+
+What already landed on `main` (Task 130 keep-set; verify with
+`git log -S stage2_final_rerank_width`):
+
+- the in-engine 3-stage pipeline: `storage_format='coarse_rerank'`
+  (RaBitQ-1 dense coarse) + `rerank_placement='index'` +
+  `rerank_format='turboquant'` (persisted TQ stage-2 payload) +
+  `stage2_final_rerank_width=N` (bounded final exact f32 source rerank)
+  — `9af6ba83e`;
+- stage-2 attribution counters (`tq_stage2_*`) — `fef5e20f6`;
+- the recall-broken experimental formats (TQ2/binary/768) were pruned
+  per Task 130; 4-bit TQ is the only stage-2 payload format.
+
+Why re-baseline: the comparators in Phase 5 predate two facts.
+(a) Task 143 flipped the TQ defaults (dense + int8 scorer) and Task 145
+cut topk_collect — the champion moved. (b) Task 169 then showed
+**rb1 + heap_f32 rerank width 50 pareto-dominates the promoted TQ
+default at every scale** (1m: 6.21 vs 6.66 ms, recall 0.9667 vs 0.9208
+@ n32, index −68%). So the product question for the TQ stage-2 pipeline
+is no longer "does it beat the RaBitQ + f32 baseline of June" but:
+
+> Does inserting the persisted TQ stage-2 reducer between the rb1
+> coarse frontier and the exact rerank beat **rb1 + heap_f32 directly**
+> — i.e. does cutting exact heap fetches from 50 to 25 pay for the TQ
+> payload scoring, at equal recall?
+
+Re-baselined measurement matrix (packet 001; measurement-only, all on
+the landed binary, `ecaz bench suite`, 10k/50k/100k then 1m for the
+winner):
+
+- **D (stage2@25)**: `coarse_rerank` + `rerank_placement=index` +
+  `rerank_format=turboquant` + `rerank_width=50` +
+  `stage2_final_rerank_width=25`.
+- **E (TQ apples-to-apples)**: `storage_format=turboquant` +
+  `rerank=heap_f32` + `rerank_width=50` — isolates coarse-payload
+  density (4-bit vs 1-bit) under the SAME rerank, the control Task 169
+  deliberately skipped.
+- **F (rb1@w25 control)**: rb1 + `rerank=heap_f32` + `rerank_width=25`
+  — if plain rb1 holds recall at width 25, the stage-2 reducer has no
+  warm-cache job; its value collapses to the IO-sensitive regime
+  (Phase 6).
+- Baselines cited, not re-run (same binary lineage): rb1@w50
+  (`reviews/task-169/001-density-pareto/`), TQ pure default
+  (`reviews/task-171/001-outside-scan-profile/`).
+
+Decision rule: D must beat rb1@w50 AND F at matched recall on warm
+latency, or show a credible fetch-count/IO rationale plus a Phase 6
+cold-cache win, to stay alive as a product path. Phase 6 (IO-sensitive
+validation) remains REQUIRED before any promotion claim regardless —
+that is also where the TQ no-rerank default retains its zero-heap-fetch
+niche and where the Task 169 verdict could flip.
 
 ## Why
 

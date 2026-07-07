@@ -22,6 +22,7 @@ mod sidecar_rerank;
 mod spire_pipeline;
 mod storage;
 mod suite;
+mod tq_bias_audit;
 
 pub use build_probe::BuildProbeArgs;
 pub use comparator::ComparatorArgs;
@@ -36,6 +37,7 @@ pub use sidecar_rerank::SidecarRerankArgs;
 pub use spire_pipeline::{SpirePipelineArgs, SpireRemoteTupleTransportMode};
 pub use storage::StorageArgs;
 pub use suite::SuiteArgs;
+pub use tq_bias_audit::TqBiasAuditArgs;
 
 pub(crate) fn missing_am_error(profile: &IndexProfile, am: &str) -> String {
     format!(
@@ -656,6 +658,8 @@ pub enum BenchCommand {
     SpirePipeline(SpirePipelineArgs),
     /// Expand a configured benchmark suite into packet-style ecaz commands.
     Suite(SuiteArgs),
+    /// Offline TurboQuant 4-bit no-QJL estimator-bias audit over staged TSVs.
+    TqBiasAudit(TqBiasAuditArgs),
 }
 
 impl BenchCommand {
@@ -673,6 +677,7 @@ impl BenchCommand {
             BenchCommand::RabitqKernel(a) => rabitq_kernel::run(a).await,
             BenchCommand::SpirePipeline(a) => spire_pipeline::run(conn, a).await,
             BenchCommand::Suite(a) => suite::run(conn, a).await,
+            BenchCommand::TqBiasAudit(a) => tq_bias_audit::run(a).await,
         }
     }
 }

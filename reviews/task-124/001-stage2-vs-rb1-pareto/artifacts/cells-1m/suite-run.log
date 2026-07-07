@@ -1,0 +1,268 @@
+[suite:task124-stage2-1m] wrote reviews/task-124/001-stage2-vs-rb1-pareto/artifacts/cells-1m/suite-manifest.json
+[suite:task124-stage2-1m] wrote reviews/task-124/001-stage2-vs-rb1-pareto/artifacts/cells-1m/suite-manifest.json
+[suite:task124-stage2-1m] precheck-build-sha -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 dev sql --pg 18 --db tqvector_bench --socket-dir /Users/peter/.pgrx --raw --sql "SELECT now() AS captured_at, ecaz_build_git_sha(), current_setting('ec_ivf.turboquant_scorer') AS scorer_default;" --log-output reviews/task-124/001-stage2-vs-rb1-pareto/artifacts/cells-1m/precheck-build-sha.log
+[suite:task124-stage2-1m] wrote reviews/task-124/001-stage2-vs-rb1-pareto/artifacts/cells-1m/suite-manifest.json
+          captured_at          |            ecaz_build_git_sha            | scorer_default 
+-------------------------------+------------------------------------------+----------------
+ 2026-07-04 16:36:39.660107-07 | 1dda8e589e3472c4f5c2476331e785a0add82f6a | int8_approx
+(1 row)
+
+[suite:task124-stage2-1m] wrote reviews/task-124/001-stage2-vs-rb1-pareto/artifacts/cells-1m/suite-manifest.json
+[suite:task124-stage2-1m] load-stage2-1m -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 --log-file reviews/task-124/001-stage2-vs-rb1-pareto/artifacts/cells-1m/load-stage2-1m.log corpus load --prefix task124_stage2_1m --profile ec_ivf --corpus-file data/staged-current/ec_real_ann_benchmarks_anchor_corpus.tsv --queries-file data/staged-current/ec_real_ann_benchmarks_anchor_queries.tsv --manifest-file data/staged-current/ec_real_ann_benchmarks_anchor_manifest.json --allow-manifest-mismatch --bits 4 --seed 42 --storage-format coarse_rerank --reloption rerank_placement=index --reloption rerank_format=turboquant --reloption rerank_width=50 --reloption stage2_final_rerank_width=25
+[suite:task124-stage2-1m] wrote reviews/task-124/001-stage2-vs-rb1-pareto/artifacts/cells-1m/suite-manifest.json
+┌─────────┬─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                                                                                                               │
+╞═════════╪═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_ivf                                                                                                                                                              │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ task124_stage2_1m_corpus (990000 rows)                                                                                                                              │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ task124_stage2_1m_queries (10000 rows)                                                                                                                              │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ task124_stage2_1m_coarse_rerank_idx [rerank_placement=index, rerank_format=turboquant, rerank_width=50, stage2_final_rerank_width=25, storage_format=coarse_rerank] │
+└─────────┴─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+[loader] inspecting data/staged-current/ec_real_ann_benchmarks_anchor_corpus.tsv
+[loader] inspecting data/staged-current/ec_real_ann_benchmarks_anchor_queries.tsv
+[loader] corpus: 990000 rows, sha256=00d96d7665edc31cd8e4e62712c0ef2679fb714682f3ce4d522305e59faec687  queries: 10000 rows, sha256=34c4874e0e35734574f4ee9e1dd10753fcec2d295955061a407c258df163f5a0
+[loader] warning: manifest verification failed for data/staged-current/ec_real_ann_benchmarks_anchor_manifest.json: prefix="ec_real_ann_benchmarks_anchor" (expected "task124_stage2_1m")
+[loader] copied corpus table task124_stage2_1m_corpus in 141.07s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table task124_stage2_1m_corpus in 278.65s
+[loader] copied queries table task124_stage2_1m_queries in 2.03s
+[loader] building task124_stage2_1m_coarse_rerank_idx using ec_ivf (reloptions=[rerank_placement=index, rerank_format=turboquant, rerank_width=50, stage2_final_rerank_width=25, storage_format=coarse_rerank]) ...
+[loader] built task124_stage2_1m_coarse_rerank_idx in 75.73s
+[loader] ec_ivf build timing: requested_workers=1 workers_launched=1 heap_tuples=990000 index_tuples=990000 heap_ingest_us=13847499 train_model_us=3597233 stage_build_plan_us=52516071 stage_pq_train_us=0 stage_centroids_us=1387 stage_assign_us=44029796 stage_postings_us=196424 stage_directory_us=35 flush_build_plan_us=5601950 parallel_begin_us=922 parallel_drain_us=12651885 parallel_sort_push_us=1194683 parallel_worker_tuple_buffer_capacity=1048576 parallel_worker_tuple_buffer_struct_bytes=67108864
+[loader] completed prefix task124_stage2_1m in 558.89s
+[suite:task124-stage2-1m] wrote reviews/task-124/001-stage2-vs-rb1-pareto/artifacts/cells-1m/suite-manifest.json
+[suite:task124-stage2-1m] recall-stage2-1m -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench recall --prefix task124_stage2_1m --profile ec_ivf --k 10 --sweep "8,16,24,32,48,64" --queries-limit 32 --bits 4 --seed 42 --force-index --truth-cache-dir reviews/task-124/001-stage2-vs-rb1-pareto/truth-cache --log-output reviews/task-124/001-stage2-vs-rb1-pareto/artifacts/cells-1m/recall-stage2-1m.log
+[suite:task124-stage2-1m] wrote reviews/task-124/001-stage2-vs-rb1-pareto/artifacts/cells-1m/suite-manifest.json
+┌────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ nprobe ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 8      ┆ 32      ┆ 320           ┆ 0.8438   ┆ 0.7999          ┆ 0.8794           ┆ 0.6100     ┆ 0.9000     ┆ 1.0000     ┆ 0.4000       ┆ 0.9917 ┆ 8.56 ms     │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 16     ┆ 32      ┆ 320           ┆ 0.9187   ┆ 0.8836          ┆ 0.9440           ┆ 0.8000     ┆ 1.0000     ┆ 1.0000     ┆ 0.5000       ┆ 0.9972 ┆ 3.92 ms     │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 24     ┆ 32      ┆ 320           ┆ 0.9375   ┆ 0.9054          ┆ 0.9592           ┆ 0.8000     ┆ 1.0000     ┆ 1.0000     ┆ 0.6000       ┆ 0.9979 ┆ 4.65 ms     │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 32     ┆ 32      ┆ 320           ┆ 0.9563   ┆ 0.9279          ┆ 0.9738           ┆ 0.8100     ┆ 1.0000     ┆ 1.0000     ┆ 0.6000       ┆ 0.9984 ┆ 5.21 ms     │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 48     ┆ 32      ┆ 320           ┆ 0.9719   ┆ 0.9474          ┆ 0.9851           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.7000       ┆ 0.9990 ┆ 7.40 ms     │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 64     ┆ 32      ┆ 320           ┆ 0.9781   ┆ 0.9555          ┆ 0.9894           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.8000       ┆ 0.9991 ┆ 9.01 ms     │
+└────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from task124_stage2_1m_queries ...
+[recall] fetching corpus from task124_stage2_1m_corpus ...
+[recall] computing ground truth: 32 queries vs 990000 corpus rows (dim=1536) ...
+[recall] ground truth in 1.18s
+[recall] wrote ground truth cache reviews/task-124/001-stage2-vs-rb1-pareto/truth-cache/truth-v1-rows990000-queries32-dim1536-k10-6281efcc46fafa86.json
+[suite:task124-stage2-1m] wrote reviews/task-124/001-stage2-vs-rb1-pareto/artifacts/cells-1m/suite-manifest.json
+[suite:task124-stage2-1m] latency-stage2-1m -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench latency --prefix task124_stage2_1m --profile ec_ivf --k 10 --concurrency 1 --iterations 32 --sweep "32,40" --bits 4 --seed 42 --force-index --sample-backend-memory --cache-state task124_stage2_1m_warm --task87-candidate-batch-counters --ivf-stage-counters --memory-sample-interval-ms 25 --log-output reviews/task-124/001-stage2-vs-rb1-pareto/artifacts/cells-1m/latency-stage2-1m.log
+[suite:task124-stage2-1m] wrote reviews/task-124/001-stage2-vs-rb1-pareto/artifacts/cells-1m/suite-manifest.json
+┌────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬────────────────────────┬─────────────┬─────────────┬────────────────┐
+│ nprobe ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state            ┆ rss_peak_kb ┆ hwm_peak_kb ┆ memory_samples │
+╞════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪════════════════════════╪═════════════╪═════════════╪════════════════╡
+│ 32     ┆ 32    ┆ 5.50 ms ┆ 0.98 ms ┆ 4.16 ms ┆ 5.29 ms ┆ 6.59 ms ┆ 8.99 ms ┆ 9.90 ms ┆ task124_stage2_1m_warm ┆ 0           ┆ 0           ┆ 0              │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 40     ┆ 32    ┆ 6.30 ms ┆ 0.85 ms ┆ 5.17 ms ┆ 6.17 ms ┆ 7.52 ms ┆ 9.14 ms ┆ 9.86 ms ┆ task124_stage2_1m_warm ┆ 0           ┆ 0           ┆ 0              │
+└────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴────────────────────────┴─────────────┴─────────────┴────────────────┘
+[block-kernel-counters] command=latency label=nprobe=32 surface=ivf quant=rabitq isa=neon flushes=5250 candidates=1340430 elapsed_nanos=91197458 elapsed_ms=91.197458 kernel_flushes=5250 kernel_candidates=1340430 kernel_elapsed_nanos=91197458 kernel_elapsed_ms=91.197458 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=1 width_8_15=2 width_16_31=2 width_ge32=5245 pruned_candidates=0 kept_candidates=0
+[block-kernel-counters] command=latency label=nprobe=32 surface=ivf quant=turboquant_int8 isa=neon flushes=32 candidates=1600 elapsed_nanos=71081 elapsed_ms=0.071081 kernel_flushes=32 kernel_candidates=1600 kernel_elapsed_nanos=71081 kernel_elapsed_ms=0.071081 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=0 width_8_15=0 width_16_31=0 width_ge32=32 pruned_candidates=0 kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=ivf flushes=5282 candidates=1342030 elapsed_nanos=91268539 elapsed_ms=91.268539 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[block-kernel-counters] command=latency label=nprobe=40 surface=ivf quant=rabitq isa=neon flushes=6377 candidates=1627949 elapsed_nanos=109740401 elapsed_ms=109.740401 kernel_flushes=6377 kernel_candidates=1627949 kernel_elapsed_nanos=109740401 kernel_elapsed_ms=109.740401 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=2 width_8_15=1 width_16_31=4 width_ge32=6370 pruned_candidates=0 kept_candidates=0
+[block-kernel-counters] command=latency label=nprobe=40 surface=ivf quant=turboquant_int8 isa=neon flushes=32 candidates=1600 elapsed_nanos=73078 elapsed_ms=0.073078 kernel_flushes=32 kernel_candidates=1600 kernel_elapsed_nanos=73078 kernel_elapsed_ms=0.073078 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=0 width_8_15=0 width_16_31=0 width_ge32=32 pruned_candidates=0 kept_candidates=0
+[task87-counters] command=latency label=nprobe=40 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=40 surface=ivf flushes=6409 candidates=1629549 elapsed_nanos=109813479 elapsed_ms=109.813479 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=40 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=40 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[ivf-stage-counters] command=latency label=nprobe=32 stage=approximate_scan scans=32 samples=32 elapsed_us=132009 elapsed_ms=132.009
+[ivf-stage-counters] command=latency label=nprobe=32 stage=candidate_record scans=32 samples=5250 elapsed_us=974 elapsed_ms=0.974
+[ivf-stage-counters] command=latency label=nprobe=32 stage=centroid_score scans=32 samples=32 elapsed_us=10714 elapsed_ms=10.714
+[ivf-stage-counters] command=latency label=nprobe=32 stage=exact_rerank scans=32 samples=32 elapsed_us=16214 elapsed_ms=16.214
+[ivf-stage-counters] command=latency label=nprobe=32 stage=posting_page_decode scans=32 samples=32 elapsed_us=119793 elapsed_ms=119.793
+[ivf-stage-counters] command=latency label=nprobe=32 stage=posting_visit scans=32 samples=32 elapsed_us=131651 elapsed_ms=131.651
+[ivf-stage-counters] command=latency label=nprobe=32 stage=probe_plan scans=32 samples=32 elapsed_us=11654 elapsed_ms=11.654
+[ivf-stage-counters] command=latency label=nprobe=32 stage=query_prep scans=32 samples=32 elapsed_us=190 elapsed_ms=0.190
+[ivf-stage-counters] command=latency label=nprobe=32 stage=rerank_payload_decode scans=32 samples=64 elapsed_us=12633 elapsed_ms=12.633
+[ivf-stage-counters] command=latency label=nprobe=32 stage=rerank_payload_score scans=32 samples=64 elapsed_us=150 elapsed_ms=0.150
+[ivf-stage-counters] command=latency label=nprobe=32 stage=rescan_total scans=32 samples=32 elapsed_us=171031 elapsed_ms=171.031
+[ivf-stage-counters] command=latency label=nprobe=32 stage=scorer_batch scans=32 samples=5250 elapsed_us=91704 elapsed_ms=91.704
+[ivf-stage-counters] command=latency label=nprobe=32 stage=scratch_flush scans=32 samples=5250 elapsed_us=97314 elapsed_ms=97.314
+[ivf-stage-counters] command=latency label=nprobe=32 stage=topk_collect scans=32 samples=32 elapsed_us=260 elapsed_ms=0.260
+[ivf-stage-counters] command=latency label=nprobe=40 stage=approximate_scan scans=32 samples=32 elapsed_us=158393 elapsed_ms=158.393
+[ivf-stage-counters] command=latency label=nprobe=40 stage=candidate_record scans=32 samples=6377 elapsed_us=1045 elapsed_ms=1.045
+[ivf-stage-counters] command=latency label=nprobe=40 stage=centroid_score scans=32 samples=32 elapsed_us=10758 elapsed_ms=10.758
+[ivf-stage-counters] command=latency label=nprobe=40 stage=exact_rerank scans=32 samples=32 elapsed_us=13515 elapsed_ms=13.515
+[ivf-stage-counters] command=latency label=nprobe=40 stage=posting_page_decode scans=32 samples=32 elapsed_us=144864 elapsed_ms=144.864
+[ivf-stage-counters] command=latency label=nprobe=40 stage=posting_visit scans=32 samples=32 elapsed_us=158026 elapsed_ms=158.026
+[ivf-stage-counters] command=latency label=nprobe=40 stage=probe_plan scans=32 samples=32 elapsed_us=11794 elapsed_ms=11.794
+[ivf-stage-counters] command=latency label=nprobe=40 stage=query_prep scans=32 samples=32 elapsed_us=180 elapsed_ms=0.180
+[ivf-stage-counters] command=latency label=nprobe=40 stage=rerank_payload_decode scans=32 samples=64 elapsed_us=11269 elapsed_ms=11.269
+[ivf-stage-counters] command=latency label=nprobe=40 stage=rerank_payload_score scans=32 samples=64 elapsed_us=142 elapsed_ms=0.142
+[ivf-stage-counters] command=latency label=nprobe=40 stage=rescan_total scans=32 samples=32 elapsed_us=194878 elapsed_ms=194.878
+[ivf-stage-counters] command=latency label=nprobe=40 stage=scorer_batch scans=32 samples=6377 elapsed_us=110171 elapsed_ms=110.171
+[ivf-stage-counters] command=latency label=nprobe=40 stage=scratch_flush scans=32 samples=6377 elapsed_us=117000 elapsed_ms=117.000
+[ivf-stage-counters] command=latency label=nprobe=40 stage=topk_collect scans=32 samples=32 elapsed_us=258 elapsed_ms=0.258
+[suite:task124-stage2-1m] wrote reviews/task-124/001-stage2-vs-rb1-pareto/artifacts/cells-1m/suite-manifest.json
+[suite:task124-stage2-1m] storage-stage2-1m -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 --log-file reviews/task-124/001-stage2-vs-rb1-pareto/artifacts/cells-1m/storage-stage2-1m.log bench storage --prefix task124_stage2_1m
+[suite:task124-stage2-1m] wrote reviews/task-124/001-stage2-vs-rb1-pareto/artifacts/cells-1m/suite-manifest.json
+┌───────────────────────────────┬──────────────────────────┐
+│ field                         ┆ value                    │
+╞═══════════════════════════════╪══════════════════════════╡
+│ prefix                        ┆ task124_stage2_1m        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus                        ┆ task124_stage2_1m_corpus │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ rows                          ┆ 990000                   │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ heap                          ┆ 72.3 MiB                 │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ table (heap + toast + fsm/vm) ┆ 15.3 GiB                 │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes                       ┆ 1.0 GiB                  │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ total                         ┆ 16.3 GiB                 │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (total)               ┆ 17730.6 B                │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (heap only)           ┆ 76.6 B                   │
+└───────────────────────────────┴──────────────────────────┘
+┌─────────────────────────────────────┬───────────────┬───────────┬─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬────────────┬──────────┐
+│ index                               ┆ access method ┆ profile   ┆ reloptions                                                                                                                  ┆ size       ┆ per row  │
+╞═════════════════════════════════════╪═══════════════╪═══════════╪═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╪════════════╪══════════╡
+│ task124_stage2_1m_coarse_rerank_idx ┆ ec_ivf        ┆ ec_ivf    ┆ {rerank_placement=index,rerank_format=turboquant,rerank_width=50,stage2_final_rerank_width=25,storage_format=coarse_rerank} ┆ 1003.3 MiB ┆ 1062.6 B │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ task124_stage2_1m_corpus_pkey       ┆ btree         ┆ <unknown> ┆ {}                                                                                                                          ┆ 21.2 MiB   ┆ 22.5 B   │
+└─────────────────────────────────────┴───────────────┴───────────┴─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴────────────┴──────────┘
+[suite:task124-stage2-1m] wrote reviews/task-124/001-stage2-vs-rb1-pareto/artifacts/cells-1m/suite-manifest.json
+[suite:task124-stage2-1m] load-tqf32-1m -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 --log-file reviews/task-124/001-stage2-vs-rb1-pareto/artifacts/cells-1m/load-tqf32-1m.log corpus load --prefix task124_tqf32_1m --profile ec_ivf --corpus-file data/staged-current/ec_real_ann_benchmarks_anchor_corpus.tsv --queries-file data/staged-current/ec_real_ann_benchmarks_anchor_queries.tsv --manifest-file data/staged-current/ec_real_ann_benchmarks_anchor_manifest.json --allow-manifest-mismatch --bits 4 --seed 42 --storage-format turboquant --reloption rerank=heap_f32 --reloption rerank_width=50
+[suite:task124-stage2-1m] wrote reviews/task-124/001-stage2-vs-rb1-pareto/artifacts/cells-1m/suite-manifest.json
+┌─────────┬───────────────────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                                         │
+╞═════════╪═══════════════════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_ivf                                                                                        │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ task124_tqf32_1m_corpus (990000 rows)                                                         │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ task124_tqf32_1m_queries (10000 rows)                                                         │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ task124_tqf32_1m_turboquant_idx [rerank=heap_f32, rerank_width=50, storage_format=turboquant] │
+└─────────┴───────────────────────────────────────────────────────────────────────────────────────────────┘
+[loader] inspecting data/staged-current/ec_real_ann_benchmarks_anchor_corpus.tsv
+[loader] inspecting data/staged-current/ec_real_ann_benchmarks_anchor_queries.tsv
+[loader] corpus: 990000 rows, sha256=00d96d7665edc31cd8e4e62712c0ef2679fb714682f3ce4d522305e59faec687  queries: 10000 rows, sha256=34c4874e0e35734574f4ee9e1dd10753fcec2d295955061a407c258df163f5a0
+[loader] warning: manifest verification failed for data/staged-current/ec_real_ann_benchmarks_anchor_manifest.json: prefix="ec_real_ann_benchmarks_anchor" (expected "task124_tqf32_1m")
+[loader] copied corpus table task124_tqf32_1m_corpus in 138.05s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table task124_tqf32_1m_corpus in 141.63s
+[loader] copied queries table task124_tqf32_1m_queries in 1.43s
+[loader] building task124_tqf32_1m_turboquant_idx using ec_ivf (reloptions=[rerank=heap_f32, rerank_width=50, storage_format=turboquant]) ...
+[loader] built task124_tqf32_1m_turboquant_idx in 70.56s
+[loader] ec_ivf build timing: requested_workers=1 workers_launched=1 heap_tuples=990000 index_tuples=990000 heap_ingest_us=12337595 train_model_us=3591425 stage_build_plan_us=45732291 stage_pq_train_us=0 stage_centroids_us=1369 stage_assign_us=45448414 stage_postings_us=280450 stage_directory_us=264 flush_build_plan_us=8675270 parallel_begin_us=894 parallel_drain_us=11142720 parallel_sort_push_us=1193971 parallel_worker_tuple_buffer_capacity=1048576 parallel_worker_tuple_buffer_struct_bytes=67108864
+[loader] completed prefix task124_tqf32_1m in 414.31s
+[suite:task124-stage2-1m] wrote reviews/task-124/001-stage2-vs-rb1-pareto/artifacts/cells-1m/suite-manifest.json
+[suite:task124-stage2-1m] recall-tqf32-1m -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench recall --prefix task124_tqf32_1m --profile ec_ivf --k 10 --sweep "8,16,24,32,48,64" --queries-limit 32 --bits 4 --seed 42 --force-index --truth-cache-dir reviews/task-124/001-stage2-vs-rb1-pareto/truth-cache --log-output reviews/task-124/001-stage2-vs-rb1-pareto/artifacts/cells-1m/recall-tqf32-1m.log
+[suite:task124-stage2-1m] wrote reviews/task-124/001-stage2-vs-rb1-pareto/artifacts/cells-1m/suite-manifest.json
+┌────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ nprobe ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 8      ┆ 32      ┆ 320           ┆ 0.8500   ┆ 0.8067          ┆ 0.8850           ┆ 0.6100     ┆ 0.9000     ┆ 1.0000     ┆ 0.4000       ┆ 0.9917 ┆ 6.09 ms     │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 16     ┆ 32      ┆ 320           ┆ 0.9250   ┆ 0.8908          ┆ 0.9491           ┆ 0.8000     ┆ 1.0000     ┆ 1.0000     ┆ 0.5000       ┆ 0.9972 ┆ 4.24 ms     │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 24     ┆ 32      ┆ 320           ┆ 0.9437   ┆ 0.9128          ┆ 0.9641           ┆ 0.8100     ┆ 1.0000     ┆ 1.0000     ┆ 0.6000       ┆ 0.9979 ┆ 5.27 ms     │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 32     ┆ 32      ┆ 320           ┆ 0.9625   ┆ 0.9356          ┆ 0.9784           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.6000       ┆ 0.9985 ┆ 6.41 ms     │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 48     ┆ 32      ┆ 320           ┆ 0.9781   ┆ 0.9555          ┆ 0.9894           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.8000       ┆ 0.9991 ┆ 8.41 ms     │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 64     ┆ 32      ┆ 320           ┆ 0.9844   ┆ 0.9640          ┆ 0.9933           ┆ 0.9100     ┆ 1.0000     ┆ 1.0000     ┆ 0.8000       ┆ 0.9992 ┆ 10.51 ms    │
+└────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from task124_tqf32_1m_queries ...
+[recall] fetching corpus from task124_tqf32_1m_corpus ...
+[recall] loaded ground truth cache reviews/task-124/001-stage2-vs-rb1-pareto/truth-cache/truth-v1-rows990000-queries32-dim1536-k10-6281efcc46fafa86.json
+[suite:task124-stage2-1m] wrote reviews/task-124/001-stage2-vs-rb1-pareto/artifacts/cells-1m/suite-manifest.json
+[suite:task124-stage2-1m] latency-tqf32-1m -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench latency --prefix task124_tqf32_1m --profile ec_ivf --k 10 --concurrency 1 --iterations 32 --sweep "32,40" --bits 4 --seed 42 --force-index --sample-backend-memory --cache-state task124_tqf32_1m_warm --task87-candidate-batch-counters --ivf-stage-counters --memory-sample-interval-ms 25 --log-output reviews/task-124/001-stage2-vs-rb1-pareto/artifacts/cells-1m/latency-tqf32-1m.log
+[suite:task124-stage2-1m] wrote reviews/task-124/001-stage2-vs-rb1-pareto/artifacts/cells-1m/suite-manifest.json
+┌────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬───────────────────────┬─────────────┬─────────────┬────────────────┐
+│ nprobe ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state           ┆ rss_peak_kb ┆ hwm_peak_kb ┆ memory_samples │
+╞════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═══════════════════════╪═════════════╪═════════════╪════════════════╡
+│ 32     ┆ 32    ┆ 5.92 ms ┆ 1.26 ms ┆ 4.24 ms ┆ 5.51 ms ┆ 7.56 ms ┆ 10.3 ms ┆ 11.4 ms ┆ task124_tqf32_1m_warm ┆ 0           ┆ 0           ┆ 0              │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 40     ┆ 32    ┆ 7.20 ms ┆ 1.34 ms ┆ 5.80 ms ┆ 6.76 ms ┆ 8.86 ms ┆ 12.0 ms ┆ 13.2 ms ┆ task124_tqf32_1m_warm ┆ 0           ┆ 0           ┆ 0              │
+└────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴───────────────────────┴─────────────┴─────────────┴────────────────┘
+[block-kernel-counters] command=latency label=nprobe=32 surface=ivf quant=turboquant_int8 isa=neon flushes=5250 candidates=1340430 elapsed_nanos=56398377 elapsed_ms=56.398377 kernel_flushes=5250 kernel_candidates=1340430 kernel_elapsed_nanos=56398377 kernel_elapsed_ms=56.398377 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=1 width_8_15=2 width_16_31=2 width_ge32=5245 pruned_candidates=0 kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=ivf flushes=5250 candidates=1340430 elapsed_nanos=56398377 elapsed_ms=56.398377 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[block-kernel-counters] command=latency label=nprobe=40 surface=ivf quant=turboquant_int8 isa=neon flushes=6377 candidates=1627949 elapsed_nanos=68613006 elapsed_ms=68.613006 kernel_flushes=6377 kernel_candidates=1627949 kernel_elapsed_nanos=68613006 kernel_elapsed_ms=68.613006 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=2 width_8_15=1 width_16_31=4 width_ge32=6370 pruned_candidates=0 kept_candidates=0
+[task87-counters] command=latency label=nprobe=40 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=40 surface=ivf flushes=6377 candidates=1627949 elapsed_nanos=68613006 elapsed_ms=68.613006 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=40 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=40 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[ivf-stage-counters] command=latency label=nprobe=32 stage=approximate_scan scans=32 samples=32 elapsed_us=146611 elapsed_ms=146.611
+[ivf-stage-counters] command=latency label=nprobe=32 stage=candidate_record scans=32 samples=5250 elapsed_us=1741 elapsed_ms=1.741
+[ivf-stage-counters] command=latency label=nprobe=32 stage=centroid_score scans=32 samples=32 elapsed_us=11873 elapsed_ms=11.873
+[ivf-stage-counters] command=latency label=nprobe=32 stage=exact_rerank scans=32 samples=32 elapsed_us=11160 elapsed_ms=11.160
+[ivf-stage-counters] command=latency label=nprobe=32 stage=posting_page_decode scans=32 samples=32 elapsed_us=103769 elapsed_ms=103.769
+[ivf-stage-counters] command=latency label=nprobe=32 stage=posting_visit scans=32 samples=32 elapsed_us=146112 elapsed_ms=146.112
+[ivf-stage-counters] command=latency label=nprobe=32 stage=probe_plan scans=32 samples=32 elapsed_us=12992 elapsed_ms=12.992
+[ivf-stage-counters] command=latency label=nprobe=32 stage=query_prep scans=32 samples=32 elapsed_us=1186 elapsed_ms=1.186
+[ivf-stage-counters] command=latency label=nprobe=32 stage=rerank_payload_decode scans=32 samples=32 elapsed_us=8329 elapsed_ms=8.329
+[ivf-stage-counters] command=latency label=nprobe=32 stage=rerank_payload_score scans=32 samples=32 elapsed_us=138 elapsed_ms=0.138
+[ivf-stage-counters] command=latency label=nprobe=32 stage=rescan_total scans=32 samples=32 elapsed_us=184072 elapsed_ms=184.072
+[ivf-stage-counters] command=latency label=nprobe=32 stage=scorer_batch scans=32 samples=5250 elapsed_us=58729 elapsed_ms=58.729
+[ivf-stage-counters] command=latency label=nprobe=32 stage=scratch_flush scans=32 samples=5250 elapsed_us=64410 elapsed_ms=64.410
+[ivf-stage-counters] command=latency label=nprobe=32 stage=topk_collect scans=32 samples=32 elapsed_us=247 elapsed_ms=0.247
+[ivf-stage-counters] command=latency label=nprobe=40 stage=approximate_scan scans=32 samples=32 elapsed_us=183899 elapsed_ms=183.899
+[ivf-stage-counters] command=latency label=nprobe=40 stage=candidate_record scans=32 samples=6377 elapsed_us=2133 elapsed_ms=2.133
+[ivf-stage-counters] command=latency label=nprobe=40 stage=centroid_score scans=32 samples=32 elapsed_us=12395 elapsed_ms=12.395
+[ivf-stage-counters] command=latency label=nprobe=40 stage=exact_rerank scans=32 samples=32 elapsed_us=11290 elapsed_ms=11.290
+[ivf-stage-counters] command=latency label=nprobe=40 stage=posting_page_decode scans=32 samples=32 elapsed_us=126775 elapsed_ms=126.775
+[ivf-stage-counters] command=latency label=nprobe=40 stage=posting_visit scans=32 samples=32 elapsed_us=183335 elapsed_ms=183.335
+[ivf-stage-counters] command=latency label=nprobe=40 stage=probe_plan scans=32 samples=32 elapsed_us=13797 elapsed_ms=13.797
+[ivf-stage-counters] command=latency label=nprobe=40 stage=query_prep scans=32 samples=32 elapsed_us=1194 elapsed_ms=1.194
+[ivf-stage-counters] command=latency label=nprobe=40 stage=rerank_payload_decode scans=32 samples=32 elapsed_us=8177 elapsed_ms=8.177
+[ivf-stage-counters] command=latency label=nprobe=40 stage=rerank_payload_score scans=32 samples=32 elapsed_us=151 elapsed_ms=0.151
+[ivf-stage-counters] command=latency label=nprobe=40 stage=rescan_total scans=32 samples=32 elapsed_us=222877 elapsed_ms=222.877
+[ivf-stage-counters] command=latency label=nprobe=40 stage=scorer_batch scans=32 samples=6377 elapsed_us=71446 elapsed_ms=71.446
+[ivf-stage-counters] command=latency label=nprobe=40 stage=scratch_flush scans=32 samples=6377 elapsed_us=78313 elapsed_ms=78.313
+[ivf-stage-counters] command=latency label=nprobe=40 stage=topk_collect scans=32 samples=32 elapsed_us=258 elapsed_ms=0.258
+[suite:task124-stage2-1m] wrote reviews/task-124/001-stage2-vs-rb1-pareto/artifacts/cells-1m/suite-manifest.json
+[suite:task124-stage2-1m] storage-tqf32-1m -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 --log-file reviews/task-124/001-stage2-vs-rb1-pareto/artifacts/cells-1m/storage-tqf32-1m.log bench storage --prefix task124_tqf32_1m
+[suite:task124-stage2-1m] wrote reviews/task-124/001-stage2-vs-rb1-pareto/artifacts/cells-1m/suite-manifest.json
+┌───────────────────────────────┬─────────────────────────┐
+│ field                         ┆ value                   │
+╞═══════════════════════════════╪═════════════════════════╡
+│ prefix                        ┆ task124_tqf32_1m        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus                        ┆ task124_tqf32_1m_corpus │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ rows                          ┆ 990000                  │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ heap                          ┆ 72.3 MiB                │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ table (heap + toast + fsm/vm) ┆ 15.3 GiB                │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes                       ┆ 806.0 MiB               │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ total                         ┆ 16.1 GiB                │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (total)               ┆ 17499.1 B               │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (heap only)           ┆ 76.6 B                  │
+└───────────────────────────────┴─────────────────────────┘
+┌─────────────────────────────────┬───────────────┬───────────┬─────────────────────────────────────────────────────────────┬───────────┬─────────┐
+│ index                           ┆ access method ┆ profile   ┆ reloptions                                                  ┆ size      ┆ per row │
+╞═════════════════════════════════╪═══════════════╪═══════════╪═════════════════════════════════════════════════════════════╪═══════════╪═════════╡
+│ task124_tqf32_1m_turboquant_idx ┆ ec_ivf        ┆ ec_ivf    ┆ {rerank=heap_f32,rerank_width=50,storage_format=turboquant} ┆ 784.8 MiB ┆ 831.2 B │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ task124_tqf32_1m_corpus_pkey    ┆ btree         ┆ <unknown> ┆ {}                                                          ┆ 21.2 MiB  ┆ 22.5 B  │
+└─────────────────────────────────┴───────────────┴───────────┴─────────────────────────────────────────────────────────────┴───────────┴─────────┘
+[suite:task124-stage2-1m] wrote reviews/task-124/001-stage2-vs-rb1-pareto/artifacts/cells-1m/suite-manifest.json
+[suite:task124-stage2-1m] wrote reviews/task-124/001-stage2-vs-rb1-pareto/artifacts/cells-1m/results.jsonl
+[suite:task124-stage2-1m] wrote reviews/task-124/001-stage2-vs-rb1-pareto/artifacts/cells-1m/suite-manifest.json

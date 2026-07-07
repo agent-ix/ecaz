@@ -1,0 +1,422 @@
+^D[suite:task148-length-renorm-ab] wrote reviews/task-148/002-length-renorm-ab/artifacts/renorm/suite-manifest.json
+[suite:task148-length-renorm-ab] wrote reviews/task-148/002-length-renorm-ab/artifacts/renorm/suite-manifest.json
+[suite:task148-length-renorm-ab] precheck-build-sha -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 dev sql --pg 18 --db tqvector_bench --socket-dir /Users/peter/.pgrx --raw --sql "SELECT now() AS captured_at, ecaz_build_git_sha(), current_setting('ec_ivf.turboquant_scorer') AS scorer_default;" --log-output reviews/task-148/002-length-renorm-ab/artifacts/renorm/precheck-build-sha.log
+[suite:task148-length-renorm-ab] wrote reviews/task-148/002-length-renorm-ab/artifacts/renorm/suite-manifest.json
+          captured_at          |            ecaz_build_git_sha            | scorer_default 
+-------------------------------+------------------------------------------+----------------
+ 2026-07-04 22:17:27.495892-07 | a3bcb13d0f8f58950e765ab0642cb168fcc8807d | int8_approx
+(1 row)
+
+[suite:task148-length-renorm-ab] wrote reviews/task-148/002-length-renorm-ab/artifacts/renorm/suite-manifest.json
+[suite:task148-length-renorm-ab] load-tqdefault-10k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 --log-file reviews/task-148/002-length-renorm-ab/artifacts/renorm/load-tqdefault-10k.log corpus load --prefix task148_tqdefault_real10k --profile ec_ivf --corpus-file data/staged-current/ec_real_10k_corpus.tsv --queries-file data/staged-current/ec_real_10k_queries.tsv --manifest-file data/staged-current/ec_real_10k_manifest.json --allow-manifest-mismatch --bits 4 --seed 42 --storage-format turboquant
+[suite:task148-length-renorm-ab] wrote reviews/task-148/002-length-renorm-ab/artifacts/renorm/suite-manifest.json
+┌─────────┬──────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                │
+╞═════════╪══════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_ivf                                                               │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ task148_tqdefault_real10k_corpus (10000 rows)                        │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ task148_tqdefault_real10k_queries (200 rows)                         │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ task148_tqdefault_real10k_turboquant_idx [storage_format=turboquant] │
+└─────────┴──────────────────────────────────────────────────────────────────────┘
+[loader] inspecting data/staged-current/ec_real_10k_corpus.tsv
+[loader] inspecting data/staged-current/ec_real_10k_queries.tsv
+[loader] corpus: 10000 rows, sha256=c67c5810b66d982d705974e48d4775479adfbd92a988f694091266e049a35e75  queries: 200 rows, sha256=a2c191bb742017d849e73f6e6866e8e0f0bac1579ba212f7fc76b8eb09904ae8
+[loader] warning: manifest verification failed for data/staged-current/ec_real_10k_manifest.json: prefix="ec_real_10k" (expected "task148_tqdefault_real10k")
+[loader] task148_tqdefault_real10k_corpus already has 10000 rows; skipping reload
+[loader] task148_tqdefault_real10k_queries already has 200 rows; skipping reload
+[loader] task148_tqdefault_real10k_turboquant_idx already exists with reloptions=[storage_format=turboquant]; skipping rebuild
+[loader] completed prefix task148_tqdefault_real10k in 649.50ms
+[suite:task148-length-renorm-ab] wrote reviews/task-148/002-length-renorm-ab/artifacts/renorm/suite-manifest.json
+[suite:task148-length-renorm-ab] recall-tqdefault-10k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench recall --prefix task148_tqdefault_real10k --profile ec_ivf --k 10 --sweep "8,16,24,32,48,64" --queries-limit 32 --bits 4 --seed 42 --force-index --truth-cache-dir reviews/task-148/002-length-renorm-ab/truth-cache --log-output reviews/task-148/002-length-renorm-ab/artifacts/renorm/recall-tqdefault-10k.log
+[suite:task148-length-renorm-ab] wrote reviews/task-148/002-length-renorm-ab/artifacts/renorm/suite-manifest.json
+┌────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ nprobe ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 8      ┆ 32      ┆ 320           ┆ 0.9625   ┆ 0.9356          ┆ 0.9784           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.7000       ┆ 0.9991 ┆ 1.67 ms     │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 16     ┆ 32      ┆ 320           ┆ 0.9719   ┆ 0.9474          ┆ 0.9851           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.8000       ┆ 0.9996 ┆ 1.72 ms     │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 24     ┆ 32      ┆ 320           ┆ 0.9750   ┆ 0.9515          ┆ 0.9873           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.9000       ┆ 0.9998 ┆ 2.39 ms     │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 32     ┆ 32      ┆ 320           ┆ 0.9750   ┆ 0.9515          ┆ 0.9873           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.9000       ┆ 0.9998 ┆ 3.26 ms     │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 48     ┆ 32      ┆ 320           ┆ 0.9750   ┆ 0.9515          ┆ 0.9873           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.9000       ┆ 0.9998 ┆ 4.67 ms     │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 64     ┆ 32      ┆ 320           ┆ 0.9750   ┆ 0.9515          ┆ 0.9873           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.9000       ┆ 0.9998 ┆ 6.28 ms     │
+└────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from task148_tqdefault_real10k_queries ...
+[recall] fetching corpus from task148_tqdefault_real10k_corpus ...
+[recall] loaded ground truth cache reviews/task-148/002-length-renorm-ab/truth-cache/truth-v1-rows10000-queries32-dim1536-k10-a217f264f771d9c5.json
+[suite:task148-length-renorm-ab] wrote reviews/task-148/002-length-renorm-ab/artifacts/renorm/suite-manifest.json
+[suite:task148-length-renorm-ab] latency-tqdefault-10k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench latency --prefix task148_tqdefault_real10k --profile ec_ivf --k 10 --concurrency 1 --iterations 32 --sweep "32,40" --bits 4 --seed 42 --force-index --sample-backend-memory --cache-state task148_tqdefault_real10k_warm --task87-candidate-batch-counters --ivf-stage-counters --memory-sample-interval-ms 25 --log-output reviews/task-148/002-length-renorm-ab/artifacts/renorm/latency-tqdefault-10k.log
+[suite:task148-length-renorm-ab] wrote reviews/task-148/002-length-renorm-ab/artifacts/renorm/suite-manifest.json
+┌────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬────────────────────────────────┬─────────────┬─────────────┬────────────────┐
+│ nprobe ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state                    ┆ rss_peak_kb ┆ hwm_peak_kb ┆ memory_samples │
+╞════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪════════════════════════════════╪═════════════╪═════════════╪════════════════╡
+│ 32     ┆ 32    ┆ 3.04 ms ┆ 0.37 ms ┆ 2.65 ms ┆ 2.96 ms ┆ 3.44 ms ┆ 4.34 ms ┆ 4.75 ms ┆ task148_tqdefault_real10k_warm ┆ 0           ┆ 0           ┆ 0              │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 40     ┆ 32    ┆ 3.78 ms ┆ 0.42 ms ┆ 3.39 ms ┆ 3.72 ms ┆ 4.37 ms ┆ 5.20 ms ┆ 5.56 ms ┆ task148_tqdefault_real10k_warm ┆ 0           ┆ 0           ┆ 0              │
+└────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴────────────────────────────────┴─────────────┴─────────────┴────────────────┘
+[block-kernel-counters] command=latency label=nprobe=32 surface=ivf quant=turboquant_int8 isa=neon flushes=404 candidates=99207 elapsed_nanos=3901275 elapsed_ms=3.901275 kernel_flushes=404 kernel_candidates=99207 kernel_elapsed_nanos=3901275 kernel_elapsed_ms=3.901275 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=0 width_8_15=1 width_16_31=3 width_ge32=400 pruned_candidates=0 kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=ivf flushes=404 candidates=99207 elapsed_nanos=3901275 elapsed_ms=3.901275 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[block-kernel-counters] command=latency label=nprobe=40 surface=ivf quant=turboquant_int8 isa=neon flushes=500 candidates=123870 elapsed_nanos=4902055 elapsed_ms=4.902055 kernel_flushes=500 kernel_candidates=123870 kernel_elapsed_nanos=4902055 kernel_elapsed_ms=4.902055 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=1 width_8_15=1 width_16_31=1 width_ge32=497 pruned_candidates=0 kept_candidates=0
+[task87-counters] command=latency label=nprobe=40 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=40 surface=ivf flushes=500 candidates=123870 elapsed_nanos=4902055 elapsed_ms=4.902055 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=40 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=40 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[ivf-stage-counters] command=latency label=nprobe=32 stage=approximate_scan scans=32 samples=32 elapsed_us=88407 elapsed_ms=88.407
+[ivf-stage-counters] command=latency label=nprobe=32 stage=candidate_record scans=32 samples=404 elapsed_us=831 elapsed_ms=0.831
+[ivf-stage-counters] command=latency label=nprobe=32 stage=centroid_score scans=32 samples=32 elapsed_us=1066 elapsed_ms=1.066
+[ivf-stage-counters] command=latency label=nprobe=32 stage=exact_rerank scans=32 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=posting_page_decode scans=32 samples=32 elapsed_us=83243 elapsed_ms=83.243
+[ivf-stage-counters] command=latency label=nprobe=32 stage=posting_visit scans=32 samples=32 elapsed_us=87934 elapsed_ms=87.934
+[ivf-stage-counters] command=latency label=nprobe=32 stage=probe_plan scans=32 samples=32 elapsed_us=1315 elapsed_ms=1.315
+[ivf-stage-counters] command=latency label=nprobe=32 stage=query_prep scans=32 samples=32 elapsed_us=1090 elapsed_ms=1.090
+[ivf-stage-counters] command=latency label=nprobe=32 stage=rerank_payload_decode scans=32 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=rerank_payload_score scans=32 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=rescan_total scans=32 samples=32 elapsed_us=92034 elapsed_ms=92.034
+[ivf-stage-counters] command=latency label=nprobe=32 stage=scorer_batch scans=32 samples=404 elapsed_us=82477 elapsed_ms=82.477
+[ivf-stage-counters] command=latency label=nprobe=32 stage=scratch_flush scans=32 samples=404 elapsed_us=83516 elapsed_ms=83.516
+[ivf-stage-counters] command=latency label=nprobe=32 stage=topk_collect scans=32 samples=32 elapsed_us=416 elapsed_ms=0.416
+[ivf-stage-counters] command=latency label=nprobe=40 stage=approximate_scan scans=32 samples=32 elapsed_us=110684 elapsed_ms=110.684
+[ivf-stage-counters] command=latency label=nprobe=40 stage=candidate_record scans=32 samples=500 elapsed_us=1015 elapsed_ms=1.015
+[ivf-stage-counters] command=latency label=nprobe=40 stage=centroid_score scans=32 samples=32 elapsed_us=1092 elapsed_ms=1.092
+[ivf-stage-counters] command=latency label=nprobe=40 stage=exact_rerank scans=32 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=40 stage=posting_page_decode scans=32 samples=32 elapsed_us=105028 elapsed_ms=105.028
+[ivf-stage-counters] command=latency label=nprobe=40 stage=posting_visit scans=32 samples=32 elapsed_us=110114 elapsed_ms=110.114
+[ivf-stage-counters] command=latency label=nprobe=40 stage=probe_plan scans=32 samples=32 elapsed_us=1333 elapsed_ms=1.333
+[ivf-stage-counters] command=latency label=nprobe=40 stage=query_prep scans=32 samples=32 elapsed_us=1086 elapsed_ms=1.086
+[ivf-stage-counters] command=latency label=nprobe=40 stage=rerank_payload_decode scans=32 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=40 stage=rerank_payload_score scans=32 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=40 stage=rescan_total scans=32 samples=32 elapsed_us=114349 elapsed_ms=114.349
+[ivf-stage-counters] command=latency label=nprobe=40 stage=scorer_batch scans=32 samples=500 elapsed_us=103366 elapsed_ms=103.366
+[ivf-stage-counters] command=latency label=nprobe=40 stage=scratch_flush scans=32 samples=500 elapsed_us=104608 elapsed_ms=104.608
+[ivf-stage-counters] command=latency label=nprobe=40 stage=topk_collect scans=32 samples=32 elapsed_us=512 elapsed_ms=0.512
+[suite:task148-length-renorm-ab] wrote reviews/task-148/002-length-renorm-ab/artifacts/renorm/suite-manifest.json
+[suite:task148-length-renorm-ab] storage-tqdefault-10k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 --log-file reviews/task-148/002-length-renorm-ab/artifacts/renorm/storage-tqdefault-10k.log bench storage --prefix task148_tqdefault_real10k
+[suite:task148-length-renorm-ab] wrote reviews/task-148/002-length-renorm-ab/artifacts/renorm/suite-manifest.json
+┌───────────────────────────────┬──────────────────────────────────┐
+│ field                         ┆ value                            │
+╞═══════════════════════════════╪══════════════════════════════════╡
+│ prefix                        ┆ task148_tqdefault_real10k        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus                        ┆ task148_tqdefault_real10k_corpus │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ rows                          ┆ 10000                            │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ heap                          ┆ 752.0 KiB                        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ table (heap + toast + fsm/vm) ┆ 158.8 MiB                        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes                       ┆ 9.2 MiB                          │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ total                         ┆ 168.0 MiB                        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (total)               ┆ 17616.9 B                        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (heap only)           ┆ 77.0 B                           │
+└───────────────────────────────┴──────────────────────────────────┘
+┌──────────────────────────────────────────┬───────────────┬───────────┬─────────────────────────────┬───────────┬─────────┐
+│ index                                    ┆ access method ┆ profile   ┆ reloptions                  ┆ size      ┆ per row │
+╞══════════════════════════════════════════╪═══════════════╪═══════════╪═════════════════════════════╪═══════════╪═════════╡
+│ task148_tqdefault_real10k_turboquant_idx ┆ ec_ivf        ┆ ec_ivf    ┆ {storage_format=turboquant} ┆ 9.0 MiB   ┆ 939.6 B │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ task148_tqdefault_real10k_corpus_pkey    ┆ btree         ┆ <unknown> ┆ {}                          ┆ 240.0 KiB ┆ 24.6 B  │
+└──────────────────────────────────────────┴───────────────┴───────────┴─────────────────────────────┴───────────┴─────────┘
+[suite:task148-length-renorm-ab] wrote reviews/task-148/002-length-renorm-ab/artifacts/renorm/suite-manifest.json
+[suite:task148-length-renorm-ab] load-tqdefault-50k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 --log-file reviews/task-148/002-length-renorm-ab/artifacts/renorm/load-tqdefault-50k.log corpus load --prefix task148_tqdefault_real50k --profile ec_ivf --corpus-file data/staged-current/ec_real_50k_corpus.tsv --queries-file data/staged-current/ec_real_50k_queries.tsv --manifest-file data/staged-current/ec_real_50k_manifest.json --allow-manifest-mismatch --bits 4 --seed 42 --storage-format turboquant
+[suite:task148-length-renorm-ab] wrote reviews/task-148/002-length-renorm-ab/artifacts/renorm/suite-manifest.json
+┌─────────┬──────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                │
+╞═════════╪══════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_ivf                                                               │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ task148_tqdefault_real50k_corpus (50000 rows)                        │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ task148_tqdefault_real50k_queries (1000 rows)                        │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ task148_tqdefault_real50k_turboquant_idx [storage_format=turboquant] │
+└─────────┴──────────────────────────────────────────────────────────────────────┘
+[loader] inspecting data/staged-current/ec_real_50k_corpus.tsv
+[loader] inspecting data/staged-current/ec_real_50k_queries.tsv
+[loader] corpus: 50000 rows, sha256=56023baaa7bc42f758272e8617603d538808e6290a8a70a3a84e057571240133  queries: 1000 rows, sha256=95ac7992578aa80bb193657f10fbcbf1ea3867e559739244bf5a467f7a5a9fa3
+[loader] warning: manifest verification failed for data/staged-current/ec_real_50k_manifest.json: prefix="ec_real_50k" (expected "task148_tqdefault_real50k")
+[loader] task148_tqdefault_real50k_corpus already has 50000 rows; skipping reload
+[loader] task148_tqdefault_real50k_queries already has 1000 rows; skipping reload
+[loader] task148_tqdefault_real50k_turboquant_idx already exists with reloptions=[storage_format=turboquant]; skipping rebuild
+[loader] completed prefix task148_tqdefault_real50k in 3.11s
+[suite:task148-length-renorm-ab] wrote reviews/task-148/002-length-renorm-ab/artifacts/renorm/suite-manifest.json
+[suite:task148-length-renorm-ab] recall-tqdefault-50k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench recall --prefix task148_tqdefault_real50k --profile ec_ivf --k 10 --sweep "8,16,24,32,48,64" --queries-limit 32 --bits 4 --seed 42 --force-index --truth-cache-dir reviews/task-148/002-length-renorm-ab/truth-cache --log-output reviews/task-148/002-length-renorm-ab/artifacts/renorm/recall-tqdefault-50k.log
+[suite:task148-length-renorm-ab] wrote reviews/task-148/002-length-renorm-ab/artifacts/renorm/suite-manifest.json
+┌────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ nprobe ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 8      ┆ 32      ┆ 320           ┆ 0.9187   ┆ 0.8836          ┆ 0.9440           ┆ 0.8000     ┆ 0.9000     ┆ 1.0000     ┆ 0.6000       ┆ 0.9959 ┆ 2.93 ms     │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 16     ┆ 32      ┆ 320           ┆ 0.9500   ┆ 0.9203          ┆ 0.9690           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.7000       ┆ 0.9990 ┆ 3.42 ms     │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 24     ┆ 32      ┆ 320           ┆ 0.9531   ┆ 0.9241          ┆ 0.9714           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.8000       ┆ 0.9994 ┆ 5.04 ms     │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 32     ┆ 32      ┆ 320           ┆ 0.9594   ┆ 0.9317          ┆ 0.9761           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.8000       ┆ 0.9996 ┆ 6.48 ms     │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 48     ┆ 32      ┆ 320           ┆ 0.9594   ┆ 0.9317          ┆ 0.9761           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.8000       ┆ 0.9996 ┆ 9.53 ms     │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 64     ┆ 32      ┆ 320           ┆ 0.9594   ┆ 0.9317          ┆ 0.9761           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.8000       ┆ 0.9996 ┆ 12.68 ms    │
+└────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from task148_tqdefault_real50k_queries ...
+[recall] fetching corpus from task148_tqdefault_real50k_corpus ...
+[recall] loaded ground truth cache reviews/task-148/002-length-renorm-ab/truth-cache/truth-v1-rows50000-queries32-dim1536-k10-4f22f0d3a6678ffe.json
+[suite:task148-length-renorm-ab] wrote reviews/task-148/002-length-renorm-ab/artifacts/renorm/suite-manifest.json
+[suite:task148-length-renorm-ab] latency-tqdefault-50k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench latency --prefix task148_tqdefault_real50k --profile ec_ivf --k 10 --concurrency 1 --iterations 32 --sweep "32,40" --bits 4 --seed 42 --force-index --sample-backend-memory --cache-state task148_tqdefault_real50k_warm --task87-candidate-batch-counters --ivf-stage-counters --memory-sample-interval-ms 25 --log-output reviews/task-148/002-length-renorm-ab/artifacts/renorm/latency-tqdefault-50k.log
+[suite:task148-length-renorm-ab] wrote reviews/task-148/002-length-renorm-ab/artifacts/renorm/suite-manifest.json
+┌────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬────────────────────────────────┬─────────────┬─────────────┬────────────────┐
+│ nprobe ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state                    ┆ rss_peak_kb ┆ hwm_peak_kb ┆ memory_samples │
+╞════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪════════════════════════════════╪═════════════╪═════════════╪════════════════╡
+│ 32     ┆ 32    ┆ 6.61 ms ┆ 0.47 ms ┆ 5.79 ms ┆ 6.59 ms ┆ 7.16 ms ┆ 8.01 ms ┆ 8.35 ms ┆ task148_tqdefault_real50k_warm ┆ 0           ┆ 0           ┆ 0              │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 40     ┆ 32    ┆ 8.12 ms ┆ 0.45 ms ┆ 7.21 ms ┆ 8.17 ms ┆ 8.60 ms ┆ 9.23 ms ┆ 9.50 ms ┆ task148_tqdefault_real50k_warm ┆ 0           ┆ 0           ┆ 0              │
+└────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴────────────────────────────────┴─────────────┴─────────────┴────────────────┘
+[block-kernel-counters] command=latency label=nprobe=32 surface=ivf quant=turboquant_int8 isa=neon flushes=893 candidates=225031 elapsed_nanos=8723609 elapsed_ms=8.723609 kernel_flushes=893 kernel_candidates=225031 kernel_elapsed_nanos=8723609 kernel_elapsed_ms=8.723609 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=0 width_8_15=2 width_16_31=1 width_ge32=890 pruned_candidates=0 kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=ivf flushes=893 candidates=225031 elapsed_nanos=8723609 elapsed_ms=8.723609 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[block-kernel-counters] command=latency label=nprobe=40 surface=ivf quant=turboquant_int8 isa=neon flushes=1113 candidates=281405 elapsed_nanos=10851685 elapsed_ms=10.851685 kernel_flushes=1113 kernel_candidates=281405 kernel_elapsed_nanos=10851685 kernel_elapsed_ms=10.851685 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=0 width_8_15=1 width_16_31=0 width_ge32=1112 pruned_candidates=0 kept_candidates=0
+[task87-counters] command=latency label=nprobe=40 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=40 surface=ivf flushes=1113 candidates=281405 elapsed_nanos=10851685 elapsed_ms=10.851685 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=40 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=40 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[ivf-stage-counters] command=latency label=nprobe=32 stage=approximate_scan scans=32 samples=32 elapsed_us=199215 elapsed_ms=199.215
+[ivf-stage-counters] command=latency label=nprobe=32 stage=candidate_record scans=32 samples=893 elapsed_us=2020 elapsed_ms=2.020
+[ivf-stage-counters] command=latency label=nprobe=32 stage=centroid_score scans=32 samples=32 elapsed_us=2297 elapsed_ms=2.297
+[ivf-stage-counters] command=latency label=nprobe=32 stage=exact_rerank scans=32 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=posting_page_decode scans=32 samples=32 elapsed_us=191011 elapsed_ms=191.011
+[ivf-stage-counters] command=latency label=nprobe=32 stage=posting_visit scans=32 samples=32 elapsed_us=197994 elapsed_ms=197.994
+[ivf-stage-counters] command=latency label=nprobe=32 stage=probe_plan scans=32 samples=32 elapsed_us=2860 elapsed_ms=2.860
+[ivf-stage-counters] command=latency label=nprobe=32 stage=query_prep scans=32 samples=32 elapsed_us=1097 elapsed_ms=1.097
+[ivf-stage-counters] command=latency label=nprobe=32 stage=rerank_payload_decode scans=32 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=rerank_payload_score scans=32 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=rescan_total scans=32 samples=32 elapsed_us=205646 elapsed_ms=205.646
+[ivf-stage-counters] command=latency label=nprobe=32 stage=scorer_batch scans=32 samples=893 elapsed_us=185674 elapsed_ms=185.674
+[ivf-stage-counters] command=latency label=nprobe=32 stage=scratch_flush scans=32 samples=893 elapsed_us=188109 elapsed_ms=188.109
+[ivf-stage-counters] command=latency label=nprobe=32 stage=topk_collect scans=32 samples=32 elapsed_us=1148 elapsed_ms=1.148
+[ivf-stage-counters] command=latency label=nprobe=40 stage=approximate_scan scans=32 samples=32 elapsed_us=246190 elapsed_ms=246.190
+[ivf-stage-counters] command=latency label=nprobe=40 stage=candidate_record scans=32 samples=1113 elapsed_us=2257 elapsed_ms=2.257
+[ivf-stage-counters] command=latency label=nprobe=40 stage=centroid_score scans=32 samples=32 elapsed_us=2184 elapsed_ms=2.184
+[ivf-stage-counters] command=latency label=nprobe=40 stage=exact_rerank scans=32 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=40 stage=posting_page_decode scans=32 samples=32 elapsed_us=237825 elapsed_ms=237.825
+[ivf-stage-counters] command=latency label=nprobe=40 stage=posting_visit scans=32 samples=32 elapsed_us=244696 elapsed_ms=244.696
+[ivf-stage-counters] command=latency label=nprobe=40 stage=probe_plan scans=32 samples=32 elapsed_us=3016 elapsed_ms=3.016
+[ivf-stage-counters] command=latency label=nprobe=40 stage=query_prep scans=32 samples=32 elapsed_us=1058 elapsed_ms=1.058
+[ivf-stage-counters] command=latency label=nprobe=40 stage=rerank_payload_decode scans=32 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=40 stage=rerank_payload_score scans=32 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=40 stage=rescan_total scans=32 samples=32 elapsed_us=252613 elapsed_ms=252.613
+[ivf-stage-counters] command=latency label=nprobe=40 stage=scorer_batch scans=32 samples=1113 elapsed_us=230609 elapsed_ms=230.609
+[ivf-stage-counters] command=latency label=nprobe=40 stage=scratch_flush scans=32 samples=1113 elapsed_us=233525 elapsed_ms=233.525
+[ivf-stage-counters] command=latency label=nprobe=40 stage=topk_collect scans=32 samples=32 elapsed_us=1416 elapsed_ms=1.416
+[suite:task148-length-renorm-ab] wrote reviews/task-148/002-length-renorm-ab/artifacts/renorm/suite-manifest.json
+[suite:task148-length-renorm-ab] storage-tqdefault-50k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 --log-file reviews/task-148/002-length-renorm-ab/artifacts/renorm/storage-tqdefault-50k.log bench storage --prefix task148_tqdefault_real50k
+[suite:task148-length-renorm-ab] wrote reviews/task-148/002-length-renorm-ab/artifacts/renorm/suite-manifest.json
+┌───────────────────────────────┬──────────────────────────────────┐
+│ field                         ┆ value                            │
+╞═══════════════════════════════╪══════════════════════════════════╡
+│ prefix                        ┆ task148_tqdefault_real50k        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus                        ┆ task148_tqdefault_real50k_corpus │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ rows                          ┆ 50000                            │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ heap                          ┆ 3.7 MiB                          │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ table (heap + toast + fsm/vm) ┆ 793.8 MiB                        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes                       ┆ 42.7 MiB                         │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ total                         ┆ 836.5 MiB                        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (total)               ┆ 17542.2 B                        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (heap only)           ┆ 76.7 B                           │
+└───────────────────────────────┴──────────────────────────────────┘
+┌──────────────────────────────────────────┬───────────────┬───────────┬─────────────────────────────┬──────────┬─────────┐
+│ index                                    ┆ access method ┆ profile   ┆ reloptions                  ┆ size     ┆ per row │
+╞══════════════════════════════════════════╪═══════════════╪═══════════╪═════════════════════════════╪══════════╪═════════╡
+│ task148_tqdefault_real50k_turboquant_idx ┆ ec_ivf        ┆ ec_ivf    ┆ {storage_format=turboquant} ┆ 41.6 MiB ┆ 872.0 B │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ task148_tqdefault_real50k_corpus_pkey    ┆ btree         ┆ <unknown> ┆ {}                          ┆ 1.1 MiB  ┆ 22.8 B  │
+└──────────────────────────────────────────┴───────────────┴───────────┴─────────────────────────────┴──────────┴─────────┘
+[suite:task148-length-renorm-ab] wrote reviews/task-148/002-length-renorm-ab/artifacts/renorm/suite-manifest.json
+[suite:task148-length-renorm-ab] load-tqdefault-100k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 --log-file reviews/task-148/002-length-renorm-ab/artifacts/renorm/load-tqdefault-100k.log corpus load --prefix task148_tqdefault_real100k --profile ec_ivf --corpus-file data/staged-current/ec_real_100k_corpus.tsv --queries-file data/staged-current/ec_real_100k_queries.tsv --manifest-file data/staged-current/ec_real_100k_manifest.json --allow-manifest-mismatch --bits 4 --seed 42 --storage-format turboquant
+[suite:task148-length-renorm-ab] wrote reviews/task-148/002-length-renorm-ab/artifacts/renorm/suite-manifest.json
+┌─────────┬───────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                 │
+╞═════════╪═══════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_ivf                                                                │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ task148_tqdefault_real100k_corpus (100000 rows)                       │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ task148_tqdefault_real100k_queries (1000 rows)                        │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ task148_tqdefault_real100k_turboquant_idx [storage_format=turboquant] │
+└─────────┴───────────────────────────────────────────────────────────────────────┘
+[loader] inspecting data/staged-current/ec_real_100k_corpus.tsv
+[loader] inspecting data/staged-current/ec_real_100k_queries.tsv
+[loader] corpus: 100000 rows, sha256=07275cfd5a7a4b415ddf5eacc086de98294ac978532df46ffae30f9202323a95  queries: 1000 rows, sha256=a7cbec6fc44f6c148234538f61339d00d2f10646febc8f667dcbe75d9cf41782
+[loader] warning: manifest verification failed for data/staged-current/ec_real_100k_manifest.json: prefix="ec_real_100k" (expected "task148_tqdefault_real100k")
+[loader] task148_tqdefault_real100k_corpus already has 100000 rows; skipping reload
+[loader] task148_tqdefault_real100k_queries already has 1000 rows; skipping reload
+[loader] task148_tqdefault_real100k_turboquant_idx already exists with reloptions=[storage_format=turboquant]; skipping rebuild
+[loader] completed prefix task148_tqdefault_real100k in 6.07s
+[suite:task148-length-renorm-ab] wrote reviews/task-148/002-length-renorm-ab/artifacts/renorm/suite-manifest.json
+[suite:task148-length-renorm-ab] recall-tqdefault-100k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench recall --prefix task148_tqdefault_real100k --profile ec_ivf --k 10 --sweep "8,16,24,32,48,64" --queries-limit 32 --bits 4 --seed 42 --force-index --truth-cache-dir reviews/task-148/002-length-renorm-ab/truth-cache --log-output reviews/task-148/002-length-renorm-ab/artifacts/renorm/recall-tqdefault-100k.log
+[suite:task148-length-renorm-ab] wrote reviews/task-148/002-length-renorm-ab/artifacts/renorm/suite-manifest.json
+┌────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ nprobe ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 8      ┆ 32      ┆ 320           ┆ 0.7906   ┆ 0.7427          ┆ 0.8316           ┆ 0.6100     ┆ 0.8000     ┆ 0.9000     ┆ 0.2000       ┆ 0.9865 ┆ 3.67 ms     │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 16     ┆ 32      ┆ 320           ┆ 0.8406   ┆ 0.7965          ┆ 0.8767           ┆ 0.7000     ┆ 0.9000     ┆ 0.9900     ┆ 0.4000       ┆ 0.9923 ┆ 5.07 ms     │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 24     ┆ 32      ┆ 320           ┆ 0.8812   ┆ 0.8412          ┆ 0.9122           ┆ 0.8000     ┆ 0.9000     ┆ 1.0000     ┆ 0.5000       ┆ 0.9948 ┆ 7.32 ms     │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 32     ┆ 32      ┆ 320           ┆ 0.9000   ┆ 0.8622          ┆ 0.9283           ┆ 0.8000     ┆ 0.9000     ┆ 1.0000     ┆ 0.7000       ┆ 0.9958 ┆ 9.59 ms     │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 48     ┆ 32      ┆ 320           ┆ 0.9187   ┆ 0.8836          ┆ 0.9440           ┆ 0.8000     ┆ 0.9000     ┆ 1.0000     ┆ 0.7000       ┆ 0.9970 ┆ 14.07 ms    │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 64     ┆ 32      ┆ 320           ┆ 0.9313   ┆ 0.8981          ┆ 0.9542           ┆ 0.8000     ┆ 0.9500     ┆ 1.0000     ┆ 0.8000       ┆ 0.9985 ┆ 18.46 ms    │
+└────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from task148_tqdefault_real100k_queries ...
+[recall] fetching corpus from task148_tqdefault_real100k_corpus ...
+[recall] loaded ground truth cache reviews/task-148/002-length-renorm-ab/truth-cache/truth-v1-rows100000-queries32-dim1536-k10-22dfd78bf8c49028.json
+[suite:task148-length-renorm-ab] wrote reviews/task-148/002-length-renorm-ab/artifacts/renorm/suite-manifest.json
+[suite:task148-length-renorm-ab] latency-tqdefault-100k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench latency --prefix task148_tqdefault_real100k --profile ec_ivf --k 10 --concurrency 1 --iterations 32 --sweep "32,40" --bits 4 --seed 42 --force-index --sample-backend-memory --cache-state task148_tqdefault_real100k_warm --task87-candidate-batch-counters --ivf-stage-counters --memory-sample-interval-ms 25 --log-output reviews/task-148/002-length-renorm-ab/artifacts/renorm/latency-tqdefault-100k.log
+[suite:task148-length-renorm-ab] wrote reviews/task-148/002-length-renorm-ab/artifacts/renorm/suite-manifest.json
+┌────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────────────────────────────┬─────────────┬─────────────┬────────────────┐
+│ nprobe ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state                     ┆ rss_peak_kb ┆ hwm_peak_kb ┆ memory_samples │
+╞════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════════════════════════════╪═════════════╪═════════════╪════════════════╡
+│ 32     ┆ 32    ┆ 9.83 ms ┆ 1.05 ms ┆ 7.87 ms ┆ 9.82 ms ┆ 11.6 ms ┆ 12.3 ms ┆ 12.6 ms ┆ task148_tqdefault_real100k_warm ┆ 0           ┆ 0           ┆ 0              │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 40     ┆ 32    ┆ 11.9 ms ┆ 0.90 ms ┆ 9.92 ms ┆ 12.1 ms ┆ 12.9 ms ┆ 13.5 ms ┆ 13.7 ms ┆ task148_tqdefault_real100k_warm ┆ 0           ┆ 0           ┆ 0              │
+└────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────────────────────────────┴─────────────┴─────────────┴────────────────┘
+[block-kernel-counters] command=latency label=nprobe=32 surface=ivf quant=turboquant_int8 isa=neon flushes=1311 candidates=331757 elapsed_nanos=12915711 elapsed_ms=12.915711 kernel_flushes=1311 kernel_candidates=331757 kernel_elapsed_nanos=12915711 kernel_elapsed_ms=12.915711 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=2 width_8_15=0 width_16_31=2 width_ge32=1307 pruned_candidates=0 kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=ivf flushes=1311 candidates=331757 elapsed_nanos=12915711 elapsed_ms=12.915711 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=32 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[block-kernel-counters] command=latency label=nprobe=40 surface=ivf quant=turboquant_int8 isa=neon flushes=1624 candidates=411901 elapsed_nanos=15816449 elapsed_ms=15.816449 kernel_flushes=1624 kernel_candidates=411901 kernel_elapsed_nanos=15816449 kernel_elapsed_ms=15.816449 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=0 width_8_15=0 width_16_31=4 width_ge32=1620 pruned_candidates=0 kept_candidates=0
+[task87-counters] command=latency label=nprobe=40 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=40 surface=ivf flushes=1624 candidates=411901 elapsed_nanos=15816449 elapsed_ms=15.816449 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=40 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[task87-counters] command=latency label=nprobe=40 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0 lut32_pruned_candidates=0 lut32_kept_candidates=0
+[ivf-stage-counters] command=latency label=nprobe=32 stage=approximate_scan scans=32 samples=32 elapsed_us=299529 elapsed_ms=299.529
+[ivf-stage-counters] command=latency label=nprobe=32 stage=candidate_record scans=32 samples=1311 elapsed_us=2798 elapsed_ms=2.798
+[ivf-stage-counters] command=latency label=nprobe=32 stage=centroid_score scans=32 samples=32 elapsed_us=3221 elapsed_ms=3.221
+[ivf-stage-counters] command=latency label=nprobe=32 stage=exact_rerank scans=32 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=posting_page_decode scans=32 samples=32 elapsed_us=289093 elapsed_ms=289.093
+[ivf-stage-counters] command=latency label=nprobe=32 stage=posting_visit scans=32 samples=32 elapsed_us=297737 elapsed_ms=297.737
+[ivf-stage-counters] command=latency label=nprobe=32 stage=probe_plan scans=32 samples=32 elapsed_us=4060 elapsed_ms=4.060
+[ivf-stage-counters] command=latency label=nprobe=32 stage=query_prep scans=32 samples=32 elapsed_us=1079 elapsed_ms=1.079
+[ivf-stage-counters] command=latency label=nprobe=32 stage=rerank_payload_decode scans=32 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=rerank_payload_score scans=32 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=32 stage=rescan_total scans=32 samples=32 elapsed_us=308074 elapsed_ms=308.074
+[ivf-stage-counters] command=latency label=nprobe=32 stage=scorer_batch scans=32 samples=1311 elapsed_us=275092 elapsed_ms=275.092
+[ivf-stage-counters] command=latency label=nprobe=32 stage=scratch_flush scans=32 samples=1311 elapsed_us=278576 elapsed_ms=278.576
+[ivf-stage-counters] command=latency label=nprobe=32 stage=topk_collect scans=32 samples=32 elapsed_us=1703 elapsed_ms=1.703
+[ivf-stage-counters] command=latency label=nprobe=40 stage=approximate_scan scans=32 samples=32 elapsed_us=364095 elapsed_ms=364.095
+[ivf-stage-counters] command=latency label=nprobe=40 stage=candidate_record scans=32 samples=1624 elapsed_us=3737 elapsed_ms=3.737
+[ivf-stage-counters] command=latency label=nprobe=40 stage=centroid_score scans=32 samples=32 elapsed_us=3031 elapsed_ms=3.031
+[ivf-stage-counters] command=latency label=nprobe=40 stage=exact_rerank scans=32 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=40 stage=posting_page_decode scans=32 samples=32 elapsed_us=353648 elapsed_ms=353.648
+[ivf-stage-counters] command=latency label=nprobe=40 stage=posting_visit scans=32 samples=32 elapsed_us=361931 elapsed_ms=361.931
+[ivf-stage-counters] command=latency label=nprobe=40 stage=probe_plan scans=32 samples=32 elapsed_us=4180 elapsed_ms=4.180
+[ivf-stage-counters] command=latency label=nprobe=40 stage=query_prep scans=32 samples=32 elapsed_us=1047 elapsed_ms=1.047
+[ivf-stage-counters] command=latency label=nprobe=40 stage=rerank_payload_decode scans=32 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=40 stage=rerank_payload_score scans=32 samples=0 elapsed_us=0 elapsed_ms=0.000
+[ivf-stage-counters] command=latency label=nprobe=40 stage=rescan_total scans=32 samples=32 elapsed_us=372538 elapsed_ms=372.538
+[ivf-stage-counters] command=latency label=nprobe=40 stage=scorer_batch scans=32 samples=1624 elapsed_us=336484 elapsed_ms=336.484
+[ivf-stage-counters] command=latency label=nprobe=40 stage=scratch_flush scans=32 samples=1624 elapsed_us=341040 elapsed_ms=341.040
+[ivf-stage-counters] command=latency label=nprobe=40 stage=topk_collect scans=32 samples=32 elapsed_us=2068 elapsed_ms=2.068
+[suite:task148-length-renorm-ab] wrote reviews/task-148/002-length-renorm-ab/artifacts/renorm/suite-manifest.json
+[suite:task148-length-renorm-ab] storage-tqdefault-100k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 --log-file reviews/task-148/002-length-renorm-ab/artifacts/renorm/storage-tqdefault-100k.log bench storage --prefix task148_tqdefault_real100k
+[suite:task148-length-renorm-ab] wrote reviews/task-148/002-length-renorm-ab/artifacts/renorm/suite-manifest.json
+┌───────────────────────────────┬───────────────────────────────────┐
+│ field                         ┆ value                             │
+╞═══════════════════════════════╪═══════════════════════════════════╡
+│ prefix                        ┆ task148_tqdefault_real100k        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus                        ┆ task148_tqdefault_real100k_corpus │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ rows                          ┆ 100000                            │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ heap                          ┆ 7.3 MiB                           │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ table (heap + toast + fsm/vm) ┆ 1.6 GiB                           │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes                       ┆ 83.8 MiB                          │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ total                         ┆ 1.6 GiB                           │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (total)               ┆ 17525.7 B                         │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (heap only)           ┆ 76.6 B                            │
+└───────────────────────────────┴───────────────────────────────────┘
+┌───────────────────────────────────────────┬───────────────┬───────────┬─────────────────────────────┬──────────┬─────────┐
+│ index                                     ┆ access method ┆ profile   ┆ reloptions                  ┆ size     ┆ per row │
+╞═══════════════════════════════════════════╪═══════════════╪═══════════╪═════════════════════════════╪══════════╪═════════╡
+│ task148_tqdefault_real100k_turboquant_idx ┆ ec_ivf        ┆ ec_ivf    ┆ {storage_format=turboquant} ┆ 81.7 MiB ┆ 856.5 B │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ task148_tqdefault_real100k_corpus_pkey    ┆ btree         ┆ <unknown> ┆ {}                          ┆ 2.2 MiB  ┆ 22.6 B  │
+└───────────────────────────────────────────┴───────────────┴───────────┴─────────────────────────────┴──────────┴─────────┘
+[suite:task148-length-renorm-ab] wrote reviews/task-148/002-length-renorm-ab/artifacts/renorm/suite-manifest.json
+[suite:task148-length-renorm-ab] load-stage2-10k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 --log-file reviews/task-148/002-length-renorm-ab/artifacts/renorm/load-stage2-10k.log corpus load --prefix task148_stage2_real10k --profile ec_ivf --corpus-file data/staged-current/ec_real_10k_corpus.tsv --queries-file data/staged-current/ec_real_10k_queries.tsv --manifest-file data/staged-current/ec_real_10k_manifest.json --allow-manifest-mismatch --bits 4 --seed 42 --storage-format coarse_rerank --reloption rerank_placement=index --reloption rerank_format=turboquant --reloption rerank_width=50 --reloption stage2_final_rerank_width=25
+[suite:task148-length-renorm-ab] wrote reviews/task-148/002-length-renorm-ab/artifacts/renorm/suite-manifest.json
+┌─────────┬──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                                                                                                                    │
+╞═════════╪══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_ivf                                                                                                                                                                   │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ task148_stage2_real10k_corpus (10000 rows)                                                                                                                               │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ task148_stage2_real10k_queries (200 rows)                                                                                                                                │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ task148_stage2_real10k_coarse_rerank_idx [rerank_placement=index, rerank_format=turboquant, rerank_width=50, stage2_final_rerank_width=25, storage_format=coarse_rerank] │
+└─────────┴──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+[loader] inspecting data/staged-current/ec_real_10k_corpus.tsv
+[loader] inspecting data/staged-current/ec_real_10k_queries.tsv
+[loader] corpus: 10000 rows, sha256=c67c5810b66d982d705974e48d4775479adfbd92a988f694091266e049a35e75  queries: 200 rows, sha256=a2c191bb742017d849e73f6e6866e8e0f0bac1579ba212f7fc76b8eb09904ae8
+[loader] warning: manifest verification failed for data/staged-current/ec_real_10k_manifest.json: prefix="ec_real_10k" (expected "task148_stage2_real10k")
+[loader] task148_stage2_real10k_corpus already has 10000 rows; skipping reload
+[loader] task148_stage2_real10k_queries already has 200 rows; skipping reload
+[loader] task148_stage2_real10k_coarse_rerank_idx already exists with reloptions=[rerank_placement=index, rerank_format=turboquant, rerank_width=50, stage2_final_rerank_width=25, storage_format=coarse_rerank]; skipping rebuild
+[loader] completed prefix task148_stage2_real10k in 634.96ms
+[suite:task148-length-renorm-ab] wrote reviews/task-148/002-length-renorm-ab/artifacts/renorm/suite-manifest.json
+[suite:task148-length-renorm-ab] recall-stage2-10k -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench recall --prefix task148_stage2_real10k --profile ec_ivf --k 10 --sweep "8,16,24,32,48,64" --queries-limit 32 --bits 4 --seed 42 --force-index --truth-cache-dir reviews/task-148/002-length-renorm-ab/truth-cache --log-output reviews/task-148/002-length-renorm-ab/artifacts/renorm/recall-stage2-10k.log
+[suite:task148-length-renorm-ab] wrote reviews/task-148/002-length-renorm-ab/artifacts/renorm/suite-manifest.json
+[recall] fetching queries from task148_stage2_real10k_queries ...
+[recall] fetching corpus from task148_stage2_real10k_corpus ...
+[recall] loaded ground truth cache reviews/task-148/002-length-renorm-ab/truth-cache/truth-v1-rows10000-queries32-dim1536-k10-a217f264f771d9c5.json
+
+   0: [91mexecuting recall KNN query[0m
+   1: [91mdb error[0m
+   2: [91mERROR: ec_ivf TurboQuant borrowed batch payload/gamma count 50/0 does not match score count 50[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/bench/recall.rs[0m:[35m321[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.
+[suite:task148-length-renorm-ab] wrote reviews/task-148/002-length-renorm-ab/artifacts/renorm/suite-manifest.json
+
+   0: [91msuite step "recall-stage2-10k" failed with exit code 1; rerun with --continue-on-error to keep going[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/bench/suite.rs[0m:[35m975[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.

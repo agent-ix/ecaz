@@ -1,0 +1,218 @@
+{
+ "name": "task124-stage2-1m",
+ "schema_version": 1,
+ "artifact_dir": "reviews/task-124/001-stage2-vs-rb1-pareto/artifacts/cells-1m",
+ "defaults": {
+  "pg": 18,
+  "socket_dir": "/Users/peter/.pgrx",
+  "profile": "ec_ivf",
+  "seed": 42,
+  "queries_limit": 32,
+  "iterations": 32,
+  "force_index": true,
+  "sample_backend_memory": true,
+  "memory_sample_interval_ms": 25
+ },
+ "thresholds": [],
+ "steps": [
+  {
+   "kind": "raw",
+   "name": "precheck-build-sha",
+   "tags": [
+    "setup",
+    "precheck",
+    "task124"
+   ],
+   "args": [
+    "dev",
+    "sql",
+    "--pg",
+    "18",
+    "--db",
+    "tqvector_bench",
+    "--socket-dir",
+    "/Users/peter/.pgrx",
+    "--raw",
+    "--sql",
+    "SELECT now() AS captured_at, ecaz_build_git_sha(), current_setting('ec_ivf.turboquant_scorer') AS scorer_default;",
+    "--log-output",
+    "${artifact_dir}/precheck-build-sha.log"
+   ],
+   "expected_artifacts": [
+    "${artifact_dir}/precheck-build-sha.log"
+   ]
+  },
+  {
+   "kind": "load",
+   "name": "load-stage2-1m",
+   "tags": [
+    "load",
+    "task124",
+    "stage2",
+    "real1m"
+   ],
+   "prefix": "task124_stage2_1m",
+   "profile": "ec_ivf",
+   "storage_format": "coarse_rerank",
+   "bits": 4,
+   "corpus_file": "data/staged-current/ec_real_ann_benchmarks_anchor_corpus.tsv",
+   "queries_file": "data/staged-current/ec_real_ann_benchmarks_anchor_queries.tsv",
+   "manifest_file": "data/staged-current/ec_real_ann_benchmarks_anchor_manifest.json",
+   "allow_manifest_mismatch": true,
+   "reloptions": [
+    "rerank_placement=index",
+    "rerank_format=turboquant",
+    "rerank_width=50",
+    "stage2_final_rerank_width=25"
+   ],
+   "log_file": "${artifact_dir}/load-stage2-1m.log"
+  },
+  {
+   "kind": "recall",
+   "name": "recall-stage2-1m",
+   "tags": [
+    "recall",
+    "task124",
+    "stage2",
+    "real1m"
+   ],
+   "prefix": "task124_stage2_1m",
+   "profile": "ec_ivf",
+   "k": 10,
+   "bits": 4,
+   "sweep": [
+    8,
+    16,
+    24,
+    32,
+    48,
+    64
+   ],
+   "queries_limit": 32,
+   "truth_cache_dir": "reviews/task-124/001-stage2-vs-rb1-pareto/truth-cache",
+   "log_output": "${artifact_dir}/recall-stage2-1m.log"
+  },
+  {
+   "kind": "latency",
+   "name": "latency-stage2-1m",
+   "tags": [
+    "latency",
+    "task124",
+    "stage2",
+    "real1m"
+   ],
+   "prefix": "task124_stage2_1m",
+   "profile": "ec_ivf",
+   "k": 10,
+   "bits": 4,
+   "sweep": [
+    32,
+    40
+   ],
+   "iterations": 32,
+   "queries_limit": 32,
+   "concurrency": 1,
+   "cache_state": "task124_stage2_1m_warm",
+   "task87_candidate_batch_counters": true,
+   "ivf_stage_counters": true,
+   "log_output": "${artifact_dir}/latency-stage2-1m.log"
+  },
+  {
+   "kind": "storage",
+   "name": "storage-stage2-1m",
+   "tags": [
+    "storage",
+    "task124",
+    "stage2",
+    "real1m"
+   ],
+   "prefix": "task124_stage2_1m",
+   "log_file": "${artifact_dir}/storage-stage2-1m.log"
+  },
+  {
+   "kind": "load",
+   "name": "load-tqf32-1m",
+   "tags": [
+    "load",
+    "task124",
+    "tqf32",
+    "real1m"
+   ],
+   "prefix": "task124_tqf32_1m",
+   "profile": "ec_ivf",
+   "storage_format": "turboquant",
+   "bits": 4,
+   "corpus_file": "data/staged-current/ec_real_ann_benchmarks_anchor_corpus.tsv",
+   "queries_file": "data/staged-current/ec_real_ann_benchmarks_anchor_queries.tsv",
+   "manifest_file": "data/staged-current/ec_real_ann_benchmarks_anchor_manifest.json",
+   "allow_manifest_mismatch": true,
+   "reloptions": [
+    "rerank=heap_f32",
+    "rerank_width=50"
+   ],
+   "log_file": "${artifact_dir}/load-tqf32-1m.log"
+  },
+  {
+   "kind": "recall",
+   "name": "recall-tqf32-1m",
+   "tags": [
+    "recall",
+    "task124",
+    "tqf32",
+    "real1m"
+   ],
+   "prefix": "task124_tqf32_1m",
+   "profile": "ec_ivf",
+   "k": 10,
+   "bits": 4,
+   "sweep": [
+    8,
+    16,
+    24,
+    32,
+    48,
+    64
+   ],
+   "queries_limit": 32,
+   "truth_cache_dir": "reviews/task-124/001-stage2-vs-rb1-pareto/truth-cache",
+   "log_output": "${artifact_dir}/recall-tqf32-1m.log"
+  },
+  {
+   "kind": "latency",
+   "name": "latency-tqf32-1m",
+   "tags": [
+    "latency",
+    "task124",
+    "tqf32",
+    "real1m"
+   ],
+   "prefix": "task124_tqf32_1m",
+   "profile": "ec_ivf",
+   "k": 10,
+   "bits": 4,
+   "sweep": [
+    32,
+    40
+   ],
+   "iterations": 32,
+   "queries_limit": 32,
+   "concurrency": 1,
+   "cache_state": "task124_tqf32_1m_warm",
+   "task87_candidate_batch_counters": true,
+   "ivf_stage_counters": true,
+   "log_output": "${artifact_dir}/latency-tqf32-1m.log"
+  },
+  {
+   "kind": "storage",
+   "name": "storage-tqf32-1m",
+   "tags": [
+    "storage",
+    "task124",
+    "tqf32",
+    "real1m"
+   ],
+   "prefix": "task124_tqf32_1m",
+   "log_file": "${artifact_dir}/storage-tqf32-1m.log"
+  }
+ ]
+}

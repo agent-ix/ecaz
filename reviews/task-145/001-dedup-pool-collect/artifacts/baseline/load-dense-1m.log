@@ -1,0 +1,20 @@
+[loader] warning: profile "ec_ivf" does not list dense_posting_blocks as known reloption; passing through verbatim. Known reloptions: nlists, nprobe, rerank_width, training_sample_rows, seed, pq_group_size, storage_format, quantizer, rerank, coarse_format, coarse_bits, rerank_placement, rerank_format, rerank_group_width, stage2_final_rerank_width
+[loader] inspecting data/staged-current/ec_real_ann_benchmarks_anchor_corpus.tsv
+[loader] inspecting data/staged-current/ec_real_ann_benchmarks_anchor_queries.tsv
+[loader] corpus: 990000 rows, sha256=00d96d7665edc31cd8e4e62712c0ef2679fb714682f3ce4d522305e59faec687  queries: 10000 rows, sha256=34c4874e0e35734574f4ee9e1dd10753fcec2d295955061a407c258df163f5a0
+[loader] warning: manifest verification failed for data/staged-current/ec_real_ann_benchmarks_anchor_manifest.json: prefix="ec_real_ann_benchmarks_anchor" (expected "task143_dense_1m")
+[loader] task143_dense_1m_corpus already has 990000 rows; skipping reload
+[loader] task143_dense_1m_queries already has 10000 rows; skipping reload
+[loader] task143_dense_1m_turboquant_idx already exists with reloptions=[dense_posting_blocks=1, storage_format=turboquant]; skipping rebuild
+┌─────────┬─────────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                               │
+╞═════════╪═════════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_ivf                                                                              │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ task143_dense_1m_corpus (990000 rows)                                               │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ task143_dense_1m_queries (10000 rows)                                               │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ task143_dense_1m_turboquant_idx [dense_posting_blocks=1, storage_format=turboquant] │
+└─────────┴─────────────────────────────────────────────────────────────────────────────────────┘
+[loader] completed prefix task143_dense_1m in 62.60s
