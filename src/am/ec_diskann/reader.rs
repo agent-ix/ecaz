@@ -217,7 +217,11 @@ pub struct TidHasher(u64);
 
 impl std::hash::Hasher for TidHasher {
     fn finish(&self) -> u64 {
-        self.0.wrapping_mul(0x9E37_79B9_7F4A_7C15)
+        // Multiply then fold the well-mixed high half into the low half:
+        // hashbrown indexes buckets with the LOW bits, and multiplication
+        // alone leaves them poorly mixed.
+        let hashed = self.0.wrapping_mul(0x9E37_79B9_7F4A_7C15);
+        hashed ^ (hashed >> 32)
     }
 
     fn write(&mut self, bytes: &[u8]) {
