@@ -3,7 +3,7 @@
 Status: **measured — awaiting review**. Coder: Codex. 2026-07-04.
 Measurement-only packet (no code change; the pipeline under test is the
 Task 130 keep-set already on main). Binary `1dda8e589`, code-identical
-to the Task 168/147 baseline binary `da6101a00` (docs-only interim
+to the Task 171/147 baseline binary `da6101a00` (docs-only interim
 commits; see `artifacts/install-stage2-dylib.log`).
 
 ## Summary

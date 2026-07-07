@@ -1,7 +1,7 @@
-# Task 168 packet 001 — outside-scan latency decomposition (review request)
+# Task 171 packet 001 — outside-scan latency decomposition (review request)
 
 Status: **measured — awaiting review**. Coder: Codex. 2026-07-03.
-Branch: `task-168-outside-scan-profile` (stacked on
+Branch: `task-171-outside-scan-profile` (stacked on
 `task-145-topk-collect`). Code commit under review: `da6101a00`.
 
 ## Summary

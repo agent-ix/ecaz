@@ -1,7 +1,7 @@
 # Task 169 packet 001 — coarse-payload density pareto: artifact manifest
 
 - Measurement-only packet (no code change). Binary for ALL cells:
-  installed dylib `da6101a00` (the Task 168 timers commit; shasum +
+  installed dylib `da6101a00` (the Task 171 timers commit; shasum +
   in-suite sha prechecks per cell). The TQ champion cells are the Task
   146 packet's `timers` run on the SAME binary — cited, not re-run.
 - Task bucket / packet: `reviews/task-169/001-density-pareto/`
@@ -16,7 +16,7 @@
 - Cells (isolated one-index-per-table, dbpedia 1536-dim, seed 42):
   - **A (champion)**: pure defaults, `storage_format=turboquant`
     (dense + int8/SDOT, rerank off) — from
-    `reviews/task-168/001-outside-scan-profile/artifacts/timers/`.
+    `reviews/task-171/001-outside-scan-profile/artifacts/timers/`.
   - **B (rb1)**: `storage_format=rabitq`, reloptions `quant_bits=1,
     dense_posting_blocks=1, rerank=heap_f32, rerank_width=50` —
     prefixes `task147_rb1_real{10k,50k,100k}` + `task147_rb1_1m`,

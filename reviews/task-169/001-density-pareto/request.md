@@ -2,7 +2,7 @@
 
 Status: **measured — awaiting review**. Coder: Codex. 2026-07-03.
 Measurement-only packet (no code change; all cells on the installed
-`da6101a00` binary, same as the Task 168 champion cells).
+`da6101a00` binary, same as the Task 171 champion cells).
 
 ## Summary
 

@@ -5,7 +5,7 @@
 - Binary for ALL new cells: installed dylib built at worktree HEAD
   `1dda8e589e3472c4f5c2476331e785a0add82f6a` (branch
   `task-124-stage2-pareto`), shasum `1326b1c0...` — see
-  `install-stage2-dylib.log`. Code-identical to the Task 168/147 baseline
+  `install-stage2-dylib.log`. Code-identical to the Task 171/147 baseline
   binary `da6101a00` (`git diff da6101a00..1dda8e589 -- src/ crates/
   Cargo.toml Cargo.lock` is empty; interim commits are docs only), so the
   cited baseline cells compare cleanly.
@@ -38,7 +38,7 @@
   - **rb1@w50**: `reviews/task-169/001-density-pareto/artifacts/cells/`
     (+ `cells-1m/`).
   - **TQ pure default (no rerank)**:
-    `reviews/task-168/001-outside-scan-profile/artifacts/timers/`.
+    `reviews/task-171/001-outside-scan-profile/artifacts/timers/`.
 - Suites: `task124-stage2-suite.json` (37 steps, ≤100k, 37/37
   succeeded) and `task124-stage2-1m-suite.json` (9 steps, winner tier).
   Bespoke-config reason: cross-storage-format pipeline matrix on the

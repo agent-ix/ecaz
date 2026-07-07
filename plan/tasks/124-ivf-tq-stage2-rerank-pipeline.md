@@ -60,7 +60,7 @@ winner):
   (Phase 6).
 - Baselines cited, not re-run (same binary lineage): rb1@w50
   (`reviews/task-169/001-density-pareto/`), TQ pure default
-  (`reviews/task-168/001-outside-scan-profile/`).
+  (`reviews/task-171/001-outside-scan-profile/`).
 
 Decision rule: D must beat rb1@w50 AND F at matched recall on warm
 latency, or show a credible fetch-count/IO rationale plus a Phase 6

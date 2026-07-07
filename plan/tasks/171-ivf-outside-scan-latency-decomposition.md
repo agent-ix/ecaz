@@ -1,9 +1,9 @@
-# Task 168: IVF outside-scan latency decomposition (rescan setup + executor share)
+# Task 171: IVF outside-scan latency decomposition (rescan setup + executor share)
 
 Status: **measured — awaiting review** (2026-07-03). Owner: Codex (branch
-`task-168-outside-scan-profile`, stacked on `task-145-topk-collect`).
+`task-171-outside-scan-profile`, stacked on `task-145-topk-collect`).
 Priority: P2. Follow-up of Task 133 finding #4.
-Packet: `reviews/task-168/001-outside-scan-profile/` — timers landed at
+Packet: `reviews/task-171/001-outside-scan-profile/` — timers landed at
 `da6101a00`, overhead neutral, decomposition complete. Headline:
 executor/gettuple is ~160–180 µs/query flat (27% of e2e at 10k, 11% at
 100k, 5% at 1m); probe_plan and centroid_score grow with scale (~432 /

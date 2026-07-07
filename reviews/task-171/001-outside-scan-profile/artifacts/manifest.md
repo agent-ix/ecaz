@@ -1,10 +1,10 @@
-# Task 168 packet 001 — outside-scan latency decomposition: artifact manifest
+# Task 171 packet 001 — outside-scan latency decomposition: artifact manifest
 
 - Code under review: `da6101a00` ("Add query_prep / centroid_score /
   rescan_total stage timers to the IVF scan", branch
-  `task-168-outside-scan-profile`, stacked on `task-145-topk-collect`
+  `task-171-outside-scan-profile`, stacked on `task-145-topk-collect`
   head `d527d78d7`).
-- Task bucket / packet: `reviews/task-168/001-outside-scan-profile/`
+- Task bucket / packet: `reviews/task-171/001-outside-scan-profile/`
 - Host: Apple M5 Pro (m5-local), PG18 socket `/Users/peter/.pgrx` port
   28818, db `tqvector_bench`. 2026-07-03.
 - Timers only — no scan behavior change. Overhead A/B baseline = the
