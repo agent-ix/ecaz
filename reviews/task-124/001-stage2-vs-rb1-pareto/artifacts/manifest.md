@@ -5,7 +5,7 @@
 - Binary for ALL new cells: installed dylib built at worktree HEAD
   `1dda8e589e3472c4f5c2476331e785a0add82f6a` (branch
   `task-124-stage2-pareto`), shasum `1326b1c0...` — see
-  `install-stage2-dylib.log`. Code-identical to the Task 146/147 baseline
+  `install-stage2-dylib.log`. Code-identical to the Task 168/147 baseline
   binary `da6101a00` (`git diff da6101a00..1dda8e589 -- src/ crates/
   Cargo.toml Cargo.lock` is empty; interim commits are docs only), so the
   cited baseline cells compare cleanly.
@@ -20,7 +20,7 @@
 - Question (re-baselined Task 124): does the landed in-engine 3-stage
   pipeline (rb1 coarse -> persisted TQ stage-2 over the width-50
   frontier -> exact f32 final rerank of 25) beat rb1 + heap_f32 width 50
-  directly? Plus the apples-to-apples control Task 147 skipped
+  directly? Plus the apples-to-apples control Task 169 skipped
   (TQ coarse + the SAME heap_f32 rerank) and a no-stage2 width control
   (rb1@w25).
 - Cells (fresh loads this packet):
@@ -35,10 +35,10 @@
     `dense_posting_blocks=1`, `rerank=heap_f32`, `rerank_width=25` —
     `task124_rb1w25_real{10k,50k,100k}`.
 - Baselines cited, not re-run (same binary lineage `da6101a00`):
-  - **rb1@w50**: `reviews/task-147/001-density-pareto/artifacts/cells/`
+  - **rb1@w50**: `reviews/task-169/001-density-pareto/artifacts/cells/`
     (+ `cells-1m/`).
   - **TQ pure default (no rerank)**:
-    `reviews/task-146/001-outside-scan-profile/artifacts/timers/`.
+    `reviews/task-168/001-outside-scan-profile/artifacts/timers/`.
 - Suites: `task124-stage2-suite.json` (37 steps, ≤100k, 37/37
   succeeded) and `task124-stage2-1m-suite.json` (9 steps, winner tier).
   Bespoke-config reason: cross-storage-format pipeline matrix on the
@@ -65,7 +65,7 @@ Two recall facts:
 
 1. **stage2, tqf32, and rb1@w50 are recall-IDENTICAL at all 18 points.**
    The exact width-50 frontier determines recall; neither the coarse
-   payload (1-bit vs 4-bit — the Task 147 masking fact, now confirmed
+   payload (1-bit vs 4-bit — the Task 169 masking fact, now confirmed
    head-on under the SAME rerank) nor inserting the TQ stage-2 reducer
    before a width-25 exact stage changes which truth rows surface.
 2. **Plain width-25 exact rerank (rb1w25) LOSES recall** (−0.3..−1.3 pp
@@ -94,7 +94,7 @@ Two recall facts:
   identical, latency parity-to-slightly-worse at ≤100k warm. The 4×
   coarse-byte advantage of rb1 is NOT yet decisive at ≤100k e2e; the
   decisive deltas at these scales are storage (below) and the rerank
-  stage. 1m is where Task 147 saw posting bytes matter.
+  stage. 1m is where Task 169 saw posting bytes matter.
 - rb1w25 is fastest but NOT at matched recall — dominated on the
   recall axis; excluded from the 1m tier.
 
@@ -163,14 +163,14 @@ vs tqf32 0.35 vs rb1@w50 0.49.
   CI ~±2 pp; deltas −0.4..+0.8 pp) with mixed latency (−5% at n32,
   +9% at n40) and 3.5× the storage. The controlled density conclusion:
   with the SAME exact rerank, the 4-bit vs 1-bit coarse payload is
-  ~recall/latency-neutral warm; **the Task 147 rb1-vs-TQ-default win
+  ~recall/latency-neutral warm; **the Task 169 rb1-vs-TQ-default win
   was primarily the rerank stage, and density's durable payoff is
   storage** (3.2–3.5× smaller) plus a latency edge that only appears
   at deeper sweeps.
 
 ### Verdict
 
-**No warm-cache promotion case.** rb1 + heap_f32 width 50 (the Task 147
+**No warm-cache promotion case.** rb1 + heap_f32 width 50 (the Task 169
 champion) survives all three challengers on the warm pareto once recall
 is matched, and keeps a 3.2–4.4× storage advantage:
 
@@ -183,7 +183,7 @@ is matched, and keeps a 3.2–4.4× storage advantage:
   Task 124 premise; (2) TQ payload decode is 98% of the stage-2 cost
   (5.45 of 5.58 ms/sweep at 100k) — a decode-path optimization could
   tilt the warm comparison before Phase 6 is even run.
-- **E (tqf32)**: closes the Task 147 apples-to-apples gap — density
+- **E (tqf32)**: closes the Task 169 apples-to-apples gap — density
   alone (holding rerank fixed) is recall-neutral and roughly
   latency-neutral warm; rb1's structural win is storage. No reason to
   run a TQ coarse stage under rerank at 3.5× the bytes.
@@ -201,7 +201,7 @@ Follow-ups this evidence motivates (not started here):
 2. **TQ sidecar decode optimization** (98% of stage-2 payload cost is
    decode, not scoring) — bounded, well-attributed target if Phase 6
    shows promise.
-3. The rb1 promotion-matrix task (Task 147 follow-up) should cite this
+3. The rb1 promotion-matrix task (Task 169 follow-up) should cite this
    packet's E-cell as the controlled density evidence.
 
 ## Run log
@@ -213,6 +213,6 @@ Follow-ups this evidence motivates (not started here):
   (`artifacts/cells/suite-manifest.json`).
 - 2026-07-04 ~17:0x: first 1m launch failed on a config authoring error
   (`ec_real_1m_*` staged names do not exist; the staged 1m corpus is the
-  990k `ec_real_ann_benchmarks_anchor_*` split, as in the Task 147 1m
+  990k `ec_real_ann_benchmarks_anchor_*` split, as in the Task 169 1m
   cell); paths fixed, relaunched, 9/9 succeeded
   (`artifacts/cells-1m/suite-manifest.json`).

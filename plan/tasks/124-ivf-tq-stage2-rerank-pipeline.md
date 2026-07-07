@@ -11,7 +11,7 @@ Packet 001 verdict: **no warm-cache promotion** — stage2@25 matches
 rb1@w50 recall at ≤100k and wins −4..−10% latency at 100k, but at 1m it
 pays 0.3–1.0 pp recall and is pareto-equivalent at matched recall, at
 4.4× the index size. Density control (TQ 4-bit + same rerank) proves
-the Task 147 win was primarily the rerank stage. Live paths: Phase 6
+the Task 169 win was primarily the rerank stage. Live paths: Phase 6
 cold-cache (halved heap fetches, 25 vs 50/query) and TQ sidecar decode
 optimization (98% of stage-2 payload cost).
 Priority: P1 follow-up for the Task 122 TurboQuant keep-experimental outcome.
@@ -32,7 +32,7 @@ What already landed on `main` (Task 130 keep-set; verify with
 
 Why re-baseline: the comparators in Phase 5 predate two facts.
 (a) Task 143 flipped the TQ defaults (dense + int8 scorer) and Task 145
-cut topk_collect — the champion moved. (b) Task 147 then showed
+cut topk_collect — the champion moved. (b) Task 169 then showed
 **rb1 + heap_f32 rerank width 50 pareto-dominates the promoted TQ
 default at every scale** (1m: 6.21 vs 6.66 ms, recall 0.9667 vs 0.9208
 @ n32, index −68%). So the product question for the TQ stage-2 pipeline
@@ -52,22 +52,22 @@ winner):
   `stage2_final_rerank_width=25`.
 - **E (TQ apples-to-apples)**: `storage_format=turboquant` +
   `rerank=heap_f32` + `rerank_width=50` — isolates coarse-payload
-  density (4-bit vs 1-bit) under the SAME rerank, the control Task 147
+  density (4-bit vs 1-bit) under the SAME rerank, the control Task 169
   deliberately skipped.
 - **F (rb1@w25 control)**: rb1 + `rerank=heap_f32` + `rerank_width=25`
   — if plain rb1 holds recall at width 25, the stage-2 reducer has no
   warm-cache job; its value collapses to the IO-sensitive regime
   (Phase 6).
 - Baselines cited, not re-run (same binary lineage): rb1@w50
-  (`reviews/task-147/001-density-pareto/`), TQ pure default
-  (`reviews/task-146/001-outside-scan-profile/`).
+  (`reviews/task-169/001-density-pareto/`), TQ pure default
+  (`reviews/task-168/001-outside-scan-profile/`).
 
 Decision rule: D must beat rb1@w50 AND F at matched recall on warm
 latency, or show a credible fetch-count/IO rationale plus a Phase 6
 cold-cache win, to stay alive as a product path. Phase 6 (IO-sensitive
 validation) remains REQUIRED before any promotion claim regardless —
 that is also where the TQ no-rerank default retains its zero-heap-fetch
-niche and where the Task 147 verdict could flip.
+niche and where the Task 169 verdict could flip.
 
 ## Why
 
