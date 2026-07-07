@@ -1,0 +1,174 @@
+{
+  "name": "task168-phase4-alloc-cleanups-final",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-168/004-alloc-cleanups/artifacts",
+  "defaults": {
+    "pg": 18,
+    "socket_dir": "/home/peter/.pgrx",
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 200,
+    "iterations": 200,
+    "force_index": true,
+    "sample_backend_memory": true,
+    "memory_sample_interval_ms": 25
+  },
+  "steps": [
+    {
+      "kind": "recall",
+      "name": "recall-10k-final",
+      "tags": [
+        "task168",
+        "phase4",
+        "alloc-cleanups",
+        "ec_real_10k",
+        "diskann",
+        "w4",
+        "after",
+        "recall"
+      ],
+      "prefix": "t168_p1_real10k_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128,
+        200,
+        400,
+        800
+      ],
+      "truth_cache_file": "reviews/task-168/001-rabitq-characterization/artifacts/truth-10k-k10.json",
+      "log_output": "reviews/task-168/004-alloc-cleanups/artifacts/recall-10k-final.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-10k-final",
+      "tags": [
+        "task168",
+        "phase4",
+        "alloc-cleanups",
+        "ec_real_10k",
+        "diskann",
+        "w4",
+        "after",
+        "latency"
+      ],
+      "prefix": "t168_p1_real10k_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128,
+        200,
+        400,
+        800
+      ],
+      "cache_state": "warm",
+      "log_output": "reviews/task-168/004-alloc-cleanups/artifacts/latency-10k-final.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-50k-final",
+      "tags": [
+        "task168",
+        "phase4",
+        "alloc-cleanups",
+        "ec_real_50k",
+        "diskann",
+        "w4",
+        "after",
+        "recall"
+      ],
+      "prefix": "t168_p1_real50k_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128,
+        200,
+        400,
+        800
+      ],
+      "truth_cache_file": "reviews/task-168/001-rabitq-characterization/artifacts/truth-50k-k10.json",
+      "log_output": "reviews/task-168/004-alloc-cleanups/artifacts/recall-50k-final.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-50k-final",
+      "tags": [
+        "task168",
+        "phase4",
+        "alloc-cleanups",
+        "ec_real_50k",
+        "diskann",
+        "w4",
+        "after",
+        "latency"
+      ],
+      "prefix": "t168_p1_real50k_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128,
+        200,
+        400,
+        800
+      ],
+      "cache_state": "warm",
+      "log_output": "reviews/task-168/004-alloc-cleanups/artifacts/latency-50k-final.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-final",
+      "tags": [
+        "task168",
+        "phase4",
+        "alloc-cleanups",
+        "ec_real_100k",
+        "diskann",
+        "w4",
+        "after",
+        "recall"
+      ],
+      "prefix": "t168_p1_real100k_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128,
+        200,
+        400,
+        800
+      ],
+      "truth_cache_file": "reviews/task-168/001-rabitq-characterization/artifacts/truth-100k-k10.json",
+      "log_output": "reviews/task-168/004-alloc-cleanups/artifacts/recall-100k-final.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-final",
+      "tags": [
+        "task168",
+        "phase4",
+        "alloc-cleanups",
+        "ec_real_100k",
+        "diskann",
+        "w4",
+        "after",
+        "latency"
+      ],
+      "prefix": "t168_p1_real100k_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128,
+        200,
+        400,
+        800
+      ],
+      "cache_state": "warm",
+      "log_output": "reviews/task-168/004-alloc-cleanups/artifacts/latency-100k-final.log"
+    }
+  ]
+}

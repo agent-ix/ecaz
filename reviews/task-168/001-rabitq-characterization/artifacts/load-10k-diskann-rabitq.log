@@ -1,0 +1,23 @@
+[loader] inspecting data/staged-current/ec_real_10k_corpus.tsv
+[loader] inspecting data/staged-current/ec_real_10k_queries.tsv
+[loader] corpus: 10000 rows, sha256=c67c5810b66d982d705974e48d4775479adfbd92a988f694091266e049a35e75  queries: 200 rows, sha256=a2c191bb742017d849e73f6e6866e8e0f0bac1579ba212f7fc76b8eb09904ae8
+[loader] warning: manifest verification failed for data/staged-current/ec_real_10k_manifest.json: prefix="ec_real_10k" (expected "t168_p1_real10k_diskann")
+[loader] copied corpus table t168_p1_real10k_diskann_corpus in 4.13s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table t168_p1_real10k_diskann_corpus in 4.70s
+[loader] copied queries table t168_p1_real10k_diskann_queries in 98.49ms
+[loader] building t168_p1_real10k_diskann_rabitq_idx using ec_diskann (reloptions=[graph_degree=32, build_list_size=100, alpha=1.2, rerank_budget=64, top_k=10, storage_format=rabitq]) ...
+[loader] built t168_p1_real10k_diskann_rabitq_idx in 12.01s
+[loader] ec_diskann_ambuild_timing index=t168_p1_real10k_diskann_rabitq_idx phase=complete heap_tuples=10000 scanned_tuples=10000 unique_tuples=10000 data_pages=527 heap_scan_ms=406 source_ref_ms=1 training_ms=0 sidecar_setup_ms=0 payload_derivation_ms=11 build_persist_ms=11541 core_medoid_ms=232 core_graph_ms=11299 core_persist_ms=8 parallel_requested_workers=0 parallel_effective_workers=0 parallel_batch_size=704 parallel_flush_rate=0 parallel_rayon_scaffold=0 parallel_epochs=0 parallel_proposal_ms=0 parallel_reducer_ms=0 parallel_same_epoch_candidate_reads=0 parallel_total_candidate_reads=0 overflow_ms=0 codebook_ms=0 write_pages_ms=30 metadata_ms=0 flush_total_ms=11585 total_ms=11992
+┌─────────┬─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                                                                                   │
+╞═════════╪═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_diskann                                                                                                                              │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ t168_p1_real10k_diskann_corpus (10000 rows)                                                                                             │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ t168_p1_real10k_diskann_queries (200 rows)                                                                                              │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ t168_p1_real10k_diskann_rabitq_idx [graph_degree=32, build_list_size=100, alpha=1.2, rerank_budget=64, top_k=10, storage_format=rabitq] │
+└─────────┴─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+[loader] completed prefix t168_p1_real10k_diskann in 22.75s

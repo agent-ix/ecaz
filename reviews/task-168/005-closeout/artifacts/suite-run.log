@@ -1,0 +1,283 @@
+[suite:current-intel-local] wrote reviews/task-168/005-closeout/artifacts/suite-manifest.json
+[suite:current-intel-local] wrote reviews/task-168/005-closeout/artifacts/suite-manifest.json
+[suite:current-intel-local] load-10k-diskann -> --database tqvector_bench --host /home/peter/.pgrx --port 28818 --log-file reviews/task-168/005-closeout/artifacts/load-10k-diskann.log corpus load --prefix current_intel_real10k_diskann --profile ec_diskann --corpus-file data/staged-current/ec_real_10k_corpus.tsv --queries-file data/staged-current/ec_real_10k_queries.tsv --manifest-file data/staged-current/ec_real_10k_manifest.json --allow-manifest-mismatch --bits 4 --seed 42
+[suite:current-intel-local] wrote reviews/task-168/005-closeout/artifacts/suite-manifest.json
+┌─────────┬───────────────────────────────────────────────────┐
+│ field   ┆ value                                             │
+╞═════════╪═══════════════════════════════════════════════════╡
+│ profile ┆ ec_diskann                                        │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ current_intel_real10k_diskann_corpus (10000 rows) │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ current_intel_real10k_diskann_queries (200 rows)  │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ current_intel_real10k_diskann_idx [<default>]     │
+└─────────┴───────────────────────────────────────────────────┘
+[loader] inspecting data/staged-current/ec_real_10k_corpus.tsv
+[loader] inspecting data/staged-current/ec_real_10k_queries.tsv
+[loader] corpus: 10000 rows, sha256=c67c5810b66d982d705974e48d4775479adfbd92a988f694091266e049a35e75  queries: 200 rows, sha256=a2c191bb742017d849e73f6e6866e8e0f0bac1579ba212f7fc76b8eb09904ae8
+[loader] warning: manifest verification failed for data/staged-current/ec_real_10k_manifest.json: prefix="ec_real_10k" (expected "current_intel_real10k_diskann")
+[loader] copied corpus table current_intel_real10k_diskann_corpus in 4.12s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table current_intel_real10k_diskann_corpus in 2.77s
+[loader] copied queries table current_intel_real10k_diskann_queries in 97.14ms
+[loader] building current_intel_real10k_diskann_idx using ec_diskann (reloptions=[<none>]) ...
+[loader] built current_intel_real10k_diskann_idx in 13.07s
+[loader] ec_diskann_ambuild_timing index=current_intel_real10k_diskann_idx phase=complete heap_tuples=10000 scanned_tuples=10000 unique_tuples=10000 data_pages=527 heap_scan_ms=342 source_ref_ms=1 training_ms=0 sidecar_setup_ms=0 payload_derivation_ms=13 build_persist_ms=12660 core_medoid_ms=262 core_graph_ms=12387 core_persist_ms=9 parallel_requested_workers=0 parallel_effective_workers=0 parallel_batch_size=704 parallel_flush_rate=0 parallel_rayon_scaffold=0 parallel_epochs=0 parallel_proposal_ms=0 parallel_reducer_ms=0 parallel_same_epoch_candidate_reads=0 parallel_total_candidate_reads=0 overflow_ms=0 codebook_ms=0 write_pages_ms=31 metadata_ms=0 flush_total_ms=12706 total_ms=13050
+[loader] completed prefix current_intel_real10k_diskann in 21.54s
+[suite:current-intel-local] wrote reviews/task-168/005-closeout/artifacts/suite-manifest.json
+[suite:current-intel-local] recall-10k-diskann -> --database tqvector_bench --host /home/peter/.pgrx --port 28818 bench recall --prefix current_intel_real10k_diskann --profile ec_diskann --k 10 --sweep "64,128,200,400,800" --queries-limit 200 --bits 4 --seed 42 --force-index --log-output reviews/task-168/005-closeout/artifacts/recall-10k-diskann.log
+[suite:current-intel-local] wrote reviews/task-168/005-closeout/artifacts/suite-manifest.json
+┌───────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ list_size ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞═══════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 64        ┆ 200     ┆ 2000          ┆ 0.9990   ┆ 0.9964          ┆ 0.9997           ┆ 1.0000     ┆ 1.0000     ┆ 1.0000     ┆ 0.9000       ┆ 1.0000 ┆ 3.57 ms     │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 128       ┆ 200     ┆ 2000          ┆ 0.9995   ┆ 0.9972          ┆ 0.9999           ┆ 1.0000     ┆ 1.0000     ┆ 1.0000     ┆ 0.9000       ┆ 1.0000 ┆ 3.84 ms     │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 200       ┆ 200     ┆ 2000          ┆ 1.0000   ┆ 0.9981          ┆ 1.0000           ┆ 1.0000     ┆ 1.0000     ┆ 1.0000     ┆ 1.0000       ┆ 1.0000 ┆ 4.20 ms     │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 400       ┆ 200     ┆ 2000          ┆ 1.0000   ┆ 0.9981          ┆ 1.0000           ┆ 1.0000     ┆ 1.0000     ┆ 1.0000     ┆ 1.0000       ┆ 1.0000 ┆ 4.94 ms     │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 800       ┆ 200     ┆ 2000          ┆ 1.0000   ┆ 0.9981          ┆ 1.0000           ┆ 1.0000     ┆ 1.0000     ┆ 1.0000     ┆ 1.0000       ┆ 1.0000 ┆ 6.40 ms     │
+└───────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from current_intel_real10k_diskann_queries ...
+[recall] fetching corpus from current_intel_real10k_diskann_corpus ...
+[recall] computing ground truth: 200 queries vs 10000 corpus rows (dim=1536) ...
+[recall] ground truth in 80.07ms
+[suite:current-intel-local] wrote reviews/task-168/005-closeout/artifacts/suite-manifest.json
+[suite:current-intel-local] latency-10k-diskann -> --database tqvector_bench --host /home/peter/.pgrx --port 28818 bench latency --prefix current_intel_real10k_diskann --profile ec_diskann --k 10 --concurrency 1 --iterations 200 --sweep "64,128,200,400,800" --bits 4 --seed 42 --force-index --sample-backend-memory --cache-state post_recall_warm --memory-sample-interval-ms 25 --log-output reviews/task-168/005-closeout/artifacts/latency-10k-diskann.log
+[suite:current-intel-local] wrote reviews/task-168/005-closeout/artifacts/suite-manifest.json
+┌───────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬──────────────────┬─────────────┬─────────────┬────────────────┐
+│ list_size ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state      ┆ rss_peak_kb ┆ hwm_peak_kb ┆ memory_samples │
+╞═══════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪══════════════════╪═════════════╪═════════════╪════════════════╡
+│ 64        ┆ 200   ┆ 3.42 ms ┆ 0.31 ms ┆ 3.01 ms ┆ 3.38 ms ┆ 3.75 ms ┆ 4.31 ms ┆ 6.63 ms ┆ post_recall_warm ┆ 106640      ┆ 106640      ┆ 27             │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 128       ┆ 200   ┆ 3.71 ms ┆ 0.36 ms ┆ 3.18 ms ┆ 3.66 ms ┆ 4.22 ms ┆ 4.57 ms ┆ 7.04 ms ┆ post_recall_warm ┆ 106796      ┆ 106796      ┆ 29             │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 200       ┆ 200   ┆ 4.06 ms ┆ 0.40 ms ┆ 3.40 ms ┆ 4.04 ms ┆ 4.57 ms ┆ 5.10 ms ┆ 7.49 ms ┆ post_recall_warm ┆ 106980      ┆ 106980      ┆ 32             │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 400       ┆ 200   ┆ 4.75 ms ┆ 0.57 ms ┆ 3.72 ms ┆ 4.77 ms ┆ 5.56 ms ┆ 6.17 ms ┆ 8.61 ms ┆ post_recall_warm ┆ 107420      ┆ 107420      ┆ 37             │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 800       ┆ 200   ┆ 5.93 ms ┆ 0.76 ms ┆ 4.78 ms ┆ 5.74 ms ┆ 7.07 ms ┆ 8.11 ms ┆ 10.2 ms ┆ post_recall_warm ┆ 107868      ┆ 107868      ┆ 46             │
+└───────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴──────────────────┴─────────────┴─────────────┴────────────────┘
+[suite:current-intel-local] wrote reviews/task-168/005-closeout/artifacts/suite-manifest.json
+[suite:current-intel-local] storage-10k-diskann -> --database tqvector_bench --host /home/peter/.pgrx --port 28818 --log-file reviews/task-168/005-closeout/artifacts/storage-10k-diskann.log bench storage --prefix current_intel_real10k_diskann
+[suite:current-intel-local] wrote reviews/task-168/005-closeout/artifacts/suite-manifest.json
+┌───────────────────────────────┬──────────────────────────────────────┐
+│ field                         ┆ value                                │
+╞═══════════════════════════════╪══════════════════════════════════════╡
+│ prefix                        ┆ current_intel_real10k_diskann        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus                        ┆ current_intel_real10k_diskann_corpus │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ rows                          ┆ 10000                                │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ heap                          ┆ 752.0 KiB                            │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ table (heap + toast + fsm/vm) ┆ 158.8 MiB                            │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes                       ┆ 4.4 MiB                              │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ total                         ┆ 163.2 MiB                            │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (total)               ┆ 17108.2 B                            │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (heap only)           ┆ 77.0 B                               │
+└───────────────────────────────┴──────────────────────────────────────┘
+┌───────────────────────────────────────────┬───────────────┬────────────┬────────────┬───────────┬─────────┐
+│ index                                     ┆ access method ┆ profile    ┆ reloptions ┆ size      ┆ per row │
+╞═══════════════════════════════════════════╪═══════════════╪════════════╪════════════╪═══════════╪═════════╡
+│ current_intel_real10k_diskann_idx         ┆ ec_diskann    ┆ ec_diskann ┆ {}         ┆ 4.1 MiB   ┆ 432.5 B │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ current_intel_real10k_diskann_corpus_pkey ┆ btree         ┆ <unknown>  ┆ {}         ┆ 240.0 KiB ┆ 24.6 B  │
+└───────────────────────────────────────────┴───────────────┴────────────┴────────────┴───────────┴─────────┘
+[suite:current-intel-local] wrote reviews/task-168/005-closeout/artifacts/suite-manifest.json
+[suite:current-intel-local] load-50k-diskann -> --database tqvector_bench --host /home/peter/.pgrx --port 28818 --log-file reviews/task-168/005-closeout/artifacts/load-50k-diskann.log corpus load --prefix current_intel_real50k_diskann --profile ec_diskann --corpus-file data/staged-current/ec_real_50k_corpus.tsv --queries-file data/staged-current/ec_real_50k_queries.tsv --manifest-file data/staged-current/ec_real_50k_manifest.json --allow-manifest-mismatch --bits 4 --seed 42
+[suite:current-intel-local] wrote reviews/task-168/005-closeout/artifacts/suite-manifest.json
+┌─────────┬───────────────────────────────────────────────────┐
+│ field   ┆ value                                             │
+╞═════════╪═══════════════════════════════════════════════════╡
+│ profile ┆ ec_diskann                                        │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ current_intel_real50k_diskann_corpus (50000 rows) │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ current_intel_real50k_diskann_queries (1000 rows) │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ current_intel_real50k_diskann_idx [<default>]     │
+└─────────┴───────────────────────────────────────────────────┘
+[loader] inspecting data/staged-current/ec_real_50k_corpus.tsv
+[loader] inspecting data/staged-current/ec_real_50k_queries.tsv
+[loader] corpus: 50000 rows, sha256=56023baaa7bc42f758272e8617603d538808e6290a8a70a3a84e057571240133  queries: 1000 rows, sha256=95ac7992578aa80bb193657f10fbcbf1ea3867e559739244bf5a467f7a5a9fa3
+[loader] warning: manifest verification failed for data/staged-current/ec_real_50k_manifest.json: prefix="ec_real_50k" (expected "current_intel_real50k_diskann")
+[loader] copied corpus table current_intel_real50k_diskann_corpus in 20.04s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table current_intel_real50k_diskann_corpus in 13.79s
+[loader] copied queries table current_intel_real50k_diskann_queries in 423.98ms
+[loader] building current_intel_real50k_diskann_idx using ec_diskann (reloptions=[<none>]) ...
+[loader] built current_intel_real50k_diskann_idx in 145.18s
+[loader] ec_diskann_ambuild_timing index=current_intel_real50k_diskann_idx phase=complete heap_tuples=50000 scanned_tuples=50000 unique_tuples=50000 data_pages=2632 heap_scan_ms=1768 source_ref_ms=1 training_ms=0 sidecar_setup_ms=0 payload_derivation_ms=48 build_persist_ms=143157 core_medoid_ms=226 core_graph_ms=142870 core_persist_ms=55 parallel_requested_workers=0 parallel_effective_workers=0 parallel_batch_size=704 parallel_flush_rate=0 parallel_rayon_scaffold=0 parallel_epochs=0 parallel_proposal_ms=0 parallel_reducer_ms=0 parallel_same_epoch_candidate_reads=0 parallel_total_candidate_reads=0 overflow_ms=0 codebook_ms=0 write_pages_ms=173 metadata_ms=0 flush_total_ms=143381 total_ms=145155
+[loader] completed prefix current_intel_real50k_diskann in 186.84s
+[suite:current-intel-local] wrote reviews/task-168/005-closeout/artifacts/suite-manifest.json
+[suite:current-intel-local] recall-50k-diskann -> --database tqvector_bench --host /home/peter/.pgrx --port 28818 bench recall --prefix current_intel_real50k_diskann --profile ec_diskann --k 10 --sweep "64,128,200,400,800" --queries-limit 200 --bits 4 --seed 42 --force-index --log-output reviews/task-168/005-closeout/artifacts/recall-50k-diskann.log
+[suite:current-intel-local] wrote reviews/task-168/005-closeout/artifacts/suite-manifest.json
+┌───────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ list_size ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞═══════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 64        ┆ 200     ┆ 2000          ┆ 0.9700   ┆ 0.9616          ┆ 0.9766           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.5000       ┆ 0.9984 ┆ 4.08 ms     │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 128       ┆ 200     ┆ 2000          ┆ 0.9860   ┆ 0.9798          ┆ 0.9903           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.8000       ┆ 0.9994 ┆ 4.46 ms     │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 200       ┆ 200     ┆ 2000          ┆ 0.9905   ┆ 0.9852          ┆ 0.9939           ┆ 1.0000     ┆ 1.0000     ┆ 1.0000     ┆ 0.8000       ┆ 0.9997 ┆ 5.18 ms     │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 400       ┆ 200     ┆ 2000          ┆ 0.9950   ┆ 0.9908          ┆ 0.9973           ┆ 1.0000     ┆ 1.0000     ┆ 1.0000     ┆ 0.9000       ┆ 0.9998 ┆ 7.20 ms     │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 800       ┆ 200     ┆ 2000          ┆ 0.9965   ┆ 0.9928          ┆ 0.9983           ┆ 1.0000     ┆ 1.0000     ┆ 1.0000     ┆ 0.9000       ┆ 0.9999 ┆ 10.08 ms    │
+└───────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from current_intel_real50k_diskann_queries ...
+[recall] fetching corpus from current_intel_real50k_diskann_corpus ...
+[recall] computing ground truth: 200 queries vs 50000 corpus rows (dim=1536) ...
+[recall] ground truth in 370.57ms
+[suite:current-intel-local] wrote reviews/task-168/005-closeout/artifacts/suite-manifest.json
+[suite:current-intel-local] latency-50k-diskann -> --database tqvector_bench --host /home/peter/.pgrx --port 28818 bench latency --prefix current_intel_real50k_diskann --profile ec_diskann --k 10 --concurrency 1 --iterations 200 --sweep "64,128,200,400,800" --bits 4 --seed 42 --force-index --sample-backend-memory --cache-state post_recall_warm --memory-sample-interval-ms 25 --log-output reviews/task-168/005-closeout/artifacts/latency-50k-diskann.log
+[suite:current-intel-local] wrote reviews/task-168/005-closeout/artifacts/suite-manifest.json
+┌───────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬──────────────────┬─────────────┬─────────────┬────────────────┐
+│ list_size ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state      ┆ rss_peak_kb ┆ hwm_peak_kb ┆ memory_samples │
+╞═══════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪══════════════════╪═════════════╪═════════════╪════════════════╡
+│ 64        ┆ 200   ┆ 3.71 ms ┆ 0.47 ms ┆ 3.08 ms ┆ 3.67 ms ┆ 4.26 ms ┆ 4.67 ms ┆ 8.69 ms ┆ post_recall_warm ┆ 148628      ┆ 148628      ┆ 29             │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 128       ┆ 200   ┆ 4.36 ms ┆ 0.63 ms ┆ 3.42 ms ┆ 4.34 ms ┆ 5.15 ms ┆ 5.48 ms ┆ 9.89 ms ┆ post_recall_warm ┆ 149712      ┆ 149712      ┆ 34             │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 200       ┆ 200   ┆ 4.92 ms ┆ 0.80 ms ┆ 3.82 ms ┆ 4.84 ms ┆ 5.94 ms ┆ 6.28 ms ┆ 11.8 ms ┆ post_recall_warm ┆ 150220      ┆ 150220      ┆ 38             │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 400       ┆ 200   ┆ 6.38 ms ┆ 1.08 ms ┆ 4.46 ms ┆ 6.31 ms ┆ 7.71 ms ┆ 8.87 ms ┆ 15.0 ms ┆ post_recall_warm ┆ 151464      ┆ 151464      ┆ 49             │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 800       ┆ 200   ┆ 9.57 ms ┆ 1.60 ms ┆ 6.05 ms ┆ 9.41 ms ┆ 12.0 ms ┆ 13.8 ms ┆ 18.0 ms ┆ post_recall_warm ┆ 152472      ┆ 152472      ┆ 73             │
+└───────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴──────────────────┴─────────────┴─────────────┴────────────────┘
+[suite:current-intel-local] wrote reviews/task-168/005-closeout/artifacts/suite-manifest.json
+[suite:current-intel-local] storage-50k-diskann -> --database tqvector_bench --host /home/peter/.pgrx --port 28818 --log-file reviews/task-168/005-closeout/artifacts/storage-50k-diskann.log bench storage --prefix current_intel_real50k_diskann
+[suite:current-intel-local] wrote reviews/task-168/005-closeout/artifacts/suite-manifest.json
+┌───────────────────────────────┬──────────────────────────────────────┐
+│ field                         ┆ value                                │
+╞═══════════════════════════════╪══════════════════════════════════════╡
+│ prefix                        ┆ current_intel_real50k_diskann        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus                        ┆ current_intel_real50k_diskann_corpus │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ rows                          ┆ 50000                                │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ heap                          ┆ 3.7 MiB                              │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ table (heap + toast + fsm/vm) ┆ 793.8 MiB                            │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes                       ┆ 21.7 MiB                             │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ total                         ┆ 815.5 MiB                            │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (total)               ┆ 17101.6 B                            │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (heap only)           ┆ 76.7 B                               │
+└───────────────────────────────┴──────────────────────────────────────┘
+┌───────────────────────────────────────────┬───────────────┬────────────┬────────────┬──────────┬─────────┐
+│ index                                     ┆ access method ┆ profile    ┆ reloptions ┆ size     ┆ per row │
+╞═══════════════════════════════════════════╪═══════════════╪════════════╪════════════╪══════════╪═════════╡
+│ current_intel_real50k_diskann_idx         ┆ ec_diskann    ┆ ec_diskann ┆ {}         ┆ 20.6 MiB ┆ 431.4 B │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ current_intel_real50k_diskann_corpus_pkey ┆ btree         ┆ <unknown>  ┆ {}         ┆ 1.1 MiB  ┆ 22.8 B  │
+└───────────────────────────────────────────┴───────────────┴────────────┴────────────┴──────────┴─────────┘
+[suite:current-intel-local] wrote reviews/task-168/005-closeout/artifacts/suite-manifest.json
+[suite:current-intel-local] load-100k-diskann -> --database tqvector_bench --host /home/peter/.pgrx --port 28818 --log-file reviews/task-168/005-closeout/artifacts/load-100k-diskann.log corpus load --prefix current_intel_real100k_diskann --profile ec_diskann --corpus-file data/staged-current/ec_real_100k_corpus.tsv --queries-file data/staged-current/ec_real_100k_queries.tsv --manifest-file data/staged-current/ec_real_100k_manifest.json --allow-manifest-mismatch --bits 4 --seed 42
+[suite:current-intel-local] wrote reviews/task-168/005-closeout/artifacts/suite-manifest.json
+┌─────────┬─────────────────────────────────────────────────────┐
+│ field   ┆ value                                               │
+╞═════════╪═════════════════════════════════════════════════════╡
+│ profile ┆ ec_diskann                                          │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ current_intel_real100k_diskann_corpus (100000 rows) │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ current_intel_real100k_diskann_queries (1000 rows)  │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ current_intel_real100k_diskann_idx [<default>]      │
+└─────────┴─────────────────────────────────────────────────────┘
+[loader] inspecting data/staged-current/ec_real_100k_corpus.tsv
+[loader] inspecting data/staged-current/ec_real_100k_queries.tsv
+[loader] corpus: 100000 rows, sha256=07275cfd5a7a4b415ddf5eacc086de98294ac978532df46ffae30f9202323a95  queries: 1000 rows, sha256=a7cbec6fc44f6c148234538f61339d00d2f10646febc8f667dcbe75d9cf41782
+[loader] warning: manifest verification failed for data/staged-current/ec_real_100k_manifest.json: prefix="ec_real_100k" (expected "current_intel_real100k_diskann")
+[loader] copied corpus table current_intel_real100k_diskann_corpus in 39.99s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table current_intel_real100k_diskann_corpus in 31.25s
+[loader] copied queries table current_intel_real100k_diskann_queries in 427.86ms
+[loader] building current_intel_real100k_diskann_idx using ec_diskann (reloptions=[<none>]) ...
+[loader] built current_intel_real100k_diskann_idx in 346.29s
+[loader] ec_diskann_ambuild_timing index=current_intel_real100k_diskann_idx phase=complete heap_tuples=100000 scanned_tuples=100000 unique_tuples=100000 data_pages=5264 heap_scan_ms=3566 source_ref_ms=2 training_ms=0 sidecar_setup_ms=0 payload_derivation_ms=100 build_persist_ms=342200 core_medoid_ms=280 core_graph_ms=341769 core_persist_ms=133 parallel_requested_workers=0 parallel_effective_workers=0 parallel_batch_size=704 parallel_flush_rate=0 parallel_rayon_scaffold=0 parallel_epochs=0 parallel_proposal_ms=0 parallel_reducer_ms=0 parallel_same_epoch_candidate_reads=0 parallel_total_candidate_reads=0 overflow_ms=0 codebook_ms=0 write_pages_ms=382 metadata_ms=0 flush_total_ms=342686 total_ms=346264
+[loader] completed prefix current_intel_real100k_diskann in 431.07s
+[suite:current-intel-local] wrote reviews/task-168/005-closeout/artifacts/suite-manifest.json
+[suite:current-intel-local] recall-100k-diskann -> --database tqvector_bench --host /home/peter/.pgrx --port 28818 bench recall --prefix current_intel_real100k_diskann --profile ec_diskann --k 10 --sweep "64,128,200,400,800" --queries-limit 200 --bits 4 --seed 42 --force-index --log-output reviews/task-168/005-closeout/artifacts/recall-100k-diskann.log
+[suite:current-intel-local] wrote reviews/task-168/005-closeout/artifacts/suite-manifest.json
+┌───────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ list_size ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞═══════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 64        ┆ 200     ┆ 2000          ┆ 0.9360   ┆ 0.9244          ┆ 0.9459           ┆ 0.8000     ┆ 1.0000     ┆ 1.0000     ┆ 0.1000       ┆ 0.9934 ┆ 4.83 ms     │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 128       ┆ 200     ┆ 2000          ┆ 0.9700   ┆ 0.9616          ┆ 0.9766           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.1000       ┆ 0.9966 ┆ 5.34 ms     │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 200       ┆ 200     ┆ 2000          ┆ 0.9845   ┆ 0.9781          ┆ 0.9891           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.5000       ┆ 0.9981 ┆ 6.35 ms     │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 400       ┆ 200     ┆ 2000          ┆ 0.9940   ┆ 0.9895          ┆ 0.9966           ┆ 1.0000     ┆ 1.0000     ┆ 1.0000     ┆ 0.9000       ┆ 0.9996 ┆ 9.17 ms     │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 800       ┆ 200     ┆ 2000          ┆ 0.9975   ┆ 0.9942          ┆ 0.9989           ┆ 1.0000     ┆ 1.0000     ┆ 1.0000     ┆ 0.9000       ┆ 0.9998 ┆ 14.39 ms    │
+└───────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from current_intel_real100k_diskann_queries ...
+[recall] fetching corpus from current_intel_real100k_diskann_corpus ...
+[recall] computing ground truth: 200 queries vs 100000 corpus rows (dim=1536) ...
+[recall] ground truth in 896.16ms
+[suite:current-intel-local] wrote reviews/task-168/005-closeout/artifacts/suite-manifest.json
+[suite:current-intel-local] latency-100k-diskann -> --database tqvector_bench --host /home/peter/.pgrx --port 28818 bench latency --prefix current_intel_real100k_diskann --profile ec_diskann --k 10 --concurrency 1 --iterations 200 --sweep "64,128,200,400,800" --bits 4 --seed 42 --force-index --sample-backend-memory --cache-state post_recall_warm --memory-sample-interval-ms 25 --log-output reviews/task-168/005-closeout/artifacts/latency-100k-diskann.log
+[suite:current-intel-local] wrote reviews/task-168/005-closeout/artifacts/suite-manifest.json
+┌───────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬──────────────────┬─────────────┬─────────────┬────────────────┐
+│ list_size ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state      ┆ rss_peak_kb ┆ hwm_peak_kb ┆ memory_samples │
+╞═══════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪══════════════════╪═════════════╪═════════════╪════════════════╡
+│ 64        ┆ 200   ┆ 4.31 ms ┆ 0.40 ms ┆ 3.61 ms ┆ 4.28 ms ┆ 4.93 ms ┆ 5.42 ms ┆ 7.23 ms ┆ post_recall_warm ┆ 152204      ┆ 152204      ┆ 33             │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 128       ┆ 200   ┆ 5.26 ms ┆ 0.57 ms ┆ 4.22 ms ┆ 5.25 ms ┆ 6.10 ms ┆ 7.03 ms ┆ 9.14 ms ┆ post_recall_warm ┆ 152208      ┆ 152208      ┆ 41             │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 200       ┆ 200   ┆ 6.35 ms ┆ 0.68 ms ┆ 5.07 ms ┆ 6.27 ms ┆ 7.74 ms ┆ 8.23 ms ┆ 9.92 ms ┆ post_recall_warm ┆ 153068      ┆ 153068      ┆ 49             │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 400       ┆ 200   ┆ 8.74 ms ┆ 1.10 ms ┆ 6.13 ms ┆ 8.66 ms ┆ 10.8 ms ┆ 11.6 ms ┆ 13.0 ms ┆ post_recall_warm ┆ 153564      ┆ 153564      ┆ 67             │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 800       ┆ 200   ┆ 13.9 ms ┆ 1.81 ms ┆ 8.64 ms ┆ 14.0 ms ┆ 16.5 ms ┆ 18.1 ms ┆ 20.1 ms ┆ post_recall_warm ┆ 155020      ┆ 155268      ┆ 106            │
+└───────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴──────────────────┴─────────────┴─────────────┴────────────────┘
+[suite:current-intel-local] wrote reviews/task-168/005-closeout/artifacts/suite-manifest.json
+[suite:current-intel-local] storage-100k-diskann -> --database tqvector_bench --host /home/peter/.pgrx --port 28818 --log-file reviews/task-168/005-closeout/artifacts/storage-100k-diskann.log bench storage --prefix current_intel_real100k_diskann
+[suite:current-intel-local] wrote reviews/task-168/005-closeout/artifacts/suite-manifest.json
+┌───────────────────────────────┬───────────────────────────────────────┐
+│ field                         ┆ value                                 │
+╞═══════════════════════════════╪═══════════════════════════════════════╡
+│ prefix                        ┆ current_intel_real100k_diskann        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus                        ┆ current_intel_real100k_diskann_corpus │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ rows                          ┆ 100000                                │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ heap                          ┆ 7.3 MiB                               │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ table (heap + toast + fsm/vm) ┆ 1.6 GiB                               │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes                       ┆ 43.3 MiB                              │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ total                         ┆ 1.6 GiB                               │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (total)               ┆ 17100.6 B                             │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (heap only)           ┆ 76.6 B                                │
+└───────────────────────────────┴───────────────────────────────────────┘
+┌────────────────────────────────────────────┬───────────────┬────────────┬────────────┬──────────┬─────────┐
+│ index                                      ┆ access method ┆ profile    ┆ reloptions ┆ size     ┆ per row │
+╞════════════════════════════════════════════╪═══════════════╪════════════╪════════════╪══════════╪═════════╡
+│ current_intel_real100k_diskann_idx         ┆ ec_diskann    ┆ ec_diskann ┆ {}         ┆ 41.1 MiB ┆ 431.3 B │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ current_intel_real100k_diskann_corpus_pkey ┆ btree         ┆ <unknown>  ┆ {}         ┆ 2.2 MiB  ┆ 22.6 B  │
+└────────────────────────────────────────────┴───────────────┴────────────┴────────────┴──────────┴─────────┘
+[suite:current-intel-local] wrote reviews/task-168/005-closeout/artifacts/suite-manifest.json
+[suite:current-intel-local] wrote reviews/task-168/005-closeout/artifacts/results.jsonl
+[suite:current-intel-local] wrote reviews/task-168/005-closeout/artifacts/suite-manifest.json

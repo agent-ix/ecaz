@@ -86,6 +86,16 @@ Also benched: `turboquant` (1M G4 0.982 / 6.7 ms, 967 MiB) and `pq_fastscan`
 binary (1M G4 0.964 / 4.8 ms, 455 MiB). DiskANN has the best recall-per-ms at
 scale; it requires unit-normalized source vectors.
 
+**Task 168 (2026-07)**: `rabitq` is now the code default (`storage_format`
+reloption no longer needed), scans use width-4 batched-beam expansion
+(`ec_diskann.beam_width` GUC, `SET ... = 1` restores the one-pop loop), and
+the beam loop decodes allocation-free. Local-Intel-desktop A/B on the staged
+real corpus: −6 to −23% mean latency at 50k/100k mid-to-high `list_size`
+(best 100k L=200 7.31 → 5.61 ms cumulative) with recall@10 equal or better
+at every sweep point (100k L=64 improves 0.9275 → 0.9360). The AWS-lane
+cells above predate this and refresh on their next canonical run. Evidence:
+`reviews/task-168/00{1..5}-*`.
+
 ### `ec_spire` (rabitq, single-node)
 
 | Scale | Graviton 4 recall@10 / p50 | Intel recall@10 / p50 | Index size |
