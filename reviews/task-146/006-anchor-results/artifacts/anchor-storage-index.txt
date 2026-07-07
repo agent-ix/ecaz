@@ -1,0 +1,7 @@
+step	profile	prefix	index	size	size_bytes	per_row	per_row_bytes
+storage-10k-ivf-control	ec_ivf	t146_anchor_10k_ivf	t146_anchor_10k_ivf_idx	2.3 MiB	2411725	237.6 B	237.6
+storage-10k-hnsw-control	ec_hnsw	t146_anchor_10k_hnsw	t146_anchor_10k_hnsw_m16_idx	13.0 MiB	13631488	1366.4 B	1366.4
+storage-50k-ivf-control	ec_ivf	t146_anchor_50k_ivf	t146_anchor_50k_ivf_idx	9.7 MiB	10171187	203.8 B	203.8
+storage-50k-hnsw-control	ec_hnsw	t146_anchor_50k_hnsw	t146_anchor_50k_hnsw_m16_idx	65.1 MiB	68262298	1365.6 B	1365.6
+storage-100k-ivf-control	ec_ivf	t146_anchor_100k_ivf	t146_anchor_100k_ivf_idx	19.4 MiB	20342374	202.9 B	202.9
+storage-100k-hnsw-control	ec_hnsw	t146_anchor_100k_hnsw	t146_anchor_100k_hnsw_m16_idx	130.2 MiB	136524595	1365.4 B	1365.4

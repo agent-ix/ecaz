@@ -1,0 +1,10 @@
+
+   0: [91mconnecting to Postgres database "tqvector_bench"[0m
+   1: [91mdb error[0m
+   2: [91mFATAL: database "tqvector_bench" does not exist[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/psql.rs[0m:[35m101[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.

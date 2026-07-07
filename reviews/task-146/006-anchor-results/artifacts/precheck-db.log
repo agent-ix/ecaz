@@ -1,0 +1,12 @@
+        datname         
+------------------------
+ postgres
+ tqvector_bench_task144
+ tqvector_bench_task145
+(3 rows)
+
+ extname | extversion 
+---------+------------
+ ecaz    | 0.1.1
+(1 row)
+

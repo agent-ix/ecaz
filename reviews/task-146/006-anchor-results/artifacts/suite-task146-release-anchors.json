@@ -1,0 +1,316 @@
+{
+  "name": "task146-release-anchors",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-146/004-anchor-reporting-and-suite/artifacts/top-suite",
+  "defaults": {
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 200,
+    "iterations": 200,
+    "force_index": true,
+    "sample_backend_memory": true,
+    "memory_sample_interval_ms": 25,
+    "pg": 18
+  },
+  "thresholds": [],
+  "_doc": {
+    "intent": "Task 146 matched-scale ecaz release anchors for the Pareto frontier table.",
+    "step_count": "24 = 3 scales x 2 engines x load/recall/latency/storage",
+    "validity": [
+      "all cells use data/staged-current fixtures to match the Task 146 SPIRE matrix",
+      "ec_ivf controls use pq_fastscan, pq_group_size=8, heap_f32 rerank, rerank_width=500",
+      "ec_hnsw controls use m=16, ef_construction=128",
+      "50k anchors are required because Task76 has only 10k and 100k ecaz controls"
+    ]
+  },
+  "steps": [
+    {
+      "kind": "load",
+      "name": "load-10k-ivf-control",
+      "tags": ["load", "task146", "anchor", "10k", "ivf"],
+      "prefix": "t146_anchor_10k_ivf",
+      "profile": "ec_ivf",
+      "corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_10k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_10k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "storage_format=pq_fastscan",
+        "pq_group_size=8",
+        "nlists=32",
+        "nprobe=24",
+        "rerank=heap_f32",
+        "rerank_width=500"
+      ],
+      "log_file": "${artifact_dir}/load-10k-ivf-control.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-10k-ivf-control",
+      "tags": ["recall", "task146", "anchor", "10k", "ivf"],
+      "prefix": "t146_anchor_10k_ivf",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [16, 24, 32],
+      "rerank_width": 500,
+      "truth_corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "log_output": "${artifact_dir}/recall-10k-ivf-control.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-10k-ivf-control",
+      "tags": ["latency", "task146", "anchor", "10k", "ivf"],
+      "prefix": "t146_anchor_10k_ivf",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [16, 24, 32],
+      "rerank_width": 500,
+      "concurrency": 1,
+      "cache_state": "post_recall_warm",
+      "log_output": "${artifact_dir}/latency-10k-ivf-control.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-10k-ivf-control",
+      "tags": ["storage", "task146", "anchor", "10k", "ivf"],
+      "prefix": "t146_anchor_10k_ivf",
+      "log_file": "${artifact_dir}/storage-10k-ivf-control.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-10k-hnsw-control",
+      "tags": ["load", "task146", "anchor", "10k", "hnsw"],
+      "prefix": "t146_anchor_10k_hnsw",
+      "profile": "ec_hnsw",
+      "corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_10k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_10k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "m": [16],
+      "ef_construction": 128,
+      "log_file": "${artifact_dir}/load-10k-hnsw-control.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-10k-hnsw-control",
+      "tags": ["recall", "task146", "anchor", "10k", "hnsw"],
+      "prefix": "t146_anchor_10k_hnsw",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [64, 128, 200, 400],
+      "truth_corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "log_output": "${artifact_dir}/recall-10k-hnsw-control.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-10k-hnsw-control",
+      "tags": ["latency", "task146", "anchor", "10k", "hnsw"],
+      "prefix": "t146_anchor_10k_hnsw",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [64, 128, 200, 400],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm",
+      "log_output": "${artifact_dir}/latency-10k-hnsw-control.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-10k-hnsw-control",
+      "tags": ["storage", "task146", "anchor", "10k", "hnsw"],
+      "prefix": "t146_anchor_10k_hnsw",
+      "log_file": "${artifact_dir}/storage-10k-hnsw-control.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-50k-ivf-control",
+      "tags": ["load", "task146", "anchor", "50k", "ivf"],
+      "prefix": "t146_anchor_50k_ivf",
+      "profile": "ec_ivf",
+      "corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_50k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "storage_format=pq_fastscan",
+        "pq_group_size=8",
+        "nlists=64",
+        "nprobe=48",
+        "rerank=heap_f32",
+        "rerank_width=750"
+      ],
+      "log_file": "${artifact_dir}/load-50k-ivf-control.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-50k-ivf-control",
+      "tags": ["recall", "task146", "anchor", "50k", "ivf"],
+      "prefix": "t146_anchor_50k_ivf",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [32, 48, 64],
+      "rerank_width": 750,
+      "truth_corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "log_output": "${artifact_dir}/recall-50k-ivf-control.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-50k-ivf-control",
+      "tags": ["latency", "task146", "anchor", "50k", "ivf"],
+      "prefix": "t146_anchor_50k_ivf",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [32, 48, 64],
+      "rerank_width": 750,
+      "concurrency": 1,
+      "cache_state": "post_recall_warm",
+      "log_output": "${artifact_dir}/latency-50k-ivf-control.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-50k-ivf-control",
+      "tags": ["storage", "task146", "anchor", "50k", "ivf"],
+      "prefix": "t146_anchor_50k_ivf",
+      "log_file": "${artifact_dir}/storage-50k-ivf-control.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-50k-hnsw-control",
+      "tags": ["load", "task146", "anchor", "50k", "hnsw"],
+      "prefix": "t146_anchor_50k_hnsw",
+      "profile": "ec_hnsw",
+      "corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_50k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "m": [16],
+      "ef_construction": 128,
+      "log_file": "${artifact_dir}/load-50k-hnsw-control.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-50k-hnsw-control",
+      "tags": ["recall", "task146", "anchor", "50k", "hnsw"],
+      "prefix": "t146_anchor_50k_hnsw",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [64, 128, 200, 400],
+      "truth_corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "log_output": "${artifact_dir}/recall-50k-hnsw-control.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-50k-hnsw-control",
+      "tags": ["latency", "task146", "anchor", "50k", "hnsw"],
+      "prefix": "t146_anchor_50k_hnsw",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [64, 128, 200, 400],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm",
+      "log_output": "${artifact_dir}/latency-50k-hnsw-control.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-50k-hnsw-control",
+      "tags": ["storage", "task146", "anchor", "50k", "hnsw"],
+      "prefix": "t146_anchor_50k_hnsw",
+      "log_file": "${artifact_dir}/storage-50k-hnsw-control.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-ivf-control",
+      "tags": ["load", "task146", "anchor", "100k", "ivf"],
+      "prefix": "t146_anchor_100k_ivf",
+      "profile": "ec_ivf",
+      "corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_100k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "storage_format=pq_fastscan",
+        "pq_group_size=8",
+        "nlists=128",
+        "nprobe=96",
+        "rerank=heap_f32",
+        "rerank_width=500"
+      ],
+      "log_file": "${artifact_dir}/load-100k-ivf-control.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-ivf-control",
+      "tags": ["recall", "task146", "anchor", "100k", "ivf"],
+      "prefix": "t146_anchor_100k_ivf",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [48, 64, 80, 96, 128],
+      "rerank_width": 500,
+      "truth_corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "log_output": "${artifact_dir}/recall-100k-ivf-control.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-ivf-control",
+      "tags": ["latency", "task146", "anchor", "100k", "ivf"],
+      "prefix": "t146_anchor_100k_ivf",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [48, 64, 80, 96, 128],
+      "rerank_width": 500,
+      "concurrency": 1,
+      "cache_state": "post_recall_warm",
+      "log_output": "${artifact_dir}/latency-100k-ivf-control.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k-ivf-control",
+      "tags": ["storage", "task146", "anchor", "100k", "ivf"],
+      "prefix": "t146_anchor_100k_ivf",
+      "log_file": "${artifact_dir}/storage-100k-ivf-control.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-hnsw-control",
+      "tags": ["load", "task146", "anchor", "100k", "hnsw"],
+      "prefix": "t146_anchor_100k_hnsw",
+      "profile": "ec_hnsw",
+      "corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_100k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "m": [16],
+      "ef_construction": 128,
+      "log_file": "${artifact_dir}/load-100k-hnsw-control.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-hnsw-control",
+      "tags": ["recall", "task146", "anchor", "100k", "hnsw"],
+      "prefix": "t146_anchor_100k_hnsw",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [64, 128, 200, 400],
+      "truth_corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "log_output": "${artifact_dir}/recall-100k-hnsw-control.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-hnsw-control",
+      "tags": ["latency", "task146", "anchor", "100k", "hnsw"],
+      "prefix": "t146_anchor_100k_hnsw",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [64, 128, 200, 400],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm",
+      "log_output": "${artifact_dir}/latency-100k-hnsw-control.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k-hnsw-control",
+      "tags": ["storage", "task146", "anchor", "100k", "hnsw"],
+      "prefix": "t146_anchor_100k_hnsw",
+      "log_file": "${artifact_dir}/storage-100k-hnsw-control.log"
+    }
+  ]
+}
