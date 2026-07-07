@@ -216,11 +216,12 @@ pub const EC_DISTANN: IndexProfile = IndexProfile {
     embedding_type: "ecvector",
     encoder_function: "encode_to_ecvector",
     encode_scan_query: false,
-    // FR-081 hop-round budget H; BW stays at the ec_distann.beam_width
-    // default (4), so sweep values map to expansion budgets BW x H of
-    // 64/128/256/400/800 -- aligned with the ec_diskann list_size sweep
-    // for the M0 parity A/B.
-    ef_search_guc: Some("ec_distann.hop_rounds"),
+    // The scan-quality knob is the D9 early-exit bar ec_distann.top_k
+    // (the ec_diskann list_size analog): the scan keeps expanding until
+    // the beam cannot improve the current kth exact distance. Sweeping
+    // hop_rounds is inert past convergence (measured in task-162 packet
+    // 002); hop_rounds stays the NFR-019 hard cap at its default.
+    ef_search_guc: Some("ec_distann.top_k"),
     build_source_column: None,
     sweep_axis: SweepAxis::None,
     known_reloptions: &[

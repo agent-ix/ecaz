@@ -59,9 +59,11 @@ pub(super) const ECDISTANN_MAX_CLOSURE_EPSILON: f32 = 1.0;
 pub(super) const ECDISTANN_DEFAULT_BEAM_WIDTH: i32 = 4;
 pub(super) const ECDISTANN_MAX_BEAM_WIDTH: i32 = 64;
 
-/// FR-081 H default; provisional until the M0 recall-vs-H kill-check
-/// measurement (ADR-085 D2) pins it.
-pub(super) const ECDISTANN_DEFAULT_HOP_ROUNDS: i32 = 8;
+/// FR-081 H default. H is the NFR-019 hard round cap, not the quality
+/// knob: the D9 early-exit (bounded by ec_distann.top_k) terminates real
+/// scans, so the default is generous and the M0 kill-check measures the
+/// recall-vs-H curve explicitly.
+pub(super) const ECDISTANN_DEFAULT_HOP_ROUNDS: i32 = 100;
 /// High ceiling so the bench sweep can match ec_diskann expansion budgets
 /// (BW x H up to ~800 at the default BW=4); D9 early-exit terminates long
 /// sweeps in practice.
