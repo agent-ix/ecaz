@@ -1,6 +1,19 @@
 # Task 148: TQ estimator bias corrections (length renormalization + codebook calibration)
 
-Status: **proposed** (2026-07-04). Owner: unassigned.
+Status: **closed — source-grounded negative** (2026-07-06). Owner: Codex.
+Both corrections failed promotion and were reverted; the calibration machinery
+was stripped and the on-disk IVF format kept at v9 (strip commit `285fde66f`).
+- **Length renormalization** (packets 001–003): +0.62pp recall @100k but a
+  5–6× latency regression (100k n40 1.85→11.80 ms); reverted (`2de14b389`,
+  `da7ede88a`).
+- **Codebook calibration** (packets 004–008): pure-TQ recall gains
+  (+1.25pp @50k, +2.19pp @100k) but fails the neutral latency gate
+  (100k n32 +44%) and left stage2@25 recall unchanged; the wired but
+  default-off machinery carried an unwanted v9→v10 format bump, so it was
+  stripped rather than merged. Reviewer feedback:
+  `reviews/task-148/008-codebook-calibration-ab/feedback/2026-07-06-01-reviewer.md`.
+- Kept: the read-only `ecaz` TQ bias-audit diagnostic (`edafc52d1`).
+
 Priority: P2 — the recall levers for the two TQ niches that survived the
 Task 124/147 pareto sweeps.
 
