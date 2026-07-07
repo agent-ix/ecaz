@@ -15,9 +15,11 @@ mod ambuild;
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::ambuild::read_metadata_from_index;
 mod cost;
+mod identity;
 mod options;
 pub mod page;
 mod routine;
+pub mod tuple;
 
 pub(crate) fn register_gucs() {
     options::register_gucs();
