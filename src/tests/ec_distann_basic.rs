@@ -484,6 +484,71 @@ fn test_ec_distann_sql_ordered_scan_through_planner() {
 }
 
 #[pg_test]
+fn test_ec_distann_ordered_scan_scores_are_monotone() {
+    // FR-075-AC-3: ordered top-k scans return results in non-increasing
+    // score order (non-decreasing <#> operator values).
+    create_distann_fixture(
+        "ec_distann_scan_order",
+        "WITH (graph_degree = 4, neighbor_code_format = 'rabitq')",
+    );
+    Spi::run("SET enable_seqscan = off").expect("disabling seqscan should succeed");
+    Spi::connect(|client| {
+        let rows = client
+            .select(
+                "SELECT embedding <#> ARRAY[1.0, 0.0, 0.0, 0.0]::real[] AS score \
+                 FROM ec_distann_scan_order \
+                 ORDER BY embedding <#> ARRAY[1.0, 0.0, 0.0, 0.0]::real[] LIMIT 5",
+                None,
+                &[],
+            )
+            .expect("ordered select should succeed");
+        let mut previous = f32::NEG_INFINITY;
+        let mut count = 0;
+        for row in rows {
+            let score = row
+                .get_datum_by_ordinal(1)
+                .expect("score datum")
+                .value::<f32>()
+                .expect("score should convert")
+                .expect("score should be non-null");
+            assert!(
+                score >= previous,
+                "scores must be non-decreasing: {score} after {previous}"
+            );
+            previous = score;
+            count += 1;
+        }
+        assert_eq!(count, 5);
+    });
+    Spi::run("RESET enable_seqscan").expect("seqscan reset should succeed");
+}
+
+#[pg_test]
+fn test_ec_distann_head_sample_is_deterministic_across_reindex() {
+    // FR-080-AC-2: head construction is deterministic for a fixed seed;
+    // the persisted BFS sample must be identical across rebuilds of the
+    // same corpus.
+    create_distann_fixture("ec_distann_head_determinism", "WITH (graph_degree = 4)");
+    let read_sample = || {
+        let (metadata, chain) = distann_materialized_index("ec_distann_head_determinism_idx");
+        crate::am::ec_distann::reader::read_head_sample_chain(
+            &chain,
+            metadata.head_sample_head,
+            usize::from(metadata.dimensions),
+            metadata.head_index_cap as usize,
+        )
+        .expect("head sample should read")
+        .into_iter()
+        .map(|sample| (sample.vec_id, sample.vector))
+        .collect::<Vec<_>>()
+    };
+    let before = read_sample();
+    Spi::run("REINDEX INDEX ec_distann_head_determinism_idx").expect("reindex should succeed");
+    let after = read_sample();
+    assert_eq!(before, after, "BFS head sample must be rebuild-deterministic");
+}
+
+#[pg_test]
 fn test_ec_distann_guc_defaults() {
     let beam_width = Spi::get_one::<String>("SHOW ec_distann.beam_width")
         .expect("SPI query should succeed")
