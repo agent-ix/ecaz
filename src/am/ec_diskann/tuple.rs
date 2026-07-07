@@ -241,6 +241,42 @@ impl VamanaNodeTuple {
         binary_word_count: usize,
         search_code_len: usize,
     ) -> Result<Self, String> {
+        let mut out = Self::empty();
+        Self::decode_into(
+            input,
+            graph_degree_r,
+            binary_word_count,
+            search_code_len,
+            &mut out,
+        )?;
+        Ok(out)
+    }
+
+    /// Payload-free tuple for pooled decoding.
+    pub fn empty() -> Self {
+        Self {
+            deleted: false,
+            has_overflow_heaptids: false,
+            primary_heaptid: ItemPointer::INVALID,
+            rerank_tid: ItemPointer::INVALID,
+            binary_words: Vec::new(),
+            search_code: Vec::new(),
+            neighbors: Vec::new(),
+            neighbor_count: 0,
+        }
+    }
+
+    /// Allocation-recycling variant of [`VamanaNodeTuple::decode`]
+    /// (Task 168 Phase 4): refills `out` in place, reusing the capacity
+    /// of its three payload `Vec`s so a pooled tuple decodes without
+    /// heap allocation on the scan hot path.
+    pub fn decode_into(
+        input: &[u8],
+        graph_degree_r: u16,
+        binary_word_count: usize,
+        search_code_len: usize,
+        out: &mut Self,
+    ) -> Result<(), String> {
         let expected_len = Self::encoded_len(graph_degree_r, binary_word_count, search_code_len);
         if input.len() != expected_len {
             return Err(format!(
@@ -270,35 +306,35 @@ impl VamanaNodeTuple {
 
         let mut cursor = HEADER_FIXED_BYTES;
 
-        let mut binary_words = Vec::with_capacity(binary_word_count);
+        out.binary_words.clear();
+        out.binary_words.reserve(binary_word_count);
         for _ in 0..binary_word_count {
-            binary_words.push(u64::from_le_bytes(
+            out.binary_words.push(u64::from_le_bytes(
                 input[cursor..cursor + 8].try_into().expect("word bytes"),
             ));
             cursor += 8;
         }
 
-        let search_code = input[cursor..cursor + search_code_len].to_vec();
+        out.search_code.clear();
+        out.search_code
+            .extend_from_slice(&input[cursor..cursor + search_code_len]);
         cursor += search_code_len;
 
-        let mut neighbors = Vec::with_capacity(graph_degree_r as usize);
+        out.neighbors.clear();
+        out.neighbors.reserve(graph_degree_r as usize);
         for _ in 0..(graph_degree_r as usize) {
-            neighbors.push(ItemPointer::decode(
+            out.neighbors.push(ItemPointer::decode(
                 &input[cursor..cursor + ITEM_POINTER_BYTES],
             )?);
             cursor += ITEM_POINTER_BYTES;
         }
 
-        Ok(Self {
-            deleted,
-            has_overflow_heaptids,
-            primary_heaptid,
-            rerank_tid,
-            binary_words,
-            search_code,
-            neighbors,
-            neighbor_count,
-        })
+        out.deleted = deleted;
+        out.has_overflow_heaptids = has_overflow_heaptids;
+        out.primary_heaptid = primary_heaptid;
+        out.rerank_tid = rerank_tid;
+        out.neighbor_count = neighbor_count;
+        Ok(())
     }
 }
 

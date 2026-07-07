@@ -293,6 +293,18 @@ impl GraphReader for RelationGraphReader {
         })
     }
 
+    fn read_node_into(&self, tid: ItemPointer, out: &mut VamanaNodeTuple) -> Result<(), String> {
+        self.read_tuple_bytes(tid, "ec_diskann scan node", |raw| {
+            VamanaNodeTuple::decode_into(
+                raw,
+                self.graph_degree_r,
+                self.binary_word_count,
+                self.search_code_len,
+                out,
+            )
+        })
+    }
+
     fn first_live_tid(&self) -> Result<Option<ItemPointer>, String> {
         let block_count = crate::storage::relation::main_fork_block_count_handle(self.handle);
         for block_number in FIRST_DATA_BLOCK_NUMBER..block_count {

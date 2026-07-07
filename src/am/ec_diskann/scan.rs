@@ -547,7 +547,10 @@ where
     let mut visited_best: Vec<ScanCandidate> = Vec::with_capacity(list_size);
     let mut picked_entries: Vec<FrontierEntry> = Vec::with_capacity(beam_width);
     let mut neighbor_tids = Vec::new();
-    let mut neighbor_tuples = Vec::new();
+    let mut neighbor_tuples: Vec<VamanaNodeTuple> = Vec::new();
+    let mut neighbor_scores: Vec<f32> = Vec::new();
+    let mut tuple_pool: Vec<VamanaNodeTuple> = Vec::new();
+    let mut neighbor_vec_pool: Vec<Vec<ItemPointer>> = Vec::new();
     loop {
         maybe_check_for_interrupts();
 
@@ -572,9 +575,9 @@ where
 
         neighbor_tids.clear();
         neighbor_tuples.clear();
-        for picked_entry in picked_entries.drain(..) {
+        for mut picked_entry in picked_entries.drain(..) {
             let neighbor_count = picked_entry.neighbor_count;
-            for nbr in picked_entry.neighbors.into_iter().take(neighbor_count) {
+            for nbr in picked_entry.neighbors.drain(..).take(neighbor_count) {
                 if nbr == ItemPointer::INVALID {
                     continue;
                 }
@@ -582,15 +585,19 @@ where
                     continue;
                 }
                 neighbor_tids.push(nbr);
-                neighbor_tuples.push(reader.read_node(nbr)?);
+                let mut tuple = tuple_pool.pop().unwrap_or_else(VamanaNodeTuple::empty);
+                reader.read_node_into(nbr, &mut tuple)?;
+                neighbor_tuples.push(tuple);
             }
+            neighbor_vec_pool.push(picked_entry.neighbors);
         }
-        let mut neighbor_scores = vec![0.0_f32; neighbor_tuples.len()];
+        neighbor_scores.clear();
+        neighbor_scores.resize(neighbor_tuples.len(), 0.0);
         prefilter.score_batch(&neighbor_tuples, &mut neighbor_scores);
-        for ((nbr, nbr_tuple), score) in neighbor_tids
+        for ((nbr, mut nbr_tuple), score) in neighbor_tids
             .drain(..)
             .zip(neighbor_tuples.drain(..))
-            .zip(neighbor_scores.into_iter())
+            .zip(neighbor_scores.iter().copied())
         {
             let candidate = ScanCandidate {
                 tid: nbr,
@@ -599,7 +606,14 @@ where
                 emittable: nbr_tuple.is_live(),
                 has_overflow_heaptids: nbr_tuple.has_overflow_heaptids,
             };
-            push_frontier_entry(&mut next_heap, candidate, neighbors_from_tuple(nbr_tuple));
+            let neighbor_count =
+                usize::from(nbr_tuple.neighbor_count).min(nbr_tuple.neighbors.len());
+            let neighbors = std::mem::replace(
+                &mut nbr_tuple.neighbors,
+                neighbor_vec_pool.pop().unwrap_or_default(),
+            );
+            push_frontier_entry(&mut next_heap, candidate, (neighbors, neighbor_count));
+            tuple_pool.push(nbr_tuple);
         }
     }
 
@@ -670,7 +684,10 @@ where
     let mut visited_best: Vec<ScanCandidate> = Vec::with_capacity(list_size);
     let mut picked_entries: Vec<FrontierEntry> = Vec::with_capacity(beam_width);
     let mut neighbor_tids = Vec::new();
-    let mut neighbor_tuples = Vec::new();
+    let mut neighbor_tuples: Vec<VamanaNodeTuple> = Vec::new();
+    let mut neighbor_scores: Vec<f32> = Vec::new();
+    let mut tuple_pool: Vec<VamanaNodeTuple> = Vec::new();
+    let mut neighbor_vec_pool: Vec<Vec<ItemPointer>> = Vec::new();
     loop {
         maybe_check_for_interrupts();
 
@@ -705,9 +722,9 @@ where
 
         neighbor_tids.clear();
         neighbor_tuples.clear();
-        for picked_entry in picked_entries.drain(..) {
+        for mut picked_entry in picked_entries.drain(..) {
             let neighbor_count = picked_entry.neighbor_count;
-            for nbr in picked_entry.neighbors.into_iter().take(neighbor_count) {
+            for nbr in picked_entry.neighbors.drain(..).take(neighbor_count) {
                 let neighbor_started = Instant::now();
                 frontier_profile.neighbor_slots += 1;
                 if nbr == ItemPointer::INVALID {
@@ -724,16 +741,20 @@ where
                 add_profile_elapsed(&mut frontier_profile.visited_set_us, visited_started);
                 frontier_profile.visited_set_ops += 1;
                 neighbor_tids.push(nbr);
-                neighbor_tuples.push(reader.read_node(nbr)?);
+                let mut tuple = tuple_pool.pop().unwrap_or_else(VamanaNodeTuple::empty);
+                reader.read_node_into(nbr, &mut tuple)?;
+                neighbor_tuples.push(tuple);
             }
+            neighbor_vec_pool.push(picked_entry.neighbors);
         }
         frontier_profile.record_flush_width(neighbor_tuples.len());
-        let mut neighbor_scores = vec![0.0_f32; neighbor_tuples.len()];
+        neighbor_scores.clear();
+        neighbor_scores.resize(neighbor_tuples.len(), 0.0);
         prefilter.score_batch(&neighbor_tuples, &mut neighbor_scores);
-        for ((nbr, nbr_tuple), score) in neighbor_tids
+        for ((nbr, mut nbr_tuple), score) in neighbor_tids
             .drain(..)
             .zip(neighbor_tuples.drain(..))
-            .zip(neighbor_scores.into_iter())
+            .zip(neighbor_scores.iter().copied())
         {
             let candidate = ScanCandidate {
                 tid: nbr,
@@ -742,10 +763,17 @@ where
                 emittable: nbr_tuple.is_live(),
                 has_overflow_heaptids: nbr_tuple.has_overflow_heaptids,
             };
+            let neighbor_count =
+                usize::from(nbr_tuple.neighbor_count).min(nbr_tuple.neighbors.len());
+            let neighbors = std::mem::replace(
+                &mut nbr_tuple.neighbors,
+                neighbor_vec_pool.pop().unwrap_or_default(),
+            );
             let heap_started = Instant::now();
-            push_frontier_entry(&mut next_heap, candidate, neighbors_from_tuple(nbr_tuple));
+            push_frontier_entry(&mut next_heap, candidate, (neighbors, neighbor_count));
             add_profile_elapsed(&mut frontier_profile.candidate_heap_us, heap_started);
             frontier_profile.candidate_heap_ops += 1;
+            tuple_pool.push(nbr_tuple);
         }
     }
 

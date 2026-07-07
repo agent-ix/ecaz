@@ -901,6 +901,15 @@ where
         add_profile_elapsed(&mut self.profile.borrow_mut().graph_read_decode_us, started);
         result
     }
+
+    fn read_node_into(&self, tid: ItemPointer, out: &mut VamanaNodeTuple) -> Result<(), String> {
+        let started = Instant::now();
+        let result = self.inner.read_node_into(tid, out);
+        let mut profile = self.profile.borrow_mut();
+        add_profile_elapsed(&mut profile.graph_read_decode_us, started);
+        profile.graph_read_count += 1;
+        result
+    }
 }
 
 struct ProfiledDiskannPrefilter<'a> {

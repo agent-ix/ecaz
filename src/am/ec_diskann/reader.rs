@@ -41,6 +41,15 @@ use crate::storage::page::{DataPageChain, ItemPointer};
 pub trait GraphReader {
     fn read_node(&self, tid: ItemPointer) -> Result<VamanaNodeTuple, String>;
     fn first_live_tid(&self) -> Result<Option<ItemPointer>, String>;
+
+    /// Decode a node into a caller-recycled tuple (Task 168 Phase 4).
+    /// Buffered readers override this with
+    /// [`VamanaNodeTuple::decode_into`] so a pooled tuple decodes
+    /// without allocating; the default falls back to [`read_node`].
+    fn read_node_into(&self, tid: ItemPointer, out: &mut VamanaNodeTuple) -> Result<(), String> {
+        *out = self.read_node(tid)?;
+        Ok(())
+    }
 }
 
 /// Handle to a persisted Vamana graph. Holds a borrowed
@@ -198,14 +207,44 @@ pub struct PersistedGreedyResult {
     pub visited: Vec<ItemPointer>,
 }
 
+/// Multiply-shift hasher for 6-byte `ItemPointer` keys (Task 168
+/// Phase 4). The default SipHash is DoS-hardened, which the visited
+/// set does not need — its keys are index-internal TIDs. Accumulates
+/// whatever byte/int writes `ItemPointer`'s derived `Hash` emits and
+/// finishes with a Fibonacci multiply.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct TidHasher(u64);
+
+impl std::hash::Hasher for TidHasher {
+    fn finish(&self) -> u64 {
+        self.0.wrapping_mul(0x9E37_79B9_7F4A_7C15)
+    }
+
+    fn write(&mut self, bytes: &[u8]) {
+        for &byte in bytes {
+            self.0 = (self.0 << 8) | u64::from(byte);
+        }
+    }
+
+    fn write_u16(&mut self, value: u16) {
+        self.0 = (self.0 << 16) | u64::from(value);
+    }
+
+    fn write_u32(&mut self, value: u32) {
+        self.0 = (self.0 << 32) | u64::from(value);
+    }
+}
+
+pub(crate) type TidBuildHasher = std::hash::BuildHasherDefault<TidHasher>;
+
 /// Reusable scratch for greedy traversal. Phase 6B's pgrx scan
 /// path will allocate one of these per index cursor and `clear()`
 /// between queries so `greedy_search_persisted_with` /
 /// `greedy_descent_with` don't allocate on the hot path.
 #[derive(Debug, Default)]
 pub struct VisitedState {
-    pub(crate) in_frontier: HashSet<ItemPointer>,
-    pub(crate) visited: HashSet<ItemPointer>,
+    pub(crate) in_frontier: HashSet<ItemPointer, TidBuildHasher>,
+    pub(crate) visited: HashSet<ItemPointer, TidBuildHasher>,
 }
 
 impl VisitedState {
