@@ -59,22 +59,38 @@ neighbor_code_dists real[])`, one row per requested vec_id.
   [FR-078](./FR-078-distann-hash-placement.md) — so the call remains one
   network round-trip per node per hop round with no separate rerank
   round-trip.
-- Requested vec_ids SHALL resolve to exactly one of three defined outcomes:
-  (a) present (row returned, `is_tombstone` reflecting the flag);
-  (b) not owned by this node under the epoch's placement → placement error
-  (never an empty result); (c) owned but absent → structural fault error.
-  Within a published epoch, records are never physically reclaimed
-  ([FR-082](./FR-082-distann-epoch-lifecycle.md)), so case (c) always
-  indicates corruption or placement drift, never a vacuum race
-  ([NFR-020](../../../non-functional/NFR-020-distann-fault-behavior.md)).
+- Requested vec_ids SHALL resolve to exactly one of four defined outcomes:
+  (a) present with its co-placed vector readable (row returned, `exact_dist`
+  set, `is_tombstone` reflecting the flag); (b) not owned by this node under
+  the epoch's placement → placement error (never an empty result); (c) record
+  owned but absent → structural fault error; (d) record present but its
+  co-placed vector missing or unreadable (`heap_tid` resolves nothing under
+  the epoch) → structural fault error, distinct code from (c). Within a
+  published epoch neither records nor the vector tier are physically
+  reclaimed ([FR-082](./FR-082-distann-epoch-lifecycle.md)), so cases (c) and
+  (d) always indicate corruption or co-placement drift, never a vacuum race
+  ([NFR-020](../../../non-functional/NFR-020-distann-fault-behavior.md)); a
+  mid-hop failure of either the record read or the vector read maps to the
+  corresponding structural fault, non-retriable (distinct from the retriable
+  epoch-mismatch of the first bullet).
+- `heap_tid` SHALL be interpreted as the epoch-scoped handle to the vec_id's
+  frozen co-placed vector ([FR-082](./FR-082-distann-epoch-lifecycle.md)), not
+  as a live base-table `ItemPointer` on a data node: a data node is not
+  required to host the user base table, only the epoch's vector tier for its
+  owned vec_ids. In the single-node degenerate case the handle is the local
+  base-table TID under the AM's tombstone/vacuum-consistency handling.
 - Exact distances SHALL be computed against the node's co-placed
-  full-precision heap row (resolved via `heap_tid`,
+  full-precision vector (resolved via `heap_tid`,
   [FR-078](./FR-078-distann-hash-placement.md)) — not against any vector
   stored in the index record, which carries none — so the coordinator needs
   no separate rerank round-trip. This is exactly the `ec_diskann`
   coarse-search-then-heap-rerank split, executed node-locally; the
   rerank-fidelity source is table/heap (co-placed, exact), the default and,
-  for `ec_diskann`/`ec_distann`, effectively the only mode (ADR-085 D11).
+  for `ec_diskann`/`ec_distann`, effectively the only mode (ADR-085 D11). For
+  a tombstoned record the function MAY omit the vector read and leave
+  `exact_dist` unset (NULL), since [FR-081](./FR-081-distann-query-orchestration.md)
+  excludes tombstones from results; `is_tombstone` SHALL still be returned so
+  the neighbor edges remain usable for traversal continuity.
 - `code_threshold` SHALL default to NULL (no pruning). When set, it is a
   documented recall-risk parameter: pruned neighbors may include true
   results. Gate benchmark runs ([NFR-017](../../../non-functional/NFR-017-distann-latency-recall-gate.md))

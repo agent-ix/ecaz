@@ -17,7 +17,13 @@ relationships:
 ## Statement
 
 A top-k scan SHALL expand at most BW × H graph-node records (plus
-coordinator-local head-index hits), independent of corpus size. The scan
+coordinator-local head-index hits), independent of corpus size. Each expanded
+record incurs exactly one co-placed exact-rerank vector read
+([FR-079](../functional/index/distann/FR-079-distann-remote-expansion-protocol.md),
+ADR-085 D11), so the per-query exact-rerank read count equals the
+expanded-record count and is bound by the same BW × H — this equality
+(`records read == expansions == exact reranks`) is what makes co-placed heap
+rerank affordable (ADR-085 D11) where SPIRE's scan-fraction was not. The scan
 SHALL report the per-query expanded-record count in EXPLAIN and in the bench
 pipeline step.
 

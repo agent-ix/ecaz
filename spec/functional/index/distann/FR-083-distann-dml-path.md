@@ -53,16 +53,21 @@ only incremental distributed insert is the final milestone.
   state: the program closes only with incremental insert landed or an
   explicit operator descope.
 - **Remote write endpoint**: data nodes SHALL expose a write counterpart to
-  FR-079 (`ec_distann_apply_record_writes`: new-record append, tombstone
-  set, back-edge amendment with per-record `robust_prune` re-pruning
-  executed on the owning node), epoch-fingerprint-validated like FR-079,
-  with per-record atomicity. `aminsert`/`ambulkdelete` run on the
+  FR-079 (`ec_distann_apply_record_writes`: new-record append **with its
+  co-placed full-precision vector (heap row)**, tombstone set, back-edge
+  amendment with per-record `robust_prune` re-pruning executed on the owning
+  node), epoch-fingerprint-validated like FR-079, with per-record atomicity.
+  A new-record append SHALL co-place the record and its vector on the same
+  hash-owned node atomically ([FR-078](./FR-078-distann-hash-placement.md)),
+  so FR-079 exact rerank of a freshly inserted vec_id always has a
+  node-local vector. `aminsert`/`ambulkdelete` run on the
   coordinator and drive this endpoint; degree re-pruning executes on the
   data node that owns the amended record.
 - **Incremental distributed insert (committed scope, final milestone)**:
   `aminsert` SHALL run the [FR-081](./FR-081-distann-query-orchestration.md)
   beam search for the new vector, select its edges with `robust_prune`,
-  write the new record to its hash-owned node, and apply back-edges to
+  write the new record **and its co-placed full-precision vector (heap row)**
+  to its hash-owned node, and apply back-edges to
   affected neighbor records via the write endpoint; a failed insert SHALL
   leave the graph in its prior consistent state (no dangling forward edge
   without its record). Per-insert work SHALL be bounded by the FR-081
@@ -83,6 +88,7 @@ only incremental distributed insert is the final milestone.
 | FR-083-AC-4 | After incremental insert, distinct_recall@10 on queries targeting the inserted rows' neighborhoods matches a fresh rebuild containing the same rows | Test (bench A/B via `ecaz bench suite`) |
 | FR-083-AC-5 | A mid-insert fault leaves no dangling forward edge (graph consistent) | Test (fault drill) |
 | FR-083-AC-6 | Concurrent inserts and queries interleave without wrong results | Test (concurrency drill) |
+| FR-083-AC-7 | After incremental insert, a query expanding the inserted vec_id reads its co-placed vector node-locally and returns a valid exact_dist (no missing-heap-row fault) | Test |
 
 ## Dependencies
 

@@ -57,6 +57,12 @@ per-record directory lookup.
   ([FR-082](./FR-082-distann-epoch-lifecycle.md)).
 - The coordinator SHALL group any set of vec_ids by owning node in O(set
   size) using only the manifest.
+- At expansion time, if a record's `heap_tid` does not resolve to a
+  node-local vector under the epoch (co-placement drift — record and vector
+  diverged across nodes), the owning node SHALL raise the structural fault of
+  [FR-079](./FR-079-distann-remote-expansion-protocol.md) case (d), never a
+  silent skip or a remote fetch. Co-placement is thus enforced at runtime,
+  not only asserted at build time (AC-4).
 
 ## Acceptance Criteria
 

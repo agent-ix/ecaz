@@ -51,6 +51,11 @@ flowchart LR
   `graph_degree` edges; and emit exactly one record per vec_id.
 - When a vector appears in only one shard, the stitch SHALL pass its record
   through unchanged (stitch idempotence).
+- The build SHALL emit, alongside each stitched record, that vec_id's
+  full-precision vector as the co-placed rerank (heap) tier
+  ([FR-076](./FR-076-distann-graph-node-record-format.md), ADR-085 D11), so
+  the FR-078 hand-off can place record and vector together on one node. The
+  vector is carried once per vec_id (never per neighbor).
 - The full build (shard assignment, per-shard builds, stitch) SHALL be
   deterministic under a fixed seed: identical corpus + seed + options yield
   an identical stitched graph (this is what makes FR-081-AC-1's
