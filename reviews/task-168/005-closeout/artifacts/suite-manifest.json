@@ -1,0 +1,1470 @@
+{
+  "suite": "current-intel-local",
+  "schema_version": 1,
+  "config": "crates/ecaz-cli/suites/current/intel-local.json",
+  "config_sha256": "01f05aeb2cb844298b05a8b6ca83f68174f82e790caf9c022a1fa2b3a07a9435",
+  "dry_run": false,
+  "generated_at_unix_ms": 1783410485968,
+  "runner_git_commit": "b891c3743370a0183dbc75da44fe7ad209ebb4e7",
+  "connection": {
+    "database": "tqvector_bench",
+    "host": "/home/peter/.pgrx",
+    "port": 28818,
+    "user": null,
+    "password_configured": false
+  },
+  "backend": {
+    "build_profile": "release",
+    "git_commit": "4050ea830133e9f3552bff877bf2dc6acaab11bc-dirty",
+    "sha256": "ada7ee8e96a06c848026778a5c29c0ee6f9a1748d81bc4092f814a2518eeb55e",
+    "path": "/home/peter/.pgrx/18.3/pgrx-install/lib/postgresql/ecaz.so"
+  },
+  "steps": [
+    {
+      "name": "precheck-host",
+      "kind": "raw",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "setup",
+        "precheck",
+        "current",
+        "intel-local"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/005-closeout/artifacts/precheck-host.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-10k-hnsw",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "current",
+        "intel-local",
+        "ec_real_10k",
+        "hnsw"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/005-closeout/artifacts/load-10k-hnsw.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-10k-hnsw",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "recall",
+        "current",
+        "intel-local",
+        "ec_real_10k",
+        "hnsw"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/005-closeout/artifacts/recall-10k-hnsw.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-10k-hnsw",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "latency",
+        "current",
+        "intel-local",
+        "ec_real_10k",
+        "hnsw"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/005-closeout/artifacts/latency-10k-hnsw.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-10k-hnsw",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "current",
+        "intel-local",
+        "ec_real_10k",
+        "hnsw"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/005-closeout/artifacts/storage-10k-hnsw.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-10k-ivf",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "current",
+        "intel-local",
+        "ec_real_10k",
+        "ivf"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/005-closeout/artifacts/load-10k-ivf.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-10k-ivf",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "recall",
+        "current",
+        "intel-local",
+        "ec_real_10k",
+        "ivf"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/005-closeout/artifacts/recall-10k-ivf.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-10k-ivf",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "latency",
+        "current",
+        "intel-local",
+        "ec_real_10k",
+        "ivf"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/005-closeout/artifacts/latency-10k-ivf.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-10k-ivf",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "current",
+        "intel-local",
+        "ec_real_10k",
+        "ivf"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/005-closeout/artifacts/storage-10k-ivf.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-10k-diskann",
+      "kind": "load",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-168/005-closeout/artifacts/load-10k-diskann.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "current_intel_real10k_diskann",
+        "--profile",
+        "ec_diskann",
+        "--corpus-file",
+        "data/staged-current/ec_real_10k_corpus.tsv",
+        "--queries-file",
+        "data/staged-current/ec_real_10k_queries.tsv",
+        "--manifest-file",
+        "data/staged-current/ec_real_10k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--bits",
+        "4",
+        "--seed",
+        "42"
+      ],
+      "selected": true,
+      "tags": [
+        "load",
+        "current",
+        "intel-local",
+        "ec_real_10k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/005-closeout/artifacts/load-10k-diskann.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783410486044,
+      "finished_at_unix_ms": 1783410507586,
+      "duration_ms": 21541,
+      "exit_code": 0
+    },
+    {
+      "name": "recall-10k-diskann",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "recall",
+        "--prefix",
+        "current_intel_real10k_diskann",
+        "--profile",
+        "ec_diskann",
+        "--k",
+        "10",
+        "--sweep",
+        "64,128,200,400,800",
+        "--queries-limit",
+        "200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--log-output",
+        "reviews/task-168/005-closeout/artifacts/recall-10k-diskann.log"
+      ],
+      "selected": true,
+      "tags": [
+        "recall",
+        "current",
+        "intel-local",
+        "ec_real_10k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/005-closeout/artifacts/recall-10k-diskann.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783410507586,
+      "finished_at_unix_ms": 1783410523469,
+      "duration_ms": 17083,
+      "exit_code": 0
+    },
+    {
+      "name": "latency-10k-diskann",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "latency",
+        "--prefix",
+        "current_intel_real10k_diskann",
+        "--profile",
+        "ec_diskann",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "200",
+        "--sweep",
+        "64,128,200,400,800",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--sample-backend-memory",
+        "--cache-state",
+        "post_recall_warm",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "reviews/task-168/005-closeout/artifacts/latency-10k-diskann.log"
+      ],
+      "selected": true,
+      "tags": [
+        "latency",
+        "current",
+        "intel-local",
+        "ec_real_10k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/005-closeout/artifacts/latency-10k-diskann.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783410523470,
+      "finished_at_unix_ms": 1783410528228,
+      "duration_ms": 4750,
+      "exit_code": 0
+    },
+    {
+      "name": "storage-10k-diskann",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-168/005-closeout/artifacts/storage-10k-diskann.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "current_intel_real10k_diskann"
+      ],
+      "selected": true,
+      "tags": [
+        "storage",
+        "current",
+        "intel-local",
+        "ec_real_10k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/005-closeout/artifacts/storage-10k-diskann.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783410528229,
+      "finished_at_unix_ms": 1783410528251,
+      "duration_ms": 21,
+      "exit_code": 0
+    },
+    {
+      "name": "load-10k-spire",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "current",
+        "intel-local",
+        "ec_real_10k",
+        "spire"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/005-closeout/artifacts/load-10k-spire.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-10k-spire",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "recall",
+        "current",
+        "intel-local",
+        "ec_real_10k",
+        "spire"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/005-closeout/artifacts/recall-10k-spire.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-10k-spire",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "latency",
+        "current",
+        "intel-local",
+        "ec_real_10k",
+        "spire"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/005-closeout/artifacts/latency-10k-spire.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-10k-spire",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "current",
+        "intel-local",
+        "ec_real_10k",
+        "spire"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/005-closeout/artifacts/storage-10k-spire.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-50k-hnsw",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "current",
+        "intel-local",
+        "ec_real_50k",
+        "hnsw"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/005-closeout/artifacts/load-50k-hnsw.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-50k-hnsw",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "recall",
+        "current",
+        "intel-local",
+        "ec_real_50k",
+        "hnsw"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/005-closeout/artifacts/recall-50k-hnsw.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-50k-hnsw",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "latency",
+        "current",
+        "intel-local",
+        "ec_real_50k",
+        "hnsw"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/005-closeout/artifacts/latency-50k-hnsw.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-50k-hnsw",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "current",
+        "intel-local",
+        "ec_real_50k",
+        "hnsw"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/005-closeout/artifacts/storage-50k-hnsw.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-50k-ivf",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "current",
+        "intel-local",
+        "ec_real_50k",
+        "ivf"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/005-closeout/artifacts/load-50k-ivf.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-50k-ivf",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "recall",
+        "current",
+        "intel-local",
+        "ec_real_50k",
+        "ivf"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/005-closeout/artifacts/recall-50k-ivf.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-50k-ivf",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "latency",
+        "current",
+        "intel-local",
+        "ec_real_50k",
+        "ivf"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/005-closeout/artifacts/latency-50k-ivf.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-50k-ivf",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "current",
+        "intel-local",
+        "ec_real_50k",
+        "ivf"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/005-closeout/artifacts/storage-50k-ivf.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-50k-diskann",
+      "kind": "load",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-168/005-closeout/artifacts/load-50k-diskann.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "current_intel_real50k_diskann",
+        "--profile",
+        "ec_diskann",
+        "--corpus-file",
+        "data/staged-current/ec_real_50k_corpus.tsv",
+        "--queries-file",
+        "data/staged-current/ec_real_50k_queries.tsv",
+        "--manifest-file",
+        "data/staged-current/ec_real_50k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--bits",
+        "4",
+        "--seed",
+        "42"
+      ],
+      "selected": true,
+      "tags": [
+        "load",
+        "current",
+        "intel-local",
+        "ec_real_50k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/005-closeout/artifacts/load-50k-diskann.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783410528251,
+      "finished_at_unix_ms": 1783410707863,
+      "duration_ms": 186849,
+      "exit_code": 0
+    },
+    {
+      "name": "recall-50k-diskann",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "recall",
+        "--prefix",
+        "current_intel_real50k_diskann",
+        "--profile",
+        "ec_diskann",
+        "--k",
+        "10",
+        "--sweep",
+        "64,128,200,400,800",
+        "--queries-limit",
+        "200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--log-output",
+        "reviews/task-168/005-closeout/artifacts/recall-50k-diskann.log"
+      ],
+      "selected": true,
+      "tags": [
+        "recall",
+        "current",
+        "intel-local",
+        "ec_real_50k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/005-closeout/artifacts/recall-50k-diskann.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783410707864,
+      "finished_at_unix_ms": 1783410772557,
+      "duration_ms": 67092,
+      "exit_code": 0
+    },
+    {
+      "name": "latency-50k-diskann",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "latency",
+        "--prefix",
+        "current_intel_real50k_diskann",
+        "--profile",
+        "ec_diskann",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "200",
+        "--sweep",
+        "64,128,200,400,800",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--sample-backend-memory",
+        "--cache-state",
+        "post_recall_warm",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "reviews/task-168/005-closeout/artifacts/latency-50k-diskann.log"
+      ],
+      "selected": true,
+      "tags": [
+        "latency",
+        "current",
+        "intel-local",
+        "ec_real_50k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/005-closeout/artifacts/latency-50k-diskann.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783410772558,
+      "finished_at_unix_ms": 1783410778433,
+      "duration_ms": 7080,
+      "exit_code": 0
+    },
+    {
+      "name": "storage-50k-diskann",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-168/005-closeout/artifacts/storage-50k-diskann.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "current_intel_real50k_diskann"
+      ],
+      "selected": true,
+      "tags": [
+        "storage",
+        "current",
+        "intel-local",
+        "ec_real_50k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/005-closeout/artifacts/storage-50k-diskann.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783410778433,
+      "finished_at_unix_ms": 1783410778457,
+      "duration_ms": 22,
+      "exit_code": 0
+    },
+    {
+      "name": "load-50k-spire",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "current",
+        "intel-local",
+        "ec_real_50k",
+        "spire"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/005-closeout/artifacts/load-50k-spire.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-50k-spire",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "recall",
+        "current",
+        "intel-local",
+        "ec_real_50k",
+        "spire"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/005-closeout/artifacts/recall-50k-spire.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-50k-spire",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "latency",
+        "current",
+        "intel-local",
+        "ec_real_50k",
+        "spire"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/005-closeout/artifacts/latency-50k-spire.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-50k-spire",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "current",
+        "intel-local",
+        "ec_real_50k",
+        "spire"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/005-closeout/artifacts/storage-50k-spire.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-100k-hnsw",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "current",
+        "intel-local",
+        "ec_real_100k",
+        "hnsw"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/005-closeout/artifacts/load-100k-hnsw.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-100k-hnsw",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "recall",
+        "current",
+        "intel-local",
+        "ec_real_100k",
+        "hnsw"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/005-closeout/artifacts/recall-100k-hnsw.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-100k-hnsw",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "latency",
+        "current",
+        "intel-local",
+        "ec_real_100k",
+        "hnsw"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/005-closeout/artifacts/latency-100k-hnsw.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-100k-hnsw",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "current",
+        "intel-local",
+        "ec_real_100k",
+        "hnsw"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/005-closeout/artifacts/storage-100k-hnsw.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-100k-ivf",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "current",
+        "intel-local",
+        "ec_real_100k",
+        "ivf"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/005-closeout/artifacts/load-100k-ivf.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-100k-ivf",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "recall",
+        "current",
+        "intel-local",
+        "ec_real_100k",
+        "ivf"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/005-closeout/artifacts/recall-100k-ivf.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-100k-ivf",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "latency",
+        "current",
+        "intel-local",
+        "ec_real_100k",
+        "ivf"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/005-closeout/artifacts/latency-100k-ivf.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-100k-ivf",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "current",
+        "intel-local",
+        "ec_real_100k",
+        "ivf"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/005-closeout/artifacts/storage-100k-ivf.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-100k-diskann",
+      "kind": "load",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-168/005-closeout/artifacts/load-100k-diskann.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "current_intel_real100k_diskann",
+        "--profile",
+        "ec_diskann",
+        "--corpus-file",
+        "data/staged-current/ec_real_100k_corpus.tsv",
+        "--queries-file",
+        "data/staged-current/ec_real_100k_queries.tsv",
+        "--manifest-file",
+        "data/staged-current/ec_real_100k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--bits",
+        "4",
+        "--seed",
+        "42"
+      ],
+      "selected": true,
+      "tags": [
+        "load",
+        "current",
+        "intel-local",
+        "ec_real_100k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/005-closeout/artifacts/load-100k-diskann.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783410778458,
+      "finished_at_unix_ms": 1783411192699,
+      "duration_ms": 431072,
+      "exit_code": 0
+    },
+    {
+      "name": "recall-100k-diskann",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "recall",
+        "--prefix",
+        "current_intel_real100k_diskann",
+        "--profile",
+        "ec_diskann",
+        "--k",
+        "10",
+        "--sweep",
+        "64,128,200,400,800",
+        "--queries-limit",
+        "200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--log-output",
+        "reviews/task-168/005-closeout/artifacts/recall-100k-diskann.log"
+      ],
+      "selected": true,
+      "tags": [
+        "recall",
+        "current",
+        "intel-local",
+        "ec_real_100k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/005-closeout/artifacts/recall-100k-diskann.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783411192700,
+      "finished_at_unix_ms": 1783411317513,
+      "duration_ms": 129625,
+      "exit_code": 0
+    },
+    {
+      "name": "latency-100k-diskann",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "latency",
+        "--prefix",
+        "current_intel_real100k_diskann",
+        "--profile",
+        "ec_diskann",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "200",
+        "--sweep",
+        "64,128,200,400,800",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--sample-backend-memory",
+        "--cache-state",
+        "post_recall_warm",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "reviews/task-168/005-closeout/artifacts/latency-100k-diskann.log"
+      ],
+      "selected": true,
+      "tags": [
+        "latency",
+        "current",
+        "intel-local",
+        "ec_real_100k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/005-closeout/artifacts/latency-100k-diskann.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783411317513,
+      "finished_at_unix_ms": 1783411325320,
+      "duration_ms": 9015,
+      "exit_code": 0
+    },
+    {
+      "name": "storage-100k-diskann",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-168/005-closeout/artifacts/storage-100k-diskann.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "current_intel_real100k_diskann"
+      ],
+      "selected": true,
+      "tags": [
+        "storage",
+        "current",
+        "intel-local",
+        "ec_real_100k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/005-closeout/artifacts/storage-100k-diskann.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783411325321,
+      "finished_at_unix_ms": 1783411325353,
+      "duration_ms": 31,
+      "exit_code": 0
+    },
+    {
+      "name": "load-100k-spire",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "current",
+        "intel-local",
+        "ec_real_100k",
+        "spire"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/005-closeout/artifacts/load-100k-spire.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-100k-spire",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "recall",
+        "current",
+        "intel-local",
+        "ec_real_100k",
+        "spire"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/005-closeout/artifacts/recall-100k-spire.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-100k-spire",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "latency",
+        "current",
+        "intel-local",
+        "ec_real_100k",
+        "spire"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/005-closeout/artifacts/latency-100k-spire.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-100k-spire",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "current",
+        "intel-local",
+        "ec_real_100k",
+        "spire"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/005-closeout/artifacts/storage-100k-spire.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-1m-hnsw",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "current",
+        "intel-local",
+        "ec_real_1m",
+        "hnsw"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/005-closeout/artifacts/load-1m-hnsw.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-1m-hnsw",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "recall",
+        "current",
+        "intel-local",
+        "ec_real_1m",
+        "hnsw"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/005-closeout/artifacts/recall-1m-hnsw.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-1m-hnsw",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "latency",
+        "current",
+        "intel-local",
+        "ec_real_1m",
+        "hnsw"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/005-closeout/artifacts/latency-1m-hnsw.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-1m-hnsw",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "current",
+        "intel-local",
+        "ec_real_1m",
+        "hnsw"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/005-closeout/artifacts/storage-1m-hnsw.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-1m-ivf",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "current",
+        "intel-local",
+        "ec_real_1m",
+        "ivf"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/005-closeout/artifacts/load-1m-ivf.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-1m-ivf",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "recall",
+        "current",
+        "intel-local",
+        "ec_real_1m",
+        "ivf"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/005-closeout/artifacts/recall-1m-ivf.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-1m-ivf",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "latency",
+        "current",
+        "intel-local",
+        "ec_real_1m",
+        "ivf"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/005-closeout/artifacts/latency-1m-ivf.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-1m-ivf",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "current",
+        "intel-local",
+        "ec_real_1m",
+        "ivf"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/005-closeout/artifacts/storage-1m-ivf.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-1m-diskann",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "current",
+        "intel-local",
+        "ec_real_1m",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/005-closeout/artifacts/load-1m-diskann.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-1m-diskann",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "recall",
+        "current",
+        "intel-local",
+        "ec_real_1m",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/005-closeout/artifacts/recall-1m-diskann.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-1m-diskann",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "latency",
+        "current",
+        "intel-local",
+        "ec_real_1m",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/005-closeout/artifacts/latency-1m-diskann.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-1m-diskann",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "current",
+        "intel-local",
+        "ec_real_1m",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/005-closeout/artifacts/storage-1m-diskann.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-1m-spire",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "current",
+        "intel-local",
+        "ec_real_1m",
+        "spire"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/005-closeout/artifacts/load-1m-spire.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-1m-spire",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "recall",
+        "current",
+        "intel-local",
+        "ec_real_1m",
+        "spire"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/005-closeout/artifacts/recall-1m-spire.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-1m-spire",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "latency",
+        "current",
+        "intel-local",
+        "ec_real_1m",
+        "spire"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/005-closeout/artifacts/latency-1m-spire.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-1m-spire",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "current",
+        "intel-local",
+        "ec_real_1m",
+        "spire"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/005-closeout/artifacts/storage-1m-spire.log"
+      ],
+      "status": "skipped"
+    }
+  ]
+}

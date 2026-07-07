@@ -1,0 +1,162 @@
+[suite:task168-phase3-prefetch-after] wrote reviews/task-168/003-prefetch-block-reads/artifacts/suite-manifest.json
+[suite:task168-phase3-prefetch-after] wrote reviews/task-168/003-prefetch-block-reads/artifacts/suite-manifest.json
+[suite:task168-phase3-prefetch-after] recall-10k-after -> --database tqvector_bench --host /home/peter/.pgrx --port 28818 bench recall --prefix t168_p1_real10k_diskann --profile ec_diskann --k 10 --sweep "64,128,200,400,800" --queries-limit 200 --bits 4 --seed 42 --force-index --truth-cache-file reviews/task-168/001-rabitq-characterization/artifacts/truth-10k-k10.json --log-output reviews/task-168/003-prefetch-block-reads/artifacts/recall-10k-after.log
+[suite:task168-phase3-prefetch-after] wrote reviews/task-168/003-prefetch-block-reads/artifacts/suite-manifest.json
+┌───────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ list_size ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞═══════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 64        ┆ 200     ┆ 2000          ┆ 0.9990   ┆ 0.9964          ┆ 0.9997           ┆ 1.0000     ┆ 1.0000     ┆ 1.0000     ┆ 0.9000       ┆ 1.0000 ┆ 3.90 ms     │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 128       ┆ 200     ┆ 2000          ┆ 0.9995   ┆ 0.9972          ┆ 0.9999           ┆ 1.0000     ┆ 1.0000     ┆ 1.0000     ┆ 0.9000       ┆ 1.0000 ┆ 3.95 ms     │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 200       ┆ 200     ┆ 2000          ┆ 1.0000   ┆ 0.9981          ┆ 1.0000           ┆ 1.0000     ┆ 1.0000     ┆ 1.0000     ┆ 1.0000       ┆ 1.0000 ┆ 4.28 ms     │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 400       ┆ 200     ┆ 2000          ┆ 1.0000   ┆ 0.9981          ┆ 1.0000           ┆ 1.0000     ┆ 1.0000     ┆ 1.0000     ┆ 1.0000       ┆ 1.0000 ┆ 5.17 ms     │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 800       ┆ 200     ┆ 2000          ┆ 1.0000   ┆ 0.9981          ┆ 1.0000           ┆ 1.0000     ┆ 1.0000     ┆ 1.0000     ┆ 1.0000       ┆ 1.0000 ┆ 6.93 ms     │
+└───────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from t168_p1_real10k_diskann_queries ...
+[recall] loaded ground truth cache reviews/task-168/001-rabitq-characterization/artifacts/truth-10k-k10.json
+[suite:task168-phase3-prefetch-after] wrote reviews/task-168/003-prefetch-block-reads/artifacts/suite-manifest.json
+[suite:task168-phase3-prefetch-after] latency-10k-after -> --database tqvector_bench --host /home/peter/.pgrx --port 28818 bench latency --prefix t168_p1_real10k_diskann --profile ec_diskann --k 10 --concurrency 1 --iterations 200 --sweep "64,128,200,400,800" --bits 4 --seed 42 --force-index --sample-backend-memory --cache-state warm --memory-sample-interval-ms 25 --log-output reviews/task-168/003-prefetch-block-reads/artifacts/latency-10k-after.log
+[suite:task168-phase3-prefetch-after] wrote reviews/task-168/003-prefetch-block-reads/artifacts/suite-manifest.json
+┌───────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────────┬─────────────┬─────────────┬────────────────┐
+│ list_size ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state ┆ rss_peak_kb ┆ hwm_peak_kb ┆ memory_samples │
+╞═══════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════════╪═════════════╪═════════════╪════════════════╡
+│ 64        ┆ 200   ┆ 3.35 ms ┆ 0.30 ms ┆ 2.94 ms ┆ 3.32 ms ┆ 3.62 ms ┆ 4.08 ms ┆ 6.62 ms ┆ warm        ┆ 94148       ┆ 94148       ┆ 26             │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 128       ┆ 200   ┆ 3.81 ms ┆ 0.38 ms ┆ 3.15 ms ┆ 3.77 ms ┆ 4.39 ms ┆ 4.73 ms ┆ 7.29 ms ┆ warm        ┆ 94420       ┆ 94420       ┆ 30             │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 200       ┆ 200   ┆ 4.09 ms ┆ 0.45 ms ┆ 3.41 ms ┆ 4.07 ms ┆ 4.73 ms ┆ 5.34 ms ┆ 7.75 ms ┆ warm        ┆ 94336       ┆ 94336       ┆ 32             │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 400       ┆ 200   ┆ 5.08 ms ┆ 0.61 ms ┆ 4.01 ms ┆ 5.07 ms ┆ 5.96 ms ┆ 6.47 ms ┆ 9.42 ms ┆ warm        ┆ 94956       ┆ 94956       ┆ 39             │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 800       ┆ 200   ┆ 6.77 ms ┆ 0.79 ms ┆ 5.53 ms ┆ 6.69 ms ┆ 8.05 ms ┆ 8.66 ms ┆ 11.6 ms ┆ warm        ┆ 95324       ┆ 95324       ┆ 52             │
+└───────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────────┴─────────────┴─────────────┴────────────────┘
+[suite:task168-phase3-prefetch-after] wrote reviews/task-168/003-prefetch-block-reads/artifacts/suite-manifest.json
+[suite:task168-phase3-prefetch-after] recall-50k-after -> --database tqvector_bench --host /home/peter/.pgrx --port 28818 bench recall --prefix t168_p1_real50k_diskann --profile ec_diskann --k 10 --sweep "64,128,200,400,800" --queries-limit 200 --bits 4 --seed 42 --force-index --truth-cache-file reviews/task-168/001-rabitq-characterization/artifacts/truth-50k-k10.json --log-output reviews/task-168/003-prefetch-block-reads/artifacts/recall-50k-after.log
+[suite:task168-phase3-prefetch-after] wrote reviews/task-168/003-prefetch-block-reads/artifacts/suite-manifest.json
+┌───────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ list_size ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞═══════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 64        ┆ 200     ┆ 2000          ┆ 0.9700   ┆ 0.9616          ┆ 0.9766           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.5000       ┆ 0.9984 ┆ 5.30 ms     │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 128       ┆ 200     ┆ 2000          ┆ 0.9860   ┆ 0.9798          ┆ 0.9903           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.8000       ┆ 0.9994 ┆ 4.99 ms     │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 200       ┆ 200     ┆ 2000          ┆ 0.9905   ┆ 0.9852          ┆ 0.9939           ┆ 1.0000     ┆ 1.0000     ┆ 1.0000     ┆ 0.8000       ┆ 0.9997 ┆ 5.80 ms     │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 400       ┆ 200     ┆ 2000          ┆ 0.9950   ┆ 0.9908          ┆ 0.9973           ┆ 1.0000     ┆ 1.0000     ┆ 1.0000     ┆ 0.9000       ┆ 0.9998 ┆ 7.82 ms     │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 800       ┆ 200     ┆ 2000          ┆ 0.9965   ┆ 0.9928          ┆ 0.9983           ┆ 1.0000     ┆ 1.0000     ┆ 1.0000     ┆ 0.9000       ┆ 0.9999 ┆ 11.54 ms    │
+└───────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from t168_p1_real50k_diskann_queries ...
+[recall] loaded ground truth cache reviews/task-168/001-rabitq-characterization/artifacts/truth-50k-k10.json
+[suite:task168-phase3-prefetch-after] wrote reviews/task-168/003-prefetch-block-reads/artifacts/suite-manifest.json
+[suite:task168-phase3-prefetch-after] latency-50k-after -> --database tqvector_bench --host /home/peter/.pgrx --port 28818 bench latency --prefix t168_p1_real50k_diskann --profile ec_diskann --k 10 --concurrency 1 --iterations 200 --sweep "64,128,200,400,800" --bits 4 --seed 42 --force-index --sample-backend-memory --cache-state warm --memory-sample-interval-ms 25 --log-output reviews/task-168/003-prefetch-block-reads/artifacts/latency-50k-after.log
+[suite:task168-phase3-prefetch-after] wrote reviews/task-168/003-prefetch-block-reads/artifacts/suite-manifest.json
+┌───────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────────┬─────────────┬─────────────┬────────────────┐
+│ list_size ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state ┆ rss_peak_kb ┆ hwm_peak_kb ┆ memory_samples │
+╞═══════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════════╪═════════════╪═════════════╪════════════════╡
+│ 64        ┆ 200   ┆ 3.93 ms ┆ 0.43 ms ┆ 3.22 ms ┆ 3.89 ms ┆ 4.61 ms ┆ 4.79 ms ┆ 7.40 ms ┆ warm        ┆ 126664      ┆ 126664      ┆ 30             │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 128       ┆ 200   ┆ 4.65 ms ┆ 0.63 ms ┆ 3.57 ms ┆ 4.65 ms ┆ 5.63 ms ┆ 6.08 ms ┆ 9.14 ms ┆ warm        ┆ 126896      ┆ 126896      ┆ 36             │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 200       ┆ 200   ┆ 5.68 ms ┆ 1.00 ms ┆ 4.02 ms ┆ 5.50 ms ┆ 7.25 ms ┆ 8.97 ms ┆ 10.6 ms ┆ warm        ┆ 126456      ┆ 126456      ┆ 44             │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 400       ┆ 200   ┆ 8.75 ms ┆ 1.93 ms ┆ 6.21 ms ┆ 8.39 ms ┆ 12.5 ms ┆ 15.4 ms ┆ 19.2 ms ┆ warm        ┆ 128300      ┆ 128300      ┆ 67             │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 800       ┆ 200   ┆ 12.2 ms ┆ 1.83 ms ┆ 7.90 ms ┆ 12.0 ms ┆ 15.3 ms ┆ 16.3 ms ┆ 19.7 ms ┆ warm        ┆ 129556      ┆ 129556      ┆ 93             │
+└───────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────────┴─────────────┴─────────────┴────────────────┘
+[suite:task168-phase3-prefetch-after] wrote reviews/task-168/003-prefetch-block-reads/artifacts/suite-manifest.json
+[suite:task168-phase3-prefetch-after] recall-100k-after -> --database tqvector_bench --host /home/peter/.pgrx --port 28818 bench recall --prefix t168_p1_real100k_diskann --profile ec_diskann --k 10 --sweep "64,128,200,400,800" --queries-limit 200 --bits 4 --seed 42 --force-index --truth-cache-file reviews/task-168/001-rabitq-characterization/artifacts/truth-100k-k10.json --log-output reviews/task-168/003-prefetch-block-reads/artifacts/recall-100k-after.log
+[suite:task168-phase3-prefetch-after] wrote reviews/task-168/003-prefetch-block-reads/artifacts/suite-manifest.json
+┌───────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ list_size ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞═══════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 64        ┆ 200     ┆ 2000          ┆ 0.9360   ┆ 0.9244          ┆ 0.9459           ┆ 0.8000     ┆ 1.0000     ┆ 1.0000     ┆ 0.1000       ┆ 0.9934 ┆ 6.15 ms     │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 128       ┆ 200     ┆ 2000          ┆ 0.9700   ┆ 0.9616          ┆ 0.9766           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.1000       ┆ 0.9966 ┆ 5.39 ms     │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 200       ┆ 200     ┆ 2000          ┆ 0.9845   ┆ 0.9781          ┆ 0.9891           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.5000       ┆ 0.9981 ┆ 6.56 ms     │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 400       ┆ 200     ┆ 2000          ┆ 0.9940   ┆ 0.9895          ┆ 0.9966           ┆ 1.0000     ┆ 1.0000     ┆ 1.0000     ┆ 0.9000       ┆ 0.9996 ┆ 9.80 ms     │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 800       ┆ 200     ┆ 2000          ┆ 0.9975   ┆ 0.9942          ┆ 0.9989           ┆ 1.0000     ┆ 1.0000     ┆ 1.0000     ┆ 0.9000       ┆ 0.9998 ┆ 15.78 ms    │
+└───────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from t168_p1_real100k_diskann_queries ...
+[recall] loaded ground truth cache reviews/task-168/001-rabitq-characterization/artifacts/truth-100k-k10.json
+[suite:task168-phase3-prefetch-after] wrote reviews/task-168/003-prefetch-block-reads/artifacts/suite-manifest.json
+[suite:task168-phase3-prefetch-after] latency-100k-after -> --database tqvector_bench --host /home/peter/.pgrx --port 28818 bench latency --prefix t168_p1_real100k_diskann --profile ec_diskann --k 10 --concurrency 1 --iterations 200 --sweep "64,128,200,400,800" --bits 4 --seed 42 --force-index --sample-backend-memory --cache-state warm --memory-sample-interval-ms 25 --log-output reviews/task-168/003-prefetch-block-reads/artifacts/latency-100k-after.log
+[suite:task168-phase3-prefetch-after] wrote reviews/task-168/003-prefetch-block-reads/artifacts/suite-manifest.json
+┌───────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────────┬─────────────┬─────────────┬────────────────┐
+│ list_size ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state ┆ rss_peak_kb ┆ hwm_peak_kb ┆ memory_samples │
+╞═══════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════════╪═════════════╪═════════════╪════════════════╡
+│ 64        ┆ 200   ┆ 4.29 ms ┆ 0.39 ms ┆ 3.61 ms ┆ 4.24 ms ┆ 4.89 ms ┆ 5.37 ms ┆ 7.05 ms ┆ warm        ┆ 146908      ┆ 146908      ┆ 33             │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 128       ┆ 200   ┆ 5.15 ms ┆ 0.47 ms ┆ 4.10 ms ┆ 5.12 ms ┆ 5.81 ms ┆ 6.50 ms ┆ 8.60 ms ┆ warm        ┆ 148068      ┆ 148068      ┆ 40             │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 200       ┆ 200   ┆ 6.34 ms ┆ 0.69 ms ┆ 4.94 ms ┆ 6.33 ms ┆ 7.48 ms ┆ 8.72 ms ┆ 9.78 ms ┆ warm        ┆ 148592      ┆ 148592      ┆ 49             │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 400       ┆ 200   ┆ 9.21 ms ┆ 1.08 ms ┆ 6.65 ms ┆ 9.07 ms ┆ 11.2 ms ┆ 12.1 ms ┆ 13.3 ms ┆ warm        ┆ 149248      ┆ 149248      ┆ 71             │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 800       ┆ 200   ┆ 14.6 ms ┆ 1.92 ms ┆ 9.46 ms ┆ 14.7 ms ┆ 17.6 ms ┆ 19.5 ms ┆ 22.5 ms ┆ warm        ┆ 151484      ┆ 151484      ┆ 112            │
+└───────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────────┴─────────────┴─────────────┴────────────────┘
+[suite:task168-phase3-prefetch-after] wrote reviews/task-168/003-prefetch-block-reads/artifacts/suite-manifest.json
+[suite:task168-phase3-prefetch-after] evict-100k-l64 -> --database tqvector_bench --host /home/peter/.pgrx --port 28818 dev evict-relation-cache --prefix t168_p1_real100k_diskann --log-file reviews/task-168/003-prefetch-block-reads/artifacts/evict-100k-l64.log
+[suite:task168-phase3-prefetch-after] wrote reviews/task-168/003-prefetch-block-reads/artifacts/suite-manifest.json
+cache_evict_start database=tqvector_bench dry_run=false data_directory=/home/peter/.pgrx/data-18 relations=5 files=10 bytes=1710055424
+cache_evict_file status=evicted relation=pg_toast_166369513 relkind=t bytes=1073741824 path=/home/peter/.pgrx/data-18/base/166187735/166369519
+cache_evict_file status=evicted relation=pg_toast_166369513 relkind=t bytes=564658176 path=/home/peter/.pgrx/data-18/base/166187735/166369519.1
+cache_evict_file status=evicted relation=pg_toast_166369513 relkind=t bytes=425984 path=/home/peter/.pgrx/data-18/base/166187735/166369519_fsm
+cache_evict_file status=evicted relation=pg_toast_166369513 relkind=t bytes=57344 path=/home/peter/.pgrx/data-18/base/166187735/166369519_vm
+cache_evict_file status=evicted relation=pg_toast_166369513_index relkind=i bytes=18087936 path=/home/peter/.pgrx/data-18/base/166187735/166369520
+cache_evict_file status=evicted relation=t168_p1_real100k_diskann_corpus relkind=r bytes=7659520 path=/home/peter/.pgrx/data-18/base/166187735/166369513
+cache_evict_file status=evicted relation=t168_p1_real100k_diskann_corpus relkind=r bytes=24576 path=/home/peter/.pgrx/data-18/base/166187735/166369513_fsm
+cache_evict_file status=evicted relation=t168_p1_real100k_diskann_corpus relkind=r bytes=8192 path=/home/peter/.pgrx/data-18/base/166187735/166369513_vm
+cache_evict_file status=evicted relation=t168_p1_real100k_diskann_corpus_pkey relkind=i bytes=2260992 path=/home/peter/.pgrx/data-18/base/166187735/166369521
+cache_evict_file status=evicted relation=t168_p1_real100k_diskann_rabitq_idx relkind=i bytes=43130880 path=/home/peter/.pgrx/data-18/base/166187735/166670541
+cache_evict_relation relation=pg_toast_166369513 bytes=1638883328
+cache_evict_relation relation=pg_toast_166369513_index bytes=18087936
+cache_evict_relation relation=t168_p1_real100k_diskann_corpus bytes=7692288
+cache_evict_relation relation=t168_p1_real100k_diskann_corpus_pkey bytes=2260992
+cache_evict_relation relation=t168_p1_real100k_diskann_rabitq_idx bytes=43130880
+cache_evict_summary database=tqvector_bench dry_run=false relations=5 files=10 bytes=1710055424
+[suite:task168-phase3-prefetch-after] wrote reviews/task-168/003-prefetch-block-reads/artifacts/suite-manifest.json
+[suite:task168-phase3-prefetch-after] latency-100k-after-cold-l64 -> --database tqvector_bench --host /home/peter/.pgrx --port 28818 bench latency --prefix t168_p1_real100k_diskann --profile ec_diskann --k 10 --concurrency 1 --iterations 50 --sweep 64 --bits 4 --seed 42 --force-index --sample-backend-memory --cache-state os_evicted --memory-sample-interval-ms 25 --log-output reviews/task-168/003-prefetch-block-reads/artifacts/latency-100k-after-cold-l64.log
+[suite:task168-phase3-prefetch-after] wrote reviews/task-168/003-prefetch-block-reads/artifacts/suite-manifest.json
+┌───────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────────┬─────────────┬─────────────┬────────────────┐
+│ list_size ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state ┆ rss_peak_kb ┆ hwm_peak_kb ┆ memory_samples │
+╞═══════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════════╪═════════════╪═════════════╪════════════════╡
+│ 64        ┆ 50    ┆ 5.44 ms ┆ 1.41 ms ┆ 3.58 ms ┆ 5.12 ms ┆ 8.69 ms ┆ 9.47 ms ┆ 10.1 ms ┆ os_evicted  ┆ 127664      ┆ 127664      ┆ 11             │
+└───────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────────┴─────────────┴─────────────┴────────────────┘
+[suite:task168-phase3-prefetch-after] wrote reviews/task-168/003-prefetch-block-reads/artifacts/suite-manifest.json
+[suite:task168-phase3-prefetch-after] evict-100k-l800 -> --database tqvector_bench --host /home/peter/.pgrx --port 28818 dev evict-relation-cache --prefix t168_p1_real100k_diskann --log-file reviews/task-168/003-prefetch-block-reads/artifacts/evict-100k-l800.log
+[suite:task168-phase3-prefetch-after] wrote reviews/task-168/003-prefetch-block-reads/artifacts/suite-manifest.json
+cache_evict_start database=tqvector_bench dry_run=false data_directory=/home/peter/.pgrx/data-18 relations=5 files=10 bytes=1710055424
+cache_evict_file status=evicted relation=pg_toast_166369513 relkind=t bytes=1073741824 path=/home/peter/.pgrx/data-18/base/166187735/166369519
+cache_evict_file status=evicted relation=pg_toast_166369513 relkind=t bytes=564658176 path=/home/peter/.pgrx/data-18/base/166187735/166369519.1
+cache_evict_file status=evicted relation=pg_toast_166369513 relkind=t bytes=425984 path=/home/peter/.pgrx/data-18/base/166187735/166369519_fsm
+cache_evict_file status=evicted relation=pg_toast_166369513 relkind=t bytes=57344 path=/home/peter/.pgrx/data-18/base/166187735/166369519_vm
+cache_evict_file status=evicted relation=pg_toast_166369513_index relkind=i bytes=18087936 path=/home/peter/.pgrx/data-18/base/166187735/166369520
+cache_evict_file status=evicted relation=t168_p1_real100k_diskann_corpus relkind=r bytes=7659520 path=/home/peter/.pgrx/data-18/base/166187735/166369513
+cache_evict_file status=evicted relation=t168_p1_real100k_diskann_corpus relkind=r bytes=24576 path=/home/peter/.pgrx/data-18/base/166187735/166369513_fsm
+cache_evict_file status=evicted relation=t168_p1_real100k_diskann_corpus relkind=r bytes=8192 path=/home/peter/.pgrx/data-18/base/166187735/166369513_vm
+cache_evict_file status=evicted relation=t168_p1_real100k_diskann_corpus_pkey relkind=i bytes=2260992 path=/home/peter/.pgrx/data-18/base/166187735/166369521
+cache_evict_file status=evicted relation=t168_p1_real100k_diskann_rabitq_idx relkind=i bytes=43130880 path=/home/peter/.pgrx/data-18/base/166187735/166670541
+cache_evict_relation relation=pg_toast_166369513 bytes=1638883328
+cache_evict_relation relation=pg_toast_166369513_index bytes=18087936
+cache_evict_relation relation=t168_p1_real100k_diskann_corpus bytes=7692288
+cache_evict_relation relation=t168_p1_real100k_diskann_corpus_pkey bytes=2260992
+cache_evict_relation relation=t168_p1_real100k_diskann_rabitq_idx bytes=43130880
+cache_evict_summary database=tqvector_bench dry_run=false relations=5 files=10 bytes=1710055424
+[suite:task168-phase3-prefetch-after] wrote reviews/task-168/003-prefetch-block-reads/artifacts/suite-manifest.json
+[suite:task168-phase3-prefetch-after] latency-100k-after-cold-l800 -> --database tqvector_bench --host /home/peter/.pgrx --port 28818 bench latency --prefix t168_p1_real100k_diskann --profile ec_diskann --k 10 --concurrency 1 --iterations 50 --sweep 800 --bits 4 --seed 42 --force-index --sample-backend-memory --cache-state os_evicted --memory-sample-interval-ms 25 --log-output reviews/task-168/003-prefetch-block-reads/artifacts/latency-100k-after-cold-l800.log
+[suite:task168-phase3-prefetch-after] wrote reviews/task-168/003-prefetch-block-reads/artifacts/suite-manifest.json
+┌───────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────────┬─────────────┬─────────────┬────────────────┐
+│ list_size ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state ┆ rss_peak_kb ┆ hwm_peak_kb ┆ memory_samples │
+╞═══════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════════╪═════════════╪═════════════╪════════════════╡
+│ 800       ┆ 50    ┆ 14.4 ms ┆ 2.02 ms ┆ 9.32 ms ┆ 14.4 ms ┆ 17.2 ms ┆ 19.8 ms ┆ 20.2 ms ┆ os_evicted  ┆ 136208      ┆ 136208      ┆ 28             │
+└───────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────────┴─────────────┴─────────────┴────────────────┘
+[suite:task168-phase3-prefetch-after] wrote reviews/task-168/003-prefetch-block-reads/artifacts/suite-manifest.json
+[suite:task168-phase3-prefetch-after] wrote reviews/task-168/003-prefetch-block-reads/artifacts/results.jsonl
+[suite:task168-phase3-prefetch-after] wrote reviews/task-168/003-prefetch-block-reads/artifacts/suite-manifest.json

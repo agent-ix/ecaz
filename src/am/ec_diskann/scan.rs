@@ -75,6 +75,30 @@ pub struct FrontierProfile {
     pub visited_set_ops: usize,
     pub neighbor_slots: usize,
     pub retained_inserts: usize,
+    /// Per-hop `score_batch` width histogram. A "flush" here is one
+    /// prefilter `score_batch` call over the popped node's post-dedup
+    /// fresh neighbors; the width is the number of tuples scored.
+    /// Buckets follow the Task 98 block-kernel convention (1-7, 8-15,
+    /// 16-31, >=32), plus a zero bucket for hops whose neighbors were
+    /// all already in the frontier (pure frontier-maintenance hops).
+    pub flush_width_zero: usize,
+    pub flush_width_buckets: [usize; 4],
+}
+
+impl FrontierProfile {
+    fn record_flush_width(&mut self, width: usize) {
+        if width == 0 {
+            self.flush_width_zero += 1;
+            return;
+        }
+        let bucket = match width {
+            1..=7 => 0,
+            8..=15 => 1,
+            16..=31 => 2,
+            _ => 3,
+        };
+        self.flush_width_buckets[bucket] += 1;
+    }
 }
 
 /// Candidate carried through the greedy loop. Caches the tuple's
@@ -247,13 +271,34 @@ where
     Pf: FnOnce(&[ItemPointer]),
     Re: Fn(ItemPointer) -> f32,
 {
+    vamana_scan_beam_with(reader, scratch, params, 1, prefilter, prefetch, rerank)
+}
+
+/// Width-W batched-beam variant of [`vamana_scan_with`] (Task 168
+/// Phase 2). `beam_width == 1` is the legacy one-pop loop.
+pub fn vamana_scan_beam_with<R, Pre, Pf, Re>(
+    reader: &R,
+    scratch: &mut VisitedState,
+    params: ScanParams,
+    beam_width: usize,
+    prefilter: Pre,
+    prefetch: Pf,
+    rerank: Re,
+) -> Result<Vec<ScanResult>, String>
+where
+    R: GraphReader + ?Sized,
+    Pre: VamanaPrefilter,
+    Pf: FnOnce(&[ItemPointer]),
+    Re: Fn(ItemPointer) -> f32,
+{
     validate_scan_params(params)?;
 
-    let frontier = greedy_descent_with(
+    let frontier = greedy_descent_beam_with(
         reader,
         scratch,
         params.entry_point,
         params.list_size,
+        beam_width,
         &prefilter,
     )?;
     finish_scan_rerank(frontier, params, prefetch, rerank)
@@ -274,13 +319,44 @@ where
     Pf: FnOnce(&[ItemPointer]),
     Re: Fn(ItemPointer) -> f32,
 {
+    vamana_scan_beam_with_frontier_profile(
+        reader,
+        scratch,
+        params,
+        1,
+        prefilter,
+        prefetch,
+        rerank,
+        frontier_profile,
+    )
+}
+
+/// Profiled twin of [`vamana_scan_beam_with`].
+#[allow(clippy::too_many_arguments)]
+pub fn vamana_scan_beam_with_frontier_profile<R, Pre, Pf, Re>(
+    reader: &R,
+    scratch: &mut VisitedState,
+    params: ScanParams,
+    beam_width: usize,
+    prefilter: Pre,
+    prefetch: Pf,
+    rerank: Re,
+    frontier_profile: &mut FrontierProfile,
+) -> Result<Vec<ScanResult>, String>
+where
+    R: GraphReader + ?Sized,
+    Pre: VamanaPrefilter,
+    Pf: FnOnce(&[ItemPointer]),
+    Re: Fn(ItemPointer) -> f32,
+{
     validate_scan_params(params)?;
 
-    let frontier = greedy_descent_with_frontier_profile(
+    let frontier = greedy_descent_beam_with_frontier_profile(
         reader,
         scratch,
         params.entry_point,
         params.list_size,
+        beam_width,
         &prefilter,
         frontier_profile,
     )?;
@@ -420,6 +496,37 @@ where
     R: GraphReader + ?Sized,
     Pre: VamanaPrefilter,
 {
+    greedy_descent_beam_with(reader, scratch, entry_point, list_size, 1, prefilter)
+}
+
+/// Width-W batched-beam variant of [`greedy_descent_with`] (Task 168
+/// Phase 2; the ec_distann FR-081 hop-round shape).
+///
+/// Each round pops up to `beam_width` frontier entries that pass the
+/// same admission check the one-pop loop uses (the retained-set bound
+/// tightens as each popped emittable candidate is inserted, exactly as
+/// in the sequential loop), gathers the deduplicated union of their
+/// fresh neighbors, and scores that union with a single
+/// `prefilter.score_batch` call so the 32-wide block kernels see full
+/// batches. `beam_width == 1` reproduces the legacy loop pop-for-pop.
+///
+/// Relative to one-pop, a wider beam can expand entries that a strictly
+/// sequential loop would have pruned after the first pop's neighbors
+/// tightened the bound — extra reads, never fewer, so the retained set
+/// at fixed `list_size` explores a superset of the sequential frontier.
+pub fn greedy_descent_beam_with<R, Pre>(
+    reader: &R,
+    scratch: &mut VisitedState,
+    entry_point: ItemPointer,
+    list_size: usize,
+    beam_width: usize,
+    prefilter: &Pre,
+) -> Result<Vec<ScanCandidate>, String>
+where
+    R: GraphReader + ?Sized,
+    Pre: VamanaPrefilter,
+{
+    let beam_width = beam_width.max(1);
     scratch.clear();
     scratch.reserve(list_size.saturating_mul(2));
 
@@ -438,45 +545,59 @@ where
     push_frontier_entry(&mut next_heap, entry, neighbors_from_tuple(entry_tuple));
 
     let mut visited_best: Vec<ScanCandidate> = Vec::with_capacity(list_size);
+    let mut picked_entries: Vec<FrontierEntry> = Vec::with_capacity(beam_width);
+    let mut neighbor_tids = Vec::new();
+    let mut neighbor_tuples: Vec<VamanaNodeTuple> = Vec::new();
+    let mut neighbor_scores: Vec<f32> = Vec::new();
+    let mut tuple_pool: Vec<VamanaNodeTuple> = Vec::new();
+    let mut neighbor_vec_pool: Vec<Vec<ItemPointer>> = Vec::new();
     loop {
         maybe_check_for_interrupts();
 
-        let Some(next) = peek_next_active(&next_heap) else {
-            break;
-        };
-        if visited_best.len() >= list_size && next >= visited_best[list_size - 1] {
+        picked_entries.clear();
+        while picked_entries.len() < beam_width {
+            let Some(next) = peek_next_active(&next_heap) else {
+                break;
+            };
+            if visited_best.len() >= list_size && next >= visited_best[list_size - 1] {
+                break;
+            }
+            let picked_entry =
+                pop_next_active(&mut next_heap).expect("peek_next_active returned a candidate");
+            if picked_entry.candidate.emittable {
+                insert_visited_sorted(&mut visited_best, picked_entry.candidate, list_size);
+            }
+            picked_entries.push(picked_entry);
+        }
+        if picked_entries.is_empty() {
             break;
         }
 
-        let picked_entry =
-            pop_next_active(&mut next_heap).expect("peek_next_active returned a candidate");
-        let picked = picked_entry.candidate;
-        if picked.emittable {
-            insert_visited_sorted(&mut visited_best, picked, list_size);
-        }
-
-        let mut neighbor_tids = Vec::new();
-        let mut neighbor_tuples = Vec::new();
-        for nbr in picked_entry
-            .neighbors
-            .into_iter()
-            .take(picked_entry.neighbor_count)
-        {
-            if nbr == ItemPointer::INVALID {
-                continue;
+        neighbor_tids.clear();
+        neighbor_tuples.clear();
+        for mut picked_entry in picked_entries.drain(..) {
+            let neighbor_count = picked_entry.neighbor_count;
+            for nbr in picked_entry.neighbors.drain(..).take(neighbor_count) {
+                if nbr == ItemPointer::INVALID {
+                    continue;
+                }
+                if !scratch.in_frontier.insert(nbr) {
+                    continue;
+                }
+                neighbor_tids.push(nbr);
+                let mut tuple = tuple_pool.pop().unwrap_or_else(VamanaNodeTuple::empty);
+                reader.read_node_into(nbr, &mut tuple)?;
+                neighbor_tuples.push(tuple);
             }
-            if !scratch.in_frontier.insert(nbr) {
-                continue;
-            }
-            neighbor_tids.push(nbr);
-            neighbor_tuples.push(reader.read_node(nbr)?);
+            neighbor_vec_pool.push(picked_entry.neighbors);
         }
-        let mut neighbor_scores = vec![0.0_f32; neighbor_tuples.len()];
+        neighbor_scores.clear();
+        neighbor_scores.resize(neighbor_tuples.len(), 0.0);
         prefilter.score_batch(&neighbor_tuples, &mut neighbor_scores);
-        for ((nbr, nbr_tuple), score) in neighbor_tids
-            .into_iter()
-            .zip(neighbor_tuples.into_iter())
-            .zip(neighbor_scores.into_iter())
+        for ((nbr, mut nbr_tuple), score) in neighbor_tids
+            .drain(..)
+            .zip(neighbor_tuples.drain(..))
+            .zip(neighbor_scores.iter().copied())
         {
             let candidate = ScanCandidate {
                 tid: nbr,
@@ -485,7 +606,14 @@ where
                 emittable: nbr_tuple.is_live(),
                 has_overflow_heaptids: nbr_tuple.has_overflow_heaptids,
             };
-            push_frontier_entry(&mut next_heap, candidate, neighbors_from_tuple(nbr_tuple));
+            let neighbor_count =
+                usize::from(nbr_tuple.neighbor_count).min(nbr_tuple.neighbors.len());
+            let neighbors = std::mem::replace(
+                &mut nbr_tuple.neighbors,
+                neighbor_vec_pool.pop().unwrap_or_default(),
+            );
+            push_frontier_entry(&mut next_heap, candidate, (neighbors, neighbor_count));
+            tuple_pool.push(nbr_tuple);
         }
     }
 
@@ -505,6 +633,34 @@ where
     R: GraphReader + ?Sized,
     Pre: VamanaPrefilter,
 {
+    greedy_descent_beam_with_frontier_profile(
+        reader,
+        scratch,
+        entry_point,
+        list_size,
+        1,
+        prefilter,
+        frontier_profile,
+    )
+}
+
+/// Profiled twin of [`greedy_descent_beam_with`]. Kept as a separate
+/// loop (matching the pre-existing profiled/unprofiled split) so the
+/// hot path carries no timing branches.
+pub fn greedy_descent_beam_with_frontier_profile<R, Pre>(
+    reader: &R,
+    scratch: &mut VisitedState,
+    entry_point: ItemPointer,
+    list_size: usize,
+    beam_width: usize,
+    prefilter: &Pre,
+    frontier_profile: &mut FrontierProfile,
+) -> Result<Vec<ScanCandidate>, String>
+where
+    R: GraphReader + ?Sized,
+    Pre: VamanaPrefilter,
+{
+    let beam_width = beam_width.max(1);
     scratch.clear();
     scratch.reserve(list_size.saturating_mul(2));
 
@@ -526,65 +682,79 @@ where
     frontier_profile.candidate_heap_ops += 1;
 
     let mut visited_best: Vec<ScanCandidate> = Vec::with_capacity(list_size);
+    let mut picked_entries: Vec<FrontierEntry> = Vec::with_capacity(beam_width);
+    let mut neighbor_tids = Vec::new();
+    let mut neighbor_tuples: Vec<VamanaNodeTuple> = Vec::new();
+    let mut neighbor_scores: Vec<f32> = Vec::new();
+    let mut tuple_pool: Vec<VamanaNodeTuple> = Vec::new();
+    let mut neighbor_vec_pool: Vec<Vec<ItemPointer>> = Vec::new();
     loop {
         maybe_check_for_interrupts();
 
-        let heap_started = Instant::now();
-        let Some(next) = peek_next_active(&next_heap) else {
+        picked_entries.clear();
+        while picked_entries.len() < beam_width {
+            let heap_started = Instant::now();
+            let next = peek_next_active(&next_heap);
             add_profile_elapsed(&mut frontier_profile.candidate_heap_us, heap_started);
             frontier_profile.candidate_heap_ops += 1;
-            break;
-        };
-        add_profile_elapsed(&mut frontier_profile.candidate_heap_us, heap_started);
-        frontier_profile.candidate_heap_ops += 1;
-        if visited_best.len() >= list_size && next >= visited_best[list_size - 1] {
-            break;
-        }
-
-        let heap_started = Instant::now();
-        let picked_entry =
-            pop_next_active(&mut next_heap).expect("peek_next_active returned a candidate");
-        add_profile_elapsed(&mut frontier_profile.candidate_heap_us, heap_started);
-        frontier_profile.candidate_heap_ops += 1;
-        let picked = picked_entry.candidate;
-        if picked.emittable {
-            let retained_started = Instant::now();
-            insert_visited_sorted(&mut visited_best, picked, list_size);
-            add_profile_elapsed(&mut frontier_profile.retained_insert_us, retained_started);
-            frontier_profile.retained_inserts += 1;
-        }
-
-        let mut neighbor_tids = Vec::new();
-        let mut neighbor_tuples = Vec::new();
-        for nbr in picked_entry
-            .neighbors
-            .into_iter()
-            .take(picked_entry.neighbor_count)
-        {
-            let neighbor_started = Instant::now();
-            frontier_profile.neighbor_slots += 1;
-            if nbr == ItemPointer::INVALID {
-                add_profile_elapsed(&mut frontier_profile.neighbor_iter_us, neighbor_started);
-                continue;
+            let Some(next) = next else {
+                break;
+            };
+            if visited_best.len() >= list_size && next >= visited_best[list_size - 1] {
+                break;
             }
-            add_profile_elapsed(&mut frontier_profile.neighbor_iter_us, neighbor_started);
-            let visited_started = Instant::now();
-            if !scratch.in_frontier.insert(nbr) {
+            let heap_started = Instant::now();
+            let picked_entry =
+                pop_next_active(&mut next_heap).expect("peek_next_active returned a candidate");
+            add_profile_elapsed(&mut frontier_profile.candidate_heap_us, heap_started);
+            frontier_profile.candidate_heap_ops += 1;
+            if picked_entry.candidate.emittable {
+                let retained_started = Instant::now();
+                insert_visited_sorted(&mut visited_best, picked_entry.candidate, list_size);
+                add_profile_elapsed(&mut frontier_profile.retained_insert_us, retained_started);
+                frontier_profile.retained_inserts += 1;
+            }
+            picked_entries.push(picked_entry);
+        }
+        if picked_entries.is_empty() {
+            break;
+        }
+
+        neighbor_tids.clear();
+        neighbor_tuples.clear();
+        for mut picked_entry in picked_entries.drain(..) {
+            let neighbor_count = picked_entry.neighbor_count;
+            for nbr in picked_entry.neighbors.drain(..).take(neighbor_count) {
+                let neighbor_started = Instant::now();
+                frontier_profile.neighbor_slots += 1;
+                if nbr == ItemPointer::INVALID {
+                    add_profile_elapsed(&mut frontier_profile.neighbor_iter_us, neighbor_started);
+                    continue;
+                }
+                add_profile_elapsed(&mut frontier_profile.neighbor_iter_us, neighbor_started);
+                let visited_started = Instant::now();
+                if !scratch.in_frontier.insert(nbr) {
+                    add_profile_elapsed(&mut frontier_profile.visited_set_us, visited_started);
+                    frontier_profile.visited_set_ops += 1;
+                    continue;
+                }
                 add_profile_elapsed(&mut frontier_profile.visited_set_us, visited_started);
                 frontier_profile.visited_set_ops += 1;
-                continue;
+                neighbor_tids.push(nbr);
+                let mut tuple = tuple_pool.pop().unwrap_or_else(VamanaNodeTuple::empty);
+                reader.read_node_into(nbr, &mut tuple)?;
+                neighbor_tuples.push(tuple);
             }
-            add_profile_elapsed(&mut frontier_profile.visited_set_us, visited_started);
-            frontier_profile.visited_set_ops += 1;
-            neighbor_tids.push(nbr);
-            neighbor_tuples.push(reader.read_node(nbr)?);
+            neighbor_vec_pool.push(picked_entry.neighbors);
         }
-        let mut neighbor_scores = vec![0.0_f32; neighbor_tuples.len()];
+        frontier_profile.record_flush_width(neighbor_tuples.len());
+        neighbor_scores.clear();
+        neighbor_scores.resize(neighbor_tuples.len(), 0.0);
         prefilter.score_batch(&neighbor_tuples, &mut neighbor_scores);
-        for ((nbr, nbr_tuple), score) in neighbor_tids
-            .into_iter()
-            .zip(neighbor_tuples.into_iter())
-            .zip(neighbor_scores.into_iter())
+        for ((nbr, mut nbr_tuple), score) in neighbor_tids
+            .drain(..)
+            .zip(neighbor_tuples.drain(..))
+            .zip(neighbor_scores.iter().copied())
         {
             let candidate = ScanCandidate {
                 tid: nbr,
@@ -593,10 +763,17 @@ where
                 emittable: nbr_tuple.is_live(),
                 has_overflow_heaptids: nbr_tuple.has_overflow_heaptids,
             };
+            let neighbor_count =
+                usize::from(nbr_tuple.neighbor_count).min(nbr_tuple.neighbors.len());
+            let neighbors = std::mem::replace(
+                &mut nbr_tuple.neighbors,
+                neighbor_vec_pool.pop().unwrap_or_default(),
+            );
             let heap_started = Instant::now();
-            push_frontier_entry(&mut next_heap, candidate, neighbors_from_tuple(nbr_tuple));
+            push_frontier_entry(&mut next_heap, candidate, (neighbors, neighbor_count));
             add_profile_elapsed(&mut frontier_profile.candidate_heap_us, heap_started);
             frontier_profile.candidate_heap_ops += 1;
+            tuple_pool.push(nbr_tuple);
         }
     }
 
@@ -1324,6 +1501,102 @@ mod tests {
         assert!(
             profile.retained_inserts >= params.rerank_budget,
             "retained inserts should cover the rerank budget"
+        );
+        let recorded_flushes =
+            profile.flush_width_zero + profile.flush_width_buckets.iter().sum::<usize>();
+        assert!(
+            recorded_flushes > 0,
+            "flush-width histogram must record one entry per expanded hop"
+        );
+        assert_eq!(
+            profile.flush_width_buckets[2] + profile.flush_width_buckets[3],
+            0,
+            "degree-4 chain fixture can never flush 16+ wide"
+        );
+    }
+
+    #[test]
+    fn sc_011c_batched_beam_matches_sequential_results() {
+        let n = 64;
+        let g = chain_graph(n, 4);
+        let payloads = synth_payloads(n, 0, 0);
+        let persisted =
+            persist_vamana_graph(&g, 0, DEFAULT_PAGE_SIZE, &payloads, 4, 0, 0).expect("persist");
+        let reader = PersistedGraphReader::new(&persisted.chain, 4, 0, 0);
+
+        let prefilter = |t: &VamanaNodeTuple| (t.primary_heaptid.block_number - 1000) as f32;
+        let rerank = |hip: ItemPointer| (hip.block_number - 1000) as f32;
+        let params = ScanParams {
+            entry_point: persisted.entry_point_tid,
+            list_size: 12,
+            rerank_budget: 8,
+            top_k: 5,
+        };
+
+        use crate::am::ec_diskann::reader::VisitedState;
+        let mut scratch = VisitedState::new();
+        let sequential = vamana_scan_beam_with(
+            &reader,
+            &mut scratch,
+            params,
+            1,
+            prefilter,
+            |_: &[ItemPointer]| {},
+            rerank,
+        )
+        .expect("sequential");
+        for beam_width in [2, 4, 8, 64] {
+            let batched = vamana_scan_beam_with(
+                &reader,
+                &mut scratch,
+                params,
+                beam_width,
+                prefilter,
+                |_: &[ItemPointer]| {},
+                rerank,
+            )
+            .expect("batched");
+            assert_eq!(
+                batched, sequential,
+                "beam width {beam_width} must return the sequential results on the chain fixture"
+            );
+        }
+
+        let mut profile = FrontierProfile::default();
+        let wide = vamana_scan_beam_with_frontier_profile(
+            &reader,
+            &mut scratch,
+            params,
+            8,
+            prefilter,
+            |_: &[ItemPointer]| {},
+            rerank,
+            &mut profile,
+        )
+        .expect("profiled batched");
+        assert_eq!(wide, sequential);
+        let mut sequential_profile = FrontierProfile::default();
+        let seq_again = vamana_scan_beam_with_frontier_profile(
+            &reader,
+            &mut scratch,
+            params,
+            1,
+            prefilter,
+            |_: &[ItemPointer]| {},
+            rerank,
+            &mut sequential_profile,
+        )
+        .expect("profiled sequential");
+        assert_eq!(seq_again, sequential);
+        // A chain graph exposes few admissible frontier entries per
+        // round, so the beam cannot widen flushes much here — but
+        // batching rounds must never *increase* the flush count.
+        let flushes = |p: &FrontierProfile| {
+            p.flush_width_zero + p.flush_width_buckets.iter().sum::<usize>()
+        };
+        assert!(
+            flushes(&profile) <= flushes(&sequential_profile),
+            "batched rounds must not exceed the sequential flush count"
         );
     }
 

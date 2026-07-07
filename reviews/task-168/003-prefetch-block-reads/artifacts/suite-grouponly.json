@@ -1,0 +1,93 @@
+{
+  "name": "task168-phase3-grouponly",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-168/003-prefetch-block-reads/artifacts",
+  "defaults": {
+    "pg": 18,
+    "socket_dir": "/home/peter/.pgrx",
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 200,
+    "iterations": 200,
+    "force_index": true,
+    "sample_backend_memory": true,
+    "memory_sample_interval_ms": 25
+  },
+  "steps": [
+    {
+      "kind": "latency",
+      "name": "latency-10k-grouponly",
+      "tags": [
+        "task168",
+        "phase3",
+        "grouponly",
+        "ec_real_10k",
+        "diskann",
+        "w4",
+        "latency"
+      ],
+      "prefix": "t168_p1_real10k_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128,
+        200,
+        400,
+        800
+      ],
+      "cache_state": "warm",
+      "log_output": "reviews/task-168/003-prefetch-block-reads/artifacts/latency-10k-grouponly.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-50k-grouponly",
+      "tags": [
+        "task168",
+        "phase3",
+        "grouponly",
+        "ec_real_50k",
+        "diskann",
+        "w4",
+        "latency"
+      ],
+      "prefix": "t168_p1_real50k_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128,
+        200,
+        400,
+        800
+      ],
+      "cache_state": "warm",
+      "log_output": "reviews/task-168/003-prefetch-block-reads/artifacts/latency-50k-grouponly.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-grouponly",
+      "tags": [
+        "task168",
+        "phase3",
+        "grouponly",
+        "ec_real_100k",
+        "diskann",
+        "w4",
+        "latency"
+      ],
+      "prefix": "t168_p1_real100k_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128,
+        200,
+        400,
+        800
+      ],
+      "cache_state": "warm",
+      "log_output": "reviews/task-168/003-prefetch-block-reads/artifacts/latency-100k-grouponly.log"
+    }
+  ]
+}
