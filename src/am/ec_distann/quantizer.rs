@@ -8,6 +8,11 @@
 
 use std::sync::Arc;
 
+use crate::am::common::candidate_batch::{
+    score_grouped_pq_batch_for, score_rabitq_bits1_batch_for,
+    score_turboquant_no_qjl_4bit_batch_for, CandidateBatch, CandidateBatchScoringSurface,
+    CandidateMeta, CandidatePayload,
+};
 use crate::am::common::training::{self, GroupedPq4Model};
 use crate::quant::{
     grouped_pq::{build_grouped_pq_lut_f32, grouped_pq_score_f32, GROUPED_PQ_CENTROIDS},
@@ -248,6 +253,109 @@ impl DistannPreparedQuery {
                 prepared,
             } => -quantizer.score_ip_from_parts_lut_no_qjl_4bit(prepared, code),
         }
+    }
+}
+
+impl DistannPreparedQuery {
+    /// Batched variant of [`Self::score_dist`] over a fixed-stride block of
+    /// `count` codes (the FR-076 embedded neighbor-code block): dispatches
+    /// into the 32-wide block kernels instead of per-code scalar scoring.
+    pub(crate) fn score_dists_batch(
+        &self,
+        codes: &[u8],
+        code_len: usize,
+        count: usize,
+        out_scores: &mut [f32],
+    ) -> Result<(), String> {
+        if out_scores.len() != count || codes.len() < count * code_len {
+            return Err("ec_distann batch scoring shape mismatch".to_owned());
+        }
+        if count == 0 {
+            return Ok(());
+        }
+        match self {
+            Self::GroupedPq {
+                query_lut,
+                group_count,
+            } => {
+                let mut batch = CandidateBatch::with_capacity(count);
+                for slot in 0..count {
+                    batch.push(
+                        slot,
+                        CandidatePayload::new(
+                            &codes[slot * code_len..(slot + 1) * code_len],
+                            CandidateMeta::GroupedPq {
+                                group_count: *group_count,
+                            },
+                        ),
+                    )?;
+                }
+                score_grouped_pq_batch_for(
+                    CandidateBatchScoringSurface::Distann,
+                    query_lut,
+                    *group_count,
+                    &batch,
+                    out_scores,
+                )?;
+            }
+            Self::RaBitQ { prepared } => {
+                match prepared.bits1_block_prepared(code_len) {
+                    Some(block_prepared) => {
+                        let mut batch = CandidateBatch::with_capacity(count);
+                        for slot in 0..count {
+                            batch.push(
+                                slot,
+                                CandidatePayload::new(
+                                    &codes[slot * code_len..(slot + 1) * code_len],
+                                    CandidateMeta::RaBitQ,
+                                ),
+                            )?;
+                        }
+                        score_rabitq_bits1_batch_for(
+                            CandidateBatchScoringSurface::Distann,
+                            block_prepared,
+                            &batch,
+                            out_scores,
+                        )?;
+                    }
+                    None => {
+                        for slot in 0..count {
+                            out_scores[slot] = prepared.estimate_ip_scalar_only(
+                                &codes[slot * code_len..(slot + 1) * code_len],
+                            );
+                        }
+                    }
+                }
+            }
+            Self::TurboQuant {
+                quantizer,
+                prepared,
+            } => {
+                let mut batch = CandidateBatch::with_capacity(count);
+                for slot in 0..count {
+                    batch.push(
+                        slot,
+                        CandidatePayload::new(
+                            &codes[slot * code_len..(slot + 1) * code_len],
+                            CandidateMeta::None,
+                        ),
+                    )?;
+                }
+                score_turboquant_no_qjl_4bit_batch_for(
+                    CandidateBatchScoringSurface::Distann,
+                    quantizer,
+                    prepared,
+                    &batch,
+                    out_scores,
+                )?;
+            }
+        }
+        // Codec batch entry points return ip estimates; the scan distance
+        // convention is -ip (matching score_dist).
+        for score in out_scores.iter_mut() {
+            *score = -*score;
+        }
+        Ok(())
     }
 }
 

@@ -75,7 +75,10 @@ impl DistannNodeExpander for LocalNodeExpander<'_> {
         vec_ids: &[u64],
         code_threshold: Option<f32>,
     ) -> Result<Vec<DistannExpandedNode>, String> {
+        // Pass 1: one record read per vec_id; neighbor codes scored with
+        // one block-kernel batch call per record (32-wide cascade).
         let mut responses = Vec::with_capacity(vec_ids.len());
+        let mut batch_dists: Vec<f32> = Vec::new();
         for vec_id in vec_ids {
             // Single-node deployment owns every vec_id: an unresolved id is
             // the FR-079 owned-but-absent structural fault, never a miss.
@@ -96,12 +99,16 @@ impl DistannNodeExpander for LocalNodeExpander<'_> {
             let is_tombstone = node.tombstoned;
             let heap_tid = node.heap_tid;
             let neighbor_count = usize::from(node.neighbor_count);
+            batch_dists.resize(neighbor_count, 0.0);
+            self.prepared_query.score_dists_batch(
+                &node.neighbor_codes,
+                self.code_len,
+                neighbor_count,
+                &mut batch_dists,
+            )?;
             let mut neighbor_vec_ids = Vec::with_capacity(neighbor_count);
             let mut neighbor_code_dists = Vec::with_capacity(neighbor_count);
-            for slot in 0..neighbor_count {
-                let code =
-                    &node.neighbor_codes[slot * self.code_len..(slot + 1) * self.code_len];
-                let code_dist = self.prepared_query.score_dist(code);
+            for (slot, code_dist) in batch_dists.iter().copied().enumerate() {
                 // FR-079 code_threshold: an ip-score floor; neighbors whose
                 // estimated ip (-code_dist) falls below it MAY be omitted.
                 if let Some(threshold) = code_threshold {
@@ -113,29 +120,45 @@ impl DistannNodeExpander for LocalNodeExpander<'_> {
                 neighbor_code_dists.push(code_dist);
             }
 
-            // Tombstones skip the vector read (FR-079); their edges above
-            // keep traversal continuity.
-            let exact_dist = if is_tombstone {
-                None
-            } else {
-                Some(exact_heap_rerank_distance(
-                    self.heap_relation,
-                    self.snapshot,
-                    self.slot,
-                    self.source_attnum,
-                    self.raw_query,
-                    heap_tid,
-                )?)
-            };
-
             responses.push(DistannExpandedNode {
                 vec_id: *vec_id,
-                exact_dist,
+                exact_dist: None,
                 is_tombstone,
                 heap_tid,
                 neighbor_vec_ids,
                 neighbor_code_dists,
             });
+        }
+
+        // Prefetch the co-placed heap blocks for the whole batch before the
+        // exact reads (mirrors the ec_diskann rerank prefetch).
+        let rerank_blocks: Vec<ItemPointer> = responses
+            .iter()
+            .filter(|response| !response.is_tombstone)
+            .map(|response| response.heap_tid)
+            .collect();
+        if !rerank_blocks.is_empty() {
+            crate::am::stream::prefetch_relation_blocks(
+                self.heap_relation,
+                rerank_blocks.iter().map(|tid| tid.block_number).collect(),
+                "ec_distann heap rerank",
+            );
+        }
+
+        // Pass 2: one co-placed heap read per live record for the exact
+        // distance (D11). Tombstones skip the vector read (FR-079); their
+        // edges from pass 1 keep traversal continuity.
+        for response in &mut responses {
+            if !response.is_tombstone {
+                response.exact_dist = Some(exact_heap_rerank_distance(
+                    self.heap_relation,
+                    self.snapshot,
+                    self.slot,
+                    self.source_attnum,
+                    self.raw_query,
+                    response.heap_tid,
+                )?);
+            }
         }
         Ok(responses)
     }
