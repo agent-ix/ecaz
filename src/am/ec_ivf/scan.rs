@@ -1948,9 +1948,10 @@ unsafe fn materialize_probe_candidates(
     // during the posting visitor above.
     let best_by_heap_tid = unsafe { &mut *best_by_heap_tid };
     let topk_collect_started = Instant::now();
+    let candidate_len = best_by_heap_tid.candidates().len();
     let mut ranked = collect_ranked_probe_candidates(
         best_by_heap_tid.candidates().iter().copied(),
-        pre_rerank_candidate_limit(index_options),
+        ranked_collect_limit(index_options, candidate_len),
     );
     record_stage_elapsed(
         opaque,
@@ -1962,16 +1963,16 @@ unsafe fn materialize_probe_candidates(
         super::stage_counters::IvfQueryStage::ApproximateScan,
         approximate_started.elapsed(),
     );
-    // The lazy-heap path never reranks: a `Some` pre-rerank limit is exactly
-    // the heap_f32 condition, and `rerank_probe_candidates` is a no-op for
-    // every other rerank mode, so skipping the call for `LazyHeap` is
-    // behavior-identical to the former unconditional call.
+    // The lazy-heap path is taken iff rerank is not heap_f32 (see
+    // `pre_rerank_candidate_limit`), and `rerank_probe_candidates` is a no-op
+    // for every non-heap_f32 mode, so skipping the call for `LazyHeap` is
+    // behavior-identical to the former unconditional call. heap_f32 always
+    // takes the sorted path below — including the "rerank all" width<=0
+    // sentinel, which sorts the whole frontier — and always reranks.
     if let RankedProbeCandidates::Sorted(candidates) = &mut ranked {
-        let should_record_exact_rerank = matches!(
-            index_options.rerank.v1_effective(),
-            super::options::RerankMode::HeapF32
-        ) && pre_rerank_candidate_limit(index_options).is_some()
-            && !candidates.is_empty();
+        // Reaching the sorted path means heap_f32 rerank is active, so the
+        // exact rerank always runs here (an empty frontier is a no-op).
+        let should_record_exact_rerank = !candidates.is_empty();
         // SAFETY: candidates were materialized for this live scan and opaque;
         // the rerank helper validates whether heap_f32 state is present
         // before use.
@@ -2515,10 +2516,36 @@ fn pre_rerank_candidate_limit(index_options: &super::options::EcIvfOptions) -> O
     }
 }
 
-/// The ranked output of a probe collect. The bounded pre-rerank path stays a
-/// fully sorted vec (the exact heap-f32 rerank consumes an ascending
-/// prefix); the unbounded path (no pre-rerank limit — the shipping default,
-/// where rerank mode is not heap_f32) becomes a min-heap popped lazily by
+/// Collect limit passed to `collect_ranked_probe_candidates`, which uses `Some`
+/// to select the fully-sorted vec and `None` to select the lazy min-heap.
+///
+/// heap_f32 always reranks, so it MUST take the sorted path (never the lazy
+/// heap, which skips rerank): a positive rerank width bounds the pre-rerank
+/// frontier to the top `width`, and the "rerank all" width<=0 sentinel sorts
+/// the whole frontier (`candidate_len`). Every non-heap_f32 mode never reranks
+/// and takes the lazy heap (`None`) — the shipping-default fast path. Keeping
+/// heap_f32+width<=0 on the sorted path is what prevents the exact rerank from
+/// being silently skipped (a recall regression vs the former unconditional
+/// rerank).
+fn ranked_collect_limit(
+    index_options: &super::options::EcIvfOptions,
+    candidate_len: usize,
+) -> Option<usize> {
+    if matches!(
+        index_options.rerank.v1_effective(),
+        super::options::RerankMode::HeapF32
+    ) {
+        Some(pre_rerank_candidate_limit(index_options).unwrap_or(candidate_len))
+    } else {
+        None
+    }
+}
+
+/// The ranked output of a probe collect. The heap_f32 rerank path stays a
+/// fully sorted vec (the exact heap-f32 rerank consumes an ascending prefix,
+/// or the whole frontier when width<=0); the unbounded path (no pre-rerank
+/// limit — the shipping default, where rerank mode is not heap_f32) becomes a
+/// min-heap popped lazily by
 /// `next_posting_candidate`. Pop order equals the former full-sort order
 /// because `candidate_cmp` is a strict total order over distinct heap tids,
 /// so this replaces the per-query O(n log n) sort over every deduped
@@ -4871,7 +4898,7 @@ mod tests {
     use super::{
         build_probe_block_sequence, candidate_cmp, candidate_heap_blocks, candidate_heap_tid_cmp,
         choose_adaptive_nprobe, collect_ranked_probe_candidates, consume_live_tid_budget,
-        inner_product, inner_product_scalar, pre_rerank_candidate_limit,
+        inner_product, inner_product_scalar, pre_rerank_candidate_limit, ranked_collect_limit,
         rerank_group_payload_for_candidate, select_probe_lists, select_probe_lists_with_adaptive,
         use_scratch_soa_batch_decode_for_format, CandidateDedupPool, CandidateRecordOutcome,
         CandidateTopK, EcIvfCentroidScore, EcIvfScoredCandidate, IvfDensePostingBlockScratch,
@@ -5665,6 +5692,34 @@ mod tests {
         );
         assert_eq!(
             pre_rerank_candidate_limit(&options_with_rerank(RerankMode::Auto, 50)),
+            None
+        );
+    }
+
+    #[test]
+    fn ranked_collect_limit_keeps_heap_f32_on_sorted_path_including_rerank_all() {
+        // Positive width -> bounded sorted top-`width` (unchanged from before).
+        assert_eq!(
+            ranked_collect_limit(&options_with_rerank(RerankMode::HeapF32, 50), 1000),
+            Some(50)
+        );
+        // heap_f32 + width<=0 is the "rerank all" sentinel: it MUST stay on the
+        // sorted path (Some == full pool length), NOT fall through to the lazy
+        // heap, otherwise the exact rerank is silently skipped and recall
+        // regresses vs the former unconditional rerank. This is the Task 145
+        // review fix (2026-07-06).
+        assert_eq!(
+            ranked_collect_limit(&options_with_rerank(RerankMode::HeapF32, 0), 1000),
+            Some(1000)
+        );
+        // Non-heap_f32 modes never rerank -> lazy heap (None), the default fast
+        // path that carries the topk_collect win.
+        assert_eq!(
+            ranked_collect_limit(&options_with_rerank(RerankMode::Off, 50), 1000),
+            None
+        );
+        assert_eq!(
+            ranked_collect_limit(&options_with_rerank(RerankMode::Auto, 50), 1000),
             None
         );
     }
