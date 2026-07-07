@@ -1,0 +1,459 @@
+{
+  "name": "task168-phase1-rabitq-characterization",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-168/001-rabitq-characterization/artifacts",
+  "defaults": {
+    "pg": 18,
+    "socket_dir": "/home/peter/.pgrx",
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 200,
+    "iterations": 200,
+    "force_index": true,
+    "sample_backend_memory": true,
+    "memory_sample_interval_ms": 25
+  },
+  "steps": [
+    {
+      "kind": "load",
+      "name": "load-10k-diskann-rabitq",
+      "tags": [
+        "task168",
+        "phase1",
+        "rabitq",
+        "ec_real_10k",
+        "diskann",
+        "load"
+      ],
+      "prefix": "t168_p1_real10k_diskann",
+      "corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_10k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_10k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "profile": "ec_diskann",
+      "storage_format": "rabitq",
+      "reloptions": [
+        "graph_degree=32",
+        "build_list_size=100",
+        "alpha=1.2",
+        "rerank_budget=64",
+        "top_k=10"
+      ],
+      "log_file": "reviews/task-168/001-rabitq-characterization/artifacts/load-10k-diskann-rabitq.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-10k-diskann-rabitq",
+      "tags": [
+        "task168",
+        "phase1",
+        "rabitq",
+        "ec_real_10k",
+        "diskann",
+        "recall"
+      ],
+      "prefix": "t168_p1_real10k_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128,
+        200,
+        400,
+        800
+      ],
+      "truth_cache_file": "reviews/task-168/001-rabitq-characterization/artifacts/truth-10k-k10.json",
+      "log_output": "reviews/task-168/001-rabitq-characterization/artifacts/recall-10k-diskann-rabitq.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-10k-diskann-rabitq",
+      "tags": [
+        "task168",
+        "phase1",
+        "rabitq",
+        "ec_real_10k",
+        "diskann",
+        "latency"
+      ],
+      "prefix": "t168_p1_real10k_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128,
+        200,
+        400,
+        800
+      ],
+      "log_output": "reviews/task-168/001-rabitq-characterization/artifacts/latency-10k-diskann-rabitq.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-10k-diskann-rabitq",
+      "tags": [
+        "task168",
+        "phase1",
+        "rabitq",
+        "ec_real_10k",
+        "diskann",
+        "storage"
+      ],
+      "prefix": "t168_p1_real10k_diskann"
+    },
+    {
+      "kind": "raw",
+      "name": "profile-notices-10k-l64",
+      "tags": [
+        "task168",
+        "phase1",
+        "rabitq",
+        "ec_real_10k",
+        "diskann",
+        "profile",
+        "scan-profile",
+        "l64"
+      ],
+      "args": [
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "tqvector_bench",
+        "--raw",
+        "--file",
+        "reviews/task-168/001-rabitq-characterization/artifacts/profile-notices-10k-l64.sql",
+        "--log-output",
+        "reviews/task-168/001-rabitq-characterization/artifacts/profile-notices-10k-l64.log"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/001-rabitq-characterization/artifacts/profile-notices-10k-l64.log"
+      ]
+    },
+    {
+      "kind": "raw",
+      "name": "profile-notices-10k-l800",
+      "tags": [
+        "task168",
+        "phase1",
+        "rabitq",
+        "ec_real_10k",
+        "diskann",
+        "profile",
+        "scan-profile",
+        "l800"
+      ],
+      "args": [
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "tqvector_bench",
+        "--raw",
+        "--file",
+        "reviews/task-168/001-rabitq-characterization/artifacts/profile-notices-10k-l800.sql",
+        "--log-output",
+        "reviews/task-168/001-rabitq-characterization/artifacts/profile-notices-10k-l800.log"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/001-rabitq-characterization/artifacts/profile-notices-10k-l800.log"
+      ]
+    },
+    {
+      "kind": "load",
+      "name": "load-50k-diskann-rabitq",
+      "tags": [
+        "task168",
+        "phase1",
+        "rabitq",
+        "ec_real_50k",
+        "diskann",
+        "load"
+      ],
+      "prefix": "t168_p1_real50k_diskann",
+      "corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_50k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "profile": "ec_diskann",
+      "storage_format": "rabitq",
+      "reloptions": [
+        "graph_degree=32",
+        "build_list_size=100",
+        "alpha=1.2",
+        "rerank_budget=64",
+        "top_k=10"
+      ],
+      "log_file": "reviews/task-168/001-rabitq-characterization/artifacts/load-50k-diskann-rabitq.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-50k-diskann-rabitq",
+      "tags": [
+        "task168",
+        "phase1",
+        "rabitq",
+        "ec_real_50k",
+        "diskann",
+        "recall"
+      ],
+      "prefix": "t168_p1_real50k_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128,
+        200,
+        400,
+        800
+      ],
+      "truth_cache_file": "reviews/task-168/001-rabitq-characterization/artifacts/truth-50k-k10.json",
+      "log_output": "reviews/task-168/001-rabitq-characterization/artifacts/recall-50k-diskann-rabitq.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-50k-diskann-rabitq",
+      "tags": [
+        "task168",
+        "phase1",
+        "rabitq",
+        "ec_real_50k",
+        "diskann",
+        "latency"
+      ],
+      "prefix": "t168_p1_real50k_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128,
+        200,
+        400,
+        800
+      ],
+      "log_output": "reviews/task-168/001-rabitq-characterization/artifacts/latency-50k-diskann-rabitq.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-50k-diskann-rabitq",
+      "tags": [
+        "task168",
+        "phase1",
+        "rabitq",
+        "ec_real_50k",
+        "diskann",
+        "storage"
+      ],
+      "prefix": "t168_p1_real50k_diskann"
+    },
+    {
+      "kind": "raw",
+      "name": "profile-notices-50k-l64",
+      "tags": [
+        "task168",
+        "phase1",
+        "rabitq",
+        "ec_real_50k",
+        "diskann",
+        "profile",
+        "scan-profile",
+        "l64"
+      ],
+      "args": [
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "tqvector_bench",
+        "--raw",
+        "--file",
+        "reviews/task-168/001-rabitq-characterization/artifacts/profile-notices-50k-l64.sql",
+        "--log-output",
+        "reviews/task-168/001-rabitq-characterization/artifacts/profile-notices-50k-l64.log"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/001-rabitq-characterization/artifacts/profile-notices-50k-l64.log"
+      ]
+    },
+    {
+      "kind": "raw",
+      "name": "profile-notices-50k-l800",
+      "tags": [
+        "task168",
+        "phase1",
+        "rabitq",
+        "ec_real_50k",
+        "diskann",
+        "profile",
+        "scan-profile",
+        "l800"
+      ],
+      "args": [
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "tqvector_bench",
+        "--raw",
+        "--file",
+        "reviews/task-168/001-rabitq-characterization/artifacts/profile-notices-50k-l800.sql",
+        "--log-output",
+        "reviews/task-168/001-rabitq-characterization/artifacts/profile-notices-50k-l800.log"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/001-rabitq-characterization/artifacts/profile-notices-50k-l800.log"
+      ]
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-diskann-rabitq",
+      "tags": [
+        "task168",
+        "phase1",
+        "rabitq",
+        "ec_real_100k",
+        "diskann",
+        "load"
+      ],
+      "prefix": "t168_p1_real100k_diskann",
+      "corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_100k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "profile": "ec_diskann",
+      "storage_format": "rabitq",
+      "reloptions": [
+        "graph_degree=32",
+        "build_list_size=100",
+        "alpha=1.2",
+        "rerank_budget=64",
+        "top_k=10"
+      ],
+      "log_file": "reviews/task-168/001-rabitq-characterization/artifacts/load-100k-diskann-rabitq.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-diskann-rabitq",
+      "tags": [
+        "task168",
+        "phase1",
+        "rabitq",
+        "ec_real_100k",
+        "diskann",
+        "recall"
+      ],
+      "prefix": "t168_p1_real100k_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128,
+        200,
+        400,
+        800
+      ],
+      "truth_cache_file": "reviews/task-168/001-rabitq-characterization/artifacts/truth-100k-k10.json",
+      "log_output": "reviews/task-168/001-rabitq-characterization/artifacts/recall-100k-diskann-rabitq.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-diskann-rabitq",
+      "tags": [
+        "task168",
+        "phase1",
+        "rabitq",
+        "ec_real_100k",
+        "diskann",
+        "latency"
+      ],
+      "prefix": "t168_p1_real100k_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128,
+        200,
+        400,
+        800
+      ],
+      "log_output": "reviews/task-168/001-rabitq-characterization/artifacts/latency-100k-diskann-rabitq.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k-diskann-rabitq",
+      "tags": [
+        "task168",
+        "phase1",
+        "rabitq",
+        "ec_real_100k",
+        "diskann",
+        "storage"
+      ],
+      "prefix": "t168_p1_real100k_diskann"
+    },
+    {
+      "kind": "raw",
+      "name": "profile-notices-100k-l64",
+      "tags": [
+        "task168",
+        "phase1",
+        "rabitq",
+        "ec_real_100k",
+        "diskann",
+        "profile",
+        "scan-profile",
+        "l64"
+      ],
+      "args": [
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "tqvector_bench",
+        "--raw",
+        "--file",
+        "reviews/task-168/001-rabitq-characterization/artifacts/profile-notices-100k-l64.sql",
+        "--log-output",
+        "reviews/task-168/001-rabitq-characterization/artifacts/profile-notices-100k-l64.log"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/001-rabitq-characterization/artifacts/profile-notices-100k-l64.log"
+      ]
+    },
+    {
+      "kind": "raw",
+      "name": "profile-notices-100k-l800",
+      "tags": [
+        "task168",
+        "phase1",
+        "rabitq",
+        "ec_real_100k",
+        "diskann",
+        "profile",
+        "scan-profile",
+        "l800"
+      ],
+      "args": [
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "tqvector_bench",
+        "--raw",
+        "--file",
+        "reviews/task-168/001-rabitq-characterization/artifacts/profile-notices-100k-l800.sql",
+        "--log-output",
+        "reviews/task-168/001-rabitq-characterization/artifacts/profile-notices-100k-l800.log"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/001-rabitq-characterization/artifacts/profile-notices-100k-l800.log"
+      ]
+    }
+  ]
+}
