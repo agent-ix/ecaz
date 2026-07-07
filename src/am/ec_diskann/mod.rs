@@ -7,6 +7,9 @@
 
 mod ambuild;
 pub(crate) use self::ambuild::{debug_last_build_timing, BuildTimingSnapshot};
+// Generic datum/TID decode helpers shared with `ec_distann` (ADR-085 reuse
+// posture: shared Vamana-family machinery lives here, not forked).
+pub(crate) use self::ambuild::{decode_heap_tid, ecvector_datum_to_vec};
 pub mod build;
 mod cost;
 pub(crate) use self::cost::index_cost_snapshot;

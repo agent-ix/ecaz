@@ -1084,7 +1084,7 @@ pub(super) fn write_data_pages(handle: RelationHandle, chain: &DataPageChain) {
     }
 }
 
-pub(super) unsafe fn decode_heap_tid(tid: pg_sys::ItemPointer) -> ItemPointer {
+pub(crate) unsafe fn decode_heap_tid(tid: pg_sys::ItemPointer) -> ItemPointer {
     if tid.is_null() {
         pgrx::error!("ec_diskann ambuild received a null heap tid");
     }
@@ -1155,7 +1155,7 @@ pub(super) unsafe fn with_ecvector_datum_slice<T>(
     f(body)
 }
 
-pub(super) unsafe fn ecvector_datum_to_vec(datum: pg_sys::Datum) -> Vec<f32> {
+pub(crate) unsafe fn ecvector_datum_to_vec(datum: pg_sys::Datum) -> Vec<f32> {
     with_ecvector_datum_slice(datum, |body| body.to_vec())
 }
 

@@ -2,6 +2,7 @@
 
 pub(crate) mod common;
 mod ec_diskann;
+pub(crate) mod ec_distann;
 mod ec_hnsw;
 pub(crate) mod ec_ivf;
 mod ec_spire;
@@ -374,6 +375,7 @@ pub(crate) use self::ec_spire::remote_search_libpq_identity_cache_contract_probe
 pub(crate) fn register_gucs() {
     common::isa_cap::register_gucs();
     ec_diskann::register_gucs();
+    ec_distann::register_gucs();
     ec_hnsw::register_gucs();
     ec_ivf::register_gucs();
     ec_spire::register_gucs();
