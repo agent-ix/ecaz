@@ -39,7 +39,7 @@ pub(super) struct DiskannScanOpaque {
     pub(super) rerank_budget: usize,
 }
 
-pub(super) struct ResolvedScanHeapRelation {
+pub(crate) struct ResolvedScanHeapRelation {
     relation: pg_sys::Relation,
     _owned: Option<HeapRelationGuard>,
 }
@@ -60,12 +60,12 @@ impl ResolvedScanHeapRelation {
         }
     }
 
-    pub(super) fn as_ptr(&self) -> pg_sys::Relation {
+    pub(crate) fn as_ptr(&self) -> pg_sys::Relation {
         self.relation
     }
 }
 
-pub(super) struct ResolvedScanSnapshot {
+pub(crate) struct ResolvedScanSnapshot {
     snapshot: pg_sys::Snapshot,
     _owned: Option<RegisteredSnapshotGuard>,
 }
@@ -86,7 +86,7 @@ impl ResolvedScanSnapshot {
         }
     }
 
-    pub(super) fn as_ptr(&self) -> pg_sys::Snapshot {
+    pub(crate) fn as_ptr(&self) -> pg_sys::Snapshot {
         self.snapshot
     }
 }
@@ -344,22 +344,22 @@ impl GraphReader for RelationGraphReader {
     }
 }
 
-pub(super) struct DiskannScanDescView<'a> {
+pub(crate) struct DiskannScanDescView<'a> {
     scan: &'a pg_sys::IndexScanDescData,
 }
 
 impl<'a> DiskannScanDescView<'a> {
-    pub(super) unsafe fn from_raw(scan: pg_sys::IndexScanDesc, context: &str) -> Self {
+    pub(crate) unsafe fn from_raw(scan: pg_sys::IndexScanDesc, context: &str) -> Self {
         let scan = unsafe { scan.as_ref() }
             .unwrap_or_else(|| pgrx::error!("{context} received a null scan descriptor"));
         Self { scan }
     }
 
-    pub(super) fn index_relation(&self) -> pg_sys::Relation {
+    pub(crate) fn index_relation(&self) -> pg_sys::Relation {
         self.scan.indexRelation
     }
 
-    pub(super) fn resolve_heap_relation(&self) -> Result<ResolvedScanHeapRelation, String> {
+    pub(crate) fn resolve_heap_relation(&self) -> Result<ResolvedScanHeapRelation, String> {
         if !self.scan.heapRelation.is_null() {
             return Ok(ResolvedScanHeapRelation::borrowed(self.scan.heapRelation));
         }
@@ -375,7 +375,7 @@ impl<'a> DiskannScanDescView<'a> {
             .ok_or_else(|| "ec_diskann scan could not open heap relation".into())
     }
 
-    pub(super) fn resolve_snapshot(&self) -> Result<ResolvedScanSnapshot, String> {
+    pub(crate) fn resolve_snapshot(&self) -> Result<ResolvedScanSnapshot, String> {
         if !self.scan.xs_snapshot.is_null() {
             return Ok(ResolvedScanSnapshot::borrowed(self.scan.xs_snapshot));
         }
@@ -390,7 +390,7 @@ impl<'a> DiskannScanDescView<'a> {
     }
 }
 
-pub(super) fn fetch_heap_row_version_with_reader(
+pub(crate) fn fetch_heap_row_version_with_reader(
     reader: &mut heap_slot::HeapSlotReader<'_>,
     heap_tid: ItemPointer,
 ) -> Result<(), String> {
@@ -403,7 +403,7 @@ pub(super) fn fetch_heap_row_version_with_reader(
     Ok(())
 }
 
-pub(super) fn required_slot_datum_with_reader(
+pub(crate) fn required_slot_datum_with_reader(
     reader: &mut heap_slot::HeapSlotReader<'_>,
     attnum: i32,
     label: &str,
@@ -411,7 +411,7 @@ pub(super) fn required_slot_datum_with_reader(
     reader.required_datum(attnum, label)
 }
 
-pub(super) fn set_scan_heap_tid(scan: pg_sys::IndexScanDesc, heap_tid: ItemPointer) {
+pub(crate) fn set_scan_heap_tid(scan: pg_sys::IndexScanDesc, heap_tid: ItemPointer) {
     // SAFETY: `scan` is the live IndexScanDesc currently returning a tuple, and
     // `xs_heaptid` is PostgreSQL-owned output storage for the heap TID.
     unsafe {

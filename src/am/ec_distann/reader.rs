@@ -49,6 +49,130 @@ pub(crate) fn materialize_chain_from_index_handle(
     Ok((metadata, chain))
 }
 
+/// Fetch one raw tuple's bytes from the live relation (buffer read).
+pub(crate) fn read_raw_tuple_bytes_from_relation(
+    handle: RelationHandle,
+    tid: ItemPointer,
+    context: &str,
+) -> Result<Vec<u8>, String> {
+    let buffer = LockedBufferGuard::read_main_handle(
+        handle,
+        tid.block_number,
+        pg_sys::ReadBufferMode::RBM_NORMAL,
+        pg_sys::BUFFER_LOCK_SHARE as i32,
+    )
+    .ok_or_else(|| format!("{context}: could not open block {}", tid.block_number))?;
+    match buffer.visit_tuple_bytes(tid, context, |raw| Ok(raw.to_vec()))? {
+        LockedPageTupleVisit::Present(bytes) => Ok(bytes),
+        _ => Err(format!(
+            "{context}: no tuple at ({},{})",
+            tid.block_number, tid.offset_number
+        )),
+    }
+}
+
+/// Walk the directory chain from the live relation into one ascending
+/// vec_id -> TID vector (buffer reads; no chain materialization).
+pub(crate) fn read_directory_from_relation(
+    handle: RelationHandle,
+    head_tid: ItemPointer,
+    expected_entries: usize,
+) -> Result<Vec<(u64, ItemPointer)>, String> {
+    let mut entries = Vec::with_capacity(expected_entries);
+    let mut cursor = head_tid;
+    while cursor != ItemPointer::INVALID {
+        let raw =
+            read_raw_tuple_bytes_from_relation(handle, cursor, "ec_distann directory chunk")?;
+        let tuple = DistannDirectoryTuple::decode(&raw)?;
+        entries.extend_from_slice(&tuple.entries);
+        cursor = tuple.next_tid;
+        if entries.len() > expected_entries {
+            return Err(format!(
+                "ec_distann directory chain yielded more than {expected_entries} entries"
+            ));
+        }
+    }
+    if entries.len() != expected_entries {
+        return Err(format!(
+            "ec_distann directory chain yielded {} entries, expected {expected_entries}",
+            entries.len()
+        ));
+    }
+    if !entries.windows(2).all(|pair| pair[0].0 < pair[1].0) {
+        return Err("ec_distann directory chain is not strictly ascending by vec_id".to_owned());
+    }
+    Ok(entries)
+}
+
+/// Walk the FR-080 head-sample chain from the live relation in persisted
+/// (BFS) order.
+pub(crate) fn read_head_samples_from_relation(
+    handle: RelationHandle,
+    head_tid: ItemPointer,
+    dimensions: usize,
+    cap: usize,
+) -> Result<Vec<DistannHeadSampleTuple>, String> {
+    let mut samples = Vec::new();
+    let mut cursor = head_tid;
+    while cursor != ItemPointer::INVALID {
+        let raw =
+            read_raw_tuple_bytes_from_relation(handle, cursor, "ec_distann head sample")?;
+        let tuple = DistannHeadSampleTuple::decode(&raw, dimensions)?;
+        cursor = tuple.next_tid;
+        samples.push(tuple);
+        if samples.len() > cap {
+            return Err(format!(
+                "ec_distann head-sample chain exceeds the head_index_cap {cap}"
+            ));
+        }
+    }
+    if samples.is_empty() {
+        return Err("ec_distann head-sample chain is empty (FR-080 strict policy)".to_owned());
+    }
+    Ok(samples)
+}
+
+/// Walk the persisted GroupedPq codebook chain from the live relation into
+/// the flat centroid array (mirrors ec_diskann's chain reader shape).
+pub(crate) fn read_grouped_codebooks_from_relation(
+    handle: RelationHandle,
+    head_tid: ItemPointer,
+    group_count: usize,
+    centroid_count: usize,
+) -> Result<Vec<f32>, String> {
+    if head_tid == ItemPointer::INVALID {
+        return Err("ec_distann grouped codebook chain head is INVALID".to_owned());
+    }
+    let mut flat = Vec::with_capacity(group_count * centroid_count);
+    let mut cursor = head_tid;
+    let mut group_index = 0_usize;
+    while cursor != ItemPointer::INVALID {
+        let raw =
+            read_raw_tuple_bytes_from_relation(handle, cursor, "ec_distann codebook tuple")?;
+        let tuple = crate::am::VamanaCodebookTuple::decode(&raw, centroid_count)?;
+        if usize::from(tuple.group_index) != group_index {
+            return Err(format!(
+                "ec_distann codebook chain out of order: got group {}, expected {group_index}",
+                tuple.group_index
+            ));
+        }
+        flat.extend_from_slice(&tuple.centroids);
+        cursor = tuple.nexttid;
+        group_index += 1;
+        if group_index > group_count {
+            return Err(format!(
+                "ec_distann codebook chain exceeds group_count {group_count}"
+            ));
+        }
+    }
+    if group_index != group_count {
+        return Err(format!(
+            "ec_distann codebook chain yielded {group_index} groups, expected {group_count}"
+        ));
+    }
+    Ok(flat)
+}
+
 pub(crate) fn read_node(
     chain: &DataPageChain,
     tid: ItemPointer,

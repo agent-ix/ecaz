@@ -15,12 +15,15 @@ mod ambuild;
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::ambuild::read_metadata_from_index;
 mod cost;
+mod expand;
+mod head_cache;
 mod identity;
 mod options;
 pub mod page;
 pub(crate) mod quantizer;
 pub(crate) mod reader;
 mod routine;
+pub(crate) mod scan;
 pub mod tuple;
 
 pub(crate) fn register_gucs() {
@@ -60,3 +63,8 @@ pub(super) const ECDISTANN_MAX_BEAM_WIDTH: i32 = 64;
 /// measurement (ADR-085 D2) pins it.
 pub(super) const ECDISTANN_DEFAULT_HOP_ROUNDS: i32 = 8;
 pub(super) const ECDISTANN_MAX_HOP_ROUNDS: i32 = 64;
+
+/// Result-heap size k for the FR-081 convergence early-exit; session GUC
+/// because k is a query property, not an index property.
+pub(super) const ECDISTANN_DEFAULT_TOP_K: i32 = 10;
+pub(super) const ECDISTANN_MAX_TOP_K: i32 = 10_000;

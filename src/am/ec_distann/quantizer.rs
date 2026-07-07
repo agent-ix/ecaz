@@ -10,8 +10,9 @@ use std::sync::Arc;
 
 use crate::am::common::training::{self, GroupedPq4Model};
 use crate::quant::{
-    prod::{mse_code_len, ProdQuantizer},
-    rabitq::{code_len_for, RaBitQQuantizer},
+    grouped_pq::{build_grouped_pq_lut_f32, grouped_pq_score_f32, GROUPED_PQ_CENTROIDS},
+    prod::{mse_code_len, PreparedLutNoQjl4BitQuery, ProdQuantizer},
+    rabitq::{code_len_for, PreparedEstimator, RaBitQQuantizer},
     Quantizer,
 };
 
@@ -151,4 +152,106 @@ pub(crate) fn metadata_code_len(metadata: &DistannMetadataPage) -> Result<usize,
         )),
         other => Err(format!("ec_distann unsupported neighbor codec kind {other}")),
     }
+}
+
+/// Prepared per-query scoring state; one instance scores both search codes
+/// and embedded neighbor codes (same codec, same stride). `score_dist`
+/// returns the negated estimated inner product, matching the `-ip` distance
+/// convention of the ec_diskann scan path.
+pub(crate) enum DistannPreparedQuery {
+    GroupedPq {
+        query_lut: Vec<f32>,
+        group_count: usize,
+    },
+    RaBitQ {
+        prepared: PreparedEstimator,
+    },
+    TurboQuant {
+        quantizer: Arc<ProdQuantizer>,
+        prepared: PreparedLutNoQjl4BitQuery,
+    },
+}
+
+impl DistannPreparedQuery {
+    /// `flat_codebooks` is required for (and only for) the GroupedPq codec:
+    /// the flat centroid array read from the persisted codebook chain.
+    pub(crate) fn prepare(
+        metadata: &DistannMetadataPage,
+        flat_codebooks: Option<&[f32]>,
+        raw_query: &[f32],
+    ) -> Result<Self, String> {
+        let dimensions = usize::from(metadata.dimensions);
+        if raw_query.len() != dimensions {
+            return Err(format!(
+                "ec_distann query dimension mismatch: index dim {dimensions}, query dim {}",
+                raw_query.len()
+            ));
+        }
+        match metadata.neighbor_codec_kind {
+            DISTANN_NEIGHBOR_CODEC_GROUPED_PQ => {
+                let flat_codebooks = flat_codebooks.ok_or_else(|| {
+                    "ec_distann grouped_pq query preparation requires the codebook chain"
+                        .to_owned()
+                })?;
+                let group_count = usize::from(metadata.codec_subvector_count);
+                let group_size = usize::from(metadata.codec_subvector_dim);
+                if group_count == 0 || group_size == 0 {
+                    return Err(
+                        "ec_distann grouped_pq metadata is missing subvector parameters".to_owned()
+                    );
+                }
+                let rotated = crate::am::ec_diskann::scan_query::encode_query_srht(
+                    raw_query,
+                    dimensions,
+                    metadata.seed,
+                );
+                let query_lut = build_grouped_pq_lut_f32(&rotated, flat_codebooks, group_size);
+                Ok(Self::GroupedPq {
+                    query_lut,
+                    group_count,
+                })
+            }
+            DISTANN_NEIGHBOR_CODEC_RABITQ => {
+                let bits = u8::try_from(metadata.codec_subvector_dim)
+                    .map_err(|_| "ec_distann RaBitQ bit width exceeds u8".to_owned())?;
+                let quantizer =
+                    RaBitQQuantizer::cached_seeded_srht_bits(dimensions, metadata.seed, bits)?;
+                Ok(Self::RaBitQ {
+                    prepared: quantizer.prepare_estimator(raw_query),
+                })
+            }
+            DISTANN_NEIGHBOR_CODEC_TURBOQUANT => {
+                let quantizer =
+                    ProdQuantizer::cached(dimensions, DISTANN_TURBOQUANT_BITS, metadata.seed);
+                let prepared = quantizer.prepare_ip_query_lut_no_qjl_4bit(raw_query);
+                Ok(Self::TurboQuant {
+                    quantizer,
+                    prepared,
+                })
+            }
+            other => Err(format!(
+                "ec_distann unsupported neighbor codec kind {other}"
+            )),
+        }
+    }
+
+    /// Distance-ordered code score (`-estimated_ip`; smaller is better).
+    pub(crate) fn score_dist(&self, code: &[u8]) -> f32 {
+        match self {
+            Self::GroupedPq {
+                query_lut,
+                group_count,
+            } => -grouped_pq_score_f32(query_lut, *group_count, code),
+            Self::RaBitQ { prepared } => -prepared.estimate_ip_scalar_only(code),
+            Self::TurboQuant {
+                quantizer,
+                prepared,
+            } => -quantizer.score_ip_from_parts_lut_no_qjl_4bit(prepared, code),
+        }
+    }
+}
+
+/// Centroid count per codebook tuple for the persisted GroupedPq chain.
+pub(crate) fn grouped_centroid_count(metadata: &DistannMetadataPage) -> usize {
+    usize::from(metadata.codec_subvector_dim) * GROUPED_PQ_CENTROIDS
 }

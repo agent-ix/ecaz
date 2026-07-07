@@ -15,8 +15,9 @@ use super::{
     ECDISTANN_DEFAULT_HEAD_INDEX_CAP, ECDISTANN_DEFAULT_HOP_ROUNDS, ECDISTANN_MAX_ALPHA,
     ECDISTANN_MAX_BEAM_WIDTH, ECDISTANN_MAX_BUILD_LIST_SIZE, ECDISTANN_MAX_CLOSURE_EPSILON,
     ECDISTANN_MAX_GRAPH_DEGREE, ECDISTANN_MAX_HEAD_INDEX_CAP, ECDISTANN_MAX_HOP_ROUNDS,
-    ECDISTANN_MIN_ALPHA, ECDISTANN_MIN_BUILD_LIST_SIZE, ECDISTANN_MIN_CLOSURE_EPSILON,
-    ECDISTANN_MIN_GRAPH_DEGREE, ECDISTANN_MIN_HEAD_INDEX_CAP,
+    ECDISTANN_DEFAULT_TOP_K, ECDISTANN_MAX_TOP_K, ECDISTANN_MIN_ALPHA,
+    ECDISTANN_MIN_BUILD_LIST_SIZE, ECDISTANN_MIN_CLOSURE_EPSILON, ECDISTANN_MIN_GRAPH_DEGREE,
+    ECDISTANN_MIN_HEAD_INDEX_CAP,
 };
 
 /// FR-081 beam width BW: frontier candidates expanded per hop round.
@@ -27,6 +28,11 @@ static ECDISTANN_BEAM_WIDTH_GUC: GucSetting<i32> =
 /// (NFR-019).
 static ECDISTANN_HOP_ROUNDS_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(ECDISTANN_DEFAULT_HOP_ROUNDS);
+
+/// Result-heap size k used by the FR-081 convergence early-exit.
+static ECDISTANN_TOP_K_GUC: GucSetting<i32> = GucSetting::<i32>::new(ECDISTANN_DEFAULT_TOP_K);
+
+static ECDISTANN_SCAN_PROFILE_NOTICE_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
@@ -156,6 +162,32 @@ pub(super) fn register_gucs() {
         GucContext::Userset,
         GucFlags::default(),
     );
+    GucRegistry::define_int_guc(
+        c"ec_distann.top_k",
+        c"Result-heap size k for ec_distann scans.",
+        c"Bounds the FR-081 convergence early-exit: the scan may stop once k exact results cannot be improved by the beam's best unvisited code distance. Results themselves are all expanded records, so a query LIMIT above k still gets rows; set k >= the query LIMIT for correct early-exit behavior.",
+        &ECDISTANN_TOP_K_GUC,
+        1,
+        ECDISTANN_MAX_TOP_K,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    GucRegistry::define_bool_guc(
+        c"ec_distann.scan_profile_notice",
+        c"Emit per-query ec_distann FR-081 traversal counters as NOTICE.",
+        c"Observability for NFR-019/FR-081-AC-5: rounds executed, records expanded (<= BW x H), neighbors code-scored, early-exit and beam-exhaustion flags. The M4 bench pipeline step consumes the same counters.",
+        &ECDISTANN_SCAN_PROFILE_NOTICE_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+}
+
+pub(super) fn current_top_k() -> usize {
+    usize::try_from(ECDISTANN_TOP_K_GUC.get()).unwrap_or(1).max(1)
+}
+
+pub(super) fn scan_profile_notice_enabled() -> bool {
+    ECDISTANN_SCAN_PROFILE_NOTICE_GUC.get()
 }
 
 pub(super) fn current_beam_width() -> usize {

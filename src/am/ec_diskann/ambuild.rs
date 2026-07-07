@@ -805,7 +805,7 @@ pub(crate) fn source_inner_product_distance(left: &[f32], right: &[f32]) -> f32 
 }
 
 #[cfg(target_arch = "x86_64")]
-pub(super) fn source_inner_product(left: &[f32], right: &[f32]) -> f32 {
+pub(crate) fn source_inner_product(left: &[f32], right: &[f32]) -> f32 {
     if std::arch::is_x86_feature_detected!("avx2") && std::arch::is_x86_feature_detected!("fma") {
         // SAFETY: Runtime feature detection guarantees the target features
         // required by the AVX2/FMA kernel before entering the target-feature fn.
@@ -816,7 +816,7 @@ pub(super) fn source_inner_product(left: &[f32], right: &[f32]) -> f32 {
 }
 
 #[cfg(target_arch = "aarch64")]
-pub(super) fn source_inner_product(left: &[f32], right: &[f32]) -> f32 {
+pub(crate) fn source_inner_product(left: &[f32], right: &[f32]) -> f32 {
     if std::arch::is_aarch64_feature_detected!("neon") {
         // SAFETY: Runtime feature detection guarantees NEON support before
         // entering the target-feature fn.
@@ -827,7 +827,7 @@ pub(super) fn source_inner_product(left: &[f32], right: &[f32]) -> f32 {
 }
 
 #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
-pub(super) fn source_inner_product(left: &[f32], right: &[f32]) -> f32 {
+pub(crate) fn source_inner_product(left: &[f32], right: &[f32]) -> f32 {
     source_inner_product_scalar(left, right)
 }
 

@@ -402,6 +402,87 @@ fn test_ec_distann_rebuild_assigns_identical_vec_ids() {
     assert_eq!(metadata_before.seed, metadata_after.seed);
 }
 
+fn assert_distann_self_queries_return_self(table: &str) {
+    // Drive scans through the planner/executor: the ec_hnsw debug scan
+    // driver is HNSW-specific and cannot exercise this AM.
+    Spi::run("SET enable_seqscan = off").expect("disabling seqscan should succeed");
+    for (row, vector) in DISTANN_FIXTURE_ROWS.iter().enumerate() {
+        let top_id = Spi::get_one::<i64>(&format!(
+            "SELECT id FROM {table} \
+             ORDER BY embedding <#> ARRAY[{}, {}, {}, {}]::real[] LIMIT 1",
+            vector[0], vector[1], vector[2], vector[3]
+        ))
+        .expect("SPI query should succeed")
+        .expect("top row should exist");
+        assert_eq!(
+            top_id,
+            (row + 1) as i64,
+            "query vector {row}'s nearest neighbor must be itself"
+        );
+    }
+    Spi::run("RESET enable_seqscan").expect("seqscan reset should succeed");
+}
+
+#[pg_test]
+fn test_ec_distann_ordered_scan_self_recall_rabitq() {
+    create_distann_fixture(
+        "ec_distann_scan_rabitq",
+        "WITH (graph_degree = 4, build_list_size = 16, head_index_cap = 16, \
+               neighbor_code_format = 'rabitq')",
+    );
+    assert_distann_self_queries_return_self("ec_distann_scan_rabitq");
+}
+
+#[pg_test]
+fn test_ec_distann_ordered_scan_self_recall_grouped_pq_default() {
+    // Default codec (D7 GroupedPq): exercises codebook persistence, the
+    // codebook chain reader, and the LUT scoring path end to end.
+    create_distann_fixture(
+        "ec_distann_scan_grouped",
+        "WITH (graph_degree = 4, build_list_size = 16)",
+    );
+    assert_distann_self_queries_return_self("ec_distann_scan_grouped");
+}
+
+#[pg_test]
+fn test_ec_distann_sql_ordered_scan_through_planner() {
+    create_distann_fixture(
+        "ec_distann_sql_scan",
+        "WITH (graph_degree = 4, neighbor_code_format = 'rabitq')",
+    );
+    Spi::run("SET enable_seqscan = off").expect("disabling seqscan should succeed");
+    let (top_id, plan_uses_index) = (
+        Spi::get_one::<i64>(
+            "SELECT id FROM ec_distann_sql_scan \
+             ORDER BY embedding <#> ARRAY[1.0, 0.0, 0.0, 0.0]::real[] LIMIT 1",
+        )
+        .expect("SPI query should succeed")
+        .expect("top row should exist"),
+        Spi::get_one::<String>(
+            "EXPLAIN (FORMAT text) SELECT id FROM ec_distann_sql_scan \
+             ORDER BY embedding <#> ARRAY[1.0, 0.0, 0.0, 0.0]::real[] LIMIT 1",
+        )
+        .expect("EXPLAIN should succeed")
+        .expect("plan should exist"),
+    );
+    assert_eq!(top_id, 1, "unit query e1 must return row 1 first");
+    assert!(
+        plan_uses_index.contains("Limit"),
+        "plan head should be a Limit node: {plan_uses_index}"
+    );
+    Spi::run("SET ec_distann.scan_profile_notice = on")
+        .expect("profile notice GUC should set");
+    let probed = Spi::get_one::<i64>(
+        "SELECT id FROM ec_distann_sql_scan \
+         ORDER BY embedding <#> ARRAY[0.0, 1.0, 0.0, 0.0]::real[] LIMIT 1",
+    )
+    .expect("SPI query should succeed")
+    .expect("top row should exist");
+    assert_eq!(probed, 2);
+    Spi::run("RESET ec_distann.scan_profile_notice").expect("GUC reset should succeed");
+    Spi::run("RESET enable_seqscan").expect("seqscan reset should succeed");
+}
+
 #[pg_test]
 fn test_ec_distann_guc_defaults() {
     let beam_width = Spi::get_one::<String>("SHOW ec_distann.beam_width")
