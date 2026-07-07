@@ -24,13 +24,21 @@ static EC_HNSW_ENABLE_PARALLEL_BUILD_CONCURRENT_DSM_GUC: GucSetting<bool> =
     GucSetting::<bool>::new(true);
 static EC_HNSW_CANDIDATE_BATCH_SCORING_GUC: GucSetting<bool> = GucSetting::<bool>::new(true);
 static EC_HNSW_TURBOQUANT_EXACT_SCORE_MODE_GUC: GucSetting<TurboQuantExactScoreModeGuc> =
-    GucSetting::<TurboQuantExactScoreModeGuc>::new(TurboQuantExactScoreModeGuc::Exact);
+    GucSetting::<TurboQuantExactScoreModeGuc>::new(TurboQuantExactScoreModeGuc::Auto);
 
 /// Session selector for the HNSW TurboQuant exact-score strategy. Replaces
 /// the former `TQVECTOR_TURBOQUANT_EXACT_SCORE_MODE` server environment
 /// variable so benchmark cells can toggle modes per session (Task 98).
+///
+/// Task 144: the default is `auto`, which resolves to `int8_approx` when the
+/// index is on the no-QJL 4-bit lane (recall within noise across the ef
+/// grid, ~10% latency win at mid-ef; `reviews/task-144/001`) and falls back
+/// to `exact` on lanes the factored kernel does not serve. Explicit values
+/// keep their strict lane errors.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PostgresGucEnum)]
 pub(super) enum TurboQuantExactScoreModeGuc {
+    #[name = c"auto"]
+    Auto,
     #[name = c"exact"]
     Exact,
     #[name = c"full_lut"]
@@ -134,7 +142,7 @@ pub(super) fn register_gucs() {
     GucRegistry::define_enum_guc(
         c"ec_hnsw.turboquant_exact_score_mode",
         c"Session selector for the ec_hnsw TurboQuant exact-score strategy.",
-        c"Task 98 measurement switch (formerly the TQVECTOR_TURBOQUANT_EXACT_SCORE_MODE server environment variable). Values: exact, full_lut, tiled_lut, int8_approx.",
+        c"Task 98 measurement switch (formerly the TQVECTOR_TURBOQUANT_EXACT_SCORE_MODE server environment variable). Values: auto (default per Task 144: int8_approx on the no-QJL 4-bit lane, exact elsewhere), exact, full_lut, tiled_lut, int8_approx.",
         &EC_HNSW_TURBOQUANT_EXACT_SCORE_MODE_GUC,
         GucContext::Userset,
         GucFlags::default(),

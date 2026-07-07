@@ -1,0 +1,25 @@
+[loader] inspecting /private/tmp/claude-501/-Users-peter-dev-tqvector/611d9fce-ed35-467a-9ad1-1caa91d6e476/scratchpad/tq144fallback_corpus.tsv
+[loader] inspecting /private/tmp/claude-501/-Users-peter-dev-tqvector/611d9fce-ed35-467a-9ad1-1caa91d6e476/scratchpad/tq144fallback_queries.tsv
+[loader] corpus: 2000 rows, sha256=2b389b2a4759601da78845b5581526ca327510c34f9bc30e2559a7f01f1edcd4  queries: 64 rows, sha256=715f91db5e139c7ff04184581d35b79679306a34ebc951e46701475fc2c5c32a
+[loader] no sibling manifest at /private/tmp/claude-501/-Users-peter-dev-tqvector/611d9fce-ed35-467a-9ad1-1caa91d6e476/scratchpad/tq144fallback_manifest.json; continuing without verification
+[loader] copied corpus table tq144fallback_corpus in 28.18ms
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table tq144fallback_corpus in 9.07ms
+[loader] copied queries table tq144fallback_queries in 1.24ms
+[loader] building tq144fallback_m8_idx using ec_hnsw (reloptions=[m=8, ef_construction=128, build_source_column=source]) ...
+[loader] built tq144fallback_m8_idx in 100.10ms
+[loader] building tq144fallback_m16_idx using ec_hnsw (reloptions=[m=16, ef_construction=128, build_source_column=source]) ...
+[loader] built tq144fallback_m16_idx in 90.74ms
+┌─────────┬───────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                         │
+╞═════════╪═══════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_hnsw                                                                       │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ tq144fallback_corpus (2000 rows)                                              │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ tq144fallback_queries (64 rows)                                               │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ tq144fallback_m8_idx [m=8, ef_construction=128, build_source_column=source]   │
+│         ┆ tq144fallback_m16_idx [m=16, ef_construction=128, build_source_column=source] │
+└─────────┴───────────────────────────────────────────────────────────────────────────────┘
+[loader] completed prefix tq144fallback in 259.48ms

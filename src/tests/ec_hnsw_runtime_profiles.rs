@@ -2030,6 +2030,13 @@
 
     #[pg_test]
     fn test_ech_debug_turboquant_scan_stage_profile_sql_surface() {
+        // This case pins the exact-score `mse_no_qjl_4bit` lane and its
+        // deferred-rerank counter invariants. Task 144 flipped the resolved
+        // default on this same no-QJL 4-bit fixture to `int8_approx`, so hold
+        // the exact override explicitly here; the int8 default-path is covered
+        // by `test_turboquant_scan_stage_profile_auto_default_resolves_int8`.
+        let _lock = env_var_test_lock();
+        let _score_mode_guard = ScopedEnvVar::set("TQVECTOR_TURBOQUANT_EXACT_SCORE_MODE", "exact");
         let index_name = "ec_hnsw_turboquant_scan_stage_profile_sql_surface_idx";
         let _index_oid = create_turboquant_binary_runtime_fixture(
             "ec_hnsw_turboquant_scan_stage_profile_sql_surface",
@@ -2162,14 +2169,19 @@
     }
 
     fn assert_turboquant_scan_stage_profile_mode(
-        env_value: &str,
+        env_value: Option<&str>,
         expected_mode: &str,
         expected_uses_lut: bool,
         expected_uses_qjl: bool,
     ) {
         let _lock = env_var_test_lock();
-        let _score_mode_guard =
-            ScopedEnvVar::set("TQVECTOR_TURBOQUANT_EXACT_SCORE_MODE", env_value);
+        // `None` exercises the resolved default with no env override in force
+        // (GUC stays at its registered `auto`), which is how the Task 144
+        // default-path lands on int8_approx for the no-QJL 4-bit lane.
+        let _score_mode_guard = match env_value {
+            Some(value) => ScopedEnvVar::set("TQVECTOR_TURBOQUANT_EXACT_SCORE_MODE", value),
+            None => ScopedEnvVar::unset("TQVECTOR_TURBOQUANT_EXACT_SCORE_MODE"),
+        };
         let index_name = "ec_hnsw_turboquant_scan_stage_profile_sql_surface_int8_idx";
         let _index_oid = create_turboquant_binary_runtime_fixture(
             "ec_hnsw_turboquant_scan_stage_profile_sql_surface_int8",
@@ -2279,13 +2291,18 @@
 
     #[pg_test]
     fn test_turboquant_scan_stage_profile_full_lut_mode() {
-        assert_turboquant_scan_stage_profile_mode("full_lut", "full_lut_no_qjl_4bit", true, false);
+        assert_turboquant_scan_stage_profile_mode(
+            Some("full_lut"),
+            "full_lut_no_qjl_4bit",
+            true,
+            false,
+        );
     }
 
     #[pg_test]
     fn test_turboquant_scan_stage_profile_tiled_lut_mode() {
         assert_turboquant_scan_stage_profile_mode(
-            "tiled_lut",
+            Some("tiled_lut"),
             "tiled_lut_no_qjl_4bit",
             true,
             false,
@@ -2295,11 +2312,22 @@
     #[pg_test]
     fn test_turboquant_scan_stage_profile_int8_mode() {
         assert_turboquant_scan_stage_profile_mode(
-            "int8_approx",
+            Some("int8_approx"),
             "int8_approx_no_qjl_4bit",
             false,
             false,
         );
+    }
+
+    /// Task 144: with no explicit mode override (GUC at its registered `auto`
+    /// default and no env var), a no-QJL 4-bit turboquant HNSW scan resolves to
+    /// the `int8_approx` exact-score lane rather than the former `exact`
+    /// default. This is the default-path regression guard behind the
+    /// `reviews/task-144/002-auto-default-confirm` measurement packet, whose
+    /// recall cells match the explicit-int8 A/B byte-for-byte at every ef point.
+    #[pg_test]
+    fn test_turboquant_scan_stage_profile_auto_default_resolves_int8() {
+        assert_turboquant_scan_stage_profile_mode(None, "int8_approx_no_qjl_4bit", false, false);
     }
 
     #[pg_test]

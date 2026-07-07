@@ -1,6 +1,8 @@
 # Task 135: IVF posting-visit optimization (page walk + entry parse)
 
-Status: **measured — awaiting review** (2026-07-02). Owner: Codex. Priority: P2
+Status: **review accepted / measured** (2026-07-03; feedback
+`reviews/task-135/001-posting-visit-profile/feedback/2026-07-03-02-reviewer.md`).
+Owner: Codex. Priority: P2
 Follow-up to Task 133 (stage attribution).
 
 Evidence: `reviews/task-135/001-posting-visit-profile/` (posting_page_decode

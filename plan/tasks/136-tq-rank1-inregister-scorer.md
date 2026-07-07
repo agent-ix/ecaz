@@ -1,6 +1,8 @@
 # Task 136: TQ rank-1 in-register scorer for IVF (int8_approx wiring)
 
-Status: **measured — awaiting review** (2026-07-02). Owner: Codex. Priority: P2
+Status: **review accepted / measured** (2026-07-03; feedback
+`reviews/task-136/001-int8-approx-ivf-scorer/feedback/2026-07-03-02-reviewer.md`).
+Owner: Codex. Priority: P2
 Follow-up to Tasks 125/132/133; highest-ceiling scorer idea on the table.
 
 Evidence: `reviews/task-136/001-int8-approx-ivf-scorer/` (code `9514c7518`,

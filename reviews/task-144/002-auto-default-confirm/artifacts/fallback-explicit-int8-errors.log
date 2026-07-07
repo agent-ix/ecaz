@@ -1,0 +1,6 @@
+SET
+SET
+ERROR:  operator does not exist: real[] <-> real[]
+LINE 1: ...LECT id FROM tq144fallback_corpus ORDER BY source <-> (SELEC...
+                                                             ^
+HINT:  No operator matches the given name and argument types. You might need to add explicit type casts.

@@ -1,6 +1,7 @@
 # Task 133: TQ IVF non-scorer latency profiling (attack the remaining ~40%)
 
-Status: **proposed** (2026-07-01). Owner: coder (to be assigned). Priority: P2
+Status: **measured - follow-ups spawned** (2026-07-02;
+`reviews/task-133/001-stage-attribution/`). Owner: Codex. Priority: P2
 Follow-up to Task 125.
 
 ## Why

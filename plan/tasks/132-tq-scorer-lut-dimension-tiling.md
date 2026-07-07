@@ -1,7 +1,8 @@
 # Task 132: TQ scorer LUT dimension tiling (durable L1D fix)
 
-Status: **proposed** (2026-07-01). Owner: coder (to be assigned). Priority: P2
-TQ-scorer-speed follow-up to Task 125.
+Status: **measured - alloc-free driver landed, dimension tiling shelved**
+(2026-07-02; `reviews/task-132/001-alloc-free-batch-driver/`). Owner: Codex.
+Priority: P2 TQ-scorer-speed follow-up to Task 125.
 
 ## Why
 

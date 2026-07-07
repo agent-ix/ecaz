@@ -1,6 +1,8 @@
 # Task 141: int8_approx SDOT kernel (NEON dotprod upgrade)
 
-Status: **measured — awaiting review** (2026-07-02). Owner: Codex. Priority: P2
+Status: **review accepted / measured** (2026-07-03; feedback
+`reviews/task-141/001-sdot-kernel/feedback/2026-07-03-02-reviewer.md`).
+Owner: Codex. Priority: P2
 
 Evidence: `reviews/task-141/001-sdot-kernel/` (code `2d98ec5b7`, branch
 `task-141-sdot-kernel`): scorer_batch 15.9→9.0 / 26.6→14.2 / 25.8→13.5

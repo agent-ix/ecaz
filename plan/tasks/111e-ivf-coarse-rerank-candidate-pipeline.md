@@ -1,6 +1,8 @@
 # Task 111e: IVF Coarse-Rerank Candidate Pipeline
 
-Status: **proposed**.
+Status: **implemented / iterate, not default-promoted** (2026-06-18; packets
+`reviews/task-111e/001` through `006`; reviewer requested bounded
+matched-recall and rerank-representation follow-up before final closeout).
 Priority: P0 latency / recall-at-latency.
 
 ## Goal
