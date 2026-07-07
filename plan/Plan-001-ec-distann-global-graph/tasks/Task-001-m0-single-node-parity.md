@@ -2,7 +2,7 @@
 id: Task-001
 title: "M0 — ec_distann single-node parity + kill-check spike"
 type: Task
-status: not_started
+status: completed
 track: A
 priority: P0
 relationships:

@@ -1,6 +1,19 @@
 # Task 162: ec_distann M0 — Single-Node Parity
 
-Status: proposed (2026-07-06). Depends on: Task 161 (specs merged).
+Status: **done — banded M0 exit** (2026-07-07). Reviewer signoff:
+`reviews/task-162/004-parity-remeasure/feedback/2026-07-07-01-reviewer.md`;
+operator acceptance: `.../2026-07-07-02-coder.md`. Outcome: parity vs
+rabitq ec_diskann holds through the ~0.988 recall band at 10k/50k
+(≤1.16×); D7 default measured and flipped to rabitq; D1 (TQ exceeds page
+capacity at R=32; buildable formats ≤1.9× raw, no fallback layout needed)
+and D3 (C=4096) measured; Gate G0 kill-check GO
+(`reviews/task-162/003-g0-killcheck/`). Known miss carried to the M4 risk
+list: the 50k ≥0.995 single-node tail is 2.03× (D11 exact-per-expansion
+cost; remediation options recorded in packet 004). Evidence:
+`reviews/task-162/001..004`. Branch `task-162-ec-distann-m0`, not merged.
+Original text follows.
+
+Depends on: Task 161 (specs merged).
 Prefer landing Task 168 (DiskANN batched-beam primitive) first and reusing its
 width-W beam shape for the FR-081 local-expansion loop, rather than forking
 `ec_diskann/scan.rs`.
