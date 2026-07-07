@@ -75,6 +75,30 @@ pub struct FrontierProfile {
     pub visited_set_ops: usize,
     pub neighbor_slots: usize,
     pub retained_inserts: usize,
+    /// Per-hop `score_batch` width histogram. A "flush" here is one
+    /// prefilter `score_batch` call over the popped node's post-dedup
+    /// fresh neighbors; the width is the number of tuples scored.
+    /// Buckets follow the Task 98 block-kernel convention (1-7, 8-15,
+    /// 16-31, >=32), plus a zero bucket for hops whose neighbors were
+    /// all already in the frontier (pure frontier-maintenance hops).
+    pub flush_width_zero: usize,
+    pub flush_width_buckets: [usize; 4],
+}
+
+impl FrontierProfile {
+    fn record_flush_width(&mut self, width: usize) {
+        if width == 0 {
+            self.flush_width_zero += 1;
+            return;
+        }
+        let bucket = match width {
+            1..=7 => 0,
+            8..=15 => 1,
+            16..=31 => 2,
+            _ => 3,
+        };
+        self.flush_width_buckets[bucket] += 1;
+    }
 }
 
 /// Candidate carried through the greedy loop. Caches the tuple's
@@ -579,6 +603,7 @@ where
             neighbor_tids.push(nbr);
             neighbor_tuples.push(reader.read_node(nbr)?);
         }
+        frontier_profile.record_flush_width(neighbor_tuples.len());
         let mut neighbor_scores = vec![0.0_f32; neighbor_tuples.len()];
         prefilter.score_batch(&neighbor_tuples, &mut neighbor_scores);
         for ((nbr, nbr_tuple), score) in neighbor_tids
@@ -1324,6 +1349,17 @@ mod tests {
         assert!(
             profile.retained_inserts >= params.rerank_budget,
             "retained inserts should cover the rerank budget"
+        );
+        let recorded_flushes =
+            profile.flush_width_zero + profile.flush_width_buckets.iter().sum::<usize>();
+        assert!(
+            recorded_flushes > 0,
+            "flush-width histogram must record one entry per expanded hop"
+        );
+        assert_eq!(
+            profile.flush_width_buckets[2] + profile.flush_width_buckets[3],
+            0,
+            "degree-4 chain fixture can never flush 16+ wide"
         );
     }
 

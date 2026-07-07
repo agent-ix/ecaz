@@ -870,6 +870,8 @@ struct ScanProfile {
     frontier_visited_set_ops: usize,
     frontier_neighbor_slots: usize,
     frontier_retained_inserts: usize,
+    flush_width_zero: usize,
+    flush_width_buckets: [usize; 4],
     rerank_count: usize,
     result_count: usize,
 }
@@ -996,6 +998,8 @@ where
         captured.frontier_visited_set_ops = frontier_profile.visited_set_ops;
         captured.frontier_neighbor_slots = frontier_profile.neighbor_slots;
         captured.frontier_retained_inserts = frontier_profile.retained_inserts;
+        captured.flush_width_zero = frontier_profile.flush_width_zero;
+        captured.flush_width_buckets = frontier_profile.flush_width_buckets;
         captured.frontier_us = elapsed_micros_u64(frontier_started)
             .saturating_sub(captured.graph_read_decode_us)
             .saturating_sub(captured.prefilter_score_us)
@@ -1017,7 +1021,7 @@ fn add_profile_elapsed(target: &mut u64, started: Instant) {
 fn emit_scan_profile_notice(profile: &ScanProfile, scan_params: ScanParams, payload_flags: u8) {
     let has_binary_sidecar = payload_flags & PAYLOAD_FLAG_BINARY_SIDECAR != 0;
     pgrx::notice!(
-        "ec_diskann_scan_profile list_size={} rerank_budget={} top_k={} binary_sidecar={} setup_us={} entry_resolution_us={} graph_read_decode_us={} prefilter_score_us={} frontier_us={} frontier_candidate_heap_us={} frontier_visited_set_us={} frontier_neighbor_iter_us={} frontier_retained_insert_us={} heap_prefetch_us={} exact_rerank_us={} result_expand_us={} total_us={} graph_read_count={} prefilter_count={} frontier_candidate_heap_ops={} frontier_visited_set_ops={} frontier_neighbor_slots={} frontier_retained_inserts={} rerank_count={} result_count={}",
+        "ec_diskann_scan_profile list_size={} rerank_budget={} top_k={} binary_sidecar={} setup_us={} entry_resolution_us={} graph_read_decode_us={} prefilter_score_us={} frontier_us={} frontier_candidate_heap_us={} frontier_visited_set_us={} frontier_neighbor_iter_us={} frontier_retained_insert_us={} heap_prefetch_us={} exact_rerank_us={} result_expand_us={} total_us={} graph_read_count={} prefilter_count={} frontier_candidate_heap_ops={} frontier_visited_set_ops={} frontier_neighbor_slots={} frontier_retained_inserts={} flush_width_zero={} flush_width_1_7={} flush_width_8_15={} flush_width_16_31={} flush_width_ge32={} rerank_count={} result_count={}",
         scan_params.list_size,
         scan_params.rerank_budget,
         scan_params.top_k,
@@ -1041,6 +1045,11 @@ fn emit_scan_profile_notice(profile: &ScanProfile, scan_params: ScanParams, payl
         profile.frontier_visited_set_ops,
         profile.frontier_neighbor_slots,
         profile.frontier_retained_inserts,
+        profile.flush_width_zero,
+        profile.flush_width_buckets[0],
+        profile.flush_width_buckets[1],
+        profile.flush_width_buckets[2],
+        profile.flush_width_buckets[3],
         profile.rerank_count,
         profile.result_count,
     );
