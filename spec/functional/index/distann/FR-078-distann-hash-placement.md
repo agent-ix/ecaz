@@ -45,13 +45,15 @@ per-record directory lookup.
   SHALL carry topology metadata only: node roster, roster ordering, hash
   function version, and per-node record counts. It SHALL NOT store
   per-record entries.
-- The build→publish hand-off SHALL be owned by the epoch build pipeline:
-  after the FR-077 stitch emits records, the build SHALL write each record
-  **and its full-precision vector (heap row)** to the same hash-owned node
-  and then publish the epoch
-  ([FR-082](./FR-082-distann-epoch-lifecycle.md)); no other component moves
-  records or vectors. The vector is stored once, on the owning node, and is
-  never duplicated into the index record (ADR-085 decision D11).
+- The build→publish hand-off SHALL be owned by the **coordinator's epoch
+  build pipeline** (the same component that runs FR-077 and FR-082 assembly):
+  after the FR-077 stitch emits records, it SHALL write each record **and its
+  full-precision vector (heap row)** to the same hash-owned node — issuing the
+  per-node writes over the lifted transport ([NFR-014](../../../non-functional/NFR-014-spire-transport-security-and-operations.md))
+  — and then publish the epoch ([FR-082](./FR-082-distann-epoch-lifecycle.md));
+  no other component moves records or vectors. The vector is stored once, on
+  the owning node, and is never duplicated into the index record (ADR-085
+  decision D11).
 - When the roster changes, a new epoch SHALL be built and published; queries
   against the old epoch continue against the old roster until retirement
   ([FR-082](./FR-082-distann-epoch-lifecycle.md)).

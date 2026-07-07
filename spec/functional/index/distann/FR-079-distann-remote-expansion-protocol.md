@@ -91,9 +91,14 @@ neighbor_code_dists real[])`, one row per requested vec_id.
   `exact_dist` unset (NULL), since [FR-081](./FR-081-distann-query-orchestration.md)
   excludes tombstones from results; `is_tombstone` SHALL still be returned so
   the neighbor edges remain usable for traversal continuity.
-- `code_threshold` SHALL default to NULL (no pruning). When set, it is a
-  documented recall-risk parameter: pruned neighbors may include true
-  results. Gate benchmark runs ([NFR-017](../../../non-functional/NFR-017-distann-latency-recall-gate.md))
+- `code_threshold` SHALL default to NULL (no pruning), set by the coordinator
+  and defaulting to NULL. When set, it is a documented recall-risk
+  optimization **outside the scan's correctness guarantees**: it is not a
+  fault path, and the [FR-081](./FR-081-distann-query-orchestration.md)-AC-4
+  early-exit result-equivalence guarantee holds only at `code_threshold` NULL.
+  Because a non-NULL threshold may prune true results, it is never used where
+  correctness or the gate is asserted. Gate benchmark runs
+  ([NFR-017](../../../non-functional/NFR-017-distann-latency-recall-gate.md))
   SHALL run with `code_threshold` NULL unless the packet pre-registers the
   value and reports its recall effect.
 - The response schema of this function is a fixed wire contract independent
@@ -112,7 +117,7 @@ neighbor_code_dists real[])`, one row per requested vec_id.
 | FR-079-AC-2 | Stale epoch_fingerprint yields the retriable epoch-mismatch error, never data | Test |
 | FR-079-AC-3 | Non-owned vec_id yields a placement error; owned-but-absent yields a structural fault error; tombstones return normally with the flag set | Test |
 | FR-079-AC-4 | Neighbor code distances equal direct QuantCodec scoring of the same codes | Test |
-| FR-079-AC-5 | `exact_dist` for each returned vec_id equals the full-precision distance between the query and the node's co-placed heap vector; no vector is read from the index record | Test |
+| FR-079-AC-5 | `exact_dist` for each returned vec_id equals the full-precision distance between the query and the node's co-placed heap vector | Test |
 
 ## Dependencies
 

@@ -151,13 +151,13 @@ presence alone.
 | FR-046 | FR-046-AC-1..3 | TC-028 | Planned: dataset registry and parquet staging |
 | FR-047 | FR-047-AC-1..4 | TC-029, TC-032 | Planned: in-VPC parallel corpus load |
 | FR-075 | FR-075-AC-1..4 | TC-037 | Planned: ec_distann AM surface (`src/tests/ec_distann_basic.rs`) |
-| FR-076 | FR-076-AC-1..5, FR-076-CON-1..2 | TC-037, TC-044 | Planned: record round-trip + identity stability + lean-record/no-inline-vector (AC-5) in TC-037; CON-1 storage budget measured in TC-044 |
+| FR-076 | FR-076-AC-1..6, FR-076-CON-1..2 | TC-037, TC-044 | Planned: record round-trip + identity stability + lean-record/no-inline-vector (AC-5) + dim-independent record size (AC-6) in TC-037; CON-1 storage budget measured in TC-044 |
 | FR-077 | FR-077-AC-1..4, FR-077-CON-1..4 | TC-038, TC-039 | Planned: proptest invariants (TC-038) + stitched-vs-monolithic recall A/B (TC-039); build emits co-placed vector tier (asserted via TC-040 co-resolution) |
 | FR-078 | FR-078-AC-1..4 | TC-040 | Planned: placement determinism + roster-change epoch behavior; AC-4 record/heap-row co-resolution + runtime co-placement-drift fault |
 | FR-079 | FR-079-AC-1..5 | TC-040 | Planned: expand_nodes contract incl. epoch-fingerprint rejection, placement-error disambiguation, four-outcome table (incl. missing-heap-row case d), and exact_dist==heap distance (AC-5) |
 | FR-080 | FR-080-AC-1..4, FR-080-CON-1 | TC-037, TC-041 | Planned: determinism/reachability in TC-037; C recall-sensitivity measurement in TC-041 |
 | FR-081 | FR-081-AC-1..5 | TC-041 | Planned: 2-node result identity, BW×H cap assertion, dedupe, early-exit equivalence, EXPLAIN counters |
-| FR-082 | FR-082-AC-1..5 | TC-042 | Planned: lifecycle drills (epoch-swap-under-load, fingerprint retry, retirement gating) + epoch-frozen co-placed vector under concurrent delete+VACUUM+TID-reuse (AC-5) |
+| FR-082 | FR-082-AC-1..6 | TC-042 | Planned: lifecycle drills (epoch-swap-under-load, fingerprint retry, retirement gating) + epoch-frozen co-placed vector under concurrent delete+VACUUM+TID-reuse (AC-5) + wedged-in-flight-count operator override (AC-6) |
 | FR-083 | FR-083-AC-1..7 | TC-043 | Planned: tombstone/vacuum, interim posture, incremental insert parity + mid-insert fault drills; AC-7 inserted vec_id reads co-placed vector node-locally |
 
 ### Non-Functional Requirement Coverage

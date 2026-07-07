@@ -63,5 +63,7 @@ before the gate run.
 
 ## Dependencies
 
-- **Upstream**: [FR-076](../functional/index/distann/FR-076-distann-graph-node-record-format.md);
-  ADR-085 decisions D1 (duplication) and D7 (codec)
+- **Upstream**: [FR-076](../functional/index/distann/FR-076-distann-graph-node-record-format.md),
+  [FR-078](../functional/index/distann/FR-078-distann-hash-placement.md) (co-placed
+  heap tier — the 1.0× ratio denominator); ADR-085 decisions D1 (duplication),
+  D7 (codec), and D11 (co-placed heap rerank / lean record)

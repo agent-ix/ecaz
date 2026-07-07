@@ -97,7 +97,8 @@ fields:
 | FR-076-AC-2 | Two rebuilds of the same corpus assign identical vec_ids to identical source rows | Test |
 | FR-076-AC-3 | Scoring a node's neighbors after one record read matches direct codec scoring of the neighbors' vectors | Test |
 | FR-076-AC-4 | Tombstoned records are traversable but never returned | Test |
-| FR-076-AC-5 | The record carries no full-precision vector field; encoded record bytes at fixed R are independent of vector dimension beyond the fixed-stride code lengths | Test |
+| FR-076-AC-5 | The encoded record layout contains no full-precision vector field (structural inspection of the decoded record) | Test |
+| FR-076-AC-6 | At fixed R and `neighbor_code_format`, encoded record byte size is independent of vector dimension | Test |
 
 ## Dependencies
 

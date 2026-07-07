@@ -80,6 +80,7 @@ fingerprint so cross-node reads are always mutually consistent.
 | FR-082-AC-4 | Under concurrent tombstone/insert amendments, scans return only expanded records and never observe a half-applied back-edge amendment | Test (concurrency drill) |
 | FR-082-AC-3 | Retired-epoch storage reclaim waits for in-flight queries | Test |
 | FR-082-AC-5 | Within a Published epoch, a vec_id's exact-rerank vector resolved via `heap_tid` is byte-identical to its build-time vector — a concurrent base-table delete+VACUUM+TID-reuse never causes rerank against a different tuple | Test (concurrency drill) |
+| FR-082-AC-6 | A wedged in-flight query count (e.g. crashed coordinator) never auto-reclaims Retired-epoch storage; storage is retained until the operator override is invoked, and the override is logged | Test (fault drill) |
 
 ## Dependencies
 

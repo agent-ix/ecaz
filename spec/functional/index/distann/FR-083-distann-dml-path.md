@@ -35,7 +35,12 @@ only incremental distributed insert is the final milestone.
   remote tombstone write SHALL error (a lost tombstone would silently
   resurrect a deleted row —
   [NFR-020](../../../non-functional/NFR-020-distann-fault-behavior.md)
-  covers mid-delete faults).
+  covers mid-delete faults). Delete SHALL NOT reclaim the record's co-placed
+  heap row within the epoch: under FR-082 immutability the heap row is
+  retained (so a still-traversable tombstoned record's `exact_dist` read, if
+  attempted, never faults) and is reclaimed only at the next epoch build. The
+  origin node issuing the DML need not own the vec_id; the tombstone write is
+  routed to the hash-owning node exactly like a record write.
 - **Physical reclaim**: records are never physically reclaimed within a
   Published epoch (FR-082 mutation model). The next epoch build SHALL drop
   tombstoned records, repair all adjacency referencing them, and
@@ -71,7 +76,12 @@ only incremental distributed insert is the final milestone.
   affected neighbor records via the write endpoint; a failed insert SHALL
   leave the graph in its prior consistent state (no dangling forward edge
   without its record). Per-insert work SHALL be bounded by the FR-081
-  traversal cap plus at most `graph_degree` back-edge amendments.
+  traversal cap plus at most `graph_degree` back-edge amendments (this is the
+  insert-path counterpart of the [NFR-019](../../../non-functional/NFR-019-distann-per-query-touch-bound.md)
+  scan touch bound). Back-edge re-pruning SHALL NOT drop an edge that would
+  disconnect a node from the medoid: reachability (FR-077-CON-3) is preserved
+  across incremental inserts, and any residual degradation is repaired at the
+  next epoch build.
 - **Insert-time identity collision**: when the computed vec_id already
   exists with a different `source_identity`/heap identity, `aminsert` SHALL
   error (the live-path counterpart of ADR-085 D6's build-time

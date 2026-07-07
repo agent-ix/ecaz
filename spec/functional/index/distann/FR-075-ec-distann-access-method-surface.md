@@ -26,7 +26,9 @@ unchanged.
 - Reloptions: `graph_degree` (R), `build_list_size`, `alpha`,
   `neighbor_code_format` (QuantCodec selector), `closure_epsilon`
   (build-shard overlap band), `head_index_cap` (C), plus the shared
-  `source_identity` reloption per the ADR-068 contract.
+  `source_identity` reloption whose identity contract is ADR-063 (reached via
+  ADR-068's distributed topology; ADR-068 owns roster/placement, ADR-063 owns
+  identity).
 - Session GUCs: `ec_distann.beam_width` (BW), `ec_distann.hop_rounds` (H),
   registered at `_PG_init` via the module `register_gucs()` convention.
 

@@ -28,7 +28,9 @@ neighbors into the beam and exact distances into the result heap.
 - Per hop round the coordinator SHALL: select the best BW unvisited beam
   candidates; group them by owning node
   ([FR-078](./FR-078-distann-hash-placement.md)); issue the per-node
-  expansion calls in parallel over the pooled transport; merge returned
+  expansion calls in parallel over the pooled transport (operational/security
+  posture per [NFR-014](../../../non-functional/NFR-014-spire-transport-security-and-operations.md),
+  the lifted SPIRE transport contract); merge returned
   neighbor candidates (code distances) into the beam and returned exact
   distances into the top-k heap; and mark expanded nodes visited.
 - The loop SHALL terminate after H rounds, or earlier when the beam's best

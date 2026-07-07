@@ -41,7 +41,10 @@ flowchart LR
   of its best centroid distance SHALL be inserted into that shard as well
   (closure overlap), reusing the distance-ratio assignment machinery
   established on branch `task-144-spire-closure-ratio-pruning`
-  (`src/am/ec_spire/build/routing_plan.rs`).
+  (`src/am/ec_spire/build/routing_plan.rs`). Reuse mode is **extract-to-shared**
+  (lift the pure distance-ratio helper into a shared module consumed by both
+  AMs), not a fork and not an in-place edit under SPIRE's spec ownership — so
+  SPIRE's behavior (whose specs remain APPROVED) is unchanged.
 - Each shard SHALL be built with the shared Vamana core
   (`build_vamana_graph_with_stats`, `robust_prune`) independently; shard
   builds MAY run in parallel.

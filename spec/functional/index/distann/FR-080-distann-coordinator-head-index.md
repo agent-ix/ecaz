@@ -31,7 +31,9 @@ in the correct region of the global graph.
   (monolithic) build is the degenerate case: one medoid, one BFS sample.
 - The coordinator SHALL construct the in-memory head index from the persisted
   sample on first use per epoch (reusing the in-memory Vamana builder used
-  by the SPIRE top-graph) and cache it keyed on `(index_oid, epoch)`.
+  by the SPIRE top-graph, via **extract-to-shared** — the pure builder is
+  lifted into a shared module, not forked and not edited in place under
+  SPIRE's spec ownership) and cache it keyed on `(index_oid, epoch)`.
 - A query SHALL search the head index first; its best results seed the hop
   round frontier of [FR-081](./FR-081-distann-query-orchestration.md).
 - Head-index construction SHALL be deterministic under a fixed seed.
