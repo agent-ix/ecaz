@@ -80,7 +80,6 @@ This index is the canonical navigation surface for Ecaz architecture decisions. 
 | IVF rerank sidecar two-level directory | `ADR-080-ivf-rerank-sidecar-two-level-directory.md` | PROPOSED | Refines ADR-079: the rerank sidecar directory must be two-level for fat f16/rabitq4 payloads. |
 | TQ+ experimental calibration profile | `ADR-081-tqplus-experimental-calibration-profile.md` | ACCEPTED | Task 89: TQ+ is an experimental TurboQuant calibration profile (learned transform), not a separate quantizer family; affects FR-013/FR-038 and ADR-070/071/072. |
 | TurboQuant TQ+ format and validation | `ADR-082-turboquant-tqplus-format-and-validation.md` | PROPOSED | Task 89 TQ+ re-landing format/validation across IVF, SPIRE, HNSW, DiskANN (renumbered from a draft that collided with ADR-076). |
-| IVF TurboQuant calibration metadata | `ADR-083-ivf-turboquant-calibration-metadata.md` | PROPOSED | Task 148 IVF-local calibration persistence: explicit profile reloption, metadata pointer, and dedicated calibration tuples. |
 
 ## Superseded Historical Decisions
 

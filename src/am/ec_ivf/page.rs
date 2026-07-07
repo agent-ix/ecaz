@@ -29,9 +29,7 @@ mod pg_sys {
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
-use super::options::{
-    EcIvfOptions, RaBitQRerankScoreMode, RerankMode, StorageFormat, TurboQuantProfile,
-};
+use super::options::{EcIvfOptions, RaBitQRerankScoreMode, RerankMode, StorageFormat};
 #[cfg(any(feature = "pg17", feature = "pg18"))]
 use super::P_NEW;
 #[cfg(not(any(feature = "pg17", feature = "pg18")))]
@@ -55,7 +53,7 @@ pub(super) const METADATA_BLOCK_NUMBER: u32 = 0;
 pub(super) const FIRST_DATA_BLOCK_NUMBER: pg_sys::BlockNumber = 1;
 #[cfg(not(any(feature = "pg17", feature = "pg18")))]
 pub(super) const FIRST_DATA_BLOCK_NUMBER: u32 = 1;
-// v10 metadata is the only supported on-disk format. It is 100 bytes wide and
+// v9 metadata is the only supported on-disk format. It is 92 bytes wide and
 // stores RaBitQ rerank score knobs at bytes 22..24 plus the rerank sidecar head
 // ItemPointer at bytes 80..86. In v9 that head
 // points at the 0x2B packed rerank group-header chain used by
@@ -74,15 +72,13 @@ pub(super) const FIRST_DATA_BLOCK_NUMBER: u32 = 1;
 // vacuum, and inspection path. A rerank_sidecar_head of INVALID is the
 // legitimate "no sidecar" state for rerank_placement = 'source' and for f32
 // storage (rerank reads from the heap/source-vector path instead). This
-// v10 adds Task 148 TurboQuant calibration profile metadata at bytes 92..100:
-// a calibration tuple-chain head plus the profile byte. The research project
-// keeps no backward compatibility with older metadata
+// research project keeps no backward compatibility with older metadata
 // widths/layouts.
-pub const EC_IVF_INDEX_FORMAT_VERSION: u16 = 10;
+pub const EC_IVF_INDEX_FORMAT_VERSION: u16 = 9;
 pub(super) const INDEX_FORMAT_VERSION: u16 = EC_IVF_INDEX_FORMAT_VERSION;
 
 pub const EC_IVF_METADATA_MAGIC: u32 = 0x5649_4345; // "ECIV" as little-endian bytes.
-pub const EC_IVF_METADATA_BYTES: usize = 100;
+pub const EC_IVF_METADATA_BYTES: usize = 92;
 pub const EC_IVF_METADATA_MAGIC_OFFSET: usize = 0;
 pub const EC_IVF_METADATA_FORMAT_VERSION_OFFSET: usize = 4;
 pub const EC_IVF_METADATA_DIMENSIONS_OFFSET: usize = 6;
@@ -111,10 +107,6 @@ pub const EC_IVF_METADATA_RERANK_SIDECAR_HEAD_OFFSET: usize = 80;
 /// keep the field for metadata width stability but write INVALID; group headers
 /// chain through their own `next_group_tid`.
 pub const EC_IVF_METADATA_RERANK_SIDECAR_DIRECTORY_HEAD_OFFSET: usize = 86;
-/// Task 148 v10: TurboQuant calibration tuple-chain head (bytes 92..98).
-pub const EC_IVF_METADATA_TURBOQUANT_CALIBRATION_HEAD_OFFSET: usize = 92;
-/// Task 148 v10: TurboQuant profile byte (byte 98). Byte 99 is reserved.
-pub const EC_IVF_METADATA_TURBOQUANT_PROFILE_OFFSET: usize = 98;
 
 pub const EC_IVF_BLOCK_REF_BYTES: usize = 4;
 pub const EC_IVF_BLOCK_REF_BLOCK_NUMBER_OFFSET: usize = 0;
@@ -145,12 +137,6 @@ pub const EC_IVF_PQ_CODEBOOK_GROUP_INDEX_OFFSET: usize = 1;
 pub const EC_IVF_PQ_CODEBOOK_NEXT_TID_OFFSET: usize = 3;
 pub const EC_IVF_PQ_CODEBOOK_CENTROIDS_OFFSET: usize =
     EC_IVF_PQ_CODEBOOK_NEXT_TID_OFFSET + ITEM_POINTER_BYTES;
-pub const EC_IVF_TQ_CALIBRATION_TAG_OFFSET: usize = 0;
-pub const EC_IVF_TQ_CALIBRATION_ARRAY_KIND_OFFSET: usize = 1;
-pub const EC_IVF_TQ_CALIBRATION_VALUE_COUNT_OFFSET: usize = 2;
-pub const EC_IVF_TQ_CALIBRATION_NEXT_TID_OFFSET: usize = 4;
-pub const EC_IVF_TQ_CALIBRATION_VALUES_OFFSET: usize =
-    EC_IVF_TQ_CALIBRATION_NEXT_TID_OFFSET + ITEM_POINTER_BYTES;
 pub const EC_IVF_RERANK_GROUP_HEADER_TAG_OFFSET: usize = 0;
 pub const EC_IVF_RERANK_GROUP_HEADER_RERANK_FORMAT_OFFSET: usize = 1;
 pub const EC_IVF_RERANK_GROUP_HEADER_LIST_ID_OFFSET: usize = 2;
@@ -189,7 +175,6 @@ const IVF_RERANK_SIDECAR_BLOCK_TAG: u8 = 0x2A;
 // logical-group metadata once; payload segments carry only continuation bytes.
 const IVF_RERANK_GROUP_HEADER_TAG: u8 = 0x2B;
 const IVF_RERANK_GROUP_PAYLOAD_SEGMENT_TAG: u8 = 0x2C;
-const IVF_TQ_CALIBRATION_TAG: u8 = 0x2D;
 const POSTING_FLAG_DELETED: u8 = 0b0000_0001;
 const POSTING_FIXED_BYTES: usize = EC_IVF_POSTING_PAYLOAD_OFFSET;
 const DENSE_POSTING_BLOCK_HEADER_BYTES: usize = 16;
@@ -206,14 +191,6 @@ pub enum StorageFormat {
     PqFastScan = 2,
     RaBitQ = 3,
     CoarseRerank = 4,
-}
-
-#[cfg(not(any(feature = "pg17", feature = "pg18")))]
-#[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TurboQuantProfile {
-    Standard = 0,
-    TqPlus = 1,
 }
 
 #[cfg(not(any(feature = "pg17", feature = "pg18")))]
@@ -744,7 +721,6 @@ pub struct MetadataPage {
     pub training_version: u16,
     pub seed: u64,
     pub storage_format: StorageFormat,
-    pub turboquant_profile: TurboQuantProfile,
     pub rerank: RerankMode,
     /// Task 111h v9: compact rerank scorer mode persisted at metadata byte
     /// 22. `0` uses the format default scorer, `1` uses the RaBitQ
@@ -782,9 +758,6 @@ pub struct MetadataPage {
     /// `INVALID` when no directory exists (no sidecar, or pre-ADR-079 build);
     /// scan falls back to the full-chain read in that case.
     pub rerank_sidecar_directory_head: ItemPointer,
-    /// Task 148 v10: head of the TurboQuant calibration tuple chain. INVALID
-    /// for `turboquant_profile = 'standard'`.
-    pub turboquant_calibration_head: ItemPointer,
 }
 
 impl MetadataPage {
@@ -799,7 +772,6 @@ impl MetadataPage {
             training_version: 0,
             seed: u64::try_from(options.seed).expect("validated seed should fit in u64"),
             storage_format: options.storage_format,
-            turboquant_profile: options.turboquant_profile,
             rerank: options.rerank.v1_effective(),
             rabitq_rerank_score_mode: options.rabitq_rerank_score,
             rabitq_rerank_clip: u8::try_from(options.rabitq_rerank_clip)
@@ -815,7 +787,6 @@ impl MetadataPage {
             pq_group_size: 0,
             rerank_sidecar_head: ItemPointer::INVALID,
             rerank_sidecar_directory_head: ItemPointer::INVALID,
-            turboquant_calibration_head: ItemPointer::INVALID,
         }
     }
 
@@ -855,17 +826,13 @@ impl MetadataPage {
         write_item_pointer(&mut out[80..86], self.rerank_sidecar_head);
         // ADR-079: rerank sidecar directory head (bytes 86..92).
         write_item_pointer(&mut out[86..92], self.rerank_sidecar_directory_head);
-        // Task 148: TurboQuant calibration metadata (bytes 92..100).
-        write_item_pointer(&mut out[92..98], self.turboquant_calibration_head);
-        out[98] = self.turboquant_profile as u8;
         out
     }
 
     pub fn decode(bytes: &[u8]) -> Result<Self, String> {
-        // v10 is the only supported width (100 bytes), including compact rerank
+        // v9 is the only supported width (92 bytes), including compact rerank
         // score knobs at bytes 22..24, the packed rerank group head at bytes
-        // 80..86, the legacy sidecar directory head at bytes 86..92, and the
-        // TurboQuant calibration fields at bytes 92..100.
+        // 80..86, and the legacy sidecar directory head at bytes 86..92.
         if bytes.len() < EC_IVF_METADATA_BYTES {
             return Err(format!(
                 "ec_ivf metadata length mismatch: got {}, expected at least {EC_IVF_METADATA_BYTES}",
@@ -932,9 +899,6 @@ impl MetadataPage {
                     .expect("metadata seed slice should be 8 bytes"),
             ),
             storage_format: decode_storage_format(bytes[32])?,
-            turboquant_profile: decode_turboquant_profile(
-                bytes[EC_IVF_METADATA_TURBOQUANT_PROFILE_OFFSET],
-            )?,
             rerank: decode_rerank(bytes[33])?,
             // v1 metadata didn't write here, leaving 0 — coerce to the
             // legacy default of 4 so old indexes keep working.
@@ -989,12 +953,7 @@ impl MetadataPage {
             )?,
             // ADR-079 rerank sidecar directory head (bytes 86..92).
             rerank_sidecar_directory_head: ItemPointer::decode(
-                &bytes[EC_IVF_METADATA_RERANK_SIDECAR_DIRECTORY_HEAD_OFFSET
-                    ..EC_IVF_METADATA_RERANK_SIDECAR_DIRECTORY_HEAD_OFFSET + ITEM_POINTER_BYTES],
-            )?,
-            turboquant_calibration_head: ItemPointer::decode(
-                &bytes[EC_IVF_METADATA_TURBOQUANT_CALIBRATION_HEAD_OFFSET
-                    ..EC_IVF_METADATA_TURBOQUANT_CALIBRATION_HEAD_OFFSET + ITEM_POINTER_BYTES],
+                &bytes[EC_IVF_METADATA_RERANK_SIDECAR_DIRECTORY_HEAD_OFFSET..EC_IVF_METADATA_BYTES],
             )?,
         })
     }
@@ -2582,117 +2541,6 @@ impl IvfPqCodebookTuple {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum IvfTqCalibrationArrayKind {
-    Shift,
-    Scale,
-}
-
-impl IvfTqCalibrationArrayKind {
-    fn encode(self) -> u8 {
-        match self {
-            Self::Shift => 0,
-            Self::Scale => 1,
-        }
-    }
-
-    fn decode(value: u8) -> Result<Self, String> {
-        match value {
-            0 => Ok(Self::Shift),
-            1 => Ok(Self::Scale),
-            other => Err(format!(
-                "invalid ec_ivf TurboQuant calibration array kind: {other}"
-            )),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub(super) struct IvfTqCalibrationTuple {
-    pub(super) array_kind: IvfTqCalibrationArrayKind,
-    pub(super) next_tid: ItemPointer,
-    pub(super) values: Vec<f32>,
-}
-
-impl IvfTqCalibrationTuple {
-    pub(super) fn encode(&self) -> Result<Vec<u8>, String> {
-        if self.values.len() > u16::MAX as usize {
-            return Err(format!(
-                "ec_ivf TurboQuant calibration array length {} exceeds u16",
-                self.values.len()
-            ));
-        }
-        if self.values.iter().any(|value| !value.is_finite()) {
-            return Err("ec_ivf TurboQuant calibration contains a non-finite value".to_owned());
-        }
-        if self.array_kind == IvfTqCalibrationArrayKind::Scale
-            && self.values.iter().any(|value| *value == 0.0)
-        {
-            return Err("ec_ivf TurboQuant calibration scale contains zero".to_owned());
-        }
-
-        let mut out = Vec::with_capacity(Self::encoded_len(self.values.len()));
-        out.push(IVF_TQ_CALIBRATION_TAG);
-        out.push(self.array_kind.encode());
-        out.extend_from_slice(&(self.values.len() as u16).to_le_bytes());
-        self.next_tid.encode_into(&mut out);
-        for value in &self.values {
-            out.extend_from_slice(&value.to_le_bytes());
-        }
-        Ok(out)
-    }
-
-    pub(super) fn decode(input: &[u8]) -> Result<Self, String> {
-        if input.len() < EC_IVF_TQ_CALIBRATION_VALUES_OFFSET {
-            return Err(format!(
-                "ec_ivf TurboQuant calibration tuple length mismatch: got {}, expected at least {}",
-                input.len(),
-                EC_IVF_TQ_CALIBRATION_VALUES_OFFSET
-            ));
-        }
-        if input[EC_IVF_TQ_CALIBRATION_TAG_OFFSET] != IVF_TQ_CALIBRATION_TAG {
-            return Err(format!(
-                "invalid ec_ivf TurboQuant calibration tuple tag: {}",
-                input[EC_IVF_TQ_CALIBRATION_TAG_OFFSET]
-            ));
-        }
-        let array_kind =
-            IvfTqCalibrationArrayKind::decode(input[EC_IVF_TQ_CALIBRATION_ARRAY_KIND_OFFSET])?;
-        let value_count = u16::from_le_bytes(
-            input[EC_IVF_TQ_CALIBRATION_VALUE_COUNT_OFFSET
-                ..EC_IVF_TQ_CALIBRATION_VALUE_COUNT_OFFSET + 2]
-                .try_into()
-                .expect("calibration value_count slice should be two bytes"),
-        ) as usize;
-        let expected_len = Self::encoded_len(value_count);
-        if input.len() != expected_len {
-            return Err(format!(
-                "ec_ivf TurboQuant calibration tuple length mismatch: got {}, expected {expected_len}",
-                input.len()
-            ));
-        }
-        let next_tid = ItemPointer::decode(
-            &input[EC_IVF_TQ_CALIBRATION_NEXT_TID_OFFSET
-                ..EC_IVF_TQ_CALIBRATION_NEXT_TID_OFFSET + ITEM_POINTER_BYTES],
-        )?;
-        let values = input[EC_IVF_TQ_CALIBRATION_VALUES_OFFSET..]
-            .chunks_exact(std::mem::size_of::<f32>())
-            .map(|chunk| f32::from_le_bytes(chunk.try_into().expect("validated f32 chunk")))
-            .collect::<Vec<_>>();
-        let tuple = Self {
-            array_kind,
-            next_tid,
-            values,
-        };
-        tuple.encode()?;
-        Ok(tuple)
-    }
-
-    pub(super) const fn encoded_len(value_count: usize) -> usize {
-        EC_IVF_TQ_CALIBRATION_VALUES_OFFSET + value_count * std::mem::size_of::<f32>()
-    }
-}
-
 /// Task 111g: a compact rerank sidecar block (tag 0x2A), keyed by heap TID.
 ///
 /// Each block holds a tid-sorted run of (heap_tid, compact payload) entries and
@@ -2912,11 +2760,6 @@ pub(super) fn pq_codebook_tuple_fits(centroid_count: usize, page_size: usize) ->
         <= usable_page_bytes(page_size)
 }
 
-pub(super) fn tq_calibration_tuple_fits(value_count: usize, page_size: usize) -> bool {
-    aligned_tuple_bytes(IvfTqCalibrationTuple::encoded_len(value_count))
-        <= usable_page_bytes(page_size)
-}
-
 impl DataPage {
     pub(super) fn insert_ivf_centroid(
         &mut self,
@@ -2994,28 +2837,6 @@ impl DataPage {
         tuple: &IvfPqCodebookTuple,
     ) -> Result<(), String> {
         self.update_raw_tuple(tid, tuple.encode()?)
-    }
-
-    pub(super) fn insert_ivf_tq_calibration(
-        &mut self,
-        tuple: &IvfTqCalibrationTuple,
-    ) -> Result<ItemPointer, String> {
-        self.insert_raw_tuple(tuple.encode()?)
-    }
-
-    pub(super) fn update_ivf_tq_calibration(
-        &mut self,
-        tid: ItemPointer,
-        tuple: &IvfTqCalibrationTuple,
-    ) -> Result<(), String> {
-        self.update_raw_tuple(tid, tuple.encode()?)
-    }
-
-    pub(super) fn read_ivf_tq_calibration(
-        &self,
-        tid: ItemPointer,
-    ) -> Result<IvfTqCalibrationTuple, String> {
-        IvfTqCalibrationTuple::decode(self.raw_tuple(tid)?)
     }
 
     pub(super) fn insert_ivf_rerank_sidecar_block(
@@ -3180,41 +3001,6 @@ impl DataPageChain {
             .update_ivf_pq_codebook(tid, tuple)
     }
 
-    pub(super) fn insert_ivf_tq_calibration(
-        &mut self,
-        tuple: &IvfTqCalibrationTuple,
-    ) -> Result<ItemPointer, String> {
-        self.insert_raw_tuple(tuple.encode()?)
-    }
-
-    pub(super) fn update_ivf_tq_calibration(
-        &mut self,
-        tid: ItemPointer,
-        tuple: &IvfTqCalibrationTuple,
-    ) -> Result<(), String> {
-        self.get_page_mut(tid.block_number)
-            .ok_or_else(|| {
-                format!(
-                    "ec_ivf TurboQuant calibration block {} not found",
-                    tid.block_number
-                )
-            })?
-            .update_ivf_tq_calibration(tid, tuple)
-    }
-
-    pub(super) fn read_ivf_tq_calibration(
-        &self,
-        tid: ItemPointer,
-    ) -> Result<IvfTqCalibrationTuple, String> {
-        let page = self.get_page(tid.block_number).ok_or_else(|| {
-            format!(
-                "ec_ivf TurboQuant calibration block {} not found",
-                tid.block_number
-            )
-        })?;
-        page.read_ivf_tq_calibration(tid)
-    }
-
     pub(super) fn insert_ivf_rerank_sidecar_block(
         &mut self,
         tuple: &IvfRerankSidecarBlockTuple,
@@ -3370,21 +3156,6 @@ pub(super) unsafe fn read_ivf_pq_codebook(
         IvfPqCodebookTuple::decode(tuple_bytes, centroid_count)
     })?;
     Ok(codebook)
-}
-
-#[cfg(any(feature = "pg17", feature = "pg18"))]
-pub(super) unsafe fn read_ivf_tq_calibration(
-    index_relation: pg_sys::Relation,
-    tid: ItemPointer,
-) -> Result<IvfTqCalibrationTuple, String> {
-    let index = IvfPageRelation::new(ivf_relation_nonnull(
-        index_relation,
-        "ec_ivf TurboQuant calibration read",
-    ));
-    let (tuple, _) = read_page_tuple(index, tid, "TurboQuant calibration", |tuple_bytes| {
-        IvfTqCalibrationTuple::decode(tuple_bytes)
-    })?;
-    Ok(tuple)
 }
 
 /// Task 111g: read one rerank sidecar block (tag 0x2A) and return its decoded
@@ -3736,12 +3507,8 @@ where
         "ec_ivf posting entry block sequence",
         |buffer, block_number| {
             let decode_started = std::time::Instant::now();
-            let result = visit_all_ivf_posting_entries_from_buffer(
-                buffer,
-                block_number,
-                payload_len,
-                visitor,
-            );
+            let result =
+                visit_all_ivf_posting_entries_from_buffer(buffer, block_number, payload_len, visitor);
             decode_elapsed += decode_started.elapsed();
             result
         },
@@ -4873,14 +4640,6 @@ fn decode_storage_format(value: u8) -> Result<StorageFormat, String> {
     }
 }
 
-fn decode_turboquant_profile(value: u8) -> Result<TurboQuantProfile, String> {
-    match value {
-        value if value == TurboQuantProfile::Standard as u8 => Ok(TurboQuantProfile::Standard),
-        value if value == TurboQuantProfile::TqPlus as u8 => Ok(TurboQuantProfile::TqPlus),
-        other => Err(format!("invalid ec_ivf TurboQuant profile code: {other}")),
-    }
-}
-
 fn decode_rerank(value: u8) -> Result<RerankMode, String> {
     match value {
         value if value == RerankMode::Auto as u8 => Ok(RerankMode::Auto),
@@ -5120,7 +4879,6 @@ mod tests {
             rabitq_residual: false,
             rabitq_rerank_score: RaBitQRerankScoreMode::Estimator,
             rabitq_rerank_clip: EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
-            turboquant_profile: TurboQuantProfile::Standard,
             storage_format: StorageFormat::RaBitQ,
             rerank: RerankMode::HeapF32,
             coarse_format: CoarseFormat::Auto,
@@ -5170,7 +4928,6 @@ mod tests {
             rabitq_residual: false,
             rabitq_rerank_score: RaBitQRerankScoreMode::LeastSquares,
             rabitq_rerank_clip: 4,
-            turboquant_profile: TurboQuantProfile::Standard,
             storage_format: StorageFormat::CoarseRerank,
             rerank: RerankMode::HeapF32,
             coarse_format: CoarseFormat::RaBitQ,
@@ -5215,7 +4972,6 @@ mod tests {
             rabitq_residual: false,
             rabitq_rerank_score: RaBitQRerankScoreMode::ExactDequant,
             rabitq_rerank_clip: 4,
-            turboquant_profile: TurboQuantProfile::Standard,
             storage_format: StorageFormat::CoarseRerank,
             rerank: RerankMode::HeapF32,
             coarse_format: CoarseFormat::RaBitQ,
@@ -5256,7 +5012,6 @@ mod tests {
             rabitq_residual: true,
             rabitq_rerank_score: RaBitQRerankScoreMode::Estimator,
             rabitq_rerank_clip: EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
-            turboquant_profile: TurboQuantProfile::Standard,
             storage_format: StorageFormat::RaBitQ,
             rerank: RerankMode::HeapF32,
             coarse_format: CoarseFormat::Auto,
@@ -5296,7 +5051,6 @@ mod tests {
             rabitq_residual: false,
             rabitq_rerank_score: RaBitQRerankScoreMode::Estimator,
             rabitq_rerank_clip: EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
-            turboquant_profile: TurboQuantProfile::Standard,
             storage_format: StorageFormat::Auto,
             rerank: RerankMode::Auto,
             coarse_format: CoarseFormat::Auto,
@@ -5328,7 +5082,6 @@ mod tests {
             rabitq_residual: false,
             rabitq_rerank_score: RaBitQRerankScoreMode::Estimator,
             rabitq_rerank_clip: EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
-            turboquant_profile: TurboQuantProfile::Standard,
             storage_format: StorageFormat::Auto,
             rerank: RerankMode::Auto,
             coarse_format: CoarseFormat::Auto,
@@ -6579,7 +6332,6 @@ mod tests {
             rabitq_residual: false,
             rabitq_rerank_score: RaBitQRerankScoreMode::Estimator,
             rabitq_rerank_clip: EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
-            turboquant_profile: TurboQuantProfile::Standard,
             storage_format: StorageFormat::Auto,
             rerank: RerankMode::Auto,
             coarse_format: CoarseFormat::Auto,

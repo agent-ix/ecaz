@@ -26,10 +26,8 @@ use crate::storage::{
     snapshot_guard::ActiveSnapshotGuard,
 };
 
-use super::options::{StorageFormat, TurboQuantProfile};
-use super::quantizer::{
-    self, IvfPqFastScanModel, IvfPreparedQuery, IvfQuantizer, IvfTqCalibrationModel,
-};
+use super::options::StorageFormat;
+use super::quantizer::{self, IvfPqFastScanModel, IvfPreparedQuery, IvfQuantizer};
 
 // Manual `Debug` impl below; the `Option<Box<T>>` fields whose payload
 // types (`IvfHeapRerankState`, `IvfPqFastScanModel`) wrap pgrx guard
@@ -45,7 +43,6 @@ struct EcIvfScanOpaque {
     scan_nlists: u32,
     scan_nprobe: u32,
     pq_fastscan_model: Option<Box<IvfPqFastScanModel>>,
-    tq_calibration_model: Option<Box<IvfTqCalibrationModel>>,
     prepared_query: *mut IvfPreparedQuery,
     centroid_scores: *mut EcIvfCentroidScore,
     centroid_score_count: u32,
@@ -85,7 +82,6 @@ impl std::fmt::Debug for EcIvfScanOpaque {
             .field("scan_nlists", &self.scan_nlists)
             .field("scan_nprobe", &self.scan_nprobe)
             .field("pq_fastscan_model", &self.pq_fastscan_model.is_some())
-            .field("tq_calibration_model", &self.tq_calibration_model.is_some())
             .field("prepared_query", &self.prepared_query)
             .field("centroid_scores", &self.centroid_scores)
             .field("centroid_score_count", &self.centroid_score_count)
@@ -889,7 +885,6 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amendscan(scan: pg_sys::IndexScanD
             flush_scan_stats(opaque);
             free_scan_query_prep(opaque);
             free_pq_fastscan_model(opaque);
-            free_tq_calibration_model(opaque);
             free_candidate_dedup(opaque);
             free_posting_scratch_soa(opaque);
             free_dense_posting_coalescing_scratch(opaque);
@@ -1064,16 +1059,6 @@ unsafe fn store_scan_prepared_query(
         quantizer
             .prepare_ip_query_with_pq_model(query, model)
             .unwrap_or_else(|e| pgrx::error!("ec_ivf failed to prepare scan query: {e}"))
-    } else if metadata.storage_format == StorageFormat::TurboQuant
-        && metadata.turboquant_profile == TurboQuantProfile::TqPlus
-    {
-        let model =
-            tq_calibration_model_for_scan(opaque, index_relation, metadata).unwrap_or_else(|e| {
-                pgrx::error!("ec_ivf failed to load TurboQuant calibration model: {e}")
-            });
-        quantizer
-            .prepare_ip_query_with_tq_calibration_model(query, model)
-            .unwrap_or_else(|e| pgrx::error!("ec_ivf failed to prepare scan query: {e}"))
     } else {
         quantizer
             .prepare_ip_query(query)
@@ -1112,29 +1097,6 @@ unsafe fn pq_fastscan_model_for_scan<'a>(
 
 fn free_pq_fastscan_model(opaque: &mut EcIvfScanOpaque) {
     opaque.pq_fastscan_model = None;
-}
-
-/// # Safety
-/// `index_relation` and metadata describe the live IVF index; the quantizer
-/// loader validates the on-disk TurboQuant calibration model. The returned
-/// reference is valid until `free_tq_calibration_model` clears the scan opaque.
-unsafe fn tq_calibration_model_for_scan<'a>(
-    opaque: &'a mut EcIvfScanOpaque,
-    index_relation: pg_sys::Relation,
-    metadata: &super::page::MetadataPage,
-) -> Result<&'a IvfTqCalibrationModel, String> {
-    if opaque.tq_calibration_model.is_none() {
-        let model = quantizer::load_tq_calibration_model(index_relation, metadata)?;
-        opaque.tq_calibration_model = Some(Box::new(model));
-    }
-    Ok(opaque
-        .tq_calibration_model
-        .as_deref()
-        .expect("tq_calibration_model was just populated above"))
-}
-
-fn free_tq_calibration_model(opaque: &mut EcIvfScanOpaque) {
-    opaque.tq_calibration_model = None;
 }
 
 fn store_centroid_scores(opaque: &mut EcIvfScanOpaque, scores: &[EcIvfCentroidScore]) {
@@ -1211,7 +1173,6 @@ fn store_posting_candidate_heap(
 fn free_scan_query_prep(opaque: &mut EcIvfScanOpaque) {
     free_scan_query(opaque);
     free_scan_prepared_query(opaque);
-    free_tq_calibration_model(opaque);
     free_heap_rerank_state(opaque);
     free_centroid_scores(opaque);
     free_selected_lists(opaque);
@@ -1230,8 +1191,9 @@ unsafe fn candidate_dedup_map(
     capacity: usize,
 ) -> *mut CandidateDedupPool {
     if opaque.candidate_dedup.is_null() {
-        opaque.candidate_dedup =
-            Box::into_raw(Box::new(CandidateDedupPool::with_capacity(capacity)));
+        opaque.candidate_dedup = Box::into_raw(Box::new(CandidateDedupPool::with_capacity(
+            capacity,
+        )));
         return opaque.candidate_dedup;
     }
 
@@ -1977,9 +1939,7 @@ unsafe fn materialize_probe_candidates(
         // the rerank helper validates whether heap_f32 state is present
         // before use.
         let rerank_started = should_record_exact_rerank.then(Instant::now);
-        unsafe {
-            rerank_probe_candidates(scan, index_options, opaque, centroid_scores, candidates)
-        };
+        unsafe { rerank_probe_candidates(scan, index_options, opaque, centroid_scores, candidates) };
         if let Some(rerank_started) = rerank_started {
             record_stage_elapsed(
                 opaque,
@@ -2680,35 +2640,13 @@ unsafe fn rerank_probe_candidates(
             } else {
                 super::options::RerankPlacement::SourceDiagnostic
             };
-            let sidecar_tq_metadata = if sidecar_head.is_some()
-                && index_options.turboquant_profile == TurboQuantProfile::TqPlus
-                && index_options.rerank_format == super::options::RerankFormat::TurboQuant
-            {
-                Some(unsafe { super::page::read_metadata_page((*scan).indexRelation) })
-            } else {
-                None
-            };
-            let sidecar_tq_calibration_model = if let Some(metadata) = sidecar_tq_metadata.as_ref()
-            {
-                Some(
-                    unsafe {
-                        tq_calibration_model_for_scan(opaque, (*scan).indexRelation, metadata)
-                    }
-                    .unwrap_or_else(|e| {
-                        pgrx::error!("ec_ivf failed to load TurboQuant calibration model: {e}")
-                    })
-                    .clone(),
-                )
-            } else {
-                None
-            };
 
             // Task 111g: the rerank stage reads the heap source column
             // tid-sorted (unchanged) and rescores the frontier through the
             // configured `rerank_format`. The default `f32` path stays
             // bit-identical to the pre-111g heap_f32 rerank; compact formats
             // share the Task 111h rerank payload codec.
-            let scorer = super::rerank::RerankScorer::resolve_with_tq_calibration_model(
+            let scorer = super::rerank::RerankScorer::resolve(
                 index_options.rerank_format,
                 scorer_placement,
                 index_options.storage_format,
@@ -2716,7 +2654,6 @@ unsafe fn rerank_probe_candidates(
                 opaque.query_values(),
                 index_options.rabitq_rerank_score,
                 index_options.rabitq_rerank_clip,
-                sidecar_tq_calibration_model.as_ref(),
             )
             .unwrap_or_else(|e| pgrx::error!("{e}"));
             opaque.explain_counters.record_rerank_surface(
@@ -4974,7 +4911,6 @@ mod tests {
             rabitq_residual: false,
             rabitq_rerank_score: RaBitQRerankScoreMode::Estimator,
             rabitq_rerank_clip: EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
-            turboquant_profile: crate::am::ec_ivf::options::TurboQuantProfile::Standard,
             storage_format: IvfStorageFormat::RaBitQ,
             rerank,
             coarse_format: CoarseFormat::Auto,
@@ -5456,9 +5392,7 @@ mod tests {
         let mut stream = Vec::new();
         let mut state = 0x2545F4914F6CDD1D_u64;
         for i in 0..10_000_u32 {
-            state = state
-                .wrapping_mul(6364136223846793005)
-                .wrapping_add(1442695040888963407);
+            state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
             let block = (state >> 33) as u32 % 512;
             let offset = 1 + ((state >> 17) as u16 % 128);
             let score = ((state >> 40) as f32) / 1e6 - 8.0;
@@ -5496,11 +5430,7 @@ mod tests {
             for (left, right) in from_pool.iter().zip(from_reference.iter()) {
                 assert_eq!(left.heap_tid, right.heap_tid, "limit {limit:?}");
                 assert_eq!(left.rerank_tid, right.rerank_tid, "limit {limit:?}");
-                assert_eq!(
-                    left.score.to_bits(),
-                    right.score.to_bits(),
-                    "limit {limit:?}"
-                );
+                assert_eq!(left.score.to_bits(), right.score.to_bits(), "limit {limit:?}");
             }
         }
     }
@@ -5549,9 +5479,7 @@ mod tests {
         let mut stream = Vec::with_capacity(CANDIDATES);
         let mut state = 0x9E3779B97F4A7C15_u64;
         for i in 0..CANDIDATES as u64 {
-            state = state
-                .wrapping_mul(6364136223846793005)
-                .wrapping_add(1442695040888963407);
+            state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
             // Unique tids so the map holds the full candidate count.
             let block = (i / 291) as u32;
             let offset = 1 + (i % 291) as u16;
@@ -5586,12 +5514,7 @@ mod tests {
         let map_ref = &map;
         let map_walk = time_ns(
             "map walk only (values -> black_box)",
-            Box::new(move || {
-                map_ref
-                    .values()
-                    .map(|c| c.heap_tid.offset_number as usize)
-                    .sum()
-            }),
+            Box::new(move || map_ref.values().map(|c| c.heap_tid.offset_number as usize).sum()),
         );
         let ranked_len = |ranked: RankedProbeCandidates| match ranked {
             RankedProbeCandidates::Sorted(candidates) => candidates.len(),

@@ -1,8 +1,6 @@
 use super::quant_codec::QuantCodecKind;
 use crate::quant::isa::Isa;
-use crate::quant::prod::{
-    PreparedLutNoQjl4BitQuery, PreparedQuery, PreparedTqCalibratedNoQjl4BitQuery, ProdQuantizer,
-};
+use crate::quant::prod::{PreparedLutNoQjl4BitQuery, PreparedQuery, ProdQuantizer};
 use std::time::Instant;
 
 mod counters;
@@ -343,21 +341,6 @@ pub(crate) fn score_turboquant_no_qjl_4bit_batch_for<Id>(
     result.map(|_| ())
 }
 
-pub(crate) fn score_turboquant_calibrated_no_qjl_4bit_batch_for<Id>(
-    surface: CandidateBatchScoringSurface,
-    quantizer: &ProdQuantizer,
-    prepared: &PreparedTqCalibratedNoQjl4BitQuery,
-    batch: &CandidateBatch<'_, Id>,
-    out_scores: &mut [f32],
-) -> Result<(), String> {
-    let result =
-        score_turboquant_calibrated_no_qjl_4bit_batch_inner(quantizer, prepared, batch, out_scores);
-    if let Ok(timing) = &result {
-        record_batch_scoring_timing(surface, QuantCodecKind::TurboQuant, batch.len(), timing);
-    }
-    result.map(|_| ())
-}
-
 pub(crate) fn score_turboquant_qjl_batch_for<Id>(
     surface: CandidateBatchScoringSurface,
     quantizer: &ProdQuantizer,
@@ -599,41 +582,6 @@ fn score_turboquant_no_qjl_4bit_batch_inner<Id>(
         out_scores,
         false,
     ))
-}
-
-fn score_turboquant_calibrated_no_qjl_4bit_batch_inner<Id>(
-    quantizer: &ProdQuantizer,
-    prepared: &PreparedTqCalibratedNoQjl4BitQuery,
-    batch: &CandidateBatch<'_, Id>,
-    out_scores: &mut [f32],
-) -> Result<BatchScoringTiming, String> {
-    if batch.len() != out_scores.len() {
-        return Err(format!(
-            "candidate batch score output count {} does not match candidate count {}",
-            out_scores.len(),
-            batch.len()
-        ));
-    }
-    crate::quant::lut32::validate_lut_shape(&prepared.lut, quantizer.original_dim)?;
-    for (index, payload) in batch.payloads().iter().enumerate() {
-        validate_turboquant_no_qjl_4bit_meta(payload.meta)?;
-        let mse_code = checked_mse_code_bytes_no_qjl_4bit("lut32", index, quantizer, payload.code)?;
-        crate::quant::lut32::validate_mse_code_shape(index, quantizer.original_dim, mse_code)?;
-    }
-
-    let timing = score_turboquant_no_qjl_4bit_payloads_lut32(
-        quantizer.original_dim,
-        quantizer,
-        &prepared.lut,
-        prepared.lut_scale,
-        batch.payloads(),
-        out_scores,
-        false,
-    );
-    for score in out_scores {
-        *score += prepared.bias;
-    }
-    Ok(timing)
 }
 
 fn score_turboquant_no_qjl_4bit_payloads_lut32(

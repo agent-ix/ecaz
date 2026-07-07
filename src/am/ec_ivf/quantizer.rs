@@ -3,9 +3,9 @@ use super::page;
 use crate::am::common::candidate_batch::{
     record_ivf_rabitq_arithmetic_batch_flush_width, score_grouped_pq_batch_for,
     score_rabitq_bits1_batch_for, score_rabitq_bitsn_batch_for,
-    score_turboquant_calibrated_no_qjl_4bit_batch_for, score_turboquant_int8_approx_batch_for,
-    score_turboquant_no_qjl_4bit_batch_for, score_turboquant_qjl_batch_for, CandidateBatch,
-    CandidateBatchScoringSurface, CandidateMeta, CandidatePayload,
+    score_turboquant_int8_approx_batch_for, score_turboquant_no_qjl_4bit_batch_for,
+    score_turboquant_qjl_batch_for, CandidateBatch, CandidateBatchScoringSurface, CandidateMeta,
+    CandidatePayload,
 };
 use crate::am::common::quant_codec::{
     EncodedQuantPayload, QuantCodec, QuantCodecKind, QuantSearchCodecTag,
@@ -15,7 +15,7 @@ use crate::quant::grouped_pq::{
 };
 use crate::quant::prod::{
     ExactScoreMode, Int8ApproxNoQjl4BitQuery, PreparedLutNoQjl4BitQuery, PreparedQuery,
-    PreparedTqCalibratedNoQjl4BitQuery, ProdQuantizer, TqCalibration,
+    ProdQuantizer,
 };
 use crate::quant::rabitq::{code_len_for, PreparedEstimator, RaBitQQuantizer};
 use crate::quant::rotation;
@@ -40,7 +40,6 @@ pub(super) enum IvfPreparedQuery {
     /// lane. Query-side alternative to the i16 LUT selected via the
     /// `ec_ivf.turboquant_scorer` session GUC; on-disk codes are unchanged.
     TurboQuantNoQjl4BitInt8Approx(Int8ApproxNoQjl4BitQuery),
-    TurboQuantCalibratedNoQjl4Bit(PreparedTqCalibratedNoQjl4BitQuery),
     PqFastScan {
         lut: Vec<f32>,
         group_count: usize,
@@ -55,11 +54,6 @@ pub(super) struct IvfPqFastScanModel {
     pub(super) group_size: usize,
     pub(super) signs: Vec<f32>,
     pub(super) flat_codebooks: Vec<f32>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub(super) struct IvfTqCalibrationModel {
-    pub(super) calibration: TqCalibration,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -306,38 +300,6 @@ impl IvfQuantizer {
         Ok((dimensions, 0.0, payload))
     }
 
-    pub(super) fn encode_source_with_tq_calibration_model(
-        self,
-        source: &[f32],
-        model: &IvfTqCalibrationModel,
-    ) -> Result<(u16, f32, Vec<u8>), String> {
-        if source.is_empty() {
-            return Err("embedding must not be empty".to_owned());
-        }
-        if source.len() != self.dimensions {
-            return Err(format!(
-                "embedding dimension mismatch: got {}, expected {}",
-                source.len(),
-                self.dimensions
-            ));
-        }
-        if !matches!(self.profile, IvfQuantizerProfile::TurboQuant) {
-            return Err(
-                "ec_ivf TurboQuant calibration encoding requires a TurboQuant quantizer".to_owned(),
-            );
-        }
-        self.validate_tq_calibration_model(model)?;
-        let dimensions = u16::try_from(source.len())
-            .map_err(|_| format!("embedding dimension {} exceeds maximum 65535", source.len()))?;
-        let quantizer = ProdQuantizer::cached(
-            self.dimensions,
-            crate::DEFAULT_QUANT_BITS,
-            crate::DEFAULT_QUANT_SEED,
-        );
-        let encoded = quantizer.encode_calibrated_no_qjl_4bit(source, &model.calibration);
-        Ok((dimensions, 0.0, encoded.mse_packed))
-    }
-
     pub(super) fn prepare_ip_query(self, query: &[f32]) -> Result<IvfPreparedQuery, String> {
         self.prepare_ip_query_with_turboquant_scorer(
             query,
@@ -429,35 +391,6 @@ impl IvfQuantizer {
         })
     }
 
-    pub(super) fn prepare_ip_query_with_tq_calibration_model(
-        self,
-        query: &[f32],
-        model: &IvfTqCalibrationModel,
-    ) -> Result<IvfPreparedQuery, String> {
-        if query.len() != self.dimensions {
-            return Err(format!(
-                "query dimension mismatch: got {}, expected {}",
-                query.len(),
-                self.dimensions
-            ));
-        }
-        if !matches!(self.profile, IvfQuantizerProfile::TurboQuant) {
-            return Err(
-                "ec_ivf TurboQuant calibration query prep requires a TurboQuant quantizer"
-                    .to_owned(),
-            );
-        }
-        self.validate_tq_calibration_model(model)?;
-        let quantizer = ProdQuantizer::cached(
-            self.dimensions,
-            crate::DEFAULT_QUANT_BITS,
-            crate::DEFAULT_QUANT_SEED,
-        );
-        Ok(IvfPreparedQuery::TurboQuantCalibratedNoQjl4Bit(
-            quantizer.prepare_ip_query_calibrated_no_qjl_4bit(query, &model.calibration),
-        ))
-    }
-
     pub(super) fn score_ip_from_parts(
         self,
         prepared_query: &IvfPreparedQuery,
@@ -495,18 +428,6 @@ impl IvfQuantizer {
                 );
                 Ok(quantizer.score_ip_from_parts_int8_approx_no_qjl_4bit(prepared_query, payload))
             }
-            (
-                IvfQuantizerProfile::TurboQuant,
-                IvfPreparedQuery::TurboQuantCalibratedNoQjl4Bit(prepared_query),
-            ) => {
-                let _ = gamma;
-                let quantizer = ProdQuantizer::cached(
-                    self.dimensions,
-                    crate::DEFAULT_QUANT_BITS,
-                    crate::DEFAULT_QUANT_SEED,
-                );
-                Ok(quantizer.score_calibrated_no_qjl_4bit(prepared_query, payload))
-            }
             (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::RaBitQ(prepared_query)) => {
                 let _ = gamma;
                 Ok(prepared_query.estimate_ip_scalar_only(payload))
@@ -528,8 +449,10 @@ impl IvfQuantizer {
             (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::RaBitQ(_))
             | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuant(_))
             | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuantNoQjl4BitLut(_))
-            | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuantNoQjl4BitInt8Approx(_))
-            | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuantCalibratedNoQjl4Bit(_))
+            | (
+                IvfQuantizerProfile::RaBitQ,
+                IvfPreparedQuery::TurboQuantNoQjl4BitInt8Approx(_),
+            )
             | (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::PqFastScan { .. })
             | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::PqFastScan { .. })
             | (IvfQuantizerProfile::PqFastScan { .. }, IvfPreparedQuery::TurboQuant(_))
@@ -540,10 +463,6 @@ impl IvfQuantizer {
             | (
                 IvfQuantizerProfile::PqFastScan { .. },
                 IvfPreparedQuery::TurboQuantNoQjl4BitInt8Approx(_),
-            )
-            | (
-                IvfQuantizerProfile::PqFastScan { .. },
-                IvfPreparedQuery::TurboQuantCalibratedNoQjl4Bit(_),
             )
             | (IvfQuantizerProfile::PqFastScan { .. }, IvfPreparedQuery::RaBitQ(_)) => {
                 Err("ec_ivf prepared query does not match quantizer profile".to_owned())
@@ -738,18 +657,16 @@ impl IvfQuantizer {
                 IvfQuantizerProfile::TurboQuant,
                 IvfPreparedQuery::TurboQuantNoQjl4BitInt8Approx(_),
             )
-            | (
-                IvfQuantizerProfile::TurboQuant,
-                IvfPreparedQuery::TurboQuantCalibratedNoQjl4Bit(_),
-            )
             | (IvfQuantizerProfile::PqFastScan { .. }, IvfPreparedQuery::PqFastScan { .. }) => {
                 Ok(false)
             }
             (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::RaBitQ(_))
             | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuant(_))
             | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuantNoQjl4BitLut(_))
-            | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuantNoQjl4BitInt8Approx(_))
-            | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuantCalibratedNoQjl4Bit(_))
+            | (
+                IvfQuantizerProfile::RaBitQ,
+                IvfPreparedQuery::TurboQuantNoQjl4BitInt8Approx(_),
+            )
             | (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::PqFastScan { .. })
             | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::PqFastScan { .. })
             | (IvfQuantizerProfile::PqFastScan { .. }, IvfPreparedQuery::TurboQuant(_))
@@ -760,10 +677,6 @@ impl IvfQuantizer {
             | (
                 IvfQuantizerProfile::PqFastScan { .. },
                 IvfPreparedQuery::TurboQuantNoQjl4BitInt8Approx(_),
-            )
-            | (
-                IvfQuantizerProfile::PqFastScan { .. },
-                IvfPreparedQuery::TurboQuantCalibratedNoQjl4Bit(_),
             )
             | (IvfQuantizerProfile::PqFastScan { .. }, IvfPreparedQuery::RaBitQ(_)) => {
                 Err("ec_ivf prepared query does not match quantizer profile".to_owned())
@@ -914,51 +827,6 @@ impl IvfQuantizer {
                 }
                 Ok(true)
             }
-            (
-                IvfQuantizerProfile::TurboQuant,
-                IvfPreparedQuery::TurboQuantCalibratedNoQjl4Bit(prepared_query),
-            ) => {
-                if payload_len == 0 {
-                    return Err("ec_ivf TurboQuant batch payload length must be nonzero".to_owned());
-                }
-                if payloads.len() != payload_len * out_scores.len() {
-                    return Err(format!(
-                        "ec_ivf TurboQuant calibrated batch payload length mismatch: got {} bytes for {} postings with {} byte payloads",
-                        payloads.len(),
-                        out_scores.len(),
-                        payload_len
-                    ));
-                }
-
-                let quantizer = ProdQuantizer::cached(
-                    self.dimensions,
-                    crate::DEFAULT_QUANT_BITS,
-                    crate::DEFAULT_QUANT_SEED,
-                );
-                let mut batch = CandidateBatch::with_capacity(out_scores.len());
-                for (index, payload) in payloads.chunks_exact(payload_len).enumerate() {
-                    batch.push(
-                        index,
-                        CandidatePayload {
-                            code: payload,
-                            meta: CandidateMeta::None,
-                        },
-                    )?;
-                }
-                score_turboquant_calibrated_no_qjl_4bit_batch_for(
-                    CandidateBatchScoringSurface::Ivf,
-                    quantizer.as_ref(),
-                    prepared_query,
-                    &batch,
-                    out_scores,
-                )?;
-                if negate {
-                    for score in out_scores {
-                        *score = -*score;
-                    }
-                }
-                Ok(true)
-            }
             (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::TurboQuant(prepared_query)) => {
                 if payload_len == 0 {
                     return Err(
@@ -1015,8 +883,10 @@ impl IvfQuantizer {
             (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::RaBitQ(_))
             | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuant(_))
             | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuantNoQjl4BitLut(_))
-            | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuantNoQjl4BitInt8Approx(_))
-            | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuantCalibratedNoQjl4Bit(_))
+            | (
+                IvfQuantizerProfile::RaBitQ,
+                IvfPreparedQuery::TurboQuantNoQjl4BitInt8Approx(_),
+            )
             | (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::PqFastScan { .. })
             | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::PqFastScan { .. })
             | (IvfQuantizerProfile::PqFastScan { .. }, IvfPreparedQuery::TurboQuant(_))
@@ -1027,10 +897,6 @@ impl IvfQuantizer {
             | (
                 IvfQuantizerProfile::PqFastScan { .. },
                 IvfPreparedQuery::TurboQuantNoQjl4BitInt8Approx(_),
-            )
-            | (
-                IvfQuantizerProfile::PqFastScan { .. },
-                IvfPreparedQuery::TurboQuantCalibratedNoQjl4Bit(_),
             )
             | (IvfQuantizerProfile::PqFastScan { .. }, IvfPreparedQuery::RaBitQ(_)) => {
                 Err("ec_ivf prepared query does not match quantizer profile".to_owned())
@@ -1050,9 +916,6 @@ impl IvfQuantizer {
             ) | (
                 IvfQuantizerProfile::TurboQuant,
                 IvfPreparedQuery::TurboQuantNoQjl4BitInt8Approx(_)
-            ) | (
-                IvfQuantizerProfile::TurboQuant,
-                IvfPreparedQuery::TurboQuantCalibratedNoQjl4Bit(_)
             ) | (
                 IvfQuantizerProfile::TurboQuant,
                 IvfPreparedQuery::TurboQuant(_)
@@ -1216,60 +1079,6 @@ impl IvfQuantizer {
                 }
                 Ok(true)
             }
-            (
-                IvfQuantizerProfile::TurboQuant,
-                IvfPreparedQuery::TurboQuantCalibratedNoQjl4Bit(prepared_query),
-            ) => {
-                if payload_len == 0 {
-                    return Err("ec_ivf TurboQuant batch payload length must be nonzero".to_owned());
-                }
-                if payloads.len() != out_scores.len() {
-                    return Err(format!(
-                        "ec_ivf TurboQuant calibrated borrowed batch payload count {} does not match score count {}",
-                        payloads.len(),
-                        out_scores.len()
-                    ));
-                }
-                if let Some((index, payload)) = payloads
-                    .iter()
-                    .enumerate()
-                    .find(|(_, payload)| payload.len() != payload_len)
-                {
-                    return Err(format!(
-                        "ec_ivf TurboQuant calibrated borrowed batch payload {index} has {} bytes, expected {payload_len}",
-                        payload.len()
-                    ));
-                }
-
-                let quantizer = ProdQuantizer::cached(
-                    self.dimensions,
-                    crate::DEFAULT_QUANT_BITS,
-                    crate::DEFAULT_QUANT_SEED,
-                );
-                let mut batch = CandidateBatch::with_capacity(out_scores.len());
-                for (index, payload) in payloads.iter().copied().enumerate() {
-                    batch.push(
-                        index,
-                        CandidatePayload {
-                            code: payload,
-                            meta: CandidateMeta::None,
-                        },
-                    )?;
-                }
-                score_turboquant_calibrated_no_qjl_4bit_batch_for(
-                    CandidateBatchScoringSurface::Ivf,
-                    quantizer.as_ref(),
-                    prepared_query,
-                    &batch,
-                    out_scores,
-                )?;
-                if negate {
-                    for score in out_scores {
-                        *score = -*score;
-                    }
-                }
-                Ok(true)
-            }
             (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::TurboQuant(prepared_query)) => {
                 if payload_len == 0 {
                     return Err(
@@ -1335,8 +1144,10 @@ impl IvfQuantizer {
             (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::RaBitQ(_))
             | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuant(_))
             | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuantNoQjl4BitLut(_))
-            | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuantNoQjl4BitInt8Approx(_))
-            | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuantCalibratedNoQjl4Bit(_))
+            | (
+                IvfQuantizerProfile::RaBitQ,
+                IvfPreparedQuery::TurboQuantNoQjl4BitInt8Approx(_),
+            )
             | (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::PqFastScan { .. })
             | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::PqFastScan { .. })
             | (IvfQuantizerProfile::PqFastScan { .. }, IvfPreparedQuery::TurboQuant(_))
@@ -1347,10 +1158,6 @@ impl IvfQuantizer {
             | (
                 IvfQuantizerProfile::PqFastScan { .. },
                 IvfPreparedQuery::TurboQuantNoQjl4BitInt8Approx(_),
-            )
-            | (
-                IvfQuantizerProfile::PqFastScan { .. },
-                IvfPreparedQuery::TurboQuantCalibratedNoQjl4Bit(_),
             )
             | (IvfQuantizerProfile::PqFastScan { .. }, IvfPreparedQuery::RaBitQ(_)) => {
                 Err("ec_ivf prepared query does not match quantizer profile".to_owned())
@@ -1438,16 +1245,14 @@ impl IvfQuantizer {
             | (
                 IvfQuantizerProfile::TurboQuant,
                 IvfPreparedQuery::TurboQuantNoQjl4BitInt8Approx(_),
-            )
-            | (
-                IvfQuantizerProfile::TurboQuant,
-                IvfPreparedQuery::TurboQuantCalibratedNoQjl4Bit(_),
             ) => Ok(false),
             (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::RaBitQ(_))
             | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuant(_))
             | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuantNoQjl4BitLut(_))
-            | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuantNoQjl4BitInt8Approx(_))
-            | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuantCalibratedNoQjl4Bit(_))
+            | (
+                IvfQuantizerProfile::RaBitQ,
+                IvfPreparedQuery::TurboQuantNoQjl4BitInt8Approx(_),
+            )
             | (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::PqFastScan { .. })
             | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::PqFastScan { .. })
             | (IvfQuantizerProfile::PqFastScan { .. }, IvfPreparedQuery::TurboQuant(_))
@@ -1458,10 +1263,6 @@ impl IvfQuantizer {
             | (
                 IvfQuantizerProfile::PqFastScan { .. },
                 IvfPreparedQuery::TurboQuantNoQjl4BitInt8Approx(_),
-            )
-            | (
-                IvfQuantizerProfile::PqFastScan { .. },
-                IvfPreparedQuery::TurboQuantCalibratedNoQjl4Bit(_),
             )
             | (IvfQuantizerProfile::PqFastScan { .. }, IvfPreparedQuery::RaBitQ(_)) => {
                 Err("ec_ivf prepared query does not match quantizer profile".to_owned())
@@ -1542,48 +1343,6 @@ impl IvfQuantizer {
             }
             _ => Err("ec_ivf pq_fastscan model used with non-pq quantizer".to_owned()),
         }
-    }
-
-    pub(super) fn validate_tq_calibration_model(
-        self,
-        model: &IvfTqCalibrationModel,
-    ) -> Result<(), String> {
-        if !matches!(self.profile, IvfQuantizerProfile::TurboQuant) {
-            return Err(
-                "ec_ivf TurboQuant calibration model used with non-TurboQuant quantizer".to_owned(),
-            );
-        }
-        if model.calibration.shift.len() != self.dimensions
-            || model.calibration.scale.len() != self.dimensions
-        {
-            return Err(format!(
-                "ec_ivf TurboQuant calibration shape mismatch: shift {}, scale {}, expected {}",
-                model.calibration.shift.len(),
-                model.calibration.scale.len(),
-                self.dimensions
-            ));
-        }
-        if model
-            .calibration
-            .shift
-            .iter()
-            .chain(model.calibration.scale.iter())
-            .any(|value| !value.is_finite())
-        {
-            return Err("ec_ivf TurboQuant calibration contains non-finite values".to_owned());
-        }
-        if model.calibration.scale.iter().any(|value| *value == 0.0) {
-            return Err("ec_ivf TurboQuant calibration contains zero scale".to_owned());
-        }
-        let quantizer = ProdQuantizer::cached(
-            self.dimensions,
-            crate::DEFAULT_QUANT_BITS,
-            crate::DEFAULT_QUANT_SEED,
-        );
-        if quantizer.exact_score_mode() != ExactScoreMode::MseNoQjl4Bit {
-            return Err("ec_ivf TurboQuant calibration requires the no-QJL 4-bit lane".to_owned());
-        }
-        Ok(())
     }
 }
 
@@ -1791,23 +1550,6 @@ impl QuantCodec for IvfQuantCodec<'_> {
                 )
             }
             (
-                IvfQuantizerProfile::TurboQuant,
-                IvfPreparedQuery::TurboQuantCalibratedNoQjl4Bit(prepared_query),
-            ) => {
-                let quantizer = ProdQuantizer::cached(
-                    self.quantizer.dimensions,
-                    crate::DEFAULT_QUANT_BITS,
-                    crate::DEFAULT_QUANT_SEED,
-                );
-                score_turboquant_calibrated_no_qjl_4bit_batch_for(
-                    CandidateBatchScoringSurface::Ivf,
-                    quantizer.as_ref(),
-                    prepared_query,
-                    batch,
-                    out_scores,
-                )
-            }
-            (
                 IvfQuantizerProfile::PqFastScan { group_count, .. },
                 IvfPreparedQuery::PqFastScan {
                     lut,
@@ -1967,48 +1709,6 @@ pub(super) unsafe fn load_pq_fastscan_model(
     })
 }
 
-pub(super) unsafe fn load_tq_calibration_model(
-    index_relation: pgrx::pg_sys::Relation,
-    metadata: &page::MetadataPage,
-) -> Result<IvfTqCalibrationModel, String> {
-    if metadata.turboquant_profile != super::options::TurboQuantProfile::TqPlus {
-        return Err(
-            "ec_ivf TurboQuant calibration model load requires turboquant_profile = 'tqplus'"
-                .to_owned(),
-        );
-    }
-    if metadata.turboquant_calibration_head == ItemPointer::INVALID {
-        return Err(
-            "ec_ivf TurboQuant calibration metadata is missing a calibration head".to_owned(),
-        );
-    }
-    let shift = unsafe {
-        page::read_ivf_tq_calibration(index_relation, metadata.turboquant_calibration_head)
-    }?;
-    if shift.array_kind != page::IvfTqCalibrationArrayKind::Shift {
-        return Err("ec_ivf TurboQuant calibration chain must start with shift tuple".to_owned());
-    }
-    if shift.next_tid == ItemPointer::INVALID {
-        return Err("ec_ivf TurboQuant calibration chain is missing scale tuple".to_owned());
-    }
-    let scale = unsafe { page::read_ivf_tq_calibration(index_relation, shift.next_tid) }?;
-    if scale.array_kind != page::IvfTqCalibrationArrayKind::Scale {
-        return Err("ec_ivf TurboQuant calibration chain second tuple must be scale".to_owned());
-    }
-    if scale.next_tid != ItemPointer::INVALID {
-        return Err("ec_ivf TurboQuant calibration chain has trailing tuples".to_owned());
-    }
-    let model = IvfTqCalibrationModel {
-        calibration: TqCalibration {
-            shift: shift.values,
-            scale: scale.values,
-        },
-    };
-    IvfQuantizer::resolve(StorageFormat::TurboQuant, metadata.dimensions as usize)?
-        .validate_tq_calibration_model(&model)?;
-    Ok(model)
-}
-
 impl IvfPreparedQuery {
     #[cfg(any(test, feature = "pg_test"))]
     pub(super) fn lut_len(&self) -> usize {
@@ -2016,7 +1716,6 @@ impl IvfPreparedQuery {
             Self::TurboQuant(prepared) => prepared.lut.len(),
             Self::TurboQuantNoQjl4BitLut(prepared) => prepared.lut.len(),
             Self::TurboQuantNoQjl4BitInt8Approx(_) => 0,
-            Self::TurboQuantCalibratedNoQjl4Bit(prepared) => prepared.lut.len(),
             Self::PqFastScan { lut, .. } => lut.len(),
             Self::RaBitQ(_) => 0,
         }
@@ -2028,7 +1727,6 @@ impl IvfPreparedQuery {
             Self::TurboQuant(prepared) => prepared.sq.len(),
             Self::TurboQuantNoQjl4BitLut(_) => 0,
             Self::TurboQuantNoQjl4BitInt8Approx(_) => 0,
-            Self::TurboQuantCalibratedNoQjl4Bit(_) => 0,
             Self::PqFastScan { .. } => 0,
             Self::RaBitQ(_) => 0,
         }

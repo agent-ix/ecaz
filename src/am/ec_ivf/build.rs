@@ -4,7 +4,7 @@ use std::ptr::{self, NonNull};
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::time::Instant;
 
-use super::quantizer::{self, IvfPqFastScanModel, IvfQuantizer, IvfTqCalibrationModel};
+use super::quantizer::{self, IvfPqFastScanModel, IvfQuantizer};
 use super::{build_parallel, options, page, training, P_NEW};
 use crate::am::common::{
     callback::pg_am_callback, detoast::DetoastedVarlena, training as common_training,
@@ -167,7 +167,6 @@ unsafe extern "C-unwind" fn ec_ivf_build_callback(
                 heap_tid,
                 state.indexed_vector_kind,
                 state.options.storage_format,
-                state.options.turboquant_profile,
                 state.options.effective_quant_bits(),
                 "ambuild",
             );
@@ -447,17 +446,7 @@ impl BuildState {
         .payload_len();
         let deferred_pq_encode = self.options.storage_format == options::StorageFormat::PqFastScan
             && tuple.payload.is_empty();
-        let deferred_tq_calibration_encode = self.options.turboquant_profile
-            == options::TurboQuantProfile::TqPlus
-            && matches!(
-                self.options.storage_format,
-                options::StorageFormat::Auto | options::StorageFormat::TurboQuant
-            )
-            && tuple.payload.is_empty();
-        if !deferred_pq_encode
-            && !deferred_tq_calibration_encode
-            && tuple.payload.len() != expected_payload_len
-        {
+        if !deferred_pq_encode && tuple.payload.len() != expected_payload_len {
             return Err(format!(
                 "posting payload length mismatch: got {}, expected {expected_payload_len} for dim {}",
                 tuple.payload.len(),
@@ -569,6 +558,7 @@ impl BuildState {
                 "pq_fastscan codebook tuple for group centroid count {pq_centroid_count} does not fit on a page"
             ));
         }
+
         let nlists = model.centroid_count();
         let mut data_pages = DataPageChain::new(self.page_size);
         let mut centroid_tids = Vec::with_capacity(nlists);
@@ -625,44 +615,10 @@ impl BuildState {
         let assign_start = Instant::now();
         let list_ids = training::assign_vectors_to_centroids(&source_refs, model)?;
         let mut tuple_indices_by_list = vec![Vec::new(); nlists];
-        for (tuple_index, list_id) in list_ids.iter().copied().enumerate() {
+        for (tuple_index, list_id) in list_ids.into_iter().enumerate() {
             tuple_indices_by_list[list_id].push(tuple_index);
         }
         timing.assign_us = elapsed_us(assign_start);
-        let tq_train_start = Instant::now();
-        let tq_calibration_model = self.train_tq_calibration_model(dimensions, model, &list_ids)?;
-        timing.pq_train_us = timing
-            .pq_train_us
-            .saturating_add(elapsed_us(tq_train_start));
-        if tq_calibration_model.is_some()
-            && !page::tq_calibration_tuple_fits(usize::from(dimensions), self.page_size)
-        {
-            return Err(format!(
-                "TurboQuant calibration tuple for dim {} does not fit on a page",
-                dimensions
-            ));
-        }
-        let mut tq_calibration_head = ItemPointer::INVALID;
-        if let Some(model) = &tq_calibration_model {
-            let shift_tuple = page::IvfTqCalibrationTuple {
-                array_kind: page::IvfTqCalibrationArrayKind::Shift,
-                next_tid: ItemPointer::INVALID,
-                values: model.calibration.shift.clone(),
-            };
-            let scale_tuple = page::IvfTqCalibrationTuple {
-                array_kind: page::IvfTqCalibrationArrayKind::Scale,
-                next_tid: ItemPointer::INVALID,
-                values: model.calibration.scale.clone(),
-            };
-            let shift_tid = data_pages.insert_ivf_tq_calibration(&shift_tuple)?;
-            let scale_tid = data_pages.insert_ivf_tq_calibration(&scale_tuple)?;
-            let linked_shift = page::IvfTqCalibrationTuple {
-                next_tid: scale_tid,
-                ..shift_tuple
-            };
-            data_pages.update_ivf_tq_calibration(shift_tid, &linked_shift)?;
-            tq_calibration_head = shift_tid;
-        }
         let pq_posting_quantizer = if pq_model.is_some() {
             Some(IvfQuantizer::resolve_with_pq_group_size_and_bits(
                 self.options.storage_format,
@@ -670,14 +626,6 @@ impl BuildState {
                 self.options.requested_pq_group_size(),
                 Some(self.options.effective_quant_bits()),
             )?)
-        } else {
-            None
-        };
-        let tq_posting_calibration_model = if matches!(
-            self.options.storage_format,
-            options::StorageFormat::Auto | options::StorageFormat::TurboQuant
-        ) {
-            tq_calibration_model.as_ref()
         } else {
             None
         };
@@ -709,7 +657,6 @@ impl BuildState {
                 &model.centroids,
                 &self.options,
                 dimensions,
-                &tq_calibration_model,
             )?;
 
         let mut posting_tids_by_list = vec![Vec::new(); nlists];
@@ -736,7 +683,6 @@ impl BuildState {
                     let (heap_tid, gamma, payload) = encode_build_posting(
                         &self.heap_tuples[*tuple_index],
                         &pq_model,
-                        tq_posting_calibration_model,
                         pq_posting_quantizer,
                         residual_posting,
                     )?;
@@ -788,7 +734,6 @@ impl BuildState {
                     let (heap_tid, gamma, payload) = encode_build_posting(
                         &self.heap_tuples[*tuple_index],
                         &pq_model,
-                        tq_posting_calibration_model,
                         pq_posting_quantizer,
                         residual_posting,
                     )?;
@@ -878,9 +823,6 @@ impl BuildState {
             metadata.pq_group_size = u16::try_from(pq_model.group_size)
                 .map_err(|_| "pq_fastscan group size exceeds u16".to_owned())?;
         }
-        if tq_calibration_model.is_some() {
-            metadata.turboquant_calibration_head = tq_calibration_head;
-        }
         metadata.total_live_tuples = u64::try_from(self.heap_tuples.len())
             .map_err(|_| "heap tuple count exceeds u64".to_owned())?;
         metadata.rerank_sidecar_head = rerank_sidecar_head;
@@ -924,76 +866,6 @@ impl BuildState {
             group_size: model.group_size,
             signs: model.signs,
             flat_codebooks: model.codebooks.into_iter().flatten().collect(),
-        }))
-    }
-
-    fn train_tq_calibration_model(
-        &self,
-        dimensions: u16,
-        model: &training::SphericalKMeansModel,
-        list_ids: &[usize],
-    ) -> Result<Option<IvfTqCalibrationModel>, String> {
-        if self.options.turboquant_profile != options::TurboQuantProfile::TqPlus {
-            return Ok(None);
-        }
-        let raw_tq_postings = matches!(
-            self.options.storage_format,
-            options::StorageFormat::Auto | options::StorageFormat::TurboQuant
-        );
-        let residual_tq_sidecar = self.options.storage_format
-            == options::StorageFormat::CoarseRerank
-            && self.options.rerank_placement == options::RerankPlacement::Index
-            && self.options.rerank_format == options::RerankFormat::TurboQuant;
-        if !raw_tq_postings && !residual_tq_sidecar {
-            return Err(
-                "ec_ivf TurboQuant calibration requires TurboQuant posting storage or a TurboQuant coarse-rerank sidecar"
-                    .to_owned(),
-            );
-        }
-        if list_ids.len() != self.heap_tuples.len() {
-            return Err(format!(
-                "ec_ivf TurboQuant calibration assignment count {} does not match tuple count {}",
-                list_ids.len(),
-                self.heap_tuples.len()
-            ));
-        }
-        let quantizer = ProdQuantizer::cached(
-            usize::from(dimensions),
-            crate::DEFAULT_QUANT_BITS,
-            crate::DEFAULT_QUANT_SEED,
-        );
-        if quantizer.exact_score_mode() != crate::quant::prod::ExactScoreMode::MseNoQjl4Bit {
-            return Err("ec_ivf TurboQuant calibration requires the no-QJL 4-bit lane".to_owned());
-        }
-        let sample_count = self.training_sample_count();
-        let mut sample_vectors = Vec::with_capacity(sample_count);
-        for (tuple_index, tuple) in self.heap_tuples.iter().take(sample_count).enumerate() {
-            if residual_tq_sidecar {
-                let list_id = list_ids[tuple_index];
-                let centroid = model.centroids.get(list_id).ok_or_else(|| {
-                    format!("ec_ivf TurboQuant calibration list {list_id} has no centroid")
-                })?;
-                if tuple.source_vector.len() != centroid.len() {
-                    return Err(format!(
-                        "ec_ivf TurboQuant calibration source/centroid dimension mismatch: source {}, centroid {}",
-                        tuple.source_vector.len(),
-                        centroid.len()
-                    ));
-                }
-                sample_vectors.push(
-                    tuple
-                        .source_vector
-                        .iter()
-                        .zip(centroid.iter())
-                        .map(|(value, center)| value - center)
-                        .collect::<Vec<_>>(),
-                );
-            } else {
-                sample_vectors.push(tuple.source_vector.clone());
-            }
-        }
-        Ok(Some(IvfTqCalibrationModel {
-            calibration: quantizer.fit_calibration_no_qjl_4bit(&sample_vectors),
         }))
     }
 }
@@ -1058,7 +930,6 @@ fn build_rerank_group_chain(
     centroids: &[Vec<f32>],
     options: &options::EcIvfOptions,
     dimensions: u16,
-    tq_calibration_model: &Option<IvfTqCalibrationModel>,
 ) -> Result<(ItemPointer, ItemPointer, HashMap<ItemPointer, ItemPointer>), String> {
     // Returns (group_head, directory_head, heap_tid -> group header tid).
     // The directory head is intentionally INVALID for the packed group layout;
@@ -1067,11 +938,10 @@ fn build_rerank_group_chain(
     if options.rerank_placement != options::RerankPlacement::Index {
         return Ok((ItemPointer::INVALID, ItemPointer::INVALID, HashMap::new()));
     }
-    let Some(encoder) = super::rerank::RerankSidecarEncoder::resolve_with_tq_calibration_model(
+    let Some(encoder) = super::rerank::RerankSidecarEncoder::resolve(
         options.rerank_format,
         usize::from(dimensions),
         options.rabitq_rerank_clip,
-        tq_calibration_model.as_ref(),
     )?
     else {
         // f32 / auto keep the heap source: no sidecar.
@@ -1316,35 +1186,25 @@ fn insert_dense_posting_group(
 fn encode_build_posting(
     tuple: &BuildTuple,
     pq_model: &Option<IvfPqFastScanModel>,
-    tq_calibration_model: Option<&IvfTqCalibrationModel>,
     pq_posting_quantizer: Option<IvfQuantizer>,
     residual_posting: Option<(IvfQuantizer, &[f32])>,
 ) -> Result<(ItemPointer, f32, Vec<u8>), String> {
-    let (gamma, payload) = match (pq_model, tq_calibration_model, residual_posting) {
-        (Some(pq_model), _, _) => {
+    let (gamma, payload) = match (pq_model, residual_posting) {
+        (Some(pq_model), _) => {
             let (_, gamma, payload) = pq_posting_quantizer
                 .expect("pq posting quantizer should exist for pq model")
                 .encode_source_with_pq_model(&tuple.source_vector, pq_model)?;
             (gamma, payload)
         }
-        (None, Some(model), _) => {
-            let quantizer = IvfQuantizer::resolve(
-                options::StorageFormat::TurboQuant,
-                tuple.source_vector.len(),
-            )?;
-            let (_, gamma, payload) =
-                quantizer.encode_source_with_tq_calibration_model(&tuple.source_vector, model)?;
-            (gamma, payload)
-        }
         // Task 115: residual mode re-encodes the source against the assigned
         // centroid here (the only point in the build where the list's centroid
         // is in hand), mirroring the deferred PQ re-encode path above.
-        (None, None, Some((residual_quantizer, centroid))) => {
+        (None, Some((residual_quantizer, centroid))) => {
             let (_, gamma, payload) =
                 residual_quantizer.encode_source_residual(&tuple.source_vector, centroid)?;
             (gamma, payload)
         }
-        (None, None, None) => (tuple.gamma, tuple.payload.clone()),
+        (None, None) => (tuple.gamma, tuple.payload.clone()),
     };
     Ok((tuple.heap_tid, gamma, payload))
 }
@@ -1417,7 +1277,6 @@ pub(super) fn build_index_tuple(
     heap_tid: ItemPointer,
     indexed_vector_kind: IndexedVectorKind,
     storage_format: options::StorageFormat,
-    turboquant_profile: options::TurboQuantProfile,
     quant_bits: u8,
     context: &str,
 ) -> BuildTuple {
@@ -1431,14 +1290,9 @@ pub(super) fn build_index_tuple(
 
     let bytes = detoasted_varlena_bytes(datum, "indexed vector column");
     match indexed_vector_kind {
-        IndexedVectorKind::Ecvector => build_ecvector_tuple(
-            heap_tid,
-            &bytes,
-            storage_format,
-            turboquant_profile,
-            quant_bits,
-            context,
-        ),
+        IndexedVectorKind::Ecvector => {
+            build_ecvector_tuple(heap_tid, &bytes, storage_format, quant_bits, context)
+        }
         IndexedVectorKind::Tqvector => {
             build_tqvector_tuple(heap_tid, &bytes, storage_format, quant_bits, context)
         }
@@ -1468,19 +1322,12 @@ fn build_ecvector_tuple(
     heap_tid: ItemPointer,
     bytes: &[u8],
     storage_format: options::StorageFormat,
-    turboquant_profile: options::TurboQuantProfile,
     quant_bits: u8,
     context: &str,
 ) -> BuildTuple {
     let source_vector = crate::unpack_raw_f32(bytes, "ec_ivf indexed ecvector column")
         .unwrap_or_else(|e| pgrx::error!("ec_ivf {context} found invalid indexed ecvector: {e}"));
-    if storage_format == options::StorageFormat::PqFastScan
-        || (turboquant_profile == options::TurboQuantProfile::TqPlus
-            && matches!(
-                storage_format,
-                options::StorageFormat::Auto | options::StorageFormat::TurboQuant
-            ))
-    {
+    if storage_format == options::StorageFormat::PqFastScan {
         let dimensions = u16::try_from(source_vector.len()).unwrap_or_else(|_| {
             pgrx::error!(
                 "ec_ivf {context} found invalid indexed ecvector: embedding dimension {} exceeds maximum 65535",
@@ -1671,7 +1518,6 @@ mod tests {
             rabitq_residual: false,
             rabitq_rerank_score: options::RaBitQRerankScoreMode::Estimator,
             rabitq_rerank_clip: options::EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
-            turboquant_profile: options::TurboQuantProfile::Standard,
             storage_format: options::StorageFormat::Auto,
             rerank: options::RerankMode::Auto,
             coarse_format: options::CoarseFormat::Auto,
@@ -1694,21 +1540,6 @@ mod tests {
             crate::DEFAULT_QUANT_SEED,
         )
         .unwrap();
-        BuildTuple {
-            heap_tid: tid(offset_number),
-            dimensions,
-            gamma,
-            payload,
-            source_vector,
-        }
-    }
-
-    fn tuple_for_quantizer(
-        offset_number: u16,
-        source_vector: Vec<f32>,
-        quantizer: IvfQuantizer,
-    ) -> BuildTuple {
-        let (dimensions, gamma, payload) = quantizer.encode_source(&source_vector).unwrap();
         BuildTuple {
             heap_tid: tid(offset_number),
             dimensions,
@@ -1852,72 +1683,6 @@ mod tests {
         assert_eq!(dense.gammas.len(), 2);
         assert_eq!(dense.heap_tids.len(), 2);
         assert_eq!(dense.payloads.len(), 2 * payload_len);
-    }
-
-    #[test]
-    fn tqplus_coarse_rerank_dense_postings_keep_coarse_payload_width() {
-        let mut opts = options(0, 2);
-        opts.storage_format = options::StorageFormat::CoarseRerank;
-        opts.turboquant_profile = options::TurboQuantProfile::TqPlus;
-        opts.rerank_placement = options::RerankPlacement::Index;
-        opts.rerank_format = options::RerankFormat::TurboQuant;
-        opts.rerank_width = 2;
-        opts.stage2_final_rerank_width = 1;
-        opts.quant_bits = 1;
-        opts.coarse_bits = 1;
-        opts.dense_posting_blocks = true;
-
-        let dimensions = 1536;
-        let coarse_quantizer = IvfQuantizer::resolve_with_pq_group_size_and_bits(
-            options::StorageFormat::CoarseRerank,
-            dimensions,
-            None,
-            Some(1),
-        )
-        .unwrap();
-        let coarse_payload_len = coarse_quantizer.payload_len();
-        let tq_payload_len = IvfQuantizer::resolve(options::StorageFormat::TurboQuant, dimensions)
-            .unwrap()
-            .payload_len();
-        assert_ne!(coarse_payload_len, tq_payload_len);
-
-        let mut state = BuildState::new(opts, IndexedVectorKind::Ecvector);
-        let source = |sign: f32, phase: f32| {
-            (0..dimensions)
-                .map(|index| sign * ((((index % 17) + 1) as f32 / 17.0) + phase))
-                .collect::<Vec<_>>()
-        };
-        let sources = [
-            source(1.0, 0.01),
-            source(0.9, 0.03),
-            source(-1.0, 0.02),
-            source(-0.9, 0.04),
-        ];
-        for (index, source) in sources.into_iter().enumerate() {
-            state
-                .try_push(tuple_for_quantizer(
-                    (index + 1) as u16,
-                    source,
-                    coarse_quantizer,
-                ))
-                .unwrap();
-        }
-
-        let centroids = model(vec![vec![0.4; dimensions], vec![-0.4; dimensions]]);
-        let plan = state.stage_build_plan(&centroids).unwrap();
-
-        for posting_tids in &plan.posting_tids_by_list {
-            for tid in posting_tids {
-                let dense = plan
-                    .data_pages
-                    .read_ivf_dense_posting_block(*tid, coarse_payload_len)
-                    .unwrap();
-                assert_eq!(
-                    dense.payloads.len(),
-                    dense.gammas.len() * coarse_payload_len
-                );
-            }
-        }
     }
 
     #[test]

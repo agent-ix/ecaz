@@ -23,7 +23,7 @@
 //! payloads use the index-side sidecar path instead.
 
 use super::options::{RaBitQRerankScoreMode, RerankFormat, EC_IVF_DEFAULT_RABITQ_RERANK_CLIP};
-use super::quantizer::{IvfPreparedQuery, IvfQuantizer, IvfTqCalibrationModel};
+use super::quantizer::{IvfPreparedQuery, IvfQuantizer};
 use crate::am::ec_hnsw::source;
 use crate::am::ec_ivf::options::{RerankPlacement, StorageFormat};
 
@@ -73,7 +73,6 @@ pub(super) enum RerankPayloadCodec {
     TurboQuant {
         score_mode: RaBitQRerankScoreMode,
         quantizer: IvfQuantizer,
-        tq_calibration_model: Option<IvfTqCalibrationModel>,
         code_len: usize,
         payload_len: usize,
         stores_gamma: bool,
@@ -92,7 +91,6 @@ impl RerankPayloadCodec {
             false,
             RaBitQRerankScoreMode::Estimator,
             EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
-            None,
         )
     }
 
@@ -102,29 +100,12 @@ impl RerankPayloadCodec {
         rabitq_score_mode: RaBitQRerankScoreMode,
         rabitq_quant_clip: i32,
     ) -> Result<Option<Self>, String> {
-        Self::resolve_index_side_with_tq_calibration_model(
-            rerank_format,
-            dimensions,
-            rabitq_score_mode,
-            rabitq_quant_clip,
-            None,
-        )
-    }
-
-    fn resolve_index_side_with_tq_calibration_model(
-        rerank_format: RerankFormat,
-        dimensions: usize,
-        rabitq_score_mode: RaBitQRerankScoreMode,
-        rabitq_quant_clip: i32,
-        tq_calibration_model: Option<&IvfTqCalibrationModel>,
-    ) -> Result<Option<Self>, String> {
         Self::resolve_with_rabitq_options(
             rerank_format,
             dimensions,
             true,
             rabitq_score_mode,
             rabitq_quant_clip,
-            tq_calibration_model,
         )
     }
 
@@ -134,7 +115,6 @@ impl RerankPayloadCodec {
         rabitq_residual: bool,
         rabitq_score_mode: RaBitQRerankScoreMode,
         rabitq_quant_clip: i32,
-        tq_calibration_model: Option<&IvfTqCalibrationModel>,
     ) -> Result<Option<Self>, String> {
         match rerank_format {
             RerankFormat::Auto | RerankFormat::F32 => Ok(None),
@@ -167,13 +147,8 @@ impl RerankPayloadCodec {
             }
             RerankFormat::TurboQuant => {
                 let quantizer = IvfQuantizer::resolve(StorageFormat::TurboQuant, dimensions)?;
-                let tq_calibration_model = tq_calibration_model.cloned();
-                if let Some(model) = &tq_calibration_model {
-                    quantizer.validate_tq_calibration_model(model)?;
-                }
                 let code_len = quantizer.payload_len();
-                let stores_gamma =
-                    tq_calibration_model.is_none() && turboquant_payload_needs_gamma(dimensions);
+                let stores_gamma = turboquant_payload_needs_gamma(dimensions);
                 let payload_len = code_len
                     + if stores_gamma {
                         std::mem::size_of::<f32>()
@@ -183,7 +158,6 @@ impl RerankPayloadCodec {
                 Ok(Some(Self::TurboQuant {
                     score_mode: rabitq_score_mode,
                     quantizer,
-                    tq_calibration_model,
                     code_len,
                     payload_len,
                     stores_gamma,
@@ -244,29 +218,12 @@ impl RerankPayloadCodec {
                     query_f16: query.iter().copied().map(f16_round_trip).collect(),
                 })
             }
-            Self::RaBitQ { quantizer, .. } => {
-                quantizer.prepare_ip_query(query).map(|prepared_query| {
-                    RerankPreparedQuery::Quantized {
-                        prepared_query,
-                        query: query.to_vec(),
-                    }
-                })
-            }
-            Self::TurboQuant {
-                quantizer,
-                tq_calibration_model,
-                ..
-            } => {
-                let prepared_query = if let Some(model) = tq_calibration_model {
-                    quantizer.prepare_ip_query_with_tq_calibration_model(query, model)?
-                } else {
-                    quantizer.prepare_ip_query(query)?
-                };
-                Ok(RerankPreparedQuery::Quantized {
+            Self::RaBitQ { quantizer, .. } | Self::TurboQuant { quantizer, .. } => quantizer
+                .prepare_ip_query(query)
+                .map(|prepared_query| RerankPreparedQuery::Quantized {
                     prepared_query,
                     query: query.to_vec(),
-                })
-            }
+                }),
         }
     }
 
@@ -305,7 +262,6 @@ impl RerankPayloadCodec {
             }
             Self::TurboQuant {
                 quantizer,
-                tq_calibration_model,
                 code_len,
                 payload_len,
                 stores_gamma,
@@ -320,7 +276,6 @@ impl RerankPayloadCodec {
                 }
                 encode_turboquant_payload(
                     *quantizer,
-                    tq_calibration_model.as_ref(),
                     *code_len,
                     *payload_len,
                     *stores_gamma,
@@ -355,7 +310,6 @@ impl RerankPayloadCodec {
             }
             Self::TurboQuant {
                 quantizer,
-                tq_calibration_model,
                 code_len,
                 payload_len,
                 stores_gamma,
@@ -376,7 +330,6 @@ impl RerankPayloadCodec {
                     .collect::<Vec<_>>();
                 encode_turboquant_payload(
                     *quantizer,
-                    tq_calibration_model.as_ref(),
                     *code_len,
                     *payload_len,
                     *stores_gamma,
@@ -794,17 +747,12 @@ impl RerankPayloadCodec {
 
 fn encode_turboquant_payload(
     quantizer: IvfQuantizer,
-    tq_calibration_model: Option<&IvfTqCalibrationModel>,
     code_len: usize,
     payload_len: usize,
     stores_gamma: bool,
     source: &[f32],
 ) -> Result<Vec<u8>, String> {
-    let (_dimensions, gamma, code) = if let Some(model) = tq_calibration_model {
-        quantizer.encode_source_with_tq_calibration_model(source, model)?
-    } else {
-        quantizer.encode_source(source)?
-    };
+    let (_dimensions, gamma, code) = quantizer.encode_source(source)?;
     if code.len() != code_len {
         return Err(format!(
             "ec_ivf turboquant rerank code length {} does not match payload code length {code_len}",
@@ -882,28 +830,6 @@ impl RerankScorer {
         rabitq_score_mode: RaBitQRerankScoreMode,
         rabitq_quant_clip: i32,
     ) -> Result<Self, String> {
-        Self::resolve_with_tq_calibration_model(
-            rerank_format,
-            rerank_placement,
-            storage_format,
-            dimensions,
-            query,
-            rabitq_score_mode,
-            rabitq_quant_clip,
-            None,
-        )
-    }
-
-    pub(super) fn resolve_with_tq_calibration_model(
-        rerank_format: RerankFormat,
-        rerank_placement: RerankPlacement,
-        storage_format: StorageFormat,
-        dimensions: usize,
-        query: &[f32],
-        rabitq_score_mode: RaBitQRerankScoreMode,
-        rabitq_quant_clip: i32,
-        tq_calibration_model: Option<&IvfTqCalibrationModel>,
-    ) -> Result<Self, String> {
         match rerank_format {
             // Auto never reaches scan time (build_options_from_reloptions
             // resolves it), but treat it as the exact path defensively.
@@ -920,12 +846,11 @@ impl RerankScorer {
                     ));
                 }
                 let codec = if rerank_placement == RerankPlacement::Index {
-                    RerankPayloadCodec::resolve_index_side_with_tq_calibration_model(
+                    RerankPayloadCodec::resolve_index_side(
                         rerank_format,
                         dimensions,
                         rabitq_score_mode,
                         rabitq_quant_clip,
-                        tq_calibration_model,
                     )?
                 } else {
                     RerankPayloadCodec::resolve_with_rabitq_options(
@@ -934,7 +859,6 @@ impl RerankScorer {
                         false,
                         rabitq_score_mode,
                         rabitq_quant_clip,
-                        tq_calibration_model,
                     )?
                 }
                 .ok_or_else(|| "ec_ivf compact rerank codec resolved to source".to_owned())?;
@@ -1167,21 +1091,11 @@ impl RerankSidecarEncoder {
         dimensions: usize,
         rabitq_quant_clip: i32,
     ) -> Result<Option<Self>, String> {
-        Self::resolve_with_tq_calibration_model(rerank_format, dimensions, rabitq_quant_clip, None)
-    }
-
-    pub(super) fn resolve_with_tq_calibration_model(
-        rerank_format: RerankFormat,
-        dimensions: usize,
-        rabitq_quant_clip: i32,
-        tq_calibration_model: Option<&IvfTqCalibrationModel>,
-    ) -> Result<Option<Self>, String> {
-        RerankPayloadCodec::resolve_index_side_with_tq_calibration_model(
+        RerankPayloadCodec::resolve_index_side(
             rerank_format,
             dimensions,
             RaBitQRerankScoreMode::Estimator,
             rabitq_quant_clip,
-            tq_calibration_model,
         )
         .map(|codec| codec.map(|codec| Self { codec }))
     }
@@ -1625,85 +1539,6 @@ mod tests {
             qjl_active.payload_len(1024),
             crate::code_len(1024, 4) + std::mem::size_of::<f32>()
         );
-    }
-
-    #[test]
-    fn turboquant_calibrated_sidecar_scores_scalar_and_batch_consistently() {
-        let dimensions = 1536usize;
-        let model = IvfTqCalibrationModel {
-            calibration: crate::quant::prod::TqCalibration {
-                shift: vec![0.0; dimensions],
-                scale: vec![1.0; dimensions],
-            },
-        };
-        let vector = |seed: u64, scale: f32| -> Vec<f32> {
-            let mut state = seed;
-            let mut values = Vec::with_capacity(dimensions);
-            for _ in 0..dimensions {
-                state = state
-                    .wrapping_mul(6364136223846793005)
-                    .wrapping_add(1442695040888963407);
-                let value = ((state >> 32) as f32 / u32::MAX as f32) * 2.0 - 1.0;
-                values.push(value * scale);
-            }
-            values
-        };
-        let query = vector(11, 0.03);
-        let source = vector(23, 0.02);
-        let centroid = vector(37, 0.01);
-        let centroid_ip: f32 = query.iter().zip(centroid.iter()).map(|(q, c)| q * c).sum();
-
-        let encoder = RerankSidecarEncoder::resolve_with_tq_calibration_model(
-            RerankFormat::TurboQuant,
-            dimensions,
-            EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
-            Some(&model),
-        )
-        .unwrap()
-        .unwrap();
-        let payload = encoder.encode_with_centroid(&source, &centroid).unwrap();
-        assert_eq!(payload.len(), crate::code_len(dimensions, 4));
-
-        let scorer = RerankScorer::resolve_with_tq_calibration_model(
-            RerankFormat::TurboQuant,
-            RerankPlacement::Index,
-            StorageFormat::CoarseRerank,
-            dimensions,
-            &query,
-            RaBitQRerankScoreMode::Estimator,
-            EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
-            Some(&model),
-        )
-        .unwrap();
-        assert!(scorer.uses_sidecar_centroid_ip());
-        assert!(scorer.supports_sidecar_payload_ref_batch());
-
-        let scalar = scorer.score_sidecar_payload_with_centroid_ip(&payload, centroid_ip);
-        let mut slab = Vec::with_capacity(payload.len() * 2);
-        slab.extend_from_slice(&payload);
-        slab.extend_from_slice(&payload);
-        let mut slab_scores = [0.0_f32; 2];
-        scorer
-            .score_sidecar_payloads_batch_with_centroid_ips(
-                &slab,
-                &[centroid_ip, centroid_ip],
-                &mut slab_scores,
-            )
-            .unwrap();
-        assert_eq!(slab_scores[0].to_bits(), scalar.to_bits());
-        assert_eq!(slab_scores[1].to_bits(), scalar.to_bits());
-
-        let refs = [&payload[..], &payload[..]];
-        let mut ref_scores = [0.0_f32; 2];
-        scorer
-            .score_sidecar_payload_refs_batch_with_centroid_ips(
-                &refs,
-                &[centroid_ip, centroid_ip],
-                &mut ref_scores,
-            )
-            .unwrap();
-        assert_eq!(ref_scores[0].to_bits(), scalar.to_bits());
-        assert_eq!(ref_scores[1].to_bits(), scalar.to_bits());
     }
 
     #[test]
