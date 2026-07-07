@@ -1,0 +1,622 @@
+{
+  "name": "task168-phase2-batched-beam-ab",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-168/002-batched-beam-ab/artifacts",
+  "defaults": {
+    "pg": 18,
+    "socket_dir": "/home/peter/.pgrx",
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 200,
+    "iterations": 200,
+    "force_index": true,
+    "sample_backend_memory": true,
+    "memory_sample_interval_ms": 25
+  },
+  "steps": [
+    {
+      "kind": "recall",
+      "name": "recall-10k-w1",
+      "tags": [
+        "task168",
+        "phase2",
+        "batched-beam",
+        "ec_real_10k",
+        "diskann",
+        "w1",
+        "recall"
+      ],
+      "prefix": "t168_p1_real10k_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128,
+        200,
+        400,
+        800
+      ],
+      "session_gucs": [
+        "ec_diskann.beam_width=1"
+      ],
+      "truth_cache_file": "reviews/task-168/001-rabitq-characterization/artifacts/truth-10k-k10.json",
+      "log_output": "reviews/task-168/002-batched-beam-ab/artifacts/recall-10k-w1.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-10k-w1",
+      "tags": [
+        "task168",
+        "phase2",
+        "batched-beam",
+        "ec_real_10k",
+        "diskann",
+        "w1",
+        "latency"
+      ],
+      "prefix": "t168_p1_real10k_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128,
+        200,
+        400,
+        800
+      ],
+      "session_gucs": [
+        "ec_diskann.beam_width=1"
+      ],
+      "log_output": "reviews/task-168/002-batched-beam-ab/artifacts/latency-10k-w1.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-10k-w8",
+      "tags": [
+        "task168",
+        "phase2",
+        "batched-beam",
+        "ec_real_10k",
+        "diskann",
+        "w8",
+        "recall"
+      ],
+      "prefix": "t168_p1_real10k_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128,
+        200,
+        400,
+        800
+      ],
+      "session_gucs": [
+        "ec_diskann.beam_width=8"
+      ],
+      "truth_cache_file": "reviews/task-168/001-rabitq-characterization/artifacts/truth-10k-k10.json",
+      "log_output": "reviews/task-168/002-batched-beam-ab/artifacts/recall-10k-w8.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-10k-w8",
+      "tags": [
+        "task168",
+        "phase2",
+        "batched-beam",
+        "ec_real_10k",
+        "diskann",
+        "w8",
+        "latency"
+      ],
+      "prefix": "t168_p1_real10k_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128,
+        200,
+        400,
+        800
+      ],
+      "session_gucs": [
+        "ec_diskann.beam_width=8"
+      ],
+      "log_output": "reviews/task-168/002-batched-beam-ab/artifacts/latency-10k-w8.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-50k-w1",
+      "tags": [
+        "task168",
+        "phase2",
+        "batched-beam",
+        "ec_real_50k",
+        "diskann",
+        "w1",
+        "recall"
+      ],
+      "prefix": "t168_p1_real50k_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128,
+        200,
+        400,
+        800
+      ],
+      "session_gucs": [
+        "ec_diskann.beam_width=1"
+      ],
+      "truth_cache_file": "reviews/task-168/001-rabitq-characterization/artifacts/truth-50k-k10.json",
+      "log_output": "reviews/task-168/002-batched-beam-ab/artifacts/recall-50k-w1.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-50k-w1",
+      "tags": [
+        "task168",
+        "phase2",
+        "batched-beam",
+        "ec_real_50k",
+        "diskann",
+        "w1",
+        "latency"
+      ],
+      "prefix": "t168_p1_real50k_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128,
+        200,
+        400,
+        800
+      ],
+      "session_gucs": [
+        "ec_diskann.beam_width=1"
+      ],
+      "log_output": "reviews/task-168/002-batched-beam-ab/artifacts/latency-50k-w1.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-50k-w8",
+      "tags": [
+        "task168",
+        "phase2",
+        "batched-beam",
+        "ec_real_50k",
+        "diskann",
+        "w8",
+        "recall"
+      ],
+      "prefix": "t168_p1_real50k_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128,
+        200,
+        400,
+        800
+      ],
+      "session_gucs": [
+        "ec_diskann.beam_width=8"
+      ],
+      "truth_cache_file": "reviews/task-168/001-rabitq-characterization/artifacts/truth-50k-k10.json",
+      "log_output": "reviews/task-168/002-batched-beam-ab/artifacts/recall-50k-w8.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-50k-w8",
+      "tags": [
+        "task168",
+        "phase2",
+        "batched-beam",
+        "ec_real_50k",
+        "diskann",
+        "w8",
+        "latency"
+      ],
+      "prefix": "t168_p1_real50k_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128,
+        200,
+        400,
+        800
+      ],
+      "session_gucs": [
+        "ec_diskann.beam_width=8"
+      ],
+      "log_output": "reviews/task-168/002-batched-beam-ab/artifacts/latency-50k-w8.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-w1",
+      "tags": [
+        "task168",
+        "phase2",
+        "batched-beam",
+        "ec_real_100k",
+        "diskann",
+        "w1",
+        "recall"
+      ],
+      "prefix": "t168_p1_real100k_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128,
+        200,
+        400,
+        800
+      ],
+      "session_gucs": [
+        "ec_diskann.beam_width=1"
+      ],
+      "truth_cache_file": "reviews/task-168/001-rabitq-characterization/artifacts/truth-100k-k10.json",
+      "log_output": "reviews/task-168/002-batched-beam-ab/artifacts/recall-100k-w1.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-w1",
+      "tags": [
+        "task168",
+        "phase2",
+        "batched-beam",
+        "ec_real_100k",
+        "diskann",
+        "w1",
+        "latency"
+      ],
+      "prefix": "t168_p1_real100k_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128,
+        200,
+        400,
+        800
+      ],
+      "session_gucs": [
+        "ec_diskann.beam_width=1"
+      ],
+      "log_output": "reviews/task-168/002-batched-beam-ab/artifacts/latency-100k-w1.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-w8",
+      "tags": [
+        "task168",
+        "phase2",
+        "batched-beam",
+        "ec_real_100k",
+        "diskann",
+        "w8",
+        "recall"
+      ],
+      "prefix": "t168_p1_real100k_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128,
+        200,
+        400,
+        800
+      ],
+      "session_gucs": [
+        "ec_diskann.beam_width=8"
+      ],
+      "truth_cache_file": "reviews/task-168/001-rabitq-characterization/artifacts/truth-100k-k10.json",
+      "log_output": "reviews/task-168/002-batched-beam-ab/artifacts/recall-100k-w8.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-w8",
+      "tags": [
+        "task168",
+        "phase2",
+        "batched-beam",
+        "ec_real_100k",
+        "diskann",
+        "w8",
+        "latency"
+      ],
+      "prefix": "t168_p1_real100k_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128,
+        200,
+        400,
+        800
+      ],
+      "session_gucs": [
+        "ec_diskann.beam_width=8"
+      ],
+      "log_output": "reviews/task-168/002-batched-beam-ab/artifacts/latency-100k-w8.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-50k-w2",
+      "tags": [
+        "task168",
+        "phase2",
+        "batched-beam",
+        "ec_real_50k",
+        "diskann",
+        "widthpick",
+        "w2",
+        "latency"
+      ],
+      "prefix": "t168_p1_real50k_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        800
+      ],
+      "session_gucs": [
+        "ec_diskann.beam_width=2"
+      ],
+      "log_output": "reviews/task-168/002-batched-beam-ab/artifacts/latency-50k-w2.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-50k-w4",
+      "tags": [
+        "task168",
+        "phase2",
+        "batched-beam",
+        "ec_real_50k",
+        "diskann",
+        "widthpick",
+        "w4",
+        "latency"
+      ],
+      "prefix": "t168_p1_real50k_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        800
+      ],
+      "session_gucs": [
+        "ec_diskann.beam_width=4"
+      ],
+      "log_output": "reviews/task-168/002-batched-beam-ab/artifacts/latency-50k-w4.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-50k-w16",
+      "tags": [
+        "task168",
+        "phase2",
+        "batched-beam",
+        "ec_real_50k",
+        "diskann",
+        "widthpick",
+        "w16",
+        "latency"
+      ],
+      "prefix": "t168_p1_real50k_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        800
+      ],
+      "session_gucs": [
+        "ec_diskann.beam_width=16"
+      ],
+      "log_output": "reviews/task-168/002-batched-beam-ab/artifacts/latency-50k-w16.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-50k-w32",
+      "tags": [
+        "task168",
+        "phase2",
+        "batched-beam",
+        "ec_real_50k",
+        "diskann",
+        "widthpick",
+        "w32",
+        "latency"
+      ],
+      "prefix": "t168_p1_real50k_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        800
+      ],
+      "session_gucs": [
+        "ec_diskann.beam_width=32"
+      ],
+      "log_output": "reviews/task-168/002-batched-beam-ab/artifacts/latency-50k-w32.log"
+    },
+    {
+      "kind": "raw",
+      "name": "profile-notices-10k-w8-l64",
+      "tags": [
+        "task168",
+        "phase2",
+        "batched-beam",
+        "ec_real_10k",
+        "diskann",
+        "profile",
+        "l64"
+      ],
+      "args": [
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "tqvector_bench",
+        "--raw",
+        "--file",
+        "reviews/task-168/002-batched-beam-ab/artifacts/profile-notices-10k-w8-l64.sql",
+        "--log-output",
+        "reviews/task-168/002-batched-beam-ab/artifacts/profile-notices-10k-w8-l64.log"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/002-batched-beam-ab/artifacts/profile-notices-10k-w8-l64.log"
+      ]
+    },
+    {
+      "kind": "raw",
+      "name": "profile-notices-10k-w8-l800",
+      "tags": [
+        "task168",
+        "phase2",
+        "batched-beam",
+        "ec_real_10k",
+        "diskann",
+        "profile",
+        "l800"
+      ],
+      "args": [
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "tqvector_bench",
+        "--raw",
+        "--file",
+        "reviews/task-168/002-batched-beam-ab/artifacts/profile-notices-10k-w8-l800.sql",
+        "--log-output",
+        "reviews/task-168/002-batched-beam-ab/artifacts/profile-notices-10k-w8-l800.log"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/002-batched-beam-ab/artifacts/profile-notices-10k-w8-l800.log"
+      ]
+    },
+    {
+      "kind": "raw",
+      "name": "profile-notices-50k-w8-l64",
+      "tags": [
+        "task168",
+        "phase2",
+        "batched-beam",
+        "ec_real_50k",
+        "diskann",
+        "profile",
+        "l64"
+      ],
+      "args": [
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "tqvector_bench",
+        "--raw",
+        "--file",
+        "reviews/task-168/002-batched-beam-ab/artifacts/profile-notices-50k-w8-l64.sql",
+        "--log-output",
+        "reviews/task-168/002-batched-beam-ab/artifacts/profile-notices-50k-w8-l64.log"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/002-batched-beam-ab/artifacts/profile-notices-50k-w8-l64.log"
+      ]
+    },
+    {
+      "kind": "raw",
+      "name": "profile-notices-50k-w8-l800",
+      "tags": [
+        "task168",
+        "phase2",
+        "batched-beam",
+        "ec_real_50k",
+        "diskann",
+        "profile",
+        "l800"
+      ],
+      "args": [
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "tqvector_bench",
+        "--raw",
+        "--file",
+        "reviews/task-168/002-batched-beam-ab/artifacts/profile-notices-50k-w8-l800.sql",
+        "--log-output",
+        "reviews/task-168/002-batched-beam-ab/artifacts/profile-notices-50k-w8-l800.log"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/002-batched-beam-ab/artifacts/profile-notices-50k-w8-l800.log"
+      ]
+    },
+    {
+      "kind": "raw",
+      "name": "profile-notices-100k-w8-l64",
+      "tags": [
+        "task168",
+        "phase2",
+        "batched-beam",
+        "ec_real_100k",
+        "diskann",
+        "profile",
+        "l64"
+      ],
+      "args": [
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "tqvector_bench",
+        "--raw",
+        "--file",
+        "reviews/task-168/002-batched-beam-ab/artifacts/profile-notices-100k-w8-l64.sql",
+        "--log-output",
+        "reviews/task-168/002-batched-beam-ab/artifacts/profile-notices-100k-w8-l64.log"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/002-batched-beam-ab/artifacts/profile-notices-100k-w8-l64.log"
+      ]
+    },
+    {
+      "kind": "raw",
+      "name": "profile-notices-100k-w8-l800",
+      "tags": [
+        "task168",
+        "phase2",
+        "batched-beam",
+        "ec_real_100k",
+        "diskann",
+        "profile",
+        "l800"
+      ],
+      "args": [
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "tqvector_bench",
+        "--raw",
+        "--file",
+        "reviews/task-168/002-batched-beam-ab/artifacts/profile-notices-100k-w8-l800.sql",
+        "--log-output",
+        "reviews/task-168/002-batched-beam-ab/artifacts/profile-notices-100k-w8-l800.log"
+      ],
+      "expected_artifacts": [
+        "reviews/task-168/002-batched-beam-ab/artifacts/profile-notices-100k-w8-l800.log"
+      ]
+    }
+  ]
+}
