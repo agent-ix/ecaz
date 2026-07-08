@@ -1,0 +1,14 @@
+# ec_distann pg18 pg_test result (Task 163 M1, SHA 244f8c461)
+# cmd: cargo pgrx test pg18 --no-default-features --features pg18 ec_distann
+
+test tests::pg_test_ec_distann_sharded_build_is_deterministic_across_reindex ... ok
+test tests::pg_test_ec_distann_sharded_build_self_recall ... ok
+test result: ok. 59 passed; 0 failed; 0 ignored; 0 measured; 2266 filtered out; finished in 70.23s
+
+# TC-038 proptests (same build):
+test am::ec_distann::shard_build::tests::tc038_stitch_idempotence ... ok
+test am::ec_distann::shard_build::tests::tc038_closure_duplication_scales_with_epsilon ... ok
+test am::ec_distann::shard_build::tests::tc038_degree_bounded ... ok
+test am::ec_distann::shard_build::tests::tc038_uniqueness_and_valid_edges ... ok
+test am::ec_distann::shard_build::tests::tc038_medoid_reachability ... ok
+test am::ec_distann::shard_build::tests::tc038_determinism ... ok
