@@ -1,0 +1,32 @@
+Script started on 2026-07-08 08:22:02-07:00 [<not executed on terminal>]
+   Compiling ring v0.17.14
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz-task165)
+   Compiling rustls-webpki v0.103.13
+   Compiling rustls v0.23.41
+   Compiling tokio-rustls v0.26.4
+warning: unused import: `read_delta_chain`
+  --> src/am/ec_distann/dml.rs:37:23
+   |
+37 |     directory_lookup, read_delta_chain, read_directory_from_relation,
+   |                       ^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `ecaz` (lib test) generated 1 warning (run `cargo fix --lib -p ecaz --tests` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 26s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-1906c6c01c9bead0)
+
+running 8 tests
+test am::ec_distann::insert::tests::backlink_idempotent_when_already_linked ... ok
+test am::ec_distann::insert::tests::backlink_appends_when_free ... ok
+test am::ec_distann::insert::tests::build_node_tuple_rejects_bad_shape ... ok
+test am::ec_distann::insert::tests::rank_candidates_keeps_closest ... ok
+test am::ec_distann::insert::tests::backlink_reprunes_when_full ... ok
+test am::ec_distann::insert::tests::build_node_tuple_round_trips_and_pads ... ok
+test am::ec_distann::insert::tests::select_respects_degree_bound_and_returns_valid_vec_ids ... ok
+test am::ec_distann::insert::tests::select_rejects_bad_input ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 2360 filtered out; finished in 0.00s
+
+
+Script done on 2026-07-08 08:23:24-07:00 [COMMAND_EXIT_CODE="0"]
