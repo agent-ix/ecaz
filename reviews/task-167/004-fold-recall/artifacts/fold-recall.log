@@ -1,0 +1,16 @@
+# M5 fold-recall A/B (release, ec_distann_m2, real 10k corpus subset)
+# head SHA: 6fcecd384, 2001-row working set, graph_degree=32, 50 queries
+# A_full = full build on all 2001 rows; B_fold = build on 1801 + insert 200 + fold
+# both indexes cover the identical 2001 rows (verified b_rows=a_rows=2001)
+# cmd: ecaz dev sql --db ec_distann_m2 --file fold-recall.sql
+
+index  | recall@10
+A_full | 0.9560
+B_fold | 0.8900
+
+# FINDING: the fold is functionally correct (folded rows found via graph
+# traversal, per the pg_test) but costs ~0.066 recall@10 vs a full rebuild
+# at this config (200/2001 = ~21% of the index folded). Attributable to the
+# append-if-free backlink limitation (full neighbors skip the back-edge) +
+# head-sample-only candidate search (folded nodes don't seed each other).
+# The full-reprune-backlink + head-sample-refresh follow-ups target this gap.
