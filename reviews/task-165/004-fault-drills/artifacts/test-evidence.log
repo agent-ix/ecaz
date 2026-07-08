@@ -2,3 +2,4 @@
 # cmd: cargo pgrx test pg18 --no-default-features --features pg18 fault_drills
 
 test tests::pg_test_ec_distann_fault_drills_distinct_classes ... ok
+test tests::pg_test_ec_distann_reindex_drains_delta_buffer ... ok (FR-083-AC-2 delta drain at epoch build)

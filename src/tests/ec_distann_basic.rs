@@ -1014,6 +1014,45 @@ fn test_ec_distann_expand_nodes_rejects_nonowned_placement() {
 }
 
 #[pg_test]
+fn test_ec_distann_reindex_drains_delta_buffer() {
+    // FR-083-AC-2: the epoch build (REINDEX) drains the interim delta buffer —
+    // the inserted row joins the graph and delta_buffer_head resets to INVALID
+    // (a fresh build indexes all live heap rows, including delta-inserted ones).
+    create_distann_fixture("ec_distann_drain", "WITH (graph_degree = 4)");
+    Spi::run(
+        "INSERT INTO ec_distann_drain VALUES \
+         (99, encode_to_ecvector(ARRAY[0.5, 0.5, 0.5, 0.5], 4, 42))",
+    )
+    .expect("delta insert should succeed");
+
+    let (before, _) = distann_materialized_index("ec_distann_drain_idx");
+    assert_ne!(
+        before.delta_buffer_head,
+        crate::storage::page::ItemPointer::INVALID,
+        "the inserted row is in the delta buffer before the epoch build"
+    );
+    assert_eq!(
+        before.node_count,
+        DISTANN_FIXTURE_ROWS.len() as u64,
+        "the graph still holds only the built rows before REINDEX"
+    );
+
+    Spi::run("REINDEX INDEX ec_distann_drain_idx").expect("reindex should succeed");
+
+    let (after, _) = distann_materialized_index("ec_distann_drain_idx");
+    assert_eq!(
+        after.delta_buffer_head,
+        crate::storage::page::ItemPointer::INVALID,
+        "the delta buffer is drained by the epoch build"
+    );
+    assert_eq!(
+        after.node_count,
+        DISTANN_FIXTURE_ROWS.len() as u64 + 1,
+        "the delta-inserted row is now part of the rebuilt graph"
+    );
+}
+
+#[pg_test]
 fn test_ec_distann_fault_drills_distinct_classes() {
     // TC-042 / NFR-020: each fault is an ERROR carrying a distinct
     // machine-readable class ([EC_*]) so the coordinator can decide retry vs
