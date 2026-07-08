@@ -1,0 +1,25 @@
+2026-07-08 14:44:29.931 PDT [842574] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-07-08 14:44:29.937 PDT [842574] LOG:  listening on Unix socket "/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets/.s.PGSQL.39711"
+2026-07-08 14:44:29.952 PDT [842580] LOG:  database system was shut down at 2026-07-08 14:44:28 PDT
+2026-07-08 14:44:29.959 PDT [842574] LOG:  database system is ready to accept connections
+2026-07-08 14:44:30.641 PDT [842600] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-08 14:44:32.018 PDT [842612] LOG:  could not receive data from client: Connection reset by peer
+2026-07-08 14:44:33.629 PDT [842574] LOG:  received fast shutdown request
+2026-07-08 14:44:33.634 PDT [842574] LOG:  aborting any active transactions
+2026-07-08 14:44:33.635 PDT [842574] LOG:  background worker "logical replication launcher" (PID 842583) exited with exit code 1
+2026-07-08 14:44:33.636 PDT [842578] LOG:  shutting down
+2026-07-08 14:44:33.638 PDT [842578] LOG:  checkpoint starting: shutdown immediate
+2026-07-08 14:44:33.786 PDT [842578] LOG:  checkpoint complete: wrote 503 buffers (3.1%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.013 s, sync=0.122 s, total=0.151 s; sync files=125, longest=0.008 s, average=0.001 s; distance=3681 kB, estimate=3681 kB; lsn=0/1AECA98, redo lsn=0/1AECA98
+2026-07-08 14:44:33.795 PDT [842574] LOG:  database system is shut down
+2026-07-08 14:54:11.679 PDT [843773] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-07-08 14:54:11.684 PDT [843773] LOG:  listening on Unix socket "/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets/.s.PGSQL.39711"
+2026-07-08 14:54:11.695 PDT [843779] LOG:  database system was shut down at 2026-07-08 14:54:10 PDT
+2026-07-08 14:54:11.700 PDT [843773] LOG:  database system is ready to accept connections
+2026-07-08 14:54:12.386 PDT [843799] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-08 14:54:16.018 PDT [843773] LOG:  received fast shutdown request
+2026-07-08 14:54:16.027 PDT [843773] LOG:  aborting any active transactions
+2026-07-08 14:54:16.027 PDT [843773] LOG:  background worker "logical replication launcher" (PID 843782) exited with exit code 1
+2026-07-08 14:54:16.028 PDT [843777] LOG:  shutting down
+2026-07-08 14:54:16.032 PDT [843777] LOG:  checkpoint starting: shutdown immediate
+2026-07-08 14:54:16.149 PDT [843777] LOG:  checkpoint complete: wrote 503 buffers (3.1%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.008 s, sync=0.098 s, total=0.122 s; sync files=125, longest=0.006 s, average=0.001 s; distance=3681 kB, estimate=3681 kB; lsn=0/1AECA98, redo lsn=0/1AECA98
+2026-07-08 14:54:16.158 PDT [843773] LOG:  database system is shut down

@@ -188,7 +188,7 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args) -> Result<()> {
             .wrap_err_with(|| format!("start node {}", node.node_id))?;
     }
 
-    let result = drive_fixture(args, &psql, &socket_dir, &nodes, log_dir.as_path()).await;
+    let result = drive_fixture(args, &pg_ctl, &psql, &socket_dir, &nodes, log_dir.as_path()).await;
 
     if !args.keep_running {
         for node in &nodes {
@@ -276,6 +276,7 @@ fn recall_sql(roster: &str, queries: u32, top_k: u32) -> String {
 
 async fn drive_fixture(
     args: &LocalMultinodePg18Args,
+    pg_ctl: &Path,
     psql: &Path,
     socket_dir: &Path,
     nodes: &[Node],
@@ -311,37 +312,159 @@ async fn drive_fixture(
         .to_owned();
     crate::ecaz_println!("[distann-multicluster] {result_line}");
 
-    // Fail-closed transport drill: point one roster node at a dead port and
-    // confirm the multi-node query errors (never a silent wrong/partial result).
-    let dead_roster = nodes
-        .iter()
-        .map(|node| {
-            let port = if node.node_id == nodes.last().unwrap().node_id {
-                1
-            } else {
-                node.port
-            };
-            format!("{}@{}", node.node_id, conninfo(socket_dir, port))
-        })
-        .collect::<Vec<_>>()
-        .join(";");
-    let drill = format!(
-        "SET enable_seqscan=off; SET ec_distann.roster='{dead_roster}'; SET ec_distann.local_node_id=1; SET ec_distann.epoch=1; \
-         SELECT id FROM dm ORDER BY embedding <#> (SELECT source FROM dm WHERE id=1) LIMIT {};",
+    // TC-042 fault matrix (NFR-020): each fault must make the multi-node query
+    // ERROR (fail closed) — never a silent wrong or partial result — and a
+    // post-recovery query must match the baseline (no false reject).
+    let mut drills: Vec<(String, bool)> = Vec::new();
+    let last = nodes.last().unwrap();
+    let single_query = format!(
+        "SELECT id FROM dm ORDER BY embedding <#> (SELECT source FROM dm WHERE id=1) LIMIT {};",
         args.top_k
     );
-    let drill_out = capture_psql_allow_error(psql, socket_dir, coord_port, &drill).await;
-    let fail_closed = drill_out.contains("EC_INTERNAL") || drill_out.contains("could not connect");
-    crate::ecaz_println!(
-        "[distann-multicluster] fault_drill dead_remote_port fail_closed={fail_closed}"
-    );
+
+    // 1. simulated_network_partition: one owner at a dead port ⇒ connect error.
+    {
+        let dead_roster = roster_with_port_override(nodes, socket_dir, last.node_id, 1);
+        let sql = format!(
+            "SET enable_seqscan=off; SET ec_distann.roster='{dead_roster}'; SET ec_distann.local_node_id=1; SET ec_distann.epoch=1; {single_query}"
+        );
+        let out = capture_psql_allow_error(psql, socket_dir, coord_port, &sql).await;
+        drills.push(("simulated_network_partition".to_owned(), query_errored(&out)));
+    }
+
+    // 2. epoch_bump_no_false_reject: a bare epoch-number bump must NOT reject —
+    // the FR-082 fingerprint is content-based and the coordinator propagates its
+    // epoch to owners, so both sides agree and the query returns its result.
+    {
+        let sql = format!(
+            "SET enable_seqscan=off; SET ec_distann.roster='{roster}'; SET ec_distann.local_node_id=1; SET ec_distann.epoch=999999; {single_query}"
+        );
+        let out = capture_psql_allow_error(psql, socket_dir, coord_port, &sql).await;
+        // Pass = no false reject: no error AND a result row came back.
+        drills.push(("epoch_bump_no_false_reject".to_owned(), !query_errored(&out) && out.contains('\n')));
+    }
+
+    // 3. remote_content_divergence (real epoch/fingerprint mismatch): rebuild an
+    // owner's index with a different graph_degree so its content fingerprint no
+    // longer matches the coordinator's ⇒ the owner rejects the epoch (error).
+    {
+        run_psql_file(
+            psql,
+            socket_dir,
+            last.port,
+            &format!(
+                "DROP INDEX dm_idx; CREATE INDEX dm_idx ON dm USING ec_distann (embedding ecvector_distann_ip_ops) WITH (graph_degree = {});",
+                args.graph_degree + 8
+            ),
+        )
+        .await
+        .wrap_err("diverging remote index content for the drill")?;
+        let sql = format!(
+            "SET enable_seqscan=off; SET ec_distann.roster='{roster}'; SET ec_distann.local_node_id=1; SET ec_distann.epoch=1; {single_query}"
+        );
+        let out = capture_psql_allow_error(psql, socket_dir, coord_port, &sql).await;
+        drills.push(("remote_content_divergence".to_owned(), query_errored(&out)));
+        run_psql_file(
+            psql,
+            socket_dir,
+            last.port,
+            &format!(
+                "DROP INDEX dm_idx; CREATE INDEX dm_idx ON dm USING ec_distann (embedding ecvector_distann_ip_ops) WITH (graph_degree = {});",
+                args.graph_degree
+            ),
+        )
+        .await
+        .wrap_err("restoring remote index content after the drill")?;
+    }
+
+    // 3. missing_or_reindexed_remote_index: drop the index on an owner ⇒ error.
+    {
+        run_psql_file(psql, socket_dir, last.port, "DROP INDEX dm_idx;")
+            .await
+            .wrap_err("dropping remote index for the drill")?;
+        let sql = format!(
+            "SET enable_seqscan=off; SET ec_distann.roster='{roster}'; SET ec_distann.local_node_id=1; SET ec_distann.epoch=1; {single_query}"
+        );
+        let out = capture_psql_allow_error(psql, socket_dir, coord_port, &sql).await;
+        drills.push(("missing_or_reindexed_remote_index".to_owned(), query_errored(&out)));
+        // Rebuild for recovery.
+        run_psql_file(
+            psql,
+            socket_dir,
+            last.port,
+            &format!(
+                "CREATE INDEX dm_idx ON dm USING ec_distann (embedding ecvector_distann_ip_ops) WITH (graph_degree = {});",
+                args.graph_degree
+            ),
+        )
+        .await
+        .wrap_err("rebuilding remote index after the drill")?;
+    }
+
+    // 4. remote_backend_termination / instance down: stop an owner ⇒ error.
+    {
+        let _ = Command::new(pg_ctl)
+            .arg("-D")
+            .arg(&last.data_dir)
+            .arg("-m")
+            .arg("fast")
+            .arg("stop")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .await;
+        let sql = format!(
+            "SET enable_seqscan=off; SET ec_distann.roster='{roster}'; SET ec_distann.local_node_id=1; SET ec_distann.epoch=1; {single_query}"
+        );
+        let out = capture_psql_allow_error(psql, socket_dir, coord_port, &sql).await;
+        drills.push(("remote_backend_termination".to_owned(), query_errored(&out)));
+        // Restart for recovery.
+        let mut restart = Command::new(pg_ctl);
+        restart
+            .arg("-w")
+            .arg("-D")
+            .arg(&last.data_dir)
+            .arg("-l")
+            .arg(&last.log_file)
+            .arg("-o")
+            .arg(format!(
+                "-p {} -k {} -c listen_addresses=''",
+                last.port,
+                socket_dir.display()
+            ))
+            .arg("start")
+            .stdout(Stdio::null())
+            .stderr(Stdio::inherit());
+        run_status(restart).await.wrap_err("restarting owner after the drill")?;
+    }
+
+    // 5. recovery / no-false-reject: after all faults clear, the full-roster
+    // query must match the single-node baseline again.
+    let recovery = capture_psql(psql, socket_dir, coord_port, &recall_sql(&roster, args.queries, args.top_k))
+        .await
+        .wrap_err("running the post-recovery recall comparison")?;
+    let recovery_line = recovery
+        .lines()
+        .find(|line| line.contains("RECALL_RESULT"))
+        .unwrap_or("RECALL_RESULT <none>")
+        .trim()
+        .to_owned();
+    let recovered = recovery_line.contains("mismatched_ids=0");
+
+    for (name, fail_closed) in &drills {
+        crate::ecaz_println!("[distann-multicluster] fault_drill {name} pass={fail_closed}");
+    }
+    crate::ecaz_println!("[distann-multicluster] recovery {recovery_line} recovered={recovered}");
 
     // Persist the evidence.
-    let summary = format!(
-        "distann-multinode fixture\nnodes={}\nrows={}\ndim={}\ngraph_degree={}\nqueries={}\ntop_k={}\nroster={}\n{}\nfault_drill dead_remote_port fail_closed={}\n",
-        args.nodes, args.rows, args.dim, args.graph_degree, args.queries, args.top_k, roster,
-        result_line, fail_closed
+    let mut summary = format!(
+        "distann-multinode fixture\nnodes={}\nrows={}\ndim={}\ngraph_degree={}\nqueries={}\ntop_k={}\nroster={}\n{}\n",
+        args.nodes, args.rows, args.dim, args.graph_degree, args.queries, args.top_k, roster, result_line
     );
+    for (name, fail_closed) in &drills {
+        summary.push_str(&format!("fault_drill {name} pass={fail_closed}\n"));
+    }
+    summary.push_str(&format!("recovery {recovery_line} recovered={recovered}\n"));
     let summary_path = log_dir.join("distann-multinode-summary.log");
     fs::write(&summary_path, &summary)
         .wrap_err_with(|| format!("writing {}", summary_path.display()))?;
@@ -350,17 +473,52 @@ async fn drive_fixture(
         summary_path.display()
     );
 
-    let mismatched_zero = result_line.contains("mismatched_ids=0");
-    if !mismatched_zero {
+    if !result_line.contains("mismatched_ids=0") {
         bail!("multi-node distinct-recall gate FAILED: {result_line}");
     }
-    if !fail_closed {
-        bail!("fault drill FAILED: dead remote port did not fail closed");
+    let all_fail_closed = drills.iter().all(|(_, ok)| *ok);
+    if !all_fail_closed {
+        let failed: Vec<&str> = drills
+            .iter()
+            .filter(|(_, ok)| !*ok)
+            .map(|(name, _)| name.as_str())
+            .collect();
+        bail!("TC-042 fault matrix FAILED (not fail-closed): {failed:?}");
+    }
+    if !recovered {
+        bail!("recovery FAILED: post-fault query did not match baseline: {recovery_line}");
     }
     crate::ecaz_println!(
-        "[distann-multicluster] GATE PASS: multi-node top-k identical to single-node; fault drill fail-closed"
+        "[distann-multicluster] GATE PASS: recall identical; {} faults fail-closed; recovery clean",
+        drills.len()
     );
     Ok(())
+}
+
+fn roster_with_port_override(
+    nodes: &[Node],
+    socket_dir: &Path,
+    override_node_id: u32,
+    override_port: u16,
+) -> String {
+    nodes
+        .iter()
+        .map(|node| {
+            let port = if node.node_id == override_node_id {
+                override_port
+            } else {
+                node.port
+            };
+            format!("{}@{}", node.node_id, conninfo(socket_dir, port))
+        })
+        .collect::<Vec<_>>()
+        .join(";")
+}
+
+/// A drill query satisfies NFR-020's fail-closed arm if it raised an ERROR
+/// rather than returning a (possibly wrong/partial) result.
+fn query_errored(output: &str) -> bool {
+    output.contains("ERROR") || output.contains("EC_INTERNAL") || output.contains("could not connect")
 }
 
 fn psql_base(psql: &Path, socket_dir: &Path, port: u16) -> Command {
