@@ -23,3 +23,15 @@ B_fold | 0.8900
 # folded siblings instead of anchoring to the well-connected built graph).
 # Change reverted. The real lever is backlink QUALITY into the built graph
 # (full-reprune when a neighbor is at capacity), not candidate interconnection.
+
+# --- Full-reprune backlinks (measured, KEPT) ---
+# Fix: at capacity, reprune the neighbor's adjacency (plan_insert_backlink) so a
+# folded node earns an INCOMING edge from the built graph (evicting the
+# neighbor's worst edge) instead of being skipped. Distinct from the rejected
+# interconnection: this adds built->folded edges (reachability), not
+# folded<->folded edges.
+# RESULT: B_fold recall@10 0.8900 -> 0.8980 (gap 0.066 -> 0.058). A real +0.008
+# improvement; correctness holds (101 distann pg_tests pass). KEPT.
+# Residual gap is the head-sample-only candidate search (a proper greedy insert
+# search past the head-index cap is the scaling follow-up); REINDEX still
+# restores full parity.

@@ -354,9 +354,25 @@ pub(super) unsafe fn graph_insert_record(
     )?;
     let new_node_tid = append_node_record(handle, node.encode(graph_degree_r, code_len)?)?;
 
-    // 6. Append-if-free backlinks on each forward neighbor.
+    // 6. Backlinks on each forward neighbor: full-reprune from the neighbor's
+    //    vantage using head-sample source vectors, so a folded node earns an
+    //    incoming edge from the built graph (evicting the neighbor's worst edge
+    //    when at capacity) rather than being skipped. Head samples cover the
+    //    built nodes, so their source vectors are available for the reprune.
+    let source_map: std::collections::HashMap<u64, Vec<f32>> =
+        sample_pairs.iter().cloned().collect();
     for &tid in &forward_tids {
-        add_backlink_if_free(handle, tid, new_vec_id, &new_code, graph_degree_r, code_len)?;
+        add_backlink(
+            handle,
+            tid,
+            new_vec_id,
+            &new_code,
+            new_source_vector,
+            &source_map,
+            metadata.alpha,
+            graph_degree_r,
+            code_len,
+        )?;
     }
 
     // 7. Rebuild the sorted directory with the new entry, based at the current
@@ -441,16 +457,22 @@ fn append_node_record(handle: RelationHandle, payload: Vec<u8>) -> Result<ItemPo
     Ok(ItemPointer { block_number, offset_number })
 }
 
-/// Add `new_vec_id` (+ its code) to a forward neighbor's adjacency in a free
-/// slot, WAL-logged in place. A neighbor already at `graph_degree_r` is left
-/// unchanged (the full-reprune path needs neighbor source vectors — a
-/// head-sample-backed follow-up); the forward edge from the new node still
-/// links them, so connectivity is not lost.
-fn add_backlink_if_free(
+/// Amend a forward neighbor's adjacency to include `new_vec_id`, WAL-logged in
+/// place. A free slot → append (edge-preserving). At capacity → full-reprune
+/// (`plan_insert_backlink`) from the neighbor's own vantage using head-sample
+/// source vectors: the new node earns an incoming edge iff it is more
+/// α-diverse-close than an existing edge, which is then evicted. A neighbor
+/// whose current edges are not all head-sampled (e.g. a folded neighbor beyond
+/// the head-index cap) falls back to append-if-free. Same-length rewrite.
+#[allow(clippy::too_many_arguments)]
+fn add_backlink(
     handle: RelationHandle,
     neighbor_tid: ItemPointer,
     new_vec_id: u64,
     new_code: &[u8],
+    new_source_vector: &[f32],
+    source_map: &std::collections::HashMap<u64, Vec<f32>>,
+    alpha: f32,
     graph_degree_r: u16,
     code_len: usize,
 ) -> Result<(), String> {
@@ -474,30 +496,105 @@ fn add_backlink_if_free(
             if raw.first().copied() != Some(DISTANN_NODE_TAG) {
                 return Err("ec_distann backlink: target is not a graph-node record".to_owned());
             }
-            let count = u16::from_le_bytes(
+            let neighbor_vec_id = u64::from_le_bytes(
+                raw[super::tuple::DISTANN_NODE_VEC_ID_OFFSET
+                    ..super::tuple::DISTANN_NODE_VEC_ID_OFFSET + 8]
+                    .try_into()
+                    .expect("vec_id bytes"),
+            );
+            let count = usize::from(u16::from_le_bytes(
                 raw[DISTANN_NODE_NEIGHBOR_COUNT_OFFSET..DISTANN_NODE_NEIGHBOR_COUNT_OFFSET + 2]
                     .try_into()
                     .expect("neighbor count bytes"),
-            );
-            let slot = usize::from(count);
-            if slot >= r {
-                return Ok(()); // full — leave unchanged (forward edge suffices)
-            }
-            // Idempotence: skip if already present in a used slot.
-            for used in 0..slot {
-                let off = vec_ids_off + used * 8;
-                let existing = u64::from_le_bytes(raw[off..off + 8].try_into().expect("vid"));
-                if existing == new_vec_id {
+            ));
+            // Read the current adjacency (vec_id + code per used slot).
+            let read_slot = |raw: &[u8], slot: usize| -> (u64, Vec<u8>) {
+                let voff = vec_ids_off + slot * 8;
+                let vid = u64::from_le_bytes(raw[voff..voff + 8].try_into().expect("vid"));
+                let coff = codes_off + slot * code_len;
+                (vid, raw[coff..coff + code_len].to_vec())
+            };
+            // Idempotence.
+            for slot in 0..count {
+                if read_slot(raw, slot).0 == new_vec_id {
                     return Ok(());
                 }
             }
-            let vid_off = vec_ids_off + slot * 8;
-            raw[vid_off..vid_off + 8].copy_from_slice(&new_vec_id.to_le_bytes());
-            let code_slot = codes_off + slot * code_len;
-            raw[code_slot..code_slot + code_len].copy_from_slice(new_code);
-            let new_count = count + 1;
-            raw[DISTANN_NODE_NEIGHBOR_COUNT_OFFSET..DISTANN_NODE_NEIGHBOR_COUNT_OFFSET + 2]
-                .copy_from_slice(&new_count.to_le_bytes());
+
+            let write_adjacency = |raw: &mut [u8], edges: &[(u64, Vec<u8>)]| {
+                for (slot, (vid, code)) in edges.iter().enumerate() {
+                    let voff = vec_ids_off + slot * 8;
+                    raw[voff..voff + 8].copy_from_slice(&vid.to_le_bytes());
+                    let coff = codes_off + slot * code_len;
+                    raw[coff..coff + code_len].copy_from_slice(code);
+                }
+                let new_count = u16::try_from(edges.len()).expect("edge count fits u16");
+                raw[DISTANN_NODE_NEIGHBOR_COUNT_OFFSET..DISTANN_NODE_NEIGHBOR_COUNT_OFFSET + 2]
+                    .copy_from_slice(&new_count.to_le_bytes());
+            };
+
+            if count < r {
+                // Free slot: append.
+                let mut edges: Vec<(u64, Vec<u8>)> =
+                    (0..count).map(|s| read_slot(raw, s)).collect();
+                edges.push((new_vec_id, new_code.to_vec()));
+                write_adjacency(raw, &edges);
+                return Ok(());
+            }
+
+            // Full: reprune from the neighbor's vantage, if we have the source
+            // vectors (neighbor + all its current edges must be head-sampled).
+            let Some(neighbor_vec) = source_map.get(&neighbor_vec_id) else {
+                return Ok(()); // can't reprune without the vantage vector
+            };
+            let current: Vec<(u64, Vec<u8>)> = (0..count).map(|s| read_slot(raw, s)).collect();
+            let mut current_candidates = Vec::with_capacity(count);
+            for (vid, _) in &current {
+                match source_map.get(vid) {
+                    Some(v) => current_candidates.push(DistannForwardCandidate {
+                        vec_id: *vid,
+                        source_vector: v.clone(),
+                    }),
+                    None => return Ok(()), // an edge isn't sampled → skip reprune
+                }
+            }
+            let target = DistannBacklinkTarget {
+                vec_id: neighbor_vec_id,
+                source_vector: neighbor_vec.clone(),
+                current_neighbors: current_candidates,
+            };
+            let kept = plan_insert_backlink(&target, new_vec_id, new_source_vector, alpha, r)
+                .map_err(|e| format!("ec_distann backlink reprune: {e}"))?;
+            if !kept.contains(&new_vec_id) {
+                return Ok(()); // new node not diverse-close enough; leave as-is
+            }
+            // Rebuild the adjacency for the kept set, carrying each edge's code
+            // (existing codes from the record; the new node's from new_code).
+            let edges: Vec<(u64, Vec<u8>)> = kept
+                .iter()
+                .map(|vid| {
+                    if *vid == new_vec_id {
+                        (*vid, new_code.to_vec())
+                    } else {
+                        let code = current
+                            .iter()
+                            .find(|(cid, _)| cid == vid)
+                            .map(|(_, c)| c.clone())
+                            .expect("kept edge came from current adjacency");
+                        (*vid, code)
+                    }
+                })
+                .collect();
+            // Zero any now-unused trailing slots so stale bytes never read back.
+            write_adjacency(raw, &edges);
+            for slot in edges.len()..count {
+                let voff = vec_ids_off + slot * 8;
+                raw[voff..voff + 8].copy_from_slice(&0_u64.to_le_bytes());
+                let coff = codes_off + slot * code_len;
+                for b in &mut raw[coff..coff + code_len] {
+                    *b = 0;
+                }
+            }
             Ok(())
         })?;
     }
