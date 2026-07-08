@@ -429,9 +429,11 @@ fn fold_delta_into_graph_impl(index_oid: pg_sys::Oid) -> Result<i64, String> {
         folded += 1;
     }
     if folded > 0 {
-        // Re-read (node_count/directory_head advanced per insert) and drain.
+        // Re-read (node_count/directory_head advanced per insert) and drain the
+        // buffer: head → INVALID and the 002-P2 count → 0.
         let mut metadata = read_metadata_from_index_handle(handle)?;
         metadata.delta_buffer_head = ItemPointer::INVALID;
+        metadata.delta_count = 0;
         overwrite_metadata_page_handle(handle, &metadata);
     }
     Ok(folded)

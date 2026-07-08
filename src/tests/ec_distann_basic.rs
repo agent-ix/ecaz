@@ -76,7 +76,10 @@ fn test_ec_distann_create_on_populated_table_records_metadata() {
     let metadata =
         unsafe { crate::am::ec_distann::read_metadata_from_index(index_relation.as_ptr()) }
             .expect("metadata should decode");
-    assert_eq!(metadata.format_version, 2);
+    assert_eq!(
+        metadata.format_version,
+        crate::am::ec_distann::page::INDEX_FORMAT_V1_DISTANN
+    );
     assert_eq!(metadata.graph_degree_r, 16);
     assert_eq!(metadata.build_list_size_l, 32);
     assert_eq!(metadata.head_index_cap, 64);

@@ -11,7 +11,9 @@ use crate::storage::page::ItemPointer;
 /// rebuild, no migration). v2 (Task 164) appends `content_digest`, binding the
 /// build-time record/vector tier into the FR-082 epoch fingerprint so two
 /// graphs with identical shape metadata but different content never collide.
-pub const INDEX_FORMAT_V1_DISTANN: u16 = 2;
+/// v3 (reviewer 002-P2) appends `delta_count`, so the interim delta-buffer cap
+/// check is O(1) instead of deserializing the whole buffer on every insert.
+pub const INDEX_FORMAT_V1_DISTANN: u16 = 3;
 
 /// Neighbor-code codec kinds persisted in the metadata page. Mirrors the
 /// `neighbor_code_format` reloption (ADR-085 D7; default pinned to RaBitQ
@@ -20,7 +22,7 @@ pub const DISTANN_NEIGHBOR_CODEC_GROUPED_PQ: u8 = 1;
 pub const DISTANN_NEIGHBOR_CODEC_RABITQ: u8 = 2;
 pub const DISTANN_NEIGHBOR_CODEC_TURBOQUANT: u8 = 3;
 
-pub const DISTANN_METADATA_BYTES: usize = 80;
+pub const DISTANN_METADATA_BYTES: usize = 84;
 
 pub const DISTANN_METADATA_FORMAT_VERSION_OFFSET: usize = 0;
 pub const DISTANN_METADATA_ENTRY_POINT_OFFSET: usize = 2;
@@ -43,6 +45,9 @@ pub const DISTANN_METADATA_DIRECTORY_HEAD_OFFSET: usize = 66;
 /// FR-082 build-time content digest (Task 164): binds the sorted vec_id set,
 /// source vectors (co-placed tier), and adjacency into the epoch fingerprint.
 pub const DISTANN_METADATA_CONTENT_DIGEST_OFFSET: usize = 72;
+/// FR-083 interim delta-buffer entry count (reviewer 002-P2): kept in metadata
+/// so `delta_insert`'s cap check is O(1). Zero on an empty/just-built index.
+pub const DISTANN_METADATA_DELTA_COUNT_OFFSET: usize = 80;
 
 /// Fixed-size metadata record stored on block 0.
 #[derive(Debug, Clone, PartialEq)]
@@ -89,6 +94,10 @@ pub struct DistannMetadataPage {
     /// graphs with identical shape metadata but different content never share a
     /// fingerprint.
     pub content_digest: u64,
+    /// FR-083 interim delta-buffer entry count (reviewer 002-P2). Kept in
+    /// metadata so an insert's cap check does not deserialize the buffer; reset
+    /// to 0 by an epoch build (REINDEX) or a delta fold that drains the buffer.
+    pub delta_count: u32,
 }
 
 impl DistannMetadataPage {
@@ -123,6 +132,7 @@ impl DistannMetadataPage {
             grouped_codebook_head: ItemPointer::INVALID,
             directory_head: ItemPointer::INVALID,
             content_digest: 0,
+            delta_count: 0,
         }
     }
 
@@ -147,6 +157,7 @@ impl DistannMetadataPage {
         self.grouped_codebook_head.encode_into(&mut out);
         self.directory_head.encode_into(&mut out);
         out.extend_from_slice(&self.content_digest.to_le_bytes());
+        out.extend_from_slice(&self.delta_count.to_le_bytes());
         debug_assert_eq!(out.len(), DISTANN_METADATA_BYTES);
         out
     }
@@ -213,6 +224,9 @@ impl DistannMetadataPage {
             content_digest: u64::from_le_bytes(
                 input[72..80].try_into().expect("content_digest bytes"),
             ),
+            delta_count: u32::from_le_bytes(
+                input[80..84].try_into().expect("delta_count bytes"),
+            ),
         })
     }
 }
@@ -252,6 +266,7 @@ mod tests {
             offset_number: 2,
         };
         metadata.content_digest = 0x0123_4567_89AB_CDEF;
+        metadata.delta_count = 7;
         metadata
     }
 

@@ -34,8 +34,7 @@ use super::expand_error::DistannExpandError;
 use super::identity::vec_id_from_local_heap_tid;
 use super::options::{self, DistannSourceIdentityProvider};
 use super::reader::{
-    directory_lookup, read_delta_chain, read_directory_from_relation,
-    read_raw_tuple_bytes_from_relation,
+    directory_lookup, read_directory_from_relation, read_raw_tuple_bytes_from_relation,
 };
 use super::tuple::{
     DistannDeltaTuple, DISTANN_FLAG_TOMBSTONE, DISTANN_NODE_FLAGS_OFFSET,
@@ -321,20 +320,19 @@ pub(super) unsafe fn delta_insert(
         ));
     }
 
-    // Bounded (D5): count the current chain; refuse when full (operator drains
-    // via REINDEX). A lost insert must never be silent.
-    let existing = read_delta_chain(handle, metadata.delta_buffer_head, usize::from(metadata.dimensions))?;
-    if existing.len() >= DISTANN_DELTA_BUFFER_CAP {
+    // Bounded (D5): reviewer 002-P2 — the cap check reads the metadata count,
+    // not the whole buffer, so an insert near the cap is O(1) instead of
+    // deserializing tens of MB of buffered vectors. A lost insert must never be
+    // silent. Duplicate-vec_id idempotence is not needed here: a delta entry is
+    // a new heap row with its own TID-derived vec_id, distinct from every
+    // buffered and built vec_id by construction (see the scan-merge invariant in
+    // routine.rs), and the scan merge dedupes defensively regardless.
+    if metadata.delta_count as usize >= DISTANN_DELTA_BUFFER_CAP {
         return Err(format!(
             "ec_distann delta buffer is full ({} entries, cap {DISTANN_DELTA_BUFFER_CAP}); \
-             REINDEX to drain the interim buffer (ADR-085 D5)",
-            existing.len()
+             REINDEX (or fold) to drain the interim buffer (ADR-085 D5)",
+            metadata.delta_count
         ));
-    }
-    // Idempotence: an already-buffered vec_id (same heap row re-inserted) is a
-    // no-op — the newest visible version wins at scan-merge time anyway.
-    if existing.iter().any(|entry| entry.vec_id == vec_id) {
-        return Ok(());
     }
 
     let tuple = DistannDeltaTuple {
@@ -345,6 +343,7 @@ pub(super) unsafe fn delta_insert(
     };
     let new_head = append_delta_tuple(handle, tuple.encode())?;
     metadata.delta_buffer_head = new_head;
+    metadata.delta_count += 1;
     overwrite_metadata_page_handle(handle, &metadata);
     Ok(())
 }
