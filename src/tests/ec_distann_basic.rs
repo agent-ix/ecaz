@@ -844,6 +844,120 @@ fn test_ec_distann_guc_defaults() {
     assert_eq!(top_k, "10");
 }
 
+// ── M2 (Task 164): FR-079 ec_distann_expand_nodes remote endpoint ──────────
+
+#[pg_test]
+fn test_ec_distann_expand_nodes_single_node_matches_local() {
+    // FR-079-AC-1/AC-5: the endpoint returns one row per requested owned
+    // vec_id, and each exact_dist is the full-precision -ip against the node's
+    // co-placed heap vector. Single-node (empty roster): this node owns all.
+    create_distann_fixture(
+        "ec_distann_endpoint",
+        "WITH (graph_degree = 4, build_list_size = 16)",
+    );
+    let vec_ids = distann_directory_vec_ids("ec_distann_endpoint_idx");
+    let id_list = vec_ids
+        .iter()
+        .map(|v| (*v as i64).to_string())
+        .collect::<Vec<_>>()
+        .join(",");
+    let call = format!(
+        "ec_distann_expand_nodes(\
+           'ec_distann_endpoint_idx'::regclass::oid, \
+           ec_distann_epoch_fingerprint('ec_distann_endpoint_idx'::regclass::oid), \
+           ARRAY[1,0,0,0]::real[], ARRAY[{id_list}]::bigint[])"
+    );
+
+    let row_count = Spi::get_one::<i64>(&format!("SELECT count(*) FROM {call}"))
+        .expect("SPI query should succeed")
+        .expect("count exists");
+    assert_eq!(
+        row_count,
+        DISTANN_FIXTURE_ROWS.len() as i64,
+        "one response row per requested vec_id (FR-079-AC-1)"
+    );
+
+    // The [1,0,0,0] fixture row is its own exact nearest: min exact_dist ~ -1.0.
+    let min_dist = Spi::get_one::<f64>(&format!("SELECT min(exact_dist)::float8 FROM {call}"))
+        .expect("SPI query should succeed")
+        .expect("min exists");
+    assert!(
+        (min_dist + 1.0).abs() < 0.01,
+        "nearest exact_dist should be ~ -1.0, got {min_dist}"
+    );
+
+    // No tombstones; neighbor arrays are aligned and non-empty for a built graph.
+    let bad = Spi::get_one::<i64>(&format!(
+        "SELECT count(*) FROM {call} \
+         WHERE is_tombstone OR exact_dist IS NULL \
+           OR cardinality(neighbor_vec_ids) IS DISTINCT FROM cardinality(neighbor_code_dists)"
+    ))
+    .expect("SPI query should succeed")
+    .expect("count exists");
+    assert_eq!(bad, 0, "no tombstones, aligned neighbor arrays");
+}
+
+#[pg_test]
+fn test_ec_distann_expand_nodes_rejects_epoch_mismatch() {
+    // FR-079-AC-2: a stale/wrong epoch fingerprint yields the retriable
+    // epoch-mismatch error, never data.
+    create_distann_fixture("ec_distann_ep_mismatch", "WITH (graph_degree = 4)");
+    let vec_ids = distann_directory_vec_ids("ec_distann_ep_mismatch_idx");
+    let error = expect_pg_error(|| {
+        Spi::run(&format!(
+            "SELECT * FROM ec_distann_expand_nodes(\
+               'ec_distann_ep_mismatch_idx'::regclass::oid, \
+               '\\x000102030405060708090a0b0c0d0e0f'::bytea, \
+               ARRAY[1,0,0,0]::real[], ARRAY[{}]::bigint[])",
+            vec_ids[0] as i64
+        ))
+        .expect("this call must error before returning data");
+    });
+    assert!(
+        error.contains("epoch fingerprint mismatch"),
+        "unexpected error: {error}"
+    );
+}
+
+#[pg_test]
+fn test_ec_distann_expand_nodes_rejects_nonowned_placement() {
+    // FR-079-AC-3 case (b): a vec_id not owned by this node under the epoch
+    // placement is a placement error, never a silent miss. Configure a 2-node
+    // roster with this instance as node 0 and request a node-1-owned id.
+    create_distann_fixture("ec_distann_place", "WITH (graph_degree = 4)");
+    Spi::run("SET ec_distann.roster = '0@local;1@host=/nonexistent port=1 dbname=x'")
+        .expect("roster set should succeed");
+    Spi::run("SET ec_distann.local_node_id = 0").expect("local_node_id set should succeed");
+
+    let vec_ids = distann_directory_vec_ids("ec_distann_place_idx");
+    // Find one owned by roster index 1 (the non-local node).
+    let node1_id = vec_ids.iter().copied().find(|&id| {
+        crate::am::ec_distann::placement::owning_node(
+            id,
+            2,
+            crate::am::ec_distann::placement::DISTANN_PLACEMENT_HASH_V1,
+        ) == 1
+    });
+    let node1_id = node1_id.expect("with 8 hashed ids across 2 nodes, node 1 owns >=1") as i64;
+
+    let error = expect_pg_error(|| {
+        Spi::run(&format!(
+            "SELECT * FROM ec_distann_expand_nodes(\
+               'ec_distann_place_idx'::regclass::oid, \
+               ec_distann_epoch_fingerprint('ec_distann_place_idx'::regclass::oid), \
+               ARRAY[1,0,0,0]::real[], ARRAY[{node1_id}]::bigint[])"
+        ))
+        .expect("this call must error on the non-owned id");
+    });
+    assert!(
+        error.contains("placement error"),
+        "unexpected error: {error}"
+    );
+
+    Spi::run("RESET ec_distann.roster").expect("roster reset should succeed");
+    Spi::run("RESET ec_distann.local_node_id").expect("local_node_id reset should succeed");
+}
+
 #[pg_test]
 fn test_ec_distann_insert_reports_unimplemented_dml_posture() {
     Spi::run("CREATE TABLE ec_distann_insert_posture (id bigint, embedding ecvector)")
