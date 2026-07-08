@@ -1,0 +1,570 @@
+[suite:task-163-m1-stitch-ab] wrote reviews/task-163/001-m1-stitch-ab/artifacts/suite-manifest.json
+[suite:task-163-m1-stitch-ab] wrote reviews/task-163/001-m1-stitch-ab/artifacts/suite-manifest.json
+[suite:task-163-m1-stitch-ab] precheck-host -> --database ec_distann_bench --host /home/peter/.pgrx --port 28818 dev sql --pg 18 --db ec_distann_bench --socket-dir /home/peter/.pgrx --raw --sql "SELECT now() AS captured_at, version() AS postgres_version, ecaz_build_profile() AS build_profile, current_setting('shared_buffers') AS shared_buffers, current_setting('work_mem') AS work_mem, current_setting('maintenance_work_mem') AS maintenance_work_mem;" --log-output reviews/task-163/001-m1-stitch-ab/artifacts/precheck-host.log
+[suite:task-163-m1-stitch-ab] wrote reviews/task-163/001-m1-stitch-ab/artifacts/suite-manifest.json
+          captured_at          |                                            postgres_version                                             | build_profile | shared_buffers | work_mem | maintenance_work_mem 
+-------------------------------+---------------------------------------------------------------------------------------------------------+---------------+----------------+----------+----------------------
+ 2026-07-07 17:34:00.712924-07 | PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit | release       | 128MB          | 4MB      | 64MB
+(1 row)
+
+[suite:task-163-m1-stitch-ab] wrote reviews/task-163/001-m1-stitch-ab/artifacts/suite-manifest.json
+[suite:task-163-m1-stitch-ab] load-10k-mono -> --database ec_distann_bench --host /home/peter/.pgrx --port 28818 --log-file reviews/task-163/001-m1-stitch-ab/artifacts/load-10k-mono.log corpus load --prefix m1_10k_mono --profile ec_distann --corpus-file data/staged-current/ec_real_10k_corpus.tsv --queries-file data/staged-current/ec_real_10k_queries.tsv --manifest-file data/staged-current/ec_real_10k_manifest.json --allow-manifest-mismatch --bits 4 --seed 42 --reloption neighbor_code_format=rabitq --reloption build_shards=1
+[suite:task-163-m1-stitch-ab] wrote reviews/task-163/001-m1-stitch-ab/artifacts/suite-manifest.json
+┌─────────┬───────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                         │
+╞═════════╪═══════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_distann                                                    │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ m1_10k_mono_corpus (10000 rows)                               │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ m1_10k_mono_queries (200 rows)                                │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ m1_10k_mono_idx [neighbor_code_format=rabitq, build_shards=1] │
+└─────────┴───────────────────────────────────────────────────────────────┘
+[loader] warning: profile "ec_distann" does not list build_shards as known reloption; passing through verbatim. Known reloptions: graph_degree, build_list_size, alpha, neighbor_code_format, closure_epsilon, head_index_cap, source_identity
+[loader] inspecting data/staged-current/ec_real_10k_corpus.tsv
+[loader] inspecting data/staged-current/ec_real_10k_queries.tsv
+[loader] corpus: 10000 rows, sha256=c67c5810b66d982d705974e48d4775479adfbd92a988f694091266e049a35e75  queries: 200 rows, sha256=a2c191bb742017d849e73f6e6866e8e0f0bac1579ba212f7fc76b8eb09904ae8
+[loader] warning: manifest verification failed for data/staged-current/ec_real_10k_manifest.json: prefix="ec_real_10k" (expected "m1_10k_mono")
+[loader] copied corpus table m1_10k_mono_corpus in 4.30s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table m1_10k_mono_corpus in 4.03s
+[loader] copied queries table m1_10k_mono_queries in 95.80ms
+[loader] building m1_10k_mono_idx using ec_distann (reloptions=[neighbor_code_format=rabitq, build_shards=1]) ...
+[loader] built m1_10k_mono_idx in 15.04s
+[loader] completed prefix m1_10k_mono in 26.35s
+[suite:task-163-m1-stitch-ab] wrote reviews/task-163/001-m1-stitch-ab/artifacts/suite-manifest.json
+[suite:task-163-m1-stitch-ab] recall-10k-mono -> --database ec_distann_bench --host /home/peter/.pgrx --port 28818 bench recall --prefix m1_10k_mono --profile ec_distann --k 10 --sweep "16,32,64,100,200" --queries-limit 200 --bits 4 --seed 42 --force-index --log-output reviews/task-163/001-m1-stitch-ab/artifacts/recall-10k-mono.log
+[suite:task-163-m1-stitch-ab] wrote reviews/task-163/001-m1-stitch-ab/artifacts/suite-manifest.json
+┌───────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ top_k ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞═══════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 16    ┆ 200     ┆ 2000          ┆ 0.9935   ┆ 0.9889          ┆ 0.9962           ┆ 1.0000     ┆ 1.0000     ┆ 1.0000     ┆ 0.8000       ┆ 0.9999 ┆ 70.73 ms    │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 32    ┆ 200     ┆ 2000          ┆ 0.9990   ┆ 0.9964          ┆ 0.9997           ┆ 1.0000     ┆ 1.0000     ┆ 1.0000     ┆ 0.9000       ┆ 1.0000 ┆ 2.94 ms     │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 64    ┆ 200     ┆ 2000          ┆ 0.9995   ┆ 0.9972          ┆ 0.9999           ┆ 1.0000     ┆ 1.0000     ┆ 1.0000     ┆ 0.9000       ┆ 1.0000 ┆ 4.46 ms     │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 100   ┆ 200     ┆ 2000          ┆ 1.0000   ┆ 0.9981          ┆ 1.0000           ┆ 1.0000     ┆ 1.0000     ┆ 1.0000     ┆ 1.0000       ┆ 1.0000 ┆ 6.10 ms     │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 200   ┆ 200     ┆ 2000          ┆ 1.0000   ┆ 0.9981          ┆ 1.0000           ┆ 1.0000     ┆ 1.0000     ┆ 1.0000     ┆ 1.0000       ┆ 1.0000 ┆ 11.18 ms    │
+└───────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from m1_10k_mono_queries ...
+[recall] fetching corpus from m1_10k_mono_corpus ...
+[recall] computing ground truth: 200 queries vs 10000 corpus rows (dim=1536) ...
+[recall] ground truth in 87.14ms
+[suite:task-163-m1-stitch-ab] wrote reviews/task-163/001-m1-stitch-ab/artifacts/suite-manifest.json
+[suite:task-163-m1-stitch-ab] latency-10k-mono -> --database ec_distann_bench --host /home/peter/.pgrx --port 28818 bench latency --prefix m1_10k_mono --profile ec_distann --k 10 --concurrency 1 --iterations 200 --sweep "16,32,64,100,200" --bits 4 --seed 42 --force-index --sample-backend-memory --cache-state post_recall_warm --memory-sample-interval-ms 25 --log-output reviews/task-163/001-m1-stitch-ab/artifacts/latency-10k-mono.log
+[suite:task-163-m1-stitch-ab] wrote reviews/task-163/001-m1-stitch-ab/artifacts/suite-manifest.json
+┌───────┬───────┬─────────┬──────────┬─────────┬─────────┬─────────┬─────────┬────────────┬──────────────────┬─────────────┬─────────────┬────────────────┐
+│ top_k ┆ count ┆ mean    ┆ stddev   ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max        ┆ cache_state      ┆ rss_peak_kb ┆ hwm_peak_kb ┆ memory_samples │
+╞═══════╪═══════╪═════════╪══════════╪═════════╪═════════╪═════════╪═════════╪════════════╪══════════════════╪═════════════╪═════════════╪════════════════╡
+│ 16    ┆ 200   ┆ 65.6 ms ┆ 898.4 ms ┆ 1.57 ms ┆ 1.89 ms ┆ 2.35 ms ┆ 2.76 ms ┆ 12738.5 ms ┆ post_recall_warm ┆ 178392      ┆ 178392      ┆ 498            │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 32    ┆ 200   ┆ 66.5 ms ┆ 900.1 ms ┆ 2.23 ms ┆ 2.67 ms ┆ 3.07 ms ┆ 3.83 ms ┆ 12764.5 ms ┆ post_recall_warm ┆ 178232      ┆ 178232      ┆ 504            │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 64    ┆ 200   ┆ 69.5 ms ┆ 924.6 ms ┆ 3.26 ms ┆ 3.85 ms ┆ 4.54 ms ┆ 5.45 ms ┆ 13112.2 ms ┆ post_recall_warm ┆ 178180      ┆ 178180      ┆ 526            │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 100   ┆ 200   ┆ 59.7 ms ┆ 760.5 ms ┆ 4.85 ms ┆ 5.63 ms ┆ 7.05 ms ┆ 8.26 ms ┆ 10788.3 ms ┆ post_recall_warm ┆ 178628      ┆ 178628      ┆ 451            │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 200   ┆ 200   ┆ 65.2 ms ┆ 766.2 ms ┆ 9.18 ms ┆ 10.6 ms ┆ 13.2 ms ┆ 15.7 ms ┆ 10873.3 ms ┆ post_recall_warm ┆ 178988      ┆ 178988      ┆ 491            │
+└───────┴───────┴─────────┴──────────┴─────────┴─────────┴─────────┴─────────┴────────────┴──────────────────┴─────────────┴─────────────┴────────────────┘
+[suite:task-163-m1-stitch-ab] wrote reviews/task-163/001-m1-stitch-ab/artifacts/suite-manifest.json
+[suite:task-163-m1-stitch-ab] storage-10k-mono -> --database ec_distann_bench --host /home/peter/.pgrx --port 28818 --log-file reviews/task-163/001-m1-stitch-ab/artifacts/storage-10k-mono.log bench storage --prefix m1_10k_mono
+[suite:task-163-m1-stitch-ab] wrote reviews/task-163/001-m1-stitch-ab/artifacts/suite-manifest.json
+┌───────────────────────────────┬────────────────────┐
+│ field                         ┆ value              │
+╞═══════════════════════════════╪════════════════════╡
+│ prefix                        ┆ m1_10k_mono        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus                        ┆ m1_10k_mono_corpus │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ rows                          ┆ 10000              │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ heap                          ┆ 752.0 KiB          │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ table (heap + toast + fsm/vm) ┆ 158.8 MiB          │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes                       ┆ 110.6 MiB          │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ total                         ┆ 269.4 MiB          │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (total)               ┆ 28246.0 B          │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (heap only)           ┆ 77.0 B             │
+└───────────────────────────────┴────────────────────┘
+┌─────────────────────────┬───────────────┬────────────┬──────────────────────────────────────────────┬───────────┬───────────┐
+│ index                   ┆ access method ┆ profile    ┆ reloptions                                   ┆ size      ┆ per row   │
+╞═════════════════════════╪═══════════════╪════════════╪══════════════════════════════════════════════╪═══════════╪═══════════╡
+│ m1_10k_mono_idx         ┆ ec_distann    ┆ ec_distann ┆ {neighbor_code_format=rabitq,build_shards=1} ┆ 110.3 MiB ┆ 11568.7 B │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+│ m1_10k_mono_corpus_pkey ┆ btree         ┆ <unknown>  ┆ {}                                           ┆ 240.0 KiB ┆ 24.6 B    │
+└─────────────────────────┴───────────────┴────────────┴──────────────────────────────────────────────┴───────────┴───────────┘
+[suite:task-163-m1-stitch-ab] wrote reviews/task-163/001-m1-stitch-ab/artifacts/suite-manifest.json
+[suite:task-163-m1-stitch-ab] load-10k-stitch -> --database ec_distann_bench --host /home/peter/.pgrx --port 28818 --log-file reviews/task-163/001-m1-stitch-ab/artifacts/load-10k-stitch.log corpus load --prefix m1_10k_stitch --profile ec_distann --corpus-file data/staged-current/ec_real_10k_corpus.tsv --queries-file data/staged-current/ec_real_10k_queries.tsv --manifest-file data/staged-current/ec_real_10k_manifest.json --allow-manifest-mismatch --bits 4 --seed 42 --reloption neighbor_code_format=rabitq --reloption build_shards=4 --reloption closure_epsilon=0.1
+[suite:task-163-m1-stitch-ab] wrote reviews/task-163/001-m1-stitch-ab/artifacts/suite-manifest.json
+┌─────────┬──────────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                                │
+╞═════════╪══════════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_distann                                                                           │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ m1_10k_stitch_corpus (10000 rows)                                                    │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ m1_10k_stitch_queries (200 rows)                                                     │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ m1_10k_stitch_idx [neighbor_code_format=rabitq, build_shards=4, closure_epsilon=0.1] │
+└─────────┴──────────────────────────────────────────────────────────────────────────────────────┘
+[loader] warning: profile "ec_distann" does not list build_shards as known reloption; passing through verbatim. Known reloptions: graph_degree, build_list_size, alpha, neighbor_code_format, closure_epsilon, head_index_cap, source_identity
+[loader] inspecting data/staged-current/ec_real_10k_corpus.tsv
+[loader] inspecting data/staged-current/ec_real_10k_queries.tsv
+[loader] corpus: 10000 rows, sha256=c67c5810b66d982d705974e48d4775479adfbd92a988f694091266e049a35e75  queries: 200 rows, sha256=a2c191bb742017d849e73f6e6866e8e0f0bac1579ba212f7fc76b8eb09904ae8
+[loader] warning: manifest verification failed for data/staged-current/ec_real_10k_manifest.json: prefix="ec_real_10k" (expected "m1_10k_stitch")
+[loader] copied corpus table m1_10k_stitch_corpus in 4.05s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table m1_10k_stitch_corpus in 2.77s
+[loader] copied queries table m1_10k_stitch_queries in 105.78ms
+[loader] building m1_10k_stitch_idx using ec_distann (reloptions=[neighbor_code_format=rabitq, build_shards=4, closure_epsilon=0.1]) ...
+[loader] built m1_10k_stitch_idx in 8.95s
+[loader] completed prefix m1_10k_stitch in 16.96s
+[suite:task-163-m1-stitch-ab] wrote reviews/task-163/001-m1-stitch-ab/artifacts/suite-manifest.json
+[suite:task-163-m1-stitch-ab] recall-10k-stitch -> --database ec_distann_bench --host /home/peter/.pgrx --port 28818 bench recall --prefix m1_10k_stitch --profile ec_distann --k 10 --sweep "16,32,64,100,200" --queries-limit 200 --bits 4 --seed 42 --force-index --log-output reviews/task-163/001-m1-stitch-ab/artifacts/recall-10k-stitch.log
+[suite:task-163-m1-stitch-ab] wrote reviews/task-163/001-m1-stitch-ab/artifacts/suite-manifest.json
+┌───────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ top_k ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞═══════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 16    ┆ 200     ┆ 2000          ┆ 0.9950   ┆ 0.9908          ┆ 0.9973           ┆ 1.0000     ┆ 1.0000     ┆ 1.0000     ┆ 0.8000       ┆ 0.9999 ┆ 56.32 ms    │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 32    ┆ 200     ┆ 2000          ┆ 0.9985   ┆ 0.9956          ┆ 0.9995           ┆ 1.0000     ┆ 1.0000     ┆ 1.0000     ┆ 0.9000       ┆ 1.0000 ┆ 2.60 ms     │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 64    ┆ 200     ┆ 2000          ┆ 1.0000   ┆ 0.9981          ┆ 1.0000           ┆ 1.0000     ┆ 1.0000     ┆ 1.0000     ┆ 1.0000       ┆ 1.0000 ┆ 4.35 ms     │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 100   ┆ 200     ┆ 2000          ┆ 1.0000   ┆ 0.9981          ┆ 1.0000           ┆ 1.0000     ┆ 1.0000     ┆ 1.0000     ┆ 1.0000       ┆ 1.0000 ┆ 6.21 ms     │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 200   ┆ 200     ┆ 2000          ┆ 1.0000   ┆ 0.9981          ┆ 1.0000           ┆ 1.0000     ┆ 1.0000     ┆ 1.0000     ┆ 1.0000       ┆ 1.0000 ┆ 10.98 ms    │
+└───────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from m1_10k_stitch_queries ...
+[recall] fetching corpus from m1_10k_stitch_corpus ...
+[recall] computing ground truth: 200 queries vs 10000 corpus rows (dim=1536) ...
+[recall] ground truth in 78.89ms
+[suite:task-163-m1-stitch-ab] wrote reviews/task-163/001-m1-stitch-ab/artifacts/suite-manifest.json
+[suite:task-163-m1-stitch-ab] latency-10k-stitch -> --database ec_distann_bench --host /home/peter/.pgrx --port 28818 bench latency --prefix m1_10k_stitch --profile ec_distann --k 10 --concurrency 1 --iterations 200 --sweep "16,32,64,100,200" --bits 4 --seed 42 --force-index --sample-backend-memory --cache-state post_recall_warm --memory-sample-interval-ms 25 --log-output reviews/task-163/001-m1-stitch-ab/artifacts/latency-10k-stitch.log
+[suite:task-163-m1-stitch-ab] wrote reviews/task-163/001-m1-stitch-ab/artifacts/suite-manifest.json
+┌───────┬───────┬─────────┬──────────┬─────────┬─────────┬─────────┬─────────┬────────────┬──────────────────┬─────────────┬─────────────┬────────────────┐
+│ top_k ┆ count ┆ mean    ┆ stddev   ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max        ┆ cache_state      ┆ rss_peak_kb ┆ hwm_peak_kb ┆ memory_samples │
+╞═══════╪═══════╪═════════╪══════════╪═════════╪═════════╪═════════╪═════════╪════════════╪══════════════════╪═════════════╪═════════════╪════════════════╡
+│ 16    ┆ 200   ┆ 56.5 ms ┆ 770.9 ms ┆ 1.49 ms ┆ 1.80 ms ┆ 2.14 ms ┆ 2.68 ms ┆ 10931.2 ms ┆ post_recall_warm ┆ 154992      ┆ 154992      ┆ 427            │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 32    ┆ 200   ┆ 57.0 ms ┆ 768.9 ms ┆ 2.02 ms ┆ 2.45 ms ┆ 3.07 ms ┆ 3.86 ms ┆ 10903.6 ms ┆ post_recall_warm ┆ 171536      ┆ 171536      ┆ 431            │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 64    ┆ 200   ┆ 58.1 ms ┆ 763.3 ms ┆ 3.25 ms ┆ 3.88 ms ┆ 4.49 ms ┆ 5.92 ms ┆ 10826.0 ms ┆ post_recall_warm ┆ 177256      ┆ 177256      ┆ 438            │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 100   ┆ 200   ┆ 59.9 ms ┆ 763.7 ms ┆ 4.82 ms ┆ 5.63 ms ┆ 6.86 ms ┆ 7.71 ms ┆ 10833.1 ms ┆ post_recall_warm ┆ 177988      ┆ 177988      ┆ 452            │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 200   ┆ 200   ┆ 64.4 ms ┆ 761.0 ms ┆ 9.00 ms ┆ 10.3 ms ┆ 12.6 ms ┆ 14.8 ms ┆ 10799.7 ms ┆ post_recall_warm ┆ 178924      ┆ 178924      ┆ 487            │
+└───────┴───────┴─────────┴──────────┴─────────┴─────────┴─────────┴─────────┴────────────┴──────────────────┴─────────────┴─────────────┴────────────────┘
+[suite:task-163-m1-stitch-ab] wrote reviews/task-163/001-m1-stitch-ab/artifacts/suite-manifest.json
+[suite:task-163-m1-stitch-ab] storage-10k-stitch -> --database ec_distann_bench --host /home/peter/.pgrx --port 28818 --log-file reviews/task-163/001-m1-stitch-ab/artifacts/storage-10k-stitch.log bench storage --prefix m1_10k_stitch
+[suite:task-163-m1-stitch-ab] wrote reviews/task-163/001-m1-stitch-ab/artifacts/suite-manifest.json
+┌───────────────────────────────┬──────────────────────┐
+│ field                         ┆ value                │
+╞═══════════════════════════════╪══════════════════════╡
+│ prefix                        ┆ m1_10k_stitch        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus                        ┆ m1_10k_stitch_corpus │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ rows                          ┆ 10000                │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ heap                          ┆ 752.0 KiB            │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ table (heap + toast + fsm/vm) ┆ 158.8 MiB            │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes                       ┆ 110.6 MiB            │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ total                         ┆ 269.4 MiB            │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (total)               ┆ 28246.0 B            │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (heap only)           ┆ 77.0 B               │
+└───────────────────────────────┴──────────────────────┘
+┌───────────────────────────┬───────────────┬────────────┬──────────────────────────────────────────────────────────────────┬───────────┬───────────┐
+│ index                     ┆ access method ┆ profile    ┆ reloptions                                                       ┆ size      ┆ per row   │
+╞═══════════════════════════╪═══════════════╪════════════╪══════════════════════════════════════════════════════════════════╪═══════════╪═══════════╡
+│ m1_10k_stitch_idx         ┆ ec_distann    ┆ ec_distann ┆ {neighbor_code_format=rabitq,build_shards=4,closure_epsilon=0.1} ┆ 110.3 MiB ┆ 11568.7 B │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+│ m1_10k_stitch_corpus_pkey ┆ btree         ┆ <unknown>  ┆ {}                                                               ┆ 240.0 KiB ┆ 24.6 B    │
+└───────────────────────────┴───────────────┴────────────┴──────────────────────────────────────────────────────────────────┴───────────┴───────────┘
+[suite:task-163-m1-stitch-ab] wrote reviews/task-163/001-m1-stitch-ab/artifacts/suite-manifest.json
+[suite:task-163-m1-stitch-ab] load-50k-mono -> --database ec_distann_bench --host /home/peter/.pgrx --port 28818 --log-file reviews/task-163/001-m1-stitch-ab/artifacts/load-50k-mono.log corpus load --prefix m1_50k_mono --profile ec_distann --corpus-file data/staged-current/ec_real_50k_corpus.tsv --queries-file data/staged-current/ec_real_50k_queries.tsv --manifest-file data/staged-current/ec_real_50k_manifest.json --allow-manifest-mismatch --bits 4 --seed 42 --reloption neighbor_code_format=rabitq --reloption build_shards=1
+[suite:task-163-m1-stitch-ab] wrote reviews/task-163/001-m1-stitch-ab/artifacts/suite-manifest.json
+┌─────────┬───────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                         │
+╞═════════╪═══════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_distann                                                    │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ m1_50k_mono_corpus (50000 rows)                               │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ m1_50k_mono_queries (1000 rows)                               │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ m1_50k_mono_idx [neighbor_code_format=rabitq, build_shards=1] │
+└─────────┴───────────────────────────────────────────────────────────────┘
+[loader] warning: profile "ec_distann" does not list build_shards as known reloption; passing through verbatim. Known reloptions: graph_degree, build_list_size, alpha, neighbor_code_format, closure_epsilon, head_index_cap, source_identity
+[loader] inspecting data/staged-current/ec_real_50k_corpus.tsv
+[loader] inspecting data/staged-current/ec_real_50k_queries.tsv
+[loader] corpus: 50000 rows, sha256=56023baaa7bc42f758272e8617603d538808e6290a8a70a3a84e057571240133  queries: 1000 rows, sha256=95ac7992578aa80bb193657f10fbcbf1ea3867e559739244bf5a467f7a5a9fa3
+[loader] warning: manifest verification failed for data/staged-current/ec_real_50k_manifest.json: prefix="ec_real_50k" (expected "m1_50k_mono")
+[loader] copied corpus table m1_50k_mono_corpus in 20.30s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table m1_50k_mono_corpus in 14.68s
+[loader] copied queries table m1_50k_mono_queries in 543.94ms
+[loader] building m1_50k_mono_idx using ec_distann (reloptions=[neighbor_code_format=rabitq, build_shards=1]) ...
+[loader] built m1_50k_mono_idx in 165.08s
+[loader] completed prefix m1_50k_mono in 213.76s
+[suite:task-163-m1-stitch-ab] wrote reviews/task-163/001-m1-stitch-ab/artifacts/suite-manifest.json
+[suite:task-163-m1-stitch-ab] recall-50k-mono -> --database ec_distann_bench --host /home/peter/.pgrx --port 28818 bench recall --prefix m1_50k_mono --profile ec_distann --k 10 --sweep "16,32,64,100,200" --queries-limit 200 --bits 4 --seed 42 --force-index --log-output reviews/task-163/001-m1-stitch-ab/artifacts/recall-50k-mono.log
+[suite:task-163-m1-stitch-ab] wrote reviews/task-163/001-m1-stitch-ab/artifacts/suite-manifest.json
+┌───────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ top_k ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞═══════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 16    ┆ 200     ┆ 2000          ┆ 0.9150   ┆ 0.9020          ┆ 0.9264           ┆ 0.8000     ┆ 1.0000     ┆ 1.0000     ┆ 0.0000       ┆ 0.9931 ┆ 53.88 ms    │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 32    ┆ 200     ┆ 2000          ┆ 0.9545   ┆ 0.9445          ┆ 0.9628           ┆ 0.8000     ┆ 1.0000     ┆ 1.0000     ┆ 0.3000       ┆ 0.9968 ┆ 3.37 ms     │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 64    ┆ 200     ┆ 2000          ┆ 0.9840   ┆ 0.9775          ┆ 0.9886           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.8000       ┆ 0.9991 ┆ 5.06 ms     │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 100   ┆ 200     ┆ 2000          ┆ 0.9880   ┆ 0.9822          ┆ 0.9919           ┆ 0.9900     ┆ 1.0000     ┆ 1.0000     ┆ 0.8000       ┆ 0.9994 ┆ 7.30 ms     │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 200   ┆ 200     ┆ 2000          ┆ 0.9950   ┆ 0.9908          ┆ 0.9973           ┆ 1.0000     ┆ 1.0000     ┆ 1.0000     ┆ 0.9000       ┆ 0.9998 ┆ 13.93 ms    │
+└───────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from m1_50k_mono_queries ...
+[recall] fetching corpus from m1_50k_mono_corpus ...
+[recall] computing ground truth: 200 queries vs 50000 corpus rows (dim=1536) ...
+[recall] ground truth in 589.17ms
+[suite:task-163-m1-stitch-ab] wrote reviews/task-163/001-m1-stitch-ab/artifacts/suite-manifest.json
+[suite:task-163-m1-stitch-ab] latency-50k-mono -> --database ec_distann_bench --host /home/peter/.pgrx --port 28818 bench latency --prefix m1_50k_mono --profile ec_distann --k 10 --concurrency 1 --iterations 200 --sweep "16,32,64,100,200" --bits 4 --seed 42 --force-index --sample-backend-memory --cache-state post_recall_warm --memory-sample-interval-ms 25 --log-output reviews/task-163/001-m1-stitch-ab/artifacts/latency-50k-mono.log
+[suite:task-163-m1-stitch-ab] wrote reviews/task-163/001-m1-stitch-ab/artifacts/suite-manifest.json
+┌───────┬───────┬─────────┬──────────┬─────────┬─────────┬─────────┬─────────┬────────────┬──────────────────┬─────────────┬─────────────┬────────────────┐
+│ top_k ┆ count ┆ mean    ┆ stddev   ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max        ┆ cache_state      ┆ rss_peak_kb ┆ hwm_peak_kb ┆ memory_samples │
+╞═══════╪═══════╪═════════╪══════════╪═════════╪═════════╪═════════╪═════════╪════════════╪══════════════════╪═════════════╪═════════════╪════════════════╡
+│ 16    ┆ 200   ┆ 56.5 ms ┆ 759.4 ms ┆ 1.87 ms ┆ 2.61 ms ┆ 3.57 ms ┆ 4.32 ms ┆ 10768.5 ms ┆ post_recall_warm ┆ 174996      ┆ 174996      ┆ 427            │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 32    ┆ 200   ┆ 56.9 ms ┆ 756.7 ms ┆ 2.36 ms ┆ 3.18 ms ┆ 4.24 ms ┆ 5.26 ms ┆ 10731.5 ms ┆ post_recall_warm ┆ 179564      ┆ 179564      ┆ 430            │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 64    ┆ 200   ┆ 60.4 ms ┆ 772.5 ms ┆ 4.11 ms ┆ 5.49 ms ┆ 7.40 ms ┆ 8.50 ms ┆ 10957.6 ms ┆ post_recall_warm ┆ 179624      ┆ 179624      ┆ 452            │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 100   ┆ 200   ┆ 61.8 ms ┆ 766.6 ms ┆ 5.56 ms ┆ 7.41 ms ┆ 9.19 ms ┆ 10.8 ms ┆ 10876.6 ms ┆ post_recall_warm ┆ 179652      ┆ 179652      ┆ 465            │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 200   ┆ 200   ┆ 65.6 ms ┆ 732.9 ms ┆ 10.1 ms ┆ 13.5 ms ┆ 17.1 ms ┆ 19.3 ms ┆ 10404.1 ms ┆ post_recall_warm ┆ 179752      ┆ 179752      ┆ 495            │
+└───────┴───────┴─────────┴──────────┴─────────┴─────────┴─────────┴─────────┴────────────┴──────────────────┴─────────────┴─────────────┴────────────────┘
+[suite:task-163-m1-stitch-ab] wrote reviews/task-163/001-m1-stitch-ab/artifacts/suite-manifest.json
+[suite:task-163-m1-stitch-ab] storage-50k-mono -> --database ec_distann_bench --host /home/peter/.pgrx --port 28818 --log-file reviews/task-163/001-m1-stitch-ab/artifacts/storage-50k-mono.log bench storage --prefix m1_50k_mono
+[suite:task-163-m1-stitch-ab] wrote reviews/task-163/001-m1-stitch-ab/artifacts/suite-manifest.json
+┌───────────────────────────────┬────────────────────┐
+│ field                         ┆ value              │
+╞═══════════════════════════════╪════════════════════╡
+│ prefix                        ┆ m1_50k_mono        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus                        ┆ m1_50k_mono_corpus │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ rows                          ┆ 50000              │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ heap                          ┆ 3.7 MiB            │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ table (heap + toast + fsm/vm) ┆ 793.8 MiB          │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes                       ┆ 424.7 MiB          │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ total                         ┆ 1.2 GiB            │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (total)               ┆ 25554.0 B          │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (heap only)           ┆ 76.7 B             │
+└───────────────────────────────┴────────────────────┘
+┌─────────────────────────┬───────────────┬────────────┬──────────────────────────────────────────────┬───────────┬──────────┐
+│ index                   ┆ access method ┆ profile    ┆ reloptions                                   ┆ size      ┆ per row  │
+╞═════════════════════════╪═══════════════╪════════════╪══════════════════════════════════════════════╪═══════════╪══════════╡
+│ m1_50k_mono_idx         ┆ ec_distann    ┆ ec_distann ┆ {neighbor_code_format=rabitq,build_shards=1} ┆ 423.6 MiB ┆ 8883.7 B │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ m1_50k_mono_corpus_pkey ┆ btree         ┆ <unknown>  ┆ {}                                           ┆ 1.1 MiB   ┆ 22.8 B   │
+└─────────────────────────┴───────────────┴────────────┴──────────────────────────────────────────────┴───────────┴──────────┘
+[suite:task-163-m1-stitch-ab] wrote reviews/task-163/001-m1-stitch-ab/artifacts/suite-manifest.json
+[suite:task-163-m1-stitch-ab] load-50k-stitch -> --database ec_distann_bench --host /home/peter/.pgrx --port 28818 --log-file reviews/task-163/001-m1-stitch-ab/artifacts/load-50k-stitch.log corpus load --prefix m1_50k_stitch --profile ec_distann --corpus-file data/staged-current/ec_real_50k_corpus.tsv --queries-file data/staged-current/ec_real_50k_queries.tsv --manifest-file data/staged-current/ec_real_50k_manifest.json --allow-manifest-mismatch --bits 4 --seed 42 --reloption neighbor_code_format=rabitq --reloption build_shards=4 --reloption closure_epsilon=0.1
+[suite:task-163-m1-stitch-ab] wrote reviews/task-163/001-m1-stitch-ab/artifacts/suite-manifest.json
+┌─────────┬──────────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                                │
+╞═════════╪══════════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_distann                                                                           │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ m1_50k_stitch_corpus (50000 rows)                                                    │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ m1_50k_stitch_queries (1000 rows)                                                    │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ m1_50k_stitch_idx [neighbor_code_format=rabitq, build_shards=4, closure_epsilon=0.1] │
+└─────────┴──────────────────────────────────────────────────────────────────────────────────────┘
+[loader] warning: profile "ec_distann" does not list build_shards as known reloption; passing through verbatim. Known reloptions: graph_degree, build_list_size, alpha, neighbor_code_format, closure_epsilon, head_index_cap, source_identity
+[loader] inspecting data/staged-current/ec_real_50k_corpus.tsv
+[loader] inspecting data/staged-current/ec_real_50k_queries.tsv
+[loader] corpus: 50000 rows, sha256=56023baaa7bc42f758272e8617603d538808e6290a8a70a3a84e057571240133  queries: 1000 rows, sha256=95ac7992578aa80bb193657f10fbcbf1ea3867e559739244bf5a467f7a5a9fa3
+[loader] warning: manifest verification failed for data/staged-current/ec_real_50k_manifest.json: prefix="ec_real_50k" (expected "m1_50k_stitch")
+[loader] copied corpus table m1_50k_stitch_corpus in 19.86s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table m1_50k_stitch_corpus in 17.65s
+[loader] copied queries table m1_50k_stitch_queries in 420.92ms
+[loader] building m1_50k_stitch_idx using ec_distann (reloptions=[neighbor_code_format=rabitq, build_shards=4, closure_epsilon=0.1]) ...
+[loader] built m1_50k_stitch_idx in 111.11s
+[loader] completed prefix m1_50k_stitch in 154.63s
+[suite:task-163-m1-stitch-ab] wrote reviews/task-163/001-m1-stitch-ab/artifacts/suite-manifest.json
+[suite:task-163-m1-stitch-ab] recall-50k-stitch -> --database ec_distann_bench --host /home/peter/.pgrx --port 28818 bench recall --prefix m1_50k_stitch --profile ec_distann --k 10 --sweep "16,32,64,100,200" --queries-limit 200 --bits 4 --seed 42 --force-index --log-output reviews/task-163/001-m1-stitch-ab/artifacts/recall-50k-stitch.log
+[suite:task-163-m1-stitch-ab] wrote reviews/task-163/001-m1-stitch-ab/artifacts/suite-manifest.json
+┌───────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ top_k ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞═══════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 16    ┆ 200     ┆ 2000          ┆ 0.9150   ┆ 0.9020          ┆ 0.9264           ┆ 0.8000     ┆ 1.0000     ┆ 1.0000     ┆ 0.0000       ┆ 0.9859 ┆ 55.30 ms    │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 32    ┆ 200     ┆ 2000          ┆ 0.9420   ┆ 0.9309          ┆ 0.9514           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.0000       ┆ 0.9871 ┆ 3.55 ms     │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 64    ┆ 200     ┆ 2000          ┆ 0.9810   ┆ 0.9740          ┆ 0.9861           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.5000       ┆ 0.9990 ┆ 5.43 ms     │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 100   ┆ 200     ┆ 2000          ┆ 0.9860   ┆ 0.9798          ┆ 0.9903           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.5000       ┆ 0.9995 ┆ 8.18 ms     │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 200   ┆ 200     ┆ 2000          ┆ 0.9930   ┆ 0.9883          ┆ 0.9958           ┆ 1.0000     ┆ 1.0000     ┆ 1.0000     ┆ 0.5000       ┆ 0.9996 ┆ 14.38 ms    │
+└───────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from m1_50k_stitch_queries ...
+[recall] fetching corpus from m1_50k_stitch_corpus ...
+[recall] computing ground truth: 200 queries vs 50000 corpus rows (dim=1536) ...
+[recall] ground truth in 388.09ms
+[suite:task-163-m1-stitch-ab] wrote reviews/task-163/001-m1-stitch-ab/artifacts/suite-manifest.json
+[suite:task-163-m1-stitch-ab] latency-50k-stitch -> --database ec_distann_bench --host /home/peter/.pgrx --port 28818 bench latency --prefix m1_50k_stitch --profile ec_distann --k 10 --concurrency 1 --iterations 200 --sweep "16,32,64,100,200" --bits 4 --seed 42 --force-index --sample-backend-memory --cache-state post_recall_warm --memory-sample-interval-ms 25 --log-output reviews/task-163/001-m1-stitch-ab/artifacts/latency-50k-stitch.log
+[suite:task-163-m1-stitch-ab] wrote reviews/task-163/001-m1-stitch-ab/artifacts/suite-manifest.json
+┌───────┬───────┬─────────┬──────────┬─────────┬─────────┬─────────┬─────────┬────────────┬──────────────────┬─────────────┬─────────────┬────────────────┐
+│ top_k ┆ count ┆ mean    ┆ stddev   ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max        ┆ cache_state      ┆ rss_peak_kb ┆ hwm_peak_kb ┆ memory_samples │
+╞═══════╪═══════╪═════════╪══════════╪═════════╪═════════╪═════════╪═════════╪════════════╪══════════════════╪═════════════╪═════════════╪════════════════╡
+│ 16    ┆ 200   ┆ 61.6 ms ┆ 827.0 ms ┆ 2.25 ms ┆ 2.88 ms ┆ 3.87 ms ┆ 5.80 ms ┆ 11727.6 ms ┆ post_recall_warm ┆ 174912      ┆ 174912      ┆ 468            │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 32    ┆ 200   ┆ 62.5 ms ┆ 830.7 ms ┆ 2.81 ms ┆ 3.49 ms ┆ 4.45 ms ┆ 5.45 ms ┆ 11781.4 ms ┆ post_recall_warm ┆ 179604      ┆ 179604      ┆ 474            │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 64    ┆ 200   ┆ 64.5 ms ┆ 829.8 ms ┆ 4.17 ms ┆ 5.48 ms ┆ 7.02 ms ┆ 10.9 ms ┆ 11770.7 ms ┆ post_recall_warm ┆ 179624      ┆ 179624      ┆ 490            │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 100   ┆ 200   ┆ 66.4 ms ┆ 824.6 ms ┆ 6.03 ms ┆ 7.79 ms ┆ 9.71 ms ┆ 13.8 ms ┆ 11699.0 ms ┆ post_recall_warm ┆ 179696      ┆ 179696      ┆ 504            │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 200   ┆ 200   ┆ 78.2 ms ┆ 895.4 ms ┆ 11.3 ms ┆ 14.6 ms ┆ 18.0 ms ┆ 22.8 ms ┆ 12709.3 ms ┆ post_recall_warm ┆ 179796      ┆ 179796      ┆ 594            │
+└───────┴───────┴─────────┴──────────┴─────────┴─────────┴─────────┴─────────┴────────────┴──────────────────┴─────────────┴─────────────┴────────────────┘
+[suite:task-163-m1-stitch-ab] wrote reviews/task-163/001-m1-stitch-ab/artifacts/suite-manifest.json
+[suite:task-163-m1-stitch-ab] storage-50k-stitch -> --database ec_distann_bench --host /home/peter/.pgrx --port 28818 --log-file reviews/task-163/001-m1-stitch-ab/artifacts/storage-50k-stitch.log bench storage --prefix m1_50k_stitch
+[suite:task-163-m1-stitch-ab] wrote reviews/task-163/001-m1-stitch-ab/artifacts/suite-manifest.json
+┌───────────────────────────────┬──────────────────────┐
+│ field                         ┆ value                │
+╞═══════════════════════════════╪══════════════════════╡
+│ prefix                        ┆ m1_50k_stitch        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus                        ┆ m1_50k_stitch_corpus │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ rows                          ┆ 50000                │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ heap                          ┆ 3.7 MiB              │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ table (heap + toast + fsm/vm) ┆ 793.8 MiB            │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes                       ┆ 424.7 MiB            │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ total                         ┆ 1.2 GiB              │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (total)               ┆ 25554.0 B            │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (heap only)           ┆ 76.7 B               │
+└───────────────────────────────┴──────────────────────┘
+┌───────────────────────────┬───────────────┬────────────┬──────────────────────────────────────────────────────────────────┬───────────┬──────────┐
+│ index                     ┆ access method ┆ profile    ┆ reloptions                                                       ┆ size      ┆ per row  │
+╞═══════════════════════════╪═══════════════╪════════════╪══════════════════════════════════════════════════════════════════╪═══════════╪══════════╡
+│ m1_50k_stitch_idx         ┆ ec_distann    ┆ ec_distann ┆ {neighbor_code_format=rabitq,build_shards=4,closure_epsilon=0.1} ┆ 423.6 MiB ┆ 8883.7 B │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ m1_50k_stitch_corpus_pkey ┆ btree         ┆ <unknown>  ┆ {}                                                               ┆ 1.1 MiB   ┆ 22.8 B   │
+└───────────────────────────┴───────────────┴────────────┴──────────────────────────────────────────────────────────────────┴───────────┴──────────┘
+[suite:task-163-m1-stitch-ab] wrote reviews/task-163/001-m1-stitch-ab/artifacts/suite-manifest.json
+[suite:task-163-m1-stitch-ab] load-100k-mono -> --database ec_distann_bench --host /home/peter/.pgrx --port 28818 --log-file reviews/task-163/001-m1-stitch-ab/artifacts/load-100k-mono.log corpus load --prefix m1_100k_mono --profile ec_distann --corpus-file data/staged-current/ec_real_100k_corpus.tsv --queries-file data/staged-current/ec_real_100k_queries.tsv --manifest-file data/staged-current/ec_real_100k_manifest.json --allow-manifest-mismatch --bits 4 --seed 42 --reloption neighbor_code_format=rabitq --reloption build_shards=1
+[suite:task-163-m1-stitch-ab] wrote reviews/task-163/001-m1-stitch-ab/artifacts/suite-manifest.json
+┌─────────┬────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                          │
+╞═════════╪════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_distann                                                     │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ m1_100k_mono_corpus (100000 rows)                              │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ m1_100k_mono_queries (1000 rows)                               │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ m1_100k_mono_idx [neighbor_code_format=rabitq, build_shards=1] │
+└─────────┴────────────────────────────────────────────────────────────────┘
+[loader] warning: profile "ec_distann" does not list build_shards as known reloption; passing through verbatim. Known reloptions: graph_degree, build_list_size, alpha, neighbor_code_format, closure_epsilon, head_index_cap, source_identity
+[loader] inspecting data/staged-current/ec_real_100k_corpus.tsv
+[loader] inspecting data/staged-current/ec_real_100k_queries.tsv
+[loader] corpus: 100000 rows, sha256=07275cfd5a7a4b415ddf5eacc086de98294ac978532df46ffae30f9202323a95  queries: 1000 rows, sha256=a7cbec6fc44f6c148234538f61339d00d2f10646febc8f667dcbe75d9cf41782
+[loader] warning: manifest verification failed for data/staged-current/ec_real_100k_manifest.json: prefix="ec_real_100k" (expected "m1_100k_mono")
+[loader] copied corpus table m1_100k_mono_corpus in 42.04s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table m1_100k_mono_corpus in 37.84s
+[loader] copied queries table m1_100k_mono_queries in 427.95ms
+[loader] building m1_100k_mono_idx using ec_distann (reloptions=[neighbor_code_format=rabitq, build_shards=1]) ...
+[loader] built m1_100k_mono_idx in 386.70s
+[loader] completed prefix m1_100k_mono in 481.41s
+[suite:task-163-m1-stitch-ab] wrote reviews/task-163/001-m1-stitch-ab/artifacts/suite-manifest.json
+[suite:task-163-m1-stitch-ab] recall-100k-mono -> --database ec_distann_bench --host /home/peter/.pgrx --port 28818 bench recall --prefix m1_100k_mono --profile ec_distann --k 10 --sweep "16,32,64,100,200" --queries-limit 200 --bits 4 --seed 42 --force-index --log-output reviews/task-163/001-m1-stitch-ab/artifacts/recall-100k-mono.log
+[suite:task-163-m1-stitch-ab] wrote reviews/task-163/001-m1-stitch-ab/artifacts/suite-manifest.json
+┌───────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ top_k ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞═══════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 16    ┆ 200     ┆ 2000          ┆ 0.8685   ┆ 0.8530          ┆ 0.8826           ┆ 0.7000     ┆ 0.9000     ┆ 1.0000     ┆ 0.2000       ┆ 0.9864 ┆ 85.82 ms    │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 32    ┆ 200     ┆ 2000          ┆ 0.9260   ┆ 0.9137          ┆ 0.9367           ┆ 0.8000     ┆ 1.0000     ┆ 1.0000     ┆ 0.5000       ┆ 0.9916 ┆ 3.30 ms     │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 64    ┆ 200     ┆ 2000          ┆ 0.9650   ┆ 0.9560          ┆ 0.9722           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.5000       ┆ 0.9962 ┆ 5.01 ms     │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 100   ┆ 200     ┆ 2000          ┆ 0.9770   ┆ 0.9695          ┆ 0.9827           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.5000       ┆ 0.9973 ┆ 7.21 ms     │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 200   ┆ 200     ┆ 2000          ┆ 0.9925   ┆ 0.9877          ┆ 0.9954           ┆ 1.0000     ┆ 1.0000     ┆ 1.0000     ┆ 0.8000       ┆ 0.9995 ┆ 14.06 ms    │
+└───────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from m1_100k_mono_queries ...
+[recall] fetching corpus from m1_100k_mono_corpus ...
+[recall] computing ground truth: 200 queries vs 100000 corpus rows (dim=1536) ...
+[recall] ground truth in 1.02s
+[suite:task-163-m1-stitch-ab] wrote reviews/task-163/001-m1-stitch-ab/artifacts/suite-manifest.json
+[suite:task-163-m1-stitch-ab] latency-100k-mono -> --database ec_distann_bench --host /home/peter/.pgrx --port 28818 bench latency --prefix m1_100k_mono --profile ec_distann --k 10 --concurrency 1 --iterations 200 --sweep "16,32,64,100,200" --bits 4 --seed 42 --force-index --sample-backend-memory --cache-state post_recall_warm --memory-sample-interval-ms 25 --log-output reviews/task-163/001-m1-stitch-ab/artifacts/latency-100k-mono.log
+[suite:task-163-m1-stitch-ab] wrote reviews/task-163/001-m1-stitch-ab/artifacts/suite-manifest.json
+┌───────┬───────┬─────────┬───────────┬─────────┬─────────┬─────────┬─────────┬────────────┬──────────────────┬─────────────┬─────────────┬────────────────┐
+│ top_k ┆ count ┆ mean    ┆ stddev    ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max        ┆ cache_state      ┆ rss_peak_kb ┆ hwm_peak_kb ┆ memory_samples │
+╞═══════╪═══════╪═════════╪═══════════╪═════════╪═════════╪═════════╪═════════╪════════════╪══════════════════╪═════════════╪═════════════╪════════════════╡
+│ 16    ┆ 200   ┆ 88.5 ms ┆ 1212.3 ms ┆ 1.82 ms ┆ 2.44 ms ┆ 3.19 ms ┆ 3.69 ms ┆ 17190.2 ms ┆ post_recall_warm ┆ 167768      ┆ 167768      ┆ 668            │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 32    ┆ 200   ┆ 86.5 ms ┆ 1173.6 ms ┆ 2.36 ms ┆ 3.20 ms ┆ 4.22 ms ┆ 5.44 ms ┆ 16641.7 ms ┆ post_recall_warm ┆ 180080      ┆ 180080      ┆ 653            │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 64    ┆ 200   ┆ 86.1 ms ┆ 1144.6 ms ┆ 3.92 ms ┆ 4.85 ms ┆ 6.17 ms ┆ 6.66 ms ┆ 16232.4 ms ┆ post_recall_warm ┆ 180532      ┆ 180532      ┆ 651            │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 100   ┆ 200   ┆ 91.6 ms ┆ 1189.2 ms ┆ 5.86 ms ┆ 7.20 ms ┆ 8.79 ms ┆ 9.79 ms ┆ 16866.9 ms ┆ post_recall_warm ┆ 180572      ┆ 180572      ┆ 690            │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 200   ┆ 200   ┆ 93.9 ms ┆ 1125.7 ms ┆ 11.6 ms ┆ 14.0 ms ┆ 16.8 ms ┆ 17.7 ms ┆ 15973.4 ms ┆ post_recall_warm ┆ 180668      ┆ 180668      ┆ 708            │
+└───────┴───────┴─────────┴───────────┴─────────┴─────────┴─────────┴─────────┴────────────┴──────────────────┴─────────────┴─────────────┴────────────────┘
+[suite:task-163-m1-stitch-ab] wrote reviews/task-163/001-m1-stitch-ab/artifacts/suite-manifest.json
+[suite:task-163-m1-stitch-ab] storage-100k-mono -> --database ec_distann_bench --host /home/peter/.pgrx --port 28818 --log-file reviews/task-163/001-m1-stitch-ab/artifacts/storage-100k-mono.log bench storage --prefix m1_100k_mono
+[suite:task-163-m1-stitch-ab] wrote reviews/task-163/001-m1-stitch-ab/artifacts/suite-manifest.json
+┌───────────────────────────────┬─────────────────────┐
+│ field                         ┆ value               │
+╞═══════════════════════════════╪═════════════════════╡
+│ prefix                        ┆ m1_100k_mono        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus                        ┆ m1_100k_mono_corpus │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ rows                          ┆ 100000              │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ heap                          ┆ 7.3 MiB             │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ table (heap + toast + fsm/vm) ┆ 1.6 GiB             │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes                       ┆ 817.4 MiB           │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ total                         ┆ 2.3 GiB             │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (total)               ┆ 25217.4 B           │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (heap only)           ┆ 76.6 B              │
+└───────────────────────────────┴─────────────────────┘
+┌──────────────────────────┬───────────────┬────────────┬──────────────────────────────────────────────┬───────────┬──────────┐
+│ index                    ┆ access method ┆ profile    ┆ reloptions                                   ┆ size      ┆ per row  │
+╞══════════════════════════╪═══════════════╪════════════╪══════════════════════════════════════════════╪═══════════╪══════════╡
+│ m1_100k_mono_idx         ┆ ec_distann    ┆ ec_distann ┆ {neighbor_code_format=rabitq,build_shards=1} ┆ 815.2 MiB ┆ 8548.1 B │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ m1_100k_mono_corpus_pkey ┆ btree         ┆ <unknown>  ┆ {}                                           ┆ 2.2 MiB   ┆ 22.6 B   │
+└──────────────────────────┴───────────────┴────────────┴──────────────────────────────────────────────┴───────────┴──────────┘
+[suite:task-163-m1-stitch-ab] wrote reviews/task-163/001-m1-stitch-ab/artifacts/suite-manifest.json
+[suite:task-163-m1-stitch-ab] load-100k-stitch -> --database ec_distann_bench --host /home/peter/.pgrx --port 28818 --log-file reviews/task-163/001-m1-stitch-ab/artifacts/load-100k-stitch.log corpus load --prefix m1_100k_stitch --profile ec_distann --corpus-file data/staged-current/ec_real_100k_corpus.tsv --queries-file data/staged-current/ec_real_100k_queries.tsv --manifest-file data/staged-current/ec_real_100k_manifest.json --allow-manifest-mismatch --bits 4 --seed 42 --reloption neighbor_code_format=rabitq --reloption build_shards=4 --reloption closure_epsilon=0.1
+[suite:task-163-m1-stitch-ab] wrote reviews/task-163/001-m1-stitch-ab/artifacts/suite-manifest.json
+┌─────────┬───────────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                                 │
+╞═════════╪═══════════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_distann                                                                            │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ m1_100k_stitch_corpus (100000 rows)                                                   │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ m1_100k_stitch_queries (1000 rows)                                                    │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ m1_100k_stitch_idx [neighbor_code_format=rabitq, build_shards=4, closure_epsilon=0.1] │
+└─────────┴───────────────────────────────────────────────────────────────────────────────────────┘
+[loader] warning: profile "ec_distann" does not list build_shards as known reloption; passing through verbatim. Known reloptions: graph_degree, build_list_size, alpha, neighbor_code_format, closure_epsilon, head_index_cap, source_identity
+[loader] inspecting data/staged-current/ec_real_100k_corpus.tsv
+[loader] inspecting data/staged-current/ec_real_100k_queries.tsv
+[loader] corpus: 100000 rows, sha256=07275cfd5a7a4b415ddf5eacc086de98294ac978532df46ffae30f9202323a95  queries: 1000 rows, sha256=a7cbec6fc44f6c148234538f61339d00d2f10646febc8f667dcbe75d9cf41782
+[loader] warning: manifest verification failed for data/staged-current/ec_real_100k_manifest.json: prefix="ec_real_100k" (expected "m1_100k_stitch")
+[loader] copied corpus table m1_100k_stitch_corpus in 40.29s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table m1_100k_stitch_corpus in 37.16s
+[loader] copied queries table m1_100k_stitch_queries in 443.42ms
+[loader] building m1_100k_stitch_idx using ec_distann (reloptions=[neighbor_code_format=rabitq, build_shards=4, closure_epsilon=0.1]) ...
+[loader] built m1_100k_stitch_idx in 237.72s
+[loader] completed prefix m1_100k_stitch in 326.97s
+[suite:task-163-m1-stitch-ab] wrote reviews/task-163/001-m1-stitch-ab/artifacts/suite-manifest.json
+[suite:task-163-m1-stitch-ab] recall-100k-stitch -> --database ec_distann_bench --host /home/peter/.pgrx --port 28818 bench recall --prefix m1_100k_stitch --profile ec_distann --k 10 --sweep "16,32,64,100,200" --queries-limit 200 --bits 4 --seed 42 --force-index --log-output reviews/task-163/001-m1-stitch-ab/artifacts/recall-100k-stitch.log
+[suite:task-163-m1-stitch-ab] wrote reviews/task-163/001-m1-stitch-ab/artifacts/suite-manifest.json
+┌───────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ top_k ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞═══════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 16    ┆ 200     ┆ 2000          ┆ 0.8080   ┆ 0.7902          ┆ 0.8247           ┆ 0.5000     ┆ 0.9000     ┆ 1.0000     ┆ 0.0000       ┆ 0.9781 ┆ 91.18 ms    │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 32    ┆ 200     ┆ 2000          ┆ 0.8750   ┆ 0.8598          ┆ 0.8888           ┆ 0.6900     ┆ 0.9000     ┆ 1.0000     ┆ 0.1000       ┆ 0.9850 ┆ 3.45 ms     │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 64    ┆ 200     ┆ 2000          ┆ 0.9390   ┆ 0.9276          ┆ 0.9487           ┆ 0.8000     ┆ 1.0000     ┆ 1.0000     ┆ 0.1000       ┆ 0.9935 ┆ 5.28 ms     │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 100   ┆ 200     ┆ 2000          ┆ 0.9720   ┆ 0.9638          ┆ 0.9784           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.7000       ┆ 0.9980 ┆ 7.74 ms     │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 200   ┆ 200     ┆ 2000          ┆ 0.9885   ┆ 0.9828          ┆ 0.9923           ┆ 0.9900     ┆ 1.0000     ┆ 1.0000     ┆ 0.8000       ┆ 0.9990 ┆ 14.95 ms    │
+└───────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from m1_100k_stitch_queries ...
+[recall] fetching corpus from m1_100k_stitch_corpus ...
+[recall] computing ground truth: 200 queries vs 100000 corpus rows (dim=1536) ...
+[recall] ground truth in 860.57ms
+[suite:task-163-m1-stitch-ab] wrote reviews/task-163/001-m1-stitch-ab/artifacts/suite-manifest.json
+[suite:task-163-m1-stitch-ab] latency-100k-stitch -> --database ec_distann_bench --host /home/peter/.pgrx --port 28818 bench latency --prefix m1_100k_stitch --profile ec_distann --k 10 --concurrency 1 --iterations 200 --sweep "16,32,64,100,200" --bits 4 --seed 42 --force-index --sample-backend-memory --cache-state post_recall_warm --memory-sample-interval-ms 25 --log-output reviews/task-163/001-m1-stitch-ab/artifacts/latency-100k-stitch.log
+[suite:task-163-m1-stitch-ab] wrote reviews/task-163/001-m1-stitch-ab/artifacts/suite-manifest.json
+┌───────┬───────┬──────────┬───────────┬─────────┬─────────┬─────────┬─────────┬────────────┬──────────────────┬─────────────┬─────────────┬────────────────┐
+│ top_k ┆ count ┆ mean     ┆ stddev    ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max        ┆ cache_state      ┆ rss_peak_kb ┆ hwm_peak_kb ┆ memory_samples │
+╞═══════╪═══════╪══════════╪═══════════╪═════════╪═════════╪═════════╪═════════╪════════════╪══════════════════╪═════════════╪═════════════╪════════════════╡
+│ 16    ┆ 200   ┆ 100.9 ms ┆ 1383.9 ms ┆ 1.95 ms ┆ 2.74 ms ┆ 3.70 ms ┆ 4.08 ms ┆ 19622.9 ms ┆ post_recall_warm ┆ 166576      ┆ 166576      ┆ 765            │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 32    ┆ 200   ┆ 101.1 ms ┆ 1377.7 ms ┆ 2.72 ms ┆ 3.42 ms ┆ 4.15 ms ┆ 4.81 ms ┆ 19535.7 ms ┆ post_recall_warm ┆ 180148      ┆ 180148      ┆ 766            │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 64    ┆ 200   ┆ 103.4 ms ┆ 1383.2 ms ┆ 4.09 ms ┆ 5.27 ms ┆ 6.48 ms ┆ 8.03 ms ┆ 19616.1 ms ┆ post_recall_warm ┆ 180564      ┆ 180564      ┆ 784            │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 100   ┆ 200   ┆ 100.4 ms ┆ 1306.1 ms ┆ 6.32 ms ┆ 7.71 ms ┆ 9.66 ms ┆ 11.5 ms ┆ 18525.0 ms ┆ post_recall_warm ┆ 180764      ┆ 180764      ┆ 762            │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 200   ┆ 200   ┆ 112.8 ms ┆ 1388.4 ms ┆ 11.2 ms ┆ 14.2 ms ┆ 17.0 ms ┆ 18.4 ms ┆ 19698.4 ms ┆ post_recall_warm ┆ 180820      ┆ 180820      ┆ 856            │
+└───────┴───────┴──────────┴───────────┴─────────┴─────────┴─────────┴─────────┴────────────┴──────────────────┴─────────────┴─────────────┴────────────────┘
+[suite:task-163-m1-stitch-ab] wrote reviews/task-163/001-m1-stitch-ab/artifacts/suite-manifest.json
+[suite:task-163-m1-stitch-ab] storage-100k-stitch -> --database ec_distann_bench --host /home/peter/.pgrx --port 28818 --log-file reviews/task-163/001-m1-stitch-ab/artifacts/storage-100k-stitch.log bench storage --prefix m1_100k_stitch
+[suite:task-163-m1-stitch-ab] wrote reviews/task-163/001-m1-stitch-ab/artifacts/suite-manifest.json
+┌───────────────────────────────┬───────────────────────┐
+│ field                         ┆ value                 │
+╞═══════════════════════════════╪═══════════════════════╡
+│ prefix                        ┆ m1_100k_stitch        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus                        ┆ m1_100k_stitch_corpus │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ rows                          ┆ 100000                │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ heap                          ┆ 7.3 MiB               │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ table (heap + toast + fsm/vm) ┆ 1.6 GiB               │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes                       ┆ 817.4 MiB             │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ total                         ┆ 2.3 GiB               │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (total)               ┆ 25217.4 B             │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (heap only)           ┆ 76.6 B                │
+└───────────────────────────────┴───────────────────────┘
+┌────────────────────────────┬───────────────┬────────────┬──────────────────────────────────────────────────────────────────┬───────────┬──────────┐
+│ index                      ┆ access method ┆ profile    ┆ reloptions                                                       ┆ size      ┆ per row  │
+╞════════════════════════════╪═══════════════╪════════════╪══════════════════════════════════════════════════════════════════╪═══════════╪══════════╡
+│ m1_100k_stitch_idx         ┆ ec_distann    ┆ ec_distann ┆ {neighbor_code_format=rabitq,build_shards=4,closure_epsilon=0.1} ┆ 815.2 MiB ┆ 8548.1 B │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ m1_100k_stitch_corpus_pkey ┆ btree         ┆ <unknown>  ┆ {}                                                               ┆ 2.2 MiB   ┆ 22.6 B   │
+└────────────────────────────┴───────────────┴────────────┴──────────────────────────────────────────────────────────────────┴───────────┴──────────┘
+[suite:task-163-m1-stitch-ab] wrote reviews/task-163/001-m1-stitch-ab/artifacts/suite-manifest.json
+[suite:task-163-m1-stitch-ab] wrote reviews/task-163/001-m1-stitch-ab/artifacts/results.jsonl
+[suite:task-163-m1-stitch-ab] wrote reviews/task-163/001-m1-stitch-ab/artifacts/suite-manifest.json
