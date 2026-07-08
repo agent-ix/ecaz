@@ -21,6 +21,7 @@ mod expand;
 mod expand_error;
 mod head_cache;
 mod identity;
+mod insert;
 mod options;
 pub mod page;
 pub(crate) mod placement;

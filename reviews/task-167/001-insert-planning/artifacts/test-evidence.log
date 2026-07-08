@@ -1,0 +1,6 @@
+# M5 slice 1 insert-planning evidence
+# cmd: cargo test --no-default-features --features pg18 --lib ec_distann::insert
+
+test am::ec_distann::insert::tests::select_rejects_bad_input ... ok
+test am::ec_distann::insert::tests::select_respects_degree_bound_and_returns_valid_vec_ids ... ok
+test result: ok. 2 passed; 0 failed
