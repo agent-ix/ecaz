@@ -221,8 +221,12 @@ async fn run_one_remote(
         )
         .await
         .map_err(|error| {
+            let detail = error
+                .as_db_error()
+                .map(|db| db.message().to_owned())
+                .unwrap_or_else(|| error.to_string());
             DistannExpandError::Internal(format!(
-                "ec_distann remote transport session setup failed: {error}"
+                "ec_distann remote transport session setup failed: {detail}"
             ))
         })?;
 
@@ -241,11 +245,16 @@ async fn run_one_remote(
         .map_err(|error| {
             // Classify by the remote endpoint's SQLSTATE so the coordinator can
             // distinguish a retriable epoch mismatch from non-retriable
-            // placement/structural faults (FR-082-AC-2).
+            // placement/structural faults (FR-082-AC-2). Surface the remote
+            // db-error message (tokio_postgres's Display is just "db error").
             let code = error.code().map(|state| state.code().to_owned());
+            let detail = error
+                .as_db_error()
+                .map(|db| db.message().to_owned())
+                .unwrap_or_else(|| error.to_string());
             DistannExpandError::from_wire_sqlstate(
                 code.as_deref(),
-                format!("ec_distann remote expand call failed: {error}"),
+                format!("ec_distann remote expand call failed: {detail}"),
             )
         })?;
 
