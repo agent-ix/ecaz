@@ -15,6 +15,7 @@ mod ambuild;
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::ambuild::read_metadata_from_index;
 mod cost;
+mod custom_scan;
 mod dml;
 mod epoch;
 mod expand;
@@ -38,6 +39,11 @@ pub mod tuple;
 pub(crate) fn register_gucs() {
     options::register_gucs();
     roster::register_gucs();
+}
+
+/// Installs the multi-node CustomScan provider + planner hook (from `_PG_init`).
+pub(crate) fn register_custom_scan() {
+    custom_scan::register_custom_scan();
 }
 
 pub(super) const ECDISTANN_DEFAULT_GRAPH_DEGREE: i32 = 32;

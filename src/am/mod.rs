@@ -387,6 +387,7 @@ pub(crate) fn diskann_debug_last_build_timing() -> ec_diskann::BuildTimingSnapsh
 
 pub(crate) fn register_custom_scan() {
     ec_spire::register_custom_scan();
+    ec_distann::register_custom_scan();
 }
 
 #[cfg(any(test, feature = "bench"))]

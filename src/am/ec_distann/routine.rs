@@ -608,7 +608,7 @@ unsafe extern "C-unwind" fn ec_distann_amendscan(scan: pg_sys::IndexScanDesc) {
 /// resolves when the remote session shares the coordinator's search_path;
 /// qualifying with the namespace (and quoting both idents) makes remote
 /// resolution robust to differing search_paths and mixed-case/reserved names.
-unsafe fn distann_index_relname(index_relation: pg_sys::Relation) -> String {
+pub(super) unsafe fn distann_index_relname(index_relation: pg_sys::Relation) -> String {
     let rd_rel = (*index_relation).rd_rel;
     let relname = std::ffi::CStr::from_ptr((*rd_rel).relname.data.as_ptr())
         .to_string_lossy()

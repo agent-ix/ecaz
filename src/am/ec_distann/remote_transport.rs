@@ -300,6 +300,194 @@ fn row_err(error: tokio_postgres::Error) -> DistannExpandError {
     ))
 }
 
+// Same `$1::text::regclass::oid` name→oid trick as EXPAND_SQL: the coordinator
+// ships the index NAME and the requested projection columns + their typsend
+// functions; the owner returns each owned row's projection as PG binary.
+const MATERIALIZE_ROW_PAYLOADS_SQL: &str =
+    "SELECT vec_id, is_tombstone, tuple_payload_missing, payload_nulls, payload_values \
+     FROM ec_distann_materialize_row_payloads($1::text::regclass::oid, $2, $3::bigint[], \
+     $4::text[], $5::text[])";
+
+/// One remote row-payload materialization request over the transport (the
+/// CustomScan read path). The requested projection columns and their typsend
+/// functions are shared across owners, so they are passed to the batch call
+/// once rather than per request.
+pub(super) struct DistannRemoteMaterializeRequest<'a> {
+    pub(super) conninfo: &'a str,
+    pub(super) roster_spec: &'a str,
+    pub(super) target_node_id: u32,
+    pub(super) epoch: u64,
+    pub(super) index_regclass: &'a str,
+    pub(super) epoch_fingerprint: &'a [u8],
+    /// Owned vec_ids for this node (bit-cast to i64 on the wire).
+    pub(super) vec_ids: &'a [u64],
+}
+
+/// One owner-shipped row payload: the row's identity + tombstone plus the
+/// requested projection columns as PostgreSQL binary (`typsend`) values.
+pub(super) struct DistannMaterializedRow {
+    pub(super) vec_id: u64,
+    pub(super) is_tombstone: bool,
+    pub(super) tuple_payload_missing: bool,
+    pub(super) payload_nulls: Vec<bool>,
+    pub(super) payload_values: Vec<Vec<u8>>,
+}
+
+/// Issue a batch of remote `ec_distann_materialize_row_payloads` calls — one per
+/// owning node — concurrently over the pooled transport (reusing the warm
+/// connections + session identity the hop-round expands already established).
+/// Returns per-request results in request order; a connect/parse failure fails
+/// every request uniformly.
+pub(super) fn remote_materialize_row_payloads_batch(
+    requests: &[DistannRemoteMaterializeRequest<'_>],
+    payload_columns: &[String],
+    send_functions: &[String],
+) -> Vec<Result<Vec<DistannMaterializedRow>, DistannExpandError>> {
+    if requests.is_empty() {
+        return Vec::new();
+    }
+    let vec_ids_i64: Vec<Vec<i64>> = requests
+        .iter()
+        .map(|request| request.vec_ids.iter().map(|&v| v as i64).collect())
+        .collect();
+    let node_id_strs: Vec<String> = requests
+        .iter()
+        .map(|request| request.target_node_id.to_string())
+        .collect();
+    let epoch_strs: Vec<String> = requests.iter().map(|request| request.epoch.to_string()).collect();
+    let columns = payload_columns.to_vec();
+    let sends = send_functions.to_vec();
+
+    let outcome = with_transport_state(|state| {
+        let DistannTransportState {
+            runtime,
+            connections,
+        } = state;
+        runtime.block_on(async {
+            // Ensure every connection AND its session identity first (same 006-P3
+            // pooled-identity path as the expand batch).
+            for (index, request) in requests.iter().enumerate() {
+                let needs_connect = connections
+                    .get(request.conninfo)
+                    .map(|pooled| pooled.task.is_finished())
+                    .unwrap_or(true);
+                if needs_connect {
+                    let config =
+                        request.conninfo.parse::<tokio_postgres::Config>().map_err(|_| {
+                            format!(
+                                "ec_distann remote transport could not parse conninfo {:?}",
+                                request.conninfo
+                            )
+                        })?;
+                    let (client, connection) = config.connect(NoTls).await.map_err(|error| {
+                        format!(
+                            "ec_distann remote transport could not connect to {:?}: {error}",
+                            request.conninfo
+                        )
+                    })?;
+                    let task = tokio::spawn(async move {
+                        let _ = connection.await;
+                    });
+                    connections.insert(
+                        request.conninfo.to_owned(),
+                        PooledConnection {
+                            client,
+                            task,
+                            applied_identity: None,
+                        },
+                    );
+                }
+
+                let identity = (
+                    request.roster_spec.to_owned(),
+                    node_id_strs[index].clone(),
+                    epoch_strs[index].clone(),
+                );
+                let pooled = connections
+                    .get_mut(request.conninfo)
+                    .expect("connection just ensured");
+                if pooled.applied_identity.as_ref() != Some(&identity) {
+                    pooled
+                        .client
+                        .query(SESSION_SETUP_SQL, &[&identity.0, &identity.1, &identity.2])
+                        .await
+                        .map_err(|error| {
+                            let detail = error
+                                .as_db_error()
+                                .map(|db| db.message().to_owned())
+                                .unwrap_or_else(|| error.to_string());
+                            format!("ec_distann remote transport session setup failed: {detail}")
+                        })?;
+                    pooled.applied_identity = Some(identity);
+                }
+            }
+
+            let futures = requests.iter().enumerate().map(|(index, request)| {
+                let client = &connections[request.conninfo].client;
+                run_one_materialize(client, request, &vec_ids_i64[index], &columns, &sends)
+            });
+            Ok::<_, String>(futures_util::future::join_all(futures).await)
+        })
+    });
+
+    match outcome {
+        Ok(results) => results,
+        Err(message) => requests
+            .iter()
+            .map(|_| Err(DistannExpandError::Internal(message.clone())))
+            .collect(),
+    }
+}
+
+async fn run_one_materialize(
+    client: &Client,
+    request: &DistannRemoteMaterializeRequest<'_>,
+    vec_ids_i64: &[i64],
+    payload_columns: &[String],
+    send_functions: &[String],
+) -> Result<Vec<DistannMaterializedRow>, DistannExpandError> {
+    let rows = client
+        .query(
+            MATERIALIZE_ROW_PAYLOADS_SQL,
+            &[
+                &request.index_regclass,
+                &request.epoch_fingerprint,
+                &vec_ids_i64,
+                &payload_columns,
+                &send_functions,
+            ],
+        )
+        .await
+        .map_err(|error| {
+            let code = error.code().map(|state| state.code().to_owned());
+            let detail = error
+                .as_db_error()
+                .map(|db| db.message().to_owned())
+                .unwrap_or_else(|| error.to_string());
+            DistannExpandError::from_wire_sqlstate(
+                code.as_deref(),
+                format!("ec_distann remote row-payload call failed: {detail}"),
+            )
+        })?;
+
+    rows.into_iter()
+        .map(|row| {
+            let vec_id: i64 = row.try_get(0).map_err(row_err)?;
+            let is_tombstone: bool = row.try_get(1).map_err(row_err)?;
+            let tuple_payload_missing: bool = row.try_get(2).map_err(row_err)?;
+            let payload_nulls: Vec<bool> = row.try_get(3).map_err(row_err)?;
+            let payload_values: Vec<Vec<u8>> = row.try_get(4).map_err(row_err)?;
+            Ok(DistannMaterializedRow {
+                vec_id: vec_id as u64,
+                is_tombstone,
+                tuple_payload_missing,
+                payload_nulls,
+                payload_values,
+            })
+        })
+        .collect::<Result<Vec<_>, DistannExpandError>>()
+}
+
 /// Debug/test surface: run the FR-081 orchestration for `query` against
 /// `index_regclass`, selecting the local or remote expander from the active
 /// roster (`ec_distann.roster`), and return the ranked hits. With an empty
