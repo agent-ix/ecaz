@@ -429,8 +429,20 @@ unsafe fn execute_distann_scan(
         // FR-083 / ADR-085 D5: merge the interim delta buffer (bounded, exact-
         // scanned) into results so inserted rows are visible same-statement.
         // Delta rows carry exact distances, so they rank exactly against the
-        // graph hits; a vec_id already among the graph hits keeps the closer
-        // (an UPDATE tombstones the old graph record and re-inserts here).
+        // graph hits.
+        //
+        // Reviewer 002-P3 — dedup invariant: a graph vec_id and a delta vec_id
+        // are distinct by construction. A vec_id is derived from the record's
+        // identity (local mode: from the heap TID; include mode: from the
+        // identity column), and a delta entry is a *new* heap row with its own
+        // TID/identity, so it never collides with a built graph node. An UPDATE
+        // is delete-then-insert: the old node is a *different* vec_id (already
+        // tombstoned, hence absent from `hits`) and the new row has a new vec_id.
+        // So `seen.insert` here only guards against a duplicated delta entry, not
+        // a graph/delta collision — there is nothing to distance-compare. If
+        // vec_id derivation ever changes to allow collisions, this must become a
+        // closer-of-the-two merge; `test_ec_distann_delta_insert_visible_same_statement`
+        // pins the current new-vec_id-per-insert behavior.
         if metadata.delta_buffer_head != crate::storage::page::ItemPointer::INVALID {
             let deltas = super::reader::read_delta_chain(
                 handle,
@@ -532,14 +544,30 @@ unsafe extern "C-unwind" fn ec_distann_amendscan(scan: pg_sys::IndexScanDesc) {
     })
 }
 
-/// The index's unqualified name, for the multi-node transport's
-/// `$1::text::regclass` resolution (each node resolves its local index by name;
-/// the loopback substrate shares the schema search_path).
+/// The index's **schema-qualified, quoted** name for the multi-node transport's
+/// `$1::text::regclass` resolution. Reviewer 005-P2: an unqualified relname only
+/// resolves when the remote session shares the coordinator's search_path;
+/// qualifying with the namespace (and quoting both idents) makes remote
+/// resolution robust to differing search_paths and mixed-case/reserved names.
 unsafe fn distann_index_relname(index_relation: pg_sys::Relation) -> String {
-    let relname = &(*(*index_relation).rd_rel).relname;
-    std::ffi::CStr::from_ptr(relname.data.as_ptr())
+    let rd_rel = (*index_relation).rd_rel;
+    let relname = std::ffi::CStr::from_ptr((*rd_rel).relname.data.as_ptr())
         .to_string_lossy()
-        .into_owned()
+        .into_owned();
+    // get_namespace_name palloc's a C string for the namespace oid.
+    let nsp_ptr = pg_sys::get_namespace_name((*rd_rel).relnamespace);
+    if nsp_ptr.is_null() {
+        return quote_ident(&relname);
+    }
+    let namespace = std::ffi::CStr::from_ptr(nsp_ptr).to_string_lossy().into_owned();
+    pg_sys::pfree(nsp_ptr.cast());
+    format!("{}.{}", quote_ident(&namespace), quote_ident(&relname))
+}
+
+/// Minimal SQL identifier quoting (double quotes, embedded `"` doubled) so a
+/// schema/relation with mixed case or reserved words resolves via regclass.
+fn quote_ident(ident: &str) -> String {
+    format!("\"{}\"", ident.replace('"', "\"\""))
 }
 
 pub(super) fn indexed_ecvector_attnum(index_relation: pg_sys::Relation) -> Result<i32, String> {

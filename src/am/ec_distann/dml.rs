@@ -30,6 +30,7 @@ use crate::storage::wal;
 use crate::am::ec_diskann::{decode_heap_tid, ecvector_datum_to_vec};
 
 use super::ambuild::{overwrite_metadata_page_handle, read_metadata_from_index_handle};
+use super::expand_error::DistannExpandError;
 use super::identity::vec_id_from_local_heap_tid;
 use super::options::{self, DistannSourceIdentityProvider};
 use super::reader::{
@@ -167,33 +168,40 @@ fn callback_marks_dead(
 pub(super) unsafe fn tombstone_by_vec_ids(
     index_relation: pg_sys::Relation,
     vec_ids: &[u64],
-) -> Result<u64, String> {
+) -> Result<u64, DistannExpandError> {
+    // Reviewer 003-P3: distinguish a genuinely owned-but-absent record
+    // (EC_RECORD_MISSING) from broader structural/storage faults (Internal), so
+    // the write endpoint's error class matches the TC-042/NFR-020 contract
+    // instead of labeling every failure OwnedRecordMissing.
     if vec_ids.is_empty() {
         return Ok(0);
     }
-    let handle = NonNull::new(index_relation)
-        .ok_or_else(|| "ec_distann tombstone needs a valid index relation".to_owned())?;
-    let metadata = read_metadata_from_index_handle(handle)?;
+    let handle = NonNull::new(index_relation).ok_or_else(|| {
+        DistannExpandError::Internal("ec_distann tombstone needs a valid index relation".to_owned())
+    })?;
+    let metadata =
+        read_metadata_from_index_handle(handle).map_err(DistannExpandError::Internal)?;
     if metadata.directory_head == ItemPointer::INVALID {
-        return Err("ec_distann tombstone: index has no directory".to_owned());
+        return Err(DistannExpandError::Internal(
+            "ec_distann tombstone: index has no directory".to_owned(),
+        ));
     }
-    let directory = read_directory_from_relation(
-        handle,
-        metadata.directory_head,
-        metadata.node_count as usize,
-    )?;
+    let directory =
+        read_directory_from_relation(handle, metadata.directory_head, metadata.node_count as usize)
+            .map_err(DistannExpandError::Internal)?;
 
     let mut removed = 0_u64;
     for &vec_id in vec_ids {
+        // Owned-but-absent is the EC_RECORD_MISSING contract case; the reads and
+        // flag write below are internal/storage faults if they fail.
         let record_tid = directory_lookup(&directory, vec_id).ok_or_else(|| {
-            format!("ec_distann tombstone: vec_id {vec_id:#018x} is not in the directory")
+            DistannExpandError::OwnedRecordMissing(format!(
+                "ec_distann tombstone: vec_id {vec_id:#018x} is not in the directory"
+            ))
         })?;
-        // Skip if already tombstoned (monotone).
-        let raw = read_raw_tuple_bytes_from_relation(
-            handle,
-            record_tid,
-            "ec_distann tombstone by vec_id",
-        )?;
+        let raw =
+            read_raw_tuple_bytes_from_relation(handle, record_tid, "ec_distann tombstone by vec_id")
+                .map_err(DistannExpandError::Internal)?;
         let flags = u16::from_le_bytes(
             raw[DISTANN_NODE_FLAGS_OFFSET..DISTANN_NODE_FLAGS_OFFSET + 2]
                 .try_into()
@@ -202,7 +210,7 @@ pub(super) unsafe fn tombstone_by_vec_ids(
         if flags & DISTANN_FLAG_TOMBSTONE != 0 {
             continue;
         }
-        set_tombstone_flag(handle, record_tid)?;
+        set_tombstone_flag(handle, record_tid).map_err(DistannExpandError::Internal)?;
         removed += 1;
     }
     Ok(removed)

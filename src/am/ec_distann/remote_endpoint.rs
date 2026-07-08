@@ -168,8 +168,9 @@ fn apply_record_writes_impl(
     }
 
     // SAFETY: the guard holds the index open for write for the call.
-    let removed = unsafe { super::dml::tombstone_by_vec_ids(index_guard.as_ptr(), &ids) }
-        .map_err(DistannExpandError::OwnedRecordMissing)?;
+    // tombstone_by_vec_ids now returns a typed error (003-P3): an owned-but-
+    // absent record is EC_RECORD_MISSING, structural/storage faults are Internal.
+    let removed = unsafe { super::dml::tombstone_by_vec_ids(index_guard.as_ptr(), &ids) }?;
     Ok(i64::try_from(removed).unwrap_or(i64::MAX))
 }
 
