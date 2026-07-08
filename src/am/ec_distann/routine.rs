@@ -96,14 +96,22 @@ unsafe extern "C-unwind" fn ec_distann_aminsert(
 unsafe extern "C-unwind" fn ec_distann_ambulkdelete(
     info: *mut pg_sys::IndexVacuumInfo,
     stats: *mut pg_sys::IndexBulkDeleteResult,
-    _callback: pg_sys::IndexBulkDeleteCallback,
-    _callback_state: *mut c_void,
+    callback: pg_sys::IndexBulkDeleteCallback,
+    callback_state: *mut c_void,
 ) -> *mut pg_sys::IndexBulkDeleteResult {
     pg_am_callback!({
-        // The D10 tombstone path arrives with the FR-083 DML slice; within
-        // a published epoch nothing is physically reclaimed regardless.
-        ec_distann_noop_vacuum_stats((*info).index, stats)
-            .unwrap_or_else(|e| pgrx::error!("ec_distann ambulkdelete failed: {e}"))
+        // FR-083 D10 tombstone delete: flag records whose heap row is dead;
+        // nothing is physically reclaimed within a Published epoch (next epoch
+        // build drops tombstones + repairs edges).
+        let tombstoned =
+            super::dml::tombstone_dead_records((*info).index, callback, callback_state)
+                .unwrap_or_else(|e| pgrx::error!("ec_distann ambulkdelete failed: {e}"));
+        let stats = ec_distann_noop_vacuum_stats((*info).index, stats)
+            .unwrap_or_else(|e| pgrx::error!("ec_distann ambulkdelete failed: {e}"));
+        if !stats.is_null() {
+            (*stats).tuples_removed += tombstoned as f64;
+        }
+        stats
     })
 }
 

@@ -1014,6 +1014,69 @@ fn test_ec_distann_expand_nodes_rejects_nonowned_placement() {
 }
 
 #[pg_test]
+fn test_ec_distann_delete_tombstones_record() {
+    // FR-083-AC-1 (M3 D10 tombstone slice): tombstoning records sets the FR-076
+    // flag monotonically in place, and the FR-081 scan excludes them while
+    // remaining rows are unaffected. Uses the write-endpoint tombstone-by-vec_id
+    // primitive (VACUUM/ambulkdelete can't run inside pg_test's txn; the
+    // ambulkdelete callback path is integration-tested against a committed DB).
+    // Asserts the flag directly — proves the tombstone mechanism, not MVCC.
+    create_distann_fixture("ec_distann_del", "WITH (graph_degree = 4)");
+
+    // Tombstone the first two records by vec_id.
+    let vec_ids = distann_directory_vec_ids("ec_distann_del_idx");
+    let victims = [vec_ids[0] as i64, vec_ids[1] as i64];
+    let removed = Spi::get_one::<i64>(&format!(
+        "SELECT ec_distann_debug_tombstone('ec_distann_del_idx'::regclass::oid, ARRAY[{}, {}]::bigint[])",
+        victims[0], victims[1]
+    ))
+    .expect("SPI query should succeed")
+    .expect("count should exist");
+    assert_eq!(removed, 2, "two records should be newly tombstoned");
+    // Idempotent: re-tombstoning the same vec_ids is a no-op.
+    let removed_again = Spi::get_one::<i64>(&format!(
+        "SELECT ec_distann_debug_tombstone('ec_distann_del_idx'::regclass::oid, ARRAY[{}, {}]::bigint[])",
+        victims[0], victims[1]
+    ))
+    .expect("SPI query should succeed")
+    .expect("count should exist");
+    assert_eq!(removed_again, 0, "re-tombstoning is a monotone no-op");
+
+    // The flags are set on-disk.
+    let (metadata, chain) = distann_materialized_index("ec_distann_del_idx");
+    let code_len = crate::am::ec_distann::quantizer::metadata_code_len(&metadata)
+        .expect("code length should resolve");
+    let directory = crate::am::ec_distann::reader::read_directory_chain(
+        &chain,
+        metadata.directory_head,
+        metadata.node_count as usize,
+    )
+    .expect("directory should read");
+    let tombstoned = directory
+        .iter()
+        .filter(|(_, tid)| {
+            crate::am::ec_distann::reader::read_node(&chain, *tid, metadata.graph_degree_r, code_len)
+                .map(|node| node.tombstoned)
+                .unwrap_or(false)
+        })
+        .count();
+    assert_eq!(tombstoned, 2, "exactly two records tombstoned on disk");
+
+    // The scan excludes tombstoned rows (FR-081 is_tombstone). The victims'
+    // ids are whichever rows hash to vec_ids[0]/[1]; assert the tombstoned
+    // COUNT shrinks the returned set from 8 to 6.
+    Spi::run("SET enable_seqscan = off").expect("disabling seqscan should succeed");
+    let returned = Spi::get_one::<i64>(
+        "SELECT count(*) FROM (SELECT id FROM ec_distann_del \
+         ORDER BY embedding <#> ARRAY[1.0, 0.0, 0.0, 0.0]::real[] LIMIT 8) q",
+    )
+    .expect("SPI query should succeed")
+    .expect("count should exist");
+    assert_eq!(returned, 6, "two tombstoned rows are excluded from the scan (8 - 2)");
+    Spi::run("RESET enable_seqscan").expect("seqscan reset should succeed");
+}
+
+#[pg_test]
 fn test_ec_distann_insert_reports_unimplemented_dml_posture() {
     Spi::run("CREATE TABLE ec_distann_insert_posture (id bigint, embedding ecvector)")
         .expect("table creation should succeed");

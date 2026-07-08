@@ -15,6 +15,7 @@ mod ambuild;
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::ambuild::read_metadata_from_index;
 mod cost;
+mod dml;
 mod epoch;
 mod expand;
 mod expand_error;
