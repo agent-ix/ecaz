@@ -14,9 +14,13 @@
 
 use crate::storage::page::ItemPointer;
 
-/// Record tag for distann graph-node tuples. 0x0A is reserved for the
-/// FR-083 delta-buffer tuples of a later slice.
+/// Record tag for distann graph-node tuples.
 pub const DISTANN_NODE_TAG: u8 = 0x09;
+
+/// FR-083 / ADR-085 D5 interim delta-buffer tuple: one inserted vector
+/// (vec_id + heap_tid + full-precision vector), chained via next_tid, exact-
+/// scanned and merged into results until the next epoch build drains it.
+pub const DISTANN_DELTA_TAG: u8 = 0x0A;
 
 /// FR-080 persisted entry-region sample tuple (one sampled node per tuple:
 /// vec_id + full-precision vector, chained via next_tid).
@@ -359,10 +363,96 @@ impl DistannHeadSampleTuple {
     }
 }
 
+/// FR-083 D5 interim delta-buffer entry (one per inserted vector).
+#[derive(Debug, Clone, PartialEq)]
+pub struct DistannDeltaTuple {
+    pub next_tid: ItemPointer,
+    pub vec_id: u64,
+    pub heap_tid: ItemPointer,
+    pub vector: Vec<f32>,
+}
+
+/// tag(1) + reserved(1) + next_tid(6) + vec_id(8) + heap_tid(6).
+pub const DISTANN_DELTA_HEADER_BYTES: usize = 22;
+
+impl DistannDeltaTuple {
+    pub const fn encoded_len(dimensions: usize) -> usize {
+        DISTANN_DELTA_HEADER_BYTES + dimensions * 4
+    }
+
+    pub fn encode(&self) -> Vec<u8> {
+        let mut out = Vec::with_capacity(Self::encoded_len(self.vector.len()));
+        out.push(DISTANN_DELTA_TAG);
+        out.push(0);
+        self.next_tid.encode_into(&mut out);
+        out.extend_from_slice(&self.vec_id.to_le_bytes());
+        self.heap_tid.encode_into(&mut out);
+        for value in &self.vector {
+            out.extend_from_slice(&value.to_le_bytes());
+        }
+        debug_assert_eq!(out.len(), Self::encoded_len(self.vector.len()));
+        out
+    }
+
+    pub fn decode(input: &[u8], dimensions: usize) -> Result<Self, String> {
+        let expected = Self::encoded_len(dimensions);
+        if input.len() != expected {
+            return Err(format!(
+                "distann delta tuple length mismatch: got {}, expected {expected}",
+                input.len()
+            ));
+        }
+        if input[0] != DISTANN_DELTA_TAG {
+            return Err(format!(
+                "invalid distann delta tag: got {:#04x}, expected {DISTANN_DELTA_TAG:#04x}",
+                input[0]
+            ));
+        }
+        let next_tid = ItemPointer::decode(&input[2..8])?;
+        let vec_id = u64::from_le_bytes(input[8..16].try_into().expect("vec_id bytes"));
+        let heap_tid = ItemPointer::decode(&input[16..22])?;
+        let mut vector = Vec::with_capacity(dimensions);
+        for slot in 0..dimensions {
+            let base = DISTANN_DELTA_HEADER_BYTES + slot * 4;
+            vector.push(f32::from_le_bytes(
+                input[base..base + 4].try_into().expect("vector bytes"),
+            ));
+        }
+        Ok(Self {
+            next_tid,
+            vec_id,
+            heap_tid,
+            vector,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{DistannNodeTuple, DISTANN_FLAG_TOMBSTONE, DISTANN_NODE_HEADER_BYTES};
+    use super::{
+        DistannDeltaTuple, DistannNodeTuple, DISTANN_FLAG_TOMBSTONE, DISTANN_NODE_HEADER_BYTES,
+    };
     use crate::storage::page::ItemPointer;
+
+    #[test]
+    fn distann_delta_tuple_round_trips() {
+        let tuple = DistannDeltaTuple {
+            next_tid: ItemPointer {
+                block_number: 5,
+                offset_number: 2,
+            },
+            vec_id: 0x0123_4567_89AB_CDEF,
+            heap_tid: ItemPointer {
+                block_number: 7,
+                offset_number: 9,
+            },
+            vector: vec![1.0, -2.5, 3.25, 0.0],
+        };
+        let encoded = tuple.encode();
+        assert_eq!(encoded.len(), DistannDeltaTuple::encoded_len(4));
+        assert_eq!(DistannDeltaTuple::decode(&encoded, 4).unwrap(), tuple);
+        assert!(DistannDeltaTuple::decode(&encoded, 3).is_err());
+    }
 
     const R: u16 = 4;
     const CODE_LEN: usize = 8;

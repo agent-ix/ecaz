@@ -77,19 +77,23 @@ fn build_ec_distann_routine() -> IndexAmRoutineBox {
 }
 
 unsafe extern "C-unwind" fn ec_distann_aminsert(
-    _index_relation: pg_sys::Relation,
-    _values: *mut pg_sys::Datum,
-    _isnull: *mut bool,
-    _heap_tid: pg_sys::ItemPointer,
+    index_relation: pg_sys::Relation,
+    values: *mut pg_sys::Datum,
+    isnull: *mut bool,
+    heap_tid: pg_sys::ItemPointer,
     _heap_relation: pg_sys::Relation,
     _check_unique: pg_sys::IndexUniqueCheck::Type,
     _index_unchanged: bool,
     _index_info: *mut pg_sys::IndexInfo,
 ) -> bool {
     pg_am_callback!({
-        pgrx::error!(
-            "ec_distann aminsert is not implemented yet: the FR-083 delta-buffer DML slice lands later in Task 162"
-        );
+        // FR-083 / ADR-085 D5 interim posture: spool to the bounded exact-scan
+        // delta buffer with same-statement visibility; drained at the next epoch
+        // build. Incremental distributed insert (M5) replaces this.
+        super::dml::delta_insert(index_relation, values, isnull, heap_tid)
+            .unwrap_or_else(|e| pgrx::error!("ec_distann aminsert failed: {e}"));
+        // Delta rows are exact-scanned; there is no false-positive recheck.
+        false
     })
 }
 
@@ -346,7 +350,7 @@ unsafe fn execute_distann_scan(
             raw_query,
             pooled_node: DistannNodeTuple::placeholder(metadata.graph_degree_r, code_len),
         };
-        let (hits, counters) = distann_orchestrated_search(
+        let (mut hits, counters) = distann_orchestrated_search(
             &seeds,
             &mut expander,
             DistannOrchestrationParams {
@@ -356,6 +360,39 @@ unsafe fn execute_distann_scan(
             },
         )
         .unwrap_or_else(|e| pgrx::error!("ec_distann scan orchestration failed: {e}"));
+
+        // FR-083 / ADR-085 D5: merge the interim delta buffer (bounded, exact-
+        // scanned) into results so inserted rows are visible same-statement.
+        // Delta rows carry exact distances, so they rank exactly against the
+        // graph hits; a vec_id already among the graph hits keeps the closer
+        // (an UPDATE tombstones the old graph record and re-inserts here).
+        if metadata.delta_buffer_head != crate::storage::page::ItemPointer::INVALID {
+            let deltas = super::reader::read_delta_chain(
+                handle,
+                metadata.delta_buffer_head,
+                usize::from(metadata.dimensions),
+            )
+            .unwrap_or_else(|e| pgrx::error!("ec_distann delta-buffer scan failed: {e}"));
+            if !deltas.is_empty() {
+                let mut seen: std::collections::HashSet<u64> =
+                    hits.iter().map(|hit| hit.vec_id).collect();
+                for entry in deltas {
+                    if !seen.insert(entry.vec_id) {
+                        continue;
+                    }
+                    let exact_dist =
+                        -crate::am::ec_diskann::source_inner_product(raw_query, &entry.vector);
+                    hits.push(DistannScanHit {
+                        vec_id: entry.vec_id,
+                        heap_tid: entry.heap_tid,
+                        exact_dist,
+                    });
+                }
+                hits.sort_unstable_by(|left, right| {
+                    left.exact_dist.total_cmp(&right.exact_dist)
+                });
+            }
+        }
 
         if options::scan_profile_notice_enabled() {
             pgrx::notice!(

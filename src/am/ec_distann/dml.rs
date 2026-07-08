@@ -27,14 +27,27 @@ use crate::storage::relation::RelationHandle;
 use crate::storage::relation_guard::IndexRelationGuard;
 use crate::storage::wal;
 
-use super::ambuild::read_metadata_from_index_handle;
+use crate::am::ec_diskann::{decode_heap_tid, ecvector_datum_to_vec};
+
+use super::ambuild::{overwrite_metadata_page_handle, read_metadata_from_index_handle};
+use super::identity::vec_id_from_local_heap_tid;
+use super::options::{self, DistannSourceIdentityProvider};
 use super::reader::{
-    directory_lookup, read_directory_from_relation, read_raw_tuple_bytes_from_relation,
+    directory_lookup, read_delta_chain, read_directory_from_relation,
+    read_raw_tuple_bytes_from_relation,
 };
 use super::tuple::{
-    DISTANN_FLAG_TOMBSTONE, DISTANN_NODE_FLAGS_OFFSET, DISTANN_NODE_HEAP_TID_OFFSET,
-    DISTANN_NODE_TAG, DISTANN_NODE_TAG_OFFSET,
+    DistannDeltaTuple, DISTANN_FLAG_TOMBSTONE, DISTANN_NODE_FLAGS_OFFSET,
+    DISTANN_NODE_HEAP_TID_OFFSET, DISTANN_NODE_TAG, DISTANN_NODE_TAG_OFFSET,
 };
+
+/// FR-083 / ADR-085 D5: the interim delta buffer is bounded; when full the
+/// operator drains it with a REINDEX (the interim posture is explicitly not a
+/// terminal state — incremental insert replaces it in M5).
+const DISTANN_DELTA_BUFFER_CAP: usize = 4096;
+
+/// Constant mirroring `ambuild::P_NEW` (extend the relation with a fresh page).
+const P_NEW: pg_sys::BlockNumber = u32::MAX;
 
 /// Tombstone every record whose heap row is dead per the vacuum `callback`.
 /// Returns the count newly tombstoned. A failed flag write errors: a lost
@@ -237,4 +250,123 @@ fn set_tombstone_flag(handle: RelationHandle, record_tid: ItemPointer) -> Result
     }
     wal_txn.finish();
     Ok(())
+}
+
+/// FR-083 / D5 interim delta-buffer insert: spool the new vector into a bounded
+/// exact-scan buffer (prepended to the chain from `metadata.delta_buffer_head`)
+/// with same-statement visibility; the buffer is drained by the next epoch
+/// build. Local identity mode only for this slice — `source_identity='include'`
+/// delta insert routes through the write endpoint in a later M3 slice.
+///
+/// # Safety
+/// `values`/`isnull`/`heap_tid` are the live `aminsert` callback args and
+/// `index_relation` is the live index.
+pub(super) unsafe fn delta_insert(
+    index_relation: pg_sys::Relation,
+    values: *mut pg_sys::Datum,
+    isnull: *mut bool,
+    heap_tid: pg_sys::ItemPointer,
+) -> Result<(), String> {
+    let handle = NonNull::new(index_relation)
+        .ok_or_else(|| "ec_distann delta insert needs a valid index relation".to_owned())?;
+    if values.is_null() || isnull.is_null() {
+        return Err("ec_distann delta insert received null datum arrays".to_owned());
+    }
+    if *isnull {
+        return Err("ec_distann does not support NULL indexed values".to_owned());
+    }
+    let datum = *values;
+    if datum.is_null() {
+        return Err("ec_distann delta insert received a null indexed datum".to_owned());
+    }
+
+    let opts = options::relation_options(index_relation);
+    if matches!(opts.source_identity, DistannSourceIdentityProvider::Include) {
+        return Err(
+            "ec_distann delta insert for source_identity='include' lands in a later M3 slice \
+             (multi-node write endpoint)"
+                .to_owned(),
+        );
+    }
+
+    let vector = ecvector_datum_to_vec(datum);
+    let heap_tid = decode_heap_tid(heap_tid);
+    let vec_id = vec_id_from_local_heap_tid(heap_tid);
+
+    let mut metadata = read_metadata_from_index_handle(handle)?;
+    if metadata.node_count == 0 || metadata.dimensions == 0 {
+        // The FR-081 scan early-returns for an empty graph, so a delta-only
+        // buffer would not be visible. Reject rather than silently drop; a
+        // delta-only scan path (index built on an empty table, then bulk
+        // inserted) is a later M3 slice.
+        return Err(
+            "ec_distann delta insert into an empty index is not supported yet: build the index \
+             on non-empty data first (delta-only scan lands in a later slice)"
+                .to_owned(),
+        );
+    }
+    if vector.len() != usize::from(metadata.dimensions) {
+        return Err(format!(
+            "ec_distann delta insert dimension mismatch: index dim {}, inserted dim {}",
+            metadata.dimensions,
+            vector.len()
+        ));
+    }
+
+    // Bounded (D5): count the current chain; refuse when full (operator drains
+    // via REINDEX). A lost insert must never be silent.
+    let existing = read_delta_chain(handle, metadata.delta_buffer_head, usize::from(metadata.dimensions))?;
+    if existing.len() >= DISTANN_DELTA_BUFFER_CAP {
+        return Err(format!(
+            "ec_distann delta buffer is full ({} entries, cap {DISTANN_DELTA_BUFFER_CAP}); \
+             REINDEX to drain the interim buffer (ADR-085 D5)",
+            existing.len()
+        ));
+    }
+    // Idempotence: an already-buffered vec_id (same heap row re-inserted) is a
+    // no-op — the newest visible version wins at scan-merge time anyway.
+    if existing.iter().any(|entry| entry.vec_id == vec_id) {
+        return Ok(());
+    }
+
+    let tuple = DistannDeltaTuple {
+        next_tid: metadata.delta_buffer_head,
+        vec_id,
+        heap_tid,
+        vector,
+    };
+    let new_head = append_delta_tuple(handle, tuple.encode())?;
+    metadata.delta_buffer_head = new_head;
+    overwrite_metadata_page_handle(handle, &metadata);
+    Ok(())
+}
+
+/// Append one delta tuple on a freshly-extended page (one entry per page: a
+/// dim-1536 entry is ~6 KB, near a page anyway, and the buffer is bounded).
+/// WAL-logged. Returns the new tuple's TID.
+fn append_delta_tuple(
+    handle: RelationHandle,
+    payload: Vec<u8>,
+) -> Result<ItemPointer, String> {
+    let buffer = LockedBufferGuard::read_main_locked_handle(
+        handle,
+        P_NEW,
+        pg_sys::ReadBufferMode::RBM_ZERO_AND_LOCK,
+    )
+    .ok_or_else(|| "ec_distann delta insert could not extend the relation".to_owned())?;
+    let block_number = buffer.block_number();
+
+    let mut wal_txn = wal::WalTxnScope::start_handle(handle);
+    let offset_number = {
+        let mut page = wal_txn.register_page(&buffer);
+        page.init(0);
+        page.add_item(&payload)
+            .map_err(|error| format!("ec_distann delta insert page add failed: {error:?}"))?
+    };
+    wal_txn.finish();
+
+    Ok(ItemPointer {
+        block_number,
+        offset_number,
+    })
 }

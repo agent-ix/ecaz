@@ -746,7 +746,10 @@ fn initialize_metadata_page_handle(handle: RelationHandle, metadata: DistannMeta
     write_metadata_to_buffer(handle, &buffer, &metadata);
 }
 
-fn overwrite_metadata_page_handle(handle: RelationHandle, metadata: &DistannMetadataPage) {
+pub(super) fn overwrite_metadata_page_handle(
+    handle: RelationHandle,
+    metadata: &DistannMetadataPage,
+) {
     let buffer = LockedBufferGuard::read_main_handle(
         handle,
         METADATA_BLOCK_NUMBER,

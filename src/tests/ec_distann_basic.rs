@@ -1077,7 +1077,52 @@ fn test_ec_distann_delete_tombstones_record() {
 }
 
 #[pg_test]
-fn test_ec_distann_insert_reports_unimplemented_dml_posture() {
+fn test_ec_distann_delta_insert_visible_same_statement() {
+    // FR-083-AC-3 (M3 D5 delta buffer): aminsert spools the new row into the
+    // bounded exact-scan delta buffer; it is visible in the same statement,
+    // exact-scanned and merged into results at its true rank.
+    create_distann_fixture("ec_distann_ins", "WITH (graph_degree = 4)");
+    // Insert a new row whose vector no existing fixture row is closest to.
+    Spi::run(
+        "INSERT INTO ec_distann_ins VALUES \
+         (99, encode_to_ecvector(ARRAY[0.5, 0.5, 0.5, 0.5], 4, 42))",
+    )
+    .expect("insert should succeed");
+
+    // The delta buffer now has one entry (head set).
+    let (metadata, _) = distann_materialized_index("ec_distann_ins_idx");
+    assert_ne!(
+        metadata.delta_buffer_head,
+        crate::storage::page::ItemPointer::INVALID,
+        "delta buffer head should be set after an insert"
+    );
+
+    // Same-statement visibility: querying the inserted vector returns it first.
+    Spi::run("SET enable_seqscan = off").expect("disabling seqscan should succeed");
+    let top = Spi::get_one::<i64>(
+        "SELECT id FROM ec_distann_ins \
+         ORDER BY embedding <#> ARRAY[0.5, 0.5, 0.5, 0.5]::real[] LIMIT 1",
+    )
+    .expect("SPI query should succeed")
+    .expect("row should exist");
+    assert_eq!(top, 99, "inserted row is visible same-statement and ranked nearest");
+
+    // It also appears within a larger LIMIT alongside the graph rows.
+    let inserted_in_topk = Spi::get_one::<i64>(
+        "SELECT count(*) FROM (SELECT id FROM ec_distann_ins \
+         ORDER BY embedding <#> ARRAY[0.5, 0.5, 0.5, 0.5]::real[] LIMIT 5) q WHERE id = 99",
+    )
+    .expect("SPI query should succeed")
+    .expect("count should exist");
+    assert_eq!(inserted_in_topk, 1, "inserted row merged into the ranked result");
+    Spi::run("RESET enable_seqscan").expect("seqscan reset should succeed");
+}
+
+#[pg_test]
+fn test_ec_distann_insert_into_empty_index_is_rejected() {
+    // The FR-081 scan early-returns for an empty graph, so a delta-only buffer
+    // would be invisible; delta insert into an empty index is rejected (not
+    // silently dropped) until the delta-only scan path lands in a later slice.
     Spi::run("CREATE TABLE ec_distann_insert_posture (id bigint, embedding ecvector)")
         .expect("table creation should succeed");
     Spi::run(
@@ -1093,7 +1138,7 @@ fn test_ec_distann_insert_reports_unimplemented_dml_posture() {
         .expect("this insert must error before succeeding");
     });
     assert!(
-        error.contains("ec_distann aminsert is not implemented yet"),
+        error.contains("empty index is not supported yet"),
         "unexpected error: {error}"
     );
 }
