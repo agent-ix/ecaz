@@ -10,6 +10,9 @@
 //! without a live relation.
 
 use crate::am::{robust_prune, Candidate};
+use crate::storage::page::ItemPointer;
+
+use super::tuple::DistannNodeTuple;
 
 /// A candidate forward neighbor for an inserted node: its stable `vec_id`
 /// (distann adjacency references neighbors by vec_id, never by record TID) and
@@ -139,6 +142,64 @@ pub(super) fn plan_insert_backlink(
     select_insert_forward_neighbors(&target.source_vector, &union, alpha, max_degree)
 }
 
+/// A forward neighbor for an inserted node's record: its vec_id plus its
+/// coarse `search_code` (embedded into the new node's record per FR-076, so a
+/// scan can code-score neighbors without a second record read).
+#[derive(Debug, Clone)]
+pub(super) struct DistannInsertNeighbor {
+    pub vec_id: u64,
+    pub code: Vec<u8>,
+}
+
+/// Assemble the FR-076 node record for an inserted node — the incremental
+/// analog of the batch build's per-node staging (same layout: fixed
+/// `graph_degree_r` slots, zero-padded past `neighbor_count`, neighbor codes
+/// embedded). Pure; the on-disk append slice encodes + writes this.
+pub(super) fn build_insert_node_tuple(
+    vec_id: u64,
+    heap_tid: ItemPointer,
+    search_code: Vec<u8>,
+    forward: &[DistannInsertNeighbor],
+    graph_degree_r: u16,
+    code_len: usize,
+) -> Result<DistannNodeTuple, String> {
+    let r = graph_degree_r as usize;
+    if forward.len() > r {
+        return Err(format!(
+            "ec_distann insert node has {} neighbors, exceeding graph_degree {r}",
+            forward.len()
+        ));
+    }
+    if search_code.len() != code_len {
+        return Err(format!(
+            "ec_distann insert node search_code len {} != code_len {code_len}",
+            search_code.len()
+        ));
+    }
+    let mut neighbor_vec_ids = vec![0_u64; r];
+    let mut neighbor_codes = vec![0_u8; r * code_len];
+    for (slot, neighbor) in forward.iter().enumerate() {
+        if neighbor.code.len() != code_len {
+            return Err(format!(
+                "ec_distann insert neighbor code len {} != code_len {code_len}",
+                neighbor.code.len()
+            ));
+        }
+        neighbor_vec_ids[slot] = neighbor.vec_id;
+        neighbor_codes[slot * code_len..(slot + 1) * code_len].copy_from_slice(&neighbor.code);
+    }
+    Ok(DistannNodeTuple {
+        tombstoned: false,
+        vec_id,
+        heap_tid,
+        neighbor_count: u16::try_from(forward.len())
+            .map_err(|_| "ec_distann insert neighbor count exceeds u16".to_owned())?,
+        search_code,
+        neighbor_vec_ids,
+        neighbor_codes,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -172,6 +233,61 @@ mod tests {
         // No duplicates.
         let uniq: std::collections::HashSet<u64> = kept.iter().copied().collect();
         assert_eq!(uniq.len(), kept.len(), "no duplicate edges");
+    }
+
+    #[test]
+    fn build_node_tuple_round_trips_and_pads() {
+        let r: u16 = 4;
+        let code_len = 8;
+        let fwd = vec![
+            DistannInsertNeighbor { vec_id: 111, code: vec![1_u8; code_len] },
+            DistannInsertNeighbor { vec_id: 222, code: vec![2_u8; code_len] },
+        ];
+        let node = build_insert_node_tuple(
+            999,
+            ItemPointer { block_number: 3, offset_number: 7 },
+            vec![9_u8; code_len],
+            &fwd,
+            r,
+            code_len,
+        )
+        .unwrap();
+        assert_eq!(node.vec_id, 999);
+        assert_eq!(node.neighbor_count, 2, "count = real neighbors, not padding");
+        assert_eq!(node.neighbor_vec_ids.len(), r as usize, "fixed R slots");
+        assert_eq!(node.neighbor_vec_ids[0], 111);
+        assert_eq!(node.neighbor_vec_ids[2], 0, "slots past count are zero-padded");
+        assert!(!node.tombstoned);
+        // Round-trips through the on-disk encoding at fixed length.
+        let encoded = node.encode(r, code_len).unwrap();
+        assert_eq!(encoded.len(), DistannNodeTuple::encoded_len(r, code_len));
+        assert_eq!(DistannNodeTuple::decode(&encoded, r, code_len).unwrap(), node);
+    }
+
+    #[test]
+    fn build_node_tuple_rejects_bad_shape() {
+        let code_len = 8;
+        // Too many neighbors for R.
+        let many: Vec<_> = (0..5)
+            .map(|i| DistannInsertNeighbor { vec_id: i, code: vec![0_u8; code_len] })
+            .collect();
+        assert!(
+            build_insert_node_tuple(1, ItemPointer::INVALID, vec![0; code_len], &many, 4, code_len)
+                .is_err(),
+            "neighbors > R rejected"
+        );
+        // Wrong search_code length.
+        assert!(
+            build_insert_node_tuple(1, ItemPointer::INVALID, vec![0; 4], &[], 4, code_len).is_err(),
+            "search_code len mismatch rejected"
+        );
+        // Wrong neighbor code length.
+        let bad = vec![DistannInsertNeighbor { vec_id: 1, code: vec![0_u8; 4] }];
+        assert!(
+            build_insert_node_tuple(1, ItemPointer::INVALID, vec![0; code_len], &bad, 4, code_len)
+                .is_err(),
+            "neighbor code len mismatch rejected"
+        );
     }
 
     #[test]

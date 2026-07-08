@@ -1,9 +1,5 @@
-# M5 slice 2 backlink-planning evidence
+# M5 slice 3 node-assembly evidence
 # cmd: cargo test --no-default-features --features pg18 --lib ec_distann::insert
 
-backlink_appends_when_free ... ok
-backlink_reprunes_when_full ... ok
-backlink_idempotent_when_already_linked ... ok
-select_respects_degree_bound_and_returns_valid_vec_ids ... ok
-select_rejects_bad_input ... ok
-test result: ok. 5 passed; 0 failed
+test result: ok. 7 passed; 0 failed
+  (select x2, backlink x3, build_node_tuple x2)
