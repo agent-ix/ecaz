@@ -14,3 +14,12 @@ B_fold | 0.8900
 # append-if-free backlink limitation (full neighbors skip the back-edge) +
 # head-sample-only candidate search (folded nodes don't seed each other).
 # The full-reprune-backlink + head-sample-refresh follow-ups target this gap.
+
+# --- Rejected hypothesis (measured, not assumed) ---
+# Tried: interconnect a fold batch (already-folded nodes seed later folds so
+# they connect to each other, not just the built graph). Prediction: closes
+# the gap. RESULT: recall got WORSE, 0.8900 -> 0.8420. Interconnecting folds
+# builds a poorly-anchored island of folded nodes (their forward edges go to
+# folded siblings instead of anchoring to the well-connected built graph).
+# Change reverted. The real lever is backlink QUALITY into the built graph
+# (full-reprune when a neighbor is at capacity), not candidate interconnection.
