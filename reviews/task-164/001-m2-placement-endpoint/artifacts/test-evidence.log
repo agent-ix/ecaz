@@ -1,0 +1,18 @@
+# M2 slices 1-2b test evidence (branch task-164-ec-distann-m2, SHA 1a14eee0e)
+
+## Pure unit/proptests (cargo test --lib)
+test am::ec_distann::epoch::tests::fingerprint_bytes_round_trip ... ok
+test am::ec_distann::epoch::tests::fingerprint_is_deterministic ... ok
+test am::ec_distann::epoch::tests::fingerprint_is_roster_order_sensitive ... ok
+test am::ec_distann::epoch::tests::fingerprint_is_sensitive_to_every_field ... ok
+test am::ec_distann::epoch::tests::fingerprint_length_prefix_prevents_aliasing ... ok
+test am::ec_distann::roster::tests::parse_roster_empty_is_single_node ... ok
+test am::ec_distann::roster::tests::parse_roster_rejects_malformed_entries ... ok
+test am::ec_distann::roster::tests::parse_roster_tolerates_trailing_separator_and_whitespace ... ok
+test am::ec_distann::roster::tests::parse_roster_two_nodes ... ok
+test am::ec_distann::roster::tests::placement_order_matches_spec_order ... ok
+
+## pg_tests (cargo pgrx test pg18 expand_nodes)
+test tests::pg_test_ec_distann_expand_nodes_rejects_epoch_mismatch ... ok
+test tests::pg_test_ec_distann_expand_nodes_rejects_nonowned_placement ... ok
+test tests::pg_test_ec_distann_expand_nodes_single_node_matches_local ... ok
