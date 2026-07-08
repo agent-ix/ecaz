@@ -25,6 +25,7 @@ pub(crate) mod placement;
 pub(crate) mod quantizer;
 pub(crate) mod reader;
 mod remote_endpoint;
+mod remote_transport;
 mod roster;
 mod routine;
 pub(crate) mod scan;
