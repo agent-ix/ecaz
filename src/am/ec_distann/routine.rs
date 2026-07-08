@@ -337,7 +337,7 @@ unsafe fn execute_distann_scan(
         let slot = crate::storage::slot_guard::TupleTableSlotGuard::single_for_heap(heap_relation)
             .unwrap_or_else(|| pgrx::error!("ec_distann scan heap slot setup failed"));
 
-        let mut expander = LocalNodeExpander {
+        let local_expander = LocalNodeExpander {
             index_handle: handle,
             directory: &entry.directory,
             graph_degree_r: metadata.graph_degree_r,
@@ -350,16 +350,81 @@ unsafe fn execute_distann_scan(
             raw_query,
             pooled_node: DistannNodeTuple::placeholder(metadata.graph_degree_r, code_len),
         };
-        let (mut hits, counters) = distann_orchestrated_search(
-            &seeds,
-            &mut expander,
-            DistannOrchestrationParams {
-                beam_width,
-                hop_rounds,
-                top_k,
-            },
-        )
+        let params = DistannOrchestrationParams {
+            beam_width,
+            hop_rounds,
+            top_k,
+        };
+        // FR-078/FR-081: with a multi-node roster the scan drives the remote
+        // expander (group by owner → pooled transport → endpoint → reassemble);
+        // the empty/single-node roster stays fully local. The FR-081 loop is
+        // identical either way.
+        let placement = super::roster::current_placement_directory()
+            .unwrap_or_else(|e| pgrx::error!("ec_distann scan roster resolution failed: {e}"));
+        let (mut hits, counters) = if placement.node_count() > 1 {
+            let local_index = placement
+                .nodes
+                .iter()
+                .position(|node| node.is_local)
+                .unwrap_or_else(|| pgrx::error!("ec_distann scan: no local node in the roster"));
+            let identity = super::roster::local_epoch_identity(&placement, &metadata);
+            let fingerprint = super::epoch::compute_epoch_fingerprint(
+                &identity,
+                super::epoch::DISTANN_EPOCH_FINGERPRINT_V1,
+            )
+            .to_vec();
+            let roster_spec = super::roster::current_roster_spec();
+            let epoch = super::roster::current_epoch();
+            let index_name = distann_index_relname(index_relation);
+            let mut remote = super::remote_transport::RemoteNodeExpander {
+                local: local_expander,
+                placement: &placement,
+                local_index,
+                index_regclass: &index_name,
+                epoch_fingerprint: &fingerprint,
+                roster_spec: &roster_spec,
+                epoch,
+            };
+            distann_orchestrated_search(&seeds, &mut remote, params)
+        } else {
+            let mut local = local_expander;
+            distann_orchestrated_search(&seeds, &mut local, params)
+        }
         .unwrap_or_else(|e| pgrx::error!("ec_distann scan orchestration failed: {e}"));
+
+        // Materialize remote-owned hits' heap TIDs. Remote responses carry
+        // heap_tid = INVALID (it is not in the FR-079 wire contract); on the
+        // loopback substrate the coordinator holds the full vec_id → record
+        // directory, so each remote hit's heap row is locally resolvable. A real
+        // multi-node deployment ships row data from the owning node instead
+        // (a CustomScan materialization follow-up); there a remote hit's vec_id
+        // is not in the local directory and this errors rather than mis-fetches.
+        if placement.node_count() > 1 {
+            for hit in &mut hits {
+                if hit.heap_tid != crate::storage::page::ItemPointer::INVALID {
+                    continue;
+                }
+                let record_tid = super::reader::directory_lookup(&entry.directory, hit.vec_id)
+                    .unwrap_or_else(|| {
+                        pgrx::error!(
+                            "ec_distann scan: remote hit vec_id {:#018x} is not locally \
+                             resolvable (multi-node row materialization is a follow-up)",
+                            hit.vec_id
+                        )
+                    });
+                let raw = super::reader::read_raw_tuple_bytes_from_relation(
+                    handle,
+                    record_tid,
+                    "ec_distann remote-hit materialization",
+                )
+                .unwrap_or_else(|e| pgrx::error!("{e}"));
+                hit.heap_tid = crate::storage::page::ItemPointer::decode(
+                    &raw[super::tuple::DISTANN_NODE_HEAP_TID_OFFSET
+                        ..super::tuple::DISTANN_NODE_HEAP_TID_OFFSET + 6],
+                )
+                .unwrap_or_else(|e| pgrx::error!("{e}"));
+            }
+        }
 
         // FR-083 / ADR-085 D5: merge the interim delta buffer (bounded, exact-
         // scanned) into results so inserted rows are visible same-statement.
@@ -465,6 +530,16 @@ unsafe extern "C-unwind" fn ec_distann_amendscan(scan: pg_sys::IndexScanDesc) {
             (*scan).opaque = ptr::null_mut();
         }
     })
+}
+
+/// The index's unqualified name, for the multi-node transport's
+/// `$1::text::regclass` resolution (each node resolves its local index by name;
+/// the loopback substrate shares the schema search_path).
+unsafe fn distann_index_relname(index_relation: pg_sys::Relation) -> String {
+    let relname = &(*(*index_relation).rd_rel).relname;
+    std::ffi::CStr::from_ptr(relname.data.as_ptr())
+        .to_string_lossy()
+        .into_owned()
 }
 
 pub(super) fn indexed_ecvector_attnum(index_relation: pg_sys::Relation) -> Result<i32, String> {
