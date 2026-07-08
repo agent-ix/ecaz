@@ -45,9 +45,13 @@ use super::tuple::DistannNodeTuple;
 pub(super) struct DistannRemoteExpandRequest<'a> {
     /// libpq conninfo of the target node.
     pub(super) conninfo: &'a str,
-    /// Session GUC setup run before the call (SET roster/epoch/local_node_id to
-    /// the target node's identity). Empty for a node already configured.
-    pub(super) session_setup_sql: &'a str,
+    /// Roster spec set on the session via **parameterized** `set_config` (never
+    /// string-interpolated — a conninfo may contain spaces, `=`, or quotes).
+    pub(super) roster_spec: &'a str,
+    /// The node id this call targets (its `local_node_id` on the remote
+    /// session, so the endpoint validates ownership for that node — loopback).
+    pub(super) target_node_id: u32,
+    pub(super) epoch: u64,
     /// The target index by NAME (regclass-castable). Resolved per-node by name
     /// — real nodes have different oids for their local index, so the wire
     /// carries the name, not an oid (FR-079 `index_regclass regclass`).
@@ -103,110 +107,165 @@ where
     })
 }
 
+// `$1::text::regclass::oid` forces PG to infer $1 as text (the coordinator
+// sends the index NAME as a string); `$1::regclass` alone would infer a
+// regclass-typed param that tokio-postgres cannot serialize from a &str.
 const EXPAND_SQL: &str = "SELECT vec_id, exact_dist, is_tombstone, neighbor_vec_ids, \
-    neighbor_code_dists FROM ec_distann_expand_nodes($1::regclass::oid, $2, $3::real[], \
+    neighbor_code_dists FROM ec_distann_expand_nodes($1::text::regclass::oid, $2, $3::real[], \
     $4::bigint[], $5)";
 
-/// Issue one remote `ec_distann_expand_nodes` call and parse the wire rows into
-/// `DistannExpandedNode`s (request order is reconstructed by the caller from
-/// vec_id; `heap_tid` is local-only and stays INVALID for remote responses).
-pub(super) fn remote_expand_nodes(
-    request: &DistannRemoteExpandRequest<'_>,
-) -> Result<Vec<DistannExpandedNode>, DistannExpandError> {
-    let vec_ids_i64: Vec<i64> = request.vec_ids.iter().map(|&v| v as i64).collect();
-    with_transport_state(|state| {
+/// Parameterized session setup — sets the target node identity without any
+/// string interpolation of the (possibly quote/space-bearing) roster spec.
+const SESSION_SETUP_SQL: &str = "SELECT set_config('ec_distann.roster', $1, false), \
+    set_config('ec_distann.local_node_id', $2, false), \
+    set_config('ec_distann.epoch', $3, false)";
+
+/// Issue a batch of remote `ec_distann_expand_nodes` calls — one per owning
+/// node for this hop round — and drive them **concurrently** on the runtime
+/// (FR-081: per-node calls in parallel, so a hop costs ~max remote RTT, not the
+/// sum). Returns per-request results in request order; a connect/parse failure
+/// fails every request uniformly. `heap_tid` stays INVALID for remote
+/// responses (local-only handle).
+pub(super) fn remote_expand_batch(
+    requests: &[DistannRemoteExpandRequest<'_>],
+) -> Vec<Result<Vec<DistannExpandedNode>, DistannExpandError>> {
+    if requests.is_empty() {
+        return Vec::new();
+    }
+    // Owned scratch borrowed by the async futures.
+    let vec_ids_i64: Vec<Vec<i64>> = requests
+        .iter()
+        .map(|request| request.vec_ids.iter().map(|&v| v as i64).collect())
+        .collect();
+    let node_id_strs: Vec<String> = requests
+        .iter()
+        .map(|request| request.target_node_id.to_string())
+        .collect();
+    let epoch_strs: Vec<String> = requests
+        .iter()
+        .map(|request| request.epoch.to_string())
+        .collect();
+
+    let outcome = with_transport_state(|state| {
         let DistannTransportState {
             runtime,
             connections,
         } = state;
         runtime.block_on(async {
-            // Establish (or reuse) the per-conninfo connection.
-            let needs_connect = connections
-                .get(request.conninfo)
-                .map(|pooled| pooled.task.is_finished())
-                .unwrap_or(true);
-            if needs_connect {
-                let config = request
-                    .conninfo
-                    .parse::<tokio_postgres::Config>()
-                    .map_err(|_| {
-                        DistannExpandError::Internal(format!(
-                            "ec_distann remote transport could not parse conninfo {:?}",
+            // Ensure every connection first (one-time/cached; sequential connect
+            // is not on the per-hop hot path once pooled).
+            for request in requests {
+                let needs_connect = connections
+                    .get(request.conninfo)
+                    .map(|pooled| pooled.task.is_finished())
+                    .unwrap_or(true);
+                if needs_connect {
+                    let config =
+                        request.conninfo.parse::<tokio_postgres::Config>().map_err(|_| {
+                            format!(
+                                "ec_distann remote transport could not parse conninfo {:?}",
+                                request.conninfo
+                            )
+                        })?;
+                    let (client, connection) = config.connect(NoTls).await.map_err(|error| {
+                        format!(
+                            "ec_distann remote transport could not connect to {:?}: {error}",
                             request.conninfo
-                        ))
+                        )
                     })?;
-                let (client, connection) = config.connect(NoTls).await.map_err(|error| {
-                    DistannExpandError::Internal(format!(
-                        "ec_distann remote transport could not connect to {:?}: {error}",
-                        request.conninfo
-                    ))
-                })?;
-                let task = tokio::spawn(async move {
-                    let _ = connection.await;
-                });
-                connections
-                    .insert(request.conninfo.to_owned(), PooledConnection { client, task });
-            }
-            let pooled = connections
-                .get(request.conninfo)
-                .expect("connection just inserted or reused");
-
-            // Configure the session for the target node identity (loopback).
-            if !request.session_setup_sql.is_empty() {
-                pooled
-                    .client
-                    .batch_execute(request.session_setup_sql)
-                    .await
-                    .map_err(|error| {
-                        DistannExpandError::Internal(format!(
-                            "ec_distann remote transport session setup failed: {error}"
-                        ))
-                    })?;
+                    let task = tokio::spawn(async move {
+                        let _ = connection.await;
+                    });
+                    connections
+                        .insert(request.conninfo.to_owned(), PooledConnection { client, task });
+                }
             }
 
-            let rows = pooled
-                .client
-                .query(
-                    EXPAND_SQL,
-                    &[
-                        &request.index_regclass,
-                        &request.epoch_fingerprint,
-                        &request.query,
-                        &vec_ids_i64,
-                        &request.code_threshold,
-                    ],
+            // Fire all owners concurrently and await the whole set.
+            let futures = requests.iter().enumerate().map(|(index, request)| {
+                let client = &connections[request.conninfo].client;
+                run_one_remote(
+                    client,
+                    request,
+                    &vec_ids_i64[index],
+                    &node_id_strs[index],
+                    &epoch_strs[index],
                 )
-                .await
-                .map_err(|error| {
-                    // Classify by the remote endpoint's SQLSTATE so the
-                    // coordinator can distinguish a retriable epoch mismatch from
-                    // non-retriable placement/structural faults (FR-082-AC-2).
-                    let code = error.code().map(|state| state.code().to_owned());
-                    DistannExpandError::from_wire_sqlstate(
-                        code.as_deref(),
-                        format!("ec_distann remote expand call failed: {error}"),
-                    )
-                })?;
-
-            rows.into_iter()
-                .map(|row| {
-                    let vec_id: i64 = row.try_get(0).map_err(row_err)?;
-                    let exact_dist: Option<f32> = row.try_get(1).map_err(row_err)?;
-                    let is_tombstone: bool = row.try_get(2).map_err(row_err)?;
-                    let neighbor_vec_ids: Vec<i64> = row.try_get(3).map_err(row_err)?;
-                    let neighbor_code_dists: Vec<f32> = row.try_get(4).map_err(row_err)?;
-                    Ok(DistannExpandedNode {
-                        vec_id: vec_id as u64,
-                        exact_dist,
-                        is_tombstone,
-                        heap_tid: ItemPointer::INVALID,
-                        neighbor_vec_ids: neighbor_vec_ids.into_iter().map(|v| v as u64).collect(),
-                        neighbor_code_dists,
-                    })
-                })
-                .collect::<Result<Vec<_>, DistannExpandError>>()
+            });
+            Ok::<_, String>(futures_util::future::join_all(futures).await)
         })
-    })
+    });
+
+    match outcome {
+        Ok(results) => results,
+        // A connect/parse failure (or runtime init failure) fails all uniformly.
+        Err(message) => requests
+            .iter()
+            .map(|_| Err(DistannExpandError::Internal(message.clone())))
+            .collect(),
+    }
+}
+
+/// One remote call: parameterized session setup then the expand query.
+async fn run_one_remote(
+    client: &Client,
+    request: &DistannRemoteExpandRequest<'_>,
+    vec_ids_i64: &[i64],
+    node_id_str: &str,
+    epoch_str: &str,
+) -> Result<Vec<DistannExpandedNode>, DistannExpandError> {
+    client
+        .query(
+            SESSION_SETUP_SQL,
+            &[&request.roster_spec, &node_id_str, &epoch_str],
+        )
+        .await
+        .map_err(|error| {
+            DistannExpandError::Internal(format!(
+                "ec_distann remote transport session setup failed: {error}"
+            ))
+        })?;
+
+    let rows = client
+        .query(
+            EXPAND_SQL,
+            &[
+                &request.index_regclass,
+                &request.epoch_fingerprint,
+                &request.query,
+                &vec_ids_i64,
+                &request.code_threshold,
+            ],
+        )
+        .await
+        .map_err(|error| {
+            // Classify by the remote endpoint's SQLSTATE so the coordinator can
+            // distinguish a retriable epoch mismatch from non-retriable
+            // placement/structural faults (FR-082-AC-2).
+            let code = error.code().map(|state| state.code().to_owned());
+            DistannExpandError::from_wire_sqlstate(
+                code.as_deref(),
+                format!("ec_distann remote expand call failed: {error}"),
+            )
+        })?;
+
+    rows.into_iter()
+        .map(|row| {
+            let vec_id: i64 = row.try_get(0).map_err(row_err)?;
+            let exact_dist: Option<f32> = row.try_get(1).map_err(row_err)?;
+            let is_tombstone: bool = row.try_get(2).map_err(row_err)?;
+            let neighbor_vec_ids: Vec<i64> = row.try_get(3).map_err(row_err)?;
+            let neighbor_code_dists: Vec<f32> = row.try_get(4).map_err(row_err)?;
+            Ok(DistannExpandedNode {
+                vec_id: vec_id as u64,
+                exact_dist,
+                is_tombstone,
+                heap_tid: ItemPointer::INVALID,
+                neighbor_vec_ids: neighbor_vec_ids.into_iter().map(|v| v as u64).collect(),
+                neighbor_code_dists,
+            })
+        })
+        .collect::<Result<Vec<_>, DistannExpandError>>()
 }
 
 fn row_err(error: tokio_postgres::Error) -> DistannExpandError {
@@ -405,34 +464,53 @@ impl DistannNodeExpander for RemoteNodeExpander<'_> {
 
         let mut ordered: Vec<Option<DistannExpandedNode>> =
             (0..vec_ids.len()).map(|_| None).collect();
-        for (node_index, bucket) in buckets.iter().enumerate() {
-            if bucket.is_empty() {
-                continue;
+
+        // Expand this node's ids in-process first.
+        if let Some(local_bucket) = buckets.get(self.local_index) {
+            if !local_bucket.is_empty() {
+                let ids: Vec<u64> = local_bucket.iter().map(|(_, vec_id)| *vec_id).collect();
+                let responses = self.local.expand_nodes(&ids, code_threshold)?;
+                place_bucket_responses(self.local_index, local_bucket, responses, &mut ordered)?;
             }
-            let ids: Vec<u64> = bucket.iter().map(|(_, vec_id)| *vec_id).collect();
-            let responses = if node_index == self.local_index {
-                self.local.expand_nodes(&ids, code_threshold)?
-            } else {
-                let node = &self.placement.nodes[node_index];
-                // Configure the target node's identity on its session so the
-                // endpoint validates ownership for that node (loopback fixture;
-                // a real node is already configured, so this is a no-op set).
-                let session_setup_sql = format!(
-                    "SET ec_distann.roster = '{}'; SET ec_distann.local_node_id = {}; \
-                     SET ec_distann.epoch = {};",
-                    self.roster_spec, node.node_id, self.epoch
-                );
-                remote_expand_nodes(&DistannRemoteExpandRequest {
-                    conninfo: &node.conninfo,
-                    session_setup_sql: &session_setup_sql,
-                    index_regclass: self.index_regclass,
-                    epoch_fingerprint: self.epoch_fingerprint,
-                    query: self.local.raw_query,
-                    vec_ids: &ids,
-                    code_threshold,
-                })?
-            };
-            place_bucket_responses(node_index, bucket, responses, &mut ordered)?;
+        }
+
+        // Build one request per remote owner and drive them concurrently.
+        let query = self.local.raw_query;
+        let remote_ids: Vec<(usize, Vec<u64>)> = buckets
+            .iter()
+            .enumerate()
+            .filter(|(node_index, bucket)| *node_index != self.local_index && !bucket.is_empty())
+            .map(|(node_index, bucket)| {
+                (node_index, bucket.iter().map(|(_, vec_id)| *vec_id).collect())
+            })
+            .collect();
+        if !remote_ids.is_empty() {
+            let requests: Vec<DistannRemoteExpandRequest<'_>> = remote_ids
+                .iter()
+                .map(|(node_index, ids)| {
+                    let node = &self.placement.nodes[*node_index];
+                    DistannRemoteExpandRequest {
+                        conninfo: &node.conninfo,
+                        roster_spec: self.roster_spec,
+                        target_node_id: node.node_id,
+                        epoch: self.epoch,
+                        index_regclass: self.index_regclass,
+                        epoch_fingerprint: self.epoch_fingerprint,
+                        query,
+                        vec_ids: ids,
+                        code_threshold,
+                    }
+                })
+                .collect();
+            let results = remote_expand_batch(&requests);
+            for ((node_index, _), responses) in remote_ids.iter().zip(results.into_iter()) {
+                place_bucket_responses(
+                    *node_index,
+                    &buckets[*node_index],
+                    responses?,
+                    &mut ordered,
+                )?;
+            }
         }
 
         finalize_request_order(ordered)

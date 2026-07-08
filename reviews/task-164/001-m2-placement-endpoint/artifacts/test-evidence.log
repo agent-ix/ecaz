@@ -16,3 +16,14 @@ test am::ec_distann::roster::tests::placement_order_matches_spec_order ... ok
 test tests::pg_test_ec_distann_expand_nodes_rejects_epoch_mismatch ... ok
 test tests::pg_test_ec_distann_expand_nodes_rejects_nonowned_placement ... ok
 test tests::pg_test_ec_distann_expand_nodes_single_node_matches_local ... ok
+
+## placement tests (cargo test --lib am::ec_distann::placement) — added per reviewer P3
+test group_by_owning_node_keeps_duplicate_positions ... ok
+test group_by_owning_node_covers_all_ids_with_positions ... ok
+test placement_is_deterministic ... ok
+test placement_changes_only_with_node_count ... ok
+test single_node_owns_everything ... ok
+test placement_is_balanced_across_three_nodes ... ok
+test result: ok. 6 passed; 0 failed
+
+## clippy (cargo clippy --lib --no-default-features --features pg18): 0 warnings, exit 0
