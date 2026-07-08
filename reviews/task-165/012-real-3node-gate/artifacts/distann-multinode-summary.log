@@ -1,0 +1,10 @@
+distann-multinode fixture
+nodes=3
+rows=2000
+dim=16
+graph_degree=32
+queries=50
+top_k=10
+roster=1@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39710 dbname=postgres user=postgres;2@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39711 dbname=postgres user=postgres;3@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39712 dbname=postgres user=postgres
+RECALL_RESULT n_queries=50 identical=50 mismatched_ids=0
+fault_drill dead_remote_port fail_closed=true
