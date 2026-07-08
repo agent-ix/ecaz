@@ -82,6 +82,17 @@ impl NeighborCodeFormat {
         }
     }
 
+    /// Recover the format from a persisted metadata codec kind (the inverse of
+    /// `metadata_kind`); used by incremental insert to rebuild the codec.
+    pub(crate) fn from_metadata_kind(kind: u8) -> Result<Self, String> {
+        match kind {
+            DISTANN_NEIGHBOR_CODEC_GROUPED_PQ => Ok(Self::GroupedPq),
+            DISTANN_NEIGHBOR_CODEC_RABITQ => Ok(Self::RaBitQ),
+            DISTANN_NEIGHBOR_CODEC_TURBOQUANT => Ok(Self::TurboQuant),
+            other => Err(format!("unknown ec_distann neighbor codec kind {other}")),
+        }
+    }
+
     fn parse_reloption(raw: &str) -> Result<Self, String> {
         match raw {
             "grouped_pq" => Ok(Self::GroupedPq),

@@ -585,7 +585,7 @@ fn compute_content_digest(
 /// Stage the sorted vec_id→TID directory. Chunks are staged in reverse so
 /// each can point at the next chunk's already-known TID; the returned head
 /// covers the ascending-sorted entry stream.
-fn stage_directory_chain(
+pub(super) fn stage_directory_chain(
     chain: &mut DataPageChain,
     vec_ids: &[u64],
     node_tids: &[ItemPointer],

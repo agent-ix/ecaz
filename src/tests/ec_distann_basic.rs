@@ -1014,6 +1014,58 @@ fn test_ec_distann_expand_nodes_rejects_nonowned_placement() {
 }
 
 #[pg_test]
+fn test_ec_distann_fold_delta_into_graph() {
+    // FR-083 M5: an inserted row (delta buffer) is folded into the persisted
+    // graph — node_count grows, the buffer drains, and the row is found via
+    // graph traversal (empty delta buffer), not the exact-scan tail.
+    create_distann_fixture("ec_distann_fold", "WITH (graph_degree = 4)");
+    Spi::run(
+        "INSERT INTO ec_distann_fold VALUES \
+         (99, encode_to_ecvector(ARRAY[0.5, 0.5, 0.5, 0.5], 4, 42))",
+    )
+    .expect("delta insert should succeed");
+
+    let (before, _) = distann_materialized_index("ec_distann_fold_idx");
+    assert_ne!(
+        before.delta_buffer_head,
+        crate::storage::page::ItemPointer::INVALID,
+        "row is in the delta buffer before folding"
+    );
+
+    let folded = Spi::get_one::<i64>(
+        "SELECT ec_distann_fold_delta_into_graph('ec_distann_fold_idx'::regclass::oid)",
+    )
+    .expect("SPI query should succeed")
+    .expect("count should exist");
+    assert_eq!(folded, 1, "one delta entry folded into the graph");
+
+    let (after, _) = distann_materialized_index("ec_distann_fold_idx");
+    assert_eq!(
+        after.node_count,
+        before.node_count + 1,
+        "folded node joined the graph"
+    );
+    assert_eq!(
+        after.delta_buffer_head,
+        crate::storage::page::ItemPointer::INVALID,
+        "delta buffer drained after fold"
+    );
+
+    // The folded row is found via graph traversal (delta buffer is empty now).
+    // The scan reads the rebuilt directory + node record by real on-disk TIDs
+    // (read_*_from_relation), so this exercises the actual incremental layout.
+    Spi::run("SET enable_seqscan = off").expect("disabling seqscan should succeed");
+    let top = Spi::get_one::<i64>(
+        "SELECT id FROM ec_distann_fold \
+         ORDER BY embedding <#> ARRAY[0.5, 0.5, 0.5, 0.5]::real[] LIMIT 1",
+    )
+    .expect("SPI query should succeed")
+    .expect("row should exist");
+    assert_eq!(top, 99, "folded row is found via the graph");
+    Spi::run("RESET enable_seqscan").expect("seqscan reset should succeed");
+}
+
+#[pg_test]
 fn test_ec_distann_reindex_drains_delta_buffer() {
     // FR-083-AC-2: the epoch build (REINDEX) drains the interim delta buffer —
     // the inserted row joins the graph and delta_buffer_head resets to INVALID

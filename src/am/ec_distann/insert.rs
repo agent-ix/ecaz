@@ -9,10 +9,31 @@
 //! directory maintenance) build on. Pure functions here are unit-testable
 //! without a live relation.
 
-use crate::am::{robust_prune, Candidate};
-use crate::storage::page::ItemPointer;
+use std::ptr::NonNull;
 
-use super::tuple::DistannNodeTuple;
+use pgrx::{pg_extern, pg_sys};
+
+use crate::am::ec_diskann::write_data_pages;
+use crate::am::{robust_prune, Candidate};
+use crate::storage::buffer_guard::LockedBufferGuard;
+use crate::storage::page::{DataPageChain, ItemPointer};
+use crate::storage::relation::{main_fork_block_count_handle, RelationHandle};
+use crate::storage::relation_guard::IndexRelationGuard;
+use crate::storage::wal;
+
+use super::ambuild::{
+    overwrite_metadata_page_handle, read_metadata_from_index_handle, stage_directory_chain,
+};
+use super::options::NeighborCodeFormat;
+use super::quantizer::{metadata_code_len, DistannCodecBinding};
+use super::reader::{
+    directory_lookup, read_delta_chain, read_directory_from_relation,
+    read_head_samples_from_relation, read_raw_tuple_bytes_from_relation,
+};
+use super::tuple::{
+    distann_node_neighbor_codes_offset, distann_node_neighbor_vec_ids_offset, DistannNodeTuple,
+    DISTANN_NODE_NEIGHBOR_COUNT_OFFSET, DISTANN_NODE_TAG,
+};
 
 /// A candidate forward neighbor for an inserted node: its stable `vec_id`
 /// (distann adjacency references neighbors by vec_id, never by record TID) and
@@ -236,6 +257,252 @@ pub(super) fn build_insert_node_tuple(
         neighbor_vec_ids,
         neighbor_codes,
     })
+}
+
+/// FR-083 M5 incremental graph insert: fold one record into the persisted
+/// Vamana graph so it gains graph connectivity (found by traversal, not just
+/// the M3 delta-buffer exact-scan tail). Applies the tested pure pipeline
+/// (rank → select → assemble) then mutates on disk: append the node record,
+/// append-if-free backlinks on its forward neighbors, and rebuild the sorted
+/// directory. Candidates come from the FR-080 head-sample region (no heap
+/// reads). WAL-logged throughout. See `reviews/task-167/002-*` for the design.
+///
+/// # Safety
+/// `index_relation` is a live index relation opened for write.
+pub(super) unsafe fn graph_insert_record(
+    index_relation: pg_sys::Relation,
+    new_vec_id: u64,
+    new_heap_tid: ItemPointer,
+    new_source_vector: &[f32],
+) -> Result<(), String> {
+    let handle = NonNull::new(index_relation)
+        .ok_or_else(|| "ec_distann graph insert needs a valid index relation".to_owned())?;
+    let mut metadata = read_metadata_from_index_handle(handle)?;
+    let dimensions = usize::from(metadata.dimensions);
+    if new_source_vector.len() != dimensions {
+        return Err(format!(
+            "ec_distann graph insert dimension mismatch: index {dimensions}, inserted {}",
+            new_source_vector.len()
+        ));
+    }
+    if metadata.node_count == 0 || metadata.directory_head == ItemPointer::INVALID {
+        return Err("ec_distann graph insert into an empty graph is unsupported".to_owned());
+    }
+    let code_len = metadata_code_len(&metadata)?;
+    let graph_degree_r = metadata.graph_degree_r;
+
+    // 1. Reconstruct the codec (seeded formats only; GroupedPq rehydration is a
+    //    follow-up) and encode the new node's coarse search code.
+    let format = NeighborCodeFormat::from_metadata_kind(metadata.neighbor_codec_kind)?;
+    if matches!(format, NeighborCodeFormat::GroupedPq) {
+        return Err(
+            "ec_distann graph insert for grouped_pq codec is a follow-up (codebook rehydration); \
+             the delta buffer still serves inserts"
+                .to_owned(),
+        );
+    }
+    let binding = DistannCodecBinding::prepare(format, &[], dimensions, metadata.seed)?;
+    let new_code = binding.encode(new_source_vector);
+
+    // 2. Candidate search over the head-sample region → 3. forward selection.
+    let samples = read_head_samples_from_relation(
+        handle,
+        metadata.head_sample_head,
+        dimensions,
+        metadata.head_index_cap as usize,
+    )?;
+    let sample_pairs: Vec<(u64, Vec<f32>)> = samples
+        .into_iter()
+        .filter(|s| s.vec_id != new_vec_id)
+        .map(|s| (s.vec_id, s.vector))
+        .collect();
+    let candidates = rank_insert_candidates(
+        new_source_vector,
+        &sample_pairs,
+        usize::from(metadata.build_list_size_l),
+    )?;
+    let forward_ids = select_insert_forward_neighbors(
+        new_source_vector,
+        &candidates,
+        metadata.alpha,
+        usize::from(graph_degree_r),
+    )?;
+
+    // 4. Read each forward neighbor's record for its embedded search code.
+    let directory =
+        read_directory_from_relation(handle, metadata.directory_head, metadata.node_count as usize)?;
+    let mut forward = Vec::with_capacity(forward_ids.len());
+    let mut forward_tids = Vec::with_capacity(forward_ids.len());
+    for &fid in &forward_ids {
+        let tid = directory_lookup(&directory, fid).ok_or_else(|| {
+            format!("ec_distann graph insert: forward neighbor {fid:#018x} not in directory")
+        })?;
+        let raw = read_raw_tuple_bytes_from_relation(handle, tid, "ec_distann insert forward")?;
+        let node = DistannNodeTuple::decode(&raw, graph_degree_r, code_len)?;
+        forward.push(DistannInsertNeighbor { vec_id: fid, code: node.search_code });
+        forward_tids.push(tid);
+    }
+
+    // 5. Assemble + append the new node record.
+    let node = build_insert_node_tuple(
+        new_vec_id,
+        new_heap_tid,
+        new_code.clone(),
+        &forward,
+        graph_degree_r,
+        code_len,
+    )?;
+    let new_node_tid = append_node_record(handle, node.encode(graph_degree_r, code_len)?)?;
+
+    // 6. Append-if-free backlinks on each forward neighbor.
+    for &tid in &forward_tids {
+        add_backlink_if_free(handle, tid, new_vec_id, &new_code, graph_degree_r, code_len)?;
+    }
+
+    // 7. Rebuild the sorted directory with the new entry, based at the current
+    //    relation end so its next_tids are correct after write_data_pages.
+    let mut vec_ids: Vec<u64> = directory.iter().map(|(id, _)| *id).collect();
+    let mut tids: Vec<ItemPointer> = directory.iter().map(|(_, tid)| *tid).collect();
+    vec_ids.push(new_vec_id);
+    tids.push(new_node_tid);
+    let base_block = main_fork_block_count_handle(handle);
+    let mut dir_chain = DataPageChain::with_base_block(base_block, pg_sys::BLCKSZ as usize);
+    let new_directory_head = stage_directory_chain(&mut dir_chain, &vec_ids, &tids)?;
+    write_data_pages(handle, &dir_chain);
+
+    // 8. Publish the new directory + node count.
+    metadata.directory_head = new_directory_head;
+    metadata.node_count += 1;
+    overwrite_metadata_page_handle(handle, &metadata);
+    Ok(())
+}
+
+/// FR-083 M5 maintenance op: fold the interim delta buffer (D5) into the
+/// persisted graph — graph-insert every buffered entry, then drain the buffer.
+/// Bounds the buffer and gives inserted rows graph connectivity. Returns the
+/// count folded. (Multi-node: the coordinator routes each fold to the
+/// hash-owning node via the FR-083 write endpoint — a later wire-up.)
+#[pg_extern]
+fn ec_distann_fold_delta_into_graph(index_regclass: pg_sys::Oid) -> i64 {
+    fold_delta_into_graph_impl(index_regclass).unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+fn fold_delta_into_graph_impl(index_oid: pg_sys::Oid) -> Result<i64, String> {
+    let guard = IndexRelationGuard::open(
+        index_oid,
+        pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
+        "ec_distann_fold_delta_into_graph",
+    );
+    let handle = NonNull::new(guard.as_ptr())
+        .ok_or_else(|| "ec_distann fold got a null index relation".to_owned())?;
+    let metadata = read_metadata_from_index_handle(handle)?;
+    if metadata.delta_buffer_head == ItemPointer::INVALID {
+        return Ok(0);
+    }
+    let deltas = read_delta_chain(
+        handle,
+        metadata.delta_buffer_head,
+        usize::from(metadata.dimensions),
+    )?;
+    let mut folded = 0_i64;
+    for entry in &deltas {
+        // SAFETY: the guard holds the index open for write for the call.
+        unsafe {
+            graph_insert_record(guard.as_ptr(), entry.vec_id, entry.heap_tid, &entry.vector)?;
+        }
+        folded += 1;
+    }
+    if folded > 0 {
+        // Re-read (node_count/directory_head advanced per insert) and drain.
+        let mut metadata = read_metadata_from_index_handle(handle)?;
+        metadata.delta_buffer_head = ItemPointer::INVALID;
+        overwrite_metadata_page_handle(handle, &metadata);
+    }
+    Ok(folded)
+}
+
+/// Append a node record on a freshly-extended page, WAL-logged. Returns its TID.
+fn append_node_record(handle: RelationHandle, payload: Vec<u8>) -> Result<ItemPointer, String> {
+    let buffer = LockedBufferGuard::read_main_locked_handle(
+        handle,
+        u32::MAX, // P_NEW
+        pg_sys::ReadBufferMode::RBM_ZERO_AND_LOCK,
+    )
+    .ok_or_else(|| "ec_distann graph insert could not extend the relation".to_owned())?;
+    let block_number = buffer.block_number();
+    let mut wal_txn = wal::WalTxnScope::start_handle(handle);
+    let offset_number = {
+        let mut page = wal_txn.register_page(&buffer);
+        page.init(0);
+        page.add_item(&payload)
+            .map_err(|e| format!("ec_distann graph insert node add failed: {e:?}"))?
+    };
+    wal_txn.finish();
+    Ok(ItemPointer { block_number, offset_number })
+}
+
+/// Add `new_vec_id` (+ its code) to a forward neighbor's adjacency in a free
+/// slot, WAL-logged in place. A neighbor already at `graph_degree_r` is left
+/// unchanged (the full-reprune path needs neighbor source vectors — a
+/// head-sample-backed follow-up); the forward edge from the new node still
+/// links them, so connectivity is not lost.
+fn add_backlink_if_free(
+    handle: RelationHandle,
+    neighbor_tid: ItemPointer,
+    new_vec_id: u64,
+    new_code: &[u8],
+    graph_degree_r: u16,
+    code_len: usize,
+) -> Result<(), String> {
+    let buffer = LockedBufferGuard::read_main_handle(
+        handle,
+        neighbor_tid.block_number,
+        pg_sys::ReadBufferMode::RBM_NORMAL,
+        pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
+    )
+    .ok_or_else(|| {
+        format!("ec_distann backlink: could not open block {}", neighbor_tid.block_number)
+    })?;
+    let r = usize::from(graph_degree_r);
+    let vec_ids_off = distann_node_neighbor_vec_ids_offset(code_len);
+    let codes_off = distann_node_neighbor_codes_offset(graph_degree_r, code_len);
+
+    let mut wal_txn = wal::WalTxnScope::start_handle(handle);
+    {
+        let mut page = wal_txn.register_page(&buffer);
+        page.visit_tuple_bytes_mut(neighbor_tid, "ec_distann backlink write", |raw| {
+            if raw.first().copied() != Some(DISTANN_NODE_TAG) {
+                return Err("ec_distann backlink: target is not a graph-node record".to_owned());
+            }
+            let count = u16::from_le_bytes(
+                raw[DISTANN_NODE_NEIGHBOR_COUNT_OFFSET..DISTANN_NODE_NEIGHBOR_COUNT_OFFSET + 2]
+                    .try_into()
+                    .expect("neighbor count bytes"),
+            );
+            let slot = usize::from(count);
+            if slot >= r {
+                return Ok(()); // full — leave unchanged (forward edge suffices)
+            }
+            // Idempotence: skip if already present in a used slot.
+            for used in 0..slot {
+                let off = vec_ids_off + used * 8;
+                let existing = u64::from_le_bytes(raw[off..off + 8].try_into().expect("vid"));
+                if existing == new_vec_id {
+                    return Ok(());
+                }
+            }
+            let vid_off = vec_ids_off + slot * 8;
+            raw[vid_off..vid_off + 8].copy_from_slice(&new_vec_id.to_le_bytes());
+            let code_slot = codes_off + slot * code_len;
+            raw[code_slot..code_slot + code_len].copy_from_slice(new_code);
+            let new_count = count + 1;
+            raw[DISTANN_NODE_NEIGHBOR_COUNT_OFFSET..DISTANN_NODE_NEIGHBOR_COUNT_OFFSET + 2]
+                .copy_from_slice(&new_count.to_le_bytes());
+            Ok(())
+        })?;
+    }
+    wal_txn.finish();
+    Ok(())
 }
 
 #[cfg(test)]
