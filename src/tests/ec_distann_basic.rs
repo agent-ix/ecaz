@@ -1014,6 +1014,76 @@ fn test_ec_distann_expand_nodes_rejects_nonowned_placement() {
 }
 
 #[pg_test]
+fn test_ec_distann_fault_drills_distinct_classes() {
+    // TC-042 / NFR-020: each fault is an ERROR carrying a distinct
+    // machine-readable class ([EC_*]) so the coordinator can decide retry vs
+    // fail-fast — never a wrong or silent result. Single-node endpoint drills.
+    create_distann_fixture("ec_distann_drill", "WITH (graph_degree = 4)");
+    let vec_ids = distann_directory_vec_ids("ec_distann_drill_idx");
+    let good_fp = "ec_distann_epoch_fingerprint('ec_distann_drill_idx'::regclass::oid)";
+
+    // Drill: epoch_mismatch (retriable class).
+    let epoch = expect_pg_error(|| {
+        Spi::run(&format!(
+            "SELECT * FROM ec_distann_expand_nodes('ec_distann_drill_idx'::regclass::oid, \
+             '\\x000102030405060708090a0b0c0d0e0f'::bytea, ARRAY[1,0,0,0]::real[], ARRAY[{}]::bigint[])",
+            vec_ids[0] as i64
+        ))
+        .expect("must error");
+    });
+    assert!(epoch.contains("[EC_EPOCH_MISMATCH]"), "epoch drill class: {epoch}");
+
+    // Drill: missing_node_record (owned-but-absent structural fault) — a vec_id
+    // that hashes to this node (single-node owns all) but is not in the
+    // directory.
+    let absent = expect_pg_error(|| {
+        Spi::run(&format!(
+            "SELECT * FROM ec_distann_expand_nodes('ec_distann_drill_idx'::regclass::oid, \
+             {good_fp}, ARRAY[1,0,0,0]::real[], ARRAY[{}]::bigint[])",
+            1_i64
+        ))
+        .expect("must error on a vec_id absent from the directory");
+    });
+    assert!(absent.contains("[EC_RECORD_MISSING]"), "absent-record drill class: {absent}");
+
+    // Drill: bad input (malformed fingerprint width).
+    let bad = expect_pg_error(|| {
+        Spi::run(&format!(
+            "SELECT * FROM ec_distann_expand_nodes('ec_distann_drill_idx'::regclass::oid, \
+             '\\x0011'::bytea, ARRAY[1,0,0,0]::real[], ARRAY[{}]::bigint[])",
+            vec_ids[0] as i64
+        ))
+        .expect("must error on a malformed fingerprint");
+    });
+    assert!(bad.contains("[EC_BAD_INPUT]"), "bad-input drill class: {bad}");
+
+    // Drill: placement_drift (non-owned id under a 2-node roster).
+    Spi::run("SET ec_distann.roster = '0@local;1@host=/x port=1 dbname=y'")
+        .expect("roster set");
+    Spi::run("SET ec_distann.local_node_id = 0").expect("id set");
+    let node1 = vec_ids.iter().copied().find(|&id| {
+        crate::am::ec_distann::placement::owning_node(
+            id,
+            2,
+            crate::am::ec_distann::placement::DISTANN_PLACEMENT_HASH_V1,
+        ) == 1
+    });
+    if let Some(node1_id) = node1 {
+        let placement = expect_pg_error(|| {
+            Spi::run(&format!(
+                "SELECT * FROM ec_distann_expand_nodes('ec_distann_drill_idx'::regclass::oid, \
+                 {good_fp}, ARRAY[1,0,0,0]::real[], ARRAY[{}]::bigint[])",
+                node1_id as i64
+            ))
+            .expect("must error on a non-owned id");
+        });
+        assert!(placement.contains("[EC_PLACEMENT]"), "placement drill class: {placement}");
+    }
+    Spi::run("RESET ec_distann.roster").expect("roster reset");
+    Spi::run("RESET ec_distann.local_node_id").expect("id reset");
+}
+
+#[pg_test]
 fn test_ec_distann_apply_record_writes_tombstones() {
     // FR-083 write endpoint (M3): the tombstone-set operation applies on the
     // hash-owning node under epoch validation. Single-node: this node owns all.

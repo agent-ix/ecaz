@@ -1,0 +1,4 @@
+# M3 slice 4 fault-drill matrix evidence (TC-042 / NFR-020)
+# cmd: cargo pgrx test pg18 --no-default-features --features pg18 fault_drills
+
+test tests::pg_test_ec_distann_fault_drills_distinct_classes ... ok
