@@ -422,7 +422,7 @@ unsafe extern "C-unwind" fn ec_distann_amendscan(scan: pg_sys::IndexScanDesc) {
     })
 }
 
-fn indexed_ecvector_attnum(index_relation: pg_sys::Relation) -> Result<i32, String> {
+pub(super) fn indexed_ecvector_attnum(index_relation: pg_sys::Relation) -> Result<i32, String> {
     // SAFETY: The index relation is live; BuildIndexInfo returns palloc'd
     // metadata that remains valid until it is released at the end of this block.
     unsafe {

@@ -24,6 +24,7 @@ pub mod page;
 mod placement;
 pub(crate) mod quantizer;
 pub(crate) mod reader;
+mod roster;
 mod routine;
 pub(crate) mod scan;
 mod shard_build;
@@ -31,6 +32,7 @@ pub mod tuple;
 
 pub(crate) fn register_gucs() {
     options::register_gucs();
+    roster::register_gucs();
 }
 
 pub(super) const ECDISTANN_DEFAULT_GRAPH_DEGREE: i32 = 32;
