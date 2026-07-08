@@ -1224,6 +1224,102 @@ fn test_ec_distann_materialize_rows_ships_heap_identity() {
 }
 
 #[pg_test]
+fn test_ec_distann_materialize_row_payloads_ships_binary_columns() {
+    // 005-P1 / CustomScan data path: the owning node ships the requested heap
+    // column data itself (not just a ctid) as PostgreSQL binary (`typsend`), so a
+    // coordinator can reconstruct a real SQL row for a remote-owned hit without a
+    // local directory or a local heap fetch. Single-node: this node owns all.
+    create_distann_fixture("ec_distann_payload", "WITH (graph_degree = 4)");
+    let vec_ids = distann_directory_vec_ids("ec_distann_payload_idx");
+    let fp = "ec_distann_epoch_fingerprint('ec_distann_payload_idx'::regclass::oid)";
+    let call = format!(
+        "ec_distann_materialize_row_payloads(\
+           'ec_distann_payload_idx'::regclass::oid, {fp}, \
+           ARRAY[{}, {}]::bigint[], ARRAY['id']::text[], ARRAY['int8send']::text[])",
+        vec_ids[0] as i64, vec_ids[1] as i64
+    );
+
+    // Every requested owned vec_id yields exactly one live, present row carrying a
+    // single 8-byte (int8send) non-null column value.
+    let n = Spi::get_one::<i64>(&format!("SELECT count(*) FROM {call}"))
+        .expect("SPI query should succeed")
+        .expect("count should exist");
+    assert_eq!(n, 2, "two owned rows materialized with payloads");
+
+    let bad = Spi::get_one::<i64>(&format!(
+        "SELECT count(*) FROM {call} \
+         WHERE is_tombstone OR tuple_payload_missing \
+            OR array_length(payload_values, 1) <> 1 OR payload_nulls[1] \
+            OR octet_length(payload_values[1]) <> 8"
+    ))
+    .expect("SPI query should succeed")
+    .expect("count should exist");
+    assert_eq!(bad, 0, "shipped columns are live, present, and 8-byte int8send");
+
+    // The shipped binary decodes back to the row's id: int8send is big-endian, and
+    // the fixture ids are 1..=8 so only the low byte is set. This proves the owner
+    // ships the actual column value, byte-exact, not a placeholder.
+    let all_decode = Spi::get_one::<bool>(&format!(
+        "SELECT bool_and(\
+             get_byte(payload_values[1], 0) = 0 AND get_byte(payload_values[1], 1) = 0 AND \
+             get_byte(payload_values[1], 2) = 0 AND get_byte(payload_values[1], 3) = 0 AND \
+             get_byte(payload_values[1], 4) = 0 AND get_byte(payload_values[1], 5) = 0 AND \
+             get_byte(payload_values[1], 6) = 0 AND \
+             get_byte(payload_values[1], 7) BETWEEN 1 AND 8) \
+           FROM {call}"
+    ))
+    .expect("SPI query should succeed")
+    .expect("bool should exist");
+    assert!(all_decode, "shipped int8send payload decodes to the row id");
+
+    // Wrong epoch fingerprint → retriable mismatch error (fail closed).
+    let error = expect_pg_error(|| {
+        Spi::run(&format!(
+            "SELECT * FROM ec_distann_materialize_row_payloads(\
+               'ec_distann_payload_idx'::regclass::oid, \
+               '\\x000102030405060708090a0b0c0d0e0f'::bytea, ARRAY[{}]::bigint[], \
+               ARRAY['id']::text[], ARRAY['int8send']::text[])",
+            vec_ids[0] as i64
+        ))
+        .expect("must error on the wrong epoch");
+    });
+    assert!(
+        error.contains("epoch fingerprint mismatch"),
+        "unexpected error: {error}"
+    );
+
+    // An injection-shaped send function name is rejected before any SQL runs.
+    let error = expect_pg_error(|| {
+        Spi::run(&format!(
+            "SELECT * FROM ec_distann_materialize_row_payloads(\
+               'ec_distann_payload_idx'::regclass::oid, {fp}, ARRAY[{}]::bigint[], \
+               ARRAY['id']::text[], ARRAY['int8send(id); DROP TABLE ec_distann_payload; --']::text[])",
+            vec_ids[0] as i64
+        ))
+        .expect("must reject a non-identifier send function");
+    });
+    assert!(
+        error.contains("invalid send function"),
+        "unexpected error: {error}"
+    );
+
+    // Column/send-function count mismatch is rejected.
+    let error = expect_pg_error(|| {
+        Spi::run(&format!(
+            "SELECT * FROM ec_distann_materialize_row_payloads(\
+               'ec_distann_payload_idx'::regclass::oid, {fp}, ARRAY[{}]::bigint[], \
+               ARRAY['id']::text[], ARRAY[]::text[])",
+            vec_ids[0] as i64
+        ))
+        .expect("must reject a column/send-function count mismatch");
+    });
+    assert!(
+        error.contains("payload columns but") && error.contains("send functions"),
+        "unexpected error: {error}"
+    );
+}
+
+#[pg_test]
 fn test_ec_distann_apply_record_writes_tombstones() {
     // FR-083 write endpoint (M3): the tombstone-set operation applies on the
     // hash-owning node under epoch validation. Single-node: this node owns all.

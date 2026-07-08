@@ -21,9 +21,11 @@
 use std::ptr::NonNull;
 
 use pgrx::iter::TableIterator;
-use pgrx::{default, name, pg_extern, pg_sys};
+use pgrx::{default, name, pg_extern, pg_sys, Spi};
 
-use crate::storage::relation::index_heap_relation_oid_handle;
+use crate::storage::relation::{
+    index_heap_relation_oid_from_index_oid, index_heap_relation_oid_handle,
+};
 use crate::storage::relation_guard::{HeapRelationGuard, IndexRelationGuard};
 use crate::storage::slot_guard::TupleTableSlotGuard;
 
@@ -211,25 +213,30 @@ fn ec_distann_materialize_rows(
     TableIterator::new(rows)
 }
 
-fn materialize_rows_impl(
+/// Resolve each requested owned vec_id to its heap ctid + tombstone flag under
+/// the FR-082 epoch + FR-078 ownership preflight the expand endpoint uses. This
+/// is the shared owner-side resolution the ctid-shipping (`materialize_rows`) and
+/// row-payload-shipping (`materialize_row_payloads`) endpoints both build on.
+/// Response rows preserve request order and cover every requested vec_id
+/// (owned-but-absent → `EC_RECORD_MISSING`, never a silent skip).
+fn resolve_owned_rows(
     index_oid: pg_sys::Oid,
     epoch_fingerprint: &[u8],
     vec_ids: &[i64],
-) -> Result<Vec<(i64, i64, i32, bool)>, DistannExpandError> {
+) -> Result<Vec<(i64, ItemPointer, bool)>, DistannExpandError> {
     let received_fingerprint =
         fingerprint_from_bytes(epoch_fingerprint).map_err(DistannExpandError::BadInput)?;
-    let index_guard = IndexRelationGuard::try_access_share(index_oid).ok_or_else(|| {
-        "ec_distann_materialize_rows could not open the index relation".to_owned()
-    })?;
+    let index_guard = IndexRelationGuard::try_access_share(index_oid)
+        .ok_or_else(|| "ec_distann materialize could not open the index relation".to_owned())?;
     let handle = NonNull::new(index_guard.as_ptr())
-        .ok_or_else(|| "ec_distann_materialize_rows got a null index relation".to_owned())?;
+        .ok_or_else(|| "ec_distann materialize got a null index relation".to_owned())?;
     let metadata = read_metadata_from_index_handle(handle)?;
     if metadata.node_count == 0 || metadata.directory_head == ItemPointer::INVALID {
         if vec_ids.is_empty() {
             return Ok(Vec::new());
         }
         return Err(DistannExpandError::OwnedRecordMissing(
-            "ec_distann_materialize_rows: index is empty (no owned records)".to_owned(),
+            "ec_distann materialize: index is empty (no owned records)".to_owned(),
         ));
     }
 
@@ -239,7 +246,7 @@ fn materialize_rows_impl(
     let local_fingerprint = compute_epoch_fingerprint(&identity, DISTANN_EPOCH_FINGERPRINT_V1);
     if !fingerprints_match(&received_fingerprint, &local_fingerprint) {
         return Err(DistannExpandError::EpochMismatch(
-            "ec_distann_materialize_rows epoch fingerprint mismatch".to_owned(),
+            "ec_distann materialize epoch fingerprint mismatch".to_owned(),
         ));
     }
 
@@ -248,12 +255,12 @@ fn materialize_rows_impl(
         .nodes
         .iter()
         .position(|node| node.is_local)
-        .ok_or_else(|| "ec_distann_materialize_rows: no local node in the roster".to_owned())?;
+        .ok_or_else(|| "ec_distann materialize: no local node in the roster".to_owned())?;
     for &vec_id in vec_ids {
         let owner = owning_node(vec_id as u64, node_count, placement.hash_version);
         if owner != local_index {
             return Err(DistannExpandError::Placement(format!(
-                "ec_distann_materialize_rows placement error: vec_id {:#018x} owned by roster \
+                "ec_distann materialize placement error: vec_id {:#018x} owned by roster \
                  index {owner}, not this node ({local_index})",
                 vec_id as u64
             )));
@@ -271,7 +278,7 @@ fn materialize_rows_impl(
         // Owned-but-absent is EC_RECORD_MISSING (never a silent skip).
         let record_tid = directory_lookup(&directory, vec_id as u64).ok_or_else(|| {
             DistannExpandError::OwnedRecordMissing(format!(
-                "ec_distann_materialize_rows: owned vec_id {:#018x} is not in the directory",
+                "ec_distann materialize: owned vec_id {:#018x} is not in the directory",
                 vec_id as u64
             ))
         })?;
@@ -287,14 +294,268 @@ fn materialize_rows_impl(
                 .expect("flags bytes"),
         );
         let is_tombstone = flags & DISTANN_FLAG_TOMBSTONE != 0;
-        rows.push((
-            vec_id,
-            i64::from(heap_tid.block_number),
-            i32::from(heap_tid.offset_number),
-            is_tombstone,
-        ));
+        rows.push((vec_id, heap_tid, is_tombstone));
     }
     Ok(rows)
+}
+
+fn materialize_rows_impl(
+    index_oid: pg_sys::Oid,
+    epoch_fingerprint: &[u8],
+    vec_ids: &[i64],
+) -> Result<Vec<(i64, i64, i32, bool)>, DistannExpandError> {
+    Ok(resolve_owned_rows(index_oid, epoch_fingerprint, vec_ids)?
+        .into_iter()
+        .map(|(vec_id, heap_tid, is_tombstone)| {
+            (
+                vec_id,
+                i64::from(heap_tid.block_number),
+                i32::from(heap_tid.offset_number),
+                is_tombstone,
+            )
+        })
+        .collect())
+}
+
+/// One row-payload wire response row: the owning node's identity + tombstone plus
+/// the requested projection columns as PostgreSQL binary (`typsend`) values.
+type PayloadRow = (i64, bool, bool, Vec<bool>, Vec<Vec<u8>>);
+
+/// FR-079/005-P1 row-payload shipping endpoint (the CustomScan data path). Where
+/// `ec_distann_materialize_rows` ships only the ctid — unusable off the loopback
+/// substrate because a remote ctid is not fetchable from the coordinator's local
+/// heap — this ships the *row column data itself*: for each owned vec_id, the
+/// owner resolves its heap ctid and encodes the requested projection columns to
+/// PostgreSQL binary via each column's `typsend` function. The coordinator's
+/// CustomScan reconstructs a virtual tuple from `payload_values` (via
+/// `ReceiveFunctionCall`) and yields it directly, so a real multi-node scan
+/// returns owner-owned SQL rows without a local directory or a local heap fetch.
+///
+/// `payload_columns` are the heap relation column names to project;
+/// `payload_send_functions` are their binary send functions (parallel arrays,
+/// supplied by the coordinator from the scan target list). Same FR-082 epoch +
+/// FR-078 ownership preflight as the ctid endpoint (validated before any read).
+#[pg_extern(volatile, parallel_restricted)]
+#[allow(clippy::type_complexity)]
+fn ec_distann_materialize_row_payloads(
+    index_regclass: pg_sys::Oid,
+    epoch_fingerprint: &[u8],
+    vec_ids: Vec<i64>,
+    payload_columns: Vec<String>,
+    payload_send_functions: Vec<String>,
+) -> TableIterator<
+    'static,
+    (
+        name!(vec_id, i64),
+        name!(is_tombstone, bool),
+        name!(tuple_payload_missing, bool),
+        name!(payload_nulls, Vec<bool>),
+        name!(payload_values, Vec<Vec<u8>>),
+    ),
+> {
+    let rows = materialize_row_payloads_impl(
+        index_regclass,
+        epoch_fingerprint,
+        &vec_ids,
+        &payload_columns,
+        &payload_send_functions,
+    )
+    .unwrap_or_else(|e| e.raise());
+    TableIterator::new(rows)
+}
+
+fn materialize_row_payloads_impl(
+    index_oid: pg_sys::Oid,
+    epoch_fingerprint: &[u8],
+    vec_ids: &[i64],
+    payload_columns: &[String],
+    payload_send_functions: &[String],
+) -> Result<Vec<PayloadRow>, DistannExpandError> {
+    if payload_columns.len() != payload_send_functions.len() {
+        return Err(DistannExpandError::BadInput(format!(
+            "ec_distann_materialize_row_payloads: {} payload columns but {} send functions",
+            payload_columns.len(),
+            payload_send_functions.len()
+        )));
+    }
+    // FR-082/FR-078 preflight + heap ctid resolution (shared with the ctid path).
+    let resolved = resolve_owned_rows(index_oid, epoch_fingerprint, vec_ids)?;
+    if resolved.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let heap_oid = index_heap_relation_oid_from_index_oid(index_oid);
+    // The heap relation name (schema-qualified, quoted) — a regclass value cannot
+    // be a FROM-clause target, so the LATERAL join needs the resolved name.
+    let heap_name = unsafe { heap_relation_qualified_name(heap_oid) }?;
+    let sql = build_payload_sql(&heap_name, payload_columns, payload_send_functions)
+        .map_err(DistannExpandError::BadInput)?;
+    // Candidate ctids in resolved (request) order; the SQL preserves that order
+    // via WITH ORDINALITY so responses zip 1:1 back onto `resolved`.
+    let ctid_texts: Vec<String> = resolved
+        .iter()
+        .map(|(_, tid, _)| format!("({},{})", tid.block_number, tid.offset_number))
+        .collect();
+    let column_count = payload_columns.len();
+    let ctid_refs: Vec<&str> = ctid_texts.iter().map(String::as_str).collect();
+
+    let payloads: Vec<(bool, Vec<bool>, Vec<Vec<u8>>)> = Spi::connect(|client| {
+        let rows = client
+            .select(sql.as_str(), None, &[ctid_refs.as_slice().into()])
+            .map_err(|e| format!("ec_distann materialize row payload heap fetch failed: {e}"))?;
+        let mut out = Vec::with_capacity(ctid_texts.len());
+        for row in rows {
+            let tuple_payload_missing = row["tuple_payload_missing"]
+                .value::<bool>()
+                .map_err(|e| format!("ec_distann row payload missing-flag decode failed: {e}"))?
+                .ok_or_else(|| "ec_distann row payload missing flag is null".to_owned())?;
+            let payload_nulls = row["payload_nulls"]
+                .value::<Vec<bool>>()
+                .map_err(|e| format!("ec_distann row payload nulls decode failed: {e}"))?
+                .unwrap_or_default();
+            let payload_values = row["payload_values"]
+                .value::<pgrx::datum::Array<&[u8]>>()
+                .map_err(|e| format!("ec_distann row payload values decode failed: {e}"))?
+                .map(|array| array.iter_deny_null().map(<[u8]>::to_vec).collect::<Vec<_>>())
+                .unwrap_or_default();
+            if payload_nulls.len() != column_count || payload_values.len() != column_count {
+                return Err(format!(
+                    "ec_distann row payload returned {} null flags and {} values for {} columns",
+                    payload_nulls.len(),
+                    payload_values.len(),
+                    column_count
+                ));
+            }
+            out.push((tuple_payload_missing, payload_nulls, payload_values));
+        }
+        Ok(out)
+    })
+    .map_err(DistannExpandError::Internal)?;
+
+    if payloads.len() != resolved.len() {
+        return Err(DistannExpandError::Internal(format!(
+            "ec_distann row payload returned {} rows for {} requested ctids",
+            payloads.len(),
+            resolved.len()
+        )));
+    }
+
+    Ok(resolved
+        .into_iter()
+        .zip(payloads)
+        .map(
+            |((vec_id, _tid, is_tombstone), (missing, nulls, values))| {
+                (vec_id, is_tombstone, missing, nulls, values)
+            },
+        )
+        .collect())
+}
+
+/// Build the owner-side per-ctid projection SQL. Each requested column becomes a
+/// `payload_nulls` boolean and a `payload_values` bytea (its `typsend` binary, or
+/// `''::bytea` when the row/column is NULL or the ctid resolves to no live tuple).
+/// Column names are double-quote escaped; send functions are validated to plain
+/// (optionally schema-qualified) identifiers so the projection cannot inject SQL.
+/// Resolve a heap relation's **schema-qualified, quoted** name from its oid, for
+/// safe interpolation as a FROM-clause target. Mirrors `distann_index_relname`
+/// but works from the oid via the syscache (no open relation needed).
+unsafe fn heap_relation_qualified_name(
+    heap_oid: pg_sys::Oid,
+) -> Result<String, DistannExpandError> {
+    let name_ptr = pg_sys::get_rel_name(heap_oid);
+    if name_ptr.is_null() {
+        return Err(DistannExpandError::Internal(format!(
+            "ec_distann materialize: heap relation oid {} has no name (dropped?)",
+            u32::from(heap_oid)
+        )));
+    }
+    let relname = std::ffi::CStr::from_ptr(name_ptr).to_string_lossy().into_owned();
+    let nsp_oid = pg_sys::get_rel_namespace(heap_oid);
+    let nsp_ptr = pg_sys::get_namespace_name(nsp_oid);
+    if nsp_ptr.is_null() {
+        return Err(DistannExpandError::Internal(format!(
+            "ec_distann materialize: heap relation oid {} has no namespace",
+            u32::from(heap_oid)
+        )));
+    }
+    let nspname = std::ffi::CStr::from_ptr(nsp_ptr).to_string_lossy().into_owned();
+    Ok(format!("{}.{}", quote_ident(&nspname), quote_ident(&relname)))
+}
+
+fn build_payload_sql(
+    heap_relation: &str,
+    payload_columns: &[String],
+    payload_send_functions: &[String],
+) -> Result<String, String> {
+    let mut null_exprs = Vec::with_capacity(payload_columns.len());
+    let mut value_exprs = Vec::with_capacity(payload_columns.len());
+    let mut projected = Vec::with_capacity(payload_columns.len());
+    for (column, send_function) in payload_columns.iter().zip(payload_send_functions) {
+        let ident = quote_ident(column);
+        let send = validate_send_function(send_function)?;
+        projected.push(format!("heap_row.{ident} AS {ident}"));
+        null_exprs.push(format!("(heap.__ec_distann_found IS NULL OR heap.{ident} IS NULL)"));
+        value_exprs.push(format!(
+            "CASE WHEN heap.__ec_distann_found IS NULL OR heap.{ident} IS NULL \
+                  THEN ''::bytea ELSE {send}(heap.{ident}) END"
+        ));
+    }
+    let found_projection = if projected.is_empty() {
+        "true AS __ec_distann_found".to_owned()
+    } else {
+        format!("true AS __ec_distann_found, {}", projected.join(", "))
+    };
+    let null_array = if null_exprs.is_empty() {
+        "ARRAY[]::boolean[]".to_owned()
+    } else {
+        format!("ARRAY[{}]::boolean[]", null_exprs.join(", "))
+    };
+    let value_array = if value_exprs.is_empty() {
+        "ARRAY[]::bytea[]".to_owned()
+    } else {
+        format!("ARRAY[{}]::bytea[]", value_exprs.join(", "))
+    };
+    Ok(format!(
+        "SELECT heap.__ec_distann_found IS NULL AS tuple_payload_missing, \
+                {null_array} AS payload_nulls, \
+                {value_array} AS payload_values \
+           FROM unnest($1::text[]) WITH ORDINALITY AS candidate(ctid_text, ordinality) \
+           LEFT JOIN LATERAL ( \
+             SELECT {found_projection} \
+               FROM {heap_relation} AS heap_row \
+              WHERE heap_row.ctid = candidate.ctid_text::tid \
+           ) AS heap ON true \
+          ORDER BY candidate.ordinality"
+    ))
+}
+
+/// Double-quote-escape a heap column identifier for safe interpolation.
+fn quote_ident(ident: &str) -> String {
+    format!("\"{}\"", ident.replace('"', "\"\""))
+}
+
+/// A binary send function name supplied by the coordinator must be a plain SQL
+/// identifier, optionally schema-qualified (`pg_catalog.int8send`). Reject
+/// anything else so the projection SQL cannot be used as an injection vector.
+fn validate_send_function(name: &str) -> Result<String, String> {
+    let is_ident = |part: &str| {
+        !part.is_empty()
+            && part
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_')
+            && !part.chars().next().unwrap().is_ascii_digit()
+    };
+    let ok = match name.split_once('.') {
+        Some((schema, func)) => is_ident(schema) && is_ident(func),
+        None => is_ident(name),
+    };
+    if ok {
+        Ok(name.to_owned())
+    } else {
+        Err(format!(
+            "ec_distann_materialize_row_payloads: invalid send function name {name:?}"
+        ))
+    }
 }
 
 fn expand_nodes_impl(
