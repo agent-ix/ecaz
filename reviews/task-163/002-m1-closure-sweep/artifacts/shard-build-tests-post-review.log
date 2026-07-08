@@ -1,0 +1,13 @@
+# shard_build unit/proptest result after reviewer fixes (SHA f47ab1a37)
+# cmd: cargo test --no-default-features --features pg18 --lib shard_build
+
+test am::ec_distann::shard_build::tests::repair_reachability_bounds_degree_on_disconnected_graph ... ok
+test am::ec_distann::shard_build::tests::resolve_shard_count_behaviour ... ok
+test am::ec_distann::shard_build::tests::tc038_stitch_idempotence ... ok
+test am::ec_distann::shard_build::tests::tc038_closure_duplication_scales_with_epsilon ... ok
+test am::ec_distann::shard_build::tests::tc038_medoid_reachability ... ok
+test am::ec_distann::shard_build::tests::tc038_alpha_prune_invariant ... ok
+test am::ec_distann::shard_build::tests::tc038_degree_bounded ... ok
+test am::ec_distann::shard_build::tests::tc038_uniqueness_and_valid_edges ... ok
+test am::ec_distann::shard_build::tests::tc038_determinism ... ok
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 2318 filtered out; finished in 1.29s
