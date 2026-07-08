@@ -94,6 +94,44 @@ pub(super) fn select_insert_forward_neighbors(
         .collect())
 }
 
+/// Rank candidate neighbors for an inserted vector by exact distance and keep
+/// the closest `limit`. The candidates come from the FR-080 head-sample region
+/// (full-precision vectors already persisted for graph seeding); for an index
+/// whose node count is within the head-index cap this is every node, so the
+/// selected forward edges are exact. Larger indexes seed from the representative
+/// head region (a greedy walk is the scaling follow-up). Pure.
+pub(super) fn rank_insert_candidates(
+    new_vector: &[f32],
+    samples: &[(u64, Vec<f32>)],
+    limit: usize,
+) -> Result<Vec<DistannForwardCandidate>, String> {
+    if new_vector.is_empty() {
+        return Err("ec_distann insert candidate ranking needs a non-empty vector".to_owned());
+    }
+    let mut scored: Vec<(f32, &(u64, Vec<f32>))> = Vec::with_capacity(samples.len());
+    for sample in samples {
+        if sample.1.len() != new_vector.len() {
+            return Err(format!(
+                "ec_distann insert candidate dim {} != inserted dim {}",
+                sample.1.len(),
+                new_vector.len()
+            ));
+        }
+        scored.push((exact_distance(new_vector, &sample.1), sample));
+    }
+    // A candidate that is the inserted vector itself (re-insert) is dropped: a
+    // node is never its own neighbor.
+    scored.sort_unstable_by(|a, b| a.0.total_cmp(&b.0));
+    Ok(scored
+        .into_iter()
+        .take(limit)
+        .map(|(_, s)| DistannForwardCandidate {
+            vec_id: s.0,
+            source_vector: s.1.clone(),
+        })
+        .collect())
+}
+
 /// A neighbor that a newly-inserted node points to, and which must gain a
 /// backlink to the new node. Carries the neighbor's own source vector plus its
 /// current out-edges (vec_id + source vector each) so a full backlink can be
@@ -233,6 +271,34 @@ mod tests {
         // No duplicates.
         let uniq: std::collections::HashSet<u64> = kept.iter().copied().collect();
         assert_eq!(uniq.len(), kept.len(), "no duplicate edges");
+    }
+
+    #[test]
+    fn rank_candidates_keeps_closest() {
+        let new_vec = [1.0_f32, 0.0, 0.0];
+        let samples = vec![
+            (10_u64, vec![0.99, 0.01, 0.0]), // closest
+            (20, vec![0.0, 1.0, 0.0]),
+            (30, vec![0.9, 0.1, 0.0]),   // 2nd closest
+            (40, vec![-1.0, 0.0, 0.0]),  // farthest
+        ];
+        let ranked = rank_insert_candidates(&new_vec, &samples, 2).unwrap();
+        assert_eq!(ranked.len(), 2, "limit respected");
+        assert_eq!(ranked[0].vec_id, 10, "closest first");
+        assert_eq!(ranked[1].vec_id, 30, "2nd closest second");
+        // Feeding into forward selection yields valid, degree-bounded edges.
+        let fwd = select_insert_forward_neighbors(&new_vec, &ranked, 1.2, 4).unwrap();
+        assert!(fwd.iter().all(|id| [10, 30].contains(id)));
+
+        assert!(
+            rank_insert_candidates(&[], &samples, 2).is_err(),
+            "empty vector rejected"
+        );
+        let bad = vec![(1_u64, vec![1.0, 0.0])];
+        assert!(
+            rank_insert_candidates(&new_vec, &bad, 2).is_err(),
+            "dim mismatch rejected"
+        );
     }
 
     #[test]

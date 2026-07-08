@@ -1,5 +1,5 @@
-# M5 slice 3 node-assembly evidence
+# M5 slice 4 candidate-ranking evidence
 # cmd: cargo test --no-default-features --features pg18 --lib ec_distann::insert
 
-test result: ok. 7 passed; 0 failed
-  (select x2, backlink x3, build_node_tuple x2)
+test result: ok. 8 passed; 0 failed
+  (rank x1, select x2, backlink x3, build_node x2)
