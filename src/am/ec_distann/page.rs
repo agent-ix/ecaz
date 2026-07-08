@@ -8,8 +8,10 @@
 use crate::storage::page::ItemPointer;
 
 /// ec_distann on-disk format version. Bump on any layout change (NFR-016:
-/// rebuild, no migration).
-pub const INDEX_FORMAT_V1_DISTANN: u16 = 1;
+/// rebuild, no migration). v2 (Task 164) appends `content_digest`, binding the
+/// build-time record/vector tier into the FR-082 epoch fingerprint so two
+/// graphs with identical shape metadata but different content never collide.
+pub const INDEX_FORMAT_V1_DISTANN: u16 = 2;
 
 /// Neighbor-code codec kinds persisted in the metadata page. Mirrors the
 /// `neighbor_code_format` reloption (ADR-085 D7; default pinned to RaBitQ
@@ -18,7 +20,7 @@ pub const DISTANN_NEIGHBOR_CODEC_GROUPED_PQ: u8 = 1;
 pub const DISTANN_NEIGHBOR_CODEC_RABITQ: u8 = 2;
 pub const DISTANN_NEIGHBOR_CODEC_TURBOQUANT: u8 = 3;
 
-pub const DISTANN_METADATA_BYTES: usize = 72;
+pub const DISTANN_METADATA_BYTES: usize = 80;
 
 pub const DISTANN_METADATA_FORMAT_VERSION_OFFSET: usize = 0;
 pub const DISTANN_METADATA_ENTRY_POINT_OFFSET: usize = 2;
@@ -38,6 +40,9 @@ pub const DISTANN_METADATA_CODEC_SUBVECTOR_COUNT_OFFSET: usize = 56;
 pub const DISTANN_METADATA_CODEC_SUBVECTOR_DIM_OFFSET: usize = 58;
 pub const DISTANN_METADATA_GROUPED_CODEBOOK_HEAD_OFFSET: usize = 60;
 pub const DISTANN_METADATA_DIRECTORY_HEAD_OFFSET: usize = 66;
+/// FR-082 build-time content digest (Task 164): binds the sorted vec_id set,
+/// source vectors (co-placed tier), and adjacency into the epoch fingerprint.
+pub const DISTANN_METADATA_CONTENT_DIGEST_OFFSET: usize = 72;
 
 /// Fixed-size metadata record stored on block 0.
 #[derive(Debug, Clone, PartialEq)]
@@ -78,6 +83,12 @@ pub struct DistannMetadataPage {
     /// Head of the sorted vec_id -> record-TID directory chain (FR-078's
     /// per-node resolution surface; single-node in M0).
     pub directory_head: ItemPointer,
+    /// FR-082 build-time content digest over the sorted vec_id set, the
+    /// co-placed source vectors, and the stitched adjacency (Task 164). Zero on
+    /// an empty index; set at flush. Bound into the epoch fingerprint so two
+    /// graphs with identical shape metadata but different content never share a
+    /// fingerprint.
+    pub content_digest: u64,
 }
 
 impl DistannMetadataPage {
@@ -111,6 +122,7 @@ impl DistannMetadataPage {
             codec_subvector_dim: 0,
             grouped_codebook_head: ItemPointer::INVALID,
             directory_head: ItemPointer::INVALID,
+            content_digest: 0,
         }
     }
 
@@ -134,6 +146,7 @@ impl DistannMetadataPage {
         out.extend_from_slice(&self.codec_subvector_dim.to_le_bytes());
         self.grouped_codebook_head.encode_into(&mut out);
         self.directory_head.encode_into(&mut out);
+        out.extend_from_slice(&self.content_digest.to_le_bytes());
         debug_assert_eq!(out.len(), DISTANN_METADATA_BYTES);
         out
     }
@@ -197,6 +210,9 @@ impl DistannMetadataPage {
             ),
             grouped_codebook_head: ItemPointer::decode(&input[60..66])?,
             directory_head: ItemPointer::decode(&input[66..72])?,
+            content_digest: u64::from_le_bytes(
+                input[72..80].try_into().expect("content_digest bytes"),
+            ),
         })
     }
 }
@@ -235,6 +251,7 @@ mod tests {
             block_number: 43,
             offset_number: 2,
         };
+        metadata.content_digest = 0x0123_4567_89AB_CDEF;
         metadata
     }
 

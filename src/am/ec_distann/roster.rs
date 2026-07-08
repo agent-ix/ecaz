@@ -196,6 +196,7 @@ pub(super) fn local_epoch_identity(
         graph_degree: metadata.graph_degree_r,
         neighbor_codec_kind: metadata.neighbor_codec_kind,
         build_seed: metadata.seed,
+        content_digest: metadata.content_digest,
     }
 }
 

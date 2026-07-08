@@ -528,8 +528,58 @@ unsafe fn flush_build_state(
     metadata.grouped_codebook_head = grouped_codebook_head;
     metadata.directory_head = directory_head;
     metadata.head_sample_head = head_sample_head;
+    // FR-082 build-time content digest (Task 164, reviewer 2026-07-08-01 P1):
+    // binds the sorted vec_id set + co-placed source vectors + stitched
+    // adjacency so the epoch fingerprint distinguishes two graphs that share
+    // shape metadata but differ in content (a stale remote node cannot pass
+    // validation with a different vec_id set / vectors / edges).
+    metadata.content_digest = compute_content_digest(&vec_ids, &source_refs, &graph);
     overwrite_metadata_page_handle(handle, &metadata);
     Ok(())
+}
+
+/// Deterministic digest over the build-time content: for each node in vec_id
+/// order, fold its vec_id, its full-precision source vector (the co-placed
+/// rerank tier, ADR-085 D11), and its adjacency (neighbor vec_ids, sorted for
+/// per-node order-independence). Two builds of the same corpus+seed+options
+/// yield the same digest (FR-077 determinism); any change to the vec_id set,
+/// a vector, or an edge changes it. FNV-1a lanes with a final avalanche.
+fn compute_content_digest(
+    vec_ids: &[u64],
+    source_refs: &[&[f32]],
+    graph: &crate::am::VamanaGraph,
+) -> u64 {
+    let mut order: Vec<usize> = (0..vec_ids.len()).collect();
+    order.sort_unstable_by_key(|&node| vec_ids[node]);
+
+    let mut hash = 0xcbf2_9ce4_8422_2325_u64;
+    let fold = |value: u64, hash: &mut u64| {
+        *hash ^= value;
+        *hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+        *hash ^= *hash >> 29;
+    };
+    for &node in &order {
+        fold(vec_ids[node], &mut hash);
+        for component in source_refs[node] {
+            fold(u64::from(component.to_bits()), &mut hash);
+        }
+        let mut neighbor_vec_ids: Vec<u64> = graph.neighbors[node]
+            .iter()
+            .map(|&neighbor| vec_ids[neighbor as usize])
+            .collect();
+        neighbor_vec_ids.sort_unstable();
+        fold(neighbor_vec_ids.len() as u64, &mut hash);
+        for neighbor in neighbor_vec_ids {
+            fold(neighbor, &mut hash);
+        }
+    }
+    // Final avalanche (murmur3 fmix64 constants).
+    hash ^= hash >> 33;
+    hash = hash.wrapping_mul(0xff51_afd7_ed55_8ccd);
+    hash ^= hash >> 33;
+    hash = hash.wrapping_mul(0xc4ce_b9fe_1a85_ec53);
+    hash ^= hash >> 33;
+    hash
 }
 
 /// Stage the sorted vec_id→TID directory. Chunks are staged in reverse so

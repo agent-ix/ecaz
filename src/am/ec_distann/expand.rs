@@ -15,6 +15,7 @@ use crate::storage::{
 };
 
 use super::{
+    expand_error::DistannExpandError,
     quantizer::DistannPreparedQuery,
     reader::directory_lookup,
     scan::{DistannExpandedNode, DistannNodeExpander},
@@ -74,38 +75,41 @@ impl DistannNodeExpander for LocalNodeExpander<'_> {
         &mut self,
         vec_ids: &[u64],
         code_threshold: Option<f32>,
-    ) -> Result<Vec<DistannExpandedNode>, String> {
+    ) -> Result<Vec<DistannExpandedNode>, DistannExpandError> {
         // Pass 1: one record read per vec_id; neighbor codes scored with
         // one block-kernel batch call per record (32-wide cascade).
         let mut responses = Vec::with_capacity(vec_ids.len());
         let mut batch_dists: Vec<f32> = Vec::new();
         for vec_id in vec_ids {
-            // Single-node deployment owns every vec_id: an unresolved id is
-            // the FR-079 owned-but-absent structural fault, never a miss.
+            // Ownership is validated before this call; an unresolved id here is
+            // the FR-079 case (c) owned-but-absent structural fault, never a miss.
             let tid = directory_lookup(self.directory, *vec_id).ok_or_else(|| {
-                format!(
+                DistannExpandError::OwnedRecordMissing(format!(
                     "ec_distann structural fault: vec_id {vec_id:#018x} is not in the directory"
-                )
+                ))
             })?;
-            self.read_node_into_pool(tid)?;
+            self.read_node_into_pool(tid)
+                .map_err(DistannExpandError::OwnedRecordMissing)?;
             let node = &self.pooled_node;
             if node.vec_id != *vec_id {
-                return Err(format!(
+                return Err(DistannExpandError::OwnedRecordMissing(format!(
                     "ec_distann structural fault: directory maps vec_id {vec_id:#018x} to a record carrying {:#018x}",
                     node.vec_id
-                ));
+                )));
             }
 
             let is_tombstone = node.tombstoned;
             let heap_tid = node.heap_tid;
             let neighbor_count = usize::from(node.neighbor_count);
             batch_dists.resize(neighbor_count, 0.0);
-            self.prepared_query.score_dists_batch(
-                &node.neighbor_codes,
-                self.code_len,
-                neighbor_count,
-                &mut batch_dists,
-            )?;
+            self.prepared_query
+                .score_dists_batch(
+                    &node.neighbor_codes,
+                    self.code_len,
+                    neighbor_count,
+                    &mut batch_dists,
+                )
+                .map_err(DistannExpandError::Internal)?;
             let mut neighbor_vec_ids = Vec::with_capacity(neighbor_count);
             let mut neighbor_code_dists = Vec::with_capacity(neighbor_count);
             for (slot, code_dist) in batch_dists.iter().copied().enumerate() {
@@ -150,14 +154,19 @@ impl DistannNodeExpander for LocalNodeExpander<'_> {
         // edges from pass 1 keep traversal continuity.
         for response in &mut responses {
             if !response.is_tombstone {
-                response.exact_dist = Some(exact_heap_rerank_distance(
-                    self.heap_relation,
-                    self.snapshot,
-                    self.slot,
-                    self.source_attnum,
-                    self.raw_query,
-                    response.heap_tid,
-                )?);
+                // FR-079 case (d): a co-placed vector that cannot be read is a
+                // distinct structural fault from the owned-but-absent record (c).
+                response.exact_dist = Some(
+                    exact_heap_rerank_distance(
+                        self.heap_relation,
+                        self.snapshot,
+                        self.slot,
+                        self.source_attnum,
+                        self.raw_query,
+                        response.heap_tid,
+                    )
+                    .map_err(DistannExpandError::VectorMissing)?,
+                );
             }
         }
         Ok(responses)

@@ -17,6 +17,7 @@ pub(crate) use self::ambuild::read_metadata_from_index;
 mod cost;
 mod epoch;
 mod expand;
+mod expand_error;
 mod head_cache;
 mod identity;
 mod options;

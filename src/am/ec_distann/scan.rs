@@ -26,6 +26,8 @@ use std::collections::HashSet;
 
 use crate::storage::page::ItemPointer;
 
+use super::expand_error::DistannExpandError;
+
 /// One expanded record, mirroring an `ec_distann_expand_nodes` response row
 /// (plus the local-only `heap_tid`; see the module docs).
 #[derive(Debug, Clone, PartialEq)]
@@ -53,7 +55,7 @@ pub(crate) trait DistannNodeExpander {
         &mut self,
         vec_ids: &[u64],
         code_threshold: Option<f32>,
-    ) -> Result<Vec<DistannExpandedNode>, String>;
+    ) -> Result<Vec<DistannExpandedNode>, DistannExpandError>;
 }
 
 /// Head-index descent output seeding the hop-round frontier.
@@ -93,10 +95,12 @@ pub(crate) fn distann_orchestrated_search<E: DistannNodeExpander>(
     seeds: &[DistannSeedCandidate],
     expander: &mut E,
     params: DistannOrchestrationParams,
-) -> Result<(Vec<DistannScanHit>, DistannScanCounters), String> {
+) -> Result<(Vec<DistannScanHit>, DistannScanCounters), DistannExpandError> {
     let mut counters = DistannScanCounters::default();
     if params.beam_width == 0 || params.hop_rounds == 0 {
-        return Err("ec_distann scan requires beam_width >= 1 and hop_rounds >= 1".to_owned());
+        return Err(DistannExpandError::BadInput(
+            "ec_distann scan requires beam_width >= 1 and hop_rounds >= 1".to_owned(),
+        ));
     }
 
     // Beam pool ordered by code distance; `enqueued` dedupes by vec_id
@@ -148,29 +152,29 @@ pub(crate) fn distann_orchestrated_search<E: DistannNodeExpander>(
 
         let responses = expander.expand_nodes(&batch, None)?;
         if responses.len() != batch.len() {
-            return Err(format!(
+            return Err(DistannExpandError::Internal(format!(
                 "ec_distann expansion returned {} entries for {} requested vec_ids",
                 responses.len(),
                 batch.len()
-            ));
+            )));
         }
         counters.rounds_executed += 1;
         for (requested, response) in batch.iter().zip(responses.iter()) {
             if response.vec_id != *requested {
-                return Err(format!(
+                return Err(DistannExpandError::Internal(format!(
                     "ec_distann expansion order violation: requested vec_id {requested:#x}, got {:#x}",
                     response.vec_id
-                ));
+                )));
             }
             expanded.insert(response.vec_id);
             counters.records_expanded += 1;
 
             if !response.is_tombstone {
                 let exact_dist = response.exact_dist.ok_or_else(|| {
-                    format!(
+                    DistannExpandError::Internal(format!(
                         "ec_distann expansion returned no exact distance for live vec_id {:#x}",
                         response.vec_id
-                    )
+                    ))
                 })?;
                 hits.push(DistannScanHit {
                     vec_id: response.vec_id,
@@ -180,9 +184,9 @@ pub(crate) fn distann_orchestrated_search<E: DistannNodeExpander>(
             }
 
             if response.neighbor_vec_ids.len() != response.neighbor_code_dists.len() {
-                return Err(
-                    "ec_distann expansion neighbor arrays are not index-aligned".to_owned()
-                );
+                return Err(DistannExpandError::Internal(
+                    "ec_distann expansion neighbor arrays are not index-aligned".to_owned(),
+                ));
             }
             counters.neighbors_code_scored += response.neighbor_vec_ids.len();
             for (neighbor_vec_id, code_dist) in response
@@ -216,8 +220,8 @@ fn kth_exact_dist(hits: &mut [DistannScanHit], top_k: usize) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::{
-        distann_orchestrated_search, DistannExpandedNode, DistannNodeExpander,
-        DistannOrchestrationParams, DistannSeedCandidate,
+        distann_orchestrated_search, DistannExpandedNode, DistannExpandError,
+        DistannNodeExpander, DistannOrchestrationParams, DistannSeedCandidate,
     };
     use crate::storage::page::ItemPointer;
     use std::collections::HashMap;
@@ -240,7 +244,7 @@ mod tests {
             &mut self,
             vec_ids: &[u64],
             _code_threshold: Option<f32>,
-        ) -> Result<Vec<DistannExpandedNode>, String> {
+        ) -> Result<Vec<DistannExpandedNode>, DistannExpandError> {
             self.calls.push(vec_ids.to_vec());
             vec_ids
                 .iter()
@@ -248,7 +252,7 @@ mod tests {
                     let (exact, tombstone, neighbors) = self
                         .nodes
                         .get(vec_id)
-                        .ok_or_else(|| format!("unknown vec_id {vec_id}"))?;
+                        .ok_or_else(|| DistannExpandError::Internal(format!("unknown vec_id {vec_id}")))?;
                     Ok(DistannExpandedNode {
                         vec_id: *vec_id,
                         exact_dist: (!tombstone).then_some(*exact),

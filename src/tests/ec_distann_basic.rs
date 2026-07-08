@@ -76,7 +76,7 @@ fn test_ec_distann_create_on_populated_table_records_metadata() {
     let metadata =
         unsafe { crate::am::ec_distann::read_metadata_from_index(index_relation.as_ptr()) }
             .expect("metadata should decode");
-    assert_eq!(metadata.format_version, 1);
+    assert_eq!(metadata.format_version, 2);
     assert_eq!(metadata.graph_degree_r, 16);
     assert_eq!(metadata.build_list_size_l, 32);
     assert_eq!(metadata.head_index_cap, 64);
@@ -845,6 +845,61 @@ fn test_ec_distann_guc_defaults() {
 }
 
 // ── M2 (Task 164): FR-079 ec_distann_expand_nodes remote endpoint ──────────
+
+#[pg_test]
+fn test_ec_distann_content_digest_binds_build_content() {
+    // Reviewer 2026-07-08-01 P1: two indexes with IDENTICAL shape metadata
+    // (node_count, dims, seed, degree, codec) but different build content must
+    // have different content digests — and thus different epoch fingerprints —
+    // so a stale remote node cannot pass FR-082 validation while serving a
+    // different vec_id set / vectors / edges.
+    for (table, second_vec) in [
+        ("ec_distann_digest_a", "ARRAY[0.0, 1.0, 0.0, 0.0]"),
+        ("ec_distann_digest_b", "ARRAY[0.0, 0.0, 1.0, 0.0]"),
+    ] {
+        Spi::run(&format!(
+            "CREATE TABLE {table} (id bigint, embedding ecvector)"
+        ))
+        .expect("table creation should succeed");
+        Spi::run(&format!(
+            "INSERT INTO {table} VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector({second_vec}, 4, 42)), \
+             (3, encode_to_ecvector(ARRAY[0.0, 0.0, 0.0, 1.0], 4, 42))"
+        ))
+        .expect("rows should insert");
+        Spi::run(&format!(
+            "CREATE INDEX {table}_idx ON {table} \
+             USING ec_distann (embedding ecvector_distann_ip_ops) WITH (graph_degree = 4)"
+        ))
+        .expect("index creation should succeed");
+    }
+
+    let (meta_a, _) = distann_materialized_index("ec_distann_digest_a_idx");
+    let (meta_b, _) = distann_materialized_index("ec_distann_digest_b_idx");
+    // Same shape metadata: without the content digest these would collide.
+    assert_eq!(meta_a.node_count, meta_b.node_count);
+    assert_eq!(meta_a.dimensions, meta_b.dimensions);
+    assert_eq!(meta_a.seed, meta_b.seed);
+    assert_eq!(meta_a.graph_degree_r, meta_b.graph_degree_r);
+    assert_eq!(meta_a.neighbor_codec_kind, meta_b.neighbor_codec_kind);
+    // Different content ⇒ different digest ⇒ different fingerprint.
+    assert_ne!(
+        meta_a.content_digest, meta_b.content_digest,
+        "a differing build vector must change the content digest"
+    );
+    let fp_a = Spi::get_one::<Vec<u8>>(
+        "SELECT ec_distann_epoch_fingerprint('ec_distann_digest_a_idx'::regclass::oid)",
+    )
+    .expect("SPI query should succeed")
+    .expect("fingerprint exists");
+    let fp_b = Spi::get_one::<Vec<u8>>(
+        "SELECT ec_distann_epoch_fingerprint('ec_distann_digest_b_idx'::regclass::oid)",
+    )
+    .expect("SPI query should succeed")
+    .expect("fingerprint exists");
+    assert_ne!(fp_a, fp_b, "differing content must change the epoch fingerprint");
+}
 
 #[pg_test]
 fn test_ec_distann_expand_nodes_single_node_matches_local() {

@@ -33,6 +33,7 @@ use super::epoch::{
     DISTANN_EPOCH_FINGERPRINT_V1,
 };
 use super::expand::LocalNodeExpander;
+use super::expand_error::DistannExpandError;
 use super::head_cache::cached_index_entry;
 use super::placement::owning_node;
 use super::quantizer::{metadata_code_len, DistannPreparedQuery};
@@ -49,7 +50,7 @@ type ExpandRow = (i64, Option<f32>, bool, Vec<i64>, Vec<f32>);
 /// index. `epoch_fingerprint` is the coordinator's active-epoch identity
 /// (FR-082); `code_threshold` defaults to NULL (no pruning — the only mode with
 /// the FR-081 early-exit result guarantee).
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(volatile, parallel_restricted)]
 #[allow(clippy::type_complexity)]
 fn ec_distann_expand_nodes(
     index_regclass: pg_sys::Oid,
@@ -74,7 +75,9 @@ fn ec_distann_expand_nodes(
         &vec_ids,
         code_threshold,
     )
-    .unwrap_or_else(|e| pgrx::error!("{e}"));
+    // Raise with the distinct SQLSTATE per FR-079 outcome so the coordinator
+    // classifies retriable epoch mismatch vs non-retriable faults by code.
+    .unwrap_or_else(|e| e.raise());
     TableIterator::new(rows.into_iter())
 }
 
@@ -83,7 +86,7 @@ fn ec_distann_expand_nodes(
 /// fingerprint it then passes to every `ec_distann_expand_nodes` call so all
 /// participants agree on the epoch (FR-082 subset). Also the operator/test
 /// surface for inspecting epoch identity.
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(volatile, parallel_restricted)]
 fn ec_distann_epoch_fingerprint(index_regclass: pg_sys::Oid) -> Vec<u8> {
     epoch_fingerprint_impl(index_regclass).unwrap_or_else(|e| pgrx::error!("{e}"))
 }
@@ -106,8 +109,9 @@ fn expand_nodes_impl(
     query: &[f32],
     vec_ids: &[i64],
     code_threshold: Option<f32>,
-) -> Result<Vec<ExpandRow>, String> {
-    let received_fingerprint = fingerprint_from_bytes(epoch_fingerprint)?;
+) -> Result<Vec<ExpandRow>, DistannExpandError> {
+    let received_fingerprint =
+        fingerprint_from_bytes(epoch_fingerprint).map_err(DistannExpandError::BadInput)?;
 
     let index_guard = IndexRelationGuard::try_access_share(index_oid)
         .ok_or_else(|| "ec_distann_expand_nodes could not open the index relation".to_owned())?;
@@ -116,19 +120,21 @@ fn expand_nodes_impl(
     let metadata = read_metadata_from_index_handle(handle)?;
 
     if metadata.dimensions == 0 || metadata.node_count == 0 {
-        // Empty index owns nothing; any requested id is a placement/structural
-        // fault. If none requested, an empty response is correct.
+        // Empty index owns nothing; any requested id is a structural fault
+        // (owned-but-absent). If none requested, an empty response is correct.
         if vec_ids.is_empty() {
             return Ok(Vec::new());
         }
-        return Err("ec_distann_expand_nodes: index is empty (no owned records)".to_owned());
+        return Err(DistannExpandError::OwnedRecordMissing(
+            "ec_distann_expand_nodes: index is empty (no owned records)".to_owned(),
+        ));
     }
     if query.len() != usize::from(metadata.dimensions) {
-        return Err(format!(
+        return Err(DistannExpandError::BadInput(format!(
             "ec_distann_expand_nodes query dimension {} != index dimension {}",
             query.len(),
             metadata.dimensions
-        ));
+        )));
     }
 
     // FR-082 (subset): validate the caller's epoch fingerprint against this
@@ -137,11 +143,11 @@ fn expand_nodes_impl(
     let identity = local_epoch_identity(&directory, &metadata);
     let local_fingerprint = compute_epoch_fingerprint(&identity, DISTANN_EPOCH_FINGERPRINT_V1);
     if !fingerprints_match(&received_fingerprint, &local_fingerprint) {
-        return Err(
-            "ec_distann_expand_nodes epoch fingerprint mismatch (retriable): caller epoch \
-             differs from this node's active epoch"
+        return Err(DistannExpandError::EpochMismatch(
+            "ec_distann_expand_nodes epoch fingerprint mismatch: caller epoch differs from this \
+             node's active epoch"
                 .to_owned(),
-        );
+        ));
     }
 
     // FR-079 case (b): every requested vec_id must be owned by THIS node under
@@ -155,11 +161,11 @@ fn expand_nodes_impl(
     for &vec_id in vec_ids {
         let owner = owning_node(vec_id as u64, node_count, directory.hash_version);
         if owner != local_index {
-            return Err(format!(
+            return Err(DistannExpandError::Placement(format!(
                 "ec_distann_expand_nodes placement error: vec_id {:#018x} is owned by roster \
                  index {owner}, not this node (roster index {local_index})",
                 vec_id as u64
-            ));
+            )));
         }
     }
 
@@ -185,7 +191,9 @@ fn expand_nodes_impl(
     // an active snapshot; the pointer is valid for this call.
     let snapshot = unsafe { pg_sys::GetActiveSnapshot() };
     if snapshot.is_null() {
-        return Err("ec_distann_expand_nodes has no active snapshot".to_owned());
+        return Err(DistannExpandError::Internal(
+            "ec_distann_expand_nodes has no active snapshot".to_owned(),
+        ));
     }
     // SAFETY: `heap_relation` is a live relation from `heap_guard`, held open
     // for the duration of this call.

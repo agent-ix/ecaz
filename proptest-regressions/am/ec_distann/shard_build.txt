@@ -5,3 +5,4 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc d60737c063d7f12c3d9029c1752473a9f0931cf8c67548fd078ebea7c8b75bc0 # shrinks to node_count = 40, dimensions = 4, graph_degree = 4, shard_count = 4, eps = 0.0, seed = 0
+cc a27b3d0012d7a3f13466bec4e24fd35ca97c8b98856c7694ff13bca109f1bc6c # shrinks to node_count = 88, dimensions = 4, graph_degree = 4, shard_count = 4, eps = 0.24201721, seed = 8883128530292219633

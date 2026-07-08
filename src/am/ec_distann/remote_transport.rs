@@ -29,6 +29,7 @@ use crate::storage::slot_guard::TupleTableSlotGuard;
 use super::ambuild::read_metadata_from_index_handle;
 use super::epoch::{compute_epoch_fingerprint, DISTANN_EPOCH_FINGERPRINT_V1};
 use super::expand::LocalNodeExpander;
+use super::expand_error::DistannExpandError;
 use super::head_cache::cached_index_entry;
 use super::placement::{group_by_owning_node, DistannPlacementDirectory};
 use super::quantizer::{metadata_code_len, DistannPreparedQuery};
@@ -87,9 +88,12 @@ impl DistannTransportState {
     }
 }
 
-fn with_transport_state<T>(
-    f: impl FnOnce(&mut DistannTransportState) -> Result<T, String>,
-) -> Result<T, String> {
+fn with_transport_state<T, E>(
+    f: impl FnOnce(&mut DistannTransportState) -> Result<T, E>,
+) -> Result<T, E>
+where
+    E: From<String>,
+{
     DISTANN_TRANSPORT_STATE.with(|cell| {
         let mut state = cell.borrow_mut();
         if state.is_none() {
@@ -108,7 +112,7 @@ const EXPAND_SQL: &str = "SELECT vec_id, exact_dist, is_tombstone, neighbor_vec_
 /// vec_id; `heap_tid` is local-only and stays INVALID for remote responses).
 pub(super) fn remote_expand_nodes(
     request: &DistannRemoteExpandRequest<'_>,
-) -> Result<Vec<DistannExpandedNode>, String> {
+) -> Result<Vec<DistannExpandedNode>, DistannExpandError> {
     let vec_ids_i64: Vec<i64> = request.vec_ids.iter().map(|&v| v as i64).collect();
     with_transport_state(|state| {
         let DistannTransportState {
@@ -126,16 +130,16 @@ pub(super) fn remote_expand_nodes(
                     .conninfo
                     .parse::<tokio_postgres::Config>()
                     .map_err(|_| {
-                        format!(
+                        DistannExpandError::Internal(format!(
                             "ec_distann remote transport could not parse conninfo {:?}",
                             request.conninfo
-                        )
+                        ))
                     })?;
                 let (client, connection) = config.connect(NoTls).await.map_err(|error| {
-                    format!(
+                    DistannExpandError::Internal(format!(
                         "ec_distann remote transport could not connect to {:?}: {error}",
                         request.conninfo
-                    )
+                    ))
                 })?;
                 let task = tokio::spawn(async move {
                     let _ = connection.await;
@@ -154,7 +158,9 @@ pub(super) fn remote_expand_nodes(
                     .batch_execute(request.session_setup_sql)
                     .await
                     .map_err(|error| {
-                        format!("ec_distann remote transport session setup failed: {error}")
+                        DistannExpandError::Internal(format!(
+                            "ec_distann remote transport session setup failed: {error}"
+                        ))
                     })?;
             }
 
@@ -172,9 +178,14 @@ pub(super) fn remote_expand_nodes(
                 )
                 .await
                 .map_err(|error| {
-                    // Carries the remote endpoint's error text (epoch mismatch,
-                    // placement error, structural fault) back to the coordinator.
-                    format!("ec_distann remote expand call failed: {error}")
+                    // Classify by the remote endpoint's SQLSTATE so the
+                    // coordinator can distinguish a retriable epoch mismatch from
+                    // non-retriable placement/structural faults (FR-082-AC-2).
+                    let code = error.code().map(|state| state.code().to_owned());
+                    DistannExpandError::from_wire_sqlstate(
+                        code.as_deref(),
+                        format!("ec_distann remote expand call failed: {error}"),
+                    )
                 })?;
 
             rows.into_iter()
@@ -193,13 +204,15 @@ pub(super) fn remote_expand_nodes(
                         neighbor_code_dists,
                     })
                 })
-                .collect::<Result<Vec<_>, String>>()
+                .collect::<Result<Vec<_>, DistannExpandError>>()
         })
     })
 }
 
-fn row_err(error: tokio_postgres::Error) -> String {
-    format!("ec_distann remote transport row decode failed: {error}")
+fn row_err(error: tokio_postgres::Error) -> DistannExpandError {
+    DistannExpandError::Internal(format!(
+        "ec_distann remote transport row decode failed: {error}"
+    ))
 }
 
 /// Debug/test surface: run the FR-081 orchestration for `query` against
@@ -349,10 +362,10 @@ fn debug_expand_search_impl(
             roster_spec: &roster_spec,
             epoch,
         };
-        distann_orchestrated_search(&seeds, &mut expander, params)?
+        distann_orchestrated_search(&seeds, &mut expander, params).map_err(|e| e.to_string())?
     } else {
         let mut expander = make_local();
-        distann_orchestrated_search(&seeds, &mut expander, params)?
+        distann_orchestrated_search(&seeds, &mut expander, params).map_err(|e| e.to_string())?
     };
     Ok(hits)
 }
@@ -384,17 +397,21 @@ impl DistannNodeExpander for RemoteNodeExpander<'_> {
         &mut self,
         vec_ids: &[u64],
         code_threshold: Option<f32>,
-    ) -> Result<Vec<DistannExpandedNode>, String> {
+    ) -> Result<Vec<DistannExpandedNode>, DistannExpandError> {
         let node_count = self.placement.node_count();
+        // Position-carrying buckets: reassembly is driven by the original
+        // request index, robust to a request that repeats a vec_id.
         let buckets = group_by_owning_node(vec_ids, node_count, self.placement.hash_version);
 
-        let mut by_vec_id: HashMap<u64, DistannExpandedNode> = HashMap::with_capacity(vec_ids.len());
-        for (node_index, ids) in buckets.iter().enumerate() {
-            if ids.is_empty() {
+        let mut ordered: Vec<Option<DistannExpandedNode>> =
+            (0..vec_ids.len()).map(|_| None).collect();
+        for (node_index, bucket) in buckets.iter().enumerate() {
+            if bucket.is_empty() {
                 continue;
             }
+            let ids: Vec<u64> = bucket.iter().map(|(_, vec_id)| *vec_id).collect();
             let responses = if node_index == self.local_index {
-                self.local.expand_nodes(ids, code_threshold)?
+                self.local.expand_nodes(&ids, code_threshold)?
             } else {
                 let node = &self.placement.nodes[node_index];
                 // Configure the target node's identity on its session so the
@@ -411,32 +428,53 @@ impl DistannNodeExpander for RemoteNodeExpander<'_> {
                     index_regclass: self.index_regclass,
                     epoch_fingerprint: self.epoch_fingerprint,
                     query: self.local.raw_query,
-                    vec_ids: ids,
+                    vec_ids: &ids,
                     code_threshold,
                 })?
             };
-            for response in responses {
-                by_vec_id.insert(response.vec_id, response);
-            }
+            place_bucket_responses(node_index, bucket, responses, &mut ordered)?;
         }
 
-        reassemble_request_order(vec_ids, by_vec_id)
+        finalize_request_order(ordered)
     }
 }
 
-/// Rebuild per-node responses into request order and assert full coverage
-/// (FR-079-AC-1: response entries preserve request order and cover every
-/// requested vec_id; a gap is a fault, never a silent drop). Pure — the
-/// coordinator's ordering/coverage guarantee, unit-tested below.
-fn reassemble_request_order(
-    vec_ids: &[u64],
-    mut by_vec_id: HashMap<u64, DistannExpandedNode>,
-) -> Result<Vec<DistannExpandedNode>, String> {
-    vec_ids
-        .iter()
-        .map(|&vec_id| {
-            by_vec_id.remove(&vec_id).ok_or_else(|| {
-                format!("ec_distann remote expansion did not cover requested vec_id {vec_id:#018x}")
+/// Place a node's responses (returned in the bucket's request order) back at
+/// their original request positions. Endpoint responses preserve request order
+/// (FR-079-AC-1), so `responses[k]` is `bucket[k]`'s answer.
+fn place_bucket_responses(
+    node_index: usize,
+    bucket: &[(usize, u64)],
+    responses: Vec<DistannExpandedNode>,
+    ordered: &mut [Option<DistannExpandedNode>],
+) -> Result<(), DistannExpandError> {
+    if responses.len() != bucket.len() {
+        return Err(DistannExpandError::Internal(format!(
+            "ec_distann node {node_index} returned {} responses for {} requested ids \
+             (FR-079-AC-1 coverage)",
+            responses.len(),
+            bucket.len()
+        )));
+    }
+    for (&(orig_index, _), response) in bucket.iter().zip(responses.into_iter()) {
+        ordered[orig_index] = Some(response);
+    }
+    Ok(())
+}
+
+/// Finalize the position-indexed responses into request order, erroring on any
+/// gap (a requested id whose node dropped it — never a silent miss, FR-079).
+fn finalize_request_order(
+    ordered: Vec<Option<DistannExpandedNode>>,
+) -> Result<Vec<DistannExpandedNode>, DistannExpandError> {
+    ordered
+        .into_iter()
+        .enumerate()
+        .map(|(index, response)| {
+            response.ok_or_else(|| {
+                DistannExpandError::Internal(format!(
+                    "ec_distann remote expansion did not cover request position {index}"
+                ))
             })
         })
         .collect()
@@ -445,6 +483,7 @@ fn reassemble_request_order(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::am::ec_distann::placement::{placement_hash, DISTANN_PLACEMENT_HASH_V1};
 
     fn node(vec_id: u64) -> DistannExpandedNode {
         DistannExpandedNode {
@@ -457,32 +496,55 @@ mod tests {
         }
     }
 
-    // FR-079-AC-1: responses returned out of order (as if from several nodes)
-    // are reassembled into the original request order.
+    // FR-079-AC-1: an interleaved request split across two owners, whose
+    // per-node responses concatenate in node order, still reassembles into the
+    // exact original request order (position-driven, not value-driven).
     #[test]
-    fn reassembles_into_request_order() {
-        let vec_ids = vec![30_u64, 10, 20, 40];
-        // Insert in a different order than requested (simulating per-node batches).
-        let mut map = HashMap::new();
-        for id in [20_u64, 40, 30, 10] {
-            map.insert(id, node(id));
+    fn reassembles_interleaved_request_across_owners() {
+        // Pick ids and a 2-node roster; group them, then feed each bucket's
+        // responses back in bucket order and check the final order.
+        let vec_ids: Vec<u64> =
+            (0..12).map(|i| placement_hash(i, DISTANN_PLACEMENT_HASH_V1)).collect();
+        let node_count = 2;
+        let buckets =
+            group_by_owning_node(&vec_ids, node_count, DISTANN_PLACEMENT_HASH_V1);
+        // Require a genuine split so the test actually exercises interleaving.
+        assert!(buckets.iter().all(|b| !b.is_empty()), "both owners populated");
+
+        let mut ordered: Vec<Option<DistannExpandedNode>> =
+            (0..vec_ids.len()).map(|_| None).collect();
+        for (node_index, bucket) in buckets.iter().enumerate() {
+            let responses: Vec<DistannExpandedNode> =
+                bucket.iter().map(|(_, id)| node(*id)).collect();
+            place_bucket_responses(node_index, bucket, responses, &mut ordered).unwrap();
         }
-        let ordered = reassemble_request_order(&vec_ids, map).expect("full coverage");
+        let final_order = finalize_request_order(ordered).expect("full coverage");
         assert_eq!(
-            ordered.iter().map(|n| n.vec_id).collect::<Vec<_>>(),
-            vec_ids
+            final_order.iter().map(|n| n.vec_id).collect::<Vec<_>>(),
+            vec_ids,
+            "final order equals original request order"
         );
     }
 
-    // A missing response (node dropped a requested id) is a fault, not a silent
-    // gap.
+    // A missing response (a node dropped a requested id) is a fault, not a
+    // silent gap.
     #[test]
     fn missing_coverage_is_an_error() {
-        let vec_ids = vec![1_u64, 2, 3];
-        let mut map = HashMap::new();
-        map.insert(1_u64, node(1));
-        map.insert(3_u64, node(3)); // 2 missing
-        let error = reassemble_request_order(&vec_ids, map).expect_err("must error on gap");
+        let ordered = vec![Some(node(1)), None, Some(node(3))];
+        let error = finalize_request_order(ordered)
+            .expect_err("must error on gap")
+            .to_string();
         assert!(error.contains("did not cover"), "unexpected: {error}");
+    }
+
+    // A node returning the wrong count is rejected (coverage guard).
+    #[test]
+    fn wrong_response_count_is_an_error() {
+        let bucket = vec![(0_usize, 10_u64), (1, 20)];
+        let mut ordered = vec![None, None];
+        let error = place_bucket_responses(0, &bucket, vec![node(10)], &mut ordered)
+            .expect_err("count mismatch must error")
+            .to_string();
+        assert!(error.contains("coverage"), "unexpected: {error}");
     }
 }

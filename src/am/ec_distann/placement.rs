@@ -61,29 +61,41 @@ fn pgrx_unreachable_version(other: u16) -> u64 {
 }
 
 /// Owning node index (`0..node_count`) for a vec_id under a roster of
-/// `node_count` nodes. `node_count` must be >= 1 (a published epoch always has
-/// at least one node). FR-078-AC-1: identical wherever it is computed.
+/// `node_count` nodes. `node_count` MUST be >= 1 — a published epoch always has
+/// at least one node, and a zero-node roster is manifest/config corruption
+/// rejected at the validation layer (`current_placement_directory`), never
+/// silently normalized here. Panics on `node_count == 0` (an invariant
+/// violation behind the validated directory). FR-078-AC-1: identical wherever
+/// it is computed.
 pub(crate) fn owning_node(vec_id: u64, node_count: usize, hash_version: u16) -> usize {
-    debug_assert!(node_count >= 1, "a published epoch has >= 1 node");
-    let nc = node_count.max(1) as u64;
-    (placement_hash(vec_id, hash_version) % nc) as usize
+    assert!(
+        node_count >= 1,
+        "ec_distann owning_node requires a validated roster of >= 1 node (got 0)"
+    );
+    (placement_hash(vec_id, hash_version) % node_count as u64) as usize
 }
 
 /// Group `vec_ids` by owning node in O(set size) using only the roster size
 /// (FR-078: "group any set of vec_ids by owning node in O(set size) using only
 /// the manifest"). Returns one bucket per node index `0..node_count`; empty
-/// buckets are retained so the caller can index by node. Each bucket preserves
-/// the input order of its members, which — combined with the caller stitching
-/// buckets back in request order — satisfies FR-079-AC-1.
+/// buckets are retained so the caller can index by node. Each bucket entry is
+/// `(original_request_index, vec_id)` so the caller can reassemble responses in
+/// exact request order (FR-079-AC-1) even when the request splits across nodes
+/// or repeats a vec_id — the position, not the value, drives reassembly.
+/// `node_count` MUST be >= 1 (see `owning_node`).
 pub(crate) fn group_by_owning_node(
     vec_ids: &[u64],
     node_count: usize,
     hash_version: u16,
-) -> Vec<Vec<u64>> {
-    let mut buckets: Vec<Vec<u64>> = vec![Vec::new(); node_count.max(1)];
-    for &vec_id in vec_ids {
+) -> Vec<Vec<(usize, u64)>> {
+    assert!(
+        node_count >= 1,
+        "ec_distann group_by_owning_node requires a validated roster of >= 1 node (got 0)"
+    );
+    let mut buckets: Vec<Vec<(usize, u64)>> = vec![Vec::new(); node_count];
+    for (index, &vec_id) in vec_ids.iter().enumerate() {
         let node = owning_node(vec_id, node_count, hash_version);
-        buckets[node].push(vec_id);
+        buckets[node].push((index, vec_id));
     }
     buckets
 }
@@ -186,31 +198,43 @@ mod tests {
     }
 
     #[test]
-    fn group_by_owning_node_covers_all_ids_in_order() {
-        let vec_ids: Vec<u64> = (0..50).map(|i| super::fmix64(i)).collect();
+    fn group_by_owning_node_covers_all_ids_with_positions() {
+        let vec_ids: Vec<u64> = (0..50).map(super::fmix64).collect();
         let node_count = 4;
         let buckets = group_by_owning_node(&vec_ids, node_count, DISTANN_PLACEMENT_HASH_V1);
         assert_eq!(buckets.len(), node_count);
-        // Every id appears exactly once, in its owner's bucket, order preserved.
-        let mut seen: HashMap<u64, usize> = HashMap::new();
+        // Every (index, id) appears exactly once, in its owner's bucket, with
+        // ascending indices within a bucket (input order preserved).
+        let mut seen: HashMap<usize, u64> = HashMap::new();
         for (node, bucket) in buckets.iter().enumerate() {
-            for &vec_id in bucket {
+            let mut last_index = None;
+            for &(index, vec_id) in bucket {
+                assert_eq!(vec_ids[index], vec_id, "position maps back to the same id");
                 assert_eq!(owning_node(vec_id, node_count, DISTANN_PLACEMENT_HASH_V1), node);
-                *seen.entry(vec_id).or_insert(0) += 1;
+                if let Some(prev) = last_index {
+                    assert!(index > prev, "bucket indices ascend (input order)");
+                }
+                last_index = Some(index);
+                assert!(seen.insert(index, vec_id).is_none(), "index {index} duplicated");
             }
         }
-        assert_eq!(seen.len(), vec_ids.len());
-        assert!(seen.values().all(|&c| c == 1));
-        // Order within a bucket matches input order.
-        for bucket in &buckets {
-            let mut expected: Vec<u64> = vec_ids
-                .iter()
-                .copied()
-                .filter(|id| bucket.contains(id))
-                .collect();
-            expected.retain(|id| bucket.contains(id));
-            assert_eq!(bucket, &expected);
-        }
+        assert_eq!(seen.len(), vec_ids.len(), "every request position covered");
+    }
+
+    // A repeated vec_id keeps distinct positions, so position-based reassembly
+    // never collapses duplicates.
+    #[test]
+    fn group_by_owning_node_keeps_duplicate_positions() {
+        let repeated = super::fmix64(7);
+        let vec_ids = vec![repeated, super::fmix64(1), repeated];
+        let buckets = group_by_owning_node(&vec_ids, 3, DISTANN_PLACEMENT_HASH_V1);
+        let positions: Vec<usize> = buckets
+            .iter()
+            .flat_map(|bucket| bucket.iter().map(|(index, _)| *index))
+            .collect();
+        let mut sorted = positions.clone();
+        sorted.sort_unstable();
+        assert_eq!(sorted, vec![0, 1, 2], "all three positions present, none merged");
     }
 
     // Degenerate single-node (M0/M2 coordinator-only): every id owned locally.

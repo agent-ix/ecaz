@@ -47,6 +47,10 @@ pub(crate) struct DistannEpochIdentity {
     pub(crate) graph_degree: u16,
     pub(crate) neighbor_codec_kind: u8,
     pub(crate) build_seed: u64,
+    /// Build-time content digest (FR-082, Task 164 P1): binds the actual vec_id
+    /// set + co-placed vectors + adjacency, so two graphs with identical shape
+    /// metadata but different content produce different fingerprints.
+    pub(crate) content_digest: u64,
 }
 
 /// FNV-1a-style streaming mixer with a per-lane offset basis, so the two lanes
@@ -127,6 +131,7 @@ pub(crate) fn compute_epoch_fingerprint(
     hasher.write_u16(identity.graph_degree);
     hasher.write(&[identity.neighbor_codec_kind]);
     hasher.write_u64(identity.build_seed);
+    hasher.write_u64(identity.content_digest);
     hasher.finish()
 }
 
@@ -172,6 +177,7 @@ mod tests {
             graph_degree: 32,
             neighbor_codec_kind: 2,
             build_seed: 42,
+            content_digest: 0xDEAD_BEEF_CAFE_F00D,
         }
     }
 
@@ -202,6 +208,7 @@ mod tests {
             Box::new(|i| i.graph_degree += 1),
             Box::new(|i| i.neighbor_codec_kind += 1),
             Box::new(|i| i.build_seed += 1),
+            Box::new(|i| i.content_digest ^= 1),
         ];
         for (index, mutate) in mutators.iter().enumerate() {
             let mut id = base_identity();
