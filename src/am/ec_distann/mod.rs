@@ -49,9 +49,14 @@ pub(super) const ECDISTANN_DEFAULT_HEAD_INDEX_CAP: i32 = 4096;
 pub(super) const ECDISTANN_MIN_HEAD_INDEX_CAP: i32 = 16;
 pub(super) const ECDISTANN_MAX_HEAD_INDEX_CAP: i32 = 1_048_576;
 
-/// FR-077 closure-overlap band. Provisional default until the M1 sharded
-/// build measures it; the monolithic M0 build does not consume it.
-pub(super) const ECDISTANN_DEFAULT_CLOSURE_EPSILON: f32 = 0.1;
+/// FR-077 closure-overlap band. Measured at M1 (task-163 packet 002): the M0
+/// provisional 0.1 starved boundary nodes of cross-shard edges and the
+/// stitched build trailed monolithic recall by up to 0.06 at 100k (gap growing
+/// with corpus size). Widening to 0.3 recovers parity — stitched recall@10
+/// matches or exceeds monolithic across the operational search band (ef>=64)
+/// at 50k/100k — at near-monolithic build cost, and beats wider bands (0.6/1.0)
+/// on the recall/cost tradeoff. Only consumed when `build_shards >= 2`.
+pub(super) const ECDISTANN_DEFAULT_CLOSURE_EPSILON: f32 = 0.3;
 pub(super) const ECDISTANN_MIN_CLOSURE_EPSILON: f32 = 0.0;
 pub(super) const ECDISTANN_MAX_CLOSURE_EPSILON: f32 = 1.0;
 
