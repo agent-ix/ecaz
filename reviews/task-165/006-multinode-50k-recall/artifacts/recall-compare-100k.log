@@ -1,0 +1,9 @@
+# M3 gate 100k multinode recall == single-node (release), index m1_100k_mono_idx (100000 rows, dim 1536, REINDEXed current .so)
+# cmd: ecaz dev sql --db ec_distann_bench --file recall-compare-100k.sql
+
+SET
+ n_queries | identical_queries | total_mismatched_ids 
+-----------+-------------------+----------------------
+        51 |                51 |                    0
+
+# RESULT: 51/51 byte-identical, 0 mismatched => 100k multinode recall == single-node.

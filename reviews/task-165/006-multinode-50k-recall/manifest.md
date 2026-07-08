@@ -1,18 +1,21 @@
-# Manifest — Task 165 M3 exit gate: 50k multinode recall
+# Manifest — Task 165 M3 exit gate: multinode recall (10k/50k/100k)
 
 - head SHA: this commit (task-165-ec-distann-m3)
 - task bucket / packet: reviews/task-165/006-multinode-50k-recall
-- lane / fixture: Intel local, ec_distann, real DBpedia 50k (dim 1536)
-- index: m1_50k_mono_idx (monolithic build, 50000 rows), one-index-per-table
-  (m1_50k_mono_corpus), REINDEXed with the current .so (format v2)
+- lane / fixture: Intel local, ec_distann, real DBpedia 50k + 100k (dim 1536)
+- indexes: m1_50k_mono_idx / m1_100k_mono_idx (monolithic build), one-index-
+  per-table (m1_{50,100}k_mono_corpus), REINDEXed with the current .so (v2)
 - build profile: release (ecaz_build_profile = release, verified)
 - storage: isolated one-index-per-table
-- command: `ecaz dev sql --db ec_distann_bench --file reviews/task-165/006-multinode-50k-recall/recall-compare.sql`
+- commands: `ecaz dev sql --db ec_distann_bench --file .../recall-compare.sql`
+  (50k) and `.../recall-compare-100k.sql` (100k)
 - timestamp: 2026-07-08
-- key result (artifacts/recall-compare.log): 51 queries, 2-node loopback top-10
-  vs single-node top-10 — identical_queries=51/51, total_mismatched_ids=0.
-  Byte-identical => multinode recall == single-node (delta 0, >= single-node
-  - 0.001, the M3 gate).
+- key results — 51 queries, 2-node loopback top-10 vs single-node top-10,
+  byte-identical => multinode recall == single-node (delta 0, >= single-node
+  - 0.001, the M3 gate), across the closeout matrix:
+  - 10k (slice 005 artifacts/scan-compare.log, m2_10k_idx): identical top-10, order_identical=t
+  - 50k (artifacts/recall-compare.log, m1_50k_mono_idx): identical=51/51, mismatched=0
+  - 100k (artifacts/recall-compare-100k.log, m1_100k_mono_idx): identical=51/51, mismatched=0
 
 ## Method note
 
