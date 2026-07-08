@@ -20,6 +20,7 @@ mod head_cache;
 mod identity;
 mod options;
 pub mod page;
+mod placement;
 pub(crate) mod quantizer;
 pub(crate) mod reader;
 mod routine;
