@@ -13,8 +13,8 @@ use super::{
     ambuild, cost, expand::LocalNodeExpander, head_cache, options,
     quantizer::{self, DistannPreparedQuery},
     scan::{
-        distann_orchestrated_search, DistannOrchestrationParams, DistannScanHit,
-        DistannSeedCandidate,
+        distann_orchestrated_search, DistannOrchestrationParams, DistannScanCounters,
+        DistannScanHit, DistannSeedCandidate,
     },
     tuple::DistannNodeTuple,
 };
@@ -255,6 +255,238 @@ unsafe extern "C-unwind" fn ec_distann_amrescan(
     })
 }
 
+/// Hits from the shared FR-080/FR-081 search core, plus whether the active
+/// roster is multi-node (so callers can materialize remote-owned hits their own
+/// way — see [`collect_distann_hits`]).
+pub(crate) struct DistannHitCollection {
+    pub(crate) hits: Vec<DistannScanHit>,
+    pub(crate) counters: DistannScanCounters,
+    pub(crate) multi_node: bool,
+}
+
+/// Shared FR-080/FR-081 search core: head-index descent → seeds → (single- or
+/// multi-node) expander → orchestration → delta-buffer merge. Used by both the
+/// AM `amgettuple` scan and the multi-node CustomScan.
+///
+/// Local hits come back with `heap_tid` resolved (the `LocalNodeExpander` reads
+/// the co-placed record); remote hits carry `heap_tid = INVALID` (not in the
+/// FR-079 wire contract). Callers materialize remote hits differently:
+/// - `amgettuple` runs on the co-located/loopback substrate where the
+///   coordinator holds the full directory — pass `materialize_remote_locally =
+///   true` and this resolves each remote hit's heap TID from that directory.
+/// - the CustomScan ships row payloads from the owning node — pass `false` and
+///   remote hits stay `INVALID` for the scan node to fill from owner payloads.
+///
+/// # Safety
+/// `handle`/`index_relation` must be the live index relation; `heap_relation`,
+/// `snapshot`, and `slot` must be valid for the co-placed exact-distance rerank
+/// for the duration of the call.
+#[allow(clippy::too_many_arguments)]
+pub(crate) unsafe fn collect_distann_hits(
+    handle: ptr::NonNull<pg_sys::RelationData>,
+    index_relation: pg_sys::Relation,
+    heap_relation: pg_sys::Relation,
+    snapshot: pg_sys::Snapshot,
+    slot: *mut pg_sys::TupleTableSlot,
+    source_attnum: i32,
+    raw_query: &[f32],
+    effective_top_k: usize,
+    materialize_remote_locally: bool,
+) -> DistannHitCollection {
+    let metadata = ambuild::read_metadata_from_index_handle(handle)
+        .unwrap_or_else(|e| pgrx::error!("ec_distann scan metadata read failed: {e}"));
+    if metadata.dimensions == 0 || metadata.node_count == 0 {
+        // Empty index -> zero rows (FR-081); nothing to deepen either.
+        return DistannHitCollection {
+            hits: Vec::new(),
+            counters: DistannScanCounters::default(),
+            multi_node: false,
+        };
+    }
+    if raw_query.len() != usize::from(metadata.dimensions) {
+        pgrx::error!(
+            "ec_distann scan query dimension mismatch: index dim {}, query dim {}",
+            metadata.dimensions,
+            raw_query.len()
+        );
+    }
+
+    let index_oid = (*index_relation).rd_id;
+    let entry = head_cache::cached_index_entry(index_oid.into(), handle, &metadata)
+        .unwrap_or_else(|e| pgrx::error!("ec_distann scan head-cache setup failed: {e}"));
+    let prepared_query =
+        DistannPreparedQuery::prepare(&metadata, entry.flat_codebooks.as_deref(), raw_query)
+            .unwrap_or_else(|e| pgrx::error!("ec_distann scan query preparation failed: {e}"));
+    let code_len = quantizer::metadata_code_len(&metadata)
+        .unwrap_or_else(|e| pgrx::error!("ec_distann scan code length failed: {e}"));
+
+    let beam_width = options::current_beam_width();
+    let hop_rounds = options::current_hop_rounds();
+    let top_k = effective_top_k;
+
+    // FR-080 head-index descent: exact -ip over the sample vectors,
+    // zero remote calls; the frontier seeds the hop rounds.
+    let head_list_size = (beam_width * 2).max(32).min(entry.head_vectors.len());
+    let head_result = crate::am::greedy_search(
+        &entry.head_graph,
+        entry.head_entry,
+        head_list_size,
+        |node: u32| {
+            -crate::am::ec_diskann::source_inner_product(
+                raw_query,
+                &entry.head_vectors[node as usize],
+            )
+        },
+    );
+    let seeds: Vec<DistannSeedCandidate> = head_result
+        .frontier
+        .iter()
+        .map(|candidate| DistannSeedCandidate {
+            vec_id: entry.head_vec_ids[candidate.node as usize],
+            dist: candidate.distance,
+        })
+        .collect();
+
+    let local_expander = LocalNodeExpander {
+        index_handle: handle,
+        directory: &entry.directory,
+        graph_degree_r: metadata.graph_degree_r,
+        code_len,
+        prepared_query: &prepared_query,
+        heap_relation,
+        snapshot,
+        slot,
+        source_attnum,
+        raw_query,
+        pooled_node: DistannNodeTuple::placeholder(metadata.graph_degree_r, code_len),
+    };
+    let params = DistannOrchestrationParams {
+        beam_width,
+        hop_rounds,
+        top_k,
+    };
+    // FR-078/FR-081: with a multi-node roster the scan drives the remote
+    // expander (group by owner → pooled transport → endpoint → reassemble);
+    // the empty/single-node roster stays fully local. The FR-081 loop is
+    // identical either way.
+    let placement = super::roster::current_placement_directory()
+        .unwrap_or_else(|e| pgrx::error!("ec_distann scan roster resolution failed: {e}"));
+    let multi_node = placement.node_count() > 1;
+    let (mut hits, counters) = if multi_node {
+        let local_index = placement
+            .nodes
+            .iter()
+            .position(|node| node.is_local)
+            .unwrap_or_else(|| pgrx::error!("ec_distann scan: no local node in the roster"));
+        let identity = super::roster::local_epoch_identity(&placement, &metadata);
+        let fingerprint = super::epoch::compute_epoch_fingerprint(
+            &identity,
+            super::epoch::DISTANN_EPOCH_FINGERPRINT_V1,
+        )
+        .to_vec();
+        let roster_spec = super::roster::current_roster_spec();
+        let epoch = super::roster::current_epoch();
+        let index_name = distann_index_relname(index_relation);
+        let mut remote = super::remote_transport::RemoteNodeExpander {
+            local: local_expander,
+            placement: &placement,
+            local_index,
+            index_regclass: &index_name,
+            epoch_fingerprint: &fingerprint,
+            roster_spec: &roster_spec,
+            epoch,
+        };
+        distann_orchestrated_search(&seeds, &mut remote, params)
+    } else {
+        let mut local = local_expander;
+        distann_orchestrated_search(&seeds, &mut local, params)
+    }
+    .unwrap_or_else(|e| pgrx::error!("ec_distann scan orchestration failed: {e}"));
+
+    // Loopback-only remote-hit materialization. Remote responses carry
+    // heap_tid = INVALID (not in the FR-079 wire contract); on the co-located
+    // substrate the coordinator holds the full vec_id → record directory, so a
+    // remote hit's heap row is locally resolvable — the `amgettuple` path uses
+    // this. A real multi-node deployment (the CustomScan) ships row payloads
+    // from the owning node instead and passes `materialize_remote_locally=false`,
+    // leaving remote hits INVALID for the scan node to fill from owner payloads.
+    if multi_node && materialize_remote_locally {
+        for hit in &mut hits {
+            if hit.heap_tid != crate::storage::page::ItemPointer::INVALID {
+                continue;
+            }
+            let record_tid = super::reader::directory_lookup(&entry.directory, hit.vec_id)
+                .unwrap_or_else(|| {
+                    pgrx::error!(
+                        "ec_distann scan: remote hit vec_id {:#018x} is not locally \
+                         resolvable (use the multi-node CustomScan for real row shipping)",
+                        hit.vec_id
+                    )
+                });
+            let raw = super::reader::read_raw_tuple_bytes_from_relation(
+                handle,
+                record_tid,
+                "ec_distann remote-hit materialization",
+            )
+            .unwrap_or_else(|e| pgrx::error!("{e}"));
+            hit.heap_tid = crate::storage::page::ItemPointer::decode(
+                &raw[super::tuple::DISTANN_NODE_HEAP_TID_OFFSET
+                    ..super::tuple::DISTANN_NODE_HEAP_TID_OFFSET + 6],
+            )
+            .unwrap_or_else(|e| pgrx::error!("{e}"));
+        }
+    }
+
+    // FR-083 / ADR-085 D5: merge the interim delta buffer (bounded, exact-
+    // scanned) into results so inserted rows are visible same-statement.
+    // Delta rows carry exact distances, so they rank exactly against the
+    // graph hits.
+    //
+    // Reviewer 002-P3 — dedup invariant: a graph vec_id and a delta vec_id
+    // are distinct by construction. A vec_id is derived from the record's
+    // identity (local mode: from the heap TID; include mode: from the
+    // identity column), and a delta entry is a *new* heap row with its own
+    // TID/identity, so it never collides with a built graph node. An UPDATE
+    // is delete-then-insert: the old node is a *different* vec_id (already
+    // tombstoned, hence absent from `hits`) and the new row has a new vec_id.
+    // So `seen.insert` here only guards against a duplicated delta entry, not
+    // a graph/delta collision — there is nothing to distance-compare. If
+    // vec_id derivation ever changes to allow collisions, this must become a
+    // closer-of-the-two merge; `test_ec_distann_delta_insert_visible_same_statement`
+    // pins the current new-vec_id-per-insert behavior.
+    if metadata.delta_buffer_head != crate::storage::page::ItemPointer::INVALID {
+        let deltas = super::reader::read_delta_chain(
+            handle,
+            metadata.delta_buffer_head,
+            usize::from(metadata.dimensions),
+        )
+        .unwrap_or_else(|e| pgrx::error!("ec_distann delta-buffer scan failed: {e}"));
+        if !deltas.is_empty() {
+            let mut seen: std::collections::HashSet<u64> =
+                hits.iter().map(|hit| hit.vec_id).collect();
+            for entry in deltas {
+                if !seen.insert(entry.vec_id) {
+                    continue;
+                }
+                let exact_dist =
+                    -crate::am::ec_diskann::source_inner_product(raw_query, &entry.vector);
+                hits.push(DistannScanHit {
+                    vec_id: entry.vec_id,
+                    heap_tid: entry.heap_tid,
+                    exact_dist,
+                });
+            }
+            hits.sort_unstable_by(|left, right| left.exact_dist.total_cmp(&right.exact_dist));
+        }
+    }
+
+    DistannHitCollection {
+        hits,
+        counters,
+        multi_node,
+    }
+}
+
 /// Run (or re-run, for iterative deepening) the FR-081 orchestration into
 /// the scan opaque. `effective_top_k` is the D9 exit bar for this attempt.
 unsafe fn execute_distann_scan(
@@ -270,58 +502,6 @@ unsafe fn execute_distann_scan(
         let index_relation = (*scan).indexRelation;
         let handle = ptr::NonNull::new(index_relation)
             .unwrap_or_else(|| pgrx::error!("ec_distann scan received a null index relation"));
-        let metadata = ambuild::read_metadata_from_index_handle(handle)
-            .unwrap_or_else(|e| pgrx::error!("ec_distann scan metadata read failed: {e}"));
-        if metadata.dimensions == 0 || metadata.node_count == 0 {
-            // Empty index -> zero rows (FR-081); nothing to deepen either.
-            opaque.result_buf = Vec::new();
-            opaque.proven_k = effective_top_k;
-            opaque.early_exit = false;
-            return;
-        }
-        if raw_query.len() != usize::from(metadata.dimensions) {
-            pgrx::error!(
-                "ec_distann scan query dimension mismatch: index dim {}, query dim {}",
-                metadata.dimensions,
-                raw_query.len()
-            );
-        }
-
-        let index_oid = (*index_relation).rd_id;
-        let entry = head_cache::cached_index_entry(index_oid.into(), handle, &metadata)
-            .unwrap_or_else(|e| pgrx::error!("ec_distann scan head-cache setup failed: {e}"));
-        let prepared_query =
-            DistannPreparedQuery::prepare(&metadata, entry.flat_codebooks.as_deref(), raw_query)
-                .unwrap_or_else(|e| pgrx::error!("ec_distann scan query preparation failed: {e}"));
-        let code_len = quantizer::metadata_code_len(&metadata)
-            .unwrap_or_else(|e| pgrx::error!("ec_distann scan code length failed: {e}"));
-
-        let beam_width = options::current_beam_width();
-        let hop_rounds = options::current_hop_rounds();
-        let top_k = effective_top_k;
-
-        // FR-080 head-index descent: exact -ip over the sample vectors,
-        // zero remote calls; the frontier seeds the hop rounds.
-        let head_list_size = (beam_width * 2).max(32).min(entry.head_vectors.len());
-        let head_result = crate::am::greedy_search(
-            &entry.head_graph,
-            entry.head_entry,
-            head_list_size,
-            |node: u32| {
-                -crate::am::ec_diskann::source_inner_product(
-                    raw_query,
-                    &entry.head_vectors[node as usize],
-                )
-            },
-        );
-        let seeds: Vec<DistannSeedCandidate> = head_result
-            .frontier
-            .iter()
-            .map(|candidate| DistannSeedCandidate {
-                vec_id: entry.head_vec_ids[candidate.node as usize],
-                dist: candidate.distance,
-            })
-            .collect();
 
         let scan_desc = DiskannScanDescView::from_raw(scan, "ec_distann scan");
         let heap_relation_state = scan_desc
@@ -337,157 +517,36 @@ unsafe fn execute_distann_scan(
         let slot = crate::storage::slot_guard::TupleTableSlotGuard::single_for_heap(heap_relation)
             .unwrap_or_else(|| pgrx::error!("ec_distann scan heap slot setup failed"));
 
-        let local_expander = LocalNodeExpander {
-            index_handle: handle,
-            directory: &entry.directory,
-            graph_degree_r: metadata.graph_degree_r,
-            code_len,
-            prepared_query: &prepared_query,
+        let collection = collect_distann_hits(
+            handle,
+            index_relation,
             heap_relation,
-            snapshot: snapshot_state.as_ptr(),
-            slot: slot.as_ptr(),
+            snapshot_state.as_ptr(),
+            slot.as_ptr(),
             source_attnum,
             raw_query,
-            pooled_node: DistannNodeTuple::placeholder(metadata.graph_degree_r, code_len),
-        };
-        let params = DistannOrchestrationParams {
-            beam_width,
-            hop_rounds,
-            top_k,
-        };
-        // FR-078/FR-081: with a multi-node roster the scan drives the remote
-        // expander (group by owner → pooled transport → endpoint → reassemble);
-        // the empty/single-node roster stays fully local. The FR-081 loop is
-        // identical either way.
-        let placement = super::roster::current_placement_directory()
-            .unwrap_or_else(|e| pgrx::error!("ec_distann scan roster resolution failed: {e}"));
-        let (mut hits, counters) = if placement.node_count() > 1 {
-            let local_index = placement
-                .nodes
-                .iter()
-                .position(|node| node.is_local)
-                .unwrap_or_else(|| pgrx::error!("ec_distann scan: no local node in the roster"));
-            let identity = super::roster::local_epoch_identity(&placement, &metadata);
-            let fingerprint = super::epoch::compute_epoch_fingerprint(
-                &identity,
-                super::epoch::DISTANN_EPOCH_FINGERPRINT_V1,
-            )
-            .to_vec();
-            let roster_spec = super::roster::current_roster_spec();
-            let epoch = super::roster::current_epoch();
-            let index_name = distann_index_relname(index_relation);
-            let mut remote = super::remote_transport::RemoteNodeExpander {
-                local: local_expander,
-                placement: &placement,
-                local_index,
-                index_regclass: &index_name,
-                epoch_fingerprint: &fingerprint,
-                roster_spec: &roster_spec,
-                epoch,
-            };
-            distann_orchestrated_search(&seeds, &mut remote, params)
-        } else {
-            let mut local = local_expander;
-            distann_orchestrated_search(&seeds, &mut local, params)
-        }
-        .unwrap_or_else(|e| pgrx::error!("ec_distann scan orchestration failed: {e}"));
-
-        // Materialize remote-owned hits' heap TIDs. Remote responses carry
-        // heap_tid = INVALID (it is not in the FR-079 wire contract); on the
-        // loopback substrate the coordinator holds the full vec_id → record
-        // directory, so each remote hit's heap row is locally resolvable. A real
-        // multi-node deployment ships row data from the owning node instead
-        // (a CustomScan materialization follow-up); there a remote hit's vec_id
-        // is not in the local directory and this errors rather than mis-fetches.
-        if placement.node_count() > 1 {
-            for hit in &mut hits {
-                if hit.heap_tid != crate::storage::page::ItemPointer::INVALID {
-                    continue;
-                }
-                let record_tid = super::reader::directory_lookup(&entry.directory, hit.vec_id)
-                    .unwrap_or_else(|| {
-                        pgrx::error!(
-                            "ec_distann scan: remote hit vec_id {:#018x} is not locally \
-                             resolvable (multi-node row materialization is a follow-up)",
-                            hit.vec_id
-                        )
-                    });
-                let raw = super::reader::read_raw_tuple_bytes_from_relation(
-                    handle,
-                    record_tid,
-                    "ec_distann remote-hit materialization",
-                )
-                .unwrap_or_else(|e| pgrx::error!("{e}"));
-                hit.heap_tid = crate::storage::page::ItemPointer::decode(
-                    &raw[super::tuple::DISTANN_NODE_HEAP_TID_OFFSET
-                        ..super::tuple::DISTANN_NODE_HEAP_TID_OFFSET + 6],
-                )
-                .unwrap_or_else(|e| pgrx::error!("{e}"));
-            }
-        }
-
-        // FR-083 / ADR-085 D5: merge the interim delta buffer (bounded, exact-
-        // scanned) into results so inserted rows are visible same-statement.
-        // Delta rows carry exact distances, so they rank exactly against the
-        // graph hits.
-        //
-        // Reviewer 002-P3 — dedup invariant: a graph vec_id and a delta vec_id
-        // are distinct by construction. A vec_id is derived from the record's
-        // identity (local mode: from the heap TID; include mode: from the
-        // identity column), and a delta entry is a *new* heap row with its own
-        // TID/identity, so it never collides with a built graph node. An UPDATE
-        // is delete-then-insert: the old node is a *different* vec_id (already
-        // tombstoned, hence absent from `hits`) and the new row has a new vec_id.
-        // So `seen.insert` here only guards against a duplicated delta entry, not
-        // a graph/delta collision — there is nothing to distance-compare. If
-        // vec_id derivation ever changes to allow collisions, this must become a
-        // closer-of-the-two merge; `test_ec_distann_delta_insert_visible_same_statement`
-        // pins the current new-vec_id-per-insert behavior.
-        if metadata.delta_buffer_head != crate::storage::page::ItemPointer::INVALID {
-            let deltas = super::reader::read_delta_chain(
-                handle,
-                metadata.delta_buffer_head,
-                usize::from(metadata.dimensions),
-            )
-            .unwrap_or_else(|e| pgrx::error!("ec_distann delta-buffer scan failed: {e}"));
-            if !deltas.is_empty() {
-                let mut seen: std::collections::HashSet<u64> =
-                    hits.iter().map(|hit| hit.vec_id).collect();
-                for entry in deltas {
-                    if !seen.insert(entry.vec_id) {
-                        continue;
-                    }
-                    let exact_dist =
-                        -crate::am::ec_diskann::source_inner_product(raw_query, &entry.vector);
-                    hits.push(DistannScanHit {
-                        vec_id: entry.vec_id,
-                        heap_tid: entry.heap_tid,
-                        exact_dist,
-                    });
-                }
-                hits.sort_unstable_by(|left, right| {
-                    left.exact_dist.total_cmp(&right.exact_dist)
-                });
-            }
-        }
+            effective_top_k,
+            true,
+        );
 
         if options::scan_profile_notice_enabled() {
+            let counters = &collection.counters;
             pgrx::notice!(
                 "ec_distann_scan_profile beam_width={} hop_rounds={} top_k={} rounds_executed={} records_expanded={} neighbors_code_scored={} early_exit={} beam_exhausted={} result_count={}",
-                beam_width,
-                hop_rounds,
-                top_k,
+                options::current_beam_width(),
+                options::current_hop_rounds(),
+                effective_top_k,
                 counters.rounds_executed,
                 counters.records_expanded,
                 counters.neighbors_code_scored,
                 counters.early_exit,
                 counters.beam_exhausted,
-                hits.len(),
+                collection.hits.len(),
             );
         }
-        opaque.result_buf = hits;
-        opaque.proven_k = top_k;
-        opaque.early_exit = counters.early_exit;
+        opaque.early_exit = collection.counters.early_exit;
+        opaque.proven_k = effective_top_k;
+        opaque.result_buf = collection.hits;
     }
 }
 
