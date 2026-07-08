@@ -390,7 +390,10 @@ struct DistannCustomScanExecState {
     custom_scan_state: pg_sys::CustomScanState,
     index_oid: pg_sys::Oid,
     top_k: usize,
-    query: Vec<f32>,
+    /// The ORDER BY query expression, initialized once in BeginCustomScan and
+    /// evaluated lazily per (re)scan — a correlated LATERAL Param is only bound
+    /// per outer row, so the vector cannot be materialized at Begin time.
+    query_expr_state: *mut pg_sys::ExprState,
     /// Heap attnums of the projected payload columns (parallel to the io vecs).
     payload_attnums: Vec<pg_sys::AttrNumber>,
     payload_columns: Vec<String>,
@@ -399,6 +402,11 @@ struct DistannCustomScanExecState {
     outputs: Vec<CustomScanOutputRow>,
     next_output: usize,
     loaded: bool,
+    /// A buffer-heap slot for local-hit `table_tuple_fetch_row_version` (the
+    /// CustomScan's own scan slot is virtual, which that heap fetch asserts
+    /// against; the fetched row is then copied into the virtual scan slot the
+    /// projection is compiled for). Estate-managed.
+    local_heap_slot: *mut pg_sys::TupleTableSlot,
 }
 
 fn default_exec_state() -> DistannCustomScanExecState {
@@ -408,7 +416,7 @@ fn default_exec_state() -> DistannCustomScanExecState {
         custom_scan_state: unsafe { std::mem::zeroed() },
         index_oid: pg_sys::InvalidOid,
         top_k: 0,
-        query: Vec::new(),
+        query_expr_state: ptr::null_mut(),
         payload_attnums: Vec::new(),
         payload_columns: Vec::new(),
         payload_send_functions: Vec::new(),
@@ -416,6 +424,7 @@ fn default_exec_state() -> DistannCustomScanExecState {
         outputs: Vec::new(),
         next_output: 0,
         loaded: false,
+        local_heap_slot: ptr::null_mut(),
     }
 }
 
@@ -461,12 +470,18 @@ unsafe extern "C-unwind" fn begin_custom_scan(
     let index_oid = pg_sys::list_nth_oid((*custom_scan).custom_private, 1);
     let top_k = u32::from(pg_sys::list_nth_oid((*custom_scan).custom_private, 2)) as usize;
 
-    // Query vector from custom_exprs[0] (Const or Param).
+    // Initialize (but do not yet evaluate) the ORDER BY query expression from
+    // custom_exprs[0]. A Const evaluates to the same vector every scan; a
+    // correlated Param is only bound per outer row, so evaluation is deferred to
+    // ensure_outputs (after each rescan binds the current param).
     let exprs = cs_pg_list::<pg_sys::Expr>((*custom_scan).custom_exprs);
     let query_expr = exprs
         .get_ptr(0)
         .unwrap_or_else(|| pgrx::error!("EcDistannDistributedScan plan missing ORDER BY query"));
-    let query = extract_query_vector(node, query_expr);
+    let query_expr_state = pg_sys::ExecInitExpr(query_expr, &mut (*node).ss.ps);
+    if query_expr_state.is_null() {
+        pgrx::error!("EcDistannDistributedScan failed to initialize the ORDER BY query expression");
+    }
 
     let (payload_attnums, payload_columns, payload_send_functions, payload_inputs) =
         build_payload_metadata(node, custom_scan);
@@ -474,7 +489,7 @@ unsafe extern "C-unwind" fn begin_custom_scan(
     let state = exec_state_mut(node);
     state.index_oid = index_oid;
     state.top_k = top_k;
-    state.query = query;
+    state.query_expr_state = query_expr_state;
     state.payload_attnums = payload_attnums;
     state.payload_columns = payload_columns;
     state.payload_send_functions = payload_send_functions;
@@ -484,40 +499,33 @@ unsafe extern "C-unwind" fn begin_custom_scan(
     state.loaded = false;
 }
 
-unsafe fn extract_query_vector(
-    node: *mut pg_sys::CustomScanState,
-    query_expr: *mut pg_sys::Expr,
+/// Evaluate the ORDER BY query expression for the current (re)scan into a
+/// finite `real[]`. Called from `ensure_outputs`, after any correlated Param has
+/// been bound for the current outer row.
+unsafe fn eval_query_vector(
+    scan_state: *mut pg_sys::ScanState,
+    expr_state: *mut pg_sys::ExprState,
 ) -> Vec<f32> {
-    let Some(node_ref) = cs_pg_ref(query_expr.cast::<pg_sys::Node>()) else {
-        pgrx::error!("EcDistannDistributedScan ORDER BY query expression is null");
-    };
-    match node_ref.type_ {
-        pg_sys::NodeTag::T_Const => query_values_from_const(query_expr).unwrap_or_else(|| {
-            pgrx::error!("EcDistannDistributedScan requires a non-null finite real[] ORDER BY query")
-        }),
-        pg_sys::NodeTag::T_Param => {
-            let expr_state = pg_sys::ExecInitExpr(query_expr, &mut (*node).ss.ps);
-            if expr_state.is_null() {
-                pgrx::error!("EcDistannDistributedScan failed to initialize ORDER BY query param");
-            }
-            let eval = (*expr_state).evalfunc.unwrap_or_else(|| {
-                pgrx::error!("EcDistannDistributedScan ORDER BY query param has no evaluator")
-            });
-            let mut is_null = false;
-            let datum = eval(expr_state, (*node).ss.ps.ps_ExprContext, &mut is_null);
-            if is_null {
-                pgrx::error!("EcDistannDistributedScan ORDER BY query param must not be NULL");
-            }
-            Vec::<f32>::from_polymorphic_datum(datum, false, pg_sys::FLOAT4ARRAYOID)
-                .filter(|values| !values.is_empty() && values.iter().all(|v| v.is_finite()))
-                .unwrap_or_else(|| {
-                    pgrx::error!("EcDistannDistributedScan requires a finite real[] ORDER BY query param")
-                })
-        }
-        _ => pgrx::error!(
-            "EcDistannDistributedScan requires a constant or parameter real[] ORDER BY query"
-        ),
+    if expr_state.is_null() {
+        pgrx::error!("EcDistannDistributedScan missing initialized ORDER BY query expression");
     }
+    let eval = (*expr_state).evalfunc.unwrap_or_else(|| {
+        pgrx::error!("EcDistannDistributedScan ORDER BY query expression has no evaluator")
+    });
+    let econtext = (*scan_state).ps.ps_ExprContext;
+    if econtext.is_null() {
+        pgrx::error!("EcDistannDistributedScan missing expression context for the ORDER BY query");
+    }
+    let mut is_null = false;
+    let datum = eval(expr_state, econtext, &mut is_null);
+    if is_null {
+        pgrx::error!("EcDistannDistributedScan ORDER BY query must not be NULL");
+    }
+    Vec::<f32>::from_polymorphic_datum(datum, false, pg_sys::FLOAT4ARRAYOID)
+        .filter(|values| !values.is_empty() && values.iter().all(|v| v.is_finite()))
+        .unwrap_or_else(|| {
+            pgrx::error!("EcDistannDistributedScan requires a finite real[] ORDER BY query")
+        })
 }
 
 /// Build the projected-column payload metadata: the heap attnums + names to ship
@@ -689,6 +697,8 @@ unsafe extern "C-unwind" fn custom_scan_access(
 ) -> *mut pg_sys::TupleTableSlot {
     let state = exec_state_mut(scan_state.cast());
     ensure_outputs(state, scan_state);
+    // The projection is compiled for the (virtual) scan tuple slot, so every row
+    // — local or remote — is delivered through it.
     let scan_slot = (*scan_state).ss_ScanTupleSlot;
     loop {
         let output_index = state.next_output;
@@ -704,19 +714,21 @@ unsafe extern "C-unwind" fn custom_scan_access(
                     tid.block_number,
                     tid.offset_number,
                 );
-                pg_sys::ExecClearTuple(scan_slot);
                 let estate = (*scan_state).ps.state;
                 if estate.is_null() {
                     pgrx::error!("EcDistannDistributedScan missing executor estate");
                 }
+                pg_sys::ExecClearTuple(state.local_heap_slot);
                 let visible = pg_sys::table_tuple_fetch_row_version(
                     (*scan_state).ss_currentRelation,
                     &mut item,
                     (*estate).es_snapshot,
-                    scan_slot,
+                    state.local_heap_slot,
                 );
                 if visible {
-                    return scan_slot;
+                    // Copy the heap row into the virtual scan slot the projection
+                    // reads from.
+                    return pg_sys::ExecCopySlot(scan_slot, state.local_heap_slot);
                 }
                 // Row no longer visible under the snapshot — skip to the next.
             }
@@ -753,6 +765,15 @@ unsafe fn ensure_outputs(
     }
     let snapshot = (*estate).es_snapshot;
 
+    // A private buffer-heap slot for local ctid fetches (once, estate-managed).
+    if state.local_heap_slot.is_null() {
+        state.local_heap_slot = pg_sys::ExecInitExtraTupleSlot(
+            estate,
+            (*heap_relation).rd_att,
+            pg_sys::table_slot_callbacks(heap_relation),
+        );
+    }
+
     let index_guard = crate::storage::relation_guard::IndexRelationGuard::try_access_share(
         state.index_oid,
     )
@@ -766,6 +787,9 @@ unsafe fn ensure_outputs(
         crate::storage::slot_guard::TupleTableSlotGuard::single_for_heap(heap_relation)
             .unwrap_or_else(|| pgrx::error!("EcDistannDistributedScan rerank slot setup failed"));
 
+    // Evaluate the ORDER BY query for this scan (binds any correlated Param).
+    let query = eval_query_vector(scan_state, state.query_expr_state);
+
     // Shared search core: local hits get a resolved ctid; remote hits carry
     // INVALID (we ship their row payloads below).
     let collection = super::routine::collect_distann_hits(
@@ -775,7 +799,7 @@ unsafe fn ensure_outputs(
         snapshot,
         rerank_slot.as_ptr(),
         source_attnum,
-        &state.query,
+        &query,
         state.top_k,
         false,
     );

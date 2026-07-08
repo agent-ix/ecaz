@@ -1,0 +1,38 @@
+# CustomScan loopback validation — head 2102272abf20f74192209d1ae1b2ae8e02655e21 — 2026-07-08
+# release .so; db ec_distann_cs (400 rows, dim 8); 2-node loopback roster
+
+SET
+DROP TABLE
+SELECT 20
+SET
+SET
+SET
+                        QUERY PLAN                        
+----------------------------------------------------------
+ Nested Loop
+   ->  Seq Scan on q
+         Disabled: true
+   ->  Limit
+         ->  Custom Scan (EcDistannDistributedScan) on cs
+(5 rows)
+
+SET
+SET
+SET
+DROP TABLE
+SELECT 200
+SET
+SET
+SET
+DROP TABLE
+SELECT 200
+SET
+ n_queries | identical_queries | total_mismatched_ids 
+-----------+-------------------+----------------------
+        20 |                20 |                    0
+(1 row)
+
+
+# Fail-closed proof the remote path fires (dead remote port -> query errors):
+# SET ec_distann.roster='...;1@host=/home/peter/.pgrx port=1 ...'
+ERROR:  ec_distann scan orchestration failed: [EC_INTERNAL] ec_distann remote transport could not connect to "host=/home/peter/.pgrx port=1 dbname=ec_distann_cs user=peter": error connecting to server
