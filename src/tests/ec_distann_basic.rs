@@ -1014,6 +1014,40 @@ fn test_ec_distann_expand_nodes_rejects_nonowned_placement() {
 }
 
 #[pg_test]
+fn test_ec_distann_apply_record_writes_tombstones() {
+    // FR-083 write endpoint (M3): the tombstone-set operation applies on the
+    // hash-owning node under epoch validation. Single-node: this node owns all.
+    create_distann_fixture("ec_distann_write", "WITH (graph_degree = 4)");
+    let vec_ids = distann_directory_vec_ids("ec_distann_write_idx");
+
+    let removed = Spi::get_one::<i64>(&format!(
+        "SELECT ec_distann_apply_record_writes(\
+           'ec_distann_write_idx'::regclass::oid, \
+           ec_distann_epoch_fingerprint('ec_distann_write_idx'::regclass::oid), \
+           ARRAY[{}, {}]::bigint[])",
+        vec_ids[0] as i64, vec_ids[1] as i64
+    ))
+    .expect("SPI query should succeed")
+    .expect("count should exist");
+    assert_eq!(removed, 2, "two records tombstoned via the write endpoint");
+
+    // FR-082-AC-2: a wrong epoch fingerprint is a retriable mismatch error.
+    let error = expect_pg_error(|| {
+        Spi::run(&format!(
+            "SELECT ec_distann_apply_record_writes(\
+               'ec_distann_write_idx'::regclass::oid, \
+               '\\x000102030405060708090a0b0c0d0e0f'::bytea, ARRAY[{}]::bigint[])",
+            vec_ids[2] as i64
+        ))
+        .expect("this call must error on the wrong epoch");
+    });
+    assert!(
+        error.contains("epoch fingerprint mismatch"),
+        "unexpected error: {error}"
+    );
+}
+
+#[pg_test]
 fn test_ec_distann_delete_tombstones_record() {
     // FR-083-AC-1 (M3 D10 tombstone slice): tombstoning records sets the FR-076
     // flag monotonically in place, and the FR-081 scan excludes them while

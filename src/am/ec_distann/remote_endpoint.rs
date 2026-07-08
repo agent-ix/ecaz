@@ -103,6 +103,76 @@ fn epoch_fingerprint_impl(index_oid: pg_sys::Oid) -> Result<Vec<u8>, String> {
     Ok(compute_epoch_fingerprint(&identity, DISTANN_EPOCH_FINGERPRINT_V1).to_vec())
 }
 
+/// FR-083 remote write endpoint (write counterpart to FR-079): apply
+/// record-level writes on the hash-owning node under epoch-fingerprint
+/// validation. This slice implements the **tombstone-set** operation (the
+/// coordinator's delete routes the tombstone to the owning node); new-record
+/// append + back-edge amendment (M5 incremental insert) are later. Validates
+/// the caller's epoch (retriable mismatch) and every vec_id's ownership
+/// (placement error) before any write, exactly like FR-079. Returns the count
+/// newly tombstoned.
+#[pg_extern(volatile, parallel_restricted)]
+fn ec_distann_apply_record_writes(
+    index_regclass: pg_sys::Oid,
+    epoch_fingerprint: &[u8],
+    tombstone_vec_ids: Vec<i64>,
+) -> i64 {
+    apply_record_writes_impl(index_regclass, epoch_fingerprint, &tombstone_vec_ids)
+        .unwrap_or_else(|e| e.raise())
+}
+
+fn apply_record_writes_impl(
+    index_oid: pg_sys::Oid,
+    epoch_fingerprint: &[u8],
+    tombstone_vec_ids: &[i64],
+) -> Result<i64, DistannExpandError> {
+    let received_fingerprint =
+        fingerprint_from_bytes(epoch_fingerprint).map_err(DistannExpandError::BadInput)?;
+    // Writes need a RowExclusive lock (tombstone flips are exclusive-buffer).
+    let index_guard = IndexRelationGuard::open(
+        index_oid,
+        pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
+        "ec_distann_apply_record_writes",
+    );
+    let handle = NonNull::new(index_guard.as_ptr())
+        .ok_or_else(|| "ec_distann_apply_record_writes got a null index relation".to_owned())?;
+    let metadata = read_metadata_from_index_handle(handle)?;
+
+    // FR-082 epoch validation (retriable on mismatch), before any write.
+    let directory = current_placement_directory()?;
+    let identity = local_epoch_identity(&directory, &metadata);
+    let local_fingerprint = compute_epoch_fingerprint(&identity, DISTANN_EPOCH_FINGERPRINT_V1);
+    if !fingerprints_match(&received_fingerprint, &local_fingerprint) {
+        return Err(DistannExpandError::EpochMismatch(
+            "ec_distann_apply_record_writes epoch fingerprint mismatch".to_owned(),
+        ));
+    }
+
+    // FR-078 ownership: every write target must be owned by this node.
+    let node_count = directory.node_count();
+    let local_index = directory
+        .nodes
+        .iter()
+        .position(|node| node.is_local)
+        .ok_or_else(|| {
+            "ec_distann_apply_record_writes: no local node in the active roster".to_owned()
+        })?;
+    let ids: Vec<u64> = tombstone_vec_ids.iter().map(|&v| v as u64).collect();
+    for &vec_id in &ids {
+        if owning_node(vec_id, node_count, directory.hash_version) != local_index {
+            return Err(DistannExpandError::Placement(format!(
+                "ec_distann_apply_record_writes placement error: vec_id {vec_id:#018x} not owned \
+                 by this node (roster index {local_index})"
+            )));
+        }
+    }
+
+    // SAFETY: the guard holds the index open for write for the call.
+    let removed = unsafe { super::dml::tombstone_by_vec_ids(index_guard.as_ptr(), &ids) }
+        .map_err(DistannExpandError::OwnedRecordMissing)?;
+    Ok(i64::try_from(removed).unwrap_or(i64::MAX))
+}
+
 fn expand_nodes_impl(
     index_oid: pg_sys::Oid,
     epoch_fingerprint: &[u8],
