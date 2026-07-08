@@ -91,6 +91,54 @@ pub(super) fn select_insert_forward_neighbors(
         .collect())
 }
 
+/// A neighbor that a newly-inserted node points to, and which must gain a
+/// backlink to the new node. Carries the neighbor's own source vector plus its
+/// current out-edges (vec_id + source vector each) so a full backlink can be
+/// re-pruned on the same exact metric when the neighbor is already at capacity.
+#[derive(Debug, Clone)]
+pub(super) struct DistannBacklinkTarget {
+    pub vec_id: u64,
+    pub source_vector: Vec<f32>,
+    pub current_neighbors: Vec<DistannForwardCandidate>,
+}
+
+/// Plan a neighbor's adjacency after an inserted node points to it (FR-083
+/// back-edge amendment). If the neighbor has a free slot, the new node is simply
+/// appended (cheap, edge-preserving). If it is already at `max_degree`, the
+/// union of its current edges plus the new node is `robust_prune`d back to
+/// `max_degree` on exact distance — so a full neighbor keeps its most
+/// α-diverse edges rather than rejecting the backlink outright. Returns the
+/// amended out-edge vec_id list. Pure; the on-disk slice just writes this.
+pub(super) fn plan_insert_backlink(
+    target: &DistannBacklinkTarget,
+    new_vec_id: u64,
+    new_source_vector: &[f32],
+    alpha: f32,
+    max_degree: usize,
+) -> Result<Vec<u64>, String> {
+    if max_degree == 0 {
+        return Err("ec_distann backlink planning max_degree must be > 0".to_owned());
+    }
+    // Already linked (idempotent — a re-inserted/duplicate edge is a no-op).
+    if target.current_neighbors.iter().any(|n| n.vec_id == new_vec_id) {
+        return Ok(target.current_neighbors.iter().map(|n| n.vec_id).collect());
+    }
+    // Free slot: append, preserving existing edges.
+    if target.current_neighbors.len() < max_degree {
+        let mut kept: Vec<u64> = target.current_neighbors.iter().map(|n| n.vec_id).collect();
+        kept.push(new_vec_id);
+        return Ok(kept);
+    }
+    // Full: re-prune the union (current edges + the new node) from the
+    // neighbor's own vantage point.
+    let mut union = target.current_neighbors.clone();
+    union.push(DistannForwardCandidate {
+        vec_id: new_vec_id,
+        source_vector: new_source_vector.to_vec(),
+    });
+    select_insert_forward_neighbors(&target.source_vector, &union, alpha, max_degree)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -124,6 +172,50 @@ mod tests {
         // No duplicates.
         let uniq: std::collections::HashSet<u64> = kept.iter().copied().collect();
         assert_eq!(uniq.len(), kept.len(), "no duplicate edges");
+    }
+
+    #[test]
+    fn backlink_appends_when_free() {
+        // Neighbor 100 has 2 of max 4 edges; the new node 999 is appended.
+        let target = DistannBacklinkTarget {
+            vec_id: 100,
+            source_vector: vec![1.0, 0.0, 0.0],
+            current_neighbors: vec![
+                candidate(10, &[0.9, 0.1, 0.0]),
+                candidate(20, &[0.8, 0.2, 0.0]),
+            ],
+        };
+        let kept = plan_insert_backlink(&target, 999, &[0.95, 0.05, 0.0], 1.2, 4).unwrap();
+        assert_eq!(kept, vec![10, 20, 999], "free slot -> append, edges preserved");
+    }
+
+    #[test]
+    fn backlink_reprunes_when_full() {
+        // Neighbor 100 is at capacity (3/3); adding 999 re-prunes the union to 3.
+        let target = DistannBacklinkTarget {
+            vec_id: 100,
+            source_vector: vec![1.0, 0.0, 0.0],
+            current_neighbors: vec![
+                candidate(10, &[0.99, 0.01, 0.0]),
+                candidate(20, &[0.0, 1.0, 0.0]),
+                candidate(30, &[-1.0, 0.0, 0.0]),
+            ],
+        };
+        let kept = plan_insert_backlink(&target, 999, &[0.98, 0.02, 0.0], 1.2, 3).unwrap();
+        assert!(kept.len() <= 3, "degree bound respected after re-prune");
+        let uniq: std::collections::HashSet<u64> = kept.iter().copied().collect();
+        assert_eq!(uniq.len(), kept.len(), "no duplicate edges");
+    }
+
+    #[test]
+    fn backlink_idempotent_when_already_linked() {
+        let target = DistannBacklinkTarget {
+            vec_id: 100,
+            source_vector: vec![1.0, 0.0, 0.0],
+            current_neighbors: vec![candidate(999, &[0.9, 0.1, 0.0]), candidate(10, &[0.8, 0.2, 0.0])],
+        };
+        let kept = plan_insert_backlink(&target, 999, &[0.9, 0.1, 0.0], 1.2, 4).unwrap();
+        assert_eq!(kept, vec![999, 10], "already-linked -> unchanged (idempotent)");
     }
 
     #[test]
