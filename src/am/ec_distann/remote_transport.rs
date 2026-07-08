@@ -66,6 +66,11 @@ pub(super) struct DistannRemoteExpandRequest<'a> {
 struct PooledConnection {
     client: Client,
     task: tokio::task::JoinHandle<()>,
+    /// Reviewer 006-P3: the (roster, local_node_id, epoch) last applied to this
+    /// pooled session via `set_config`. The expand hot path skips the setup
+    /// round-trip when it is unchanged, and re-applies (epoch-aware) on a
+    /// mismatch so a mid-backend epoch change is never served stale.
+    applied_identity: Option<(String, String, String)>,
 }
 
 struct DistannTransportState {
@@ -152,9 +157,12 @@ pub(super) fn remote_expand_batch(
             connections,
         } = state;
         runtime.block_on(async {
-            // Ensure every connection first (one-time/cached; sequential connect
-            // is not on the per-hop hot path once pooled).
-            for request in requests {
+            // Ensure every connection AND its session identity first — sequential
+            // and off the per-hop hot path. 006-P3: applying set_config here
+            // (once per (roster,node,epoch)) instead of before every expand
+            // removes a round-trip per owner per hop and avoids racing session
+            // GUCs against concurrent expands on a shared loopback connection.
+            for (index, request) in requests.iter().enumerate() {
                 let needs_connect = connections
                     .get(request.conninfo)
                     .map(|pooled| pooled.task.is_finished())
@@ -176,21 +184,46 @@ pub(super) fn remote_expand_batch(
                     let task = tokio::spawn(async move {
                         let _ = connection.await;
                     });
-                    connections
-                        .insert(request.conninfo.to_owned(), PooledConnection { client, task });
+                    connections.insert(
+                        request.conninfo.to_owned(),
+                        PooledConnection { client, task, applied_identity: None },
+                    );
+                }
+
+                let identity = (
+                    request.roster_spec.to_owned(),
+                    node_id_strs[index].clone(),
+                    epoch_strs[index].clone(),
+                );
+                let pooled = connections
+                    .get_mut(request.conninfo)
+                    .expect("connection just ensured");
+                if pooled.applied_identity.as_ref() != Some(&identity) {
+                    pooled
+                        .client
+                        .query(
+                            SESSION_SETUP_SQL,
+                            &[&identity.0, &identity.1, &identity.2],
+                        )
+                        .await
+                        .map_err(|error| {
+                            let detail = error
+                                .as_db_error()
+                                .map(|db| db.message().to_owned())
+                                .unwrap_or_else(|| error.to_string());
+                            format!(
+                                "ec_distann remote transport session setup failed: {detail}"
+                            )
+                        })?;
+                    pooled.applied_identity = Some(identity);
                 }
             }
 
-            // Fire all owners concurrently and await the whole set.
+            // Fire all owners concurrently and await the whole set (expand only —
+            // the session identity is already applied above).
             let futures = requests.iter().enumerate().map(|(index, request)| {
                 let client = &connections[request.conninfo].client;
-                run_one_remote(
-                    client,
-                    request,
-                    &vec_ids_i64[index],
-                    &node_id_strs[index],
-                    &epoch_strs[index],
-                )
+                run_one_remote(client, request, &vec_ids_i64[index])
             });
             Ok::<_, String>(futures_util::future::join_all(futures).await)
         })
@@ -206,30 +239,14 @@ pub(super) fn remote_expand_batch(
     }
 }
 
-/// One remote call: parameterized session setup then the expand query.
+/// One remote call: the expand query only. The session identity
+/// (roster/local_node_id/epoch) is applied once per pooled connection by the
+/// caller (006-P3), so the per-hop hot path is a single round trip.
 async fn run_one_remote(
     client: &Client,
     request: &DistannRemoteExpandRequest<'_>,
     vec_ids_i64: &[i64],
-    node_id_str: &str,
-    epoch_str: &str,
 ) -> Result<Vec<DistannExpandedNode>, DistannExpandError> {
-    client
-        .query(
-            SESSION_SETUP_SQL,
-            &[&request.roster_spec, &node_id_str, &epoch_str],
-        )
-        .await
-        .map_err(|error| {
-            let detail = error
-                .as_db_error()
-                .map(|db| db.message().to_owned())
-                .unwrap_or_else(|| error.to_string());
-            DistannExpandError::Internal(format!(
-                "ec_distann remote transport session setup failed: {detail}"
-            ))
-        })?;
-
     let rows = client
         .query(
             EXPAND_SQL,

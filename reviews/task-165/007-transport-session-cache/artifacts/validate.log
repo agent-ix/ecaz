@@ -1,0 +1,12 @@
+# 006-P3 per-connection session-setup cache — validation (release, v3 index)
+# head SHA: 891afb6a7, DB ec_distann_m2, fresh p3_idx (ec_distann, 3000 rows, dim 1536)
+# cmd: ecaz dev sql --db ec_distann_m2 --file validate.sql
+
+## 2-node loopback top-10 vs single-node, after moving set_config to per-connection:
+ base_minus_two | two_minus_base | order_identical 
+----------------+----------------+-----------------
+              0 |              0 | t
+
+# RESULT: identical top-10 (base_minus_two=0, two_minus_base=0, order_identical=t).
+# The cached session identity does not change results; the per-hop set_config
+# round-trip is eliminated (applied once per (roster,node,epoch) at connect).
