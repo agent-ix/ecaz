@@ -29,8 +29,8 @@ pub use self::ec_diskann::tuple::{
 };
 pub use self::ec_diskann::vamana::{
     approximate_medoid, bfs_reachable, build_vamana_graph_with_pass1_extra_candidates,
-    build_vamana_graph_with_stats, greedy_search, greedy_search_view, MetricSummary,
-    VamanaBuildPassStats, VamanaBuildStats, VamanaGraph, VamanaGraphView,
+    build_vamana_graph_with_stats, greedy_search, greedy_search_view, robust_prune, Candidate,
+    MetricSummary, VamanaBuildPassStats, VamanaBuildStats, VamanaGraph, VamanaGraphView,
 };
 pub(crate) use self::ec_diskann::{
     diagnostics::graph_summary as diskann_graph_summary,

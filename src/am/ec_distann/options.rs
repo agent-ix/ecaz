@@ -11,12 +11,13 @@ use super::{
         DISTANN_NEIGHBOR_CODEC_TURBOQUANT,
     },
     ECDISTANN_DEFAULT_ALPHA, ECDISTANN_DEFAULT_BEAM_WIDTH, ECDISTANN_DEFAULT_BUILD_LIST_SIZE,
-    ECDISTANN_DEFAULT_CLOSURE_EPSILON, ECDISTANN_DEFAULT_GRAPH_DEGREE,
-    ECDISTANN_DEFAULT_HEAD_INDEX_CAP, ECDISTANN_DEFAULT_HOP_ROUNDS, ECDISTANN_MAX_ALPHA,
-    ECDISTANN_MAX_BEAM_WIDTH, ECDISTANN_MAX_BUILD_LIST_SIZE, ECDISTANN_MAX_CLOSURE_EPSILON,
-    ECDISTANN_MAX_GRAPH_DEGREE, ECDISTANN_MAX_HEAD_INDEX_CAP, ECDISTANN_MAX_HOP_ROUNDS,
-    ECDISTANN_DEFAULT_TOP_K, ECDISTANN_MAX_TOP_K, ECDISTANN_MIN_ALPHA,
-    ECDISTANN_MIN_BUILD_LIST_SIZE, ECDISTANN_MIN_CLOSURE_EPSILON, ECDISTANN_MIN_GRAPH_DEGREE,
+    ECDISTANN_DEFAULT_BUILD_SHARDS, ECDISTANN_DEFAULT_CLOSURE_EPSILON,
+    ECDISTANN_DEFAULT_GRAPH_DEGREE, ECDISTANN_DEFAULT_HEAD_INDEX_CAP, ECDISTANN_DEFAULT_HOP_ROUNDS,
+    ECDISTANN_MAX_ALPHA, ECDISTANN_MAX_BEAM_WIDTH, ECDISTANN_MAX_BUILD_LIST_SIZE,
+    ECDISTANN_MAX_BUILD_SHARDS, ECDISTANN_MAX_CLOSURE_EPSILON, ECDISTANN_MAX_GRAPH_DEGREE,
+    ECDISTANN_MAX_HEAD_INDEX_CAP, ECDISTANN_MAX_HOP_ROUNDS, ECDISTANN_DEFAULT_TOP_K,
+    ECDISTANN_MAX_TOP_K, ECDISTANN_MIN_ALPHA, ECDISTANN_MIN_BUILD_LIST_SIZE,
+    ECDISTANN_MIN_BUILD_SHARDS, ECDISTANN_MIN_CLOSURE_EPSILON, ECDISTANN_MIN_GRAPH_DEGREE,
     ECDISTANN_MIN_HEAD_INDEX_CAP,
 };
 
@@ -41,6 +42,7 @@ struct EcDistannReloptions {
     graph_degree: i32,
     build_list_size: i32,
     head_index_cap: i32,
+    build_shards: i32,
     // Postgres real reloptions are stored as C doubles; downcast to f32 when
     // constructing `EcDistannOptions` (same posture as ec_diskann alpha).
     alpha: f64,
@@ -125,6 +127,9 @@ pub(super) struct EcDistannOptions {
     pub(super) graph_degree: i32,
     pub(super) build_list_size: i32,
     pub(super) head_index_cap: i32,
+    /// FR-077 build-shard count (0 = auto, 1 = monolithic fallback, >=2
+    /// sharded closure-overlap build + stitch).
+    pub(super) build_shards: i32,
     pub(super) alpha: f32,
     pub(super) closure_epsilon: f32,
     pub(super) neighbor_code_format: NeighborCodeFormat,
@@ -136,6 +141,7 @@ impl EcDistannOptions {
         graph_degree: ECDISTANN_DEFAULT_GRAPH_DEGREE,
         build_list_size: ECDISTANN_DEFAULT_BUILD_LIST_SIZE,
         head_index_cap: ECDISTANN_DEFAULT_HEAD_INDEX_CAP,
+        build_shards: ECDISTANN_DEFAULT_BUILD_SHARDS,
         alpha: ECDISTANN_DEFAULT_ALPHA,
         closure_epsilon: ECDISTANN_DEFAULT_CLOSURE_EPSILON,
         neighbor_code_format: NeighborCodeFormat::DEFAULT,
@@ -245,6 +251,17 @@ pub(super) unsafe extern "C-unwind" fn ec_distann_amoptions(
             ECDISTANN_MAX_HEAD_INDEX_CAP,
             offset_of!(EcDistannReloptions, head_index_cap) as i32,
         );
+        pg_sys::add_local_int_reloption(
+            &mut relopts,
+            b"build_shards\0".as_ptr().cast(),
+            b"FR-077 build-shard count: 0 = auto, 1 = monolithic fallback, >=2 sharded closure-overlap build + stitch.\0"
+                .as_ptr()
+                .cast(),
+            ECDISTANN_DEFAULT_BUILD_SHARDS,
+            ECDISTANN_MIN_BUILD_SHARDS,
+            ECDISTANN_MAX_BUILD_SHARDS,
+            offset_of!(EcDistannReloptions, build_shards) as i32,
+        );
         pg_sys::add_local_real_reloption(
             &mut relopts,
             b"alpha\0".as_ptr().cast(),
@@ -338,6 +355,7 @@ impl EcDistannReloptionsView {
             graph_degree: reloptions.graph_degree,
             build_list_size: reloptions.build_list_size,
             head_index_cap: reloptions.head_index_cap,
+            build_shards: reloptions.build_shards,
             alpha: reloptions.alpha as f32,
             closure_epsilon: reloptions.closure_epsilon as f32,
             neighbor_code_format,

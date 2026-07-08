@@ -458,6 +458,67 @@ fn test_ec_distann_default_codec_is_rabitq() {
 }
 
 #[pg_test]
+fn test_ec_distann_sharded_build_self_recall() {
+    // FR-077 M1: the sharded closure-overlap build + stitch returns valid
+    // results through the same scan path as the monolithic build. Drive four
+    // build shards over the eight-row fixture; self queries must still return
+    // self (the stitched graph is navigable end to end).
+    create_distann_fixture(
+        "ec_distann_sharded_recall",
+        "WITH (graph_degree = 4, build_list_size = 16, head_index_cap = 16, \
+               build_shards = 4, closure_epsilon = 0.25, neighbor_code_format = 'rabitq')",
+    );
+    let (metadata, _) = distann_materialized_index("ec_distann_sharded_recall_idx");
+    assert_eq!(
+        metadata.node_count,
+        DISTANN_FIXTURE_ROWS.len() as u64,
+        "sharded stitch must emit exactly one record per vec_id"
+    );
+    assert_ne!(
+        metadata.entry_point,
+        crate::storage::page::ItemPointer::INVALID,
+        "sharded build must set the entry medoid"
+    );
+    assert_distann_self_queries_return_self("ec_distann_sharded_recall");
+}
+
+#[pg_test]
+fn test_ec_distann_sharded_build_is_deterministic_across_reindex() {
+    // FR-077 determinism: identical corpus + seed + options => identical
+    // stitched graph. Two sharded builds must produce the same vec_id
+    // directory (the M2 single-vs-multinode result-identity contract).
+    create_distann_fixture(
+        "ec_distann_sharded_determinism",
+        "WITH (graph_degree = 4, build_shards = 3, closure_epsilon = 0.2)",
+    );
+    let (metadata_before, chain_before) =
+        distann_materialized_index("ec_distann_sharded_determinism_idx");
+    let directory_before = crate::am::ec_distann::reader::read_directory_chain(
+        &chain_before,
+        metadata_before.directory_head,
+        DISTANN_FIXTURE_ROWS.len(),
+    )
+    .expect("directory should read");
+
+    Spi::run("REINDEX INDEX ec_distann_sharded_determinism_idx")
+        .expect("reindex should succeed");
+
+    let (metadata_after, chain_after) =
+        distann_materialized_index("ec_distann_sharded_determinism_idx");
+    let directory_after = crate::am::ec_distann::reader::read_directory_chain(
+        &chain_after,
+        metadata_after.directory_head,
+        DISTANN_FIXTURE_ROWS.len(),
+    )
+    .expect("directory should read after reindex");
+
+    assert_eq!(
+        directory_before, directory_after,
+        "sharded build must be deterministic across reindex"
+    );
+}
+
+#[pg_test]
 fn test_ec_distann_sql_ordered_scan_through_planner() {
     create_distann_fixture(
         "ec_distann_sql_scan",

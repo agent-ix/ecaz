@@ -407,21 +407,59 @@ unsafe fn flush_build_state(
         })
         .collect::<Result<_, String>>()?;
 
-    // Seed-deterministic monolithic Vamana build over exact distances
-    // (FR-077 determinism contract starts here).
+    // Seed-deterministic Vamana build over exact distances (FR-077
+    // determinism contract starts here). The monolithic path is the
+    // single-shard degenerate case; `build_shards >= 2` selects the sharded
+    // closure-overlap build + stitch (FR-077), which returns a graph in the
+    // same global node-id space so all downstream staging is unchanged.
     let dist = |left: u32, right: u32| -> f32 {
         source_inner_product_distance(source_refs[left as usize], source_refs[right as usize])
     };
-    let medoid = crate::am::approximate_medoid(node_count, DISTANN_MEDOID_SAMPLE_CAP, seed, dist);
-    let (graph, _stats) = crate::am::build_vamana_graph_with_stats(
+    let shard_count = super::shard_build::resolve_shard_count(
         node_count,
-        medoid,
-        state.options.graph_degree as usize,
-        state.options.build_list_size as usize,
-        state.options.alpha,
-        seed,
-        dist,
+        usize::try_from(state.options.build_shards.max(0)).unwrap_or(0),
     );
+    let (graph, medoid) = if shard_count >= 2 {
+        let (graph, medoid, shard_stats) = super::shard_build::build_sharded_graph(
+            &source_refs,
+            usize::from(dimensions),
+            state.options.graph_degree as usize,
+            state.options.build_list_size as usize,
+            state.options.alpha,
+            shard_count,
+            state.options.closure_epsilon,
+            seed,
+        )?;
+        // FR-077-AC-3 / ADR-085 D8: surface the closure/stitch manifest rows.
+        // Single-node M1 has no persisted epoch manifest yet (FR-082, M2/M3),
+        // so these land as a build NOTICE captured in the packet artifacts.
+        pgrx::notice!(
+            "ec_distann sharded build: shards={} duplication_factor={:.4} max_shard_size={} \
+             stitch_edges_before_prune={} stitch_edges_after_prune={} stitch_peak_union_len={} \
+             reachability_repairs={}",
+            shard_stats.shard_count,
+            shard_stats.duplication_factor,
+            shard_stats.max_shard_size,
+            shard_stats.stitch_edges_before_prune,
+            shard_stats.stitch_edges_after_prune,
+            shard_stats.stitch_peak_union_len,
+            shard_stats.reachability_repairs,
+        );
+        (graph, medoid)
+    } else {
+        let medoid =
+            crate::am::approximate_medoid(node_count, DISTANN_MEDOID_SAMPLE_CAP, seed, dist);
+        let (graph, _stats) = crate::am::build_vamana_graph_with_stats(
+            node_count,
+            medoid,
+            state.options.graph_degree as usize,
+            state.options.build_list_size as usize,
+            state.options.alpha,
+            seed,
+            dist,
+        );
+        (graph, medoid)
+    };
 
     // Stage FR-076 node records; adjacency references neighbors by vec_id
     // and embeds their codes, so records never carry TIDs of other records.

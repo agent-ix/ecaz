@@ -24,6 +24,7 @@ pub(crate) mod quantizer;
 pub(crate) mod reader;
 mod routine;
 pub(crate) mod scan;
+mod shard_build;
 pub mod tuple;
 
 pub(crate) fn register_gucs() {
@@ -53,6 +54,15 @@ pub(super) const ECDISTANN_MAX_HEAD_INDEX_CAP: i32 = 1_048_576;
 pub(super) const ECDISTANN_DEFAULT_CLOSURE_EPSILON: f32 = 0.1;
 pub(super) const ECDISTANN_MIN_CLOSURE_EPSILON: f32 = 0.0;
 pub(super) const ECDISTANN_MAX_CLOSURE_EPSILON: f32 = 1.0;
+
+/// FR-077 build-shard count. `0` = auto (monolithic below ~20k rows, then
+/// ~one shard per 25k up to a cap); `1` forces the monolithic fallback path;
+/// `>=2` selects the sharded closure-overlap build + stitch. Default is `1`
+/// (monolithic) so the single-node default matches the M0-measured behavior
+/// until the M1 A/B promotes the sharded path.
+pub(super) const ECDISTANN_DEFAULT_BUILD_SHARDS: i32 = 1;
+pub(super) const ECDISTANN_MIN_BUILD_SHARDS: i32 = 0;
+pub(super) const ECDISTANN_MAX_BUILD_SHARDS: i32 = 4096;
 
 /// FR-081 BW default; matches the ec_diskann batched-beam width measured in
 /// Task 168 (packet 002 A/B).
