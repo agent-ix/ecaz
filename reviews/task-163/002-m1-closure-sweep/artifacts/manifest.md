@@ -54,8 +54,10 @@ Sweeps `closure_epsilon` ∈ {0.3, 0.6, 1.0} vs the packet-001 baselines
   ef=64 +0.0030, ef=100 +0.0090, ef=200 +0.0035 (stitch above mono). It trails
   only at sub-operational ef≤32 (ef=16 −0.016, ef=32 −0.005), where recall is
   0.85–0.92 (not a usable operating point) and the CI95 bands overlap.
-- At 50k, ε=0.3 tracks monolithic within ±0.0045 at every ef (matches or
-  exceeds at ef≥100).
+- At 50k, ε=0.3 tracks monolithic within ±0.0045 at every ef: it exceeds mono
+  at ef=32/100/200 and is −0.0045 below at ef=64 (0.9795 vs 0.9840). So the 50k
+  result is "within ±0.0045", NOT "matches or exceeds" at every operational
+  point — ef=64 is a small deficit inside the CI band, not a crossover.
 - ε=0.3 is near the sweet spot: ε=0.6/1.0 do not improve the operational band
   meaningfully (ε=1.0 even trails ε=0.3 at ef=100: 0.9815 vs 0.9860) and cost
   more to build. **Recommendation: default `closure_epsilon` 0.1 → 0.3**
@@ -103,8 +105,12 @@ the corpus, so its per-shard Vamana dominates the (single-host) critical path
 and erases the parallel-build win. A better-balanced sharder (or more k-means
 iterations / a balanced-assignment variant) is the obvious follow-up to reclaim
 the parallelism at ε=0.3; it is not required for M1 correctness. The
-`stitch_peak_union_len` stays 114–119 regardless of ε — the D8 / CON-4 bound
-holds independent of duplication.
+`stitch_peak_union_len` (incremental merge scratch) stays 114–119 regardless of
+ε. Correction (reviewer 2026-07-07-01): the honest CON-4 peak is
+`shard_output_retained_node_ids` — all shard outputs are held in RAM in this v1,
+so `stitch_peak_union_len` under-reports; both figures are now in the build
+NOTICE. The strict streamed-by-vec_id-group D8 bound (spill sorted shard outputs,
+merge from cursors) is a tracked follow-up — see packet-001 manifest.
 
 ## Artifacts
 

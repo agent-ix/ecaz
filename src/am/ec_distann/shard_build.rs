@@ -75,10 +75,20 @@ pub(super) struct ShardBuildStats {
     pub(super) stitch_edges_before_prune: u64,
     /// Total edges emitted after `robust_prune`.
     pub(super) stitch_edges_after_prune: u64,
-    /// Peak stitch working set in node ids: the largest single-node union the
-    /// stitch held (ADR-085 D8 CON-4 — this plus the shard streams and prune
-    /// scratch is the whole working set; it never holds all unions at once).
+    /// Peak *incremental* stitch working set in node ids: the largest
+    /// single-node neighbor union the merge held at once. The merge never holds
+    /// all unions simultaneously — it streams one node group at a time.
     pub(super) stitch_peak_union_len: usize,
+    /// Total node-ids retained across all shard outputs during the stitch
+    /// (sum of every shard's node list + adjacency). This v1 holds the shard
+    /// graphs in memory rather than spilling them to sorted files, so this —
+    /// NOT `stitch_peak_union_len` — is the honest peak-memory figure for the
+    /// stitch input (ADR-085 D8 / FR-077-CON-4). It is bounded by
+    /// `duplication_factor * node_count * (graph_degree + 1)` and is a small
+    /// fraction of the already-resident source vectors; the strict "streamed by
+    /// vec_id group" D8 bound (spill shard outputs to disk, merge from cursors)
+    /// is a tracked follow-up, not required for M1 correctness.
+    pub(super) shard_output_retained_node_ids: u64,
     /// Reachability repairs applied (FR-077-CON-3 guard); expected 0 at scale.
     pub(super) reachability_repairs: usize,
 }
@@ -154,14 +164,26 @@ pub(super) fn build_sharded_graph(
         &dist,
     );
 
+    // Honest D8/CON-4 accounting: the shard outputs are held in memory during
+    // the stitch (v1 does not spill them to sorted files), so their total size
+    // is the real peak-memory figure for the stitch input.
+    let shard_output_retained_node_ids: u64 = shard_graphs
+        .iter()
+        .map(|shard| {
+            shard.nodes.len() as u64
+                + shard.neighbors.iter().map(|n| n.len() as u64).sum::<u64>()
+        })
+        .sum();
+
     let (graph, mut stats) =
         stitch_shard_graphs(node_count, &shard_graphs, graph_degree, alpha, &dist);
     stats.shard_count = shard_count;
     stats.duplication_factor = assignment.duplication_factor;
     stats.max_shard_size = assignment.max_shard_size;
+    stats.shard_output_retained_node_ids = shard_output_retained_node_ids;
 
     let mut graph = graph;
-    stats.reachability_repairs = repair_reachability(&mut graph, medoid, graph_degree, &dist);
+    stats.reachability_repairs = repair_reachability(&mut graph, medoid, graph_degree, &dist)?;
 
     Ok((graph, medoid, stats))
 }
@@ -416,47 +438,52 @@ where
         stitch_edges_before_prune: edges_before,
         stitch_edges_after_prune: edges_after,
         stitch_peak_union_len: peak_union_len,
+        shard_output_retained_node_ids: 0,
         reachability_repairs: 0,
     };
     (graph, stats)
 }
 
-/// Cap on the reached-set scan when picking a repair source. Bounds the
-/// reachability repair at O(stranded * cap) rather than O(stranded * n²); the
-/// BFS-order prefix scanned first is dominated by well-connected hubs, so the
-/// chosen source is close in practice. Repairs are ~never needed at scale.
-const DISTANN_REPAIR_SCAN_CAP: usize = 8192;
-
-/// Guarantee FR-077-CON-3: every node reachable from `medoid`. Runs BFS over
-/// out-edges; each stranded node gets one in-edge from a nearby already-
-/// reached node. The edge is **appended** into a slot with room (or replaces
-/// the source's farthest neighbor only when the source is full), so the degree
-/// bound (CON-1) holds and no earlier repair edge is ever evicted — the repair
-/// is monotone and always converges. Deterministic (stranded nodes processed
-/// ascending). Returns the repair count (expected 0 at corpus scale).
+/// Guarantee FR-077-CON-3: every node reachable from `medoid`, while never
+/// violating FR-077-CON-1 (out-degree ≤ `graph_degree`). Runs BFS over
+/// out-edges; each stranded node gets one in-edge from the nearest already-
+/// reached node that can accept the edge **without exceeding R** — a node with
+/// a free slot (append) or with an evictable non-protected neighbor (replace
+/// its farthest such neighbor). Repair edges are protected so a later repair
+/// on the same source never re-strands an earlier node (monotone convergence),
+/// and reachability is propagated from each repaired node so no node is
+/// repaired that is already navigable through a repaired predecessor.
+///
+/// Such an accepting source always exists for `graph_degree >= 2`: the number
+/// of protected repair edges never exceeds the number of reached nodes (each
+/// repair marks ≥1 new node reached), which is `< reached_count * graph_degree`
+/// total slots, so some reached node always has a free or non-protected slot.
+/// `graph_degree` is reloption-bounded to ≥ 4 (`ECDISTANN_MIN_GRAPH_DEGREE`),
+/// so the "no accepting source" branch is unreachable in practice; it is an
+/// `Err` rather than a silent CON-1 violation. Deterministic (stranded nodes
+/// processed ascending). Returns the repair count (expected 0 at corpus scale).
 fn repair_reachability<D>(
     graph: &mut VamanaGraph,
     medoid: u32,
     graph_degree: usize,
     dist: &D,
-) -> usize
+) -> Result<usize, String>
 where
     D: Fn(u32, u32) -> f32,
 {
     let node_count = graph.node_count();
     if node_count == 0 {
-        return 0;
+        return Ok(0);
     }
     let reached_order = bfs_reachable(graph, medoid);
     if reached_order.len() == node_count {
-        return 0;
+        return Ok(0);
     }
 
     let mut reached = vec![false; node_count];
     for &n in &reached_order {
         reached[n as usize] = true;
     }
-    // BFS order first (hub-heavy), so the bounded scan sees good sources early.
     let mut reached_list: Vec<u32> = reached_order;
     // Edges added by the repair must never be evicted, else a later repair on
     // the same source could re-strand an earlier node.
@@ -467,62 +494,59 @@ where
         if reached[node as usize] {
             continue;
         }
-        // Prefer a nearby reached node that still has a free adjacency slot;
-        // fall back to the nearest reached node overall (evict its farthest
-        // non-protected neighbor). Bounded scan over the reached list.
-        let scan_len = reached_list.len().min(DISTANN_REPAIR_SCAN_CAP);
-        let mut best_room: Option<(u32, f32)> = None;
-        let mut best_any: Option<(u32, f32)> = None;
-        for &candidate in reached_list.iter().take(scan_len) {
-            let d = dist(candidate, node);
-            if best_any.map_or(true, |(_, bd)| d < bd) {
-                best_any = Some((candidate, d));
-            }
-            if graph.neighbors[candidate as usize].len() < graph_degree
-                && best_room.map_or(true, |(_, bd)| d < bd)
-            {
-                best_room = Some((candidate, d));
-            }
-        }
-
-        // Add one in-edge src -> node so `node` (and everything reachable from
-        // it) joins the reached set. If the chosen source already links to
-        // `node`, no edge is needed.
-        let src = best_room
-            .or(best_any)
-            .map(|(src, _)| src)
-            .unwrap_or(medoid);
-        if !graph.neighbors[src as usize].contains(&node) {
-            if graph.neighbors[src as usize].len() < graph_degree {
-                graph.neighbors[src as usize].push(node);
-            } else {
-                // Source is full: evict its farthest non-protected neighbor.
-                let protected_src = &protected[src as usize];
-                let victim = graph.neighbors[src as usize]
+        // With reachability propagation, an unreached node has no in-edge from
+        // any reached node, so a fresh in-edge is always needed. Pick the
+        // nearest reached source that can accept it without exceeding R: it has
+        // a free slot, or a non-protected neighbor we can evict.
+        let mut best_src: Option<(u32, f32, bool)> = None; // (src, dist, has_room)
+        for &candidate in &reached_list {
+            let adjacency = &graph.neighbors[candidate as usize];
+            let has_room = adjacency.len() < graph_degree;
+            let has_evictable = !has_room
+                && adjacency
                     .iter()
-                    .enumerate()
-                    .filter(|(_, n)| !protected_src.contains(n))
-                    .map(|(i, &n)| (i, dist(src, n)))
-                    .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
-                match victim {
-                    Some((pos, _)) => graph.neighbors[src as usize][pos] = node,
-                    // Pathological: source is full of protected repair edges.
-                    // Still guarantee reachability by exceeding R by one here
-                    // (CON-1 tolerates this vanishingly rare degenerate — it
-                    // only occurs when graph_degree stranded nodes all route
-                    // through one source).
-                    None => graph.neighbors[src as usize].push(node),
+                    .any(|n| !protected[candidate as usize].contains(n));
+            if has_room || has_evictable {
+                let d = dist(candidate, node);
+                if best_src.map_or(true, |(_, bd, _)| d < bd) {
+                    best_src = Some((candidate, d, has_room));
                 }
             }
-            protected[src as usize].push(node);
-            repairs += 1;
         }
-        debug_assert!(graph.neighbors[src as usize].contains(&node));
+
+        let (src, has_room) = match best_src {
+            Some((src, _, has_room)) => (src, has_room),
+            // Unreachable for graph_degree >= 2 (see fn docs); never exceed R.
+            None => {
+                return Err(format!(
+                    "ec_distann reachability repair could not place an in-edge to node {node} \
+                     without exceeding graph_degree {graph_degree} (degenerate saturation)"
+                ))
+            }
+        };
+
+        if has_room {
+            graph.neighbors[src as usize].push(node);
+        } else {
+            // Evict the farthest non-protected neighbor (exists: has_evictable).
+            let protected_src = &protected[src as usize];
+            let victim = graph.neighbors[src as usize]
+                .iter()
+                .enumerate()
+                .filter(|(_, n)| !protected_src.contains(n))
+                .map(|(i, &n)| (i, dist(src, n)))
+                .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+                .map(|(i, _)| i)
+                .expect("has_evictable guarantees a non-protected neighbor");
+            graph.neighbors[src as usize][victim] = node;
+        }
+        protected[src as usize].push(node);
+        repairs += 1;
+        debug_assert!(graph.neighbors[src as usize].len() <= graph_degree);
 
         // Propagate reachability from the newly-connected node: everything it
-        // can now reach is reached too, so we never re-repair a node that is
-        // already navigable through a repaired predecessor (this also avoids
-        // adding a duplicate in-edge to a node reachable via `node`).
+        // can now reach is reached too, so no node navigable through a repaired
+        // predecessor is repaired again.
         let mut stack = vec![node];
         reached[node as usize] = true;
         reached_list.push(node);
@@ -537,7 +561,7 @@ where
         }
     }
 
-    repairs
+    Ok(repairs)
 }
 
 #[cfg(test)]
@@ -683,6 +707,78 @@ mod tests {
             prop_assert_eq!(stats_a, stats_b);
             prop_assert_eq!(graph_a.neighbors, graph_b.neighbors);
         }
+
+        // FR-077-CON (alpha-prune invariant, TC-038 / spec/tests.md): the
+        // stitched *union* preserves robust_prune's alpha-diversity. For every
+        // multi-shard node (the nodes the stitch actually re-prunes over their
+        // unioned edge lists), the kept neighbor list satisfies, in kept order,
+        // that no earlier-kept (closer) neighbor alpha-dominates a later one
+        // under the GLOBAL distance: alpha * dist(nb[i], nb[j]) > dist(node,
+        // nb[j]) for i < j. Single-shard passthrough nodes carry the per-shard
+        // Vamana output (backlink re-prunes reorder that list, so it is not a
+        // single-prune kept order) and are exempt; the reachability repair runs
+        // after this, so it is checked on the pre-repair stitch output.
+        #[test]
+        fn tc038_alpha_prune_invariant(
+            node_count in 40_usize..160,
+            dimensions in 4_usize..12,
+            graph_degree in 4_usize..24,
+            shard_count in 2_usize..6,
+            eps in 0.0_f32..0.4,
+            seed in any::<u64>(),
+        ) {
+            let alpha = 1.2_f32;
+            let corpus = random_corpus(node_count, dimensions, seed);
+            let refs = refs(&corpus);
+            let dist = |a: u32, b: u32| {
+                source_inner_product_distance(refs[a as usize], refs[b as usize])
+            };
+            let assignment =
+                assign_shards(&refs, dimensions, shard_count, eps, seed).unwrap();
+            // Membership count per global node: the stitch re-prunes exactly the
+            // nodes appearing in >= 2 shards.
+            let mut membership = vec![0_u32; node_count];
+            for shard in &assignment.members {
+                for &n in shard {
+                    membership[n as usize] += 1;
+                }
+            }
+            let shard_graphs =
+                build_shard_graphs(&assignment.members, graph_degree, 64, alpha, seed, &dist);
+            let (graph, _stats) =
+                stitch_shard_graphs(node_count, &shard_graphs, graph_degree, alpha, &dist);
+
+            let mut checked_multi = 0_usize;
+            for node in 0..node_count as u32 {
+                if membership[node as usize] < 2 {
+                    continue; // passthrough node — exempt (see comment above)
+                }
+                checked_multi += 1;
+                let neighbors = &graph.neighbors[node as usize];
+                for j in 0..neighbors.len() {
+                    let vj = neighbors[j];
+                    let d_node_vj = dist(node, vj);
+                    for &vi in neighbors.iter().take(j) {
+                        // vi kept before vj => vi must not alpha-dominate vj.
+                        let lhs = alpha * dist(vi, vj);
+                        prop_assert!(
+                            lhs + 1e-4 >= d_node_vj,
+                            "alpha-prune violated at node {}: alpha*d({},{})={} < d(node,{})={}",
+                            node, vi, vj, lhs, vj, d_node_vj
+                        );
+                    }
+                }
+            }
+            // Guard against the test silently degenerating to zero coverage:
+            // with eps up to 0.4 and >=2 shards there is essentially always some
+            // closure overlap. Only assert coverage when eps is non-trivial.
+            if eps > 0.15 {
+                prop_assert!(
+                    checked_multi > 0,
+                    "no multi-shard nodes to check (closure overlap produced none)"
+                );
+            }
+        }
     }
 
     // FR-077-AC-2: stitching an already-stitched graph is a no-op. Model the
@@ -745,5 +841,42 @@ mod tests {
         assert_eq!(resolve_shard_count(5_000, 8), 8, "explicit request honored");
         assert_eq!(resolve_shard_count(3, 8), 3, "request clamped to node_count");
         assert_eq!(resolve_shard_count(1_000_000, 0), 16, "auto shard cap");
+    }
+
+    // FR-077-CON-1 + CON-3 regression: repair_reachability must connect a fully
+    // disconnected component from the medoid WITHOUT any node exceeding
+    // graph_degree, even when every reachable source already sits at R (the
+    // degenerate saturation the reviewer flagged: the old code appended past R
+    // and would have failed staging). Two triangles at R=2, medoid in one.
+    #[test]
+    fn repair_reachability_bounds_degree_on_disconnected_graph() {
+        let graph_degree = 2;
+        let node_count = 6;
+        let mut graph = VamanaGraph::empty(node_count, graph_degree);
+        // Component A {0,1,2} (contains medoid 0), component B {3,4,5}.
+        graph.neighbors[0] = vec![1, 2];
+        graph.neighbors[1] = vec![0, 2];
+        graph.neighbors[2] = vec![0, 1];
+        graph.neighbors[3] = vec![4, 5];
+        graph.neighbors[4] = vec![3, 5];
+        graph.neighbors[5] = vec![3, 4];
+        // Every source in component A is already at R=2, so the repair must
+        // evict a non-protected neighbor rather than append past R.
+        let dist = |a: u32, b: u32| (a as f32 - b as f32).abs();
+        let repairs = repair_reachability(&mut graph, 0, graph_degree, &dist)
+            .expect("repair must succeed without exceeding R");
+        assert!(repairs >= 1, "component B was stranded and must be repaired");
+
+        // CON-1: no node exceeds graph_degree.
+        for (node, neighbors) in graph.neighbors.iter().enumerate() {
+            assert!(
+                neighbors.len() <= graph_degree,
+                "node {node} degree {} exceeds R {graph_degree}",
+                neighbors.len()
+            );
+        }
+        // CON-3: every node reachable from the medoid.
+        let reached = bfs_reachable(&graph, 0);
+        assert_eq!(reached.len(), node_count, "all nodes must be reachable post-repair");
     }
 }

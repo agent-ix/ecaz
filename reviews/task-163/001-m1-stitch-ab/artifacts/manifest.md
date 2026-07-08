@@ -116,9 +116,21 @@ Captured from the build NOTICE (`ec_distann sharded build: …`):
 | 50k  | 1.3226 | 24771 | 110 | 14 |
 
 - **Duplication factor** 1.18–1.32 at ε=0.1 (grows with corpus).
-- **Peak stitch working set** (`stitch_peak_union_len`) 88–110 node ids — the
-  D8 / FR-077-CON-4 bound: the stitch holds one node's neighbor union + prune
-  scratch, never all unions. This is the peak-memory evidence.
+- **Incremental stitch working set** (`stitch_peak_union_len`) 88–110 node ids
+  — the largest single-node neighbor union the merge holds at once; the merge
+  streams one node group at a time and never holds all unions simultaneously.
+- **D8 / FR-077-CON-4 honest accounting (corrected per reviewer 2026-07-07-01):**
+  `stitch_peak_union_len` is only the *incremental merge* scratch, NOT the full
+  stitch peak. This v1 holds all shard outputs in memory during the stitch
+  (it does not spill them to sorted files), so the honest peak-memory figure is
+  `shard_output_retained_node_ids` = Σ over shards of (node list + adjacency),
+  bounded by `duplication_factor · node_count · (graph_degree+1)`. That is a
+  small fraction of the already-resident source-vector set
+  (`node_count · dim · 4 B`), which the build holds regardless. The strict D8
+  "streamed by vec_id group" bound (spill sorted shard outputs, merge from
+  cursors) is a tracked follow-up, not required for M1 correctness. The build
+  NOTICE now emits `shard_output_retained_node_ids` alongside the incremental
+  peak so both are on record.
 - **max_shard_size** 24771/50k shows spherical k-means is quite imbalanced on
   DBpedia (one dominant cluster). This concentrates the boundary and is a
   contributor to the recall gap; the closure sweep (packet 002) tests whether a

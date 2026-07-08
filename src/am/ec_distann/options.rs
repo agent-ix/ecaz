@@ -285,7 +285,7 @@ pub(super) unsafe extern "C-unwind" fn ec_distann_amoptions(
         pg_sys::add_local_string_reloption(
             &mut relopts,
             b"neighbor_code_format\0".as_ptr().cast(),
-            b"FR-076 neighbor-code codec: 'grouped_pq' (default), 'rabitq', or 'turboquant'.\0"
+            b"FR-076 neighbor-code codec: 'rabitq' (default, ADR-085 D7 M0 measurement), 'grouped_pq', or 'turboquant'.\0"
                 .as_ptr()
                 .cast(),
             ptr::null(),

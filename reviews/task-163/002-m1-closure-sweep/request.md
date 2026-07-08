@@ -32,18 +32,28 @@ monolithic + ε=0.1 baselines, release-verified:
 
 ## FR-077-AC-1 verdict (proposed)
 
-**PASS at `closure_epsilon=0.3`:** the stitched build does not regress below
-monolithic across the operational recall band at 50k and 100k (it matches or
-exceeds), so the "within 0.001" intent — stitch must not lose quality vs the
-monolithic fallback — is satisfied. The residual two-sided Δ at ef≥64 is
-positive (stitch better) and inside CI95. Full FR-077 acceptance:
+**PASS at `closure_epsilon=0.3`:** at **100k** (the AC-1 scale) the stitched
+build meets or exceeds monolithic across the whole operational band (ef=64
++0.0030, ef=100 +0.0090, ef=200 +0.0035). At **50k** it tracks monolithic
+within ±0.0045 — exceeding at ef=32/100/200 and −0.0045 at ef=64 (0.9795 vs
+0.9840), a small deficit inside the CI band rather than a crossover, so 50k is
+"within noise", not "matches or exceeds at every point". Either way the stitch
+does not materially lose quality vs the monolithic fallback, so the "within
+0.001" intent (no quality regression) is satisfied at the AC-1 scale. Full
+FR-077 acceptance:
 
 - FR-077-AC-1 (100k recall parity): **met at ε=0.3** (this packet).
 - FR-077-AC-2 (idempotence): proptest `tc038_stitch_idempotence` (packet 001 code).
 - FR-077-AC-3 (dup factor + stitch stats in manifest): `dup-factors-e30.log` +
   packet-001 stitch NOTICE table.
-- FR-077-AC-4 (CON property tests): `tc038_*` suite green.
-- FR-077-CON-4 (D8 peak memory): `stitch_peak_union_len` 88–110 node ids.
+- FR-077-AC-4 (CON property tests): `tc038_*` suite green, now including
+  `tc038_alpha_prune_invariant` (the alpha-diversity property the reviewer
+  flagged as missing) and a `repair_reachability_bounds_degree_on_disconnected_graph`
+  regression for the CON-1 degenerate case.
+- FR-077-CON-4 (D8 peak memory): honest peak is `shard_output_retained_node_ids`
+  (all shard outputs held in RAM this v1); `stitch_peak_union_len` (88–119) is
+  only the incremental merge scratch. Strict streamed-by-group D8 is a tracked
+  follow-up (see packet-001 manifest). Corrected per reviewer 2026-07-07-01.
 
 ## Ask
 
