@@ -1,0 +1,6 @@
+# 005-P1 row-shipping materialize endpoint — evidence
+# cmd: cargo pgrx test pg18 --no-default-features --features pg18 distann
+
+test tests::pg_test_ec_distann_materialize_rows_ships_heap_identity ... ok
+test result: ok. 102 passed; 0 failed
+clippy: 0 warnings

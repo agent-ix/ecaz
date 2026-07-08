@@ -1178,6 +1178,52 @@ fn test_ec_distann_fault_drills_distinct_classes() {
 }
 
 #[pg_test]
+fn test_ec_distann_materialize_rows_ships_heap_identity() {
+    // 005-P1: the owning node ships the heap identity (ctid + tombstone) for the
+    // vec_ids it owns, under epoch + ownership validation — so a coordinator
+    // materializes remote hits from the OWNER rather than a local directory.
+    // Single-node: this node owns all.
+    create_distann_fixture("ec_distann_mat", "WITH (graph_degree = 4)");
+    let vec_ids = distann_directory_vec_ids("ec_distann_mat_idx");
+    let fp = "ec_distann_epoch_fingerprint('ec_distann_mat_idx'::regclass::oid)";
+
+    let n = Spi::get_one::<i64>(&format!(
+        "SELECT count(*) FROM ec_distann_materialize_rows(\
+           'ec_distann_mat_idx'::regclass::oid, {fp}, ARRAY[{}, {}]::bigint[])",
+        vec_ids[0] as i64, vec_ids[1] as i64
+    ))
+    .expect("SPI query should succeed")
+    .expect("count should exist");
+    assert_eq!(n, 2, "two owned rows materialized");
+
+    // Every shipped row carries a valid heap ctid and is not tombstoned.
+    let bad = Spi::get_one::<i64>(&format!(
+        "SELECT count(*) FROM ec_distann_materialize_rows(\
+           'ec_distann_mat_idx'::regclass::oid, {fp}, ARRAY[{}, {}]::bigint[]) \
+         WHERE heap_block < 0 OR heap_offset <= 0 OR is_tombstone",
+        vec_ids[0] as i64, vec_ids[1] as i64
+    ))
+    .expect("SPI query should succeed")
+    .expect("count should exist");
+    assert_eq!(bad, 0, "shipped ctids are valid and rows are live");
+
+    // Wrong epoch fingerprint → retriable mismatch error (fail closed).
+    let error = expect_pg_error(|| {
+        Spi::run(&format!(
+            "SELECT * FROM ec_distann_materialize_rows(\
+               'ec_distann_mat_idx'::regclass::oid, \
+               '\\x000102030405060708090a0b0c0d0e0f'::bytea, ARRAY[{}]::bigint[])",
+            vec_ids[0] as i64
+        ))
+        .expect("must error on the wrong epoch");
+    });
+    assert!(
+        error.contains("epoch fingerprint mismatch"),
+        "unexpected error: {error}"
+    );
+}
+
+#[pg_test]
 fn test_ec_distann_apply_record_writes_tombstones() {
     // FR-083 write endpoint (M3): the tombstone-set operation applies on the
     // hash-owning node under epoch validation. Single-node: this node owns all.

@@ -37,9 +37,14 @@ use super::expand_error::DistannExpandError;
 use super::head_cache::cached_index_entry;
 use super::placement::owning_node;
 use super::quantizer::{metadata_code_len, DistannPreparedQuery};
+use super::reader::{directory_lookup, read_directory_from_relation, read_raw_tuple_bytes_from_relation};
 use super::roster::{current_placement_directory, local_epoch_identity};
 use super::routine::indexed_ecvector_attnum;
 use super::scan::DistannNodeExpander;
+use super::tuple::{
+    DISTANN_FLAG_TOMBSTONE, DISTANN_NODE_FLAGS_OFFSET, DISTANN_NODE_HEAP_TID_OFFSET,
+};
+use crate::storage::page::ItemPointer;
 use super::tuple::DistannNodeTuple;
 
 /// One wire response row (no `heap_tid` — see module docs).
@@ -172,6 +177,124 @@ fn apply_record_writes_impl(
     // absent record is EC_RECORD_MISSING, structural/storage faults are Internal.
     let removed = unsafe { super::dml::tombstone_by_vec_ids(index_guard.as_ptr(), &ids) }?;
     Ok(i64::try_from(removed).unwrap_or(i64::MAX))
+}
+
+/// FR-079/005-P1 row-shipping endpoint: the owning node ships the heap identity
+/// (ctid + tombstone flag) for each vec_id it owns, so a coordinator materializes
+/// remote-owned hits from the OWNER rather than assuming it holds the full local
+/// directory. Validates the caller's epoch (retriable mismatch) and every
+/// vec_id's ownership (placement error) before any read — the same FR-079/FR-082
+/// preflight as `ec_distann_expand_nodes`.
+///
+/// This is the data-path half of real multi-node materialization. Returning
+/// remote rows through the executor still needs a CustomScan to yield the
+/// shipped identity/row directly (a remote ctid is not fetchable from the
+/// coordinator's local heap); that integration is the remaining M3 read-path
+/// piece. On the co-located/loopback substrate the shipped ctid is locally
+/// valid, so the coordinator's `amgettuple` path already completes the fetch.
+#[pg_extern(volatile, parallel_restricted)]
+fn ec_distann_materialize_rows(
+    index_regclass: pg_sys::Oid,
+    epoch_fingerprint: &[u8],
+    vec_ids: Vec<i64>,
+) -> TableIterator<
+    'static,
+    (
+        name!(vec_id, i64),
+        name!(heap_block, i64),
+        name!(heap_offset, i32),
+        name!(is_tombstone, bool),
+    ),
+> {
+    let rows = materialize_rows_impl(index_regclass, epoch_fingerprint, &vec_ids)
+        .unwrap_or_else(|e| e.raise());
+    TableIterator::new(rows)
+}
+
+fn materialize_rows_impl(
+    index_oid: pg_sys::Oid,
+    epoch_fingerprint: &[u8],
+    vec_ids: &[i64],
+) -> Result<Vec<(i64, i64, i32, bool)>, DistannExpandError> {
+    let received_fingerprint =
+        fingerprint_from_bytes(epoch_fingerprint).map_err(DistannExpandError::BadInput)?;
+    let index_guard = IndexRelationGuard::try_access_share(index_oid).ok_or_else(|| {
+        "ec_distann_materialize_rows could not open the index relation".to_owned()
+    })?;
+    let handle = NonNull::new(index_guard.as_ptr())
+        .ok_or_else(|| "ec_distann_materialize_rows got a null index relation".to_owned())?;
+    let metadata = read_metadata_from_index_handle(handle)?;
+    if metadata.node_count == 0 || metadata.directory_head == ItemPointer::INVALID {
+        if vec_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        return Err(DistannExpandError::OwnedRecordMissing(
+            "ec_distann_materialize_rows: index is empty (no owned records)".to_owned(),
+        ));
+    }
+
+    // FR-082 epoch validation (retriable on mismatch), before any read.
+    let placement = current_placement_directory()?;
+    let identity = local_epoch_identity(&placement, &metadata);
+    let local_fingerprint = compute_epoch_fingerprint(&identity, DISTANN_EPOCH_FINGERPRINT_V1);
+    if !fingerprints_match(&received_fingerprint, &local_fingerprint) {
+        return Err(DistannExpandError::EpochMismatch(
+            "ec_distann_materialize_rows epoch fingerprint mismatch".to_owned(),
+        ));
+    }
+
+    let node_count = placement.node_count();
+    let local_index = placement
+        .nodes
+        .iter()
+        .position(|node| node.is_local)
+        .ok_or_else(|| "ec_distann_materialize_rows: no local node in the roster".to_owned())?;
+    for &vec_id in vec_ids {
+        let owner = owning_node(vec_id as u64, node_count, placement.hash_version);
+        if owner != local_index {
+            return Err(DistannExpandError::Placement(format!(
+                "ec_distann_materialize_rows placement error: vec_id {:#018x} owned by roster \
+                 index {owner}, not this node ({local_index})",
+                vec_id as u64
+            )));
+        }
+    }
+    if vec_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let directory =
+        read_directory_from_relation(handle, metadata.directory_head, metadata.node_count as usize)
+            .map_err(DistannExpandError::Internal)?;
+    let mut rows = Vec::with_capacity(vec_ids.len());
+    for &vec_id in vec_ids {
+        // Owned-but-absent is EC_RECORD_MISSING (never a silent skip).
+        let record_tid = directory_lookup(&directory, vec_id as u64).ok_or_else(|| {
+            DistannExpandError::OwnedRecordMissing(format!(
+                "ec_distann_materialize_rows: owned vec_id {:#018x} is not in the directory",
+                vec_id as u64
+            ))
+        })?;
+        let raw = read_raw_tuple_bytes_from_relation(handle, record_tid, "ec_distann materialize row")
+            .map_err(DistannExpandError::Internal)?;
+        let heap_tid = ItemPointer::decode(
+            &raw[DISTANN_NODE_HEAP_TID_OFFSET..DISTANN_NODE_HEAP_TID_OFFSET + 6],
+        )
+        .map_err(DistannExpandError::Internal)?;
+        let flags = u16::from_le_bytes(
+            raw[DISTANN_NODE_FLAGS_OFFSET..DISTANN_NODE_FLAGS_OFFSET + 2]
+                .try_into()
+                .expect("flags bytes"),
+        );
+        let is_tombstone = flags & DISTANN_FLAG_TOMBSTONE != 0;
+        rows.push((
+            vec_id,
+            i64::from(heap_tid.block_number),
+            i32::from(heap_tid.offset_number),
+            is_tombstone,
+        ));
+    }
+    Ok(rows)
 }
 
 fn expand_nodes_impl(
