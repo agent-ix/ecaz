@@ -148,6 +148,16 @@ pub(super) fn remote_expand_batch(
         .iter()
         .map(|request| request.target_node_id.to_string())
         .collect();
+    // 007-P1/021-P2: pool by (conninfo, target_node_id), not conninfo alone. Two
+    // logical owners that share one physical conninfo (the loopback/logical-shard
+    // topology) MUST get separate pooled sessions — otherwise the second owner's
+    // `local_node_id` set_config overwrites the first, and the concurrent expands
+    // launched below run under the wrong node identity. The real 3-node fixture
+    // gives each node a distinct port (distinct conninfo) so it was masked there.
+    let conn_keys: Vec<String> = requests
+        .iter()
+        .map(|request| format!("{}\u{1}{}", request.conninfo, request.target_node_id))
+        .collect();
     let epoch_strs: Vec<String> = requests
         .iter()
         .map(|request| request.epoch.to_string())
@@ -165,8 +175,9 @@ pub(super) fn remote_expand_batch(
             // removes a round-trip per owner per hop and avoids racing session
             // GUCs against concurrent expands on a shared loopback connection.
             for (index, request) in requests.iter().enumerate() {
+                let conn_key = &conn_keys[index];
                 let needs_connect = connections
-                    .get(request.conninfo)
+                    .get(conn_key)
                     .map(|pooled| pooled.task.is_finished())
                     .unwrap_or(true);
                 if needs_connect {
@@ -187,7 +198,7 @@ pub(super) fn remote_expand_batch(
                         let _ = connection.await;
                     });
                     connections.insert(
-                        request.conninfo.to_owned(),
+                        conn_key.clone(),
                         PooledConnection { client, task, applied_identity: None },
                     );
                 }
@@ -198,7 +209,7 @@ pub(super) fn remote_expand_batch(
                     epoch_strs[index].clone(),
                 );
                 let pooled = connections
-                    .get_mut(request.conninfo)
+                    .get_mut(conn_key)
                     .expect("connection just ensured");
                 if pooled.applied_identity.as_ref() != Some(&identity) {
                     pooled
@@ -224,7 +235,7 @@ pub(super) fn remote_expand_batch(
             // Fire all owners concurrently and await the whole set (expand only —
             // the session identity is already applied above).
             let futures = requests.iter().enumerate().map(|(index, request)| {
-                let client = &connections[request.conninfo].client;
+                let client = &connections[&conn_keys[index]].client;
                 run_one_remote(client, request, &vec_ids_i64[index])
             });
             Ok::<_, String>(futures_util::future::join_all(futures).await)
@@ -356,6 +367,11 @@ pub(super) fn remote_materialize_row_payloads_batch(
         .iter()
         .map(|request| request.target_node_id.to_string())
         .collect();
+    // 007-P1/021-P2: pool by (conninfo, target_node_id) — see the expand batch.
+    let conn_keys: Vec<String> = requests
+        .iter()
+        .map(|request| format!("{}\u{1}{}", request.conninfo, request.target_node_id))
+        .collect();
     let epoch_strs: Vec<String> = requests.iter().map(|request| request.epoch.to_string()).collect();
     let columns = payload_columns.to_vec();
     let sends = send_functions.to_vec();
@@ -369,8 +385,9 @@ pub(super) fn remote_materialize_row_payloads_batch(
             // Ensure every connection AND its session identity first (same 006-P3
             // pooled-identity path as the expand batch).
             for (index, request) in requests.iter().enumerate() {
+                let conn_key = &conn_keys[index];
                 let needs_connect = connections
-                    .get(request.conninfo)
+                    .get(conn_key)
                     .map(|pooled| pooled.task.is_finished())
                     .unwrap_or(true);
                 if needs_connect {
@@ -391,7 +408,7 @@ pub(super) fn remote_materialize_row_payloads_batch(
                         let _ = connection.await;
                     });
                     connections.insert(
-                        request.conninfo.to_owned(),
+                        conn_key.clone(),
                         PooledConnection {
                             client,
                             task,
@@ -406,7 +423,7 @@ pub(super) fn remote_materialize_row_payloads_batch(
                     epoch_strs[index].clone(),
                 );
                 let pooled = connections
-                    .get_mut(request.conninfo)
+                    .get_mut(conn_key)
                     .expect("connection just ensured");
                 if pooled.applied_identity.as_ref() != Some(&identity) {
                     pooled
@@ -425,7 +442,7 @@ pub(super) fn remote_materialize_row_payloads_batch(
             }
 
             let futures = requests.iter().enumerate().map(|(index, request)| {
-                let client = &connections[request.conninfo].client;
+                let client = &connections[&conn_keys[index]].client;
                 run_one_materialize(client, request, &vec_ids_i64[index], &columns, &sends)
             });
             Ok::<_, String>(futures_util::future::join_all(futures).await)

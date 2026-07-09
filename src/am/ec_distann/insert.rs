@@ -331,6 +331,16 @@ pub(super) unsafe fn graph_insert_record(
     // 4. Read each forward neighbor's record for its embedded search code.
     let directory =
         read_directory_from_relation(handle, metadata.directory_head, metadata.node_count as usize)?;
+    // 167-003-P2: reject a vec_id collision BEFORE appending. The directory is a
+    // strict-ascending vec_id set (the reader rejects duplicates); a duplicate
+    // insert (e.g. a retried fold) must error, never append a second record for
+    // an existing vec_id.
+    if directory_lookup(&directory, new_vec_id).is_some() {
+        return Err(format!(
+            "ec_distann graph insert: vec_id {new_vec_id:#018x} already present in the directory \
+             (duplicate insert rejected)"
+        ));
+    }
     let mut forward = Vec::with_capacity(forward_ids.len());
     let mut forward_tids = Vec::with_capacity(forward_ids.len());
     for &fid in &forward_ids {
