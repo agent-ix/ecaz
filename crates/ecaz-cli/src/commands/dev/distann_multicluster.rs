@@ -69,6 +69,12 @@ pub struct LocalMultinodePg18Args {
     /// Keep the instances running after the run (for manual inspection).
     #[arg(long, default_value_t = false)]
     pub keep_running: bool,
+    /// Run only the multi-node distinct-recall gates (skip the TC-042 fault
+    /// matrix + FR-082 lifecycle drills). Used by the `distann-local-multinode`
+    /// suite step to package the scaled distinct_recall evidence without the
+    /// (expensive at scale) per-drill re-setups.
+    #[arg(long, default_value_t = false)]
+    pub skip_fault_drills: bool,
 }
 
 impl DistannMulticlusterCommand {
@@ -341,6 +347,40 @@ async fn drive_fixture(
     let (fr082_line, fr082_ok) =
         fr082_published_epoch_drill(psql, socket_dir, nodes, &roster, args).await;
     crate::ecaz_println!("[distann-multicluster] {fr082_line}");
+
+    // Recall-only mode (the `distann-local-multinode` suite step): the multi-node
+    // distinct-recall gates above are the scaled evidence; skip the (expensive at
+    // scale) TC-042 fault matrix + FR-082 lifecycle drills, which are proven
+    // scale-independently at the fixture default size.
+    if args.skip_fault_drills {
+        let mut summary = format!(
+            "distann-multinode fixture (recall-only)\nnodes={}\nrows={}\ndim={}\ngraph_degree={}\nqueries={}\ntop_k={}\nroster={}\n{}\n",
+            args.nodes, args.rows, args.dim, args.graph_degree, args.queries, args.top_k, roster, result_line
+        );
+        summary.push_str(&format!("{qual_line}\n"));
+        summary.push_str(&format!("{fr082_line}\n"));
+        summary.push_str(&format!("{suite_line}\n"));
+        let summary_path = log_dir.join("distann-multinode-summary.log");
+        fs::write(&summary_path, &summary)
+            .wrap_err_with(|| format!("writing {}", summary_path.display()))?;
+        crate::ecaz_println!(
+            "[distann-multicluster] summary written to {}",
+            summary_path.display()
+        );
+        if !result_line.contains("mismatched_ids=0") {
+            bail!("multi-node distinct-recall gate FAILED: {result_line}");
+        }
+        if !qual_ok {
+            bail!("qual correctness FAILED: {qual_line}");
+        }
+        if !fr082_ok {
+            bail!("FR-082 published-epoch read consumption FAILED: {fr082_line}");
+        }
+        crate::ecaz_println!(
+            "[distann-multicluster] GATE PASS (recall-only): multi-node distinct-recall identical to single-node"
+        );
+        return Ok(());
+    }
 
     // TC-042 fault matrix (NFR-020): each fault must make the multi-node query
     // ERROR (fail closed) — never a silent wrong or partial result — and a

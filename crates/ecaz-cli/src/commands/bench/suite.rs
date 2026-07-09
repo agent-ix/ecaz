@@ -209,6 +209,7 @@ enum SuiteStep {
     CrossAm(CrossAmStep),
     Latency(LatencyStep),
     SpireLocalMultinode(SpireLocalMultinodeStep),
+    DistannLocalMultinode(DistannLocalMultinodeStep),
     SpirePipeline(SpirePipelineStep),
     Storage(StorageStep),
     Explain(ExplainStep),
@@ -470,6 +471,48 @@ struct SpireLocalMultinodeStep {
     skip_fault_drills: bool,
     #[serde(default)]
     skip_install: bool,
+}
+
+/// FR-082/NFR-020 distann multinode fixture step: drives
+/// `ecaz dev distann-multicluster local-multinode-pg18`, which replicates a
+/// deterministic ec_distann corpus across N real PG18 instances, runs the
+/// multi-node distinct-recall gate (multi == single-node) plus the TC-042 fault
+/// matrix + FR-082 lifecycle drills, and writes a packet-local summary. This is
+/// the `ecaz bench suite` packaging of the Task 165 "multinode distinct_recall
+/// >= single-node - 0.001" evidence.
+#[derive(Debug, Deserialize)]
+struct DistannLocalMultinodeStep {
+    name: String,
+    #[serde(default)]
+    tags: Vec<String>,
+    #[serde(default)]
+    pgoptions: Option<String>,
+    #[serde(default)]
+    artifact_dir: Option<PathBuf>,
+    #[serde(default)]
+    run_dir: Option<PathBuf>,
+    #[serde(default)]
+    log_file: Option<PathBuf>,
+    #[serde(default)]
+    pg: Option<u16>,
+    #[serde(default)]
+    pgbin: Option<PathBuf>,
+    #[serde(default)]
+    nodes: Option<u32>,
+    #[serde(default)]
+    base_port: Option<u16>,
+    #[serde(default)]
+    rows: Option<usize>,
+    #[serde(default)]
+    dim: Option<usize>,
+    #[serde(default)]
+    graph_degree: Option<u32>,
+    #[serde(default)]
+    queries: Option<u32>,
+    #[serde(default)]
+    top_k: Option<u32>,
+    #[serde(default)]
+    skip_fault_drills: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1215,6 +1258,18 @@ fn apply_default_artifact_logs(config: &mut SuiteConfig) {
                         .map(|dir| dir.join("local-multinode.log"));
                 }
             }
+            SuiteStep::DistannLocalMultinode(step) => {
+                if step.artifact_dir.is_none() {
+                    step.artifact_dir =
+                        Some(artifact_dir.join(artifact_safe_step_name(&step.name)));
+                }
+                if step.log_file.is_none() {
+                    step.log_file = step
+                        .artifact_dir
+                        .as_ref()
+                        .map(|dir| dir.join("distann-local-multinode.log"));
+                }
+            }
             SuiteStep::SpirePipeline(step) if step.log_output.is_none() => {
                 step.log_output = Some(log_path(&step.name));
             }
@@ -1283,6 +1338,12 @@ fn apply_artifact_dir_templates(config: &mut SuiteConfig) {
                 rewrite_artifact_dir_path(&mut step.pgbin, &artifact_dir);
                 rewrite_artifact_dir_path(&mut step.prepared_dir, &artifact_dir);
                 rewrite_artifact_dir_path(&mut step.bench_truth_corpus_file, &artifact_dir);
+            }
+            SuiteStep::DistannLocalMultinode(step) => {
+                rewrite_artifact_dir_path(&mut step.artifact_dir, &artifact_dir);
+                rewrite_artifact_dir_path(&mut step.run_dir, &artifact_dir);
+                rewrite_artifact_dir_path(&mut step.log_file, &artifact_dir);
+                rewrite_artifact_dir_path(&mut step.pgbin, &artifact_dir);
             }
             SuiteStep::SpirePipeline(step) => {
                 rewrite_artifact_dir_path(&mut step.truth_corpus_file, &artifact_dir);
@@ -2429,6 +2490,7 @@ impl SuiteStep {
             SuiteStep::CrossAm(step) => &step.name,
             SuiteStep::Latency(step) => &step.name,
             SuiteStep::SpireLocalMultinode(step) => &step.name,
+            SuiteStep::DistannLocalMultinode(step) => &step.name,
             SuiteStep::SpirePipeline(step) => &step.name,
             SuiteStep::Storage(step) => &step.name,
             SuiteStep::Explain(step) => &step.name,
@@ -2447,6 +2509,7 @@ impl SuiteStep {
             SuiteStep::CrossAm(_) => "cross-am",
             SuiteStep::Latency(_) => "latency",
             SuiteStep::SpireLocalMultinode(_) => "spire-local-multinode",
+            SuiteStep::DistannLocalMultinode(_) => "distann-local-multinode",
             SuiteStep::SpirePipeline(_) => "spire-pipeline",
             SuiteStep::Storage(_) => "storage",
             SuiteStep::Explain(_) => "explain",
@@ -2465,6 +2528,7 @@ impl SuiteStep {
             SuiteStep::CrossAm(step) => &step.tags,
             SuiteStep::Latency(step) => &step.tags,
             SuiteStep::SpireLocalMultinode(step) => &step.tags,
+            SuiteStep::DistannLocalMultinode(step) => &step.tags,
             SuiteStep::SpirePipeline(step) => &step.tags,
             SuiteStep::Storage(step) => &step.tags,
             SuiteStep::Explain(step) => &step.tags,
@@ -2479,6 +2543,7 @@ impl SuiteStep {
             SuiteStep::Load(step) => step.pgoptions.as_deref(),
             SuiteStep::Latency(step) => step.pgoptions.as_deref(),
             SuiteStep::SpireLocalMultinode(step) => step.pgoptions.as_deref(),
+            SuiteStep::DistannLocalMultinode(step) => step.pgoptions.as_deref(),
             SuiteStep::SpirePipeline(step) => step.pgoptions.as_deref(),
             _ => None,
         }
@@ -2645,6 +2710,28 @@ impl SuiteStep {
                 }
                 Ok(())
             }
+            SuiteStep::DistannLocalMultinode(step) => {
+                if step.pg.unwrap_or(18) != 18 {
+                    bail!(
+                        "distann-local-multinode step {:?} requires pg=18, got {}",
+                        step.name,
+                        step.pg.unwrap_or(18)
+                    )
+                }
+                if step.nodes == Some(0) {
+                    bail!(
+                        "distann-local-multinode step {:?} must set nodes >= 1",
+                        step.name
+                    )
+                }
+                if step.top_k == Some(0) {
+                    bail!(
+                        "distann-local-multinode step {:?} must set top_k >= 1",
+                        step.name
+                    )
+                }
+                Ok(())
+            }
             SuiteStep::SpirePipeline(step) => {
                 if step.sweep.is_empty() {
                     bail!(
@@ -2762,6 +2849,9 @@ impl SuiteStep {
             SuiteStep::SpireLocalMultinode(step) => {
                 Ok(expand_spire_local_multinode(step, defaults))
             }
+            SuiteStep::DistannLocalMultinode(step) => {
+                Ok(expand_distann_local_multinode(step, defaults))
+            }
             SuiteStep::SpirePipeline(step) => Ok(expand_spire_pipeline(step, defaults)),
             SuiteStep::Storage(step) => Ok(expand_storage(step)),
             SuiteStep::Explain(step) => Ok(expand_explain(step, defaults, conn)),
@@ -2798,6 +2888,13 @@ impl SuiteStep {
                 .collect(),
             SuiteStep::CrossAm(step) => step.log_output.iter().cloned().collect(),
             SuiteStep::Latency(step) => step.log_output.iter().cloned().collect(),
+            SuiteStep::DistannLocalMultinode(step) => {
+                let mut artifacts: Vec<PathBuf> = step.log_file.iter().cloned().collect();
+                if let Some(dir) = &step.artifact_dir {
+                    artifacts.push(dir.join("distann-multinode-summary.log"));
+                }
+                artifacts
+            }
             SuiteStep::SpireLocalMultinode(step) => {
                 let mut artifacts: Vec<PathBuf> = step.smoke_log.iter().cloned().collect();
                 if let Some(run_dir) = &step.run_dir {
@@ -3364,6 +3461,61 @@ fn expand_spire_local_multinode(
     }
     if step.skip_install {
         args.push("--skip-install".into());
+    }
+    args
+}
+
+fn expand_distann_local_multinode(
+    step: &DistannLocalMultinodeStep,
+    defaults: &SuiteDefaults,
+) -> Vec<String> {
+    let mut args = vec![
+        "dev".into(),
+        "distann-multicluster".into(),
+        "local-multinode-pg18".into(),
+    ];
+    push_arg(
+        &mut args,
+        "--pg",
+        &step.pg.or(defaults.pg).unwrap_or(18).to_string(),
+    );
+    push_opt_path(&mut args, "--pgbin", step.pgbin.as_deref());
+    push_opt_path(&mut args, "--artifact-dir", step.artifact_dir.as_deref());
+    push_opt_path(&mut args, "--run-dir", step.run_dir.as_deref());
+    push_opt_path(&mut args, "--log-file", step.log_file.as_deref());
+    push_opt_arg(
+        &mut args,
+        "--nodes",
+        step.nodes.map(|v| v.to_string()).as_deref(),
+    );
+    push_opt_u16(&mut args, "--base-port", step.base_port);
+    push_opt_arg(
+        &mut args,
+        "--rows",
+        step.rows.map(|v| v.to_string()).as_deref(),
+    );
+    push_opt_arg(
+        &mut args,
+        "--dim",
+        step.dim.map(|v| v.to_string()).as_deref(),
+    );
+    push_opt_arg(
+        &mut args,
+        "--graph-degree",
+        step.graph_degree.map(|v| v.to_string()).as_deref(),
+    );
+    push_opt_arg(
+        &mut args,
+        "--queries",
+        step.queries.map(|v| v.to_string()).as_deref(),
+    );
+    push_opt_arg(
+        &mut args,
+        "--top-k",
+        step.top_k.map(|v| v.to_string()).as_deref(),
+    );
+    if step.skip_fault_drills {
+        args.push("--skip-fault-drills".into());
     }
     args
 }
