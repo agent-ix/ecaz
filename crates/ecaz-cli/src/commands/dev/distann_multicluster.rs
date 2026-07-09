@@ -321,6 +321,13 @@ async fn drive_fixture(
     let suite_line = suite_recall_gate(psql, socket_dir, nodes, &roster, args).await;
     crate::ecaz_println!("[distann-multicluster] {suite_line}");
 
+    // Qual correctness (011/020-P1): a WHERE predicate on a NON-projected column
+    // plus LIMIT. Multi-node must match single-node exactly — this exercises
+    // shipping the qual column (source) for remote rows and over-fetching so the
+    // LIMIT applies after the qual. Runs early, on the clean/consistent corpus.
+    let (qual_line, qual_ok) = qual_correctness_drill(psql, socket_dir, coord_port, &roster, args).await;
+    crate::ecaz_println!("[distann-multicluster] {qual_line}");
+
     // TC-042 fault matrix (NFR-020): each fault must make the multi-node query
     // ERROR (fail closed) — never a silent wrong or partial result — and a
     // post-recovery query must match the baseline (no false reject).
@@ -521,6 +528,7 @@ async fn drive_fixture(
     summary.push_str(&format!(
         "concurrency_scan_insert_epochswap pass={concurrency_ok}\n"
     ));
+    summary.push_str(&format!("{qual_line}\n"));
     summary.push_str(&format!("live_retention_gate pass={retention_ok}\n"));
     summary.push_str(&format!(
         "ac5_frozen_vector_after_vacuum_reuse pass={frozen_ok}\n"
@@ -541,6 +549,9 @@ async fn drive_fixture(
     }
     if !concurrency_ok {
         bail!("concurrency drill FAILED: a scan errored under concurrent insert load");
+    }
+    if !qual_ok {
+        bail!("qual correctness FAILED: multi-node WHERE+LIMIT result differs from single-node");
     }
     if !retention_ok {
         bail!("live retention gate FAILED: retire not gated by an in-flight scan, or blocked after drain");
@@ -1017,6 +1028,53 @@ async fn frozen_vector_drill(
     }
     let after = after.lines().find(|l| l.contains(':')).unwrap_or("").trim().to_owned();
     baseline == after
+}
+
+/// 011/020-P1: a WHERE qual on a NON-projected column (`source`) plus LIMIT.
+/// Multi-node (CustomScan) must return exactly the single-node result — proving
+/// the qual column is shipped for remote rows and the LIMIT applies after the
+/// qual (over-fetch), not before. Returns (report line, pass).
+async fn qual_correctness_drill(
+    psql: &Path,
+    socket_dir: &Path,
+    coord_port: u16,
+    roster: &str,
+    args: &LocalMultinodePg18Args,
+) -> (String, bool) {
+    // Order by the id=1 vector; filter on source[1] > 0 (source is NOT selected).
+    let query = format!(
+        "SELECT id FROM dm WHERE source[1] > 0 \
+           ORDER BY embedding <#> (SELECT source FROM dm WHERE id=1) LIMIT {}",
+        args.top_k
+    );
+    let sql = format!(
+        "SET enable_seqscan=off; \
+         DROP TABLE IF EXISTS qc_s; DROP TABLE IF EXISTS qc_m; \
+         SELECT set_config('ec_distann.roster', '', false); SET ec_distann.local_node_id=1; SET ec_distann.epoch=0; \
+         CREATE TEMP TABLE qc_s AS {query}; \
+         SELECT set_config('ec_distann.roster', '{roster}', false); SET ec_distann.local_node_id=1; SET ec_distann.epoch=1; \
+         CREATE TEMP TABLE qc_m AS {query}; \
+         SELECT set_config('ec_distann.roster', '', false); \
+         SELECT (SELECT count(*) FROM qc_s) || ' ' || (SELECT count(*) FROM qc_m) || ' ' || \
+           ((SELECT count(*) FROM (SELECT id FROM qc_s EXCEPT SELECT id FROM qc_m) x) \
+          + (SELECT count(*) FROM (SELECT id FROM qc_m EXCEPT SELECT id FROM qc_s) x));"
+    );
+    let out = capture_psql_allow_error(psql, socket_dir, coord_port, &sql).await;
+    let parsed: Vec<i64> = out
+        .lines()
+        .find(|l| l.split_whitespace().count() == 3 && l.split_whitespace().all(|f| f.parse::<i64>().is_ok()))
+        .map(|l| l.split_whitespace().filter_map(|f| f.parse().ok()).collect())
+        .unwrap_or_default();
+    if parsed.len() != 3 {
+        return (format!("qual_correctness=INCONCLUSIVE({})", out.lines().last().unwrap_or("").trim()), false);
+    }
+    let (s_n, m_n, mismatch) = (parsed[0], parsed[1], parsed[2]);
+    // Pass = same count and zero id mismatch (single==multi under the qual+LIMIT).
+    let pass = s_n == m_n && mismatch == 0;
+    (
+        format!("qual_correctness single_n={s_n} multi_n={m_n} mismatch={mismatch} pass={pass}"),
+        pass,
+    )
 }
 
 struct CaptureOut {

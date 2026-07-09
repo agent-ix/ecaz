@@ -14,7 +14,7 @@
 //! Single-node / empty roster is not eligible here — those queries stay on the
 //! local AM `amgettuple` path.
 
-use pgrx::{pg_guard, pg_sys, FromDatum, PgBox, PgList, Spi};
+use pgrx::{pg_guard, pg_sys, FromDatum, PgBox, Spi};
 use std::ptr;
 
 use crate::am::common::{
@@ -185,6 +185,70 @@ impl<'a> PlannerRel<'a> {
             None
         }
     }
+
+    /// The heap attribute number of the ORDER BY relation Var — i.e. the vector
+    /// column the query orders by. Used to bind the CustomScan to the ec_distann
+    /// index built on *that* column (011/020-P2).
+    fn orderby_var_attno(self) -> Option<pg_sys::AttrNumber> {
+        // SAFETY: built from live planner callback pointers; nodes inspected now.
+        unsafe {
+            let query = cs_pg_ref(self.root_ref.parse)?;
+            if query.sortClause.is_null() || query.targetList.is_null() {
+                return None;
+            }
+            let sort_clauses = cs_pg_list::<pg_sys::SortGroupClause>(query.sortClause);
+            if sort_clauses.len() != 1 {
+                return None;
+            }
+            let sort_clause = cs_pg_ref(sort_clauses.get_ptr(0)?)?;
+            let target_list = cs_pg_list::<pg_sys::TargetEntry>(query.targetList);
+            for target_entry in target_list.iter_ptr() {
+                let Some(target_entry) = cs_pg_ref(target_entry) else {
+                    continue;
+                };
+                if target_entry.ressortgroupref != sort_clause.tleSortGroupRef {
+                    continue;
+                }
+                return var_attno_from_op_expr(target_entry.expr, self.rel_ref.relid);
+            }
+            None
+        }
+    }
+}
+
+/// The relation Var's attribute number from a `(Var <op> query) / (query <op>
+/// Var)` distance OpExpr.
+unsafe fn var_attno_from_op_expr(
+    expr: *mut pg_sys::Expr,
+    relid: pg_sys::Index,
+) -> Option<pg_sys::AttrNumber> {
+    let node = cs_pg_ref(expr.cast::<pg_sys::Node>())?;
+    if node.type_ != pg_sys::NodeTag::T_OpExpr {
+        return None;
+    }
+    let op_expr = cs_pg_ref(expr.cast::<pg_sys::OpExpr>())?;
+    let args = cs_pg_list::<pg_sys::Expr>(op_expr.args);
+    if args.len() != 2 {
+        return None;
+    }
+    for index in 0..2 {
+        let arg = args.get_ptr(index)?;
+        if is_relation_var(arg, relid) {
+            let var = cs_pg_ref(arg.cast::<pg_sys::Var>())?;
+            return Some(var.varattno);
+        }
+    }
+    None
+}
+
+/// The first (and, for ec_distann, only) indexed column's heap attnum, or None
+/// for an expression index.
+unsafe fn index_first_key_attno(index_info: &pg_sys::IndexOptInfo) -> Option<pg_sys::AttrNumber> {
+    if index_info.nkeycolumns < 1 || index_info.indexkeys.is_null() {
+        return None;
+    }
+    let key = *index_info.indexkeys;
+    pg_sys::AttrNumber::try_from(key).ok().filter(|attno| *attno > 0)
 }
 
 unsafe fn is_relation_var(expr: *mut pg_sys::Expr, relid: pg_sys::Index) -> bool {
@@ -235,13 +299,18 @@ unsafe fn custom_scan_candidate_index(planner_rel: PlannerRel<'_>) -> Option<pg_
         return None;
     }
     planner_rel.orderby_query_expr()?;
+    // Bind the ORDER BY vector column to the ec_distann index built on it
+    // (011/020-P2): pick the ec_distann index whose indexed column IS the ORDER BY
+    // Var, not just the first ec_distann index on the relation — a table with two
+    // vector columns / two ec_distann indexes must scan the matching one.
+    let order_by_attno = planner_rel.orderby_var_attno()?;
     let am_oid = ec_distann_am_oid()?;
     let index_list = cs_pg_list::<pg_sys::IndexOptInfo>(planner_rel.rel_ref.indexlist);
     for index_info in index_list.iter_ptr() {
         let Some(index_info) = cs_pg_ref(index_info) else {
             continue;
         };
-        if index_info.relam == am_oid {
+        if index_info.relam == am_oid && index_first_key_attno(index_info) == Some(order_by_attno) {
             return Some(index_info.indexoid);
         }
     }
@@ -402,6 +471,17 @@ struct DistannCustomScanExecState {
     outputs: Vec<CustomScanOutputRow>,
     next_output: usize,
     loaded: bool,
+    /// The ORDER BY query vector for this (re)scan, evaluated once in
+    /// ensure_outputs and reused when the cursor deepens.
+    query: Vec<f32>,
+    /// The current FR-081 exploration bar and whether the last search early-exited
+    /// (i.e. more results are available on a deeper re-run). Together these drive
+    /// deepen-on-demand: the CustomScan serves outputs as a cursor and re-runs the
+    /// search with a doubled bar when the executor exhausts them past the proven
+    /// window — so a LIMIT above a WHERE qual keeps getting rows until it is
+    /// satisfied, instead of truncating to LIMIT before quals filter (011/020-P1).
+    effective: usize,
+    early_exit: bool,
     /// A buffer-heap slot for local-hit `table_tuple_fetch_row_version` (the
     /// CustomScan's own scan slot is virtual, which that heap fetch asserts
     /// against; the fetched row is then copied into the virtual scan slot the
@@ -425,6 +505,9 @@ fn default_exec_state() -> DistannCustomScanExecState {
         next_output: 0,
         loaded: false,
         local_heap_slot: ptr::null_mut(),
+        query: Vec::new(),
+        effective: 0,
+        early_exit: false,
     }
 }
 
@@ -549,36 +632,13 @@ unsafe fn build_payload_metadata(
     let tuple_desc = (*relation).rd_att;
     let natts = (*tuple_desc).natts;
 
-    // Narrow to the target-list Var attnums when every target entry is a plain
-    // Var; otherwise ship every column.
-    let mut narrow: Option<std::collections::BTreeSet<pg_sys::AttrNumber>> = Some(Default::default());
-    if !custom_scan.is_null() && !(*custom_scan).scan.plan.targetlist.is_null() {
-        let target_list = PgList::<pg_sys::TargetEntry>::from_pg((*custom_scan).scan.plan.targetlist);
-        for target_entry in target_list.iter_ptr() {
-            let Some(target_entry) = target_entry.as_ref() else {
-                continue;
-            };
-            if target_entry.resjunk || target_entry.expr.is_null() {
-                continue;
-            }
-            let expr = target_entry.expr.cast::<pg_sys::Node>();
-            if (*expr).type_ != pg_sys::NodeTag::T_Var {
-                narrow = None;
-                break;
-            }
-            let var = &*target_entry.expr.cast::<pg_sys::Var>();
-            if var.varattno > 0 {
-                if let Some(set) = narrow.as_mut() {
-                    set.insert(var.varattno);
-                }
-            } else {
-                narrow = None;
-                break;
-            }
-        }
-    } else {
-        narrow = None;
-    }
+    // Ship EVERY non-dropped column, not just target-list Vars. Reviewer
+    // 011/020-P1: narrowing to the target list left qual columns unshipped, so a
+    // WHERE predicate on a non-projected column evaluated against NULL for remote
+    // rows (wrong results / dropped valid rows). Shipping the whole row is the
+    // correct, shape-agnostic reconstruction (a qual-aware narrowing is a later
+    // optimization). The `custom_scan` plan pointer is no longer needed here.
+    let _ = custom_scan;
 
     let mut attnums = Vec::new();
     let mut columns = Vec::new();
@@ -589,11 +649,6 @@ unsafe fn build_payload_metadata(
             continue;
         }
         let attnum = (*attr).attnum;
-        if let Some(set) = narrow.as_ref() {
-            if !set.contains(&attnum) {
-                continue;
-            }
-        }
         let name = std::ffi::CStr::from_ptr((*attr).attname.data.as_ptr())
             .to_string_lossy()
             .into_owned();
@@ -701,10 +756,23 @@ unsafe extern "C-unwind" fn custom_scan_access(
     // — local or remote — is delivered through it.
     let scan_slot = (*scan_state).ss_ScanTupleSlot;
     loop {
-        let output_index = state.next_output;
-        if output_index >= state.outputs.len() {
-            return pg_sys::ExecClearTuple(scan_slot);
+        if state.next_output >= state.outputs.len() {
+            // Deepen-on-demand (011/020-P1): if the last search early-exited, more
+            // results exist beyond the proven window; re-run with a doubled bar so
+            // a LIMIT above a WHERE qual keeps getting candidates until the Limit
+            // node is satisfied. Stop at beam exhaustion or the cap.
+            let cap = state.effective.saturating_mul(64).max(1024);
+            if !(state.early_exit && state.effective < cap) {
+                return pg_sys::ExecClearTuple(scan_slot);
+            }
+            let prev_len = state.outputs.len();
+            run_search_and_build_outputs(state, scan_state, state.effective.saturating_mul(2));
+            if state.outputs.len() <= prev_len {
+                return pg_sys::ExecClearTuple(scan_slot);
+            }
+            continue;
         }
+        let output_index = state.next_output;
         state.next_output += 1;
         match &state.outputs[output_index] {
             CustomScanOutputRow::Local(tid) => {
@@ -763,7 +831,6 @@ unsafe fn ensure_outputs(
     if estate.is_null() {
         pgrx::error!("EcDistannDistributedScan missing executor estate");
     }
-    let snapshot = (*estate).es_snapshot;
 
     // A private buffer-heap slot for local ctid fetches (once, estate-managed).
     if state.local_heap_slot.is_null() {
@@ -773,6 +840,33 @@ unsafe fn ensure_outputs(
             pg_sys::table_slot_callbacks(heap_relation),
         );
     }
+
+    // Evaluate the ORDER BY query for this scan (binds any correlated Param);
+    // stored so the cursor can re-run the search when it deepens.
+    state.query = eval_query_vector(scan_state, state.query_expr_state);
+
+    // Initial exploration bar = `ec_distann.top_k` (the D9 exit bar / ef-search
+    // knob) floored at the LIMIT — the AM `amgettuple` path explores to
+    // `options::current_top_k()` and serves rows from it. The CustomScan serves
+    // ALL of it as a cursor (no LIMIT truncation), deepening on demand so a WHERE
+    // qual under a LIMIT keeps getting rows (011/020-P1).
+    let effective = super::options::current_top_k().max(state.top_k).max(1);
+    run_search_and_build_outputs(state, scan_state, effective);
+}
+
+/// Run the shared FR-080/FR-081 search at `effective` bar and (re)build the
+/// output cursor: local hits keep their ctid, remote hits carry their shipped
+/// payload. Does NOT truncate to the plan LIMIT — the executor's Limit node
+/// applies the LIMIT after quals; this over-fetches to the proven window and the
+/// access callback deepens when the executor consumes past it.
+unsafe fn run_search_and_build_outputs(
+    state: &mut DistannCustomScanExecState,
+    scan_state: *mut pg_sys::ScanState,
+    effective: usize,
+) {
+    let heap_relation = (*scan_state).ss_currentRelation;
+    let estate = (*scan_state).ps.state;
+    let snapshot = (*estate).es_snapshot;
 
     let index_guard = crate::storage::relation_guard::IndexRelationGuard::try_access_share(
         state.index_oid,
@@ -787,51 +881,20 @@ unsafe fn ensure_outputs(
         crate::storage::slot_guard::TupleTableSlotGuard::single_for_heap(heap_relation)
             .unwrap_or_else(|| pgrx::error!("EcDistannDistributedScan rerank slot setup failed"));
 
-    // Evaluate the ORDER BY query for this scan (binds any correlated Param).
-    let query = eval_query_vector(scan_state, state.query_expr_state);
-
-    // Shared search core: local hits get a resolved ctid; remote hits carry
-    // INVALID (we ship their row payloads below).
-    //
-    // Exploration bar = `ec_distann.top_k` (the D9 exit bar / ef-search knob),
-    // NOT the plan LIMIT — the AM `amgettuple` path explores to
-    // `options::current_top_k()` (routine.rs) and serves LIMIT rows from it. Using
-    // the LIMIT as the bar made the CustomScan under-explore (ef=LIMIT vs ef=GUC),
-    // trailing single-node recall at larger `ec_distann.top_k` (caught by the
-    // suite recall gate). Explore to at least the GUC and at least the LIMIT, then
-    // iteratively deepen on early-exit for parity, and truncate to the LIMIT.
-    let mut effective = super::options::current_top_k().max(state.top_k).max(1);
-    let deepen_cap = effective.saturating_mul(64).max(1024);
-    let mut collection = super::routine::collect_distann_hits(
+    let collection = super::routine::collect_distann_hits(
         handle,
         index_relation,
         heap_relation,
         snapshot,
         rerank_slot.as_ptr(),
         source_attnum,
-        &query,
+        &state.query,
         effective,
         false,
     );
-    while collection.counters.early_exit
-        && collection.hits.len() < state.top_k
-        && effective < deepen_cap
-    {
-        effective = effective.saturating_mul(2);
-        collection = super::routine::collect_distann_hits(
-            handle,
-            index_relation,
-            heap_relation,
-            snapshot,
-            rerank_slot.as_ptr(),
-            source_attnum,
-            &query,
-            effective,
-            false,
-        );
-    }
-    let mut hits = collection.hits;
-    hits.truncate(state.top_k);
+    state.effective = effective;
+    state.early_exit = collection.counters.early_exit;
+    let hits = collection.hits;
 
     // Group remote hits (INVALID ctid) by owning node and fetch their row
     // payloads from the owner.
@@ -855,6 +918,10 @@ unsafe fn ensure_outputs(
             }
         })
         .collect();
+    // NB: `next_output` is intentionally NOT reset — on a deepen the result is a
+    // superset whose proven prefix (the already-served rows) is stable, so serving
+    // continues from where it left off. The initial build starts at 0 (set by
+    // create/rescan).
 }
 
 struct RemotePayload {
