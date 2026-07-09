@@ -1,0 +1,12 @@
+distann-multinode fixture (recall-only)
+nodes=3
+rows=50000
+dim=16
+graph_degree=32
+queries=100
+top_k=10
+roster=1@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39710 dbname=postgres user=postgres;2@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39711 dbname=postgres user=postgres;3@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39712 dbname=postgres user=postgres
+RECALL_RESULT n_queries=100 identical=100 mismatched_ids=0
+qual_correctness single_n=10 multi_n=10 mismatch=0 pass=true
+fr082_published_epoch base_ok=true coord_only_publish_errored=true all_publish_swap_ok=true pass=true
+suite_recall_gate single=0.0800 multi=0.0800 delta=0.0000 pass=true
