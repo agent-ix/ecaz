@@ -71,6 +71,9 @@ pub(crate) struct DistannOrchestrationParams {
     pub(crate) beam_width: usize,
     pub(crate) hop_rounds: usize,
     pub(crate) top_k: usize,
+    /// NFR-020 fault injection: fail at the start of this 0-based hop round
+    /// (after earlier rounds executed). `None` disables injection.
+    pub(crate) debug_fail_hop_round: Option<usize>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -148,6 +151,16 @@ pub(crate) fn distann_orchestrated_search<E: DistannNodeExpander>(
                 counters.early_exit = true;
                 break;
             }
+        }
+
+        // NFR-020 fault injection: a mid-beam round failure must discard the
+        // partial beam and error rather than surface a partial result. Fires
+        // after earlier rounds executed (counters.rounds_executed == round idx).
+        if params.debug_fail_hop_round == Some(counters.rounds_executed) {
+            return Err(DistannExpandError::Internal(format!(
+                "ec_distann injected hop-round failure at round {} (ec_distann.debug_fail_hop_round)",
+                counters.rounds_executed
+            )));
         }
 
         let responses = expander.expand_nodes(&batch, None)?;
@@ -345,6 +358,7 @@ mod tests {
             beam_width: bw,
             hop_rounds: h,
             top_k: k,
+            debug_fail_hop_round: None,
         }
     }
 

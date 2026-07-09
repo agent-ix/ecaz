@@ -352,6 +352,7 @@ pub(crate) unsafe fn collect_distann_hits(
         beam_width,
         hop_rounds,
         top_k,
+        debug_fail_hop_round: options::debug_fail_hop_round(),
     };
     // FR-078/FR-081: with a multi-node roster the scan drives the remote
     // expander (group by owner → pooled transport → endpoint → reassemble);

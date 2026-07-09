@@ -599,6 +599,7 @@ fn debug_expand_search_impl(
         beam_width,
         hop_rounds,
         top_k,
+        debug_fail_hop_round: None,
     };
     let make_local = || LocalNodeExpander {
         index_handle: handle,

@@ -486,6 +486,27 @@ async fn drive_fixture(
         drills.push(("remote_statement_timeout".to_owned(), query_errored(&out)));
     }
 
+    // 7b. hop_round_failure_mid_beam: force the search past round 0 (a high top_k
+    // bar prevents the round-0 convergence early-exit) and inject a failure at the
+    // start of hop round 1 via `ec_distann.debug_fail_hop_round`. A mid-beam round
+    // failure must discard the partial beam and ERROR — never surface round 0's
+    // partial frontier as a complete result.
+    {
+        let sql = format!(
+            "SET enable_seqscan=off; SET ec_distann.roster='{roster}'; SET ec_distann.local_node_id=1; SET ec_distann.epoch=1; \
+             SET ec_distann.hop_rounds=4; SET ec_distann.top_k=200; SET ec_distann.beam_width=8; \
+             SET ec_distann.debug_fail_hop_round=1; {single_query}"
+        );
+        let out = capture_psql_allow_error(psql, socket_dir, coord_port, &sql).await;
+        // Fail closed AND specifically the injected mid-beam (round 1) failure.
+        let mid_beam = query_errored(&out) && out.contains("round 1");
+        crate::ecaz_println!(
+            "[distann-multicluster] hop_round_failure_mid_beam DIAG errored={} mid_beam={mid_beam}",
+            query_errored(&out)
+        );
+        drills.push(("hop_round_failure_mid_beam".to_owned(), mid_beam));
+    }
+
     // 8. missing_heap_row_co_placement_drift (also the partial mid-delete case):
     // remove only an owned record's heap row on its owner, leaving the index
     // record ⇒ the owner's exact rerank fails `[EC_VECTOR_MISSING]` ⇒ error. The

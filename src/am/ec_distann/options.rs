@@ -35,6 +35,14 @@ static ECDISTANN_TOP_K_GUC: GucSetting<i32> = GucSetting::<i32>::new(ECDISTANN_D
 
 static ECDISTANN_SCAN_PROFILE_NOTICE_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
 
+/// NFR-020 fault-injection hook (debug only): when >= 0, an ec_distann scan
+/// raises an error at the start of the hop round with this 0-based index, after
+/// all earlier rounds have executed. Setting it to a value >= 1 injects a
+/// `hop_round_failure_mid_beam` fault (a mid-beam remote/round failure that must
+/// discard partial results and error, never return a partial result as
+/// complete). -1 (the default) disables injection.
+static ECDISTANN_DEBUG_FAIL_HOP_ROUND_GUC: GucSetting<i32> = GucSetting::<i32>::new(-1);
+
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 struct EcDistannReloptions {
@@ -199,6 +207,16 @@ pub(super) fn register_gucs() {
         GucContext::Userset,
         GucFlags::default(),
     );
+    GucRegistry::define_int_guc(
+        c"ec_distann.debug_fail_hop_round",
+        c"NFR-020 fault injection (debug): fail an ec_distann scan at this 0-based hop round.",
+        c"When >= 0, the scan raises an error at the start of the hop round with this index, after earlier rounds executed. Values >= 1 inject a hop_round_failure_mid_beam fault used by the multinode fault-drill matrix (TC-042). -1 disables injection.",
+        &ECDISTANN_DEBUG_FAIL_HOP_ROUND_GUC,
+        -1,
+        ECDISTANN_MAX_HOP_ROUNDS,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
 }
 
 pub(super) fn current_top_k() -> usize {
@@ -219,6 +237,12 @@ pub(super) fn current_hop_rounds() -> usize {
     usize::try_from(ECDISTANN_HOP_ROUNDS_GUC.get())
         .unwrap_or(1)
         .max(1)
+}
+
+/// NFR-020 fault injection: the 0-based hop round to fail at, or `None` when
+/// disabled (the -1 default). See `ec_distann.debug_fail_hop_round`.
+pub(super) fn debug_fail_hop_round() -> Option<usize> {
+    usize::try_from(ECDISTANN_DEBUG_FAIL_HOP_ROUND_GUC.get()).ok()
 }
 
 pub(super) unsafe extern "C-unwind" fn ec_distann_amoptions(
