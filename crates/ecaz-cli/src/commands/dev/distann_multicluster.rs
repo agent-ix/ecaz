@@ -458,7 +458,14 @@ async fn drive_fixture(
     // distributed-tombstone drill needs per-node ownership bucketing (an
     // `owning_node` SQL surface) and is a follow-up.
 
-    // 7. recovery / no-false-reject: after all faults clear, the full-roster
+    // 7. concurrency (FR-082-AC-4): run many multi-node scans concurrently with a
+    // background inserter mutating the coordinator's table. Every scan must
+    // complete (return only expanded records; never a torn/half-applied read that
+    // errors). A single failing session fails the drill.
+    let concurrency_ok = concurrency_drill(psql, socket_dir, coord_port, &roster, args).await?;
+    crate::ecaz_println!("[distann-multicluster] concurrency_scan_under_insert pass={concurrency_ok}");
+
+    // 8. recovery / no-false-reject: after all faults clear, the full-roster
     // query must match the single-node baseline again.
     let recovery = capture_psql(psql, socket_dir, coord_port, &recall_sql(&roster, args.queries, args.top_k))
         .await
@@ -484,6 +491,9 @@ async fn drive_fixture(
     for (name, fail_closed) in &drills {
         summary.push_str(&format!("fault_drill {name} pass={fail_closed}\n"));
     }
+    summary.push_str(&format!(
+        "concurrency_scan_under_insert pass={concurrency_ok}\n"
+    ));
     summary.push_str(&format!("recovery {recovery_line} recovered={recovered}\n"));
     let summary_path = log_dir.join("distann-multinode-summary.log");
     fs::write(&summary_path, &summary)
@@ -495,6 +505,9 @@ async fn drive_fixture(
 
     if !result_line.contains("mismatched_ids=0") {
         bail!("multi-node distinct-recall gate FAILED: {result_line}");
+    }
+    if !concurrency_ok {
+        bail!("concurrency drill FAILED: a scan errored under concurrent insert load");
     }
     let all_fail_closed = drills.iter().all(|(_, ok)| *ok);
     if !all_fail_closed {
@@ -539,6 +552,99 @@ fn roster_with_port_override(
 /// rather than returning a (possibly wrong/partial) result.
 fn query_errored(output: &str) -> bool {
     output.contains("ERROR") || output.contains("EC_INTERNAL") || output.contains("could not connect")
+}
+
+/// FR-082-AC-4 concurrency drill: `scanners` concurrent multi-node scan loops on
+/// the coordinator, plus a background inserter mutating the table, all at once.
+/// Returns true iff every session completed without error (each scan drew only
+/// from expanded records — a torn/half-applied read would surface as an error).
+async fn concurrency_drill(
+    psql: &Path,
+    socket_dir: &Path,
+    coord_port: u16,
+    roster: &str,
+    args: &LocalMultinodePg18Args,
+) -> Result<bool> {
+    let scanners = 4;
+    let iters = 12;
+    let scan_sql = format!(
+        "SET enable_seqscan=off; SET ec_distann.roster='{roster}'; SET ec_distann.local_node_id=1; SET ec_distann.epoch=1; \
+         SELECT count(*) FROM (SELECT id FROM dm ORDER BY embedding <#> (SELECT source FROM dm WHERE id=1) LIMIT {}) t;",
+        args.top_k
+    );
+    // Deterministic insert vector (same shape as the corpus generator).
+    let arr = format!(
+        "(SELECT array_agg((sin(7 * 0.017 * (d + 1)) + cos(7 * 0.0031 * (d + 1)))::real) FROM generate_series(0, {} - 1) AS d)",
+        args.dim
+    );
+
+    let mut tasks = Vec::new();
+    for _ in 0..scanners {
+        let (psql, socket_dir, sql) = (psql.to_path_buf(), socket_dir.to_path_buf(), scan_sql.clone());
+        tasks.push(tokio::spawn(async move {
+            for _ in 0..iters {
+                let out = run_capture(&psql, &socket_dir, coord_port, &sql).await;
+                if !out.status_ok {
+                    return Err(out.stderr);
+                }
+            }
+            Ok(())
+        }));
+    }
+    // Background inserter: unique ids well above the corpus range.
+    {
+        let (psql, socket_dir, arr) = (psql.to_path_buf(), socket_dir.to_path_buf(), arr.clone());
+        let base_rows = args.rows;
+        tasks.push(tokio::spawn(async move {
+            for i in 0..iters {
+                let sql = format!(
+                    "INSERT INTO dm SELECT {}, {arr}, encode_to_ecvector({arr}, 4, 42);",
+                    900_000 + base_rows as i64 + i
+                );
+                let out = run_capture(&psql, &socket_dir, coord_port, &sql).await;
+                if !out.status_ok {
+                    return Err(out.stderr);
+                }
+            }
+            Ok(())
+        }));
+    }
+
+    let mut ok = true;
+    for task in tasks {
+        match task.await {
+            Ok(Ok(())) => {}
+            Ok(Err(stderr)) => {
+                crate::ecaz_println!("[distann-multicluster] concurrency session error: {stderr}");
+                ok = false;
+            }
+            Err(join_err) => {
+                crate::ecaz_println!("[distann-multicluster] concurrency task panicked: {join_err}");
+                ok = false;
+            }
+        }
+    }
+    Ok(ok)
+}
+
+struct CaptureOut {
+    status_ok: bool,
+    stderr: String,
+}
+
+async fn run_capture(psql: &Path, socket_dir: &Path, port: u16, sql: &str) -> CaptureOut {
+    let mut command = psql_base(psql, socket_dir, port);
+    command.arg("-v").arg("ON_ERROR_STOP=1").arg("-tAc").arg(sql);
+    match command.output().await {
+        Ok(output) => CaptureOut {
+            status_ok: output.status.success(),
+            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+        },
+        Err(error) => CaptureOut {
+            status_ok: false,
+            stderr: format!("spawn error: {error}"),
+        },
+    }
 }
 
 fn psql_base(psql: &Path, socket_dir: &Path, port: u16) -> Command {
