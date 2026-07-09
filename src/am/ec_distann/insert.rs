@@ -386,6 +386,17 @@ pub(super) unsafe fn graph_insert_record(
     let new_directory_head = stage_directory_chain(&mut dir_chain, &vec_ids, &tids)?;
     write_data_pages(handle, &dir_chain);
 
+    // NFR-020 fault injection: a mid-insert failure after the node + directory
+    // pages are staged but before the metadata publish. The aborting transaction
+    // must roll the staged pages back so no partial record is ever visible.
+    if super::options::debug_fail_insert() {
+        return Err(
+            "ec_distann injected mid-insert failure after staging, before publish \
+             (ec_distann.debug_fail_insert)"
+                .to_owned(),
+        );
+    }
+
     // 8. Publish the new directory + node count.
     metadata.directory_head = new_directory_head;
     metadata.node_count += 1;

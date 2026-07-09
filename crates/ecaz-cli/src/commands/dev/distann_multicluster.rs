@@ -507,6 +507,23 @@ async fn drive_fixture(
         drills.push(("hop_round_failure_mid_beam".to_owned(), mid_beam));
     }
 
+    // 7c. missing_node_record (FR-079 case c): force the local expander to report
+    // an owned record as absent from its directory. The scan must raise the
+    // structural fault, never silently under-return.
+    {
+        let sql = format!(
+            "SET enable_seqscan=off; SET ec_distann.roster='{roster}'; SET ec_distann.local_node_id=1; SET ec_distann.epoch=1; \
+             SET ec_distann.debug_missing_node_record=true; {single_query}"
+        );
+        let out = capture_psql_allow_error(psql, socket_dir, coord_port, &sql).await;
+        let pass = query_errored(&out) && out.contains("missing node record");
+        crate::ecaz_println!(
+            "[distann-multicluster] missing_node_record DIAG errored={} tagged={pass}",
+            query_errored(&out)
+        );
+        drills.push(("missing_node_record".to_owned(), pass));
+    }
+
     // 8. missing_heap_row_co_placement_drift (also the partial mid-delete case):
     // remove only an owned record's heap row on its owner, leaving the index
     // record ⇒ the owner's exact rerank fails `[EC_VECTOR_MISSING]` ⇒ error. The
@@ -519,6 +536,15 @@ async fn drive_fixture(
         let drift_ok =
             co_placement_drift_drill(psql, socket_dir, coord_port, &roster, nodes, args).await;
         drills.push(("missing_heap_row_co_placement_drift".to_owned(), drift_ok));
+    }
+
+    // 8b. mid-insert failure (FR-083 fold path, TC-043): a graph insert that fails
+    // after staging pages but before publishing metadata must roll back cleanly —
+    // no partial record visible. Runs on an isolated table so shared `dm` is
+    // untouched.
+    {
+        let mid_insert_ok = mid_insert_drill(psql, socket_dir, coord_port, args).await;
+        drills.push(("mid_insert_failure_rolls_back".to_owned(), mid_insert_ok));
     }
 
     // 7. concurrency (FR-082-AC-4): run many multi-node scans concurrently with a
@@ -702,6 +728,69 @@ async fn co_placement_drift_drill(
         co_placement_drift_case(psql, socket_dir, coord_port, roster, nodes, args, args.nodes - 1)
             .await;
     coord && remote
+}
+
+/// FR-083 mid-insert failure drill (TC-043), on an isolated table so the shared
+/// `dm` other drills use is untouched. Builds a small graph, buffers a few
+/// inserts (delta buffer), then folds them with `ec_distann.debug_fail_insert`
+/// on: `graph_insert_record` errors after staging the node + directory pages but
+/// before publishing metadata. The aborting statement must roll the staged pages
+/// back, so a scan after the failed fold succeeds and is byte-identical to the
+/// pre-fold scan (no partial/corrupt record). Returns true iff the fold errored
+/// AND the post-fold scan matches the pre-fold scan.
+async fn mid_insert_drill(
+    psql: &Path,
+    socket_dir: &Path,
+    coord_port: u16,
+    args: &LocalMultinodePg18Args,
+) -> bool {
+    let dim = args.dim;
+    let vec = |g: &str| -> String {
+        format!(
+            "encode_to_ecvector((SELECT array_agg((sin({g} * 0.017 * (d + 1)) + cos({g} * 0.0031 * (d + 1)))::real) \
+               FROM generate_series(0, {dim} - 1) AS d), 4, 42)"
+        )
+    };
+    let setup = format!(
+        "DROP TABLE IF EXISTS mi; CREATE TABLE mi (id bigint, embedding ecvector); \
+         INSERT INTO mi SELECT g, {gvec} FROM generate_series(1, 500) AS g; \
+         CREATE INDEX mi_idx ON mi USING ec_distann (embedding ecvector_distann_ip_ops) WITH (graph_degree = {gd});",
+        gvec = vec("g"),
+        gd = args.graph_degree,
+    );
+    if run_psql_file(psql, socket_dir, coord_port, &setup).await.is_err() {
+        return false;
+    }
+    // Buffer a few inserts into the delta buffer (aminsert), to be folded.
+    let more = format!(
+        "INSERT INTO mi SELECT g, {gvec} FROM generate_series(501, 510) AS g;",
+        gvec = vec("g"),
+    );
+    if run_psql_file(psql, socket_dir, coord_port, &more).await.is_err() {
+        return false;
+    }
+    let scan = "SET enable_seqscan=off; SELECT id FROM mi ORDER BY embedding <#> (SELECT embedding FROM mi WHERE id=1) LIMIT 10;";
+    let before = capture_psql_allow_error(psql, socket_dir, coord_port, scan).await;
+    // Inject the mid-insert failure and fold: the fold must error.
+    let fold = "SET ec_distann.debug_fail_insert=true; SELECT ec_distann_fold_delta_into_graph('mi_idx'::regclass);";
+    let fold_out = capture_psql_allow_error(psql, socket_dir, coord_port, fold).await;
+    let fold_errored = query_errored(&fold_out);
+    // Post-failed-fold scan: must still work and match the pre-fold result.
+    let after = capture_psql_allow_error(psql, socket_dir, coord_port, scan).await;
+    let ids = |out: &str| -> Vec<i64> {
+        out.lines().filter_map(|l| l.trim().parse().ok()).collect()
+    };
+    let (before_ids, after_ids) = (ids(&before), ids(&after));
+    let consistent = !after_ids.is_empty() && after_ids == before_ids;
+    let pass = fold_errored && consistent;
+    crate::ecaz_println!(
+        "[distann-multicluster] mid_insert_failure DIAG fold_errored={fold_errored} \
+         before_n={} after_n={} consistent={consistent} pass={pass}",
+        before_ids.len(),
+        after_ids.len(),
+    );
+    let _ = run_psql_file(psql, socket_dir, coord_port, "DROP TABLE IF EXISTS mi;").await;
+    pass
 }
 
 /// One co-placement-drift case: pick a live record owned by `owner_idx`, delete

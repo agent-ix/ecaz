@@ -43,6 +43,19 @@ static ECDISTANN_SCAN_PROFILE_NOTICE_GUC: GucSetting<bool> = GucSetting::<bool>:
 /// complete). -1 (the default) disables injection.
 static ECDISTANN_DEBUG_FAIL_HOP_ROUND_GUC: GucSetting<i32> = GucSetting::<i32>::new(-1);
 
+/// NFR-020 fault injection (debug only): when true, the local expander raises the
+/// FR-079 case-(c) `OwnedRecordMissing` structural fault on the first vec_id it is
+/// asked to expand, simulating a `missing_node_record` (an owned record absent
+/// from the node's directory). The scan must error, never silently under-return.
+static ECDISTANN_DEBUG_MISSING_NODE_RECORD_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
+
+/// NFR-020 fault injection (debug only): when true, `graph_insert_record` (the
+/// FR-083 fold path) raises an error after staging the new node + directory pages
+/// but before publishing the metadata, simulating a `mid-insert failure`. The
+/// aborting transaction must roll the staged pages back so no partial record is
+/// ever visible to a scan.
+static ECDISTANN_DEBUG_FAIL_INSERT_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
+
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 struct EcDistannReloptions {
@@ -217,6 +230,22 @@ pub(super) fn register_gucs() {
         GucContext::Userset,
         GucFlags::default(),
     );
+    GucRegistry::define_bool_guc(
+        c"ec_distann.debug_missing_node_record",
+        c"NFR-020 fault injection (debug): force an FR-079 case-(c) missing owned record.",
+        c"When on, the local expander raises OwnedRecordMissing on the first vec_id it expands, simulating a missing_node_record so the multinode fault-drill matrix (TC-042) can assert the scan errors rather than under-returning. Off by default.",
+        &ECDISTANN_DEBUG_MISSING_NODE_RECORD_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    GucRegistry::define_bool_guc(
+        c"ec_distann.debug_fail_insert",
+        c"NFR-020 fault injection (debug): fail a graph insert after staging, before publish.",
+        c"When on, graph_insert_record errors after staging the new node + directory pages but before publishing metadata, simulating a mid-insert failure so the fault-drill matrix (TC-042/TC-043) can assert the aborting transaction rolls staged pages back. Off by default.",
+        &ECDISTANN_DEBUG_FAIL_INSERT_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
 }
 
 pub(super) fn current_top_k() -> usize {
@@ -243,6 +272,16 @@ pub(super) fn current_hop_rounds() -> usize {
 /// disabled (the -1 default). See `ec_distann.debug_fail_hop_round`.
 pub(super) fn debug_fail_hop_round() -> Option<usize> {
     usize::try_from(ECDISTANN_DEBUG_FAIL_HOP_ROUND_GUC.get()).ok()
+}
+
+/// NFR-020 fault injection: force the FR-079 case-(c) missing-record fault.
+pub(super) fn debug_missing_node_record() -> bool {
+    ECDISTANN_DEBUG_MISSING_NODE_RECORD_GUC.get()
+}
+
+/// NFR-020 fault injection: fail a graph insert after staging, before publish.
+pub(super) fn debug_fail_insert() -> bool {
+    ECDISTANN_DEBUG_FAIL_INSERT_GUC.get()
 }
 
 pub(super) unsafe extern "C-unwind" fn ec_distann_amoptions(

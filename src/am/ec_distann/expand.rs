@@ -81,6 +81,13 @@ impl DistannNodeExpander for LocalNodeExpander<'_> {
         let mut responses = Vec::with_capacity(vec_ids.len());
         let mut batch_dists: Vec<f32> = Vec::new();
         for vec_id in vec_ids {
+            // NFR-020 fault injection: force the FR-079 case-(c) structural fault
+            // on the first expanded vec_id (missing_node_record drill).
+            if super::options::debug_missing_node_record() {
+                return Err(DistannExpandError::OwnedRecordMissing(format!(
+                    "ec_distann injected missing node record for vec_id {vec_id:#018x} (ec_distann.debug_missing_node_record)"
+                )));
+            }
             // Ownership is validated before this call; an unresolved id here is
             // the FR-079 case (c) owned-but-absent structural fault, never a miss.
             let tid = directory_lookup(self.directory, *vec_id).ok_or_else(|| {
