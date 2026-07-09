@@ -1,0 +1,21 @@
+PostgreSQL 18 planner/RLS metadata audit
+date: 2026-07-09
+source tree: /home/peter/.pgrx/18.3/src/include/nodes
+
+Command:
+  rg -n -A 30 -B 8 'relationOids|permInfos' /home/peter/.pgrx/18.3/src/include/nodes/plannodes.h
+
+Relevant declarations/comments:
+  List *permInfos;      /* list of RTEPermissionInfo nodes for rtable entries needing one */
+  List *relationOids;   /* OIDs of relations the plan depends on */
+
+Command:
+  rg -n -A 18 -B 8 'securityQuals|hasRowSecurity' /home/peter/.pgrx/18.3/src/include/nodes/parsenodes.h
+
+Relevant declarations/comments:
+  bool hasRowSecurity;  /* rewriter has applied some RLS policy */
+  List *securityQuals;  /* security barrier quals to apply, if any */
+
+The RangeTblEntry comment further states that securityQuals are boolean
+expressions added by the rewriter for security-barrier views and/or row-level
+security and are to be tested before returning a row from the relation.

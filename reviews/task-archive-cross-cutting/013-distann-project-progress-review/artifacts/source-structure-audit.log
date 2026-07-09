@@ -1,0 +1,49 @@
+DistANN/SPIRE static source structure audit
+head: de99f5ec7c853b1909937cb9097194d5e9878704
+date: 2026-07-09
+
+Command:
+  rg --files src/am/ec_spire -g '*.rs' -0 | xargs -0 wc -l | sort -nr | head -n 18
+
+Key output:
+  97016 total
+   4200 src/am/ec_spire/scan/candidates.rs
+   2883 src/am/ec_spire/coordinator/snapshots.rs
+   2869 src/am/ec_spire/scan/tests/candidates.rs
+   2868 src/am/ec_spire/coordinator/remote_candidates/dispatch.rs
+   2826 src/am/ec_spire/coordinator/hierarchy_snapshots.rs
+   2781 src/am/ec_spire/dml_frontdoor/mod.rs
+   2221 src/am/ec_spire/options/mod.rs
+   2197 src/am/ec_spire/coordinator/tests.rs
+   2117 src/am/ec_spire/storage/relation_store.rs
+   1997 src/am/ec_spire/coordinator/types.rs
+   1997 src/am/ec_spire/coordinator/remote_candidates/tests/production_executor_state.rs
+   1985 src/am/ec_spire/scan/routing.rs
+   1976 src/am/ec_spire/coordinator/remote_candidates/production_transport.rs
+   1670 src/am/ec_spire/build/recursive.rs
+   1587 src/am/ec_spire/coordinator/remote_candidates/scan_output.rs
+   1410 src/am/ec_spire/scan/tests/routing.rs
+   1352 src/am/ec_spire/storage/leaf_v2_parts.rs
+
+Command:
+  rg --files src/am/ec_spire -g '*.rs' | rg -v '/tests/|/tests\.rs$' | tr '\n' '\0' | xargs -0 wc -l | tail -n 1
+
+Output:
+  66448 total
+
+Command:
+  rg '^include!' src/am/ec_spire -g '*.rs' | wc -l
+
+Output:
+  106
+
+Command:
+  rg -c '#\[pg_extern' src/lib.rs
+  wc -l src/lib.rs crates/ecaz-cli/src/commands/bench/spire_pipeline.rs crates/ecaz-cli/src/commands/bench/suite.rs
+
+Output:
+  246
+  20360 src/lib.rs
+   7243 crates/ecaz-cli/src/commands/bench/spire_pipeline.rs
+   7266 crates/ecaz-cli/src/commands/bench/suite.rs
+  34869 total
