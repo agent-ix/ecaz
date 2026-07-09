@@ -13,7 +13,17 @@ use crate::storage::page::ItemPointer;
 /// graphs with identical shape metadata but different content never collide.
 /// v3 (reviewer 002-P2) appends `delta_count`, so the interim delta-buffer cap
 /// check is O(1) instead of deserializing the whole buffer on every insert.
-pub const INDEX_FORMAT_V1_DISTANN: u16 = 3;
+/// v4 (Task 165 FR-082) appends the epoch-lifecycle triple (`epoch_state`,
+/// `active_epoch`, `in_flight_count`) so Building→Published→Retired lifecycle
+/// state and the retention in-flight gate persist across restart.
+pub const INDEX_FORMAT_V1_DISTANN: u16 = 4;
+
+/// FR-082 epoch lifecycle states (persisted in `epoch_state`). A build lands
+/// `Published` (the build IS the publish in the single-index model); a republish
+/// swaps the active epoch; retirement gates storage reclaim on in-flight zero.
+pub const DISTANN_EPOCH_STATE_BUILDING: u8 = 0;
+pub const DISTANN_EPOCH_STATE_PUBLISHED: u8 = 1;
+pub const DISTANN_EPOCH_STATE_RETIRED: u8 = 2;
 
 /// Neighbor-code codec kinds persisted in the metadata page. Mirrors the
 /// `neighbor_code_format` reloption (ADR-085 D7; default pinned to RaBitQ
@@ -22,7 +32,7 @@ pub const DISTANN_NEIGHBOR_CODEC_GROUPED_PQ: u8 = 1;
 pub const DISTANN_NEIGHBOR_CODEC_RABITQ: u8 = 2;
 pub const DISTANN_NEIGHBOR_CODEC_TURBOQUANT: u8 = 3;
 
-pub const DISTANN_METADATA_BYTES: usize = 84;
+pub const DISTANN_METADATA_BYTES: usize = 97;
 
 pub const DISTANN_METADATA_FORMAT_VERSION_OFFSET: usize = 0;
 pub const DISTANN_METADATA_ENTRY_POINT_OFFSET: usize = 2;
@@ -48,6 +58,10 @@ pub const DISTANN_METADATA_CONTENT_DIGEST_OFFSET: usize = 72;
 /// FR-083 interim delta-buffer entry count (reviewer 002-P2): kept in metadata
 /// so `delta_insert`'s cap check is O(1). Zero on an empty/just-built index.
 pub const DISTANN_METADATA_DELTA_COUNT_OFFSET: usize = 80;
+/// FR-082 epoch lifecycle triple (v4).
+pub const DISTANN_METADATA_EPOCH_STATE_OFFSET: usize = 84;
+pub const DISTANN_METADATA_ACTIVE_EPOCH_OFFSET: usize = 85;
+pub const DISTANN_METADATA_IN_FLIGHT_COUNT_OFFSET: usize = 93;
 
 /// Fixed-size metadata record stored on block 0.
 #[derive(Debug, Clone, PartialEq)]
@@ -98,6 +112,14 @@ pub struct DistannMetadataPage {
     /// metadata so an insert's cap check does not deserialize the buffer; reset
     /// to 0 by an epoch build (REINDEX) or a delta fold that drains the buffer.
     pub delta_count: u32,
+    /// FR-082 epoch lifecycle state (one of `DISTANN_EPOCH_STATE_*`).
+    pub epoch_state: u8,
+    /// FR-082 active epoch number for this published graph.
+    pub active_epoch: u64,
+    /// FR-082 retention gate: count of scans in-flight against this epoch. A
+    /// retire waits for this to reach zero; a wedged count (crashed coordinator)
+    /// is cleared only by the operator force-retire override.
+    pub in_flight_count: u32,
 }
 
 impl DistannMetadataPage {
@@ -133,6 +155,12 @@ impl DistannMetadataPage {
             directory_head: ItemPointer::INVALID,
             content_digest: 0,
             delta_count: 0,
+            // A freshly built index is immediately queryable: the build is the
+            // publish in the single-index model (FR-082). ambuild stamps the
+            // active epoch after the graph lands.
+            epoch_state: DISTANN_EPOCH_STATE_PUBLISHED,
+            active_epoch: 1,
+            in_flight_count: 0,
         }
     }
 
@@ -158,6 +186,9 @@ impl DistannMetadataPage {
         self.directory_head.encode_into(&mut out);
         out.extend_from_slice(&self.content_digest.to_le_bytes());
         out.extend_from_slice(&self.delta_count.to_le_bytes());
+        out.push(self.epoch_state);
+        out.extend_from_slice(&self.active_epoch.to_le_bytes());
+        out.extend_from_slice(&self.in_flight_count.to_le_bytes());
         debug_assert_eq!(out.len(), DISTANN_METADATA_BYTES);
         out
     }
@@ -226,6 +257,13 @@ impl DistannMetadataPage {
             ),
             delta_count: u32::from_le_bytes(
                 input[80..84].try_into().expect("delta_count bytes"),
+            ),
+            epoch_state: input[DISTANN_METADATA_EPOCH_STATE_OFFSET],
+            active_epoch: u64::from_le_bytes(
+                input[85..93].try_into().expect("active_epoch bytes"),
+            ),
+            in_flight_count: u32::from_le_bytes(
+                input[93..97].try_into().expect("in_flight_count bytes"),
             ),
         })
     }

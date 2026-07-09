@@ -18,6 +18,7 @@ mod cost;
 mod custom_scan;
 mod dml;
 mod epoch;
+mod epoch_manifest;
 mod expand;
 mod expand_error;
 mod head_cache;

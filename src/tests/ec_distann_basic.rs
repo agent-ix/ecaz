@@ -1320,6 +1320,65 @@ fn test_ec_distann_materialize_row_payloads_ships_binary_columns() {
 }
 
 #[pg_test]
+fn test_ec_distann_epoch_lifecycle_publish_retire_override() {
+    // FR-082 AC-1/AC-3/AC-6: the epoch lifecycle state machine persists in the v4
+    // metadata page. A built index is Published; republish swaps the active
+    // epoch; retire is gated on the in-flight count; the operator override
+    // force-retires a wedged count.
+    create_distann_fixture("ec_distann_epoch", "WITH (graph_degree = 4)");
+    let idx = "'ec_distann_epoch_idx'::regclass::oid";
+
+    // A freshly built index is Published at epoch 1, nothing in flight.
+    let state = Spi::get_one::<String>(&format!(
+        "SELECT epoch_state FROM ec_distann_epoch_status({idx})"
+    ))
+    .expect("SPI")
+    .expect("state");
+    assert_eq!(state, "published", "built index is published");
+
+    // AC-1: republish swaps the active epoch atomically.
+    Spi::run(&format!("SELECT ec_distann_publish_epoch({idx}, 5)")).expect("publish");
+    let epoch = Spi::get_one::<i64>(&format!(
+        "SELECT active_epoch FROM ec_distann_epoch_status({idx})"
+    ))
+    .expect("SPI")
+    .expect("epoch");
+    assert_eq!(epoch, 5, "republish set the active epoch");
+
+    // AC-3: a non-zero in-flight count blocks retire (retention gate).
+    Spi::run(&format!("SELECT ec_distann_debug_set_in_flight({idx}, 3)")).expect("set in-flight");
+    let error = expect_pg_error(|| {
+        Spi::run(&format!("SELECT ec_distann_retire_epoch({idx})")).expect("must gate");
+    });
+    assert!(error.contains("retention gate"), "unexpected error: {error}");
+    // Still published, count intact.
+    let (state, in_flight) = Spi::get_two::<String, i64>(&format!(
+        "SELECT epoch_state, in_flight_count FROM ec_distann_epoch_status({idx})"
+    ))
+    .expect("SPI");
+    assert_eq!(state.as_deref(), Some("published"), "retire was blocked");
+    assert_eq!(in_flight, Some(3), "in-flight count retained");
+
+    // AC-6: the operator override force-retires the wedged count and clears it.
+    Spi::run(&format!("SELECT ec_distann_force_retire_epoch({idx})")).expect("force retire");
+    let (state, in_flight) = Spi::get_two::<String, i64>(&format!(
+        "SELECT epoch_state, in_flight_count FROM ec_distann_epoch_status({idx})"
+    ))
+    .expect("SPI");
+    assert_eq!(state.as_deref(), Some("retired"), "override retired the epoch");
+    assert_eq!(in_flight, Some(0), "override cleared the wedged count");
+
+    // Gate opens once in-flight is zero: a clean retire is idempotent.
+    Spi::run(&format!("SELECT ec_distann_retire_epoch({idx})")).expect("retire when drained");
+    let state = Spi::get_one::<String>(&format!(
+        "SELECT epoch_state FROM ec_distann_epoch_status({idx})"
+    ))
+    .expect("SPI")
+    .expect("state");
+    assert_eq!(state, "retired");
+}
+
+#[pg_test]
 fn test_ec_distann_apply_record_writes_tombstones() {
     // FR-083 write endpoint (M3): the tombstone-set operation applies on the
     // hash-owning node under epoch validation. Single-node: this node owns all.
