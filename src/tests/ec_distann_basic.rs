@@ -1320,6 +1320,44 @@ fn test_ec_distann_materialize_row_payloads_ships_binary_columns() {
 }
 
 #[pg_test]
+fn test_ec_distann_owning_node_surface() {
+    // FR-078 ownership surface: deterministic, in-range, and load-distributing,
+    // so operator tooling / the multinode fixture can bucket vec_ids by owner.
+    // hash_version 1 == DISTANN_PLACEMENT_HASH_V1.
+    let out_of_range = Spi::get_one::<i64>(
+        "SELECT count(*) FROM generate_series(1, 500) g \
+         WHERE ec_distann_owning_node(g, 3, 1) < 0 OR ec_distann_owning_node(g, 3, 1) >= 3",
+    )
+    .expect("SPI")
+    .expect("count");
+    assert_eq!(out_of_range, 0, "every owner is in [0, node_count)");
+
+    // Deterministic: same inputs -> same owner.
+    let stable = Spi::get_one::<bool>(
+        "SELECT ec_distann_owning_node(12345, 3, 1) = ec_distann_owning_node(12345, 3, 1)",
+    )
+    .expect("SPI")
+    .expect("bool");
+    assert!(stable, "ownership is deterministic");
+
+    // Load-distributing: 500 ids across 3 nodes touch every node.
+    let distinct_owners = Spi::get_one::<i64>(
+        "SELECT count(DISTINCT ec_distann_owning_node(g, 3, 1)) FROM generate_series(1, 500) g",
+    )
+    .expect("SPI")
+    .expect("count");
+    assert_eq!(distinct_owners, 3, "hash placement uses all 3 nodes");
+
+    // Single-node roster: everything owned by node 0.
+    let all_local = Spi::get_one::<i64>(
+        "SELECT count(*) FROM generate_series(1, 100) g WHERE ec_distann_owning_node(g, 1, 1) <> 0",
+    )
+    .expect("SPI")
+    .expect("count");
+    assert_eq!(all_local, 0, "single-node owns every vec_id");
+}
+
+#[pg_test]
 fn test_ec_distann_epoch_lifecycle_publish_retire_override() {
     // FR-082 AC-1/AC-3/AC-6: the epoch lifecycle state machine persists in the v4
     // metadata page. A built index is Published; republish swaps the active

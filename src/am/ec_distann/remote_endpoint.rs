@@ -52,6 +52,21 @@ use super::tuple::DistannNodeTuple;
 /// One wire response row (no `heap_tid` — see module docs).
 type ExpandRow = (i64, Option<f32>, bool, Vec<i64>, Vec<f32>);
 
+/// FR-078 ownership surface: the roster index that owns `vec_id` under a given
+/// node count and placement hash version. Exposed so operator tooling and the
+/// multinode fixture can bucket vec_ids by owner (e.g. to drive a distributed
+/// tombstone drill) without reimplementing the placement hash. Pure/deterministic.
+#[pg_extern(immutable, parallel_safe)]
+fn ec_distann_owning_node(vec_id: i64, node_count: i32, hash_version: i32) -> i32 {
+    if node_count <= 0 {
+        pgrx::error!("ec_distann_owning_node: node_count must be >= 1, got {node_count}");
+    }
+    let hash_version = u16::try_from(hash_version)
+        .unwrap_or_else(|_| pgrx::error!("ec_distann_owning_node: hash_version out of range"));
+    let owner = owning_node(vec_id as u64, node_count as usize, hash_version);
+    i32::try_from(owner).unwrap_or_else(|_| pgrx::error!("ec_distann_owning_node: owner overflow"))
+}
+
 /// FR-079 endpoint. `index_regclass` is accepted as its `oid` (a `regclass`
 /// literal casts implicitly), matching how the coordinator resolves the local
 /// index. `epoch_fingerprint` is the coordinator's active-epoch identity
