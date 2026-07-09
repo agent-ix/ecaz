@@ -793,12 +793,14 @@ unsafe fn ensure_outputs(
     // Shared search core: local hits get a resolved ctid; remote hits carry
     // INVALID (we ship their row payloads below).
     //
-    // Iterative deepening for recall parity with the AM `amgettuple` path
-    // (routine.rs): a scan that early-exits below top_k proven results is re-run
-    // with a doubled exit bar until top_k is proven or the beam is exhausted.
-    // Without this the CustomScan under-explores at larger `ec_distann.top_k` and
-    // its recall trails the single-node path (caught by the suite recall gate).
-    let mut effective = state.top_k.max(1);
+    // Exploration bar = `ec_distann.top_k` (the D9 exit bar / ef-search knob),
+    // NOT the plan LIMIT — the AM `amgettuple` path explores to
+    // `options::current_top_k()` (routine.rs) and serves LIMIT rows from it. Using
+    // the LIMIT as the bar made the CustomScan under-explore (ef=LIMIT vs ef=GUC),
+    // trailing single-node recall at larger `ec_distann.top_k` (caught by the
+    // suite recall gate). Explore to at least the GUC and at least the LIMIT, then
+    // iteratively deepen on early-exit for parity, and truncate to the LIMIT.
+    let mut effective = super::options::current_top_k().max(state.top_k).max(1);
     let deepen_cap = effective.saturating_mul(64).max(1024);
     let mut collection = super::routine::collect_distann_hits(
         handle,
