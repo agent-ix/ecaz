@@ -1,0 +1,15 @@
+2026-07-09 12:31:36.870 PDT [1216443] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-07-09 12:31:36.874 PDT [1216443] LOG:  listening on Unix socket "/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets/.s.PGSQL.39710"
+2026-07-09 12:31:36.890 PDT [1216449] LOG:  database system was shut down at 2026-07-09 12:31:33 PDT
+2026-07-09 12:31:36.896 PDT [1216443] LOG:  database system is ready to accept connections
+2026-07-09 12:31:38.963 PDT [1216480] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-09 12:31:58.592 PDT [1216527] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-09 12:32:20.909 PDT [1216691] ERROR:  ec_distann scan orchestration failed: [EC_EPOCH_MISMATCH] ec_distann remote expand call failed: [EC_EPOCH_MISMATCH] ec_distann_expand_nodes epoch fingerprint mismatch: caller epoch differs from this node's active epoch
+2026-07-09 12:32:20.909 PDT [1216691] STATEMENT:  SET enable_seqscan=off; SET ec_distann.roster='1@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39710 dbname=postgres user=postgres;2@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39711 dbname=postgres user=postgres;3@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39712 dbname=postgres user=postgres'; SET ec_distann.local_node_id=1; SELECT id FROM dm ORDER BY embedding <#> (SELECT source FROM dm WHERE id=1) LIMIT 10;
+2026-07-09 12:32:21.801 PDT [1216443] LOG:  received fast shutdown request
+2026-07-09 12:32:21.870 PDT [1216443] LOG:  aborting any active transactions
+2026-07-09 12:32:21.871 PDT [1216443] LOG:  background worker "logical replication launcher" (PID 1216452) exited with exit code 1
+2026-07-09 12:32:21.871 PDT [1216447] LOG:  shutting down
+2026-07-09 12:32:21.876 PDT [1216447] LOG:  checkpoint starting: shutdown immediate
+2026-07-09 12:32:22.124 PDT [1216447] LOG:  checkpoint complete: wrote 12921 buffers (78.9%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 6 recycled; write=0.118 s, sync=0.081 s, total=0.253 s; sync files=141, longest=0.023 s, average=0.001 s; distance=99028 kB, estimate=99028 kB; lsn=0/7809620, redo lsn=0/7809620
+2026-07-09 12:32:22.148 PDT [1216443] LOG:  database system is shut down

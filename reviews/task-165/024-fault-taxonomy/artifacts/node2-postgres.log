@@ -1,0 +1,243 @@
+2026-07-09 09:44:47.893 PDT [1146337] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-07-09 09:44:47.898 PDT [1146337] LOG:  listening on Unix socket "/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets/.s.PGSQL.39711"
+2026-07-09 09:44:47.916 PDT [1146343] LOG:  database system was shut down at 2026-07-09 09:44:46 PDT
+2026-07-09 09:44:47.922 PDT [1146337] LOG:  database system is ready to accept connections
+2026-07-09 09:44:48.588 PDT [1146363] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-09 09:44:49.662 PDT [1146377] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-09 09:44:50.953 PDT [1146468] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:44:54.233 PDT [1146608] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:44:54.234 PDT [1146610] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:44:54.855 PDT [1146643] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:44:56.668 PDT [1146737] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:44:56.673 PDT [1146735] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:44:57.025 PDT [1146755] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:44:57.036 PDT [1146757] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:44:57.329 PDT [1146771] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:45:02.082 PDT [1146828] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:45:03.767 PDT [1146337] LOG:  received fast shutdown request
+2026-07-09 09:45:03.781 PDT [1146337] LOG:  aborting any active transactions
+2026-07-09 09:45:03.782 PDT [1146337] LOG:  background worker "logical replication launcher" (PID 1146346) exited with exit code 1
+2026-07-09 09:45:03.782 PDT [1146341] LOG:  shutting down
+2026-07-09 09:45:03.786 PDT [1146341] LOG:  checkpoint starting: shutdown immediate
+2026-07-09 09:45:03.958 PDT [1146341] LOG:  checkpoint complete: wrote 945 buffers (5.8%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 1 recycled; write=0.016 s, sync=0.133 s, total=0.177 s; sync files=136, longest=0.008 s, average=0.001 s; distance=17277 kB, estimate=17277 kB; lsn=0/2833A80, redo lsn=0/2833A80
+2026-07-09 09:45:03.971 PDT [1146337] LOG:  database system is shut down
+2026-07-09 09:52:22.587 PDT [1152648] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-07-09 09:52:22.592 PDT [1152648] LOG:  listening on Unix socket "/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets/.s.PGSQL.39711"
+2026-07-09 09:52:22.606 PDT [1152654] LOG:  database system was shut down at 2026-07-09 09:52:21 PDT
+2026-07-09 09:52:22.612 PDT [1152648] LOG:  database system is ready to accept connections
+2026-07-09 09:52:23.275 PDT [1152681] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-09 09:52:24.179 PDT [1152693] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:52:24.323 PDT [1152698] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-09 09:52:25.603 PDT [1152789] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:52:28.602 PDT [1152854] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-09 09:52:29.229 PDT [1152915] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:52:30.476 PDT [1152980] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:52:30.833 PDT [1153000] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:52:31.147 PDT [1153016] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:52:31.400 PDT [1153028] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:52:31.722 PDT [1153044] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:52:32.389 PDT [1153078] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:52:36.217 PDT [1153117] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:52:37.638 PDT [1153150] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:52:38.427 PDT [1153179] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:52:38.630 PDT [1152648] LOG:  received fast shutdown request
+2026-07-09 09:52:38.634 PDT [1152648] LOG:  aborting any active transactions
+2026-07-09 09:52:38.634 PDT [1152648] LOG:  background worker "logical replication launcher" (PID 1152657) exited with exit code 1
+2026-07-09 09:52:38.635 PDT [1152652] LOG:  shutting down
+2026-07-09 09:52:38.639 PDT [1152652] LOG:  checkpoint starting: shutdown immediate
+2026-07-09 09:52:38.809 PDT [1152652] LOG:  checkpoint complete: wrote 950 buffers (5.8%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 1 recycled; write=0.014 s, sync=0.135 s, total=0.175 s; sync files=141, longest=0.009 s, average=0.001 s; distance=19424 kB, estimate=19424 kB; lsn=0/2A4C7A0, redo lsn=0/2A4C7A0
+2026-07-09 09:52:38.824 PDT [1152648] LOG:  database system is shut down
+2026-07-09 09:55:58.164 PDT [1155694] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-07-09 09:55:58.169 PDT [1155694] LOG:  listening on Unix socket "/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets/.s.PGSQL.39711"
+2026-07-09 09:55:58.187 PDT [1155700] LOG:  database system was shut down at 2026-07-09 09:55:56 PDT
+2026-07-09 09:55:58.196 PDT [1155694] LOG:  database system is ready to accept connections
+2026-07-09 09:55:58.877 PDT [1155720] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-09 09:55:59.804 PDT [1155726] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:55:59.961 PDT [1155731] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-09 09:56:01.273 PDT [1155822] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:56:04.515 PDT [1155896] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-09 09:56:05.214 PDT [1155957] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:56:05.533 PDT [1155973] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:56:06.141 PDT [1156011] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:56:06.450 PDT [1156025] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:56:06.451 PDT [1156026] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:56:07.648 PDT [1156089] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:56:07.696 PDT [1156093] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:56:07.929 PDT [1156104] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:56:08.283 PDT [1156126] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:56:08.529 PDT [1156136] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:56:08.537 PDT [1156140] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:56:08.581 PDT [1156142] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:56:13.016 PDT [1156181] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:56:14.598 PDT [1155694] LOG:  received fast shutdown request
+2026-07-09 09:56:14.611 PDT [1155694] LOG:  aborting any active transactions
+2026-07-09 09:56:14.612 PDT [1155694] LOG:  background worker "logical replication launcher" (PID 1155703) exited with exit code 1
+2026-07-09 09:56:14.612 PDT [1155698] LOG:  shutting down
+2026-07-09 09:56:14.616 PDT [1155698] LOG:  checkpoint starting: shutdown immediate
+2026-07-09 09:56:14.776 PDT [1155698] LOG:  checkpoint complete: wrote 950 buffers (5.8%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 1 recycled; write=0.017 s, sync=0.123 s, total=0.165 s; sync files=141, longest=0.007 s, average=0.001 s; distance=19424 kB, estimate=19424 kB; lsn=0/2A4C7A0, redo lsn=0/2A4C7A0
+2026-07-09 09:56:14.788 PDT [1155694] LOG:  database system is shut down
+2026-07-09 09:58:29.714 PDT [1158612] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-07-09 09:58:29.718 PDT [1158612] LOG:  listening on Unix socket "/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets/.s.PGSQL.39711"
+2026-07-09 09:58:29.731 PDT [1158618] LOG:  database system was shut down at 2026-07-09 09:58:28 PDT
+2026-07-09 09:58:29.736 PDT [1158612] LOG:  database system is ready to accept connections
+2026-07-09 09:58:30.399 PDT [1158638] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-09 09:58:31.292 PDT [1158644] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:58:31.430 PDT [1158649] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-09 09:58:32.708 PDT [1158740] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:58:33.009 PDT [1158751] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:58:33.863 PDT [1158764] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:58:35.963 PDT [1158814] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-09 09:58:36.692 PDT [1158833] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-09 09:58:37.673 PDT [1158914] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:58:37.675 PDT [1158912] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:58:37.962 PDT [1158926] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:58:38.286 PDT [1158948] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:58:38.580 PDT [1158960] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:58:39.236 PDT [1158993] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:58:39.549 PDT [1159009] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:58:40.461 PDT [1159059] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:58:40.463 PDT [1159058] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:58:40.775 PDT [1159078] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:58:44.214 PDT [1159091] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:58:44.677 PDT [1159120] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:58:45.143 PDT [1159124] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:58:46.681 PDT [1158612] LOG:  received fast shutdown request
+2026-07-09 09:58:46.685 PDT [1158612] LOG:  aborting any active transactions
+2026-07-09 09:58:46.686 PDT [1158612] LOG:  background worker "logical replication launcher" (PID 1158621) exited with exit code 1
+2026-07-09 09:58:46.686 PDT [1158616] LOG:  shutting down
+2026-07-09 09:58:46.691 PDT [1158616] LOG:  checkpoint starting: shutdown immediate
+2026-07-09 09:58:46.849 PDT [1158616] LOG:  checkpoint complete: wrote 954 buffers (5.8%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 1 recycled; write=0.014 s, sync=0.123 s, total=0.163 s; sync files=145, longest=0.007 s, average=0.001 s; distance=21576 kB, estimate=21576 kB; lsn=0/2C667D0, redo lsn=0/2C667D0
+2026-07-09 09:58:46.862 PDT [1158612] LOG:  database system is shut down
+2026-07-09 10:14:32.286 PDT [1167917] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-07-09 10:14:32.291 PDT [1167917] LOG:  listening on Unix socket "/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets/.s.PGSQL.39711"
+2026-07-09 10:14:32.307 PDT [1167923] LOG:  database system was shut down at 2026-07-09 10:14:30 PDT
+2026-07-09 10:14:32.315 PDT [1167917] LOG:  database system is ready to accept connections
+2026-07-09 10:14:33.955 PDT [1167943] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-09 10:14:40.901 PDT [1167956] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-09 10:14:48.724 PDT [1168055] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 10:15:15.363 PDT [1168171] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-09 10:15:18.988 PDT [1168207] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-09 10:15:24.457 PDT [1168268] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 10:15:27.619 PDT [1168294] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 10:15:30.764 PDT [1168307] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 10:15:30.880 PDT [1168311] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 10:15:30.953 PDT [1168313] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 10:15:37.349 PDT [1168358] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 10:15:46.834 PDT [1168420] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 10:15:46.838 PDT [1168416] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 10:15:50.079 PDT [1168438] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 10:15:53.224 PDT [1168449] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 10:16:13.474 PDT [1168554] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 10:16:16.691 PDT [1168567] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 10:16:20.456 PDT [1167917] LOG:  received fast shutdown request
+2026-07-09 10:16:20.462 PDT [1167917] LOG:  aborting any active transactions
+2026-07-09 10:16:20.462 PDT [1167917] LOG:  background worker "logical replication launcher" (PID 1167926) exited with exit code 1
+2026-07-09 10:16:20.463 PDT [1167921] LOG:  shutting down
+2026-07-09 10:16:20.467 PDT [1167921] LOG:  checkpoint starting: shutdown immediate
+2026-07-09 10:16:20.561 PDT [1167921] LOG:  checkpoint complete: wrote 983 buffers (6.0%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 1 recycled; write=0.014 s, sync=0.058 s, total=0.099 s; sync files=153, longest=0.011 s, average=0.001 s; distance=21785 kB, estimate=21785 kB; lsn=0/2C9AA78, redo lsn=0/2C9AA78
+2026-07-09 10:16:20.573 PDT [1167917] LOG:  database system is shut down
+2026-07-09 10:28:51.775 PDT [1176000] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-07-09 10:28:51.781 PDT [1176000] LOG:  listening on Unix socket "/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets/.s.PGSQL.39711"
+2026-07-09 10:28:51.797 PDT [1176006] LOG:  database system was shut down at 2026-07-09 10:28:50 PDT
+2026-07-09 10:28:51.804 PDT [1176000] LOG:  database system is ready to accept connections
+2026-07-09 10:28:53.466 PDT [1176026] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-09 10:29:00.197 PDT [1176043] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-09 10:29:07.817 PDT [1176135] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 10:29:15.087 PDT [1176164] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 10:29:35.797 PDT [1176241] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-09 10:29:39.481 PDT [1176267] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-09 10:29:45.274 PDT [1176361] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 10:29:48.633 PDT [1176375] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 10:29:51.849 PDT [1176402] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 10:29:58.394 PDT [1176448] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 10:30:01.551 PDT [1176460] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 10:30:17.784 PDT [1176561] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 10:30:38.198 PDT [1176650] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 10:30:41.791 PDT [1176687] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 10:30:41.994 PDT [1176000] LOG:  received fast shutdown request
+2026-07-09 10:30:42.000 PDT [1176000] LOG:  aborting any active transactions
+2026-07-09 10:30:42.001 PDT [1176000] LOG:  background worker "logical replication launcher" (PID 1176009) exited with exit code 1
+2026-07-09 10:30:42.001 PDT [1176004] LOG:  shutting down
+2026-07-09 10:30:42.003 PDT [1176004] LOG:  checkpoint starting: shutdown immediate
+2026-07-09 10:30:42.101 PDT [1176004] LOG:  checkpoint complete: wrote 983 buffers (6.0%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 1 recycled; write=0.014 s, sync=0.060 s, total=0.100 s; sync files=153, longest=0.015 s, average=0.001 s; distance=21785 kB, estimate=21785 kB; lsn=0/2C9AA78, redo lsn=0/2C9AA78
+2026-07-09 10:30:42.112 PDT [1176000] LOG:  database system is shut down
+2026-07-09 10:36:20.243 PDT [1181542] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-07-09 10:36:20.248 PDT [1181542] LOG:  listening on Unix socket "/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets/.s.PGSQL.39711"
+2026-07-09 10:36:20.262 PDT [1181548] LOG:  database system was shut down at 2026-07-09 10:36:18 PDT
+2026-07-09 10:36:20.268 PDT [1181542] LOG:  database system is ready to accept connections
+2026-07-09 10:36:21.964 PDT [1181568] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-09 10:36:27.784 PDT [1181587] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 10:36:28.879 PDT [1181592] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-09 10:36:36.575 PDT [1181684] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 10:37:05.748 PDT [1181794] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-09 10:37:09.371 PDT [1181815] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-09 10:37:15.120 PDT [1181903] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 10:37:31.462 PDT [1182009] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 10:37:34.762 PDT [1182028] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 10:37:34.787 PDT [1182030] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 10:37:38.041 PDT [1182046] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 10:37:41.298 PDT [1182064] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 10:37:41.336 PDT [1182070] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 10:37:44.612 PDT [1182092] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 10:38:05.125 PDT [1182191] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 10:38:08.465 PDT [1182197] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 10:38:12.086 PDT [1182228] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 10:38:12.289 PDT [1181542] LOG:  received fast shutdown request
+2026-07-09 10:38:12.295 PDT [1181542] LOG:  aborting any active transactions
+2026-07-09 10:38:12.296 PDT [1181542] LOG:  background worker "logical replication launcher" (PID 1181551) exited with exit code 1
+2026-07-09 10:38:12.296 PDT [1181546] LOG:  shutting down
+2026-07-09 10:38:12.301 PDT [1181546] LOG:  checkpoint starting: shutdown immediate
+2026-07-09 10:38:12.408 PDT [1181546] LOG:  checkpoint complete: wrote 983 buffers (6.0%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 1 recycled; write=0.014 s, sync=0.069 s, total=0.112 s; sync files=153, longest=0.015 s, average=0.001 s; distance=21785 kB, estimate=21785 kB; lsn=0/2C9AA78, redo lsn=0/2C9AA78
+2026-07-09 10:38:12.420 PDT [1181542] LOG:  database system is shut down
+2026-07-09 10:42:51.234 PDT [1184843] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-07-09 10:42:51.238 PDT [1184843] LOG:  listening on Unix socket "/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets/.s.PGSQL.39711"
+2026-07-09 10:42:51.250 PDT [1184849] LOG:  database system was shut down at 2026-07-09 10:42:49 PDT
+2026-07-09 10:42:51.255 PDT [1184843] LOG:  database system is ready to accept connections
+2026-07-09 10:42:52.900 PDT [1184869] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-09 10:42:58.682 PDT [1184888] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 10:42:59.899 PDT [1184908] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-09 10:43:36.197 PDT [1185110] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-09 10:43:39.858 PDT [1185129] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-09 10:43:46.000 PDT [1185220] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 10:43:49.237 PDT [1185239] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 10:44:02.249 PDT [1185332] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 10:44:05.512 PDT [1185349] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 10:44:09.062 PDT [1185369] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 10:44:15.193 PDT [1185399] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 10:44:15.312 PDT [1185401] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 10:44:18.793 PDT [1185426] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 10:44:21.988 PDT [1185449] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 10:44:39.244 PDT [1185520] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 10:44:42.930 PDT [1185550] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 10:44:43.133 PDT [1184843] LOG:  received fast shutdown request
+2026-07-09 10:44:43.143 PDT [1184843] LOG:  aborting any active transactions
+2026-07-09 10:44:43.143 PDT [1184843] LOG:  background worker "logical replication launcher" (PID 1184852) exited with exit code 1
+2026-07-09 10:44:43.144 PDT [1184847] LOG:  shutting down
+2026-07-09 10:44:43.148 PDT [1184847] LOG:  checkpoint starting: shutdown immediate
+2026-07-09 10:44:43.251 PDT [1184847] LOG:  checkpoint complete: wrote 983 buffers (6.0%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 1 recycled; write=0.014 s, sync=0.064 s, total=0.108 s; sync files=153, longest=0.010 s, average=0.001 s; distance=21785 kB, estimate=21785 kB; lsn=0/2C9AA78, redo lsn=0/2C9AA78
+2026-07-09 10:44:43.265 PDT [1184843] LOG:  database system is shut down
+2026-07-09 10:46:15.345 PDT [1187852] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-07-09 10:46:15.348 PDT [1187852] LOG:  listening on Unix socket "/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets/.s.PGSQL.39711"
+2026-07-09 10:46:15.362 PDT [1187858] LOG:  database system was shut down at 2026-07-09 10:46:13 PDT
+2026-07-09 10:46:15.366 PDT [1187852] LOG:  database system is ready to accept connections
+2026-07-09 10:46:16.987 PDT [1187878] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-09 10:46:22.653 PDT [1187890] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 10:46:23.729 PDT [1187902] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-09 10:46:31.314 PDT [1188000] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 10:46:34.267 PDT [1188012] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 10:47:00.137 PDT [1188113] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-09 10:47:03.803 PDT [1188139] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-09 10:47:13.080 PDT [1188245] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 10:47:19.520 PDT [1188287] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 10:47:32.547 PDT [1188380] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 10:47:39.189 PDT [1188415] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 10:47:45.737 PDT [1188451] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 10:47:59.889 PDT [1188521] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 10:48:03.123 PDT [1188535] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 10:48:06.922 PDT [1187852] LOG:  received fast shutdown request
+2026-07-09 10:48:06.929 PDT [1187852] LOG:  aborting any active transactions
+2026-07-09 10:48:06.929 PDT [1187852] LOG:  background worker "logical replication launcher" (PID 1187861) exited with exit code 1
+2026-07-09 10:48:06.929 PDT [1187856] LOG:  shutting down
+2026-07-09 10:48:06.934 PDT [1187856] LOG:  checkpoint starting: shutdown immediate
+2026-07-09 10:48:07.029 PDT [1187856] LOG:  checkpoint complete: wrote 983 buffers (6.0%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 1 recycled; write=0.009 s, sync=0.055 s, total=0.100 s; sync files=153, longest=0.011 s, average=0.001 s; distance=21785 kB, estimate=21785 kB; lsn=0/2C9AA78, redo lsn=0/2C9AA78
+2026-07-09 10:48:07.040 PDT [1187852] LOG:  database system is shut down
