@@ -1320,6 +1320,68 @@ fn test_ec_distann_materialize_row_payloads_ships_binary_columns() {
 }
 
 #[pg_test]
+fn test_ec_distann_tombstone_excludes_and_preserves_live_vectors() {
+    // FR-082-AC-4 (tombstones honored at expansion) + AC-5 (a live record's
+    // exact-rerank vector is unaffected by another record's tombstone — the D10
+    // "nothing physically reclaimed within a Published epoch" model means the
+    // frozen vec_id→vector correspondence holds without a base-table race, so
+    // long as deletion is a tombstone-flag set (FR-083), NOT a raw base DELETE
+    // (which strips the co-placed vector — the EC_VECTOR_MISSING hazard).
+    Spi::run("SET enable_seqscan = off").expect("seqscan off");
+    create_distann_fixture("ec_distann_ac45", "WITH (graph_degree = 4)");
+    let vec_ids = distann_directory_vec_ids("ec_distann_ac45_idx");
+
+    // Self-query each fixture row: its own vector's nearest neighbor is itself
+    // (id = row_index + 1), at exact_dist ≈ -1 (unit vectors, ip self = 1).
+    let self_top1 = |row: &[f32; 4]| -> (i64, f64) {
+        Spi::get_two::<i64, f64>(&format!(
+            "SELECT id, (embedding <#> ARRAY[{},{},{},{}]::real[])::float8 \
+               FROM ec_distann_ac45 \
+              ORDER BY embedding <#> ARRAY[{},{},{},{}]::real[] LIMIT 1",
+            row[0], row[1], row[2], row[3], row[0], row[1], row[2], row[3]
+        ))
+        .map(|(id, d)| (id.expect("id"), d.expect("dist")))
+        .expect("SPI")
+    };
+
+    let baseline: Vec<(i64, f64)> = DISTANN_FIXTURE_ROWS.iter().map(self_top1).collect();
+    for (i, (id, _)) in baseline.iter().enumerate() {
+        assert_eq!(*id, i as i64 + 1, "baseline: row {i} self-returns itself");
+    }
+
+    // Tombstone three records via the FR-083 write endpoint.
+    let removed = Spi::get_one::<i64>(&format!(
+        "SELECT ec_distann_apply_record_writes(\
+           'ec_distann_ac45_idx'::regclass::oid, \
+           ec_distann_epoch_fingerprint('ec_distann_ac45_idx'::regclass::oid), \
+           ARRAY[{}, {}, {}]::bigint[])",
+        vec_ids[0] as i64, vec_ids[1] as i64, vec_ids[2] as i64
+    ))
+    .expect("SPI")
+    .expect("count");
+    assert_eq!(removed, 3, "three records tombstoned");
+
+    // After: exactly 3 rows no longer self-return (their record is tombstoned →
+    // excluded at expansion, AC-4); the other 5 still self-return AND at the
+    // byte-identical exact distance (their vector is intact, AC-5).
+    let mut still_self = 0;
+    for (i, row) in DISTANN_FIXTURE_ROWS.iter().enumerate() {
+        let (id, dist) = self_top1(row);
+        if id == i as i64 + 1 {
+            still_self += 1;
+            assert_eq!(
+                dist, baseline[i].1,
+                "AC-5: surviving row {i} rerank distance is unchanged by others' tombstones"
+            );
+        }
+    }
+    assert_eq!(
+        still_self, 5,
+        "AC-4: exactly the 3 tombstoned records are excluded; 5 live records remain"
+    );
+}
+
+#[pg_test]
 fn test_ec_distann_owning_node_surface() {
     // FR-078 ownership surface: deterministic, in-range, and load-distributing,
     // so operator tooling / the multinode fixture can bucket vec_ids by owner.
