@@ -22,10 +22,13 @@ Produce a release-build `ecaz bench suite` benchmark packet for the real
 
 - recall@10;
 - p50 / p95 / p99 latency;
+- throughput under concurrency;
 - per-node and summed cluster storage;
 - build/load time;
 - remote-path engagement counters proving the query used remote expansion and
-  remote materialization rather than the single-node degenerate path.
+  remote materialization rather than the single-node degenerate path;
+- distributed-process telemetry detailed enough to debug, optimize, and model
+  larger deployments.
 
 The result must explicitly compare distributed `ec_distann` against the
 single-instance `ec_distann` control on the same corpus/query/commit, and may
@@ -59,6 +62,57 @@ path before adding network/instance-placement variables.
   - cluster-total bytes across coordinator + data nodes.
 - Emit a remote-engagement audit per scale/sweep: remote expand calls, remote
   materialize calls, remote-owned output rows or equivalent counters/log lines.
+- Emit structured distributed telemetry, not only pass/fail logs. The suite
+  runner should collect these as normalized JSONL rows and packet-local logs so
+  follow-up optimization work can attribute costs without re-running the packet.
+
+## Distributed Telemetry Requirements
+
+The benchmark must capture per-scale and per-sweep aggregate metrics for the
+distributed process, and either full per-query rows or a documented sampled
+per-query trace. At minimum:
+
+- query shape: scale, top_k sweep, k, query count, concurrency, cache state;
+- orchestration: hop rounds executed, owners touched, local vs remote candidate
+  counts, early-exit count, restart/retry count;
+- remote expansion: number of `ec_distann_expand_nodes` calls, vec_ids requested
+  and returned, neighbor rows returned, remote SQL time, coordinator wait time,
+  serialization/deserialization bytes if available;
+- remote materialization: number of materialize calls, remote-owned output rows,
+  payload bytes, missing/tombstone rows, remote SQL time, coordinator decode time;
+- connection behavior: connect count, pooled connection reuse, session-GUC setup
+  count/time, connection failures/timeouts;
+- coordinator work: merge/dedup time, exact rerank count, final rows produced,
+  executor/CustomScan time where measurable;
+- node work: per-node rows owned, rows expanded, rows materialized, CPU/rss/IO
+  samples if the local harness can collect them cheaply;
+- storage: heap/index/table bytes per node, cluster-total bytes, replicated vs
+  disjoint-shard accounting explicitly separated.
+
+These metrics should be emitted by `ecaz bench suite` as first-class result rows
+or linked packet-local JSONL artifacts. Grepping PostgreSQL logs manually is not
+acceptable as the primary telemetry path.
+
+## Throughput and Scaling Analysis
+
+The benchmark must include at least one throughput sweep per scale with the
+distributed roster active, using concurrency levels sufficient to expose the
+local saturation curve, for example `1, 2, 4, 8, 16` unless the runner records a
+clear resource limit. Report:
+
+- QPS, p50, p95, p99, max latency per concurrency level;
+- per-node utilization or the closest available CPU/rss/IO proxy;
+- remote calls/query and remote bytes/query at each concurrency level;
+- the first observed bottleneck: coordinator CPU, data-node CPU, connection
+  pool, IPC/socket latency, heap/vector materialization, or storage IO.
+
+The final verdict must include a capacity-planning section. It should use the
+measured telemetry to estimate latency and throughput behavior beyond 100k, at
+least for 1m and 10m rows, with assumptions stated explicitly. The model can be
+simple, but it must be grounded in measured terms: per-query hop count, remote
+calls, remote bytes, exact-rerank/materialization work, storage bytes/row, and
+observed QPS saturation. If the data is insufficient for a credible estimate,
+the verdict must say that and identify the missing measurement.
 
 ## Required Evidence
 
@@ -70,8 +124,11 @@ Artifacts:
 - `artifacts/suite-manifest.json`;
 - `artifacts/results.jsonl`;
 - per-scale recall, latency, storage, and load logs;
+- throughput/concurrency logs;
 - node startup logs and roster manifest;
 - remote-engagement audit log;
+- distributed telemetry JSONL / trace artifact;
+- larger-scale capacity estimate markdown or verdict section;
 - storage summation log with per-node and total bytes;
 - final verdict markdown.
 
@@ -93,7 +150,8 @@ benchmark packet must use the suite runner.
 | distribution lane | replicated-serving control, disjoint-shard if claimed |
 | query mode | distributed roster active |
 | sweep | `ec_distann.top_k` default sweep `[16,32,64,100,200]` unless changed by profile registry |
-| metrics | recall, latency, storage, load/build, remote engagement |
+| concurrency | at least 1, 2, 4, 8, 16 for throughput unless resource-limited |
+| metrics | recall, latency, throughput, storage, load/build, remote engagement, distributed telemetry |
 
 ## Acceptance Criteria
 
@@ -113,6 +171,13 @@ benchmark packet must use the suite runner.
 6. The local multi-instance fixture is reusable from `ecaz bench suite` without
    packet-specific glue, so future distann distributed benchmark packets can
    invoke the same suite step/config surface.
+7. Distributed telemetry is rich enough to attribute latency to coordinator,
+   remote expansion, remote materialization, connection/session setup, and
+   merge/dedup work. A packet with only aggregate recall/latency/storage numbers
+   is incomplete.
+8. The verdict includes a measured throughput curve and a stated scaling model
+   for 1m and 10m rows, or explicitly records why the current telemetry cannot
+   support such an estimate.
 
 ## Non-Goals
 
