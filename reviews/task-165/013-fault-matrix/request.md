@@ -16,7 +16,17 @@ The fixture now runs, after the recall gate, a fault matrix against the real
 | `remote_content_divergence` | rebuild owner index at a different `graph_degree` → fingerprint mismatch | ERROR (fail closed) |
 | `missing_or_reindexed_remote_index` | `DROP INDEX` on an owner | ERROR (fail closed) |
 | `remote_backend_termination` | `pg_ctl stop` an owner instance | ERROR (fail closed) |
+| `placement_drift` | coordinator `local_node_id` absent from the roster | ERROR (no local node ⇒ fail closed) |
 | `recovery` | all faults cleared | IDENTICAL to baseline |
+
+**Deliberately not drilled — base-table DELETE.** An early attempt drilled a raw
+`DELETE` as "mid-delete"; it produced `[EC_VECTOR_MISSING]` because ec_distann's
+co-placed exact rerank needs the epoch's frozen vector, which a base DELETE
+removes. That violates the FR-082 Published-epoch model (deletion is a monotonic
+**tombstone-flag** set via FR-083's `ec_distann_apply_record_writes`, which keeps
+the vector) — and is exactly the hazard FR-082-AC-5's epoch-owned frozen snapshot
+exists to prevent. A correct distributed-tombstone drill needs per-node ownership
+bucketing (an `owning_node` SQL surface) and is a follow-up.
 
 ## Evidence (`artifacts/distann-multinode-summary.log`, real 3× PG18)
 

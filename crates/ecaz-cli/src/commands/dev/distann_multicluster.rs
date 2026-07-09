@@ -438,7 +438,27 @@ async fn drive_fixture(
         run_status(restart).await.wrap_err("restarting owner after the drill")?;
     }
 
-    // 5. recovery / no-false-reject: after all faults clear, the full-roster
+    // 6. placement_drift: coordinator local_node_id absent from the roster ⇒ no
+    // local node ⇒ error (a placement disagreement is never a silent miss).
+    {
+        let sql = format!(
+            "SET enable_seqscan=off; SET ec_distann.roster='{roster}'; SET ec_distann.local_node_id=99; SET ec_distann.epoch=1; {single_query}"
+        );
+        let out = capture_psql_allow_error(psql, socket_dir, coord_port, &sql).await;
+        drills.push(("placement_drift".to_owned(), query_errored(&out)));
+    }
+
+    // NOTE: a base-table DELETE is intentionally NOT drilled here — it violates
+    // the FR-082 Published-epoch model (the co-placed rerank vector is frozen and
+    // never physically reclaimed within an epoch; deletion is a monotonic
+    // tombstone-flag set via FR-083's `ec_distann_apply_record_writes`, which
+    // keeps the vector). A raw DELETE removes the heap row and makes the exact
+    // rerank fail `[EC_VECTOR_MISSING]` — which is precisely the hazard
+    // FR-082-AC-5's epoch-owned frozen snapshot exists to prevent. A correct
+    // distributed-tombstone drill needs per-node ownership bucketing (an
+    // `owning_node` SQL surface) and is a follow-up.
+
+    // 7. recovery / no-false-reject: after all faults clear, the full-roster
     // query must match the single-node baseline again.
     let recovery = capture_psql(psql, socket_dir, coord_port, &recall_sql(&roster, args.queries, args.top_k))
         .await

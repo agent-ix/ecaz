@@ -36,3 +36,119 @@
 2026-07-08 14:54:15.827 PDT [843764] LOG:  checkpoint starting: shutdown immediate
 2026-07-08 14:54:15.983 PDT [843764] LOG:  checkpoint complete: wrote 515 buffers (3.1%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.010 s, sync=0.131 s, total=0.160 s; sync files=130, longest=0.006 s, average=0.001 s; distance=3769 kB, estimate=3769 kB; lsn=0/1B02C78, redo lsn=0/1B02C78
 2026-07-08 14:54:15.993 PDT [843760] LOG:  database system is shut down
+2026-07-08 16:53:53.056 PDT [856502] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-07-08 16:53:53.060 PDT [856502] LOG:  listening on Unix socket "/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets/.s.PGSQL.39710"
+2026-07-08 16:53:53.070 PDT [856508] LOG:  database system was shut down at 2026-07-08 16:53:50 PDT
+2026-07-08 16:53:53.077 PDT [856502] LOG:  database system is ready to accept connections
+2026-07-08 16:53:53.552 PDT [856539] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-08 16:53:55.016 PDT [856549] ERROR:  ec_distann scan orchestration failed: [EC_INTERNAL] ec_distann remote transport could not connect to "host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=1 dbname=postgres user=postgres": error connecting to server
+2026-07-08 16:53:55.016 PDT [856549] STATEMENT:  SET enable_seqscan=off; SET ec_distann.roster='1@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39710 dbname=postgres user=postgres;2@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39711 dbname=postgres user=postgres;3@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=1 dbname=postgres user=postgres'; SET ec_distann.local_node_id=1; SET ec_distann.epoch=1; SELECT id FROM dm ORDER BY embedding <#> (SELECT source FROM dm WHERE id=1) LIMIT 10;
+2026-07-08 16:53:55.794 PDT [856558] ERROR:  ec_distann scan orchestration failed: [EC_EPOCH_MISMATCH] ec_distann remote expand call failed: [EC_EPOCH_MISMATCH] ec_distann_expand_nodes epoch fingerprint mismatch: caller epoch differs from this node's active epoch
+2026-07-08 16:53:55.794 PDT [856558] STATEMENT:  SET enable_seqscan=off; SET ec_distann.roster='1@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39710 dbname=postgres user=postgres;2@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39711 dbname=postgres user=postgres;3@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39712 dbname=postgres user=postgres'; SET ec_distann.local_node_id=1; SET ec_distann.epoch=1; SELECT id FROM dm ORDER BY embedding <#> (SELECT source FROM dm WHERE id=1) LIMIT 10;
+2026-07-08 16:53:56.332 PDT [856566] ERROR:  ec_distann scan orchestration failed: [EC_INTERNAL] ec_distann remote expand call failed: relation "public.dm_idx" does not exist
+2026-07-08 16:53:56.332 PDT [856566] STATEMENT:  SET enable_seqscan=off; SET ec_distann.roster='1@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39710 dbname=postgres user=postgres;2@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39711 dbname=postgres user=postgres;3@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39712 dbname=postgres user=postgres'; SET ec_distann.local_node_id=1; SET ec_distann.epoch=1; SELECT id FROM dm ORDER BY embedding <#> (SELECT source FROM dm WHERE id=1) LIMIT 10;
+2026-07-08 16:53:56.956 PDT [856573] ERROR:  ec_distann scan orchestration failed: [EC_INTERNAL] ec_distann remote transport could not connect to "host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39712 dbname=postgres user=postgres": error connecting to server
+2026-07-08 16:53:56.956 PDT [856573] STATEMENT:  SET enable_seqscan=off; SET ec_distann.roster='1@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39710 dbname=postgres user=postgres;2@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39711 dbname=postgres user=postgres;3@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39712 dbname=postgres user=postgres'; SET ec_distann.local_node_id=1; SET ec_distann.epoch=1; SELECT id FROM dm ORDER BY embedding <#> (SELECT source FROM dm WHERE id=1) LIMIT 10;
+2026-07-08 16:53:57.209 PDT [856589] ERROR:  ec_distann scan roster resolution failed: ec_distann.local_node_id 99 is not present in ec_distann.roster
+2026-07-08 16:53:57.209 PDT [856589] STATEMENT:  SET enable_seqscan=off; SET ec_distann.roster='1@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39710 dbname=postgres user=postgres;2@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39711 dbname=postgres user=postgres;3@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39712 dbname=postgres user=postgres'; SET ec_distann.local_node_id=99; SET ec_distann.epoch=1; SELECT id FROM dm ORDER BY embedding <#> (SELECT source FROM dm WHERE id=1) LIMIT 10;
+2026-07-08 16:53:57.592 PDT [856597] ERROR:  ec_distann scan orchestration failed: [EC_VECTOR_MISSING] ec_distann remote expand call failed: [EC_VECTOR_MISSING] ec_diskann scan could not fetch heap tuple at (34,24)
+2026-07-08 16:53:57.592 PDT [856597] STATEMENT:  SET enable_seqscan=off; SET ec_distann.roster='1@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39710 dbname=postgres user=postgres;2@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39711 dbname=postgres user=postgres;3@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39712 dbname=postgres user=postgres'; SET ec_distann.local_node_id=1; SET ec_distann.epoch=1; SELECT coalesce(max(id), 0) FROM (SELECT id FROM dm ORDER BY embedding <#> (SELECT source FROM dm WHERE id=1) LIMIT 10) t;
+2026-07-08 16:53:57.748 PDT [856601] ERROR:  ec_distann scan orchestration failed: [EC_VECTOR_MISSING] ec_diskann scan could not fetch heap tuple at (43,6)
+2026-07-08 16:53:57.748 PDT [856601] STATEMENT:  SET enable_seqscan = off;
+	DROP TABLE IF EXISTS q; CREATE TEMP TABLE q AS SELECT id AS qid, source AS v FROM dm WHERE id <= 50;
+	SET ec_distann.roster = ''; SET ec_distann.local_node_id = 1; SET ec_distann.epoch = 0;
+	DROP TABLE IF EXISTS base; CREATE TEMP TABLE base AS
+	SELECT q.qid, r.id FROM q CROSS JOIN LATERAL
+	(SELECT id FROM dm ORDER BY embedding <#> q.v LIMIT 10) r;
+	SET ec_distann.roster = '1@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39710 dbname=postgres user=postgres;2@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39711 dbname=postgres user=postgres;3@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39712 dbname=postgres user=postgres'; SET ec_distann.local_node_id = 1; SET ec_distann.epoch = 1;
+	DROP TABLE IF EXISTS two; CREATE TEMP TABLE two AS
+	SELECT q.qid, r.id FROM q CROSS JOIN LATERAL
+	(SELECT id FROM dm ORDER BY embedding <#> q.v LIMIT 10) r;
+	SET ec_distann.roster = '';
+	SELECT 'RECALL_RESULT'
+	|| ' n_queries=' || count(DISTINCT qid)
+	|| ' identical=' || count(DISTINCT qid) FILTER (WHERE mismatch = 0)
+	|| ' mismatched_ids=' || coalesce(sum(mismatch), 0)
+	FROM (
+	SELECT q.qid,
+	(SELECT count(*) FROM (SELECT id FROM base WHERE qid=q.qid EXCEPT SELECT id FROM two WHERE qid=q.qid) d)
+	+ (SELECT count(*) FROM (SELECT id FROM two WHERE qid=q.qid EXCEPT SELECT id FROM base WHERE qid=q.qid) d) AS mismatch
+	FROM q
+	) s;
+	
+2026-07-08 16:53:57.750 PDT [856502] LOG:  received fast shutdown request
+2026-07-08 16:53:57.754 PDT [856502] LOG:  aborting any active transactions
+2026-07-08 16:53:57.755 PDT [856502] LOG:  background worker "logical replication launcher" (PID 856511) exited with exit code 1
+2026-07-08 16:53:57.755 PDT [856506] LOG:  shutting down
+2026-07-08 16:53:57.757 PDT [856506] LOG:  checkpoint starting: shutdown immediate
+2026-07-08 16:53:57.890 PDT [856506] LOG:  checkpoint complete: wrote 515 buffers (3.1%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.011 s, sync=0.108 s, total=0.136 s; sync files=130, longest=0.005 s, average=0.001 s; distance=3816 kB, estimate=3816 kB; lsn=0/1B0E8B0, redo lsn=0/1B0E8B0
+2026-07-08 16:53:57.905 PDT [856502] LOG:  database system is shut down
+2026-07-08 16:54:26.785 PDT [856741] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-07-08 16:54:26.789 PDT [856741] LOG:  listening on Unix socket "/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets/.s.PGSQL.39710"
+2026-07-08 16:54:26.800 PDT [856747] LOG:  database system was shut down at 2026-07-08 16:54:23 PDT
+2026-07-08 16:54:26.806 PDT [856741] LOG:  database system is ready to accept connections
+2026-07-08 16:54:27.281 PDT [856778] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-08 16:54:28.755 PDT [856802] ERROR:  ec_distann scan orchestration failed: [EC_INTERNAL] ec_distann remote transport could not connect to "host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=1 dbname=postgres user=postgres": error connecting to server
+2026-07-08 16:54:28.755 PDT [856802] STATEMENT:  SET enable_seqscan=off; SET ec_distann.roster='1@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39710 dbname=postgres user=postgres;2@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39711 dbname=postgres user=postgres;3@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=1 dbname=postgres user=postgres'; SET ec_distann.local_node_id=1; SET ec_distann.epoch=1; SELECT id FROM dm ORDER BY embedding <#> (SELECT source FROM dm WHERE id=1) LIMIT 10;
+2026-07-08 16:54:29.530 PDT [856811] ERROR:  ec_distann scan orchestration failed: [EC_EPOCH_MISMATCH] ec_distann remote expand call failed: [EC_EPOCH_MISMATCH] ec_distann_expand_nodes epoch fingerprint mismatch: caller epoch differs from this node's active epoch
+2026-07-08 16:54:29.530 PDT [856811] STATEMENT:  SET enable_seqscan=off; SET ec_distann.roster='1@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39710 dbname=postgres user=postgres;2@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39711 dbname=postgres user=postgres;3@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39712 dbname=postgres user=postgres'; SET ec_distann.local_node_id=1; SET ec_distann.epoch=1; SELECT id FROM dm ORDER BY embedding <#> (SELECT source FROM dm WHERE id=1) LIMIT 10;
+2026-07-08 16:54:30.019 PDT [856819] ERROR:  ec_distann scan orchestration failed: [EC_INTERNAL] ec_distann remote expand call failed: relation "public.dm_idx" does not exist
+2026-07-08 16:54:30.019 PDT [856819] STATEMENT:  SET enable_seqscan=off; SET ec_distann.roster='1@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39710 dbname=postgres user=postgres;2@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39711 dbname=postgres user=postgres;3@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39712 dbname=postgres user=postgres'; SET ec_distann.local_node_id=1; SET ec_distann.epoch=1; SELECT id FROM dm ORDER BY embedding <#> (SELECT source FROM dm WHERE id=1) LIMIT 10;
+2026-07-08 16:54:30.649 PDT [856826] ERROR:  ec_distann scan orchestration failed: [EC_INTERNAL] ec_distann remote transport could not connect to "host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39712 dbname=postgres user=postgres": error connecting to server
+2026-07-08 16:54:30.649 PDT [856826] STATEMENT:  SET enable_seqscan=off; SET ec_distann.roster='1@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39710 dbname=postgres user=postgres;2@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39711 dbname=postgres user=postgres;3@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39712 dbname=postgres user=postgres'; SET ec_distann.local_node_id=1; SET ec_distann.epoch=1; SELECT id FROM dm ORDER BY embedding <#> (SELECT source FROM dm WHERE id=1) LIMIT 10;
+2026-07-08 16:54:30.898 PDT [856842] ERROR:  ec_distann scan roster resolution failed: ec_distann.local_node_id 99 is not present in ec_distann.roster
+2026-07-08 16:54:30.898 PDT [856842] STATEMENT:  SET enable_seqscan=off; SET ec_distann.roster='1@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39710 dbname=postgres user=postgres;2@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39711 dbname=postgres user=postgres;3@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39712 dbname=postgres user=postgres'; SET ec_distann.local_node_id=99; SET ec_distann.epoch=1; SELECT id FROM dm ORDER BY embedding <#> (SELECT source FROM dm WHERE id=1) LIMIT 10;
+2026-07-08 16:54:31.275 PDT [856854] ERROR:  ec_distann scan orchestration failed: [EC_VECTOR_MISSING] ec_distann remote expand call failed: [EC_VECTOR_MISSING] ec_diskann scan could not fetch heap tuple at (34,24)
+2026-07-08 16:54:31.275 PDT [856854] STATEMENT:  SET enable_seqscan=off; SET ec_distann.roster='1@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39710 dbname=postgres user=postgres;2@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39711 dbname=postgres user=postgres;3@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39712 dbname=postgres user=postgres'; SET ec_distann.local_node_id=1; SET ec_distann.epoch=1; SELECT coalesce(max(id), 0) FROM (SELECT id FROM dm ORDER BY embedding <#> (SELECT source FROM dm WHERE id=1) LIMIT 10) t;
+2026-07-08 16:54:31.430 PDT [856858] ERROR:  ec_distann scan orchestration failed: [EC_VECTOR_MISSING] ec_diskann scan could not fetch heap tuple at (43,6)
+2026-07-08 16:54:31.430 PDT [856858] STATEMENT:  SET enable_seqscan = off;
+	DROP TABLE IF EXISTS q; CREATE TEMP TABLE q AS SELECT id AS qid, source AS v FROM dm WHERE id <= 50;
+	SET ec_distann.roster = ''; SET ec_distann.local_node_id = 1; SET ec_distann.epoch = 0;
+	DROP TABLE IF EXISTS base; CREATE TEMP TABLE base AS
+	SELECT q.qid, r.id FROM q CROSS JOIN LATERAL
+	(SELECT id FROM dm ORDER BY embedding <#> q.v LIMIT 10) r;
+	SET ec_distann.roster = '1@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39710 dbname=postgres user=postgres;2@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39711 dbname=postgres user=postgres;3@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39712 dbname=postgres user=postgres'; SET ec_distann.local_node_id = 1; SET ec_distann.epoch = 1;
+	DROP TABLE IF EXISTS two; CREATE TEMP TABLE two AS
+	SELECT q.qid, r.id FROM q CROSS JOIN LATERAL
+	(SELECT id FROM dm ORDER BY embedding <#> q.v LIMIT 10) r;
+	SET ec_distann.roster = '';
+	SELECT 'RECALL_RESULT'
+	|| ' n_queries=' || count(DISTINCT qid)
+	|| ' identical=' || count(DISTINCT qid) FILTER (WHERE mismatch = 0)
+	|| ' mismatched_ids=' || coalesce(sum(mismatch), 0)
+	FROM (
+	SELECT q.qid,
+	(SELECT count(*) FROM (SELECT id FROM base WHERE qid=q.qid EXCEPT SELECT id FROM two WHERE qid=q.qid) d)
+	+ (SELECT count(*) FROM (SELECT id FROM two WHERE qid=q.qid EXCEPT SELECT id FROM base WHERE qid=q.qid) d) AS mismatch
+	FROM q
+	) s;
+	
+2026-07-08 16:54:31.432 PDT [856741] LOG:  received fast shutdown request
+2026-07-08 16:54:31.437 PDT [856741] LOG:  aborting any active transactions
+2026-07-08 16:54:31.438 PDT [856741] LOG:  background worker "logical replication launcher" (PID 856750) exited with exit code 1
+2026-07-08 16:54:31.439 PDT [856745] LOG:  shutting down
+2026-07-08 16:54:31.441 PDT [856745] LOG:  checkpoint starting: shutdown immediate
+2026-07-08 16:54:31.617 PDT [856745] LOG:  checkpoint complete: wrote 515 buffers (3.1%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.018 s, sync=0.148 s, total=0.179 s; sync files=130, longest=0.013 s, average=0.002 s; distance=3816 kB, estimate=3816 kB; lsn=0/1B0E8B0, redo lsn=0/1B0E8B0
+2026-07-08 16:54:31.626 PDT [856741] LOG:  database system is shut down
+2026-07-08 17:03:35.393 PDT [857917] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-07-08 17:03:35.396 PDT [857917] LOG:  listening on Unix socket "/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets/.s.PGSQL.39710"
+2026-07-08 17:03:35.405 PDT [857923] LOG:  database system was shut down at 2026-07-08 17:03:32 PDT
+2026-07-08 17:03:35.410 PDT [857917] LOG:  database system is ready to accept connections
+2026-07-08 17:03:35.882 PDT [857954] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-08 17:03:37.339 PDT [857964] ERROR:  ec_distann scan orchestration failed: [EC_INTERNAL] ec_distann remote transport could not connect to "host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=1 dbname=postgres user=postgres": error connecting to server
+2026-07-08 17:03:37.339 PDT [857964] STATEMENT:  SET enable_seqscan=off; SET ec_distann.roster='1@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39710 dbname=postgres user=postgres;2@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39711 dbname=postgres user=postgres;3@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=1 dbname=postgres user=postgres'; SET ec_distann.local_node_id=1; SET ec_distann.epoch=1; SELECT id FROM dm ORDER BY embedding <#> (SELECT source FROM dm WHERE id=1) LIMIT 10;
+2026-07-08 17:03:38.104 PDT [857973] ERROR:  ec_distann scan orchestration failed: [EC_EPOCH_MISMATCH] ec_distann remote expand call failed: [EC_EPOCH_MISMATCH] ec_distann_expand_nodes epoch fingerprint mismatch: caller epoch differs from this node's active epoch
+2026-07-08 17:03:38.104 PDT [857973] STATEMENT:  SET enable_seqscan=off; SET ec_distann.roster='1@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39710 dbname=postgres user=postgres;2@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39711 dbname=postgres user=postgres;3@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39712 dbname=postgres user=postgres'; SET ec_distann.local_node_id=1; SET ec_distann.epoch=1; SELECT id FROM dm ORDER BY embedding <#> (SELECT source FROM dm WHERE id=1) LIMIT 10;
+2026-07-08 17:03:36.735 PDT [857981] ERROR:  ec_distann scan orchestration failed: [EC_INTERNAL] ec_distann remote expand call failed: relation "public.dm_idx" does not exist
+2026-07-08 17:03:36.735 PDT [857981] STATEMENT:  SET enable_seqscan=off; SET ec_distann.roster='1@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39710 dbname=postgres user=postgres;2@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39711 dbname=postgres user=postgres;3@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39712 dbname=postgres user=postgres'; SET ec_distann.local_node_id=1; SET ec_distann.epoch=1; SELECT id FROM dm ORDER BY embedding <#> (SELECT source FROM dm WHERE id=1) LIMIT 10;
+2026-07-08 17:03:37.255 PDT [857990] ERROR:  ec_distann scan orchestration failed: [EC_INTERNAL] ec_distann remote transport could not connect to "host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39712 dbname=postgres user=postgres": error connecting to server
+2026-07-08 17:03:37.255 PDT [857990] STATEMENT:  SET enable_seqscan=off; SET ec_distann.roster='1@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39710 dbname=postgres user=postgres;2@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39711 dbname=postgres user=postgres;3@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39712 dbname=postgres user=postgres'; SET ec_distann.local_node_id=1; SET ec_distann.epoch=1; SELECT id FROM dm ORDER BY embedding <#> (SELECT source FROM dm WHERE id=1) LIMIT 10;
+2026-07-08 17:03:37.504 PDT [858006] ERROR:  ec_distann scan roster resolution failed: ec_distann.local_node_id 99 is not present in ec_distann.roster
+2026-07-08 17:03:37.504 PDT [858006] STATEMENT:  SET enable_seqscan=off; SET ec_distann.roster='1@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39710 dbname=postgres user=postgres;2@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39711 dbname=postgres user=postgres;3@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39712 dbname=postgres user=postgres'; SET ec_distann.local_node_id=99; SET ec_distann.epoch=1; SELECT id FROM dm ORDER BY embedding <#> (SELECT source FROM dm WHERE id=1) LIMIT 10;
+2026-07-08 17:03:38.004 PDT [857917] LOG:  received fast shutdown request
+2026-07-08 17:03:38.011 PDT [857917] LOG:  aborting any active transactions
+2026-07-08 17:03:38.012 PDT [857917] LOG:  background worker "logical replication launcher" (PID 857926) exited with exit code 1
+2026-07-08 17:03:38.012 PDT [857921] LOG:  shutting down
+2026-07-08 17:03:38.017 PDT [857921] LOG:  checkpoint starting: shutdown immediate
+2026-07-08 17:03:38.147 PDT [857921] LOG:  checkpoint complete: wrote 515 buffers (3.1%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.009 s, sync=0.105 s, total=0.135 s; sync files=130, longest=0.013 s, average=0.001 s; distance=3769 kB, estimate=3769 kB; lsn=0/1B02C78, redo lsn=0/1B02C78
+2026-07-08 17:03:38.158 PDT [857917] LOG:  database system is shut down

@@ -55,3 +55,101 @@
 2026-07-08 14:54:16.231 PDT [843847] LOG:  checkpoint starting: shutdown immediate
 2026-07-08 14:54:16.255 PDT [843847] LOG:  checkpoint complete: wrote 9 buffers (0.1%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.006 s, sync=0.008 s, total=0.030 s; sync files=7, longest=0.004 s, average=0.002 s; distance=56 kB, estimate=56 kB; lsn=0/203EA18, redo lsn=0/203EA18
 2026-07-08 14:54:16.265 PDT [843843] LOG:  database system is shut down
+2026-07-08 16:53:53.266 PDT [856528] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-07-08 16:53:53.271 PDT [856528] LOG:  listening on Unix socket "/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets/.s.PGSQL.39712"
+2026-07-08 16:53:53.284 PDT [856534] LOG:  database system was shut down at 2026-07-08 16:53:52 PDT
+2026-07-08 16:53:53.289 PDT [856528] LOG:  database system is ready to accept connections
+2026-07-08 16:53:54.228 PDT [856543] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-08 16:53:55.351 PDT [856556] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-08 16:53:55.654 PDT [856560] ERROR:  [EC_EPOCH_MISMATCH] ec_distann_expand_nodes epoch fingerprint mismatch: caller epoch differs from this node's active epoch
+2026-07-08 16:53:55.654 PDT [856560] STATEMENT:  SELECT vec_id, exact_dist, is_tombstone, neighbor_vec_ids, neighbor_code_dists FROM ec_distann_expand_nodes($1::text::regclass::oid, $2, $3::real[], $4::bigint[], $5)
+2026-07-08 16:53:55.812 PDT [856562] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-08 16:53:56.195 PDT [856568] ERROR:  relation "public.dm_idx" does not exist
+2026-07-08 16:53:56.195 PDT [856568] STATEMENT:  SELECT vec_id, exact_dist, is_tombstone, neighbor_vec_ids, neighbor_code_dists FROM ec_distann_expand_nodes($1::text::regclass::oid, $2, $3::real[], $4::bigint[], $5)
+2026-07-08 16:53:56.340 PDT [856570] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-08 16:53:56.498 PDT [856528] LOG:  received fast shutdown request
+2026-07-08 16:53:56.503 PDT [856528] LOG:  aborting any active transactions
+2026-07-08 16:53:56.504 PDT [856528] LOG:  background worker "logical replication launcher" (PID 856537) exited with exit code 1
+2026-07-08 16:53:56.504 PDT [856532] LOG:  shutting down
+2026-07-08 16:53:56.510 PDT [856532] LOG:  checkpoint starting: shutdown immediate
+2026-07-08 16:53:56.704 PDT [856532] LOG:  checkpoint complete: wrote 506 buffers (3.1%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 1 recycled; write=0.015 s, sync=0.158 s, total=0.200 s; sync files=128, longest=0.012 s, average=0.002 s; distance=9072 kB, estimate=9072 kB; lsn=0/20307A8, redo lsn=0/20307A8
+2026-07-08 16:53:56.717 PDT [856528] LOG:  database system is shut down
+2026-07-08 16:53:56.976 PDT [856578] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-07-08 16:53:56.981 PDT [856578] LOG:  listening on Unix socket "/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets/.s.PGSQL.39712"
+2026-07-08 16:53:56.994 PDT [856584] LOG:  database system was shut down at 2026-07-08 16:53:56 PDT
+2026-07-08 16:53:57.000 PDT [856578] LOG:  database system is ready to accept connections
+2026-07-08 16:53:57.592 PDT [856599] ERROR:  [EC_VECTOR_MISSING] ec_diskann scan could not fetch heap tuple at (43,6)
+2026-07-08 16:53:57.592 PDT [856599] STATEMENT:  SELECT vec_id, exact_dist, is_tombstone, neighbor_vec_ids, neighbor_code_dists FROM ec_distann_expand_nodes($1::text::regclass::oid, $2, $3::real[], $4::bigint[], $5)
+2026-07-08 16:53:57.592 PDT [856599] LOG:  could not receive data from client: Connection reset by peer
+2026-07-08 16:53:58.154 PDT [856578] LOG:  received fast shutdown request
+2026-07-08 16:53:58.182 PDT [856578] LOG:  aborting any active transactions
+2026-07-08 16:53:58.182 PDT [856578] LOG:  background worker "logical replication launcher" (PID 856587) exited with exit code 1
+2026-07-08 16:53:58.182 PDT [856582] LOG:  shutting down
+2026-07-08 16:53:58.186 PDT [856582] LOG:  checkpoint starting: shutdown immediate
+2026-07-08 16:53:58.215 PDT [856582] LOG:  checkpoint complete: wrote 33 buffers (0.2%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.005 s, sync=0.008 s, total=0.034 s; sync files=8, longest=0.005 s, average=0.001 s; distance=298 kB, estimate=298 kB; lsn=0/207B0E8, redo lsn=0/207B0E8
+2026-07-08 16:53:58.225 PDT [856578] LOG:  database system is shut down
+2026-07-08 16:54:27.017 PDT [856767] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-07-08 16:54:27.022 PDT [856767] LOG:  listening on Unix socket "/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets/.s.PGSQL.39712"
+2026-07-08 16:54:27.031 PDT [856773] LOG:  database system was shut down at 2026-07-08 16:54:26 PDT
+2026-07-08 16:54:27.038 PDT [856767] LOG:  database system is ready to accept connections
+2026-07-08 16:54:27.954 PDT [856789] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-08 16:54:29.088 PDT [856809] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-08 16:54:29.397 PDT [856813] ERROR:  [EC_EPOCH_MISMATCH] ec_distann_expand_nodes epoch fingerprint mismatch: caller epoch differs from this node's active epoch
+2026-07-08 16:54:29.397 PDT [856813] STATEMENT:  SELECT vec_id, exact_dist, is_tombstone, neighbor_vec_ids, neighbor_code_dists FROM ec_distann_expand_nodes($1::text::regclass::oid, $2, $3::real[], $4::bigint[], $5)
+2026-07-08 16:54:29.549 PDT [856815] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-08 16:54:29.884 PDT [856821] ERROR:  relation "public.dm_idx" does not exist
+2026-07-08 16:54:29.884 PDT [856821] STATEMENT:  SELECT vec_id, exact_dist, is_tombstone, neighbor_vec_ids, neighbor_code_dists FROM ec_distann_expand_nodes($1::text::regclass::oid, $2, $3::real[], $4::bigint[], $5)
+2026-07-08 16:54:30.028 PDT [856823] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-08 16:54:30.186 PDT [856767] LOG:  received fast shutdown request
+2026-07-08 16:54:30.191 PDT [856767] LOG:  aborting any active transactions
+2026-07-08 16:54:30.192 PDT [856767] LOG:  background worker "logical replication launcher" (PID 856776) exited with exit code 1
+2026-07-08 16:54:30.192 PDT [856771] LOG:  shutting down
+2026-07-08 16:54:30.196 PDT [856771] LOG:  checkpoint starting: shutdown immediate
+2026-07-08 16:54:30.384 PDT [856771] LOG:  checkpoint complete: wrote 506 buffers (3.1%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 1 recycled; write=0.012 s, sync=0.153 s, total=0.193 s; sync files=128, longest=0.013 s, average=0.002 s; distance=9072 kB, estimate=9072 kB; lsn=0/20307A8, redo lsn=0/20307A8
+2026-07-08 16:54:30.399 PDT [856767] LOG:  database system is shut down
+2026-07-08 16:54:30.673 PDT [856831] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-07-08 16:54:30.677 PDT [856831] LOG:  listening on Unix socket "/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets/.s.PGSQL.39712"
+2026-07-08 16:54:30.689 PDT [856837] LOG:  database system was shut down at 2026-07-08 16:54:30 PDT
+2026-07-08 16:54:30.698 PDT [856831] LOG:  database system is ready to accept connections
+2026-07-08 16:54:31.275 PDT [856856] ERROR:  [EC_VECTOR_MISSING] ec_diskann scan could not fetch heap tuple at (43,6)
+2026-07-08 16:54:31.275 PDT [856856] STATEMENT:  SELECT vec_id, exact_dist, is_tombstone, neighbor_vec_ids, neighbor_code_dists FROM ec_distann_expand_nodes($1::text::regclass::oid, $2, $3::real[], $4::bigint[], $5)
+2026-07-08 16:54:31.275 PDT [856856] LOG:  could not receive data from client: Connection reset by peer
+2026-07-08 16:54:31.835 PDT [856831] LOG:  received fast shutdown request
+2026-07-08 16:54:31.839 PDT [856831] LOG:  aborting any active transactions
+2026-07-08 16:54:31.840 PDT [856831] LOG:  background worker "logical replication launcher" (PID 856840) exited with exit code 1
+2026-07-08 16:54:31.840 PDT [856835] LOG:  shutting down
+2026-07-08 16:54:31.845 PDT [856835] LOG:  checkpoint starting: shutdown immediate
+2026-07-08 16:54:31.873 PDT [856835] LOG:  checkpoint complete: wrote 33 buffers (0.2%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.005 s, sync=0.008 s, total=0.033 s; sync files=8, longest=0.005 s, average=0.001 s; distance=298 kB, estimate=298 kB; lsn=0/207B0E8, redo lsn=0/207B0E8
+2026-07-08 16:54:31.884 PDT [856831] LOG:  database system is shut down
+2026-07-08 17:03:35.609 PDT [857943] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-07-08 17:03:35.614 PDT [857943] LOG:  listening on Unix socket "/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets/.s.PGSQL.39712"
+2026-07-08 17:03:35.630 PDT [857949] LOG:  database system was shut down at 2026-07-08 17:03:35 PDT
+2026-07-08 17:03:35.636 PDT [857943] LOG:  database system is ready to accept connections
+2026-07-08 17:03:36.566 PDT [857958] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-08 17:03:37.647 PDT [857969] LOG:  could not receive data from client: Connection reset by peer
+2026-07-08 17:03:37.665 PDT [857971] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-08 17:03:37.970 PDT [857975] ERROR:  [EC_EPOCH_MISMATCH] ec_distann_expand_nodes epoch fingerprint mismatch: caller epoch differs from this node's active epoch
+2026-07-08 17:03:37.970 PDT [857975] STATEMENT:  SELECT vec_id, exact_dist, is_tombstone, neighbor_vec_ids, neighbor_code_dists FROM ec_distann_expand_nodes($1::text::regclass::oid, $2, $3::real[], $4::bigint[], $5)
+2026-07-08 17:03:38.121 PDT [857977] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-08 17:03:37.621 PDT [857983] ERROR:  relation "public.dm_idx" does not exist
+2026-07-08 17:03:37.621 PDT [857983] STATEMENT:  SELECT vec_id, exact_dist, is_tombstone, neighbor_vec_ids, neighbor_code_dists FROM ec_distann_expand_nodes($1::text::regclass::oid, $2, $3::real[], $4::bigint[], $5)
+2026-07-08 17:03:36.743 PDT [857987] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-08 17:03:36.898 PDT [857943] LOG:  received fast shutdown request
+2026-07-08 17:03:36.902 PDT [857943] LOG:  aborting any active transactions
+2026-07-08 17:03:36.902 PDT [857943] LOG:  background worker "logical replication launcher" (PID 857952) exited with exit code 1
+2026-07-08 17:03:36.903 PDT [857947] LOG:  shutting down
+2026-07-08 17:03:36.905 PDT [857947] LOG:  checkpoint starting: shutdown immediate
+2026-07-08 17:03:37.062 PDT [857947] LOG:  checkpoint complete: wrote 506 buffers (3.1%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 1 recycled; write=0.011 s, sync=0.120 s, total=0.160 s; sync files=128, longest=0.009 s, average=0.001 s; distance=9072 kB, estimate=9072 kB; lsn=0/20307A8, redo lsn=0/20307A8
+2026-07-08 17:03:37.076 PDT [857943] LOG:  database system is shut down
+2026-07-08 17:03:37.279 PDT [857995] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-07-08 17:03:37.283 PDT [857995] LOG:  listening on Unix socket "/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets/.s.PGSQL.39712"
+2026-07-08 17:03:37.295 PDT [858001] LOG:  database system was shut down at 2026-07-08 17:03:37 PDT
+2026-07-08 17:03:37.302 PDT [857995] LOG:  database system is ready to accept connections
+2026-07-08 17:03:38.010 PDT [858010] LOG:  could not receive data from client: Connection reset by peer
+2026-07-08 17:03:38.408 PDT [857995] LOG:  received fast shutdown request
+2026-07-08 17:03:38.419 PDT [857995] LOG:  aborting any active transactions
+2026-07-08 17:03:38.420 PDT [857995] LOG:  background worker "logical replication launcher" (PID 858004) exited with exit code 1
+2026-07-08 17:03:38.420 PDT [857999] LOG:  shutting down
+2026-07-08 17:03:38.424 PDT [857999] LOG:  checkpoint starting: shutdown immediate
+2026-07-08 17:03:38.452 PDT [857999] LOG:  checkpoint complete: wrote 9 buffers (0.1%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.007 s, sync=0.009 s, total=0.032 s; sync files=7, longest=0.004 s, average=0.002 s; distance=56 kB, estimate=56 kB; lsn=0/203EA18, redo lsn=0/203EA18
+2026-07-08 17:03:38.460 PDT [857995] LOG:  database system is shut down
