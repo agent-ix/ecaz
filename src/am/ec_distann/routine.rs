@@ -9,6 +9,7 @@ use crate::am::common::{
 };
 use crate::am::ec_diskann::DiskannScanDescView;
 
+use super::expand_error::DistannExpandError;
 use super::{
     ambuild, cost, expand::LocalNodeExpander, head_cache, options,
     quantizer::{self, DistannPreparedQuery},
@@ -347,19 +348,6 @@ pub(crate) unsafe fn collect_distann_hits(
         })
         .collect();
 
-    let local_expander = LocalNodeExpander {
-        index_handle: handle,
-        directory: &entry.directory,
-        graph_degree_r: metadata.graph_degree_r,
-        code_len,
-        prepared_query: &prepared_query,
-        heap_relation,
-        snapshot,
-        slot,
-        source_attnum,
-        raw_query,
-        pooled_node: DistannNodeTuple::placeholder(metadata.graph_degree_r, code_len),
-    };
     let params = DistannOrchestrationParams {
         beam_width,
         hop_rounds,
@@ -369,39 +357,67 @@ pub(crate) unsafe fn collect_distann_hits(
     // expander (group by owner → pooled transport → endpoint → reassemble);
     // the empty/single-node roster stays fully local. The FR-081 loop is
     // identical either way.
-    let placement = super::roster::current_placement_directory()
-        .unwrap_or_else(|e| pgrx::error!("ec_distann scan roster resolution failed: {e}"));
-    let multi_node = placement.node_count() > 1;
-    let (mut hits, counters) = if multi_node {
-        let local_index = placement
-            .nodes
-            .iter()
-            .position(|node| node.is_local)
-            .unwrap_or_else(|| pgrx::error!("ec_distann scan: no local node in the roster"));
-        let identity = super::roster::local_epoch_identity(&placement, &metadata);
-        let fingerprint = super::epoch::compute_epoch_fingerprint(
-            &identity,
-            super::epoch::DISTANN_EPOCH_FINGERPRINT_V1,
-        )
-        .to_vec();
-        let roster_spec = super::roster::current_roster_spec();
-        let epoch = super::roster::current_epoch();
-        let index_name = distann_index_relname(index_relation);
-        let mut remote = super::remote_transport::RemoteNodeExpander {
-            local: local_expander,
-            placement: &placement,
-            local_index,
-            index_regclass: &index_name,
-            epoch_fingerprint: &fingerprint,
-            roster_spec: &roster_spec,
-            epoch,
-        };
-        distann_orchestrated_search(&seeds, &mut remote, params)
-    } else {
-        let mut local = local_expander;
-        distann_orchestrated_search(&seeds, &mut local, params)
-    }
-    .unwrap_or_else(|e| pgrx::error!("ec_distann scan orchestration failed: {e}"));
+    //
+    // FR-082-AC-2: the whole attempt runs under `run_scan_attempt_with_restart`,
+    // so a retriable epoch mismatch from any hop discards all partial state and
+    // restarts once from the head seeds under a refreshed epoch view (the closure
+    // re-reads the active epoch each attempt); a second mismatch fails the query.
+    let (mut hits, counters, multi_node) =
+        super::scan::run_scan_attempt_with_restart(|| {
+            let placement = super::roster::current_placement_directory()
+                .map_err(DistannExpandError::Internal)?;
+            let multi_node = placement.node_count() > 1;
+            // Rebuilt per attempt: orchestration consumes the expander, and a
+            // restart must not carry stale beam/visited state.
+            let local_expander = LocalNodeExpander {
+                index_handle: handle,
+                directory: &entry.directory,
+                graph_degree_r: metadata.graph_degree_r,
+                code_len,
+                prepared_query: &prepared_query,
+                heap_relation,
+                snapshot,
+                slot,
+                source_attnum,
+                raw_query,
+                pooled_node: DistannNodeTuple::placeholder(metadata.graph_degree_r, code_len),
+            };
+            let (hits, counters) = if multi_node {
+                let local_index = placement
+                    .nodes
+                    .iter()
+                    .position(|node| node.is_local)
+                    .ok_or_else(|| {
+                        DistannExpandError::Internal(
+                            "ec_distann scan: no local node in the roster".to_owned(),
+                        )
+                    })?;
+                let identity = super::roster::local_epoch_identity(&placement, &metadata);
+                let fingerprint = super::epoch::compute_epoch_fingerprint(
+                    &identity,
+                    super::epoch::DISTANN_EPOCH_FINGERPRINT_V1,
+                )
+                .to_vec();
+                let roster_spec = super::roster::current_roster_spec();
+                let epoch = super::roster::current_epoch();
+                let index_name = distann_index_relname(index_relation);
+                let mut remote = super::remote_transport::RemoteNodeExpander {
+                    local: local_expander,
+                    placement: &placement,
+                    local_index,
+                    index_regclass: &index_name,
+                    epoch_fingerprint: &fingerprint,
+                    roster_spec: &roster_spec,
+                    epoch,
+                };
+                distann_orchestrated_search(&seeds, &mut remote, params)?
+            } else {
+                let mut local = local_expander;
+                distann_orchestrated_search(&seeds, &mut local, params)?
+            };
+            Ok((hits, counters, multi_node))
+        })
+        .unwrap_or_else(|e| pgrx::error!("ec_distann scan orchestration failed: {e}"));
 
     // Loopback-only remote-hit materialization. Remote responses carry
     // heap_tid = INVALID (not in the FR-079 wire contract); on the co-located

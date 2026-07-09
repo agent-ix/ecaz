@@ -209,6 +209,27 @@ pub(crate) fn distann_orchestrated_search<E: DistannNodeExpander>(
     Ok((hits, counters))
 }
 
+/// FR-082-AC-2 restart-once: run a coordinator scan attempt; if any hop round
+/// fails with a **retriable epoch mismatch**, discard all partial state (the
+/// closure rebuilds it), let the caller refresh its epoch view (the closure
+/// re-reads it), and restart the whole attempt exactly once. A second epoch
+/// mismatch — or any other error — propagates. Non-epoch errors on the first
+/// attempt propagate immediately (no restart). NFR-019 per-attempt accounting is
+/// reset naturally because each attempt runs the orchestration fresh.
+///
+/// This is the coordinator half of the epoch-swap consistency contract; the
+/// closure's "refresh" reads whatever the active epoch source provides (the
+/// roster/epoch GUCs today; the persisted epoch manifest once FR-082's lifecycle
+/// lands — see reviews/task-165/014-fr082-lifecycle-design).
+pub(crate) fn run_scan_attempt_with_restart<T>(
+    mut attempt: impl FnMut() -> Result<T, DistannExpandError>,
+) -> Result<T, DistannExpandError> {
+    match attempt() {
+        Err(DistannExpandError::EpochMismatch(_)) => attempt(),
+        other => other,
+    }
+}
+
 fn kth_exact_dist(hits: &mut [DistannScanHit], top_k: usize) -> f32 {
     debug_assert!(hits.len() >= top_k && top_k >= 1);
     let (_, kth, _) = hits.select_nth_unstable_by(top_k - 1, |left, right| {
@@ -220,11 +241,64 @@ fn kth_exact_dist(hits: &mut [DistannScanHit], top_k: usize) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::{
-        distann_orchestrated_search, DistannExpandedNode, DistannExpandError,
-        DistannNodeExpander, DistannOrchestrationParams, DistannSeedCandidate,
+        distann_orchestrated_search, run_scan_attempt_with_restart, DistannExpandedNode,
+        DistannExpandError, DistannNodeExpander, DistannOrchestrationParams, DistannSeedCandidate,
     };
     use crate::storage::page::ItemPointer;
+    use std::cell::Cell;
     use std::collections::HashMap;
+
+    #[test]
+    fn restart_success_on_first_attempt_runs_once() {
+        let calls = Cell::new(0);
+        let result = run_scan_attempt_with_restart(|| {
+            calls.set(calls.get() + 1);
+            Ok::<_, DistannExpandError>(42)
+        });
+        assert_eq!(result.unwrap(), 42);
+        assert_eq!(calls.get(), 1, "no restart when the first attempt succeeds");
+    }
+
+    #[test]
+    fn restart_once_after_epoch_mismatch_then_succeeds() {
+        // FR-082-AC-2: one epoch mismatch triggers exactly one restart, which
+        // succeeds under the refreshed epoch.
+        let calls = Cell::new(0);
+        let result = run_scan_attempt_with_restart(|| {
+            calls.set(calls.get() + 1);
+            if calls.get() == 1 {
+                Err(DistannExpandError::EpochMismatch("stale".to_owned()))
+            } else {
+                Ok(7)
+            }
+        });
+        assert_eq!(result.unwrap(), 7);
+        assert_eq!(calls.get(), 2, "exactly one restart");
+    }
+
+    #[test]
+    fn restart_second_epoch_mismatch_errors() {
+        // A second mismatch fails the query (attempts capped at two).
+        let calls = Cell::new(0);
+        let result = run_scan_attempt_with_restart(|| {
+            calls.set(calls.get() + 1);
+            Err::<i32, _>(DistannExpandError::EpochMismatch(format!("mismatch {}", calls.get())))
+        });
+        assert!(matches!(result, Err(DistannExpandError::EpochMismatch(_))));
+        assert_eq!(calls.get(), 2, "capped at two attempts");
+    }
+
+    #[test]
+    fn restart_non_epoch_error_does_not_restart() {
+        // A structural/placement error is not retriable — it propagates at once.
+        let calls = Cell::new(0);
+        let result = run_scan_attempt_with_restart(|| {
+            calls.set(calls.get() + 1);
+            Err::<i32, _>(DistannExpandError::Placement("not owned".to_owned()))
+        });
+        assert!(matches!(result, Err(DistannExpandError::Placement(_))));
+        assert_eq!(calls.get(), 1, "no restart on a non-epoch error");
+    }
 
     fn tid(offset: u16) -> ItemPointer {
         ItemPointer {
