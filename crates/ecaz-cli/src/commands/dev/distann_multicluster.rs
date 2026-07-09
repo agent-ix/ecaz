@@ -469,15 +469,36 @@ async fn drive_fixture(
         drills.push(("placement_drift".to_owned(), query_errored(&out)));
     }
 
-    // NOTE: a base-table DELETE is intentionally NOT drilled here — it violates
-    // the FR-082 Published-epoch model (the co-placed rerank vector is frozen and
-    // never physically reclaimed within an epoch; deletion is a monotonic
-    // tombstone-flag set via FR-083's `ec_distann_apply_record_writes`, which
-    // keeps the vector). A raw DELETE removes the heap row and makes the exact
-    // rerank fail `[EC_VECTOR_MISSING]` — which is precisely the hazard
-    // FR-082-AC-5's epoch-owned frozen snapshot exists to prevent. A correct
-    // distributed-tombstone drill needs per-node ownership bucketing (an
-    // `owning_node` SQL surface) and is a follow-up.
+    // 7. remote_statement_timeout: inject `statement_timeout=1` (1 ms) into one
+    // owner's conninfo ⇒ its expand statement is cancelled server-side ⇒ the
+    // coordinator surfaces the remote error rather than a partial result.
+    {
+        let timeout_roster = roster_with_conninfo_suffix(
+            nodes,
+            socket_dir,
+            last.node_id,
+            "options=-cstatement_timeout=1",
+        );
+        let sql = format!(
+            "SET enable_seqscan=off; SET ec_distann.roster='{timeout_roster}'; SET ec_distann.local_node_id=1; SET ec_distann.epoch=1; {single_query}"
+        );
+        let out = capture_psql_allow_error(psql, socket_dir, coord_port, &sql).await;
+        drills.push(("remote_statement_timeout".to_owned(), query_errored(&out)));
+    }
+
+    // 8. missing_heap_row_co_placement_drift (also the partial mid-delete case):
+    // remove only an owned record's heap row on its owner, leaving the index
+    // record ⇒ the owner's exact rerank fails `[EC_VECTOR_MISSING]` ⇒ error. The
+    // correct in-epoch delete is a monotonic tombstone via FR-083's
+    // `ec_distann_apply_record_writes` (which keeps the frozen vector, per
+    // FR-082-AC-5); this drill proves the *drift* hazard fails closed rather than
+    // silently dropping the row. The drill self-recovers by re-running setup on
+    // the owner.
+    {
+        let drift_ok =
+            co_placement_drift_drill(psql, socket_dir, coord_port, &roster, nodes, args).await;
+        drills.push(("missing_heap_row_co_placement_drift".to_owned(), drift_ok));
+    }
 
     // 7. concurrency (FR-082-AC-4): run many multi-node scans concurrently with a
     // background inserter mutating the coordinator's table. Every scan must
@@ -604,6 +625,152 @@ fn roster_with_port_override(
         })
         .collect::<Vec<_>>()
         .join(";")
+}
+
+/// A roster where `override_node_id`'s conninfo carries an extra libpq keyword
+/// (space-separated, matching the `host=… port=…` conninfo shape). Used to inject
+/// `options=-cstatement_timeout=1` into a single owner for the
+/// remote_statement_timeout fault drill.
+fn roster_with_conninfo_suffix(
+    nodes: &[Node],
+    socket_dir: &Path,
+    override_node_id: u32,
+    suffix: &str,
+) -> String {
+    nodes
+        .iter()
+        .map(|node| {
+            let base = conninfo(socket_dir, node.port);
+            if node.node_id == override_node_id {
+                format!("{}@{} {}", node.node_id, base, suffix)
+            } else {
+                format!("{}@{}", node.node_id, base)
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(";")
+}
+
+/// NFR-020 co-placement drift / missing-heap-row (and partial mid-delete) drill.
+///
+/// In the replicated topology every node holds every heap row, so a serving node
+/// reranks from its OWN heap copy — deleting a row on a single owner is masked by
+/// the other replicas (proven: a single-node delete still returned the row with
+/// no error). Genuine cluster-wide co-placement drift is: the index record
+/// survives on every node but its co-placed heap row is gone everywhere. This
+/// drill deletes a record's heap row on ALL nodes (leaving the index record),
+/// then runs a query anchored on that record's own vector. Every serving node's
+/// exact rerank must fetch the (now invisible) heap tuple and fail
+/// `[EC_VECTOR_MISSING]`, so the multi-node query ERRORs (fail closed) rather than
+/// silently dropping or mis-ranking the true top-1. Recovery re-runs the
+/// deterministic setup on every node (identical vec_ids), so the post-fault recall
+/// baseline still matches.
+async fn co_placement_drift_drill(
+    psql: &Path,
+    socket_dir: &Path,
+    coord_port: u16,
+    roster: &str,
+    nodes: &[Node],
+    args: &LocalMultinodePg18Args,
+) -> bool {
+    // Exercise both ownership arms: a coordinator-owned record (local MVCC skip →
+    // correct-complete) and a remote-owned record (remote rerank → structural
+    // fault). Both must satisfy the NFR-020 disjunction.
+    let coord = co_placement_drift_case(psql, socket_dir, coord_port, roster, nodes, args, 0).await;
+    let remote =
+        co_placement_drift_case(psql, socket_dir, coord_port, roster, nodes, args, args.nodes - 1)
+            .await;
+    coord && remote
+}
+
+/// One co-placement-drift case: pick a live record owned by `owner_idx`, delete
+/// its heap row on EVERY node (index record survives ⇒ cluster-wide dangling
+/// record / missing co-placed vector), and assert the NFR-020 disjunction — the
+/// multinode scan SHALL either raise an error OR return a correct complete result
+/// (equal to a single-node scan over the same deleted corpus, target excluded),
+/// never a partial/stale result presented as complete.
+async fn co_placement_drift_case(
+    psql: &Path,
+    socket_dir: &Path,
+    coord_port: u16,
+    roster: &str,
+    nodes: &[Node],
+    args: &LocalMultinodePg18Args,
+    owner_idx: u32,
+) -> bool {
+    let discover = format!(
+        "SELECT t.id || '|' || t.source::text \
+           FROM ec_distann_list_directory('dm_idx'::regclass) d \
+           JOIN dm t ON t.ctid = ('(' || d.heap_block || ',' || d.heap_offset || ')')::tid \
+          WHERE NOT d.is_tombstone \
+            AND ec_distann_owning_node(d.vec_id, {n}, 1) = {owner_idx} \
+          ORDER BY t.id LIMIT 1;",
+        n = args.nodes,
+    );
+    let discovered = capture_psql_allow_error(psql, socket_dir, coord_port, &discover).await;
+    let Some((id_text, source_text)) = discovered
+        .lines()
+        .find_map(|l| l.trim().split_once('|'))
+        .filter(|(id, src)| id.parse::<i64>().is_ok() && src.starts_with('{'))
+    else {
+        crate::ecaz_println!(
+            "[distann-multicluster] co_placement_drift[owner={owner_idx}]: no record discovered (skipped)"
+        );
+        return false;
+    };
+    let target_id: i64 = id_text.trim().parse().unwrap();
+
+    for node in nodes {
+        if run_psql_file(
+            psql,
+            socket_dir,
+            node.port,
+            &format!("DELETE FROM dm WHERE id = {target_id};"),
+        )
+        .await
+        .is_err()
+        {
+            return false;
+        }
+    }
+
+    let anchor = format!("encode_to_ecvector('{source_text}'::real[], 4, 42)");
+    let multi_sql = format!(
+        "SET enable_seqscan=off; SET ec_distann.roster='{roster}'; SET ec_distann.local_node_id=1; SET ec_distann.epoch=1; \
+         SELECT id FROM dm ORDER BY embedding <#> {anchor} LIMIT {k};",
+        k = args.top_k,
+    );
+    let single_sql = format!(
+        "SET enable_seqscan=off; SELECT set_config('ec_distann.roster','',false); SET ec_distann.local_node_id=1; SET ec_distann.epoch=0; \
+         SELECT id FROM dm ORDER BY embedding <#> {anchor} LIMIT {k};",
+        k = args.top_k,
+    );
+    let multi_out = capture_psql_allow_error(psql, socket_dir, coord_port, &multi_sql).await;
+    let single_out = capture_psql_allow_error(psql, socket_dir, coord_port, &single_sql).await;
+    let errored = query_errored(&multi_out);
+
+    let ids = |out: &str| -> Vec<i64> {
+        let mut v: Vec<i64> = out.lines().filter_map(|l| l.trim().parse().ok()).collect();
+        v.sort_unstable();
+        v
+    };
+    let (multi_ids, single_ids) = (ids(&multi_out), ids(&single_out));
+    let target_excluded = !multi_ids.contains(&target_id) && !single_ids.contains(&target_id);
+    let correct_complete = !errored && multi_ids == single_ids && target_excluded;
+    let pass = errored || correct_complete;
+    let arm = if errored { "error" } else { "correct_complete" };
+    crate::ecaz_println!(
+        "[distann-multicluster] co_placement_drift[owner={owner_idx}] target_id={target_id} arm={arm} \
+         multi_n={} single_n={} pass={pass}",
+        multi_ids.len(),
+        single_ids.len(),
+    );
+
+    // Recovery: restore the deterministic corpus on every node.
+    for node in nodes {
+        let _ = run_psql_file(psql, socket_dir, node.port, &setup_sql(args)).await;
+    }
+    pass
 }
 
 /// A drill query satisfies NFR-020's fail-closed arm if it raised an ERROR
