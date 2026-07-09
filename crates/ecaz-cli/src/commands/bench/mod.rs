@@ -226,10 +226,12 @@ pub(crate) async fn apply_session_gucs(
     session_gucs: &[(String, String)],
 ) -> Result<()> {
     for (name, value) in session_gucs {
+        // Parameterized set_config so values containing spaces/@/;/= (e.g. an
+        // ec_distann roster spec) apply without a `SET name = value` syntax error.
         client
-            .batch_execute(&format!("SET {name} = {value}"))
+            .execute("SELECT set_config($1, $2, false)", &[name, value])
             .await
-            .wrap_err_with(|| format!("SET {name} = {value}"))?;
+            .wrap_err_with(|| format!("set_config({name}, {value})"))?;
     }
     Ok(())
 }

@@ -792,7 +792,15 @@ unsafe fn ensure_outputs(
 
     // Shared search core: local hits get a resolved ctid; remote hits carry
     // INVALID (we ship their row payloads below).
-    let collection = super::routine::collect_distann_hits(
+    //
+    // Iterative deepening for recall parity with the AM `amgettuple` path
+    // (routine.rs): a scan that early-exits below top_k proven results is re-run
+    // with a doubled exit bar until top_k is proven or the beam is exhausted.
+    // Without this the CustomScan under-explores at larger `ec_distann.top_k` and
+    // its recall trails the single-node path (caught by the suite recall gate).
+    let mut effective = state.top_k.max(1);
+    let deepen_cap = effective.saturating_mul(64).max(1024);
+    let mut collection = super::routine::collect_distann_hits(
         handle,
         index_relation,
         heap_relation,
@@ -800,9 +808,26 @@ unsafe fn ensure_outputs(
         rerank_slot.as_ptr(),
         source_attnum,
         &query,
-        state.top_k,
+        effective,
         false,
     );
+    while collection.counters.early_exit
+        && collection.hits.len() < state.top_k
+        && effective < deepen_cap
+    {
+        effective = effective.saturating_mul(2);
+        collection = super::routine::collect_distann_hits(
+            handle,
+            index_relation,
+            heap_relation,
+            snapshot,
+            rerank_slot.as_ptr(),
+            source_attnum,
+            &query,
+            effective,
+            false,
+        );
+    }
     let mut hits = collection.hits;
     hits.truncate(state.top_k);
 

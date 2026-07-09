@@ -225,6 +225,7 @@ fn conninfo(socket_dir: &Path, port: u16) -> String {
 fn setup_sql(args: &LocalMultinodePg18Args) -> String {
     format!(
         "CREATE EXTENSION IF NOT EXISTS ecaz;\n\
+         DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'peter') THEN CREATE ROLE peter LOGIN SUPERUSER; END IF; END $$;\n\
          DROP TABLE IF EXISTS dm;\n\
          CREATE TABLE dm (id bigint, source real[], embedding ecvector);\n\
          INSERT INTO dm\n\
@@ -311,6 +312,14 @@ async fn drive_fixture(
         .trim()
         .to_owned();
     crate::ecaz_println!("[distann-multicluster] {result_line}");
+
+    // Suite-driven recall gate (006-P1 letter): `ecaz bench recall` against the
+    // coordinator single-node vs multi-node, distinct_recall(multi) >=
+    // distinct_recall(single) - 0.001. Run here — before the mutating drills —
+    // so benchgate_corpus is byte-identical across nodes (consistent vec_ids).
+    // The byte-identical top-k gate above is strictly stronger.
+    let suite_line = suite_recall_gate(psql, socket_dir, nodes, &roster, args).await;
+    crate::ecaz_println!("[distann-multicluster] {suite_line}");
 
     // TC-042 fault matrix (NFR-020): each fault must make the multi-node query
     // ERROR (fail closed) — never a silent wrong or partial result — and a
@@ -511,6 +520,7 @@ async fn drive_fixture(
     summary.push_str(&format!(
         "ac5_frozen_vector_after_vacuum_reuse pass={frozen_ok}\n"
     ));
+    summary.push_str(&format!("{suite_line}\n"));
     summary.push_str(&format!("recovery {recovery_line} recovered={recovered}\n"));
     let summary_path = log_dir.join("distann-multinode-summary.log");
     fs::write(&summary_path, &summary)
@@ -674,6 +684,116 @@ async fn concurrency_drill(
         }
     }
     Ok(ok)
+}
+
+/// Suite-driven recall gate (006-P1 letter): reuse the fixture corpus as a
+/// `benchgate_*` bench-format corpus and run `ecaz bench recall` against the
+/// coordinator single-node vs multi-node, asserting recall(multi) >= recall(single)
+/// - 0.001. Best-effort/non-fatal: the byte-identical top-k gate is the hard one.
+async fn suite_recall_gate(
+    psql: &Path,
+    socket_dir: &Path,
+    nodes: &[Node],
+    roster: &str,
+    args: &LocalMultinodePg18Args,
+) -> String {
+    let gd = args.graph_degree;
+    for node in nodes {
+        let sql = format!(
+            "DROP TABLE IF EXISTS benchgate_corpus; \
+             CREATE TABLE benchgate_corpus AS SELECT * FROM dm; \
+             CREATE INDEX benchgate_corpus_idx ON benchgate_corpus \
+               USING ec_distann (embedding ecvector_distann_ip_ops) WITH (graph_degree = {gd});"
+        );
+        if !run_capture(psql, socket_dir, node.port, &sql).await.status_ok {
+            return "suite_recall_gate=SKIPPED(benchgate setup failed)".to_owned();
+        }
+    }
+    let coord_port = nodes[0].port;
+    let _ = run_capture(
+        psql,
+        socket_dir,
+        coord_port,
+        "DROP TABLE IF EXISTS benchgate_queries; CREATE TABLE benchgate_queries AS SELECT id, source FROM dm WHERE id <= 50;",
+    )
+    .await;
+    let ecaz = match std::env::current_exe() {
+        Ok(p) => p,
+        Err(_) => return "suite_recall_gate=SKIPPED(no exe)".to_owned(),
+    };
+    let single = run_bench_recall(&ecaz, socket_dir, coord_port, "").await;
+    let multi = run_bench_recall(&ecaz, socket_dir, coord_port, roster).await;
+    match (single, multi) {
+        (Some(s), Some(m)) => {
+            let pass = m >= s - 0.001;
+            format!(
+                "suite_recall_gate single={s:.4} multi={m:.4} delta={:.4} pass={pass}",
+                m - s
+            )
+        }
+        _ => "suite_recall_gate=INCONCLUSIVE(recall parse/connect failed)".to_owned(),
+    }
+}
+
+/// Invoke `ecaz bench recall` against the coordinator with the given roster
+/// session-GUC; parse recall@k from the comfy-table (a single-sweep row).
+async fn run_bench_recall(
+    ecaz: &Path,
+    socket_dir: &Path,
+    coord_port: u16,
+    roster_val: &str,
+) -> Option<f64> {
+    let mut cmd = Command::new(ecaz);
+    cmd.arg("--database")
+        .arg("postgres")
+        .arg("--host")
+        .arg(socket_dir)
+        .arg("--port")
+        .arg(coord_port.to_string())
+        .arg("bench")
+        .arg("recall")
+        .arg("--prefix")
+        .arg("benchgate")
+        .arg("--profile")
+        .arg("ec_distann")
+        .arg("--k")
+        .arg("10")
+        .arg("--sweep")
+        .arg("32")
+        .arg("--force-index");
+    // Single-node = default (empty) roster; the GUC parser rejects an empty value,
+    // so only set it for the multi-node arm.
+    if !roster_val.is_empty() {
+        cmd.arg("--session-guc")
+            .arg(format!("ec_distann.roster={roster_val}"))
+            .arg("--session-guc")
+            .arg("ec_distann.local_node_id=1")
+            .arg("--session-guc")
+            .arg("ec_distann.epoch=1");
+    }
+    let out = cmd.output().await.ok()?;
+    let text = String::from_utf8_lossy(&out.stdout);
+    let errtext = String::from_utf8_lossy(&out.stderr);
+    if !out.status.success() {
+        crate::ecaz_println!(
+            "[distann-multicluster] bench recall (roster={:?}) exit={:?} stderr={}",
+            !roster_val.is_empty(),
+            out.status.code(),
+            errtext.lines().rev().take(3).collect::<Vec<_>>().join(" | ")
+        );
+    }
+    // comfy-table data row (columns: top_k/sweep, queries, recall_trials,
+    // recall@k, ...): `│ 32 ┆ 50 ┆ 500 ┆ 0.5040 ┆ ...`. The left border is '│',
+    // inner columns are separated by '┆'; recall@k is field index 4.
+    for line in text.lines() {
+        let fields: Vec<&str> = line.split(['│', '┆']).map(str::trim).collect();
+        if fields.len() > 4 && fields[1].parse::<i64>().is_ok() {
+            if let Ok(recall) = fields[4].parse::<f64>() {
+                return Some(recall);
+            }
+        }
+    }
+    None
 }
 
 /// FR-082-AC-3 live gate: hold a single-node index scan open (AccessShareLock on
