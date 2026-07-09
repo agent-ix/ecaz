@@ -470,6 +470,14 @@ async fn drive_fixture(
     let retention_ok = retention_gate_drill(psql, socket_dir, coord_port, args).await;
     crate::ecaz_println!("[distann-multicluster] live_retention_gate pass={retention_ok}");
 
+    // 7c. AC-5 frozen vec_id→vector: a live record's exact-rerank result must be
+    // byte-identical after real delete+VACUUM+reinsert TID churn on every node
+    // (the AM's ambulkdelete tombstones deleted records so they are never
+    // reranked, and a live record's heap TID is never reclaimed → its vector is
+    // frozen without a separate tier, under D10).
+    let frozen_ok = frozen_vector_drill(psql, socket_dir, coord_port, &roster, nodes, args).await;
+    crate::ecaz_println!("[distann-multicluster] ac5_frozen_vector_after_vacuum_reuse pass={frozen_ok}");
+
     // 8. recovery / no-false-reject: after all faults clear, the full-roster
     // query must match the single-node baseline again.
     let recovery = capture_psql(psql, socket_dir, coord_port, &recall_sql(&roster, args.queries, args.top_k))
@@ -500,6 +508,9 @@ async fn drive_fixture(
         "concurrency_scan_insert_epochswap pass={concurrency_ok}\n"
     ));
     summary.push_str(&format!("live_retention_gate pass={retention_ok}\n"));
+    summary.push_str(&format!(
+        "ac5_frozen_vector_after_vacuum_reuse pass={frozen_ok}\n"
+    ));
     summary.push_str(&format!("recovery {recovery_line} recovered={recovered}\n"));
     let summary_path = log_dir.join("distann-multinode-summary.log");
     fs::write(&summary_path, &summary)
@@ -517,6 +528,9 @@ async fn drive_fixture(
     }
     if !retention_ok {
         bail!("live retention gate FAILED: retire not gated by an in-flight scan, or blocked after drain");
+    }
+    if !frozen_ok {
+        bail!("AC-5 FAILED: a live record's rerank changed after delete+VACUUM+reinsert TID churn");
     }
     let all_fail_closed = drills.iter().all(|(_, ok)| *ok);
     if !all_fail_closed {
@@ -717,6 +731,80 @@ async fn retention_gate_drill(
     .await;
 
     gated && succeeded_after_drain
+}
+
+/// FR-082-AC-5: a live record's exact-rerank result must be byte-identical after
+/// real delete+VACUUM+reinsert TID churn on every node. Deleted records are
+/// tombstoned by the AM's ambulkdelete (never reranked); a live record's heap TID
+/// is never reclaimed, so its co-placed vector is frozen without a separate tier.
+async fn frozen_vector_drill(
+    psql: &Path,
+    socket_dir: &Path,
+    coord_port: u16,
+    roster: &str,
+    nodes: &[Node],
+    args: &LocalMultinodePg18Args,
+) -> bool {
+    // Probe: row 1's multi-node top-1 (id:distance), byte-exact.
+    let probe = format!(
+        "SET enable_seqscan=off; SET ec_distann.roster='{roster}'; SET ec_distann.local_node_id=1; SET ec_distann.epoch=1; \
+         SELECT id || ':' || (embedding <#> (SELECT source FROM dm WHERE id=1))::float8 \
+           FROM dm ORDER BY embedding <#> (SELECT source FROM dm WHERE id=1) LIMIT 1;"
+    );
+    let baseline = capture_psql_allow_error(psql, socket_dir, coord_port, &probe).await;
+    let baseline = baseline.lines().find(|l| l.contains(':')).unwrap_or("").trim().to_owned();
+    if baseline.is_empty() {
+        crate::ecaz_println!("[distann-multicluster] ac5 baseline probe empty");
+        return false;
+    }
+
+    // Delete a mid range on every node, then VACUUM (triggers ambulkdelete →
+    // tombstone + heap reclaim), freeing those TIDs for reuse.
+    let lo = args.rows / 4;
+    let hi = lo + 150;
+    for node in nodes {
+        let del = run_capture(
+            psql,
+            socket_dir,
+            node.port,
+            &format!("DELETE FROM dm WHERE id BETWEEN {lo} AND {hi};"),
+        )
+        .await;
+        let vac = run_capture(psql, socket_dir, node.port, "VACUUM dm;").await;
+        if !del.status_ok || !vac.status_ok {
+            crate::ecaz_println!("[distann-multicluster] ac5 delete/vacuum failed on node {}", node.node_id);
+            return false;
+        }
+    }
+    // Reinsert new rows on every node (may reuse the reclaimed TIDs).
+    let arr = format!(
+        "(SELECT array_agg((sin(g * 0.017 * (d + 1)) + cos(g * 0.0031 * (d + 1)))::real) FROM generate_series(0, {} - 1) AS d)",
+        args.dim
+    );
+    for node in nodes {
+        let ins = run_capture(
+            psql,
+            socket_dir,
+            node.port,
+            &format!(
+                "INSERT INTO dm SELECT g, {arr}, encode_to_ecvector({arr}, 4, 42) FROM generate_series({lo}, {hi}) AS g;"
+            ),
+        )
+        .await;
+        if !ins.status_ok {
+            crate::ecaz_println!("[distann-multicluster] ac5 reinsert failed on node {}", node.node_id);
+            return false;
+        }
+    }
+
+    // Re-probe: row 1 (never touched) must rerank byte-identically.
+    let after = capture_psql_allow_error(psql, socket_dir, coord_port, &probe).await;
+    if after.contains("EC_VECTOR_MISSING") || after.contains("ERROR") {
+        crate::ecaz_println!("[distann-multicluster] ac5 post-churn probe errored: {after}");
+        return false;
+    }
+    let after = after.lines().find(|l| l.contains(':')).unwrap_or("").trim().to_owned();
+    baseline == after
 }
 
 struct CaptureOut {
