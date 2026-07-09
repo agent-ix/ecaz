@@ -463,7 +463,7 @@ async fn drive_fixture(
     // complete (return only expanded records; never a torn/half-applied read that
     // errors). A single failing session fails the drill.
     let concurrency_ok = concurrency_drill(psql, socket_dir, coord_port, &roster, args).await?;
-    crate::ecaz_println!("[distann-multicluster] concurrency_scan_under_insert pass={concurrency_ok}");
+    crate::ecaz_println!("[distann-multicluster] concurrency_scan_insert_epochswap pass={concurrency_ok}");
 
     // 8. recovery / no-false-reject: after all faults clear, the full-roster
     // query must match the single-node baseline again.
@@ -492,7 +492,7 @@ async fn drive_fixture(
         summary.push_str(&format!("fault_drill {name} pass={fail_closed}\n"));
     }
     summary.push_str(&format!(
-        "concurrency_scan_under_insert pass={concurrency_ok}\n"
+        "concurrency_scan_insert_epochswap pass={concurrency_ok}\n"
     ));
     summary.push_str(&format!("recovery {recovery_line} recovered={recovered}\n"));
     let summary_path = log_dir.join("distann-multinode-summary.log");
@@ -606,6 +606,32 @@ async fn concurrency_drill(
                     return Err(out.stderr);
                 }
             }
+            Ok(())
+        }));
+    }
+    // Epoch-swap-under-load (FR-082-AC-1): churn the coordinator's epoch lifecycle
+    // (publish new epochs) while scans run. The metadata-page publish write must
+    // not corrupt concurrent scans reading the metadata; end back at epoch 1.
+    {
+        let (psql, socket_dir) = (psql.to_path_buf(), socket_dir.to_path_buf());
+        tasks.push(tokio::spawn(async move {
+            for i in 0..iters {
+                let epoch = if i % 2 == 0 { 2 } else { 1 };
+                let sql = format!(
+                    "SELECT ec_distann_publish_epoch('dm_idx'::regclass::oid, {epoch});"
+                );
+                let out = run_capture(&psql, &socket_dir, coord_port, &sql).await;
+                if !out.status_ok {
+                    return Err(out.stderr);
+                }
+            }
+            let _ = run_capture(
+                &psql,
+                &socket_dir,
+                coord_port,
+                "SELECT ec_distann_publish_epoch('dm_idx'::regclass::oid, 1);",
+            )
+            .await;
             Ok(())
         }));
     }

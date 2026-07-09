@@ -10,3 +10,15 @@
 2026-07-08 18:42:19.024 PDT [957077] LOG:  checkpoint starting: shutdown immediate
 2026-07-08 18:42:19.167 PDT [957077] LOG:  checkpoint complete: wrote 505 buffers (3.1%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.010 s, sync=0.117 s, total=0.149 s; sync files=125, longest=0.006 s, average=0.001 s; distance=3695 kB, estimate=3695 kB; lsn=0/1AF0248, redo lsn=0/1AF0248
 2026-07-08 18:42:19.181 PDT [957073] LOG:  database system is shut down
+2026-07-08 18:53:04.557 PDT [961251] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-07-08 18:53:04.559 PDT [961251] LOG:  listening on Unix socket "/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets/.s.PGSQL.39711"
+2026-07-08 18:53:04.567 PDT [961257] LOG:  database system was shut down at 2026-07-08 18:53:02 PDT
+2026-07-08 18:53:04.571 PDT [961251] LOG:  database system is ready to accept connections
+2026-07-08 18:53:05.282 PDT [961277] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-08 18:53:13.319 PDT [961251] LOG:  received fast shutdown request
+2026-07-08 18:53:13.322 PDT [961251] LOG:  aborting any active transactions
+2026-07-08 18:53:13.322 PDT [961251] LOG:  background worker "logical replication launcher" (PID 961260) exited with exit code 1
+2026-07-08 18:53:13.323 PDT [961255] LOG:  shutting down
+2026-07-08 18:53:13.325 PDT [961255] LOG:  checkpoint starting: shutdown immediate
+2026-07-08 18:53:13.412 PDT [961255] LOG:  checkpoint complete: wrote 505 buffers (3.1%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.009 s, sync=0.071 s, total=0.090 s; sync files=125, longest=0.003 s, average=0.001 s; distance=3695 kB, estimate=3695 kB; lsn=0/1AF0248, redo lsn=0/1AF0248
+2026-07-08 18:53:13.420 PDT [961251] LOG:  database system is shut down

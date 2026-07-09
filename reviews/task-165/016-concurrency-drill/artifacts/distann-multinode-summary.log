@@ -13,5 +13,5 @@ fault_drill remote_content_divergence pass=true
 fault_drill missing_or_reindexed_remote_index pass=true
 fault_drill remote_backend_termination pass=true
 fault_drill placement_drift pass=true
-concurrency_scan_under_insert pass=true
+concurrency_scan_insert_epochswap pass=true
 recovery RECALL_RESULT n_queries=50 identical=50 mismatched_ids=0 recovered=true
