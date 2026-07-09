@@ -56,6 +56,13 @@ static ECDISTANN_DEBUG_MISSING_NODE_RECORD_GUC: GucSetting<bool> = GucSetting::<
 /// ever visible to a scan.
 static ECDISTANN_DEBUG_FAIL_INSERT_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
 
+/// NFR-020 fault injection (debug only): when true, `apply_record_writes` errors
+/// after flipping the tombstone flags but before returning, simulating a lost
+/// remote tombstone write (mid-delete failure). The aborting transaction must
+/// roll the flag writes back so the record stays live — a lost tombstone write
+/// errors and never silently resurrects (or half-deletes) the row.
+static ECDISTANN_DEBUG_FAIL_TOMBSTONE_WRITE_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
+
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 struct EcDistannReloptions {
@@ -246,6 +253,14 @@ pub(super) fn register_gucs() {
         GucContext::Userset,
         GucFlags::default(),
     );
+    GucRegistry::define_bool_guc(
+        c"ec_distann.debug_fail_tombstone_write",
+        c"NFR-020 fault injection (debug): fail a tombstone write after the flag flip.",
+        c"When on, apply_record_writes errors after flipping tombstone flags but before returning, simulating a lost remote tombstone write (mid-delete). The fault-drill matrix (TC-042) asserts the aborting transaction rolls the flags back so the record stays live. Off by default.",
+        &ECDISTANN_DEBUG_FAIL_TOMBSTONE_WRITE_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
 }
 
 pub(super) fn current_top_k() -> usize {
@@ -282,6 +297,11 @@ pub(super) fn debug_missing_node_record() -> bool {
 /// NFR-020 fault injection: fail a graph insert after staging, before publish.
 pub(super) fn debug_fail_insert() -> bool {
     ECDISTANN_DEBUG_FAIL_INSERT_GUC.get()
+}
+
+/// NFR-020 fault injection: fail a tombstone write after the flag flip.
+pub(super) fn debug_fail_tombstone_write() -> bool {
+    ECDISTANN_DEBUG_FAIL_TOMBSTONE_WRITE_GUC.get()
 }
 
 pub(super) unsafe extern "C-unwind" fn ec_distann_amoptions(

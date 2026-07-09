@@ -272,6 +272,15 @@ fn apply_record_writes_impl(
     // tombstone_by_vec_ids now returns a typed error (003-P3): an owned-but-
     // absent record is EC_RECORD_MISSING, structural/storage faults are Internal.
     let removed = unsafe { super::dml::tombstone_by_vec_ids(index_guard.as_ptr(), &ids) }?;
+    // NFR-020 fault injection: a lost remote tombstone write after the flag flip.
+    // The aborting transaction must roll the flags back so the record stays live.
+    if super::options::debug_fail_tombstone_write() {
+        return Err(DistannExpandError::Internal(
+            "ec_distann injected lost tombstone write after flag flip \
+             (ec_distann.debug_fail_tombstone_write)"
+                .to_owned(),
+        ));
+    }
     Ok(i64::try_from(removed).unwrap_or(i64::MAX))
 }
 

@@ -538,6 +538,15 @@ async fn drive_fixture(
         drills.push(("missing_heap_row_co_placement_drift".to_owned(), drift_ok));
     }
 
+    // 8a. mid-delete / lost-tombstone-write (NFR-020): a tombstone write that
+    // errors after the WAL-logged flag flip. The monotonic tombstone stays set
+    // (PG does not undo index-page writes on abort), so the record is deleted and
+    // STAYS deleted — the caller sees an error but the row never resurrects.
+    {
+        let mid_delete_ok = mid_delete_drill(psql, socket_dir, coord_port, args).await;
+        drills.push(("mid_delete_lost_tombstone_no_resurrect".to_owned(), mid_delete_ok));
+    }
+
     // 8b. mid-insert failure (FR-083 fold path, TC-043): a graph insert that fails
     // after staging pages but before publishing metadata must roll back cleanly —
     // no partial record visible. Runs on an isolated table so shared `dm` is
@@ -728,6 +737,90 @@ async fn co_placement_drift_drill(
         co_placement_drift_case(psql, socket_dir, coord_port, roster, nodes, args, args.nodes - 1)
             .await;
     coord && remote
+}
+
+/// NFR-020 mid-delete / lost-tombstone-write drill: attempt a tombstone write via
+/// the FR-083 owner endpoint (`ec_distann_apply_record_writes`) with
+/// `ec_distann.debug_fail_tombstone_write` on — the endpoint WAL-logs the flag
+/// flip, then errors.
+///
+/// NFR-020 requires that a lost remote tombstone write "must error, never
+/// silently resurrect the row." The tombstone flag is a MONOTONIC set (dml.rs),
+/// and PostgreSQL does not physically undo WAL-logged index-page changes on a
+/// transaction abort — so the flag stays set: the record is deleted and STAYS
+/// deleted (the safe, non-resurrecting direction), while the caller still sees an
+/// error. This drill asserts exactly that: the write errors AND the record is
+/// tombstoned and remains tombstoned across re-reads (monotonic, no resurrection)
+/// AND an ANN scan excludes it. Runs on an isolated table so `dm` is untouched.
+/// Returns true iff errored AND tombstoned-and-stable AND excluded from scans.
+async fn mid_delete_drill(
+    psql: &Path,
+    socket_dir: &Path,
+    coord_port: u16,
+    args: &LocalMultinodePg18Args,
+) -> bool {
+    let single = "SELECT set_config('ec_distann.roster','',false); SET ec_distann.local_node_id=1; SET ec_distann.epoch=0;";
+    let dim = args.dim;
+    let gvec = format!(
+        "encode_to_ecvector((SELECT array_agg((sin(g * 0.017 * (d + 1)) + cos(g * 0.0031 * (d + 1)))::real) \
+           FROM generate_series(0, {dim} - 1) AS d), 4, 42)"
+    );
+    let setup = format!(
+        "DROP TABLE IF EXISTS md; CREATE TABLE md (id bigint, embedding ecvector); \
+         INSERT INTO md SELECT g, {gvec} FROM generate_series(1, 500) AS g; \
+         CREATE INDEX md_idx ON md USING ec_distann (embedding ecvector_distann_ip_ops) WITH (graph_degree = {gd});",
+        gd = args.graph_degree,
+    );
+    if run_psql_file(psql, socket_dir, coord_port, &setup).await.is_err() {
+        return false;
+    }
+    // Discover a live owned vec_id + its id (to check scan exclusion).
+    let discover = format!(
+        "{single} SELECT d.vec_id || '|' || t.id \
+           FROM ec_distann_list_directory('md_idx'::regclass) d \
+           JOIN md t ON t.ctid = ('(' || d.heap_block || ',' || d.heap_offset || ')')::tid \
+          WHERE NOT d.is_tombstone ORDER BY t.id LIMIT 1;"
+    );
+    let discovered = capture_psql_allow_error(psql, socket_dir, coord_port, &discover).await;
+    let Some((vec_id, id)) = discovered
+        .lines()
+        .find_map(|l| l.trim().split_once('|'))
+        .filter(|(v, i)| v.parse::<i64>().is_ok() && i.parse::<i64>().is_ok())
+        .map(|(v, i)| (v.to_owned(), i.to_owned()))
+    else {
+        crate::ecaz_println!("[distann-multicluster] mid_delete: no live vec_id discovered (skipped)");
+        let _ = run_psql_file(psql, socket_dir, coord_port, "DROP TABLE IF EXISTS md;").await;
+        return false;
+    };
+    // Attempt the tombstone write with injection: must error.
+    let attempt = format!(
+        "{single} SET ec_distann.debug_fail_tombstone_write=true; \
+         SELECT ec_distann_apply_record_writes('md_idx'::regclass, ec_distann_epoch_fingerprint('md_idx'::regclass), ARRAY[{vec_id}]::bigint[]);"
+    );
+    let attempt_out = capture_psql_allow_error(psql, socket_dir, coord_port, &attempt).await;
+    let errored = query_errored(&attempt_out);
+    // Re-read is_tombstone twice: monotonic ⇒ tombstoned and stable (no resurrection).
+    let tomb = format!(
+        "{single} SELECT is_tombstone FROM ec_distann_list_directory('md_idx'::regclass) WHERE vec_id={vec_id};"
+    );
+    let t1 = capture_psql_allow_error(psql, socket_dir, coord_port, &tomb).await;
+    let t2 = capture_psql_allow_error(psql, socket_dir, coord_port, &tomb).await;
+    let tombstoned = |o: &str| o.lines().any(|l| l.trim() == "t");
+    let stable_tombstoned = tombstoned(&t1) && tombstoned(&t2);
+    // And the ANN scan excludes the now-tombstoned record (deleted, not resurrected).
+    let scan = format!(
+        "{single} SET enable_seqscan=off; \
+         SELECT id FROM md ORDER BY embedding <#> (SELECT embedding FROM md WHERE id={id}) LIMIT 10;"
+    );
+    let scan_out = capture_psql_allow_error(psql, socket_dir, coord_port, &scan).await;
+    let excluded = !scan_out.lines().any(|l| l.trim() == id);
+    let pass = errored && stable_tombstoned && excluded;
+    crate::ecaz_println!(
+        "[distann-multicluster] mid_delete_lost_tombstone DIAG vec_id={vec_id} id={id} errored={errored} \
+         stable_tombstoned={stable_tombstoned} excluded_from_scan={excluded} pass={pass}"
+    );
+    let _ = run_psql_file(psql, socket_dir, coord_port, "DROP TABLE IF EXISTS md;").await;
+    pass
 }
 
 /// FR-083 mid-insert failure drill (TC-043), on an isolated table so the shared
