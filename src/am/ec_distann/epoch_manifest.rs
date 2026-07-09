@@ -83,26 +83,47 @@ fn ec_distann_publish_epoch(index_regclass: pg_sys::Oid, epoch: i64) {
     .unwrap_or_else(|e| pgrx::error!("{e}"));
 }
 
-/// FR-082-AC-3: retire the active epoch, but only once its in-flight query count
-/// reaches zero. A non-zero count is the retention gate — the call errors and the
-/// epoch stays Published (its storage is retained).
+/// FR-082-AC-3: retire the active epoch, but only once no scan is in flight
+/// against the index. The **live** gate uses PostgreSQL's lock manager: a scan
+/// holds `AccessShareLock` on the index for its lifetime, so a conditional
+/// `AccessExclusiveLock` (which conflicts) fails while any scan is in flight —
+/// a real, auto-clearing count (a crashed scan's lock is released on backend
+/// exit). The persisted `in_flight_count` field remains a second gate + the
+/// operator-visible/wedge value that `force_retire` overrides (AC-6).
 #[pg_extern(volatile)]
 fn ec_distann_retire_epoch(index_regclass: pg_sys::Oid) {
-    with_metadata_mut(index_regclass, "ec_distann_retire_epoch", |metadata| {
+    // Live in-flight gate: cannot take AccessExclusiveLock ⇒ scans in flight.
+    // (Same backend already holding a lock self-grants, so a retire in the same
+    // session as an unrelated scan is not falsely gated.)
+    let acquired = unsafe {
+        pg_sys::ConditionalLockRelationOid(
+            index_regclass,
+            pg_sys::AccessExclusiveLock as pg_sys::LOCKMODE,
+        )
+    };
+    if !acquired {
+        pgrx::error!(
+            "ec_distann_retire_epoch: retention gate — scan(s) in flight against the index block \
+             retire; retry once they drain (or use ec_distann_force_retire_epoch)"
+        );
+    }
+    // Hold the lock until transaction end (a short retire op); it also blocks new
+    // scans from starting between this check and the state write.
+    let result = with_metadata_mut(index_regclass, "ec_distann_retire_epoch", |metadata| {
         if metadata.epoch_state == DISTANN_EPOCH_STATE_RETIRED {
             return Ok(());
         }
         if metadata.in_flight_count != 0 {
             return Err(format!(
-                "ec_distann_retire_epoch: retention gate — {} scan(s) in flight against epoch {}; \
-                 retire is blocked until they drain (or use ec_distann_force_retire_epoch)",
+                "ec_distann_retire_epoch: retention gate — persisted in-flight count {} against \
+                 epoch {}; retire is blocked (or use ec_distann_force_retire_epoch)",
                 metadata.in_flight_count, metadata.active_epoch
             ));
         }
         metadata.epoch_state = DISTANN_EPOCH_STATE_RETIRED;
         Ok(())
-    })
-    .unwrap_or_else(|e| pgrx::error!("{e}"));
+    });
+    result.unwrap_or_else(|e| pgrx::error!("{e}"));
 }
 
 /// FR-082-AC-6: operator override for a wedged in-flight count (e.g. a crashed

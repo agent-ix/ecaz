@@ -465,6 +465,11 @@ async fn drive_fixture(
     let concurrency_ok = concurrency_drill(psql, socket_dir, coord_port, &roster, args).await?;
     crate::ecaz_println!("[distann-multicluster] concurrency_scan_insert_epochswap pass={concurrency_ok}");
 
+    // 7b. live retention gate (FR-082-AC-3): a scan held open (AccessShareLock)
+    // must block retire; once it drains, retire succeeds.
+    let retention_ok = retention_gate_drill(psql, socket_dir, coord_port, args).await;
+    crate::ecaz_println!("[distann-multicluster] live_retention_gate pass={retention_ok}");
+
     // 8. recovery / no-false-reject: after all faults clear, the full-roster
     // query must match the single-node baseline again.
     let recovery = capture_psql(psql, socket_dir, coord_port, &recall_sql(&roster, args.queries, args.top_k))
@@ -494,6 +499,7 @@ async fn drive_fixture(
     summary.push_str(&format!(
         "concurrency_scan_insert_epochswap pass={concurrency_ok}\n"
     ));
+    summary.push_str(&format!("live_retention_gate pass={retention_ok}\n"));
     summary.push_str(&format!("recovery {recovery_line} recovered={recovered}\n"));
     let summary_path = log_dir.join("distann-multinode-summary.log");
     fs::write(&summary_path, &summary)
@@ -508,6 +514,9 @@ async fn drive_fixture(
     }
     if !concurrency_ok {
         bail!("concurrency drill FAILED: a scan errored under concurrent insert load");
+    }
+    if !retention_ok {
+        bail!("live retention gate FAILED: retire not gated by an in-flight scan, or blocked after drain");
     }
     let all_fail_closed = drills.iter().all(|(_, ok)| *ok);
     if !all_fail_closed {
@@ -651,6 +660,63 @@ async fn concurrency_drill(
         }
     }
     Ok(ok)
+}
+
+/// FR-082-AC-3 live gate: hold a single-node index scan open (AccessShareLock on
+/// dm_idx) in a background transaction, and assert `ec_distann_retire_epoch` is
+/// gated while it is in flight, then succeeds once it drains.
+async fn retention_gate_drill(
+    psql: &Path,
+    socket_dir: &Path,
+    coord_port: u16,
+    args: &LocalMultinodePg18Args,
+) -> bool {
+    let idx = "'dm_idx'::regclass::oid";
+    // Background holder: an ec_distann index scan held open ~3s via a cursor.
+    let hold_sql = format!(
+        "SET enable_seqscan=off; SET ec_distann.roster=''; SET ec_distann.local_node_id=1; \
+         BEGIN; \
+         DECLARE c CURSOR FOR SELECT id FROM dm ORDER BY embedding <#> (SELECT source FROM dm WHERE id=1) LIMIT {}; \
+         FETCH 1 FROM c; SELECT pg_sleep(3); COMMIT;",
+        args.top_k
+    );
+    let holder = {
+        let (psql, socket_dir) = (psql.to_path_buf(), socket_dir.to_path_buf());
+        tokio::spawn(async move { run_capture(&psql, &socket_dir, coord_port, &hold_sql).await })
+    };
+    // Let the scan acquire its AccessShareLock.
+    tokio::time::sleep(std::time::Duration::from_millis(900)).await;
+
+    let gated_out = capture_psql_allow_error(
+        psql,
+        socket_dir,
+        coord_port,
+        &format!("SELECT ec_distann_retire_epoch({idx})"),
+    )
+    .await;
+    let gated = gated_out.contains("retention gate");
+
+    let _ = holder.await;
+
+    let drained_out = capture_psql_allow_error(
+        psql,
+        socket_dir,
+        coord_port,
+        &format!("SELECT ec_distann_retire_epoch({idx})"),
+    )
+    .await;
+    let succeeded_after_drain = !drained_out.contains("ERROR");
+
+    // Restore a Published epoch for any downstream steps.
+    let _ = run_capture(
+        psql,
+        socket_dir,
+        coord_port,
+        &format!("SELECT ec_distann_publish_epoch({idx}, 1)"),
+    )
+    .await;
+
+    gated && succeeded_after_drain
 }
 
 struct CaptureOut {
