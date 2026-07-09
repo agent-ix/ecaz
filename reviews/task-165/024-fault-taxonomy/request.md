@@ -1,11 +1,15 @@
-# Task 165 — packet 024: NFR-020 fault-taxonomy extension (remote timeout + co-placement drift)
+# Task 165 — packet 024: NFR-020 fault-taxonomy extension (mid-beam, remote timeout, co-placement drift)
 
 Coder review request. Addresses the packet-021 **P1 "NFR-020 fault taxonomy is
-still incomplete"** finding by extending the TC-042 fault matrix from 6 to 8
-drills and proving the two new cases on the real 3× PG18 fixture.
+still incomplete"** finding by extending the TC-042 fault matrix from 6 to 9
+drills and proving the three new cases on the real 3× PG18 fixture.
 
 ## Summary
 
+- **hop_round_failure_mid_beam** (new, fail-closed): a narrow debug GUC
+  (`ec_distann.debug_fail_hop_round`) injects a failure at hop round 1 after
+  round 0 executed; the partial beam is discarded and the query errors (verified
+  to name `round 1`). `pass=true`.
 - **remote_statement_timeout** (new, fail-closed): one owner's conninfo carries
   `statement_timeout=1ms`; its expand is cancelled server-side and the
   coordinator surfaces the remote error — never a partial result. `pass=true`.
@@ -39,6 +43,7 @@ compliant rather than a masked fail-open.
 
 ## Still open (tracked, not in this packet)
 
-`hop_round_failure_mid_beam`, `missing_node_record`, `mid-insert failure`
-(FR-083) remain NFR-020 gaps; the FR-082 published-epoch read wiring and the
-full `ecaz bench suite` 10k/50k/100k matrix remain the other two packet-021 P1s.
+`missing_node_record` and `mid-insert failure` (FR-083) remain NFR-020 gaps
+(3 of 5 taxonomy cases now closed); the FR-082 published-epoch read wiring and
+the full `ecaz bench suite` 10k/50k/100k matrix remain the other two
+packet-021 P1s.

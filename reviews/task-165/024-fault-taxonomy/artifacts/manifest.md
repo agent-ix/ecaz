@@ -20,8 +20,19 @@ ecaz dev distann-multicluster local-multinode-pg18 \
 
 ## What changed vs packet 023
 
-Extends the TC-042 fault matrix from **6 → 8** drills, closing two NFR-020
+Extends the TC-042 fault matrix from **6 → 9** drills, closing three NFR-020
 taxonomy gaps flagged in the packet-021 review:
+
+0. **hop_round_failure_mid_beam** — a narrow debug GUC
+   (`ec_distann.debug_fail_hop_round`, default -1/off) makes the orchestrated
+   search error at the start of a chosen 0-based hop round. The drill forces the
+   search past round 0 (a high `top_k` bar defeats the round-0 early-exit) and
+   injects a failure at round 1: the partial beam is discarded and the query
+   ERRORs (verified: the error names `round 1`) — never a partial round-0
+   frontier presented as complete. Extension `.so` was swapped to the debug build
+   for this run and reverted to the shared release build afterward (the change
+   adds no SQL, only a GUC + a `DistannOrchestrationParams` field).
+
 
 1. **remote_statement_timeout** — inject `options=-cstatement_timeout=1` (1 ms)
    into a single owner's roster conninfo; that owner's expand statement is
@@ -53,6 +64,8 @@ taxonomy gaps flagged in the packet-021 review:
 
 - `RECALL_RESULT n_queries=50 identical=50 mismatched_ids=0`
 - `fault_drill remote_statement_timeout pass=true`
+- `fault_drill hop_round_failure_mid_beam pass=true`
+- (stdout) `hop_round_failure_mid_beam DIAG errored=true mid_beam=true`
 - `fault_drill missing_heap_row_co_placement_drift pass=true`
 - (stdout) `co_placement_drift[owner=0] target_id=4 arm=correct_complete multi_n=10 single_n=10 pass=true`
 - (stdout) `co_placement_drift[owner=2] target_id=3 arm=correct_complete multi_n=10 single_n=10 pass=true`
@@ -60,12 +73,12 @@ taxonomy gaps flagged in the packet-021 review:
 - `qual_correctness single_n=10 multi_n=10 mismatch=0 pass=true`
 - `recovery RECALL_RESULT n_queries=50 identical=50 mismatched_ids=0 recovered=true`
 - `disjoint_shard identical_after_prune=true per_node_rows[n1:2000->647 n2:2000->639 n3:2000->714]`
-- GATE PASS: recall identical; 8 faults NFR-020-compliant; recovery clean.
+- GATE PASS: recall identical; 9 faults NFR-020-compliant; recovery clean.
 
 ## Remaining NFR-020 taxonomy gaps (not in this packet)
 
-Still open from the reviewer's list: `hop_round_failure_mid_beam`,
-`missing_node_record`, and `mid-insert failure` (FR-083 insert path).
-`mid-delete failure` (lost remote tombstone → row must not resurrect) is
-partially exercised by the co-placement drift + AC-5 frozen-vector drills but
-not yet as a dedicated lost-tombstone-write injection.
+Still open from the reviewer's list: `missing_node_record` and
+`mid-insert failure` (FR-083 insert path). `mid-delete failure` (lost remote
+tombstone → row must not resurrect) is partially exercised by the co-placement
+drift + AC-5 frozen-vector drills but not yet as a dedicated lost-tombstone-write
+injection.

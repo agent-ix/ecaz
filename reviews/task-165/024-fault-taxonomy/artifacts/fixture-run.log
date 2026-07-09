@@ -7,6 +7,7 @@
 [distann-multicluster] RECALL_RESULT n_queries=50 identical=50 mismatched_ids=0
 [distann-multicluster] suite_recall_gate single=0.5000 multi=0.5000 delta=0.0000 pass=true
 [distann-multicluster] qual_correctness single_n=10 multi_n=10 mismatch=0 pass=true
+[distann-multicluster] hop_round_failure_mid_beam DIAG errored=true mid_beam=true
 [distann-multicluster] co_placement_drift[owner=0] target_id=4 arm=correct_complete multi_n=10 single_n=10 pass=true
 [distann-multicluster] co_placement_drift[owner=2] target_id=3 arm=correct_complete multi_n=10 single_n=10 pass=true
 [distann-multicluster] concurrency_scan_insert_epochswap pass=true
@@ -19,8 +20,9 @@
 [distann-multicluster] fault_drill remote_backend_termination pass=true
 [distann-multicluster] fault_drill placement_drift pass=true
 [distann-multicluster] fault_drill remote_statement_timeout pass=true
+[distann-multicluster] fault_drill hop_round_failure_mid_beam pass=true
 [distann-multicluster] fault_drill missing_heap_row_co_placement_drift pass=true
 [distann-multicluster] recovery RECALL_RESULT n_queries=50 identical=50 mismatched_ids=0 recovered=true
 [distann-multicluster] disjoint_shard identical_after_prune=true per_node_rows[n1:2000->647 n2:2000->639 n3:2000->714]
 [distann-multicluster] summary written to reviews/task-165/024-fault-taxonomy/artifacts/distann-multinode-summary.log
-[distann-multicluster] GATE PASS: recall identical; 8 faults fail-closed; recovery clean
+[distann-multicluster] GATE PASS: recall identical; 9 faults fail-closed; recovery clean

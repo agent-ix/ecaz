@@ -14,6 +14,7 @@ fault_drill missing_or_reindexed_remote_index pass=true
 fault_drill remote_backend_termination pass=true
 fault_drill placement_drift pass=true
 fault_drill remote_statement_timeout pass=true
+fault_drill hop_round_failure_mid_beam pass=true
 fault_drill missing_heap_row_co_placement_drift pass=true
 concurrency_scan_insert_epochswap pass=true
 qual_correctness single_n=10 multi_n=10 mismatch=0 pass=true
