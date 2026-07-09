@@ -40,7 +40,7 @@ use super::head_cache::cached_index_entry;
 use super::placement::owning_node;
 use super::quantizer::{metadata_code_len, DistannPreparedQuery};
 use super::reader::{directory_lookup, read_directory_from_relation, read_raw_tuple_bytes_from_relation};
-use super::roster::{current_placement_directory, local_epoch_identity};
+use super::roster::{local_epoch_identity, placement_directory_for_epoch, scan_epoch};
 use super::routine::indexed_ecvector_attnum;
 use super::scan::DistannNodeExpander;
 use super::tuple::{
@@ -199,7 +199,9 @@ fn epoch_fingerprint_impl(index_oid: pg_sys::Oid) -> Result<Vec<u8>, String> {
     let handle = NonNull::new(index_guard.as_ptr())
         .ok_or_else(|| "ec_distann_epoch_fingerprint got a null index relation".to_owned())?;
     let metadata = read_metadata_from_index_handle(handle)?;
-    let directory = current_placement_directory()?;
+    // FR-082: the fingerprint attests to the PUBLISHED epoch (manifest), so the
+    // coordinator and owners agree on the published epoch, not the session GUC.
+    let directory = placement_directory_for_epoch(scan_epoch(&metadata))?;
     let identity = local_epoch_identity(&directory, &metadata);
     Ok(compute_epoch_fingerprint(&identity, DISTANN_EPOCH_FINGERPRINT_V1).to_vec())
 }
@@ -239,8 +241,9 @@ fn apply_record_writes_impl(
         .ok_or_else(|| "ec_distann_apply_record_writes got a null index relation".to_owned())?;
     let metadata = read_metadata_from_index_handle(handle)?;
 
-    // FR-082 epoch validation (retriable on mismatch), before any write.
-    let directory = current_placement_directory()?;
+    // FR-082 epoch validation (retriable on mismatch), before any write. Uses the
+    // PUBLISHED epoch from this node's manifest, not the session GUC.
+    let directory = placement_directory_for_epoch(scan_epoch(&metadata))?;
     let identity = local_epoch_identity(&directory, &metadata);
     let local_fingerprint = compute_epoch_fingerprint(&identity, DISTANN_EPOCH_FINGERPRINT_V1);
     if !fingerprints_match(&received_fingerprint, &local_fingerprint) {
@@ -343,8 +346,9 @@ fn resolve_owned_rows(
         ));
     }
 
-    // FR-082 epoch validation (retriable on mismatch), before any read.
-    let placement = current_placement_directory()?;
+    // FR-082 epoch validation (retriable on mismatch), before any read. Uses the
+    // PUBLISHED epoch from this node's manifest, not the session GUC.
+    let placement = placement_directory_for_epoch(scan_epoch(&metadata))?;
     let identity = local_epoch_identity(&placement, &metadata);
     let local_fingerprint = compute_epoch_fingerprint(&identity, DISTANN_EPOCH_FINGERPRINT_V1);
     if !fingerprints_match(&received_fingerprint, &local_fingerprint) {
@@ -687,9 +691,10 @@ fn expand_nodes_impl(
         )));
     }
 
-    // FR-082 (subset): validate the caller's epoch fingerprint against this
-    // node's active-epoch identity before any read. Mismatch is retriable.
-    let directory = current_placement_directory()?;
+    // FR-082: validate the caller's epoch fingerprint against this node's
+    // PUBLISHED-epoch identity (manifest, not the session GUC) before any read.
+    // Mismatch is retriable.
+    let directory = placement_directory_for_epoch(scan_epoch(&metadata))?;
     let identity = local_epoch_identity(&directory, &metadata);
     let local_fingerprint = compute_epoch_fingerprint(&identity, DISTANN_EPOCH_FINGERPRINT_V1);
     if !fingerprints_match(&received_fingerprint, &local_fingerprint) {

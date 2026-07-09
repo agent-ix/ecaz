@@ -365,7 +365,13 @@ pub(crate) unsafe fn collect_distann_hits(
     // re-reads the active epoch each attempt); a second mismatch fails the query.
     let (mut hits, counters, multi_node) =
         super::scan::run_scan_attempt_with_restart(|| {
-            let placement = super::roster::current_placement_directory()
+            // FR-082: consume the epoch from the published manifest (re-read per
+            // attempt so a concurrent republish is picked up on restart). The
+            // fingerprint below then attests to the published epoch, not the GUC.
+            let scan_metadata = ambuild::read_metadata_from_index_handle(handle)
+                .map_err(DistannExpandError::Internal)?;
+            let scan_epoch = super::roster::scan_epoch(&scan_metadata);
+            let placement = super::roster::placement_directory_for_epoch(scan_epoch)
                 .map_err(DistannExpandError::Internal)?;
             let multi_node = placement.node_count() > 1;
             // Rebuilt per attempt: orchestration consumes the expander, and a
@@ -393,14 +399,17 @@ pub(crate) unsafe fn collect_distann_hits(
                             "ec_distann scan: no local node in the roster".to_owned(),
                         )
                     })?;
-                let identity = super::roster::local_epoch_identity(&placement, &metadata);
+                // Identity carries the published scan epoch (placement.epoch) plus
+                // this index's build-time metadata — the fresh scan_metadata so a
+                // republished epoch/state is reflected in the fingerprint.
+                let identity = super::roster::local_epoch_identity(&placement, &scan_metadata);
                 let fingerprint = super::epoch::compute_epoch_fingerprint(
                     &identity,
                     super::epoch::DISTANN_EPOCH_FINGERPRINT_V1,
                 )
                 .to_vec();
                 let roster_spec = super::roster::current_roster_spec();
-                let epoch = super::roster::current_epoch();
+                let epoch = scan_epoch;
                 let index_name = distann_index_relname(index_relation);
                 let mut remote = super::remote_transport::RemoteNodeExpander {
                     local: local_expander,

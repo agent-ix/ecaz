@@ -948,13 +948,17 @@ unsafe fn fetch_remote_payloads(
         return result;
     }
 
-    let placement = super::roster::current_placement_directory()
-        .unwrap_or_else(|e| pgrx::error!("EcDistannDistributedScan roster resolution failed: {e}"));
-    let node_count = placement.node_count();
+    // FR-082: the fingerprint + epoch shipped to owners for materialization must
+    // attest to the PUBLISHED epoch (manifest), matching the owner-side
+    // materialize validation — not the session GUC.
     let metadata = super::ambuild::read_metadata_from_index_handle(
         ptr::NonNull::new(index_relation).expect("index relation non-null"),
     )
     .unwrap_or_else(|e| pgrx::error!("EcDistannDistributedScan metadata read failed: {e}"));
+    let epoch = super::roster::scan_epoch(&metadata);
+    let placement = super::roster::placement_directory_for_epoch(epoch)
+        .unwrap_or_else(|e| pgrx::error!("EcDistannDistributedScan roster resolution failed: {e}"));
+    let node_count = placement.node_count();
     let identity = super::roster::local_epoch_identity(&placement, &metadata);
     let fingerprint = super::epoch::compute_epoch_fingerprint(
         &identity,
@@ -962,7 +966,6 @@ unsafe fn fetch_remote_payloads(
     )
     .to_vec();
     let roster_spec = super::roster::current_roster_spec();
-    let epoch = super::roster::current_epoch();
     let index_name = super::routine::distann_index_relname(index_relation);
 
     // Bucket vec_ids by owning-node index.

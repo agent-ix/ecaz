@@ -78,6 +78,20 @@ pub(super) fn current_epoch() -> u64 {
     u64::try_from(ECDISTANN_EPOCH_GUC.get().max(0)).unwrap_or(0)
 }
 
+/// FR-082: the epoch a scan runs under. When the index carries a Published epoch
+/// (the default for any built index), reads consume the persisted
+/// `active_epoch` from the manifest so a `publish` actually changes what queries
+/// see; otherwise the session GUC is the fallback. Read once per scan attempt so
+/// a scan returns wholly from one epoch (a concurrent republish surfaces as an
+/// FR-082-AC-2 retriable epoch mismatch and restarts under the refreshed epoch).
+pub(super) fn scan_epoch(metadata: &DistannMetadataPage) -> u64 {
+    if metadata.epoch_state == super::page::DISTANN_EPOCH_STATE_PUBLISHED {
+        metadata.active_epoch
+    } else {
+        current_epoch()
+    }
+}
+
 pub(super) fn current_roster_spec() -> String {
     ECDISTANN_ROSTER_GUC
         .get()
@@ -135,11 +149,23 @@ pub(super) fn parse_roster(spec: &str) -> Result<Vec<ParsedRosterEntry>, String>
     Ok(entries)
 }
 
-/// Build the active `DistannPlacementDirectory` from the roster + epoch GUCs.
-/// An empty roster produces a single-node directory owning everything locally.
+/// Build the active `DistannPlacementDirectory` from the roster GUC + the epoch
+/// GUC. Kept for callers without an index handle (they fall back to the GUC
+/// epoch); the scan path uses [`placement_directory_for_epoch`] with the epoch
+/// consumed from the published manifest (FR-082).
 pub(super) fn current_placement_directory() -> Result<DistannPlacementDirectory, String> {
+    placement_directory_for_epoch(current_epoch())
+}
+
+/// Build the active `DistannPlacementDirectory` from the roster GUC at an
+/// explicit `epoch`. The scan path passes the published `metadata.active_epoch`
+/// (FR-082) so the epoch fingerprint attests to the published epoch, not the
+/// session GUC. An empty roster produces a single-node directory owning
+/// everything locally.
+pub(super) fn placement_directory_for_epoch(
+    epoch: u64,
+) -> Result<DistannPlacementDirectory, String> {
     let entries = parse_roster(&current_roster_spec())?;
-    let epoch = current_epoch();
     if entries.is_empty() {
         // Single-node degenerate: one local node, owns every vec_id.
         return Ok(DistannPlacementDirectory {

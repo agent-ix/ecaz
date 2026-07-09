@@ -33,7 +33,9 @@ use super::expand_error::DistannExpandError;
 use super::head_cache::cached_index_entry;
 use super::placement::{group_by_owning_node, DistannPlacementDirectory};
 use super::quantizer::{metadata_code_len, DistannPreparedQuery};
-use super::roster::{current_epoch, current_placement_directory, current_roster_spec, local_epoch_identity};
+use super::roster::{
+    current_roster_spec, local_epoch_identity, placement_directory_for_epoch, scan_epoch,
+};
 use super::routine::indexed_ecvector_attnum;
 use super::scan::{
     distann_orchestrated_search, DistannExpandedNode, DistannNodeExpander,
@@ -615,7 +617,9 @@ fn debug_expand_search_impl(
         pooled_node: DistannNodeTuple::placeholder(metadata.graph_degree_r, code_len),
     };
 
-    let directory = current_placement_directory()?;
+    // FR-082: debug expander agrees with owners on the PUBLISHED epoch.
+    let scan_epoch_val = scan_epoch(&metadata);
+    let directory = placement_directory_for_epoch(scan_epoch_val)?;
     let (hits, _counters) = if directory.node_count() > 1 {
         let local_index = directory
             .nodes
@@ -626,7 +630,7 @@ fn debug_expand_search_impl(
         let fingerprint =
             compute_epoch_fingerprint(&identity, DISTANN_EPOCH_FINGERPRINT_V1).to_vec();
         let roster_spec = current_roster_spec();
-        let epoch = current_epoch();
+        let epoch = scan_epoch_val;
         let mut expander = RemoteNodeExpander {
             local: make_local(),
             placement: &directory,

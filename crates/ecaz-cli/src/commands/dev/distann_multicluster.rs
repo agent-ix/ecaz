@@ -333,6 +333,15 @@ async fn drive_fixture(
     let (qual_line, qual_ok) = qual_correctness_drill(psql, socket_dir, coord_port, &roster, args).await;
     crate::ecaz_println!("[distann-multicluster] {qual_line}");
 
+    // FR-082 published-epoch read consumption: reads must source the epoch from
+    // the persisted manifest (`active_epoch`), not the session GUC. Proven by a
+    // coordinator-only publish (breaks scans via fingerprint mismatch — only
+    // possible if reads consume active_epoch) vs a coordinated all-node publish
+    // (swaps the epoch; scans match the baseline again).
+    let (fr082_line, fr082_ok) =
+        fr082_published_epoch_drill(psql, socket_dir, nodes, &roster, args).await;
+    crate::ecaz_println!("[distann-multicluster] {fr082_line}");
+
     // TC-042 fault matrix (NFR-020): each fault must make the multi-node query
     // ERROR (fail closed) — never a silent wrong or partial result — and a
     // post-recovery query must match the baseline (no false reject).
@@ -560,7 +569,7 @@ async fn drive_fixture(
     // background inserter mutating the coordinator's table. Every scan must
     // complete (return only expanded records; never a torn/half-applied read that
     // errors). A single failing session fails the drill.
-    let concurrency_ok = concurrency_drill(psql, socket_dir, coord_port, &roster, args).await?;
+    let concurrency_ok = concurrency_drill(psql, socket_dir, coord_port, nodes, &roster, args).await?;
     crate::ecaz_println!("[distann-multicluster] concurrency_scan_insert_epochswap pass={concurrency_ok}");
 
     // 7b. live retention gate (FR-082-AC-3): a scan held open (AccessShareLock)
@@ -611,6 +620,7 @@ async fn drive_fixture(
         "concurrency_scan_insert_epochswap pass={concurrency_ok}\n"
     ));
     summary.push_str(&format!("{qual_line}\n"));
+    summary.push_str(&format!("{fr082_line}\n"));
     summary.push_str(&format!("live_retention_gate pass={retention_ok}\n"));
     summary.push_str(&format!(
         "ac5_frozen_vector_after_vacuum_reuse pass={frozen_ok}\n"
@@ -634,6 +644,9 @@ async fn drive_fixture(
     }
     if !qual_ok {
         bail!("qual correctness FAILED: multi-node WHERE+LIMIT result differs from single-node");
+    }
+    if !fr082_ok {
+        bail!("FR-082 published-epoch read consumption FAILED: {fr082_line}");
     }
     if !retention_ok {
         bail!("live retention gate FAILED: retire not gated by an in-flight scan, or blocked after drain");
@@ -737,6 +750,78 @@ async fn co_placement_drift_drill(
         co_placement_drift_case(psql, socket_dir, coord_port, roster, nodes, args, args.nodes - 1)
             .await;
     coord && remote
+}
+
+/// FR-082 published-epoch read-consumption drill. Reads must source the scan
+/// epoch from the persisted manifest (`active_epoch`), not the session GUC — so a
+/// `publish` actually changes what queries see. Proven in three steps against the
+/// replicated `dm`:
+///
+///   A. baseline multi-node scan at the built-in published epoch (1) succeeds;
+///   B. publish epoch 2 on the COORDINATOR ONLY ⇒ its fingerprint no longer
+///      matches the owners' (still epoch 1) ⇒ the scan ERRORS. This can only
+///      happen if reads consume `active_epoch` (the GUC is unchanged throughout);
+///   C. publish epoch 2 on EVERY node ⇒ the epoch swaps atomically and the scan
+///      succeeds again with the same top-k as the baseline.
+///
+/// Restores epoch 1 on all nodes so later drills see the default state. Returns
+/// (summary, pass).
+async fn fr082_published_epoch_drill(
+    psql: &Path,
+    socket_dir: &Path,
+    nodes: &[Node],
+    roster: &str,
+    args: &LocalMultinodePg18Args,
+) -> (String, bool) {
+    let coord_port = nodes[0].port;
+    // Note: no `ec_distann.epoch` is set — reads must ignore the GUC and use the
+    // published manifest epoch.
+    let scan = format!(
+        "SET enable_seqscan=off; SET ec_distann.roster='{roster}'; SET ec_distann.local_node_id=1; \
+         SELECT id FROM dm ORDER BY embedding <#> (SELECT source FROM dm WHERE id=1) LIMIT {};",
+        args.top_k
+    );
+    let ids = |out: &str| -> Vec<i64> {
+        let mut v: Vec<i64> = out.lines().filter_map(|l| l.trim().parse().ok()).collect();
+        v.sort_unstable();
+        v
+    };
+    let publish = |port: u16, epoch: i64| {
+        let sql = format!("SELECT ec_distann_publish_epoch('dm_idx'::regclass, {epoch});");
+        async move { run_psql_file(psql, socket_dir, port, &sql).await }
+    };
+
+    // A. baseline at the built-in published epoch.
+    let base_out = capture_psql_allow_error(psql, socket_dir, coord_port, &scan).await;
+    let base_ids = ids(&base_out);
+    let base_ok = !query_errored(&base_out) && !base_ids.is_empty();
+
+    // B. coordinator-only publish of epoch 2 ⇒ mismatch ⇒ scan errors.
+    let _ = publish(coord_port, 2).await;
+    let skew_out = capture_psql_allow_error(psql, socket_dir, coord_port, &scan).await;
+    let skew_errored = query_errored(&skew_out);
+
+    // C. publish epoch 2 on every node ⇒ swap ⇒ scan matches the baseline.
+    for node in nodes {
+        let _ = publish(node.port, 2).await;
+    }
+    let swap_out = capture_psql_allow_error(psql, socket_dir, coord_port, &scan).await;
+    let swap_ids = ids(&swap_out);
+    let swap_ok = !query_errored(&swap_out) && swap_ids == base_ids;
+
+    // Restore epoch 1 on every node for the later drills.
+    for node in nodes {
+        let _ = publish(node.port, 1).await;
+    }
+
+    let pass = base_ok && skew_errored && swap_ok;
+    (
+        format!(
+            "fr082_published_epoch base_ok={base_ok} coord_only_publish_errored={skew_errored} \
+             all_publish_swap_ok={swap_ok} pass={pass}"
+        ),
+        pass,
+    )
 }
 
 /// NFR-020 mid-delete / lost-tombstone-write drill: attempt a tombstone write via
@@ -990,6 +1075,7 @@ async fn concurrency_drill(
     psql: &Path,
     socket_dir: &Path,
     coord_port: u16,
+    nodes: &[Node],
     roster: &str,
     args: &LocalMultinodePg18Args,
 ) -> Result<bool> {
@@ -1013,6 +1099,14 @@ async fn concurrency_drill(
             for _ in 0..iters {
                 let out = run_capture(&psql, &socket_dir, coord_port, &sql).await;
                 if !out.status_ok {
+                    // A scan that races an in-progress coordinated epoch swap may
+                    // fail-closed with an epoch mismatch (FR-082-AC-2, one epoch per
+                    // scan) — that is a correct outcome, not corruption. Any OTHER
+                    // error (torn read, crash, wrong-result path) fails the drill.
+                    let stderr = out.stderr.to_lowercase();
+                    if stderr.contains("epoch") && stderr.contains("mismatch") {
+                        continue;
+                    }
                     return Err(out.stderr);
                 }
             }
@@ -1037,29 +1131,38 @@ async fn concurrency_drill(
             Ok(())
         }));
     }
-    // Epoch-swap-under-load (FR-082-AC-1): churn the coordinator's epoch lifecycle
-    // (publish new epochs) while scans run. The metadata-page publish write must
-    // not corrupt concurrent scans reading the metadata; end back at epoch 1.
+    // Epoch-swap-under-load (FR-082-AC-1 / one-epoch-per-scan): perform COORDINATED
+    // epoch publishes across EVERY node while scans run. Publishing on all nodes
+    // keeps the cluster at a single consistent epoch (all-1 or all-2) so each
+    // in-flight scan returns wholly from one published epoch — a scan that races a
+    // swap surfaces a retriable epoch mismatch and restarts under the refreshed
+    // epoch (FR-082-AC-2), never a torn result. The metadata-page publish write
+    // must not corrupt concurrent scans reading the metadata; end back at epoch 1.
     {
         let (psql, socket_dir) = (psql.to_path_buf(), socket_dir.to_path_buf());
+        let ports: Vec<u16> = nodes.iter().map(|n| n.port).collect();
         tasks.push(tokio::spawn(async move {
             for i in 0..iters {
                 let epoch = if i % 2 == 0 { 2 } else { 1 };
                 let sql = format!(
                     "SELECT ec_distann_publish_epoch('dm_idx'::regclass::oid, {epoch});"
                 );
-                let out = run_capture(&psql, &socket_dir, coord_port, &sql).await;
-                if !out.status_ok {
-                    return Err(out.stderr);
+                for &port in &ports {
+                    let out = run_capture(&psql, &socket_dir, port, &sql).await;
+                    if !out.status_ok {
+                        return Err(out.stderr);
+                    }
                 }
             }
-            let _ = run_capture(
-                &psql,
-                &socket_dir,
-                coord_port,
-                "SELECT ec_distann_publish_epoch('dm_idx'::regclass::oid, 1);",
-            )
-            .await;
+            for &port in &ports {
+                let _ = run_capture(
+                    &psql,
+                    &socket_dir,
+                    port,
+                    "SELECT ec_distann_publish_epoch('dm_idx'::regclass::oid, 1);",
+                )
+                .await;
+            }
             Ok(())
         }));
     }
