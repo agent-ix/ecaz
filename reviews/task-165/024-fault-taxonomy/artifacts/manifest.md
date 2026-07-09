@@ -20,8 +20,33 @@ ecaz dev distann-multicluster local-multinode-pg18 \
 
 ## What changed vs packet 023
 
-Extends the TC-042 fault matrix from **6 → 9** drills, closing three NFR-020
-taxonomy gaps flagged in the packet-021 review:
+Extends the TC-042 fault matrix from **6 → 12** drills, closing **all six**
+NFR-020 taxonomy cases flagged in the packet-021 review (remote statement
+timeout, hop-round failure mid-beam, missing node record, missing heap
+row/co-placement drift, mid-insert failure, mid-delete failure). Three narrow
+debug fault-injection GUCs were added (all off by default; each adds only a GUC
++ params field, no SQL): `ec_distann.debug_fail_hop_round`,
+`ec_distann.debug_missing_node_record`, `ec_distann.debug_fail_insert`,
+`ec_distann.debug_fail_tombstone_write`. The extension `.so` was swapped to the
+debug build for each run and reverted to the shared release build afterward.
+
+New cases:
+
+-1. **missing_node_record** (FR-079 case c) — the local expander raises
+    `OwnedRecordMissing` on its first expansion; the scan errors (tagged
+    `missing node record`), never silently under-returns.
+-1. **mid_insert_failure** (FR-083 fold path, TC-043) — `graph_insert_record`
+    errors after staging the node + directory pages but before publishing
+    metadata; on an isolated table, the aborting statement rolls the staged pages
+    back and a post-fold scan is byte-identical to the pre-fold scan
+    (`before_n=10 after_n=10 consistent=true`).
+-1. **mid_delete_lost_tombstone_no_resurrect** (NFR-020 mid-delete) —
+    `apply_record_writes` WAL-logs the tombstone flag flip then errors. The caller
+    sees an error, and because the tombstone is a MONOTONIC set and PostgreSQL
+    does not undo WAL-logged index-page writes on abort, the record is deleted and
+    STAYS deleted (stable across re-reads, excluded from ANN scans) — the safe,
+    non-resurrecting direction NFR-020 requires. (The initial drill asserted
+    rollback-to-live; corrected after observing the monotonic-persist behavior.)
 
 0. **hop_round_failure_mid_beam** — a narrow debug GUC
    (`ec_distann.debug_fail_hop_round`, default -1/off) makes the orchestrated
@@ -66,6 +91,12 @@ taxonomy gaps flagged in the packet-021 review:
 - `fault_drill remote_statement_timeout pass=true`
 - `fault_drill hop_round_failure_mid_beam pass=true`
 - (stdout) `hop_round_failure_mid_beam DIAG errored=true mid_beam=true`
+- `fault_drill missing_node_record pass=true`
+- (stdout) `missing_node_record DIAG errored=true tagged=true`
+- `fault_drill mid_delete_lost_tombstone_no_resurrect pass=true`
+- (stdout) `mid_delete_lost_tombstone DIAG ... errored=true stable_tombstoned=true excluded_from_scan=true pass=true`
+- `fault_drill mid_insert_failure_rolls_back pass=true`
+- (stdout) `mid_insert_failure DIAG fold_errored=true before_n=10 after_n=10 consistent=true pass=true`
 - `fault_drill missing_heap_row_co_placement_drift pass=true`
 - (stdout) `co_placement_drift[owner=0] target_id=4 arm=correct_complete multi_n=10 single_n=10 pass=true`
 - (stdout) `co_placement_drift[owner=2] target_id=3 arm=correct_complete multi_n=10 single_n=10 pass=true`
@@ -73,12 +104,14 @@ taxonomy gaps flagged in the packet-021 review:
 - `qual_correctness single_n=10 multi_n=10 mismatch=0 pass=true`
 - `recovery RECALL_RESULT n_queries=50 identical=50 mismatched_ids=0 recovered=true`
 - `disjoint_shard identical_after_prune=true per_node_rows[n1:2000->647 n2:2000->639 n3:2000->714]`
-- GATE PASS: recall identical; 9 faults NFR-020-compliant; recovery clean.
+- GATE PASS: recall identical; 12 faults NFR-020-compliant; recovery clean.
 
-## Remaining NFR-020 taxonomy gaps (not in this packet)
+## NFR-020 taxonomy coverage
 
-Still open from the reviewer's list: `missing_node_record` and
-`mid-insert failure` (FR-083 insert path). `mid-delete failure` (lost remote
-tombstone → row must not resurrect) is partially exercised by the co-placement
-drift + AC-5 frozen-vector drills but not yet as a dedicated lost-tombstone-write
-injection.
+All six of the reviewer's packet-021 named cases are now drilled and green, plus
+the original six, for 12 total. This is the "100% drill pass across the taxonomy"
+acceptance criterion for TC-042's multinode fault matrix. Note the
+distributed-delete *routing* (coordinator → owner tombstone) is still a later M3
+wire-up (dml.rs); the mid-delete drill exercises the owner endpoint
+(`apply_record_writes`) directly, which is the FR-083 write contract's failure
+surface.
