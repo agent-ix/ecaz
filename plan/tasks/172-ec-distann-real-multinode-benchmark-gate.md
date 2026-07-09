@@ -30,6 +30,16 @@ Produce a release-build `ecaz bench suite` benchmark packet for the real
 - distributed-process telemetry detailed enough to debug, optimize, and model
   larger deployments.
 
+The suite must support two execution modes:
+
+- **benchmark mode**: low-overhead gate mode for recall, latency, throughput,
+  storage, and load/build. It captures only cheap counters needed to prove the
+  distributed path was engaged and to label the run.
+- **full metrics mode**: instrumentation-heavy diagnostic mode for attribution,
+  debugging, and scaling estimates. Its latency numbers are diagnostic and must
+  not be used as the primary product latency gate unless the packet also proves
+  instrumentation overhead is negligible.
+
 The result must explicitly compare distributed `ec_distann` against the
 single-instance `ec_distann` control on the same corpus/query/commit, and may
 reuse Task 166 comparator AMs only if the commit, corpus, host, and protocol are
@@ -65,10 +75,13 @@ path before adding network/instance-placement variables.
 - Emit structured distributed telemetry, not only pass/fail logs. The suite
   runner should collect these as normalized JSONL rows and packet-local logs so
   follow-up optimization work can attribute costs without re-running the packet.
+- Keep full telemetry optional at invocation time. The default gate run should
+  be benchmark mode; full metrics mode should be enabled by an explicit suite
+  option/config field and write separate artifacts/result rows.
 
 ## Distributed Telemetry Requirements
 
-The benchmark must capture per-scale and per-sweep aggregate metrics for the
+Full metrics mode must capture per-scale and per-sweep aggregate metrics for the
 distributed process, and either full per-query rows or a documented sampled
 per-query trace. At minimum:
 
@@ -92,6 +105,16 @@ per-query trace. At minimum:
 These metrics should be emitted by `ecaz bench suite` as first-class result rows
 or linked packet-local JSONL artifacts. Grepping PostgreSQL logs manually is not
 acceptable as the primary telemetry path.
+
+Benchmark mode should still emit enough low-overhead fields to validate that it
+used the distributed path: roster hash/spec label, non-empty remote owner count,
+remote expand call count, remote materialize call count, and remote-owned result
+row count. If those fields are zero or absent, the latency/recall run is invalid.
+
+The packet must include a small overhead audit: run one representative scale and
+sweep point in both benchmark mode and full metrics mode, then report the
+instrumentation overhead. This audit is for interpreting diagnostics; it must
+not replace the lean benchmark-mode gate rows.
 
 ## Throughput and Scaling Analysis
 
@@ -126,8 +149,9 @@ Artifacts:
 - per-scale recall, latency, storage, and load logs;
 - throughput/concurrency logs;
 - node startup logs and roster manifest;
-- remote-engagement audit log;
-- distributed telemetry JSONL / trace artifact;
+- benchmark-mode remote-engagement audit log;
+- full-metrics-mode distributed telemetry JSONL / trace artifact;
+- instrumentation overhead audit;
 - larger-scale capacity estimate markdown or verdict section;
 - storage summation log with per-node and total bytes;
 - final verdict markdown.
@@ -151,6 +175,7 @@ benchmark packet must use the suite runner.
 | query mode | distributed roster active |
 | sweep | `ec_distann.top_k` default sweep `[16,32,64,100,200]` unless changed by profile registry |
 | concurrency | at least 1, 2, 4, 8, 16 for throughput unless resource-limited |
+| modes | benchmark mode for gate rows; full metrics mode for attribution rows |
 | metrics | recall, latency, throughput, storage, load/build, remote engagement, distributed telemetry |
 
 ## Acceptance Criteria
@@ -178,6 +203,9 @@ benchmark packet must use the suite runner.
 8. The verdict includes a measured throughput curve and a stated scaling model
    for 1m and 10m rows, or explicitly records why the current telemetry cannot
    support such an estimate.
+9. Primary recall/latency/throughput verdicts are taken from benchmark mode, not
+   full metrics mode. Full metrics mode is separately labeled, its overhead is
+   measured, and its rows are used for attribution and modeling.
 
 ## Non-Goals
 
