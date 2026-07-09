@@ -13,19 +13,23 @@ use std::ptr::NonNull;
 
 use pgrx::{pg_extern, pg_sys};
 
-use crate::am::ec_diskann::write_data_pages;
+use crate::am::ec_diskann::{
+    fetch_heap_source_vector, source_inner_product_distance, write_data_pages,
+};
 use crate::am::{robust_prune, Candidate};
 use crate::storage::buffer_guard::LockedBufferGuard;
 use crate::storage::page::{DataPageChain, ItemPointer};
 use crate::storage::relation::{main_fork_block_count_handle, RelationHandle};
-use crate::storage::relation_guard::IndexRelationGuard;
+use crate::storage::relation_guard::{HeapRelationGuard, IndexRelationGuard};
+use crate::storage::slot_guard::TupleTableSlotGuard;
 use crate::storage::wal;
 
 use super::ambuild::{
     overwrite_metadata_page_handle, read_metadata_from_index_handle, stage_directory_chain,
 };
 use super::options::NeighborCodeFormat;
-use super::quantizer::{metadata_code_len, DistannCodecBinding};
+use super::page::DistannMetadataPage;
+use super::quantizer::{metadata_code_len, DistannCodecBinding, DistannPreparedQuery};
 use super::reader::{
     directory_lookup, read_delta_chain, read_directory_from_relation,
     read_head_samples_from_relation, read_raw_tuple_bytes_from_relation,
@@ -269,6 +273,103 @@ pub(super) fn build_insert_node_tuple(
 ///
 /// # Safety
 /// `index_relation` is a live index relation opened for write.
+/// Greedy best-first graph descent to find an inserted node's true nearest
+/// neighbors over the PERSISTED graph. This replaces the old head-sample-only
+/// candidate set, which collapsed fold recall at scale (packet 167-005: the
+/// fixed `head_index_cap` sample is too small a fraction of a 50k+ graph, so
+/// folded nodes got poor forward edges). Uses the head samples as entry points,
+/// then walks node records' neighbor edges, reading each candidate's co-placed
+/// heap vector for exact distance, bounded by `visit_cap` expansions. Returns
+/// the visited pool as robust_prune candidates.
+#[allow(clippy::too_many_arguments)]
+unsafe fn greedy_insert_candidates(
+    handle: RelationHandle,
+    heap_relation: pg_sys::Relation,
+    snapshot: pg_sys::Snapshot,
+    slot: *mut pg_sys::TupleTableSlot,
+    source_attnum: i32,
+    metadata: &DistannMetadataPage,
+    directory: &[(u64, ItemPointer)],
+    graph_degree_r: u16,
+    code_len: usize,
+    query: &[f32],
+    entry: &[(u64, Vec<f32>)],
+    beam_cap: usize,
+    visit_cap: usize,
+    pool_size: usize,
+) -> Result<Vec<DistannForwardCandidate>, String> {
+    use std::collections::HashSet;
+    // Code-based best-first traversal (the scan's FR-081 metric): the walk scores
+    // neighbors from each node record's EMBEDDED codes (no heap reads), and only
+    // the final `pool_size` candidates get an exact co-placed-vector read for
+    // robust_prune. Grouped_pq is rejected earlier, so codebooks are None here.
+    let prepared = DistannPreparedQuery::prepare(metadata, None, query)?;
+    // beam entries: (approx distance, vec_id, expanded?)
+    let mut beam: Vec<(f32, u64, bool)> = entry
+        .iter()
+        .map(|(id, vector)| (source_inner_product_distance(query, vector), *id, false))
+        .collect();
+    let mut seen: HashSet<u64> = entry.iter().map(|(id, _)| *id).collect();
+    let mut visits = 0usize;
+    while visits < visit_cap {
+        beam.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let Some(i) = beam.iter().position(|(_, _, expanded)| !expanded) else {
+            break;
+        };
+        beam[i].2 = true;
+        let vid = beam[i].1;
+        visits += 1;
+        let Some(tid) = directory_lookup(directory, vid) else {
+            continue;
+        };
+        let raw = read_raw_tuple_bytes_from_relation(handle, tid, "ec_distann insert descent")?;
+        let node = DistannNodeTuple::decode(&raw, graph_degree_r, code_len)?;
+        let ncount = usize::from(node.neighbor_count);
+        if ncount == 0 {
+            continue;
+        }
+        let mut nb_dists = vec![0.0_f32; ncount];
+        prepared.score_dists_batch(&node.neighbor_codes, code_len, ncount, &mut nb_dists)?;
+        for (slot_idx, &nb) in node.neighbor_vec_ids.iter().take(ncount).enumerate() {
+            if nb == 0 || !seen.insert(nb) {
+                continue;
+            }
+            beam.push((nb_dists[slot_idx], nb, false));
+        }
+        // Keep the beam bounded so a hub node cannot blow it up.
+        if beam.len() > beam_cap {
+            beam.sort_by(|a, b| a.0.total_cmp(&b.0));
+            beam.truncate(beam_cap);
+        }
+    }
+    // Final pool: exact co-placed vectors for robust_prune, best-by-code first.
+    beam.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let mut candidates = Vec::with_capacity(pool_size.min(beam.len()));
+    for (_, vid, _) in beam.iter().take(pool_size) {
+        let Some(tid) = directory_lookup(directory, *vid) else {
+            continue;
+        };
+        let raw = read_raw_tuple_bytes_from_relation(handle, tid, "ec_distann insert pool")?;
+        let node = DistannNodeTuple::decode(&raw, graph_degree_r, code_len)?;
+        if node.tombstoned {
+            continue;
+        }
+        let vector = fetch_heap_source_vector(
+            heap_relation,
+            snapshot,
+            slot,
+            source_attnum,
+            node.heap_tid,
+            "ec_distann insert pool vector",
+        )?;
+        candidates.push(DistannForwardCandidate {
+            vec_id: *vid,
+            source_vector: vector,
+        });
+    }
+    Ok(candidates)
+}
+
 pub(super) unsafe fn graph_insert_record(
     index_relation: pg_sys::Relation,
     new_vec_id: u64,
@@ -304,31 +405,7 @@ pub(super) unsafe fn graph_insert_record(
     let binding = DistannCodecBinding::prepare(format, &[], dimensions, metadata.seed)?;
     let new_code = binding.encode(new_source_vector);
 
-    // 2. Candidate search over the head-sample region → 3. forward selection.
-    let samples = read_head_samples_from_relation(
-        handle,
-        metadata.head_sample_head,
-        dimensions,
-        metadata.head_index_cap as usize,
-    )?;
-    let sample_pairs: Vec<(u64, Vec<f32>)> = samples
-        .into_iter()
-        .filter(|s| s.vec_id != new_vec_id)
-        .map(|s| (s.vec_id, s.vector))
-        .collect();
-    let candidates = rank_insert_candidates(
-        new_source_vector,
-        &sample_pairs,
-        usize::from(metadata.build_list_size_l),
-    )?;
-    let forward_ids = select_insert_forward_neighbors(
-        new_source_vector,
-        &candidates,
-        metadata.alpha,
-        usize::from(graph_degree_r),
-    )?;
-
-    // 4. Read each forward neighbor's record for its embedded search code.
+    // Directory first — the descent and the collision guard both need it.
     let directory =
         read_directory_from_relation(handle, metadata.directory_head, metadata.node_count as usize)?;
     // 167-003-P2: reject a vec_id collision BEFORE appending. The directory is a
@@ -341,6 +418,56 @@ pub(super) unsafe fn graph_insert_record(
              (duplicate insert rejected)"
         ));
     }
+
+    // 2. Candidate search: greedy graph descent from the head-sample entry set
+    //    over the persisted graph (167-005 fix — the fixed head-sample region was
+    //    too small a fraction of a large graph, collapsing fold recall), then
+    //    3. robust-prune to R.
+    let samples = read_head_samples_from_relation(
+        handle,
+        metadata.head_sample_head,
+        dimensions,
+        metadata.head_index_cap as usize,
+    )?;
+    let entry: Vec<(u64, Vec<f32>)> = samples
+        .into_iter()
+        .filter(|s| s.vec_id != new_vec_id)
+        .map(|s| (s.vec_id, s.vector))
+        .collect();
+    // Open the base heap for exact co-placed-vector reads during the descent.
+    let heap_oid = (*(*index_relation).rd_index).indrelid;
+    let heap_guard = HeapRelationGuard::try_access_share(heap_oid)
+        .ok_or_else(|| "ec_distann insert could not open the base heap relation".to_owned())?;
+    let heap_relation = heap_guard.as_ptr();
+    let source_attnum = super::routine::indexed_ecvector_attnum(index_relation)?;
+    let snapshot = pg_sys::GetActiveSnapshot();
+    let slot = TupleTableSlotGuard::single_for_heap(heap_relation)
+        .ok_or_else(|| "ec_distann insert could not build a heap slot".to_owned())?;
+    let list_size = usize::from(metadata.build_list_size_l).max(64);
+    let candidates = greedy_insert_candidates(
+        handle,
+        heap_relation,
+        snapshot,
+        slot.as_ptr(),
+        source_attnum,
+        &metadata,
+        &directory,
+        graph_degree_r,
+        code_len,
+        new_source_vector,
+        &entry,
+        list_size.max(128),
+        list_size,
+        list_size,
+    )?;
+    let forward_ids = select_insert_forward_neighbors(
+        new_source_vector,
+        &candidates,
+        metadata.alpha,
+        usize::from(graph_degree_r),
+    )?;
+
+    // 4. Read each forward neighbor's record for its embedded search code.
     let mut forward = Vec::with_capacity(forward_ids.len());
     let mut forward_tids = Vec::with_capacity(forward_ids.len());
     for &fid in &forward_ids {
@@ -365,12 +492,15 @@ pub(super) unsafe fn graph_insert_record(
     let new_node_tid = append_node_record(handle, node.encode(graph_degree_r, code_len)?)?;
 
     // 6. Backlinks on each forward neighbor: full-reprune from the neighbor's
-    //    vantage using head-sample source vectors, so a folded node earns an
-    //    incoming edge from the built graph (evicting the neighbor's worst edge
-    //    when at capacity) rather than being skipped. Head samples cover the
-    //    built nodes, so their source vectors are available for the reprune.
-    let source_map: std::collections::HashMap<u64, Vec<f32>> =
-        sample_pairs.iter().cloned().collect();
+    //    vantage, so a folded node earns an incoming edge from the built graph
+    //    (evicting the neighbor's worst edge when at capacity) rather than being
+    //    skipped. Source vectors come from the greedy descent's visited pool plus
+    //    the head-sample entry set — a superset of the old head-sample-only map.
+    let source_map: std::collections::HashMap<u64, Vec<f32>> = candidates
+        .iter()
+        .map(|c| (c.vec_id, c.source_vector.clone()))
+        .chain(entry.iter().cloned())
+        .collect();
     for &tid in &forward_tids {
         add_backlink(
             handle,
