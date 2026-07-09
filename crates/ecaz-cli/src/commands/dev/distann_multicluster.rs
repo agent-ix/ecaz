@@ -505,6 +505,11 @@ async fn drive_fixture(
     }
     crate::ecaz_println!("[distann-multicluster] recovery {recovery_line} recovered={recovered}");
 
+    // Disjoint-shard demonstration (destructive — prunes to owned shards; runs
+    // last, after the replicated-corpus recovery check).
+    let (disjoint_line, disjoint_ok) = disjoint_shard_drill(psql, socket_dir, nodes, &roster, args).await;
+    crate::ecaz_println!("[distann-multicluster] {disjoint_line}");
+
     // Persist the evidence.
     let mut summary = format!(
         "distann-multinode fixture\nnodes={}\nrows={}\ndim={}\ngraph_degree={}\nqueries={}\ntop_k={}\nroster={}\n{}\n",
@@ -522,6 +527,7 @@ async fn drive_fixture(
     ));
     summary.push_str(&format!("{suite_line}\n"));
     summary.push_str(&format!("recovery {recovery_line} recovered={recovered}\n"));
+    summary.push_str(&format!("{disjoint_line}\n"));
     let summary_path = log_dir.join("distann-multinode-summary.log");
     fs::write(&summary_path, &summary)
         .wrap_err_with(|| format!("writing {}", summary_path.display()))?;
@@ -553,6 +559,9 @@ async fn drive_fixture(
     }
     if !recovered {
         bail!("recovery FAILED: post-fault query did not match baseline: {recovery_line}");
+    }
+    if !disjoint_ok {
+        bail!("disjoint-shard FAILED: multi-node result changed after pruning to owned shards");
     }
     crate::ecaz_println!(
         "[distann-multicluster] GATE PASS: recall identical; {} faults fail-closed; recovery clean",
@@ -684,6 +693,89 @@ async fn concurrency_drill(
         }
     }
     Ok(ok)
+}
+
+/// True disjoint-shard demonstration: prune each node's replicated corpus to only
+/// the heap rows it OWNS (`owning_node`), then prove the multi-node top-k result
+/// signature is byte-identical to the pre-prune (replicated) result — i.e. the
+/// distributed read is correct with genuinely disjoint per-node storage, not a
+/// full replica. Returns a report line; fatal if the signature changes.
+async fn disjoint_shard_drill(
+    psql: &Path,
+    socket_dir: &Path,
+    nodes: &[Node],
+    roster: &str,
+    args: &LocalMultinodePg18Args,
+) -> (String, bool) {
+    let coord_port = nodes[0].port;
+    // Operate on benchgate_corpus (a clean, cross-node-consistent copy the suite
+    // gate created before the mutating drills). Save the query vectors first so
+    // they survive pruning of non-owned coordinator rows.
+    let setup = run_capture(
+        psql,
+        socket_dir,
+        coord_port,
+        &format!(
+            "DROP TABLE IF EXISTS dj_queries; \
+             CREATE TABLE dj_queries AS SELECT id AS qid, source AS v FROM benchgate_corpus WHERE id <= {};",
+            args.queries
+        ),
+    )
+    .await;
+    if !setup.status_ok {
+        return ("disjoint_shard=SKIPPED(no benchgate_corpus)".to_owned(), false);
+    }
+    // Order-stable signature of the multi-node top-k over the saved query set.
+    let sig_sql = format!(
+        "SET enable_seqscan=off; SET ec_distann.roster='{roster}'; SET ec_distann.local_node_id=1; SET ec_distann.epoch=1; \
+         SELECT md5(string_agg(id::text, ',' ORDER BY qid, id)) FROM ( \
+           SELECT q.qid, r.id FROM dj_queries q \
+           CROSS JOIN LATERAL (SELECT id FROM benchgate_corpus ORDER BY embedding <#> q.v LIMIT {k}) r) t;",
+        k = args.top_k
+    );
+    let sig = |out: String| out.lines().map(str::trim).find(|l| l.len() == 32).unwrap_or("").to_owned();
+    let before = sig(capture_psql_allow_error(psql, socket_dir, coord_port, &sig_sql).await);
+
+    // Prune each node to its owned shard: delete the heap rows for vec_ids this
+    // node does not own, then VACUUM (ambulkdelete tombstones their records).
+    let n = args.nodes;
+    let mut row_report = Vec::new();
+    for node in nodes {
+        let owner_idx = node.node_id - 1; // placement index = roster position
+        let before_rows = capture_psql_allow_error(psql, socket_dir, node.port, "SELECT count(*) FROM benchgate_corpus;")
+            .await
+            .lines().find_map(|l| l.trim().parse::<i64>().ok()).unwrap_or(-1);
+        let del = run_capture(
+            psql,
+            socket_dir,
+            node.port,
+            &format!(
+                "DELETE FROM benchgate_corpus WHERE ctid IN (\
+                   SELECT ('(' || heap_block || ',' || heap_offset || ')')::tid \
+                     FROM ec_distann_list_directory('benchgate_corpus_idx'::regclass::oid) \
+                    WHERE NOT is_tombstone AND ec_distann_owning_node(vec_id, {n}, 1) <> {owner_idx});"
+            ),
+        )
+        .await;
+        let vac = run_capture(psql, socket_dir, node.port, "VACUUM benchgate_corpus;").await;
+        if !del.status_ok || !vac.status_ok {
+            return ("disjoint_shard=SKIPPED(prune failed)".to_owned(), false);
+        }
+        let after_rows = capture_psql_allow_error(psql, socket_dir, node.port, "SELECT count(*) FROM benchgate_corpus;")
+            .await
+            .lines().find_map(|l| l.trim().parse::<i64>().ok()).unwrap_or(-1);
+        row_report.push(format!("n{}:{}->{}", node.node_id, before_rows, after_rows));
+    }
+
+    let after = sig(capture_psql_allow_error(psql, socket_dir, coord_port, &sig_sql).await);
+    let identical = !before.is_empty() && before == after;
+    (
+        format!(
+            "disjoint_shard identical_after_prune={identical} per_node_rows[{}]",
+            row_report.join(" ")
+        ),
+        identical,
+    )
 }
 
 /// Suite-driven recall gate (006-P1 letter): reuse the fixture corpus as a

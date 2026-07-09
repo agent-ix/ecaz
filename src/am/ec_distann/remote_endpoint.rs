@@ -52,6 +52,62 @@ use super::tuple::DistannNodeTuple;
 /// One wire response row (no `heap_tid` — see module docs).
 type ExpandRow = (i64, Option<f32>, bool, Vec<i64>, Vec<f32>);
 
+/// Directory-listing surface: enumerate every graph node's `(vec_id, heap ctid,
+/// tombstone)`. Lets operator tooling / the fixture identify which records a node
+/// owns (via `ec_distann_owning_node`) so a replicated build can be pruned to a
+/// true disjoint shard (drop the heap rows for non-owned vec_ids). Diagnostic —
+/// no epoch/ownership preflight.
+#[pg_extern(volatile, parallel_restricted)]
+fn ec_distann_list_directory(
+    index_regclass: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(vec_id, i64),
+        name!(heap_block, i64),
+        name!(heap_offset, i32),
+        name!(is_tombstone, bool),
+    ),
+> {
+    let rows = list_directory_impl(index_regclass).unwrap_or_else(|e| e.raise());
+    TableIterator::new(rows)
+}
+
+fn list_directory_impl(index_oid: pg_sys::Oid) -> Result<Vec<(i64, i64, i32, bool)>, DistannExpandError> {
+    let index_guard = IndexRelationGuard::try_access_share(index_oid)
+        .ok_or_else(|| "ec_distann_list_directory could not open the index relation".to_owned())?;
+    let handle = NonNull::new(index_guard.as_ptr())
+        .ok_or_else(|| "ec_distann_list_directory got a null index relation".to_owned())?;
+    let metadata = read_metadata_from_index_handle(handle)?;
+    if metadata.node_count == 0 || metadata.directory_head == ItemPointer::INVALID {
+        return Ok(Vec::new());
+    }
+    let directory =
+        read_directory_from_relation(handle, metadata.directory_head, metadata.node_count as usize)
+            .map_err(DistannExpandError::Internal)?;
+    let mut rows = Vec::with_capacity(directory.len());
+    for (vec_id, record_tid) in directory {
+        let raw = read_raw_tuple_bytes_from_relation(handle, record_tid, "ec_distann list directory")
+            .map_err(DistannExpandError::Internal)?;
+        let heap_tid = ItemPointer::decode(
+            &raw[DISTANN_NODE_HEAP_TID_OFFSET..DISTANN_NODE_HEAP_TID_OFFSET + 6],
+        )
+        .map_err(DistannExpandError::Internal)?;
+        let flags = u16::from_le_bytes(
+            raw[DISTANN_NODE_FLAGS_OFFSET..DISTANN_NODE_FLAGS_OFFSET + 2]
+                .try_into()
+                .expect("flags bytes"),
+        );
+        rows.push((
+            vec_id as i64,
+            i64::from(heap_tid.block_number),
+            i32::from(heap_tid.offset_number),
+            flags & DISTANN_FLAG_TOMBSTONE != 0,
+        ));
+    }
+    Ok(rows)
+}
+
 /// FR-078 ownership surface: the roster index that owns `vec_id` under a given
 /// node count and placement hash version. Exposed so operator tooling and the
 /// multinode fixture can bucket vec_ids by owner (e.g. to drive a distributed
