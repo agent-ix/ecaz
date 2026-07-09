@@ -1,0 +1,52 @@
+2026-07-09 08:50:44.050 PDT [1134072] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-07-09 08:50:44.053 PDT [1134072] LOG:  listening on Unix socket "/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets/.s.PGSQL.39711"
+2026-07-09 08:50:44.067 PDT [1134078] LOG:  database system was shut down at 2026-07-09 08:50:42 PDT
+2026-07-09 08:50:44.071 PDT [1134072] LOG:  database system is ready to accept connections
+2026-07-09 08:50:44.737 PDT [1134098] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-09 08:50:45.650 PDT [1134107] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 08:50:45.792 PDT [1134112] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-09 08:50:46.992 PDT [1134203] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 08:50:49.646 PDT [1134313] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 08:50:49.945 PDT [1134327] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 08:50:50.247 PDT [1134343] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 08:50:50.258 PDT [1134346] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 08:50:51.480 PDT [1134408] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 08:50:51.488 PDT [1134411] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 08:50:52.080 PDT [1134440] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 08:50:52.392 PDT [1134453] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 08:50:52.689 PDT [1134469] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 08:50:53.005 PDT [1134497] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 08:50:57.401 PDT [1134536] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 08:50:57.781 PDT [1134542] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 08:50:59.122 PDT [1134571] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 08:50:59.324 PDT [1134072] LOG:  received fast shutdown request
+2026-07-09 08:50:59.343 PDT [1134072] LOG:  aborting any active transactions
+2026-07-09 08:50:59.344 PDT [1134072] LOG:  background worker "logical replication launcher" (PID 1134081) exited with exit code 1
+2026-07-09 08:50:59.344 PDT [1134076] LOG:  shutting down
+2026-07-09 08:50:59.348 PDT [1134076] LOG:  checkpoint starting: shutdown immediate
+2026-07-09 08:50:59.478 PDT [1134076] LOG:  checkpoint complete: wrote 945 buffers (5.8%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 1 recycled; write=0.015 s, sync=0.097 s, total=0.134 s; sync files=136, longest=0.006 s, average=0.001 s; distance=17277 kB, estimate=17277 kB; lsn=0/2833A80, redo lsn=0/2833A80
+2026-07-09 08:50:59.487 PDT [1134072] LOG:  database system is shut down
+2026-07-09 09:04:46.779 PDT [1136485] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-07-09 09:04:46.783 PDT [1136485] LOG:  listening on Unix socket "/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets/.s.PGSQL.39711"
+2026-07-09 09:04:46.798 PDT [1136491] LOG:  database system was shut down at 2026-07-09 09:04:45 PDT
+2026-07-09 09:04:46.804 PDT [1136485] LOG:  database system is ready to accept connections
+2026-07-09 09:04:47.466 PDT [1136511] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-09 09:04:48.507 PDT [1136521] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-09 09:04:49.703 PDT [1136612] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:04:53.312 PDT [1136770] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:04:53.328 PDT [1136772] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:04:54.223 PDT [1136816] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:04:54.232 PDT [1136818] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:04:54.257 PDT [1136820] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:04:54.525 PDT [1136832] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:04:55.762 PDT [1136896] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:04:59.713 PDT [1136942] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:05:00.209 PDT [1136946] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:05:00.647 PDT [1136952] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:05:01.821 PDT [1136485] LOG:  received fast shutdown request
+2026-07-09 09:05:01.827 PDT [1136485] LOG:  aborting any active transactions
+2026-07-09 09:05:01.827 PDT [1136485] LOG:  background worker "logical replication launcher" (PID 1136494) exited with exit code 1
+2026-07-09 09:05:01.828 PDT [1136489] LOG:  shutting down
+2026-07-09 09:05:01.835 PDT [1136489] LOG:  checkpoint starting: shutdown immediate
+2026-07-09 09:05:02.036 PDT [1136489] LOG:  checkpoint complete: wrote 945 buffers (5.8%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 1 recycled; write=0.015 s, sync=0.164 s, total=0.209 s; sync files=136, longest=0.039 s, average=0.002 s; distance=17277 kB, estimate=17277 kB; lsn=0/2833A80, redo lsn=0/2833A80
+2026-07-09 09:05:02.051 PDT [1136485] LOG:  database system is shut down

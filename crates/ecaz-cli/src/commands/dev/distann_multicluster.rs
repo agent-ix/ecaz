@@ -320,6 +320,11 @@ async fn drive_fixture(
     // The byte-identical top-k gate above is strictly stronger.
     let suite_line = suite_recall_gate(psql, socket_dir, nodes, &roster, args).await;
     crate::ecaz_println!("[distann-multicluster] {suite_line}");
+    // 019-P1: a genuine recall regression fails the run (SKIPPED/INCONCLUSIVE are
+    // environment issues, not gate failures).
+    if suite_line.contains("pass=false") {
+        bail!("suite recall gate FAILED: {suite_line}");
+    }
 
     // Qual correctness (011/020-P1): a WHERE predicate on a NON-projected column
     // plus LIMIT. Multi-node must match single-node exactly — this exercises
@@ -736,12 +741,17 @@ async fn disjoint_shard_drill(
     if !setup.status_ok {
         return ("disjoint_shard=SKIPPED(no benchgate_corpus)".to_owned(), false);
     }
-    // Order-stable signature of the multi-node top-k over the saved query set.
+    // Signature over (id, EXACT DISTANCE) per query in a canonical (dist, id)
+    // order (021-P2): includes the distance — not just the id set — so a
+    // distance/recall change is caught, while the canonical order makes it
+    // deterministic (equal-distance tie order, which the scan does not guarantee
+    // and which is not a recall property, does not spuriously fail the drill).
     let sig_sql = format!(
         "SET enable_seqscan=off; SET ec_distann.roster='{roster}'; SET ec_distann.local_node_id=1; SET ec_distann.epoch=1; \
-         SELECT md5(string_agg(id::text, ',' ORDER BY qid, id)) FROM ( \
-           SELECT q.qid, r.id FROM dj_queries q \
-           CROSS JOIN LATERAL (SELECT id FROM benchgate_corpus ORDER BY embedding <#> q.v LIMIT {k}) r) t;",
+         SELECT md5(string_agg(qid || ':' || id || ':' || dist, ',' ORDER BY qid, dist, id)) FROM ( \
+           SELECT q.qid, r.id, (r.embedding <#> q.v)::float8 AS dist FROM dj_queries q \
+           CROSS JOIN LATERAL ( \
+             SELECT id, embedding FROM benchgate_corpus ORDER BY embedding <#> q.v LIMIT {k}) r) t;",
         k = args.top_k
     );
     let sig = |out: String| out.lines().map(str::trim).find(|l| l.len() == 32).unwrap_or("").to_owned();

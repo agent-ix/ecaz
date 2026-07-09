@@ -1,0 +1,81 @@
+2026-07-09 08:50:44.155 PDT [1134085] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-07-09 08:50:44.159 PDT [1134085] LOG:  listening on Unix socket "/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets/.s.PGSQL.39712"
+2026-07-09 08:50:44.171 PDT [1134091] LOG:  database system was shut down at 2026-07-09 08:50:43 PDT
+2026-07-09 08:50:44.178 PDT [1134085] LOG:  database system is ready to accept connections
+2026-07-09 08:50:45.051 PDT [1134104] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-09 08:50:45.926 PDT [1134114] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-09 08:50:47.735 PDT [1134217] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-09 08:50:48.017 PDT [1134221] ERROR:  [EC_EPOCH_MISMATCH] ec_distann_expand_nodes epoch fingerprint mismatch: caller epoch differs from this node's active epoch
+2026-07-09 08:50:48.017 PDT [1134221] STATEMENT:  SELECT vec_id, exact_dist, is_tombstone, neighbor_vec_ids, neighbor_code_dists FROM ec_distann_expand_nodes($1::text::regclass::oid, $2, $3::real[], $4::bigint[], $5)
+2026-07-09 08:50:48.144 PDT [1134221] ERROR:  [EC_EPOCH_MISMATCH] ec_distann_expand_nodes epoch fingerprint mismatch: caller epoch differs from this node's active epoch
+2026-07-09 08:50:48.144 PDT [1134221] STATEMENT:  SELECT vec_id, exact_dist, is_tombstone, neighbor_vec_ids, neighbor_code_dists FROM ec_distann_expand_nodes($1::text::regclass::oid, $2, $3::real[], $4::bigint[], $5)
+2026-07-09 08:50:48.161 PDT [1134223] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-09 08:50:48.476 PDT [1134229] ERROR:  relation "public.dm_idx" does not exist
+2026-07-09 08:50:48.476 PDT [1134229] STATEMENT:  SELECT vec_id, exact_dist, is_tombstone, neighbor_vec_ids, neighbor_code_dists FROM ec_distann_expand_nodes($1::text::regclass::oid, $2, $3::real[], $4::bigint[], $5)
+2026-07-09 08:50:48.608 PDT [1134231] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-09 08:50:48.732 PDT [1134085] LOG:  received fast shutdown request
+2026-07-09 08:50:48.737 PDT [1134085] LOG:  aborting any active transactions
+2026-07-09 08:50:48.738 PDT [1134085] LOG:  background worker "logical replication launcher" (PID 1134094) exited with exit code 1
+2026-07-09 08:50:48.738 PDT [1134089] LOG:  shutting down
+2026-07-09 08:50:48.742 PDT [1134089] LOG:  checkpoint starting: shutdown immediate
+2026-07-09 08:50:48.892 PDT [1134089] LOG:  checkpoint complete: wrote 790 buffers (4.8%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 1 recycled; write=0.013 s, sync=0.117 s, total=0.154 s; sync files=136, longest=0.007 s, average=0.001 s; distance=11215 kB, estimate=11215 kB; lsn=0/2248300, redo lsn=0/2248300
+2026-07-09 08:50:48.904 PDT [1134085] LOG:  database system is shut down
+2026-07-09 08:50:49.102 PDT [1134239] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-07-09 08:50:49.106 PDT [1134239] LOG:  listening on Unix socket "/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets/.s.PGSQL.39712"
+2026-07-09 08:50:49.119 PDT [1134245] LOG:  database system was shut down at 2026-07-09 08:50:48 PDT
+2026-07-09 08:50:49.125 PDT [1134239] LOG:  database system is ready to accept connections
+2026-07-09 08:50:49.946 PDT [1134326] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 08:50:50.564 PDT [1134364] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 08:50:51.177 PDT [1134395] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 08:50:51.780 PDT [1134426] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 08:50:51.787 PDT [1134423] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 08:50:52.092 PDT [1134444] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 08:50:56.925 PDT [1134533] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 08:50:59.526 PDT [1134239] LOG:  received fast shutdown request
+2026-07-09 08:50:59.542 PDT [1134239] LOG:  aborting any active transactions
+2026-07-09 08:50:59.543 PDT [1134239] LOG:  background worker "logical replication launcher" (PID 1134248) exited with exit code 1
+2026-07-09 08:50:59.543 PDT [1134243] LOG:  shutting down
+2026-07-09 08:50:59.546 PDT [1134243] LOG:  checkpoint starting: shutdown immediate
+2026-07-09 08:50:59.580 PDT [1134243] LOG:  checkpoint complete: wrote 485 buffers (3.0%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.006 s, sync=0.015 s, total=0.037 s; sync files=17, longest=0.006 s, average=0.001 s; distance=11733 kB, estimate=11733 kB; lsn=0/2DBDA38, redo lsn=0/2DBDA38
+2026-07-09 08:50:59.589 PDT [1134239] LOG:  database system is shut down
+2026-07-09 09:04:46.883 PDT [1136498] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-07-09 09:04:46.887 PDT [1136498] LOG:  listening on Unix socket "/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets/.s.PGSQL.39712"
+2026-07-09 09:04:46.901 PDT [1136504] LOG:  database system was shut down at 2026-07-09 09:04:46 PDT
+2026-07-09 09:04:46.906 PDT [1136498] LOG:  database system is ready to accept connections
+2026-07-09 09:04:47.777 PDT [1136513] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-09 09:04:48.366 PDT [1136517] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:04:48.643 PDT [1136523] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-09 09:04:50.446 PDT [1136626] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-09 09:04:50.729 PDT [1136630] ERROR:  [EC_EPOCH_MISMATCH] ec_distann_expand_nodes epoch fingerprint mismatch: caller epoch differs from this node's active epoch
+2026-07-09 09:04:50.729 PDT [1136630] STATEMENT:  SELECT vec_id, exact_dist, is_tombstone, neighbor_vec_ids, neighbor_code_dists FROM ec_distann_expand_nodes($1::text::regclass::oid, $2, $3::real[], $4::bigint[], $5)
+2026-07-09 09:04:50.854 PDT [1136630] ERROR:  [EC_EPOCH_MISMATCH] ec_distann_expand_nodes epoch fingerprint mismatch: caller epoch differs from this node's active epoch
+2026-07-09 09:04:50.854 PDT [1136630] STATEMENT:  SELECT vec_id, exact_dist, is_tombstone, neighbor_vec_ids, neighbor_code_dists FROM ec_distann_expand_nodes($1::text::regclass::oid, $2, $3::real[], $4::bigint[], $5)
+2026-07-09 09:04:50.870 PDT [1136632] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-09 09:04:51.189 PDT [1136638] ERROR:  relation "public.dm_idx" does not exist
+2026-07-09 09:04:51.189 PDT [1136638] STATEMENT:  SELECT vec_id, exact_dist, is_tombstone, neighbor_vec_ids, neighbor_code_dists FROM ec_distann_expand_nodes($1::text::regclass::oid, $2, $3::real[], $4::bigint[], $5)
+2026-07-09 09:04:51.325 PDT [1136640] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-09 09:04:51.449 PDT [1136498] LOG:  received fast shutdown request
+2026-07-09 09:04:51.453 PDT [1136498] LOG:  aborting any active transactions
+2026-07-09 09:04:51.454 PDT [1136498] LOG:  background worker "logical replication launcher" (PID 1136507) exited with exit code 1
+2026-07-09 09:04:51.454 PDT [1136502] LOG:  shutting down
+2026-07-09 09:04:51.458 PDT [1136502] LOG:  checkpoint starting: shutdown immediate
+2026-07-09 09:04:51.632 PDT [1136502] LOG:  checkpoint complete: wrote 790 buffers (4.8%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 1 recycled; write=0.014 s, sync=0.138 s, total=0.179 s; sync files=136, longest=0.010 s, average=0.002 s; distance=11215 kB, estimate=11215 kB; lsn=0/2248300, redo lsn=0/2248300
+2026-07-09 09:04:51.645 PDT [1136498] LOG:  database system is shut down
+2026-07-09 09:04:51.827 PDT [1136648] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-07-09 09:04:51.832 PDT [1136648] LOG:  listening on Unix socket "/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets/.s.PGSQL.39712"
+2026-07-09 09:04:51.846 PDT [1136654] LOG:  database system was shut down at 2026-07-09 09:04:51 PDT
+2026-07-09 09:04:51.852 PDT [1136648] LOG:  database system is ready to accept connections
+2026-07-09 09:04:53.011 PDT [1136757] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:04:53.595 PDT [1136785] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:04:53.626 PDT [1136787] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:04:53.928 PDT [1136805] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:04:54.841 PDT [1136851] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:04:55.505 PDT [1136885] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:05:01.518 PDT [1136981] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 09:05:02.123 PDT [1136648] LOG:  received fast shutdown request
+2026-07-09 09:05:02.128 PDT [1136648] LOG:  aborting any active transactions
+2026-07-09 09:05:02.129 PDT [1136648] LOG:  background worker "logical replication launcher" (PID 1136657) exited with exit code 1
+2026-07-09 09:05:02.129 PDT [1136652] LOG:  shutting down
+2026-07-09 09:05:02.133 PDT [1136652] LOG:  checkpoint starting: shutdown immediate
+2026-07-09 09:05:02.184 PDT [1136652] LOG:  checkpoint complete: wrote 485 buffers (3.0%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.012 s, sync=0.021 s, total=0.055 s; sync files=17, longest=0.007 s, average=0.002 s; distance=11746 kB, estimate=11746 kB; lsn=0/2DC0E48, redo lsn=0/2DC0E48
+2026-07-09 09:05:02.197 PDT [1136648] LOG:  database system is shut down

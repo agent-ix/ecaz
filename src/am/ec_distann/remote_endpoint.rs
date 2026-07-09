@@ -45,12 +45,42 @@ use super::routine::indexed_ecvector_attnum;
 use super::scan::DistannNodeExpander;
 use super::tuple::{
     DISTANN_FLAG_TOMBSTONE, DISTANN_NODE_FLAGS_OFFSET, DISTANN_NODE_HEAP_TID_OFFSET,
+    DISTANN_NODE_TAG, DISTANN_NODE_TAG_OFFSET,
 };
 use crate::storage::page::ItemPointer;
 use super::tuple::DistannNodeTuple;
 
 /// One wire response row (no `heap_tid` — see module docs).
 type ExpandRow = (i64, Option<f32>, bool, Vec<i64>, Vec<f32>);
+
+/// Validate a raw node-record tuple and extract its heap ctid + tombstone flag.
+/// Guards the record tag and length before slicing fixed offsets (reviewer
+/// 021-P2), so a corrupt or non-node tuple is a structural fault rather than a
+/// silent mis-decode — important because `ec_distann_list_directory` feeds these
+/// ctids into destructive disjoint-shard pruning.
+fn decode_node_heap_identity(raw: &[u8]) -> Result<(ItemPointer, bool), String> {
+    let min_len = (DISTANN_NODE_HEAP_TID_OFFSET + 6).max(DISTANN_NODE_FLAGS_OFFSET + 2);
+    if raw.len() < min_len {
+        return Err(format!(
+            "ec_distann node record too short: got {}, need at least {min_len}",
+            raw.len()
+        ));
+    }
+    if raw[DISTANN_NODE_TAG_OFFSET] != DISTANN_NODE_TAG {
+        return Err(format!(
+            "ec_distann structural fault: tuple tag {:#04x} is not a graph-node record ({DISTANN_NODE_TAG:#04x})",
+            raw[DISTANN_NODE_TAG_OFFSET]
+        ));
+    }
+    let heap_tid =
+        ItemPointer::decode(&raw[DISTANN_NODE_HEAP_TID_OFFSET..DISTANN_NODE_HEAP_TID_OFFSET + 6])?;
+    let flags = u16::from_le_bytes(
+        raw[DISTANN_NODE_FLAGS_OFFSET..DISTANN_NODE_FLAGS_OFFSET + 2]
+            .try_into()
+            .expect("flags bytes"),
+    );
+    Ok((heap_tid, flags & DISTANN_FLAG_TOMBSTONE != 0))
+}
 
 /// Directory-listing surface: enumerate every graph node's `(vec_id, heap ctid,
 /// tombstone)`. Lets operator tooling / the fixture identify which records a node
@@ -89,20 +119,13 @@ fn list_directory_impl(index_oid: pg_sys::Oid) -> Result<Vec<(i64, i64, i32, boo
     for (vec_id, record_tid) in directory {
         let raw = read_raw_tuple_bytes_from_relation(handle, record_tid, "ec_distann list directory")
             .map_err(DistannExpandError::Internal)?;
-        let heap_tid = ItemPointer::decode(
-            &raw[DISTANN_NODE_HEAP_TID_OFFSET..DISTANN_NODE_HEAP_TID_OFFSET + 6],
-        )
-        .map_err(DistannExpandError::Internal)?;
-        let flags = u16::from_le_bytes(
-            raw[DISTANN_NODE_FLAGS_OFFSET..DISTANN_NODE_FLAGS_OFFSET + 2]
-                .try_into()
-                .expect("flags bytes"),
-        );
+        let (heap_tid, is_tombstone) =
+            decode_node_heap_identity(&raw).map_err(DistannExpandError::Internal)?;
         rows.push((
             vec_id as i64,
             i64::from(heap_tid.block_number),
             i32::from(heap_tid.offset_number),
-            flags & DISTANN_FLAG_TOMBSTONE != 0,
+            is_tombstone,
         ));
     }
     Ok(rows)
@@ -355,16 +378,8 @@ fn resolve_owned_rows(
         })?;
         let raw = read_raw_tuple_bytes_from_relation(handle, record_tid, "ec_distann materialize row")
             .map_err(DistannExpandError::Internal)?;
-        let heap_tid = ItemPointer::decode(
-            &raw[DISTANN_NODE_HEAP_TID_OFFSET..DISTANN_NODE_HEAP_TID_OFFSET + 6],
-        )
-        .map_err(DistannExpandError::Internal)?;
-        let flags = u16::from_le_bytes(
-            raw[DISTANN_NODE_FLAGS_OFFSET..DISTANN_NODE_FLAGS_OFFSET + 2]
-                .try_into()
-                .expect("flags bytes"),
-        );
-        let is_tombstone = flags & DISTANN_FLAG_TOMBSTONE != 0;
+        let (heap_tid, is_tombstone) =
+            decode_node_heap_identity(&raw).map_err(DistannExpandError::Internal)?;
         rows.push((vec_id, heap_tid, is_tombstone));
     }
     Ok(rows)

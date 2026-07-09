@@ -1,0 +1,22 @@
+distann-multinode fixture
+nodes=3
+rows=2000
+dim=16
+graph_degree=32
+queries=50
+top_k=10
+roster=1@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39710 dbname=postgres user=postgres;2@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39711 dbname=postgres user=postgres;3@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39712 dbname=postgres user=postgres
+RECALL_RESULT n_queries=50 identical=50 mismatched_ids=0
+fault_drill simulated_network_partition pass=true
+fault_drill epoch_bump_no_false_reject pass=true
+fault_drill remote_content_divergence pass=true
+fault_drill missing_or_reindexed_remote_index pass=true
+fault_drill remote_backend_termination pass=true
+fault_drill placement_drift pass=true
+concurrency_scan_insert_epochswap pass=true
+qual_correctness single_n=10 multi_n=10 mismatch=0 pass=true
+live_retention_gate pass=true
+ac5_frozen_vector_after_vacuum_reuse pass=true
+suite_recall_gate single=0.5000 multi=0.5000 delta=0.0000 pass=true
+recovery RECALL_RESULT n_queries=50 identical=50 mismatched_ids=0 recovered=true
+disjoint_shard identical_after_prune=true per_node_rows[n1:2000->647 n2:2000->639 n3:2000->714]
