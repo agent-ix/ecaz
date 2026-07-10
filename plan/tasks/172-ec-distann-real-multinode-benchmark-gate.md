@@ -11,6 +11,13 @@ it did not exercise the distributed DistANN path: no `ec_distann.roster`, no
 remote `ec_distann_expand_nodes`, no remote row materialization, no multi-process
 latency, and no cluster-level storage summation.
 
+The first Task 172 preflight also did not exercise the intended physical storage
+topology. It built a complete graph on every node and partitioned only serving
+ownership; its destructive "disjoint" drill then deleted non-owned heap rows
+while leaving the replicated graph records tombstoned in each index. That is a
+useful transport/fanout control, but it is **not a sharded index** and none of its
+latency, throughput, storage, or scaling rows may satisfy this gate.
+
 For a multi-instance AM, single-instance numbers are not a product gate. We need
 a benchmark that proves the actual distributed path on real PostgreSQL
 instances, with the same evidence quality expected of other index gates.
@@ -18,7 +25,11 @@ instances, with the same evidence quality expected of other index gates.
 ## Goal
 
 Produce a release-build `ecaz bench suite` benchmark packet for the real
-**local multi-instance** `ec_distann` path at 10k / 50k / 100k, measuring:
+**physically hash-sharded local multi-instance** `ec_distann` path at 10k / 50k
+/ 100k. `ec_distann` remains one logical global Vamana graph; "sharded" here
+means that each graph record and its co-placed full-precision vector are stored
+on exactly one FR-078 hash owner, not that each node builds an independent ANN
+graph. Measure:
 
 - recall@10;
 - p50 / p95 / p99 latency;
@@ -58,12 +69,32 @@ path before adding network/instance-placement variables.
   coordinator plus two data nodes, separate data directories/sockets/ports,
   release extension installed on every node.
 - Load the staged real DBpedia 10k / 50k / 100k corpora and queries.
-- Build the benchmark surface under the current honest distribution model:
-  - replicated-global graph with serving ownership is acceptable only as a
-    distinct control lane and must be labeled as such;
-  - disjoint-shard storage must be measured if the current branch claims it is
-    implemented; otherwise the packet must explicitly mark disjoint storage as a
-    blocker and not claim a distributed storage gate.
+- Build and publish the benchmark surface in the FR-078 physical placement
+  topology:
+  - construct/stitch one coherent global graph, then hand off each graph record
+    and its full-precision vector to exactly one `hash(vec_id) mod roster` owner;
+  - each serving node stores only its owned graph records and co-placed vector
+    rows; the coordinator stores only routing/head/epoch metadata plus an owned
+    shard if it is itself in the serving roster;
+  - no serving node may retain a complete graph replica, and build-then-delete /
+    tombstone pruning of a replicated index does not qualify as physical
+    sharding;
+  - a replicated-global graph with serving-ownership filtering may be retained
+    only as a separately named control lane. It cannot satisfy any Task 172 gate
+    row or the NFR-018 distributed-storage result.
+- Run a fail-closed topology audit before any benchmark measurement. The suite
+  must prove from the serving relations/index directories that:
+  - every corpus vec_id has exactly one physical graph record across the roster;
+  - pairwise graph-record ownership intersections are empty and the union equals
+    the corpus vec_id set;
+  - every record is on its FR-078 hash owner with its full-precision vector
+    co-placed on the same node;
+  - no node retains non-owned live or tombstoned graph records from a full
+    replica; and
+  - per-node owned-record counts and physical bytes are emitted as structured
+    result rows (including FR-078's 100k balance check).
+  Missing audit fields or any failed invariant invalidates all downstream
+  recall, latency, throughput, storage, and scaling rows for that run.
 - Run recall and latency with `ec_distann.roster`, `ec_distann.local_node_id`,
   and `ec_distann.epoch` set so the coordinator uses the distributed
   CustomScan/remote transport path.
@@ -146,6 +177,9 @@ Artifacts:
 - suite config checked into the packet;
 - `artifacts/suite-manifest.json`;
 - `artifacts/results.jsonl`;
+- topology/placement audit log and normalized JSONL rows proving physical
+  hash-shard disjointness, exact corpus coverage, record/vector co-placement,
+  and absence of full-index replicas or tombstoned non-owner residue;
 - per-scale recall, latency, storage, and load logs;
 - throughput/concurrency logs;
 - node startup logs and roster manifest;
@@ -171,7 +205,7 @@ benchmark packet must use the suite runner.
 |------|--------|
 | scale | 10k, 50k, 100k |
 | nodes | 3 PG18 instances |
-| distribution lane | replicated-serving control, disjoint-shard if claimed |
+| distribution lane | physically hash-sharded global graph (required); replicated-serving control (optional, non-gate) |
 | query mode | distributed roster active |
 | sweep | `ec_distann.top_k` default sweep `[16,32,64,100,200]` unless changed by profile registry |
 | concurrency | at least 1, 2, 4, 8, 16 for throughput unless resource-limited |
@@ -180,30 +214,37 @@ benchmark packet must use the suite runner.
 
 ## Acceptance Criteria
 
-1. Distributed recall is measured at 10k / 50k / 100k and compared against the
+1. A suite-driven topology preflight proves the FR-078 physical hash-shard
+   invariants before measurements run: exactly one graph record and co-placed
+   vector per vec_id across the roster, exact corpus coverage, empty pairwise
+   ownership intersections, correct hash owner, no non-owner record residue,
+   and the 100k balance check. A replicated index filtered by serving ownership,
+   including a build-then-delete/tombstone variant, fails this criterion.
+2. Distributed recall is measured at 10k / 50k / 100k and compared against the
    same-commit single-instance `ec_distann` control. Any point below
    `single_instance_recall - 0.001` is a blocker unless the packet explicitly
    records a no-promote verdict.
-2. Distributed latency is measured at every scale and sweep. The packet reports
+3. Distributed latency is measured at every scale and sweep. The packet reports
    the overhead ratio versus single-instance `ec_distann` and versus the Task 166
    comparator AMs where comparable.
-3. Storage is reported as cluster-total bytes, not just coordinator-local index
-   bytes. If replicated storage is used, the 3x replication cost must be shown.
-4. The packet proves the remote path was used. A run with an empty roster,
+4. Storage is reported as cluster-total bytes for the physically sharded graph,
+   not just coordinator-local index bytes. Any optional replicated control must
+   report its replication cost separately and cannot supply the NFR-018 verdict.
+5. The packet proves the remote path was used. A run with an empty roster,
    missing remote engagement counters, or only local AM scans is invalid.
-5. The final verdict reclassifies Task 166 correctly: Task 166 remains
+6. The final verdict reclassifies Task 166 correctly: Task 166 remains
    single-instance evidence; Task 172 is the distributed benchmark gate.
-6. The local multi-instance fixture is reusable from `ecaz bench suite` without
+7. The local multi-instance fixture is reusable from `ecaz bench suite` without
    packet-specific glue, so future distann distributed benchmark packets can
    invoke the same suite step/config surface.
-7. Distributed telemetry is rich enough to attribute latency to coordinator,
+8. Distributed telemetry is rich enough to attribute latency to coordinator,
    remote expansion, remote materialization, connection/session setup, and
    merge/dedup work. A packet with only aggregate recall/latency/storage numbers
    is incomplete.
-8. The verdict includes a measured throughput curve and a stated scaling model
+9. The verdict includes a measured throughput curve and a stated scaling model
    for 1m and 10m rows, or explicitly records why the current telemetry cannot
    support such an estimate.
-9. Primary recall/latency/throughput verdicts are taken from benchmark mode, not
+10. Primary recall/latency/throughput verdicts are taken from benchmark mode, not
    full metrics mode. Full metrics mode is separately labeled, its overhead is
    measured, and its rows are used for attribution and modeling.
 
