@@ -37,33 +37,34 @@ code-based traversal above (fast).
 | 10k | 64  | 0.8470 | **0.9735** | 0.9995 |
 | 10k | 100 | 0.8570 | **0.9820** | 1.0000 |
 | 10k | 200 | 0.8780 | **0.9930** | 1.0000 |
-| 50k | 16  | 0.6260 | _(env-deferred)_ | 0.9150 |
-| 50k | 32  | 0.6520 | _(env-deferred)_ | 0.9545 |
-| 50k | 64  | 0.6700 | _(env-deferred)_ | 0.9840 |
-| 50k | 100 | 0.6810 | _(env-deferred)_ | 0.9880 |
-| 50k | 200 | 0.6910 | _(env-deferred)_ | 0.9950 |
+| 50k | 16  | 0.6260 | 0.6540 | 0.9150 |
+| 50k | 32  | 0.6520 | 0.6920 | 0.9545 |
+| 50k | 64  | 0.6700 | 0.7395 | 0.9840 |
+| 50k | 100 | 0.6810 | 0.7790 | 0.9880 |
+| 50k | 200 | 0.6910 | **0.8280** | 0.9950 |
 
-## Reading (10k)
+(50k greedy = scaled visit budget, commit `c574c1fa8`; fixed-budget 50k was
+0.7605 at tk=200 — the scaled budget raised it to 0.828.)
 
-The greedy descent **nearly closes the fold-recall gap** at 10k: recall@10 at
-tk=200 rose 0.878 → **0.993** (gap to full rebuild 0.122 → 0.007); at tk=64,
-0.847 → 0.974. The incremental fold is now recall-competitive with a full
-rebuild at 10k, directly resolving the 167-005 / 004-P2 finding.
+## Reading — 10k parity, 50k improved-not-parity (honest)
 
-## 50k confirmation — env-deferred (not a code issue)
-
-The 50k A/B needs a **release** `.so` (the greedy descent's build + fold under a
-debug `.so` is impractical — a debug 47.5k CREATE INDEX ran >46 min at 99% CPU).
-During this session the shared host was severely degraded (per-core throughput
-~6–18× below normal: a release extension build that normally takes ~5.5 min did
-not finish in 30 min; the debug 50k index build ran 46 min vs the ~150 s a
-release build takes in packet 026). The 50k run is therefore deferred to a
-healthy host / release `.so`; the mechanism (a full graph descent replacing the
-head-sample-only candidate set) and the 10k A/B already demonstrate the fix, and
-the change is behaviour-identical across scales (the descent bound scales with
-`build_list_size`, independent of corpus size). Re-run:
-`build foldincr50k (95%) → INSERT 5% → fold → ecaz bench recall` under a release
-`.so`, compare to full-rebuild 0.915→0.995 (packet 026).
+- **10k: the greedy descent closes the fold-recall gap.** recall@10 at tk=200
+  rose 0.878 → **0.993** (gap to full rebuild 0.122 → 0.007); tk=64 0.847 →
+  0.974. At 10k the head-sample seed covers ~40% of the graph, so the descent
+  reaches the new node's true neighborhood. Directly resolves 167-005 / 004-P2 at
+  10k.
+- **50k: a large improvement, but NOT full parity.** recall@10 at tk=200 rose
+  0.691 → **0.828** (and scales with the visit budget: 100 visits → 0.76, ~400 →
+  0.828). At 50k the head samples cover only ~8% of the graph; even with a scaled
+  budget the greedy best-first walk does not consistently reach the true
+  neighborhood, so a ~0.17 gap to full rebuild (0.995) remains.
+- **Verdict:** the greedy descent is a real, substantial fix (10k parity; 50k
+  major improvement, budget-tunable) but the incremental fold is **not yet
+  recall-parity at 50k+**. Closing the scale gap needs a convergence-based descent
+  (the scan's beam + early-exit, seeded from the medoid) rather than a single
+  best-first walk, OR REINDEX (epoch rebuild) remains the parity mechanism for
+  large incremental loads. This is the honest remaining M5 fold work — the fold is
+  now much more usable, not fully solved at scale.
 
 ## Known follow-ups
 
