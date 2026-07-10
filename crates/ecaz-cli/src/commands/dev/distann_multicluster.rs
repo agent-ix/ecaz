@@ -267,6 +267,23 @@ fn build_setup_sql(args: &LocalMultinodePg18Args) -> Result<String> {
     }
 }
 
+/// A SQL `real[]` expression for a drill row's insert vector. In real mode it
+/// reuses an existing corpus vector (guaranteed to match the index dimension);
+/// in synthetic mode it reproduces the deterministic corpus generator at
+/// `args.dim`. A synthetic `args.dim` vector does NOT match a real corpus, so
+/// the drill inserts must not synthesize a vector when a real corpus is loaded.
+fn insert_vector_expr(args: &LocalMultinodePg18Args) -> String {
+    if args.corpus_prefix.is_some() {
+        "(SELECT source FROM dm ORDER BY id LIMIT 1)".to_owned()
+    } else {
+        format!(
+            "(SELECT array_agg((sin(7 * 0.017 * (d + 1)) + cos(7 * 0.0031 * (d + 1)))::real) \
+             FROM generate_series(0, {} - 1) AS d)",
+            args.dim
+        )
+    }
+}
+
 /// Real staged-corpus load: COPY each 2-column TSV (`id\t[v1,v2,...]`) into a
 /// text stage, convert the `[...]` JSON-array literal to a PG `{...}` array,
 /// and materialize `dm(source real[], embedding ecvector)` +
@@ -501,14 +518,20 @@ async fn drive_fixture(
     // 3. remote_content_divergence (real epoch/fingerprint mismatch): rebuild an
     // owner's index with a different graph_degree so its content fingerprint no
     // longer matches the coordinator's ⇒ the owner rejects the epoch (error).
+    // Diverge DOWNWARD (graph_degree - 8): a larger degree can overflow the
+    // ec_distann node-record page budget on high-dim corpora (a 1536-dim
+    // co-placed vector + graph_degree neighbor codes must fit one 8 KB page), so
+    // graph_degree + 8 fails ambuild at real scale. A smaller degree is always
+    // within the budget the base build already satisfied and still changes the
+    // content fingerprint.
+    let divergent_degree = args.graph_degree.saturating_sub(8).max(4);
     {
         run_psql_file(
             psql,
             socket_dir,
             last.port,
             &format!(
-                "DROP INDEX dm_idx; CREATE INDEX dm_idx ON dm USING ec_distann (embedding ecvector_distann_ip_ops) WITH (graph_degree = {});",
-                args.graph_degree + 8
+                "DROP INDEX dm_idx; CREATE INDEX dm_idx ON dm USING ec_distann (embedding ecvector_distann_ip_ops) WITH (graph_degree = {divergent_degree});",
             ),
         )
         .await
@@ -1178,9 +1201,14 @@ async fn co_placement_drift_case(
         single_ids.len(),
     );
 
-    // Recovery: restore the deterministic corpus on every node.
-    for node in nodes {
-        let _ = run_psql_file(psql, socket_dir, node.port, &setup_sql(args)).await;
+    // Recovery: restore the corpus on every node. Must use the SAME setup as the
+    // initial build (real staged corpus when --corpus-prefix is set), else the
+    // node is rebuilt with the synthetic dim-16 corpus and the post-recovery
+    // real-query recall comparison fails with a dimension mismatch.
+    if let Ok(setup) = build_setup_sql(args) {
+        for node in nodes {
+            let _ = run_psql_file(psql, socket_dir, node.port, &setup).await;
+        }
     }
     pass
 }
@@ -1210,11 +1238,11 @@ async fn concurrency_drill(
          SELECT count(*) FROM (SELECT id FROM dm ORDER BY embedding <#> (SELECT source FROM dm WHERE id=1) LIMIT {}) t;",
         args.top_k
     );
-    // Deterministic insert vector (same shape as the corpus generator).
-    let arr = format!(
-        "(SELECT array_agg((sin(7 * 0.017 * (d + 1)) + cos(7 * 0.0031 * (d + 1)))::real) FROM generate_series(0, {} - 1) AS d)",
-        args.dim
-    );
+    // Insert vector: a real corpus vector (correct dimension) in real mode, else
+    // a synthetic vector matching the corpus generator. Synthetic args.dim does
+    // NOT match a real corpus dimension, so a synthetic vector would fail the
+    // aminsert dimension check against the real index.
+    let arr = insert_vector_expr(args);
 
     let mut tasks = Vec::new();
     for _ in 0..scanners {
@@ -1611,11 +1639,11 @@ async fn frozen_vector_drill(
             return false;
         }
     }
-    // Reinsert new rows on every node (may reuse the reclaimed TIDs).
-    let arr = format!(
-        "(SELECT array_agg((sin(g * 0.017 * (d + 1)) + cos(g * 0.0031 * (d + 1)))::real) FROM generate_series(0, {} - 1) AS d)",
-        args.dim
-    );
+    // Reinsert new rows on every node (may reuse the reclaimed TIDs). Use a
+    // real corpus vector (correct dimension) in real mode; the reinserted vector
+    // content is irrelevant to the frozen-vector check (which probes a
+    // pre-existing live record), only its dimension must match the index.
+    let arr = insert_vector_expr(args);
     for node in nodes {
         let ins = run_capture(
             psql,
