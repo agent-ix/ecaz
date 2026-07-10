@@ -107,6 +107,131 @@ fn test_ec_distann_create_on_populated_table_records_metadata() {
     Spi::run("DROP INDEX ec_distann_populated_idx").expect("index drop should succeed");
 }
 
+#[pg_test]
+fn test_distann_control_metadata_and_fail_closed() {
+    Spi::run(
+        "CREATE TABLE ec_distann_control (
+             source_id uuid NOT NULL,
+             embedding ecvector NOT NULL
+         )",
+    )
+    .expect("control source table should create");
+    Spi::run(
+        "INSERT INTO ec_distann_control VALUES
+         ('00000000-0000-4000-8000-000000000001', encode_to_ecvector(ARRAY[1.0,0.0,0.0,0.0], 4, 42)),
+         ('00000000-0000-4000-8000-000000000002', encode_to_ecvector(ARRAY[0.0,1.0,0.0,0.0], 4, 42))",
+    )
+    .expect("control source rows should insert");
+    Spi::run(
+        "CREATE INDEX ec_distann_control_idx ON ec_distann_control
+         USING ec_distann (embedding ecvector_distann_ip_ops)
+         INCLUDE (source_id)
+         WITH (distributed_control = true, source_identity = 'include')",
+    )
+    .expect("metadata-only control index should create");
+
+    let index_oid = Spi::get_one::<pg_sys::Oid>("SELECT 'ec_distann_control_idx'::regclass::oid")
+        .unwrap()
+        .unwrap();
+    let index_relation = IndexRelationGuard::open(
+        index_oid,
+        pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+        "ec_distann control metadata test",
+    );
+    let metadata = unsafe {
+        crate::am::ec_distann::read_metadata_from_index(index_relation.as_ptr())
+    }
+    .expect("v5 control metadata should decode");
+    assert_eq!(
+        metadata.format_version,
+        crate::am::ec_distann::page::INDEX_FORMAT_V5_DISTANN_CONTROL
+    );
+    assert!(metadata.is_distributed_control());
+    assert_ne!(metadata.logical_index_uuid, [0; 16]);
+    assert_eq!(metadata.logical_index_uuid[6] & 0xf0, 0x40);
+    assert_eq!(metadata.logical_index_uuid[8] & 0xc0, 0x80);
+    assert_eq!(metadata.dimensions, 0);
+    assert_eq!(metadata.node_count, 0);
+    assert_eq!(metadata.active_epoch, 0);
+    let handle = std::ptr::NonNull::new(index_relation.as_ptr()).unwrap();
+    assert_eq!(
+        crate::storage::relation::main_fork_block_count_handle(handle),
+        1,
+        "control relation contains only block-0 metadata"
+    );
+    drop(index_relation);
+
+    Spi::run("SET enable_seqscan = off").unwrap();
+    let scan_error = expect_pg_error(|| {
+        Spi::get_one::<i64>(
+            "SELECT 1 FROM ec_distann_control
+             ORDER BY embedding <#> ARRAY[1.0,0.0,0.0,0.0]::real[] LIMIT 1",
+        )
+        .expect("direct control scan must fail before returning");
+    });
+    assert!(
+        scan_error.contains("EC_DISTANN_CONTROL_SCAN"),
+        "unexpected direct-scan error: {scan_error}"
+    );
+    Spi::run("RESET enable_seqscan").unwrap();
+
+    let insert_error = expect_pg_error(|| {
+        Spi::run(
+            "INSERT INTO ec_distann_control VALUES
+             ('00000000-0000-4000-8000-000000000003', encode_to_ecvector(ARRAY[0.0,0.0,1.0,0.0], 4, 42))",
+        )
+        .expect("control insert without a Published generation must fail");
+    });
+    assert!(
+        insert_error.contains("EC_GENERATION_MISSING"),
+        "unexpected control insert error: {insert_error}"
+    );
+}
+
+#[pg_test]
+fn test_distann_control_requires_include_identity() {
+    Spi::run("CREATE TABLE ec_distann_control_no_identity (embedding ecvector NOT NULL)")
+        .expect("source table should create");
+    let error = expect_pg_error(|| {
+        Spi::run(
+            "CREATE INDEX ec_distann_control_no_identity_idx
+             ON ec_distann_control_no_identity
+             USING ec_distann (embedding ecvector_distann_ip_ops)
+             WITH (distributed_control = true)",
+        )
+        .expect("control index without source identity must fail");
+    });
+    assert!(
+        error.contains("distributed_control=true requires source_identity='include'"),
+        "unexpected missing-identity error: {error}"
+    );
+}
+
+#[pg_test]
+fn test_distann_control_requires_permanent_wal_logged_relation() {
+    Spi::run(
+        "CREATE UNLOGGED TABLE ec_distann_control_unlogged (
+             source_id uuid NOT NULL,
+             embedding ecvector NOT NULL
+         )",
+    )
+    .expect("unlogged source table should create");
+    let error = expect_pg_error(|| {
+        Spi::run(
+            "CREATE INDEX ec_distann_control_unlogged_idx
+             ON ec_distann_control_unlogged
+             USING ec_distann (embedding ecvector_distann_ip_ops)
+             INCLUDE (source_id)
+             WITH (distributed_control = true, source_identity = 'include')",
+        )
+        .expect("unlogged distributed control must fail");
+    });
+    assert!(
+        error.contains("EC_CONTROL_PERSISTENCE"),
+        "unexpected persistence error: {error}"
+    );
+}
+
 fn expect_pg_error(run: impl FnOnce() + std::panic::UnwindSafe) -> String {
     pg_sys::PgTryBuilder::new(|| {
         run();

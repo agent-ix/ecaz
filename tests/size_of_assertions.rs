@@ -113,6 +113,67 @@ const _: () = {
 };
 
 const _: () = {
+    // Task 179 DistANN physical-generation formats (TC-050). Legacy v4 local
+    // metadata remains 97 bytes; the opt-in v5 control adds only the 16-byte
+    // logical-index UUID. Canonical variable-length objects pin their version
+    // offset and fixed prefix rather than an in-memory Rust struct layout.
+    assert!(DISTANN_METADATA_BYTES == 97);
+    assert!(DISTANN_CONTROL_METADATA_BYTES == 113);
+    assert!(DISTANN_METADATA_FORMAT_VERSION_OFFSET == 0);
+    assert!(DISTANN_METADATA_ENTRY_POINT_OFFSET == 2);
+    assert!(DISTANN_METADATA_GRAPH_DEGREE_R_OFFSET == 8);
+    assert!(DISTANN_METADATA_BUILD_LIST_SIZE_L_OFFSET == 10);
+    assert!(DISTANN_METADATA_ALPHA_OFFSET == 12);
+    assert!(DISTANN_METADATA_DIMENSIONS_OFFSET == 16);
+    assert!(DISTANN_METADATA_SEED_OFFSET == 18);
+    assert!(DISTANN_METADATA_NEIGHBOR_CODEC_KIND_OFFSET == 26);
+    assert!(DISTANN_METADATA_FLAGS_OFFSET == 27);
+    assert!(DISTANN_METADATA_HEAD_INDEX_CAP_OFFSET == 28);
+    assert!(DISTANN_METADATA_CLOSURE_EPSILON_OFFSET == 32);
+    assert!(DISTANN_METADATA_NODE_COUNT_OFFSET == 36);
+    assert!(DISTANN_METADATA_HEAD_SAMPLE_HEAD_OFFSET == 44);
+    assert!(DISTANN_METADATA_DELTA_BUFFER_HEAD_OFFSET == 50);
+    assert!(DISTANN_METADATA_CODEC_SUBVECTOR_COUNT_OFFSET == 56);
+    assert!(DISTANN_METADATA_CODEC_SUBVECTOR_DIM_OFFSET == 58);
+    assert!(DISTANN_METADATA_GROUPED_CODEBOOK_HEAD_OFFSET == 60);
+    assert!(DISTANN_METADATA_DIRECTORY_HEAD_OFFSET == 66);
+    assert!(DISTANN_METADATA_CONTENT_DIGEST_OFFSET == 72);
+    assert!(DISTANN_METADATA_DELTA_COUNT_OFFSET == 80);
+    assert!(DISTANN_METADATA_EPOCH_STATE_OFFSET == 84);
+    assert!(DISTANN_METADATA_ACTIVE_EPOCH_OFFSET == 85);
+    assert!(DISTANN_METADATA_IN_FLIGHT_COUNT_OFFSET == 93);
+    assert!(DISTANN_METADATA_LOGICAL_INDEX_UUID_OFFSET == 97);
+
+    assert!(DISTANN_NODE_HEADER_BYTES == 20);
+    assert!(DISTANN_NODE_FORMAT_VERSION_OFFSET == 0);
+    assert!(DISTANN_NODE_FLAGS_OFFSET == 2);
+    assert!(DISTANN_NODE_VEC_ID_OFFSET == 4);
+    assert!(DISTANN_NODE_HEAP_TID_OFFSET == 12);
+    assert!(DISTANN_NODE_NEIGHBOR_COUNT_OFFSET == 18);
+    assert!(DISTANN_NODE_SEARCH_CODE_OFFSET == 20);
+    assert!(distann_node_neighbor_vec_ids_offset(2) == 22);
+    assert!(distann_node_neighbor_codes_offset(4, 2) == 54);
+
+    assert!(DISTANN_GENERATION_DESCRIPTOR_VERSION_OFFSET == 0);
+    assert!(DISTANN_GENERATION_DESCRIPTOR_FIXED_PREFIX_BYTES == 14);
+    assert!(DISTANN_CODEC_ARTIFACT_VERSION_OFFSET == 0);
+    assert!(DISTANN_BUILD_SPEC_VERSION_OFFSET == 0);
+    assert!(DISTANN_HANDOFF_VERSION_OFFSET == 0);
+    assert!(DISTANN_HANDOFF_ENTRY_FIXED_PREFIX_BYTES == 10);
+    assert!(DISTANN_HANDOFF_BATCH_FIXED_PREFIX_BYTES == 109);
+    assert!(DISTANN_ROW_SCHEMA_VERSION_OFFSET == 0);
+    assert!(DISTANN_SOURCE_SNAPSHOT_VERSION_OFFSET == 0);
+    assert!(DISTANN_READY_RECEIPT_VERSION_OFFSET == 0);
+    assert!(DISTANN_READY_RECEIPT_BYTES == 303);
+    assert!(DISTANN_EPOCH_MANIFEST_VERSION_OFFSET == 0);
+    assert!(DISTANN_EPOCH_FINGERPRINT_BYTES == 34);
+    assert!(DISTANN_MANIFEST_CODEC_PARAMETERS_VERSION_OFFSET == 0);
+    assert!(DISTANN_MANIFEST_CODEC_PARAMETERS_BYTES == 31);
+    assert!(DISTANN_MANIFEST_BUILD_OPTIONS_VERSION_OFFSET == 0);
+    assert!(DISTANN_MANIFEST_BUILD_OPTIONS_BYTES == 30);
+};
+
+const _: () = {
     // v9 metadata: 92 bytes. Bytes 22..24 persist compact rerank score mode
     // and RaBitQ clip knobs.
     // Bytes 80..86 point at the packed 0x2B rerank group

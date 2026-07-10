@@ -88,6 +88,13 @@ unsafe extern "C-unwind" fn ec_distann_aminsert(
     _index_info: *mut pg_sys::IndexInfo,
 ) -> bool {
     pg_am_callback!({
+        let metadata = ambuild::read_metadata_from_index(index_relation)
+            .unwrap_or_else(|e| pgrx::error!("ec_distann aminsert metadata read failed: {e}"));
+        if metadata.is_distributed_control() {
+            pgrx::error!(
+                "EC_GENERATION_MISSING: ec_distann distributed-control inserts require a Published physical generation"
+            );
+        }
         // FR-083 / ADR-085 D5 interim posture: spool to the bounded exact-scan
         // delta buffer with same-statement visibility; drained at the next epoch
         // build. Incremental distributed insert (M5) replaces this.
@@ -105,6 +112,13 @@ unsafe extern "C-unwind" fn ec_distann_ambulkdelete(
     callback_state: *mut c_void,
 ) -> *mut pg_sys::IndexBulkDeleteResult {
     pg_am_callback!({
+        let metadata = ambuild::read_metadata_from_index((*info).index)
+            .unwrap_or_else(|e| pgrx::error!("ec_distann ambulkdelete metadata read failed: {e}"));
+        if metadata.is_distributed_control() {
+            pgrx::error!(
+                "EC_GENERATION_MISSING: ec_distann distributed-control deletes require a Published physical generation"
+            );
+        }
         // FR-083 D10 tombstone delete: flag records whose heap row is dead;
         // nothing is physically reclaimed within a Published epoch (next epoch
         // build drops tombstones + repairs edges).
@@ -179,6 +193,13 @@ unsafe extern "C-unwind" fn ec_distann_ambeginscan(
     norderbys: std::ffi::c_int,
 ) -> pg_sys::IndexScanDesc {
     pg_am_callback!({
+        let metadata = ambuild::read_metadata_from_index(index_relation)
+            .unwrap_or_else(|e| pgrx::error!("ec_distann scan metadata read failed: {e}"));
+        if metadata.is_distributed_control() {
+            pgrx::error!(
+                "EC_DISTANN_CONTROL_SCAN: a distributed-control index is CustomScan-only and cannot be scanned through amgettuple"
+            );
+        }
         let scan = pg_sys::RelationGetIndexScan(index_relation, nkeys, norderbys);
         if scan.is_null() {
             pgrx::error!("ec_distann failed to allocate scan descriptor");
@@ -296,6 +317,11 @@ pub(crate) unsafe fn collect_distann_hits(
 ) -> DistannHitCollection {
     let metadata = ambuild::read_metadata_from_index_handle(handle)
         .unwrap_or_else(|e| pgrx::error!("ec_distann scan metadata read failed: {e}"));
+    if metadata.is_distributed_control() {
+        pgrx::error!(
+            "EC_GENERATION_MISSING: ec_distann distributed-control index has no Published physical generation"
+        );
+    }
     if metadata.dimensions == 0 || metadata.node_count == 0 {
         // Empty index -> zero rows (FR-081); nothing to deepen either.
         return DistannHitCollection {

@@ -52,6 +52,21 @@ unchanged.
   relation. The control index SHALL remain query-invisible until
   [FR-078](./FR-078-distann-hash-placement.md) and
   [FR-082](./FR-082-distann-epoch-lifecycle.md) publish a physical generation.
+- A distributed-control source table and index SHALL be permanent WAL-logged
+  relations. `ambuild` SHALL reject temporary or unlogged persistence before
+  initializing control metadata: an unlogged init fork cannot preserve the
+  never-reused logical-index UUID across crash recovery, and physical
+  generation catalogs and acknowledged handoff batches require WAL durability.
+- `distributed_control = false` SHALL continue to write the existing 97-byte
+  metadata format v4 byte-for-byte. The opt-in control SHALL write metadata
+  format v5: the same 97-byte prefix with flags bit 0 set, followed by one
+  non-zero 16-byte RFC 4122 version-4 logical-index UUID at byte offset 97
+  (113 bytes total). Its version nibble SHALL be `4` and its variant bits SHALL
+  be `10`; malformed UUID bits reject. In v5 the entry point, dimensions, node count, all graph/codebook/
+  directory heads, content/delta counts, active epoch, and in-flight count
+  SHALL be zero or invalid as appropriate. Unknown flag bits, a zero UUID, or
+  any local graph state SHALL reject. There is no implicit v4→v5 migration;
+  the transition is explicit and rebuild-only under NFR-016.
 - A distributed-control index SHALL be scanned only through the coordinator
   CustomScan path.
 - While a distributed-control index lacks a Published manifest, the AM SHALL
@@ -76,7 +91,7 @@ unchanged.
 | FR-075-AC-2 | Invalid reloption values are rejected at index creation with a descriptive error | Test |
 | FR-075-AC-3 | Ordered top-k scans return results in non-increasing score order | Test |
 | FR-075-AC-4 | Single-node distinct_recall@10 at 10k is within 0.002 of `ec_diskann` at equivalent parameters | Test (bench A/B via `ecaz bench suite`) |
-| FR-075-AC-5 | `distributed_control = true` creates no local graph records, rejects reads before first publish, and becomes queryable through the coordinator path only after a physical generation is Published | Test (TC-040, TC-042) |
+| FR-075-AC-5 | `distributed_control = true` creates no local graph records, rejects non-permanent persistence and reads before first publish, and becomes queryable through the coordinator path only after a physical generation is Published | Test (TC-040, TC-042) |
 
 ## Dependencies
 

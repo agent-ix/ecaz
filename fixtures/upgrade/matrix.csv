@@ -4,6 +4,20 @@ hnsw,2,true,false,fixtures/on-disk/hnsw_grouped_hot_tuple_v2.hex,grouped hot tup
 hnsw,3,true,true,fixtures/on-disk/hnsw_metadata_v3.hex,current turbo hot/cold HNSW format
 hnsw,4,true,true,fixtures/on-disk/hnsw_metadata_v4_rabitq.hex,current RaBitQ HNSW format
 diskann,3,true,true,fixtures/on-disk/diskann_vamana_metadata_v3.hex,current DiskANN Vamana format
+distann-metadata,4,true,true,fixtures/on-disk/distann_metadata_v4.hex,current legacy local graph metadata; remains default writable while distributed_control is opt-in
+distann-metadata,5,true,true,fixtures/on-disk/distann_control_metadata_v5.hex,current opt-in distributed-control metadata with logical-index UUID; rebuild-only from v4
+distann-graph-record,1,true,true,fixtures/on-disk/distann_graph_record_v1.hex,current physical-generation graph record; legacy local records retain the 0x0009 tag/reserved prefix
+distann-row-schema,1,true,true,fixtures/on-disk/distann_row_schema_v1.hex,current canonical frozen row-tier schema descriptor
+distann-codec-artifact,1,true,true,fixtures/on-disk/distann_codec_artifact_v1.hex,current complete generation codec artifact including trained GroupedPQ bytes
+distann-generation-descriptor,1,true,true,fixtures/on-disk/distann_generation_descriptor_v1.hex,current immutable physical-generation descriptor
+distann-build-spec,1,true,true,fixtures/on-disk/distann_build_spec_v1.hex,current immutable pre-handoff build specification
+distann-handoff-entry,1,true,true,fixtures/on-disk/distann_handoff_entry_v1.hex,current bounded canonical owner handoff entry
+distann-handoff-batch,1,true,true,fixtures/on-disk/distann_handoff_batch_v1.hex,current bounded canonical owner handoff batch with appended digest
+distann-source-snapshot,1,true,true,fixtures/on-disk/distann_source_snapshot_v1.hex,current canonical PostgreSQL source snapshot identity
+distann-ready-receipt,1,true,true,fixtures/on-disk/distann_ready_receipt_v1.hex,current participant Ready receipt with appended digest
+distann-manifest-codec-parameters,1,true,true,fixtures/on-disk/distann_manifest_codec_parameters_v1.hex,current epoch-manifest codec kind and shape subrecord
+distann-manifest-build-options,1,true,true,fixtures/on-disk/distann_manifest_build_options_v1.hex,current epoch-manifest graph and build options subrecord
+distann-epoch-manifest,2,true,true,fixtures/on-disk/distann_epoch_manifest_v2.hex,current immutable physical epoch manifest and 34-byte fingerprint source
 ivf,4,false,false,fixtures/on-disk/ivf_metadata_v4.hex,legacy IVF v4 rejected; used 0x2A heap-TID rerank sidecar
 ivf,5,false,false,fixtures/on-disk/ivf_metadata_v5.hex,legacy IVF v5 rejected; packed 0x2B groups used non-residual RaBitQ rerank payload bytes
 ivf,6,false,false,fixtures/on-disk/ivf_metadata_v6.hex,legacy IVF v6 rejected; packed 0x2B groups used whole-vector TurboQuant rerank payload bytes

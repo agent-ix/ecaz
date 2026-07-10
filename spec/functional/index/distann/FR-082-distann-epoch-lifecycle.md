@@ -90,8 +90,8 @@ The version-2 canonical epoch manifest SHALL contain these fields in this order:
 | index_format_version | u16 | distributed-control/generation storage format version |
 | graph_format_version | u16 | FR-076 persisted graph format |
 | handoff_wire_version | u16 | FR-076 handoff version |
-| codec_parameters | length-prefixed bytes | canonical codec kind and shape |
-| build_options | length-prefixed bytes | canonical graph degree, build width, alpha, seed, closure, and head-cap values |
+| codec_parameters | length-prefixed bytes | canonical version-1 codec kind and shape subrecord defined below |
+| build_options | length-prefixed bytes | canonical version-1 graph/build options subrecord defined below |
 | row_schema_fingerprint | byte[32] | FR-078 schema identity |
 | head_sample_digest | byte[32] | canonical coordinator head-sample identity |
 | global_record_count | u64 | exact source vec_id cardinality |
@@ -99,17 +99,37 @@ The version-2 canonical epoch manifest SHALL contain these fields in this order:
 | global_row_tier_digest | byte[32] | canonical frozen row payload content |
 | participant_receipts | length-prefixed array | exactly one receipt per roster entry, in roster order |
 
+The `codec_parameters` subrecord SHALL contain, in order:
+`parameters_version u16 = 1`, `codec_kind u8`, `dimensions u16`,
+`code_stride u32`, `seed u64`, `transform_dim u32`, `group_count u32`,
+`group_size u32`, and `centroids_per_group u16`. RaBitQ and TurboQuant SHALL
+encode zero for the four GroupedPQ-only shape fields. GroupedPQ4 SHALL encode
+`group_count × group_size = transform_dim`,
+`code_stride = ceil(group_count / 2)`, and `centroids_per_group = 16`.
+The subrecord is exactly 31 bytes.
+
+The `build_options` subrecord SHALL contain, in order:
+`options_version u16 = 1`, `graph_degree u16`, `build_list_size u16`,
+IEEE-754 `alpha f32_le`, `seed u64`, IEEE-754 `closure_epsilon f32_le`,
+`head_index_cap u32`, and `build_shards u32`. `build_shards = 0` retains the
+FR-077 auto-shard meaning. The subrecord is exactly 30 bytes.
+
+Every array in the manifest SHALL begin with an unsigned little-endian `u32`
+element count. Each participant receipt SHALL then be encoded as one
+`u32` byte length followed by its complete canonical receipt bytes.
+
 Each participant Ready receipt SHALL contain, in order: `receipt_version u16 =
 1`, `node_id u32`, `epoch u64`, `build_id byte[16]`, build-specification digest,
 generation-descriptor digest, `last_acknowledged_batch_sequence u64`, owned
 record count `u64`, row count `u64`, owner-stream digest, persisted graph
 digest, persisted row-tier digest, local-directory digest, graph bytes `u64`,
-row-tier bytes `u64`, directory bytes `u64`, and `state u8 = Ready`. Receipt
+row-tier bytes `u64`, directory bytes `u64`, and `state u8 = 1` (`Ready`). Receipt
 fixed-width integers use little-endian encoding; UUID uses RFC 4122 byte order;
 digests are 32 bytes.
 
-The receipt SHALL append
+The receipt's canonical body is 271 bytes and it SHALL append
 `SHA-256("ec_distann_ready_receipt_v1\0" || canonical_receipt_without_digest)`.
+The complete receipt is therefore exactly 303 bytes.
 
 - The coordinator SHALL capture one PostgreSQL MVCC snapshot for the complete
   build and handoff.

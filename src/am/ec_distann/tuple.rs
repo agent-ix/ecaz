@@ -16,6 +16,10 @@ use crate::storage::page::ItemPointer;
 
 /// Record tag for distann graph-node tuples.
 pub const DISTANN_NODE_TAG: u8 = 0x09;
+/// Task 179 physical-generation graph record version. Legacy v4 local records
+/// retain `(tag=0x09, reserved=0)` in bytes 0..2; physical v5 generations
+/// reinterpret those same two bytes as this little-endian u16 format version.
+pub const DISTANN_NODE_FORMAT_VERSION: u16 = 1;
 
 /// FR-083 / ADR-085 D5 interim delta-buffer tuple: one inserted vector
 /// (vec_id + heap_tid + full-precision vector), chained via next_tid, exact-
@@ -38,6 +42,7 @@ pub const DISTANN_FLAG_TOMBSTONE: u16 = 1 << 0;
 pub const DISTANN_NODE_HEADER_BYTES: usize = 20;
 
 pub const DISTANN_NODE_TAG_OFFSET: usize = 0;
+pub const DISTANN_NODE_FORMAT_VERSION_OFFSET: usize = 0;
 pub const DISTANN_NODE_FLAGS_OFFSET: usize = 2;
 pub const DISTANN_NODE_VEC_ID_OFFSET: usize = 4;
 pub const DISTANN_NODE_HEAP_TID_OFFSET: usize = 12;
@@ -134,11 +139,57 @@ impl DistannNodeTuple {
         Ok(())
     }
 
-    pub fn encode(&self, graph_degree_r: u16, code_len: usize) -> Result<Vec<u8>, String> {
+    fn validate_physical_v1(&self, graph_degree_r: u16, code_len: usize) -> Result<(), String> {
         self.validate(graph_degree_r, code_len)?;
+        if self.heap_tid == ItemPointer::INVALID {
+            return Err("distann physical node record has an invalid row-tier TID".to_owned());
+        }
+        let live = usize::from(self.neighbor_count);
+        if self.neighbor_vec_ids[live..]
+            .iter()
+            .any(|neighbor| *neighbor != 0)
+            || self.neighbor_codes[live * code_len..]
+                .iter()
+                .any(|byte| *byte != 0)
+        {
+            return Err(
+                "distann physical node record has non-zero adjacency padding".to_owned(),
+            );
+        }
+        Ok(())
+    }
+
+    pub fn encode(&self, graph_degree_r: u16, code_len: usize) -> Result<Vec<u8>, String> {
+        self.encode_with_version(graph_degree_r, code_len, None)
+    }
+
+    /// Encode the versioned physical-generation record governed by FR-076.
+    pub fn encode_physical_v1(
+        &self,
+        graph_degree_r: u16,
+        code_len: usize,
+    ) -> Result<Vec<u8>, String> {
+        self.encode_with_version(graph_degree_r, code_len, Some(DISTANN_NODE_FORMAT_VERSION))
+    }
+
+    fn encode_with_version(
+        &self,
+        graph_degree_r: u16,
+        code_len: usize,
+        format_version: Option<u16>,
+    ) -> Result<Vec<u8>, String> {
+        if format_version.is_some() {
+            self.validate_physical_v1(graph_degree_r, code_len)?;
+        } else {
+            self.validate(graph_degree_r, code_len)?;
+        }
         let mut out = Vec::with_capacity(Self::encoded_len(graph_degree_r, code_len));
-        out.push(DISTANN_NODE_TAG);
-        out.push(0); // reserved
+        if let Some(format_version) = format_version {
+            out.extend_from_slice(&format_version.to_le_bytes());
+        } else {
+            out.push(DISTANN_NODE_TAG);
+            out.push(0);
+        }
         let mut flags = 0_u16;
         if self.tombstoned {
             flags |= DISTANN_FLAG_TOMBSTONE;
@@ -157,8 +208,38 @@ impl DistannNodeTuple {
     }
 
     pub fn decode(input: &[u8], graph_degree_r: u16, code_len: usize) -> Result<Self, String> {
+        Self::decode_version(input, graph_degree_r, code_len, None)
+    }
+
+    /// Decode a Task 179 physical-generation graph record, rejecting legacy
+    /// and unknown record versions before interpreting payload fields.
+    pub fn decode_physical_v1(
+        input: &[u8],
+        graph_degree_r: u16,
+        code_len: usize,
+    ) -> Result<Self, String> {
+        Self::decode_version(
+            input,
+            graph_degree_r,
+            code_len,
+            Some(DISTANN_NODE_FORMAT_VERSION),
+        )
+    }
+
+    fn decode_version(
+        input: &[u8],
+        graph_degree_r: u16,
+        code_len: usize,
+        expected_version: Option<u16>,
+    ) -> Result<Self, String> {
         let mut out = Self::empty();
-        Self::decode_into(input, graph_degree_r, code_len, &mut out)?;
+        Self::decode_into_version(
+            input,
+            graph_degree_r,
+            code_len,
+            expected_version,
+            &mut out,
+        )?;
         Ok(out)
     }
 
@@ -169,6 +250,16 @@ impl DistannNodeTuple {
         code_len: usize,
         out: &mut Self,
     ) -> Result<(), String> {
+        Self::decode_into_version(input, graph_degree_r, code_len, None, out)
+    }
+
+    fn decode_into_version(
+        input: &[u8],
+        graph_degree_r: u16,
+        code_len: usize,
+        expected_version: Option<u16>,
+        out: &mut Self,
+    ) -> Result<(), String> {
         let expected = Self::encoded_len(graph_degree_r, code_len);
         if input.len() != expected {
             return Err(format!(
@@ -176,10 +267,22 @@ impl DistannNodeTuple {
                 input.len()
             ));
         }
-        if input[DISTANN_NODE_TAG_OFFSET] != DISTANN_NODE_TAG {
+        if let Some(expected_version) = expected_version {
+            let format_version = u16::from_le_bytes(
+                input[DISTANN_NODE_FORMAT_VERSION_OFFSET
+                    ..DISTANN_NODE_FORMAT_VERSION_OFFSET + 2]
+                    .try_into()
+                    .expect("graph record version bytes"),
+            );
+            if format_version != expected_version {
+                return Err(format!(
+                    "invalid distann graph record version: got {format_version}, expected {expected_version}"
+                ));
+            }
+        } else if input[DISTANN_NODE_TAG_OFFSET] != DISTANN_NODE_TAG || input[1] != 0 {
             return Err(format!(
-                "invalid distann node record tag: got {:#04x}, expected {DISTANN_NODE_TAG:#04x}",
-                input[DISTANN_NODE_TAG_OFFSET]
+                "invalid legacy distann node record tag/reserved: got {:#04x}/{:#04x}, expected {DISTANN_NODE_TAG:#04x}/0x00",
+                input[DISTANN_NODE_TAG_OFFSET], input[1]
             ));
         }
         let flags = u16::from_le_bytes(
@@ -234,6 +337,9 @@ impl DistannNodeTuple {
         out.neighbor_codes.clear();
         out.neighbor_codes
             .extend_from_slice(&input[codes_offset..][..r * code_len]);
+        if expected_version.is_some() {
+            out.validate_physical_v1(graph_degree_r, code_len)?;
+        }
         Ok(())
     }
 }
@@ -430,7 +536,9 @@ impl DistannDeltaTuple {
 #[cfg(test)]
 mod tests {
     use super::{
-        DistannDeltaTuple, DistannNodeTuple, DISTANN_FLAG_TOMBSTONE, DISTANN_NODE_HEADER_BYTES,
+        DistannDeltaTuple, DistannNodeTuple, DISTANN_FLAG_TOMBSTONE,
+        DISTANN_NODE_FORMAT_VERSION, DISTANN_NODE_FORMAT_VERSION_OFFSET,
+        DISTANN_NODE_HEADER_BYTES,
     };
     use crate::storage::page::ItemPointer;
 
@@ -468,7 +576,9 @@ mod tests {
             neighbor_count: 3,
             search_code: (0..CODE_LEN as u8).collect(),
             neighbor_vec_ids: vec![101, 202, 303, 0],
-            neighbor_codes: (0..(R as usize * CODE_LEN) as u8).collect(),
+            neighbor_codes: (0..R as usize * CODE_LEN)
+                .map(|offset| if offset < 3 * CODE_LEN { offset as u8 } else { 0 })
+                .collect(),
         }
     }
 
@@ -483,6 +593,37 @@ mod tests {
         assert_eq!(decoded, tuple);
         let re_encoded = decoded.encode(R, CODE_LEN).expect("re-encode");
         assert_eq!(re_encoded, encoded);
+    }
+
+    #[test]
+    fn distann_physical_node_v1_rejects_legacy_and_unknown_versions() {
+        let tuple = sample();
+        let encoded = tuple
+            .encode_physical_v1(R, CODE_LEN)
+            .expect("physical encode should succeed");
+        assert_eq!(
+            u16::from_le_bytes(
+                encoded[DISTANN_NODE_FORMAT_VERSION_OFFSET
+                    ..DISTANN_NODE_FORMAT_VERSION_OFFSET + 2]
+                    .try_into()
+                    .unwrap()
+            ),
+            DISTANN_NODE_FORMAT_VERSION
+        );
+        assert_eq!(
+            DistannNodeTuple::decode_physical_v1(&encoded, R, CODE_LEN).unwrap(),
+            tuple
+        );
+        assert!(DistannNodeTuple::decode(&encoded, R, CODE_LEN).is_err());
+
+        let mut unknown = encoded;
+        unknown[DISTANN_NODE_FORMAT_VERSION_OFFSET..DISTANN_NODE_FORMAT_VERSION_OFFSET + 2]
+            .copy_from_slice(&2_u16.to_le_bytes());
+        assert!(DistannNodeTuple::decode_physical_v1(&unknown, R, CODE_LEN).is_err());
+
+        let mut noncanonical = tuple;
+        noncanonical.neighbor_vec_ids[3] = 404;
+        assert!(noncanonical.encode_physical_v1(R, CODE_LEN).is_err());
     }
 
     #[test]

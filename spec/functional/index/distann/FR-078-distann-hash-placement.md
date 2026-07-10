@@ -75,6 +75,11 @@ record_count bigint, receipt_digest bytea, last_error_category text)`
   endpoint identities, more than one local participant, raw conninfo in any
   argument, or a remote index that is not a schema/reloption-compatible
   `distributed_control` ec_distann index.
+- An endpoint identity SHALL be non-empty canonical UTF-8 with no NUL or
+  leading/trailing whitespace, at most 65,535 bytes, and SHALL NOT be a
+  PostgreSQL URI or keyword/value conninfo string. The exact canonical value
+  is the identity persisted in the generation descriptor and matched by an
+  owner; it is not transport secret material.
 - Registration SHALL store the conninfo secret reference only in the
   coordinator-local descriptor catalog governed by
   [NFR-014](../../../non-functional/NFR-014-spire-transport-security-and-operations.md).
@@ -141,7 +146,10 @@ fields:
 ```
 
 Fixed-width integers SHALL use little-endian encoding and variable fields SHALL
-use unsigned little-endian `u32` lengths. The descriptor digest SHALL be
+use unsigned little-endian `u32` lengths. Every canonical array SHALL begin
+with an unsigned little-endian `u32` element count; the roster then encodes
+each entry as `node_id u32`, `logical_index_uuid byte[16]`, and one
+length-prefixed UTF-8 endpoint identity. The descriptor digest SHALL be
 `SHA-256("ec_distann_generation_descriptor_v1\0" || canonical_descriptor)`.
 The immutable build-specification digest SHALL include that descriptor digest.
 
@@ -319,7 +327,7 @@ order:
 | parent_fingerprint | length-prefixed bytes | empty or one retained FR-082 fingerprint |
 | source_snapshot_digest | byte[32] | FR-082 canonical snapshot identity |
 | generation_descriptor_digest | byte[32] | descriptor above, binding roster/formats/codec/schema |
-| build_options | length-prefixed bytes | `build_list_size u16`, IEEE-754 `alpha f32_le`, `seed u64`, IEEE-754 `closure_epsilon f32_le`, `head_index_cap u32`, and `build_shards u32` |
+| build_options | length-prefixed bytes | `build_list_size u16`, IEEE-754 `alpha f32_le`, `seed u64`, IEEE-754 `closure_epsilon f32_le`, `head_index_cap u32`, and `build_shards u32`; zero build_shards means FR-077 auto selection |
 | expected_global_count | u64 | exact source vec_id count |
 | expected_global_graph_digest | byte[32] | canonical stitched graph content |
 | expected_global_row_tier_digest | byte[32] | canonical source row payload content |
@@ -329,7 +337,9 @@ order:
 The build-specification digest SHALL be
 `SHA-256("ec_distann_build_spec_v1\0" || canonical_build_specification)`.
 Fixed-width fields and length prefixes SHALL follow the same integer/UUID rules
-as the generation descriptor. The build specification SHALL contain no raw
+as the generation descriptor. `owner_expectations` SHALL begin with its `u32`
+element count and then encode the three fixed-width fields for each roster
+entry without per-entry byte lengths. The build specification SHALL contain no raw
 conninfo, secret reference, PostgreSQL OID, or local physical locator.
 - The final epoch-manifest digest SHALL be computed only after all Ready
   receipts exist under [FR-082](./FR-082-distann-epoch-lifecycle.md).

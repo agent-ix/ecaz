@@ -134,6 +134,47 @@ fn empty_metadata(state: &BuildState) -> DistannMetadataPage {
     )
 }
 
+fn new_logical_index_uuid() -> [u8; 16] {
+    let mut uuid = [0_u8; 16];
+    // SAFETY: `uuid` is a writable 16-byte buffer and PostgreSQL's strong
+    // random generator writes exactly the requested byte count.
+    if !unsafe { pg_sys::pg_strong_random(uuid.as_mut_ptr().cast(), uuid.len()) } {
+        pgrx::error!("ec_distann could not generate a logical index UUID");
+    }
+    // RFC 4122 variant + version 4. The random 122 bits make reuse across OID
+    // churn or rebuilds cryptographically negligible; the UUID is persisted in
+    // control metadata before any generation catalog row can reference it.
+    uuid[6] = (uuid[6] & 0x0f) | 0x40;
+    uuid[8] = (uuid[8] & 0x3f) | 0x80;
+    uuid
+}
+
+fn control_metadata(state: &BuildState) -> DistannMetadataPage {
+    DistannMetadataPage::distributed_control(
+        state.options.graph_degree as u16,
+        state.options.build_list_size as u16,
+        state.options.alpha,
+        DEFAULT_QUANT_SEED,
+        state.options.neighbor_code_format.metadata_kind(),
+        state.options.head_index_cap as u32,
+        state.options.closure_epsilon,
+        new_logical_index_uuid(),
+    )
+}
+
+fn require_permanent_control(index_relation: pg_sys::Relation) {
+    let handle = NonNull::new(index_relation).unwrap_or_else(|| {
+        pgrx::error!("ec_distann distributed-control persistence check needs a valid index relation")
+    });
+    let (_, _, persistence) =
+        crate::storage::relation::relation_namespace_owner_persistence_handle(handle);
+    if persistence != pg_sys::RELPERSISTENCE_PERMANENT as std::ffi::c_char {
+        pgrx::error!(
+            "EC_CONTROL_PERSISTENCE: ec_distann distributed_control=true requires a permanent WAL-logged source table and index"
+        );
+    }
+}
+
 pub(super) unsafe extern "C-unwind" fn ec_distann_ambuild(
     heap_relation: pg_sys::Relation,
     index_relation: pg_sys::Relation,
@@ -143,6 +184,22 @@ pub(super) unsafe extern "C-unwind" fn ec_distann_ambuild(
         let mut state = BuildState::new(index_relation);
         state.identity =
             resolve_identity_attribute(heap_relation, index_info, &state.options);
+
+        if state.options.distributed_control {
+            require_permanent_control(index_relation);
+            if state.identity.is_none() {
+                pgrx::error!(
+                    "ec_distann distributed_control=true requires source_identity='include' with exactly one UUID or bytea(16) INCLUDE column"
+                );
+            }
+            initialize_metadata_page(index_relation, control_metadata(&state));
+            let mut result = PgBox::<pg_sys::IndexBuildResult>::alloc0();
+            // The logical control relation intentionally indexes no heap rows.
+            // Physical generation construction later owns snapshot accounting.
+            result.heap_tuples = 0.0;
+            result.index_tuples = 0.0;
+            return result.into_pg();
+        }
 
         initialize_metadata_page(index_relation, empty_metadata(&state));
 
@@ -179,7 +236,17 @@ pub(super) unsafe extern "C-unwind" fn ec_distann_ambuild(
 pub(super) unsafe extern "C-unwind" fn ec_distann_ambuildempty(index_relation: pg_sys::Relation) {
     pg_am_callback!({
         let state = BuildState::new(index_relation);
-        initialize_metadata_page(index_relation, empty_metadata(&state));
+        if state.options.distributed_control {
+            require_permanent_control(index_relation);
+            if state.options.source_identity != DistannSourceIdentityProvider::Include {
+                pgrx::error!(
+                    "ec_distann distributed_control=true requires source_identity='include'"
+                );
+            }
+            initialize_metadata_page(index_relation, control_metadata(&state));
+        } else {
+            initialize_metadata_page(index_relation, empty_metadata(&state));
+        }
     })
 }
 
@@ -700,17 +767,25 @@ pub(crate) fn read_metadata_from_index_handle(
     // special pointer covers the serialized metadata payload.
     let metadata_bytes = unsafe {
         let special_size = pg_sys::PageGetSpecialSize(page) as usize;
-        if special_size < super::page::DISTANN_METADATA_BYTES {
+        if special_size < 2 {
             return Err(format!(
-                "ec_distann metadata page special area too small: got {special_size}, expected at least {}",
-                super::page::DISTANN_METADATA_BYTES
+                "ec_distann metadata page special area too small: got {special_size}, expected at least 2"
             ));
         }
         let metadata_ptr = pg_sys::PageGetSpecialPointer(page).cast::<u8>();
-        std::slice::from_raw_parts(
-            metadata_ptr.cast_const(),
-            super::page::DISTANN_METADATA_BYTES,
-        )
+        let version_bytes = std::slice::from_raw_parts(metadata_ptr.cast_const(), 2);
+        let format_version = u16::from_le_bytes(
+            version_bytes
+                .try_into()
+                .expect("metadata version is exactly two bytes"),
+        );
+        let encoded_len = DistannMetadataPage::encoded_len_for_version(format_version)?;
+        if special_size < encoded_len {
+            return Err(format!(
+                "ec_distann metadata page special area too small: got {special_size}, expected at least {encoded_len} for format {format_version}"
+            ));
+        }
+        std::slice::from_raw_parts(metadata_ptr.cast_const(), encoded_len)
     };
     DistannMetadataPage::decode(metadata_bytes)
 }

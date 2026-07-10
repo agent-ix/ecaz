@@ -14,6 +14,7 @@
 mod ambuild;
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::ambuild::read_metadata_from_index;
+mod canonical_wire;
 mod cost;
 mod custom_scan;
 mod dml;
@@ -21,9 +22,12 @@ mod epoch;
 mod epoch_manifest;
 mod expand;
 mod expand_error;
+mod generation_descriptor;
+mod handoff_wire;
 mod head_cache;
 mod identity;
 mod insert;
+mod manifest_v2;
 mod options;
 pub mod page;
 pub(crate) mod placement;
@@ -33,9 +37,43 @@ mod remote_endpoint;
 mod remote_transport;
 mod roster;
 mod routine;
+mod row_schema;
 pub(crate) mod scan;
 mod shard_build;
 pub mod tuple;
+
+pub use self::generation_descriptor::{
+    DistannBuildOptions, DistannBuildSpec, DistannCodecArtifact,
+    DistannGenerationDescriptor, DistannOwnerExpectation, DistannRosterEntry,
+    DISTANN_BUILD_SPEC_VERSION, DISTANN_BUILD_SPEC_VERSION_OFFSET,
+    DISTANN_CODEC_ARTIFACT_VERSION, DISTANN_CODEC_ARTIFACT_VERSION_OFFSET,
+    DISTANN_GENERATION_DESCRIPTOR_FIXED_PREFIX_BYTES,
+    DISTANN_GENERATION_DESCRIPTOR_VERSION, DISTANN_GENERATION_DESCRIPTOR_VERSION_OFFSET,
+    DISTANN_GRAPH_RECORD_VERSION, DISTANN_HANDOFF_WIRE_VERSION,
+    DISTANN_PHYSICAL_INDEX_FORMAT_VERSION, DISTANN_PLACEMENT_HASH_VERSION,
+};
+pub use self::handoff_wire::{
+    owner_stream_digest, DistannHandoffBatch, DistannHandoffEntry,
+    DistannHandoffShape, DISTANN_HANDOFF_BATCH_FIXED_PREFIX_BYTES,
+    DISTANN_HANDOFF_ENTRY_FIXED_PREFIX_BYTES, DISTANN_HANDOFF_MAX_BYTES,
+    DISTANN_HANDOFF_VERSION_OFFSET,
+};
+pub use self::manifest_v2::{
+    DistannEpochFingerprint, DistannEpochManifestV2, DistannManifestBuildOptions,
+    DistannManifestCodecParameters, DistannReadyReceipt, DistannSourceSnapshot,
+    DISTANN_EPOCH_FINGERPRINT_BYTES, DISTANN_EPOCH_MANIFEST_VERSION,
+    DISTANN_EPOCH_MANIFEST_VERSION_OFFSET, DISTANN_MANIFEST_BUILD_OPTIONS_BYTES,
+    DISTANN_MANIFEST_BUILD_OPTIONS_VERSION, DISTANN_MANIFEST_BUILD_OPTIONS_VERSION_OFFSET,
+    DISTANN_MANIFEST_CODEC_PARAMETERS_BYTES, DISTANN_MANIFEST_CODEC_PARAMETERS_VERSION,
+    DISTANN_MANIFEST_CODEC_PARAMETERS_VERSION_OFFSET, DISTANN_READY_RECEIPT_BYTES,
+    DISTANN_READY_RECEIPT_STATE, DISTANN_READY_RECEIPT_VERSION,
+    DISTANN_READY_RECEIPT_VERSION_OFFSET, DISTANN_SOURCE_SNAPSHOT_VERSION,
+    DISTANN_SOURCE_SNAPSHOT_VERSION_OFFSET,
+};
+pub use self::row_schema::{
+    DistannRowSchemaAttribute, DistannRowSchemaDescriptor, DISTANN_ROW_SCHEMA_VERSION,
+    DISTANN_ROW_SCHEMA_VERSION_OFFSET,
+};
 
 pub(crate) fn register_gucs() {
     options::register_gucs();

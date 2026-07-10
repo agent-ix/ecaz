@@ -22,6 +22,7 @@ use crate::quant::{
 };
 
 use super::{
+    generation_descriptor::DistannCodecArtifact,
     options::NeighborCodeFormat,
     page::{
         DistannMetadataPage, DISTANN_NEIGHBOR_CODEC_GROUPED_PQ, DISTANN_NEIGHBOR_CODEC_RABITQ,
@@ -133,6 +134,59 @@ impl DistannCodecBinding {
             Self::RaBitQ { .. } | Self::TurboQuant { .. } => None,
         }
     }
+
+    /// Freeze the complete generation codec state. Seeded codecs need only
+    /// shape/seed; GroupedPQ carries transform signs and every trained
+    /// codebook so a participant never retrains on an owner-local corpus.
+    pub(crate) fn to_artifact(
+        &self,
+        dimensions: u16,
+        seed: u64,
+    ) -> Result<DistannCodecArtifact, String> {
+        let artifact = match self {
+            Self::GroupedPq { model } => DistannCodecArtifact::GroupedPq4 {
+                dimensions,
+                seed,
+                model: model.clone(),
+            },
+            Self::RaBitQ { .. } => DistannCodecArtifact::RaBitQ {
+                dimensions,
+                seed,
+                bits: DISTANN_RABITQ_BITS,
+            },
+            Self::TurboQuant { .. } => DistannCodecArtifact::TurboQuant {
+                dimensions,
+                seed,
+                bits: DISTANN_TURBOQUANT_BITS,
+            },
+        };
+        artifact.validate()?;
+        Ok(artifact)
+    }
+
+    pub(crate) fn from_artifact(artifact: &DistannCodecArtifact) -> Result<Self, String> {
+        artifact.validate()?;
+        let dimensions = usize::from(artifact.dimensions());
+        let binding = match artifact {
+            DistannCodecArtifact::GroupedPq4 { model, .. } => Self::GroupedPq {
+                model: model.clone(),
+            },
+            DistannCodecArtifact::RaBitQ { seed, bits, .. } => Self::RaBitQ {
+                quantizer: RaBitQQuantizer::cached_seeded_srht_bits(dimensions, *seed, *bits)?,
+            },
+            DistannCodecArtifact::TurboQuant { seed, bits, .. } => {
+                let quantizer = ProdQuantizer::cached(dimensions, *bits, *seed);
+                if !quantizer.int8_approx_no_qjl_4bit_supported() {
+                    return Err(
+                        "EC_GENERATION_DESCRIPTOR: restored TurboQuant artifact lacks supported no-QJL lane"
+                            .to_owned(),
+                    );
+                }
+                Self::TurboQuant { quantizer }
+            }
+        };
+        Ok(binding)
+    }
 }
 
 /// Code stride implied by persisted metadata, for readers that have no
@@ -237,6 +291,55 @@ impl DistannPreparedQuery {
             other => Err(format!(
                 "ec_distann unsupported neighbor codec kind {other}"
             )),
+        }
+    }
+
+    /// Prepare directly from the immutable generation artifact. This is the
+    /// physical-owner path: no index-page codebook lookup and no retraining.
+    pub(crate) fn prepare_artifact(
+        artifact: &DistannCodecArtifact,
+        raw_query: &[f32],
+    ) -> Result<Self, String> {
+        artifact.validate()?;
+        let dimensions = usize::from(artifact.dimensions());
+        if raw_query.len() != dimensions {
+            return Err(format!(
+                "ec_distann query dimension mismatch: artifact dim {dimensions}, query dim {}",
+                raw_query.len()
+            ));
+        }
+        match artifact {
+            DistannCodecArtifact::GroupedPq4 { model, .. } => {
+                let rotated = crate::quant::rotation::srht_padded(raw_query, &model.signs);
+                let flat_codebooks = model
+                    .codebooks
+                    .iter()
+                    .flat_map(|codebook| codebook.iter().copied())
+                    .collect::<Vec<_>>();
+                Ok(Self::GroupedPq {
+                    query_lut: build_grouped_pq_lut_f32(
+                        &rotated,
+                        &flat_codebooks,
+                        model.group_size,
+                    ),
+                    group_count: model.group_count,
+                })
+            }
+            DistannCodecArtifact::RaBitQ { seed, bits, .. } => {
+                let quantizer =
+                    RaBitQQuantizer::cached_seeded_srht_bits(dimensions, *seed, *bits)?;
+                Ok(Self::RaBitQ {
+                    prepared: quantizer.prepare_estimator(raw_query),
+                })
+            }
+            DistannCodecArtifact::TurboQuant { seed, bits, .. } => {
+                let quantizer = ProdQuantizer::cached(dimensions, *bits, *seed);
+                let prepared = quantizer.prepare_ip_query_lut_no_qjl_4bit(raw_query);
+                Ok(Self::TurboQuant {
+                    quantizer,
+                    prepared,
+                })
+            }
         }
     }
 
@@ -362,4 +465,80 @@ impl DistannPreparedQuery {
 /// Centroid count per codebook tuple for the persisted GroupedPq chain.
 pub(crate) fn grouped_centroid_count(metadata: &DistannMetadataPage) -> usize {
     usize::from(metadata.codec_subvector_dim) * GROUPED_PQ_CENTROIDS
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const ARTIFACT_TEST_DIMENSIONS: usize = 1536;
+
+    fn corpus() -> Vec<Vec<f32>> {
+        (0..32)
+            .map(|row| {
+                let mut vector = (0..ARTIFACT_TEST_DIMENSIONS)
+                    .map(|dimension| ((row * 17 + dimension * 11) as f32).sin())
+                    .collect::<Vec<_>>();
+                let norm = vector.iter().map(|value| value * value).sum::<f32>().sqrt();
+                for value in &mut vector {
+                    *value /= norm;
+                }
+                vector
+            })
+            .collect()
+    }
+
+    #[test]
+    fn codec_artifact_restores_codes_and_prepared_scores_without_retraining() {
+        let corpus = corpus();
+        let refs = corpus.iter().map(Vec::as_slice).collect::<Vec<_>>();
+        for format in [
+            NeighborCodeFormat::RaBitQ,
+            NeighborCodeFormat::TurboQuant,
+            NeighborCodeFormat::GroupedPq,
+        ] {
+            let binding =
+                DistannCodecBinding::prepare(format, &refs, ARTIFACT_TEST_DIMENSIONS, 42).unwrap();
+            let artifact = binding
+                .to_artifact(ARTIFACT_TEST_DIMENSIONS as u16, 42)
+                .unwrap();
+            let canonical = artifact.encode().unwrap();
+            let decoded = DistannCodecArtifact::decode(&canonical).unwrap();
+            let restored = DistannCodecBinding::from_artifact(&decoded).unwrap();
+
+            let original_code = binding.encode(&corpus[1]);
+            assert_eq!(restored.encode(&corpus[1]), original_code);
+
+            let artifact_prepared =
+                DistannPreparedQuery::prepare_artifact(&decoded, &corpus[0]).unwrap();
+            let mut metadata = DistannMetadataPage::empty(
+                4,
+                16,
+                1.2,
+                ARTIFACT_TEST_DIMENSIONS as u16,
+                42,
+                binding.metadata_kind(),
+                16,
+                0.3,
+            );
+            metadata.codec_subvector_count = binding.metadata_subvector_count();
+            metadata.codec_subvector_dim = binding.metadata_subvector_dim();
+            let flat_codebooks = binding.grouped_model().map(|model| {
+                model
+                    .codebooks
+                    .iter()
+                    .flat_map(|codebook| codebook.iter().copied())
+                    .collect::<Vec<_>>()
+            });
+            let legacy_prepared =
+                DistannPreparedQuery::prepare(&metadata, flat_codebooks.as_deref(), &corpus[0])
+                    .unwrap();
+            assert_eq!(
+                artifact_prepared.score_dist(&original_code).to_bits(),
+                legacy_prepared.score_dist(&original_code).to_bits(),
+                "format {}",
+                format.as_str()
+            );
+        }
+    }
 }

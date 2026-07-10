@@ -33,26 +33,35 @@ row supplies exact rerank.
 record: distann_graph_node
 version: 1
 fields:
+  - { name: record_version, type: u16, rule: exactly 1; little-endian at byte offset 0 }
+  - { name: flags, type: u16, rule: bit0 = tombstone }
   - { name: vec_id, type: u64, rule: global identity per ADR-068 source_identity; unique per logical row }
   - { name: heap_tid, type: item_pointer, rule: owner-local epoch-row-tier tuple; resolves the full-precision vector for exact rerank and the frozen source payload for final materialization }
-  - { name: flags, type: u16, rule: bit0 = tombstone }
-  - { name: search_code, type: bytes, rule: one neighbor_code_format code for this node's own vector, fixed stride; used to score the node when it enters the beam }
   - { name: neighbor_count, type: u16, rule: "<= graph_degree (R)" }
-  - { name: neighbor_vec_ids, type: u64[neighbor_count], rule: adjacency list }
-  - { name: neighbor_codes, type: bytes, rule: one neighbor_code_format code per neighbor, fixed stride, scoreable via QuantCodec::score_ip_batch }
+  - { name: search_code, type: bytes[code_stride], rule: one neighbor_code_format code for this node's own vector; used to score the node when it enters the beam }
+  - { name: neighbor_vec_ids, type: u64[R], rule: first neighbor_count slots are adjacency; remaining slots are canonical zero padding }
+  - { name: neighbor_codes, type: bytes[R * code_stride], rule: one fixed-stride code per live neighbor slot; remaining slots are canonical zero padding }
 ```
 
 ## Record Fields
 
 | Field | Type | Rule |
 |-------|------|------|
+| record_version | u16 | Exactly 1, little-endian at byte offset 0; unknown and byte-swapped versions reject before any other field is interpreted |
+| flags | u16 | Bit 0 = tombstone (deleted, retained until vacuum) |
 | vec_id | u64 | Global identity derived from the ADR-068 source-identity contract; unique per logical row across all nodes and epochs |
 | heap_tid | ItemPointer | Owner-local epoch-row-tier tuple; the co-placed row it resolves ([FR-078](./FR-078-distann-hash-placement.md)) is the source of the node's full-precision vector for exact rerank and the frozen source payload for final materialization ([FR-079](./FR-079-distann-remote-expansion-protocol.md)) |
-| flags | u16 | Bit 0 = tombstone (deleted, retained until vacuum) |
-| search_code | byte block | One `neighbor_code_format` code for this node's own vector, fixed stride; scores the node when it enters the beam without a heap read |
 | neighbor_count | u16 | ≤ `graph_degree` (R) |
-| neighbor_vec_ids | u64[neighbor_count] | Adjacency list |
-| neighbor_codes | byte block | One `neighbor_code_format` code per neighbor, fixed stride, scoreable via `QuantCodec::score_ip_batch` without any further read |
+| search_code | byte[code_stride] | One `neighbor_code_format` code for this node's own vector; scores the node when it enters the beam without a heap read |
+| neighbor_vec_ids | u64[R] | First `neighbor_count` slots are the adjacency list; unused slots are zero |
+| neighbor_codes | byte[R × code_stride] | One scoreable code per live neighbor slot; unused slots are zero |
+
+The fixed header is 20 bytes with offsets: `record_version=0`, `flags=2`,
+`vec_id=4`, `heap_tid=12`, `neighbor_count=18`, and `search_code=20`.
+Consequently the complete record remains exactly
+`20 + code_stride + (R × 8) + (R × code_stride)` bytes. The legacy local-v4
+tuple's `(tag=0x09, reserved=0)` prefix is not a physical-generation version
+and SHALL NOT be accepted by the physical-v1 decoder.
 
 ## Handoff Entry Layout
 
@@ -100,7 +109,8 @@ fields:
 Fixed-width integer fields SHALL use little-endian encoding except the UUID
 bytes defined above. Every length prefix SHALL be an unsigned little-endian
 `u32`. The row NULL bitmap SHALL contain `ceil(non_dropped_attribute_count / 8)`
-bytes, with the first non-dropped attnum in the least-significant bit of byte zero. A NULL
+bytes, with the first non-dropped attnum in the least-significant bit of byte zero and
+`1 = NULL`, `0 = non-NULL`. A NULL
 attribute SHALL consume no `row_values` element. Each non-NULL attribute SHALL
 consume exactly one length-prefixed `row_values` element in ascending attnum
 order.
@@ -115,8 +125,9 @@ batch envelope.
 
 ## Behavior
 
-- The record format SHALL carry a format-version tag in the index metadata
-  page following the `VamanaMetadataPage` convention; version bumps follow
+- The physical record SHALL carry `record_version` at byte offset zero and the
+  generation descriptor/control metadata SHALL declare the same graph format;
+  version bumps follow
   [NFR-016](../../../non-functional/NFR-016-on-disk-format-evolution-discipline.md)
   (research posture: rebuild, no migration).
 - `vec_id` SHALL be stable across index rebuilds for the same logical row,

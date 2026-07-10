@@ -71,6 +71,7 @@ struct EcDistannReloptions {
     build_list_size: i32,
     head_index_cap: i32,
     build_shards: i32,
+    distributed_control: bool,
     // Postgres real reloptions are stored as C doubles; downcast to f32 when
     // constructing `EcDistannOptions` (same posture as ec_diskann alpha).
     alpha: f64,
@@ -173,6 +174,9 @@ pub(super) struct EcDistannOptions {
     pub(super) closure_epsilon: f32,
     pub(super) neighbor_code_format: NeighborCodeFormat,
     pub(super) source_identity: DistannSourceIdentityProvider,
+    /// FR-075 logical coordinator index. False preserves the legacy v4 local
+    /// graph build and metadata bytes; true creates metadata only.
+    pub(super) distributed_control: bool,
 }
 
 impl EcDistannOptions {
@@ -185,6 +189,7 @@ impl EcDistannOptions {
         closure_epsilon: ECDISTANN_DEFAULT_CLOSURE_EPSILON,
         neighbor_code_format: NeighborCodeFormat::DEFAULT,
         source_identity: DistannSourceIdentityProvider::None,
+        distributed_control: false,
     };
 }
 
@@ -356,6 +361,15 @@ pub(super) unsafe extern "C-unwind" fn ec_distann_amoptions(
             ECDISTANN_MAX_BUILD_SHARDS,
             offset_of!(EcDistannReloptions, build_shards) as i32,
         );
+        pg_sys::add_local_bool_reloption(
+            &mut relopts,
+            b"distributed_control\0".as_ptr().cast(),
+            b"Create a Task 179 logical distributed-control index with no local graph records; physical generations are built and published separately.\0"
+                .as_ptr()
+                .cast(),
+            false,
+            offset_of!(EcDistannReloptions, distributed_control) as i32,
+        );
         pg_sys::add_local_real_reloption(
             &mut relopts,
             b"alpha\0".as_ptr().cast(),
@@ -454,6 +468,7 @@ impl EcDistannReloptionsView {
             closure_epsilon: reloptions.closure_epsilon as f32,
             neighbor_code_format,
             source_identity,
+            distributed_control: reloptions.distributed_control,
         }
     }
 }
@@ -482,6 +497,7 @@ mod tests {
         assert_eq!(defaults.head_index_cap, ECDISTANN_DEFAULT_HEAD_INDEX_CAP);
         assert_eq!(defaults.head_index_cap, 4096);
         assert_eq!(defaults.neighbor_code_format, NeighborCodeFormat::RaBitQ);
+        assert!(!defaults.distributed_control);
         assert_eq!(
             defaults.source_identity,
             DistannSourceIdentityProvider::None
