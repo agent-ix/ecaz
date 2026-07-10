@@ -27,3 +27,5 @@ description: "Index of artifacts in this directory."
 * [NFR-018: Distann Space Amplification Budget](./NFR-018-distann-space-amplification.md)
 * [NFR-019: Distann Per-Query Touch Bound](./NFR-019-distann-per-query-touch-bound.md)
 * [NFR-020: Distann Fault Behavior](./NFR-020-distann-fault-behavior.md)
+* [NFR-021: Distann Relay Resource and Depth Bounds](./NFR-021-distann-relay-resource-bounds.md)
+* [NFR-022: Distann BatANN Coordination-Mode Bench Gate](./NFR-022-distann-batann-mode-bench-gate.md)
