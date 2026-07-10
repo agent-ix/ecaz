@@ -355,6 +355,17 @@ pub(super) unsafe fn graph_insert_record(
         if hit.vec_id == new_vec_id || hit.heap_tid == ItemPointer::INVALID {
             continue;
         }
+        // 167-006-P1: `collect_distann_hits` merges the still-live delta chain into
+        // its results (routine.rs), so during a multi-row fold this hit set can
+        // include OTHER not-yet-folded delta rows. Those rows have no directory
+        // entry, so selecting one as a forward neighbor would fail the mandatory
+        // directory lookup below (step 4) AFTER earlier rows already mutated the
+        // graph. Graph-placement candidates must be persisted graph nodes: skip any
+        // hit absent from the current directory. A delta row earns its own edges
+        // when the fold loop reaches it against the then-current graph.
+        if directory_lookup(&directory, hit.vec_id).is_none() {
+            continue;
+        }
         let vector = fetch_heap_source_vector(
             heap_relation,
             snapshot,

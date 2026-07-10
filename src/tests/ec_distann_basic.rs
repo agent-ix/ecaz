@@ -1069,6 +1069,81 @@ fn test_ec_distann_fold_delta_into_graph() {
 }
 
 #[pg_test]
+fn test_ec_distann_fold_multi_row_clustered_delta() {
+    // 167-006-P1 regression: fold SEVERAL delta rows in one call. The candidate
+    // search (`collect_distann_hits`) merges the still-live delta chain into its
+    // hits, so while folding row A the search sees not-yet-folded rows B/C. Those
+    // rows have no directory entry; before the fix, robust-prune could pick one as
+    // a forward neighbor and the fold would error at the mandatory directory lookup
+    // AFTER earlier rows already mutated the graph. The rows are clustered near a
+    // common point so they are genuinely each other's nearest neighbors — the exact
+    // shape that surfaces the bug. Every row must fold and be found via traversal.
+    create_distann_fixture("ec_distann_multifold", "WITH (graph_degree = 4)");
+    for (row_id, coord) in [(90, 0.51_f32), (91, 0.52), (92, 0.53)] {
+        Spi::run(&format!(
+            "INSERT INTO ec_distann_multifold VALUES \
+             ({row_id}, encode_to_ecvector(ARRAY[{coord}, {coord}, {coord}, {coord}], 4, 42))"
+        ))
+        .expect("clustered delta insert should succeed");
+    }
+
+    let (before, _) = distann_materialized_index("ec_distann_multifold_idx");
+    assert_ne!(
+        before.delta_buffer_head,
+        crate::storage::page::ItemPointer::INVALID,
+        "clustered rows are in the delta buffer before folding"
+    );
+
+    let folded = Spi::get_one::<i64>(
+        "SELECT ec_distann_fold_delta_into_graph('ec_distann_multifold_idx'::regclass::oid)",
+    )
+    .expect("SPI query should succeed")
+    .expect("count should exist");
+    assert_eq!(folded, 3, "all three clustered delta entries fold in one call");
+
+    let (after, _) = distann_materialized_index("ec_distann_multifold_idx");
+    assert_eq!(
+        after.node_count,
+        before.node_count + 3,
+        "all three folded nodes joined the graph"
+    );
+    assert_eq!(
+        after.delta_buffer_head,
+        crate::storage::page::ItemPointer::INVALID,
+        "delta buffer drained after multi-row fold"
+    );
+
+    // All three folded rows are reachable via graph traversal (delta buffer is
+    // empty now). The three cluster coords (0.51/0.52/0.53) are near-identical, so
+    // the quantized `<#>` order cannot reliably distinguish top-1 among them; the
+    // regression assertion is that the whole folded cluster is graph-reachable, so
+    // query the cluster centre and require all three to appear in the top-3 (they
+    // were connected into the graph by the multi-row fold, not lost).
+    Spi::run("SET enable_seqscan = off").expect("disabling seqscan should succeed");
+    let mut found: Vec<i64> = Vec::new();
+    Spi::connect(|client| {
+        let rows = client
+            .select(
+                "SELECT id FROM ec_distann_multifold \
+                 ORDER BY embedding <#> ARRAY[0.52, 0.52, 0.52, 0.52]::real[] LIMIT 3",
+                None,
+                &[],
+            )
+            .expect("cluster query should succeed");
+        for row in rows {
+            found.push(row.get::<i64>(1).expect("id column").expect("id present"));
+        }
+    });
+    for row_id in [90_i64, 91, 92] {
+        assert!(
+            found.contains(&row_id),
+            "folded clustered row {row_id} must be graph-reachable in the top-3 (got {found:?})"
+        );
+    }
+    Spi::run("RESET enable_seqscan").expect("seqscan reset should succeed");
+}
+
+#[pg_test]
 fn test_ec_distann_reindex_drains_delta_buffer() {
     // FR-083-AC-2: the epoch build (REINDEX) drains the interim delta buffer —
     // the inserted row joins the graph and delta_buffer_head resets to INVALID
