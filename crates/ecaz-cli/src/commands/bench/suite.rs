@@ -1771,6 +1771,17 @@ fn parse_result_rows(
                 values: add_result_context(manifest, step, values),
             })
             .collect(),
+        "distann-local-multinode" => parse_distann_multinode_rows(raw)
+            .into_iter()
+            .map(|(metric, values)| ResultRow {
+                suite: manifest.suite.clone(),
+                step: step.name.clone(),
+                kind: step.kind.clone(),
+                metric,
+                artifact: artifact.into(),
+                values: add_result_context(manifest, step, values),
+            })
+            .collect(),
         _ => Vec::new(),
     }
 }
@@ -2082,6 +2093,82 @@ fn parse_load_rows(raw: &str) -> Vec<(String, BTreeMap<String, String>)> {
         }
     }
     rows
+}
+
+/// Parse the `ecaz dev distann-multicluster` fixture log emitted by a
+/// `distann-local-multinode` suite step into structured result rows. The
+/// fixture prints `[distann-multicluster] ...` lines; three shapes carry
+/// decision-grade signal (027-P1 — the empty-`results.jsonl` fix):
+///
+/// - `RECALL_RESULT n_queries=.. identical=.. mismatched_ids=..` — the
+///   byte-identical single-vs-multi top-k distinct-recall identity. Emits a
+///   `distinct_recall_identity` row with an `identity_ok` threshold
+///   (`mismatched_ids == 0`).
+/// - `suite_recall_gate single=.. multi=.. delta=.. pass=..` — the
+///   `ecaz bench recall` single-vs-multi gate. Emits a `suite_recall_gate` row.
+/// - any `<drill> pass=<bool>` line (qual, FR-082, fault drills, concurrency,
+///   retention, AC-5, disjoint, recovery) — emits a `drill_outcome` row with
+///   the drill label and pass flag, so every asserted fixture arm traces to a
+///   result row.
+fn parse_distann_multinode_rows(raw: &str) -> Vec<(String, BTreeMap<String, String>)> {
+    const PREFIX: &str = "[distann-multicluster] ";
+    let mut rows = Vec::new();
+    for line in raw.lines() {
+        let line = line.trim();
+        let Some(body) = line.find(PREFIX).map(|idx| &line[idx + PREFIX.len()..]) else {
+            continue;
+        };
+        let body = body.trim();
+        if let Some(rest) = body.strip_prefix("RECALL_RESULT") {
+            if let Some(mut values) = parse_space_key_values(rest.trim()) {
+                let identity_ok = values
+                    .get("mismatched_ids")
+                    .map(|m| m == "0")
+                    .unwrap_or(false);
+                values.insert("identity_ok".into(), identity_ok.to_string());
+                rows.push(("distinct_recall_identity".into(), values));
+            }
+        } else if let Some(rest) = body.strip_prefix("suite_recall_gate ") {
+            // Only the measured form carries `single=`; SKIPPED/INCONCLUSIVE do not.
+            if let Some(values) = parse_space_key_values(rest.trim()) {
+                if values.contains_key("single") {
+                    rows.push(("suite_recall_gate".into(), values));
+                }
+            }
+        } else if let Some(pass_idx) = body.find(" pass=") {
+            // A generic drill-outcome line: `<label> pass=<bool>`.
+            let label = body[..pass_idx].trim();
+            let pass_token = body[pass_idx + " pass=".len()..]
+                .split_whitespace()
+                .next()
+                .unwrap_or("");
+            if (pass_token == "true" || pass_token == "false") && !label.is_empty() {
+                let mut values = BTreeMap::new();
+                values.insert("drill".into(), sanitize_drill_label(label));
+                values.insert("pass".into(), pass_token.to_owned());
+                rows.push(("drill_outcome".into(), values));
+            }
+        }
+    }
+    rows
+}
+
+/// Collapse a free-text drill label (which may carry interior spaces from the
+/// fixture, e.g. `recovery RECALL_RESULT ...`) into a compact identifier.
+fn sanitize_drill_label(label: &str) -> String {
+    label
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join("_")
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '_' || ch == '-' {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect()
 }
 
 fn parse_ec_ivf_build_timing_line(line: &str) -> Option<BTreeMap<String, String>> {
@@ -4295,6 +4382,79 @@ mod tests {
             user: None,
             password: Some("secret".into()),
         }
+    }
+
+    #[test]
+    fn distann_multinode_rows_parse_recall_identity_gate_and_drills() {
+        // 027-P1: the `distann-local-multinode` step used to emit an empty
+        // results.jsonl because parse_result_rows had no arm. This pins the
+        // three decision-grade shapes the fixture emits.
+        let raw = "\
+[distann-multicluster] node 1 loaded + indexed\n\
+[distann-multicluster] RECALL_RESULT n_queries=50 identical=50 mismatched_ids=0\n\
+[distann-multicluster] suite_recall_gate single=0.9950 multi=0.9950 delta=0.0000 pass=true\n\
+[distann-multicluster] qual_correctness mismatched_ids=0 pass=true\n\
+[distann-multicluster] fault_drill remote_statement_timeout pass=true\n\
+[distann-multicluster] suite_recall_gate=SKIPPED(no exe)\n";
+        let rows = parse_distann_multinode_rows(raw);
+
+        let identity = rows
+            .iter()
+            .find(|(m, _)| m == "distinct_recall_identity")
+            .expect("recall identity row");
+        assert_eq!(identity.1.get("n_queries").map(String::as_str), Some("50"));
+        assert_eq!(
+            identity.1.get("mismatched_ids").map(String::as_str),
+            Some("0")
+        );
+        assert_eq!(
+            identity.1.get("identity_ok").map(String::as_str),
+            Some("true")
+        );
+
+        let gate = rows
+            .iter()
+            .find(|(m, _)| m == "suite_recall_gate")
+            .expect("suite recall gate row");
+        assert_eq!(gate.1.get("single").map(String::as_str), Some("0.9950"));
+        assert_eq!(gate.1.get("multi").map(String::as_str), Some("0.9950"));
+        assert_eq!(gate.1.get("pass").map(String::as_str), Some("true"));
+
+        // The SKIPPED gate line (no `single=`) must NOT produce a gate row.
+        assert_eq!(
+            rows.iter().filter(|(m, _)| m == "suite_recall_gate").count(),
+            1,
+            "only the measured gate line yields a row"
+        );
+
+        let drills: Vec<&String> = rows
+            .iter()
+            .filter(|(m, _)| m == "drill_outcome")
+            .filter_map(|(_, v)| v.get("drill"))
+            .collect();
+        assert!(
+            drills.iter().any(|d| d.contains("fault_drill_remote_statement_timeout")),
+            "fault drill outcome captured: {drills:?}"
+        );
+        assert!(
+            drills.iter().any(|d| d.contains("qual_correctness")),
+            "qual drill outcome captured: {drills:?}"
+        );
+    }
+
+    #[test]
+    fn distann_multinode_recall_mismatch_sets_identity_not_ok() {
+        let raw = "[distann-multicluster] RECALL_RESULT n_queries=50 identical=48 mismatched_ids=4\n";
+        let rows = parse_distann_multinode_rows(raw);
+        let identity = rows
+            .iter()
+            .find(|(m, _)| m == "distinct_recall_identity")
+            .expect("recall identity row");
+        assert_eq!(
+            identity.1.get("identity_ok").map(String::as_str),
+            Some("false"),
+            "a nonzero mismatch fails the identity threshold"
+        );
     }
 
     #[test]
