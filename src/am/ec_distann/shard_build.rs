@@ -9,17 +9,20 @@
 //!      lives on the unmerged `task-144-spire-closure-ratio-pruning` branch,
 //!      so this is a fresh implementation against the already-plumbed
 //!      `closure_epsilon` reloption (FR-077 "implement the ε band fresh").
-//!   2. **Per-shard Vamana builds** (`build_shard_graphs`): each shard is an
+//!   2. **Per-shard Vamana builds** (`build_shard_spool`): each shard is an
 //!      independent seed-deterministic Vamana over the shared core
 //!      (`build_vamana_graph_with_stats`), built in parallel; shard output
-//!      adjacency is mapped back to the global vec-id space and sorted by
-//!      global node id so the stitch can stream it.
-//!   3. **Streaming stitch** (`stitch_shard_graphs`): group by global node
-//!      (ADR-085 D8 — one node group + the prune working set held at a time),
-//!      union the per-shard neighbor lists, and `robust_prune` the union to
-//!      at most `graph_degree` edges under the global distance. A node that
-//!      appears in exactly one shard passes through unchanged (stitch
-//!      idempotence, FR-077-AC-2).
+//!      adjacency is mapped back to the global vec-id space, sorted by global
+//!      node id, and written to one sequential PostgreSQL-managed `BufFile` per
+//!      shard.
+//!   3. **Streaming stitch** (`stitch_shard_spool`): k-way merge lightweight
+//!      shard cursors by global node (ADR-085 D8 — one node group + the prune
+//!      working set held at a time), union the current group's neighbor lists,
+//!      and `robust_prune` the union to at most `graph_degree` edges under the
+//!      global distance. Cursor lookahead retains only the entry header; an
+//!      adjacency payload is read only when its vec-id is the current group.
+//!      A node that appears in exactly one shard passes through unchanged
+//!      (stitch idempotence, FR-077-AC-2).
 //!   4. **Reachability repair** (`repair_reachability`): a deterministic
 //!      guard that guarantees FR-077-CON-3 (every node reachable from the
 //!      entry medoid) by adding a single in-edge from the nearest reached
@@ -35,8 +38,13 @@
 //! head-sample staging in `ambuild.rs` is unchanged (FR-077 non-goal: no
 //! head-index changes beyond consuming multi-shard entry samples).
 
-use std::collections::BTreeSet;
+use std::cmp::Reverse;
+use std::collections::BinaryHeap;
+use std::mem::size_of;
+#[cfg(not(test))]
+use std::ptr::NonNull;
 
+use pgrx::pg_sys;
 use rayon::prelude::*;
 
 use crate::am::common::training::train_spherical_kmeans;
@@ -60,6 +68,12 @@ const DISTANN_SHARD_KMEANS_ITERATIONS: usize = 10;
 /// deterministic).
 const DISTANN_SHARD_SEED_STRIDE: u64 = 0x9E37_79B9_7F4A_7C15;
 
+/// Internal, temporary-only shard-spool entry header: global node id followed
+/// by neighbor count, both little-endian u32. The payload is `count` little-
+/// endian u32 neighbor ids. This is deliberately not a persisted index/wire
+/// format; the `BufFile` is resource-owner scoped to the build.
+const DISTANN_SHARD_SPILL_HEADER_BYTES: usize = 8;
+
 /// Build-time diagnostics surfaced to the epoch/packet manifest (FR-077-AC-3,
 /// ADR-085 D8). All counts are over the global node space.
 #[derive(Debug, Clone, PartialEq)]
@@ -75,20 +89,20 @@ pub(super) struct ShardBuildStats {
     pub(super) stitch_edges_before_prune: u64,
     /// Total edges emitted after `robust_prune`.
     pub(super) stitch_edges_after_prune: u64,
-    /// Peak *incremental* stitch working set in node ids: the largest
-    /// single-node neighbor union the merge held at once. The merge never holds
-    /// all unions simultaneously — it streams one node group at a time.
+    /// Largest de-duplicated single-node neighbor union.
     pub(super) stitch_peak_union_len: usize,
-    /// Total node-ids retained across all shard outputs during the stitch
-    /// (sum of every shard's node list + adjacency). This v1 holds the shard
-    /// graphs in memory rather than spilling them to sorted files, so this —
-    /// NOT `stitch_peak_union_len` — is the honest peak-memory figure for the
-    /// stitch input (ADR-085 D8 / FR-077-CON-4). It is bounded by
-    /// `duplication_factor * node_count * (graph_degree + 1)` and is a small
-    /// fraction of the already-resident source vectors; the strict "streamed by
-    /// vec_id group" D8 bound (spill shard outputs to disk, merge from cursors)
-    /// is a tracked follow-up, not required for M1 correctness.
-    pub(super) shard_output_retained_node_ids: u64,
+    /// Total encoded bytes written to the PostgreSQL-managed shard spool.
+    pub(super) shard_output_spill_bytes: u64,
+    /// Peak retained bytes for every shard BufFile block buffer plus cursor and
+    /// merge-heap metadata. Cursor lookahead contains no adjacency payload.
+    pub(super) stitch_peak_cursor_bytes: usize,
+    /// Peak retained bytes for the current vec-id's passthrough/union and the
+    /// candidate/result capacity used by `robust_prune`.
+    pub(super) stitch_peak_group_bytes: usize,
+    /// Peak cursor + current-group/prune bytes. This is the D8/CON-4 manifest
+    /// row; it excludes the required output graph and the source vectors that
+    /// pre-exist the stitch, and includes every `BufFile` block buffer.
+    pub(super) stitch_peak_retained_bytes: usize,
     /// Reachability repairs applied (FR-077-CON-3 guard); expected 0 at scale.
     pub(super) reachability_repairs: usize,
 }
@@ -102,6 +116,320 @@ struct ShardGraph {
     /// Parallel to `nodes`: each entry is the shard-local Vamana adjacency of
     /// that node, remapped to global node ids.
     neighbors: Vec<Vec<u32>>,
+}
+
+#[cfg(not(test))]
+struct ShardSpoolIo {
+    file: NonNull<pg_sys::BufFile>,
+}
+
+#[cfg(not(test))]
+impl ShardSpoolIo {
+    fn create() -> Result<Self, String> {
+        // SAFETY: called on the PostgreSQL backend's main thread while an
+        // ambuild resource owner is active. `false` scopes the file to the
+        // current transaction; Drop closes it earlier on the normal path.
+        let file = unsafe { pg_sys::BufFileCreateTemp(false) };
+        let file = NonNull::new(file)
+            .ok_or_else(|| "ec_distann could not create shard BufFile".to_owned())?;
+        Ok(Self { file })
+    }
+
+    fn rewind(&mut self) -> Result<(), String> {
+        // PostgreSQL's BufFileSeek uses the C SEEK_SET value (0).
+        // SAFETY: `file` is live; every shard owns one BufFile and starts at
+        // logical file 0, offset 0.
+        let status = unsafe { pg_sys::BufFileSeek(self.file.as_ptr(), 0, 0, 0) };
+        if status == 0 {
+            Ok(())
+        } else {
+            Err("ec_distann could not rewind shard BufFile".to_owned())
+        }
+    }
+
+    fn write_all(&mut self, bytes: &[u8]) {
+        if bytes.is_empty() {
+            return;
+        }
+        // SAFETY: BufFileWrite either consumes the full slice or raises a
+        // PostgreSQL error; the slice remains live for the call.
+        unsafe {
+            pg_sys::BufFileWrite(
+                self.file.as_ptr(),
+                bytes.as_ptr().cast::<std::ffi::c_void>(),
+                bytes.len(),
+            );
+        }
+    }
+
+    fn read_exact(&mut self, bytes: &mut [u8]) -> Result<(), String> {
+        let mut read = 0_usize;
+        while read < bytes.len() {
+            // SAFETY: the remaining part of `bytes` is writable and the
+            // BufFile pointer remains live.
+            let count = unsafe {
+                pg_sys::BufFileRead(
+                    self.file.as_ptr(),
+                    bytes[read..].as_mut_ptr().cast::<std::ffi::c_void>(),
+                    bytes.len() - read,
+                )
+            };
+            if count == 0 {
+                return Err("ec_distann truncated shard BufFile entry".to_owned());
+            }
+            read += count;
+        }
+        Ok(())
+    }
+}
+
+#[cfg(not(test))]
+impl Drop for ShardSpoolIo {
+    fn drop(&mut self) {
+        // SAFETY: this object uniquely owns the BufFile and closes it once.
+        unsafe { pg_sys::BufFileClose(self.file.as_ptr()) };
+    }
+}
+
+/// Unit tests exercise the same encoder and cursor merge without requiring a
+/// live PostgreSQL backend. Runtime and pg_test builds use the BufFile version
+/// above; this in-memory implementation is never part of extension code.
+#[cfg(test)]
+struct ShardSpoolIo {
+    bytes: Vec<u8>,
+    position: usize,
+}
+
+#[cfg(test)]
+impl ShardSpoolIo {
+    fn create() -> Result<Self, String> {
+        Ok(Self {
+            bytes: Vec::new(),
+            position: 0,
+        })
+    }
+
+    fn rewind(&mut self) -> Result<(), String> {
+        self.position = 0;
+        Ok(())
+    }
+
+    fn write_all(&mut self, bytes: &[u8]) {
+        let end = self.position + bytes.len();
+        if end > self.bytes.len() {
+            self.bytes.resize(end, 0);
+        }
+        self.bytes[self.position..end].copy_from_slice(bytes);
+        self.position = end;
+    }
+
+    fn read_exact(&mut self, bytes: &mut [u8]) -> Result<(), String> {
+        let end = self.position + bytes.len();
+        if end > self.bytes.len() {
+            return Err("ec_distann truncated test shard spool entry".to_owned());
+        }
+        bytes.copy_from_slice(&self.bytes[self.position..end]);
+        self.position = end;
+        Ok(())
+    }
+}
+
+struct ShardSpill {
+    io: ShardSpoolIo,
+    entry_count: usize,
+}
+
+struct ShardSpool {
+    spills: Vec<Option<ShardSpill>>,
+    bytes_written: u64,
+}
+
+impl ShardSpool {
+    fn create(shard_count: usize) -> Result<Self, String> {
+        Ok(Self {
+            spills: (0..shard_count).map(|_| None).collect(),
+            bytes_written: 0,
+        })
+    }
+
+    fn append_shard(
+        &mut self,
+        shard_index: usize,
+        graph: ShardGraph,
+        graph_degree: usize,
+    ) -> Result<(), String> {
+        if shard_index >= self.spills.len() || self.spills[shard_index].is_some() {
+            return Err(format!(
+                "ec_distann duplicate or invalid shard spool index {shard_index}"
+            ));
+        }
+        if graph.nodes.len() != graph.neighbors.len() {
+            return Err(format!(
+                "ec_distann shard {shard_index} node/adjacency length mismatch: {} vs {}",
+                graph.nodes.len(),
+                graph.neighbors.len()
+            ));
+        }
+        if graph.nodes.windows(2).any(|pair| pair[0] >= pair[1]) {
+            return Err(format!(
+                "ec_distann shard {shard_index} output is not strictly node-sorted"
+            ));
+        }
+        for (node, neighbors) in graph.nodes.iter().zip(&graph.neighbors) {
+            if neighbors.len() > graph_degree {
+                return Err(format!(
+                    "ec_distann shard {shard_index} node {node} has {} neighbors, exceeding R={graph_degree}",
+                    neighbors.len()
+                ));
+            }
+        }
+
+        let entry_count = graph.nodes.len();
+        let mut io = ShardSpoolIo::create()?;
+        let mut shard_bytes = 0_u64;
+        for (node, neighbors) in graph.nodes.into_iter().zip(graph.neighbors) {
+            let neighbor_count = u32::try_from(neighbors.len())
+                .map_err(|_| "ec_distann shard neighbor count exceeds u32".to_owned())?;
+            let mut header = [0_u8; DISTANN_SHARD_SPILL_HEADER_BYTES];
+            header[0..4].copy_from_slice(&node.to_le_bytes());
+            header[4..8].copy_from_slice(&neighbor_count.to_le_bytes());
+            io.write_all(&header);
+
+            let mut encoded_neighbors = Vec::with_capacity(neighbors.len() * size_of::<u32>());
+            for neighbor in neighbors {
+                encoded_neighbors.extend_from_slice(&neighbor.to_le_bytes());
+            }
+            io.write_all(&encoded_neighbors);
+            shard_bytes = shard_bytes
+                .checked_add((header.len() + encoded_neighbors.len()) as u64)
+                .ok_or_else(|| "ec_distann shard spill byte count overflow".to_owned())?;
+        }
+        self.bytes_written = self
+            .bytes_written
+            .checked_add(shard_bytes)
+            .ok_or_else(|| "ec_distann total shard spill byte count overflow".to_owned())?;
+        self.spills[shard_index] = Some(ShardSpill { io, entry_count });
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ShardEntryHeader {
+    node: u32,
+    neighbor_count: usize,
+}
+
+struct ShardCursor {
+    io: ShardSpoolIo,
+    remaining_entries: usize,
+    current: Option<ShardEntryHeader>,
+}
+
+impl ShardCursor {
+    fn open(mut spill: ShardSpill, node_count: usize, graph_degree: usize) -> Result<Self, String> {
+        spill.io.rewind()?;
+        let current = if spill.entry_count == 0 {
+            None
+        } else {
+            Some(read_shard_entry_header(
+                &mut spill.io,
+                node_count,
+                graph_degree,
+            )?)
+        };
+        Ok(Self {
+            io: spill.io,
+            remaining_entries: spill.entry_count,
+            current,
+        })
+    }
+
+    fn consume(
+        &mut self,
+        node_count: usize,
+        graph_degree: usize,
+    ) -> Result<(u32, Vec<u32>), String> {
+        let header = self
+            .current
+            .take()
+            .ok_or_else(|| "ec_distann consumed an exhausted shard cursor".to_owned())?;
+
+        let payload_bytes = header
+            .neighbor_count
+            .checked_mul(size_of::<u32>())
+            .ok_or_else(|| "ec_distann shard payload length overflow".to_owned())?;
+        let mut neighbors = vec![0_u32; header.neighbor_count];
+        if payload_bytes > 0 {
+            // SAFETY: `neighbors` is initialized and owns exactly
+            // `payload_bytes` writable bytes. Reading into its byte view and
+            // converting every word from little endian preserves validity.
+            let bytes = unsafe {
+                std::slice::from_raw_parts_mut(neighbors.as_mut_ptr().cast::<u8>(), payload_bytes)
+            };
+            self.io.read_exact(bytes)?;
+            for neighbor in &mut neighbors {
+                *neighbor = u32::from_le(*neighbor);
+                if *neighbor as usize >= node_count {
+                    return Err(format!(
+                        "ec_distann shard spool neighbor {} outside node count {node_count}",
+                        *neighbor
+                    ));
+                }
+            }
+        }
+
+        self.remaining_entries = self
+            .remaining_entries
+            .checked_sub(1)
+            .ok_or_else(|| "ec_distann shard cursor entry underflow".to_owned())?;
+        if self.remaining_entries > 0 {
+            let next = read_shard_entry_header(&mut self.io, node_count, graph_degree)?;
+            if next.node <= header.node {
+                return Err(format!(
+                    "ec_distann shard spool is not strictly sorted: {} after {}",
+                    next.node, header.node
+                ));
+            }
+            self.current = Some(next);
+        }
+        Ok((header.node, neighbors))
+    }
+}
+
+fn read_shard_entry_header(
+    io: &mut ShardSpoolIo,
+    node_count: usize,
+    graph_degree: usize,
+) -> Result<ShardEntryHeader, String> {
+    let mut header = [0_u8; DISTANN_SHARD_SPILL_HEADER_BYTES];
+    io.read_exact(&mut header)?;
+    let node = u32::from_le_bytes(header[0..4].try_into().expect("four-byte node"));
+    let neighbor_count =
+        u32::from_le_bytes(header[4..8].try_into().expect("four-byte neighbor count")) as usize;
+    if node as usize >= node_count {
+        return Err(format!(
+            "ec_distann shard spool node {node} outside node count {node_count}"
+        ));
+    }
+    if neighbor_count > graph_degree {
+        return Err(format!(
+            "ec_distann shard spool node {node} has {neighbor_count} neighbors, exceeding R={graph_degree}"
+        ));
+    }
+    Ok(ShardEntryHeader {
+        node,
+        neighbor_count,
+    })
+}
+
+fn retained_cursor_bytes(
+    shard_count: usize,
+    cursor_capacity: usize,
+    heap_capacity: usize,
+) -> usize {
+    shard_count * pg_sys::BLCKSZ as usize
+        + cursor_capacity * size_of::<ShardCursor>()
+        + heap_capacity * size_of::<Reverse<(u32, usize)>>()
 }
 
 /// Result of closure-overlap shard assignment.
@@ -155,32 +483,22 @@ pub(super) fn build_sharded_graph(
     let medoid = approximate_medoid(node_count, DISTANN_MEDOID_SAMPLE_CAP, seed, dist);
 
     let assignment = assign_shards(source_refs, dimensions, shard_count, closure_epsilon, seed)?;
-    let shard_graphs = build_shard_graphs(
+    let mut shard_spool = build_shard_spool(
         &assignment.members,
         graph_degree,
         build_list_size,
         alpha,
         seed,
         &dist,
-    );
-
-    // Honest D8/CON-4 accounting: the shard outputs are held in memory during
-    // the stitch (v1 does not spill them to sorted files), so their total size
-    // is the real peak-memory figure for the stitch input.
-    let shard_output_retained_node_ids: u64 = shard_graphs
-        .iter()
-        .map(|shard| {
-            shard.nodes.len() as u64
-                + shard.neighbors.iter().map(|n| n.len() as u64).sum::<u64>()
-        })
-        .sum();
+    )?;
+    let shard_output_spill_bytes = shard_spool.bytes_written;
 
     let (graph, mut stats) =
-        stitch_shard_graphs(node_count, &shard_graphs, graph_degree, alpha, &dist);
+        stitch_shard_spool(node_count, &mut shard_spool, graph_degree, alpha, &dist)?;
     stats.shard_count = shard_count;
     stats.duplication_factor = assignment.duplication_factor;
     stats.max_shard_size = assignment.max_shard_size;
-    stats.shard_output_retained_node_ids = shard_output_retained_node_ids;
+    stats.shard_output_spill_bytes = shard_output_spill_bytes;
 
     let mut graph = graph;
     stats.reachability_repairs = repair_reachability(&mut graph, medoid, graph_degree, &dist)?;
@@ -271,9 +589,52 @@ fn nearest_centroid_index(source: &[f32], centroids: &[Vec<f32>]) -> usize {
     best_index
 }
 
-/// Build one independent Vamana per shard (parallel; each is pure and seeded,
-/// so parallel and sequential yield identical output). Shard-local node ids
-/// are remapped to global ids on the way out.
+/// Build independent Vamana shards in bounded parallel batches, immediately
+/// spilling each completed shard to a sequential PostgreSQL-managed BufFile.
+/// Parallel
+/// and sequential builds are identical because each shard is pure and seeded.
+/// No shard graph remains resident when the stitch starts.
+fn build_shard_spool<D>(
+    members: &[Vec<u32>],
+    graph_degree: usize,
+    build_list_size: usize,
+    alpha: f32,
+    seed: u64,
+    dist: &D,
+) -> Result<ShardSpool, String>
+where
+    D: Fn(u32, u32) -> f32 + Sync,
+{
+    let mut spool = ShardSpool::create(members.len())?;
+    let batch_width = rayon::current_num_threads()
+        .max(1)
+        .min(members.len().max(1));
+    for (batch_index, batch) in members.chunks(batch_width).enumerate() {
+        let base_shard = batch_index * batch_width;
+        let completed: Vec<ShardGraph> = batch
+            .par_iter()
+            .enumerate()
+            .map(|(batch_offset, global_ids)| {
+                let shard_index = base_shard + batch_offset;
+                build_one_shard(
+                    shard_index,
+                    global_ids,
+                    graph_degree,
+                    build_list_size,
+                    alpha,
+                    seed,
+                    dist,
+                )
+            })
+            .collect();
+        for (batch_offset, graph) in completed.into_iter().enumerate() {
+            spool.append_shard(base_shard + batch_offset, graph, graph_degree)?;
+        }
+    }
+    Ok(spool)
+}
+
+#[cfg(test)]
 fn build_shard_graphs<D>(
     members: &[Vec<u32>],
     graph_degree: usize,
@@ -289,7 +650,15 @@ where
         .par_iter()
         .enumerate()
         .map(|(shard_index, global_ids)| {
-            build_one_shard(shard_index, global_ids, graph_degree, build_list_size, alpha, seed, dist)
+            build_one_shard(
+                shard_index,
+                global_ids,
+                graph_degree,
+                build_list_size,
+                alpha,
+                seed,
+                dist,
+            )
         })
         .collect()
 }
@@ -319,7 +688,8 @@ where
     };
     // Independent per-shard seed keeps each shard's insertion order distinct
     // yet deterministic.
-    let shard_seed = seed.wrapping_add((shard_index as u64).wrapping_mul(DISTANN_SHARD_SEED_STRIDE));
+    let shard_seed =
+        seed.wrapping_add((shard_index as u64).wrapping_mul(DISTANN_SHARD_SEED_STRIDE));
     let medoid = approximate_medoid(shard_len, DISTANN_MEDOID_SAMPLE_CAP, shard_seed, local_dist);
     let (graph, _stats) = build_vamana_graph_with_stats(
         shard_len,
@@ -350,98 +720,176 @@ where
     }
 }
 
-/// Streaming stitch (ADR-085 D8): merge the sorted shard adjacency streams by
-/// global node id, holding one node group + the prune working set at a time.
-/// Single-shard nodes pass through unchanged (idempotence); multi-shard nodes
-/// have their neighbor union `robust_prune`d to `graph_degree`.
-///
-/// Exposed to the property suite (`stitch_shard_graphs` is the pure core of
-/// FR-077-CON-1..3 and FR-077-AC-2).
-fn stitch_shard_graphs<D>(
+/// Streaming stitch (ADR-085 D8): k-way merge sorted shard cursors by global
+/// node id. Cursors retain only headers; adjacency payloads are loaded for the
+/// current node group, then discarded after passthrough/prune. The output graph
+/// is required result storage and excluded from the incremental D8 bound.
+fn stitch_shard_spool<D>(
     node_count: usize,
-    shard_graphs: &[ShardGraph],
+    shard_spool: &mut ShardSpool,
     graph_degree: usize,
     alpha: f32,
     dist: &D,
-) -> (VamanaGraph, ShardBuildStats)
+) -> Result<(VamanaGraph, ShardBuildStats), String>
 where
     D: Fn(u32, u32) -> f32,
 {
     let mut graph = VamanaGraph::empty(node_count, graph_degree);
-    let mut cursors = vec![0_usize; shard_graphs.len()];
+    let spills = std::mem::take(&mut shard_spool.spills);
+    let shard_count = spills.len();
+    let mut cursors = Vec::with_capacity(shard_count);
+    for (shard_index, spill) in spills.into_iter().enumerate() {
+        let spill = spill.ok_or_else(|| {
+            format!("ec_distann shard {shard_index} was not written to the spool")
+        })?;
+        cursors.push(ShardCursor::open(spill, node_count, graph_degree)?);
+    }
+    let mut heap: BinaryHeap<Reverse<(u32, usize)>> = BinaryHeap::with_capacity(shard_count);
+    for (shard_index, cursor) in cursors.iter().enumerate() {
+        if let Some(header) = cursor.current {
+            heap.push(Reverse((header.node, shard_index)));
+        }
+    }
 
     let mut edges_before: u64 = 0;
     let mut edges_after: u64 = 0;
     let mut peak_union_len = 0_usize;
+    let mut peak_cursor_bytes =
+        retained_cursor_bytes(shard_count, cursors.capacity(), heap.capacity());
+    let mut peak_group_bytes = 0_usize;
+    let mut peak_retained_bytes = peak_cursor_bytes;
+    let mut expected_node = 0_u32;
 
-    for node in 0..node_count as u32 {
-        // Gather this node's neighbor lists from every shard that owns it,
-        // advancing each shard cursor. Streams are sorted by node id, so the
-        // cursor only moves forward.
+    while let Some(Reverse((node, first_shard))) = heap.pop() {
+        if node != expected_node {
+            return Err(format!(
+                "ec_distann stitched coverage gap: expected node {expected_node}, found {node}"
+            ));
+        }
+        expected_node = expected_node
+            .checked_add(1)
+            .ok_or_else(|| "ec_distann stitched node id overflow".to_owned())?;
+
         let mut membership = 0_usize;
-        let mut union: BTreeSet<u32> = BTreeSet::new();
         let mut passthrough: Option<Vec<u32>> = None;
-        for (shard_index, shard) in shard_graphs.iter().enumerate() {
-            let cursor = &mut cursors[shard_index];
-            while *cursor < shard.nodes.len() && shard.nodes[*cursor] < node {
-                *cursor += 1;
+        let mut union: Vec<u32> = Vec::new();
+        let mut shard = Some(first_shard);
+        while let Some(shard_index) = shard {
+            let (entry_node, mut neighbors) =
+                cursors[shard_index].consume(node_count, graph_degree)?;
+            if entry_node != node {
+                return Err(format!(
+                    "ec_distann shard cursor changed node: expected {node}, got {entry_node}"
+                ));
             }
-            if *cursor < shard.nodes.len() && shard.nodes[*cursor] == node {
-                let neighbors = &shard.neighbors[*cursor];
-                membership += 1;
-                if membership == 1 {
-                    // Remember the first shard's list verbatim in case this is
-                    // the only shard (idempotent passthrough).
-                    passthrough = Some(neighbors.clone());
+            neighbors.retain(|&neighbor| neighbor != node);
+            membership += 1;
+            if membership == 1 {
+                passthrough = Some(neighbors);
+            } else {
+                if membership == 2 {
+                    union = passthrough.take().unwrap_or_default();
                 }
-                for &neighbor in neighbors {
-                    if neighbor != node {
-                        union.insert(neighbor);
-                    }
-                }
-                *cursor += 1;
+                union.extend(neighbors);
             }
+
+            if let Some(next) = cursors[shard_index].current {
+                heap.push(Reverse((next.node, shard_index)));
+            }
+            let current_cursor_bytes =
+                retained_cursor_bytes(shard_count, cursors.capacity(), heap.capacity());
+            peak_cursor_bytes = peak_cursor_bytes.max(current_cursor_bytes);
+            let active_group_bytes = passthrough
+                .as_ref()
+                .map_or(0, |neighbors| neighbors.capacity() * size_of::<u32>())
+                + union.capacity() * size_of::<u32>();
+            peak_group_bytes = peak_group_bytes.max(active_group_bytes);
+            peak_retained_bytes =
+                peak_retained_bytes.max(current_cursor_bytes + active_group_bytes);
+
+            shard = match heap.peek() {
+                Some(Reverse((next_node, _))) if *next_node == node => {
+                    let Reverse((_, next_shard)) = heap.pop().expect("peeked heap entry");
+                    Some(next_shard)
+                }
+                _ => None,
+            };
         }
 
-        peak_union_len = peak_union_len.max(union.len());
-
-        let final_neighbors = match membership {
-            0 => Vec::new(),
-            1 => {
-                // Single-shard node: pass the record through unchanged
-                // (FR-077 stitch idempotence). Filter any self-loop for safety.
-                let mut list = passthrough.unwrap_or_default();
-                list.retain(|&n| n != node);
-                edges_before += list.len() as u64;
-                list
-            }
-            _ => {
-                edges_before += union.len() as u64;
-                let candidates: Vec<Candidate> = union
-                    .iter()
-                    .map(|&n| Candidate {
-                        node: n,
-                        distance: dist(node, n),
-                    })
-                    .collect();
-                robust_prune(node, candidates, alpha, graph_degree, dist)
-            }
+        let final_neighbors = if membership == 1 {
+            let list = passthrough.unwrap_or_default();
+            edges_before += list.len() as u64;
+            list
+        } else {
+            union.sort_unstable();
+            union.dedup();
+            peak_union_len = peak_union_len.max(union.len());
+            edges_before += union.len() as u64;
+            let candidates: Vec<Candidate> = union
+                .iter()
+                .map(|&neighbor| Candidate {
+                    node: neighbor,
+                    distance: dist(node, neighbor),
+                })
+                .collect();
+            let prune_bytes = union.capacity() * size_of::<u32>()
+                + candidates.capacity() * size_of::<Candidate>()
+                + graph_degree * size_of::<u32>();
+            let current_cursor_bytes =
+                retained_cursor_bytes(shard_count, cursors.capacity(), heap.capacity());
+            peak_group_bytes = peak_group_bytes.max(prune_bytes);
+            peak_retained_bytes = peak_retained_bytes.max(current_cursor_bytes + prune_bytes);
+            robust_prune(node, candidates, alpha, graph_degree, dist)
         };
         edges_after += final_neighbors.len() as u64;
         graph.neighbors[node as usize] = final_neighbors;
     }
 
+    if expected_node as usize != node_count {
+        return Err(format!(
+            "ec_distann stitched coverage ended at {expected_node}, expected {node_count} nodes"
+        ));
+    }
+    for (shard_index, cursor) in cursors.iter().enumerate() {
+        if cursor.remaining_entries != 0 || cursor.current.is_some() {
+            return Err(format!(
+                "ec_distann shard cursor {shard_index} retained unconsumed entries"
+            ));
+        }
+    }
+
     let stats = ShardBuildStats {
-        shard_count: shard_graphs.len(),
+        shard_count,
         duplication_factor: 1.0,
         max_shard_size: 0,
         stitch_edges_before_prune: edges_before,
         stitch_edges_after_prune: edges_after,
         stitch_peak_union_len: peak_union_len,
-        shard_output_retained_node_ids: 0,
+        shard_output_spill_bytes: shard_spool.bytes_written,
+        stitch_peak_cursor_bytes: peak_cursor_bytes,
+        stitch_peak_group_bytes: peak_group_bytes,
+        stitch_peak_retained_bytes: peak_retained_bytes,
         reachability_repairs: 0,
     };
-    (graph, stats)
+    Ok((graph, stats))
+}
+
+#[cfg(test)]
+fn stitch_shard_graphs<D>(
+    node_count: usize,
+    shard_graphs: Vec<ShardGraph>,
+    graph_degree: usize,
+    alpha: f32,
+    dist: &D,
+) -> Result<(VamanaGraph, ShardBuildStats), String>
+where
+    D: Fn(u32, u32) -> f32,
+{
+    let mut spool = ShardSpool::create(shard_graphs.len())?;
+    for (shard_index, graph) in shard_graphs.into_iter().enumerate() {
+        spool.append_shard(shard_index, graph, graph_degree)?;
+    }
+    stitch_shard_spool(node_count, &mut spool, graph_degree, alpha, dist)
 }
 
 /// Guarantee FR-077-CON-3: every node reachable from `medoid`, while never
@@ -576,7 +1024,9 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(seed);
         (0..node_count)
             .map(|_| {
-                let mut v: Vec<f32> = (0..dimensions).map(|_| rng.gen_range(-1.0_f32..1.0)).collect();
+                let mut v: Vec<f32> = (0..dimensions)
+                    .map(|_| rng.gen_range(-1.0_f32..1.0))
+                    .collect();
                 let norm = v.iter().map(|x| x * x).sum::<f32>().sqrt().max(1e-6);
                 v.iter_mut().for_each(|x| *x /= norm);
                 v
@@ -745,8 +1195,14 @@ mod tests {
             }
             let shard_graphs =
                 build_shard_graphs(&assignment.members, graph_degree, 64, alpha, seed, &dist);
-            let (graph, _stats) =
-                stitch_shard_graphs(node_count, &shard_graphs, graph_degree, alpha, &dist);
+            let (graph, _stats) = stitch_shard_graphs(
+                node_count,
+                shard_graphs,
+                graph_degree,
+                alpha,
+                &dist,
+            )
+            .unwrap();
 
             let mut checked_multi = 0_usize;
             for node in 0..node_count as u32 {
@@ -788,10 +1244,10 @@ mod tests {
         let graph_degree = 16;
         let corpus = random_corpus(node_count, dimensions, 0xABCD);
         let refs = refs(&corpus);
-        let dist = |a: u32, b: u32| source_inner_product_distance(refs[a as usize], refs[b as usize]);
+        let dist =
+            |a: u32, b: u32| source_inner_product_distance(refs[a as usize], refs[b as usize]);
 
-        let (graph, _medoid, _stats) =
-            build(&corpus, dimensions, graph_degree, 4, 0.2, 0xABCD);
+        let (graph, _medoid, _stats) = build(&corpus, dimensions, graph_degree, 4, 0.2, 0xABCD);
 
         // Present the stitched graph as one shard covering every node.
         let single = ShardGraph {
@@ -799,10 +1255,55 @@ mod tests {
             neighbors: graph.neighbors.clone(),
         };
         let (restitched, _stats) =
-            stitch_shard_graphs(node_count, std::slice::from_ref(&single), graph_degree, 1.2, &dist);
+            stitch_shard_graphs(node_count, vec![single], graph_degree, 1.2, &dist)
+                .expect("single-shard spool stitch should succeed");
         assert_eq!(
             restitched.neighbors, graph.neighbors,
             "re-stitching a single-shard graph must be a no-op"
+        );
+    }
+
+    // FR-077-CON-4 / ADR-085 D8: shard outputs are represented by spill bytes,
+    // while the stitch retains only fixed cursor headers plus one node-group
+    // union/prune workspace. This is an allocation-accounting assertion over
+    // the exact runtime merge; the pg_test build exercises the BufFile-backed
+    // I/O implementation rather than this unit-test memory transport.
+    #[test]
+    fn tc038_d8_spill_and_cursor_bound() {
+        let dimensions = 12;
+        let node_count = 800;
+        let graph_degree = 16;
+        let shard_count = 8;
+        let corpus = random_corpus(node_count, dimensions, 0xD8);
+        let (_graph, _medoid, stats) =
+            build(&corpus, dimensions, graph_degree, shard_count, 0.3, 0xD8);
+
+        assert!(stats.shard_output_spill_bytes > 0);
+        assert!(stats.stitch_peak_cursor_bytes >= pg_sys::BLCKSZ as usize);
+        assert!(stats.stitch_peak_group_bytes > 0);
+        assert!(
+            stats.stitch_peak_retained_bytes
+                <= stats.stitch_peak_cursor_bytes + stats.stitch_peak_group_bytes
+        );
+
+        // Vec capacity growth is at most the next power-of-two (<2x logical
+        // entries). The active group can contain at most S*R neighbor ids,
+        // one Candidate per unique id, and one R-sized prune result.
+        let max_group_nodes = shard_count * graph_degree;
+        let conservative_group_bound = 2 * max_group_nodes * size_of::<u32>()
+            + 2 * max_group_nodes * size_of::<Candidate>()
+            + graph_degree * size_of::<u32>();
+        assert!(
+            stats.stitch_peak_group_bytes <= conservative_group_bound,
+            "group bytes {} exceed conservative one-group bound {}",
+            stats.stitch_peak_group_bytes,
+            conservative_group_bound
+        );
+        assert!(
+            stats.stitch_peak_retained_bytes < stats.shard_output_spill_bytes as usize,
+            "stitch retained {} bytes but spool contains only {} bytes",
+            stats.stitch_peak_retained_bytes,
+            stats.shard_output_spill_bytes
         );
     }
 
@@ -832,10 +1333,18 @@ mod tests {
     // resolve_shard_count honors explicit requests and the monolithic default.
     #[test]
     fn resolve_shard_count_behaviour() {
-        assert_eq!(resolve_shard_count(10_000, 0), 1, "small corpus auto = monolithic");
+        assert_eq!(
+            resolve_shard_count(10_000, 0),
+            1,
+            "small corpus auto = monolithic"
+        );
         assert_eq!(resolve_shard_count(100_000, 0), 4, "100k auto shards");
         assert_eq!(resolve_shard_count(5_000, 8), 8, "explicit request honored");
-        assert_eq!(resolve_shard_count(3, 8), 3, "request clamped to node_count");
+        assert_eq!(
+            resolve_shard_count(3, 8),
+            3,
+            "request clamped to node_count"
+        );
         assert_eq!(resolve_shard_count(1_000_000, 0), 16, "auto shard cap");
     }
 
@@ -861,7 +1370,10 @@ mod tests {
         let dist = |a: u32, b: u32| (a as f32 - b as f32).abs();
         let repairs = repair_reachability(&mut graph, 0, graph_degree, &dist)
             .expect("repair must succeed without exceeding R");
-        assert!(repairs >= 1, "component B was stranded and must be repaired");
+        assert!(
+            repairs >= 1,
+            "component B was stranded and must be repaired"
+        );
 
         // CON-1: no node exceeds graph_degree.
         for (node, neighbors) in graph.neighbors.iter().enumerate() {
@@ -873,6 +1385,10 @@ mod tests {
         }
         // CON-3: every node reachable from the medoid.
         let reached = bfs_reachable(&graph, 0);
-        assert_eq!(reached.len(), node_count, "all nodes must be reachable post-repair");
+        assert_eq!(
+            reached.len(),
+            node_count,
+            "all nodes must be reachable post-repair"
+        );
     }
 }

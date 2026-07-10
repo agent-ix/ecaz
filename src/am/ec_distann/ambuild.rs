@@ -436,14 +436,18 @@ unsafe fn flush_build_state(
         pgrx::notice!(
             "ec_distann sharded build: shards={} duplication_factor={:.4} max_shard_size={} \
              stitch_edges_before_prune={} stitch_edges_after_prune={} stitch_peak_union_len={} \
-             shard_output_retained_node_ids={} reachability_repairs={}",
+             shard_output_spill_bytes={} stitch_peak_cursor_bytes={} stitch_peak_group_bytes={} \
+             stitch_peak_retained_bytes={} reachability_repairs={}",
             shard_stats.shard_count,
             shard_stats.duplication_factor,
             shard_stats.max_shard_size,
             shard_stats.stitch_edges_before_prune,
             shard_stats.stitch_edges_after_prune,
             shard_stats.stitch_peak_union_len,
-            shard_stats.shard_output_retained_node_ids,
+            shard_stats.shard_output_spill_bytes,
+            shard_stats.stitch_peak_cursor_bytes,
+            shard_stats.stitch_peak_group_bytes,
+            shard_stats.stitch_peak_retained_bytes,
             shard_stats.reachability_repairs,
         );
         (graph, medoid)
