@@ -443,7 +443,19 @@ pub(super) unsafe fn graph_insert_record(
     let snapshot = pg_sys::GetActiveSnapshot();
     let slot = TupleTableSlotGuard::single_for_heap(heap_relation)
         .ok_or_else(|| "ec_distann insert could not build a heap slot".to_owned())?;
+    // Descent budget: at scale the head-sample seed covers only a small fraction
+    // of the graph, so the walk must explore well beyond `build_list_size` to
+    // reach the new node's true neighborhood. Scale the visit/beam budget with the
+    // graph size (log-ish), capped, so a 50k+ graph gets enough exploration while
+    // a small graph stays cheap. The walk is code-only (no heap reads), so a large
+    // visit budget is affordable; exact vectors are still read for only
+    // `pool_size` final candidates.
     let list_size = usize::from(metadata.build_list_size_l).max(64);
+    let node_count = metadata.node_count as usize;
+    // ~ list_size * ceil(log2(node_count)/4), bounded to [list_size, 1024].
+    let scale = (usize::BITS - node_count.max(1).leading_zeros()) as usize; // ~log2(N)
+    let visit_cap = (list_size * scale.max(4) / 4).clamp(list_size, 1024);
+    let beam_cap = visit_cap.max(256);
     let candidates = greedy_insert_candidates(
         handle,
         heap_relation,
@@ -456,8 +468,8 @@ pub(super) unsafe fn graph_insert_record(
         code_len,
         new_source_vector,
         &entry,
-        list_size.max(128),
-        list_size,
+        beam_cap,
+        visit_cap,
         list_size,
     )?;
     let forward_ids = select_insert_forward_neighbors(
