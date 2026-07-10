@@ -482,6 +482,13 @@ struct DistannCustomScanExecState {
     /// satisfied, instead of truncating to LIMIT before quals filter (011/020-P1).
     effective: usize,
     early_exit: bool,
+    /// Number of emitted outputs that came from the first `effective` RAW hits
+    /// (the proven window), tracked through remote-payload filtering (011-04-P1).
+    proven_outputs: usize,
+    /// The absolute deepening cap, derived ONCE from the initial bar (011-04-P2).
+    /// A per-iteration `effective * 64` would grow as the bar doubles, so it
+    /// never actually bounds the loop; this fixed ceiling does.
+    deepen_cap: usize,
     /// A buffer-heap slot for local-hit `table_tuple_fetch_row_version` (the
     /// CustomScan's own scan slot is virtual, which that heap fetch asserts
     /// against; the fetched row is then copied into the virtual scan slot the
@@ -508,6 +515,8 @@ fn default_exec_state() -> DistannCustomScanExecState {
         query: Vec::new(),
         effective: 0,
         early_exit: false,
+        proven_outputs: 0,
+        deepen_cap: 0,
     }
 }
 
@@ -773,8 +782,7 @@ unsafe extern "C-unwind" fn custom_scan_access(
             // qual keeps getting PROVEN candidates until the Limit node is
             // satisfied. Stop at beam exhaustion (proven prefix stops growing) or
             // the cap.
-            let cap = state.effective.saturating_mul(64).max(1024);
-            if !(state.early_exit && state.effective < cap) {
+            if !(state.early_exit && state.effective < state.deepen_cap) {
                 return pg_sys::ExecClearTuple(scan_slot);
             }
             run_search_and_build_outputs(state, scan_state, state.effective.saturating_mul(2));
@@ -830,7 +838,10 @@ unsafe extern "C-unwind" fn custom_scan_access(
 /// or a rare remote-payload drop shortens the set).
 fn proven_prefix_len(state: &DistannCustomScanExecState) -> usize {
     if state.early_exit {
-        state.effective.min(state.outputs.len())
+        // Outputs derived from the first `effective` RAW hits (computed during
+        // build so a dropped in-window remote payload cannot admit a beyond-
+        // boundary hit as proven).
+        state.proven_outputs.min(state.outputs.len())
     } else {
         state.outputs.len()
     }
@@ -875,6 +886,9 @@ unsafe fn ensure_outputs(
     // ALL of it as a cursor (no LIMIT truncation), deepening on demand so a WHERE
     // qual under a LIMIT keeps getting rows (011/020-P1).
     let effective = super::options::current_top_k().max(state.top_k).max(1);
+    // Fixed deepening ceiling from the INITIAL bar (011-04-P2), so doubling the
+    // bar cannot outrun the cap.
+    state.deepen_cap = effective.saturating_mul(64).max(1024);
     run_search_and_build_outputs(state, scan_state, effective);
 }
 
@@ -924,12 +938,18 @@ unsafe fn run_search_and_build_outputs(
     // payloads from the owner.
     let payloads = fetch_remote_payloads(state, index_relation, &hits);
 
-    state.outputs = hits
-        .iter()
-        .filter_map(|hit| {
-            if hit.heap_tid != crate::storage::page::ItemPointer::INVALID {
-                return Some(CustomScanOutputRow::Local(hit.heap_tid));
-            }
+    // Build outputs in rank order AND track the raw proven boundary
+    // (011-04-P1): `proven_outputs` counts how many emitted outputs came from
+    // the first `effective` RAW hits (the proven window). Computing the boundary
+    // from raw ranks — not `min(effective, outputs.len())` after filtering —
+    // means a dropped remote-payload hit inside the window cannot shift an
+    // unproven, beyond-boundary hit into the counted prefix.
+    let mut outputs = Vec::with_capacity(hits.len());
+    let mut proven_outputs = 0usize;
+    for (raw_rank, hit) in hits.iter().enumerate() {
+        let row = if hit.heap_tid != crate::storage::page::ItemPointer::INVALID {
+            Some(CustomScanOutputRow::Local(hit.heap_tid))
+        } else {
             match payloads.get(&hit.vec_id) {
                 Some(payload) if !payload.tuple_payload_missing => Some(CustomScanOutputRow::Remote {
                     payload_nulls: payload.payload_nulls.clone(),
@@ -940,8 +960,16 @@ unsafe fn run_search_and_build_outputs(
                 // it rather than emit a wrong row.
                 _ => None,
             }
-        })
-        .collect();
+        };
+        if let Some(row) = row {
+            if raw_rank < effective {
+                proven_outputs += 1;
+            }
+            outputs.push(row);
+        }
+    }
+    state.outputs = outputs;
+    state.proven_outputs = proven_outputs;
     // NB: `next_output` is intentionally NOT reset — on a deepen the result is a
     // superset whose proven prefix (the already-served rows) is stable, so serving
     // continues from where it left off. The initial build starts at 0 (set by

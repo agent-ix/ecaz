@@ -502,7 +502,16 @@ pub(crate) unsafe fn collect_distann_hits(
                     exact_dist,
                 });
             }
-            hits.sort_unstable_by(|left, right| left.exact_dist.total_cmp(&right.exact_dist));
+            // Deterministic TOTAL order (011-04-P1): break exact-distance ties by
+            // vec_id so the ranking is invariant across iterative deepening. A
+            // bare distance sort is unstable under ties, so a re-run at a deeper
+            // bar could reorder the already-served prefix (returning one row twice
+            // and skipping another). vec_id is a stable per-record identity.
+            hits.sort_unstable_by(|left, right| {
+                left.exact_dist
+                    .total_cmp(&right.exact_dist)
+                    .then_with(|| left.vec_id.cmp(&right.vec_id))
+            });
         }
     }
 
