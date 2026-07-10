@@ -23,7 +23,7 @@
 
 /// Placement-hash function version. Bump on any change to `placement_hash`
 /// (a placement change is an epoch rebuild, not a migration — NFR-016).
-pub(crate) const DISTANN_PLACEMENT_HASH_V1: u16 = 1;
+pub const DISTANN_PLACEMENT_HASH_V1: u16 = 1;
 
 /// Domain separator so the placement mix never aliases the identity mix even
 /// though both use the same fmix64 primitive.
@@ -160,6 +160,26 @@ mod tests {
         }
     }
 
+    #[test]
+    fn placement_hash_v1_golden_vectors() {
+        for (vec_id, expected_hash, expected_owner_three) in [
+            (0x0000_0000_0000_0000, 0x2046_ffe6_6003_c942, 2),
+            (0x0000_0000_0000_0001, 0x19ec_555c_128b_edc0, 1),
+            (0x0000_0000_0000_002a, 0x3ccb_c4b5_c8aa_40ea, 0),
+            (0xffff_ffff_ffff_ffff, 0x0049_8282_650a_c8a8, 2),
+            (0xdead_beef_cafe_f00d, 0xdaa2_d74d_76f4_450a, 0),
+        ] {
+            assert_eq!(
+                placement_hash(vec_id, DISTANN_PLACEMENT_HASH_V1),
+                expected_hash
+            );
+            assert_eq!(
+                owning_node(vec_id, 3, DISTANN_PLACEMENT_HASH_V1),
+                expected_owner_three
+            );
+        }
+    }
+
     // FR-078-AC-3: within an epoch the roster (node_count) is fixed, so
     // placement never changes. A *different* node_count is a new epoch.
     #[test]
@@ -210,12 +230,18 @@ mod tests {
             let mut last_index = None;
             for &(index, vec_id) in bucket {
                 assert_eq!(vec_ids[index], vec_id, "position maps back to the same id");
-                assert_eq!(owning_node(vec_id, node_count, DISTANN_PLACEMENT_HASH_V1), node);
+                assert_eq!(
+                    owning_node(vec_id, node_count, DISTANN_PLACEMENT_HASH_V1),
+                    node
+                );
                 if let Some(prev) = last_index {
                     assert!(index > prev, "bucket indices ascend (input order)");
                 }
                 last_index = Some(index);
-                assert!(seen.insert(index, vec_id).is_none(), "index {index} duplicated");
+                assert!(
+                    seen.insert(index, vec_id).is_none(),
+                    "index {index} duplicated"
+                );
             }
         }
         assert_eq!(seen.len(), vec_ids.len(), "every request position covered");
@@ -234,7 +260,11 @@ mod tests {
             .collect();
         let mut sorted = positions.clone();
         sorted.sort_unstable();
-        assert_eq!(sorted, vec![0, 1, 2], "all three positions present, none merged");
+        assert_eq!(
+            sorted,
+            vec![0, 1, 2],
+            "all three positions present, none merged"
+        );
     }
 
     // Degenerate single-node (M0/M2 coordinator-only): every id owned locally.

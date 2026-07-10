@@ -38,9 +38,9 @@ not compatible with the reviewed physical contract.
 Land a real distributed-control ec_distann index whose one coherent stitched
 graph is stored as disjoint physical owner generations. Each vec_id has one
 owner-local graph record and one immutable frozen source row, publication is
-commit-only and recoverable, scans pin one manifest/fingerprint, and the
-three-instance fixture proves exact/disjoint topology before Task 172 measures
-anything.
+commit-only and recoverable, scans register one manifest/fingerprint locally,
+and the three-instance fixture proves exact/disjoint topology before Task 172
+measures anything.
 
 The implementation-ready checkpoint unblocks Task 172. Task 179 itself remains
 open until Task 172 supplies the required 10k/50k/100k A/B recall, latency, and
@@ -57,7 +57,7 @@ The specification owns behavior and wire/storage identities:
   tier, handoff endpoints, transaction/replay rules, and topology endpoint.
 - FR-079: expansion and attnum-based row materialization.
 - FR-082: manifest v2, 34-byte fingerprint, decision/publish/recovery order,
-  scan pins, retention, and active-pointer semantics.
+  coordinator scan retention/retire fencing, and active-pointer semantics.
 - FR-083: physical mutation model; full DML adaptation remains Task 167.
 - NFR-014/NFR-016/NFR-017..020 and TC-040/TC-042/TC-044/TC-050.
 
@@ -150,7 +150,8 @@ For each local `(logical_index_uuid, build_id)` generation:
   generation catalog; they never enter a descriptor, receipt, manifest,
   fingerprint, log, or remote payload.
 - Count graph heap, graph TOAST, directory B-tree, row-tier heap, and row-tier
-  TOAST separately for topology/storage results.
+  TOAST separately for topology/storage results; report the logical control
+  index in its own `control_index_bytes` column so NFR-018 can include it.
 
 Adapt the proven `ec_spire/storage/relation_plan.rs`
 `heap_create_with_catalog`/`DEPENDENCY_INTERNAL` helpers where their ownership
@@ -162,14 +163,21 @@ reviewed schema checkpoint):
 - `ec_distann_node_descriptor`
 - `ec_distann_generation`
 - `ec_distann_generation_batch`
+- `ec_distann_build_registration`
 - `ec_distann_publish_decision`
+- `ec_distann_retire_decision`
 - `ec_distann_active_epoch`
-- `ec_distann_scan_pin`
 
 Every row is keyed by logical-index UUID in addition to the local index OID.
 Catalog and endpoint privileges are revoked from `PUBLIC`. DROP/REINDEX tests
 must prove hidden relations are dependency-cleaned and stale catalog rows are
 never addressable after OID reuse.
+
+Implement node registration as insert-only: resolve the secret, query the
+remote v5 control identity, verify the endpoint/index metadata, and store the
+returned UUID. Add guarded unregister and a participant-local unpublished
+generation listing for orphan reconciliation; do not infer either identity or
+recovery state from relation names/OIDs.
 
 Suggested modules: `generation_catalog.rs`, `generation_store.rs`, and
 `topology.rs`.
@@ -196,6 +204,9 @@ DataPageChain" to "build and yield canonical graph entries":
   serialize every non-dropped attribute through locally resolved `typsend`.
   Add focused coverage for NULL, generated, toasted, dropped, unsupported, and
   recently-dead tuple cases.
+- During that capture pass, reject any row whose complete eventual handoff
+  entry (row payload plus fixed graph/code payload) can exceed 8 MiB, before
+  Vamana construction or any participant `begin`.
 - Join the one-group stitched output to its spooled source payload and emit one
   `distann_epoch_handoff_entry` per vec_id in global vec_id order.
 - Route entries into one bounded buffer per owner. Each buffer is at most 8 MiB;
@@ -216,8 +227,8 @@ Add a small `handoff.rs` service behind the exact FR-078 SQL wrappers.
 - `seal`: rescan physical relations, verify expected counts/digests, local
   ownership, record/row locator agreement, unique coverage, and physical bytes;
   then transition Building→Ready and emit the canonical receipt.
-- `abort`: idempotently drop only an unpublished generation and its batch/pin
-  rows. It must refuse a generation named by a durable publish decision.
+- `abort`: idempotently drop only an unpublished generation and its batch rows.
+  It must refuse a generation named by a durable publish decision.
 - An identical acknowledged replay returns the journaled receipt. A conflict,
   sequence error, malformed entry, wrong owner, duplicate, schema/codec error,
   or oversize input performs zero relation/catalog mutation.
@@ -230,15 +241,17 @@ MVCC snapshot.
 
 ### 6. Split Ready, decision, and recovery across real commit boundaries
 
-The operator/CLI sequence uses one coordinator connection but three committed
+The operator/CLI sequence uses one coordinator connection but four committed
 transactions:
 
-1. `ec_distann_build_epoch` captures/builds/hands off and returns a Ready
-   manifest candidate. It holds a session-level source lock and persists the
-   durable build gate before returning.
-2. `ec_distann_decide_epoch_publish` re-reads owner topology/receipts and commits
+1. `ec_distann_begin_epoch_build` acquires the session-level source lock,
+   snapshots the registry/reloptions/schema identity, and commits the durable
+   build registration/gate before any remote handoff call.
+2. `ec_distann_build_epoch` captures/builds/hands off and returns a Ready
+   manifest candidate in a new transaction using that registration.
+3. `ec_distann_decide_epoch_publish` re-reads owner topology/receipts and commits
    the immutable commit-only decision. It must not contact publish endpoints.
-3. In a later transaction, `ec_distann_recover_epoch_publish` idempotently
+4. In a later transaction, `ec_distann_recover_epoch_publish` idempotently
    publishes participants, waits for matching acknowledgements, swaps the
    coordinator active pointer last, clears the build gate, and releases the
    session lock.
@@ -254,20 +267,25 @@ generation state; keep the legacy local implementation behind
 after each participant acknowledgement, before pointer swap, and after pointer
 swap.
 
-### 7. Pin physical generations for the whole scan attempt
+### 7. Register scans locally and make retirement the expensive path
 
-- Add idempotent pin/unpin wrappers keyed by `(fingerprint, scan_token UUID)`.
-- At CustomScan attempt start, pin every participant before expansion. On a
-  partial pin failure, unpin the acquired subset and issue no expansion.
-- Put unpin in a guard reached by normal completion, `EndCustomScan`, rescan,
-  epoch-mismatch restart, remote error, statement timeout, and cancellation.
-- Persist pins on participants so a participant restart cannot erase a live
-  coordinator's retention claim. Duplicate pin/unpin is a no-op; token reuse
-  across fingerprints is `EC_EPOCH_PIN_CONFLICT`.
-- Normal retire requires zero token rows. Force-retire deletes wedged tokens
-  only with the FR-082 audit record.
+- Add a coordinator-local in-flight registry keyed by
+  `(logical_index_uuid, fingerprint, scan_token UUID)` and an RAII guard reached
+  by normal completion, `EndCustomScan`, rescan, epoch-mismatch restart, remote
+  error, statement timeout, and cancellation.
+- Atomically select/register the active fingerprint under a per-index retire
+  fence before expansion. Do not add participant pin RPCs, participant catalog
+  writes, WAL flushes, or synchronous commits to the query path.
+- Implement normal retire by exclusively fencing new registrations, requiring
+  the local count to reach zero, committing a durable retire decision, and only
+  then applying idempotent reclaim to participants. Add recovery for a crash
+  after a subset applies.
+- Participants never reclaim autonomously, so their restart cannot race a live
+  scan. Force-retire remains a non-active-epoch operator override with the full
+  FR-082 audit record.
 
-Suggested module: `generation_pin.rs`; keep this separate from beam counters.
+Suggested module: `generation_retention.rs`; keep this separate from beam
+counters.
 
 ### 8. Make expansion and materialization generation-aware
 
@@ -292,7 +310,7 @@ Update `expand.rs`, `reader.rs`, `remote_endpoint.rs`, `remote_transport.rs`,
 - Remove physical-lane fallbacks that materialize a remote hit through the
   coordinator's local heap or directory. A missing generation/record/row is a
   classified structural error.
-- Load the head sample and codec artifact for the exact pinned manifest so
+- Load the head sample and codec artifact for the exact registered manifest so
   retained old and new fingerprints can be read concurrently.
 
 ### 9. Replace the fixture's pruning drill with a physical build
@@ -336,19 +354,19 @@ Use narrow code commits followed by separate request commits:
 
 1. Task 163 next packet — D8 `BufFile` shard-output spill and bounded-cursor
    proof (prerequisite; not a Task 179 packet).
-2. `reviews/task-179/001-format-and-control/` — reloption/control metadata,
+2. `reviews/task-179/002-format-and-control/` — reloption/control metadata,
    wire/descriptor/manifest/fingerprint codecs, TC-050 fixtures.
-3. `reviews/task-179/002-generation-storage/` — catalogs, hidden relation
+3. `reviews/task-179/003-generation-storage/` — catalogs, hidden relation
    lifecycle, transactional batch model, DROP/OID-reuse tests.
-4. `reviews/task-179/003-streamed-handoff/` — source-row capture, owner streams,
+4. `reviews/task-179/004-streamed-handoff/` — source-row capture, owner streams,
    begin/stage/seal/abort, replay/boundary/error tests.
-5. `reviews/task-179/004-publication-and-pins/` — build gate, decision boundary,
-   recovery, active pointer, pin/retire fault matrix.
-6. `reviews/task-179/005-generation-read-path/` — expansion, frozen-row
+5. `reviews/task-179/005-publication-and-retention/` — build gate, decision
+   boundary, recovery, active pointer, scan registry/retire fault matrix.
+6. `reviews/task-179/006-generation-read-path/` — expansion, frozen-row
    materialization, quals, retained old/new reads, legacy parity.
-7. `reviews/task-179/006-physical-three-instance-fixture/` — suite-driven
+7. `reviews/task-179/007-physical-three-instance-fixture/` — suite-driven
    physical setup, topology results, TC-040/TC-042 implementation-ready verdict.
-8. `reviews/task-179/007-closeout/` — reviewer response plus immutable Task 172
+8. `reviews/task-179/008-closeout/` — reviewer response plus immutable Task 172
    10k/50k/100k A/B evidence citation; only this packet may mark Task 179 done.
 
 Each measurement packet needs its suite config, manifest, results JSONL, and
@@ -363,7 +381,7 @@ Run the narrowest PG18 checks appropriate to each risky checkpoint:
 - NFR-016 fixture, upgrade-matrix, endian, and layout checks;
 - focused PG18 pg_tests for relation/catalog/WAL/rollback behavior;
 - three-instance TC-040 handoff/materialization tests;
-- three-instance TC-042 lifecycle/fault/pin tests;
+- three-instance TC-042 lifecycle/fault/retention tests;
 - `ecaz bench suite` physical topology preflight and 10k implementation smoke;
 - Task 172 A/B at 10k/50k/100k for physical vs single-node and explicitly
   labeled replicated control: recall + latency + cluster storage.
@@ -387,9 +405,10 @@ requires it or the user asks.
 6. Ready/publish/recovery follows a real committed decision boundary and every
    crash drill ends with the old active epoch or the fully acknowledged new
    epoch, never mixed/partial state.
-7. Durable scan pins cover normal/error/cancel/restart paths and prevent normal
-   reclaim; force-retire is explicit and fully audited.
-8. Expansion and materialization read only the pinned physical generation;
+7. Coordinator-local scan registrations cover normal/error/cancel/restart paths,
+   add no participant query-path work, and retire decisions prevent reclaim;
+   force-retire is explicit, non-active-only, and fully audited.
+8. Expansion and materialization read only the registered physical generation;
    owner-local row CTIDs never cross the wire, caller-selected functions are
    absent, and frozen projections/quals match the source snapshot.
 9. The topology endpoint and suite preflight prove exact global coverage, empty

@@ -29,6 +29,10 @@ at or below the release single-instance IVF anchor at matched recall.
   on the standard local multi-instance fixture, release-verified builds only.
 - A replicated full index with serving-ownership filtering or tombstoned
   non-owner records is an optional control lane and cannot satisfy this NFR.
+- Query latency includes FR-082's coordinator-local scan registration and
+  release. The physical lane SHALL issue no participant pin/unpin RPC, remote
+  catalog write, WAL flush, or synchronous commit per query; a lane that does
+  so is non-conforming rather than a slower valid gate candidate.
 - Anchors: IVF 100k 0.9980 distinct recall @ 37.6 ms p50; HNSW 100k 0.9795
   @ 20.4 ms (informational) — `reviews/task-146/006-anchor-results/` on
   branch `task-146-spire-honest-pareto-confirmation`, same host/corpus/query

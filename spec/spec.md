@@ -131,7 +131,7 @@ This specification does not govern:
 | `ec_ivf` | `ecvector_ip_ops`, `tqvector_ip_ops` | Optional posting-list index for IVF tradeoff measurement | Implemented local v1 |
 | `ec_diskann` | `ecvector_diskann_ip_ops`, `tqvector_diskann_ip_ops` | Optional Vamana/DiskANN-style graph index | Implemented local v1 |
 | `ec_spire` | `ecvector_spire_ip_ops`, `tqvector_spire_ip_ops` | SPIRE partition-object local and distributed index | Implemented local and distributed v1 |
-| `ec_distann` | `ecvector_distann_ip_ops` | One global Vamana graph with physically hash-sharded records and frozen row tier | Proposed; local/replicated prototype exists, physical publish path pending |
+| `ec_distann` | `ecvector_distann_ip_ops`, `tqvector_distann_ip_ops` | One global Vamana graph with physically hash-sharded records and frozen row tier | Proposed; local/replicated prototype exists, physical publish path pending |
 
 All current index families expose inner-product ordering through `<#>` as negative inner product so `ORDER BY embedding <#> query ASC LIMIT k` returns highest-similarity rows first.
 

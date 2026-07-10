@@ -50,7 +50,7 @@ fn validate_parent_fingerprint(parent: &[u8]) -> Result<(), String> {
     DistannEpochFingerprint::decode(parent).map(|_| ())
 }
 
-fn validate_strictly_ascending(values: &[u32], field: &str) -> Result<(), String> {
+fn validate_strictly_ascending(values: &[u64], field: &str) -> Result<(), String> {
     if values.windows(2).any(|pair| pair[0] >= pair[1]) {
         return Err(format!(
             "EC_SOURCE_SNAPSHOT: {field} must be strictly ascending"
@@ -63,11 +63,11 @@ fn validate_strictly_ascending(values: &[u32], field: &str) -> Result<(), String
 pub struct DistannSourceSnapshot {
     pub system_identifier: u64,
     pub database_name: String,
-    pub xmin: u32,
-    pub xmax: u32,
+    pub xmin_full: u64,
+    pub xmax_full: u64,
     pub curcid: u32,
-    pub xip: Vec<u32>,
-    pub subxip: Vec<u32>,
+    pub xip: Vec<u64>,
+    pub subxip: Vec<u64>,
     pub suboverflowed: bool,
     pub taken_during_recovery: bool,
 }
@@ -91,27 +91,27 @@ impl DistannSourceSnapshot {
     pub fn encode(&self) -> Result<Vec<u8>, String> {
         self.validate()?;
         let mut encoder = CanonicalEncoder::with_capacity(
-            40 + self.database_name.len() + (self.xip.len() + self.subxip.len()) * 4,
+            44 + self.database_name.len() + (self.xip.len() + self.subxip.len()) * 8,
         );
         encoder.put_u16(DISTANN_SOURCE_SNAPSHOT_VERSION);
         encoder.put_u64(self.system_identifier);
         encoder.put_string(&self.database_name)?;
-        encoder.put_u32(self.xmin);
-        encoder.put_u32(self.xmax);
+        encoder.put_u64(self.xmin_full);
+        encoder.put_u64(self.xmax_full);
         encoder.put_u32(self.curcid);
         encoder.put_u32(
             u32::try_from(self.xip.len())
                 .map_err(|_| "EC_SOURCE_SNAPSHOT: xip count exceeds u32".to_owned())?,
         );
         for xid in &self.xip {
-            encoder.put_u32(*xid);
+            encoder.put_u64(*xid);
         }
         encoder.put_u32(
             u32::try_from(self.subxip.len())
                 .map_err(|_| "EC_SOURCE_SNAPSHOT: subxip count exceeds u32".to_owned())?,
         );
         for xid in &self.subxip {
-            encoder.put_u32(*xid);
+            encoder.put_u64(*xid);
         }
         encoder.put_u8(u8::from(self.suboverflowed));
         encoder.put_u8(u8::from(self.taken_during_recovery));
@@ -128,32 +128,32 @@ impl DistannSourceSnapshot {
         }
         let system_identifier = decoder.get_u64("cluster system identifier")?;
         let database_name = decoder.get_string("database name")?;
-        let xmin = decoder.get_u32("snapshot xmin")?;
-        let xmax = decoder.get_u32("snapshot xmax")?;
+        let xmin_full = decoder.get_u64("snapshot full xmin")?;
+        let xmax_full = decoder.get_u64("snapshot full xmax")?;
         let curcid = decoder.get_u32("snapshot curcid")?;
         let xip_count = decoder.get_u32("snapshot xip count")? as usize;
         if xip_count > MAX_SNAPSHOT_XIDS
             || xip_count
-                .checked_mul(size_of::<u32>())
+                .checked_mul(size_of::<u64>())
                 .map_or(true, |bytes| bytes > decoder.remaining())
         {
             return Err("EC_SOURCE_SNAPSHOT: invalid xip count".to_owned());
         }
         let mut xip = Vec::with_capacity(xip_count);
         for _ in 0..xip_count {
-            xip.push(decoder.get_u32("snapshot xip")?);
+            xip.push(decoder.get_u64("snapshot xip")?);
         }
         let subxip_count = decoder.get_u32("snapshot subxip count")? as usize;
         if subxip_count > MAX_SNAPSHOT_XIDS
             || subxip_count
-                .checked_mul(size_of::<u32>())
+                .checked_mul(size_of::<u64>())
                 .map_or(true, |bytes| bytes > decoder.remaining())
         {
             return Err("EC_SOURCE_SNAPSHOT: invalid subxip count".to_owned());
         }
         let mut subxip = Vec::with_capacity(subxip_count);
         for _ in 0..subxip_count {
-            subxip.push(decoder.get_u32("snapshot subxip")?);
+            subxip.push(decoder.get_u64("snapshot subxip")?);
         }
         let suboverflowed = match decoder.get_u8("snapshot suboverflowed")? {
             0 => false,
@@ -173,8 +173,8 @@ impl DistannSourceSnapshot {
         let snapshot = Self {
             system_identifier,
             database_name,
-            xmin,
-            xmax,
+            xmin_full,
+            xmax_full,
             curcid,
             xip,
             subxip,
@@ -507,7 +507,7 @@ pub struct DistannEpochManifestV2 {
     pub placement_hash_version: u16,
     pub roster: Vec<DistannRosterEntry>,
     pub index_format_version: u16,
-    pub graph_format_version: u16,
+    pub graph_record_version: u16,
     pub handoff_wire_version: u16,
     pub codec_parameters: DistannManifestCodecParameters,
     pub build_options: DistannManifestBuildOptions,
@@ -527,7 +527,7 @@ impl DistannEpochManifestV2 {
         validate_parent_fingerprint(&self.parent_fingerprint)?;
         if self.placement_hash_version != DISTANN_PLACEMENT_HASH_VERSION
             || self.index_format_version != DISTANN_PHYSICAL_INDEX_FORMAT_VERSION
-            || self.graph_format_version != DISTANN_GRAPH_RECORD_VERSION
+            || self.graph_record_version != DISTANN_GRAPH_RECORD_VERSION
             || self.handoff_wire_version != DISTANN_HANDOFF_WIRE_VERSION
         {
             return Err("EC_EPOCH_MANIFEST: unsupported physical format version".to_owned());
@@ -595,7 +595,7 @@ impl DistannEpochManifestV2 {
         encoder.put_u16(self.placement_hash_version);
         encode_roster(&mut encoder, &self.roster)?;
         encoder.put_u16(self.index_format_version);
-        encoder.put_u16(self.graph_format_version);
+        encoder.put_u16(self.graph_record_version);
         encoder.put_u16(self.handoff_wire_version);
         encoder.put_len_prefixed(&codec_parameters)?;
         encoder.put_len_prefixed(&build_options)?;
@@ -632,7 +632,7 @@ impl DistannEpochManifestV2 {
         let placement_hash_version = decoder.get_u16("manifest placement hash version")?;
         let roster = decode_roster(&mut decoder)?;
         let index_format_version = decoder.get_u16("manifest index format version")?;
-        let graph_format_version = decoder.get_u16("manifest graph format version")?;
+        let graph_record_version = decoder.get_u16("manifest graph record version")?;
         let handoff_wire_version = decoder.get_u16("manifest handoff wire version")?;
         let codec_parameters = DistannManifestCodecParameters::decode(
             decoder.get_len_prefixed("manifest codec parameters")?,
@@ -670,7 +670,7 @@ impl DistannEpochManifestV2 {
             placement_hash_version,
             roster,
             index_format_version,
-            graph_format_version,
+            graph_record_version,
             handoff_wire_version,
             codec_parameters,
             build_options,
@@ -730,7 +730,7 @@ pub(crate) fn sample_manifest_v2() -> DistannEpochManifestV2 {
         placement_hash_version: DISTANN_PLACEMENT_HASH_VERSION,
         roster: super::generation_descriptor::sample_roster(),
         index_format_version: DISTANN_PHYSICAL_INDEX_FORMAT_VERSION,
-        graph_format_version: DISTANN_GRAPH_RECORD_VERSION,
+        graph_record_version: DISTANN_GRAPH_RECORD_VERSION,
         handoff_wire_version: DISTANN_HANDOFF_WIRE_VERSION,
         codec_parameters: DistannManifestCodecParameters {
             codec_kind: DISTANN_NEIGHBOR_CODEC_RABITQ,
@@ -770,8 +770,8 @@ mod tests {
         DistannSourceSnapshot {
             system_identifier: 0x0102_0304_0506_0708,
             database_name: "ecaz".to_owned(),
-            xmin: 100,
-            xmax: 200,
+            xmin_full: 100,
+            xmax_full: 200,
             curcid: 3,
             xip: vec![101, 103, 107],
             subxip: vec![109, 113],
@@ -790,6 +790,25 @@ mod tests {
         let mut unsorted = snapshot;
         unsorted.xip.swap(0, 1);
         assert!(unsorted.encode().is_err());
+    }
+
+    #[test]
+    fn source_snapshot_digest_binds_full_xid_epoch_bits() {
+        let snapshot = sample_snapshot();
+        let mut next_xid_epoch = snapshot.clone();
+        next_xid_epoch.xmin_full += 1_u64 << 32;
+        next_xid_epoch.xmax_full += 1_u64 << 32;
+        for xid in &mut next_xid_epoch.xip {
+            *xid += 1_u64 << 32;
+        }
+        for xid in &mut next_xid_epoch.subxip {
+            *xid += 1_u64 << 32;
+        }
+        assert_ne!(
+            snapshot.digest().unwrap(),
+            next_xid_epoch.digest().unwrap(),
+            "identical 32-bit XIDs in another wrap epoch must not alias"
+        );
     }
 
     #[test]

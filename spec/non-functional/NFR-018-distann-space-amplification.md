@@ -58,6 +58,7 @@ measurement rather than assumed.
 | published-epoch bytes vs transient build peak | recorded | recorded | build instrumentation in epoch manifest |
 | active epoch row-tier vector bytes across all owners | ≈ 1.0× raw vectors | exactly one row-tier vector per vec_id | topology/storage audit |
 | row-tier heap/TOAST bytes and end-to-end cluster bytes | recorded per owner and summed | recorded; no omitted owner/TOAST relation | topology/storage audit |
+| logical control-index bytes | recorded per participant and summed into graph-side numerator | no omitted control relation | FR-078 `control_index_bytes` topology column |
 | non-owner graph records in the measured lane | 0 | 0 | topology audit |
 
 ## Verification
@@ -67,8 +68,9 @@ the packet manifest per scale. A threshold breach fails the milestone
 closeout.
 
 Multinode measurement mechanism: the suite's storage step runs once per node
-and the suite report sums the per-node graph, TOAST, directory, and metadata
-bytes for the ratio. With the D11 lean record and the implemented 1-bit RaBitQ
+and the suite report sums the per-node graph, TOAST, directory, generation
+metadata, and separately reported logical `control_index_bytes` for the ratio.
+With the D11 lean record and the implemented 1-bit RaBitQ
 default, ADR-085 D1's corrected dim-1536/R=32 formula is 7,008 record bytes, or
 about 1.14× raw vector bytes before PostgreSQL relation overhead. The threshold
 still depends on measured 10k/50k/100k physical-owner storage: tuple/page/TOAST/

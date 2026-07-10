@@ -58,6 +58,9 @@ fields:
 
 The fixed header is 20 bytes with offsets: `record_version=0`, `flags=2`,
 `vec_id=4`, `heap_tid=12`, `neighbor_count=18`, and `search_code=20`.
+The 6-byte `ItemPointer` encoding is exactly `block_number u32_le` followed by
+`offset_number u16_le`, with no alignment padding. Thus the header arithmetic
+is `2 + 2 + 8 + 6 + 2 = 20` bytes.
 Consequently the complete record remains exactly
 `20 + code_stride + (R × 8) + (R × code_stride)` bytes. The legacy local-v4
 tuple's `(tag=0x09, reserved=0)` prefix is not a physical-generation version

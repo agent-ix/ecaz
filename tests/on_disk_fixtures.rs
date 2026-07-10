@@ -545,19 +545,19 @@ fn distann_source_snapshot_v1_fixture_decodes_independently_and_rejects_swap() {
     assert_eq!(independent.u16(), 1);
     assert_eq!(independent.u64(), 0x0102_0304_0506_0708);
     assert_eq!(independent.len_bytes(), b"ecaz");
-    assert_eq!(independent.u32(), 100);
-    assert_eq!(independent.u32(), 200);
+    assert_eq!(independent.u64(), 100);
+    assert_eq!(independent.u64(), 200);
     assert_eq!(independent.u32(), 3);
     let xip_count = independent.u32();
     assert_eq!(xip_count, 3);
     assert_eq!(
-        (0..xip_count).map(|_| independent.u32()).collect::<Vec<_>>(),
+        (0..xip_count).map(|_| independent.u64()).collect::<Vec<_>>(),
         vec![101, 103, 107]
     );
     let subxip_count = independent.u32();
     assert_eq!(subxip_count, 2);
-    assert_eq!(independent.u32(), 109);
-    assert_eq!(independent.u32(), 113);
+    assert_eq!(independent.u64(), 109);
+    assert_eq!(independent.u64(), 113);
     assert_eq!(independent.u8(), 0);
     assert_eq!(independent.u8(), 1);
     independent.finish();

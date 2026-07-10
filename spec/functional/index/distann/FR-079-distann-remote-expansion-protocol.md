@@ -16,7 +16,7 @@ relationships:
 
 ## Description
 
-Each data node SHALL expose fingerprint-pinned SQL endpoints for expanding
+Each data node SHALL expose fingerprint-selected SQL endpoints for expanding
 locally owned graph records and materializing their frozen source rows.
 
 ## Endpoint
@@ -47,7 +47,7 @@ is_tombstone bool, payload_nulls boolean[], payload_values bytea[])`
   omitted
 - `projection_attnums` — non-dropped source attribute numbers required by the
   target list and coordinator-side quals, without duplicates
-- `expected_schema_fingerprint` — the row-tier schema identity pinned by the
+- `expected_schema_fingerprint` — the row-tier schema identity bound by the
   coordinator's scan epoch
 
 ## Outputs
@@ -95,17 +95,19 @@ entry.
   frozen co-placed source row ([FR-082](./FR-082-distann-epoch-lifecycle.md)).
 - In a multi-node generation, `heap_tid` SHALL NOT be interpreted as a live
   source-table `ItemPointer`.
-- In the single-node degenerate case, `heap_tid` MAY reference the local
-  base-table tuple under the AM's tombstone/vacuum-consistency handling.
+- In a one-owner `distributed_control=true` roster, `heap_tid` SHALL still
+  reference the AM-owned frozen epoch row tier. Only the legacy
+  `distributed_control=false` single-node lane MAY reference a local base-table
+  tuple under the AM's tombstone/vacuum-consistency handling.
 - Exact distances SHALL be computed against the node's co-placed
   full-precision vector (resolved via `heap_tid`,
   [FR-078](./FR-078-distann-hash-placement.md)) — not against any vector
   stored in the index record, which carries none — so the coordinator needs
   no separate rerank round-trip. This is exactly the `ec_diskann`
   coarse-search-then-heap-rerank split, executed node-locally; the
-  rerank-fidelity source is the co-placed heap (AM-owned frozen epoch heap for
-  multinode, base heap for the single-node degenerate case), exact in both
-  cases (ADR-085 D11).
+  rerank-fidelity source is the co-placed heap (the AM-owned frozen epoch heap
+  for every distributed-control roster, or the base heap only for the legacy
+  non-distributed single-node lane), exact in both cases (ADR-085 D11).
 - For a tombstoned record, the expansion endpoint MAY omit the row-tier read
   and leave `exact_dist` unset (NULL).
 - For a tombstoned record, the expansion endpoint SHALL return

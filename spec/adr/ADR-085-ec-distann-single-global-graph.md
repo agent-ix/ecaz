@@ -3,7 +3,7 @@ type: ADR
 id: ADR-085
 title: "ec_distann: Single Global Vamana Graph with Hash-Placed Records and Coordinator Hop-Round Search"
 status: PROPOSED
-impact: Establishes the fifth access method (ec_distann) and the successor distributed-search architecture to partitioned SPIRE routing. Governs FR-075..FR-083, NFR-017..NFR-020, StR-008. Relates to ADR-049/054/056/067/068 (reused machinery) and records the measured rejection of the partitioned-routing lane.
+impact: Establishes the fifth access method (ec_distann) and the successor distributed-search architecture to partitioned SPIRE routing. Governs FR-075..FR-083, NFR-014, NFR-016..NFR-020, StR-008. Relates to ADR-049/054/056/067/068 (reused machinery) and records the measured rejection of the partitioned-routing lane.
 date: 2026-07-06
 ---
 # ADR-085: ec_distann — Single Global Vamana Graph with Hash-Placed Records and Coordinator Hop-Round Search

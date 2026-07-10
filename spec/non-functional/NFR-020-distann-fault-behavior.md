@@ -58,13 +58,14 @@ published epoch as active.
   crash after a strict subset of participants publishes; participant outage
   after the decision; crash after all acknowledgements but before active-pointer
   swap; crash immediately after active-pointer swap; abort racing with recovery;
-  retire racing with a pinned old-epoch scan; and cleanup targeting an active or
+  retire racing with a coordinator-registered old-epoch scan; and cleanup targeting an active or
   decision-referenced generation.
-- Scan-pin fault taxonomy: failure after a strict subset of participants pins;
-  identical and conflicting token replay; participant restart while pinned;
-  epoch-mismatch restart; statement cancellation; coordinator crash leaving a
-  durable wedged token; duplicate unpin; and force-retire racing with a live
-  scan.
+- Scan-retention fault taxonomy: identical and conflicting coordinator-local
+  token replay; epoch-mismatch restart; statement cancellation; backend crash;
+  participant restart while a retained generation is readable; normal retire
+  racing with a local live scan; coordinator crash after a durable retire
+  decision but a strict subset of participant reclaims; and active/non-active
+  force-retire racing with a live scan.
 
 ## Rationale
 
@@ -93,8 +94,10 @@ active partial graph.
 | conflicting retry mutations | 0 additional records/bytes | 0 | receipt/count/byte comparison |
 | leaked Building/Ready generations after explicit abort | 0 | 0 | generation inventory after bounded cleanup |
 | acknowledged-batch loss after PostgreSQL restart | 0 | 0 | WAL/restart resume drill |
-| leaked scan pins after normal/error/cancel/restart completion | 0 | 0 | participant token-ledger inventory after every TC-042 drill |
-| duplicate pin/unpin retention-count drift | 0 | 0 | idempotency and conflict drill |
+| leaked coordinator scan registrations after normal/error/cancel/restart completion | 0 | 0 | local registry inventory after every TC-042 drill |
+| participant pin/unpin query-path operations | 0 | 0 | endpoint/counter assertion |
+| duplicate register/release retention-count drift | 0 | 0 | idempotency and conflict drill |
+| partial participant reclaim after durable retire decision | recoverable to all reclaimed | 100% | retire-decision restart drill |
 
 ## Verification
 
@@ -138,9 +141,11 @@ opt-in and result labeling; the default path never degrades silently.
 
 ### NFR-020-AC-7
 
-Every non-crash scan exit releases all participant pins exactly once; a
-coordinator-crash pin remains visible and blocks normal reclaim until an
-explicit audited force-retire clears it.
+Every non-crash scan exit releases its coordinator-local registration exactly
+once, backend death releases registrations with the dead scan, and no scan
+performs participant pin/WAL work. Participants reclaim only from a durable
+zero-in-flight retire decision; partial application recovers idempotently, and
+forced retirement remains an explicit audited non-active-epoch override.
 
 ## Dependencies
 

@@ -53,20 +53,25 @@ unchanged.
   [FR-078](./FR-078-distann-hash-placement.md) and
   [FR-082](./FR-082-distann-epoch-lifecycle.md) publish a physical generation.
 - A distributed-control source table and index SHALL be permanent WAL-logged
-  relations. `ambuild` SHALL reject temporary or unlogged persistence before
+  relations.
+- `ambuild` SHALL reject temporary or unlogged persistence before
   initializing control metadata: an unlogged init fork cannot preserve the
   never-reused logical-index UUID across crash recovery, and physical
   generation catalogs and acknowledged handoff batches require WAL durability.
 - `distributed_control = false` SHALL continue to write the existing 97-byte
-  metadata format v4 byte-for-byte. The opt-in control SHALL write metadata
+  metadata format v4 byte-for-byte.
+- The opt-in control SHALL write metadata
   format v5: the same 97-byte prefix with flags bit 0 set, followed by one
   non-zero 16-byte RFC 4122 version-4 logical-index UUID at byte offset 97
-  (113 bytes total). Its version nibble SHALL be `4` and its variant bits SHALL
-  be `10`; malformed UUID bits reject. In v5 the entry point, dimensions, node count, all graph/codebook/
-  directory heads, content/delta counts, active epoch, and in-flight count
-  SHALL be zero or invalid as appropriate. Unknown flag bits, a zero UUID, or
-  any local graph state SHALL reject. There is no implicit v4→v5 migration;
-  the transition is explicit and rebuild-only under NFR-016.
+  (113 bytes total).
+- The logical-index UUID SHALL have version nibble `4` and RFC 4122 variant
+  bits `10`.
+- The v5 control SHALL encode zero or invalid values, as appropriate, for its
+  entry point, dimensions, node count, all graph/codebook/directory heads,
+  content/delta counts, active epoch, and in-flight count.
+- The decoder SHALL reject unknown flag bits, malformed/zero UUID bytes, or any
+  local graph state. There is no implicit v4→v5 migration; the transition is
+  explicit and rebuild-only under NFR-016.
 - A distributed-control index SHALL be scanned only through the coordinator
   CustomScan path.
 - While a distributed-control index lacks a Published manifest, the AM SHALL

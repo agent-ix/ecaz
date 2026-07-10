@@ -13,7 +13,7 @@ distann-generation-descriptor,1,true,true,fixtures/on-disk/distann_generation_de
 distann-build-spec,1,true,true,fixtures/on-disk/distann_build_spec_v1.hex,current immutable pre-handoff build specification
 distann-handoff-entry,1,true,true,fixtures/on-disk/distann_handoff_entry_v1.hex,current bounded canonical owner handoff entry
 distann-handoff-batch,1,true,true,fixtures/on-disk/distann_handoff_batch_v1.hex,current bounded canonical owner handoff batch with appended digest
-distann-source-snapshot,1,true,true,fixtures/on-disk/distann_source_snapshot_v1.hex,current canonical PostgreSQL source snapshot identity
+distann-source-snapshot,1,true,true,fixtures/on-disk/distann_source_snapshot_v1.hex,current canonical PostgreSQL source snapshot identity with wrap-aware FullTransactionId fields
 distann-ready-receipt,1,true,true,fixtures/on-disk/distann_ready_receipt_v1.hex,current participant Ready receipt with appended digest
 distann-manifest-codec-parameters,1,true,true,fixtures/on-disk/distann_manifest_codec_parameters_v1.hex,current epoch-manifest codec kind and shape subrecord
 distann-manifest-build-options,1,true,true,fixtures/on-disk/distann_manifest_build_options_v1.hex,current epoch-manifest graph and build options subrecord

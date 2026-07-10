@@ -7,9 +7,6 @@ relationships:
   - target: "ix://agent-ix/ecaz/FR-076"
     type: "depends_on"
     cardinality: "N:1"
-  - target: "ix://agent-ix/ecaz/FR-055"
-    type: "depends_on"
-    cardinality: "N:1"
   - target: "ix://agent-ix/ecaz/FR-077"
     type: "depends_on"
     cardinality: "N:1"
@@ -26,6 +23,11 @@ the same owner in an AM-owned epoch row tier.
 
 The placement protocol SHALL preserve one coherent global graph while
 physically distributing its records and row tier across the published roster.
+
+In this specification, a **generation** is one participant's physical shard
+for one `(logical_index_uuid, build_id, epoch)` identity. An **epoch** is the
+cluster-wide unit comprising exactly one such generation for every ordered
+roster participant plus its canonical manifest.
 
 ## Inputs
 
@@ -60,6 +62,12 @@ roster_ordinal integer, node_id integer, endpoint_identity text,
 conninfo_secret_name text, remote_index_regclass text, is_local boolean)
 RETURNS void`
 
+`ec_distann_unregister_node_descriptor(index_regclass regclass,
+roster_ordinal integer) RETURNS void`
+
+`ec_distann_begin_epoch_build(index_regclass regclass, epoch bigint,
+build_id uuid) RETURNS bytea`
+
 `ec_distann_build_epoch(index_regclass regclass, epoch bigint, build_id uuid)
 RETURNS bytea`
 
@@ -70,6 +78,17 @@ RETURNS void`
 RETURNS TABLE (epoch bigint, build_state text, publish_decision_state text,
 node_id integer, participant_state text, next_batch_seq bigint,
 record_count bigint, receipt_digest bytea, last_error_category text)`
+
+Each participant SHALL expose these identity/recovery inspection operations:
+
+`ec_distann_control_identity(index_regclass regclass)
+RETURNS TABLE (logical_index_uuid uuid, index_format_version integer,
+distributed_control boolean)`
+
+`ec_distann_list_unpublished_generations(index_regclass regclass)
+RETURNS TABLE (build_id uuid, epoch bigint, state text,
+build_spec_digest bytea, generation_descriptor_digest bytea,
+created_at timestamptz)`
 
 - Registration SHALL reject duplicate ordinals, duplicate node ids, duplicate
   endpoint identities, more than one local participant, raw conninfo in any
@@ -83,18 +102,34 @@ record_count bigint, receipt_digest bytea, last_error_category text)`
 - Registration SHALL store the conninfo secret reference only in the
   coordinator-local descriptor catalog governed by
   [NFR-014](../../../non-functional/NFR-014-spire-transport-security-and-operations.md).
+- Registration SHALL resolve the secret, call the participant's secured
+  `ec_distann_control_identity`, and persist the returned logical-index UUID
+  only after verifying v5 `distributed_control` metadata and the configured
+  endpoint identity. A caller-supplied or OID-derived UUID SHALL NOT be
+  accepted as provenance.
+- Registration is insert-only for one ordinal. Updating an entry requires
+  `ec_distann_unregister_node_descriptor` followed by registration, and
+  unregister SHALL reject while a build gate, publish decision, or active
+  manifest references the registry. A build always consumes an immutable
+  copied roster snapshot, so later registry edits cannot mutate an epoch.
 - A distributed-control build SHALL require the ADR-063 global
   `source_identity = 'include'` provider with exactly one non-NULL UUID or
   16-byte bytea identity attribute. Heap-TID-derived local identity SHALL be
   rejected as `EC_SOURCE_IDENTITY` before snapshot capture.
-- `ec_distann_build_epoch` SHALL consume one immutable ordered snapshot of that
-  registry, the index reloptions, and the source-relation schema.
-- `ec_distann_build_epoch` SHALL acquire a session-level source-relation lock
-  that permits reads but blocks DML and schema changes.
-- The build operation SHALL persist a coordinator build gate before returning
-  Ready. The gate SHALL cause source DML and schema-changing DDL to fail closed
-  if the coordinating session exits and releases its session lock before
-  publish or abort.
+- `ec_distann_begin_epoch_build` SHALL acquire a session-level source-relation
+  lock that permits reads but blocks DML and schema changes, copy the ordered
+  registry/reloptions/schema identity into a coordinator build registration,
+  persist the durable build gate, and return its digest without contacting a
+  participant.
+- The transaction containing `ec_distann_begin_epoch_build` SHALL commit before
+  the first remote `ec_distann_begin_epoch_handoff` call. A caller SHALL NOT
+  invoke `ec_distann_build_epoch` until that commit succeeds.
+- `ec_distann_build_epoch` SHALL require the matching durable registration and
+  held session lock, capture one source MVCC snapshot in its new transaction,
+  and consume the immutable registered roster, reloptions, and schema.
+- The gate SHALL cause source DML and schema-changing DDL to fail closed if the
+  coordinating session exits and releases its session lock before publish or
+  abort.
 - The durable build gate SHALL reject `INSERT`, `UPDATE`, `DELETE`, `MERGE`,
   `COPY FROM`, `TRUNCATE`, source-relation `ALTER`/`DROP`, `CLUSTER`,
   `VACUUM FULL`, and any other source tuple/schema rewrite. It SHALL continue to permit
@@ -113,6 +148,11 @@ record_count bigint, receipt_digest bytea, last_error_category text)`
   leave the prior epoch active and require explicit resume with the original
   frozen build workspace or abort. A build SHALL NOT publish from a newly
   observed source snapshot under the old build id.
+- A participant SHALL list every local Building or Ready generation through
+  `ec_distann_list_unpublished_generations`, including one whose coordinator
+  disappeared before a remote receipt returned. An operator can therefore
+  reconcile it to the durable coordinator registration or abort it explicitly;
+  relation-name discovery and logs are not recovery state.
 - Reinvoking the build operation with an already Published build id and exact
   immutable inputs SHALL return the existing 32-byte manifest digest. Reusing the build id
   with different inputs SHALL raise `EC_BUILD_ID_CONFLICT`.
@@ -173,8 +213,9 @@ transform_dim`, and `centroid_value_count = group_size × 16` for every group.
   coordinator. A trained codec SHALL NOT be independently retrained on an
   owner.
 - The participant SHALL validate supported versions, dimensions, degree,
-  codec-artifact digest, codec shape, schema descriptor, and schema fingerprint
-  before creating a Building generation.
+  descriptor digest, codec shape, schema descriptor, and schema fingerprint
+  before creating a Building generation. The descriptor digest transitively
+  binds the complete codec artifact; no separate codec-artifact digest exists.
 - The participant SHALL match exactly one roster entry to its local logical
   index UUID and endpoint identity, derive its owner ordinal from that entry,
   and reject a missing or ambiguous match as `EC_NODE_DESCRIPTOR`.
@@ -186,6 +227,16 @@ transform_dim`, and `centroid_value_count = group_size × 16` for every group.
 
 - The placement function SHALL compute the owner as
   `placement_hash(vec_id, hash_version) mod roster_count`.
+- For `hash_version = 1`, `placement_hash` SHALL be the unsigned 64-bit
+  MurmurHash3 finalizer `fmix64` applied to
+  `u64(vec_id) XOR 0x64697374616e6e70`. Every multiplication wraps modulo
+  `2^64`, and the steps are exactly: `h ^= h >> 33`; `h *=
+  0xff51afd7ed558ccd`; `h ^= h >> 33`; `h *= 0xc4ceb9fe1a85ec53`;
+  `h ^= h >> 33`. TC-050 SHALL pin at least the vec_id/hash vectors
+  `0→0x2046ffe66003c942`, `1→0x19ec555c128bedc0`,
+  `42→0x3ccbc4b5c8aa40ea`, `u64::MAX→0x00498282650ac8a8`, and
+  `0xdeadbeefcafef00d→0xdaa2d74d76f4450a`. With `roster_count = 3`, those
+  vectors SHALL resolve to owner ordinals `2, 1, 0, 2, 0`, respectively.
 - The epoch manifest SHALL preserve the exact roster order used by the
   placement function.
 - The placement manifest SHALL contain no per-record routing entries.
@@ -253,8 +304,10 @@ transform_dim`, and `centroid_value_count = group_size × 16` for every group.
   identity.
 - A Published row-tier tuple SHALL remain immutable until its epoch is retired
   under [FR-082](./FR-082-distann-epoch-lifecycle.md).
-- In the single-node degenerate deployment, the graph record MAY reference the
-  indexed base-table tuple instead of an AM-owned copied row tier.
+- `distributed_control=true` SHALL always create an AM-owned frozen row tier,
+  including a one-owner degenerate roster. Only the legacy
+  `distributed_control=false` single-node lane MAY reference an indexed
+  base-table tuple directly.
 
 ## Handoff Protocol
 
@@ -283,7 +336,7 @@ RETURNS void`
 |-----------|-----------------|-------------------|
 | `ec_distann_begin_epoch_handoff` | index relation, epoch, UUID build id, build-spec/roster/generation-descriptor digests and descriptor bytes, expected owner count and owner digest | Building-state receipt with the next batch sequence and cumulative count |
 | `ec_distann_stage_epoch_batch` | index relation, build id, monotonically increasing batch sequence, SHA-256 batch digest, versioned handoff entries | committed batch receipt with accepted count, cumulative count, and cumulative digest |
-| `ec_distann_seal_epoch_handoff` | index relation, build id, expected final count and owner digest | Ready receipt with graph, row-tier, directory, schema, and physical-byte digests/counts |
+| `ec_distann_seal_epoch_handoff` | index relation, build id, expected final count and owner digest | Ready receipt with graph, row-tier, directory, and physical-byte digests/counts; schema is bound transitively by the generation-descriptor digest |
 | `ec_distann_abort_epoch_handoff` | index relation and build id | idempotent removal of a non-Published Building or Ready generation |
 
 - The begin operation SHALL return the existing progress receipt when the same
@@ -293,6 +346,13 @@ RETURNS void`
 - The coordinator SHALL retain at most one unacknowledged batch per owner.
 - The coordinator SHALL preserve strictly increasing vec_id order within each
   owner stream.
+- During initial snapshot capture, before Vamana construction, stitching, or
+  the first participant handoff, the coordinator SHALL serialize and preflight
+  every frozen source row against the complete handoff-entry size formula
+  (row bytes plus fixed graph payload for the selected degree/codec). If one
+  canonical entry can exceed 8 MiB, the build SHALL fail immediately as
+  `EC_HANDOFF_TOO_LARGE`. Entry chunking is not supported in v1; this is an
+  explicit corpus constraint rather than a mid-handoff discovery.
 - The participant SHALL verify the batch digest before decoding entries.
 - The participant SHALL validate wire version, schema, codec shape, vector
   dimension, owner, vec_id order, and duplicate absence before writing a batch.
@@ -341,6 +401,11 @@ as the generation descriptor. `owner_expectations` SHALL begin with its `u32`
 element count and then encode the three fixed-width fields for each roster
 entry without per-entry byte lengths. The build specification SHALL contain no raw
 conninfo, secret reference, PostgreSQL OID, or local physical locator.
+- Because `owner_expectations` bind final per-owner counts and stream digests,
+  v1 SHALL finish the bounded source/stitched spools and make a counting/digest
+  pass before the first participant `begin`. This deliberate second pass keeps
+  immutable begin/replay identities complete; overlapping handoff with stitch
+  output is deferred to a later version.
 - The final epoch-manifest digest SHALL be computed only after all Ready
   receipts exist under [FR-082](./FR-082-distann-epoch-lifecycle.md).
 - PostgreSQL WAL SHALL preserve every acknowledged batch across backend or
@@ -359,7 +424,7 @@ row_count bigint, owned_vec_id_digest bytea, graph_digest bytea,
 row_tier_digest bytea, non_owned_live_count bigint,
 non_owned_tombstone_count bigint, orphan_record_count bigint,
 orphan_row_count bigint, graph_bytes bigint, row_tier_bytes bigint,
-directory_bytes bigint)`
+directory_bytes bigint, control_index_bytes bigint)`
 
 `ec_distann_epoch_topology(index_regclass regclass, epoch_fingerprint bytea)
 RETURNS TABLE (node_id integer, state text, record_count bigint,
@@ -367,21 +432,26 @@ row_count bigint, owned_vec_id_digest bytea, graph_digest bytea,
 row_tier_digest bytea, non_owned_live_count bigint,
 non_owned_tombstone_count bigint, orphan_record_count bigint,
 orphan_row_count bigint, graph_bytes bigint, row_tier_bytes bigint,
-directory_bytes bigint)`
+directory_bytes bigint, control_index_bytes bigint)`
 
 - The operation SHALL derive every count and digest from the selected physical
   generation, not from expected manifest fields.
 - `owned_vec_id_digest` SHALL hash the strictly sorted local vec_id sequence as
   `SHA-256("ec_distann_owned_vec_ids_v1\0" || u64_le(vec_id)...)`.
-- Byte counts SHALL include TOAST and local-directory storage attributed to the
-  generation and SHALL exclude the logical control index.
+- `graph_bytes`, `row_tier_bytes`, and `directory_bytes` SHALL include their
+  attributed TOAST storage and exclude the logical control index.
+  `control_index_bytes` SHALL separately report the local logical control
+  relation so NFR-018 can sum it into the graph-side numerator without
+  conflating it with generation storage.
 - The coordinator SHALL use `ec_distann_generation_topology` to verify each
   build-id-selected Ready generation before persisting a publish decision. The
   function MAY report Building state for operator diagnostics, but a publish
   decision SHALL accept only Ready.
 - The suite and scan diagnostics SHALL use `ec_distann_epoch_topology` for a
-  Published or retained Retired fingerprint. Unknown, Ready, Building, or
-  reclaimed fingerprints SHALL fail closed on the epoch-selected operation.
+  Published or retained Retired fingerprint. Building and Ready state are
+  selectable only by build id through `ec_distann_generation_topology`; bytes
+  that do not resolve to a Published/retained manifest, and reclaimed
+  fingerprints, SHALL fail closed on the epoch-selected operation.
 
 ## Error Conditions
 
@@ -392,7 +462,7 @@ directory_bytes bigint)`
 | `EC_SOURCE_IDENTITY` | Physical build lacks one valid global UUID/bytea16 source identity per row | Reject before snapshot capture or handoff |
 | `EC_BATCH_SEQUENCE` | Gap, regression, or out-of-order batch sequence | Reject before mutation |
 | `EC_BATCH_CONFLICT` | Replayed sequence has different digest or bytes | Reject before mutation |
-| `EC_HANDOFF_DIGEST` | Batch or final owner digest differs | Roll back current operation; generation remains resumable |
+| `EC_HANDOFF_DIGEST` | Supplied batch bytes do not match the batch digest | Roll back the current batch; generation remains resumable |
 | `EC_WRONG_OWNER` | Entry hashes to another roster participant | Roll back the entire batch |
 | `EC_DUPLICATE_VEC_ID` | Duplicate vec_id within or across acknowledged batches | Roll back the entire batch |
 | `EC_SCHEMA_MISMATCH` | Source and destination row-tier schema fingerprints differ | Reject before tuple allocation |
@@ -400,8 +470,8 @@ directory_bytes bigint)`
 | `EC_GENERATION_DESCRIPTOR` | Descriptor/digest/version/codec/schema content is malformed, unsupported, or inconsistent | Reject before creating or mutating a generation |
 | `EC_UNSUPPORTED_PROJECTION` | Multi-node query references an unspecified system-column identity | Reject during planning |
 | `EC_HANDOFF_FORMAT` | Unknown wire/record/codec version or malformed entry | Roll back the entire batch |
-| `EC_HANDOFF_TOO_LARGE` | Encoded batch or one entry exceeds 8 MiB | Reject before declared-size allocation |
-| `EC_BUILD_INCOMPLETE` | Seal observes missing sequence, count, row, directory, or digest | Keep generation Building and query-invisible |
+| `EC_HANDOFF_TOO_LARGE` | Preflight shows one entry can exceed 8 MiB, or an encoded batch exceeds 8 MiB | Reject before graph construction/remote begin for an entry, or before declared-size allocation for a batch |
+| `EC_BUILD_INCOMPLETE` | Seal observes missing sequence, count, row, directory, or final owner digest | Keep generation Building and query-invisible |
 | `EC_BUILD_STATE` | Operation is invalid for the generation state | Reject without changing the state |
 
 ## Constraints
