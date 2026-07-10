@@ -1,11 +1,15 @@
 # Task 179 packet 001 — physical hash-shard specification and implementation plan
 
-**Status:** review requested. This packet specifies and plans the physical
-hash-sharded generation work; it does not claim implementation or benchmark
-completion.
+**Status:** outside re-review requested after findings were addressed. This
+packet specifies and plans the physical hash-sharded generation work; it does
+not claim physical-topology or benchmark completion. Format/control code is
+reviewed separately in packet 002.
 
-**Branch:** `task-165-ec-distann-m3`
-**Specification checkpoint:** `32b9b43fbdaa23cafb31ef25b759892c2c05028a`
+**Branch:** `task-179-ec-distann-physical-shards`
+
+**Original specification checkpoint:** `32b9b43fbdaa23cafb31ef25b759892c2c05028a`
+
+**Outside-review correction:** `57a45cca1afba081563b33f253dc9d89a4826f08`
 
 ## Outcome
 
@@ -16,8 +20,9 @@ row tiers, replica-count controls, and tombstone-pruned copies are invalid
 substitutes for this topology.
 
 Task 179 is the implementation task because Task 173 already reserves Tasks
-173–178 for BatANN slices. Task 163 D8 remains a prerequisite, and the corrected
-Task 172 benchmark gate is shelved until Task 179 provides the physical surface.
+173–178 for BatANN slices. The Task 163 D8 prerequisite has landed and received
+outside acceptance; the corrected Task 172 benchmark gate remains shelved until
+Task 179 provides the physical surface.
 
 ## Specification changes
 
@@ -32,9 +37,9 @@ Task 172 benchmark gate is shelved until Task 179 provides the physical surface.
 - `FR-079` fixes the query and row-materialization interfaces and bounds graph,
   exact-vector, and payload reads independently.
 - `FR-082` defines the lifecycle state machine, 34-byte versioned epoch
-  fingerprint, canonical manifest and Ready receipt, a durable coordinator
-  decision boundary, recovery, generation pins, retirement, and force-retire
-  audit behavior.
+  fingerprint, canonical manifest and Ready receipt, durable publish/retire
+  decisions, recovery, coordinator-local scan registration, retirement
+  fencing, and force-retire audit behavior.
 - `FR-083` binds tombstones, redirects, frozen row payloads, and reclamation to
   immutable generations.
 - `NFR-014`, `NFR-016`–`NFR-020`, and `ADR-085` now carry the corresponding
@@ -46,7 +51,9 @@ Task 172 benchmark gate is shelved until Task 179 provides the physical surface.
 The base review caught and corrected several contract defects before code:
 
 - the generation descriptor did not bind the complete trained codec artifact;
-- scan lifetime was not protected by durable all-participant generation pins;
+- the initial all-participant durable-pin correction imposed an unacceptable
+  per-query RPC/commit tax and was replaced after outside review by local scan
+  registration plus a durable retirement fence;
 - Ready-generation topology could not be selected by an unpublished epoch
   fingerprint, so build-id and epoch-fingerprint selectors are now separate;
 - the record-size acceptance formula counted a vector that is not in the
@@ -63,7 +70,8 @@ The base review caught and corrected several contract defects before code:
 criterion-level verification. It adds:
 
 - registry, descriptor, handoff, materialization, privilege, lifecycle,
-  publication, pin, mutation-gate, retirement, format, and topology cases;
+  publication, scan-retention, mutation-gate, retirement, format, and topology
+  cases;
 - explicit boundary, option-permutation, stable-error, state-transition, and
   edge-case coverage;
 - a true three-PostgreSQL-instance integration fixture requirement;
@@ -72,12 +80,12 @@ criterion-level verification. It adds:
   to `TC-049`, Task 173 retains `TC-045`–`TC-048`, and DistANN format discipline
   uses `TC-050`.
 
-The matrix remains `PARTIAL` because no physical implementation or runtime
-evidence exists yet.
+The matrix remains `PARTIAL` because physical generation storage/topology and
+its runtime evidence do not exist yet.
 
 ## Task and status reconciliation
 
-- Task 163 remains partial/open for D8 streaming.
+- Task 163 D8 streamed stitching is landed and outside-review accepted.
 - Tasks 164 and 165 are useful distributed-control/read-path work, but do not
   constitute physical sharding.
 - Task 166 evidence is explicitly a single-instance control.
@@ -98,44 +106,49 @@ commit, abort, recover, and reclaim transactionally:
 - frozen row-tier heap with the source tuple descriptor;
 - graph heap keyed by vector identity and pointing to the row-tier TID;
 - unique B-tree directory for vector identity lookup;
-- cataloged generation, participant, receipt, decision, pin, and audit state.
+- cataloged generation, batch, build-registration, receipt, publish/retire
+  decision, active-pointer, and audit state.
 
 It divides delivery into narrow checkpoints for D8 input, local generation
 storage, canonical row capture and streamed handoff, participant endpoints,
-coordinator publication/recovery, pins/retirement, read integration, and the
-true multi-instance fixture.
+coordinator publication/recovery, scan retention/retirement, read integration,
+and the true multi-instance fixture.
 
 ## Reviewer focus
 
 Please review these high-risk seams:
 
-1. The three committed publication phases: build-to-Ready, durable decision,
-   then recoverable participant publish and coordinator pointer swap.
+1. The four committed phases: durable build registration before remote begin,
+   build-to-Ready, durable publish decision, then recoverable participant
+   publish and coordinator pointer swap.
 2. The session source lock plus durable mutation gate and its fail-closed DDL/DML
    coverage.
 3. Descriptor/receipt/manifest digest binding, especially trained codec and row
    schema identity.
-4. Durable scan pins across every participant and partial cleanup after failure,
-   cancellation, or restart.
+4. Coordinator-local scan registration with zero participant query-path writes,
+   plus the zero-in-flight durable retire decision and partial-apply recovery.
 5. The distinct build-id and epoch-fingerprint topology selectors.
 6. The ordinary heap/B-tree first implementation and whether it preserves the
    specified ownership, atomicity, WAL, and reclamation semantics.
 
 ## Validation
 
-- `quire validate --scope /home/peter/dev/ecaz-task165 "spec/**/*.md" --summary`
+- `quire validate --scope /home/peter/dev/ecaz/.claude/worktrees/task-179-physical-shards "spec/**/*.md" --summary`
   — `244/244 docs grammar-clean (100%); 0 EARS finding(s): none`.
 - Stable EC error categories referenced by the amended specs but absent from the
   matrix: `0`.
 - Duplicate first-column test-summary identifiers: `0`.
-- `git diff --check -- spec plan`: pass before the specification checkpoint.
-- No build, PostgreSQL test, or benchmark was run because this checkpoint changes
-  specification, traceability, and planning only.
+- `git diff --check -- spec plan`: pass at the outside-review correction head.
+- Packet 001 remains a specification/traceability checkpoint. Packet 002 owns
+  the format/control build, clippy, fixture, and live PG18 evidence; neither
+  packet claims a benchmark result.
 
 ## Known open work
 
-- Task 179 has no implementation yet.
-- Task 163 D8 streaming remains open.
+- Task 179 now has its format/control checkpoint, but generation storage,
+  handoff, publication/retention, read integration, and the physical fixture
+  remain open.
+- Task 163 D8 is complete and supplies Task 179's bounded stitched input.
 - BatANN Task 173 needs the noted fingerprint/dependency reconciliation on its
   branch.
 - Task 172 remains non-promotable until the physical implementation and complete

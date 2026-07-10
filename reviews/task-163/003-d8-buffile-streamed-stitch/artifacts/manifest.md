@@ -4,7 +4,7 @@
 - **Task bucket / packet:**
   `reviews/task-163/003-d8-buffile-streamed-stitch`
 - **Branch:** `task-179-ec-distann-physical-shards`
-- **Timestamp:** `2026-07-10T10:34:25-07:00`
+- **Timestamp:** `2026-07-10T10:41:07-07:00`
 - **Lane:** Task 163 D8 / FR-077-CON-4 implementation prerequisite
 - **Fixture:** pure randomized shard suite plus focused live local PG18 pgrx
 - **Storage format:** temporary per-shard PostgreSQL `BufFile`; no persisted
