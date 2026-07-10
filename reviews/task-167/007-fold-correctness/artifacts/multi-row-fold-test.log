@@ -1,0 +1,7 @@
+     Running unittests src/lib.rs (target/debug/deps/ecaz-b48cf24d400cdea2)
+test tests::pg_test_ec_distann_fold_multi_row_clustered_delta has been running for over 60 seconds
+test tests::pg_test_ec_distann_fold_multi_row_clustered_delta ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2377 filtered out; finished in 67.32s
+     Running unittests src/bin/approx_score_study.rs (target/debug/deps/approx_score_study-75ff4c21b7950251)
+     Running unittests src/bin/pgrx_embed.rs (target/debug/deps/pgrx_embed_ecaz-f208615668ca53e7)
+     Running unittests src/bin/simd_bench.rs (target/debug/deps/simd_bench-d70bec39e924c72c)
