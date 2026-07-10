@@ -1,0 +1,98 @@
+{
+  "suite": "task172-distann-real-multinode",
+  "schema_version": 1,
+  "config": "reviews/task-172/001-real-multinode-benchmark/artifacts/distann-real-multinode.json",
+  "config_sha256": "7ef7a338637af80a0e8378d123f803666a4afebb9c792fcd8466d00f5bae26af",
+  "dry_run": false,
+  "generated_at_unix_ms": 1783661259843,
+  "runner_git_commit": "d2084c962164820461eb16ea7f37ae270016511d-dirty",
+  "connection": {
+    "database": "tqvector_bench",
+    "host": null,
+    "port": null,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "distann-real-multinode-10k",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "reviews/task-172/001-real-multinode-benchmark/artifacts/distann-real-multinode-10k",
+        "--log-file",
+        "reviews/task-172/001-real-multinode-benchmark/artifacts/distann-real-multinode-10k/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--base-port",
+        "39710",
+        "--graph-degree",
+        "32",
+        "--queries",
+        "200",
+        "--top-k",
+        "10",
+        "--skip-fault-drills",
+        "--corpus-prefix",
+        "ec_real_10k"
+      ],
+      "selected": true,
+      "tags": [
+        "task172",
+        "ec_distann",
+        "multinode",
+        "ec_real_10k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-172/001-real-multinode-benchmark/artifacts/distann-real-multinode-10k/distann-local-multinode.log",
+        "reviews/task-172/001-real-multinode-benchmark/artifacts/distann-real-multinode-10k/distann-multinode-summary.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783661259843,
+      "finished_at_unix_ms": 1783661637672,
+      "duration_ms": 378899,
+      "exit_code": 0
+    },
+    {
+      "name": "distann-real-multinode-50k",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task172",
+        "ec_distann",
+        "multinode",
+        "ec_real_50k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-172/001-real-multinode-benchmark/artifacts/distann-real-multinode-50k/distann-local-multinode.log",
+        "reviews/task-172/001-real-multinode-benchmark/artifacts/distann-real-multinode-50k/distann-multinode-summary.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "distann-real-multinode-100k",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task172",
+        "ec_distann",
+        "multinode",
+        "ec_real_100k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-172/001-real-multinode-benchmark/artifacts/distann-real-multinode-100k/distann-local-multinode.log",
+        "reviews/task-172/001-real-multinode-benchmark/artifacts/distann-real-multinode-100k/distann-multinode-summary.log"
+      ],
+      "status": "skipped"
+    }
+  ]
+}
