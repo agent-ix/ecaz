@@ -1,8 +1,36 @@
 # Task 172: ec_distann Real Multi-Instance Benchmark Gate
 
-Status: proposed (2026-07-09). Depends on: Tasks 165 and 166.
+Status: SHELVED (2026-07-10). Depends on: Tasks 165 and 166, and now a
+**hard block on FR-078 physical hash-shard topology** (record-level sharding +
+publish, per reviewer 2026-07-10-03). Do NOT run the benchmark matrix until the
+physically sharded lane exists and passes the topology audit.
 Owner: coder (to be assigned). One branch off the current ec_distann line.
-Priority: P0 corrective benchmark gate.
+Priority: P0 corrective benchmark gate — but blocked; execution deferred.
+
+## SHELVE NOTE (2026-07-10)
+
+Task 172 is shelved and we are shifting to option (a): **build the FR-078 real
+sharded build/publish path first, then benchmark.** Rationale:
+
+- The only available multi-instance surface (`ecaz dev distann-multicluster
+  local-multinode-pg18`) builds the COMPLETE global Vamana graph independently
+  on every node and partitions only serving ownership; the "disjoint" drill
+  deletes non-owned heap rows and tombstones (not removes) the replicated index.
+  It is a **replicated-serving control**, not a sharded index.
+- Every gate quantity is therefore an artifact of replication, not the design:
+  storage is ~3× inflated (measured 5.65× vs an expected ~1.9× sharded, so the
+  replicated model fails NFR-018 while the real design likely passes); recall
+  identity is real but does not exercise cross-shard hop-round traversal; and
+  distributed latency reflects local full-graph search + eager remote
+  materialization, not per-hop network cost — the reason the latency sweep timed
+  out repeatedly (900s/700s/600s) on this fixture.
+- Benching the replicated fixture cannot answer NFR-017/018/019. Physical
+  FR-078 placement is a fail-closed prerequisite for all gate measurements.
+
+**Retained as valid evidence (functional, not gate):** the read-path,
+fanout/merge, 12-drill NFR-020 fault matrix, recall-oracle, and single-vs-multi
+identity results in packet 001 stand as replicated-serving-control evidence and
+must never be promoted as distributed latency/storage/scaling numbers.
 
 ## Why
 
