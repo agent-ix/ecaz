@@ -1,9 +1,10 @@
 # Task 172: ec_distann Real Multi-Instance Benchmark Gate
 
-Status: SHELVED (2026-07-10). Depends on: Tasks 165 and 166, and now a
-**hard block on FR-078 physical hash-shard topology** (record-level sharding +
-publish, per reviewer 2026-07-10-03). Do NOT run the benchmark matrix until the
-physically sharded lane exists and passes the topology audit.
+Status: SHELVED (2026-07-10). Depends on: Task 166 and Task 179's
+implementation-ready physical-fixture checkpoint; Task 165 remains
+replicated-control evidence only. Do NOT run the benchmark matrix until Task
+179's physically sharded lane exists and passes TC-040/TC-042/TC-050 plus the
+fail-closed topology audit.
 Owner: coder (to be assigned). One branch off the current ec_distann line.
 Priority: P0 corrective benchmark gate — but blocked; execution deferred.
 
@@ -287,8 +288,12 @@ benchmark packet must use the suite runner.
 
 ## References
 
-- Task 165: real multi-instance functional fixture and disjoint-shard drill.
+- Task 165: real multi-instance replicated-control fixture and destructive
+  delete/tombstone "disjoint" drill (functional control only; non-qualifying
+  topology).
 - Task 166: single-instance `ec_distann` benchmark gate, now a control lane.
+- Task 179: physical owner generations, streamed handoff, publication, frozen
+  row tier, and topology preflight; the hard implementation prerequisite.
 - NFR-017: DistANN latency/recall gate.
 - NFR-018: DistANN space amplification.
 - FR-081: query orchestration.

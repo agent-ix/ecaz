@@ -30,7 +30,7 @@ flowchart LR
     C1 --> D[Stitch: group by vec_id,<br/>union neighbor lists,<br/>robust_prune to R]
     C2 --> D
     C3 --> D
-    D --> E[One record per vec_id]
+    D --> E[One record + frozen source row<br/>per vec_id]
     E --> F[Hash placement + epoch publish]
 ```
 
@@ -54,11 +54,14 @@ flowchart LR
   `graph_degree` edges; and emit exactly one record per vec_id.
 - When a vector appears in only one shard, the stitch SHALL pass its record
   through unchanged (stitch idempotence).
-- The build SHALL emit, alongside each stitched record, that vec_id's
-  full-precision vector as the co-placed rerank (heap) tier
-  ([FR-076](./FR-076-distann-graph-node-record-format.md), ADR-085 D11), so
-  the FR-078 hand-off can place record and vector together on one node. The
-  vector is carried once per vec_id (never per neighbor).
+- The build SHALL emit one canonical source-row payload alongside each stitched
+  record.
+- The source-row payload SHALL include the full-precision indexed vector and
+  every non-dropped source attribute from the same MVCC build snapshot.
+- The build SHALL encode the source-row payload as the versioned handoff entry
+  from [FR-076](./FR-076-distann-graph-node-record-format.md).
+- The build SHALL carry one source-row payload per vec_id rather than one per
+  neighbor or closure-overlap copy.
 - The full build (shard assignment, per-shard builds, stitch) SHALL be
   deterministic under a fixed seed: identical corpus + seed + options yield
   an identical stitched graph (this is what makes FR-081-AC-1's
@@ -87,6 +90,7 @@ flowchart LR
 | FR-077-AC-2 | Stitching an already-stitched graph is a no-op | Test (property) |
 | FR-077-AC-3 | Closure duplication factor and stitch statistics are present in the epoch manifest | Inspection |
 | FR-077-AC-4 | All FR-077-CON property tests pass across randomized corpora | Test (proptest) |
+| FR-077-AC-5 | Stitched output contains exactly one canonical handoff entry per vec_id, with the vector and source-row payload captured from the same build snapshot | Test (TC-038, TC-040) |
 
 ## Dependencies
 

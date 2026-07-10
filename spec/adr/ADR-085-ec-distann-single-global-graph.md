@@ -53,8 +53,10 @@ Build `ec_distann` as a fifth access method:
    holds a coarse search code + adjacency + embedded compressed neighbor
    codes, so one read expands a node and scores all neighbors; the
    full-precision vector is NOT in the record but in a co-placed heap row
-   (FR-078) read node-locally for exact rerank. This is the `ec_diskann`
-   coarse-in-index / exact-from-heap split, sharded.
+   read node-locally for exact rerank. The single-node degenerate path may use
+   the base-table row; a physical multinode epoch uses FR-078's immutable
+   AM-owned epoch row tier. This is the `ec_diskann` coarse-in-index /
+   exact-from-heap split, sharded without live cross-node base-table TIDs.
 3. **Hash placement** (FR-078): `hash(vec_id) mod roster`; placement affects
    load balance only.
 4. **Sharded build + stitch** (FR-077): closure-overlap clustering (the
@@ -71,21 +73,18 @@ Build `ec_distann` as a fifth access method:
 ## Sub-Decisions
 
 - **D1 — Neighbor-code duplication over on-demand fetch.** Embedding R
-  neighbor codes per record trades disk for one-read expansion. Honest
-  arithmetic at dim=1536 (6,144 B raw f32): with R=32 and rabitq-class 4-bit
-  codes (~768 B/code) the code block alone is ~24.6 KB. Because D11 keeps the
-  full-precision vector out of the record (it is exactly 1.0× raw, stored
-  once in the co-placed heap tier, not duplicated per record), the graph
-  record is ~25 KB ≈ **4.0× raw — at NFR-018's threshold, not the ~5.0× an
-  inline-vector layout would carry.** The remaining amplifier is the R×
-  neighbor-code block, so staying inside the budget still requires pinning
-  the D7 default (GroupedPq) code size at M0 plus some combination of lower
-  `graph_degree`, smaller codes (e.g. ~384 B/code ⇒ ≈2.1×), or the fallback
-  layout (adjacency-only records, codes piggybacked on expansion responses —
-  a format-version change, acceptable under the research rebuild posture).
-  The M0 storage measurement decides; the reference paper's ~10× used
-  full-precision-adjacent OPQ at higher degree. Dropping the inline vector
-  (D11) is the first ~1.0× of that reduction.
+  neighbor codes per record trades disk for one-read expansion. Corrected
+  arithmetic for the measured D7 default is based on the implementation's
+  RaBitQ **1-bit** stride, not a hypothetical 4-bit stride. At dim=1536 the
+  stride is `ceil(1536/8) + 12 = 204 B`; with R=32, FR-076's exact record
+  formula is `20 + 204 + 32×8 + 32×204 = 7,008 B`, or about **1.14×** the
+  6,144-byte raw f32 vector before page/tuple/directory overhead. D11 keeps the
+  full-precision vector out of that numerator and stores it once in the
+  co-placed epoch row tier. The NFR-018 4.0× threshold therefore has measured
+  implementation headroom for the default, while TurboQuant's 4-bit
+  dimension-wide stride remains a distinct high-space/fallback case. Actual
+  graph, TOAST, directory, and metadata bytes at 10k/50k/100k still decide the
+  gate; arithmetic is not evidence.
 - **D2 — Gate substrate: loopback multi-instance**, matching how the
   IVF/HNSW anchors were measured; one informational injected-latency
   (netem) run accompanies the gate for external validity. H×RTT sensitivity
@@ -134,16 +133,18 @@ Build `ec_distann` as a fifth access method:
   FR-082.
 - **D11 — Co-placed heap rerank (A) over an index-resident shipped rerank
   tier (B).** The rerank fidelity source is the co-placed full-precision
-  heap row, read node-locally via `heap_tid`; the index record carries no
-  vector (FR-076/FR-078/FR-079). **Why (A), not SPIRE's (B):** SPIRE ships a
+  row, read node-locally via `heap_tid`; in a physical multinode epoch this is
+  the immutable AM-owned FR-078 row tier, while the single-node degenerate path
+  may use its base heap. The index record carries no vector
+  (FR-076/FR-078/FR-079). **Why (A), not SPIRE's (B):** SPIRE ships a
   compressed rerank code into index storage because its wide-leaf scan
   scores *many* candidates per leaf, so a per-candidate heap fetch is a
   random-read storm — index-resident codes are forced by scan-fraction.
   distann has no scan-fraction: NFR-019 caps per-query work at BW×H expanded
-  records independent of corpus size, and (crucially) `records read ==
-  nodes expanded == nodes exact-reranked == the set materialized`, so the
-  rerank fetch count is bounded, small, and coincides with the
-  materialization read that would happen anyway. The thing that forced (B)
+  records independent of corpus size. Exact-vector row reads are bounded by
+  live expansions (tombstones may skip), final payload reads are bounded by k,
+  and the combined row-tier bound is BW×H+k per attempt; an implementation may
+  reuse a row read but correctness does not assume it. The thing that forced (B)
   is exactly the failure mode distann is designed not to have. **What (A)
   buys:** the full vector is stored once (in the heap tier), never
   duplicated into the index → −1.0× raw off per-record amplification (D1);
@@ -158,7 +159,8 @@ Build `ec_distann` as a fifth access method:
   dominated by transport. The rerank source is kept conceptually pluggable
   (a future `index`-tier mode could serve a same-node deployment that wants
   to avoid the heap detoast), but `ec_diskann`/`ec_distann` default to — and
-  in practice only use — the table/heap source.
+  in practice only use — the local heap source (base heap for the single-node
+  degenerate path, frozen epoch heap for multinode).
 
 ## Consequences
 
@@ -170,7 +172,7 @@ Build `ec_distann` as a fifth access method:
   pays the D1 amplification — now the R× neighbor-code block alone, since
   D11 keeps the 1.0×-raw vector out of the record.
 - Placement gains a co-location obligation (D11/FR-078): each vec_id's
-  full-precision heap row must land on the same node as its record;
+  full-precision AM-owned epoch row must land on the same node as its record;
   multi-node expansion is two node-local reads (record + heap) instead of
   one inline read. Both stay local, so latency is still H × per-round
   transport, not read-bound.

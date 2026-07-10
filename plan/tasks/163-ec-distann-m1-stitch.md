@@ -1,8 +1,11 @@
 # Task 163: ec_distann M1 — Sharded Build + Stitch Correctness
 
-Status: proposed (2026-07-06). Depends on: Task 161; Task 162 (record
-format). The pure-graph stitch core may start in parallel with 162 once 161
-merges.
+Status: partial / open (2026-07-10). The stitched-graph quality, determinism,
+and property work landed, but ADR-085 D8 / FR-077-CON-4 remains open: the
+implementation retains every shard output in memory instead of spilling sorted
+streams and merging from bounded cursors. Depends on: Task 161; Task 162
+(record format). The D8 closeout is a hard prerequisite of Task 179's physical
+owner handoff.
 Owner: coder (to be assigned). One coder, one branch.
 Priority: P0 — the paper's least-proven step and the program's highest
 technical risk (spec-review SR-006 FND-001).
@@ -17,6 +20,15 @@ parallelism, not the program) — but that must be proven, not assumed.
 
 Stitched 100k build within 0.001 distinct_recall of a monolithic build at
 equal search parameters, with all structural invariants property-tested.
+
+## Corrective closeout note (2026-07-10)
+
+Packets 001–002 establish graph quality and honestly report retained shard
+output memory. They do not close this task. The remaining implementation must
+write each sorted shard output to PostgreSQL-managed temporary spill storage,
+k-way merge through bounded cursors, and prove peak stitch memory is one vec_id
+group plus prune scratch. That work stays in Task 163 and its next packet; Task
+179 consumes the resulting stream but does not redefine D8.
 
 ## Scope
 
