@@ -756,18 +756,29 @@ unsafe extern "C-unwind" fn custom_scan_access(
     // — local or remote — is delivered through it.
     let scan_slot = (*scan_state).ss_ScanTupleSlot;
     loop {
-        if state.next_output >= state.outputs.len() {
-            // Deepen-on-demand (011/020-P1): if the last search early-exited, more
-            // results exist beyond the proven window; re-run with a doubled bar so
-            // a LIMIT above a WHERE qual keeps getting candidates until the Limit
-            // node is satisfied. Stop at beam exhaustion or the cap.
+        // Serve ONLY within the proven prefix — mirror the single-node AM
+        // amgettuple cursor (routine.rs), which never serves a row past
+        // `proven_k` of an early-exited scan and deepens first. Serving the
+        // unproven tail (011-P1) diverges from the AM: under a WHERE qual +
+        // LIMIT the leaked unproven rows can pass the qual and replace the true
+        // proven boundary row, so the distributed result differs from
+        // single-node by a boundary row. A converged (non-early-exit) search
+        // proved its whole beam, so the prefix is the full output set. The
+        // exact-distance stable sort makes `outputs[0..proven]` invariant across
+        // deepening, so this prefix is safe to serve incrementally.
+        let proven = proven_prefix_len(state);
+        if state.next_output >= proven {
+            // Deepen-on-demand: an early-exited scan has more proven rows beyond
+            // the current bar; re-run with a doubled bar so a LIMIT above a WHERE
+            // qual keeps getting PROVEN candidates until the Limit node is
+            // satisfied. Stop at beam exhaustion (proven prefix stops growing) or
+            // the cap.
             let cap = state.effective.saturating_mul(64).max(1024);
             if !(state.early_exit && state.effective < cap) {
                 return pg_sys::ExecClearTuple(scan_slot);
             }
-            let prev_len = state.outputs.len();
             run_search_and_build_outputs(state, scan_state, state.effective.saturating_mul(2));
-            if state.outputs.len() <= prev_len {
+            if proven_prefix_len(state) <= proven {
                 return pg_sys::ExecClearTuple(scan_slot);
             }
             continue;
@@ -809,6 +820,19 @@ unsafe extern "C-unwind" fn custom_scan_access(
                 return store_remote_payload(state, scan_slot, &nulls, &values);
             }
         }
+    }
+}
+
+/// The number of leading outputs that are PROVEN under the current search bar,
+/// mirroring the single-node AM's `proven_k` gate. An early-exited scan only
+/// proved the first `effective` results; a converged scan proved its whole beam.
+/// Bounded by the actual output count (fewer rows may be reachable than the bar,
+/// or a rare remote-payload drop shortens the set).
+fn proven_prefix_len(state: &DistannCustomScanExecState) -> usize {
+    if state.early_exit {
+        state.effective.min(state.outputs.len())
+    } else {
+        state.outputs.len()
     }
 }
 
