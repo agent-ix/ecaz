@@ -218,14 +218,10 @@ pub(crate) fn distann_orchestrated_search<E: DistannNodeExpander>(
         counters.records_expanded <= params.beam_width * params.hop_rounds,
         "BW x H expansion cap violated"
     );
-    // Deterministic TOTAL order (011-04-P1): break exact-distance ties by vec_id
-    // so the served prefix is invariant across iterative deepening (see the
-    // matching sort in routine.rs).
-    hits.sort_unstable_by(|left, right| {
-        left.exact_dist
-            .total_cmp(&right.exact_dist)
-            .then_with(|| left.vec_id.cmp(&right.vec_id))
-    });
+    // Bare distance sort: a `(exact_dist, vec_id)` total-order tie-break is
+    // coupled to the FR-081-AC-4 early-exit soundness fix (164-P1) and must land
+    // with it (see the matching note in routine.rs).
+    hits.sort_unstable_by(|left, right| left.exact_dist.total_cmp(&right.exact_dist));
     Ok((hits, counters))
 }
 
