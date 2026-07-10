@@ -1,0 +1,3 @@
+test commands::bench::suite::tests::distann_multinode_recall_mismatch_sets_identity_not_ok ... ok
+test commands::bench::suite::tests::distann_multinode_rows_parse_recall_identity_gate_and_drills ... ok
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 425 filtered out; finished in 0.00s
