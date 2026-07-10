@@ -296,8 +296,12 @@ fn real_setup_sql(
     queries_limit: u32,
     gd: u32,
 ) -> String {
-    let corpus = corpus_path.display();
-    let queries = queries_path.display();
+    // Escape the paths as SQL string literals (double any single quote) so a
+    // path containing `'` cannot break out of the COPY ... FROM '<path>' literal
+    // (172-P2). Canonical repo paths are unlikely to contain one, but the COPY
+    // literal must be robust to it.
+    let corpus = corpus_path.display().to_string().replace('\'', "''");
+    let queries = queries_path.display().to_string().replace('\'', "''");
     format!(
         "CREATE EXTENSION IF NOT EXISTS ecaz;\n\
          DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'peter') THEN CREATE ROLE peter LOGIN SUPERUSER; END IF; END $$;\n\
@@ -449,18 +453,50 @@ async fn drive_fixture(
         fr082_published_epoch_drill(psql, socket_dir, nodes, &roster, args).await;
     crate::ecaz_println!("[distann-multicluster] {fr082_line}");
 
+    // Cluster storage summation (Task 172 AC-3 / NFR-018): per-node and summed
+    // index+heap bytes across every participant, plus the replicated-index space
+    // amplification vs raw f32 vectors. Runs in both modes so the suite always
+    // captures it.
+    let storage_lines = storage_summation(psql, socket_dir, nodes, args).await;
+    for line in &storage_lines {
+        crate::ecaz_println!("[distann-multicluster] {line}");
+    }
+
     // Recall-only mode (the `distann-local-multinode` suite step): the multi-node
     // distinct-recall gates above are the scaled evidence; skip the (expensive at
     // scale) TC-042 fault matrix + FR-082 lifecycle drills, which are proven
     // scale-independently at the fixture default size.
     if args.skip_fault_drills {
+        // 172-P1: report MEASURED corpus metadata, not the synthetic args
+        // defaults. In real mode args.rows/args.dim are meaningless (16/2000);
+        // the true rows/dim come from the storage summation over the loaded data.
+        let (measured_rows, measured_dim) = storage_lines
+            .iter()
+            .find(|l| l.starts_with("storage_summation"))
+            .map(|l| {
+                let field = |k: &str| {
+                    l.split_whitespace()
+                        .find_map(|t| t.strip_prefix(k))
+                        .unwrap_or("?")
+                        .to_owned()
+                };
+                (field("corpus_rows="), field("dim="))
+            })
+            .unwrap_or_else(|| (args.rows.to_string(), args.dim.to_string()));
+        let corpus_label = match &args.corpus_prefix {
+            Some(prefix) => format!("corpus=real staged prefix={prefix}"),
+            None => "corpus=synthetic".to_owned(),
+        };
         let mut summary = format!(
-            "distann-multinode fixture (recall-only)\nnodes={}\nrows={}\ndim={}\ngraph_degree={}\nqueries={}\ntop_k={}\nroster={}\n{}\n",
-            args.nodes, args.rows, args.dim, args.graph_degree, args.queries, args.top_k, roster, result_line
+            "distann-multinode fixture (recall-only)\n{corpus_label}\nnodes={}\nrows={measured_rows}\ndim={measured_dim}\ngraph_degree={}\nqueries={}\ntop_k={}\nroster={}\n{}\n",
+            args.nodes, args.graph_degree, args.queries, args.top_k, roster, result_line
         );
         summary.push_str(&format!("{qual_line}\n"));
         summary.push_str(&format!("{fr082_line}\n"));
         summary.push_str(&format!("{suite_line}\n"));
+        for line in &storage_lines {
+            summary.push_str(&format!("{line}\n"));
+        }
         let summary_path = log_dir.join("distann-multinode-summary.log");
         fs::write(&summary_path, &summary)
             .wrap_err_with(|| format!("writing {}", summary_path.display()))?;
@@ -1428,6 +1464,67 @@ async fn disjoint_shard_drill(
 /// `benchgate_*` bench-format corpus and run `ecaz bench recall` against the
 /// coordinator single-node vs multi-node, asserting recall(multi) >= recall(single)
 /// - 0.001. Best-effort/non-fatal: the byte-identical top-k gate is the hard one.
+/// Task 172 AC-3 / NFR-018 cluster storage summation. Queries each node for its
+/// `dm_idx` index bytes and `dm` heap bytes, sums across the cluster, and
+/// computes the replicated-index space amplification vs raw f32 vectors
+/// (`cluster_index_bytes / (rows * dim * 4)`). Emits one `storage_node` line per
+/// node plus a `storage_summation` summary line (both parsed into result rows).
+async fn storage_summation(
+    psql: &Path,
+    socket_dir: &Path,
+    nodes: &[Node],
+    _args: &LocalMultinodePg18Args,
+) -> Vec<String> {
+    let mut lines = Vec::new();
+    let mut cluster_index = 0i64;
+    let mut cluster_heap = 0i64;
+    let mut coord_index = 0i64;
+    let mut rows = 0i64;
+    let mut dim = 0i64;
+    for (k, node) in nodes.iter().enumerate() {
+        // index bytes | heap bytes | row count | vector dimension
+        let sql = "SELECT pg_total_relation_size('dm_idx') || ' ' || \
+                   pg_total_relation_size('dm') || ' ' || \
+                   (SELECT count(*) FROM dm) || ' ' || \
+                   coalesce((SELECT array_length(source, 1) FROM dm LIMIT 1), 0);";
+        let out = capture_psql_allow_error(psql, socket_dir, node.port, sql).await;
+        let vals: Vec<i64> = out
+            .lines()
+            .find(|l| l.split_whitespace().count() == 4 && l.split_whitespace().all(|f| f.parse::<i64>().is_ok()))
+            .map(|l| l.split_whitespace().filter_map(|f| f.parse().ok()).collect())
+            .unwrap_or_default();
+        if vals.len() != 4 {
+            lines.push(format!("storage_node node={} index_bytes=0 heap_bytes=0 rows=0 (parse failed)", node.node_id));
+            continue;
+        }
+        let (idx, heap, n, d) = (vals[0], vals[1], vals[2], vals[3]);
+        if k == 0 {
+            coord_index = idx;
+            rows = n;
+            dim = d;
+        }
+        cluster_index += idx;
+        cluster_heap += heap;
+        lines.push(format!(
+            "storage_node node={} index_bytes={idx} heap_bytes={heap} rows={n} dim={d}",
+            node.node_id
+        ));
+    }
+    let raw_vector_bytes = rows * dim * 4;
+    let amp = if raw_vector_bytes > 0 {
+        cluster_index as f64 / raw_vector_bytes as f64
+    } else {
+        0.0
+    };
+    lines.push(format!(
+        "storage_summation nodes={} coord_index_bytes={coord_index} cluster_index_bytes={cluster_index} \
+         cluster_heap_bytes={cluster_heap} corpus_rows={rows} dim={dim} raw_vector_bytes={raw_vector_bytes} \
+         cluster_index_space_amplification={amp:.4}",
+        nodes.len()
+    ));
+    lines
+}
+
 async fn suite_recall_gate(
     psql: &Path,
     socket_dir: &Path,

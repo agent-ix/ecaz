@@ -2142,6 +2142,15 @@ fn parse_distann_multinode_rows(raw: &str) -> Vec<(String, BTreeMap<String, Stri
                     rows.push(("suite_recall_gate".into(), values));
                 }
             }
+        } else if let Some(rest) = body.strip_prefix("storage_summation ") {
+            // Task 172 AC-3 / NFR-018 cluster storage summation.
+            if let Some(values) = parse_space_key_values(rest.trim()) {
+                rows.push(("storage_summation".into(), values));
+            }
+        } else if let Some(rest) = body.strip_prefix("storage_node ") {
+            if let Some(values) = parse_space_key_values(rest.trim()) {
+                rows.push(("storage_node".into(), values));
+            }
         } else if let Some(pass_idx) = body.find(" pass=") {
             // A generic drill-outcome line: `<label> pass=<bool>`.
             let label = body[..pass_idx].trim();
