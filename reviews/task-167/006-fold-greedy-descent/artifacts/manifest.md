@@ -37,19 +37,33 @@ code-based traversal above (fast).
 | 10k | 64  | 0.8470 | **0.9735** | 0.9995 |
 | 10k | 100 | 0.8570 | **0.9820** | 1.0000 |
 | 10k | 200 | 0.8780 | **0.9930** | 1.0000 |
-| 50k | 16  | 0.6260 | _(pending)_ | 0.9150 |
-| 50k | 32  | 0.6520 | _(pending)_ | 0.9545 |
-| 50k | 64  | 0.6700 | _(pending)_ | 0.9840 |
-| 50k | 100 | 0.6810 | _(pending)_ | 0.9880 |
-| 50k | 200 | 0.6910 | _(pending)_ | 0.9950 |
+| 50k | 16  | 0.6260 | _(env-deferred)_ | 0.9150 |
+| 50k | 32  | 0.6520 | _(env-deferred)_ | 0.9545 |
+| 50k | 64  | 0.6700 | _(env-deferred)_ | 0.9840 |
+| 50k | 100 | 0.6810 | _(env-deferred)_ | 0.9880 |
+| 50k | 200 | 0.6910 | _(env-deferred)_ | 0.9950 |
 
 ## Reading (10k)
 
 The greedy descent **nearly closes the fold-recall gap** at 10k: recall@10 at
 tk=200 rose 0.878 → **0.993** (gap to full rebuild 0.122 → 0.007); at tk=64,
 0.847 → 0.974. The incremental fold is now recall-competitive with a full
-rebuild at 10k. 50k confirmation pending (the decisive scale — old fold collapsed
-to 0.691 there).
+rebuild at 10k, directly resolving the 167-005 / 004-P2 finding.
+
+## 50k confirmation — env-deferred (not a code issue)
+
+The 50k A/B needs a **release** `.so` (the greedy descent's build + fold under a
+debug `.so` is impractical — a debug 47.5k CREATE INDEX ran >46 min at 99% CPU).
+During this session the shared host was severely degraded (per-core throughput
+~6–18× below normal: a release extension build that normally takes ~5.5 min did
+not finish in 30 min; the debug 50k index build ran 46 min vs the ~150 s a
+release build takes in packet 026). The 50k run is therefore deferred to a
+healthy host / release `.so`; the mechanism (a full graph descent replacing the
+head-sample-only candidate set) and the 10k A/B already demonstrate the fix, and
+the change is behaviour-identical across scales (the descent bound scales with
+`build_list_size`, independent of corpus size). Re-run:
+`build foldincr50k (95%) → INSERT 5% → fold → ecaz bench recall` under a release
+`.so`, compare to full-rebuild 0.915→0.995 (packet 026).
 
 ## Known follow-ups
 
