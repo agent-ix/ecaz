@@ -1,0 +1,14 @@
+Script started on 2026-07-09 21:56:45-07:00 [<not executed on terminal>]
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz-task165)
+   Compiling ecaz-cli v0.1.0 (/home/peter/dev/ecaz-task165/crates/ecaz-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 52.13s
+     Running unittests src/main.rs (target/debug/deps/ecaz-b8912c00e62fbb7a)
+
+running 2 tests
+test commands::bench::suite::tests::distann_multinode_recall_mismatch_sets_identity_not_ok ... ok
+test commands::bench::suite::tests::distann_multinode_rows_parse_recall_identity_gate_and_drills ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 425 filtered out; finished in 0.00s
+
+
+Script done on 2026-07-09 21:57:37-07:00 [COMMAND_EXIT_CODE="0"]
