@@ -1,0 +1,13 @@
+command: quire validate --scope /home/peter/dev/ecaz-task165 "spec/**/*.md" --summary
+timestamp: 2026-07-10T09:53:18-07:00
+head: 32b9b43fbdaa23cafb31ef25b759892c2c05028a
+
+DuplicateArchetype: 'ADR' contributed by modules ["spec-artifacts-process", "spec-artifacts-process"]; first-wins
+DuplicateArchetype: 'Plan' contributed by modules ["spec-artifacts-process", "spec-artifacts-process"]; first-wins
+DuplicateArchetype: 'Review' contributed by modules ["spec-artifacts-process", "spec-artifacts-process"]; first-wins
+DuplicateArchetype: 'SpecReview' contributed by modules ["spec-artifacts-process", "spec-artifacts-process"]; first-wins
+DuplicateArchetype: 'Standard' contributed by modules ["spec-artifacts-process", "spec-artifacts-process"]; first-wins
+DuplicateInverseEdge: inverse label 'part_of' declared by verbs ["aggregates", "contains"]; first-wins
+244/244 docs grammar-clean (100%); 0 EARS finding(s): none
+
+exit_status: 0
