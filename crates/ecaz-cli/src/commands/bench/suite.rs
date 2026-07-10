@@ -513,6 +513,13 @@ struct DistannLocalMultinodeStep {
     top_k: Option<u32>,
     #[serde(default)]
     skip_fault_drills: bool,
+    /// Load a real staged corpus (`{staged_dir}/{corpus_prefix}_*.tsv`) instead
+    /// of the synthetic deterministic corpus. Makes this a real-corpus
+    /// distributed quality lane (Task 172).
+    #[serde(default)]
+    corpus_prefix: Option<String>,
+    #[serde(default)]
+    staged_dir: Option<PathBuf>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -3604,6 +3611,8 @@ fn expand_distann_local_multinode(
     if step.skip_fault_drills {
         args.push("--skip-fault-drills".into());
     }
+    push_opt_arg(&mut args, "--corpus-prefix", step.corpus_prefix.as_deref());
+    push_opt_path(&mut args, "--staged-dir", step.staged_dir.as_deref());
     args
 }
 

@@ -75,6 +75,18 @@ pub struct LocalMultinodePg18Args {
     /// (expensive at scale) per-drill re-setups.
     #[arg(long, default_value_t = false)]
     pub skip_fault_drills: bool,
+    /// Load a real staged corpus instead of the synthetic deterministic corpus.
+    /// When set, each node loads `{staged_dir}/{corpus_prefix}_corpus.tsv` into
+    /// `dm` (encoded with the standard `encode_to_ecvector(source, 4, 42)`) and
+    /// `{corpus_prefix}_queries.tsv` into `dm_queries`, so the recall gate runs
+    /// against real DBpedia vectors + held-out queries (Task 172 real-corpus
+    /// distributed quality lane, not a synthetic identity smoke).
+    #[arg(long)]
+    pub corpus_prefix: Option<String>,
+    /// Directory holding the staged corpus TSVs (default: repo
+    /// `data/staged-current`). Only used with `--corpus-prefix`.
+    #[arg(long)]
+    pub staged_dir: Option<PathBuf>,
 }
 
 impl DistannMulticlusterCommand {
@@ -228,6 +240,71 @@ fn conninfo(socket_dir: &Path, port: u16) -> String {
 }
 
 /// The identical, deterministic corpus + index setup run on every node.
+/// Build the per-node corpus/index setup SQL: real staged corpus when
+/// `--corpus-prefix` is set, else the synthetic deterministic corpus.
+fn build_setup_sql(args: &LocalMultinodePg18Args) -> Result<String> {
+    match &args.corpus_prefix {
+        Some(prefix) => {
+            let staged_dir = match &args.staged_dir {
+                Some(dir) => dir.clone(),
+                None => repo_root()?.join("data/staged-current"),
+            };
+            // Canonicalize (absolute + symlinks resolved) so the server-side
+            // COPY can read the staged file regardless of the backend's cwd.
+            let corpus_path = std::fs::canonicalize(staged_dir.join(format!("{prefix}_corpus.tsv")))
+                .wrap_err_with(|| format!("resolving staged corpus for prefix {prefix}"))?;
+            let queries_path =
+                std::fs::canonicalize(staged_dir.join(format!("{prefix}_queries.tsv")))
+                    .wrap_err_with(|| format!("resolving staged queries for prefix {prefix}"))?;
+            Ok(real_setup_sql(
+                &corpus_path,
+                &queries_path,
+                args.queries,
+                args.graph_degree,
+            ))
+        }
+        None => Ok(setup_sql(args)),
+    }
+}
+
+/// Real staged-corpus load: COPY each 2-column TSV (`id\t[v1,v2,...]`) into a
+/// text stage, convert the `[...]` JSON-array literal to a PG `{...}` array,
+/// and materialize `dm(source real[], embedding ecvector)` +
+/// `dm_queries(source real[])`. The `4, 42` encode params match both the
+/// synthetic path and the standard suite load (`encode_to_ecvector(source, 4,
+/// 42)`), so this lane is comparable to the single-node suite matrices.
+fn real_setup_sql(
+    corpus_path: &Path,
+    queries_path: &Path,
+    queries_limit: u32,
+    gd: u32,
+) -> String {
+    let corpus = corpus_path.display();
+    let queries = queries_path.display();
+    format!(
+        "CREATE EXTENSION IF NOT EXISTS ecaz;\n\
+         DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'peter') THEN CREATE ROLE peter LOGIN SUPERUSER; END IF; END $$;\n\
+         DROP TABLE IF EXISTS dm; DROP TABLE IF EXISTS dm_queries;\n\
+         CREATE TABLE dm (id bigint, source real[], embedding ecvector);\n\
+         CREATE TEMP TABLE dm_stage (id bigint, vec text);\n\
+         COPY dm_stage (id, vec) FROM '{corpus}' WITH (FORMAT text, DELIMITER E'\\t');\n\
+         INSERT INTO dm\n\
+           SELECT id, translate(vec, '[]', '{{}}')::real[],\n\
+                  encode_to_ecvector(translate(vec, '[]', '{{}}')::real[], 4, 42)\n\
+           FROM dm_stage ORDER BY id;\n\
+         DROP TABLE dm_stage;\n\
+         CREATE TABLE dm_queries (id bigint, source real[]);\n\
+         CREATE TEMP TABLE dmq_stage (id bigint, vec text);\n\
+         COPY dmq_stage (id, vec) FROM '{queries}' WITH (FORMAT text, DELIMITER E'\\t');\n\
+         INSERT INTO dm_queries\n\
+           SELECT id, translate(vec, '[]', '{{}}')::real[]\n\
+           FROM dmq_stage ORDER BY id LIMIT {queries_limit};\n\
+         DROP TABLE dmq_stage;\n\
+         CREATE INDEX dm_idx ON dm USING ec_distann (embedding ecvector_distann_ip_ops)\n\
+           WITH (graph_degree = {gd});\n",
+    )
+}
+
 fn setup_sql(args: &LocalMultinodePg18Args) -> String {
     format!(
         "CREATE EXTENSION IF NOT EXISTS ecaz;\n\
@@ -255,10 +332,17 @@ fn setup_sql(args: &LocalMultinodePg18Args) -> String {
 /// The coordinator-side recall comparison: single-node (empty roster) vs the
 /// full multi-node roster (CustomScan → owner row shipping), asserting the top-k
 /// id sets are identical (distinct_recall delta 0 ⇒ ≥ single − 0.001).
-fn recall_sql(roster: &str, queries: u32, top_k: u32) -> String {
+fn recall_sql(roster: &str, queries: u32, top_k: u32, real: bool) -> String {
+    // Real lane: held-out queries from dm_queries. Synthetic lane: the first
+    // `queries` corpus rows (ids 1..=queries) double as queries, as before.
+    let q_source = if real {
+        format!("SELECT id AS qid, source AS v FROM dm_queries ORDER BY id LIMIT {queries}")
+    } else {
+        format!("SELECT id AS qid, source AS v FROM dm WHERE id <= {queries}")
+    };
     format!(
         "SET enable_seqscan = off;\n\
-         DROP TABLE IF EXISTS q; CREATE TEMP TABLE q AS SELECT id AS qid, source AS v FROM dm WHERE id <= {queries};\n\
+         DROP TABLE IF EXISTS q; CREATE TEMP TABLE q AS {q_source};\n\
          SET ec_distann.roster = ''; SET ec_distann.local_node_id = 1; SET ec_distann.epoch = 0;\n\
          DROP TABLE IF EXISTS base; CREATE TEMP TABLE base AS\n\
            SELECT q.qid, r.id FROM q CROSS JOIN LATERAL\n\
@@ -290,7 +374,7 @@ async fn drive_fixture(
     log_dir: &Path,
 ) -> Result<()> {
     // Replicated deterministic corpus + index on every node.
-    let setup = setup_sql(args);
+    let setup = build_setup_sql(args)?;
     for node in nodes {
         run_psql_file(psql, socket_dir, node.port, &setup)
             .await
@@ -307,7 +391,7 @@ async fn drive_fixture(
 
     // Distinct-recall gate on the coordinator (node 1).
     let coord_port = nodes[0].port;
-    let recall = recall_sql(&roster, args.queries, args.top_k);
+    let recall = recall_sql(&roster, args.queries, args.top_k, args.corpus_prefix.is_some());
     let out = capture_psql(psql, socket_dir, coord_port, &recall)
         .await
         .wrap_err("running the multi-node recall comparison")?;
@@ -627,7 +711,7 @@ async fn drive_fixture(
 
     // 8. recovery / no-false-reject: after all faults clear, the full-roster
     // query must match the single-node baseline again.
-    let recovery = capture_psql(psql, socket_dir, coord_port, &recall_sql(&roster, args.queries, args.top_k))
+    let recovery = capture_psql(psql, socket_dir, coord_port, &recall_sql(&roster, args.queries, args.top_k, args.corpus_prefix.is_some()))
         .await
         .wrap_err("running the post-recovery recall comparison")?;
     let recovery_line = recovery
@@ -1336,13 +1420,18 @@ async fn suite_recall_gate(
         }
     }
     let coord_port = nodes[0].port;
-    let _ = run_capture(
-        psql,
-        socket_dir,
-        coord_port,
-        "DROP TABLE IF EXISTS benchgate_queries; CREATE TABLE benchgate_queries AS SELECT id, source FROM dm WHERE id <= 50;",
-    )
-    .await;
+    // Real lane: held-out queries from dm_queries. Synthetic lane: first 50
+    // corpus rows (as before).
+    let benchgate_queries_sql = if args.corpus_prefix.is_some() {
+        format!(
+            "DROP TABLE IF EXISTS benchgate_queries; CREATE TABLE benchgate_queries AS \
+             SELECT id, source FROM dm_queries ORDER BY id LIMIT {};",
+            args.queries
+        )
+    } else {
+        "DROP TABLE IF EXISTS benchgate_queries; CREATE TABLE benchgate_queries AS SELECT id, source FROM dm WHERE id <= 50;".to_owned()
+    };
+    let _ = run_capture(psql, socket_dir, coord_port, &benchgate_queries_sql).await;
     let ecaz = match std::env::current_exe() {
         Ok(p) => p,
         Err(_) => return "suite_recall_gate=SKIPPED(no exe)".to_owned(),
